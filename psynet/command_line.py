@@ -1318,6 +1318,38 @@ def _deploy__docker_heroku(ctx, app, archive):
         reset_console()
 
 
+def _run_ssh_launch(ctx, *, mode, app, archive, dns_host, server, command):
+    """Walk the SSH launch checklist from PsyNet prepare through Dallinger deploy."""
+    from dallinger.command_line.docker_ssh import SSH_LAUNCH_STEPS
+    from dallinger.step_progress import ssh_launch_progress
+
+    os.environ["DALLINGER_NO_EGG_BUILD"] = "1"
+    kind = "Debugging" if mode == "sandbox" else "Deploying"
+    heading = f"{kind} {app}" if app else f"{kind} experiment"
+    with ssh_launch_progress(heading, SSH_LAUNCH_STEPS, subtitle=server) as steps:
+        with steps.step("prepare"):
+            _pre_launch(
+                ctx,
+                mode=mode,
+                archive=archive,
+                local_=False,
+                ssh=True,
+                docker=True,
+                server=server,
+                app=app,
+            )
+        # PsyNet bypasses Dallinger's deploy-from-archive system and uses its own.
+        return ctx.invoke(
+            command,
+            server=server,
+            dns_host=dns_host,
+            app_name=app,
+            config_options={},
+            archive_path=None,
+            update=False,
+        )
+
+
 @deploy.command("ssh")
 @click.option("--app", callback=verify_id, help="Experiment id")
 @click.option("--archive", default=None, help="Optional path to an experiment archive")
@@ -1332,37 +1364,19 @@ def deploy__docker_ssh(ctx, app, archive, dns_host, server):
     Deploy the experiment to a remote server via Docker and SSH.
     """
     try:
-        # Ensures that the experiment is deployed with the Dallinger version specified in requirements.txt,
-        # irrespective of whether a different version is installed locally.
-        os.environ["DALLINGER_NO_EGG_BUILD"] = "1"
-
-        _pre_launch(
-            ctx,
-            mode="live",
-            archive=archive,
-            local_=False,
-            ssh=True,
-            docker=True,
-            server=server,
-            app=app,
-        )
-
         from dallinger.command_line.docker_ssh import (
             deploy as dallinger_docker_ssh_deploy,
         )
 
-        # Note: PsyNet bypasses Dallinger's deploy-from-archive system and uses its own, so we set archive_path=None.
-        # Explicitly pass update=False to avoid Click converting the default to the string 'False'
-        result = ctx.invoke(
-            dallinger_docker_ssh_deploy,
-            server=server,
+        result = _run_ssh_launch(
+            ctx,
+            mode="live",
+            app=app,
+            archive=archive,
             dns_host=dns_host,
-            app_name=app,
-            config_options={},
-            archive_path=None,
-            update=False,
+            server=server,
+            command=dallinger_docker_ssh_deploy,
         )
-
         _post_deploy(result)
     finally:
         _cleanup_exp_directory()
@@ -1732,31 +1746,15 @@ def debug__docker_ssh(ctx, app, archive, server, dns_host):
     try:
         from dallinger.command_line.docker_ssh import sandbox
 
-        os.environ["DALLINGER_NO_EGG_BUILD"] = "1"
-
-        _pre_launch(
+        result = _run_ssh_launch(
             ctx,
             mode="sandbox",
-            archive=archive,
-            local_=False,
-            ssh=True,
-            docker=True,
-            server=server,
             app=app,
-        )
-
-        # Note: PsyNet bypasses Dallinger's deploy-from-archive system and uses its own, so we set archive_path=None.
-        # Explicitly pass update=False to avoid Click converting the default to the string 'False'
-        result = ctx.invoke(
-            sandbox,
-            server=server,
+            archive=archive,
             dns_host=dns_host,
-            app_name=app,
-            config_options={},
-            archive_path=None,
-            update=False,
+            server=server,
+            command=sandbox,
         )
-
         _post_deploy(result)
     finally:
         _cleanup_exp_directory()

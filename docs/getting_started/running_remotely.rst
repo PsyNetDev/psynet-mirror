@@ -158,6 +158,10 @@ by running the following command:
 
     psynet debug ssh --app your-experiment-name
 
+The command shows a live checklist from preparing the experiment through
+launch. The current step has a spinner; finished steps are ticked. After
+launch it prints the dashboard and log URLs once.
+
 Your experiment should be ready within a minute or two
 at the URL ``https://<your-experiment-name>.<your-dns-host>``.
 Note that you can have multiple experiments running on the same server,
