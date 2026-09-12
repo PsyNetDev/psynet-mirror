@@ -160,7 +160,10 @@ by running the following command:
 
 The command shows a live checklist from preparing the experiment through
 launch. The current step has a spinner; finished steps are ticked. After
-launch it prints the dashboard and log URLs once.
+launch it prints the dashboard and log URLs once. To watch the captured
+output while it runs::
+
+    tail -f /tmp/dallinger-deploy.log
 
 Your experiment should be ready within a minute or two
 at the URL ``https://<your-experiment-name>.<your-dns-host>``.
