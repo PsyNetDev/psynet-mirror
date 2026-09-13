@@ -3443,9 +3443,9 @@
           if (!psynet.timelineHold.busyRetryUsed) {
             psynet.timelineHold.busyRetryUsed = true;
             psynet.scheduleTimelineHoldBusyRetry(psynet.timelineHold);
-          } else {
-            psynet.scheduleTimelineHoldCheck(psynet.timelineHold);
           }
+          // A later busy 503 lets resumeTimelineHold's finally schedule the
+          // safety poll once. Scheduling here as well double-counts it.
         }
         return false;
       }

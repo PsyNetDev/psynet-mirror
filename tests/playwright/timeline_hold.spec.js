@@ -669,6 +669,9 @@ test("timeline hold client overlay and busy retry stay on a live hold", { tag: "
       };
       const effects = { queuedWakes: 0, scheduleCalls: 0 };
       clearTimeout(controller.safetyTimer);
+      controller.busyRetryUsed = true;
+      clearTimeout(controller.busyRetryTimer);
+      controller.busyRetryTimer = null;
       psynet.scheduleTimelineHoldCheck = () => {
         effects.scheduleCalls += 1;
       };
