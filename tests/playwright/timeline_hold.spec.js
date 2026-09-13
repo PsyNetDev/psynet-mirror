@@ -8,6 +8,7 @@ const {
   installTimelineHoldReleaseProbe,
   silenceTimelineHoldSafetyPoll,
   startResponseSubmitTracker,
+  waitForTimelinePageReady,
   withExperiment
 } = require("./psynetHarness");
 
@@ -76,6 +77,9 @@ async function probeTimelineHoldClientBehavior(page) {
     if (!controller) {
       throw new Error("timeline hold is not active");
     }
+    if (!psynet.pageReady) {
+      throw new Error("timeline hold probe ran before pageReady");
+    }
     const originalSchedule = psynet.scheduleTimelineHoldCheck;
     const originalTimeout = psynet.scheduleTimelineHoldTimeout;
     const originalConnect = PsyNetWebSocketChannel.connect;
@@ -143,8 +147,11 @@ async function probeTimelineHoldClientBehavior(page) {
           readyState: 0,
           status: 0,
           response: "",
+          timeout: 0,
           onreadystatechange: null,
           open() {},
+          setRequestHeader() {},
+          abort() {},
           send() {
             sendCount += 1;
             xhr.readyState = 4;
@@ -467,6 +474,7 @@ test("timeline hold client overlay and busy retry stay on a live hold", { tag: "
     await expect(
       experimentPage.locator("#psynet-timeline-hold-indicator")
     ).toBeVisible({ timeout: STEP_TIMEOUT_MS });
+    await waitForTimelinePageReady(experimentPage, STEP_TIMEOUT_MS);
     await silenceTimelineHoldSafetyPoll(experimentPage);
 
     const holdClient = await probeTimelineHoldClientBehavior(experimentPage);
