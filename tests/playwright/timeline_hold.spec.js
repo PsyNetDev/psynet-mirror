@@ -72,10 +72,7 @@ async function startBackgroundHold(page, { trackLucidUnload = false } = {}) {
 
 async function probeTimelineHoldClientBehavior(page) {
   await installTimelineHoldReleaseProbe(page);
-  let timer;
-  try {
-    const result = await Promise.race([
-    evaluateOnLivePage(page, async () => {
+  const overlay = await evaluateOnLivePage(page, () => {
     const controller = psynet.timelineHold;
     if (!controller) {
       throw new Error("timeline hold is not active");
@@ -96,8 +93,6 @@ async function probeTimelineHoldClientBehavior(page) {
     }
     psynet.scheduleTimelineHoldCheck = function () {};
     psynet.scheduleTimelineHoldTimeout = function () {};
-    // Reconnecting the live hold socket would POST a real hold-resume from
-    // onOpen and can reload the legacy document mid-evaluate.
     PsyNetWebSocketChannel.connect = function () {
       return {
         close() {},
@@ -118,220 +113,234 @@ async function probeTimelineHoldClientBehavior(page) {
       }
     });
 
-    try {
-      psynet.arrivalUpdates = fakeArrival();
-      const strayNotice = document.createElement("div");
-      strayNotice.id = "psynet-arrival-notice";
-      document.body.appendChild(strayNotice);
-      psynet.ensureArrivalUpdates(null);
-      const closedWithoutChannel =
-        arrivalClosed === 1 && psynet.arrivalUpdates === null;
-      const noticeClearedWithoutChannel =
-        document.getElementById("psynet-arrival-notice") === null;
+    psynet.arrivalUpdates = fakeArrival();
+    const strayNotice = document.createElement("div");
+    strayNotice.id = "psynet-arrival-notice";
+    document.body.appendChild(strayNotice);
+    psynet.ensureArrivalUpdates(null);
+    const closedWithoutChannel =
+      arrivalClosed === 1 && psynet.arrivalUpdates === null;
+    const noticeClearedWithoutChannel =
+      document.getElementById("psynet-arrival-notice") === null;
 
-      psynet.arrivalUpdates = fakeArrival();
-      const hold = { ...controller.hold };
-      psynet.beginTimelineHold(hold);
-      const closedOnBeginHold =
-        arrivalClosed === 2 && psynet.arrivalUpdates === null;
+    psynet.arrivalUpdates = fakeArrival();
+    const hold = { ...controller.hold };
+    psynet.beginTimelineHold(hold);
+    const closedOnBeginHold =
+      arrivalClosed === 2 && psynet.arrivalUpdates === null;
 
-      psynet.beginTimelineHold({
-        ...hold,
-        message: "Updated wait copy"
-      });
-      const updatedMessage = document.querySelector(
-        "#psynet-timeline-hold-indicator .psynet-timeline-hold-message"
-      )?.innerHTML;
+    psynet.beginTimelineHold({
+      ...hold,
+      message: "Updated wait copy"
+    });
+    const updatedMessage = document.querySelector(
+      "#psynet-timeline-hold-indicator .psynet-timeline-hold-message"
+    )?.innerHTML;
 
-      const OriginalXHR = window.XMLHttpRequest;
-      let sendCount = 0;
-      window.XMLHttpRequest = function FakeXHR() {
-        const xhr = {
-          readyState: 0,
-          status: 0,
-          response: "",
-          responseText: "",
-          timeout: 0,
-          onreadystatechange: null,
-          onload: null,
-          onerror: null,
-          ontimeout: null,
-          open() {},
-          setRequestHeader() {},
-          abort() {},
-          addEventListener() {},
-          removeEventListener() {},
-          send() {
-            sendCount += 1;
-            xhr.readyState = 4;
-            if (sendCount === 1) {
-              xhr.status = 503;
-              xhr.response = JSON.stringify({
-                status: "busy",
-                submission: "busy",
-                message: "The experiment is temporarily busy. Please try again."
-              });
-            } else {
-              xhr.status = 200;
-              xhr.response = JSON.stringify({
-                submission: "approved",
-                page: { contents: "", attributes: {} }
-              });
-            }
-            xhr.responseText = xhr.response;
-            if (xhr.onreadystatechange) {
-              xhr.onreadystatechange();
-            }
-            if (xhr.onload) {
-              xhr.onload();
-            }
+    const OriginalXHR = window.XMLHttpRequest;
+    let sendCount = 0;
+    window.XMLHttpRequest = function FakeXHR() {
+      const xhr = {
+        readyState: 0,
+        status: 0,
+        response: "",
+        responseText: "",
+        timeout: 0,
+        onreadystatechange: null,
+        onload: null,
+        onerror: null,
+        ontimeout: null,
+        open() {},
+        setRequestHeader() {},
+        abort() {},
+        addEventListener() {},
+        removeEventListener() {},
+        send() {
+          sendCount += 1;
+          xhr.readyState = 4;
+          if (sendCount === 1) {
+            xhr.status = 503;
+            xhr.response = JSON.stringify({
+              status: "busy",
+              submission: "busy",
+              message: "The experiment is temporarily busy. Please try again."
+            });
+          } else {
+            xhr.status = 200;
+            xhr.response = JSON.stringify({
+              submission: "approved",
+              page: { contents: "", attributes: {} }
+            });
           }
+          xhr.responseText = xhr.response;
+          if (xhr.onreadystatechange) {
+            xhr.onreadystatechange();
+          }
+          if (xhr.onload) {
+            xhr.onload();
+          }
+        }
+      };
+      return xhr;
+    };
+    const originalApproved = psynet.handleApprovedResponse;
+    const originalAlert = psynet.alert;
+    let approved = 0;
+    psynet.handleApprovedResponse = async () => {
+      approved += 1;
+      return true;
+    };
+    psynet.alert = (text) => {
+      throw new Error(
+        `unexpected psynet.alert during hold client probe: ${text}`
+      );
+    };
+    const pendingBefore = psynet.nextPagePending;
+    psynet.nextPagePending = false;
+    window.__holdClientNext = { done: false };
+    // Do not await nextPage in this evaluate. submitGenericResponse waits
+    // 250ms between the busy 503 and the retry; Playwright's awaitPromise
+    // does not flush that timer while the evaluate is still open.
+    Promise.resolve()
+      .then(() =>
+        psynet.nextPage(null, {}, {}, undefined, { timelineHoldResume: true })
+      )
+      .then((passed) => {
+        window.__holdClientNext = {
+          done: true,
+          passed,
+          approved,
+          sendCount,
+          error: null
         };
-        return xhr;
-      };
-      const originalApproved = psynet.handleApprovedResponse;
-      const originalAlert = psynet.alert;
-      let approved = 0;
-      psynet.handleApprovedResponse = async () => {
-        approved += 1;
-        return true;
-      };
-      psynet.alert = (text) => {
-        throw new Error(
-          `unexpected psynet.alert during hold client probe: ${text}`
-        );
-      };
-      const pendingBefore = psynet.nextPagePending;
-      psynet.nextPagePending = false;
-      let passed = false;
-      try {
-        passed = await Promise.race([
-          psynet.nextPage(null, {}, {}, undefined, {
-            timelineHoldResume: true
-          }),
-          new Promise((_, reject) =>
-            setTimeout(() => {
-              reject(
-                new Error(
-                  "timed out waiting for hold-resume nextPage " +
-                    `(pageReady=${psynet.pageReady}, ` +
-                    `pending=${psynet.nextPagePending}, ` +
-                    `sendCount=${sendCount})`
-                )
-              );
-            }, 8000)
-          )
-        ]);
-      } finally {
+      })
+      .catch((error) => {
+        window.__holdClientNext = {
+          done: true,
+          passed: false,
+          approved,
+          sendCount,
+          error: String(error && error.message ? error.message : error)
+        };
+      })
+      .finally(() => {
         window.XMLHttpRequest = OriginalXHR;
         psynet.handleApprovedResponse = originalApproved;
         psynet.alert = originalAlert;
         psynet.nextPagePending = pendingBefore;
-      }
+        psynet.scheduleTimelineHoldCheck = originalSchedule;
+        psynet.scheduleTimelineHoldTimeout = originalTimeout;
+        PsyNetWebSocketChannel.connect = originalConnect;
+      });
 
-      const probe = window.__psynetHoldReleaseProbe;
-      let clocksReset = false;
-      if (probe) {
-        probe.holdEndedAtMs = 123;
-        probe.wakeReceivedAtMs = 456;
-        probe.wakeReason = "old";
-        window.dispatchEvent(new CustomEvent("timelineHoldStarted"));
-        clocksReset =
-          probe.holdEndedAtMs === null &&
-          probe.wakeReceivedAtMs === null &&
-          probe.wakeReason === null;
-      }
+    return {
+      closedWithoutChannel,
+      noticeClearedWithoutChannel,
+      closedOnBeginHold,
+      updatedMessage
+    };
+  });
 
-      let reloadedHoldPayload = 0;
-      const originalReload = psynet.loadNextTimelinePageWithReload;
-      psynet.loadNextTimelinePageWithReload = () => {
-        reloadedHoldPayload += 1;
-      };
-      try {
-        await psynet.handleApprovedResponse({
-          page: {
-            attributes: {
-              timeline_hold: { ...controller.hold },
-              requires_full_page_reload: true,
-              page_uuid: controller.hold.page_uuid
-            }
-          }
-        });
-      } finally {
-        psynet.loadNextTimelinePageWithReload = originalReload;
-      }
-
-      const originalReplace = window.location.replace.bind(window.location);
-      window.location.replace = (url) => {
-        throw new Error(`lucid terminated during hold: ${url}`);
-      };
-      if (window.location.replace === originalReplace) {
-        throw new Error("could not stub location.replace");
-      }
-      const originalLucidFlag = psynetTemplateData.flags.lucidRecruitment;
-      const originalLucid = { ...psynetTemplateData.lucid };
-      try {
-        psynetTemplateData.flags.lucidRecruitment = true;
-        Object.assign(psynetTemplateData.lucid, {
-          inactivityTimeoutMs: 1,
-          inactivityTimeoutS: 0,
-          noFocusTimeoutMs: 1,
-          noFocusTimeoutReason: "no-focus-",
-          overallTimeoutS: 600,
-          secondsLeft: 600,
-          shouldWarnOnBeforeUnload: false
-        });
-        psynet.initLucidTermination();
-        await new Promise((resolve) => setTimeout(resolve, 1200));
-      } finally {
-        psynet.clearLucidTermination();
-        psynetTemplateData.flags.lucidRecruitment = originalLucidFlag;
-        Object.assign(psynetTemplateData.lucid, originalLucid);
-        window.location.replace = originalReplace;
-      }
-
-      return {
-        closedWithoutChannel,
-        noticeClearedWithoutChannel,
-        closedOnBeginHold,
-        updatedMessage,
-        sendCount,
-        approved,
-        passed,
-        clocksReset,
-        reloadedHoldPayload,
-        lucidHoldPausedClocks: true
-      };
-    } finally {
-      psynet.scheduleTimelineHoldCheck = originalSchedule;
-      psynet.scheduleTimelineHoldTimeout = originalTimeout;
-      PsyNetWebSocketChannel.connect = originalConnect;
-      // Leave the hold overlay in place. Reconnect from Node after this
-      // evaluate returns so onOpen cannot POST a real hold-resume while
-      // Playwright is still waiting for the probe promise.
-    }
-  }, 30000),
-    new Promise((_, reject) => {
-      timer = setTimeout(() => {
-        reject(
-          new Error("hold client probe evaluate did not finish within 25s")
-        );
-      }, 25000);
-    })
-  ]);
-    await evaluateOnLivePage(page, () => {
-      if (!psynet.timelineHold) {
-        return false;
-      }
-      const hold = { ...psynet.timelineHold.hold };
-      psynet.stopTimelineHold();
-      psynet.beginTimelineHold(hold);
-      return true;
-    });
-    return result;
-  } finally {
-    clearTimeout(timer);
+  await page.waitForFunction(
+    () => window.__holdClientNext && window.__holdClientNext.done,
+    { timeout: 10000 }
+  );
+  const nextPage = await page.evaluate(() => window.__holdClientNext);
+  if (nextPage.error) {
+    throw new Error(nextPage.error);
   }
+
+  const rest = await evaluateOnLivePage(page, () => {
+    const controller = psynet.timelineHold;
+    const probe = window.__psynetHoldReleaseProbe;
+    let clocksReset = false;
+    if (probe) {
+      probe.holdEndedAtMs = 123;
+      probe.wakeReceivedAtMs = 456;
+      probe.wakeReason = "old";
+      window.dispatchEvent(new CustomEvent("timelineHoldStarted"));
+      clocksReset =
+        probe.holdEndedAtMs === null &&
+        probe.wakeReceivedAtMs === null &&
+        probe.wakeReason === null;
+    }
+
+    let reloadedHoldPayload = 0;
+    const originalReload = psynet.loadNextTimelinePageWithReload;
+    psynet.loadNextTimelinePageWithReload = () => {
+      reloadedHoldPayload += 1;
+    };
+    const hold = controller ? { ...controller.hold } : {};
+    const originalReplace = window.location.replace.bind(window.location);
+    window.location.replace = (url) => {
+      throw new Error(`lucid terminated during hold: ${url}`);
+    };
+    if (window.location.replace === originalReplace) {
+      throw new Error("could not stub location.replace");
+    }
+    const originalLucidFlag = psynetTemplateData.flags.lucidRecruitment;
+    const originalLucid = { ...psynetTemplateData.lucid };
+    try {
+      psynet.handleApprovedResponse({
+        page: {
+          attributes: {
+            timeline_hold: hold,
+            requires_full_page_reload: true,
+            page_uuid: hold.page_uuid
+          }
+        }
+      });
+      psynetTemplateData.flags.lucidRecruitment = true;
+      Object.assign(psynetTemplateData.lucid, {
+        inactivityTimeoutMs: 1,
+        inactivityTimeoutS: 0,
+        noFocusTimeoutMs: 1,
+        noFocusTimeoutReason: "no-focus-",
+        overallTimeoutS: 600,
+        secondsLeft: 600,
+        shouldWarnOnBeforeUnload: false
+      });
+      psynet.initLucidTermination();
+    } finally {
+      psynet.loadNextTimelinePageWithReload = originalReload;
+      window.__holdClientLucid = {
+        originalReplace,
+        originalLucidFlag,
+        originalLucid
+      };
+    }
+    return { clocksReset, reloadedHoldPayload };
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 1200));
+
+  await evaluateOnLivePage(page, () => {
+    const lucid = window.__holdClientLucid;
+    psynet.clearLucidTermination();
+    if (lucid) {
+      psynetTemplateData.flags.lucidRecruitment = lucid.originalLucidFlag;
+      Object.assign(psynetTemplateData.lucid, lucid.originalLucid);
+      window.location.replace = lucid.originalReplace;
+      window.__holdClientLucid = null;
+    }
+    if (!psynet.timelineHold) {
+      return false;
+    }
+    const hold = { ...psynet.timelineHold.hold };
+    psynet.stopTimelineHold();
+    psynet.beginTimelineHold(hold);
+    return true;
+  });
+
+  return {
+    ...overlay,
+    sendCount: nextPage.sendCount,
+    approved: nextPage.approved,
+    passed: nextPage.passed,
+    clocksReset: rest.clocksReset,
+    reloadedHoldPayload: rest.reloadedHoldPayload,
+    lucidHoldPausedClocks: true
+  };
 }
 
 test("wait_while preserves the submitted page and wakes after async work", { tag: "@both" }, async ({
