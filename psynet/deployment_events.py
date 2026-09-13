@@ -30,9 +30,9 @@ logger = logging.getLogger("psynet")
 
 _fallback_file_lock = threading.RLock()
 
-# Same rule as local deployment IDs; kept here to avoid an import cycle with
-# ``psynet.local_deployment``.
-_LOCAL_ID_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$")
+# Shared with local deployment snapshots; lives here so ``local_deployment``
+# can import it without a cycle.
+LOCAL_ID_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$")
 
 DEFAULT_HISTORY_LIMIT = 50
 _ERROR_DISPLAY_MAX = 120
@@ -43,15 +43,16 @@ def deployment_event_log(experiment_path: Path | str) -> Path:
     return Path(experiment_path).resolve() / "data" / "deployment-events.jsonl"
 
 
-def _utc_now() -> str:
+def utc_now() -> str:
+    """Return a UTC timestamp suitable for event and snapshot metadata."""
     return (
         datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
     )
 
 
-def _validate_event_local_id(value: str) -> str:
-    """Validate a local deployment ID stored on an event."""
-    if not _LOCAL_ID_PATTERN.fullmatch(value):
+def validate_local_id(value: str) -> str:
+    """Validate and return a user-facing local deployment ID."""
+    if not LOCAL_ID_PATTERN.fullmatch(value):
         raise ValueError(
             "Local deployment IDs must contain only lowercase letters, digits, "
             "and dashes, and must start and end with a letter or digit."
@@ -60,7 +61,7 @@ def _validate_event_local_id(value: str) -> str:
 
 
 @contextmanager
-def _file_lock(path: Path, *, blocking: bool = True):
+def file_lock(path: Path, *, blocking: bool = True):
     """Lock ``path`` for the duration of the context."""
     path.parent.mkdir(parents=True, exist_ok=True)
     file = path.open("a+")
@@ -74,6 +75,8 @@ def _file_lock(path: Path, *, blocking: bool = True):
                 flags |= fcntl.LOCK_NB
             fcntl.flock(file.fileno(), flags)
         except ImportError:
+            # Native Windows is not a supported deployment host; this fallback
+            # still serializes threads in environments without fcntl.
             _fallback_file_lock.acquire()
             using_fallback = True
         yield file
@@ -95,10 +98,10 @@ def append_deployment_event(
 ) -> dict:
     """Append one structured event to the experiment's deployment history."""
     if local_id is not None:
-        _validate_event_local_id(local_id)
+        validate_local_id(local_id)
     payload = {
         "schema_version": 1,
-        "at": _utc_now(),
+        "at": utc_now(),
         "event": event,
     }
     if local_id is not None:
@@ -110,7 +113,7 @@ def append_deployment_event(
     line = (
         json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n"
     ).encode()
-    with _file_lock(path.parent / ".deployment-events.lock"):
+    with file_lock(path.parent / ".deployment-events.lock"):
         descriptor = os.open(path, os.O_APPEND | os.O_CREAT | os.O_WRONLY, 0o600)
         try:
             remaining = memoryview(line)
@@ -194,7 +197,8 @@ def load_deployment_events(
     return events
 
 
-def _subject(event: dict) -> str:
+def event_subject(event: dict) -> str:
+    """Return a short subject line for an event (id, app, server, …)."""
     parts = []
     for key in ("id", "app", "server", "target", "mode"):
         value = event.get(key)
@@ -203,7 +207,8 @@ def _subject(event: dict) -> str:
     return " ".join(parts)
 
 
-def _detail(event: dict) -> Text:
+def event_detail(event: dict) -> Text:
+    """Return Rich detail text for an event row."""
     name = str(event.get("event", ""))
     if name == "comment":
         text = Text()
@@ -270,7 +275,7 @@ def render_deployment_history(
     for event in rows:
         name = str(event.get("event", ""))
         when = str(event.get("at", ""))
-        subject = _subject(event)
+        subject = event_subject(event)
         header = Text()
         header.append(when, style="dim")
         header.append("  ")
@@ -279,7 +284,7 @@ def render_deployment_history(
             header.append("  ")
             header.append(subject, style="dim")
         console.print(header)
-        detail = _detail(event)
+        detail = event_detail(event)
         if detail.plain:
             indented = Text("  ")
             indented.append(detail)

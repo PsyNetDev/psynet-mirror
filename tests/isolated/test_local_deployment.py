@@ -332,7 +332,7 @@ def test_local_database_lock_uses_concurrent_error_when_lock_is_held(
         raise BlockingIOError
         yield
 
-    monkeypatch.setattr("psynet.local_deployment._file_lock", already_locked)
+    monkeypatch.setattr("psynet.local_deployment.file_lock", already_locked)
 
     with pytest.raises(RuntimeError, match="Stop it first") as error:
         with local_database_lock(tmp_path, "second-run", wait_seconds=0):
@@ -351,7 +351,7 @@ def test_local_database_lock_waits_out_a_deployment_that_is_stopping(
         "psynet.local_deployment.local_database_lock_path",
         lambda: tmp_path / "local-deployment.lock",
     )
-    real_file_lock = local_deployment_module()._file_lock
+    real_file_lock = local_deployment_module().file_lock
     attempts = []
 
     @contextmanager
@@ -363,7 +363,7 @@ def test_local_database_lock_waits_out_a_deployment_that_is_stopping(
             yield file
 
     monkeypatch.setattr(
-        "psynet.local_deployment._file_lock", locked_until_second_attempt
+        "psynet.local_deployment.file_lock", locked_until_second_attempt
     )
 
     with local_database_lock(tmp_path, "second-run", wait_seconds=5):
@@ -457,7 +457,7 @@ def test_deploy_local_restores_selected_snapshot_and_saves_shutdown(
         path=archive,
         metadata_path=archive.with_suffix(".json"),
         created_at="2026-08-27T18:00:00Z",
-        reason="periodic",
+        reason="shutdown",
         deployment_id="old-launch",
         parent_sequence=3,
         participant_count=12,
@@ -490,7 +490,7 @@ def test_deploy_local_restores_selected_snapshot_and_saves_shutdown(
         calls["snapshot"] = (args, kwargs)
         return final
 
-    monkeypatch.setattr("psynet.command_line.local_deployment_lock", unlocked)
+    monkeypatch.setattr("psynet.command_line.local_database_lock", unlocked)
     ensure_services = Mock(return_value=True)
     monkeypatch.setattr("psynet.services.ensure_local_services", ensure_services)
     monkeypatch.setattr(
@@ -654,6 +654,95 @@ def test_protect_existing_database_never_discards_an_unreadable_database(
 
     with pytest.raises(RuntimeError, match="identity unreadable"):
         protect_existing_database(tmp_path, "yolo")
+    with pytest.raises(RuntimeError, match="identity unreadable"):
+        protect_existing_database(tmp_path, "yolo", ignore_unmanaged=True)
+
+
+def test_protect_existing_database_skips_clean_participant_finish(
+    tmp_path, monkeypatch
+):
+    from psynet.local_deployment import (
+        DatabaseOwner,
+        protect_existing_database,
+    )
+    from psynet.local_deployment import (
+        create_snapshot as save_snapshot,
+    )
+
+    owner_path = tmp_path / "owner"
+    owner_path.mkdir()
+    save_snapshot(
+        owner_path,
+        "first",
+        reason="participant_finished",
+        deployment_id="launch-1",
+        exporter=lambda path: _write_archive(path),
+    )
+    monkeypatch.setattr(
+        "psynet.local_deployment.read_database_owner",
+        lambda: DatabaseOwner(
+            "first",
+            owner_path,
+            "launch-1",
+            "Example",
+            snapshot_needed_on_shutdown=False,
+        ),
+    )
+    create_snapshot = Mock()
+    monkeypatch.setattr(
+        "psynet.local_deployment.create_snapshot",
+        create_snapshot,
+    )
+
+    assert protect_existing_database(tmp_path / "new", "second") is None
+    create_snapshot.assert_not_called()
+
+
+def test_protect_existing_database_recovers_after_finish_if_someone_started(
+    tmp_path, monkeypatch
+):
+    from psynet.local_deployment import (
+        DatabaseOwner,
+        Snapshot,
+        protect_existing_database,
+    )
+    from psynet.local_deployment import (
+        create_snapshot as save_snapshot,
+    )
+
+    owner_path = tmp_path / "owner"
+    owner_path.mkdir()
+    save_snapshot(
+        owner_path,
+        "first",
+        reason="participant_finished",
+        deployment_id="launch-1",
+        exporter=lambda path: _write_archive(path),
+    )
+    recovered = Mock(spec=Snapshot)
+    create_snapshot = Mock(return_value=recovered)
+    monkeypatch.setattr(
+        "psynet.local_deployment.read_database_owner",
+        lambda: DatabaseOwner(
+            "first",
+            owner_path,
+            "launch-1",
+            "Example",
+            snapshot_needed_on_shutdown=True,
+        ),
+    )
+    monkeypatch.setattr(
+        "psynet.local_deployment.create_snapshot",
+        create_snapshot,
+    )
+
+    assert protect_existing_database(tmp_path / "new", "second") is recovered
+    create_snapshot.assert_called_once_with(
+        owner_path,
+        "first",
+        reason="recovery-before-reset",
+        deployment_id="launch-1",
+    )
 
 
 def test_protect_existing_database_skips_clean_shutdown(tmp_path, monkeypatch):
@@ -763,7 +852,7 @@ def test_deploy_local_skips_redundant_shutdown_snapshot(tmp_path, monkeypatch):
     def unlocked(*_args):
         yield
 
-    monkeypatch.setattr("psynet.command_line.local_deployment_lock", unlocked)
+    monkeypatch.setattr("psynet.command_line.local_database_lock", unlocked)
     monkeypatch.setattr(
         "psynet.services.ensure_local_services", Mock(return_value=True)
     )
@@ -927,7 +1016,9 @@ def test_create_local_deployment_snapshot_writes_for_live_runs(monkeypatch):
     create_snapshot = Mock(return_value=snapshot)
     monkeypatch.setattr("psynet.local_deployment.create_snapshot", create_snapshot)
 
-    assert Experiment.create_local_deployment_snapshot("participant_finished") is snapshot
+    assert (
+        Experiment.create_local_deployment_snapshot("participant_finished") is snapshot
+    )
     create_snapshot.assert_called_once_with(
         "/tmp/exp",
         "gibbs",
@@ -944,6 +1035,41 @@ def test_end_logic_snapshots_after_the_debrief():
 
     source = inspect.getsource(EndLogic.resolve)
     assert "snapshot_after_participant_finish" in source
+
+
+def test_stamp_deployment_identity_overwrites_restored_archive_identity(monkeypatch):
+    from types import SimpleNamespace
+
+    from psynet.experiment import Experiment
+
+    monkeypatch.setattr(
+        "psynet.experiment.deployment_info.read_all",
+        lambda: {
+            "deployment_id": "launch-new",
+            "local_id": "gibbs",
+            "local_experiment_path": "/tmp/exp",
+            "git_commit_sha": "abc",
+            "git_dirty": False,
+        },
+    )
+
+    class Dummy:
+        label = "Demo"
+        var = SimpleNamespace(
+            deployment_id="launch-old",
+            local_deployment_id="other",
+            local_experiment_path="/tmp/other",
+        )
+        _stamp_deployment_identity = Experiment._stamp_deployment_identity
+
+    dummy = Dummy()
+    assert dummy._stamp_deployment_identity() == "gibbs"
+    assert dummy.var.deployment_id == "launch-new"
+    assert dummy.var.local_deployment_id == "gibbs"
+    assert dummy.var.local_experiment_path == "/tmp/exp"
+    assert dummy.var.label == "Demo"
+    assert dummy.var.git_commit_sha == "abc"
+    assert dummy.var.git_dirty is False
 
 
 def test_starting_a_participant_marks_shutdown_snapshot_needed():

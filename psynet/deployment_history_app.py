@@ -14,8 +14,8 @@ from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import Footer, Header, Label, ListItem, ListView, Static
 
 from psynet.deployment_events import (
-    _detail,
-    _subject,
+    event_detail,
+    event_subject,
     filter_deployment_events,
 )
 
@@ -23,7 +23,7 @@ from psynet.deployment_events import (
 def _event_label(event: dict) -> str:
     when = str(event.get("at", ""))
     name = str(event.get("event", ""))
-    subject = _subject(event)
+    subject = event_subject(event)
     if subject:
         return f"{when}  {name}  {subject}"
     return f"{when}  {name}"
@@ -31,7 +31,7 @@ def _event_label(event: dict) -> str:
 
 def _event_detail_text(event: dict) -> str:
     lines = []
-    detail = _detail(event).plain
+    detail = event_detail(event).plain
     if detail:
         lines.append(detail)
     argv = event.get("argv")
@@ -195,8 +195,8 @@ class DeploymentHistoryApp(App[None]):
             return
         for event in rows:
             events_view.append(EventListItem(event))
-        index = len(rows) - 1 if select_last else min(
-            events_view.index or 0, len(rows) - 1
+        index = (
+            len(rows) - 1 if select_last else min(events_view.index or 0, len(rows) - 1)
         )
         events_view.index = index
         self._show_event(rows[index])

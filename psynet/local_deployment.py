@@ -37,10 +37,13 @@ from rich.console import Console
 from rich.prompt import IntPrompt
 from rich.table import Table
 
-from psynet.deployment_events import append_deployment_event, deployment_event_log
+from psynet.deployment_events import (
+    append_deployment_event,
+    file_lock,
+    utc_now,
+    validate_local_id,
+)
 from psynet.serialize import unserialize
-
-LOCAL_ID_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$")
 
 # A stopping deployment releases the lock only once its process exits, so a
 # stop-then-start sequence can briefly overlap. Wait that race out before
@@ -52,7 +55,6 @@ DATABASE_READ_TIMEOUT_SECONDS = 10
 
 logger = logging.getLogger("psynet")
 
-_fallback_file_lock = threading.RLock()
 _database_lock_guard = threading.RLock()
 _database_lock_context = None
 _database_lock_depth = 0
@@ -145,56 +147,10 @@ def should_skip_shutdown_snapshot(owner: Optional[DatabaseOwner]) -> bool:
     return owner is not None and owner.managed and not owner.snapshot_needed_on_shutdown
 
 
-def validate_local_id(value: str) -> str:
-    """Validate and return a user-facing local deployment ID."""
-    if not LOCAL_ID_PATTERN.fullmatch(value):
-        raise ValueError(
-            "Local deployment IDs must contain only lowercase letters, digits, "
-            "and dashes, and must start and end with a letter or digit."
-        )
-    return value
-
-
 def snapshots_directory(experiment_path: Path | str, local_id: str) -> Path:
     """Return the directory containing snapshots for ``local_id``."""
     validate_local_id(local_id)
     return Path(experiment_path).resolve() / "data" / "snapshots" / local_id
-
-
-def _utc_now() -> str:
-    return (
-        datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
-    )
-
-
-@contextmanager
-def _file_lock(path: Path, *, blocking: bool = True):
-    """Lock ``path`` for the duration of the context."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    file = path.open("a+")
-    using_fallback = False
-    try:
-        try:
-            import fcntl
-
-            flags = fcntl.LOCK_EX
-            if not blocking:
-                flags |= fcntl.LOCK_NB
-            fcntl.flock(file.fileno(), flags)
-        except ImportError:
-            # Native Windows is not a supported deployment host; this fallback
-            # still serializes threads in environments without fcntl.
-            _fallback_file_lock.acquire()
-            using_fallback = True
-        yield file
-    finally:
-        if using_fallback:
-            _fallback_file_lock.release()
-        else:
-            import fcntl
-
-            fcntl.flock(file.fileno(), fcntl.LOCK_UN)
-        file.close()
 
 
 def _snapshot_from_files(path: Path) -> Snapshot:
@@ -316,7 +272,7 @@ def create_snapshot(
     directory.mkdir(parents=True, exist_ok=True)
     exporter = exporter or export_database_snapshot
 
-    with _file_lock(directory / ".snapshot.lock"):
+    with file_lock(directory / ".snapshot.lock"):
         snapshots = list_snapshots(root, local_id)
         sequence = _next_snapshot_sequence(directory)
         stem = f"{sequence:06d}"
@@ -342,7 +298,7 @@ def create_snapshot(
                 "schema_version": 1,
                 "id": local_id,
                 "sequence": sequence,
-                "created_at": _utc_now(),
+                "created_at": utc_now(),
                 "reason": reason,
                 "deployment_id": deployment_id,
                 "parent_sequence": parent_sequence,
@@ -633,7 +589,7 @@ def _acquire_lock_file(path: Path, wait_seconds: float):
     deadline = time.monotonic() + wait_seconds
     waited = False
     while True:
-        lock_context = _file_lock(path, blocking=False)
+        lock_context = file_lock(path, blocking=False)
         try:
             return lock_context, lock_context.__enter__()
         except BlockingIOError:
@@ -702,13 +658,6 @@ def local_database_lock(
                 lock_context.__exit__(None, None, None)
 
 
-@contextmanager
-def local_deployment_lock(experiment_path: Path | str, local_id: str):
-    """Prevent two local live deployments from sharing PostgreSQL."""
-    with local_database_lock(experiment_path, local_id):
-        yield
-
-
 def _describe_owner(owner: DatabaseOwner) -> str:
     """Return a parenthesised description of ``owner``, or an empty string."""
     details = []
@@ -719,6 +668,25 @@ def _describe_owner(owner: DatabaseOwner) -> str:
     if not owner.readable:
         details.append("identity unreadable")
     return f" ({', '.join(details)})" if details else ""
+
+
+def _latest_snapshot_covers_owner(
+    owner: DatabaseOwner, latest: Optional[Snapshot]
+) -> bool:
+    """Return whether ``latest`` already preserves ``owner``'s collected data."""
+    if (
+        latest is None
+        or not snapshot_is_valid(latest)
+        or latest.deployment_id != owner.deployment_id
+    ):
+        return False
+    if latest.reason in {"shutdown", "recovery-before-reset", "adopt-existing"}:
+        return True
+    # A finish snapshot is terminal only when nobody has started since.
+    return (
+        latest.reason == "participant_finished"
+        and not owner.snapshot_needed_on_shutdown
+    )
 
 
 def protect_existing_database(
@@ -735,7 +703,9 @@ def protect_existing_database(
 
     requested_path = Path(requested_experiment_path).resolve()
     if not owner.managed:
-        if ignore_unmanaged:
+        # Unreadable identity may be a locked managed deployment; never discard
+        # it just because this path ignores ordinary unmanaged databases.
+        if ignore_unmanaged and owner.readable:
             return None
         if owner.disposable and not adopt_existing:
             Console().print(
@@ -770,17 +740,7 @@ def protect_existing_database(
 
     snapshots = list_snapshots(owner.experiment_path, owner.local_id)
     latest = snapshots[-1] if snapshots else None
-    if (
-        latest is not None
-        and snapshot_is_valid(latest)
-        and latest.reason
-        in {
-            "shutdown",
-            "recovery-before-reset",
-            "adopt-existing",
-        }
-        and latest.deployment_id == owner.deployment_id
-    ):
+    if _latest_snapshot_covers_owner(owner, latest):
         return None
 
     return create_snapshot(

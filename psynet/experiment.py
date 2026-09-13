@@ -938,23 +938,18 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         deployment_db_ingested = redis_vars.get("deployment_db_ingested", False)
         if not deployment_db_ingested:
             ingest_zip(database_template_path, db.engine)
+            # Re-stamp before marking ingested so a crash cannot leave restored
+            # snapshot identity that would make the next protect skip recovery.
+            self._stamp_deployment_identity()
+            db.session.commit()
             redis_vars.set("deployment_db_ingested", True)
             assert ExperimentConfig.query.count() > 0
 
         self._nodes_on_deploy()
 
         config = dallinger_get_config()
-        local_deployment_id = deployment_info.read_all().get("local_id")
+        local_deployment_id = self._stamp_deployment_identity()
         redis_vars.set("server_working_directory", os.getcwd())
-        self.var.deployment_id = deployment_info.read("deployment_id")
-        self.var.label = self.label
-        if local_deployment_id is not None:
-            self.var.local_deployment_id = local_deployment_id
-            self.var.local_experiment_path = deployment_info.read(
-                "local_experiment_path"
-            )
-        self.var.git_commit_sha = deployment_info.read("git_commit_sha")
-        self.var.git_dirty = deployment_info.read("git_dirty")
         if deployment_info.read("is_local_deployment"):
             # This is necessary because the local deployment command is blocking and therefore we can't
             # get the launch data from the command-line invocation.
@@ -976,6 +971,19 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 deployment_id=self.var.deployment_id,
                 dallinger_id=config.get("id"),
             )
+
+    def _stamp_deployment_identity(self):
+        """Copy ``deployment_info`` into experiment vars; return local deployment ID."""
+        info = deployment_info.read_all()
+        self.var.deployment_id = info["deployment_id"]
+        self.var.label = self.label
+        local_deployment_id = info.get("local_id")
+        if local_deployment_id is not None:
+            self.var.local_deployment_id = local_deployment_id
+            self.var.local_experiment_path = info.get("local_experiment_path")
+        self.var.git_commit_sha = info.get("git_commit_sha")
+        self.var.git_dirty = info.get("git_dirty")
+        return local_deployment_id
 
     @staticmethod
     def before_request():

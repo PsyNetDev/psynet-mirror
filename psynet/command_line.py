@@ -77,7 +77,6 @@ from .local_deployment import (
     create_snapshot,
     list_snapshots,
     local_database_lock,
-    local_deployment_lock,
     protect_existing_database,
     read_database_owner,
     should_skip_shutdown_snapshot,
@@ -1446,7 +1445,7 @@ def deploy__local(
     experiment_path = Path.cwd().resolve()
     extras = event_details(comment=comment)
     try:
-        with local_deployment_lock(experiment_path, local_id):
+        with local_database_lock(experiment_path, local_id):
             from .services import ensure_local_services
 
             ensure_local_services(assume_yes=False, strict=True)
@@ -2298,7 +2297,6 @@ def debug__docker_ssh(ctx, app, archive, server, dns_host, comment):
         raise
     finally:
         _cleanup_exp_directory()
-
 
 
 ##########
