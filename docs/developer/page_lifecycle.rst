@@ -462,7 +462,10 @@ Those routes do not share a lock protocol:
   claim can see zero waiters. That GET expires its identity map, follows the
   live cursor (including a stale hold page whose record is gone), and
   evaluates the live hold once more when a locking ``SELECT`` missed waiters
-  that still belong to the visit.
+  that still belong to the visit. ``get_current_elt`` may return a new object
+  for the same barrier hold when a trial page maker reconstructs the wait.
+  That is still this wait, not a cursor move; comparing Python identity would
+  loop until the hold times out.
 * ``GET /timeline`` then re-reads the live cursor. If a partner already
   advanced this waiter, GET prepares that live page. If the hold is ready,
   GET takes blocking ``FOR UPDATE`` only after ``is_ready_to_resume`` (timeout

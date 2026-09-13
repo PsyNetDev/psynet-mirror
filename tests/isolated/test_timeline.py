@@ -399,6 +399,58 @@ def test_advance_past_ready_holds_follows_live_page_when_hold_is_stale():
     experiment.timeline.advance_page.assert_not_called()
 
 
+def test_advance_past_ready_holds_stops_when_live_hold_is_reconstructed():
+    """Page makers reconstruct the hold on each read; that is still this wait."""
+    hold = MagicMock()
+    hold.is_timeline_hold = True
+    hold.hold_id = "barrier:wait_for_partner"
+    hold.prepare_resume_if_ready.return_value = False
+
+    def _reconstructed_hold(*_args, **_kwargs):
+        live = MagicMock()
+        live.is_timeline_hold = True
+        live.hold_id = "barrier:wait_for_partner"
+        live.prepare_resume_if_ready.return_value = False
+        return live
+
+    experiment = Experiment.__new__(Experiment)
+    experiment.timeline = MagicMock()
+    experiment.timeline.get_current_elt.side_effect = _reconstructed_hold
+    participant = SimpleNamespace()
+    participant.inc_progress = MagicMock()
+
+    page = experiment._advance_past_ready_holds(participant, hold)
+
+    assert page.hold_id == "barrier:wait_for_partner"
+    assert experiment.timeline.get_current_elt.call_count == 1
+    hold.account_wait.assert_not_called()
+    experiment.timeline.advance_page.assert_not_called()
+
+
+def test_advance_past_ready_holds_follows_a_later_hold():
+    """A different hold_id is a cursor move, not a reconstructed wait."""
+    hold = MagicMock()
+    hold.is_timeline_hold = True
+    hold.hold_id = "barrier:stack_init"
+    hold.prepare_resume_if_ready.return_value = False
+    nxt = MagicMock()
+    nxt.is_timeline_hold = True
+    nxt.hold_id = "barrier:stack_prepare"
+    nxt.prepare_resume_if_ready.return_value = False
+    experiment = Experiment.__new__(Experiment)
+    experiment.timeline = MagicMock()
+    experiment.timeline.get_current_elt.return_value = nxt
+    participant = SimpleNamespace()
+    participant.inc_progress = MagicMock()
+
+    page = experiment._advance_past_ready_holds(participant, hold)
+
+    assert page is nxt
+    assert experiment.timeline.get_current_elt.call_count == 2
+    hold.account_wait.assert_not_called()
+    experiment.timeline.advance_page.assert_not_called()
+
+
 def test_finalize_pending_hold_without_checks_relocks_the_participant(monkeypatch):
     """A ready hold on GET /timeline must not advance without FOR UPDATE."""
     participant = SimpleNamespace(id=42)

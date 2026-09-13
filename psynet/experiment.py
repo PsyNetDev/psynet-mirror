@@ -3447,8 +3447,14 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         that hold is not ready but the live cursor has already left it
         (another session released and advanced this participant), follow
         ``get_current_elt`` instead of first-painting the overlay.
+
+        Page makers reconstruct barrier holds on each ``get_current_elt``, so
+        a still-waiting visit is a new object with the same ``hold_id``. Treat
+        that as the same wait; identity ``is`` would loop until timeout.
         """
-        while getattr(page, "is_timeline_hold", False):
+        for _ in range(32):
+            if not getattr(page, "is_timeline_hold", False):
+                return page
             if page.prepare_resume_if_ready(self, participant):
                 page.account_wait(participant, settle=True)
                 participant.inc_progress(page.time_estimate)
@@ -3456,10 +3462,21 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 page = self.timeline.get_current_elt(self, participant)
                 continue
             live = self.timeline.get_current_elt(self, participant)
-            if live is page:
-                break
+            if self._is_same_timeline_hold(page, live):
+                return live
             page = live
-        return page
+        raise RuntimeError("Timeline hold skip did not settle after 32 steps.")
+
+    @staticmethod
+    def _is_same_timeline_hold(page, live):
+        """Return whether ``live`` is still the hold represented by ``page``."""
+        if page is live:
+            return True
+        if not getattr(live, "is_timeline_hold", False):
+            return False
+        page_id = getattr(page, "hold_id", None)
+        live_id = getattr(live, "hold_id", None)
+        return isinstance(page_id, str) and page_id == live_id
 
     def response_rejected(self, message):
         logger.warning(
