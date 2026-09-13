@@ -967,7 +967,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         self.asset_storage.on_every_launch()
         self.record_experiment_status()
         if local_deployment_id is not None:
-            from .local_deployment import append_deployment_event
+            from .deployment_events import append_deployment_event
 
             append_deployment_event(
                 deployment_info.read("local_experiment_path"),

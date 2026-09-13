@@ -72,15 +72,8 @@ contains the matching source:
 Deployment history
 ------------------
 
-Deployment and snapshot events are appended to
-``data/deployment-events.jsonl``. Successful exports and remote deployment or
-destruction commands run from the experiment directory use the same history.
-Add an operator comment with:
-
-.. code-block:: bash
-
-    psynet comment --id gibbs "Changed headphones."
-
-The ``--id`` option can be omitted when the current experiment owns the local
-database. Event history and snapshots may contain operational or participant
-information and are excluded by PsyNet's standard ``.gitignore``.
+Local deploy and snapshot events are recorded in
+``data/deployment-events.jsonl``. The same file also covers remote deploy,
+sandbox, export, destroy, and operator comments. See
+:doc:`history` for ``--comment``, ``psynet comment``, and
+``psynet history``.

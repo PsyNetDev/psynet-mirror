@@ -50,6 +50,14 @@ from .data import (
     init_db,
     populate_db_from_zip_file,
 )
+from .deployment_events import (
+    DEFAULT_HISTORY_LIMIT,
+    append_deployment_event,
+    event_details,
+    load_deployment_events,
+    option_comment,
+    render_deployment_history,
+)
 from .experiment_scaffold import (
     _clear_deployment_policy_review_marker,
     _deployment_policy_needs_review,
@@ -64,7 +72,6 @@ from .experiment_scaffold import (
     scaffold_experiment_directory,
 )
 from .local_deployment import (
-    append_deployment_event,
     choose_snapshot,
     create_snapshot,
     list_snapshots,
@@ -146,6 +153,16 @@ def _append_deployment_event_if_in_experiment(event, local_id=None, **details):
             append_deployment_event(experiment_path, event, local_id, **details)
         except OSError as error:
             logger.warning("Failed to append deployment event %s: %s", event, error)
+
+
+def _error_text(error) -> str:
+    """Return a compact error string for deployment-event payloads."""
+    if isinstance(error, subprocess.CalledProcessError):
+        message = str(error)
+        if error.returncode is not None:
+            return f"{message} (return_code={error.returncode})"
+        return message
+    return str(error)
 
 
 def clean_sys_modules():
@@ -1398,6 +1415,7 @@ def deploy():
 @click.option("--archive", default=None, help="Optional path to an experiment archive.")
 @click.option("--legacy", is_flag=True, help="Legacy mode.")
 @click.option("--no-browsers", is_flag=True, help="Skip opening browsers.")
+@option_comment
 @click.pass_context
 def deploy__local(
     ctx,
@@ -1408,6 +1426,7 @@ def deploy__local(
     archive,
     legacy,
     no_browsers,
+    comment,
 ):
     """
     Deploy the experiment locally (e.g., when collecting data on a computer in the lab or in the field).
@@ -1424,6 +1443,7 @@ def deploy__local(
         )
 
     experiment_path = Path.cwd().resolve()
+    extras = event_details(comment=comment)
     try:
         with local_deployment_lock(experiment_path, local_id):
             from .services import ensure_local_services
@@ -1467,6 +1487,7 @@ def deploy__local(
                     else None
                 ),
                 archive=archive if selected_snapshot is None else None,
+                **extras,
             )
             try:
                 _run_local(
@@ -1493,7 +1514,8 @@ def deploy__local(
                     experiment_path,
                     "deploy.failed",
                     local_id,
-                    error=str(error),
+                    error=_error_text(error),
+                    **extras,
                 )
                 raise
 
@@ -1514,6 +1536,7 @@ def deploy__local(
                     saved=latest is not None,
                     snapshot=latest.sequence if latest is not None else None,
                     shutdown_snapshot=False,
+                    **extras,
                 )
             else:
                 try:
@@ -1535,6 +1558,7 @@ def deploy__local(
                         local_id,
                         deployment_id=owner.deployment_id,
                         saved=False,
+                        **extras,
                     )
                     raise
                 append_deployment_event(
@@ -1544,6 +1568,7 @@ def deploy__local(
                     deployment_id=owner.deployment_id,
                     saved=True,
                     snapshot=final_snapshot.sequence,
+                    **extras,
                 )
     except RuntimeError as error:
         raise click.ClickException(str(error)) from error
@@ -1551,29 +1576,29 @@ def deploy__local(
 
 @psynet.command("comment")
 @click.argument("text", required=False)
-@click.option("--id", "local_id", default=None)
+@click.option(
+    "--id",
+    "local_id",
+    default=None,
+    help="Optional local deployment ID to associate with this comment.",
+)
+@click.option(
+    "--app",
+    default=None,
+    help="Optional remote app name to associate with this comment.",
+)
 @require_exp_directory
-def comment(text, local_id):
+def comment(text, local_id, app):
     """Add a comment to this experiment's deployment history."""
     import getpass
     import socket
 
     experiment_path = Path.cwd().resolve()
-    if local_id is None:
-        owner = read_database_owner()
-        if (
-            owner is None
-            or owner.local_id is None
-            or owner.experiment_path != experiment_path
-        ):
-            raise click.UsageError(
-                "Provide --id when this experiment does not own the local database."
-            )
-        local_id = owner.local_id
-    try:
-        local_id = validate_local_id(local_id)
-    except ValueError as error:
-        raise click.BadParameter(str(error), param_hint="--id") from error
+    if local_id is not None:
+        try:
+            local_id = validate_local_id(local_id)
+        except ValueError as error:
+            raise click.BadParameter(str(error), param_hint="--id") from error
     if text is None:
         from rich.prompt import Prompt
 
@@ -1587,25 +1612,72 @@ def comment(text, local_id):
         local_id,
         author=f"{getpass.getuser()}@{socket.gethostname()}",
         text=text,
+        app=app,
+        **event_details(),
     )
-    click.echo(f"Added comment to local deployment '{local_id}'.")
+    if local_id is not None:
+        click.echo(f"Added comment for local deployment '{local_id}'.")
+    elif app is not None:
+        click.echo(f"Added comment for app '{app}'.")
+    else:
+        click.echo("Added comment to deployment history.")
+
+
+@psynet.command("history")
+@click.option(
+    "--limit",
+    default=DEFAULT_HISTORY_LIMIT,
+    show_default=True,
+    type=click.IntRange(min=0),
+    help="Show only the latest N events (0 means all).",
+)
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    help="Print raw JSONL events to stdout instead of the timeline.",
+)
+@require_exp_directory
+def history(limit, as_json):
+    """Show this experiment's deployment history."""
+    experiment_path = Path.cwd().resolve()
+    effective_limit = None if limit == 0 else limit
+    events = load_deployment_events(experiment_path, limit=effective_limit)
+    if as_json:
+        for event in events:
+            click.echo(json.dumps(event, ensure_ascii=False))
+        return
+    title = "Deployment history"
+    if effective_limit is not None:
+        title = f"Deployment history (latest {effective_limit})"
+    render_deployment_history(events, title=title)
 
 
 @deploy.command("heroku")
 @click.option("--app", callback=verify_id, required=True, help="Experiment id")
 @click.option("--archive", default=None, help="Optional path to an experiment archive")
 @click.option("--docker", is_flag=True, default=False, help="Deploy using Docker")
+@option_comment
 @click.pass_context
-def deploy__heroku(ctx, app, archive, docker):
+def deploy__heroku(ctx, app, archive, docker, comment):
     """
     Deploy the experiment to Heroku.
     """
     if docker:
-        _deploy__docker_heroku(ctx, app, archive)
+        _deploy__docker_heroku(ctx, app, archive, comment=comment)
+        return
 
+    extras = event_details(comment=comment)
     try:
         from dallinger.command_line import deploy as dallinger_deploy
 
+        _append_deployment_event_if_in_experiment(
+            "deploy.requested",
+            target="heroku",
+            app=app,
+            mode="live",
+            **extras,
+        )
         _pre_launch(
             ctx,
             mode="live",
@@ -1616,13 +1688,24 @@ def deploy__heroku(ctx, app, archive, docker):
         )
         # Note: PsyNet bypasses Dallinger's deploy-from-archive system and uses its own, so we set archive=None.
         result = ctx.invoke(dallinger_deploy, verbose=True, app=app, archive=None)
-        _post_deploy(result)
+        _post_deploy(result, **extras)
+    except Exception as error:
+        _append_deployment_event_if_in_experiment(
+            "deploy.failed",
+            target="heroku",
+            app=app,
+            mode="live",
+            error=_error_text(error),
+            **extras,
+        )
+        raise
     finally:
         _cleanup_exp_directory()
         reset_console()
 
 
-def _deploy__docker_heroku(ctx, app, archive):
+def _deploy__docker_heroku(ctx, app, archive, comment=None):
+    extras = event_details(comment=comment)
     try:
         from dallinger.command_line.docker import deploy as dallinger_deploy
 
@@ -1632,6 +1715,13 @@ def _deploy__docker_heroku(ctx, app, archive):
                 "This shouldn't be hard to fix..."
             )
 
+        _append_deployment_event_if_in_experiment(
+            "deploy.requested",
+            target="heroku",
+            app=app,
+            mode="live",
+            **extras,
+        )
         _pre_launch(
             ctx,
             mode="live",
@@ -1642,7 +1732,17 @@ def _deploy__docker_heroku(ctx, app, archive):
             app=app,
         )
         result = ctx.invoke(dallinger_deploy, verbose=True, app=app)
-        _post_deploy(result)
+        _post_deploy(result, **extras)
+    except Exception as error:
+        _append_deployment_event_if_in_experiment(
+            "deploy.failed",
+            target="heroku",
+            app=app,
+            mode="live",
+            error=_error_text(error),
+            **extras,
+        )
+        raise
     finally:
         _cleanup_exp_directory()
         reset_console()
@@ -1656,16 +1756,26 @@ def _deploy__docker_heroku(ctx, app, archive):
     "--dns-host",
     help="DNS name to use. Must resolve all its subdomains to the IP address specified as ssh host",
 )
+@option_comment
 @click.pass_context
-def deploy__docker_ssh(ctx, app, archive, dns_host, server):
+def deploy__docker_ssh(ctx, app, archive, dns_host, server, comment):
     """
     Deploy the experiment to a remote server via Docker and SSH.
     """
+    extras = event_details(comment=comment)
     try:
         # Ensures that the experiment is deployed with the Dallinger version specified in requirements.txt,
         # irrespective of whether a different version is installed locally.
         os.environ["DALLINGER_NO_EGG_BUILD"] = "1"
 
+        _append_deployment_event_if_in_experiment(
+            "deploy.requested",
+            target="ssh",
+            app=app,
+            server=server,
+            mode="live",
+            **extras,
+        )
         _pre_launch(
             ctx,
             mode="live",
@@ -1693,13 +1803,24 @@ def deploy__docker_ssh(ctx, app, archive, dns_host, server):
             update=False,
         )
 
-        _post_deploy(result)
+        _post_deploy(result, **extras)
+    except Exception as error:
+        _append_deployment_event_if_in_experiment(
+            "deploy.failed",
+            target="ssh",
+            app=app,
+            server=server,
+            mode="live",
+            error=_error_text(error),
+            **extras,
+        )
+        raise
     finally:
         _cleanup_exp_directory()
         reset_console()
 
 
-def _post_deploy(result):
+def _post_deploy(result, **event_extras):
     assert isinstance(result, dict)
     assert "dashboard_user" in result
     assert "dashboard_password" in result
@@ -1709,13 +1830,21 @@ def _post_deploy(result):
     )
     info = deployment_info.read_all()
     mode = info.get("mode")
+    if mode == "live":
+        event_name = "deploy.succeeded"
+    elif mode == "sandbox":
+        event_name = "sandbox.succeeded"
+    else:
+        event_name = "deploy.succeeded"
+    details = event_details(**event_extras)
     _append_deployment_event_if_in_experiment(
-        "deploy.succeeded" if mode == "live" else "debug.succeeded",
+        event_name,
         mode=mode,
         target="ssh" if info.get("is_ssh_deployment") else "heroku",
         app=info.get("app"),
         server=info.get("server"),
         deployment_id=info.get("deployment_id"),
+        **details,
     )
 
 
@@ -2013,42 +2142,81 @@ def run_pre_checks_sandbox():
 )
 @click.option("--docker", is_flag=True, help="Docker mode.")
 @click.option("--archive", default=None, help="Optional path to an experiment archive.")
+@option_comment
 @click.pass_context
-def debug__heroku(ctx, app, docker, archive):
+def debug__heroku(ctx, app, docker, archive, comment):
     """
     Debug the experiment on Heroku.
     """
     if docker:
-        debug__docker_heroku(ctx, app, archive)
-    else:
+        debug__docker_heroku(ctx, app, archive, comment=comment)
+        return
+
+    extras = event_details(comment=comment)
+    try:
         from dallinger.command_line import sandbox as dallinger_sandbox
 
         try:
+            _append_deployment_event_if_in_experiment(
+                "sandbox.requested",
+                target="heroku",
+                app=app,
+                mode="sandbox",
+                **extras,
+            )
             _pre_launch(
                 ctx, mode="sandbox", archive=archive, local_=False, heroku=True, app=app
             )
             # Note: PsyNet bypasses Dallinger's deploy-from-archive system and uses its own, so we set archive=None.
             result = ctx.invoke(dallinger_sandbox, verbose=True, app=app, archive=None)
-            _post_deploy(result)
-        finally:
-            _cleanup_exp_directory()
-            reset_console()
+            _post_deploy(result, **extras)
+        except Exception as error:
+            _append_deployment_event_if_in_experiment(
+                "sandbox.failed",
+                target="heroku",
+                app=app,
+                mode="sandbox",
+                error=_error_text(error),
+                **extras,
+            )
+            raise
+    finally:
+        _cleanup_exp_directory()
+        reset_console()
 
 
-def debug__docker_heroku(ctx, app, archive):
-    from dallinger.command_line.docker import sandbox as dallinger_sandbox
-
+def debug__docker_heroku(ctx, app, archive, comment=None):
+    extras = event_details(comment=comment)
     try:
+        from dallinger.command_line.docker import sandbox as dallinger_sandbox
+
         if archive is not None:
             raise NotImplementedError(
                 "Unfortunately docker-heroku sandbox doesn't yet support deploying from archive. "
                 "This shouldn't be hard to fix..."
             )
+        _append_deployment_event_if_in_experiment(
+            "sandbox.requested",
+            target="heroku",
+            app=app,
+            mode="sandbox",
+            **extras,
+        )
         _pre_launch(
             ctx, mode="sandbox", archive=archive, local_=False, docker=True, app=app
         )
         result = ctx.invoke(dallinger_sandbox, verbose=True, app=app)
-        _post_deploy(result)
+        _post_deploy(result, **extras)
+    except Exception as error:
+        _append_deployment_event_if_in_experiment(
+            "sandbox.failed",
+            target="heroku",
+            app=app,
+            mode="sandbox",
+            error=_error_text(error),
+            **extras,
+        )
+        raise
     finally:
         _cleanup_exp_directory()
         reset_console()
@@ -2064,16 +2232,26 @@ def debug__docker_heroku(ctx, app, archive):
     "--dns-host",
     help="DNS name to use. Must resolve all its subdomains to the IP address specified as ssh host",
 )
+@option_comment
 @click.pass_context
-def debug__docker_ssh(ctx, app, archive, server, dns_host):
+def debug__docker_ssh(ctx, app, archive, server, dns_host, comment):
     """
     Debug the experiment on a remote server via SSH.
     """
+    extras = event_details(comment=comment)
     try:
         from dallinger.command_line.docker_ssh import sandbox
 
         os.environ["DALLINGER_NO_EGG_BUILD"] = "1"
 
+        _append_deployment_event_if_in_experiment(
+            "sandbox.requested",
+            target="ssh",
+            app=app,
+            server=server,
+            mode="sandbox",
+            **extras,
+        )
         _pre_launch(
             ctx,
             mode="sandbox",
@@ -2097,9 +2275,21 @@ def debug__docker_ssh(ctx, app, archive, server, dns_host):
             update=False,
         )
 
-        _post_deploy(result)
+        _post_deploy(result, **extras)
+    except Exception as error:
+        _append_deployment_event_if_in_experiment(
+            "sandbox.failed",
+            target="ssh",
+            app=app,
+            server=server,
+            mode="sandbox",
+            error=_error_text(error),
+            **extras,
+        )
+        raise
     finally:
         _cleanup_exp_directory()
+
 
 
 ##########
@@ -2720,6 +2910,11 @@ def export_arguments(func):
             ),
         ),
         click.option(
+            "--comment",
+            default=None,
+            help="Operator comment recorded in data/deployment-events.jsonl.",
+        ),
+        click.option(
             "--n_parallel",
             default=None,
             hidden=True,
@@ -2840,6 +3035,7 @@ def export_(
     password=None,
     transfer="auto",
     allow_project_mismatch=False,
+    comment=None,
     **kwargs,
 ):
     """
@@ -2922,13 +3118,14 @@ def export_(
     rotate_history = experiment_class.rotate_export_history if path is None else None
     path = experiment_class.export_path() if path is None else os.path.expanduser(path)
 
-    event_details = {
-        "deployment_id": deployment_id,
-        "target": "local" if local else ("ssh" if docker_ssh else "heroku"),
-        "app": app,
-        "server": server,
-        "path": str(Path(path).resolve()),
-    }
+    extras = event_details(
+        comment=comment,
+        deployment_id=deployment_id,
+        target="local" if local else ("ssh" if docker_ssh else "heroku"),
+        app=app,
+        server=server,
+        path=str(Path(path).resolve()),
+    )
     event_local_id = exp_variables.get("local_deployment_id") if local else None
 
     from .export.client import TransferError, publish_export, staging_path_for
@@ -2957,24 +3154,26 @@ def export_(
         _append_deployment_event_if_in_experiment(
             "export.failed",
             event_local_id,
-            **event_details,
+            error=_error_text(exc),
+            **extras,
         )
         raise click.Abort from exc
-    except Exception:
+    except Exception as error:
         shutil.rmtree(staging, ignore_errors=True)
         _append_deployment_event_if_in_experiment(
             "export.failed",
             event_local_id,
-            **event_details,
+            error=_error_text(error),
+            **extras,
         )
         raise
 
     log(f"Export complete. You can find your results at: {published}")
-    event_details["path"] = str(Path(published).resolve())
+    extras["path"] = str(Path(published).resolve())
     _append_deployment_event_if_in_experiment(
         "export.succeeded",
         event_local_id,
-        **event_details,
+        **extras,
     )
 
 
@@ -3358,8 +3557,9 @@ def destroy():
 
 @destroy.command("heroku")
 @click.option("--app", default=None, callback=verify_id, help="Experiment id")
+@option_comment
 @click.pass_context
-def destroy__heroku(ctx, app):
+def destroy__heroku(ctx, app, comment):
     """
     Destroy the experiment on Heroku.
     """
@@ -3367,6 +3567,7 @@ def destroy__heroku(ctx, app):
         ctx,
         dallinger.command_line.destroy,
         app=app,
+        comment=comment,
     )
 
 
@@ -3384,7 +3585,9 @@ def _destroy(
     app,
     server=None,
     ask_for_confirmation=True,
+    comment=None,
 ):
+    extras = event_details(comment=comment)
     confirmed = (
         user_confirms(
             "Would you like to delete the app from the web server?", default=True
@@ -3394,6 +3597,13 @@ def _destroy(
     )
 
     if confirmed:
+        _append_deployment_event_if_in_experiment(
+            "destroy.requested",
+            target="ssh" if server else "heroku",
+            app=app,
+            server=server,
+            **extras,
+        )
         with yaspin("Destroying app...") as spinner:
             try:
                 kwargs = {"app": app}
@@ -3417,6 +3627,7 @@ def _destroy(
                     target="ssh" if server else "heroku",
                     app=app,
                     server=server,
+                    **extras,
                 )
             except subprocess.CalledProcessError as error:
                 spinner.fail("✗")
@@ -3429,6 +3640,8 @@ def _destroy(
                     app=app,
                     server=server,
                     return_code=error.returncode,
+                    error=_error_text(error),
+                    **extras,
                 )
 
 
@@ -3436,8 +3649,9 @@ def _destroy(
 @click.option("--app", default=None, help="Experiment id")
 @click.argument("apps", required=False, nargs=-1)
 @option_server
+@option_comment
 @click.pass_context
-def destroy__docker_ssh(ctx, app, apps, server):
+def destroy__docker_ssh(ctx, app, apps, server, comment):
     """
     Destroy the experiment on a remote server via SSH.
     """
@@ -3452,6 +3666,7 @@ def destroy__docker_ssh(ctx, app, apps, server):
             destroy,
             app=app,
             server=server,
+            comment=comment,
         )
     if len(apps) > 0:
         assert app is None, "You cannot provide both --app and a list of apps."
@@ -3466,6 +3681,7 @@ def destroy__docker_ssh(ctx, app, apps, server):
                     app=app,
                     server=server,
                     ask_for_confirmation=False,
+                    comment=comment,
                 )
 
 

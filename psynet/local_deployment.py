@@ -3,8 +3,11 @@
 Local live deployments share one PostgreSQL database, and starting a new
 deployment resets that database. This module places a small safety layer around
 that behavior: a required user-facing ID groups recovery snapshots inside the
-experiment directory, snapshots are written atomically in Dallinger's existing
-CSV archive format, and an append-only JSONL file records operational events.
+experiment directory, and snapshots are written atomically in Dallinger's
+existing CSV archive format.
+
+Operational events for local deploy and other deployment commands are recorded
+in ``data/deployment-events.jsonl`` via :mod:`psynet.deployment_events`.
 
 Snapshots are deliberately database-only and intended for recovery on the same
 machine. Full PsyNet exports remain the portable format for analysis, sharing,
@@ -34,6 +37,7 @@ from rich.console import Console
 from rich.prompt import IntPrompt
 from rich.table import Table
 
+from psynet.deployment_events import append_deployment_event, deployment_event_log
 from psynet.serialize import unserialize
 
 LOCAL_ID_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$")
@@ -157,11 +161,6 @@ def snapshots_directory(experiment_path: Path | str, local_id: str) -> Path:
     return Path(experiment_path).resolve() / "data" / "snapshots" / local_id
 
 
-def deployment_event_log(experiment_path: Path | str) -> Path:
-    """Return the experiment's append-only deployment event log."""
-    return Path(experiment_path).resolve() / "data" / "deployment-events.jsonl"
-
-
 def _utc_now() -> str:
     return (
         datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
@@ -196,44 +195,6 @@ def _file_lock(path: Path, *, blocking: bool = True):
 
             fcntl.flock(file.fileno(), fcntl.LOCK_UN)
         file.close()
-
-
-def append_deployment_event(
-    experiment_path: Path | str,
-    event: str,
-    local_id: Optional[str] = None,
-    **details,
-) -> dict:
-    """Append one structured event to the experiment's deployment history."""
-    if local_id is not None:
-        validate_local_id(local_id)
-    payload = {
-        "schema_version": 1,
-        "at": _utc_now(),
-        "event": event,
-    }
-    if local_id is not None:
-        payload["id"] = local_id
-    payload.update({key: value for key, value in details.items() if value is not None})
-
-    path = deployment_event_log(experiment_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    line = (
-        json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n"
-    ).encode()
-    with _file_lock(path.parent / ".deployment-events.lock"):
-        descriptor = os.open(path, os.O_APPEND | os.O_CREAT | os.O_WRONLY, 0o600)
-        try:
-            remaining = memoryview(line)
-            while remaining:
-                written = os.write(descriptor, remaining)
-                if written == 0:
-                    raise OSError("Failed to append deployment event.")
-                remaining = remaining[written:]
-            os.fsync(descriptor)
-        finally:
-            os.close(descriptor)
-    return payload
 
 
 def _snapshot_from_files(path: Path) -> Snapshot:

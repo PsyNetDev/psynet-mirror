@@ -14,6 +14,7 @@ Deploying
    aws_server_setup
    physical_server_setup
    local
+   history
    ssh_server
    heroku_server
    deploy_from_archive
