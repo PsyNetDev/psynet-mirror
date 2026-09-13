@@ -151,7 +151,10 @@ that request is still building HTML. SAVEPOINT releases inside a
 check are not treated as durable commits for those wakes; a later root
 rollback discards them. The barrier poller locks waiters with
 ``FOR UPDATE NOWAIT`` so a participant write cannot stall other groups; if any
-waiter is busy, that barrier is skipped until the next tick. The sync-group
+waiter is busy, that barrier is skipped until the next tick. When a release
+advances waiters onto the next stacked hold, the same poller sweep processes
+that new visit before publishing wakes, so those partners do not hold-resume
+onto each remaining barrier one tick at a time. The sync-group
 recount job likewise skip-locks one group at a time.
 
 The fragment must contain the elements the persistent document replaces:
@@ -446,7 +449,9 @@ Those routes do not share a lock protocol:
   overlap, not a missed wake.
 * After the arrival write commits, queued barrier checks run in short
   transactions. Websocket wakes from those inner commits wait until the last
-  arriver finishes rendering the next page.
+  arriver finishes rendering the next page. If last-arrival cannot lock a
+  partner row, the 0.5 s poller finishes the same stacked skip in one sweep
+  and keeps those wakes unpublished until the sweep returns.
 * ``GET /timeline`` then re-reads the live cursor. If a partner already
   advanced this waiter, GET prepares that live page. If the hold is ready,
   GET takes blocking ``FOR UPDATE`` only after ``is_ready_to_resume`` (timeout

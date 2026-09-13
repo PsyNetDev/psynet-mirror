@@ -50,14 +50,17 @@ When a participant reaches a barrier, ``Barrier.receive_participant``:
 A scheduled task in ``Experiment._check_barriers`` calls ``check_barriers`` in
 this module. That loop:
 
-- Finds the next waiting barrier instance.
-- Claims it with a PostgreSQL advisory transaction lock, leaving definition
+- Finds waiting barrier instances, including visits created earlier in the
+  same sweep when released waiters were advanced onto the next stacked hold.
+- Claims each with a PostgreSQL advisory transaction lock, leaving definition
   and instance metadata available to arrival requests.
 - Locks waiters with ``FOR UPDATE NOWAIT``. If any waiter is already locked
   (for example by ``POST /response``), it skips that barrier this tick instead
   of blocking the poller.
 - Evaluates the barrier's release hooks in an isolated transaction.
 - Logs and skips failures per barrier so one bad barrier does not stall others.
+- Keeps hold-wake publishes unpublished until the sweep returns, so a waiter
+  is not told to resume onto the next stacked hold one barrier at a time.
 
 Each default barrier visit links to a durable ``TimelineHoldRecord``. Releasing
 the link accounts waiting through the release time and queues a targeted browser
@@ -128,6 +131,7 @@ from psynet.participant import Participant
 from psynet.serialize import serialize_callable
 from psynet.timeline import CodeBlock, EltCollection, conditional
 from psynet.timeline_hold import (
+    _defer_timeline_hold_wakes,
     _queue_arrival_update,
     _queue_timeline_hold_wake,
     _TimelineHoldPage,
@@ -2093,14 +2097,32 @@ def _process_barrier_instance(instance_id, *, retry=False):
 
 
 def check_barriers():
-    """Process waiting barrier visits independently, retrying lock misses once."""
-    deferred_ids = [
-        instance_id
-        for instance_id in _waiting_barrier_instance_ids()
-        if _process_barrier_instance(instance_id)
-    ]
-    for instance_id in deferred_ids:
-        _process_barrier_instance(instance_id, retry=True)
+    """Process waiting barrier visits, including stacked holds created here.
+
+    Last-arrival GET can miss a partner row (``NOWAIT``). This poller then
+    finishes the same stacked skip: walk newly created holds in this sweep
+    and keep wake publishes unpublished until that walk returns, so waiters
+    do not hold-resume onto the next barrier one at a time. Each visit still
+    commits in its own session so a locked waiter cannot poison sibling
+    checks.
+    """
+    seen = set()
+    with _defer_timeline_hold_wakes():
+        while True:
+            waiting = [
+                instance_id
+                for instance_id in _waiting_barrier_instance_ids()
+                if instance_id not in seen
+            ]
+            if not waiting:
+                break
+            deferred_ids = []
+            for instance_id in waiting:
+                seen.add(instance_id)
+                if _process_barrier_instance(instance_id):
+                    deferred_ids.append(instance_id)
+            for instance_id in deferred_ids:
+                _process_barrier_instance(instance_id, retry=True)
 
 
 def check_sync_groups():

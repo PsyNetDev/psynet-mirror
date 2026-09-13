@@ -4,8 +4,10 @@ Timeline holds preserve the currently rendered participant page while the
 server waits for a condition to clear. This module owns the durable accounting
 record and the internal page protocol shared by barriers and ``wait_while``.
 Hold-release websocket wakes publish after the next database commit. Last-arrival
-finalize can defer those publishes until its stacked checks finish so waiting
-partners are not woken while later checks still lock their rows.
+finalize and the barrier poller can defer those publishes until stacked checks
+finish so waiting partners are not woken while later checks still lock their
+rows. The poller uses a fresh session per visit, so that deferral is stored in
+a context variable rather than ``session.info``.
 ``GET /timeline`` and ``POST /response`` skip ready holds under a participant
 row lock, but they do not share that lock protocol. The page lifecycle
 developer docs describe the resume protocol.
@@ -14,6 +16,7 @@ developer docs describe the resume protocol.
 import json
 import uuid
 from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import timedelta
 
 from dallinger import db
@@ -44,9 +47,9 @@ def _timeline_hold_channel(participant_id):
 
 
 _PENDING_WAKE_KEY = "psynet_timeline_hold_wakes"
-_DEFERRED_WAKE_KEY = "psynet_deferred_timeline_hold_wakes"
-_WAKE_DEFER_DEPTH_KEY = "psynet_timeline_hold_wake_defer_depth"
 _NESTED_WAKE_SNAPSHOTS_KEY = "psynet_nested_timeline_hold_wake_keys"
+_wake_defer_depth = ContextVar("psynet_timeline_hold_wake_defer_depth", default=0)
+_deferred_wake_stash = ContextVar("psynet_timeline_hold_deferred_wakes", default=None)
 logger = get_logger()
 
 
@@ -189,30 +192,39 @@ def _defer_timeline_hold_wakes():
     on those commits would wake waiting partners while later checks still lock
     their rows. ``GET /timeline`` and ``POST /response`` nest this context
     through page render so waiters also stay unpublished until the last arriver
-    has a response body. SAVEPOINT releases are not durable: nested
-    ``after_commit`` does not publish or stash. Nested rollback restores pending
-    wakes to the keys that existed when that savepoint began. Root rollback
-    still discards uncommitted pending wakes; already committed wakes stay
-    deferred and flush here even if a later check fails.
+    has a response body. The barrier poller uses the same context around a
+    sweep: each visit commits in its own session, so the stash lives in a
+    context variable that survives ``session.remove()``. SAVEPOINT releases are
+    not durable: nested ``after_commit`` does not publish or stash. Nested
+    rollback restores pending wakes to the keys that existed when that
+    savepoint began. Root rollback still discards uncommitted pending wakes;
+    already committed wakes stay deferred and flush here even if a later
+    check fails.
     """
-    session = db.session
-    depth = session.info.get(_WAKE_DEFER_DEPTH_KEY, 0)
-    session.info[_WAKE_DEFER_DEPTH_KEY] = depth + 1
+    depth = _wake_defer_depth.get()
+    depth_token = _wake_defer_depth.set(depth + 1)
+    stash_token = None
+    if depth == 0:
+        stash_token = _deferred_wake_stash.set({})
     try:
         yield
     finally:
+        _wake_defer_depth.reset(depth_token)
         if depth == 0:
-            session.info.pop(_WAKE_DEFER_DEPTH_KEY, None)
-            _flush_deferred_timeline_hold_wakes(session)
-        else:
-            session.info[_WAKE_DEFER_DEPTH_KEY] = depth
+            deferred = _deferred_wake_stash.get() or {}
+            if stash_token is not None:
+                _deferred_wake_stash.reset(stash_token)
+            _publish_wakes(list(deferred.values()))
 
 
-def _stash_committed_wakes(session, pending):
+def _stash_committed_wakes(pending):
     """Move committed wakes into the deferred stash instead of publishing."""
     if not pending:
         return
-    deferred = session.info.setdefault(_DEFERRED_WAKE_KEY, {})
+    deferred = _deferred_wake_stash.get()
+    if deferred is None:
+        _publish_wakes(list(pending.values()))
+        return
     deferred.update(_copy_pending_wakes(pending))
 
 
@@ -242,13 +254,6 @@ def _publish_wakes(wakes):
         logger.warning("Failed to publish timeline hold wake.", exc_info=True)
 
 
-def _flush_deferred_timeline_hold_wakes(session):
-    """Publish wakes that committed while publishes were deferred."""
-    deferred = session.info.pop(_DEFERRED_WAKE_KEY, None)
-    if deferred:
-        _publish_wakes(list(deferred.values()))
-
-
 @event.listens_for(db.session, "after_transaction_create")
 def _snapshot_pending_wakes_for_nested(session, transaction):
     """Remember pending wake keys so a SAVEPOINT rollback can restore them."""
@@ -263,8 +268,8 @@ def _publish_timeline_hold_wakes(session):
     if session.in_nested_transaction():
         return
     pending = session.info.pop(_PENDING_WAKE_KEY, None) or {}
-    if session.info.get(_WAKE_DEFER_DEPTH_KEY, 0):
-        _stash_committed_wakes(session, pending)
+    if _wake_defer_depth.get():
+        _stash_committed_wakes(pending)
         return
     _publish_wakes(list(pending.values()))
 

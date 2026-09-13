@@ -44,6 +44,7 @@ from psynet.sync import (
     SimpleSyncGroup,
     _check_claimed_barrier_instance,
     _has_active_sync_group,
+    _process_barrier_instance,
     _run_pending_barrier_checks,
     _take_pending_barrier_checks,
     arrival_notice_payload,
@@ -2366,6 +2367,63 @@ def test_last_timeline_arrival_skips_stacked_partner_holds(
         assert first_page.label == "choose_action"
         assert last.sync_group is not None
         assert first.sync_group.id == last.sync_group.id
+    finally:
+        exp.timeline = original_timeline
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_check_barriers_skips_stacked_holds_in_one_sweep(
+    in_experiment_directory, db_session, monkeypatch
+):
+    """One poller sweep must skip stacked entry holds when last-arrival cannot.
+
+    Concurrent last-arrival GETs can leave partner rows locked, so the
+    poller finishes the release. Publishing a wake after the grouper only
+    would make waiters hold-resume onto the next barrier, then the next,
+    which is the extra POST /response storm Playwright flags.
+    """
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    group_type = f"stack_poller_{uuid.uuid4().hex[:8]}"
+    exp.timeline = _stacked_partner_timeline(group_type)
+    publications = _hold_wake_publications(monkeypatch)
+    wakes_during_instances = []
+    original_process = _process_barrier_instance
+
+    def tracking_process(*args, **kwargs):
+        result = original_process(*args, **kwargs)
+        wakes_during_instances.append(_released_wake_count(publications))
+        return result
+
+    @classmethod
+    def skip_finalize(cls, experiment, participant, page):
+        return participant, page
+
+    try:
+        first, last = _working_participants(exp, 2)
+        assert _json_timeline(exp, first).status_code == 200
+        first = Participant.query.get(first.id)
+        first_id = first.id
+        last_id = last.id
+        hold_uuid = first.page_uuid
+        publications.clear()
+        monkeypatch.setattr(
+            Experiment, "_finalize_pending_timeline_barriers", skip_finalize
+        )
+        assert _json_timeline(exp, last).status_code == 200
+        monkeypatch.setattr("psynet.sync._process_barrier_instance", tracking_process)
+        check_barriers()
+        _assert_on_action_page(exp, [first_id, last_id])
+        assert wakes_during_instances
+        assert all(count == 0 for count in wakes_during_instances)
+        assert _released_wake_count(publications) >= 1
+        resumed = _process_response(
+            exp, Participant.query.get(first_id), hold_uuid, timeline_hold_resume=True
+        )
+        assert resumed.payload["submission"] == "approved"
+        assert resumed.page.label == "choose_action"
     finally:
         exp.timeline = original_timeline
 
