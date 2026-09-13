@@ -6024,10 +6024,16 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             # submitting participant for timeline advancement.
             db.session.commit()
             if not all_claimed:
-                # Another request owns at least one in-flight check and may still
-                # hold its waiters. Do not wait to relock those rows. Follow the
-                # live cursor even when it is still a hold, so a later stacked
-                # wait is not first-painted as the hold this request submitted.
+                # The check waits for the instance advisory claim, then locks
+                # waiters with ``NOWAIT``. A partner GET write or POST can still
+                # hold a waiter row. Retry once after that request can commit,
+                # still without waiting on the row.
+                all_claimed = _run_pending_barrier_checks(checks)
+                db.session.commit()
+            if not all_claimed:
+                # Follow the live cursor even when it is still a hold, so a
+                # later stacked wait is not first-painted as the hold this
+                # request submitted.
                 participant = experiment._participant_request_query().get(
                     participant_id
                 )

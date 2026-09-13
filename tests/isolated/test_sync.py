@@ -1241,7 +1241,7 @@ def test_finalize_barrier_arrivals_does_not_relock_after_losing_claim(monkeypatc
     )
 
     assert returned is participant
-    assert events == ["check", "commit", "participant_read"]
+    assert events == ["check", "commit", "check", "commit", "participant_read"]
     assert result.page is hold
     assert result.payload == {"page": "hold"}
 
@@ -1293,7 +1293,7 @@ def test_finalize_barrier_arrivals_uses_later_hold_after_lost_claim(monkeypatch)
     )
 
     assert returned is participant
-    assert events == ["check", "commit", "participant_read"]
+    assert events == ["check", "commit", "check", "commit", "participant_read"]
     assert result.page is page
     assert result.payload["page"] == {"label": "next_hold"}
 
@@ -1347,7 +1347,7 @@ def test_finalize_barrier_arrivals_uses_already_advanced_page_after_lost_claim(
     )
 
     assert returned is participant
-    assert events == ["check", "commit", "participant_read"]
+    assert events == ["check", "commit", "check", "commit", "participant_read"]
     assert result.page is page
     assert result.payload["page"] == {"label": "choose_action"}
 
@@ -1355,48 +1355,51 @@ def test_finalize_barrier_arrivals_uses_already_advanced_page_after_lost_claim(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
-def test_finalize_loser_does_not_wait_on_winner_waiter_locks(
-    in_experiment_directory, db_session, monkeypatch
+def test_finalize_does_not_wait_on_locked_waiter_rows(
+    in_experiment_directory, db_session
 ):
-    """A request that loses the advisory claim must not wait on waiter rows."""
+    """Last-arrival waits for the instance claim, then uses waiter ``NOWAIT``.
+
+    A partner ``POST`` can hold a waiter row without owning the visit claim.
+    That request must fail the waiter lock immediately rather than sit in
+    ``lock_timeout``. Losing the waiter lock may still first-paint a hold;
+    the poller finishes the skip.
+    """
     exp = get_experiment()
     first, last = _pair_sync_group(exp, db_session)[0]
-    barrier = GroupBarrier(id_="finalize_loser_no_wait", group_type="main")
-    started = threading.Event()
-    finish = threading.Event()
-    enabled = [False]
-    _pause_group_barrier_checks(monkeypatch, barrier.id, started, finish, enabled)
-    page = _DummyFinalizePage()
+    first_id = first.id
+    last_id = last.id
+    barrier = GroupBarrier(id_="finalize_nowait_waiters", group_type="main")
     hold_page = SimpleNamespace(is_timeline_hold=True)
     hold_page.__json__ = lambda _participant: {"label": "hold"}
     exp.timeline = SimpleNamespace(get_current_elt=lambda _e, _p: hold_page)
-    exp._advance_past_ready_holds = lambda participant, current_page: page
+    exp._advance_past_ready_holds = lambda participant, current_page: current_page
     checks = _queued_last_arrival_checks(exp, barrier, first, last)
-    enabled[0] = True
+    result = SimpleNamespace(page=object(), payload={"page": "stale"})
 
-    winner_hold = object()
-    loser_hold = object()
-    winner_result = SimpleNamespace(page=winner_hold, payload={"page": "hold"})
-    loser_result = SimpleNamespace(page=loser_hold, payload={"page": "hold"})
-    winner, winner_errors = _run_finalize_in_thread(exp, last.id, checks, winner_result)
-    assert started.wait(timeout=2)
-    started_at = time.perf_counter()
-    loser, loser_errors = _run_finalize_in_thread(exp, first.id, checks, loser_result)
-    loser.join(timeout=2)
-    elapsed = time.perf_counter() - started_at
-    finish.set()
-    winner.join(timeout=2)
+    with db.engine.connect() as conn:
+        trans = conn.begin()
+        try:
+            conn.execute(
+                text("SELECT id FROM participant WHERE id = :id FOR UPDATE"),
+                {"id": first_id},
+            )
+            started_at = time.perf_counter()
+            Experiment._finalize_barrier_arrivals(
+                exp,
+                participant_id=last_id,
+                checks=checks,
+                result=result,
+            )
+            elapsed = time.perf_counter() - started_at
+        finally:
+            trans.rollback()
 
     assert elapsed < 1
-    assert not loser.is_alive()
-    assert not winner.is_alive()
-    assert winner_errors == []
-    assert loser_errors == []
-    assert loser_result.page is hold_page
-    assert loser_result.payload["page"] == {"label": "hold"}
-    assert winner_result.page is page
-    assert _barrier_link_released(first.id, barrier.id) is True
-    assert _barrier_link_released(last.id, barrier.id) is True
+    assert result.page is hold_page
+    assert result.payload["page"] == {"label": "hold"}
+    assert _barrier_link_released(first_id, barrier.id) is False
+    assert _barrier_link_released(last_id, barrier.id) is False
 
 
 @pytest.mark.parametrize(
@@ -2876,6 +2879,112 @@ def test_finalize_rechecks_current_hold_when_follow_up_queue_is_dropped(
         in_experiment_directory, db_session
     )
     assert seen["count"] > 1
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_last_arrival_retries_an_unclaimed_barrier_check_once(
+    in_experiment_directory, db_session, monkeypatch
+):
+    """A busy partner row must not make the last arriver first-paint a hold.
+
+    Last-arrival waits for the instance claim, then locks waiters with
+    ``NOWAIT``. If a partner row is still busy, one immediate retry (still
+    ``NOWAIT``, no lock wait) lets this GET skip stacked entry holds.
+    """
+    from psynet.sync import _run_pending_barrier_checks as original_run
+
+    seen = {"count": 0}
+
+    def fail_first(checks):
+        seen["count"] += 1
+        if seen["count"] == 1:
+            return False
+        return original_run(checks)
+
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    group_type = f"stack_retry_{uuid.uuid4().hex[:8]}"
+    exp.timeline = _stacked_partner_timeline(group_type)
+    try:
+        first, last = _working_participants(exp, 2)
+        assert _json_timeline(exp, first).status_code == 200
+        monkeypatch.setattr("psynet.sync._run_pending_barrier_checks", fail_first)
+        last_response = _json_timeline(exp, last)
+        assert last_response.status_code == 200
+        assert last_response.get_json()["attributes"]["type"] == "ModularPage"
+        _assert_on_action_page(exp, [first.id, last.id])
+        assert seen["count"] >= 2
+    finally:
+        exp.timeline = original_timeline
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_last_arrival_waits_for_a_busy_barrier_claim(
+    in_experiment_directory, db_session
+):
+    """Last-arrival GET must wait for the poller's instance claim, then skip.
+
+    Playwright first-paint fails if this GET renders a hold while the 0.5 s
+    poller still owns the visit. Waiting for the advisory claim (not waiter
+    rows) lets the last arriver follow the skip instead of first-painting
+    ``_BarrierHoldPage``.
+    """
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    group_type = f"stack_claim_{uuid.uuid4().hex[:8]}"
+    exp.timeline = _stacked_partner_timeline(group_type)
+    release_claim = threading.Event()
+    claim_held = threading.Event()
+    holder_error = []
+    try:
+        first, last = _working_participants(exp, 2)
+        assert _json_timeline(exp, first).get_json()["attributes"]["type"] == (
+            "_BarrierHoldPage"
+        )
+        first = Participant.query.get(first.id)
+        instance_id = next(iter(first.active_barriers.values())).barrier_instance_id
+        last_uid = last.unique_id
+
+        def hold_claim():
+            try:
+                with db.engine.connect() as conn:
+                    trans = conn.begin()
+                    conn.execute(
+                        text(
+                            "SELECT pg_advisory_xact_lock("
+                            "hashtextextended(:instance_id, 0))"
+                        ),
+                        {"instance_id": instance_id},
+                    )
+                    claim_held.set()
+                    if not release_claim.wait(timeout=5):
+                        raise TimeoutError("Last-arrival GET did not finish.")
+                    trans.rollback()
+            except Exception as err:  # pragma: no cover - surfaced by the caller
+                holder_error.append(err)
+
+        holder = threading.Thread(target=hold_claim, daemon=True)
+        holder.start()
+        assert claim_held.wait(timeout=2)
+        thread, result, errors = _route_timeline_in_thread(exp, last_uid)
+        thread.join(timeout=0.3)
+        assert thread.is_alive()
+        release_claim.set()
+        thread.join(timeout=5)
+        holder.join(timeout=5)
+        assert holder_error == []
+        assert errors == []
+        assert not thread.is_alive()
+        assert result.get("status") == 200
+        assert result.get("type") == "ModularPage"
+        _assert_on_action_page(exp, [first.id, last.id])
+    finally:
+        release_claim.set()
+        exp.timeline = original_timeline
 
 
 @pytest.mark.parametrize(

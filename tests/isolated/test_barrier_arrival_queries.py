@@ -276,8 +276,8 @@ def _check_expected(n):
         "for_update": 1,
         "nowait": 1,
         "relock_for_update": 0,
-        "advisory_try": 1,
-        "advisory_wait": 0,
+        "advisory_try": 0,
+        "advisory_wait": 1,
         "spec_select": 1,
         "savepoint": 1,
         "release_savepoint": 1,
@@ -342,7 +342,7 @@ def test_check_instance_sql_matches_waiter_formula(db_session):
 
     for key in (
         "nowait",
-        "advisory_try",
+        "advisory_wait",
         "spec_select",
         "waiter_join",
         "savepoint",
@@ -355,6 +355,7 @@ def test_check_instance_sql_matches_waiter_formula(db_session):
         "update_participant_wait",
     ):
         assert observed[2][key] == observed[8][key] == 1
+    assert observed[2]["advisory_try"] == observed[8]["advisory_try"] == 0
     assert observed[2]["queries"] == observed[8]["queries"] == _CHECK_QUERIES
     assert observed[2]["hold_wake_lookup"] == observed[8]["hold_wake_lookup"] == 0
 
@@ -478,12 +479,12 @@ def test_stacked_finalize_commit_and_lock_budget_does_not_grow_with_group_size(
                         "finalize_commits": 2 * _STACKED_BARRIER_COUNT,
                         "nowait": _STACKED_BARRIER_COUNT,
                         "relock_for_update": _STACKED_BARRIER_COUNT,
-                        "advisory_try": _STACKED_BARRIER_COUNT,
+                        "advisory_try": 0,
                         # O(stack) extras vs a naive "3 checks" model. Analysis:
                         # docs/developer/sqlalchemy_performance.rst
                         # (Barrier last-arrival SQL budgets). Update both if
                         # instance creation or spec reloads get cheaper.
-                        "advisory_wait": 2,
+                        "advisory_wait": _STACKED_BARRIER_COUNT + 2,
                         "spec_select": _STACKED_BARRIER_COUNT,
                         "savepoint": _STACKED_BARRIER_COUNT,
                         "release_savepoint": _STACKED_BARRIER_COUNT,

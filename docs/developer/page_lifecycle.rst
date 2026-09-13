@@ -147,7 +147,10 @@ the fast route without holding partner rows through author code or
 ``pre_render()``. Websocket wakes from those coordination commits stay unpublished
 until the last arriver finishes rendering the next page, so a waiting partner
 is not told to resume while a later entry check still holds their row or while
-that request is still building HTML. SAVEPOINT releases inside a
+that request is still building HTML. Last-arrival waits for the instance
+advisory claim the poller uses, then locks waiters with ``NOWAIT``. If a waiter
+row is still busy, the request retries that check once (still ``NOWAIT``) after
+the other request can commit. SAVEPOINT releases inside a
 check are not treated as durable commits for those wakes; a later root
 rollback discards them. The barrier poller locks waiters with
 ``FOR UPDATE NOWAIT`` so a participant write cannot stall other groups; if any
@@ -449,9 +452,13 @@ Those routes do not share a lock protocol:
   overlap, not a missed wake.
 * After the arrival write commits, queued barrier checks run in short
   transactions. Websocket wakes from those inner commits wait until the last
-  arriver finishes rendering the next page. If last-arrival cannot lock a
-  partner row, the 0.5 s poller finishes the same stacked skip in one sweep
-  and keeps those wakes unpublished until the sweep returns.
+  arriver finishes rendering the next page. Last-arrival waits for the
+  instance advisory claim (the lock the 0.5 s poller tries) so a GET does not
+  first-paint a hold while the poller still owns that visit. Waiter rows stay
+  ``NOWAIT``. If a partner row is still busy, that GET retries the check once
+  (still no lock wait). If the retry still misses, the poller finishes the
+  same stacked skip in one sweep and keeps those wakes unpublished until the
+  sweep returns.
 * ``GET /timeline`` then re-reads the live cursor. If a partner already
   advanced this waiter, GET prepares that live page. If the hold is ready,
   GET takes blocking ``FOR UPDATE`` only after ``is_ready_to_resume`` (timeout

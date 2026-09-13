@@ -275,7 +275,7 @@ Check window (one GroupBarrier, group already formed)
 
 17 statements, independent of *N*:
 
-* instance PK, SAVEPOINT, ``pg_try_advisory_xact_lock``, deferred ``spec``
+* instance PK, SAVEPOINT, ``pg_advisory_xact_lock``, deferred ``spec``
   load, one waiter ``FOR UPDATE NOWAIT`` join (this already inner-joins
   ``participant``);
 * ``module_state`` select-in, ``active_barriers`` select-in, ``timeline_hold``
@@ -311,8 +311,9 @@ Stacked last-arrival finalize (grouper + two GroupBarriers)
 
 Three check iterations, independent of group size: 9 profiler commits
 (3 nested + 2 outer per iteration), 3 waiter ``NOWAIT`` locks, 3 participant
-relocks. Creating the next two instances adds 2 blocking
-``pg_advisory_xact_lock`` calls (O(stack), not O(*N*)). Spec SELECT is 3
+relocks. Each check waits for ``pg_advisory_xact_lock`` (the poller still
+uses ``pg_try_advisory_xact_lock``). Creating the next two instances adds 2
+more blocking ``pg_advisory_xact_lock`` calls (O(stack), not O(*N*)). Spec SELECT is 3
 (one deferred load per check). Instance insert uses ``ON CONFLICT DO NOTHING``
 instead of a SAVEPOINT, so a just-created instance does not expire extra
 spec reloads onto the stacked path.
