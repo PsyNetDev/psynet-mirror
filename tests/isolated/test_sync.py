@@ -2499,22 +2499,9 @@ def test_stale_hold_resume_approves_the_current_page_after_last_arrival(
         assert "timeline_hold" not in approved.payload["page"]["attributes"]
         assert first.progress == progress_before
 
-        leftover = exp._page_for_stale_hold_resume(
-            first,
-            hold_uuid,
-            SimpleNamespace(is_timeline_hold=True),
-            leftover_overlay=True,
-        )
-        assert leftover is None
-        assert (
-            exp._page_for_stale_hold_resume(
-                first, hold_uuid, SimpleNamespace(is_timeline_hold=True)
-            )
-            is not None
-        )
-        assert (
-            exp._page_for_stale_hold_resume(first, hold_uuid, current_page) is not None
-        )
+        leftover = exp._page_for_stale_hold_resume(first, hold_uuid, current_page)
+        assert leftover is not None
+        assert leftover.label == "choose_action"
     finally:
         exp.timeline = original_timeline
 
@@ -2522,10 +2509,10 @@ def test_stale_hold_resume_approves_the_current_page_after_last_arrival(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
-def test_ordinary_submit_catches_up_onto_a_later_hold(
+def test_stale_hold_uuid_catches_up_onto_a_later_hold(
     in_experiment_directory, db_session
 ):
-    """A leftover hold uuid is catch-up for ordinary submits, not hold-resume."""
+    """A leftover hold uuid is catch-up for ordinary submits and hold-resume."""
     exp = get_experiment()
     original_timeline = exp.timeline
     group_type = f"stack_later_hold_{uuid.uuid4().hex[:8]}"
@@ -2553,9 +2540,12 @@ def test_ordinary_submit_catches_up_onto_a_later_hold(
         assert first.page_uuid != hold_uuid
         assert getattr(current_page, "is_timeline_hold", False)
 
-        rejected = _process_response(exp, first, hold_uuid, timeline_hold_resume=True)
-        assert rejected.payload["submission"] == "rejected"
+        resumed = _process_response(exp, first, hold_uuid, timeline_hold_resume=True)
+        assert resumed.payload["submission"] == "approved"
+        assert getattr(resumed.page, "is_timeline_hold", False)
+        assert resumed.payload["page"]["attributes"]["page_uuid"] == first.page_uuid
 
+        first = Participant.query.get(first.id)
         approved = _process_response(exp, first, hold_uuid)
         assert approved.payload["submission"] == "approved"
         assert getattr(approved.page, "is_timeline_hold", False)

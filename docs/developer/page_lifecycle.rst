@@ -404,9 +404,8 @@ through ``TimelineHoldRecord`` and participant wait-time fields rather than by
 counting response rows. If the last arriver already advanced the waiter, the
 hold-resume POST still carries the hold page's uuid. The server recognizes
 that uuid when it still matches this participant's hold record. Ordinary
-submits catch up even onto a later hold. A leftover hold-resume overlay from
-an earlier round that fires while the participant is already on another hold
-is rejected as a sync mismatch.
+submits and hold-resume overlays both catch up onto a later hold. An unknown
+uuid is still a sync mismatch.
 
 .. _timeline-hold-resume-protocol:
 
@@ -473,8 +472,8 @@ Bots
 Bot submissions do not request timeline fragments. Bots advance server state
 and obtain the next page through the normal server-side page interface. If
 last-arrival has already skipped them onto a later hold, an ordinary POST of
-the previous hold uuid is catch-up, not a multi-tab reject. Leftover
-hold-resume overlays still reject so a human browser reloads.
+the previous hold uuid is catch-up, not a multi-tab reject. Hold-resume
+overlays catch up the same way so the browser can swap in place.
 
 Adding new frontend components
 ------------------------------

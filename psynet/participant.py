@@ -1351,9 +1351,10 @@ class ParticipantDriver:
         """Retry once when last-arrival already rotated this driver's page uuid.
 
         Bots cache ``/participant_status`` and POST that ``page_uuid``. A
-        partner can skip this waiter onto the next hold in between. That
-        leftover overlay is a genuine sync mismatch; humans reload
-        ``/timeline``. Drivers refresh and submit the live page once.
+        partner can skip this waiter onto the next hold in between. A uuid
+        that still matches this participant's hold record is catch-up;
+        humans stay in place. An unknown uuid is a genuine sync mismatch.
+        Drivers refresh and submit the live page once.
         """
         if already_retried:
             return False

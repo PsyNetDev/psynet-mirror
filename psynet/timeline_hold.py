@@ -373,23 +373,14 @@ class TimelineHoldRecord(SQLBase, SQLMixin):
             self.credited_wait_seconds = target_credit
 
     @classmethod
-    def for_stale_hold_resume(
-        cls,
-        participant,
-        submitted_page_uuid,
-        current_page,
-        *,
-        leftover_overlay=False,
-    ):
+    def for_stale_hold_resume(cls, participant, submitted_page_uuid):
         """Return the submitted hold when it is still a catch-up from a wait page.
 
-        One indexed lookup. A hold-resume leftover overlay (already on a later
-        hold) stays rejected so the browser reloads. Ordinary submits catch up
-        even onto a later hold: automated drivers do not send
-        ``timeline_hold_resume`` and cannot reload an overlay.
+        One indexed lookup. Last-arrival can already have advanced this waiter
+        onto a later hold or off the stack; the client's POST still sends the
+        old uuid. A matching record is catch-up for both ordinary submits and
+        hold-resume overlays.
         """
-        if leftover_overlay and getattr(current_page, "is_timeline_hold", False):
-            return None
         return cls.query.filter_by(
             participant_id=participant.id,
             page_uuid=submitted_page_uuid,

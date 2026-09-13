@@ -3272,9 +3272,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             If True, lock the participant with ``NOWAIT`` so last-arrival is
             not blocked. A submitted ``page_uuid`` that still matches this
             participant's hold record is a catch-up after a partner already
-            advanced the waiter, for both hold-resume and ordinary submits.
-            Hold-resume leftover overlays (already on a later hold) stay
-            rejected. Ordinary submits still catch up onto that later hold.
+            advanced the waiter, for both hold-resume and ordinary submits,
+            including leftover overlays already on a later hold.
             Keyword-only; overrides should accept ``**kwargs`` or this
             argument.
         """
@@ -3323,7 +3322,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     participant,
                     page_uuid,
                     event,
-                    leftover_overlay=timeline_hold_resume,
                 )
                 if page is not None:
                     return ResponseResult(
@@ -3415,31 +3413,26 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         participant,
         submitted_page_uuid,
         current_page,
-        *,
-        leftover_overlay=False,
     ):
-        """Return the current page when a submit still carries a released hold uuid.
+        """Return the live page when a submit still carries a released hold uuid.
 
         The last arriver or a ready GET skip can already have advanced this
         waiter, rotating ``participant.page_uuid``. The client's POST still
         sends the hold page's uuid. If that uuid belongs to this participant,
-        approve the current page instead of treating it as a multi-tab
-        mismatch. Hold-resume leftover overlays (already on a later hold)
-        still reject so the browser reloads.
+        settle the old hold if needed and skip any later holds that are
+        already clear, instead of treating it as a multi-tab mismatch.
         """
         from .timeline_hold import TimelineHoldRecord
 
         record = TimelineHoldRecord.for_stale_hold_resume(
             participant,
             submitted_page_uuid,
-            current_page,
-            leftover_overlay=leftover_overlay,
         )
         if record is None:
             return None
         if record.resumed_at is None:
             record.settle(participant)
-        return current_page
+        return self._advance_past_ready_holds(participant, current_page)
 
     def _advance_past_ready_holds(self, participant, page):
         """Skip holds that are already clear after this request's writes.
