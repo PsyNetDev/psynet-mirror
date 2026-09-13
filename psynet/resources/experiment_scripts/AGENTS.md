@@ -1,5 +1,7 @@
 # Agent instructions
 
+On Windows, develop in WSL (Ubuntu) using Linux commands. Native Windows is not supported.
+
 PsyNet is a framework for designing and deploying online psychological experiments.
 The agent is there to help both with the development of the PsyNet source code,
 and with the development of individual PsyNet experiments.
@@ -7,7 +9,32 @@ and with the development of individual PsyNet experiments.
 If the root contains a file called `experiment.py`, assume that we are working on an experiment.
 Otherwise assume we are working on the PsyNet source code.
 
-## Initial setup
+From `experiment.py`, import sibling modules with `from . import my_module`.
+Do not run `python experiment.py` to validate imports; use `psynet test local`.
+See `docs/experiment_development/experiment_directory.rst`
+("Importing other Python files").
+
+PsyNet experiment skills are installed under `.cursor/skills/psynet/` by
+`psynet scripts update` (and created when missing by `psynet scripts scaffold`).
+Treat that directory as PsyNet-managed: update the canonical skills in the
+PsyNet source repository rather than editing generated copies in an experiment.
+It is gitignored in experiment repositories. Skills elsewhere under
+`.cursor/skills/` belong to the experiment and are preserved by
+`psynet scripts update`.
+
+## Agent Skills authoring
+
+The canonical skill format spec is `.cursor/skills/create-skill/SKILL.md` in the
+PsyNet source repository. Experiment skills live under
+`.cursor/skills/experiment/`; repo meta skills live under `.cursor/skills/`.
+After editing skills, run `python scripts/validate_agent_skills.py` and refresh
+experiment copies with `psynet scripts update`. Then reread the result using
+the "After writing" section of that skill.
+
+The PsyNetSkills workshop repository adds a thin `create-skill` addendum for
+challenge/attempt workflows and `psynetsk-validate`.
+
+## Initial setup
 
 - Install Python 3.13 (use same version specified in `Dockerfile`)
 - Install uv (`pip3 install uv`)
@@ -61,12 +88,6 @@ If a user asks for the X demo, list all child directories in `demos/experiments`
 
 ## Running experiments locally
 
-If you copied a demo into a brand new directory, initialize a Git repository first:
-
-```bash
-git init
-```
-
 The PsyNet demo directories include just the authored experiment files.
 Their unpinned `requirements.txt` files and omitted constraints are intentional.
 Within the PsyNet source checkout, PsyNet automatically generates ignored
@@ -80,14 +101,13 @@ Pytest scaffolds demos temporarily via the `in_experiment_directory` fixture.
 On teardown it removes only paths that were absent when the fixture started,
 so pre-existing scaffold leftovers and customized files remain untouched.
 
-For a copied standalone demo, initialize Git and create its complete environment:
+For a copied standalone demo, create its complete environment:
 
 ```bash
-git init
 uv venv --python 3.13
 source .venv/bin/activate
 uv pip install psynet      # bootstrap only (no experiment runtime yet)
-psynet setup               # scaffolds files and installs psynet[experiment]
+psynet setup               # scaffolds files, initializes Git, installs psynet[experiment]
 ```
 
 To run an experiment in debug mode:
@@ -111,6 +131,20 @@ Look out for an ad page URL, something like
 http://127.0.0.1:5000/ad?generate_tokens=true&recruiter=hotair.
 
 When the demo is running, offer the user to navigate the experiment automatically.
+
+## Deployment files
+
+`deploy.toml` uses an `[exclude]` table: `paths` (root-relative prefixes),
+`names` (basenames in every directory), and `suffixes` (literal endings
+such as `.db`). PsyNet creates it from the template when missing and never
+overwrites a custom copy. Inspect the current plan with
+`dallinger deployment-files list`. Stock excludes include the local
+`audit/` review packet (not needed at runtime). PsyNet never overwrites a
+custom `deploy.toml`; add `audit` to `[exclude].paths` on existing
+experiments that still ship that directory.
+
+`.dockerignore` is no longer supported. Move any custom exclusions into
+`deploy.toml` and remove `.dockerignore` before debug or deployment.
 
 ## Navigating experiments
 

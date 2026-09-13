@@ -11,7 +11,8 @@
 Unity integration
 =================
 
-**See associated** `Git repository <https://gitlab.com/computational-audition-lab/ofer/unitydemo>`_.
+**See the associated** `unity_autoplay demo <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/unity_autoplay>`_
+(``demos/experiments/unity_autoplay``).
 
 PsyNet includes several GUI features that can accelerate the development of appealing experimental environments. In addition, standard HTML5 and WebGL features can be implemented with relative ease. The built-in network visualization panel of the dashboard, is a nice example of how such tools can be used. However, for experiments where a sophisticated and gamified user interface in either 2D or 3D is desired, it makes more sense to use a well developed 3rd party GUI RDE. Unity 3D is among the leading RDEs for games, and it has several advantages:
 
@@ -19,7 +20,7 @@ PsyNet includes several GUI features that can accelerate the development of appe
 #. Both 2D and 3D virtual worlds physics are well developed
 #. There are many 3rd party components in the Unity App store that can be easily integrated. These include both high and low level tools such as embedded graphs, a virtual playable 3D piano, animated coins, etc.
 
-Learning Unity is outside the scope of this tutorial, but there are many great resources for learning Unity including Unity Learning [https://learn.unity.com/]. We will start with a quick tutorial of a simple Unity game, which is provided in the `demo project <https://gitlab.com/computational-audition-lab/ofer/unitydemo>`_.
+Learning Unity is outside the scope of this tutorial, but there are many great resources for learning Unity including `Unity Learn <https://learn.unity.com/>`_. We will start with a quick tutorial of a simple Unity game, which is provided in the `demo project <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/unity_autoplay>`_.
 
 The figure below shows the simple Unity 3D world that we created. It includes a player (yellow cylinder) and several collectable objects (red and blue cubes):
 
@@ -115,7 +116,7 @@ Installing a Unity-Psynet project
 
 You should install the free (Personal) version of Unity. Currently, we use Unity 2020.3
 
-https://store.unity.com/front-page#plans-individual
+https://unity.com/products/unity-personal
 
 Once Unity is installed in your system, it might be useful to begin by opening the very simple testing project that we included in the demo. It should look more or less like this:
 

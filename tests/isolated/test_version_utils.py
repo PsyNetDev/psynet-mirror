@@ -1,6 +1,9 @@
 import pytest
 
-from psynet.version import is_development_version
+from psynet.version import (
+    check_installed_dallinger_version_is_recommended,
+    is_development_version,
+)
 
 
 @pytest.mark.parametrize(
@@ -27,3 +30,10 @@ def test_is_development_version(version, expected):
     followed by exactly one letter and then numbers, e.g. "13.1.0a0".
     """
     assert is_development_version(version) == expected
+
+
+def test_pinned_dallinger_version_is_recommended(monkeypatch):
+    """Accept the Dallinger series required by the deployment-plan API."""
+    monkeypatch.setattr("dallinger.version.__version__", "12.4.0a1")
+
+    check_installed_dallinger_version_is_recommended()

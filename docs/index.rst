@@ -7,7 +7,7 @@
 
 PsyNet is a new platform for running advanced behavioral experiments
 ranging from adaptive psychophysics to simulated cultural evolution.
-It builds on the virtual lab framework `Dallinger <https://dallinger.readthedocs.io/en/latest/>`_.
+It builds on the virtual lab framework `Dallinger <https://dallinger.readthedocs.io/latest/>`_.
 Its goal is to enable researchers to implement and deploy experiments as efficiently as possible,
 while placing minimal constraints on the complexity of the experiment design.
 

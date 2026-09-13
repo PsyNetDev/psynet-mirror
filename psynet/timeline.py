@@ -36,6 +36,7 @@ from . import templates
 from .data import SQLBase, SQLMixin, register_table
 from .field import PythonObject
 from .serialize import is_lambda_function, prepare_function_for_serialization
+from .static_resources import version_static_urls
 from .utils import (
     NoArgumentProvided,
     call_function,
@@ -152,6 +153,30 @@ def _warn_js_var_window_collisions(js_vars):
     )
 
 
+# Named CSS colours that experiments pass to ProgressStage and Event.
+# Mapped to theme tokens so they follow the participant palette and dark
+# mode instead of the browser's primary red, green, and blue.
+# Keep in sync with psynet.theme.namedColors in psynet/resources/scripts/psynet.js.
+# "white" is intentionally omitted: it must remain CSS white so captions
+# stay visible against the content surface in dark mode.
+_PARTICIPANT_NAMED_COLORS = {
+    "red": "var(--psynet-danger)",
+    "green": "var(--psynet-success)",
+    "blue": "var(--psynet-accent)",
+    "orange": "var(--psynet-warning)",
+    "grey": "var(--psynet-text-muted)",
+    "gray": "var(--psynet-text-muted)",
+    "black": "var(--psynet-text)",
+}
+
+
+def _resolve_participant_color(color):
+    """Map a named CSS colour onto a participant-theme token when one exists."""
+    if not isinstance(color, str):
+        return color
+    return _PARTICIPANT_NAMED_COLORS.get(color.strip().lower(), color)
+
+
 class Event(dict):
     """
     Defines an event that occurs on the front-end for a given page.
@@ -207,7 +232,12 @@ class Event(dict):
         Optional message to display when this event occurs (default = ``""``).
 
     message_color:
-        CSS color specification for the message (default = ``"black"``).
+        CSS colour for the message. Named colours such as ``red``,
+        ``green``, ``blue``, ``orange``, ``grey``, and ``black`` are
+        mapped to participant-theme tokens so they follow the palette
+        and dark mode. ``white`` is left as CSS white. Other values
+        (hex, ``var(...)``) are used as-is. Default ``"black"``, which
+        resolves to ``--psynet-text``.
 
     js:
         Optional Javascript code to execute when the event occurs (default = ``None``).
@@ -239,7 +269,7 @@ class Event(dict):
             delay=delay,
             once=once,
             message=message,
-            message_color=message_color,
+            message_color=_resolve_participant_color(message_color),
             js=js,
         )
 
@@ -872,11 +902,23 @@ class MediaSpec:
 
 
 class ProgressStage(dict):
+    """A timed segment of a :class:`~psynet.timeline.ProgressDisplay`.
+
+    ``color`` is a CSS colour for the bar segment and caption. Named
+    colours such as ``red``, ``green``, ``blue``, ``orange``, and
+    ``grey`` are mapped to participant-theme tokens so they follow the
+    palette and dark mode. ``white`` is left as CSS white. Other values
+    (hex, ``var(...)``) are used as-is. The default is
+    ``var(--psynet-accent)``.
+    """
+
     def __init__(
         self,
         time: Union[float, int, List],
         caption: str = "",
-        color: str = "rgb(49, 124, 246)",
+        # Resolved by the browser, so the default tracks the participant theme
+        # (including dark mode) instead of hard-coding a colour of its own.
+        color: str = "var(--psynet-accent)",
         persistent: bool = False,
     ):
         if isinstance(time, list):
@@ -887,7 +929,7 @@ class ProgressStage(dict):
         self["time"] = time
         self["duration"] = duration
         self["caption"] = caption
-        self["color"] = color
+        self["color"] = _resolve_participant_color(color)
         self["persistent"] = persistent
 
 
@@ -1054,11 +1096,25 @@ class Page(Elt):
         shell and lifecycle; experiment-authored complete templates should use
         ``template_fragment_path`` or ``template_fragment_str`` for SPA.
 
+    delegated_render:
+        If ``True``, this page is a thin timeline wrapper whose ``render``
+        method supplies the response. It cannot be combined with a template.
+
     requires_full_page_reload:
         If ``True``, this page always uses a full browser reload rather than an
         in-place transition. Use this as a per-page opt-out while migrating
         older custom frontends. Deprecated ``js_links`` / ``scripts`` also set
         this automatically. Default: ``False``.
+
+    expect_scrolling:
+        Declares whether the page is expected to be taller than the browser
+        window. When ``False`` (default), PsyNet's front-end tests require the
+        page not to scroll at all, which catches stimuli that grow large enough
+        to push content off screen or underneath the footer. Set it to ``True``
+        for pages that legitimately need scrolling, such as long consent forms.
+        Subclasses may also declare it as a class attribute; passing ``True`` or
+        ``False`` to the constructor overrides that default. It has no effect on
+        how the page behaves for participants.
 
     template_arg:
         Dictionary of arguments to pass to the jinja2 template.
@@ -1161,9 +1217,16 @@ class Page(Elt):
     progress_display
         Optional :class:`~psynet.timeline.ProgressDisplay` object.
 
+    show_early_exit_button:
+        If ``True`` or ``False``, force the footer Leave control on or off for
+        this page. If omitted, Leave follows ``show_early_exit_button`` in the
+        experiment config or the recruiter default (on for Lucid).
+
+    show_abort_button:
+        Deprecated alias for ``show_early_exit_button``.
+
     show_termination_button:
-        If ``True``, a button is displayed allowing the participant to terminate the experiment, Defaults to ``recruiter.show_termination_button``
-        which can be ``False`` for all recruiters except for the Lucid recruiter where it should be ``True``.
+        Deprecated alias for ``show_early_exit_button``.
 
     start_trial_automatically
         If ``True`` (default), the trial starts automatically, e.g. by the playing
@@ -1214,6 +1277,7 @@ class Page(Elt):
     dynamically_update_progress_bar_and_reward = False
     is_unity_page = False
     requires_full_page_reload = False
+    expect_scrolling = False
     skip_beforeunload = False
 
     def __init__(
@@ -1241,12 +1305,16 @@ class Page(Elt):
         events: Optional[Dict] = None,
         progress_display: Optional[ProgressDisplay] = None,
         start_trial_automatically: bool = True,
+        show_early_exit_button: bool = None,
+        show_abort_button: bool = None,
         show_termination_button: bool = None,
         aggressive_termination_on_no_focus: bool = False,
         bot_response=NoArgumentProvided,
         validate: Optional[callable] = None,
         framework_owned_template: bool = False,
         requires_full_page_reload: bool = False,
+        expect_scrolling: Optional[bool] = None,
+        delegated_render: bool = False,
     ):
         super().__init__()
 
@@ -1282,35 +1350,44 @@ class Page(Elt):
             template_fragment_path is not None or template_fragment_str is not None
         )
 
-        if not complete_template_provided and not fragment_template_provided:
+        if delegated_render:
+            if complete_template_provided or fragment_template_provided:
+                raise ValueError("delegated_render cannot be combined with a template.")
+            template_str = ""
+            template_kind = "delegated"
+            template_contract_source = ""
+            framework_owned_template = True
+        elif not complete_template_provided and not fragment_template_provided:
             raise ValueError(
                 "Must provide either template_path/template_str or "
                 "template_fragment_path/template_fragment_str."
             )
-        if template_path is not None and template_str is not None:
-            raise ValueError("Cannot provide both template_path and template_str.")
-        if template_fragment_path is not None and template_fragment_str is not None:
-            raise ValueError(
-                "Cannot provide both template_fragment_path and template_fragment_str."
-            )
-        if complete_template_provided and fragment_template_provided:
-            raise ValueError(
-                "Cannot provide both a complete template and a template fragment."
-            )
+        if not delegated_render:
+            if template_path is not None and template_str is not None:
+                raise ValueError("Cannot provide both template_path and template_str.")
+            if template_fragment_path is not None and template_fragment_str is not None:
+                raise ValueError(
+                    "Cannot provide both template_fragment_path and "
+                    "template_fragment_str."
+                )
+            if complete_template_provided and fragment_template_provided:
+                raise ValueError(
+                    "Cannot provide both a complete template and a template fragment."
+                )
 
-        if template_path is not None:
-            with open(template_path, "r") as file:
-                template_str = file.read()
+            if template_path is not None:
+                with open(template_path, "r") as file:
+                    template_str = file.read()
 
-        template_kind = "complete"
-        template_contract_source = template_str
-        if fragment_template_provided:
-            template_kind = "fragment"
-            if template_fragment_path is not None:
-                with open(template_fragment_path, "r") as file:
-                    template_fragment_str = file.read()
-            template_contract_source = template_fragment_str
-            template_str = self._wrap_template_fragment(template_fragment_str)
+            template_kind = "complete"
+            template_contract_source = template_str
+            if fragment_template_provided:
+                template_kind = "fragment"
+                if template_fragment_path is not None:
+                    with open(template_fragment_path, "r") as file:
+                        template_fragment_str = file.read()
+                template_contract_source = template_fragment_str
+                template_str = self._wrap_template_fragment(template_fragment_str)
 
         assert len(label) <= 250
         assert isinstance(template_arg, dict)
@@ -1353,6 +1430,11 @@ class Page(Elt):
             # emulated across in-place transitions; force a clean document instead.
             # Authors may also opt in explicitly via requires_full_page_reload=True.
             self.requires_full_page_reload = True
+        # Subclasses may declare this as a class attribute; the constructor
+        # argument overrides that default when it is passed explicitly.
+        if expect_scrolling is not None:
+            self.expect_scrolling = expect_scrolling
+
         overlapping_javascript = set(self.js_dependencies) & set(self.js_page_modules)
         if overlapping_javascript:
             raise ValueError(
@@ -1374,7 +1456,39 @@ class Page(Elt):
         self.session_id = session_id
         self.save_answer = save_answer
         self.start_trial_automatically = start_trial_automatically
-        self.show_termination_button = show_termination_button
+        if show_abort_button is not None:
+            warnings.warn(
+                "Page(show_abort_button=...) is deprecated; "
+                "use show_early_exit_button=... instead.",
+                FutureWarning,
+                stacklevel=3,
+            )
+            if show_early_exit_button is None:
+                show_early_exit_button = show_abort_button
+            elif show_early_exit_button != show_abort_button:
+                raise ValueError(
+                    "show_early_exit_button and show_abort_button disagree; "
+                    "pass only show_early_exit_button."
+                )
+        if show_termination_button is not None:
+            warnings.warn(
+                "Page(show_termination_button=...) is deprecated; "
+                "use show_early_exit_button=... instead.",
+                FutureWarning,
+                stacklevel=3,
+            )
+            if show_early_exit_button is None:
+                show_early_exit_button = show_termination_button
+            elif show_early_exit_button != show_termination_button:
+                raise ValueError(
+                    "show_early_exit_button and show_termination_button disagree; "
+                    "pass only show_early_exit_button."
+                )
+        if show_early_exit_button is None and getattr(self, "is_consent", False):
+            show_early_exit_button = False
+        self.show_early_exit_button = show_early_exit_button
+        self.show_abort_button = show_early_exit_button
+        self.show_termination_button = show_early_exit_button
         self.aggressive_termination_on_no_focus = aggressive_termination_on_no_focus
 
         self.events = {
@@ -1490,6 +1604,7 @@ class Page(Elt):
             "page_uuid": participant.page_uuid,
             "is_unity_page": isinstance(self, UnityPage),
             "requires_full_page_reload": self.requires_full_page_reload,
+            "expect_scrolling": self.expect_scrolling,
         }
 
     @property
@@ -1525,7 +1640,7 @@ class Page(Elt):
         metadata,
         experiment,
         participant,
-        client_ip_address,
+        client_ip_address=None,
         answer=NoArgumentProvided,
     ):
         from psynet.trial.main import Trial
@@ -1541,7 +1656,6 @@ class Page(Elt):
             participant=participant,
             label=self.label,
             page_type=type(self).__name__,
-            client_ip_address=client_ip_address,
         )
         db.session.add(resp)
 
@@ -1742,8 +1856,37 @@ class Page(Elt):
         """
         pass
 
+    def early_exit_available(self, experiment, participant) -> bool:
+        """Return whether this page may offer the participant an early exit.
+
+        Leaving early costs the participant the difference between the
+        completion payment and the recruiter's early-exit payment, so it is
+        never offered once the participant has nothing left to lose by
+        finishing: end-of-experiment pages, release pages, and participants
+        who have already left.
+        """
+        from .utils import get_config
+
+        if (
+            participant.complete
+            or participant.early_exited
+            or experiment.timeline.participant_is_in_end_logic(participant)
+        ):
+            return False
+        if self.show_early_exit_button is not None:
+            return bool(self.show_early_exit_button)
+        return bool(
+            experiment.recruiter.show_early_exit_button
+            or get_config().get("show_early_exit_button", False)
+        )
+
     def render(self, experiment, participant, partial_mode=False):
         from .utils import get_config
+
+        if self.template_kind == "delegated":
+            raise NotImplementedError(
+                f"{type(self).__name__} delegates rendering and must override render()."
+            )
 
         # Architecture: docs/developer/page_lifecycle.rst
         # `partial_mode` is an internal render shape used for inplace
@@ -1764,6 +1907,16 @@ class Page(Elt):
         )
         js_vars = {**self.js_vars, **internal_js_vars}
         inplace_timeline_transitions = config.get("inplace_timeline_transitions")
+        show_early_exit_button = self.early_exit_available(experiment, participant)
+        if show_early_exit_button:
+            early_exit_plan = experiment.prepared_voluntary_exit_plan(participant)
+        else:
+            early_exit_plan = None
+
+        css_links = version_static_urls(self.css_links + experiment.css_links)
+        legacy_js_links = version_static_urls(self.legacy_js_links)
+        js_dependencies = version_static_urls(self.js_dependencies)
+        js_page_modules = version_static_urls(self.js_page_modules)
 
         all_template_args = {
             **self.template_arg,
@@ -1781,13 +1934,13 @@ class Page(Elt):
             "participant": participant,
             "unique_id": participant.unique_id,
             "worker_id": participant.worker_id,
-            "legacy_js_links": self.legacy_js_links,
+            "legacy_js_links": legacy_js_links,
             "legacy_scripts": self.legacy_scripts,
-            "js_dependencies": self.js_dependencies,
+            "js_dependencies": js_dependencies,
             "js_page_code": self.js_page_code,
-            "js_page_modules": self.js_page_modules,
+            "js_page_modules": js_page_modules,
             "css": self.css + experiment.css,
-            "css_links": self.css_links + experiment.css_links,
+            "css_links": css_links,
             "events": self.events,
             "trial_progress_display_config": self.progress_display,
             "attributes": self.attributes,
@@ -1799,7 +1952,13 @@ class Page(Elt):
             "partial_mode": partial_mode,
             "inplace_timeline_transitions": inplace_timeline_transitions,
             "start_experiment_in_popup_window": experiment.start_experiment_in_popup_window,
-            "show_termination_button": self.show_termination_button,
+            "show_early_exit_button": show_early_exit_button,
+            "show_abort_button": show_early_exit_button,
+            "show_termination_button": show_early_exit_button,
+            "early_exit_confirmation": (
+                early_exit_plan.confirmation if early_exit_plan else None
+            ),
+            "early_exit_offer_id": early_exit_plan.plan_id if early_exit_plan else None,
             "aggressive_termination_on_no_focus": self.aggressive_termination_on_no_focus,
         }
         rendered = render_string_with_translations(
@@ -2171,6 +2330,7 @@ class Timeline:
         from collections import OrderedDict
 
         from psynet.end import (
+            ImmediateExitLogic,
             RejectedConsentLogic,
             SuccessfulEndLogic,
             UnsuccessfulEndLogic,
@@ -2181,10 +2341,12 @@ class Timeline:
             [
                 ("successful_end", SuccessfulEndLogic()),
                 ("unsuccessful_end", UnsuccessfulEndLogic()),
+                ("early_exit_release", ImmediateExitLogic()),
                 ("rejected_consent", RejectedConsentLogic()),
             ]
         )
         default_branches.update(branch_kwargs)
+        self.terminal_branch_names = frozenset(default_branches)
 
         self.elts = OrderedDict()
         self.elts["main"] = join(*args, SuccessfulEndPage())
@@ -2208,7 +2370,7 @@ class Timeline:
 
     def participant_is_in_end_logic(self, participant):
         """Return True if the participant is in any end logic branch."""
-        return self.get_participant_branch(participant) != "main"
+        return self.get_participant_branch(participant) in self.terminal_branch_names
 
     def redirect_to_branch(self, experiment, participant, branch_name):
         """Redirect a participant to the start of a named branch.
@@ -2531,12 +2693,7 @@ class Response(_Response):
     successful_validation: bool
         Whether the response validation was successful,
         allowing the participant to advance to the next page.
-
-    client_ip_address : str
-        The participant's IP address as reported by Flask.
     """
-
-    __extra_vars__ = {}
 
     participant_id = Column(Integer, ForeignKey("participant.id"), index=True)
     participant = relationship(
@@ -2549,7 +2706,6 @@ class Response(_Response):
     answer = Column(PythonObject)
     page_type = Column(String)
     successful_validation = Column(Boolean)
-    client_ip_address = Column(String)
 
     # metadata is a protected attribute in SQLAlchemy, hence the underscore
     # and the functional setter/getter.
@@ -2579,7 +2735,6 @@ class Response(_Response):
         participant,
         label,
         page_type,
-        client_ip_address,
         answer=None,
         metadata=None,
     ):
@@ -2587,7 +2742,6 @@ class Response(_Response):
         self.question = label
         self.page_type = page_type
         self.metadata = metadata
-        self.client_ip_address = client_ip_address
         self.answer = answer
         self.metadata = metadata
 
@@ -3108,10 +3262,10 @@ class ModuleState(SQLBase, SQLMixin):
 
     time_started = Column(DateTime)
     time_finished = Column(DateTime)
-    time_aborted = Column(DateTime)
+    time_early_exited = Column(DateTime)
     started = Column(Boolean, default=False)
     finished = Column(Boolean, default=False)
-    aborted = Column(Boolean, default=False)
+    early_exited = Column(Boolean, default=False)
 
     asset_links = relationship(
         "AssetModuleState",
@@ -3145,9 +3299,12 @@ class ModuleState(SQLBase, SQLMixin):
         self.time_finished = datetime.now()
         self.finished = True
 
-    def abort(self):
-        self.time_finished = datetime.now()
-        self.aborted = True
+    def mark_early_exited(self):
+        """Mark this module as left unfinished by an early exit."""
+        now = datetime.now()
+        self.time_finished = now
+        self.time_early_exited = now
+        self.early_exited = True
 
     # def get(self, module_id: str):
     #     return self.participant.get_module_state(module_id)
@@ -3298,7 +3455,7 @@ class Module(EltCollection):
         logs = cls.state_class.query.filter_by(module_id=module_id, finished=True).all()
         return [
             {"time_started": log.time_started, "time_finished": log.time_finished}
-            # "time_aborted": log.time_aborted,
+            # "time_early_exited": log.time_early_exited,
             for log in logs
         ]
 
@@ -3333,17 +3490,19 @@ class Module(EltCollection):
         )
 
     @property
-    def aborted_participants(self):
+    def early_exited_participants(self):
         from .participant import Participant
 
-        aborted_participants = (
+        early_exited_participants = (
             db.session.query(Participant)
-            .filter(self.state_class.module_id == self.id, self.state_class.aborted)
+            .filter(
+                self.state_class.module_id == self.id, self.state_class.early_exited
+            )
             .all()
         )
         return sorted(
-            [p for p in aborted_participants if self.id in p.aborted_modules],
-            key=lambda p: p.module_states[self.id][0].time_aborted,
+            [p for p in early_exited_participants if self.id in p.early_exited_modules],
+            key=lambda p: p.module_states[self.id][0].time_early_exited,
         )
 
     @property
@@ -3393,9 +3552,11 @@ class Module(EltCollection):
             median_finish_time_in_min_and_s = Module.median_finish_time_in_min_and_s(
                 self.finished_participants, self.id
             )
-        if self.aborted_participants:
-            time_aborted_last = (
-                self.aborted_participants[-1].module_states[self.id][0].time_aborted
+        if self.early_exited_participants:
+            time_early_exited_last = (
+                self.early_exited_participants[-1]
+                .module_states[self.id][0]
+                .time_early_exited
             )
 
         div = tags.div()
@@ -3412,9 +3573,9 @@ class Module(EltCollection):
                     tags.li(
                         f"{len(self.finished_participants)} finished (last at {format_datetime(time_finished_last)})"
                     )
-                if self.aborted_participants:
+                if self.early_exited_participants:
                     tags.li(
-                        f"{len(self.aborted_participants)} aborted (last at {format_datetime(time_aborted_last)})"
+                        f"{len(self.early_exited_participants)} left early (last at {format_datetime(time_early_exited_last)})"
                     )
 
                 if self.finished_participants:
@@ -3439,7 +3600,7 @@ class Module(EltCollection):
                 f"{len(self.started_participants)} started, {len(self.finished_participants)} finished,"
             )
             tags.br()
-            tags.span(f"{len(self.aborted_participants)} aborted")
+            tags.span(f"{len(self.early_exited_participants)} left early")
             if self.finished_participants:
                 tags.br()
                 tags.span(f"{median_finish_time_in_min_and_s} (median)")
@@ -3463,7 +3624,7 @@ class Module(EltCollection):
             self.id: {
                 "started_n_participants": participant_counts["started"],
                 "finished_n_participants": participant_counts["finished"],
-                "aborted_n_participants": participant_counts["aborted"],
+                "early_exited_n_participants": participant_counts["early_exited"],
                 "target_n_participants": target_n_participants,
                 "progress": progress,
             }

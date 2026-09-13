@@ -5,10 +5,8 @@
 
 <script>
     function exportData() {
-        let anonymize = $('input[name="anonymize"]:checked').val();
         let assets = $('input[name="assets"]:checked').val();
-        let type = $('input[name="type"]:checked').val();
-        window.location.href = "/dashboard/export/download?anonymize=" + anonymize + "&assets=" + assets + "&type=" + type;
+        window.location.href = "/dashboard/export/download?assets=" + assets;
     }
 </script>
 {% endblock %}
@@ -28,29 +26,7 @@
 
 <div id="dashboard-participant">
     <div class="row">
-        <div class="col-3">
-            <b>Anonymize data</b>
-            <div class="form-check">
-                <input type="radio" id="input-anonymize-yes" class="form-check-input" name="anonymize" value="yes">
-                <label class="form-check-label" for="input-anonymize-yes">
-                    Yes
-                </label>
-            </div>
-            <div class="form-check">
-                <input type="radio" id="input-anonymize-no" class="form-check-input" name="anonymize" value="no">
-                <label class="form-check-label" for="input-anonymize-no">
-                    No
-                </label>
-            </div>
-            <div class="form-check">
-                <input type="radio" id="input-anonymize-both" class="form-check-input" name="anonymize" value="both"
-                       checked>
-                <label class="form-check-label" for="input-anonymize-both">
-                    Export both ways
-                </label>
-            </div>
-        </div>
-        <div class="col-3">
+        <div class="col-6" id="assets-controls">
             <b>Assets</b>
             <div class="form-check">
                 <input type="radio" id="input-assets-none" class="form-check-input" name="assets" value="none">
@@ -59,40 +35,31 @@
                 </label>
             </div>
             <div class="form-check">
-                <input type="radio" id="input-assets-experiment" class="form-check-input" name="assets"
-                       value="experiment"
+                <input type="radio" id="input-assets-collected" class="form-check-input" name="assets"
+                       value="collected"
                        checked>
-                <label class="form-check-label" for="input-assets-experiment">
-                    Experiment-specific assets only
-                </label>
-            </div>
-            <div class="form-check">
-                <input type="radio" id="input-assets-all" class="form-check-input" name="assets" value="all">
-                <label class="form-check-label" for="input-assets-all">
-                    All
-                </label>
-            </div>
-        </div>
-        <div class="col-3">
-            <b>Type</b>
-            <div class="form-check">
-                <input type="radio" id="input-type-psynet" class="form-check-input" name="type" value="psynet" checked>
-                <label class="form-check-label" for="input-type-psynet">
-                    PsyNet full export
-                </label>
-            </div>
-            <div class="form-check">
-                <input type="radio" id="input-type-database" class="form-check-input" name="type"
-                       value="database">
-                <label class="form-check-label" for="input-type-database">
-                    Database snapshot
+                <label class="form-check-label" for="input-assets-collected">
+                    Collected during the run
                 </label>
             </div>
         </div>
     </div>
+    <p class="mt-3 mb-2">
+        Downloads <code>export.zip</code> containing table CSVs under <code>database/</code>,
+        plus <code>participant_identifiers.csv</code> with original recruiter IDs.
+        Database tables use pseudonymous IDs so the archive stays loadable; this is
+        identifier separation, not anonymization of assets, free text, logs, or
+        experiment-defined basic data.
+        The export records the deployment git commit in <code>manifest.json</code>
+        instead of bundling source code.
+        <br>
+        Asset mode <em>Collected during the run</em> includes files uploaded or recorded
+        by participants (e.g. recordings). Cached stimuli, external URLs, and
+        on-demand assets are omitted. Choose <em>None</em> to omit the assets folder.
+    </p>
         <button type="button" class="btn btn-primary" onclick="exportData()">Export</button>
     <div class="alert alert-info mt-3">
-        If exporting via this button fails, we recommend trying instead to export via the command line, e.g.
+        If the button does not work, export from your experiment directory with the command line:
         <ul>
             <li><span class="monospace">psynet export local</span> (for local debugging)</li>
             <li><span class="monospace">psynet export ssh --server your-server-domain</span>

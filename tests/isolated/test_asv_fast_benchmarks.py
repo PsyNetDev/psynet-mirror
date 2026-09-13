@@ -54,9 +54,6 @@ def test_prepared_benchmark_experiment_restores_created_scaffold(tmp_path):
     (templates / "config.txt").write_text("[Config]\n")
     (templates / "test.py").write_text("# test\n")
     (templates / ".gitignore").write_text("*.pyc\n")
-    docker_templates = templates / "docker"
-    docker_templates.mkdir()
-    (docker_templates / "psynet").write_text("#!/bin/bash\n")
 
     demo_dir = tmp_path / "demo"
     demo_dir.mkdir()
@@ -66,7 +63,7 @@ def test_prepared_benchmark_experiment_restores_created_scaffold(tmp_path):
         assert created
         assert (demo_dir / "Dockerfile").exists()
         assert (demo_dir / "constraints.txt").exists()
-        assert (demo_dir / "docker" / "psynet").exists()
+        assert not (demo_dir / "docker").exists()
 
     assert not (demo_dir / "Dockerfile").exists()
     assert not (demo_dir / "constraints.txt").exists()

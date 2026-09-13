@@ -89,6 +89,15 @@ class TestParticipantFailure:
         assert not trial.finalized
         assert not trial.failed
 
+    def test_fail_can_leave_terminal_navigation_to_exit_recovery(
+        self, participant, trial
+    ):
+        participant.fail("error_recovery", redirect_to_end=False)
+
+        assert participant.failed
+        assert trial.failed
+        assert participant.pending_redirect is None
+
     def test_incomplete_cue_trial_fails_without_trial_maker(
         self, participant, trial_class, launched_experiment
     ):

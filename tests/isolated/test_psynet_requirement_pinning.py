@@ -10,6 +10,7 @@ from psynet.experiment_scaffold import (
     _normalize_git_remote_to_pip_base,
     commit_psynet_requirement,
     editable_psynet_requirement,
+    is_unambiguous_psynet_requirement,
 )
 
 
@@ -340,3 +341,32 @@ def test_default_psynet_requirement_falls_back_to_version_without_git(monkeypatc
     )
 
     assert _default_psynet_requirement() == "psynet[experiment]==13.4.0a0"
+
+
+def test_default_psynet_requirement_uses_vcs_install_for_unpublished_alpha(
+    monkeypatch,
+):
+    """Git installs must not become ``psynet[experiment]==<alpha>``.
+
+    That pin is unsatisfiable on PyPI and is what ``psynet setup`` hit when
+    PsyNet was installed from a GitLab branch.
+    """
+    commit = "a" * 40
+    monkeypatch.setattr("psynet.experiment_scaffold.psynet_version", "13.4.0a0")
+    monkeypatch.setattr(
+        "psynet.experiment_scaffold.get_editable_psynet_source",
+        lambda: None,
+    )
+    monkeypatch.setattr(
+        "psynet.experiment_scaffold._psynet_direct_url_info",
+        lambda: {
+            "url": "https://gitlab.com/PsyNetDev/PsyNet.git",
+            "vcs_info": {"vcs": "git", "commit_id": commit},
+        },
+    )
+
+    requirement = _default_psynet_requirement()
+    assert requirement == (
+        f"psynet[experiment] @ git+https://gitlab.com/PsyNetDev/PsyNet.git@{commit}"
+    )
+    assert is_unambiguous_psynet_requirement(requirement)

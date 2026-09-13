@@ -289,8 +289,6 @@ class MediaGibbsNode(GibbsNode):
     The user should not have to modify this.
     """
 
-    __extra_vars__ = GibbsNode.__extra_vars__.copy()
-
     vector_length = 0
     vector_ranges = []
     granularity = 100
@@ -298,7 +296,7 @@ class MediaGibbsNode(GibbsNode):
     batch_synthesis = False
     batch_zipped = False
 
-    slider_stimuli = claim_var("slider_stimuli", __extra_vars__)
+    slider_stimuli = claim_var("slider_stimuli")
 
     def validate(self):
         if not (isinstance(self.vector_length, int) and self.vector_length > 0):

@@ -61,7 +61,7 @@ An important thing to know is that all class names within an experiment must be 
 
 PsyNet’s trial makers make heavy use of SQLAlchemy objects. Each trial is represented as a distinct SQLAlchemy object, and each trial is connected to a node in a network, with nodes and networks also being represented as SQLAlchemy objects.
 
-The underlying Dallinger framework also makes heavy use of SQLAlchemy objects. Dallinger experiments typically involve constructing various kinds of networks which develop according to participant behavior during the course of the experiment. PsyNet fully supports the creation and manipulation of Dallinger SQLAlchemy objects. For more information about Dallinger’s network infrastructure, see the `official Dallinger documentation <https://dallinger.readthedocs.io/en/latest/classes.html>`_ (which is unfortunately very limited).
+The underlying Dallinger framework also makes heavy use of SQLAlchemy objects. Dallinger experiments typically involve constructing various kinds of networks which develop according to participant behavior during the course of the experiment. PsyNet fully supports the creation and manipulation of Dallinger SQLAlchemy objects. For more information about Dallinger’s network infrastructure, see the `official Dallinger documentation <https://dallinger.readthedocs.io/latest/classes.html>`_ (which is unfortunately very limited).
 
 Querying SQLAlchemy objects
 ---------------------------
@@ -139,22 +139,18 @@ Fortunately, it’s quite straightforward to define your own columns manually us
             super().__init__(*args, **kwargs)
             self.random_integer = random.randint(0, 10)
 
+.. note::
 
-.. warning::
-
-    Some people have reported errors of the following form here:
-
-    ..
-
-        "sqlalchemy.exc.ArgumentError: Column 'random_integer' on class <class 'dallinger_experiment.experiment.CustomTrial'> conflicts with existing column 'info.random_integer'"
-
-    Such errors can be resolved with the following, more verbose version:
-
-    .. code-block:: python
-
-        @declared_attr
-        def random_integer(cls):
-            return cls.__table__.c.get("random_integer", Column(Integer))
+    Trial classes share Dallinger's ``info`` table, so two trial classes that
+    declare the same column name share one column. Prefer a plain ``Column`` on
+    the trial class. PsyNet reuses the existing column when the name is already
+    present, which also lets PsyNet reimport ``experiment.py`` from its staging
+    copy during debug and deployment. The same reuse applies to other
+    Dallinger-backed classes that share a table. The declarations must agree on
+    type options, nullability, uniqueness, indexing, primary keys, foreign
+    keys, defaults, update values, constraints, autoincrement behavior, system
+    columns, and comments. PsyNet raises an error asking you to rename the
+    column when these definitions differ.
 
 Having defined the class in this way, we can then run queries for ``CustomTrial`` objects that filter on the value of ``random_integer``:
 

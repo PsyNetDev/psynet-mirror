@@ -231,7 +231,7 @@ If you now want to run a demo test, then you should be able to do so as follows:
 
 ::
 
-    docker/run pytest test.py
+    psynet test local
 
 Note that this does not quite match the Docker environment that the CI tests are using,
 but it should be close enough. We might document alternative approaches later.

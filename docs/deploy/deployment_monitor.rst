@@ -38,14 +38,14 @@ like budget overruns by recruiter or experimenter.
 
 The table includes the following columns:
 
-- **Study**: Shows the experiment’s label and current status (indicated by a traffic light icon). Click the experiment name to view more details such as repository URL, title, and description.
+- **Study**: Shows the experiment’s label and current status (indicated by a traffic light icon). Click the experiment name to view more details such as repository URL, deployed Git commit, clean or dirty working-tree state, title, and description.
 - **Recruitment**: Displays the recruitment status (e.g., "Published", "Draft", "Completed"). Click to view recruitment details, including the number of participants recruited and completed, and recruiter costs.
-- **Experimenter**: The name of the experimenter who created the experiment. We recommend setting this in your ``.dallingerconfig`` file, see `Slack integration <../tutorials/setting_up_slack.html>`_.
+- **Experimenter**: The name of the experimenter who created the experiment. We recommend setting this in your ``.dallingerconfig`` file, see :doc:`Slack integration </tutorials/setting_up_slack>`.
 - **Runtime**: Indicates how long the experiment has been running (relevant for the provisioning cost) and the start time. Click for more details.
 - **Cost**: Displays the experiment’s cost, based on actual recruiter expenses. If PsyNet's internal cost estimate differs from the true cost, a warning icon is shown. Click for more information.
 - **Duration**: The median experiment duration based on completion times. If this differs from PsyNet's internal estimate (via ``psynet estimate``), the real duration is shown in red.
-- **Server**: Indicates where the experiment is hosted (``local``, ``ssh``, or ``heroku``). Clicking shows the server's latest resource usage (CPU, memory, disk, etc.). Warnings and failures are flagged if resource limits are exceeded. Slack notifications are triggered `if configured. <../tutorials/setting_up_slack.html>`_
-- **Errors**: Displays the number of errors that occurred. Click to view error types and counts. Slack alerts are sent if `Slack integration <../tutorials/setting_up_slack.html>`_ is enabled, with direct links to error details and stack traces.
+- **Server**: Indicates where the experiment is hosted (``local``, ``ssh``, or ``heroku``). Clicking shows the server's latest resource usage (CPU, memory, disk, etc.). Warnings and failures are flagged if resource limits are exceeded. Slack notifications are triggered if :doc:`configured </tutorials/setting_up_slack>`.
+- **Errors**: Displays the number of errors that occurred. Click to view error types and counts. Slack alerts are sent if :doc:`Slack integration </tutorials/setting_up_slack>` is enabled, with direct links to error details and stack traces.
 - **Participants**: Shows the number of completed participants. A checkmark means recruitment has ended. A warning appears if the completion counts differ between PsyNet and the recruiter. Click for details.
 - **Actions**: Provides quick-access icons for managing the experiment (see below).
 
@@ -57,7 +57,7 @@ Actions
 If the experiment is **running**, you can:
 
 - **Access the dashboard**: Click the icon to open the experiment dashboard in a new browser tab.
-- **Access the data endpoint**: Click the icon to view the experiment’s `data endpoint <../data.html>`_ in a new tab.
+- **Access the data endpoint**: Click the icon to view the experiment’s :doc:`data endpoint </deploy/data>` in a new tab.
 
 When the experiment is not running you can also:
 If the experiment is **not running**, you can:

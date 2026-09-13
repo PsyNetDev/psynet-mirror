@@ -35,14 +35,6 @@ from psynet.experiment_scaffold import (
     help="Scaffold and generate constraints without installing packages.",
 )
 @click.option(
-    "--docker",
-    is_flag=True,
-    help=(
-        "Prepare files for Docker mode (same as --no-install, with Docker "
-        "next-step guidance)."
-    ),
-)
-@click.option(
     "--force-shared-env",
     is_flag=True,
     help="Allow synchronizing PsyNet's shared checkout virtual environment.",
@@ -56,14 +48,8 @@ from psynet.experiment_scaffold import (
     ),
 )
 @click.pass_context
-def setup(ctx, psynet_source, no_install, docker, force_shared_env, force_foreign_env):
+def setup(ctx, psynet_source, no_install, force_shared_env, force_foreign_env):
     """Scaffold and synchronize an experiment's dedicated virtual environment."""
-    if docker:
-        if force_shared_env:
-            raise click.UsageError(
-                "--docker and --force-shared-env cannot be used together."
-            )
-        no_install = True
     from psynet.experiment_setup import setup_experiment
 
     setup_experiment(
@@ -72,7 +58,6 @@ def setup(ctx, psynet_source, no_install, docker, force_shared_env, force_foreig
         no_install=no_install,
         force_shared_env=force_shared_env,
         force_foreign_env=force_foreign_env,
-        docker=docker,
     )
 
 
@@ -107,7 +92,11 @@ def scripts_scaffold(ctx, skip_constraints):
 def scripts_update(ctx):
     """Overwrite experiment boilerplate with the latest PsyNet templates.
 
-    Existing ``config.txt`` and ``README.md`` files are preserved.
+    Existing ``config.txt``, ``README.md``, and ``deploy.toml`` files are
+    preserved. PsyNet-managed Agent Skills under ``.cursor/skills/psynet`` are
+    refreshed; other skill directories under ``.cursor/skills/`` are
+    preserved. Recognized generated ``docker/`` helper scripts are deleted;
+    customized copies are preserved.
     """
     from psynet.experiment_scaffold import scaffold_experiment_directory
     from psynet.light_utils import (

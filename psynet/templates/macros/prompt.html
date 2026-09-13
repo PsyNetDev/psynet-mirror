@@ -274,9 +274,9 @@
     {{ simple(params) }}
     {{ audio_controls(params) }}
 
-    <script src="/static/scripts/Tonejs/Tone.js"></script>
-    <script src="/static/scripts/js-synthesizer/instruments.js"></script>
-    <script src="/static/scripts/js-synthesizer/synthesis.js"></script>
+    <script src="{{ url_for('static', filename='scripts/Tonejs/Tone.js') }}"></script>
+    <script src="{{ url_for('static', filename='scripts/js-synthesizer/instruments.js') }}"></script>
+    <script src="{{ url_for('static', filename='scripts/js-synthesizer/synthesis.js') }}"></script>
 
     <script>
         let stimulus = {{ params.stimulus | tojson }};

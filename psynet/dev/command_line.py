@@ -116,14 +116,14 @@ def docs():
     "-j",
     default="1",
     show_default=True,
-    help="Parallel Sphinx build jobs to pass through SPHINXOPTS, e.g. 1, 4, or auto.",
+    help="Parallel Sphinx build jobs, e.g. 1, 4, or auto.",
 )
 @click.option(
     "--sphinx-option",
     "sphinx_options",
     multiple=True,
     help=(
-        "Extra option passed to Sphinx via SPHINXOPTS; repeat as needed. "
+        "Extra option passed to Sphinx; repeat as needed. "
         "Common examples: --nitpicky, -E, -a, -T, -v."
     ),
 )
@@ -137,9 +137,9 @@ def make_docs(
     jobs,
     sphinx_options,
 ):
-    """Run a Sphinx Makefile TARGET for PsyNet docs.
+    """Run a Sphinx builder TARGET for PsyNet docs.
 
-    TARGET defaults to html, matching `make html` in docs/.
+    TARGET defaults to html.
 
     Uses --jobs 1 by default for deterministic output. Pass extra Sphinx flags
     with --sphinx-option. Pass --live-preview to serve the HTML docs with
@@ -178,19 +178,19 @@ def make_docs(
     "-j",
     default="1",
     show_default=True,
-    help="Parallel Sphinx jobs to pass through SPHINXOPTS, e.g. 1, 4, or auto.",
+    help="Parallel Sphinx jobs, e.g. 1, 4, or auto.",
 )
 @click.option(
     "--sphinx-option",
     "sphinx_options",
     multiple=True,
-    help="Extra option passed to Sphinx via SPHINXOPTS; repeat as needed.",
+    help="Extra option passed to Sphinx; repeat as needed.",
 )
 def linkcheck_docs(clean, jobs, sphinx_options):
     """Wrap Sphinx's linkcheck builder and summarize broken links.
 
-    Runs `make linkcheck` in docs/ (the same Sphinx target as
-    `psynet dev docs make linkcheck`), then prints broken links grouped
+    Runs the same Sphinx ``linkcheck`` builder as
+    `psynet dev docs make linkcheck`, then prints broken links grouped
     by failure category.
 
     Cleans docs/_build by default. For faster local reruns, pass

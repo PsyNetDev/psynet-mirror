@@ -1,6 +1,11 @@
 Deploying
 =========
 
+.. warning::
+
+   ``deploy.toml`` planning currently requires a POSIX filesystem and is not
+   supported on Windows.
+
 .. toctree::
    :maxdepth: 1
 

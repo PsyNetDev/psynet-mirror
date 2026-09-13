@@ -1,5 +1,6 @@
 {% extends "macros.html" %}
-{% include "macros/browser-detect.html" %}
+{% import "macros/browser-detect.html" as browser_detect with context %}
+{% from "macros/early_exit.html" import early_exit_modal %}
 
 {% macro template_data_script() %}
     {# Shared bootstrap payload for both full-page loads and inplace fragment swaps. #}
@@ -47,8 +48,8 @@
 {% endmacro %}
 
 {% block stylesheets %}
+    {# theme.html arrives via psynet_layout.html's stylesheets block. #}
     {{ super() }}
-    {% include "theme.html" %}
 
     {% if inplace_timeline_transitions %}
         <style>
@@ -77,15 +78,21 @@
                 <div class="progress">
                     <div id="timeline-progress-bar" class="progress-bar" role="progressbar"
                          aria-valuenow="{{ progress_percentage }}" aria-valuemin="0" aria-valuemax="100"
-                         style="width:{{ progress_percentage }}%">{{ progress_percentage }}%
-                    </div>
+                         style="width:{{ progress_percentage }}%"></div>
+                    {# Centred on the track rather than inside the fill, which is
+                       too narrow to hold it early on; participant.css puts it on
+                       a pill so one colour reads over both. #}
+                    <span id="timeline-progress-label" aria-hidden="true"
+                          data-progress="{{ progress_percentage }}%"></span>
                 </div>
             {% endif %}
         </div>
     {% endmacro %}
 
     {% macro timeline_main_body() %}
-        <div id="main-body" class="my-5 container" style="clear: both;" data-page-ready="false">
+        <div id="main-body" class="container psynet-surface" style="clear: both;"
+             data-page-ready="false"
+             data-expect-scrolling="{{ page.expect_scrolling | tojson }}">
             {% block main_body %}
                 {{ media.media_container() }}
                 {{ progress.trial_progress_display(trial_progress_display_config) }}
@@ -120,60 +127,79 @@
         </div>
     {% endmacro %}
 
+    {% macro media_download_bar() %}
+        {# Rides the footer's top edge when there is a footer, and the bottom
+           edge of the window when there is not; participant.css owns which.
+           Only the per-render width is set here. #}
+        <div id="media-download-progress-bar" style="width: {{ initial_download_progress }}%"></div>
+    {% endmacro %}
+
     {% macro timeline_footer() %}
-        <style>
-            #footer {
-                background-color: rgb(49, 124, 246);
-                color: white;
-                margin: 0px;
-                padding: 0px;
-                line-height: 33px;
-                border-style: none;
-                {% if config.show_footer == false %} display: none; {% endif %}
-            }
-
-            #media-download-progress-bar {
-                width: {{ initial_download_progress }}%;
-                height: 6px;
-                background-color: black;
-            }
-
-            .footer-text {
-                margin: 0px;
-            }
-
-        </style>
-
-        <nav id="footer" class="navbar fixed-bottom">
-            <div id="media-download-progress-bar"></div>
-                <div class="container py-2">
-                    {% if config.show_reward %}
-                        <div class="footer-text">
-                            {{ pgettext("timeline", "Reward") }}:
-                            <strong>
-                                <span id="reward-details" style="display: none">
-                                    {{ config.currency }}<span id="time-reward">{{ time_reward }}</span> (time) +
-                                    {{ config.currency }}<span id="performance-reward">{{ performance_reward }}</span> (performance) =
-                                </span>
-                                <span class="fw-bold">
-                                    {{ config.currency }}<span id="total-reward">{{ total_reward }}</span>
-                                </span>
-                            </strong>
-                        </div>
+        {# Omit the footer element when it is hidden or has no content.
+           Appearance and in-flow placement live in participant.css. #}
+        {% set show_comment_button = config.get("leave_comments_on_every_page") %}
+        {# Page.early_exit_available has already combined the page, recruiter and
+           config settings, and suppressed Leave for participants who are
+           finishing. #}
+        {% set footer_has_content = experiment.show_reward or show_comment_button or show_early_exit_button %}
+        {% if config.show_footer != false and footer_has_content %}
+        <nav id="footer" class="navbar">
+            {{ media_download_bar() }}
+                <div class="container py-2 d-flex flex-wrap align-items-center gap-2">
+                    {% if experiment.show_reward %}
+                        <span class="psynet-tooltip">
+                            <span id="reward-summary"
+                                  class="psynet-tooltip__trigger"
+                                  tabindex="0"
+                                  aria-describedby="reward-tooltip">
+                                <span class="visually-hidden">{{ pgettext("timeline", "Reward") }}: </span>
+                                <strong>{{ config.currency }}<span id="total-reward">{{ total_reward }}</span></strong>
+                                {# The readout has no border of its own, so this marks it as
+                                   explaining itself on hover or focus. #}
+                                <svg class="psynet-info" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false">
+                                    <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14Zm0-1.5A5.5 5.5 0 1 0 8 2.5a5.5 5.5 0 0 0 0 11ZM7.25 6.5a.75.75 0 1 1 1.5 0v4a.75.75 0 0 1-1.5 0v-4ZM8 3.75a.9.9 0 1 1 0 1.8.9.9 0 0 1 0-1.8Z"/>
+                                </svg>
+                            </span>
+                            <span id="reward-tooltip"
+                                  class="psynet-tooltip__content"
+                                  role="tooltip">
+                                {{ pgettext("timeline_reward", "Reward earned so far") }}:
+                                {{ config.currency }}<span id="time-reward">{{ time_reward }}</span>
+                                {{ pgettext("timeline_reward", "for time") }} +
+                                {{ config.currency }}<span id="performance-reward">{{ performance_reward }}</span>
+                                {{ pgettext("timeline_reward", "for performance") }}.
+                            </span>
+                        </span>
                     {% endif %}
 
-                    {% if config.get("leave_comments_on_every_page") %}
+                    {% if show_comment_button %}
                         <button type="button" class="btn btn-light"
                                 id="comment-button">{{ pgettext("timeline", "Comment") }}</button>
                     {% endif %}
 
-                    {% if show_termination_button or (experiment.with_lucid_recruitment() and show_termination_button is none) %}
-                        <button id="terminate-button" class="btn btn-danger">
-                            {{ pgettext("timeline_problem", "Terminate the experiment early") }}
-                        </button>
+                    {% if show_early_exit_button %}
+                        <span class="psynet-tooltip psynet-tooltip--end">
+                            <button id="early-exit-button"
+                                    class="btn btn-danger psynet-tooltip__trigger"
+                                    aria-describedby="exit-tooltip">
+                                {{ pgettext("timeline_problem", "Leave") }}
+                            </button>
+                            <span id="exit-tooltip"
+                                  class="psynet-tooltip__content"
+                                  role="tooltip">
+                                {{ pgettext("timeline_problem", "Leave without finishing.") }}
+                            </span>
+                        </span>
                     {% endif %}
                 </div>
         </nav>
+        {% else %}
+            {# A standalone completed bar reads as a stray stripe. Footerless
+               pages only need the bar while they have media to download. #}
+            {% if page.media.num_files > 0 %}
+                {{ media_download_bar() }}
+            {% endif %}
+        {% endif %}
     {% endmacro %}
 
     {% if partial_mode %}
@@ -182,15 +208,33 @@
             {{ timeline_header() }}
             {{ timeline_main_body() }}
             {{ timeline_footer() }}
+            {% if early_exit_offer_id %}
+                {{ early_exit_modal(
+                    participant.assignment_id,
+                    early_exit_offer_id,
+                    early_exit_confirmation
+                ) }}
+            {% endif %}
             {{ template_data_script() }}
         </div>
     {% else %}
-        {# Full-page render used for initial loads and for the legacy reload path. #}
+        {# Full-page render used for initial loads and for the legacy reload path.
+           The browser-detect markup stays outside the fragment so that in-place
+           transitions do not duplicate it. #}
+        {{ browser_detect.body() }}
         <div id="timeline-root">
             {{ timeline_header() }}
             {{ timeline_main_body() }}
 
             {% block modals %}
+                {% if early_exit_offer_id %}
+                    {{ early_exit_modal(
+                        participant.assignment_id,
+                        early_exit_offer_id,
+                        early_exit_confirmation
+                    ) }}
+                {% endif %}
+
                 {% block comment_modal %}
                     {% if config.get("leave_comments_on_every_page") %}
                     <div id="comment-modal" class="modal">
@@ -243,8 +287,8 @@
 {% block head %}
     {{ super() }}
 
-    <script src="/static/scripts/jquery-3.7.1.min.js"></script>
-    <script src="/static/scripts/JSZip/jszip.min.js"></script>
+    <script src="{{ url_for('static', filename='scripts/jquery-3.7.1.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='scripts/JSZip/jszip.min.js') }}"></script>
 
     {% for src in js_dependencies %}
         {# Blocking tags preserve first-page script order. Failed loads are marked
@@ -257,7 +301,8 @@
     {% endif %}
     <script src="{{ url_for('static', filename='scripts/psynet.js') }}"></script>
 
-
+    {# Last in the head block: everything it emits is valid head content. #}
+    {{ browser_detect.head() }}
 {% endblock %}
 
 {% block libs %}
@@ -276,6 +321,7 @@
                     psynet.registerErrorHandler();
                     await psynet.activateManagedPageJavascript();
                     psynet.initLucidTermination();
+                    psynet.initEarlyExitButton();
                     await psynet.initPage();
                     await psynet.finalizePageReady();
                 } catch (error) {

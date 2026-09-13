@@ -38,7 +38,12 @@ Merge-request checks
 Merge requests run the ``asv_regression`` CI job. This job uses
 ``asv continuous`` with ``--bench "^fast\\."`` to benchmark the merge-request
 base and head commits back-to-back on the same GitLab runner. The job exits
-non-zero when ASV detects a regression larger than the configured factor.
+non-zero when ASV detects a regression larger than ``--factor 1.25``.
+
+Export performance is not included in the ASV suite. End-to-end exports depend
+on mutable database fixtures, filesystem caches, and subprocess startup, which
+do not provide a stable enough signal for the merge-request gate's fixed
+regression threshold. Export correctness remains covered by functional tests.
 
 Default-branch checks and publishing
 ====================================
@@ -48,8 +53,13 @@ Commits to ``master`` run the ``asv_benchmarks`` CI job. This job uses
 slow benchmark tiers. It compares the previous ``master`` commit with the new
 commit on the same runner, writes the generated result files, commits those
 results to the ``benchmark-results`` branch, pushes them, and then propagates
-the ASV exit status. The job is currently allowed to fail while the benchmark
-suite is being tuned, but it still preserves the data needed for the published
+the ASV exit status. The comparison uses ``--factor 2`` because the slow
+``psynet performance-test`` medians commonly move by 1.2–1.3× on GitLab
+runners without a code change. ``asv continuous`` applies one factor to
+every benchmark it runs, so the default-branch job is also looser on the
+fast suite; merge requests still gate the fast suite at ``--factor 1.25``.
+The job is currently allowed to fail while the benchmark suite is being
+tuned, but it still preserves the data needed for the published
 benchmark history.
 
 ASV command modes

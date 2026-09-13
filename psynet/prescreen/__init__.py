@@ -1181,6 +1181,9 @@ class AttentionTest(Module):
                 ),
                 time_estimate=time_estimate_per_trial,
                 bot_response=lambda: None,
+                # The explanation plus eight response options is taller than a
+                # laptop window.
+                expect_scrolling=True,
             ),
             conditional(
                 "exclude_check_1",
@@ -1267,7 +1270,9 @@ class ColorBlindnessTest(StaticTrialMaker):
 
     media_url : string
         The url under which the images to be displayed can be referenced, default:
-        "https://s3.amazonaws.com/ishihara-eye-test/jpg"
+        ``https://s3.amazonaws.com/ishihara-eye-test/jpg``.
+        Files under that prefix are public, for example
+        https://s3.amazonaws.com/ishihara-eye-test/jpg/ishihara-1.jpg.
 
     time_estimate_per_trial : float
         The time estimate in seconds per trial, default: 5.0.
@@ -1825,6 +1830,7 @@ class AudioForcedChoiceTest(StaticTrialMaker):
     The audio forced choice test makes sure that the participant can correctly classify a sound.
     In each trial, the participant hears one sound and has to pick one answer from a list.
     Some use-cases where this test can be of use:
+
     - You only have a few stimuli with ground truth annotation and want the participant to annotate the rest. You can
       use the test to make sure that the participant is capable to classify the stimuli correctly.
     - You implemented an experiment that assumes participants are able to classify sounds (e.g., which bird sings the

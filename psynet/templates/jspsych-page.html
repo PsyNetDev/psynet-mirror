@@ -2,5 +2,8 @@
 
 {% block main_body %}
     {{ super() }}
-    <div id="js-psych" style="margin: 0px; height: 70%; width: 100%;"></div>
+    {# Sized against leftover viewport chrome so a laptop window does not
+       grow a scrollbar around an empty stage. Appearance lives in
+       participant.css. #}
+    <div id="js-psych"></div>
 {% endblock main_body %}

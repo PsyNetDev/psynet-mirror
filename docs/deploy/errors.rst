@@ -32,7 +32,7 @@ This persistent error log is especially helpful for debugging issues after the e
 
 Slack notifications
 --------------------
-We strongly recommended setting up the `Slack integration <../tutorials/setting_up_slack.html>`_ to receive error notifications in your Slack channel.
+We strongly recommended setting up the :doc:`Slack integration </tutorials/setting_up_slack>` to receive error notifications in your Slack channel.
 This way, you will be notified immediately when an error occurs, and you can take action to fix it.
 
 .. note::

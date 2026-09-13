@@ -438,7 +438,7 @@ def test_pre_launch_ensures_services_for_docker_mode(monkeypatch):
     ensure = Mock()
     monkeypatch.setattr("psynet.services.ensure_local_services", ensure)
     monkeypatch.setattr(
-        "psynet.command_line._check_experiment_directory", lambda mode: None
+        "psynet.command_line._check_experiment_directory", lambda mode, **kwargs: None
     )
     monkeypatch.setattr(
         "psynet.command_line.redis_vars.clear",
@@ -464,7 +464,7 @@ def test_pre_launch_ensures_services_for_local_venv_mode(monkeypatch):
     ensure = Mock()
     monkeypatch.setattr("psynet.services.ensure_local_services", ensure)
     monkeypatch.setattr(
-        "psynet.command_line._check_experiment_directory", lambda mode: None
+        "psynet.command_line._check_experiment_directory", lambda mode, **kwargs: None
     )
     monkeypatch.setattr(
         "psynet.command_line.redis_vars.clear",
@@ -491,7 +491,7 @@ def test_pre_launch_ensures_services_for_ssh_deploy(monkeypatch):
     ensure = Mock()
     monkeypatch.setattr("psynet.services.ensure_local_services", ensure)
     monkeypatch.setattr(
-        "psynet.command_line._check_experiment_directory", lambda mode: None
+        "psynet.command_line._check_experiment_directory", lambda mode, **kwargs: None
     )
     monkeypatch.setattr(
         "psynet.command_line.redis_vars.clear",
@@ -522,7 +522,7 @@ def test_test_local_ensures_services(monkeypatch):
     experiment = Mock()
     monkeypatch.setattr("psynet.services.ensure_local_services", ensure)
     monkeypatch.setattr(
-        "psynet.command_line._check_experiment_directory", lambda mode: None
+        "psynet.command_line._check_experiment_directory", lambda mode, **kwargs: None
     )
     monkeypatch.setattr(
         "psynet.experiment.get_experiment",

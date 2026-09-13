@@ -188,6 +188,12 @@ There are a few key features to point out in this example:
 
         ProgressStage([3.0, 3.5], "Get ready...", "orange")
 
+    Named colours such as ``red``, ``green``, ``blue``, ``orange``, and
+    ``grey`` are mapped to the participant theme so they follow the palette
+    and dark mode instead of the browser's primary red, green, and blue.
+    Pass a hex value or a ``var(...)`` expression to use a colour as-is;
+    see :doc:`/tutorials/theming`.
+
 
 .. warning::
 

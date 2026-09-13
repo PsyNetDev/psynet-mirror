@@ -317,6 +317,9 @@ def test_isolated_tests():
         ).__str__()
         in tests
     )
+    # Shared helper modules would fail CI, which runs each listed file as its
+    # own pytest process and treats "no tests collected" as an error.
+    assert all(Path(test).name.startswith("test_") for test in tests)
 
 
 def test_check_todos_before_deployment_raise():

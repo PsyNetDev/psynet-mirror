@@ -1,12 +1,15 @@
-Installing PsyNet via Docker (legacy)
-=====================================
+Installing PsyNet via Docker (removed)
+======================================
 
-.. warning::
+The experiment-local Docker helper scripts (``bash docker/build``,
+``bash docker/psynet``, and the rest of the generated ``docker/`` directory)
+have been removed. They called ``docker build`` directly and could not honor
+``deploy.toml``.
 
-    This Docker route is now deprecated. Please use the :ref:`running_a_demo_locally` instructions instead.
+Install PsyNet in a virtual environment, then use the standard commands:
 
-.. toctree::
-    :maxdepth: 1
+- ``psynet debug local`` for a local virtualenv run
+- ``psynet debug local --docker`` or a Docker deploy command when you want
+  Dallinger to build from the reviewed ``deploy.toml`` plan
 
-    unix_installation
-    windows_installation
+See :ref:`installation` and :ref:`docker`.

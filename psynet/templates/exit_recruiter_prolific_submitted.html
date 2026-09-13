@@ -1,0 +1,110 @@
+{% extends "psynet_layout.html" %}
+
+{# Exit page for Prolific participants. Local submission is the success
+   path: the Submit button reports the submission to PsyNet, which then
+   completes it on Prolific on the participant's behalf. Participants are
+   not redirected to a Prolific completion-code URL. After Submit, this
+   page is replaced with the confirmation so the submit heading does not
+   remain over a done state. The same confirmation HTML is used from
+   /timeline after error-page Submit. #}
+
+{% block title %}{% if submission_recorded %}{{ confirmation_heading }}{% else %}{{ pgettext("exit_recruiter_prolific", "Submit to Prolific") }}{% endif %}{% endblock %}
+
+{% block body %}
+  <div class="container my-5 psynet-surface">
+    {# The placeholder stays hidden until theme.html swaps in the themed logos,
+       otherwise the browser paints the raw PNG first and then replaces it. #}
+    <div class="row overflow-hidden mb-3" style="height: 73px;">
+      <img id="adlogo" style="display: none" alt="Lab Logo" />
+    </div>
+    {% if submission_recorded %}
+      <h1 id="header">{{ confirmation_heading }}</h1>
+      <hr>
+      <p id="prolific-exit-done">{{ confirmation_body }}</p>
+    {% else %}
+      <h1 id="header">{{ pgettext("exit_recruiter_prolific", "Submit to Prolific") }}</h1>
+      <hr>
+      <p id="prolific-exit-instructions">
+        {{ pgettext("exit_recruiter_prolific", "Click below to send your submission to Prolific. You will not need to enter a completion code.") }}
+      </p>
+      <div id="prolific-exit"
+           aria-live="polite">
+        <div id="prolific-exit-pending" hidden role="status">
+          <span class="spinner-border" aria-hidden="true"></span>
+          <span>{{ pgettext("exit_recruiter_prolific", "Please wait.") }}</span>
+        </div>
+        <p id="prolific-exit-failure" hidden>
+          {{ failure_message }}
+        </p>
+        <button type="button"
+                id="prolific-exit-retry"
+                class="btn btn-primary btn-lg"
+                hidden>
+          {{ pgettext("exit_recruiter_prolific", "Try again") }}
+        </button>
+        <button type="button"
+                id="js-exit-button"
+                class="btn btn-primary btn-lg">
+          {{ pgettext("exit_recruiter_prolific", "Submit to Prolific") }}
+        </button>
+      </div>
+    {% endif %}
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  {{ super() }}
+  {% if not submission_recorded %}
+  {# Recruiter-exit must not reuse psynet.early-exit.js: that script also
+     executes an exit plan. This page only posts the listener. #}
+  <script>
+    (function () {
+      const button = document.getElementById("js-exit-button");
+      const pending = document.getElementById("prolific-exit-pending");
+      const failure = document.getElementById("prolific-exit-failure");
+      const retry = document.getElementById("prolific-exit-retry");
+      if (!button || !pending || !failure || !retry) return;
+
+      function showPending() {
+        button.hidden = true;
+        button.disabled = true;
+        retry.hidden = true;
+        retry.disabled = true;
+        failure.hidden = true;
+        pending.hidden = false;
+      }
+
+      function showFailure() {
+        pending.hidden = true;
+        button.hidden = true;
+        failure.hidden = false;
+        retry.hidden = false;
+        retry.disabled = false;
+      }
+
+      function submit() {
+        showPending();
+        const data = new URLSearchParams();
+        data.append("assignmentId", "{{ assignment_id }}");
+        data.append("participantId", "{{ participant_id }}");
+        fetch("/prolific-submission-listener", {method: "POST", body: data})
+          .then((response) => {
+            if (!response.ok) {
+              throw new Error("submission listener failed");
+            }
+            if (window.dallinger && window.dallinger.allowExit) {
+              window.dallinger.allowExit();
+            }
+            window.location.replace(
+              window.location.pathname + window.location.search
+            );
+          })
+          .catch(() => { showFailure(); });
+      }
+
+      button.addEventListener("click", submit);
+      retry.addEventListener("click", submit);
+    })();
+  </script>
+  {% endif %}
+{% endblock %}

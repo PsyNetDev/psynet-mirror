@@ -1,0 +1,1 @@
+Tracked fatal recovery is prepared in the original failing request and opened with a reloadable ``GET /timeline?unique_id=...``. ``/error-page`` stays untracked and does not treat enumerable ``participant_id`` as session authority. A complete participant who revisits ``/timeline`` still gets the ``/worker_complete`` backstop.

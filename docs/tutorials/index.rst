@@ -16,6 +16,7 @@ Tutorials
    chatroom
    ad_page
    modular_page
+   theming
    graphics
    demography
    large_stimulus_sets

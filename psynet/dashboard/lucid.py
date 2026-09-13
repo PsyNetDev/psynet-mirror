@@ -134,13 +134,16 @@ def report_lucid():
         params["display_cards"] = True
 
     entry_df = pd.DataFrame([entrant.to_dict() for entrant in all_entrants])
+    # Display-only join: do not persist LucidRID.participant_id on page load.
+    if "participant_id" in entry_df.columns:
+        entry_df = entry_df.drop(columns=["participant_id"])
     participants = pd.DataFrame(
         [
             {"participant_id": participant.id, "rid": participant.worker_id}
             for participant in Participant.query.all()
         ]
     )
-    entry_df = entry_df.merge(participants, left_on="rid", right_on="rid", how="left")
+    entry_df = entry_df.merge(participants, on="rid", how="left")
     entry_df.lucid_entry_date = pd.to_datetime(
         entry_df.lucid_entry_date, format="mixed"
     )
@@ -561,7 +564,9 @@ def report_lucid():
             missing = terminated_df.query("rid not in @rids")[
                 ["rid", "termination_reason"]
             ]
-            missing = missing.merge(participants, on="rid", how="left")
+            missing = missing.merge(
+                entry_df[["rid", "participant_id"]], on="rid", how="left"
+            )
             missing["participant_id"] = missing.participant_id.apply(
                 lambda x: x if not pd.isna(x) else "Not registered"
             )

@@ -23,10 +23,10 @@ function deferredPromise() {
 }
 
 function hasManagedStylesheet(page, stylesheetPath) {
-  return page.evaluate((pathSuffix) => {
+  return page.evaluate((expectedPathname) => {
     return Array.from(
       document.head.querySelectorAll("link[data-psynet-fragment-stylesheet]")
-    ).some((link) => link.href.endsWith(pathSuffix));
+    ).some((link) => new URL(link.href).pathname === expectedPathname);
   }, stylesheetPath);
 }
 
@@ -250,11 +250,14 @@ test("in-place timeline transitions preload linked CSS before swapping DOM", { t
 
     const stylesheetGate = deferredPromise();
     let stylesheetRequested = false;
-    await experimentPage.route("**/static/custom-stylesheet-page.css", async (route) => {
-      stylesheetRequested = true;
-      await stylesheetGate.promise;
-      await route.continue();
-    });
+    await experimentPage.route(
+      /\/static\/custom-stylesheet-page\.css(?:\?.*)?$/,
+      async (route) => {
+        stylesheetRequested = true;
+        await stylesheetGate.promise;
+        await route.continue();
+      }
+    );
 
     const transitionPromise = clickNextAndWait(experimentPage, STEP_TIMEOUT_MS);
 

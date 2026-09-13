@@ -9,5 +9,7 @@ PsyNet splits ASV benchmarks into two CI tiers by directory:
   These benchmarks track median request time and median queue delay for an
   experiment that exercises async worker processes.
 
-Default-branch CI runs the full ASV suite with `asv continuous`, so both tiers
-contribute to regression checks on `master`.
+Default-branch CI runs the full ASV suite with `asv continuous --factor 2`, so
+both tiers contribute to regression checks on `master`. The factor is looser
+than the merge-request gate (`1.25`) because the slow load-test medians are
+noisier than the fast suite.

@@ -1,14 +1,13 @@
 import os
 import shutil
 import tempfile
-import zipfile
 
 import pytest
 from click import Context
 from dallinger import db
 
 from psynet.asset import Asset, ExperimentAsset, ExternalAsset, OnDemandAsset
-from psynet.bot import Bot, BotDriver
+from psynet.bot import BotDriver
 from psynet.command_line import export__local
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.utils import generate_text_file
@@ -21,16 +20,6 @@ def data_root_dir():
     path = os.path.join("data", f"data-{app}")
     yield path
     shutil.rmtree(path, ignore_errors=True)
-
-
-@pytest.fixture
-def data_csv_dir(data_root_dir):
-    return os.path.join(data_root_dir, "csv")
-
-
-@pytest.fixture
-def data_zip_file(data_root_dir):
-    return os.path.join(data_root_dir, "db-snapshot", f"{app}-data.zip")
 
 
 @pytest.fixture
@@ -68,22 +57,17 @@ class TestAssetExport:
     def test_exp(
         self,
         data_root_dir,
-        data_csv_dir,
-        data_zip_file,
         ctx,
     ):
-        # Creating a couple of personal and non-personal assets
+        # Creating experiment assets with different keys
         with tempfile.NamedTemporaryFile("w") as file:
             file.write("Test asset")
-            asset = ExperimentAsset(
-                local_key="test_personal_asset", input_path=file.name, personal=True
-            )
+            asset = ExperimentAsset(local_key="test_marked_asset", input_path=file.name)
             asset.deposit()
 
             asset_2 = ExperimentAsset(
                 local_key="test_public_asset",
                 input_path=file.name,
-                personal=False,
             )
             asset_2.deposit()
 
@@ -99,6 +83,11 @@ class TestAssetExport:
             )
             asset_4.deposit()
 
+            with pytest.raises(TypeError, match="personal"):
+                ExperimentAsset(
+                    local_key="should_fail", input_path=file.name, personal=True
+                )
+
         db.session.commit()
 
         assert Asset.query.count() == 4
@@ -108,178 +97,80 @@ class TestAssetExport:
         bot_driver = BotDriver()
         bot_driver.take_experiment()
 
-        bot = Bot.query.one()
-
-        json_full = bot.to_dict()
-        json_anon = bot.scrub_pii(bot.to_dict())
-
-        for key in ["client_ip_address", "worker_id"]:
-            assert key in json_full
-            assert key not in json_anon
-
-        # Calling export_ multiple times in the same process causes SQLAlchemy errors due to repeated imports...
-        # Temporary fix for now is to call in subprocess
-        # from psynet.utils import run_subprocess_with_live_output
-
         with tempfile.TemporaryDirectory() as tempdir:
-            with pytest.raises(ValueError) as e:
+            with pytest.raises(ValueError, match="must be one of"):
                 ctx.invoke(export__local, path=tempdir, assets="asdasdoj")
-            assert str(e.value) == "--assets must be either none, experiment, or all."
+            with pytest.raises(
+                ValueError, match="asset selection 'all' has been removed"
+            ):
+                ctx.invoke(export__local, path=tempdir, assets="all")
 
-            with pytest.raises(ValueError) as e:
-                ctx.invoke(export__local, path=tempdir, anonymize="asdasdoj")
-            assert str(e.value) == "--anonymize must be either yes, no, or both."
+            ctx.invoke(export__local, path=tempdir, assets="collected")
 
-            ctx.invoke(export__local, path=tempdir, assets="all", anonymize="both")
-
-            # Not relevant if we don't export code
-            # self.assert_valid_code_zip(os.path.join(tempdir, "regular", "code.zip"))
-            # self.assert_valid_code_zip(os.path.join(tempdir, "anonymous", "code.zip"))
-
-            self.assert_regular_database_zip(
-                os.path.join(tempdir, "regular", "database.zip")
+            self.assert_database_dir(os.path.join(tempdir, "database"))
+            self.assert_identifier_sidecar(
+                os.path.join(tempdir, "participant_identifiers.csv")
             )
-            self.assert_anonymous_database_zip(
-                os.path.join(tempdir, "anonymous", "database.zip")
+            assert os.path.exists(os.path.join(tempdir, "manifest.json"))
+            assert not os.path.exists(
+                os.path.join(tempdir, "lucid_entrant_identifiers.csv")
             )
-
-            self.assert_regular_data(os.path.join(tempdir, "regular", "data"))
-            self.assert_anonymous_data(os.path.join(tempdir, "anonymous", "data"))
+            assert not os.path.exists(os.path.join(tempdir, "data.zip"))
+            assert not os.path.exists(os.path.join(tempdir, "database.zip"))
 
     def _test_asset_export_modes(self, ctx):
-        for legacy in [True, False]:
-            with tempfile.TemporaryDirectory() as tempdir:
-                ctx.invoke(export__local, path=tempdir, assets="none", legacy=legacy)
+        import csv
 
-                path_1 = os.path.join(tempdir, "regular", "data")
-                assert os.path.exists(path_1) and os.path.isdir(path_1)
+        with tempfile.TemporaryDirectory() as tempdir:
+            ctx.invoke(export__local, path=tempdir, assets="none")
 
-                #  assets="none" so no assets should be exported
-                path_1 = os.path.join(tempdir, "regular", "assets")
-                assert not os.path.exists(path_1)
+            assert os.path.isdir(os.path.join(tempdir, "database"))
+            assert not os.path.exists(os.path.join(tempdir, "assets"))
+            assert not os.path.exists(os.path.join(tempdir, "data.zip"))
 
-            with tempfile.TemporaryDirectory() as tempdir:
-                ctx.invoke(
-                    export__local, path=tempdir, assets="experiment", legacy=legacy
-                )
+        with tempfile.TemporaryDirectory() as tempdir:
+            ctx.invoke(export__local, path=tempdir, assets="collected")
 
-                path = os.path.join(tempdir, "regular", "assets")
-                assert os.path.exists(path) and os.path.isdir(path)
+            path = os.path.join(tempdir, "assets")
+            assert os.path.exists(path) and os.path.isdir(path)
+            assert os.path.exists(os.path.join(path, "manifest.csv"))
+            assert not os.path.exists(os.path.join(path, "objects"))
 
-                assert os.path.exists(
-                    os.path.join(
-                        tempdir, "regular", "assets", "common", "test_personal_asset"
-                    )
-                )
-                assert not os.path.exists(
-                    os.path.join(
-                        tempdir, "anonymous", "assets", "common", "test_personal_asset"
-                    )
-                )
-                assert not os.path.exists(
-                    os.path.join(
-                        tempdir,
-                        "regular",
-                        "assets",
-                        "common",
-                        "test_external_asset.wav",
-                    )
-                )
-                assert not os.path.exists(
-                    os.path.join(
-                        tempdir, "regular", "assets", "common", "test_on_demand_asset"
-                    )
-                )
+            with open(os.path.join(path, "manifest.csv"), newline="") as csv_file:
+                rows = list(csv.DictReader(csv_file))
+            labels = {row["local_key"] for row in rows}
+            assert "test_marked_asset" in labels
+            assert "test_public_asset" in labels
+            assert "test_external_asset" not in labels
+            assert "test_on_demand_asset" not in labels
+            for row in rows:
+                export_path = row["export_path"]
+                assert export_path
+                assert os.path.exists(os.path.join(path, export_path))
 
-            with tempfile.TemporaryDirectory() as tempdir:
-                # We use legacy here, because it's an isolated test
-                ctx.invoke(export__local, path=tempdir, assets="all", legacy=legacy)
-                assert os.path.exists(
-                    os.path.join(
-                        tempdir, "regular", "assets", "common", "test_personal_asset"
-                    )
-                )
-                assert os.path.exists(
-                    os.path.join(
-                        tempdir,
-                        "regular",
-                        "assets",
-                        "common",
-                        "test_external_asset.wav",
-                    )
-                )  # now we have this
-                assert os.path.exists(
-                    os.path.join(
-                        tempdir, "regular", "assets", "common", "test_on_demand_asset"
-                    )
-                )  # and this
-
-    def assert_regular_database_zip(self, path):
+    def assert_database_dir(self, path):
         import pandas as pd
 
-        archive = zipfile.ZipFile(
-            path,
-            "r",
-        )
+        assert os.path.isdir(path)
+        for name in ["participant.csv", "response.csv", "network.csv", "trial.csv"]:
+            assert os.path.exists(os.path.join(path, name))
 
-        files = [f.filename for f in archive.filelist]
-        assert "data/experiment.csv" in files
-        assert "data/response.csv" in files
-        assert "data/network.csv" in files
-
-        with archive.open("data/asset.csv") as f:
-            asset_csv = pd.read_csv(f)
-
+        asset_csv = pd.read_csv(os.path.join(path, "asset.csv"))
         assert asset_csv.shape[0] >= 2
 
-        with archive.open("data/participant.csv") as f:
-            participant_csv = pd.read_csv(f)
+        participant_csv = pd.read_csv(os.path.join(path, "participant.csv"))
 
+        # Pseudonyms replace recruiter worker IDs inside the table CSVs.
         assert all(
-            len(id_) > 5 for id_ in participant_csv.worker_id
-        )  # All participants should have their worker IDs
-
-    def assert_anonymous_database_zip(self, path):
-        import pandas as pd
-
-        archive = zipfile.ZipFile(
-            path,
-            "r",
+            str(id_) == str(pid)
+            for id_, pid in zip(participant_csv.worker_id, participant_csv.id)
         )
 
-        files = [f.filename for f in archive.filelist]
-        assert "data/experiment.csv" in files
-        assert "data/response.csv" in files
-        assert "data/network.csv" in files
-
-        with archive.open("data/asset.csv") as f:
-            asset_csv = pd.read_csv(f)
-
-        assert asset_csv.shape[0] >= 2  # There should still be quite a few assets
-
-        with archive.open("data/participant.csv") as f:
-            participant_csv = pd.read_csv(f)
-
-        # Worker IDs should now be scrubbed and replaced with integers counting upwards from 1
-        # (so their string representation is going to be shorter than 3 characters long)
-        assert all(len(str(id_)) < 3 for id_ in participant_csv.worker_id)
-
-    def assert_regular_data(self, path):
+    def assert_identifier_sidecar(self, path):
         import pandas as pd
 
-        bots = pd.read_csv(os.path.join(path, "Bot.csv"))
-
-        assert bots.shape[0] > 0
-        assert all(bots.type == "Bot")
-        assert "creation_time" in bots
-        assert "worker_id" in bots
-
-    def assert_anonymous_data(self, path):
-        import pandas as pd
-
-        bots = pd.read_csv(os.path.join(path, "Bot.csv"))
-
-        assert bots.shape[0] > 0
-        assert all(bots.type == "Bot")
-        assert "creation_time" in bots
-        assert "worker_id" not in bots  # Anonymous data has worker_id scrubbed
+        sidecar = pd.read_csv(path)
+        assert "participant_id" in sidecar.columns
+        assert "worker_id" in sidecar.columns
+        assert sidecar.shape[0] >= 1
+        assert all(len(str(id_)) > 5 for id_ in sidecar.worker_id)

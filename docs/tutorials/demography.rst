@@ -33,7 +33,7 @@ Goldsmiths Musical Sophistication Index (GMSI)
 ----------------------------------------------
 
 For background information on the GMSI, see https://www.gold.ac.uk/music-mind-brain/gold-msi and
-https://gold-msi.org the latter of which contains an extensive set of resources and also tools which complement the PsyNet's documentation.
+https://shiny.gold-msi.org/gmsi_toplevel/ the latter of which contains an extensive set of resources and also tools which complement the PsyNet's documentation.
 
 Full version
 ++++++++++++

@@ -94,7 +94,28 @@ linkcheck_ignore = [
     r"https://your-app-name\.my-web-server\.com/?",
     # Stable reference page that aggressively rate-limits automated checks.
     r"https://www\.gnu\.org/software/gettext/manual/html_node/Usual-Language-Codes\.html",
+    # ColorBlindnessTest media prefix. Listing the prefix is forbidden;
+    # the plate files under it (e.g. ishihara-1.jpg) are public.
+    r"https://s3\.amazonaws\.com/ishihara-eye-test/jpg/?$",
+    # Citation in format_timedelta; Stack Overflow blocks automated checkers.
+    r"https://stackoverflow\.com/questions/538666/format-timedelta-to-string/?$",
+    # Official Docutils pages; SourceForge blocks automated checkers.
+    r"https://docutils\.sourceforge\.io/docs/user/rst/quickstart\.html$",
+    r"https://docutils\.sourceforge\.io/docs/ref/rst/restructuredtext\.html$",
+    # MPI Aesthetics pages; the server omits the GEANT intermediate cert.
+    r"https://www\.aesthetics\.mpg\.de/en\.html$",
+    r"https://www\.aesthetics\.mpg\.de/en/research/research-group-computational-auditory-perception\.html$",
+    # Gold-MSI Shiny apps; the server omits the Sectigo intermediate cert.
+    r"https://shiny\.gold-msi\.org/gmsiconfigurator/?$",
+    r"https://shiny\.gold-msi\.org/gmsi_toplevel/?$",
 ]
+
+# CI runners occasionally see a healthy host stall past linkcheck_timeout.
+# Sphinx only retries checks whose status is "broken", so timeouts have to be
+# reported as broken for linkcheck_retries to apply to them. This costs no
+# strictness: linkcheck already exits non-zero for timeouts either way.
+linkcheck_report_timeouts_as_broken = True
+linkcheck_retries = 3
 
 # The name of the Pygments (syntax highlighting) style to use.
 pygments_style = "sphinx"

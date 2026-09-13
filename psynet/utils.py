@@ -28,7 +28,6 @@ from bs4 import BeautifulSoup
 from dallinger.config import experiment_available
 from dallinger.heroku.tools import HerokuApp
 from dallinger.recruiters import _descendent_classes
-from flask import url_for
 from flask.globals import current_app
 from flask.templating import Environment, _render
 from sqlalchemy import or_
@@ -38,6 +37,8 @@ from psynet.light_utils import (  # noqa: F401 – re-exported for backwards com
     ExperimentDirectoryNameError,
     _md5_update_from_dir,
     _md5_update_from_file,
+    _update_hash_from_dir,
+    _update_hash_from_file,
     ensure_experiment_directory_name_does_not_conflict,
     get_psynet_root,
     git_command_available,
@@ -371,24 +372,41 @@ def md5_object(x):
     return str(hashed.hexdigest())
 
 
-# MD5 hashing code:
-# https://stackoverflow.com/a/54477583/8454486
+def sha256_object(x):
+    """Return a SHA-256 hex digest of a JSON-pickled object."""
+    string = jsonpickle.encode(x, keys=True).encode("utf-8")
+    return hashlib.sha256(string).hexdigest()
+
+
 def md5_update_from_file(filename: Union[str, Path], hash: Hash) -> Hash:
     """Update *hash* with the contents of *filename* and return it."""
-    _md5_update_from_file(filename, hash)
+    _update_hash_from_file(filename, hash)
     return hash
 
 
 def md5_file(filename: Union[str, Path]) -> str:
     """Return the MD5 hex digest of a single file."""
-    h = hashlib.md5()
-    _md5_update_from_file(filename, h)
-    return h.hexdigest()
+    return str(_update_hash_from_file(filename, hashlib.md5()).hexdigest())
+
+
+def sha256_file(filename: Union[str, Path]) -> str:
+    """Return a SHA-256 hex digest of a file's contents."""
+    return str(_update_hash_from_file(filename, hashlib.sha256()).hexdigest())
+
+
+def sha256_directory(directory: Union[str, Path]) -> str:
+    """Return a SHA-256 hex digest of a directory's names and file contents."""
+    return str(_update_hash_from_dir(directory, hashlib.sha256()).hexdigest())
+
+
+def content_object_path(digest: str) -> str:
+    """Return the canonical relative object path for a content digest."""
+    return f"objects/sha256/{digest}"
 
 
 def md5_update_from_dir(directory: Union[str, Path], hash: Hash) -> Hash:
     """Recursively update *hash* with all non-hidden files under *directory*."""
-    _md5_update_from_dir(directory, hash)
+    _update_hash_from_dir(directory, hash)
     return hash
 
 
@@ -567,12 +585,13 @@ def _render_with_translations(
     app = current_app._get_current_object()  # type: ignore[attr-defined]
     gettext = get_translator()
     pgettext = get_translator(context=True)
+    from psynet.static_resources import versioned_url_for
 
     jinja_functions = {
         **app.jinja_env.globals,
         "gettext": gettext,
         "pgettext": pgettext,
-        "url_for": url_for,
+        "url_for": versioned_url_for,
     }
 
     translation = Translations.load("translations", [locale])
@@ -643,47 +662,63 @@ class TranslationNotFoundError(KeyError):
     pass
 
 
+def is_release_branch():
+    """Return whether the current CI job is on a ``release-*`` branch."""
+    return os.environ.get("CI_COMMIT_REF_NAME", "").startswith("release-")
+
+
+def _tolerate_missing_translation(namespace):
+    """
+    Return whether a missing catalog entry should be downgraded to a warning.
+
+    Package catalogs (e.g. PsyNet's own) are refreshed on the release branch,
+    so feature-branch test runs must not depend on them. Experiment catalogs
+    are owned by the experiment author, so those keep failing loudly.
+    """
+    if namespace == "experiment":
+        return False
+    return bool(os.environ.get("PYTEST_CURRENT_TEST")) and not is_release_branch()
+
+
 def check_translation_is_available(message, context, locale, namespace):
     from . import deployment_info
     from .experiment import get_experiment, in_deployment_package
 
-    args = locals()
-
     is_available = (context, message) in REGISTERED_TRANSLATIONS[namespace][locale]
 
     if not is_available:
-        message = (
-            f"Could not find a translation for message {message!r} in locale = {locale}, context = {context}, namespace = {namespace}. "
+        error_message = (
+            f"Could not find a translation for message {message!r} in locale = {locale}, "
+            f"context = {context}, namespace = {namespace}. "
             "Perhaps the translatable string was not properly captured by `psynet translate`? "
             "To mark a string as translatable, you should write e.g. _('Hello') or _p('welcome message', 'Hello'). "
-            "You cannot rename the functions _ or _p, and you must pass them strings directly, not variables or strings wrapped in parentheses."
+            "You cannot rename the functions _ or _p, and you must pass them strings directly, "
+            "not variables or strings wrapped in parentheses."
         )
         is_live_experiment = (
             in_deployment_package() and deployment_info.read("mode") == "live"
         )
         if is_live_experiment:
-            message += " Since this is a live experiment, we instead presented the untranslated text."
-        else:
-            message += " If this happened in a live experiment, we would default to presenting the untranslated text."
-
-        # We need to actually raise the TranslationNotFoundError here for it to be treated appropriately by report_error.
-        try:
-            raise TranslationNotFoundError(message)
-        except TranslationNotFoundError as e:
-            if is_live_experiment:
+            error_message += " Since this is a live experiment, we instead presented the untranslated text."
+            logger.warning(error_message)
+            try:
+                raise TranslationNotFoundError(error_message)
+            except TranslationNotFoundError as e:
                 get_experiment().report_error(e)
-            else:
-                raise e
-
-
-def report_translation_error(message, context, locale):
-    from psynet.experiment import get_experiment
-
-    exp = get_experiment()
-    error = TranslationNotFoundError(
-        f"Translation not found for message '{message}' (context: {context}) in locale '{locale}'"
-    )
-    exp.report_error(error)
+        elif _tolerate_missing_translation(namespace):
+            error_message += (
+                " The untranslated English text will be shown instead. "
+                f"Catalogs for the {namespace} package are refreshed on the release branch "
+                "with `psynet translate`, so feature-branch tests do not require them "
+                "to be up to date."
+            )
+            logger.warning(error_message)
+        else:
+            error_message += (
+                " If this happened in a live experiment, we would default to presenting "
+                "the untranslated text."
+            )
+            raise TranslationNotFoundError(error_message)
 
 
 def get_translator(
@@ -1240,7 +1275,9 @@ def list_isolated_tests(ci_node_total=None, ci_node_index=None):
         isolated_tests_features,
         isolated_tests_translation,
     ]:
-        tests.extend(glob.glob(str(directory / "*.py")))
+        # Only pytest-discoverable modules; shared helper modules live
+        # alongside the tests and must not be run as empty test files.
+        tests.extend(glob.glob(str(directory / "test_*.py")))
 
     if ci_node_total is not None and ci_node_index is not None:
         tests = with_parallel_ci(tests, ci_node_total, ci_node_index)
@@ -1667,6 +1704,50 @@ def get_experiment_url(app=None, server=None):
 def generate_text_file(path, text="Lorem ipsum"):
     with open(path, "w") as file:
         file.write(text)
+
+
+# SQLAlchemy warns whenever a mapped class is registered under a name it has
+# registered before. PsyNet provokes this deliberately, because it executes
+# ``experiment.py`` more than once per process: Dallinger's config loader
+# imports it to read the experiment's extra parameters, and commands such as
+# ``psynet debug`` and ``psynet deploy`` load it again from the directory staged
+# for the server. Each execution redeclares the same mapped classes, so any
+# experiment that defines a Trial subclass or a custom table sees these
+# warnings. They name PsyNet's own reloading rather than anything an
+# experimenter can act on.
+#
+# Retiring the previous entries instead, through ``registry._dispose_cls`` and
+# the base mapper's ``polymorphic_map``, does not work: a load boundary cannot
+# tell whether the module is about to be executed again, because ``sys.modules``
+# often already holds it. Removing entries up front therefore unregisters
+# classes that stay live, which breaks string-based ``relationship()`` targets
+# and makes loading a row fail with "No such polymorphic_identity is defined".
+_EXPERIMENT_REDECLARATION_WARNINGS = (
+    "This declarative base already contains a class",
+    "Reassigning polymorphic association",
+)
+
+
+@contextlib.contextmanager
+def loading_experiment_classes():
+    """Suppress SQLAlchemy warnings about redeclaring the experiment's classes.
+
+    Wrap any call that may execute ``experiment.py``. Other warnings raised
+    while loading the experiment are left alone.
+    """
+
+    import warnings
+
+    from sqlalchemy.exc import SAWarning
+
+    with warnings.catch_warnings():
+        for message in _EXPERIMENT_REDECLARATION_WARNINGS:
+            warnings.filterwarnings(
+                "ignore",
+                message=f"{re.escape(message)}.*",
+                category=SAWarning,
+            )
+        yield
 
 
 def patch_yaspin_jupyter_detection():

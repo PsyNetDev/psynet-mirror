@@ -69,22 +69,7 @@ Flag:
 - Run focused tests for changed areas when practical.
 - If tests cannot run, say why and state the residual risk.
 
-## 6) Check the merge request description
-
-If the branch has an open merge request, verify that its description is
-up to date with the actual branch diff:
-
-- Fetch it with `glab api projects/PsyNetDev%2FPsyNet/merge_requests/<iid>`
-  (find the IID with `glab mr list --source-branch <branch>` if needed).
-- Compare each section (Motivation, Summary of changes, Behavior changes,
-  Testing, Automatic code review) against the reviewed diff. Look for
-  stale claims: changes that were later reverted or reworked, CI/test
-  statements that no longer hold, and new commits not yet reflected.
-- If the description is stale, update it (with the user's approval) via
-  `glab mr update <iid> --description ...`, or list the needed corrections
-  in the review report.
-
-## 7) Report format
+## 6) Report format
 
 Present findings first, ordered by severity.
 
@@ -96,3 +81,20 @@ Use this structure:
 4. Residual risks / assumptions
 
 Keep summaries brief and make the primary feedback actionable.
+
+## 7) Update the merge request
+
+Always update the open merge request title and description to match the committed
+branch diff. Do this even if the current title or description looks close.
+
+- Find the MR: `glab mr view --output json` or
+  `glab api projects/PsyNetDev%2FPsyNet/merge_requests/<iid>`
+  (find the IID with `glab mr list --source-branch <branch>` if needed).
+- Title: a concise, accurate summary of the committed change.
+- Description: follow `.gitlab/merge_request_templates/Default.md` and keep
+  every section current (Motivation, Summary of changes, Behavior changes,
+  Testing, Automatic code review). Compare each section against the reviewed
+  diff. Look for stale claims: changes that were later reverted or reworked,
+  CI/test statements that no longer hold, and new commits not yet reflected.
+- Record that `/branch-review` was run in **Automatic code review**.
+- If no merge request exists, say so and skip this step.

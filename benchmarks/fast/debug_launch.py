@@ -8,7 +8,6 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 
-
 # These generated files are deliberately not used by the experiment itself.
 # They represent bundled stimuli or other static resources that launch and
 # deployment tooling must still scan, copy, and package; historically, large
@@ -21,15 +20,15 @@ _STATIC_FILE_PROFILES = {
 
 # Used only when the installed PsyNet lacks scaffold_paths_required_for_local_run
 # (ASV continuous can compare against older commits). Keep aligned with today's
-# ``_TEMPLATE_FILES_REQUIRED_FOR_LOCAL_RUN`` + ``docker``.
+# ``_TEMPLATE_FILES_REQUIRED_FOR_LOCAL_RUN``.
 _LEGACY_LOCAL_RUN_SCAFFOLD_PATHS = frozenset(
     {
         ".gitignore",
         ".python-version",
         "Dockerfile",
         "config.txt",
+        "deploy.toml",
         "test.py",
-        "docker",
     }
 )
 

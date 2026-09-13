@@ -77,3 +77,12 @@ If you want to keep the per-process JSON files, provide ``--sql-profile-dir``:
 When no directory is provided, PsyNet uses a temporary directory. The directory
 is cleaned up only when no persistent output is requested (for example,
 text-only output); it is kept when writing HTML or JSON reports.
+
+Developer investigation notes
+-----------------------------
+
+Framework contributors should also read the
+:doc:`SQLAlchemy performance investigation notes <../developer/sqlalchemy_performance>`.
+They record profiling methodology, retained optimization patterns, approaches
+that were considered but rejected, and conditions for revisiting those
+decisions.

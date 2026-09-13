@@ -1,5 +1,7 @@
 # Agent instructions
 
+On Windows, develop in WSL (Ubuntu) using Linux commands. Native Windows is not supported.
+
 Start by following `psynet/resources/experiment_scripts/AGENTS.md`.
 
 Then act on the following PsyNet developer instructions:
@@ -186,6 +188,12 @@ record that explicitly in the merge request description.
 ## Merge request descriptions
 
 Use `.gitlab/merge_request_templates/Default.md` as the template.
+Write for experiment authors, not only for maintainers: prefer plain language
+over internal jargon, and include short code examples when the change affects
+a public API or migration.
+
+When running `/branch-review`, always update the merge request title and
+description so they match the committed branch diff.
 
 ## CLI development
 
@@ -199,6 +207,15 @@ whether package functionality or behavior can be simplified instead. Prefer
 solutions that avoid unnecessary code growth, remove obsolete code, or reuse
 existing abstractions, and call out promising refactoring opportunities to the
 user when they are relevant.
+
+## Framework improvements
+
+When developing or documenting a workflow, identify missing PsyNet abstractions
+that make experiment code override private methods, repeat framework
+bookkeeping, or use public hooks for unintended purposes. Propose a framework
+improvement alongside the experiment-level workflow and clearly distinguish it
+from APIs that already exist. If the user approves the proposal, implement it
+with focused tests and update the workflow to use the new public interface.
 
 ## Testing
 
@@ -216,6 +233,7 @@ observable behavior rather than internal implementation details.
 - Prefer marking module-internal helper functions with a leading underscore. Keep public-looking names for functions that are intended to be imported or called from outside the module.
 - When adding a feature that operates heavily within a module and that module lacks an explanatory module docstring, add one. The docstring should explain why the module exists, the important design constraints, and how maintainers should interact with it. When you add such a docstring, explicitly suggest that the user reviews it.
 - When adding or changing documentation, use Sphinx-native cross references for internal documentation and API links. Prefer roles such as `:doc:`, `:ref:`, `:class:`, `:func:`, and `:meth:` over raw relative `.html` links so links remain valid across builders and directory moves. If a URL must be ignored by linkcheck, keep the ignore pattern as narrow as possible and document why.
+- After editing a skill or a docs page, review it as described in `.cursor/skills/create-skill/SKILL.md` (section "After writing").
 
 ## Error handling policy
 
@@ -259,4 +277,13 @@ When you make changes to the PsyNet codebase:
 
    If pre-commit is not installed, install it first with `pip3 install pre-commit`.
 
-3. **Commit and push**: Commit all changes including changelog fragments (but not a regenerated `CHANGELOG.md`) and any pre-commit formatting fixes.
+3. **Do not update package catalogs**: Merge requests should not edit
+   `psynet/locales` (`.po` / `.pot` files). Refresh them on the release
+   branch with `psynet translate`, where `test_psynet_translations_up_to_date`
+   runs. Until then a missing PsyNet catalog entry falls back to English with
+   a warning during test runs; `psynet debug` and experiment-owned catalogs
+   still raise. Tests that pin translated PsyNet copy should use
+   `is_release_branch()` from `psynet.utils`, or `release_branch_only` from
+   `psynet.pytest_psynet`.
+
+4. **Commit and push**: Commit all changes including changelog fragments (but not a regenerated `CHANGELOG.md`) and any pre-commit formatting fixes.

@@ -1,5 +1,8 @@
-<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" xmlns="http://www.w3.org/1999/html">
-
+{# Split into head() and body() so that callers can place each part in a valid
+   position. Emitting the markup below directly would end <head> early. #}
+{% macro head() %}
+{# The viewport meta lives in macros/head.html, so that pages which do not run
+   browser detection get one too. #}
 <style>
     #browser-compatibility-modal .modal-dialog {
         overflow-y: initial !important;
@@ -131,10 +134,10 @@
 
 </style>
 
-<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
-<link rel="icon" type="image/png" href="/static/favicon.png">
-<script src="/static/scripts/platform.min.js"></script>
-<script src="/static/scripts/detectIncognito.min.js"></script>
+<link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
+<script src="{{ url_for('static', filename='scripts/platform.min.js') }}"></script>
+<script src="{{ url_for('static', filename='scripts/detectIncognito.min.js') }}"></script>
 
 <script>
     var browser = (function () {
@@ -438,6 +441,7 @@
     })();
 
 </script>
+{% endmacro %}
 
 
 {% macro svg(id, viewbox, content, class_name="small_icon", width=none, height=none, fill="currentColor") %}
@@ -543,6 +547,7 @@
 
 
 
+{% macro body() %}
 <div id="hidden-svgs" style="display:none">
     {{ download_chrome_icon() }}
     {{ link_icon() }}
@@ -559,7 +564,7 @@
     <div class="modal" tabindex="-1" style="display:block">
         <div class="modal-body">
             <div class="container">
-                <img id="adlogo" class="my-3" src="/static/images/logo.svg" alt="PsyNet logo"
+                <img id="adlogo" class="my-3" src="{{ url_for('static', filename='images/logo.svg') }}" alt="PsyNet logo"
                      style="width: 150px; float: none;">
                 <div class="alert alert-danger" role="alert">
                     {{ pgettext('browser_compatibility', 'This site requires JavaScript to function properly.') }}
@@ -632,3 +637,4 @@
         </div>
     </div>
 </div>
+{% endmacro %}

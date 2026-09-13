@@ -1,33 +1,102 @@
 """Tests for Dallinger lower-bound resolution from pyproject / metadata."""
 
 import re
+import tomllib
 from pathlib import Path
 
 import pytest
-import tomllib
 
 from psynet.dallinger_dependency import (
     dallinger_constraints_github_ref,
     dallinger_lower_bound_from_pyproject,
-    supported_dallinger_lower_bound,
 )
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_lower_bound_from_pyproject_matches_experiment_extra():
+def test_github_ref_tracks_declared_dallinger_dependency():
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     declared = next(
         dep
         for dep in pyproject["project"]["optional-dependencies"]["experiment"]
         if dep.startswith("dallinger[")
     )
-    expected = re.search(r">=(\d+\.\d+\.\d+)", declared).group(1)
-
+    ref = dallinger_constraints_github_ref()
+    sha = re.search(r"Dallinger\.git@([0-9a-f]{40})", declared)
+    if sha:
+        assert ref == sha.group(1)
+        with pytest.raises(ValueError, match="lower-bound version"):
+            dallinger_lower_bound_from_pyproject(ROOT / "pyproject.toml")
+        return
     version = dallinger_lower_bound_from_pyproject(ROOT / "pyproject.toml")
-    assert version == expected
-    assert dallinger_constraints_github_ref() == f"v{expected}"
-    assert supported_dallinger_lower_bound() == version
+    assert ref == f"v{version}"
+    assert version in declared
+
+
+def test_github_ref_uses_git_sha_pin(tmp_path, monkeypatch):
+    from psynet import dallinger_dependency
+
+    sha = "0123456789abcdef0123456789abcdef01234567"
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text(
+        f"""
+[project]
+dependencies = []
+[project.optional-dependencies]
+experiment = ["dallinger[docker] @ git+https://github.com/Dallinger/Dallinger.git@{sha}"]
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        dallinger_dependency, "_default_pyproject_path", lambda: pyproject
+    )
+    assert dallinger_constraints_github_ref() == sha
+    assert dallinger_constraints_github_ref(pyproject) == sha
+    with pytest.raises(ValueError, match="lower-bound version"):
+        dallinger_lower_bound_from_pyproject(pyproject)
+
+
+def test_github_ref_uses_git_sha_from_installed_metadata(tmp_path, monkeypatch):
+    """Wheels have no pyproject.toml; SHA pins must still come from Requires-Dist."""
+    from psynet import dallinger_dependency
+
+    sha = "0123456789abcdef0123456789abcdef01234567"
+    monkeypatch.setattr(
+        dallinger_dependency,
+        "_default_pyproject_path",
+        lambda: tmp_path / "missing.toml",
+    )
+    monkeypatch.setattr(
+        dallinger_dependency,
+        "requires",
+        lambda name: [
+            "click",
+            (
+                "dallinger[docker] @ "
+                f"git+https://github.com/Dallinger/Dallinger.git@{sha} "
+                "; extra == 'experiment'"
+            ),
+        ],
+    )
+    assert dallinger_constraints_github_ref() == sha
+
+
+def test_github_ref_uses_version_bound_from_installed_metadata(tmp_path, monkeypatch):
+    from psynet import dallinger_dependency
+
+    monkeypatch.setattr(
+        dallinger_dependency,
+        "_default_pyproject_path",
+        lambda: tmp_path / "missing.toml",
+    )
+    monkeypatch.setattr(
+        dallinger_dependency,
+        "requires",
+        lambda name: [
+            'dallinger[docker] (>=12.2.0,<13) ; extra == "experiment"',
+        ],
+    )
+    assert dallinger_constraints_github_ref() == "v12.2.0"
 
 
 def test_lower_bound_from_pyproject_rejects_git_url(tmp_path):
@@ -95,10 +164,10 @@ experiment = ["dallinger[docker]>=12.3.0,<13"]
     )
     monkeypatch.setattr(
         dallinger_dependency,
-        "_lower_bound_from_installed_metadata",
-        lambda: pytest.fail("source checkout should not consult stale metadata"),
+        "requires",
+        lambda name: pytest.fail("source checkout should not consult stale metadata"),
     )
-    assert supported_dallinger_lower_bound() == "12.3.0"
+    assert dallinger_constraints_github_ref() == "v12.3.0"
 
 
 def test_requirement_match_does_not_accept_similarly_named_distribution(tmp_path):

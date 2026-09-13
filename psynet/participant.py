@@ -23,6 +23,7 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
+    Text,
     UniqueConstraint,
     desc,
 )
@@ -36,7 +37,7 @@ from psynet.timeline import Page
 
 from .asset import AssetParticipant
 from .data import SQLMixinDallinger
-from .field import PythonList, PythonObject, extra_var
+from .field import PythonDict, PythonList, PythonObject
 from .utils import (
     NoArgumentProvided,
     call_function_with_context,
@@ -46,6 +47,130 @@ from .utils import (
 )
 
 logger = get_logger()
+
+BONUS_STATUS_NOT_DUE_YET = "not_due_yet"
+BONUS_STATUS_UNCONFIRMED = "unconfirmed"
+BONUS_STATUS_SUCCESS = "success"
+BONUS_STATUS_DISMISSED = "dismissed"
+BONUS_STATUS_CAPPED = "capped"
+
+SETTLED_BONUS_STATUSES = frozenset(
+    {
+        BONUS_STATUS_SUCCESS,
+        BONUS_STATUS_DISMISSED,
+        BONUS_STATUS_CAPPED,
+    }
+)
+
+_BONUS_STATUS_LABELS = {
+    BONUS_STATUS_NOT_DUE_YET: "Not due yet",
+    BONUS_STATUS_UNCONFIRMED: "Unconfirmed",
+    BONUS_STATUS_SUCCESS: "Success",
+    BONUS_STATUS_DISMISSED: "Dismissed",
+    BONUS_STATUS_CAPPED: "Capped",
+}
+
+
+def display_bonus_status(participant) -> str:
+    """Experimenter-facing bonus outcome.
+
+    ``Unconfirmed`` means PsyNet meant to pay and cannot tell if the
+    bonus arrived. ``Success`` is what PsyNet recorded, not a Prolific
+    receipt. ``Dismissed`` and ``Capped`` mean we will not post again.
+    """
+    stored = getattr(participant, "bonus_status", None)
+    return _BONUS_STATUS_LABELS.get(stored, "Not due yet")
+
+
+def bonus_is_settled(participant) -> bool:
+    """True when PsyNet will not automatically post a bonus for this person."""
+    return getattr(participant, "bonus_status", None) in SETTLED_BONUS_STATUSES
+
+
+def bonus_needs_review(participant) -> bool:
+    """True when the automatic bonus POST is unconfirmed on an external recruiter."""
+    if getattr(participant, "bonus_status", None) != BONUS_STATUS_UNCONFIRMED:
+        return False
+    recruiter = getattr(participant, "recruiter", None)
+    if recruiter is None:
+        return True
+    return recruiter.has_external_bonus_payment()
+
+
+def bonus_transfer_already_claimed(participant) -> bool:
+    """True when PsyNet will not automatically POST a bonus again.
+
+    Settled statuses skip a repeat transfer. ``unconfirmed`` also skips,
+    including on local recruiters that are not listed for dashboard review.
+    """
+    return bonus_is_settled(participant) or (
+        getattr(participant, "bonus_status", None) == BONUS_STATUS_UNCONFIRMED
+    )
+
+
+NO_BONUS_ATTEMPT_RESULT = "No result recorded from the pay request."
+BONUS_PAY_IN_PROGRESS = "Bonus pay is in progress."
+
+
+def platform_base_unpaid(participant) -> bool:
+    """True when the platform did not pay the study base PsyNet had decided."""
+    return bool(getattr(participant, "platform_base_unpaid", False))
+
+
+def record_platform_base_unpaid(participant, detail: str) -> None:
+    """Record that the platform refused the study base PsyNet had decided.
+
+    The recorded ``base_payment`` is left alone. ``amount_spent()`` is a
+    reservation figure rather than a receipts figure, so keeping the base
+    reserved is the conservative choice for spend caps: the money is still
+    owed, and a researcher may yet settle the submission on the platform.
+
+    ``platform_base_unpaid`` is the work queue for the recurring retry
+    (see ``needing_platform_base_retry``). The detail is a diagnostic for
+    the Participants dashboard, not a payment status.
+    """
+    participant.platform_base_unpaid = True
+    participant.platform_base_unpaid_detail = detail
+
+
+def clear_platform_base_unpaid(participant) -> None:
+    """Record that the platform has paid the study base after all."""
+    participant.platform_base_unpaid = None
+    participant.platform_base_unpaid_detail = None
+    participant.platform_base_retry_count = None
+
+
+def record_platform_base_retry(participant) -> int:
+    """Count one failed attempt to make the platform pay the study base."""
+    attempts = (participant.platform_base_retry_count or 0) + 1
+    participant.platform_base_retry_count = attempts
+    return attempts
+
+
+def stop_platform_base_retries(participant, detail: str, *, attempts: int) -> None:
+    """Stop retrying an unpaid study base, leaving the reason on the participant.
+
+    ``attempts`` is stored as the retry count so the participant drops out
+    of ``needing_platform_base_retry``. This is how a permanently refused
+    base stops consuming platform requests once a human has to take over.
+    """
+    participant.platform_base_unpaid = True
+    participant.platform_base_retry_count = attempts
+    participant.platform_base_unpaid_detail = detail
+
+
+def review_bonus_pay_in_progress(participant) -> bool:
+    """True when dashboard Pay has claimed this retry and not yet finished."""
+    return getattr(participant, "bonus_attempt_detail", None) == BONUS_PAY_IN_PROGRESS
+
+
+def record_bonus_attempt_detail(participant, detail: str) -> None:
+    """Store a diagnostic about the last bonus pay attempt.
+
+    This is not a payment status. Unconfirmed still means we do not know
+    whether money moved.
+    """
+    participant.bonus_attempt_detail = detail
 
 
 def _extract_server_error_details(response_text):
@@ -95,7 +220,6 @@ if TYPE_CHECKING:
 
 # pylint: disable=unused-import
 
-UniqueConstraint(dallinger.models.Participant.worker_id)
 UniqueConstraint(dallinger.models.Participant.unique_id)
 
 
@@ -164,10 +288,13 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         once they hit a :class:`~psynet.timeline.SuccessfulEndPage`.
         Should not be modified directly.
 
-    aborted : bool
-        Whether the participant has aborted the experiment.
-        A participant is considered to have aborted the experiment
-        once they have hit the "Abort experiment" button on the "Abort experiment" confirmation page.
+    early_exited : bool
+        Whether the participant's session ended through an early-exit plan,
+        either after they confirmed Leave or during automatic error recovery.
+
+    exit_plan : dict or None
+        The server-owned :class:`~psynet.exit.ExitPlan` snapshot for this
+        participant's terminal outcome.
 
     answer : object
         The most recent answer submitted by the participant.
@@ -219,7 +346,6 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
 
     # We set the polymorphic_identity manually to differentiate the class
     # from the Dallinger Participant class.
-    __extra_vars__ = {}
 
     _in_advance_page = False
 
@@ -241,7 +367,8 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
 
     page_uuid = Column(String)
     page_count = Column(Integer)
-    aborted = Column(Boolean)
+    early_exited = Column(Boolean)
+    exit_plan = Column(PythonDict)
     complete = Column(Boolean)
     pending_redirect = Column(String)
     answer = Column(PythonObject)
@@ -253,7 +380,22 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
 
     base_payment = Column(Float)
     performance_reward = Column(Float)
-    unpaid_bonus = Column(Float)
+    # Planned Prolific top-up from ``decide_payment`` (after per-participant
+    # clip). If hard-capped, this stays the decided amount so the cut is
+    # visible against delivered ``bonus``.
+    planned_bonus = Column(Float)
+    # not_due_yet | unconfirmed | success | dismissed | capped
+    bonus_status = Column(String)
+    # Diagnostic from the last bonus pay attempt; not a payment status.
+    bonus_attempt_detail = Column(Text)
+    # True when the platform refused to pay the decided study base (for
+    # example a failed Prolific COMPLETE). Work queue for the retry.
+    platform_base_unpaid = Column(Boolean)
+    # Reason shown on the Participants dashboard; not a payment status.
+    platform_base_unpaid_detail = Column(Text)
+    # Failed attempts by the recurring check to get that base paid.
+    platform_base_retry_count = Column(Integer)
+    issued_completion_code_type = Column(String)
     total_wait_page_time = Column(Float)
     client_ip_address = Column(String, default=lambda: "")
     answer_is_fresh = Column(Boolean, default=False)
@@ -262,7 +404,7 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
     module_state = relationship(
         "ModuleState", foreign_keys=[module_state_id], post_update=True, lazy="selectin"
     )
-    current_trial_id = Column(Integer, ForeignKey("info.id"))
+    current_trial_id = Column(Integer, ForeignKey("trial.id"))
     _current_trial = relationship(
         "psynet.trial.main.Trial", foreign_keys=[current_trial_id], lazy="joined"
     )
@@ -360,8 +502,8 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
     # )
 
     # current_trial_id = Column(
-    #     Integer, ForeignKey("info.id")
-    # )  # 'info.id' because trials are stored in the info table
+    #     Integer, ForeignKey("trial.id")
+    # )  # trials are stored in the trial table
 
     # This should work but it's buggy, don't know why.
     # current_trial = relationship(
@@ -477,16 +619,14 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         )
 
     @property
-    @extra_var(__extra_vars__)
-    def aborted_modules(self):
+    def early_exited_modules(self):
         return [
             log.module_id
             for log in sorted(self._module_states, key=lambda x: x.time_started)
-            if log.aborted
+            if log.early_exited
         ]
 
     @property
-    @extra_var(__extra_vars__)
     def started_modules(self):
         return [
             log.module_id
@@ -495,7 +635,6 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         ]
 
     @property
-    @extra_var(__extra_vars__)
     def finished_modules(self):
         return [
             log.module_id
@@ -559,7 +698,6 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         return self.module_state is not None
 
     @property
-    @extra_var(__extra_vars__)
     def module_id(self):
         if self.module_state:
             return self.module_state.module_id
@@ -571,7 +709,8 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
     def __init__(self, experiment, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.page_count = 0
-        self.aborted = False
+        self.early_exited = False
+        self.exit_plan = None
         self.complete = False
         self.vars = {}
         self.time_credit = 0.0
@@ -589,7 +728,13 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         self.sequences = []
         self.complete = False
         self.performance_reward = 0.0
-        self.unpaid_bonus = 0.0
+        self.planned_bonus = 0.0
+        self.bonus_status = BONUS_STATUS_NOT_DUE_YET
+        self.bonus_attempt_detail = None
+        self.platform_base_unpaid = None
+        self.platform_base_unpaid_detail = None
+        self.platform_base_retry_count = None
+        self.issued_completion_code_type = None
         self.base_payment = experiment.base_payment
         self.client_ip_address = None
         self.branch_log = []
@@ -604,6 +749,57 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
 
     def initialize(self, experiment):
         pass
+
+    @property
+    def bonus_status_label(self):
+        """Experimenter-facing bonus outcome. See ``display_bonus_status``."""
+        return display_bonus_status(self)
+
+    @property
+    def bonus_needs_review(self):
+        """True when the automatic bonus POST is unconfirmed on an external recruiter."""
+        return bonus_needs_review(self)
+
+    @classmethod
+    def needing_payment_review(cls):
+        """Participants whose automatic bonus transfer is unconfirmed.
+
+        PsyNet already used its one automatic platform bonus POST (or was
+        interrupted while doing so). Local recruiters such as HotAir are
+        omitted: they have no external platform to review. Open the
+        participant on the Participants dashboard to compare with the
+        platform, then pay or dismiss.
+        """
+        return [
+            participant
+            for participant in cls.query.filter_by(
+                bonus_status=BONUS_STATUS_UNCONFIRMED
+            )
+            .order_by(cls.id.asc())
+            .all()
+            if participant.recruiter.has_external_bonus_payment()
+        ]
+
+    @classmethod
+    def needing_platform_base_retry(cls, *, max_attempts: int):
+        """Participants whose unpaid study base the next check should retry.
+
+        ``platform_base_unpaid`` plus fewer than ``max_attempts`` failed
+        retries. The bound exists so a permanently refused row (wrong
+        code, returned, rejected) eventually stops consuming platform
+        requests and the researcher is asked to take over.
+        """
+        return (
+            cls.query.filter(
+                cls.platform_base_unpaid.is_(True),
+                (
+                    (cls.platform_base_retry_count.is_(None))
+                    | (cls.platform_base_retry_count < max_attempts)
+                ),
+            )
+            .order_by(cls.id.asc())
+            .all()
+        )
 
     @property
     def locale(self):
@@ -625,7 +821,7 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
     @property
     def time_reward(self):
         wage_per_hour = get_config().get("wage_per_hour")
-        seconds = self.time_credit
+        seconds = self.time_credit or 0.0
         hours = seconds / 3600
         return hours * wage_per_hour
 
@@ -637,7 +833,7 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
             The reward as a ``float``.
         """
         return round(
-            self.time_reward + self.performance_reward,
+            self.time_reward + (self.performance_reward or 0.0),
             ndigits=2,
         )
 
@@ -760,21 +956,7 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         self.failure_tags = combined
         return self
 
-    def abort_info(self):
-        """
-            Information that will be shown to a participant if they click the abort button,
-            e.g. in the case of an error where the participant is unable to finish the experiment.
-
-        :returns: ``dict`` which may be rendered to the worker as an HTML table
-            when they abort the experiment.
-        """
-        return {
-            "assignment_id": self.assignment_id,
-            "hit_id": self.hit_id,
-            "accumulated_reward": "$" + "{:.2f}".format(self.calculate_reward()),
-        }
-
-    def fail(self, reason=None):
+    def fail(self, reason=None, *, redirect_to_end=True):
         """
         Mark this participant as failed.
 
@@ -794,6 +976,10 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         ----------
         reason : str, optional
             Failure tag to append, for example ``"premature_exit"``.
+        redirect_to_end : bool, optional
+            Whether to enter the unsuccessful-end timeline branch. Error
+            recovery sets this to ``False`` because its exit plan owns the
+            terminal handoff.
         """
         if self.failed:
             logger.info("Participant %i already failed, not failing again.", self.id)
@@ -833,7 +1019,8 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         for group in list(self.active_sync_groups.values()):
             group.remove_participant(self)
 
-        self._redirect_to_unsuccessful_end(exp)
+        if redirect_to_end:
+            self._redirect_to_unsuccessful_end(exp)
 
     def _fail_incomplete_trials(self, reason):
         """Fail this participant's unfinished trials.
@@ -1226,10 +1413,10 @@ class ParticipantDriver:
             participant = Participant.query.get(self.id)
             return participant.get_current_page()
 
-    def fail(self, reason=None):
+    def fail(self, reason=None, *, redirect_to_end=True):
         with transaction(commit=True):
             participant = Participant.query.get(self.id)
-            participant.fail(reason)
+            participant.fail(reason, redirect_to_end=redirect_to_end)
 
     def from_db(self, attr: str):
         with transaction(commit=False):

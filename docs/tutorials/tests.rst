@@ -148,8 +148,8 @@ together.
             bots[1].take_page()
             advance_past_wait_pages(bots)
 
-            assert "That's the end of the experiment!" in bots[0].current_page_text
-            assert "That's the end of the experiment!" in bots[1].current_page_text
+            assert "That's the end!" in bots[0].current_page_text
+            assert "That's the end!" in bots[1].current_page_text
 
 
 Parallel testing
@@ -206,91 +206,18 @@ Then you invoke ``psynet test``, similar to before but with ``ssh`` instead of `
 Front-end tests
 ---------------
 
-The tests described above focus on testing the back-end logic of your
-PsyNet experiment. They catch errors to do with the instantiation of pages,
-the running of code blocks, the growing of networks, and so on.
-They do not catch logic to do with the front-end display of your
-experiment. Writing such tests is more complicated, and we haven't
-provided a tutorial for this yet; however, if you are interested in writing
-your own such tests, please have a look at corresponding tests in the
-PsyNet source code, for example ``test_demo_timeline.py`` and
-``test_demo_static.py``.
+``psynet test local`` runs bots. They catch errors in page instantiation,
+code blocks, networks, and recorded answers. They do not render a browser
+layout, so they cannot tell you whether a page scrolls, whether a control
+sits behind the footer, or whether content is wider than the window.
 
-The front-end testing patterns mentioned above (e.g. ``test_demo_timeline.py`` and ``test_demo_static.py``)
-have certain restrictions, most notably that they do not test concurrency.
-To bypass these restrictions, some PsyNet users have found it useful to write custom Selenium tests.
-Here is a minimal example of a custom Selenium test (provided without warranty) that could be extended
-to test multiple concurrent users, which you would run by executing ``python3 bot.py --app test-app``.
-Thanks Pol van Rijn for this example!
+Checking those things means driving a real browser, normally with Playwright,
+and keeping the walk with the experiment as ``tests/participant-flow.spec.js``.
+Every participant page exposes ``psynetLayout.check()``, which reports the
+layout violations it can find on the page as rendered.
 
-.. code-block:: python
-
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--app", help="Enter app name here", required=True)
-    parser.add_argument("--headless", default=1, type=int, help="Headless")
-    args = parser.parse_args()
-
-    from selenium import webdriver
-    from selenium.webdriver.common.action_chains import ActionChains
-    import random
-    import time
-    import os
-    import psycopg2
-
-    chrome_options = webdriver.ChromeOptions()
-    chrome_options.add_argument('--disable-extensions')
-
-    if args.headless == 1:
-        chrome_options.add_argument('--headless')
-    chrome_options.add_argument("--disable-plugins-discovery")
-    driver = webdriver.Chrome('/usr/local/bin/chromedriver', chrome_options=chrome_options)
-    driver.delete_all_cookies()
-    driver.set_window_size(800,800)
-    driver.set_window_position(0,0)
-    APP_NAME = args.app
-    credentials = os.popen('heroku pg:credentials:url -a dlgr-%s' % APP_NAME).read().split('\n')[2].lstrip()[1:-1].split(' ')
-    creds = dict([c.split('=') for c in credentials])
-
-    # Remove fingerprint_hash
-    conn = psycopg2.connect(dbname=creds['dbname'], user=creds['user'], password=creds['password'], host=creds['host'])
-    with conn:
-        with conn.cursor() as cur:
-            cur.execute('select id,fingerprint_hash from participant')
-            for id, fingerprint_hash in cur.fetchall():
-               cur.execute('UPDATE "public"."participant" SET "fingerprint_hash"=NULL WHERE "id"=%d' % id)
-    conn.close()
-    hash = random.getrandbits(16)
-    recruitment = 'https://dlgr-%s.herokuapp.com/ad?recruiter=hotair&assignmentId=%s&hitId=%s&workerId=%s&mode=debug' % (APP_NAME, hash, hash, hash)
-    driver.get(recruitment)
-
-    # Begin experiment
-    driver.find_element_by_xpath('//*[@id="begin-button"]').click()
-
-    # Move to popup
-    window_after = driver.window_handles[1]
-    driver.switch_to_window(window_after)
-
-    # Accept consent 1 and 2
-    driver.execute_script("next_consent_page();")
-    driver.execute_script("window.location='/start?';")
-    time.sleep(10)
-    while True:
-        try:
-            next_btn = driver.find_element_by_xpath('//*[@id="next_button"]')
-            status = next_btn.get_attribute('disabled')
-            if status is None:
-                next_btn.click()
-            else:
-                slider = driver.find_element_by_id("sliderpage_slider")
-                move = ActionChains(driver)
-                offset = random.randint(0, 500)
-                if random.randint(0, 1) == 0:
-                    offset = offset * -1
-                move.click_and_hold(slider).move_by_offset(offset, 0).release().perform()
-            time.sleep(2)
-        except:
-            print('Finished')
-            driver.close()
-            break
+For the current recipe, including which viewports to check and how to wait for
+a page to be ready, see the "Layout checks" section of
+``.cursor/skills/psynet/playwright-testing/SKILL.md``, which
+``psynet scripts update`` installs in your experiment directory.
 

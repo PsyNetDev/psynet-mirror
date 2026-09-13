@@ -116,6 +116,7 @@ AUTHORED_TEST_EXPERIMENT_FILENAMES = {
     "experiment.py",
     "requirements.txt",
     "utils.py",
+    "local_helper.py",
     "test_imports.py",
     "debug.sh",
     "shell.sh",
@@ -348,7 +349,7 @@ def test_scaffold_missing_files_restores_preexisting_tree(tmp_path):
     with working_directory(tmp_path):
         with scaffold_missing_files():
             assert Path("test.py").exists()
-            assert Path("docker/run").exists()
+            assert Path("docker/custom").exists()
             Path("static/assets").mkdir(parents=True)
 
     assert (tmp_path / "config.txt").read_text() == "[Custom]\nvalue = true\n"
@@ -405,14 +406,15 @@ def test_prune_include_modified_deletes_untracked_readme(tmp_path):
         assert Path("experiment.py").exists()
 
 
-def test_prune_keeps_tracked_docker_directory_by_default(tmp_path):
+def test_prune_preserves_custom_docker_helpers(tmp_path):
     experiment_dir = tmp_path / "standalone"
     experiment_dir.mkdir()
     with working_directory(experiment_dir):
         Path("experiment.py").write_text("class Exp:\n    pass\n")
         Path("requirements.txt").write_text("psynet\n")
         Path("docker").mkdir()
-        Path("docker/psynet").write_text("# Tracked\n")
+        Path("docker/psynet").write_text("# Tracked helper\n")
+        Path("docker/custom").write_text("# Tracked custom\n")
         subprocess.run(["git", "init", "-q"], check=True)
         subprocess.run(["git", "add", "-A"], check=True)
         subprocess.run(
@@ -429,12 +431,12 @@ def test_prune_keeps_tracked_docker_directory_by_default(tmp_path):
             check=True,
         )
         scaffold_experiment_directory()
-        Path("docker/psynet").write_text("# Tracked\n")
 
         result = prune_experiment_scaffold(include_modified=True)
 
-    assert "docker" in result["preserved_tracked"]
-    assert (experiment_dir / "docker/psynet").read_text() == "# Tracked\n"
+    assert "docker" not in result["preserved_tracked"]
+    assert (experiment_dir / "docker" / "psynet").read_text() == "# Tracked helper\n"
+    assert (experiment_dir / "docker" / "custom").read_text() == "# Tracked custom\n"
     assert not (experiment_dir / "Dockerfile").exists()
 
 
@@ -558,6 +560,22 @@ def _run_command(args, cwd: Path, *, env_updates=None):
     )
 
 
+def _test_local_after_policy_review(experiment_dir, env_updates=None):
+    """Run ``psynet test local`` through the one-shot deploy.toml review pause.
+
+    Scaffolding an experiment leaves a policy-review marker, so the first launch
+    stops and asks the author to inspect the deployment plan. Automation reruns
+    the command, which is what an author does after reviewing.
+    """
+    command = ["psynet", "test", "local"]
+    first = _run_command(command, experiment_dir, env_updates=env_updates)
+    if first.returncode == 0:
+        return first
+    combined = first.stdout + first.stderr
+    assert "created a new deploy.toml" in combined, combined
+    return _run_command(command, experiment_dir, env_updates=env_updates)
+
+
 def test_empty_directory_scaffold_git_init_and_test_local(tmp_path):
     """Standalone Workflow A: empty dir → scaffold → git init → test local."""
     experiment_dir = tmp_path / "my_experiment"
@@ -580,13 +598,23 @@ def test_empty_directory_scaffold_git_init_and_test_local(tmp_path):
     git_init = _run_command(["git", "init", "-q"], experiment_dir)
     assert git_init.returncode == 0, git_init.stderr
 
+    first = _run_command(
+        ["psynet", "test", "local"],
+        experiment_dir,
+        env_updates={"SKIP_DEPENDENCY_CHECK": "1"},
+    )
+    assert first.returncode != 0, first.stdout + first.stderr
+    assert "created a new deploy.toml" in first.stdout + first.stderr
+
     result = _run_command(
         ["psynet", "test", "local"],
         experiment_dir,
         env_updates={"SKIP_DEPENDENCY_CHECK": "1"},
     )
     assert result.returncode == 0, (
-        "Empty-directory Workflow A failed\n"
+        "Empty-directory Workflow A failed on rerun after policy review\n"
+        f"FIRST STDOUT:\n{first.stdout}\n"
+        f"FIRST STDERR:\n{first.stderr}\n"
         f"STDOUT:\n{result.stdout}\n"
         f"STDERR:\n{result.stderr}"
     )
@@ -601,7 +629,9 @@ def _preserved_snapshot(root: Path) -> dict[str, str]:
             continue
 
         relative_path = file_path.relative_to(root)
-        if relative_path.parts[0] == ".git":
+        # ``.deploy/`` holds generated local state (deployment records, policy
+        # review marker), not authored experiment files.
+        if relative_path.parts[0] in {".git", ".deploy"}:
             continue
         if relative_path in PRUNABLE_RESOURCE_PATHS:
             continue
@@ -637,7 +667,6 @@ def test_minimal_demo_prompts_for_scaffold_before_debug(tmp_path):
         "config.txt",
         "Dockerfile",
         "test.py",
-        "docker",
     ):
         assert required_path in combined_output
 
@@ -718,7 +747,7 @@ def test_demo_roundtrip_runs_local_test_command(label, demo_path, tmp_path):
     scaffold_result = _run_command(["psynet", "scripts", "scaffold"], temp_demo)
     assert scaffold_result.returncode == 0, scaffold_result.stderr
 
-    result = _run_command(["psynet", "test", "local"], temp_demo)
+    result = _test_local_after_policy_review(temp_demo)
 
     assert result.returncode == 0, (
         f"{label} failed after scaffold round-trip\n"

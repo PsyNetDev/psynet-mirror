@@ -1,11 +1,12 @@
-=====================
+======================
 Upgrading to PsyNet 14
-=====================
+======================
 
-This checklist migrates an existing experiment onto PsyNet 14's default
-in-place timeline transitions. It is the single source of truth for
-**migration order and search targets**. Frontend patterns and full examples
-live in :doc:`/tutorials/writing_custom_frontends`.
+This checklist migrates an existing experiment onto PsyNet 14: in-place
+timeline transitions, recruiter and leave APIs, and new participant-theme
+defaults. It is the single source of truth for **migration order and search
+targets**. Frontend patterns and full examples live in
+:doc:`/tutorials/writing_custom_frontends`.
 
 The Cursor skill ``/upgrade-to-psynet-14`` is a thin wrapper that points agents
 here. When PsyNet is not available as a source checkout (typical experiment
@@ -25,6 +26,8 @@ Also see: :doc:`/whats_new/psynet_14`,
    only as a short-term experiment-wide opt-out, then keep migrating so you
    can remove it.
 4. Work page by page.
+5. Even with no custom frontend, continue through steps 10–13
+   (recruiter, leave/error APIs, changed defaults, and validate).
 
 To surface SPA contract errors, run ``psynet debug local`` /
 ``psynet test local`` and read the traceback. Incompatible pages raise one
@@ -55,7 +58,7 @@ Search author-owned templates for ``<style>`` and
 See the same tutorial section for details.
 
 3. Find deprecated page JavaScript APIs
---------------------------------------
+---------------------------------------
 
 Search for ``js_links=``, ``scripts=``, and ``<script>`` tags in author-owned
 templates or component ``external_template`` files. Classify each script
@@ -83,7 +86,7 @@ See :doc:`/tutorials/writing_custom_frontends` for ``activate(context)``
 examples and cleanup guidance.
 
 6. Migrate page variables to ``psynet.var``
-------------------------------------------
+-------------------------------------------
 
 Replace legacy ``window`` reads of ``js_vars`` keys with ``psynet.var``.
 Optionally set ``legacy_js_var_globals = error`` while testing.
@@ -112,14 +115,135 @@ show up in ``psynet test local`` / ``psynet debug local``. See
 
 Details: :doc:`/tutorials/writing_custom_frontends`.
 
-9. Validate
------------
+9. Migrate trial-selection hooks
+--------------------------------
+
+Search custom trial makers for ``find_networks``, ``find_node``,
+``prioritize_networks``, and ``custom_network_filter``.
+
+* :class:`~psynet.trial.chain.ChainTrialMaker` subclasses now discover,
+  filter, and select chains with ``find_chains``, ``custom_chain_filter``,
+  and ``select_chain``. PsyNet resolves the selected chain to ``chain.head``.
+* :class:`~psynet.trial.static.StaticTrialMaker` subclasses use the
+  node-specific ``find_nodes``, ``custom_node_filter``, and ``select_node``
+  hooks instead.
+* ``custom_network_filter`` is still honoured, but construction emits a
+  ``DeprecationWarning``. Replace it with ``custom_chain_filter`` on chain
+  trial makers or ``custom_node_filter`` on static trial makers.
+* Selection hooks may return their selected value directly or wrap it in
+  :class:`~psynet.trial.main.Selection` to pass request-local context to
+  ``on_trial_created``. Returning ``None`` from ``select_chain`` or
+  ``select_node`` raises ``TypeError``. Return the selected object from the
+  supplied ``chains`` or ``nodes`` list; a newly queried copy with the same
+  id raises ``ValueError``. ``find_chains`` and ``find_nodes`` must return a
+  list, ``"wait"``, or ``"exit"``; ``None`` raises ``TypeError``.
+* ``select_chain`` and ``select_node`` replace ranking in
+  ``prioritize_networks``. They receive a nonempty eligible list and cannot
+  return ``None``, ``[]``, ``"wait"``, or ``"exit"``. Logic that emptied the
+  candidate set or chose to wait belongs in ``find_chains`` or
+  ``find_nodes``: call ``super()``, then filter or return ``"wait"`` /
+  ``"exit"``.
+* ``get_trial_class`` must return a concrete trial class. Remove unavailable
+  chains or nodes in the corresponding custom filter instead of returning
+  ``None``. Synchronized follower trials reuse the leader's concrete trial
+  class without calling ``get_trial_class`` again.
+* ``CreateAndRateTrialMakerMixin.get_non_failed_creations`` has been removed.
+  Classify nodes with
+  :meth:`~psynet.trial.create_and_rate.CreateAndRateTrialMakerMixin.get_creation_phases`
+  and load finalized creations with
+  :meth:`~psynet.trial.create_and_rate.CreateAndRateTrialMakerMixin.get_finished_creations`.
+* Create-and-rate experiments with fixed creator and rater groups should
+  override
+  :meth:`~psynet.trial.create_and_rate.CreateAndRateTrialMakerMixin.get_participant_role`.
+  The mixin then uses that role for both chain eligibility and the final phase
+  check. Do not override ``get_trial_class`` from participant role alone.
+  Creators only receive heads that still need creators. Raters receive heads
+  that are ready for raters, and they wait or exit on heads whose creator
+  slots are filled but not yet finalized. Heads that still need creators are
+  not rater-eligible. A selected head that later becomes incompatible waits
+  or exits instead of assigning the opposite role's trial class.
+* :attr:`~psynet.trial.main.Trial.position` is now stored when the trial is
+  created and counts across all concrete trial classes in a participant's trial
+  maker. Previously it was calculated within each concrete trial class. Trials
+  constructed outside a trial-maker state may have ``position=None``; code that
+  performs arithmetic with ``position`` should handle that case explicitly.
+
+PsyNet raises an actionable ``TypeError`` when a removed or wrong-paradigm
+hook is still overridden.
+
+10. Recruiter configuration
+---------------------------
+
+Search ``config.txt`` (and experiment ``config`` dicts) for
+``recruiter = mturk``, ``recruiter = bots``, ``recruiter = multi``, and
+Dallinger ``recruiters =``. PsyNet rejects those nicknames, including
+subclasses. Deploy with ``prolific``, ``generic``, ``hotair``,
+``lucid-recruiter``, or a lab recruiter instead. PsyNet's own bot-based
+test commands still work; they are not a ``recruiter = bots`` deployment.
+
+If the study currently runs on MTurk, move it to another platform before
+upgrading. Amazon is closing MTurk on September 30, 2026. See
+:doc:`/whats_new/psynet_14`.
+
+11. Leave, ads, and error recovery
+----------------------------------
+
+Search for ``show_abort_button``, ``show_termination_button``,
+``ad_requirements``, ``ad_payment_information``, ``error_page_content``,
+``error_page_content__prolific``, ``approve_assignment``,
+``reject_assignment``, and ``ExecuteFrontEndJS(``.
+
+* Config and page flags: ``show_early_exit_button`` and
+  ``min_reward_for_paid_early_exit``. The old page arguments still work
+  with a ``FutureWarning``.
+* DOM and routes: ``#early-exit-button``, ``/execute_early_exit_plan/``.
+* Participant field: ``Participant.early_exited``.
+* Remove ``Experiment.ad_requirements`` and
+  ``Experiment.ad_payment_information``. Customize ``templates/ad.html``
+  instead; see :doc:`/tutorials/ad_page`.
+* Replace ``error_page_content`` with recruiter
+  ``error_page_presentation``. A custom recruiter that shows recovery UI
+  must also override ``shows_error_recovery_page``; a button in the
+  presentation is not enough. Handoff controls are armed only while the
+  recovery plan is still prepared::
+
+      from psynet.exit import ExitContext
+
+      def shows_error_recovery_page(self, plan):
+          return plan.context is ExitContext.ERROR_RECOVERY
+
+  See :doc:`/experiment_development/configuration`.
+* Rename ``approve_assignment`` to ``submit_assignment`` and Prolific
+  ``reject_assignment`` to ``request_return_for_bonus``.
+* ``ExecuteFrontEndJS`` no longer takes ``message``. It shows a spinner::
+
+      ExecuteFrontEndJS("psynet.finishAndGoToExit()")
+
+Stale overrides fail a pre-deployment check or fail when used, with
+migration instructions in the error.
+
+12. Changed defaults and option markup
+--------------------------------------
+
+* Phones and tablets are allowed by default. Set
+  ``allow_mobile_devices = false`` to keep a study desktop-only.
+* Default ``min_browser_version`` is Chrome 105. Lower it in
+  ``config.txt`` only if you must admit older browsers.
+* Leaving ``show_reward`` unset means the recruiter decides: Prolific and
+  lab show it, generic/local do not, Lucid hides it. Set
+  ``show_reward = true`` to show it anyway where the recruiter allows.
+* Radio and checkbox options are full-width ``label.psynet-option`` rows.
+  Restyle ``.psynet-option`` / ``.psynet-option-label`` instead of bare
+  ``label`` / ``input`` elements; see :doc:`/tutorials/theming`.
+
+13. Validate
+------------
 
 From a complete experiment directory. At minimum you typically need:
 
 * ``experiment.py``, ``test.py``, ``constraints.txt``
 * ``config.txt``, ``requirements.txt``
-* ``.gitignore`` (must include ``source_code.zip``) and ``.python-version``
+* ``.gitignore``, ``deploy.toml``, and ``.python-version``
 
 If you are scaffolding from scratch, see
 :doc:`/tutorials/creating_a_new_experiment` or run ``psynet update-scripts``
@@ -134,8 +258,9 @@ before bots run, so migration errors should appear directly in the pytest
 failure. PageMaker-created pages are still checked when first rendered.
 
 Confirm the default in-place mode works (opt-out removed if possible), page
-modules activate without console errors, and cleanup runs for persistent
-listeners.
+modules activate without console errors, cleanup runs for persistent
+listeners, and ``config.txt`` no longer uses ``mturk``, ``bots``, or
+``multi``.
 
 PsyNet-repository Playwright coverage is optional and harness-specific.
 

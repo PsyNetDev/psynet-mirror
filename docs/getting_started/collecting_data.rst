@@ -112,7 +112,26 @@ Two scenarios are possible for successful completions:
 Partial payments are handled separately. If a participant reaches an
 :class:`~psynet.page.UnsuccessfulEndPage`, for example because they fail a pre-screening task, PsyNet
 marks them as failed rather than successfully completed. In this case PsyNet may try to pay them only
-the reward they have accumulated so far. If ``prolific_enable_return_for_bonus`` is set to ``True``
+the reward they have accumulated so far. The same unsuccessful path is used
+when a participant confirms **Leave** from the timeline footer or error-page
+fallback (with ``show_early_exit_button``).
+
+By default, PsyNet handles such participants by registering a dedicated Prolific
+completion code with a fixed screen-out payment (see ``prolific_pay_unsuccessful`` and
+``prolific_unsuccessful_base_payment``). When they click Submit, PsyNet completes the
+submission on Prolific with that researcher-actor code. Participants do not enter a
+completion code. Prolific automatically pays them the fixed amount, and PsyNet tops them
+up to their accumulated reward with a bonus. This also applies to participants who
+encounter an error page. Successful participants are completed the same way, using a
+researcher-actor copy of the DEFAULT auto-approve code.
+Note that this relies on a Prolific feature (custom screening with fixed rewards) that Prolific
+documents as only enabled for selected workspaces; if your workspace lacks it, study creation
+fails and PsyNet logs a hint to disable the feature via ``prolific_pay_unsuccessful = false``.
+Deployments using this feature must set ``prolific_screen_out_slots``, which caps the automatic
+screen-out spending. See :doc:`../experiment_development/configuration` for details.
+
+If ``prolific_pay_unsuccessful`` is set to ``False``, PsyNet falls back to the older flow: if
+``prolific_enable_return_for_bonus`` is set to ``True``
 (the default), PsyNet tells the participant that they will receive a partial payment, but that they
 first need to return the submission in Prolific. When the participant declares they have done this,
 PsyNet checks with Prolific via their API to see if the submission has actually been returned. If so,
@@ -124,12 +143,9 @@ return the submission and contact the experimenter, leaving the payment to be ha
 
     Advanced users can customize these default end-of-experiment behaviors by subclassing
     :class:`~psynet.end.SuccessfulEndLogic` or :class:`~psynet.end.UnsuccessfulEndLogic` and
-    overriding the relevant methods.
-
-.. note::
-
-    We plan to add support soon for Prolific's custom completion URL functionality, which should
-    make it easier to route participants to different Prolific completion outcomes.
+    overriding the relevant methods. Custom completion-code routing can be implemented by
+    overriding :meth:`~psynet.experiment.Experiment.recruiter_exit_info` and registering
+    additional codes via the ``prolific_completion_config`` config parameter.
 
 You should therefore normally set ``base_payment`` close to the reward expected for a successful
 completion. If a successful participant accumulates less reward than the base payment, PsyNet will
@@ -156,6 +172,8 @@ e.g. due to a technical error or a failed pre-screening task.
 You should select the Prolific recruiter by setting the config parameter ``recruiter`` to ``prolific``.
 Also, for most users we recommend setting the ``auto_recruit`` parameter to ``false``, meaning that you will manually
 control the recruitment of participants via the Prolific interface rather than letting PsyNet manage it for you.
+You must also set ``prolific_screen_out_slots`` (a common choice is 10 times ``initial_recruitment_size``);
+deployment fails without it. See :doc:`../experiment_development/configuration`.
 
 In summary, your config.txt might look something like this:
 
@@ -171,6 +189,7 @@ In summary, your config.txt might look something like this:
     wage_per_hour = 10
     base_payment = 5
     prolific_estimated_completion_minutes = 30
+    prolific_screen_out_slots = 100
 
 
 Testing your experiment
@@ -275,21 +294,31 @@ efficiency of your own code.
   :width: 800
   :alt: Increase places in the survey
 
-Participants may encounter technical errors. Respond to them promptly via the Prolific website,
-and tell them that you can pay them if they return their submission. You can look up a particular participant
-via their Prolific ID in the experiment dashboard to see how much bonus they had accumulated so far
-(look via the Participant tab). Normally you would pay the participant this amount of money via the Prolific website,
-as a bonus; you may also wish to pay them the base payment, or part of the base payment.
+Participants who hit a technical error are offered a "Submit to Prolific" button on the error page.
+That sends the submission locally; PsyNet then completes it on Prolific with the unsuccessful
+code. Participants then see a confirmation that the submission has been sent to Prolific, and do
+not enter a completion code. Prolific pays the
+fixed screen-out amount automatically, and PsyNet tops them up to their accumulated reward with a
+bonus. Participants who finish normally click Finish, then Submit to Prolific, and see the same
+confirmation after recruiter-exit reloads. Respond to Prolific messages promptly, and look the person up by Prolific ID on the
+Participants dashboard to confirm that PsyNet recorded the screen-out and any bonus. You should
+not ask them to return the submission or pay them by hand unless they never submitted (for
+example they closed the error page) or you disabled automatic screen-out payment
+(``prolific_pay_unsuccessful = false``).
 
-Before you terminate your experiment, you want to make sure you deal with all the participants in the
-'Awaiting review' category. Some of these participants may be people who had technical errors;
-some may have just stopped the experiment early. You need to look through these cases and deal with them
-appropriately. It's best to have a dialogue with the participant where possible, rather than rejecting their
-submissions straightaway, which can upset people.
+Before you terminate the experiment, check two places:
+
+- The Participants dashboard, including anyone listed under Needs payment review. Those are
+  cases where PsyNet meant to pay a bonus and could not confirm it; you can Pay or Dismiss there.
+- Prolific's 'Awaiting review' list. Screened-out submissions do not appear there. Successful
+  participants who clicked Submit are completed server-side and should already be approved.
+  Remaining cases are typically people who stopped early without submitting, submissions PsyNet
+  could not complete (check the experiment notifications), or codes that hold for manual review.
+  Talk to the participant where possible rather than rejecting submissions straightaway.
 
 .. image:: ../_static/images/prolific/awaiting_review_2.png
   :width: 800
-  :alt: Pay participants who are awaiting review
+  :alt: Review remaining Prolific submissions that are awaiting review
 
 Once the experiment is finished, you will need to export the data.
 You can either do this via the admin panel or from the command line:
@@ -298,16 +327,13 @@ You can either do this via the admin panel or from the command line:
 
     psynet export ssh --app your-app-name
 
-There are still some issues with the export functionality; if you encounter an error,
-we recommend trying again with the legacy flag:
+The export lands in ``exports/latest/`` inside your experiment directory, and
+your previous export is kept under ``exports/history/``. Run the command from
+the experiment directory that the deployment came from: PsyNet checks this and
+refuses to export if the labels do not match.
 
-.. code:: bash
-
-    psynet export ssh --app your-app-name --legacy
-
-Alternatively, use the admin panel to export the data, disable 'anonymous' export,
-and export only the 'Dallinger' database, not the PsyNet formatted dataset.
-This will still provide all the data you need, just in a less convenient format.
+If the export fails, your previous export is left untouched, so it is always
+safe to retry. See :doc:`/deploy/data` for asset options.
 
 Once you're done, you can take down the experiment:
 

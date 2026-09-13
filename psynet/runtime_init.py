@@ -53,7 +53,10 @@ def _initialize_runtime() -> None:
     from dallinger.config import ConfigSource, Configuration, experiment_available
 
     import psynet.recruiters  # noqa: F401
-    from psynet.utils import patch_yaspin_jupyter_detection
+    from psynet.utils import (
+        loading_experiment_classes,
+        patch_yaspin_jupyter_detection,
+    )
 
     # Fix event loop deprecation warning from dominate.
     dominate.dom_tag.get_event_loop = asyncio.get_running_loop
@@ -85,7 +88,10 @@ def _initialize_runtime() -> None:
                 source=ConfigSource.EXPERIMENT_DEFAULTS,
             )
 
-        old_load(self, strict=strict)
+        # Dallinger's loader imports experiment.py to read its extra
+        # parameters, which redeclares the experiment's mapped classes.
+        with loading_experiment_classes():
+            old_load(self, strict=strict)
 
     Configuration.load = load
 

@@ -8,20 +8,20 @@ Music perception track
 The music perception track is tailored towards people who want to run online behavioral studies
 about how people perceive music.
 
-The first step is to `install PsyNet <../../installation/index.html>`_.
+The first step is to :doc:`install PsyNet </installation/index>`.
 You should make sure you do the optional step 5, namely installing editable PsyNet and Dallinger repositories.
 
 Next you should read the
-`introduction to the demos section <../../demos/introduction.html>`_,
+:doc:`introduction to the demos section </demos/introduction>`,
 and then explore the first two demos,
-`Hello world <../../demos/hello_world.html>`_,
-and `Timeline <../../demos/timeline.html>`__.
+:doc:`Hello world </demos/hello_world>`,
+and :doc:`Timeline </demos/timeline>`.
 These demos introduce you to the basics of PsyNet experiments.
 You should approach each demo in the following way:
 
 - Copy and paste the demo from the PsyNet source code location into another location on your computer.
 - Open the demo as a new project in your IDE.
-- Run the demo following the standard approach (``psynet local debug``, or ``docker/psynet local debug``).
+- Run the demo following the standard approach (``psynet debug local``).
 - Read the source code in the demo and relate it to the behavior of the demo.
 - Try making some changes to the demo and see how they change the experiment. Note that minor changes will be
   reflected if you just save the code and refresh the page, but major changes (e.g. adding pages) may require
@@ -29,17 +29,17 @@ You should approach each demo in the following way:
 
 Now take the following tutorials:
 
-- `Classes in PsyNet <../../tutorials/classes.html>`_
-- `Timeline <../../tutorials/timeline.html>`_
-- `Modular pages <../../tutorials/modular_page.html>`_
+- :doc:`Classes in PsyNet </tutorials/classes>`
+- :doc:`Timeline </tutorials/timeline>`
+- :doc:`Modular pages </tutorials/modular_page>`
 
-Take the `timeline exercise <../exercises/timeline.html>`__.
+Take the :doc:`timeline exercise </learning/exercises/timeline>`.
 
-Explore the `audio demo <../../demos/audio.html>`_, then take the `JSSynth exercises <../exercises/js_synth.html>`_.
+Explore the :doc:`audio demo </demos/audio>`, then take the :doc:`JSSynth exercises </learning/exercises/js_synth>`.
 
 Explore the following trial demos:
 
-- `Trial (1) <../../demos/trial.html>`_
-- `Trial (2) <../../demos/trial_2.html>`_
-- `Trial (3) <../../demos/trial_3.html>`_
-- `Audio trial maker <../../demos/static_audio.html>`_
+- :doc:`Trial (1) </demos/trial>`
+- :doc:`Trial (2) </demos/trial_2>`
+- :doc:`Trial (3) </demos/trial_3>`
+- :doc:`Audio trial maker </demos/static_audio>`

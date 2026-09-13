@@ -898,10 +898,6 @@ class SyncGroup(SQLBase, SQLMixin):
 
     leader : Participant
         The leader of the SyncGroup. This can be reassigned by logic such as ``group.leader = participant``.
-
-    participants : List[Participant]
-        Read-only list of participants currently in the group (links with ``active=True``). Use
-        ``group.add_participant(participant)`` to add a participant.
     """
 
     __tablename__ = "sync_group"
@@ -921,7 +917,10 @@ class SyncGroup(SQLBase, SQLMixin):
 
     @property
     def participants(self) -> List[Participant]:
-        """Participants currently in the group (links with active=True)."""
+        """Read-only list of participants currently in the group (links with ``active=True``).
+
+        Use ``group.add_participant(participant)`` to add a participant.
+        """
         return _ReadOnlyParticipantList(
             link.participant
             for link in self.participant_links

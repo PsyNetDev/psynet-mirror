@@ -120,6 +120,12 @@ class Exp(psynet.experiment.Experiment):
     label = "Static experiment demo"
     test_n_bots = 2
 
+    config = {
+        # Asserted by the end-to-end tests; generic recruitment now hides
+        # rewards unless the experiment opts in.
+        "show_reward": True,
+    }
+
     timeline = Timeline(
         trial_maker,
     )

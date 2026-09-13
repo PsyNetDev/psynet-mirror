@@ -305,12 +305,20 @@ def test_add_asset_does_not_reobfuscate_deposited_asset(trial, launched_experime
         original_host_path = cached_asset.host_path
         original_url = cached_asset.url
         original_local_key = cached_asset.local_key
+        original_access_token = cached_asset.access_token
+        original_object_path = cached_asset.object_path
         cached_asset.node_definition = {"marker": "original"}
+
+        assert original_host_path.startswith("objects/sha256/")
+        assert original_object_path == original_host_path
+        assert original_url == f"/asset/{original_access_token}"
 
         trial.add_asset("image_left", cached_asset)
 
         assert cached_asset.host_path == original_host_path
+        assert cached_asset.object_path == original_object_path
         assert cached_asset.url == original_url
+        assert cached_asset.access_token == original_access_token
         assert cached_asset.local_key == original_local_key
         assert cached_asset.node_definition == {"marker": "original"}
 

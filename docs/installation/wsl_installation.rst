@@ -10,7 +10,7 @@ Quick start (Windows 11)
 6. Verify or set Ubuntu as the default distro (see commands below).
 
 For a more detailed walkthrough, see:
-https://ubuntu.com/tutorials/install-ubuntu-on-wsl2-on-windows-11-with-gui-support#1-overview.
+https://ubuntu.com/wsl/docs/stable/howto/install-ubuntu-wsl2/.
 Note: it is WSL 2 we want, not just WSL. Bear this in mind when looking for online tutorials.
 
 WSL is a platform for installing particular Linux operating systems. In addition to installing WSL,

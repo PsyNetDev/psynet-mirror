@@ -857,14 +857,16 @@ and implement the following changes:
 5. Add a performance check at the end of the trial maker,
    where participants fail if they score less than 50%.
 
-6. Use ``psynet simulate`` to run automated bots through your experiment.
-   Explore the exported dataset at ``data/simulated_data``.
+6. Initialize an audit with ``psynet audit init``, then use
+   ``psynet audit simulate`` to run automated bots through your experiment.
+   Explore the exported dataset at
+   ``audit/simulate/analysis/simulated_export``.
    Can you find the csv file containing your trial data?
    Can you find all you'd need to do a proper analysis?
 
 .. hint::
 
-    You can customize the number of bots used by ``psynet simulate``
+    You can customize the number of bots used by ``psynet audit simulate``
     by setting ``test_n_bots = ...`` in your experiment class.
 
 7. So far we have been using a fixed audio file for all nodes.

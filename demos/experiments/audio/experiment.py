@@ -532,16 +532,3 @@ example_record_audio_video = join(
 
 class Exp(psynet.experiment.Experiment):
     timeline = get_timeline()
-
-    @property
-    def ad_requirements(self):
-        return super().ad_requirements + [
-            'You must be wearing <span style="font-weight: bold;">headphones</span> and sitting in a quiet place.'
-        ]
-
-    @property
-    def ad_payment_information(self):
-        return (
-            super().ad_payment_information
-            + '<br>Send us your <span style="font-weight: bold;">bank account information</span> to receive refunds.'
-        )

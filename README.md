@@ -2,7 +2,7 @@
 
 [![Pipeline](https://gitlab.com/PsyNetDev/PsyNet/badges/master/pipeline.svg?ignore_skipped=true)](https://gitlab.com/PsyNetDev/PsyNet/-/pipelines)
 [![Latest release](https://gitlab.com/PsyNetDev/PsyNet/-/badges/release.svg)](https://gitlab.com/PsyNetDev/PsyNet/-/releases)
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/pmcharrison/psynet-mirror)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/PsyNetDev/psynet-mirror)
 
 PsyNet is a powerful new Python package for designing and running the next generation of online behavioural experiments.
 It builds on the virtual lab framework [Dallinger](https://dallinger.readthedocs.io/)
@@ -14,5 +14,7 @@ high-powered variants of the same experiment in the time it would ordinarily tak
 
 PsyNet is primarily developed by Peter Harrison, Frank Höger, Pol van Rijn, and Nori Jacoby,
 but we are grateful for many further contributions by other users.
+
+On Windows, use WSL (Ubuntu) and follow the Linux workflow there. Native Windows is not supported.
 
 For more information about PsyNet, visit the [documentation website](https://psynetdev.gitlab.io/PsyNet/).

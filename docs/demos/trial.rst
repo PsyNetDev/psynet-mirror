@@ -19,6 +19,8 @@ Below this we define the ``word_ratings`` Module. Modules are a useful way for o
 logic of PsyNet experiments into discrete components. This Module contains a For Loop,
 which here is used to sample three random words to present to the participant.
 To present a word in the form of a Rate Trial, we call ``RateTrial.cue``.
+For another example with a ``while_loop``,
+see ``demos/features/trial_cue_adaptive``.
 
 .. note::
 

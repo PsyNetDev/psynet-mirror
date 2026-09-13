@@ -533,6 +533,8 @@ def _make_consent_page(label: str, html: str, time_estimate: int):
         template_str=_CONSENT_TEMPLATE,
         template_arg={"consent_html": html},
         time_estimate=time_estimate,
+        # Extends timeline-page.html and injects consent.css; not SPA-safe.
+        requires_full_page_reload=True,
     )
 
 
@@ -551,7 +553,7 @@ class consent_irb_cultural_foundation(Module, Consent):
     Parameters
     ----------
     consent : "MAIN" | "CINT" | "DATABASE"
-        MAIN for direct recruitment (Prolific, MTurk, Lab Recruiter, etc.);
+        MAIN for direct recruitment (Prolific, Lab Recruiter, etc.);
         CINT for CINT panel where payment is indirect;
         DATABASE for Lab-Recruiter database enrollment.
     audiovisual : bool

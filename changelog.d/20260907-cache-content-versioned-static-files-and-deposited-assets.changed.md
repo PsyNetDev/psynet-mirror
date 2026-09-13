@@ -1,0 +1,1 @@
+PsyNet now adds content versions to generated local static URLs and caches matching static files and deposited assets immutably, while unversioned custom URLs and on-demand assets continue to revalidate.

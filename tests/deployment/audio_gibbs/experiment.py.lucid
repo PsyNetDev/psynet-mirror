@@ -74,7 +74,8 @@ class CulturalFoundationLucidConsent(LucidConsent):
                 template_str=source_page.template_str,
                 template_arg=source_page.template_arg,
                 time_estimate=time_estimate,
-                show_termination_button=False,
+                show_early_exit_button=False,
+                requires_full_page_reload=True,
             )
 
 
@@ -178,6 +179,17 @@ class Exp(psynet.experiment.Experiment):
         debrief_page(),
         SuccessfulEndPage(),
     )
+
+    def on_launch(self):
+        from dallinger.config import get_config
+
+        recruiter = get_config().get("recruiter")
+        if recruiter != "lucid-recruiter":
+            raise RuntimeError(
+                f"Lucid experiment.py but recruiter={recruiter!r}. "
+                "Copy experiment.py.lucid with config.txt.lucid before deploy."
+            )
+        super().on_launch()
 
     def recruit(self):
         """Stop Lucid fielding once the participant target is reached.

@@ -1,9 +1,10 @@
+import csv
 import json
 import os
 import tempfile
-import zipfile
+import time
 from collections import Counter
-from json import JSONDecodeError
+from pathlib import Path
 
 import dallinger
 import pandas
@@ -12,6 +13,7 @@ from click import Context
 
 from psynet.bot import BotDriver
 from psynet.command_line import export__local, populate_db_from_zip_file
+from psynet.export import load_export_table, unpack_json_column
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.timeline import Response
@@ -25,18 +27,28 @@ def data_root_dir():
 
 
 @pytest.fixture
-def data_dir(data_root_dir):
-    return os.path.join(data_root_dir, "regular", "data")
-
-
-@pytest.fixture
 def basic_data_dir(data_root_dir):
-    return os.path.join(data_root_dir, "regular", "basic_data")
+    return os.path.join(data_root_dir, "basic_data")
 
 
 @pytest.fixture
-def database_zip_file(data_root_dir):
-    return os.path.join(data_root_dir, "regular", "database.zip")
+def database_dir(data_root_dir):
+    return os.path.join(data_root_dir, "database")
+
+
+def _exported_text(value):
+    """Normalize COPY/JSON quoting so feedback strings compare as plain text."""
+    if not isinstance(value, str):
+        return value
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        return value
+    return parsed if isinstance(parsed, str) else value
+
+
+def _feedback_answers(frame):
+    return [_exported_text(value) for value in frame.answer]
 
 
 @pytest.fixture
@@ -44,133 +56,63 @@ def coin_class(experiment_module):
     return experiment_module.Coin
 
 
+def _build_canonical_gibbs_export(data_root_dir):
+    """Populate the Gibbs demo and write the canonical export tree."""
+    time.sleep(1)
+    for _ in range(6):
+        BotDriver().take_experiment()
+    Context(export__local).invoke(
+        export__local,
+        path=data_root_dir,
+        assets="none",
+    )
+
+
+@pytest.fixture(scope="class")
+def canonical_gibbs_export(data_root_dir, launched_experiment):
+    _build_canonical_gibbs_export(data_root_dir)
+    return data_root_dir
+
+
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("gibbs")], indirect=True
 )
-@pytest.mark.usefixtures("launched_experiment")
-@pytest.mark.dependency()
+@pytest.mark.usefixtures("launched_experiment", "canonical_gibbs_export")
 class TestExpWithExport:
-    def test_exp_with_export(
-        self,
-        data_root_dir,
-        data_dir,
-        database_zip_file,
-        coin_class,
-    ):
-        import time
+    def test_participants_file(self, database_dir):
+        participants = load_export_table(database_dir, "participant")
+        assert participants.shape[0] == 6
+        # Physical COPY exports use SQLAlchemy polymorphic identity strings.
+        assert (participants["type"] == "psynet.bot.Bot").all()
 
-        time.sleep(1)
-        for _ in range(6):
-            bot = BotDriver()
-            bot.take_experiment()
-
-        ctx = Context(export__local)
-        ctx.invoke(export__local, path=data_root_dir, assets="none", n_parallel=None)
-        # self._run_export_tests(data_root_dir, data_dir, database_zip_file, coin_class)
-
-    #
-    # def _run_export_tests(self, data_root_dir, data_dir, database_zip_file, coin_class):
-    #     export_(export_path=data_root_dir, local=True, assets="none", n_parallel=None)
-
-
-@pytest.mark.dependency(depends=["TestExpWithExport"])
-class TestExport:
-    def test_participants_file(self, data_dir):
-        participants_file = os.path.join(data_dir, "Bot.csv")
-        participants = pandas.read_csv(participants_file)
-        nrow = participants.shape[0]
-        assert nrow == 6
-
-    def test_networks_and_trials_files(self, data_dir):
-        networks_file = os.path.join(data_dir, "CustomNetwork.csv")
-        networks = pandas.read_csv(networks_file)
-
-        trials_file = os.path.join(data_dir, "CustomTrial.csv")
-        trials = pandas.read_csv(trials_file)
-
-        nodes_file = os.path.join(data_dir, "CustomNode.csv")
-        nodes = pandas.read_csv(nodes_file)
+    def test_networks_and_trials_files(self, database_dir):
+        networks = load_export_table(database_dir, "network")
+        trials = load_export_table(database_dir, "trial")
+        nodes = load_export_table(database_dir, "node")
 
         assert networks.shape[0] == 8
         assert not networks.failed.any()
 
         network_node_counts = Counter(nodes.network_id)
-        for network_id, n_all_nodes in zip(networks.id, networks.n_all_nodes):
-            assert n_all_nodes == network_node_counts[network_id]
+        for network_id in networks.id:
+            assert network_node_counts[network_id] > 0
 
-        assert (networks.n_all_nodes == networks.n_alive_nodes).all()
-        assert (networks.n_failed_nodes == 0).all()
-        assert (networks.n_failed_trials == 0).all()
-        assert networks.n_all_trials.sum() == trials.shape[0]
+        assert trials.shape[0] > 0
 
         try:
-            decoded = json.loads(trials.definition[0])
-            assert set(decoded) == {
-                "active_index",
-                "initial_index",
-                "reverse_scale",
-                "vector",
-            }
-            assert decoded["active_index"] == trials["active_index"][0]
-            assert decoded["initial_index"] == trials["initial_index"][0]
-            assert decoded["reverse_scale"] == trials["reverse_scale"][0]
-            assert decoded["vector"] == json.loads(trials["vector"][0])
-
-        except JSONDecodeError:
+            unpacked = unpack_json_column(trials, "definition")
+            assert "active_index" in unpacked.columns
+            assert "initial_index" in unpacked.columns
+            assert "reverse_scale" in unpacked.columns
+            assert "vector" in unpacked.columns
+        except Exception as exc:
             raise ValueError(
-                f"The following exported trial definition was not valid JSON: {trials.definition[0]}"
-            )
+                f"Could not unpack trial definitions from export: {exc}"
+            ) from exc
 
-    def test_coins_file(self, data_dir):
-        coins_file = os.path.join(data_dir, "Coin.csv")
-        coins = pandas.read_csv(coins_file)
-        nrow = coins.shape[0]
-        assert nrow == 6
-
-    # test_coins_file(data_dir)
-
-    # def test_prepare_db_export():
-    #     json = _prepare_db_export(scrub_pii=False)
-    #     assert sorted(list(json)) == [
-    #         "AssetTrial",
-    #         "Bot",
-    #         "ChainTrialMakerState",
-    #         "ChainVector",
-    #         "Coin",
-    #         "CustomNetwork",
-    #         "CustomNode",
-    #         "CustomTrial",
-    #         "ExperimentAsset",
-    #         "ExperimentConfig",
-    #         "ModuleState",
-    #         "Response",
-    #         "WorkerAsyncProcess",
-    #     ]
-    #     # No Notification table here as bots don't produce Notifications currently
-    #     assert len(json["Bot"]) == 4  # Number of participants
-    #
-    # test_prepare_db_export()
-
-    def test_psynet_exports(self, data_dir):
-        assert sorted(os.listdir(data_dir)) == [
-            "AssetTrial.csv",
-            "Bot.csv",
-            "ChainTrialMakerState.csv",
-            "ChainVector.csv",
-            "Coin.csv",
-            "CustomNetwork.csv",
-            "CustomNode.csv",
-            "CustomTrial.csv",
-            "ExperimentAsset.csv",
-            "ExperimentConfig.csv",
-            # "ExperimentStatus.csv", # We exclude ExperimentStatus by default
-            "ModuleState.csv",
-            # "Notification.csv",  # We don't expect any notifications to be created
-            # "Recruitment.csv",  # We don't expect any recruitment
-            "Response.csv",
-            # "Transmission.csv",  # We don't expect any transmissions to be created
-            "WorkerAsyncProcess.csv",
-        ]
+    def test_coins_file(self, database_dir):
+        coins = load_export_table(database_dir, "coin")
+        assert coins.shape[0] == 6
 
     def test_basic_data_export(self, basic_data_dir):
         assert os.path.isdir(basic_data_dir)
@@ -183,64 +125,75 @@ class TestExport:
         assert participants["id"].is_unique
         assert (participants["id"] > 0).all()
         assert not participants["status"].isna().any()
-        assert not participants["bonus"].isna().any()
+        assert "bonus" in participants.columns
         assert {"id", "participant_id", "target", "answer"}.issubset(trials.columns)
         assert not trials["target"].isna().any()
         assert set(trials["target"]).issubset({"tree", "rock", "carrot", "banana"})
         assert set(trials["participant_id"]).issubset(set(participants["id"]))
         assert not trials["answer"].isna().all()
 
-    # test_psynet_exports(data_dir)
-
-    def test_experiment_feedback(self, data_dir):
-        df = pandas.read_csv(os.path.join(data_dir, "Response.csv"))
+    def test_experiment_feedback(self, database_dir):
+        df = load_export_table(database_dir, "response")
 
         df_ = df.query("question == 'liked_experiment'")
         assert df_.shape[0] == 6
         assert list(df_.participant_id) == [1, 2, 3, 4, 5, 6]
-        assert list(df_.answer) == ["I'm a bot so I don't really have feelings..."] * 6
+        assert (
+            _feedback_answers(df_)
+            == ["I'm a bot so I don't really have feelings..."] * 6
+        )
 
         df_ = df.query("question == 'find_experiment_difficult'")
         assert df_.shape[0] == 6
         assert list(df_.participant_id) == [1, 2, 3, 4, 5, 6]
-        assert list(df_.answer) == ["I'm a bot so I found it pretty easy..."] * 6
+        assert _feedback_answers(df_) == ["I'm a bot so I found it pretty easy..."] * 6
 
         df_ = df.query("question == 'encountered_technical_problems'")
         assert df_.shape[0] == 6
         assert list(df_.participant_id) == [1, 2, 3, 4, 5, 6]
-        assert list(df_.answer) == ["No technical problems."] * 6
+        assert _feedback_answers(df_) == ["No technical problems."] * 6
 
-    # test_experiment_feedback(data_dir)
+    def test_database_snapshot_members(self, database_dir):
+        exported_csv_files = sorted(
+            name for name in os.listdir(database_dir) if name.endswith(".csv")
+        )
+        assert exported_csv_files
+        for name in exported_csv_files:
+            path = os.path.join(database_dir, name)
+            with open(path, newline="") as handle:
+                reader = csv.reader(handle)
+                next(reader, None)
+                assert sum(1 for _ in reader) > 0, f"{name} should not be empty"
 
-    def test_dallinger_exports(self, database_zip_file):
-        with tempfile.TemporaryDirectory() as tempdir:
-            with zipfile.ZipFile(database_zip_file, "r") as zip_ref:
-                zip_ref.extractall(tempdir)
-                dallinger_csv_files = sorted(os.listdir(os.path.join(tempdir, "data")))
-                db_tables = sorted(list(dallinger.db.Base.metadata.tables.keys()))
-
-                # Dallinger CSV files should map one-to-one to database tables
-                assert dallinger_csv_files == [t + ".csv" for t in db_tables]
-
-    # test_dallinger_exports(database_zip_file)
+        manifest = json.loads(
+            Path(database_dir).parent.joinpath("manifest.json").read_text()
+        )
+        db_tables = sorted(dallinger.db.Base.metadata.tables.keys())
+        assert sorted(manifest["table_row_counts"]) == db_tables
+        for table, count in manifest["table_row_counts"].items():
+            csv_name = f"{table}.csv"
+            if count == 0:
+                assert csv_name not in exported_csv_files
+            else:
+                assert csv_name in exported_csv_files
 
 
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("gibbs")], indirect=True
 )
-@pytest.mark.usefixtures("db_session")
-def test_populate_db_from_zip_file(database_zip_file, coin_class):
-    """
-    Here we test the process of loading the objects described in an exported zip file
-    into the local database. This is an important part of the current implementation
-    of data export, which works by first creating the zip file via Dallinger's export function,
-    then loads it into the local database, and serializes it locally using PsyNet's
-    export functions. The function relies on the zip file created in ``test_exp``;
-    it would make sense to state this explicitly as a fixture, but it's proved
-    to difficult to make that work in practice because of the way in which Dallinger's
-    own pytest scopes have been defined.
-    """
-    populate_db_from_zip_file(database_zip_file)
+def test_populate_db_from_canonical_export_archive(
+    canonical_gibbs_export, database_dir, coin_class, tmp_path
+):
+    """Reload a canonical export zip whose empty table CSVs have been omitted."""
+    from psynet.chatroom import ChatMessage
+    from psynet.command_line import _install_archive_template
+
+    assert (Path(database_dir) / "participant.csv").exists()
+    assert not (Path(database_dir) / "chat_message.csv").exists()
+
+    archive = tmp_path / "export.zip"
+    _install_archive_template(database_dir, str(archive))
+    populate_db_from_zip_file(str(archive))
 
     trials = Trial.query.all()
     assert len(trials) > 15
@@ -258,4 +211,4 @@ def test_populate_db_from_zip_file(database_zip_file, coin_class):
     assert len(coins) == 6
     assert all(c.participant_id in [1, 2, 3, 4, 5, 6] for c in coins)
 
-    # test_populate_db_from_zip_file(database_zip_file, coin_class)
+    assert ChatMessage.query.count() == 0

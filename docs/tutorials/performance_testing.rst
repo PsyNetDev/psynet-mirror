@@ -35,6 +35,8 @@ From your experiment directory, run:
 By default this starts a fresh local experiment server for you, attempts to keep
 ``Experiment.test_n_bots`` bots active for one minute, prints a report, and then
 shuts the server down again. You don't need to launch a server beforehand.
+That short default is a good first pass. Lengthen the run when the experiment
+is nearing finalizing, especially if you want some bots to finish.
 
 To simulate a heavier load, ask for more bots and a longer run:
 
@@ -58,7 +60,13 @@ The behavior of the test is governed by a handful of options:
     initializes, so this includes initialization and ramp-up rather than
     guaranteeing the full duration at target concurrency. Choose a run long
     enough for the target number of bots to become active. Defaults to
-    ``Experiment.test_duration_minutes`` (``1`` minute).
+    ``Experiment.test_duration_minutes`` (``1`` minute). A short first pass is
+    enough to see whether HTTP times look healthy. When the experiment is
+    nearing finalizing, use a longer window. If you want bots to finish, the
+    window needs to be at least on the order of the estimated experiment
+    duration (with ``--time-factor 1``, that is roughly wall-clock participant
+    time). Otherwise treat completion counts as uninformative: a multi-minute
+    timeline will often show zero finished bots on a one-minute smoke run.
 
 ``--stagger``
     The average delay, in seconds, between starting successive bots. Real
@@ -100,26 +108,30 @@ comparing them. Use a duration long enough for every test to reach its target:
 The summary table shows, for each bot count, the number of bots that succeeded,
 total requests, throughput (requests per second), the median response time, and
 the median async-process queue delay. When multiple counts are run, it also shows
-each metric relative to the first (lowest) row, so you can spot the point where
-response times or queue delays start climbing faster than the load.
+each metric relative to the first (lowest) row. Treat the response-time columns
+as the ones that decide whether the load is acceptable; completion counts mix
+server speed with page pacing and the length of the test window.
 
 Reading the results
 -------------------
 
-Each individual test prints several sections. The most useful ones are:
+The main numbers are the HTTP **response times** for ``/timeline`` and
+``/response``. Use the median for typical assignment latency and the 95th
+percentile for the tail a participant will actually feel. If those percentiles
+are high, profile SQL with ``psynet test local --sql-profile`` (add
+``--parallel`` when the problem only appears under concurrency) before changing
+the scientific policy. Repeated identical statements usually mean an N+1 query;
+see :ref:`SQLAlchemy profiling <sqlalchemy_profiling>`.
+
+Each individual test also prints:
 
 * **Bot outcomes** — how many bots were started, completed successfully,
-  completed with an error, or were still running when time ran out, plus an
-  overall completion rate.
-* **Bot runtimes** — how long bots took, broken down by outcome (succeeded,
-  failed, timed out), along with bot initialization times.
-* **Request metrics** — total requests, request errors, and throughput in
-  requests per second.
-* **Response times** — median, 95th/99th percentile, max, mean, and standard
-  deviation of HTTP response times for the key participant-facing endpoints
-  (``/timeline`` and ``/response``). The percentiles are usually more
-  informative than the mean, since a few slow requests can badly affect the
-  participant experience.
+  completed with an error, or were still running when time ran out.
+  Zero successful completions is normal when the window is shorter than the
+  experiment.
+* **Bot runtimes** — how long bots took, broken down by outcome, along with
+  initialization times.
+* **Request metrics** — total requests, request errors, and throughput.
 * **Wait page times** — how long successful bots spent on wait pages (relevant
   for synchronized experiments).
 * **Trials per bot** — the min/median/max number of trials completed by
@@ -156,8 +168,10 @@ A few things to keep in mind for SSH tests:
   bots you want to run.
 * If the app is being used by anyone else during the test, the results will not
   be reliable.
-* ``--json-output`` (see below) is not currently supported over SSH; use
+* ``--json-output`` is not currently supported over SSH; use
   ``performance-test local --json-output`` for machine-readable results.
+  Audit evidence collection is local-only via
+  ``psynet audit performance-test``.
 
 Reusing an already-running local server
 ---------------------------------------
@@ -183,6 +197,19 @@ used), to a JSON file:
 .. code-block:: bash
 
     psynet performance-test local --n-bots "10,25,50" --json-output results.json
+
+When the experiment is being packaged as a PsyNet audit, use the audit-scoped
+command instead. It writes the canonical audit path
+``<audit>/artifacts/performance.json`` (creating ``artifacts/`` if needed) and
+marks ``performance_result`` present:
+
+.. code-block:: bash
+
+    # From the experiment root
+    psynet audit performance-test --n-bots 40 --duration-minutes 5
+
+The top-level ``psynet performance-test local`` command remains available for
+load testing and custom ``--json-output`` files; it never updates an audit.
 
 This is useful for tracking performance over time or feeding results into other
 tools. PsyNet's own :ref:`ASV benchmark suite <asv_performance_tests>` uses

@@ -7,7 +7,7 @@ const { expect } = require("@playwright/test");
 
 const URL_IN_TEXT_RE = /https?:\/\/[^\s"'<>]+/g;
 
-const PSYNET_ERROR_SELECTORS = ["#error-text", "#error-text-main"];
+const PSYNET_ERROR_SELECTORS = ["#error-text"];
 let latestBackendLogPath = null;
 const DEBUG_PORT = Number(process.env.PSYNET_DEBUG_PORT || 5000);
 
@@ -378,7 +378,7 @@ async function getPossibleBackendError(page) {
       const headerText = (document.querySelector("#header")?.textContent || "").trim();
       const errorText = (document.querySelector("#error-text")?.textContent || "").trim();
       const detailText = (
-        document.querySelector("#error-text-main")?.textContent || ""
+        document.querySelector("#automatic-early-exit-ready")?.textContent || ""
       ).trim();
 
       return {

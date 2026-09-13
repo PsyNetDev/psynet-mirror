@@ -61,9 +61,9 @@ def _git_repository_root():
 def _containing_worktree_ignores_experiment():
     """Return whether the containing worktree ignores this experiment directory.
 
-    Dallinger packages files via ``git ls-files``, so an experiment that its
-    surrounding repository ignores would deploy with no files at all. A concrete
-    tracked-intent file is checked when present, otherwise the directory itself.
+    An ignored experiment cannot use the containing repository's commit as
+    meaningful source provenance. A concrete tracked-intent file is checked when
+    present, otherwise the directory itself.
     """
     target = "experiment.py" if Path("experiment.py").exists() else "."
     result = subprocess.run(
@@ -98,18 +98,12 @@ def _init_git_repository_here():
 
 
 def _ensure_git_repository():
-    """Ensure this experiment has a Git repository suitable for deployment.
+    """Ensure this experiment has a Git repository for source provenance.
 
-    Dallinger packages an experiment by intersecting its directory tree with
-    ``git ls-files``, so a repository is what gives deployment its ignore rules.
-    Being anywhere inside a work tree is normally sufficient -- the experiment
-    need not be the repository root -- so a surrounding repository (for example
-    a monorepo of experiments, or a bundled experiment inside the PsyNet source
-    checkout) is used as-is rather than nested inside a new one.
-
-    The exception is a surrounding repository that *ignores* this experiment
-    directory: there ``git ls-files`` returns nothing, so setup initialises a
-    dedicated repository here instead of silently producing an empty deployment.
+    Being anywhere inside a work tree is normally sufficient: the experiment
+    need not be the repository root. A surrounding repository that ignores the
+    experiment cannot identify its source state, so setup creates a dedicated
+    repository in the experiment directory.
     """
     if git_repository_available():
         if not _containing_worktree_ignores_experiment():
@@ -119,8 +113,8 @@ def _ensure_git_repository():
             return _GitStatus.READY
         click.echo(
             "The surrounding Git repository ignores this experiment directory, "
-            "so setup is initialising a dedicated repository here (otherwise "
-            "deployment would package no files)."
+            "so setup is initialising a dedicated repository here to record "
+            "meaningful source provenance."
         )
         return _init_git_repository_here()
 
@@ -803,20 +797,9 @@ def _echo_in_repo_setup_success():
     _handle_setup_services(mode="verify")
 
 
-def _echo_no_install_success(*, docker):
+def _echo_no_install_success():
     """Print success and next steps after a files-only setup."""
     _ensure_git_repository()
-    if docker:
-        click.echo(
-            "Prepared experiment files for Docker "
-            "(scaffolded boilerplate and constraints; did not install packages "
-            "into the local virtual environment).\n\n"
-            "Next steps:\n"
-            "  Follow the generated instructions under docker/docs."
-        )
-        _handle_setup_services(mode="verify")
-        return
-
     click.echo(
         "Prepared experiment files without installing packages "
         "(scaffolded boilerplate and constraints).\n\n"
@@ -824,8 +807,7 @@ def _echo_no_install_success(*, docker):
         "  Make sure this directory's dedicated .venv is active and PsyNet is "
         "installed in it, then run:\n"
         "  psynet setup\n"
-        "  (omit --no-install / --docker so setup can install from "
-        "constraints.txt)"
+        "  (omit --no-install so setup can install from constraints.txt)"
     )
     _handle_setup_services(mode="ensure-soft")
 
@@ -836,7 +818,7 @@ def _handle_setup_services(*, mode):
     Parameters
     ----------
     mode :
-        ``"verify"`` checks only (in-repo / Docker). ``"ensure-soft"`` may
+        ``"verify"`` checks only (in-repo). ``"ensure-soft"`` may
         offer to start Docker services but never fails setup.
     """
     from .services import ensure_local_services, verify_local_services
@@ -858,7 +840,6 @@ def setup_experiment(
     no_install,
     force_shared_env,
     force_foreign_env=False,
-    docker=False,
 ):
     """Scaffold and synchronize an experiment's dedicated virtual environment."""
     if is_in_repo_experiment():
@@ -908,7 +889,7 @@ def setup_experiment(
         _ensure_constraints_up_to_date(ctx)
 
     if action == "no-install":
-        _echo_no_install_success(docker=docker)
+        _echo_no_install_success()
         return
 
     if (

@@ -3,11 +3,11 @@
 from typing import Literal, Optional, Type
 
 from dallinger import db
-from sqlalchemy import Column, Index, String, UniqueConstraint, and_, select
+from sqlalchemy import Column, Index, Integer, String, UniqueConstraint, and_, select
 from sqlalchemy.orm import aliased
 
 from ..data import SQLBase, SQLMixin, register_table
-from ..field import Integer, PythonObject
+from ..field import PythonObject
 from .chain import ChainNetwork, ChainNode, ChainTrial, ChainTrialMaker
 from .main import with_trial_maker_namespace
 
@@ -85,8 +85,6 @@ class GraphChainNetwork(ChainNetwork):
         Source seed to use when initializing the graph in the trialmaker.
 
     """
-
-    __extra_vars__ = ChainNetwork.__extra_vars__.copy()
 
     vertex_id = Column(Integer)
     source_seed = Column(PythonObject)
@@ -204,8 +202,6 @@ class GraphChainNode(ChainNode):
         The id of the vertex that the network is representing within the graph.
 
     """
-
-    __extra_vars__ = ChainNode.__extra_vars__.copy()
 
     def __init__(
         self,

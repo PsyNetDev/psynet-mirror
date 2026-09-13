@@ -24,7 +24,7 @@ from .timeline import (
     join,
     while_loop,
 )
-from .utils import get_logger
+from .utils import get_logger, get_translator
 
 logger = get_logger()
 warnings.simplefilter("always", DeprecationWarning)
@@ -545,11 +545,30 @@ class ExecuteFrontEndJS(InfoPage):
     # Skip beforeunload detection since this page is expected to navigate away
     skip_beforeunload = True
 
-    def __init__(self, js: str, message: str = ""):
+    def __init__(self, js: str):
         super().__init__(
-            content=message,
+            content=self._spinner(),
             time_estimate=0.0,
             js_vars={"execute_front_end_js": js},
             js_page_modules=["/static/scripts/execute-front-end-js.js"],
             show_next_button=False,
         )
+
+    @staticmethod
+    def _spinner():
+        """Render a spinner rather than prose.
+
+        These pages run some JavaScript and then navigate, normally within a
+        couple of hundred milliseconds. That is too brief to read a sentence,
+        but long enough that a blank surface looks broken, and it can stretch
+        out when the network is slow. The spinner reads the same either way.
+        The label is for screen readers, which have nothing else to announce.
+        """
+        _p = get_translator(context=True)
+
+        return Markup(
+            '<div class="psynet-activity" role="status">'
+            '<span class="spinner-border" aria-hidden="true"></span>'
+            '<span class="visually-hidden">{}</span>'
+            "</div>"
+        ).format(_p("status", "Working..."))

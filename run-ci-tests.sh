@@ -40,6 +40,9 @@ if [[ "$TEST_SCOPE" == "full" ]]; then
       continue
     fi
     # We use -Werror to ensure that we see all warnings as errors, but ignore yaspin color warnings
+    # and the custom_network_filter deprecation until psynet-step migrates to
+    # custom_chain_filter (https://github.com/pmcharrison/STEP/pull/5).
+    # TODO: drop this ignore once that STEP change is released for PsyNet 14.
     # The suite name carries the Python version so the merged JUnit report can
     # distinguish otherwise identical tests run on different versions.
     pytest \
@@ -48,6 +51,7 @@ if [[ "$TEST_SCOPE" == "full" ]]; then
       $file/test.py \
       -Werror \
       -W "ignore:color, on_color and attrs are not supported when output stream is not a TTY:UserWarning:yaspin.core" \
+      -W "ignore:custom_network_filter is deprecated:DeprecationWarning" \
       -q \
       -o log_cli=False \
       --chrome \

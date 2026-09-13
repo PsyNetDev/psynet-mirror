@@ -96,6 +96,16 @@ class TestExp:
             p_trials = trial_maker.get_participant_trials(participant=participant)
 
             assert len(p_trials) == 9
+            assert [
+                trial.position for trial in sorted(p_trials, key=lambda trial: trial.id)
+            ] == list(range(9))
+            assert [
+                trial.id
+                for trial in StaticTrial.query.filter_by(
+                    participant_id=participant.id,
+                    trial_maker_id="animals",
+                ).order_by(StaticTrial.position)
+            ] == [trial.id for trial in sorted(p_trials, key=lambda trial: trial.id)]
             for t in p_trials:
                 assert t.participant_id == 1
                 assert t.trial_maker_id == "animals"
@@ -111,10 +121,10 @@ class TestExp:
                 driver,
                 "main-body",
                 """
-                That\'s the end of the experiment! You will receive a reward of $0.13
-                for the time you spent on the experiment. You have also been awarded a performance reward of $9.09!
+                That's the end! You will receive a reward of $0.13
+                for the time you spent. You have also been awarded a performance reward of $9.09.
                 Thank you for taking part.
-                Please click "Finish" to finalize the session. Finish
+                Click Finish to finalize the session. Finish
                 """,
             )
 

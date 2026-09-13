@@ -47,6 +47,11 @@ class Exp(psynet.experiment.Experiment):
         "prolific_workspace": "test_workspace",
         "prolific_project": "test_project",
         "prolific_enable_return_for_bonus": False,
+        # This experiment tests the manual/returned partial-payment routes,
+        # so disable the (default-on) automatic screen-out payment, which
+        # would otherwise require `prolific_screen_out_slots` and reroute
+        # failed participants through the UNSUCCESSFUL completion code.
+        "prolific_pay_unsuccessful": False,
     }
 
     test_n_bots = 3
@@ -124,8 +129,9 @@ class Exp(psynet.experiment.Experiment):
 
             assert self.base_payment == 1.0
 
-            assert self.bonus(bot) == BONUS, (
-                f"Expected bonus for bot ID {bot.id} to be 3.5, but got {self.bonus(bot)} (status: {bot.status}, time_reward: {bot.time_reward}, performance_reward: {bot.performance_reward}, bot.bonus: {bot.bonus})"
+            decision = bot.recruiter.decide_payment(bot, experiment=self)
+            assert decision.bonus == BONUS, (
+                f"Expected bonus for bot ID {bot.id} to be 3.5, but got {decision.bonus} (status: {bot.status}, time_reward: {bot.time_reward}, performance_reward: {bot.performance_reward}, bot.bonus: {bot.bonus})"
             )
         elif bot.id == 2:
             assert route == "manual_partial_payment", (
@@ -152,11 +158,12 @@ class Exp(psynet.experiment.Experiment):
             assert bot.status == "returned", (
                 f"Expected status for bot ID {bot.id} to be 'returned', but got '{bot.status}'"
             )
-            assert self.bonus(bot) in (
+            decision = bot.recruiter.decide_payment(bot, experiment=self)
+            assert decision.bonus in (
                 0.17,
                 0.18,
             ), (
-                f"Expected bonus for bot ID {bot.id} to be either 0.17 or 0.18, but got {self.bonus(bot)}"
+                f"Expected bonus for bot ID {bot.id} to be either 0.17 or 0.18, but got {decision.bonus}"
             )
         else:
             raise ValueError(f"Unexpected bot id: {bot.id}")

@@ -62,6 +62,14 @@ pre_commit:
   script:
     - pre-commit run --all-files
 
+validate_agent_skills:
+  image: python:3.13
+  <<: *default_rules
+  before_script:
+    - pip install pyyaml skills-ref
+  script:
+    - python scripts/validate_agent_skills.py
+
 changelog_check:
   image: python:3.13
   stage: test
@@ -252,7 +260,10 @@ asv_benchmarks:
     # Full clone: the previous default-branch commit may be unreachable in the
     # default shallow clone, but we need it as the regression baseline.
     GIT_DEPTH: "0"
-    ASV_REGRESSION_FACTOR: "1.25"
+    # Slow experiment load-test medians commonly swing ~1.2-1.3x on GitLab
+    # runners without a code change, so this job uses 2 rather than the fast
+    # merge-request gate's 1.25.
+    ASV_REGRESSION_FACTOR: "2"
   cache:
     key:
       files:
@@ -385,21 +396,31 @@ benchmark_load_sweep:
     - when: manual
       allow_failure: true
 
-# Build this commit's Sphinx docs without publishing. Catches install/import
-# and autodoc failures on MRs and branches; the ``pages`` job remains the
-# multi-version publish path for the default branch and release tags.
-docs:build:
+# Shared setup for docs CI. Replaces the global Docker before_script
+# and opts out of Docker-in-Docker, Postgres, and Redis.
+.docs_ci:
   image: python:3.13
   stage: test
   <<: *default_rules
-  before_script: []
-  script:
+  services: []
+  before_script:
     - python -m pip install -e '.[dev]'
-    - sphinx-build -b html docs public/docs-ci
+
+# Check this commit's Sphinx docs without publishing. Treats warnings as
+# errors, then checks links in the same job so pip install runs once.
+# HTML runs first so an RST/autodoc failure is not mixed with a flaky URL.
+# The ``pages`` job remains the multi-version publish path for the default
+# branch and release tags.
+docs:
+  extends: .docs_ci
+  script:
+    - psynet dev docs make --strict
+    - psynet dev docs linkcheck --no-clean
   artifacts:
     when: on_failure
     paths:
-      - public/docs-ci/
+      - docs/_build/html/
+      - docs/_build/linkcheck/
     expire_in: 1 week
 
 # To do:
@@ -407,6 +428,7 @@ docs:build:
 # Build and publish the multi-version docs site to GitLab Pages.
 # Build logic lives in docs/scripts/build_pages.sh; this job is a thin
 # wrapper that supplies the image, cache, artifacts, and rules.
+# ``services: []`` opts out of Docker-in-Docker, Postgres, and Redis.
 pages:
   image: python:3.13
   stage: deploy
@@ -422,6 +444,7 @@ pages:
     paths:
       - public/
     policy: pull-push
+  services: []
   before_script: []
   script:
     - bash docs/scripts/build_pages.sh

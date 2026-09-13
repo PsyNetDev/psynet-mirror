@@ -3,31 +3,58 @@
 {% block stylesheets %}
     {{ super() }}
     <style data-psynet-fragment-style="true">
-        .vcenter {
-            display: inline-block;
-            vertical-align: middle;
-            float: none;
-            margin: auto;
+        /* Wait pages use the same page column whether or not they have a
+           footer. Without a footer, leave room for the fixed media rail. */
+        #timeline-root {
+            display: flex;
+            flex-direction: column;
+        }
+
+        #timeline-root:not(:has(#footer)) {
+            min-height: calc(100vh - var(--psynet-media-progress-height));
+            min-height: calc(100dvh - var(--psynet-media-progress-height));
+        }
+
+        /* The waiting animation is full-bleed, so opt out of the content surface.
+           This column takes the space between the progress bar and the footer
+           rather than claiming a full viewport of its own. */
+        #main-body {
+            padding: 0 !important;
+            margin: 0 !important;
+            max-width: none;
+            background: none;
+            border: none;
+            border-radius: 0;
+            box-shadow: none;
+            flex: 1 1 auto;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+
+        /* Fill the column below the progress bar. */
+        #wait-page {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex: 1 1 auto;
+            min-height: 0;
+            padding: 2rem;
             text-align: center;
         }
 
-        #main-body {
-            padding: 0 !important;
-            margin:0 !important;
-        }
-
         #wait-page p {
-            font-size: 3em;
+            margin: 0;
+            font-size: clamp(1.75rem, 5vw, 3rem);
             font-weight: 600;
+            text-wrap: balance;
         }
     </style>
 
 {% endblock %}
 
 {% block main_body %}
-    <div class="row colorfadeanim" id="wait-page" style="height: 100%">
-        <div class="col-10 vcenter">
-            <p>{{ content }}</p>
-        </div>
+    <div class="colorfadeanim" id="wait-page">
+        <p>{{ content }}</p>
     </div>
 {% endblock %}

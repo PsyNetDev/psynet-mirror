@@ -1,4 +1,6 @@
+import re
 import warnings
+from importlib import resources
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -6,7 +8,19 @@ from unittest.mock import MagicMock, patch
 import pytest
 from markupsafe import Markup
 
-from psynet.end import UnsuccessfulEndLogic
+from psynet.end import (
+    RejectedConsentLogic,
+    SuccessfulEndLogic,
+    UnsuccessfulEndLogic,
+)
+from psynet.exit import (
+    EarlyExitConfirmation,
+    ExitContext,
+    ExitPath,
+    ExitPlan,
+    PaymentDecision,
+    PaymentState,
+)
 from psynet.experiment import Experiment
 from psynet.page import InfoPage, SuccessfulEndPage, UnsuccessfulEndPage
 from psynet.timeline import (
@@ -14,9 +28,11 @@ from psynet.timeline import (
     CodeBlock,
     CreditEstimate,
     Elt,
+    Event,
     MediaSpec,
     Page,
     PageMaker,
+    ProgressStage,
     Timeline,
     join,
     switch,
@@ -195,12 +211,16 @@ def test_partial_fragment_rendering_calls_pre_render_before_render():
     page.pre_render.side_effect = lambda: calls.append("pre_render")
     page.render.side_effect = lambda *args, **kwargs: calls.append("render") or "<html>"
     participant = SimpleNamespace(page_uuid="uuid-123")
-
-    payload = Experiment.render_partial_timeline_payload(
-        page, experiment=MagicMock(), participant=participant
+    experiment = MagicMock()
+    experiment.prepare_voluntary_exit_plan.side_effect = lambda *args: calls.append(
+        "prepare_exit"
     )
 
-    assert calls == ["pre_render", "render"]
+    payload = Experiment.render_partial_timeline_payload(
+        page, experiment=experiment, participant=participant
+    )
+
+    assert calls == ["pre_render", "prepare_exit", "render"]
     assert payload == {"html": "<html>", "page_uuid": "uuid-123"}
 
 
@@ -232,6 +252,56 @@ def test_requires_full_page_reload_skips_spa_contract_error():
     assert page.requires_full_page_reload
     assert page._spa_contract_opt_out
     page._check_spa_template_contract(inplace_timeline_transitions=True)
+
+
+def test_expect_scrolling_constructor_overrides_class_default():
+    assert InfoPage("short", time_estimate=1).expect_scrolling is False
+    assert InfoPage("long", time_estimate=1, expect_scrolling=True).expect_scrolling
+
+    class LongPage(InfoPage):
+        expect_scrolling = True
+
+    assert LongPage("long", time_estimate=1).expect_scrolling is True
+    assert (
+        LongPage("short", time_estimate=1, expect_scrolling=False).expect_scrolling
+        is False
+    )
+
+
+def test_named_progress_colours_follow_the_theme():
+    assert ProgressStage(1, "x", "red")["color"] == "var(--psynet-danger)"
+    assert ProgressStage(1, "x", "Green")["color"] == "var(--psynet-success)"
+    assert ProgressStage(1, "x", "blue")["color"] == "var(--psynet-accent)"
+    assert ProgressStage(1, "x", "orange")["color"] == "var(--psynet-warning)"
+    assert ProgressStage(1, "x", "grey")["color"] == "var(--psynet-text-muted)"
+    assert ProgressStage(1, "x", "gray")["color"] == "var(--psynet-text-muted)"
+    assert ProgressStage(1, "x", "black")["color"] == "var(--psynet-text)"
+    assert ProgressStage(1, "x", "white")["color"] == "white"
+    assert ProgressStage(1, "x", "#ff00aa")["color"] == "#ff00aa"
+    assert (
+        ProgressStage(1, "x", "var(--psynet-accent)")["color"] == "var(--psynet-accent)"
+    )
+
+
+def test_named_event_message_colours_follow_the_theme():
+    event = Event(is_triggered_by="trialStart", message="Hi", message_color="red")
+    assert event["message_color"] == "var(--psynet-danger)"
+    default = Event(is_triggered_by="trialStart", message="Hi")
+    assert default["message_color"] == "var(--psynet-text)"
+    white = Event(is_triggered_by="trialStart", message="Hi", message_color="white")
+    assert white["message_color"] == "white"
+
+
+def test_named_participant_colours_match_javascript():
+    from psynet.timeline import _PARTICIPANT_NAMED_COLORS
+
+    js = (resources.files("psynet") / "resources/scripts/psynet.js").read_text(
+        encoding="utf-8"
+    )
+    block = re.search(r"namedColors:\s*\{([^}]+)\}", js, re.S).group(1)
+    js_colors = dict(re.findall(r'(\w+):\s*"([^"]+)"', block))
+    assert js_colors == _PARTICIPANT_NAMED_COLORS
+    assert "white" not in js_colors
 
 
 def test_js_vars_window_collisions_warn_at_construction():
@@ -979,3 +1049,170 @@ def test_async_code_block_initiate__clears_stale_finished_or_failed_process(
     assert any("stale reference" in record.message for record in caplog.records), (
         f"Expected a stale-reference warning, got: {[r.message for r in caplog.records]}"
     )
+
+
+def test_page_show_abort_button_is_a_deprecated_alias():
+    with pytest.warns(FutureWarning, match="show_early_exit_button"):
+        page = InfoPage("Hello", time_estimate=1, show_abort_button=True)
+    assert page.show_early_exit_button is True
+    assert page.show_abort_button is True
+
+
+def test_page_show_termination_button_is_a_deprecated_alias():
+    with pytest.warns(FutureWarning, match="show_early_exit_button"):
+        page = InfoPage("Hello", time_estimate=1, show_termination_button=True)
+    assert page.show_early_exit_button is True
+    assert page.show_termination_button is True
+
+
+def test_page_rejects_conflicting_abort_and_termination_flags():
+    with pytest.warns(FutureWarning, match="show_early_exit_button"):
+        with pytest.raises(ValueError, match="disagree"):
+            InfoPage(
+                "Hello",
+                time_estimate=1,
+                show_early_exit_button=True,
+                show_termination_button=False,
+            )
+
+
+def test_experiment_reuses_a_voluntary_exit_plan_for_one_page():
+    experiment = object.__new__(Experiment)
+    experiment.recruiter = MagicMock()
+    first = ExitPlan.create(
+        context=ExitContext.VOLUNTARY,
+        path=ExitPath.END_SESSION,
+        payment=None,
+        payment_state=PaymentState.NOT_APPLICABLE,
+        confirmation=EarlyExitConfirmation("Leave?", "Saved.", "Leave", "Cancel"),
+    )
+    second = ExitPlan.create(
+        context=ExitContext.VOLUNTARY,
+        path=ExitPath.END_SESSION,
+        payment=None,
+        payment_state=PaymentState.NOT_APPLICABLE,
+        confirmation=EarlyExitConfirmation("Leave?", "Saved.", "Leave", "Cancel"),
+    )
+    experiment.recruiter.plan_exit.side_effect = [first, second]
+    participant = SimpleNamespace(exit_plan=None, page_uuid="page-1")
+
+    first_prepared = experiment.prepare_voluntary_exit_plan(participant)
+    same_page = experiment.prepare_voluntary_exit_plan(participant)
+    participant.page_uuid = "page-2"
+    next_page = experiment.prepare_voluntary_exit_plan(participant)
+
+    assert same_page == first_prepared
+    assert first_prepared.source_page_uuid == "page-1"
+    assert next_page.source_page_uuid == "page-2"
+    assert first_prepared.plan_id != next_page.plan_id
+    assert experiment.recruiter.plan_exit.call_count == 2
+    experiment.recruiter.plan_exit.assert_called_with(
+        experiment,
+        participant,
+        ExitContext.VOLUNTARY,
+    )
+
+
+def test_prepared_voluntary_exit_plan_is_a_read_only_lookup():
+    experiment = object.__new__(Experiment)
+    plan = ExitPlan.create(
+        context=ExitContext.VOLUNTARY,
+        path=ExitPath.END_SESSION,
+        payment=None,
+        payment_state=PaymentState.NOT_APPLICABLE,
+        confirmation=EarlyExitConfirmation("Leave?", "Saved.", "Leave", "Cancel"),
+        source_page_uuid="page-1",
+    )
+    participant = SimpleNamespace(exit_plan=plan.to_dict(), page_uuid="page-1")
+
+    assert experiment.prepared_voluntary_exit_plan(participant) == plan
+    assert participant.exit_plan == plan.to_dict()
+
+
+@pytest.mark.parametrize(
+    "logic,context",
+    [
+        (SuccessfulEndLogic(), ExitContext.SUCCESSFUL),
+        (UnsuccessfulEndLogic(), ExitContext.UNSUCCESSFUL),
+        (RejectedConsentLogic(), ExitContext.REJECTED_CONSENT),
+    ],
+)
+def test_end_logic_stores_a_committed_exit_plan(logic, context):
+    participant = SimpleNamespace(exit_plan=None)
+    experiment = MagicMock()
+    plan = ExitPlan.create(
+        context=context,
+        path=ExitPath.END_SESSION,
+        payment=PaymentDecision(
+            status="approved",
+            platform_base=1.0,
+            bonus=0.5,
+        ),
+        currency="$",
+    )
+    experiment.plan_exit.return_value = plan
+
+    logic.prepare_exit(experiment, participant)
+
+    experiment.plan_exit.assert_called_once_with(
+        participant,
+        context,
+    )
+    assert ExitPlan.from_dict(participant.exit_plan) == plan.mark_committed()
+
+
+def test_page_show_early_exit_button_does_not_warn():
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", FutureWarning)
+        page = InfoPage("Hello", time_estimate=1, show_early_exit_button=False)
+    assert page.show_early_exit_button is False
+    assert page.show_termination_button is False
+
+
+def test_consent_pages_hide_footer_exit_by_default():
+    from psynet.consent import MainConsent
+
+    page = MainConsent.MainConsentPage(time_estimate=1)
+    assert page.show_early_exit_button is False
+
+
+def _experiment_offering_early_exit(in_end_logic):
+    experiment = MagicMock()
+    experiment.recruiter.show_early_exit_button = True
+    experiment.timeline.participant_is_in_end_logic.return_value = in_end_logic
+    return experiment
+
+
+@pytest.mark.parametrize(
+    "in_end_logic,complete,early_exited,expected",
+    [
+        (False, False, False, True),
+        (True, False, False, False),
+        (False, True, False, False),
+        (False, False, True, False),
+    ],
+)
+def test_early_exit_is_not_offered_once_the_participant_is_finishing(
+    in_end_logic, complete, early_exited, expected
+):
+    page = InfoPage("Hello", time_estimate=1)
+    participant = MagicMock(complete=complete, early_exited=early_exited)
+
+    assert (
+        page.early_exit_available(
+            _experiment_offering_early_exit(in_end_logic), participant
+        )
+        is expected
+    )
+
+
+def test_page_level_early_exit_setting_overrides_the_recruiter_and_config():
+    participant = MagicMock(complete=False, early_exited=False)
+    experiment = _experiment_offering_early_exit(in_end_logic=False)
+
+    hidden = InfoPage("Hello", time_estimate=1, show_early_exit_button=False)
+    assert hidden.early_exit_available(experiment, participant) is False
+
+    experiment.recruiter.show_early_exit_button = False
+    shown = InfoPage("Hello", time_estimate=1, show_early_exit_button=True)
+    assert shown.early_exit_available(experiment, participant) is True

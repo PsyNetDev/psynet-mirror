@@ -237,6 +237,18 @@ If you do not specify which locales to translate it to, it will default to PsyNe
 
 Contributing to PsyNet
 ----------------------
+
+Merge requests that change PsyNet source should not update ``psynet/locales``.
+Package catalogs are refreshed on the release branch with ``psynet translate``,
+where :func:`~psynet.translation.check.check_translations` also runs. Until
+then, a missing PsyNet catalog entry raises under ``psynet debug`` and on
+release-branch tests. Non-release test runs show the English source text and
+log a warning instead. Live experiments report the error and show English.
+Tests that pin translated PsyNet copy should therefore run only on release
+branches. Experiment catalogs are unaffected: a missing experiment translation
+still raises outside live mode, whether you are running ``psynet debug`` or
+``psynet test local``.
+
 To contribute to PsyNet you need to:
 - have a local version of psynet on your computer e.g.: ``cd ~ && git clone https://gitlab.com/PsyNetDev/PsyNet``
 - go to the master branch and pull the latest changes: ``cd ~/PsyNet && git checkout master && git pull``

@@ -211,5 +211,5 @@ class Exp(psynet.experiment.Experiment):
         bots[1].take_page()
         advance_past_wait_pages(bots)
 
-        assert "That's the end of the experiment!" in bots[0].current_page_text
-        assert "That's the end of the experiment!" in bots[1].current_page_text
+        assert "That's the end!" in bots[0].current_page_text
+        assert "That's the end!" in bots[1].current_page_text

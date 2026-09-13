@@ -1,5 +1,7 @@
 # Note -- AWS tests will fail without setting AWS keys
 
+set -euo pipefail
+
 AWS_ACCESS_KEY_ID=TODO
 AWS_DEFAULT_REGION=TODO
 AWS_SECRET_ACCESS_KEY=TODO
@@ -11,8 +13,9 @@ DOCKER_HOST=tcp://docker:2375
 DOCKER_DRIVER=overlay2
 DOCKER_TLS_CERTDIR=""
 
-# Sets up required services (postgres, redis etc)
-. psynet/resources/experiment_scripts/docker/services
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=ci/ensure-dallinger-docker-network.sh
+. "$SCRIPT_DIR/ci/ensure-dallinger-docker-network.sh"
 
 # Builds the Docker image
 docker build --tag "$DOCKER_IMAGE" .

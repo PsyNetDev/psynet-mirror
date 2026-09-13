@@ -1,5 +1,7 @@
+import json
 import re
 import subprocess
+import sys
 
 import pytest
 
@@ -11,7 +13,7 @@ from psynet.utils import working_directory
 def source_checkout(tmp_path, monkeypatch):
     docs_dir = tmp_path / "docs"
     docs_dir.mkdir()
-    (docs_dir / "Makefile").write_text("html:\n", encoding="utf-8")
+    (docs_dir / "conf.py").write_text("# test sphinx config\n", encoding="utf-8")
     monkeypatch.setattr(docs_module, "get_psynet_root", lambda: tmp_path)
     return tmp_path
 
@@ -43,9 +45,18 @@ def test_make_command_runs_docs_make_target_with_options(source_checkout, monkey
     assert calls == [
         (
             [
-                "make",
+                sys.executable,
+                "-m",
+                "sphinx",
+                "-M",
                 "dirhtml",
-                "SPHINXOPTS=--nitpicky -W --keep-going -j auto",
+                ".",
+                "_build",
+                "--nitpicky",
+                "-W",
+                "--keep-going",
+                "-j",
+                "auto",
             ],
             {
                 "cwd": source_checkout / "docs",
@@ -69,7 +80,17 @@ def test_make_command_defaults_to_html_with_serial_jobs(source_checkout, monkeyp
 
     assert calls == [
         (
-            ["make", "html", "SPHINXOPTS=-j 1"],
+            [
+                sys.executable,
+                "-m",
+                "sphinx",
+                "-M",
+                "html",
+                ".",
+                "_build",
+                "-j",
+                "1",
+            ],
             {
                 "cwd": source_checkout / "docs",
                 "check": True,
@@ -226,15 +247,41 @@ def test_make_command_reports_failed_make_command(source_checkout, monkeypatch):
 def test_linkcheck_command_prints_structured_summary(
     source_checkout, monkeypatch, capsys
 ):
-    output = (
-        "/tmp/project/docs/api/utils.rst:3: WARNING: broken link: "
-        "http://localhost:5000 (connection refused)\n"
-        "(deploy/ssh_server: line 205) broken "
-        "https://your-app-name.example.com - certificate mismatch\n"
+    linkcheck_dir = source_checkout / "docs" / "_build" / "linkcheck"
+    linkcheck_dir.mkdir(parents=True)
+    (linkcheck_dir / "output.json").write_text(
+        "\n".join(
+            json.dumps(entry)
+            for entry in [
+                {
+                    "filename": "api/graphics.rst",
+                    "lineno": 3,
+                    "status": "working",
+                    "uri": "https://www.w3.org/TR/SVG/",
+                    "info": "",
+                },
+                {
+                    "filename": "api/utils.rst",
+                    "lineno": 3,
+                    "status": "broken",
+                    "uri": "http://localhost:5000",
+                    "info": "connection refused",
+                },
+                {
+                    "filename": "deploy/ssh_server.rst",
+                    "lineno": 205,
+                    "status": "broken",
+                    "uri": "https://your-app-name.example.com",
+                    "info": "certificate mismatch",
+                },
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
     )
 
     def fake_run(command, **kwargs):
-        return subprocess.CompletedProcess(command, 1, stdout=output, stderr="")
+        return subprocess.CompletedProcess(command, 1, stdout="", stderr="")
 
     monkeypatch.setattr(docs_module.subprocess, "run", fake_run)
 
@@ -244,13 +291,14 @@ def test_linkcheck_command_prints_structured_summary(
 
     summary = capsys.readouterr().out
     assert "Linkcheck found 2 broken link(s):" in summary
+    assert "- api/utils.rst:3 [broken] http://localhost:5000" in summary
     assert (
-        "- /tmp/project/docs/api/utils.rst:3 [broken] http://localhost:5000" in summary
-    )
-    assert (
-        "- deploy/ssh_server:205 [broken] https://your-app-name.example.com" in summary
+        "- deploy/ssh_server.rst:205 [broken] https://your-app-name.example.com"
+        in summary
     )
     assert "certificate mismatch" in summary
+    # Working links are not reported.
+    assert "www.w3.org" not in summary
 
 
 def test_linkcheck_command_updates_progress(source_checkout, monkeypatch, capsys):
@@ -258,11 +306,30 @@ def test_linkcheck_command_updates_progress(source_checkout, monkeypatch, capsys
     postfixes = []
     spinner_texts = []
 
+    linkcheck_dir = source_checkout / "docs" / "_build" / "linkcheck"
+    linkcheck_dir.mkdir(parents=True)
+    (linkcheck_dir / "output.json").write_text(
+        json.dumps(
+            {
+                "filename": "api/utils.rst",
+                "lineno": 3,
+                "status": "broken",
+                "uri": "http://localhost:5000",
+                "info": "refused",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
     class FakeProcess:
+        # Sphinx colours these lines; the progress counter must still see them.
         stdout = [
             "reading sources... [ 42%] tutorials/assets\n",
-            "(api/graphics: line    3) ok        https://www.w3.org/TR/SVG/\n",
-            "(api/utils: line    3) broken    http://localhost:5000 - refused\n",
+            "(api/graphics: line    3) \x1b[32mok        \x1b[39;49;00m"
+            "https://www.w3.org/TR/SVG/\n",
+            "(api/utils: line    3) \x1b[31mbroken    \x1b[39;49;00m"
+            "http://localhost:5000 - refused\n",
         ]
 
         def wait(self):
@@ -338,13 +405,34 @@ def test_linkcheck_command_updates_progress(source_checkout, monkeypatch, capsys
     assert "http://localhost:5000" in capsys.readouterr().out
 
 
-def test_parse_linkcheck_warning_relativizes_docs_paths(source_checkout):
-    line = (
-        f"{source_checkout}/docs/api/utils.rst:3: WARNING: broken link: "
-        "http://localhost:5000 (connection refused)"
+def test_parse_linkcheck_issues_reads_sphinx_output_json(tmp_path):
+    linkcheck_dir = tmp_path / "linkcheck"
+    linkcheck_dir.mkdir()
+    (linkcheck_dir / "output.json").write_text(
+        "\n".join(
+            json.dumps(entry)
+            for entry in [
+                {
+                    "filename": "api/graphics.rst",
+                    "lineno": 3,
+                    "status": "ignored",
+                    "uri": "https://example.com",
+                    "info": "",
+                },
+                {
+                    "filename": "api/utils.rst",
+                    "lineno": 3,
+                    "status": "broken",
+                    "uri": "http://localhost:5000",
+                    "info": "connection refused",
+                },
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
     )
 
-    issues = docs_module.parse_linkcheck_issues(line, source_checkout / "docs")
+    issues = docs_module.parse_linkcheck_issues(tmp_path)
 
     assert issues == [
         docs_module.LinkcheckIssue(
@@ -422,6 +510,23 @@ def test_format_linkcheck_summary_groups_issues_by_category():
     assert summary.index("learning/how_to_learn:15") < summary.index(
         "learning/how_to_learn:21"
     )
+
+
+def test_format_linkcheck_summary_groups_timed_out_broken_links():
+    # linkcheck_report_timeouts_as_broken makes Sphinx label timeouts "broken",
+    # so the reason has to carry them into the Timeouts category.
+    issue = docs_module.LinkcheckIssue(
+        source="api/modular_page.rst",
+        line=10,
+        status="broken",
+        url="https://slow.example.com",
+        reason=(
+            "HTTPSConnectionPool(host='slow.example.com', port=443): "
+            "Read timed out. (read timeout=30)"
+        ),
+    )
+
+    assert "Timeouts (1):" in docs_module.format_linkcheck_summary([issue])
 
 
 def test_format_linkcheck_summary_keeps_unknown_categories(monkeypatch):

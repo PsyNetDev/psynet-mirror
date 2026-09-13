@@ -6,6 +6,8 @@ from os.path import basename, join
 from uuid import uuid4
 
 from psynet.asset import S3Storage
+from psynet.cache import IMMUTABLE_CACHE_CONTROL
+from psynet.media import get_s3_client
 
 
 def get_s3_storage(transfer_backend):
@@ -91,3 +93,29 @@ def test_s3_storage_boto3(mock_s3_root):
     # environment variable and using a unique remote prefix like the AWS CLI path.
     storage = get_s3_storage("boto3")
     run_test(storage)
+
+
+def test_s3_deposit_sets_immutable_cache_control_for_files_and_folders(
+    mock_s3_root, tmp_path
+):
+    storage = get_s3_storage("boto3")
+    storage.create_bucket(storage.s3_bucket)
+    source = tmp_path / "cached.txt"
+    source.write_text("cached", encoding="utf-8")
+
+    file_asset = type("Asset", (), {"is_folder": False, "input_path": str(source)})()
+    storage._receive_deposit(file_asset, "cached.txt")
+
+    folder = tmp_path / "cached"
+    folder.mkdir()
+    nested = folder / "nested.txt"
+    nested.write_text("nested", encoding="utf-8")
+    folder_asset = type("Asset", (), {"is_folder": True, "input_path": str(folder)})()
+    storage._receive_deposit(folder_asset, "cached-folder")
+
+    for key in ("s3-tests/cached.txt", "s3-tests/cached-folder/nested.txt"):
+        metadata = get_s3_client().head_object(
+            Bucket=storage.s3_bucket,
+            Key=key,
+        )
+        assert metadata["CacheControl"] == IMMUTABLE_CACHE_CONTROL

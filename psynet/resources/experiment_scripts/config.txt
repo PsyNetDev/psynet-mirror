@@ -1,6 +1,6 @@
 [Config]
 title = Demo experiment (Chrome browser, XXX minutes to complete)
-description = This experiment requires you to XXX. Please use a Chrome browser in incognito mode. We keep track of how much money you earn as you progress through the experiment; this means that if the experiment has to end early (e.g. equipment problems) we know how much to pay you. This number will be displayed at the bottom of the screen during the experiment. If you finish the experiment but time out, don't worry, we will approve your experiment manually.
+description = This experiment requires you to XXX. Please use a Chrome browser in incognito mode. Your progress is saved throughout the experiment so that your responses can be recovered if it ends early. If you finish but completion is not recorded, please contact the experimenter.
 contact_email_on_error = XXX@gmail.com
 organization_name = XXX
 
@@ -20,6 +20,9 @@ auto_recruit = false
 prolific_estimated_completion_minutes = 2
 # 10 dollars an hour -> 16.666666667 cents per minutes
 base_payment = 0.34
+# Required when recruiter = prolific (caps automatic screen-out spend; see docs).
+# A common choice is 10x initial_recruitment_size.
+# prolific_screen_out_slots = 20
 
 [Lucid]
 # When recruiting with Lucid below settings need to be applied,
@@ -28,7 +31,6 @@ base_payment = 0.34
 # recruiter = lucid
 # debug_recruiter = DevLucidRecruiter
 # lucid_recruitment_config = file:./lucid_recruitment_config.json
-# show_reward = false
 
 [Lab Recruiter]
 # When recruiting with Lab Recruiter set the following:

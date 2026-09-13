@@ -100,8 +100,6 @@ Use the tabs below to switch between the different ways of setting up a remote s
         AmazonEC2FullAccess
         AmazonRoute53FullAccess
         AmazonS3FullAccess  # only if you want to use S3 for storing experiment data/backups
-        AmazonMechanicalTurkFullAccess  # only if you want to use MTurk for recruiting participants
-        AmazonSNSFullAccess  # only if you want to use MTurk
 
     If you are working within a research group using PsyNet, ask your lab manager to create these credentials for you.
 

@@ -5,14 +5,25 @@ Experiment directory
 
 A PsyNet experiment implementation is defined by a particular *experiment directory*.
 This directory contains all the files you need to run your experiment.
-When you deploy an experiment, a slimmed down version of this directory is created and uploaded
-to a web server.
+When you deploy an experiment, its deployable files are assembled into the Docker image
+that runs on the experiment server.
 
 When you are developing a PsyNet experiment it is good practice to use a *version control system*
 for keeping track of changes to your experiment directory.
-In particular, we advise that you use *Git* because PsyNet itself uses some Git features
-as part of its deployment process. To learn more visit
-`Version control with Git <../tutorials/version_control_with_git.html>`_.
+We recommend *Git*. PsyNet requires an active Git repository so it can record
+deployment provenance (commit SHA and dirty state). To learn more visit
+:doc:`/tutorials/version_control_with_git`.
+PsyNet records the deployed Git commit and whether files selected by the
+deployment plan contain uncommitted changes. Selected Git-ignored or untracked
+files mark the deployment as dirty; changes outside the deployment plan, or
+elsewhere in a parent repository, do not. For reproducible live deployments,
+commit your changes before deploying. Experiment-file membership for staging
+and deployment comes from ``deploy.toml``, not from Git visibility.
+
+.. warning::
+
+   ``deploy.toml`` planning currently requires a POSIX filesystem and is not
+   supported on Windows.
 
 Your experiment directory contains various important files and directories.
 Let's talk through what these different files and directories do.
@@ -22,43 +33,61 @@ PsyNet experiment, the `Carillon Experiment <https://github.com/pmcharrison/2022
 -   ``.python-version`` records the Python major and minor version used when the
     experiment was scaffolded. PsyNet generates it from the active interpreter.
 
--   ``docker`` contains various scripts for a deprecated Docker API. We are considering this in a future version of PsyNet.
-
 -   ``static`` can be used as a storage place for files that the front-end browser can access directly via HTTP.
-    If you wanted to bypass PsyNet's asset management system, you could put individual scripts or media files in here,
+    Put public, immutable resources such as scripts, images, audio, and video here,
     and then access them via ``https://your-experiment-url/static/your-file.png``.
-    If you are storing large files you may want instead to use PsyNet's asset management system,
-    see `Assets <../tutorials/assets.html>`_ for more details.
+    These files are baked into the experiment's Docker image. Use PsyNet's asset
+    management system instead for generated files, participant recordings, private
+    data, or files that need storage-backed caching and export; see
+    :doc:`/tutorials/assets`.
+
+    PsyNet applies a deployment-plan size limit, currently 256 MB by default.
+    Set the ``EXP_MAX_SIZE_MB`` environment variable when intentionally baking a
+    larger static corpus into an image.
 
 -   ``templates`` is used for customising PsyNet’s front-end. It contains
     `Jinja2 templates <https://jinja.palletsprojects.com/en/2.11.x/>`_; Jinja2 is a popular templating library for Python.
     Most experiments do not need to use this folder, but for an example of how to use it, see
-    `Writing custom frontends <../tutorials/writing_custom_frontends.html>`_.
+    :doc:`/tutorials/writing_custom_frontends`.
 
--   ``.gitignore`` controls which files Git tracks. It takes a standard format that comes from Git;
-    you can learn more by Googling ``gitignore``. If a file is included within ``.gitignore``, it will not
-    be included in your Git repository and hence won't be visible on (for example) GitHub.
-    Importantly, files included in ``gitignore`` are **also** excluded from experiment deployments.
-    This means for example that if you specify media files in ``gitignore`` then they won't be uploaded
-    to the remote server's experiment directory.
-    By default, there are some files/folders that are always excluded from this upload process,
-    and this list is hard-coded into Dallinger. Currently it looks like this:
+-   ``.gitignore`` controls which files Git tracks. It does not control which
+    files enter debug staging or deployment; that is ``deploy.toml``.
 
-        - ``.git``
-        - ``config.txt``
-        - ``*.db``
-        - ``*.dmg``
-        - ``node_modules``
-        - ``snapshots``
-        - ``data``
-        - ``develop``
-        - ``server.log``
-        - ``__pycache__``
+-   ``deploy.toml`` controls which files enter Dallinger's deployment plan and
+    therefore the debug staging directory, Docker build context, or remote
+    deployment package. PsyNet creates this file from its template when it is
+    missing and never overwrites an existing copy. If a debug or deployment
+    command creates the file, that command stops and reports Git-ignored files
+    selected by the new policy so that you can review them before rerunning.
+    ``psynet scripts scaffold`` and ``psynet scripts update`` also create the
+    file when needed. ``[exclude]`` ``paths`` are
+    root-relative prefixes; ``names`` are basenames in every directory;
+    ``suffixes`` are literal endings such as ``.db``.
+    Format, auto-omitted paths, and inspection commands are documented in
+    Dallinger's
+    `deploy.toml guide <https://github.com/Dallinger/Dallinger/blob/master/docs/source/deploy_toml.rst>`_.
+    Stock ``[exclude]`` ``paths`` include ``audit`` (the local review packet),
+    ``data``, and ``.cursor/skills/psynet``.
+    Existing experiments keep their current ``deploy.toml`` until they add
+    those entries themselves; PsyNet never overwrites a custom copy.
+    Follow :doc:`/whats_new/upgrading_deployment_file_selection`.
+    Inspect the current plan with ``dallinger deployment-files list``.
+    ``.dockerignore`` is no longer supported. PsyNet removes recognized
+    generated copies; a custom copy blocks debug and deployment until its rules
+    are moved into ``deploy.toml`` and the file is removed.
 
 -   ``Dockerfile`` is used by Docker to define the experiment's Docker image. Normally you should not edit this file
     directly, but instead use the boilerplate file provided by PsyNet. You can update this file to
     their latest PsyNet versions by running ``psynet scripts update`` within an experiment directory.
     If the file is missing entirely, you can recreate it with ``psynet scripts scaffold``.
+
+-   ``.cursor/skills/psynet/`` contains PsyNet-managed Agent Skills for experiment
+    implementation, validation, deployment, data, and participant evidence.
+    ``psynet scripts update`` replaces this managed subdirectory with the version
+    shipped by the installed PsyNet release. The directory is gitignored and
+    excluded in ``deploy.toml`` so it is not committed or uploaded with the
+    experiment; other directories under ``.cursor/skills/`` are
+    experiment-owned, preserved on update, and remain eligible to track.
 
 -   ``Dockertag`` determines the name of the Docker image that is built for the present experiment.
     It defaults to the name of the current directory.
@@ -79,18 +108,20 @@ PsyNet experiment, the `Carillon Experiment <https://github.com/pmcharrison/2022
     scaffold and update. If you are upgrading an older experiment that never had
     a ``config.txt`` and you keep settings in ``Experiment.config``, create a
     blank file with ``touch config.txt`` rather than scaffolding a full
-    template; see :ref:`configuration`.
+    template; see :doc:`/experiment_development/configuration`.
 
 -   ``constraints.txt`` stores the locked versions of Python packages used when
     you install or deploy a **standalone** experiment. It is generated
     automatically (do not edit it by hand). Create or refresh it with
     ``psynet setup`` or ``psynet generate-constraints`` (Dallinger's lock
     policy via ``uv run``). Bundled demos omit it because they use the PsyNet
-    repository's development environment. For Docker mode, ``psynet setup
-    --docker`` still writes a local ``constraints.txt`` so the experiment
-    directory is complete.
+    repository's development environment. ``psynet setup --no-install`` still
+    writes a local ``constraints.txt`` without installing into the virtual
+    environment.
 
 -   ``experiment.py`` is a Python file that defines the primary experiment logic.
+    Split substantial helpers into sibling modules and import them with
+    relative imports (see :ref:`experiment_python_modules`).
 
 -   ``instructions.py`` is specific to the Carillon Experiment implementation, we don't need to worry about it now.
 
@@ -120,9 +151,33 @@ PsyNet experiment, the `Carillon Experiment <https://github.com/pmcharrison/2022
 -   ``synth.py`` is specific to the Carillon Experiment implementation, we don't need to worry about it now.
 
 -   ``test.py`` is a boilerplate PsyNet file that defines generic tests for the experiment.
-    You can run these tests in Docker by running ``docker/run pytest test.py``.
+    You can run these tests with ``psynet test local``.
     If you want to customize these tests you should normally override specific methods in the Experiment class,
     for example ``Experiment.test_experiment`` and ``Experiment.test_check_bots``.
     If this file is missing, you can regenerate it with ``psynet scripts scaffold``.
 
     ``volume_calibration.py`` is specific to the Carillon Experiment implementation, we don't need to worry about it now.
+
+
+.. _experiment_python_modules:
+
+Importing other Python files
+----------------------------
+
+You can split experiment code across several ``.py`` files in the experiment
+directory. Dallinger imports that directory as the package
+``dallinger_experiment``, so siblings of ``experiment.py`` must use relative
+imports. Do not run ``python experiment.py`` as a syntax or import check;
+use ``psynet test local``.
+
+.. code-block:: python
+
+    from . import adaptive_logic
+
+    def choose_next_item(state):
+        return adaptive_logic.select_item(state)
+
+Standalone scripts such as ``python -m audit.simulate.design.core`` use ordinary
+top-level imports of the same helpers. Run that command from the experiment
+root so those imports resolve. Put calibrated item banks in ``item_bank/``;
+stock ``deploy.toml`` omits ``data/``, ``audit/``, and ``exports/``.

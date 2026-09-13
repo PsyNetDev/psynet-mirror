@@ -176,15 +176,15 @@ looks like:
     {% extends "timeline-page.html" %}
 
     {% block main_body %}
-        That's the end of the experiment!
-        {% if config.show_reward %}
+        That's the end!
+        {% if experiment.show_reward %}
             {% include "final-page-rewards.html" %}
         {% endif %}
         Thank you for taking part.
 
         <p class="vspace"></p>
         <p>
-            Please click "Finish" to finalize the session.
+            Click Finish to finalize the session.
         </p>
         <p class="vspace"></p>
 
@@ -584,6 +584,33 @@ or for On-Demand Assets (i.e. Assets that are generated on-demand).
             time_estimate_per_iteration=RateTrial.time_estimate,
         ),
     )
+
+Adaptive or generated trials can use ``on_trial_created`` to create related
+database records in the same transaction as the cued trial. Pass request-local
+provenance through ``creation_context`` and assign ORM relationships in the
+callback, because the trial's database ID may not exist until the transaction
+flushes:
+
+.. code-block:: python
+
+    from dallinger import db
+
+
+    def record_decision(trial, creation_context):
+        decision = AdaptiveDecision(
+            snapshot_id=creation_context["snapshot_id"],
+        )
+        decision.trial = trial
+        db.session.add(decision)
+
+    RateTrial.cue(
+        definition={"item_id": "item-1"},
+        on_trial_created=record_decision,
+        creation_context={"snapshot_id": 12},
+    )
+
+See ``demos/features/trial_cue_adaptive`` for a complete participant-level
+staircase that uses this pattern with ``while_loop``.
 
 
 Node

@@ -4,13 +4,11 @@ import io
 import os
 import shutil
 import tempfile
-from datetime import datetime
 from typing import List, Optional
 from zipfile import ZipFile
 
 import dallinger.data
 import dallinger.models
-import psutil
 import sqlalchemy
 from dallinger import db
 from dallinger.command_line.docker_ssh import CONFIGURED_HOSTS
@@ -35,8 +33,7 @@ from dallinger.utils import classproperty
 from jsonpickle.util import importable_name
 from sqlalchemy import Column, String
 from sqlalchemy.ext.declarative import declared_attr
-from sqlalchemy.ext.mutable import MutableDict, MutableList
-from sqlalchemy.orm import deferred
+from sqlalchemy.orm import ColumnProperty, deferred
 from sqlalchemy.orm.session import close_all_sessions
 from sqlalchemy.schema import (
     DropConstraint,
@@ -45,11 +42,12 @@ from sqlalchemy.schema import (
     MetaData,
     Table,
 )
-from tqdm import tqdm
 
 from . import field
 from .field import PythonDict, is_basic_type
-from .utils import json_to_data_frame, organize_by_key
+from .utils import get_logger, organize_by_key
+
+logger = get_logger()
 
 
 def get_db_tables():
@@ -138,8 +136,8 @@ def _is_global_superclass(x, class_list):
 
 def _get_preferred_superclass_version(cls):
     """
-    Given an SQLAlchemy superclass for SQLAlchemy-mapped objects (e.g. ``Info``),
-    looks to see if there is a preferred version of this superclass (e.g. ``Trial``)
+    Given an SQLAlchemy superclass for SQLAlchemy-mapped objects (e.g. ``_Response``),
+    looks to see if there is a preferred version of this superclass (e.g. ``Response``)
     that still covers all instances in the database.
 
     Parameters
@@ -152,12 +150,9 @@ def _get_preferred_superclass_version(cls):
 
     A simplified class if one was found, otherwise the original class.
     """
-    import dallinger.models
-
     import psynet.timeline
 
     preferred_superclasses = {
-        dallinger.models.Info: psynet.trial.main.Trial,
         psynet.bot.Bot: psynet.participant.Participant,
         psynet.timeline._Response: psynet.timeline.Response,
     }
@@ -175,121 +170,11 @@ def _get_preferred_superclass_version(cls):
     return cls
 
 
-def _db_instance_to_dict(obj, scrub_pii: bool):
-    """
-    Converts an ORM-mapped instance to a JSON-style representation.
-    Complex types (e.g. lists, dicts) are serialized to strings using
-    psynet.serialize.serialize.
-
-    Parameters
-    ----------
-    obj
-        Object to convert.
-
-    scrub_pii
-        Whether to remove personally identifying information.
-
-    Returns
-    -------
-
-    JSON-style dictionary
-
-    """
-    try:
-        data = obj.to_dict()
-    except AttributeError:
-        data = obj.__json__()
-    if "class" not in data:
-        data["class"] = obj.__class__.__name__  # for the Dallinger classes
-    if scrub_pii and hasattr(obj, "scrub_pii"):
-        data = obj.scrub_pii(data)
-    for key, value in data.items():
-        if isinstance(value, datetime):
-            data[key] = value.strftime("%Y-%m-%d %H:%M:%S")
-            continue
-        if isinstance(value, MutableDict):
-            data[key] = dict(value)
-            continue
-        if isinstance(value, MutableList):
-            data[key] = list(value)
-            continue
-        if not is_basic_type(value):
-            from .serialize import serialize
-
-            data[key] = serialize(value)
-    return data
-
-
-def _prepare_db_export(scrub_pii: bool):
-    """
-    Encodes the database to a JSON-style representation suitable for export.
-
-    Parameters
-    ----------
-
-    scrub_pii
-        Whether to remove personally identifying information.
-
-    Returns
-    -------
-
-    A dictionary keyed by class names with lists of JSON-style
-    encoded class instances as values.
-    The keys correspond to the most-specific available class names,
-    e.g. ``CustomNetwork`` as opposed to ``Network``.
-    """
-    from psynet.experiment import get_experiment
-
-    exp = get_experiment()
-    tables = get_db_tables().values()
-
-    obj_sql_by_table = [exp.pull_table(table) for table in tables]
-    obj_sql = [obj for sublist in obj_sql_by_table for obj in sublist]
-    obj_sql_by_cls = organize_by_key(obj_sql, key=lambda x: x.__class__.__name__)
-
-    obj_dict_by_cls = {
-        _cls_name: [
-            _db_instance_to_dict(obj, scrub_pii)
-            for obj in tqdm(_obj_sql_for_cls, desc=_cls_name)
-        ]
-        for _cls_name, _obj_sql_for_cls in obj_sql_by_cls.items()
-        if _cls_name not in exp.export_classes_to_skip
-    }
-    return obj_dict_by_cls
-
-
 def copy_db_table_to_csv(tablename, path):
-    # TODO - improve naming of copy_db_table_to_csv and dump_db_to_disk to clarify
-    # that the former is a Dallinger export and the latter is a PsyNet export
     with tempfile.TemporaryDirectory() as tempdir:
         dallinger.data.copy_db_to_csv(db.db_url, tempdir)
         temp_filename = f"{tablename}.csv"
         shutil.copyfile(os.path.join(tempdir, temp_filename), path)
-
-
-def dump_db_to_disk(dir, scrub_pii: bool):
-    """
-    Exports all database objects to JSON-style dictionaries
-    and writes them to CSV files, one for each class type.
-
-    Parameters
-    ----------
-
-    dir
-        Directory to which the CSV files should be exported.
-
-    scrub_pii
-        Whether to remove personally identifying information.
-    """
-    from .utils import make_parents
-
-    objects_by_class = _prepare_db_export(scrub_pii)
-
-    for cls, objects in objects_by_class.items():
-        filename = cls + ".csv"
-        filepath = os.path.join(dir, filename)
-        with open(make_parents(filepath), "w") as file:
-            json_to_data_frame(objects).to_csv(file, index=False)
 
 
 class InvalidDefinitionError(ValueError):
@@ -301,6 +186,202 @@ class InvalidDefinitionError(ValueError):
 
 
 checked_classes = set()
+
+
+# Key under which ``Column.info`` remembers the class that declared the column.
+_DECLARED_BY = "psynet_declared_by"
+
+
+def _class_identity(cls) -> tuple[str, str]:
+    """Return the identity that survives re-executing the defining module."""
+
+    return (cls.__module__, cls.__qualname__)
+
+
+def _reuse_inherited_columns(cls):
+    """Reuse an inherited table's column when a subclass redeclares its name.
+
+    Dallinger models such as ``Info`` use single-table inheritance, so every
+    ``Trial`` subclass contributes its columns to the shared ``info`` table.
+    A plain ``Column`` in a subclass body therefore fails as soon as that name
+    is already on the table. This happens for sibling classes, and also when
+    PsyNet executes the same ``experiment.py`` more than once in one process,
+    for example once from the experiment directory and once from the debug
+    staging copy. Substituting the existing column keeps such declarations
+    idempotent, so experiment authors can write ordinary SQLAlchemy.
+
+    Redeclaring a column from the same class is always safe, so PsyNet records
+    which class first declared each column and reuses it without comparing
+    anything. Two different classes must agree on the column's definition.
+
+    Parameters
+    ----------
+    cls
+        The subclass being created, before SQLAlchemy maps it.
+
+    Raises
+    ------
+    InvalidDefinitionError
+        If a different class redeclares the column with a different type,
+        length, nullability, schema or value-generation behavior.
+    """
+    if cls.__dict__.get("__abstract__"):
+        return
+    # A subclass with its own table starts from an empty column collection,
+    # so nothing can be inherited and ``cls.__table__`` is not yet defined.
+    if "__tablename__" in cls.__dict__ or "__table__" in cls.__dict__:
+        return
+
+    table = getattr(cls, "__table__", None)
+    if table is None:
+        return
+
+    identity = _class_identity(cls)
+    for attribute, value in list(cls.__dict__.items()):
+        column = _declared_column(value)
+        if column is None:
+            continue
+        existing = table.c.get(column.name or attribute)
+        if existing is None or existing is column:
+            column.info.setdefault(_DECLARED_BY, identity)
+            continue
+        if existing.info.get(_DECLARED_BY) != identity:
+            conflict = _inherited_column_conflict(existing, column)
+            if conflict is not None:
+                raise InvalidDefinitionError(
+                    f"Column '{attribute}' on class {cls.__name__} {conflict} "
+                    f"'{table.name}.{existing.name}'. Classes that share the "
+                    f"'{table.name}' table must agree on each column's "
+                    "definition; rename one of them."
+                )
+        setattr(
+            cls,
+            attribute,
+            deferred(existing) if isinstance(value, ColumnProperty) else existing,
+        )
+
+
+def _inherited_column_conflict(existing, column) -> str | None:
+    """Return a conflict description if two shared-table columns disagree."""
+
+    if _column_type_signature(existing.type) != _column_type_signature(column.type):
+        existing_length = getattr(existing.type, "length", None)
+        new_length = getattr(column.type, "length", None)
+        if type(existing.type) is type(column.type) and existing_length != new_length:
+            return (
+                f"is declared with length {new_length}, but already exists with "
+                f"length {existing_length} on"
+            )
+        return (
+            f"is declared as {type(column.type).__name__}, but already exists as "
+            f"{type(existing.type).__name__} on"
+        )
+    for flag in ("primary_key", "unique", "index", "nullable"):
+        if bool(getattr(existing, flag, False)) != bool(getattr(column, flag, False)):
+            return f"disagrees on {flag} with the existing column"
+    if _column_foreign_key_specs(existing) != _column_foreign_key_specs(column):
+        return "disagrees on foreign-key targets with the existing column"
+    for option in ("default", "server_default", "onupdate", "server_onupdate"):
+        conflict = _value_generation_conflict(
+            option,
+            getattr(existing, option, None),
+            getattr(column, option, None),
+        )
+        if conflict is not None:
+            return conflict
+    if _column_constraint_specs(existing) != _column_constraint_specs(column):
+        return "disagrees on constraints with the existing column"
+    for option in ("autoincrement", "system", "comment"):
+        if getattr(existing, option, None) != getattr(column, option, None):
+            return f"disagrees on {option} with the existing column"
+    return None
+
+
+def _value_generation_conflict(option, existing, declared) -> str | None:
+    """Return a conflict description if two columns generate values differently."""
+
+    if existing is None and declared is None:
+        return None
+    if existing is None or declared is None:
+        return f"disagrees on {option} with the existing column"
+    existing_signature = _default_signature(existing)
+    declared_signature = _default_signature(declared)
+    if existing_signature is None or declared_signature is None:
+        return f"declares a {option} that cannot be compared with the one already on"
+    if existing_signature != declared_signature:
+        return f"disagrees on {option} with the existing column"
+    return None
+
+
+def _default_signature(default):
+    """Return a comparison signature for a column default.
+
+    Returns ``None`` when the default cannot be compared across two class
+    definitions, which is the case for Python callables and for server-side
+    generators such as sequences. Two such defaults always count as
+    conflicting, so the author is asked to declare the shared column once
+    rather than PsyNet guessing that two functions behave the same way.
+    """
+
+    value = getattr(default, "arg", None)
+    if value is None or callable(value):
+        value = getattr(default, "sqltext", None)
+    if value is None or callable(value):
+        return None
+    if isinstance(value, sqlalchemy.sql.ClauseElement):
+        return (type(value), str(value))
+    return (type(value), repr(value))
+
+
+def _column_type_signature(type_):
+    """Return the structural cache key for a SQLAlchemy column type."""
+
+    cache_key = getattr(type_, "_static_cache_key", None)
+    return (type(type_), cache_key if cache_key is not None else repr(type_))
+
+
+def _column_foreign_key_specs(column) -> frozenset[tuple]:
+    """Return comparable foreign-key definitions for a column.
+
+    Compares where the key points and what it does on change. Rarer DDL
+    options are left out: the column already on the table keeps its own
+    definition either way, as single-table inheritance requires.
+    """
+
+    return frozenset(
+        (
+            str(
+                getattr(foreign_key, "target_fullname", None)
+                or getattr(foreign_key, "_colspec", None)
+            ),
+            foreign_key.onupdate,
+            foreign_key.ondelete,
+        )
+        for foreign_key in getattr(column, "foreign_keys", ()) or ()
+    )
+
+
+def _column_constraint_specs(column) -> frozenset[tuple]:
+    """Return comparable non-foreign-key column constraints."""
+
+    return frozenset(
+        (type(constraint), str(getattr(constraint, "sqltext", "")))
+        for constraint in column.constraints
+    )
+
+
+def _declared_column(value):
+    """Return the unmapped column a class attribute declares, if it declares one.
+
+    Handles both ``Column(...)`` and ``deferred(Column(...))``.
+    """
+    if isinstance(value, Column):
+        return value
+    if isinstance(value, ColumnProperty) and len(value.columns) == 1:
+        column = value.columns[0]
+        if isinstance(column, Column):
+            return column
+    return None
 
 
 class SQLMixinDallinger(SharedMixin):
@@ -325,7 +406,10 @@ class SQLMixinDallinger(SharedMixin):
     polymorphic_identity = (
         None  # set this to a string if you want to customize your polymorphic identity
     )
-    __extra_vars__ = {}
+
+    def __init_subclass__(cls, **kwargs):
+        _reuse_inherited_columns(cls)
+        super().__init_subclass__(**kwargs)
 
     def __new__(cls, *args, **kwargs):
         self = super().__new__(cls)
@@ -353,8 +437,7 @@ class SQLMixinDallinger(SharedMixin):
 
     def to_dict(self):
         """
-        Determines the information that is shown for this object in the dashboard
-        and in the csv files generated by ``psynet export``.
+        Determines the information that is shown for this object in the dashboard.
         """
         from psynet.trial import ChainNode
         from psynet.trial.main import GenericTrialNode
@@ -377,7 +460,6 @@ class SQLMixinDallinger(SharedMixin):
         base_class = get_sql_base_class(self)
         x["object_type"] = base_class.__name__ if base_class else x["type"]
 
-        field.json_add_extra_vars(x, self)
         field.json_clean(x, details=True)
         field.json_format_vars(x)
 
@@ -475,20 +557,6 @@ class SQLMixinDallinger(SharedMixin):
         #     return True
         #
         # return False
-
-    def scrub_pii(self, json):
-        """
-        Removes personally identifying information from the object's JSON representation.
-        This is a destructive operation (it changes the input object).
-        """
-        to_scrub = ["client_ip_address", "worker_id"]
-        for key in to_scrub:
-            try:
-                del json[key]
-            except KeyError:
-                pass
-
-        return json
 
 
 #
@@ -837,12 +905,25 @@ def patch_csv(infile, outfile, clear_columns, replace_columns):
 
 
 def ingest_zip(path, engine=None):
+    """Recreate the database from an export archive.
+
+    ``path`` may be:
+
+    * an ``export.zip`` (reads ``database/<table>.csv`` members; also accepts
+      legacy ``data/<table>.csv`` members);
+    * a ``database/`` directory of table CSVs;
+    * an extracted export directory containing ``database/``.
+
+    Nested lookalikes and mixed ``database/`` plus ``data/`` layouts are
+    rejected. This patches Dallinger's ``ingest_zip`` with support for custom
+    PsyNet tables and the flat ``database/`` export layout.
     """
-    Given a path to a zip file created with `export()`, recreate the
-    database with the data stored in the included .csv files.
-    This is a patched version of dallinger.data.ingest_zip that incorporates
-    support for custom tables.
-    """
+    from .export.paths import (
+        is_zip_path,
+        resolve_database_dir,
+        table_csv_members_by_table,
+        table_csv_path,
+    )
 
     if engine is None:
         engine = db.engine
@@ -856,6 +937,7 @@ def ingest_zip(path, engine=None):
         "response",
         "node",
         "info",
+        "trial",
         "notification",
         "question",
         "transformation",
@@ -868,26 +950,28 @@ def ingest_zip(path, engine=None):
         if n not in import_order:
             import_order.append(n)
 
-    with ZipFile(path, "r") as archive:
-        filenames = archive.namelist()
+    path = os.path.abspath(os.path.expanduser(path))
 
-        for tablename in import_order:
-            filename_template = f"data/{tablename}.csv"
+    if is_zip_path(path):
+        with ZipFile(path, "r") as archive:
+            members = table_csv_members_by_table(archive)
+            for tablename in import_order:
+                member = members.get(tablename)
+                if member is None:
+                    continue
+                model = sql_base_classes()[tablename]
+                file = archive.open(member)
+                file = io.TextIOWrapper(file, encoding="utf8", newline="")
+                ingest_to_model(file, model, engine)
+        return
 
-            matches = [f for f in filenames if filename_template in f]
-            if len(matches) == 0:
-                continue
-            elif len(matches) > 1:
-                raise IOError(
-                    f"Multiple matches for {filename_template} found in archive: {matches}"
-                )
-            else:
-                filename = matches[0]
-
-            model = sql_base_classes()[tablename]
-
-            file = archive.open(filename)
-            file = io.TextIOWrapper(file, encoding="utf8", newline="")
+    database_dir = resolve_database_dir(path)
+    for tablename in import_order:
+        csv_path = table_csv_path(database_dir, tablename)
+        if not os.path.exists(csv_path):
+            continue
+        model = sql_base_classes()[tablename]
+        with open(csv_path, encoding="utf8", newline="") as file:
             ingest_to_model(file, model, engine)
 
 
@@ -895,55 +979,314 @@ dallinger.data.ingest_zip = ingest_zip
 dallinger.data.ingest_to_model = ingest_to_model
 
 
+def populate_db_from_zip_file(zip_path):
+    """Replace the contents of the local database with an exported archive.
+
+    This drops every table first, so it must only be used where losing the
+    current local database is the point (``psynet load``).
+    """
+    from dallinger import data as dallinger_data
+
+    db.session.commit()  # The process can freeze without this
+    init_db(drop_all=True)
+    dallinger_data.ingest_zip(zip_path)
+
+
 def export_assets(
     path,
-    include_private: bool,
-    experiment_assets_only: bool,
-    include_on_demand_assets: bool,
-    n_parallel=None,
     server=None,
     local=False,
+    manifest_only: bool = False,
 ):
-    from joblib import Parallel, delayed
+    """
+    Export collected assets into ``path`` using semantic ``export_path`` trees.
 
-    # Assumes we already have loaded the experiment into the local database,
-    # as would be the case if the function is called from psynet export.
-    if n_parallel:
-        n_jobs = n_parallel
-    else:
-        n_jobs = psutil.cpu_count()
+    Callers typically pass ``<export_dir>/assets``. Layout:
 
-    if experiment_assets_only:
-        from .asset import ExperimentAsset as base_class
-    else:
-        from .asset import Asset as base_class
+    ::
 
-    asset_query = db.session.query(base_class.id, base_class.personal)
-    if not include_private:
-        asset_query = asset_query.filter_by(personal=False)
+        <path>/
+        ├── manifest.csv
+        └── <module>/.../<semantic export_path>
 
-    asset_ids = [a.id for a in asset_query]
+    Bytes are still fetched via the content-addressed local cache; the export
+    tree itself uses human-readable paths from :attr:`Asset.export_path`.
+    SSH command-line exports prefetch missing LocalStorage objects with one
+    ``rsync --files-from`` into that cache. There is no per-asset SFTP fallback:
+    if rsync cannot supply the bytes, the caller stops or switches to a complete
+    server-built archive.
 
-    n_jobs = 1  # todo - fix - parallel (SSH?) export seems to cause a deadlock, so we disable it for now
-    Parallel(
-        n_jobs=n_jobs,
-        verbose=10,
-        backend="threading",
-        # backend="multiprocessing", # Slow compared to threading
-    )(
-        delayed(export_asset)(asset_id, path, include_on_demand_assets, server, local)
-        for asset_id in asset_ids
-    )
-    # Parallel(n_jobs=n_jobs)(delayed(db.session.close)() for _ in range(n_jobs))
+    ``manifest_only`` writes ``manifest.csv`` without copying any bytes. The
+    incremental SSH transport uses this so the server can describe the asset
+    selection cheaply while the client fetches the bytes over rsync.
+    """
+    from .asset import ExperimentAsset, OnDemandAsset
+    from .export.path_safety import UnsafePathError, assert_semantic_asset_path
+
+    # ExperimentAsset covers deposits for this deployment. CachedAsset and
+    # ExternalAsset are omitted. OnDemandAsset subclasses ExperimentAsset
+    # but is generated live and is not written into the archive.
+    assets_root = path
+    os.makedirs(assets_root, exist_ok=True)
+
+    assets = [
+        asset
+        for asset in db.session.query(ExperimentAsset).order_by(ExperimentAsset.id)
+        if not isinstance(asset, OnDemandAsset)
+    ]
+
+    manifest_rows = []
+    asset_ids_needing_bytes = []
+    for asset in assets:
+        export_path = asset.export_path
+        if export_path:
+            try:
+                export_path = assert_semantic_asset_path(str(export_path).lstrip("/"))
+            except UnsafePathError as exc:
+                raise ValueError(
+                    f"Asset {asset.id} has an unsafe export path: {exc}"
+                ) from exc
+        row = {
+            "id": asset.id,
+            "type": getattr(asset, "type", type(asset).__name__),
+            "local_key": asset.local_key,
+            "export_path": export_path,
+            "sha256_contents": asset.sha256_contents,
+            "object_path": asset.object_path,
+            "extension": asset.extension,
+            "is_folder": bool(asset.is_folder),
+            "url": asset.url,
+            "module_id": asset.module_id,
+            "participant_id": asset.participant_id,
+            "trial_id": asset.trial_id,
+            "node_id": asset.node_id,
+            "network_id": asset.network_id,
+            "description": asset.description,
+            "storage": _asset_storage_kind(asset),
+        }
+        asset_ids_needing_bytes.append(asset.id)
+        manifest_rows.append(row)
+
+    if server is not None and not manifest_only:
+        _prefetch_ssh_local_objects(assets, server, logger)
+    exported_meta = {}
+    if manifest_only:
+        asset_ids_needing_bytes = []
+    n_assets = len(asset_ids_needing_bytes)
+    for index, asset_id in enumerate(asset_ids_needing_bytes, start=1):
+        if n_assets > 1 and (index == 1 or index == n_assets or index % 25 == 0):
+            logger.info("Exporting asset %s/%s (id=%s).", index, n_assets, asset_id)
+        meta = export_asset(asset_id, assets_root, server, local)
+        if meta:
+            exported_meta[asset_id] = meta
+
+    # Fill manifest digests/paths from export results without mutating Asset rows.
+    for row in manifest_rows:
+        meta = exported_meta.get(row["id"])
+        if not meta:
+            continue
+        if meta.get("sha256_contents"):
+            row["sha256_contents"] = meta["sha256_contents"]
+        if meta.get("export_path"):
+            row["export_path"] = meta["export_path"]
+        if meta.get("object_path"):
+            row["object_path"] = meta["object_path"]
+
+    manifest_path = os.path.join(assets_root, "manifest.csv")
+    fieldnames = [
+        "id",
+        "type",
+        "local_key",
+        "export_path",
+        "sha256_contents",
+        "object_path",
+        "extension",
+        "is_folder",
+        "url",
+        "module_id",
+        "participant_id",
+        "trial_id",
+        "node_id",
+        "network_id",
+        "description",
+        "storage",
+    ]
+    with open(manifest_path, "w", newline="") as csv_file:
+        writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in manifest_rows:
+            writer.writerow(row)
 
 
-# def close_parallel_db_sessions():
+def _asset_storage_kind(asset) -> str:
+    """Return the class name of the storage backend holding an asset's bytes.
+
+    Recorded in ``assets/manifest.csv`` so a client can decide whether the
+    selection is eligible for incremental transfer without querying the
+    experiment database.
+    """
+    from .asset import ExternalAsset
+
+    if isinstance(asset, ExternalAsset):
+        return "ExternalAsset"
+    storage = getattr(asset, "storage", None)
+    if storage is None:
+        try:
+            from .experiment import get_experiment
+
+            storage = get_experiment().asset_storage
+        except Exception:
+            logger.warning(
+                "Could not resolve the storage backend for asset %s.",
+                getattr(asset, "id", None),
+                exc_info=True,
+            )
+            return "unknown"
+    return type(storage).__name__
 
 
-def export_asset(asset_id, root, include_on_demand_assets, server, local):
-    from .asset import Asset, OnDemandAsset
+def _close_ssh_executor(executor) -> None:
+    """Close a docker-ssh Executor if it opened a client."""
+    if executor is None:
+        return
+    client = getattr(executor, "client", None)
+    if client is None:
+        return
+    try:
+        client.close()
+    except Exception as exc:
+        logger.warning("Could not close the SSH connection: %s", exc)
+
+
+def _prefetch_ssh_local_objects(assets, server, logger):
+    """Fill the local object cache from SSH LocalStorage using one rsync.
+
+    If rsync is missing or the copy fails, raise
+    :class:`~psynet.export.ssh_rsync.RsyncRequiredError`. Repeat exports
+    whose objects are already cached do not need rsync. This never mutates
+    Asset database rows.
+    """
+    import subprocess
+
+    from dallinger.command_line.docker_ssh import CONFIGURED_HOSTS, Executor
+    from dallinger.command_line.utils import get_server_pem_path
+
+    from .asset import ExternalAsset, LocalStorage, OnDemandAsset
     from .experiment import import_local_experiment
-    from .utils import make_parents
+    from .export.ssh_rsync import (
+        RsyncRequiredError,
+        default_ssh_command,
+        emit_rsync_missing_warning,
+        local_rsync_available,
+        missing_object_digests,
+        prefetch_missing_objects,
+        remote_assets_source,
+    )
+
+    try:
+        experiment_storage = import_local_experiment()["class"].asset_storage
+    except Exception as exc:
+        raise RsyncRequiredError(
+            "Could not resolve experiment asset storage for SSH rsync."
+        ) from exc
+
+    digests = []
+    seen = set()
+    for asset in assets:
+        if isinstance(asset, (ExternalAsset, OnDemandAsset)):
+            continue
+        digest = getattr(asset, "sha256_contents", None)
+        if not digest:
+            continue
+        storage = getattr(asset, "storage", None) or experiment_storage
+        if not isinstance(storage, LocalStorage):
+            continue
+        if digest in seen:
+            continue
+        seen.add(digest)
+        digests.append(digest)
+
+    if not digests:
+        return
+
+    try:
+        server_info = CONFIGURED_HOSTS[server]
+    except KeyError:
+        raise RsyncRequiredError(
+            f"Unknown SSH server {server!r}; cannot rsync LocalStorage assets."
+        ) from None
+
+    ssh_host = server_info["host"]
+    ssh_user = server_info.get("user")
+    if not missing_object_digests(digests):
+        return
+    if not local_rsync_available():
+        emit_rsync_missing_warning(location="local")
+        raise RsyncRequiredError()
+    executor = None
+    try:
+        executor = Executor(ssh_host, user=ssh_user)
+        if not executor.run("command -v rsync", raise_=False).strip():
+            emit_rsync_missing_warning(location="remote", host=ssh_host)
+            raise RsyncRequiredError()
+        home_dir = executor.run("echo $HOME").strip()
+        pem_path = get_server_pem_path()
+        written = prefetch_missing_objects(
+            digests,
+            source=remote_assets_source(ssh_host, ssh_user, home_dir),
+            ssh_command=default_ssh_command(pem_path),
+        )
+    except RsyncRequiredError:
+        raise
+    except FileNotFoundError as exc:
+        emit_rsync_missing_warning(location="local")
+        raise RsyncRequiredError() from exc
+    except subprocess.CalledProcessError as exc:
+        raise RsyncRequiredError(
+            "Rsync asset copy failed. Install rsync locally and on the SSH host, "
+            f"then re-run the export. ({exc})"
+        ) from exc
+    except Exception as exc:
+        raise RsyncRequiredError(
+            "Rsync asset copy failed. Install rsync locally and on the SSH host, "
+            "then re-run the export."
+        ) from exc
+    finally:
+        _close_ssh_executor(executor)
+
+    remaining = missing_object_digests(digests)
+    if remaining:
+        raise RsyncRequiredError(
+            f"Rsync finished but {len(remaining)} LocalStorage object(s) are still "
+            "missing from the local cache. Confirm the remote objects exist and "
+            "re-run the export."
+        )
+    logger.info(
+        "Rsynced %s of %s missing LocalStorage asset object(s) from %s.",
+        len(written),
+        len(digests),
+        ssh_host,
+    )
+
+
+def export_asset(asset_id, assets_root, server, local):
+    """Export one asset's bytes into the semantic export tree.
+
+    For managed assets with a known SHA-256 digest the local cache at
+    ``~/psynet-data/cache/assets`` is consulted first; only objects absent
+    from the cache are fetched from storage. Cached objects are linked into
+    the export directory at the asset's ``export_path`` (hardlink when
+    possible, copy otherwise).
+
+    Returns
+    -------
+    dict or None
+        ``sha256_contents`` / ``export_path`` / ``object_path`` for the
+        manifest when bytes were exported. Does not mutate Asset database rows.
+    """
+    from .asset import Asset, ExternalAsset, OnDemandAsset
+    from .experiment import import_local_experiment
+    from .utils import sha256_directory, sha256_file
 
     if server is None:
         ssh_host = None
@@ -956,15 +1299,115 @@ def export_asset(asset_id, root, include_on_demand_assets, server, local):
     import_local_experiment()
     a = Asset.query.filter_by(id=asset_id).one()
 
-    if not include_on_demand_assets and isinstance(a, OnDemandAsset):
-        return
+    if isinstance(a, ExternalAsset) or isinstance(a, OnDemandAsset):
+        return None
 
-    path = os.path.join(root, a.export_path)
-
-    make_parents(path)
+    semantic_path = _semantic_export_path(a)
 
     try:
-        a.export(path, ssh_host=ssh_host, ssh_user=ssh_user, local=local)
+        if a.sha256_contents:
+            # Fast path: digest is known; consult the cache before fetching.
+            digest = a.sha256_contents
+            _cache_and_link_into_export(
+                digest,
+                lambda p: a.export(
+                    p, ssh_host=ssh_host, ssh_user=ssh_user, local=local
+                ),
+                assets_root,
+                semantic_path,
+                is_folder=bool(a.is_folder),
+            )
+            return {
+                "sha256_contents": digest,
+                "export_path": semantic_path,
+                "object_path": a.object_path,
+            }
+
+        # Slow path: no digest known yet — export to a temp location, hash,
+        # place in cache, then link into the export tree.
+        with tempfile.TemporaryDirectory() as tempdir:
+            suffix = a.extension if a.extension else ""
+            temp_path = os.path.join(tempdir, f"asset{suffix}")
+            a.export(temp_path, ssh_host=ssh_host, ssh_user=ssh_user, local=local)
+            digest = (
+                sha256_directory(temp_path) if a.is_folder else sha256_file(temp_path)
+            )
+            _cache_and_link_into_export(
+                digest,
+                _make_copy_fn(temp_path, bool(a.is_folder)),
+                assets_root,
+                semantic_path,
+                is_folder=bool(a.is_folder),
+            )
+            return {
+                "sha256_contents": digest,
+                "export_path": semantic_path,
+                "object_path": a.object_path,
+            }
     except Exception:
-        print(f"An error occurred when trying to export the asset with id: {asset_id}")
+        logger.exception(
+            "An error occurred when trying to export the asset with id: %s",
+            asset_id,
+        )
         raise
+
+
+def _semantic_export_path(asset) -> str:
+    """Return a relative semantic path for an asset inside the export tree."""
+    from .export.path_safety import UnsafePathError, assert_semantic_asset_path
+
+    path = asset.export_path
+    if not path:
+        path = (
+            asset.generate_export_path()
+            if hasattr(asset, "generate_export_path")
+            else None
+        )
+    if not path:
+        extension = asset.extension or ""
+        path = f"asset_{asset.id}{extension}"
+    try:
+        return assert_semantic_asset_path(str(path).lstrip("/"))
+    except UnsafePathError as exc:
+        raise ValueError(
+            f"Asset {getattr(asset, 'id', None)} has an unsafe export path: {exc}"
+        ) from exc
+
+
+def _cache_and_link_into_export(
+    digest, fetch_fn, assets_root, semantic_path, *, is_folder: bool
+) -> str:
+    """Ensure ``digest`` is cached, then hardlink/copy it to ``semantic_path``.
+
+    Returns
+    -------
+    str
+        Relative semantic path under the assets root.
+    """
+    from .export.asset_cache import ensure_object_in_cache, link_or_copy
+    from .export.path_safety import contained_destination
+    from .utils import make_parents
+
+    cache_path = ensure_object_in_cache(digest, fetch_fn, is_folder=is_folder)
+    dest = str(contained_destination(assets_root, semantic_path))
+    if not os.path.exists(dest):
+        make_parents(dest)
+        link_or_copy(cache_path, dest, is_folder=is_folder)
+    return semantic_path
+
+
+def _make_copy_fn(src_path: str, is_folder: bool):
+    """Return a fetch_fn that copies ``src_path`` to a destination path.
+
+    Used as the ``fetch_fn`` argument to
+    :func:`~psynet.export.asset_cache.ensure_object_in_cache` when the
+    content has already been materialized locally.
+    """
+
+    def _fn(dest_path: str) -> None:
+        if is_folder:
+            shutil.copytree(src_path, dest_path)
+        else:
+            shutil.copy2(src_path, dest_path)
+
+    return _fn

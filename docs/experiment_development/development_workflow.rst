@@ -16,7 +16,7 @@ Version control
 It's important to have some system for tracking changes to your code over time.
 We recommend using Git alongside some Git host such as GitHub or GitLab.
 There are lots of good Git tutorials available online;
-see `version control with Git <../tutorials/version_control_with_git.html>`_
+see :doc:`version control with Git </tutorials/version_control_with_git>`
 for a PsyNet-oriented introduction to Git.
 
 
@@ -58,7 +58,7 @@ it), and synchronizes the environment with ``uv pip sync``.
     If you haven't got uv installed, you can install it by running ``pip install uv``.
 
 Once setup has completed, you should be able to use ``psynet`` commands in your terminal.
-See `Command line <../introduction/command_line.html>`_ for an overview of PsyNet commands.
+See :doc:`/introduction/command_line` for an overview of PsyNet commands.
 
 
 Local debug mode

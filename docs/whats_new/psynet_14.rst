@@ -24,11 +24,26 @@ What authors need to know
   ``DOMContentLoaded``.
 * Temporary opt-out while migrating:
   ``inplace_timeline_transitions = false``.
+* Recruiter ``mturk``, ``bots``, and ``multi`` are rejected.
+* Leave uses ``show_early_exit_button``; ``error_page_content`` is
+  replaced by ``error_page_presentation``.
+* Phones are allowed by default; the browser floor is Chrome 105.
+
+MTurk recruitment has been removed
+----------------------------------
+
+PsyNet no longer provides an MTurk recruiter, submission page, payment flow, or
+MTurk-specific deployment commands. Configuring ``recruiter = mturk`` now
+raises a clear error instead of falling back to Dallinger's transitive
+integration. Amazon is `closing MTurk on September 30, 2026
+<https://docs.aws.amazon.com/sagemaker/latest/dg/sms-workforce-management-public.html>`_.
+Move active experiments to another recruiter before upgrading to PsyNet 14.
 
 Upgrading
 ---------
 
-PsyNet 14 is a breaking release for some custom frontends.
+PsyNet 14 is a breaking release for some custom frontends, recruiter
+configs, and leave/error-page APIs.
 
 * Human checklist: :doc:`/whats_new/upgrading_to_psynet_14`.
 * Patterns and examples: :doc:`/tutorials/writing_custom_frontends`.

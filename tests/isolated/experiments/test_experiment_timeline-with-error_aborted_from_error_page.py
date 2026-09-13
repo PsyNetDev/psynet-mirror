@@ -3,6 +3,7 @@ import time
 import pytest
 from dallinger import db
 from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
 
 from psynet.experiment import get_experiment
 from psynet.participant import get_participant
@@ -25,11 +26,11 @@ PYTEST_BOT_CLASS = bot_class()
 class TestExp:
     def test_variables(self, db_session):
         config = get_config()
-        assert config.get("min_accumulated_reward_for_abort") == 0.10
-        assert config.get("show_abort_button") is True
+        assert config.get("min_reward_for_paid_early_exit") == 0.10
+        assert config.get("show_early_exit_button") is True
 
     def test_abort(self, bot_recruits, db_session):
-        # Simulate mturk
+        # Exercise the popup-window error flow.
         exp = get_experiment()
         exp.var.set("start_experiment_in_popup_window", True)
         db.session.commit()
@@ -38,12 +39,10 @@ class TestExp:
             time.sleep(1)
 
             driver.switch_to.window(driver.window_handles[0])
+            assert not driver.find_elements(By.ID, "abort-button")
             driver.close()
             driver.switch_to.window(driver.window_handles[0])
 
-            driver.execute_script(
-                "$('html').animate({ scrollTop: $(document).height() }, 0);"
-            )
             next_page(driver, "consent")
             next_page(driver, "next-button")
             next_page(driver, "next-button")
@@ -51,42 +50,27 @@ class TestExp:
             with pytest.raises(RuntimeError):
                 next_page(driver, "next-button")
 
-            assert_text(driver, "header", "Error!")
+            WebDriverWait(driver, 15).until(
+                lambda browser: "An error occurred" in browser.page_source
+            )
+            assert "/recruiter-exit" not in driver.current_url
+            assert_text(driver, "header", "An error occurred")
             assert_text(
                 driver,
-                "error-text",
-                "There has been an error and so you are unable to continue, sorry!",
+                "automatic-early-exit-ready",
+                "Unfortunately an error occurred and we cannot continue. "
+                "However, your responses so far have been saved. You may close this page.",
             )
-            assert_text(
-                driver,
-                "error-text-main",
-                "You may be able to abort the experiment using the Abort experiment button on the MTurk ad page. "
-                "Once aborted, there is no need to contact us to receive the compensation; this should be awarded "
-                "to you automatically via MTurk a few minutes after. If this is not the case, please contact us "
-                "at XXX@gmail.com quoting the following information:",
-            )
-            assert_text(
-                driver,
-                "abort-text",
-                "Click the above button to be compensated in case of an error.",
-            )
-
-            abort_button = driver.find_element(By.ID, "abort-button")
-            abort_button.click()
-            driver.switch_to.window(driver.window_handles[1])
-            assert_text(
-                driver, "header", "Are you sure you want to abort the experiment?"
-            )
-
-            abort_button = driver.find_element(By.ID, "abort-button")
-            abort_button.click()
-            time.sleep(0.5)
+            assert not driver.find_elements(By.ID, "automatic-early-exit-continue")
+            assert not driver.find_elements(By.ID, "early-exit-open")
 
             participant = get_participant(1)
 
-            assert participant.aborted is True
-            assert participant.aborted_modules == [
+            assert participant.early_exited is True
+            assert participant.failed is True
+            assert participant.end_time is not None
+            assert participant.early_exited_modules == [
                 "introduction",
             ]
-            assert participant.module_states["introduction"][0].aborted
+            assert participant.module_states["introduction"][0].early_exited
             assert not participant.module_states["introduction"][0].finished

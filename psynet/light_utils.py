@@ -35,21 +35,22 @@ class ExperimentDirectoryNameError(ValueError):
 
 
 # ---------------------------------------------------------------------------
-# MD5 directory hashing
-# (copied from psynet.utils to avoid importing that module in bootstrap paths)
+# Content hashing
+# (kept here to avoid importing psynet.utils in bootstrap paths)
 # ---------------------------------------------------------------------------
 
 
-def _md5_update_from_file(filename: Union[str, Path], hash_obj) -> None:
+def _update_hash_from_file(filename: Union[str, Path], hash_obj):
     """Update *hash_obj* with the contents of *filename*."""
     if not Path(filename).is_file():
         raise FileNotFoundError(f"File not found: {filename}")
     with open(str(filename), "rb") as f:
         for chunk in iter(lambda: f.read(4096), b""):
             hash_obj.update(chunk)
+    return hash_obj
 
 
-def _md5_update_from_dir(directory: Union[str, Path], hash_obj) -> None:
+def _update_hash_from_dir(directory: Union[str, Path], hash_obj):
     """Recursively update *hash_obj* with all files under *directory*."""
     assert Path(directory).is_dir()
     for path in sorted(Path(directory).iterdir(), key=lambda p: str(p).lower()):
@@ -57,15 +58,21 @@ def _md5_update_from_dir(directory: Union[str, Path], hash_obj) -> None:
             continue
         hash_obj.update(path.name.encode())
         if path.is_file():
-            _md5_update_from_file(path, hash_obj)
+            _update_hash_from_file(path, hash_obj)
         elif path.is_dir():
-            _md5_update_from_dir(path, hash_obj)
+            _update_hash_from_dir(path, hash_obj)
+    return hash_obj
+
+
+# Backward-compatible aliases for callers that imported the old private names.
+_md5_update_from_file = _update_hash_from_file
+_md5_update_from_dir = _update_hash_from_dir
 
 
 def md5_directory(directory: Union[str, Path]) -> str:
     """Return the MD5 hex digest of all non-hidden files under *directory*."""
     h = hashlib.md5()
-    _md5_update_from_dir(directory, h)
+    _update_hash_from_dir(directory, h)
     return h.hexdigest()
 
 
@@ -89,6 +96,18 @@ def git_repository_available() -> bool:
         return False
     result = subprocess.run(
         ["git", "rev-parse", "--is-inside-work-tree"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    return result.returncode == 0
+
+
+def git_commit_available() -> bool:
+    """Return whether the current Git work tree has at least one commit."""
+    if not git_repository_available():
+        return False
+    result = subprocess.run(
+        ["git", "rev-parse", "--verify", "HEAD"],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )

@@ -30,7 +30,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.11",
     "Framework :: Flask",
-    "Operating System :: OS Independent",
+    "Operating System :: POSIX",
     "License :: OSI Approved :: MIT License",
     "Intended Audience :: Science/Research",
 ]
@@ -42,9 +42,6 @@ classifiers = [
 # Experiment authors need psynet[experiment] (installed automatically by `psynet setup`).
 dependencies = [
     "click",
-    # ``psynet.dallinger_dependency`` reads pyproject.toml on source checkouts;
-    # tomllib is stdlib only from 3.11.
-    "tomli; python_version < \"3.11\"",
 ]
 
 [project.optional-dependencies]
@@ -56,7 +53,11 @@ dependencies = [
 # this runtime.
 experiment = [
     "babel",
-    "dallinger[docker]>=12.3.0,<13",
+    # TODO: Replace this Git pin with dallinger[docker]>=12.4.0,<13 once
+    # Dallinger 12.4.0 is available on PyPI.
+    # Pin Dallinger master after #9680 (deploy.toml) until a 12.4 release.
+    # Latest PyPI/tag is still 12.3.0, which does not include deploy.toml.
+    "dallinger[docker] @ git+https://github.com/Dallinger/Dallinger.git@42bd7e54fa75975660ca92b6d02ceaacc710f61f",
     # Unpin dominate once a new version is released which includes the following
     # fix for the Python 3.12 event loop warning:
     # https://github.com/Knio/dominate/commit/bdbdb8e5ddcf3213518dba0c7d054f14933460bf
@@ -84,6 +85,9 @@ experiment = [
     "yaspin",
     "arabic-reshaper",  # Used by VocabTest
     "pillow",  # Used by VocabTest
+    # Experiment audit render/validate (shipped with experiment runtime)
+    "markdown-it-py>=3,<5",  # Dallinger 12.3 pins 4.x; keep an explicit compatible bound
+    "pygments>=2.20.0",
 ]
 # PsyNet source development and docs: runtime plus tooling.
 # Demo-only packages stay in ``demos`` so docs/CI installs stay lean.
@@ -138,6 +142,9 @@ Repository = "https://gitlab.com/PsyNetDev/PsyNet/"
 [tool.hatch.build.targets.wheel]
 include = ["/psynet"]
 
+[tool.hatch.build.targets.wheel.force-include]
+".cursor/skills/experiment" = "psynet/resources/experiment_scripts/.cursor/skills/psynet"
+
 [tool.hatch.build.targets.sdist]
 exclude = [
     "/.gitlab",
@@ -153,7 +160,7 @@ exclude = [
 
 [tool.ruff]
 line-length = 88
-target-version = "py310"
+target-version = "py311"
 builtins = ["_"]
 extend-exclude = [
     ".cache",

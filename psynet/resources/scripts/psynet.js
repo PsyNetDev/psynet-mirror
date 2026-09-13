@@ -233,6 +233,30 @@
     };
     psynet.SUBMISSION_HANDLED = Symbol("psynet.SUBMISSION_HANDLED");
 
+    // Named CSS colours (red, green, blue, ...) resolve to theme tokens so
+    // trial progress, event captions, and the audio meter follow the
+    // participant palette instead of the browser's primary colours.
+    // Keep in sync with _PARTICIPANT_NAMED_COLORS in psynet/timeline.py.
+    // "white" is omitted so it remains CSS white.
+    psynet.theme = {
+      namedColors: {
+        red: "var(--psynet-danger)",
+        green: "var(--psynet-success)",
+        blue: "var(--psynet-accent)",
+        orange: "var(--psynet-warning)",
+        grey: "var(--psynet-text-muted)",
+        gray: "var(--psynet-text-muted)",
+        black: "var(--psynet-text)",
+      },
+      resolveColor: function (color) {
+        if (color == null || color === "") {
+          return color;
+        }
+        let mapped = this.namedColors[String(color).trim().toLowerCase()];
+        return mapped || color;
+      },
+    };
+
     psynet.utils.shallowCopy = function (x) {
       return Object.assign({}, x);
     };
@@ -860,12 +884,7 @@
       let template = document.createElement("template");
       template.innerHTML = payload.html.trim();
 
-      let requiredIds = [
-        "timeline-header",
-        "main-body",
-        "footer",
-        "psynet-template-data",
-      ];
+      let requiredIds = ["timeline-header", "main-body", "psynet-template-data"];
 
       let replacements = requiredIds.map((id) => {
         let nextElement = template.content.querySelector("#" + id);
@@ -878,12 +897,52 @@
         return { currentElement, nextElement };
       });
 
+      // The footer is optional and can differ between pages: show_footer =
+      // false omits it, and so does a footer that would have nothing in it.
+      // Insert, remove, or replace it rather than demanding that it exists.
+      // The media-download bar is reconciled after the footer swap: it is
+      // nested in the footer on some pages and a sibling on others, so it
+      // cannot share this insert/remove/replace loop.
+      let optionalIds = ["footer", "early-exit-modal"];
+      let optionalChanges = optionalIds.map((id) => ({
+        id,
+        nextElement: template.content.querySelector("#" + id),
+        currentElement: document.getElementById(id),
+      }));
+
       return {
         payload,
         template,
         replacements,
+        optionalChanges,
         stylesheetLinks: psynet.getPageCssLinks(template.content),
       };
+    };
+
+    psynet.reconcileMediaDownloadBar = function (template, root) {
+      // After the footer has been swapped, a nested next bar is already in
+      // the document (it travelled with the footer) and a standalone next bar
+      // is still in the template. Mixed pages (Lucid screening without a
+      // terminate button, then a later page with one) used to skip the bar
+      // entirely and leave either two rails or none.
+      const nextStandalone = template.content.querySelector(
+        "#media-download-progress-bar",
+      );
+      const liveBars = Array.from(
+        document.querySelectorAll("#media-download-progress-bar"),
+      );
+      if (nextStandalone !== null) {
+        liveBars.forEach((bar) => {
+          if (bar !== nextStandalone) bar.remove();
+        });
+        if (root !== null && nextStandalone.parentNode !== root) {
+          root.appendChild(nextStandalone);
+        }
+      } else {
+        liveBars.forEach((bar) => {
+          if (bar.closest("#footer") === null) bar.remove();
+        });
+      }
     };
 
     psynet.preloadTimelineFragmentAssets = async function (fragment) {
@@ -897,6 +956,18 @@
       fragment.replacements.forEach(({ currentElement, nextElement }) => {
         currentElement.replaceWith(nextElement);
       });
+
+      let root = document.getElementById("timeline-root");
+      (fragment.optionalChanges || []).forEach(({ currentElement, nextElement }) => {
+        if (currentElement !== null && nextElement !== null) {
+          currentElement.replaceWith(nextElement);
+        } else if (currentElement !== null) {
+          currentElement.remove();
+        } else if (nextElement !== null && root !== null) {
+          root.appendChild(nextElement);
+        }
+      });
+      psynet.reconcileMediaDownloadBar(fragment.template, root);
 
       if (fragment.payload.page_uuid !== undefined) {
         window.pageUuid = fragment.payload.page_uuid;
@@ -923,6 +994,7 @@
       await psynet.activateManagedPageJavascript();
       psynet.trialProgress = createTrialProgress();
       psynet.initLucidTermination();
+      psynet.initEarlyExitButton();
       await psynet.initPage();
       await psynet.finalizePageReady();
       psynet.nextPagePending = false;
@@ -1520,12 +1592,10 @@
     psynet.media.downloadProgress.updateDisplay = function () {
       let bar = psynet.media.downloadProgress.bar();
       if (bar !== null) {
-        var progress = psynet.media.downloadProgress.getTotal();
-        bar.style.width = Math.round(progress) + "%";
-        if (progress === 100) {
-          bar.classList.remove("colorfadeanim");
-          // You could do something here once loading is complete,
-          // e.g. delete progress bar text
+        const total = Math.round(psynet.media.downloadProgress.getTotal());
+        bar.style.width = total + "%";
+        if (bar.parentElement?.id !== "footer") {
+          bar.hidden = total >= 100;
         }
       }
     };
@@ -1537,7 +1607,9 @@
       let bar = psynet.media.downloadProgress.bar();
       if (bar !== null) {
         bar.style.width = "0%";
-        bar.classList.remove("colorfadeanim");
+        if (bar.parentElement?.id !== "footer") {
+          bar.hidden = false;
+        }
       }
     };
 
@@ -1757,10 +1829,10 @@
       }
       let requests = psynet.media.requests;
       let mediaTypes = Object.keys(requests);
-      let bar = psynet.media.downloadProgress.bar();
-      bar.classList.add("colorfadeanim");
+      // Nothing here touches the progress bar: it may not exist (show_footer =
+      // false omits it), and its appearance belongs to participant.css, which
+      // keeps it a solid accent rather than animating a gradient.
       await Promise.all(mediaTypes.map((x) => processRequests(x, requests[x])));
-      bar.classList.remove("colorfadeanim");
     };
 
     let initMediaType = function (mediaType) {
@@ -2743,6 +2815,50 @@
       window.location = "/timeline?unique_id=" + psynet.uniqueId;
     };
 
+    // Finish the assignment and go to the exit page without leaving the
+    // completed timeline in history. Using location.replace (instead of
+    // Dallinger's window.location assignment) means Back from exit cannot
+    // revive a finished session; the server also redirects finished
+    // /timeline visits as a backstop.
+    psynet.finishAndGoToExit = function () {
+      const participantId = dallinger.identity.participantId;
+      const exitRoute = "/recruiter-exit?participant_id=" + participantId;
+      return dallinger
+        .post("/worker_complete", { participant_id: participantId })
+        .done(function () {
+          dallinger.allowExit();
+          let openedFromDashboard = false;
+          try {
+            openedFromDashboard =
+              window.opener &&
+              window.opener.location.pathname.startsWith("/dashboard");
+          } catch (error) {
+            openedFromDashboard = false;
+          }
+          if (window.opener && !openedFromDashboard) {
+            window.opener.location.replace(exitRoute);
+            window.close();
+          } else {
+            window.location.replace(exitRoute);
+          }
+        })
+        .fail(function () {
+          psynetErrorPage.go({
+            uniqueId: psynet.uniqueId,
+            participantId: participantId,
+          });
+        });
+    };
+
+    // If the browser restores a timeline page from the back/forward cache
+    // (for example after Back from exit), force a reload so the server can
+    // redirect finished participants.
+    window.addEventListener("pageshow", function (event) {
+      if (event.persisted) {
+        window.location.reload();
+      }
+    });
+
     psynet.handleApprovedResponse = async function (response) {
       psynet.log.debug("Response received successfully.");
 
@@ -2808,11 +2924,10 @@
       );
     };
 
-    let onErrorResponse = function (request) {
-      dallinger.error({
-        data: {
-          participant_id: psynetTemplateData.participantId,
-        },
+    let onErrorResponse = function () {
+      psynetErrorPage.go({
+        uniqueId: psynet.uniqueId,
+        participantId: psynetTemplateData.participantId,
       });
     };
 
@@ -2966,7 +3081,7 @@
             "width: 0%; opacity: " +
             opacity +
             "; background-color: " +
-            color +
+            psynet.theme.resolveColor(color) +
             ";",
           "aria-valuenow": "0",
           "aria-valuemin": "0",
@@ -2999,7 +3114,7 @@
           let text = $("#trial-progress-caption-contents");
           text.text(content);
           if (color) {
-            text.css("color", color);
+            text.css("color", psynet.theme.resolveColor(color));
           }
         }
       };
@@ -3052,18 +3167,17 @@
       }).done(function (data) {
         let progressPercentage = data["progressPercentage"];
         let progressPercentageStr = progressPercentage + "%";
-        $("#timeline-progress-bar").text(progressPercentageStr);
+        // The bar carries the width and the accessible value; the visible
+        // percentage is drawn from the label's data attribute.
         $("#timeline-progress-bar").css("width", progressPercentageStr);
         $("#timeline-progress-bar").attr("aria-valuenow", progressPercentage);
+        $("#timeline-progress-label").attr("data-progress", progressPercentageStr);
 
         if (data["reward"] !== undefined) {
-          if (data["reward"]["performance"].toFixed(2) > 0) {
-            $("#time-reward").text(data["reward"]["time"].toFixed(2));
-            $("#performance-reward").text(
-              data["reward"]["performance"].toFixed(2),
-            );
-            $("#reward-details").show();
-          }
+          $("#time-reward").text(data["reward"]["time"].toFixed(2));
+          $("#performance-reward").text(
+            data["reward"]["performance"].toFixed(2),
+          );
           $("#total-reward").text(data["reward"]["total"].toFixed(2));
         }
       });
@@ -3118,6 +3232,9 @@
   }
 
   window.psynet = psynet;
+  if (window.psynetLayout) {
+    psynet.layout = window.psynetLayout;
+  }
 
   psynet.clearLucidTermination = function () {
     psynet.removeBeforeUnloadEventListener();
@@ -3135,6 +3252,16 @@
     }
     psynet.lucidTerminationEvents = [];
     psynet.lucidTerminationResetHandler = null;
+  };
+
+  psynet.initEarlyExitButton = function () {
+    // Keep a failed script load local to the Leave button rather than
+    // failing the whole page bootstrap.
+    if (!window.psynetEarlyExit) {
+      psynet.log.error("The early-exit script did not load.");
+      return;
+    }
+    window.psynetEarlyExit.init();
   };
 
   psynet.initLucidTermination = function () {
@@ -3236,15 +3363,11 @@
       clockIntervalID,
     ];
 
-    $(document).on("click.psynetLucidTermination", ".btn, .sd-btn", function () {
-      psynet.removeBeforeUnloadEventListener();
-    });
-
     $(document).on(
       "click.psynetLucidTermination",
-      "#terminate-button",
+      ".btn:not(#early-exit-button):not(#early-exit-cancel), .sd-btn",
       function () {
-      terminateParticipant("terminate-button");
+        psynet.removeBeforeUnloadEventListener();
       },
     );
 
@@ -3258,7 +3381,7 @@
     ];
     psynet.lucidTerminationEvents = events;
     psynet.lucidTerminationResetHandler = function () {
-        noActivitySince = 0;
+      noActivitySince = 0;
     };
     events.forEach((eventName) => {
       window.addEventListener(eventName, psynet.lucidTerminationResetHandler);

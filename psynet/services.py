@@ -14,9 +14,9 @@ speaks PostgreSQL (including ``ErrorResponse``); it does not authenticate or
 prove the DSN's user/database are valid. Full DSN validation happens once
 ``psycopg2`` is installed.
 
-Docker experiment workflows that use ``docker/run`` manage services on the
-``dallinger`` network separately; prefer ``psynet services check`` there
-rather than auto-starting host-port containers.
+Docker experiment workflows that use ``psynet debug local --docker`` manage
+services through Dallinger. Prefer ``psynet services check`` rather than
+auto-starting host-port containers in that mode.
 """
 
 from __future__ import annotations

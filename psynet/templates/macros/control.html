@@ -115,7 +115,7 @@
         });
     </script>
 
-    <button type="button" id="reset-button" class="btn btn-primary btn-lg" style="{% if params.show_reset_button == 'on_selection' %}display: none{% endif %}; margin-right: 30px;" disabled>
+    <button type="button" id="reset-button" class="btn btn-primary btn-lg" style="{% if params.show_reset_button == 'on_selection' %}display: none{% endif %}" disabled>
         {{ gettext("Reset") }}
     </button>
     {% endmacro %}
@@ -135,17 +135,7 @@
 {% endmacro %}
 
 {% macro push_buttons(params) %}
-    <style>
-        .push-button-container {
-            display: {% if params.arrange_vertically %}grid{% else %}flex{% endif %};
-            flex-wrap: wrap;
-            justify-content: center;
-            max-height: 420px;
-            overflow-y: auto;
-        }
-    </style>
-
-    <div class="push-button-container">
+    <div class="push-button-container{% if params.arrange_vertically %} push-button-container--vertical{% endif %}">
         {% for button in params.push_buttons %}
             {{ push_button(button) }}
         {% endfor %}
@@ -225,29 +215,19 @@
 {% endmacro %}
 
 {% macro checkbox(params) %}
-    <label style="margin-left: 15px; cursor: pointer;">
+    <label class="psynet-option">
         <input
             type="checkbox"
             id="{{ params.id }}"
             name="{{ params.name }}"
             class="response"
-            style="cursor: pointer;"
         />
-        <span>{{ params.label }}</span>
+        <span class="psynet-option-label">{{ params.label }}</span>
     </label>
 {% endmacro %}
 
 {% macro checkboxes(params) %}
-    <style>
-        .control-container {
-            display: {% if params.arrange_vertically %}grid{% else %}flex{% endif %};
-            flex-wrap: wrap;
-            justify-content: center;
-            max-height: 420px;
-            overflow-y: auto;
-        }
-    </style>
-    <div class="control-container">
+    <div class="control-container psynet-options{% if not params.arrange_vertically %} psynet-options--horizontal{% endif %}">
         {% for _checkbox in params.checkboxes %}
             {{ checkbox(_checkbox) }}
         {% endfor %}
@@ -270,7 +250,7 @@
 {% endmacro %}
 
 {% macro radiobutton(params) %}
-    <label style="margin-left: 15px;">
+    <label class="psynet-option">
         <input
             type="radio"
             id="{{ params.id }}"
@@ -278,21 +258,12 @@
             class="response"
             style="{{ params.style }}"
         />
-        <span style="{{ params.style }}">{{ params.label }}</span>
+        <span class="psynet-option-label" style="{{ params.style }}">{{ params.label }}</span>
     </label>
 {% endmacro %}
 
 {% macro radiobuttons(params) %}
-    <style>
-        .control-container {
-            display: {% if params.arrange_vertically %}grid{% else %}flex{% endif %};
-            flex-wrap: wrap;
-            justify-content: center;
-            max-height: 420px;
-            overflow-y: auto;
-        }
-    </style>
-    <div class="control-container">
+    <div class="control-container psynet-options{% if not params.arrange_vertically %} psynet-options--horizontal{% endif %}">
         {% for button in params.radiobuttons %}
             {{ radiobutton(button) }}
         {% endfor %}
@@ -633,9 +604,8 @@
         }
         input[type=range]::-webkit-slider-thumb {
             -webkit-appearance: none;
-            border: 1px solid #000000;
-            background-color: #0d6efd;
-            border: 11px solid #0d6efd;
+            background-color: var(--psynet-accent);
+            border: 11px solid var(--psynet-accent);
             border-radius: 1rem;
             {% if params.directional == false %}
             margin-top: -8px;
@@ -644,20 +614,20 @@
         }
         {% if params.directional == false %}
         input[type=range]::-webkit-slider-runnable-track {
-              background: #000000;
-              border: 1px solid #b2b2b2;
-              background-color: #efefef;
+              background-color: var(--psynet-surface-sunken);
+              border: 1px solid var(--psynet-border-strong);
               border-radius: 1rem;
               width: 100%;
               height: 8px;
             }
         {% endif %}
-        input[type=range]:focus::-webkit-slider-thumb {
-            box-shadow: none;
+        input[type=range]:focus-visible::-webkit-slider-thumb {
+            outline: var(--psynet-focus-ring);
+            outline-offset: 2px;
         }
         input[type=range]:disabled::-webkit-slider-thumb {
-            background-color: #86b6fe;
-            border: 11px solid #86b6fe;
+            background-color: var(--psynet-border-strong);
+            border: 11px solid var(--psynet-border-strong);
         }
     </style>
 
@@ -1069,28 +1039,22 @@
 {% endmacro %}
 
 {% macro audio_meter(params) %}
-    <style>
-        .audio-meter-block {
-            margin-top: 20px;
-            margin-bottom: 20px;
-        }
-    </style>
     <div class="audio-meter-block">
-        <table style="width: 500px; padding: 10px">
-            <tbody>
-                <tr align="left" valign="middle">
-                    <td width="300px">
-                        <div style="width: 300px; height: 50px">
-                            <canvas style=" background-color: var(--bs-secondary-bg);" id="audio-meter" width="300" height="50"></canvas>
-                        </div>
-                    </td>
-                    <td width="20px"></td>
-                    <td align="left">
-                        <p id="audio-meter-text" style="font-weight: bold; margin: 0px; display: none;"></p>
-                    </td>
-                </tr>
-            </tbody>
-        </table>
+        <div class="audio-meter">
+            <div
+                id="audio-meter"
+                class="audio-meter__track"
+                role="meter"
+                aria-valuemin="0"
+                aria-valuemax="100"
+                aria-valuenow="0"
+                aria-label="{{ pgettext('audio_meter', 'Microphone level') }}"
+            >
+                <div class="audio-meter__fill"></div>
+            </div>
+            <p id="audio-meter-text" class="audio-meter__text" aria-live="polite"></p>
+            <p id="audio-meter-device-name" class="audio-meter__device"></p>
+        </div>
 
         {% if params.calibrate %}
             {{ audio_meter_calibrate(params) }}
@@ -1747,10 +1711,9 @@
         }
         input[type=range]::-webkit-slider-thumb {
             -webkit-appearance: none;
-            border: 1px solid #000000;
             height: 36px;
-            background-color: #efefef;
-            border: 11px solid #b2b2b2;
+            background-color: var(--psynet-accent);
+            border: 11px solid var(--psynet-accent);
             border-radius: 5px;
             {% if params.directional == false %}
             margin-top: -8px;
@@ -1759,14 +1722,17 @@
         }
         {% if params.directional == false %}
         input[type=range]::-webkit-slider-runnable-track {
-              background: #000000;
-              border: 1px solid #b2b2b2;
-              background-color: #efefef;
+              background-color: var(--psynet-surface-sunken);
+              border: 1px solid var(--psynet-border-strong);
               border-radius: 5px;
               width: 100%;
               height: 8px;
             }
         {% endif %}
+        input[type=range]:focus-visible::-webkit-slider-thumb {
+            outline: var(--psynet-focus-ring);
+            outline-offset: 2px;
+        }
     </style>
 
     <div id="slider-video-container">
@@ -1943,17 +1909,7 @@
 
 
 {% macro terminate_control(params) %}
-    <style>
-        .push-button-container {
-            display: {% if params.arrange_vertically %}grid{% else %}flex{% endif %};
-            flex-wrap: wrap;
-            justify-content: center;
-            max-height: 420px;
-            overflow-y: auto;
-        }
-    </style>
-
-    <div class="push-button-container">
+    <div class="push-button-container{% if params.arrange_vertically %} push-button-container--vertical{% endif %}">
         {% for item in params.items %}
         <button
                 type="button"

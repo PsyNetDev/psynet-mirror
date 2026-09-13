@@ -39,7 +39,6 @@ from .command_line import (
     kill_chromedriver_processes,
     kill_psynet_chrome_processes,
     stop_local_debug_process,
-    working_directory,
 )
 from .experiment import get_experiment, import_local_experiment
 from .experiment_scaffold import (
@@ -54,7 +53,13 @@ from .test_helpers.mock_s3 import (
 from .testing.chrome_driver import create_psynet_chrome_driver
 from .trial.main import TrialNetwork
 from .trial.static import StaticNode, StaticTrial, StaticTrialMaker
-from .utils import clear_all_caches, is_in_repo_experiment, wait_until
+from .utils import (
+    clear_all_caches,
+    is_in_repo_experiment,
+    is_release_branch,
+    wait_until,
+    working_directory,
+)
 
 logger = logging.getLogger(__file__)
 warnings.filterwarnings("ignore", category=sqlalchemy.exc.SAWarning)
@@ -65,6 +70,11 @@ ci_only = pytest.mark.skipif(
 
 local_only = pytest.mark.skipif(
     os.environ.get("CI") is not None, reason="This test only runs in local environment"
+)
+
+release_branch_only = pytest.mark.skipif(
+    not is_release_branch(),
+    reason="This test only runs on release branches",
 )
 
 
@@ -134,7 +144,7 @@ def bot_class(headless=None):
 
     class PYTEST_BOT_CLASS(BotBase):
         def sign_up(self):
-            """Accept HIT, give consent and start experiment.
+            """Accept the assignment, give consent, and start the experiment.
 
             This uses Selenium to click through buttons on the ad,
             consent, and instruction pages.
@@ -298,7 +308,26 @@ def next_page(driver, button_identifier, by=By.ID, finished=False, max_wait=10.0
     )
 
     old_uuid = get_uuid()
-    find_button().click()
+    button = find_button()
+    # In-flow footers sit after the page content. Scrolling to the document
+    # bottom can cover the target with the footer; bring the control itself
+    # into view instead.
+    driver.execute_script(
+        """
+        const el = arguments[0];
+        el.scrollIntoView({block: 'center', inline: 'nearest'});
+        const y = el.getBoundingClientRect().top + window.pageYOffset
+            - (window.innerHeight / 2);
+        window.scrollTo(0, Math.max(0, y));
+        document.documentElement.scrollTop = Math.max(0, y);
+        document.body.scrollTop = Math.max(0, y);
+        """,
+        button,
+    )
+    try:
+        button.click()
+    except ElementClickInterceptedException:
+        driver.execute_script("arguments[0].click();", button)
     if finished:
         wait_until(
             lambda: "recruiter-exit" in driver.current_url,
@@ -306,7 +335,7 @@ def next_page(driver, button_identifier, by=By.ID, finished=False, max_wait=10.0
             error_message="Never reached the recruiter-exit route, seems like the experiment never finished.",
         )
     else:
-        if driver.current_url == "http://localhost:5000/error-page":
+        if parse.urlparse(driver.current_url).path == "/error-page":
             raise RuntimeError(
                 "Unexpectedly hit an error page, check the server logs for details."
             )

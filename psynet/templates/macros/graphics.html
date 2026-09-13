@@ -10,8 +10,17 @@
             border-style: {{ params.border_style }};
             border-color: {{ params.border_color }};
             border-width: {{ params.border_width }};
-            height: {{ params.viewport_width * 100}}%;
-            width: {{ params.viewport_width * 100 }}%;
+            /* Caps are expressed as a width: the requested window fraction,
+               the parent content surface, the height cap, and the leftover
+               height after page chrome, floored at --psynet-graphic-min-size.
+               Height then follows from aspect-ratio, so a landscape graphic
+               cannot outgrow the surface, a square graphic cannot make a
+               laptop page scroll, and a short phone window cannot collapse
+               the graphic to zero. A percentage height would collapse against
+               an auto-height parent. */
+            width: {{ params.css_box_width() }};
+            aspect-ratio: {{ params.dimensions[0] }} / {{ params.dimensions[1] }};
+            height: auto;
         }
     </style>
 
@@ -19,7 +28,7 @@
         <div id="graphic-{{ params.id }}"> </div>
     </div>
 
-    <script src="/static/scripts/raphael-2.3.0.min.js"></script>
+    <script src="{{ url_for('static', filename='scripts/raphael-2.3.0.min.js') }}"></script>
 
     <script>
         let graphic_{{ params.id }} = {
@@ -40,7 +49,7 @@
             paper.setViewBox(0, 0, blueprintDim[0], blueprintDim[1], true);
             paper.setSize("100%", "100%");
 
-            let svg = document.querySelector("svg");
+            let svg = paper.canvas;
             svg.removeAttribute("width");
             svg.removeAttribute("height");
 

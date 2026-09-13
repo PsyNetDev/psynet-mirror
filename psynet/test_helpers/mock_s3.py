@@ -35,6 +35,7 @@ class MockS3Client:
     def __init__(self, root: str):
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
+        self.object_metadata = {}
 
     def _bucket_path(self, bucket_name: str) -> Path:
         return self.root / bucket_name
@@ -83,12 +84,19 @@ class MockS3Client:
         for obj in list(self._list_objects(bucket_name=bucket_name, prefix=prefix)):
             self._delete_object(bucket_name, obj["Key"])
 
-    def _upload_file(self, filename: str, bucket_name: str, key: str):
+    def _upload_file(
+        self,
+        filename: str,
+        bucket_name: str,
+        key: str,
+        extra_args: dict | None = None,
+    ):
         if not self._has_bucket(bucket_name):
             raise _client_error("NoSuchBucket", "PutObject")
         target = self._object_path(bucket_name, key)
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(filename, target)
+        self.object_metadata[(bucket_name, key)] = dict(extra_args or {})
 
     def _download_file(self, bucket_name: str, key: str, filename: str):
         source = self._object_path(bucket_name, key)
@@ -111,6 +119,7 @@ class MockS3Client:
         path = self._object_path(bucket_name, key)
         if path.exists():
             path.unlink()
+        self.object_metadata.pop((bucket_name, key), None)
 
     def _head_object(self, bucket_name: str, key: str):
         path = self._object_path(bucket_name, key)
@@ -119,7 +128,8 @@ class MockS3Client:
         return {
             "LastModified": datetime.fromtimestamp(
                 path.stat().st_mtime, tz=timezone.utc
-            )
+            ),
+            **self.object_metadata.get((bucket_name, key), {}),
         }
 
     def _put_object(self, bucket_name: str, key: str, body):
@@ -137,8 +147,14 @@ class MockS3Client:
             raise _client_error("NoSuchKey", "GetObject")
         return {"Body": BytesIO(source.read_bytes())}
 
-    def upload_file(self, Filename: str, Bucket: str, Key: str):
-        self._upload_file(Filename, Bucket, Key)
+    def upload_file(
+        self,
+        Filename: str,
+        Bucket: str,
+        Key: str,
+        ExtraArgs: dict | None = None,
+    ):
+        self._upload_file(Filename, Bucket, Key, ExtraArgs)
 
     def download_file(self, Bucket: str, Key: str, Filename: str):
         self._download_file(Bucket, Key, Filename)

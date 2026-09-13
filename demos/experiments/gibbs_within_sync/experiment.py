@@ -283,7 +283,7 @@ class Exp(psynet.experiment.Experiment):
         for bot in bots:
             page = bot.get_current_page()
             text = as_plain_text(page.prompt.text)
-            assert "That's the end of the experiment!" in text
+            assert "That's the end!" in text
 
     def test_check_bot(self, bot: Bot, **kwargs):
         assert not bot.failed or bot.failed_reason == "simulated_failure"

@@ -1,8 +1,8 @@
 {% extends "timeline-page.html" %}
 
 {% block main_body %}
-<link rel="stylesheet" href="/static/international-keyboards/international-keyboards.css"/>
-<script src="/static/international-keyboards/international-keyboards.js"></script>
+<link rel="stylesheet" href="{{ url_for('static', filename='international-keyboards/international-keyboards.css') }}"/>
+<script src="{{ url_for('static', filename='international-keyboards/international-keyboards.js') }}"></script>
 
 {% macro keyboard() %}
     <div id="keyboard"></div>
