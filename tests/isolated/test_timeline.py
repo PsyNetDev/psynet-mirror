@@ -177,6 +177,79 @@ def test_partial_render_skips_beautifulsoup_for_fragment_roots(monkeypatch):
     assert '{"html": "</div>"}' in rendered
 
 
+def test_partial_render_does_not_rewrite_script_tags_inside_json():
+    html = """
+    <div id="psynet-timeline-fragment">
+      <script id="psynet-template-data" type="application/json">{"prompt": "<script src=x>"}</script>
+      <script>var x = 1;</script>
+    </div>
+    """
+    rendered = Page._extract_partial_render(html)
+    assert '{"prompt": "<script src=x>"}' in rendered
+    assert rendered.count('type="text/psynet-script"') == 1
+    assert "var x = 1;" in rendered
+
+
+def test_template_string_for_render_rewrites_timeline_page_parent():
+    child = '{% extends "timeline-page.html" %}\n{% block main_body %}Hi{% endblock %}'
+    rewritten = Page._template_string_for_render(child, partial_mode=True)
+    assert '{% extends "timeline-fragment.html" %}' in rewritten
+    assert '{% extends "timeline-page.html" %}' not in rewritten
+    assert Page._template_string_for_render(child, partial_mode=False) == child
+    custom = "{% extends 'macros.html' %}<p>custom</p>"
+    assert Page._template_string_for_render(custom, partial_mode=True) == custom
+
+
+def test_rewritten_wait_page_compiles_against_the_fragment_parent():
+    from importlib import resources
+
+    from jinja2 import Environment, FileSystemLoader
+
+    templates = resources.files("psynet") / "templates"
+    env = Environment(loader=FileSystemLoader(str(templates)), autoescape=True)
+    env.get_template("timeline-fragment.html")
+    source = (templates / "wait-page.html").read_text(encoding="utf-8")
+    rewritten = Page._template_string_for_render(source, partial_mode=True)
+    assert '{% extends "timeline-fragment.html" %}' in rewritten
+    env.from_string(rewritten)
+
+
+def test_spa_markup_skips_beautifulsoup_without_html_tags(monkeypatch):
+    import psynet.timeline as timeline_mod
+
+    calls = {"n": 0}
+    real_init = timeline_mod.BeautifulSoup.__init__
+
+    def tracking_init(self, *args, **kwargs):
+        calls["n"] += 1
+        return real_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(timeline_mod.BeautifulSoup, "__init__", tracking_init)
+    codes = Page._collect_spa_markup_contract_codes(
+        '<p><span style="font-weight: bold;">Hello</span></p>'
+    )
+    assert calls["n"] == 0
+    assert codes == []
+
+
+def test_spa_markup_still_parses_style_tags(monkeypatch):
+    import psynet.timeline as timeline_mod
+
+    calls = {"n": 0}
+    real_init = timeline_mod.BeautifulSoup.__init__
+
+    def tracking_init(self, *args, **kwargs):
+        calls["n"] += 1
+        return real_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(timeline_mod.BeautifulSoup, "__init__", tracking_init)
+    codes = Page._collect_spa_markup_contract_codes(
+        "<p>Hello</p><style>.x { color: red; }</style>"
+    )
+    assert calls["n"] == 1
+    assert "style_tag" in codes
+
+
 def test_embedded_script_contract_skips_parsing_pages_without_modules(monkeypatch):
     """Full-page render must not BeautifulSoup the timeline shell unless needed."""
     import psynet.timeline as timeline_mod

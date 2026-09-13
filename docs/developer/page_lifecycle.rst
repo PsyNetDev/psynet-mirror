@@ -43,13 +43,30 @@ Server-side rendering
 
 * Full mode renders the complete timeline document.
 * Partial mode renders the internal ``#psynet-timeline-fragment`` payload used
-  by ``/response``.
+  by ``/response``. Child templates that extend ``timeline-page.html`` are
+  rewritten to ``timeline-fragment.html`` so Jinja does not compile Dallinger's
+  layout and then throw it away. Child ``stylesheets`` extras (wait-page CSS,
+  consent stylesheet links) are emitted into ``#psynet-fragment-assets``.
+  Complete templates that do not extend the timeline page still render the
+  full document, then extract the fragment.
+
+Jinja translation environments are cached per locale on the Flask app, and
+compiled template strings are reused, so hold-resume HTML is not dominated by
+rebuilding the document shell on every request.
+
+BeautifulSoup is not the inplace bottleneck. PsyNet skips it for fragment
+roots, for full pages without ``type="module"`` scripts, and for prompt markup
+that has no ``<script>``, ``<style>``, or ``<link>`` tags. Executable script
+rewrites skip bodies of ``script``, ``style``, and ``template`` so JSON
+bootstrap data is not mutated. Soup remains the fallback when the fragment
+root cannot be extracted, and when copying tagged head CSS from a full-document
+partial render.
 
 Before extracting a partial fragment, PsyNet:
 
 * validates the page/template contract;
 * makes executable embedded scripts inert;
-* copies managed page CSS from the rendered head into the fragment;
+* includes child stylesheet extras and page CSS in the fragment assets;
 * includes a fresh ``#psynet-template-data`` JSON payload.
 
 Full-page renders apply the same contract check. They also emit
@@ -423,7 +440,10 @@ Those routes do not share a lock protocol:
   last arriver's request (entry ``GET /timeline``, or a later last-arrival
   ``POST /response``) occupies one worker while each waiter POSTs hold-resume.
   Playwright hold tests set workers to the session count. Remaining ``queue~``
-  means the pool is still busy. A short HTTP 503 on hold-resume is ``NOWAIT``
+  means the pool is still busy: diagnose worker occupancy (often HTML
+  ``render``) rather than subtracting that wait from overlay linger or waiter
+  spread. Overlay linger is wake→end wallclock compared with
+  ``max(1800ms, Server-Timing app + 500ms)``. A short HTTP 503 on hold-resume is ``NOWAIT``
   overlap, not a missed wake.
 * After the arrival write commits, queued barrier checks run in short
   transactions. Websocket wakes from those inner commits wait until the last

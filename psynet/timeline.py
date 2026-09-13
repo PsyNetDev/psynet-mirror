@@ -1573,6 +1573,24 @@ class Page(Elt):
             "{% endblock %}"
         )
 
+    @staticmethod
+    def _template_string_for_render(template_str, partial_mode):
+        """Use the layout-free fragment parent for inplace ``/response`` renders.
+
+        Child templates still extend ``timeline-page.html`` at authoring time.
+        Partial mode rewrites that parent so Jinja does not compile Dallinger's
+        document shell and discard it. Complete templates that do not extend
+        the timeline page still render the full layout, then extract.
+        """
+        if not partial_mode or not template_str:
+            return template_str
+        rewritten, count = Page._TIMELINE_PAGE_EXTENDS.subn(
+            '{% extends "timeline-fragment.html" %}',
+            template_str,
+            count=1,
+        )
+        return rewritten if count else template_str
+
     def call__get_bot_response(self, experiment, bot, response=NoArgumentProvided):
         """
         Constructs the appropriate bot_response for the page.
@@ -2030,7 +2048,10 @@ class Page(Elt):
             "aggressive_termination_on_no_focus": self.aggressive_termination_on_no_focus,
         }
         rendered = render_string_with_translations(
-            template_string=self.template_str, **all_template_args
+            template_string=self._template_string_for_render(
+                self.template_str, partial_mode
+            ),
+            **all_template_args,
         )
         if partial_mode:
             rendered = self._extract_partial_render(rendered)
@@ -2128,23 +2149,32 @@ class Page(Elt):
         # prohibition still applies to author-provided page/prompt/control
         # templates, which should route page JavaScript through
         # js_dependencies, js_page_code, and js_page_modules.
+        #
+        # Skip BeautifulSoup when the markup has no script, style, or link
+        # tags. Prompt HTML is usually a short fragment; parsing it on every
+        # render was measurable noise, not the hold-resume bottleneck.
         codes = []
         markup_source = markup_source or ""
-        soup = BeautifulSoup(markup_source, "html.parser")
+        if Page._SPA_MARKUP_TAG.search(markup_source):
+            soup = BeautifulSoup(markup_source, "html.parser")
 
-        if not allow_scripts and soup.find_all("script"):
-            codes.append("embedded_script")
+            if not allow_scripts and soup.find_all("script"):
+                codes.append("embedded_script")
 
-        if soup.find_all("style"):
-            codes.append("style_tag")
+            if soup.find_all("style"):
+                codes.append("style_tag")
 
-        if soup.find_all("link", rel=lambda value: value and "stylesheet" in value):
-            codes.append("stylesheet_link")
+            if soup.find_all("link", rel=lambda value: value and "stylesheet" in value):
+                codes.append("stylesheet_link")
 
         codes.extend(Page._collect_spa_javascript_contract_codes(markup_source))
 
         return codes
 
+    _SPA_MARKUP_TAG = re.compile(r"<(script|style|link)\b", re.IGNORECASE)
+    _TIMELINE_PAGE_EXTENDS = re.compile(
+        r"""\{%-?\s*extends\s+(['"])timeline-page\.html\1\s*-?%\}""",
+    )
     _RAW_TEXT_ELEMENT_OPEN = re.compile(
         r"<(script|style|template)\b",
         re.IGNORECASE,
@@ -2223,27 +2253,59 @@ class Page(Elt):
         return None
 
     @staticmethod
+    def _inert_script_opening(match):
+        """Return an executable ``<script>`` opening tag marked inert."""
+        attrs = match.group(1) or ""
+        type_match = Page._SCRIPT_TYPE_ATTR.search(attrs)
+        if type_match is None:
+            script_type = ""
+        else:
+            script_type = (type_match.group(2) or type_match.group(3) or "").strip()
+            script_type = script_type.lower()
+        if script_type not in Page._EXECUTABLE_SCRIPT_TYPES:
+            return match.group(0)
+        if type_match is not None:
+            attrs = Page._SCRIPT_TYPE_ATTR.sub(
+                'type="text/psynet-script"', attrs, count=1
+            )
+            return f"<script{attrs}>"
+        return f'<script{attrs} type="text/psynet-script">'
+
+    @staticmethod
     def _inert_executable_script_tags(html):
-        """Mark executable ``<script>`` tags inert without parsing the document."""
+        """Mark executable ``<script>`` tags inert without parsing the document.
 
-        def replace(match):
-            attrs = match.group(1) or ""
-            type_match = Page._SCRIPT_TYPE_ATTR.search(attrs)
-            if type_match is None:
-                script_type = ""
-            else:
-                script_type = (type_match.group(2) or type_match.group(3) or "").strip()
-                script_type = script_type.lower()
-            if script_type not in Page._EXECUTABLE_SCRIPT_TYPES:
-                return match.group(0)
-            if type_match is not None:
-                attrs = Page._SCRIPT_TYPE_ATTR.sub(
-                    'type="text/psynet-script"', attrs, count=1
-                )
-                return f"<script{attrs}>"
-            return f'<script{attrs} type="text/psynet-script">'
-
-        return Page._SCRIPT_OPEN.sub(replace, html)
+        Script, style, and template bodies are copied unchanged so JSON or
+        markup inside those tags is not rewritten as if it were a real tag.
+        """
+        html = html or ""
+        parts = []
+        pos = 0
+        length = len(html)
+        while pos < length:
+            next_lt = html.find("<", pos)
+            if next_lt < 0:
+                parts.append(html[pos:])
+                break
+            parts.append(html[pos:next_lt])
+            skip_to = Page._skip_raw_text_element(html, next_lt)
+            if skip_to is None:
+                parts.append("<")
+                pos = next_lt + 1
+                continue
+            open_end = html.find(">", next_lt)
+            if open_end < 0 or open_end >= skip_to:
+                parts.append(html[next_lt:skip_to])
+                pos = skip_to
+                continue
+            opening = html[next_lt : open_end + 1]
+            match = Page._SCRIPT_OPEN.match(opening)
+            if match is not None:
+                opening = Page._inert_script_opening(match)
+            parts.append(opening)
+            parts.append(html[open_end + 1 : skip_to])
+            pos = skip_to
+        return "".join(parts)
 
     @staticmethod
     def _extract_partial_render(rendered_html):

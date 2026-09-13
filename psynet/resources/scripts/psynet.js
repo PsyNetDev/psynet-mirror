@@ -764,28 +764,39 @@
       return root.querySelector("#" + id);
     };
 
+    psynet.getFragmentAssetScope = function (root = document) {
+      return (
+        psynet.getElementById(root, "psynet-fragment-assets") ||
+        root
+      );
+    };
+
     psynet.getPageCssLinks = function (root = document) {
-      let cssTemplate = psynet.getElementById(root, "psynet-page-css-links");
-      if (!cssTemplate) {
+      let scope = psynet.getFragmentAssetScope(root);
+      let cssTemplate = psynet.getElementById(scope, "psynet-page-css-links");
+      let searchRoot = scope.id === "psynet-fragment-assets" ? scope : cssTemplate;
+      if (!searchRoot) {
         return [];
       }
-      if (cssTemplate.content) {
+      if (searchRoot.content) {
         return Array.from(
-          cssTemplate.content.querySelectorAll("link[rel='stylesheet']"),
+          searchRoot.content.querySelectorAll("link[rel='stylesheet']"),
         );
       }
-      return Array.from(cssTemplate.querySelectorAll("link[rel='stylesheet']"));
+      return Array.from(searchRoot.querySelectorAll("link[rel='stylesheet']"));
     };
 
     psynet.getPageStyles = function (root = document) {
-      let cssTemplate = psynet.getElementById(root, "psynet-page-css");
-      if (!cssTemplate) {
+      let scope = psynet.getFragmentAssetScope(root);
+      let cssTemplate = psynet.getElementById(scope, "psynet-page-css");
+      let searchRoot = scope.id === "psynet-fragment-assets" ? scope : cssTemplate;
+      if (!searchRoot) {
         return [];
       }
-      if (cssTemplate.content) {
-        return Array.from(cssTemplate.content.querySelectorAll("style"));
+      if (searchRoot.content) {
+        return Array.from(searchRoot.content.querySelectorAll("style"));
       }
-      return Array.from(cssTemplate.querySelectorAll("style"));
+      return Array.from(searchRoot.querySelectorAll("style"));
     };
 
     psynet.removePageStylesheetLinks = function () {

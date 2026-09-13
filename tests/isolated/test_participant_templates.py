@@ -274,9 +274,9 @@ def test_footer_reserves_the_progress_bar_strip():
 
 def test_progress_percentage_is_centred_on_the_track():
     """Bootstrap draws it inside the fill, which is too narrow early on."""
-    source = (resources.files("psynet") / "templates" / "timeline-page.html").read_text(
-        encoding="utf-8"
-    )
+    source = (
+        resources.files("psynet") / "templates" / "macros" / "timeline-shell.html"
+    ).read_text(encoding="utf-8")
     start = source.index("{% macro timeline_header()")
     end = source.index("{% endmacro %}", start)
     macro = source[start:end]
@@ -485,9 +485,9 @@ def test_footerless_timeline_only_renders_progress_for_media(
 
     from jinja2 import Environment
 
-    source = (resources.files("psynet") / "templates" / "timeline-page.html").read_text(
-        encoding="utf-8"
-    )
+    source = (
+        resources.files("psynet") / "templates" / "macros" / "timeline-shell.html"
+    ).read_text(encoding="utf-8")
     start = source.index("{% macro media_download_bar()")
     footer_start = source.index("{% macro timeline_footer()", start)
     end = source.index("{% endmacro %}", footer_start) + len("{% endmacro %}")
@@ -508,9 +508,9 @@ def test_footerless_timeline_only_renders_progress_for_media(
 
 
 def test_timeline_footer_keeps_labels_compact_and_explanations_accessible():
-    source = (resources.files("psynet") / "templates" / "timeline-page.html").read_text(
-        encoding="utf-8"
-    )
+    source = (
+        resources.files("psynet") / "templates" / "macros" / "timeline-shell.html"
+    ).read_text(encoding="utf-8")
     start = source.index("{% macro timeline_footer()")
     end = source.index("{% endmacro %}", start)
     macro = source[start:end]
@@ -654,6 +654,21 @@ def test_wait_page_fills_space_before_the_footer():
     assert "--psynet-footer-" not in source
 
 
+def test_timeline_fragment_parent_keeps_child_stylesheet_extras():
+    fragment = (
+        resources.files("psynet") / "templates" / "timeline-fragment.html"
+    ).read_text(encoding="utf-8")
+    assert 'extends "macros.html"' not in fragment
+    assert 'extends "psynet_layout.html"' not in fragment
+    assert "self.stylesheets()" in fragment
+    assert 'id="psynet-timeline-fragment"' in fragment
+    page = (resources.files("psynet") / "templates" / "timeline-page.html").read_text(
+        encoding="utf-8"
+    )
+    assert "macros/timeline-shell.html" in page
+    assert "macros/timeline-shell.html" in fragment
+
+
 def test_reduced_motion_does_not_freeze_every_animation():
     css = (resources.files("psynet") / "resources/css/participant.css").read_text(
         encoding="utf-8"
@@ -673,6 +688,7 @@ def test_media_bar_is_reconciled_after_the_footer_swap():
     assert "psynet.reconcileMediaDownloadBar" in js
     assert "insideNextFooter" not in js
     assert 'optionalIds = ["footer", "early-exit-modal"]' in js
+    assert "psynet.getFragmentAssetScope" in js
 
 
 def test_scaffold_description_does_not_promise_a_visible_reward():
@@ -808,6 +824,7 @@ def test_hold_chip_stacks_under_the_leave_modal():
 def test_footer_exit_uses_an_in_page_confirmation():
     templates = resources.files("psynet") / "templates"
     timeline = (templates / "timeline-page.html").read_text(encoding="utf-8")
+    shell = (templates / "macros/timeline-shell.html").read_text(encoding="utf-8")
     early_exit_macro = (templates / "macros/early_exit.html").read_text(
         encoding="utf-8"
     )
@@ -816,7 +833,7 @@ def test_footer_exit_uses_an_in_page_confirmation():
     # Page.early_exit_available decides whether Leave is on offer, so the
     # modal is only rendered alongside an offer the server will honour.
     assert "{% if early_exit_offer_id %}" in timeline
-    assert "{% if show_early_exit_button %}" in timeline
+    assert "{% if show_early_exit_button %}" in shell
     assert 'id="early-exit-modal"' in early_exit_macro
     assert 'id="early-exit-cancel"' in early_exit_macro
     assert 'id="early-exit-confirm"' in early_exit_macro
