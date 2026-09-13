@@ -1,1 +1,1 @@
-Playwright stacked-group hold overlays allow linger to track a slow approved hold-resume POST's Server-Timing app (handler time), not gunicorn listen-queue.
+Playwright stacked-group hold overlays compare wake→end wallclock with ``max(1800ms, hold-resume Server-Timing app + 500ms)``. Summaries print gunicorn ``queue~`` so a long wait can be split into handler time versus pool occupancy; that queue is not subtracted from linger or waiter-release spread.

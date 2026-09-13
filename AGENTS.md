@@ -179,8 +179,8 @@ When adding or updating Playwright E2E tests, follow these rules to reduce CI fl
     - Playwright `toHaveCount` can fail with `Received: undefined` when the document reloads mid-wait. Treat that as a destroyed execution context, not a missing hold chip.
 
 14. **Do not treat a slow approved hold-resume POST as a missed wake**:
-    - Overlay linger may track POST duration under CI load.
-    - Subtract hold-resume gunicorn `queue~` from wake→end linger before comparing with `max(1800ms, app + 500ms)`. Do not subtract `queue~` from waiter-release spread.
+    - Overlay linger is wake→end wallclock, including gunicorn listen-queue.
+    - Compare linger with `max(1800ms, app + 500ms)`. Do not subtract `queue~` from linger or waiter-release spread. Print `queue~` in summaries so a long wait can be split into handler time versus pool occupancy; fix render occupancy rather than ignoring the wait.
     - Keep asserting the resume is a server wake, not a safety poll.
     - If a legacy reload drops in-page wake clocks, a published wake token plus an approved hold-resume POST still counts.
     - Use ``Server-Timing`` ``app`` versus browser wall time to split handler time from worker-pool queueing.

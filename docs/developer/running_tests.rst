@@ -148,15 +148,16 @@ page as a cleared hold (wake token and hold-resume POST) instead of failing on
 the destroyed context.
 
 Overlay linger after a published wake is bounded by
-``max(1800ms, hold-resume Server-Timing app + 500ms)``. A slow approved POST is
+``max(1800ms, hold-resume Server-Timing app + 500ms)``. That comparison uses
+wake→end wallclock, including gunicorn listen-queue. A slow approved POST is
 not a missed wake; still assert that the resume reason is not
 ``safety poll`` or ``hold timeout``. If a legacy reload drops in-page wake clocks, a published
 wake token plus an approved hold-resume POST still counts as a server wake.
 Hold-release summaries print ``Server-Timing`` ``app`` versus browser wall
 time (``queue~``) for the last arriver's request and the waiter's hold-resume
-POST. Overlay linger is wake→end minus that hold-resume ``queue~``, then
-compared with ``max(1800ms, app + 500ms)``. Waiter-release spread still uses
-raw overlay leave times and does not subtract ``queue~``. ``GET /timeline`` also prints ``lock``, ``page``, ``barriers``, and
+POST so a long linger can be split into handler time versus pool occupancy.
+Do not subtract ``queue~`` from overlay linger or from waiter-release spread.
+``GET /timeline`` also prints ``lock``, ``page``, ``barriers``, and
 ``render``. Blocking-request checks use ``app`` when that header is present, so
 worker-pool queueing is not treated as a slow handler. The 2500ms entry
 budget applies to ``GET /timeline`` and ``POST /load-participant``, not to

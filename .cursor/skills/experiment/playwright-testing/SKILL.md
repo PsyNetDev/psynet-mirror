@@ -79,10 +79,12 @@ arms `waitForHeldParticipantToResume` before the last arriver consents.
 (`resumedAtMs`) is timed from `lastArriverReleaseAtMs` (the grouping request
 finish, not the follow-up HTML 200), resume is `server notification` or
 `queued hold wake` (not `safety poll` or `hold timeout`), inplace mode issues no
-extra `GET /timeline`, and overlay linger stays under
+extra `GET /timeline`, and overlay linger (wake→end wallclock, including
+gunicorn listen-queue) stays under
 `max(1800ms, hold-resume Server-Timing app + 500ms)`. A short HTTP 503 may
-retry once; do not fold gunicorn `queue~` into linger or waiter spread. Spread
-is overlay leave times, at most 1500ms:
+retry once; do not fold gunicorn `queue~` into linger or waiter spread. Print
+`queue~` in summaries so a long wait can be split into handler time versus
+pool occupancy. Spread is overlay leave times, at most 1500ms:
 
 ```js
 await enterWaitingHold(first, { holdText: "Waiting for your partner" });

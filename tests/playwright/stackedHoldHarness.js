@@ -28,10 +28,11 @@ const ENTRY_REQUEST_MAX_MS = 2500;
 const START_PAGE_MAX_MS = 6000;
 const BLOCKING_REQUEST_MS = 4000;
 // Fast waiters leave in ~0.2–0.8s after last paint. Keep this floor under the
-// 2s safety poll so a missed wake cannot hide inside the budget. When CI load
-// makes the approved hold-resume POST itself slower than 1.8s, overlay linger
-// tracks that POST's Server-Timing app (handler time), not browser wall
-// (which includes gunicorn listen-queue). The budget is handler plus slack.
+// 2s safety poll so a missed wake cannot hide inside the budget. Overlay linger
+// is wake→end wallclock, including gunicorn listen-queue: that wait is real
+// for the participant. Compare it with max(1800, Server-Timing app + 500).
+// Summaries print queue~ so a long linger can be split into handler vs pool
+// occupancy; do not subtract queue from linger or waiter-release spread.
 const PARTNER_HOLD_RELEASE_MAX_MS = 1800;
 const HOLD_RESUME_OVERLAY_SLACK_MS = 500;
 const WAITER_RELEASE_SPREAD_MAX_MS = 1500;
@@ -123,25 +124,6 @@ function overlayLingerBudgetMs(holdResumePost) {
   );
 }
 
-function holdResumeQueueMs(holdResumePost) {
-  const serverMs = holdResumePost?.serverTimingMs;
-  const wallMs = holdResumePost?.durationMs;
-  if (serverMs == null || wallMs == null) {
-    return 0;
-  }
-  return Math.max(0, wallMs - serverMs);
-}
-
-function overlayLingerForBudgetMs(wakeToEndMs, holdResumePost) {
-  // The overlay cannot leave until the hold-resume POST is dequeued. That
-  // listen-queue wait is `queue~`, not handler time. Subtract it so linger
-  // still tracks Server-Timing app against max(1800, app + 500).
-  if (wakeToEndMs == null) {
-    return null;
-  }
-  return Math.max(0, wakeToEndMs - holdResumeQueueMs(holdResumePost));
-}
-
 function publishedWakeTokens(holdFrames) {
   const tokens = [];
   for (const frame of holdFrames) {
@@ -221,11 +203,10 @@ function holdReleaseSummary({
     : "work";
   const lastWorkDetail = requestTimingDetail(lastArriverWork, clickToPaintMs);
   const lingerBudget = overlayLingerBudgetMs(holdResumePost);
-  const lingerForBudgetMs = overlayLingerForBudgetMs(rawLingerMs, holdResumePost);
   const lingerLabel =
     rawLingerMs == null
       ? "overlay linger missing"
-      : `overlay linger ${Math.round(rawLingerMs)}ms (${Math.round(lingerForBudgetMs)}ms excl. queue)`;
+      : `overlay linger ${Math.round(rawLingerMs)}ms`;
   const responseNotes =
     resumeLog
       .filter((entry) => entry.kind)
@@ -743,13 +724,13 @@ async function assertWaiterReleasedWithLastArriver(
       ).toBeGreaterThan(0);
     } else {
       expect(
-        overlayLingerForBudgetMs(wakeToEndMs, holdResumePosts[0] || null),
+        wakeToEndMs,
         `${session.label} hold overlay lingered after the wake (${summary})`
       ).toBeLessThan(lingerBudgetMs);
     }
   } else if (wakeToEndMs != null) {
     expect(
-      overlayLingerForBudgetMs(wakeToEndMs, holdResumePosts[0] || null),
+      wakeToEndMs,
       `${session.label} hold overlay lingered after the wake (${summary})`
     ).toBeLessThan(lingerBudgetMs);
   }
@@ -920,7 +901,6 @@ module.exports = {
   enterWaitingHold,
   lastArriverReleaseAtMs,
   lastArriverWorkRecord,
-  overlayLingerForBudgetMs,
   responsesSince,
   startHoldExperiment,
   stopExperiment,
