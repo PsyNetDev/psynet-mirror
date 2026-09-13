@@ -5476,24 +5476,30 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             unique_id = participant.unique_id
             db.session.commit()
             close("page")
-            participant, page = cls._finalize_pending_timeline_barriers(
-                experiment, participant, page
-            )
-            page_uuid = participant.page_uuid
-            # Close any implicit transaction opened by expire-on-commit
-            # reloads or ``pre_render()`` so read-only rendering can start.
-            db.session.commit()
-            close("barriers")
-            rendered = cls._render_timeline_page_read_only(
-                experiment=experiment,
-                participant_id=participant_id,
-                unique_id=unique_id,
-                page_uuid=page_uuid,
-                page=page,
-                mode=mode,
-            )
-            close("render")
-            return rendered
+            from .timeline_hold import _defer_timeline_hold_wakes
+
+            # Keep last-arrival wakes unpublished through HTML/JSON render so
+            # waiting partners do not stampede this worker while it is still
+            # building the last arriver's page.
+            with _defer_timeline_hold_wakes():
+                participant, page = cls._finalize_pending_timeline_barriers(
+                    experiment, participant, page
+                )
+                page_uuid = participant.page_uuid
+                # Close any implicit transaction opened by expire-on-commit
+                # reloads or ``pre_render()`` so read-only rendering can start.
+                db.session.commit()
+                close("barriers")
+                rendered = cls._render_timeline_page_read_only(
+                    experiment=experiment,
+                    participant_id=participant_id,
+                    unique_id=unique_id,
+                    page_uuid=page_uuid,
+                    page=page,
+                    mode=mode,
+                )
+                close("render")
+                return rendered
         except cls.HandledError as err:
             # HandledError.error_page re-fetches and prepares recovery. Those
             # writes must happen after rollback, not in a read-only transaction.
@@ -5974,8 +5980,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         """Run queued arrival checks in short transactions before rendering.
 
         Hold-release websocket wakes from these inner commits stay unpublished
-        until this call returns, so waiting partners are not notified while a
-        later stacked check still locks their rows.
+        until this call returns, or until an outer ``_defer_timeline_hold_wakes``
+        exits. ``GET /timeline`` and ``POST /response`` keep that outer defer
+        through page render so waiting partners are not told to resume while a
+        later stacked check still locks their rows or while this request is
+        still rendering.
         """
         from .timeline_hold import _defer_timeline_hold_wakes
 
@@ -6295,94 +6304,101 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         if result.flask_response is not None:
             return finish(result.flask_response)
 
+        from .timeline_hold import _defer_timeline_hold_wakes
+
         write_committed = False
-        try:
-            payload = result.payload
-            participant = None
-            page = result.page
-            page_uuid_after_response = None
-            render_fragment = False
-            approved = payload.get("submission") == "approved"
-            submission = payload.get("submission")
-            if approved and pending_barrier_checks:
+        with _defer_timeline_hold_wakes():
+            try:
+                payload = result.payload
+                participant = None
+                page = result.page
+                page_uuid_after_response = None
+                render_fragment = False
+                approved = payload.get("submission") == "approved"
+                submission = payload.get("submission")
+                if approved and pending_barrier_checks:
+                    db.session.commit()
+                    write_committed = True
+                    participant = cls._finalize_barrier_arrivals(
+                        exp,
+                        participant_id,
+                        pending_barrier_checks,
+                        result,
+                    )
+                    payload = result.payload
+                    page = result.page
+                    submission = payload.get("submission")
+                clock.close("barriers")
+                if (
+                    approved
+                    and include_timeline_fragment
+                    and get_config().get("inplace_timeline_transitions")
+                ):
+                    if page is None:
+                        raise RuntimeError(
+                            "Approved response did not retain its resolved page."
+                        )
+                    if not page.is_timeline_hold:
+                        render_fragment = not page.requires_full_page_reload
+                        if render_fragment:
+                            if participant is None:
+                                participant = cls._participant_request_query().get(
+                                    participant_id
+                                )
+                            page_uuid_after_response = (
+                                cls._prepare_approved_inplace_page(
+                                    exp, participant, page, payload
+                                )
+                            )
                 db.session.commit()
                 write_committed = True
-                participant = cls._finalize_barrier_arrivals(
-                    exp,
-                    participant_id,
-                    pending_barrier_checks,
-                    result,
-                )
-                payload = result.payload
-                page = result.page
-                submission = payload.get("submission")
-            clock.close("barriers")
-            if (
-                approved
-                and include_timeline_fragment
-                and get_config().get("inplace_timeline_transitions")
-            ):
-                if page is None:
-                    raise RuntimeError(
-                        "Approved response did not retain its resolved page."
-                    )
-                if not page.is_timeline_hold:
-                    render_fragment = not page.requires_full_page_reload
-                    if render_fragment:
-                        if participant is None:
-                            participant = cls._participant_request_query().get(
-                                participant_id
-                            )
-                        page_uuid_after_response = cls._prepare_approved_inplace_page(
-                            exp, participant, page, payload
-                        )
-            db.session.commit()
-            write_committed = True
-        except Exception as err:
-            clock.close_open("barriers", "render")
-            if write_committed:
-                return finish(
-                    cls._handle_response_render_error(exp, participant_id, err)
-                )
-            return finish(cls._handle_response_prepare_error(exp, participant_id, err))
-
-        if render_fragment:
-            try:
-                fragment = cls._render_page_read_only(
-                    page=page,
-                    experiment=exp,
-                    participant_id=participant_id,
-                    page_uuid=page_uuid_after_response,
-                    kind="fragment",
-                )
             except Exception as err:
-                clock.close("render")
-                if os.getenv("PASSTHROUGH_ERRORS"):
-                    raise
+                clock.close_open("barriers", "render")
+                if write_committed:
+                    return finish(
+                        cls._handle_response_render_error(exp, participant_id, err)
+                    )
                 return finish(
-                    cls._handle_response_render_error(exp, participant_id, err)
+                    cls._handle_response_prepare_error(exp, participant_id, err)
                 )
-            clock.close("render")
-            if fragment is None:
-                _p = get_translator(context=True)
-                submission = "rejected"
-                return finish(
-                    exp.response_rejected(
-                        message=_p(
-                            "timeline_problem",
-                            "Synchronization problem detected. "
-                            "Are you running the same experiment in multiple browser tabs? "
-                            "Please close all other tabs and refresh the page.",
+
+            if render_fragment:
+                try:
+                    fragment = cls._render_page_read_only(
+                        page=page,
+                        experiment=exp,
+                        participant_id=participant_id,
+                        page_uuid=page_uuid_after_response,
+                        kind="fragment",
+                    )
+                except Exception as err:
+                    clock.close("render")
+                    if os.getenv("PASSTHROUGH_ERRORS"):
+                        raise
+                    return finish(
+                        cls._handle_response_render_error(exp, participant_id, err)
+                    )
+                clock.close("render")
+                if fragment is None:
+                    _p = get_translator(context=True)
+                    submission = "rejected"
+                    return finish(
+                        exp.response_rejected(
+                            message=_p(
+                                "timeline_problem",
+                                "Synchronization problem detected. "
+                                "Are you running the same experiment in multiple browser tabs? "
+                                "Please close all other tabs and refresh the page.",
+                            )
                         )
                     )
-                )
-            payload["timeline_fragment"] = fragment
-            return finish(success_response(**payload))
+                payload["timeline_fragment"] = fragment
+                return finish(success_response(**payload))
 
-        clock.close("render")
-        if payload.get("submission") == "rejected":
-            return finish(exp.response_rejected(payload["message"]))
-        return finish(success_response(**payload))
+            clock.close("render")
+            if payload.get("submission") == "rejected":
+                return finish(exp.response_rejected(payload["message"]))
+            return finish(success_response(**payload))
 
     @classmethod
     def _handle_response_prepare_error(cls, experiment, participant_id, error):

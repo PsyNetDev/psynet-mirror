@@ -113,9 +113,10 @@ unexpected contention fails safely instead of occupying a web worker
 indefinitely. ``GET /timeline?mode=json`` and ``POST /response`` return
 HTTP 503 with a JSON ``busy`` payload so the browser and automated drivers can
 retry. Browser HTML ``GET /timeline`` returns an HTML 503 page that refreshes
-automatically. Hold-resume submissions retry a busy 503 once, then reschedule the
-hold safety poll instead of immediately retrying, so the browser cannot
-livelock on contention. Whole timeline requests are not retried
+automatically. Hold-resume submissions retry a busy 503 once in the same
+POST. If that retry is also busy, the browser schedules one delayed queued
+hold wake. A further busy response reschedules the hold safety poll instead of
+retrying immediately, so the browser cannot livelock on contention. Whole timeline requests are not retried
 automatically on the server because author code blocks may contain
 non-idempotent external side effects. Barrier definitions and per-group visit
 instances are created in the arrival request's transaction. Each instance
@@ -127,8 +128,9 @@ arrives at a barrier, PsyNet commits the normal write phase and evaluates the
 barrier in a short coordination transaction before rendering. This preserves
 the fast route without holding partner rows through author code or
 ``pre_render()``. Websocket wakes from those coordination commits stay unpublished
-until stacked finalize returns, so a waiting partner is not told to resume
-while a later entry check still holds their row. SAVEPOINT releases inside a
+until the last arriver finishes rendering the next page, so a waiting partner
+is not told to resume while a later entry check still holds their row or while
+that request is still building HTML. SAVEPOINT releases inside a
 check are not treated as durable commits for those wakes; a later root
 rollback discards them. The barrier poller locks waiters with
 ``FOR UPDATE NOWAIT`` so a participant write cannot stall other groups; if any
@@ -425,8 +427,8 @@ Those routes do not share a lock protocol:
   means the pool is still busy. A short HTTP 503 on hold-resume is ``NOWAIT``
   overlap, not a missed wake.
 * After the arrival write commits, queued barrier checks run in short
-  transactions. Websocket wakes from those inner commits wait until stacked
-  finalize returns.
+  transactions. Websocket wakes from those inner commits wait until the last
+  arriver finishes rendering the next page.
 * ``GET /timeline`` then re-reads the live cursor. If a partner already
   advanced this waiter, GET prepares that live page. If the hold is ready,
   GET takes blocking ``FOR UPDATE`` only after ``is_ready_to_resume`` (timeout

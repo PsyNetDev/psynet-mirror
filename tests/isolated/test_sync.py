@@ -2295,6 +2295,41 @@ def _assert_stacked_finalize_defers_wakes(exp, monkeypatch, group_size):
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
+def test_last_arrival_get_defers_wakes_until_after_render(
+    in_experiment_directory, db_session, monkeypatch
+):
+    """Waiting partners must not be woken while the last arriver is still rendering."""
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    group_type = f"stack_render_wake_{uuid.uuid4().hex[:8]}"
+    exp.timeline = _stacked_partner_timeline(group_type)
+    publications = _hold_wake_publications(monkeypatch)
+    wakes_during_render = []
+    original_render = Experiment._render_timeline_page_read_only
+
+    def tracking_render(*args, **kwargs):
+        wakes_during_render.append(_released_wake_count(publications))
+        return original_render(*args, **kwargs)
+
+    try:
+        first, last = _working_participants(exp, 2)
+        assert _json_timeline(exp, first).status_code == 200
+        publications.clear()
+        monkeypatch.setattr(
+            Experiment, "_render_timeline_page_read_only", tracking_render
+        )
+        last_response = _json_timeline(exp, last)
+        assert last_response.status_code == 200
+        assert last_response.get_json()["attributes"]["type"] == "ModularPage"
+        assert wakes_during_render == [0]
+        assert _released_wake_count(publications) >= 1
+    finally:
+        exp.timeline = original_timeline
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
 def test_last_timeline_arrival_skips_stacked_partner_holds(
     in_experiment_directory, db_session
 ):

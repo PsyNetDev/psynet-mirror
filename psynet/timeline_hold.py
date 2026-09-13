@@ -187,11 +187,13 @@ def _defer_timeline_hold_wakes():
 
     Stacked last-arrival finalize commits after each barrier check. Publishing
     on those commits would wake waiting partners while later checks still lock
-    their rows. SAVEPOINT releases are not durable: nested ``after_commit``
-    does not publish or stash. Nested rollback restores pending wakes to the
-    keys that existed when that savepoint began. Root rollback still discards
-    uncommitted pending wakes; already committed wakes stay deferred and flush
-    here even if a later check fails.
+    their rows. ``GET /timeline`` and ``POST /response`` nest this context
+    through page render so waiters also stay unpublished until the last arriver
+    has a response body. SAVEPOINT releases are not durable: nested
+    ``after_commit`` does not publish or stash. Nested rollback restores pending
+    wakes to the keys that existed when that savepoint began. Root rollback
+    still discards uncommitted pending wakes; already committed wakes stay
+    deferred and flush here even if a later check fails.
     """
     session = db.session
     depth = session.info.get(_WAKE_DEFER_DEPTH_KEY, 0)
