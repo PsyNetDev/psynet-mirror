@@ -839,7 +839,7 @@ class PerformanceTester:
         max_response_time = stats.max
 
         def _trial_count_stats(bot_ids):
-            from psynet.trial.main import Trial  # noqa: lazy to avoid circular
+            from psynet.trial.main import Trial  # noqa: I001
 
             if not bot_ids:
                 return None, None, None
