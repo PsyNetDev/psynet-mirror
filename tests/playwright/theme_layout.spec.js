@@ -701,8 +701,9 @@ test(
       const update = new Function(
         `${updaterSource}; return updateProgressAndReward;`
       )();
-      const originalGet = window.$.get;
-      window.$.get = function (url) {
+      const originalAjax = window.$.ajax;
+      window.$.ajax = function (settings) {
+        const url = settings && settings.url;
         if (!String(url).includes("/timeline/progress_and_reward")) {
           throw new Error(`Unexpected progress URL: ${url}`);
         }
@@ -719,7 +720,7 @@ test(
       try {
         update();
       } finally {
-        window.$.get = originalGet;
+        window.$.ajax = originalAjax;
       }
     }, progressAndRewardUpdaterSource(PSYNET_JS));
 

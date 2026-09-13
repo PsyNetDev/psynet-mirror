@@ -678,3 +678,29 @@ def test_document_owning_pages_require_full_reload():
     assert Page.requires_full_page_reload is False
     assert JsPsychPage.requires_full_page_reload is True
     assert UnityPage.requires_full_page_reload is True
+
+
+def test_progress_and_reward_updater_uses_uncached_ajax():
+    from importlib import resources
+
+    js = (resources.files("psynet") / "resources/scripts/psynet.js").read_text(
+        encoding="utf-8"
+    )
+    start = js.index("let updateProgressAndReward = function")
+    end = js.index(
+        "if (psynetTemplateData.flags.dynamicallyUpdateProgressBarAndReward)"
+    )
+    snippet = js[start:end]
+    assert "$.ajax" in snippet
+    assert "cache: false" in snippet
+    assert "$.get(" not in snippet
+
+
+def test_hold_resume_busy_retry_schedules_a_queued_wake():
+    from importlib import resources
+
+    js = (resources.files("psynet") / "resources/scripts/psynet.js").read_text(
+        encoding="utf-8"
+    )
+    assert "psynet.timelineHoldBusyRetryMs = 250" in js
+    assert "psynet.scheduleTimelineHoldBusyRetry" in js
