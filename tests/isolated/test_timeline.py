@@ -789,13 +789,13 @@ class TestTimelineBranches:
         t = Timeline(InfoPage("hello", time_estimate=5))
         assert isinstance(t.elts["main"][-1], SuccessfulEndPage)
 
-    def test_successful_end_branch_has_four_elements(self):
+    def test_successful_end_branch_has_five_elements(self):
         t = Timeline(InfoPage("hello", time_estimate=5))
-        assert len(t.elts["successful_end"]) == 4
+        assert len(t.elts["successful_end"]) == 5
 
-    def test_unsuccessful_end_branch_has_four_elements(self):
+    def test_unsuccessful_end_branch_has_five_elements(self):
         t = Timeline(InfoPage("hello", time_estimate=5))
-        assert len(t.elts["unsuccessful_end"]) == 4
+        assert len(t.elts["unsuccessful_end"]) == 5
 
     def test_successful_end_branch_structure(self):
         t = Timeline(InfoPage("hello", time_estimate=5))
@@ -803,7 +803,8 @@ class TestTimelineBranches:
         assert isinstance(branch[0], CodeBlock)
         assert isinstance(branch[1], PageMaker)
         assert isinstance(branch[2], CodeBlock)
-        assert isinstance(branch[3], PageMaker)
+        assert isinstance(branch[3], CodeBlock)
+        assert isinstance(branch[4], PageMaker)
 
     def test_custom_branch_override(self):
         custom = UnsuccessfulEndLogic()
