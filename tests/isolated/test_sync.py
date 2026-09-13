@@ -43,6 +43,7 @@ from psynet.sync import (
     SimpleGrouper,
     SimpleSyncGroup,
     _check_claimed_barrier_instance,
+    _claim_barrier_instance,
     _has_active_sync_group,
     _process_barrier_instance,
     _run_pending_barrier_checks,
@@ -61,6 +62,7 @@ from psynet.timeline_hold import (
     _timeline_hold_channel,
     default_group_barrier_arrival_message,
 )
+from psynet.utils import get_config
 
 
 def get_random_id():
@@ -2984,6 +2986,98 @@ def test_last_arrival_waits_for_a_busy_barrier_claim(
         _assert_on_action_page(exp, [first.id, last.id])
     finally:
         release_claim.set()
+        exp.timeline = original_timeline
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_last_arrival_follows_poller_skip_after_claim_wait(
+    in_experiment_directory, db_session
+):
+    """If the poller already skipped stacked holds, last-arrival must not paint one.
+
+    Playwright last-of-three first-paint fails when this GET waits for the
+    visit claim, the poller releases everyone, and the empty locking SELECT
+    then first-paints ``_BarrierHoldPage``. Follow the live cursor instead.
+    """
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    group_type = f"stack_poller_skip_{uuid.uuid4().hex[:8]}"
+    exp.timeline = _stacked_partner_timeline(
+        group_type, group_size=3, hold_content="Waiting for your group"
+    )
+    claim_held = threading.Event()
+    last_joined = threading.Event()
+    holder_error = []
+    try:
+        first, second, last = _working_participants(exp, 3)
+        assert _json_timeline(exp, first).get_json()["attributes"]["type"] == (
+            "_BarrierHoldPage"
+        )
+        assert _json_timeline(exp, second).get_json()["attributes"]["type"] == (
+            "_BarrierHoldPage"
+        )
+        first = Participant.query.get(first.id)
+        instance_id = next(iter(first.active_barriers.values())).barrier_instance_id
+        last_uid = last.unique_id
+        last_id = last.id
+
+        def poller_skip():
+            try:
+                with transaction():
+                    _set_transaction_lock_timeout(
+                        get_config().get("timeline_lock_timeout_seconds")
+                    )
+                    instance = BarrierInstance.query.get(instance_id)
+                    assert _claim_barrier_instance(instance.id, wait=True)
+                    claim_held.set()
+                    if not last_joined.wait(timeout=5):
+                        raise TimeoutError("Last arriver did not join the visit.")
+                    _check_claimed_barrier_instance(instance, wait=False)
+            except Exception as err:  # pragma: no cover - surfaced by the caller
+                holder_error.append(err)
+                db.session.rollback()
+            finally:
+                db.session.remove()
+
+        holder = threading.Thread(target=poller_skip, daemon=True)
+        holder.start()
+        assert claim_held.wait(timeout=2)
+        thread, result, errors = _route_timeline_in_thread(exp, last_uid)
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            if not thread.is_alive():
+                break
+            with db.engine.connect() as conn:
+                waiting = conn.execute(
+                    text(
+                        """
+                        SELECT count(*)
+                        FROM participant_link_barrier
+                        WHERE barrier_instance_id = :instance_id
+                          AND released IS NOT true
+                        """
+                    ),
+                    {"instance_id": instance_id},
+                ).scalar()
+            if waiting == 3:
+                last_joined.set()
+                break
+            time.sleep(0.01)
+        else:
+            last_joined.set()
+            raise AssertionError("Last arriver did not join the visit.")
+        thread.join(timeout=5)
+        holder.join(timeout=5)
+        assert holder_error == []
+        assert errors == []
+        assert not thread.is_alive()
+        assert result.get("status") == 200
+        assert result.get("type") == "ModularPage"
+        _assert_on_action_page(exp, [first.id, second.id, last_id])
+    finally:
+        last_joined.set()
         exp.timeline = original_timeline
 
 

@@ -746,6 +746,10 @@ class Barrier(EltCollection):
                 for participant in waiting_participants
                 if self.id in participant.active_barriers
             )
+            if not waiting_participants and not instance.active:
+                # A locking SELECT can miss waiters that ``EXISTS`` still
+                # sees. Do not mark the visit finished from that snapshot.
+                instance.active = _barrier_instance_has_waiters(instance)
         return waiting_participants
 
     def _advance_released_hold_waiters(self, participants):

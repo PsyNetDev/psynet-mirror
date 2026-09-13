@@ -458,7 +458,11 @@ Those routes do not share a lock protocol:
   ``NOWAIT``. If a partner row is still busy, that GET retries the check once
   (still no lock wait). If the retry still misses, the poller finishes the
   same stacked skip in one sweep and keeps those wakes unpublished until the
-  sweep returns.
+  sweep returns. If the poller already released the visit, the last arriver's
+  claim can see zero waiters. That GET expires its identity map, follows the
+  live cursor (including a stale hold page whose record is gone), and
+  evaluates the live hold once more when a locking ``SELECT`` missed waiters
+  that still belong to the visit.
 * ``GET /timeline`` then re-reads the live cursor. If a partner already
   advanced this waiter, GET prepares that live page. If the hold is ready,
   GET takes blocking ``FOR UPDATE`` only after ``is_ready_to_resume`` (timeout

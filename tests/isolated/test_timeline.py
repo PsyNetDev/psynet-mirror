@@ -379,6 +379,26 @@ def test_advance_past_ready_holds_skips_a_cleared_hold():
     experiment.timeline.advance_page.assert_called_once_with(experiment, participant)
 
 
+def test_advance_past_ready_holds_follows_live_page_when_hold_is_stale():
+    """A stale hold object must not first-paint after another session advanced us."""
+    hold = MagicMock()
+    hold.is_timeline_hold = True
+    hold.prepare_resume_if_ready.return_value = False
+    nxt = MagicMock()
+    nxt.is_timeline_hold = False
+    experiment = Experiment.__new__(Experiment)
+    experiment.timeline = MagicMock()
+    experiment.timeline.get_current_elt.return_value = nxt
+    participant = SimpleNamespace()
+    participant.inc_progress = MagicMock()
+
+    page = experiment._advance_past_ready_holds(participant, hold)
+
+    assert page is nxt
+    hold.account_wait.assert_not_called()
+    experiment.timeline.advance_page.assert_not_called()
+
+
 def test_finalize_pending_hold_without_checks_relocks_the_participant(monkeypatch):
     """A ready hold on GET /timeline must not advance without FOR UPDATE."""
     participant = SimpleNamespace(id=42)

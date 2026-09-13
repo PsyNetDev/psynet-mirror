@@ -3442,14 +3442,23 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         while that write still holds the row (``NOWAIT`` on hold-resume);
         ``GET /timeline`` uses it only after ``_skip_ready_hold_on_get`` takes
         blocking ``FOR UPDATE``.
+
+        ``page`` can be a stale hold object from earlier in the request. If
+        that hold is not ready but the live cursor has already left it
+        (another session released and advanced this participant), follow
+        ``get_current_elt`` instead of first-painting the overlay.
         """
-        while getattr(page, "is_timeline_hold", False) and page.prepare_resume_if_ready(
-            self, participant
-        ):
-            page.account_wait(participant, settle=True)
-            participant.inc_progress(page.time_estimate)
-            self.timeline.advance_page(self, participant)
-            page = self.timeline.get_current_elt(self, participant)
+        while getattr(page, "is_timeline_hold", False):
+            if page.prepare_resume_if_ready(self, participant):
+                page.account_wait(participant, settle=True)
+                participant.inc_progress(page.time_estimate)
+                self.timeline.advance_page(self, participant)
+                page = self.timeline.get_current_elt(self, participant)
+                continue
+            live = self.timeline.get_current_elt(self, participant)
+            if live is page:
+                break
+            page = live
         return page
 
     def response_rejected(self, message):
@@ -6013,6 +6022,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         )
 
         processed = set()
+        rechecked = set()
         while checks:
             processed.update(checks)
             _set_transaction_lock_timeout(
@@ -6042,7 +6052,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     result.page = page
                     result.payload["page"] = page.__json__(participant)
                 return participant
-            # ``SET LOCAL lock_timeout`` expires at the check commit.
+            # ``SET LOCAL lock_timeout`` expires at the check commit. Expire
+            # the identity map so a poller that already released this visit
+            # is not hidden behind objects loaded before that commit.
+            db.session.expire_all()
             _set_transaction_lock_timeout(
                 get_config().get("timeline_lock_timeout_seconds")
             )
@@ -6067,6 +6080,15 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             if not checks:
                 instance_id = _hold_instance_id_for_page(participant, page)
                 if instance_id and instance_id not in processed:
+                    checks = [instance_id]
+                elif (
+                    instance_id
+                    and instance_id not in rechecked
+                    and getattr(page, "is_timeline_hold", False)
+                ):
+                    # An empty locking SELECT can miss waiters that still
+                    # belong to this visit. Evaluate it once more.
+                    rechecked.add(instance_id)
                     checks = [instance_id]
         return participant
 
