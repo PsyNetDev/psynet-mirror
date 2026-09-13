@@ -33,13 +33,16 @@ Add a free-floating note (optionally associated with a local ID or app):
     psynet comment --id gibbs "Lab booth B"
     psynet comment --app my-app "Paused recruitment overnight"
 
-Browse the log with a Rich timeline. Comments are highlighted like tags;
-failures are shown in red:
+Browse the log interactively (full-screen Rich TUI when run in a terminal).
+Use ↑/↓ to move, ``t`` to filter by type (failures/comments/…), ``c`` to filter
+by command family, and ``q`` to quit. Non-interactive environments fall back to
+a static timeline:
 
 .. code-block:: bash
 
     psynet history
     psynet history --limit 20
+    psynet history --no-interactive
     psynet history --json
 
 Event history may contain operational or participant information and is

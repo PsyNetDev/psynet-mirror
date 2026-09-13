@@ -235,8 +235,8 @@ General
 ``snapshot_on_participant_finish`` *bool* |psynet-icon|
     If ``True`` (default), a managed local live deployment
     (``psynet deploy local --id``) writes a database recovery snapshot when a
-    participant finishes. Set this to ``False`` to keep only the periodic
-    (ten-minute) and shutdown snapshots. If the last snapshot was a
+    participant finishes. Set this to ``False`` to rely on shutdown and
+    next-launch recovery snapshots only. If the last snapshot was a
     finish-time snapshot and no later participant started, PsyNet skips the
     shutdown snapshot. See :doc:`/deploy/local`.
 

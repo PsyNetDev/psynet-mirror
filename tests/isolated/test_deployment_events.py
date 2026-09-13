@@ -1,6 +1,7 @@
 """Tests for experiment deployment event history."""
 
 import json
+import sys
 
 from click.testing import CliRunner
 from rich.console import Console
@@ -205,3 +206,84 @@ def test_destroy_records_comment_on_success(monkeypatch, tmp_path):
     assert events[-1]["comment"] == "Wrong country"
     assert events[-1]["app"] == "demo-app"
     assert "argv" in events[-1]
+
+
+def test_filter_deployment_events_by_type_and_command():
+    from psynet.deployment_events import filter_deployment_events
+
+    events = [
+        {"event": "deploy.succeeded", "argv": ["psynet", "deploy", "ssh"]},
+        {"event": "export.failed", "error": "boom", "argv": ["psynet", "export", "ssh"]},
+        {"event": "comment", "text": "note", "argv": ["psynet", "comment"]},
+        {
+            "event": "destroy.succeeded",
+            "comment": "cleanup",
+            "argv": ["psynet", "destroy", "ssh"],
+        },
+        {"event": "sandbox.failed", "argv": ["psynet", "debug", "heroku"]},
+        {"event": "snapshot.succeeded", "reason": "participant_finished"},
+    ]
+
+    failures = filter_deployment_events(events, type_filter="failures")
+    assert [event["event"] for event in failures] == [
+        "export.failed",
+        "sandbox.failed",
+    ]
+
+    comments = filter_deployment_events(events, type_filter="comments")
+    assert [event["event"] for event in comments] == ["comment", "destroy.succeeded"]
+
+    exports = filter_deployment_events(events, command_filter="export")
+    assert [event["event"] for event in exports] == ["export.failed"]
+
+    snapshots = filter_deployment_events(events, command_filter="snapshot")
+    assert [event["event"] for event in snapshots] == ["snapshot.succeeded"]
+
+
+def test_browse_falls_back_to_static_when_not_a_tty(tmp_path, monkeypatch):
+    from io import StringIO
+
+    from rich.console import Console
+
+    from psynet.deployment_events import (
+        append_deployment_event,
+        browse_deployment_history,
+        load_deployment_events,
+    )
+
+    append_deployment_event(
+        tmp_path,
+        "deploy.succeeded",
+        argv=["psynet", "deploy", "local", "--id", "gibbs"],
+    )
+    output = StringIO()
+    console = Console(file=output, force_terminal=False, color_system=None)
+    monkeypatch.setattr(sys, "stdin", StringIO())
+
+    browse_deployment_history(load_deployment_events(tmp_path), console=console)
+    assert "deploy.succeeded" in output.getvalue()
+
+
+def test_history_no_interactive_flag(tmp_path):
+    from psynet.command_line import psynet
+    from psynet.deployment_events import append_deployment_event
+    from psynet.utils import working_directory
+
+    (tmp_path / "experiment.py").write_text("")
+    append_deployment_event(
+        tmp_path,
+        "export.succeeded",
+        argv=["psynet", "export", "local"],
+    )
+    runner = CliRunner()
+    with working_directory(tmp_path):
+        result = runner.invoke(psynet, ["history", "--no-interactive"])
+
+    assert result.exit_code == 0, result.output
+    assert "export.succeeded" in result.output
+
+
+def test_periodic_local_snapshot_task_removed():
+    from psynet.experiment import Experiment
+
+    assert not hasattr(Experiment, "snapshot_local_deployment")

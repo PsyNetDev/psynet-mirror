@@ -284,3 +284,258 @@ def render_deployment_history(
             indented = Text("  ")
             indented.append(detail)
             console.print(indented)
+
+
+TYPE_FILTERS = ("all", "failures", "comments", "succeeded")
+COMMAND_FILTERS = (
+    "all",
+    "deploy",
+    "sandbox",
+    "export",
+    "destroy",
+    "snapshot",
+    "comment",
+)
+
+
+def event_command_family(event: dict) -> str:
+    """Return the command family for filtering (deploy, export, comment, …)."""
+    name = str(event.get("event", ""))
+    if name == "comment":
+        return "comment"
+    if "." in name:
+        return name.split(".", 1)[0]
+    argv = event.get("argv") or []
+    if len(argv) >= 2 and argv[0].endswith("psynet"):
+        return str(argv[1])
+    return name or "other"
+
+
+def filter_deployment_events(
+    events: Iterable[dict],
+    *,
+    type_filter: str = "all",
+    command_filter: str = "all",
+) -> list[dict]:
+    """Filter deployment events by outcome type and command family."""
+    rows = []
+    for event in events:
+        name = str(event.get("event", ""))
+        if type_filter == "failures" and not name.endswith(".failed"):
+            continue
+        if type_filter == "comments" and name != "comment" and not event.get("comment"):
+            continue
+        if type_filter == "succeeded" and not (
+            name.endswith(".succeeded") or name.endswith(".stopped")
+        ):
+            continue
+        if command_filter != "all" and event_command_family(event) != command_filter:
+            continue
+        rows.append(event)
+    return rows
+
+
+def _cycle(values: tuple[str, ...], current: str, *, step: int = 1) -> str:
+    index = values.index(current) if current in values else 0
+    return values[(index + step) % len(values)]
+
+
+def _read_key(stdin) -> str:
+    """Read one keypress, including common escape sequences."""
+    import select
+    import termios
+    import tty
+
+    fd = stdin.fileno()
+    old = termios.tcgetattr(fd)
+    try:
+        tty.setraw(fd)
+        first = stdin.read(1)
+        if first != "\x1b":
+            return first
+        # Arrow keys send Esc [ A/B/...; bare Esc should not block forever.
+        ready, _, _ = select.select([stdin], [], [], 0.05)
+        if not ready:
+            return "\x1b"
+        second = stdin.read(1)
+        ready, _, _ = select.select([stdin], [], [], 0.05)
+        third = stdin.read(1) if ready else ""
+        return first + second + third
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+
+
+def _history_layout(
+    events: list[dict],
+    *,
+    selected: int,
+    type_filter: str,
+    command_filter: str,
+    show_help: bool,
+):
+    from rich.panel import Panel
+    from rich.table import Table
+
+    table = Table.grid(expand=True, padding=(0, 1))
+    table.add_column("marker", width=2)
+    table.add_column("when", style="dim", no_wrap=True)
+    table.add_column("event", no_wrap=True)
+    table.add_column("subject", overflow="ellipsis")
+
+    window = 18
+    if not events:
+        table.add_row("", "", Text("(no matching events)", style="dim"), "")
+    else:
+        start = max(0, selected - window // 2)
+        end = min(len(events), start + window)
+        start = max(0, end - window)
+        for index in range(start, end):
+            event = events[index]
+            marker = Text("❯", style="bold cyan") if index == selected else Text(" ")
+            name = str(event.get("event", ""))
+            style = _event_style(event)
+            if index == selected:
+                style = f"reverse {style}".strip() if style else "reverse"
+            table.add_row(
+                marker,
+                str(event.get("at", "")),
+                Text(name, style=style),
+                _subject(event),
+            )
+
+    detail_lines = Text()
+    if events:
+        event = events[selected]
+        detail_lines.append(_detail(event))
+        detail_lines.append("\n")
+        argv = event.get("argv")
+        if argv:
+            detail_lines.append("argv: ", style="dim")
+            detail_lines.append(" ".join(str(part) for part in argv))
+            detail_lines.append("\n")
+        error = event.get("error")
+        if error:
+            detail_lines.append("error: ", style="bold red")
+            detail_lines.append(str(error), style="red")
+
+    status = (
+        f"type={type_filter}  command={command_filter}  "
+        f"{(selected + 1) if events else 0}/{len(events)}   "
+        "↑↓ move  t type  c command  ? help  q quit"
+    )
+    body = Table.grid(expand=True)
+    body.add_row(Panel(table, title="Events", border_style="cyan"))
+    body.add_row(Panel(detail_lines or Text(" "), title="Detail", border_style="magenta"))
+    if show_help:
+        help_text = Text(
+            "↑/k  previous   ↓/j  next   g top   G bottom\n"
+            "t    cycle type filter (all/failures/comments/succeeded)\n"
+            "c    cycle command filter "
+            "(all/deploy/sandbox/export/destroy/snapshot/comment)\n"
+            "q/Esc quit"
+        )
+        body.add_row(Panel(help_text, title="Keys", border_style="green"))
+    body.add_row(Text(status, style="dim"))
+    return body
+
+
+def browse_deployment_history(
+    events: Iterable[dict],
+    *,
+    console: Optional[Console] = None,
+) -> None:
+    """Browse deployment events in a full-screen Rich Live TUI.
+
+    Falls back to the static timeline when stdin/stdout are not interactive or
+    when raw terminal mode is unavailable.
+    """
+    console = console or Console()
+    all_events = list(events)
+    if not all_events:
+        render_deployment_history(all_events, console=console)
+        return
+
+    stdin = getattr(sys, "stdin", None)
+    interactive = False
+    if stdin is not None and console.is_terminal:
+        try:
+            interactive = stdin.isatty()
+        except (AttributeError, ValueError, OSError):
+            interactive = False
+    if not interactive:
+        render_deployment_history(all_events, console=console)
+        return
+
+    try:
+        import termios  # noqa: F401
+        import tty  # noqa: F401
+    except ImportError:
+        render_deployment_history(all_events, console=console)
+        return
+
+    from rich.live import Live
+
+    type_filter = "all"
+    command_filter = "all"
+    selected = max(0, len(all_events) - 1)
+    show_help = False
+
+    def visible():
+        return filter_deployment_events(
+            all_events, type_filter=type_filter, command_filter=command_filter
+        )
+
+    rows = visible()
+    selected = min(selected, max(0, len(rows) - 1))
+
+    with Live(
+        _history_layout(
+            rows,
+            selected=selected,
+            type_filter=type_filter,
+            command_filter=command_filter,
+            show_help=show_help,
+        ),
+        console=console,
+        screen=True,
+        redirect_stdout=False,
+        redirect_stderr=False,
+        transient=True,
+    ) as live:
+        while True:
+            key = _read_key(stdin)
+            if key in {"q", "Q", "\x03", "\x1b"}:  # q / Ctrl-C / Esc alone
+                break
+            if key == "?":
+                show_help = not show_help
+            elif key in {"\x1b[A", "k", "K"}:  # up
+                selected = max(0, selected - 1)
+            elif key in {"\x1b[B", "j", "J"}:  # down
+                selected = min(max(0, len(rows) - 1), selected + 1)
+            elif key == "g":
+                selected = 0
+            elif key == "G":
+                selected = max(0, len(rows) - 1)
+            elif key in {"t", "T"}:
+                type_filter = _cycle(TYPE_FILTERS, type_filter)
+                rows = visible()
+                selected = min(selected, max(0, len(rows) - 1))
+            elif key in {"c", "C"}:
+                command_filter = _cycle(COMMAND_FILTERS, command_filter)
+                rows = visible()
+                selected = min(selected, max(0, len(rows) - 1))
+
+            rows = visible()
+            if not rows:
+                selected = 0
+            else:
+                selected = min(selected, len(rows) - 1)
+            live.update(
+                _history_layout(
+                    rows,
+                    selected=selected,
+                    type_filter=type_filter,
+                    command_filter=command_filter,
+                    show_help=show_help,
+                )
+            )

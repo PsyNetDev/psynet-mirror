@@ -53,6 +53,7 @@ from .data import (
 from .deployment_events import (
     DEFAULT_HISTORY_LIMIT,
     append_deployment_event,
+    browse_deployment_history,
     event_details,
     load_deployment_events,
     option_comment,
@@ -1637,8 +1638,13 @@ def comment(text, local_id, app):
     is_flag=True,
     help="Print raw JSONL events to stdout instead of the timeline.",
 )
+@click.option(
+    "--no-interactive",
+    is_flag=True,
+    help="Print a static timeline instead of the interactive browser.",
+)
 @require_exp_directory
-def history(limit, as_json):
+def history(limit, as_json, no_interactive):
     """Show this experiment's deployment history."""
     experiment_path = Path.cwd().resolve()
     effective_limit = None if limit == 0 else limit
@@ -1650,7 +1656,10 @@ def history(limit, as_json):
     title = "Deployment history"
     if effective_limit is not None:
         title = f"Deployment history (latest {effective_limit})"
-    render_deployment_history(events, title=title)
+    if no_interactive:
+        render_deployment_history(events, title=title)
+        return
+    browse_deployment_history(events)
 
 
 @deploy.command("heroku")

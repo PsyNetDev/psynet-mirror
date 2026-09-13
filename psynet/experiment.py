@@ -1419,15 +1419,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             self.var.local_snapshot_needed_on_shutdown = False
         return snapshot
 
-    @scheduled_task("interval", seconds=600, max_instances=1)
-    @staticmethod
-    def snapshot_local_deployment():
-        """Create a periodic snapshot for a managed local live deployment."""
-        try:
-            Experiment.create_local_deployment_snapshot("periodic")
-        except Exception:
-            logger.exception("Failed to create periodic local deployment snapshot.")
-
     @classmethod
     def backup_database(cls):
         """Store a fresh complete export as the deployment's latest artifact."""

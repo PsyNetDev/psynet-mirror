@@ -904,7 +904,7 @@ def test_create_local_deployment_snapshot_ignores_non_live_runs(monkeypatch):
     create_snapshot = Mock()
     monkeypatch.setattr("psynet.local_deployment.create_snapshot", create_snapshot)
 
-    assert Experiment.create_local_deployment_snapshot("periodic") is None
+    assert Experiment.create_local_deployment_snapshot("participant_finished") is None
     create_snapshot.assert_not_called()
 
 
@@ -927,11 +927,11 @@ def test_create_local_deployment_snapshot_writes_for_live_runs(monkeypatch):
     create_snapshot = Mock(return_value=snapshot)
     monkeypatch.setattr("psynet.local_deployment.create_snapshot", create_snapshot)
 
-    assert Experiment.create_local_deployment_snapshot("periodic") is snapshot
+    assert Experiment.create_local_deployment_snapshot("participant_finished") is snapshot
     create_snapshot.assert_called_once_with(
         "/tmp/exp",
         "gibbs",
-        reason="periodic",
+        reason="participant_finished",
         deployment_id="launch-1",
         resumed_from=3,
     )
