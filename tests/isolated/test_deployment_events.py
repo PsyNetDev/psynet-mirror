@@ -213,7 +213,11 @@ def test_filter_deployment_events_by_type_and_command():
 
     events = [
         {"event": "deploy.succeeded", "argv": ["psynet", "deploy", "ssh"]},
-        {"event": "export.failed", "error": "boom", "argv": ["psynet", "export", "ssh"]},
+        {
+            "event": "export.failed",
+            "error": "boom",
+            "argv": ["psynet", "export", "ssh"],
+        },
         {"event": "comment", "text": "note", "argv": ["psynet", "comment"]},
         {
             "event": "destroy.succeeded",
