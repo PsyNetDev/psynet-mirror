@@ -2152,14 +2152,20 @@ class Page(Elt):
         Page._make_embedded_scripts_inert(soup)
         return Page._extract_partial_body(soup)
 
+    _MODULE_SCRIPT_TYPE = re.compile(
+        r"""type\s*=\s*(?:(['"])module\1|module)(?=[\s>/])""",
+        re.IGNORECASE,
+    )
+
     @staticmethod
     def _check_embedded_script_contract(html):
         """Reject embedded modules in favor of managed page modules."""
-        soup = (
-            html
-            if isinstance(html, BeautifulSoup)
-            else BeautifulSoup(html, "html.parser")
-        )
+        if not isinstance(html, BeautifulSoup):
+            if not Page._MODULE_SCRIPT_TYPE.search(html or ""):
+                return
+            soup = BeautifulSoup(html, "html.parser")
+        else:
+            soup = html
         for script in soup.find_all("script"):
             script_type = (script.get("type") or "").strip().lower()
             if script_type == "module":

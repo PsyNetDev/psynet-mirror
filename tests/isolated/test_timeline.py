@@ -150,6 +150,24 @@ def test_embedded_module_is_rejected(html):
         Page._check_embedded_script_contract(html)
 
 
+def test_embedded_script_contract_skips_parsing_pages_without_modules(monkeypatch):
+    """Full-page render must not BeautifulSoup the timeline shell unless needed."""
+    import psynet.timeline as timeline_mod
+
+    calls = []
+    real_soup = timeline_mod.BeautifulSoup
+
+    def tracking_soup(*args, **kwargs):
+        calls.append(1)
+        return real_soup(*args, **kwargs)
+
+    monkeypatch.setattr(timeline_mod, "BeautifulSoup", tracking_soup)
+    Page._check_embedded_script_contract(
+        "<script>var x = 1;</script><script type='text/javascript'>ok()</script>"
+    )
+    assert calls == []
+
+
 def test_partial_body_extraction_uses_named_fragment_wrapper():
     html = """
     <html>
