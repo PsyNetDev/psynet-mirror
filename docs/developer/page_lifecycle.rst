@@ -384,13 +384,12 @@ Timeline-hold resume checks use the durable hold record directly. They do not
 create :class:`~psynet.timeline.Response` rows or call the internal hold page's
 ``process_response()``, validation, or ``on_complete()`` hooks. Analyze waiting
 through ``TimelineHoldRecord`` and participant wait-time fields rather than by
-counting response rows. If the last arriver already advanced the waiter, the
-hold-resume POST still carries the hold page's uuid. The server recognizes that
-uuid when it still matches this participant's hold record and they are
-not already on a later hold. The server then returns the
-current page without advancing again. A leftover overlay from an earlier
-round that fires while the participant is already on another hold is
-rejected as a sync mismatch.
+counting response rows.         If the last arriver already advanced the waiter, the
+        hold-resume POST still carries the hold page's uuid. The server
+        recognizes that uuid when it still matches this participant's hold
+        record. Ordinary submits catch up even onto a later hold. A leftover
+        hold-resume overlay from an earlier round that fires while the
+        participant is already on another hold is rejected as a sync mismatch.
 
 .. _timeline-hold-resume-protocol:
 
@@ -452,7 +451,10 @@ Bots
 ~~~~
 
 Bot submissions do not request timeline fragments. Bots advance server state
-and obtain the next page through the normal server-side page interface.
+and obtain the next page through the normal server-side page interface. If
+last-arrival has already skipped them onto a later hold, an ordinary POST of
+the previous hold uuid is catch-up, not a multi-tab reject. Leftover
+hold-resume overlays still reject so a human browser reloads.
 
 Adding new frontend components
 ------------------------------

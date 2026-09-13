@@ -2500,12 +2500,66 @@ def test_stale_hold_resume_approves_the_current_page_after_last_arrival(
         assert first.progress == progress_before
 
         leftover = exp._page_for_stale_hold_resume(
-            first, hold_uuid, SimpleNamespace(is_timeline_hold=True)
+            first,
+            hold_uuid,
+            SimpleNamespace(is_timeline_hold=True),
+            leftover_overlay=True,
         )
         assert leftover is None
         assert (
+            exp._page_for_stale_hold_resume(
+                first, hold_uuid, SimpleNamespace(is_timeline_hold=True)
+            )
+            is not None
+        )
+        assert (
             exp._page_for_stale_hold_resume(first, hold_uuid, current_page) is not None
         )
+    finally:
+        exp.timeline = original_timeline
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_ordinary_submit_catches_up_onto_a_later_hold(
+    in_experiment_directory, db_session
+):
+    """A leftover hold uuid is catch-up for ordinary submits, not hold-resume."""
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    group_type = f"stack_later_hold_{uuid.uuid4().hex[:8]}"
+    exp.timeline = Timeline(
+        SimpleGrouper(
+            group_type=group_type,
+            initial_group_size=2,
+            content="Waiting for your partner",
+        ),
+        wait_while(lambda: True, expected_wait=1, max_wait_time=60),
+        ModularPage("choose_action", "Choose your action", time_estimate=1),
+    )
+    try:
+        first, last = _working_participants(exp, 2)
+        assert _json_timeline(exp, first).get_json()["attributes"]["type"] == (
+            "_BarrierHoldPage"
+        )
+        first = Participant.query.get(first.id)
+        hold_uuid = first.page_uuid
+        last_response = _json_timeline(exp, last)
+        assert last_response.status_code == 200
+        db.session.expire_all()
+        first = Participant.query.get(first.id)
+        current_page = exp.timeline.get_current_elt(exp, first)
+        assert first.page_uuid != hold_uuid
+        assert getattr(current_page, "is_timeline_hold", False)
+
+        rejected = _process_response(exp, first, hold_uuid, timeline_hold_resume=True)
+        assert rejected.payload["submission"] == "rejected"
+
+        approved = _process_response(exp, first, hold_uuid)
+        assert approved.payload["submission"] == "approved"
+        assert getattr(approved.page, "is_timeline_hold", False)
+        assert approved.payload["page"]["attributes"]["page_uuid"] == first.page_uuid
     finally:
         exp.timeline = original_timeline
 

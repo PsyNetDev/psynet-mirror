@@ -3273,7 +3273,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             not blocked. A submitted ``page_uuid`` that still matches this
             participant's hold record is a catch-up after a partner already
             advanced the waiter, for both hold-resume and ordinary submits.
-            Ignored when the participant is already on a later hold.
+            Hold-resume leftover overlays (already on a later hold) stay
+            rejected. Ordinary submits still catch up onto that later hold.
             Keyword-only; overrides should accept ``**kwargs`` or this
             argument.
         """
@@ -3318,7 +3319,12 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 )
             event = self.timeline.get_current_elt(self, participant)
             if page_uuid != participant.page_uuid:
-                page = self._page_for_stale_hold_resume(participant, page_uuid, event)
+                page = self._page_for_stale_hold_resume(
+                    participant,
+                    page_uuid,
+                    event,
+                    leftover_overlay=timeline_hold_resume,
+                )
                 if page is not None:
                     return ResponseResult(
                         payload=self._approved_payload(participant, page),
@@ -3405,20 +3411,29 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             )
 
     def _page_for_stale_hold_resume(
-        self, participant, submitted_page_uuid, current_page
+        self,
+        participant,
+        submitted_page_uuid,
+        current_page,
+        *,
+        leftover_overlay=False,
     ):
         """Return the current page when a submit still carries a released hold uuid.
 
         The last arriver or a ready GET skip can already have advanced this
         waiter, rotating ``participant.page_uuid``. The client's POST still
-        sends the hold page's uuid. If that uuid belongs to this participant
-        and they are not already on a later hold, approve the current page
-        instead of treating it as a multi-tab mismatch.
+        sends the hold page's uuid. If that uuid belongs to this participant,
+        approve the current page instead of treating it as a multi-tab
+        mismatch. Hold-resume leftover overlays (already on a later hold)
+        still reject so the browser reloads.
         """
         from .timeline_hold import TimelineHoldRecord
 
         record = TimelineHoldRecord.for_stale_hold_resume(
-            participant, submitted_page_uuid, current_page
+            participant,
+            submitted_page_uuid,
+            current_page,
+            leftover_overlay=leftover_overlay,
         )
         if record is None:
             return None
