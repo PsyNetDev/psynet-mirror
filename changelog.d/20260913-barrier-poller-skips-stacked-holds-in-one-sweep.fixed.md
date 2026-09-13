@@ -1,1 +1,0 @@
-The barrier poller now skips stacked group holds in one sweep and publishes waiter wakes only after that walk, so a leftover overlay does not hold-resume onto each remaining barrier one tick at a time.

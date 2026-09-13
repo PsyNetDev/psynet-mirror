@@ -179,6 +179,11 @@ DEFAULT_LOCALE = "en"
 INITIAL_RECRUITMENT_SIZE = 1
 
 
+# Page makers reconstruct barrier holds on each ``get_current_elt``. Bound
+# the skip loop so a cursor that never settles cannot run until timeout.
+_MAX_READY_HOLD_SKIP_STEPS = 32
+
+
 @dataclass
 class ResponseResult:
     """Carry response state from the write phase to HTTP rendering."""
@@ -3428,10 +3433,15 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     def _unready_hold_resume_result(self, participant, page_uuid):
         """Return a still-waiting overlay result, or ``None`` if this POST must write.
 
-        Read-only: ``is_ready_to_resume`` does not apply timeout or fail.
-        Timed-out and already-released holds fall through so the locked path
-        can settle them. Accidental identity-map dirties are rolled back when
-        ``route_response`` sees ``skip_write``.
+        Read-only: ``is_ready_to_resume`` does not apply timeout or fail,
+        and this path does not call ``account_wait``. Wait credit is recorded
+        when the hold actually resumes.
+
+        Timed-out holds fall through so the locked path can settle them. A
+        missing hold record is still waiting (``skip_write``); catch-up after
+        a partner already advanced this waiter is the ``page_uuid`` mismatch
+        path (``_page_for_stale_hold_resume``). Accidental identity-map
+        dirties are rolled back when ``route_response`` sees ``skip_write``.
         """
         if page_uuid != participant.page_uuid:
             return None
@@ -3491,7 +3501,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         a still-waiting visit is a new object with the same ``hold_id``. Treat
         that as the same wait; identity ``is`` would loop until timeout.
         """
-        for _ in range(32):
+        for _ in range(_MAX_READY_HOLD_SKIP_STEPS):
             if not getattr(page, "is_timeline_hold", False):
                 return page
             if page.prepare_resume_if_ready(self, participant):
@@ -3504,7 +3514,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             if self._is_same_timeline_hold(page, live):
                 return live
             page = live
-        raise RuntimeError("Timeline hold skip did not settle after 32 steps.")
+        raise RuntimeError(
+            "Timeline hold skip did not settle after "
+            f"{_MAX_READY_HOLD_SKIP_STEPS} steps."
+        )
 
     @staticmethod
     def _is_same_timeline_hold(page, live):
@@ -6067,13 +6080,33 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             )
 
     @classmethod
+    def _run_queued_barrier_checks(cls, checks):
+        """Run queued checks, retrying waiter ``NOWAIT`` immediately once.
+
+        Each attempt waits for the instance advisory claim, then locks waiters
+        with ``NOWAIT``. The second attempt does not wait for a partner
+        transaction to commit. If both miss, the caller first-paints the live
+        cursor and the 0.5s poller finishes the skip.
+        """
+        from .sync import _run_pending_barrier_checks
+
+        all_claimed = _run_pending_barrier_checks(checks)
+        # Barrier checks can lock every waiter at the instance. Release those
+        # partner locks before reacquiring the submitting participant.
+        db.session.commit()
+        if all_claimed:
+            return True
+        all_claimed = _run_pending_barrier_checks(checks)
+        db.session.commit()
+        return all_claimed
+
+    @classmethod
     def _run_finalized_barrier_arrivals(
         cls, experiment, participant_id, checks, result
     ):
         """Evaluate queued checks, committing after each before the next lock."""
         from .sync import (
             _hold_instance_id_for_page,
-            _run_pending_barrier_checks,
             _take_pending_barrier_checks,
         )
 
@@ -6084,18 +6117,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             _set_transaction_lock_timeout(
                 get_config().get("timeline_lock_timeout_seconds")
             )
-            all_claimed = _run_pending_barrier_checks(checks)
-            # Barrier checks can lock and update every participant waiting at the
-            # instance. Release those partner locks before reacquiring the
-            # submitting participant for timeline advancement.
-            db.session.commit()
-            if not all_claimed:
-                # The check waits for the instance advisory claim, then locks
-                # waiters with ``NOWAIT``. A partner GET write or POST can still
-                # hold a waiter row. Retry once after that request can commit,
-                # still without waiting on the row.
-                all_claimed = _run_pending_barrier_checks(checks)
-                db.session.commit()
+            all_claimed = cls._run_queued_barrier_checks(checks)
             if not all_claimed:
                 # Follow the live cursor even when it is still a hold, so a
                 # later stacked wait is not first-painted as the hold this

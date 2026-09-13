@@ -1,1 +1,1 @@
-Fixed still-waiting hold-resume overlay checks holding the participant row so last-arrival could not lock waiters with ``NOWAIT``.
+Still-waiting hold-resume overlay checks no longer lock the participant, so last-arrival can lock waiters with ``NOWAIT``.

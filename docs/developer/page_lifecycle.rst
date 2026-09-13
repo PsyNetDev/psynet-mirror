@@ -149,8 +149,9 @@ until the last arriver finishes rendering the next page, so a waiting partner
 is not told to resume while a later entry check still holds their row or while
 that request is still building HTML. Last-arrival waits for the instance
 advisory claim the poller uses, then locks waiters with ``NOWAIT``. If a waiter
-row is still busy, the request retries that check once (still ``NOWAIT``) after
-the other request can commit. SAVEPOINT releases inside a
+row is still busy, the request retries that check once immediately (still
+``NOWAIT``). It does not wait for the other request to commit; if the retry
+still misses, the 0.5 s poller finishes the skip. SAVEPOINT releases inside a
 check are not treated as durable commits for those wakes; a later root
 rollback discards them. The barrier poller locks waiters with
 ``FOR UPDATE NOWAIT`` so a participant write cannot stall other groups; if any
@@ -428,10 +429,12 @@ Those routes do not share a lock protocol:
 
 * Ordinary ``POST /response`` waits up to ``timeline_lock_timeout_seconds``.
   Hold-resume POSTs that still wait do not take the participant row, so
-  last-arrival can lock waiters with ``NOWAIT``. A hold-resume that will
-  advance takes the participant with ``NOWAIT`` so it cannot sit behind the
-  last arriver's row lock. ``POST /response`` still reports
-  ``Server-Timing`` phases (``process``, ``barriers``, ``render``, ``app``).
+  last-arrival can lock waiters with ``NOWAIT``. Those overlay checks also
+  skip ``account_wait``; wait credit is recorded when the hold actually
+  resumes. A hold-resume that will advance takes the participant with
+  ``NOWAIT`` so it cannot sit behind the last arriver's row lock.
+  ``POST /response`` still reports ``Server-Timing`` phases
+  (``process``, ``barriers``, ``render``, ``app``).
   ``GET /timeline`` reports ``lock``, ``page``, ``barriers``, ``render``, and
   ``app``. ``lock`` is the participant ``FOR UPDATE`` load; ``page`` is
   ``get_current_page`` through the first commit; ``barriers`` is hold skip
@@ -458,9 +461,10 @@ Those routes do not share a lock protocol:
   instance advisory claim (the lock the 0.5 s poller tries) so a GET does not
   first-paint a hold while the poller still owns that visit. Waiter rows stay
   ``NOWAIT``. If a partner row is still busy, that GET retries the check once
-  (still no lock wait). If the retry still misses, the poller finishes the
-  same stacked skip in one sweep and keeps those wakes unpublished until the
-  sweep returns. If the poller already released the visit, the last arriver's
+  immediately (still no lock wait). It does not wait for the other request to
+  commit. If the retry still misses, the poller finishes the same stacked
+  skip in one sweep and keeps those wakes unpublished until the sweep
+  returns. If the poller already released the visit, the last arriver's
   claim can see zero waiters. That GET expires its identity map, follows the
   live cursor (including a stale hold page whose record is gone), and
   evaluates the live hold once more when a locking ``SELECT`` missed waiters

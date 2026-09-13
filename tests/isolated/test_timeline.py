@@ -21,7 +21,7 @@ from psynet.exit import (
     PaymentDecision,
     PaymentState,
 )
-from psynet.experiment import Experiment
+from psynet.experiment import _MAX_READY_HOLD_SKIP_STEPS, Experiment
 from psynet.page import InfoPage, SuccessfulEndPage, UnsuccessfulEndPage
 from psynet.participant import Participant
 from psynet.timeline import (
@@ -449,6 +449,29 @@ def test_advance_past_ready_holds_follows_a_later_hold():
     assert experiment.timeline.get_current_elt.call_count == 2
     hold.account_wait.assert_not_called()
     experiment.timeline.advance_page.assert_not_called()
+
+
+def test_advance_past_ready_holds_stops_after_max_skip_steps():
+    """A cursor that never settles must not loop until the hold times out."""
+    n = {"i": 0}
+
+    def _new_hold(*_args, **_kwargs):
+        n["i"] += 1
+        hold = MagicMock()
+        hold.is_timeline_hold = True
+        hold.hold_id = f"barrier:{n['i']}"
+        hold.prepare_resume_if_ready.return_value = False
+        return hold
+
+    experiment = Experiment.__new__(Experiment)
+    experiment.timeline = MagicMock()
+    experiment.timeline.get_current_elt.side_effect = _new_hold
+    participant = SimpleNamespace(inc_progress=MagicMock())
+
+    with pytest.raises(RuntimeError, match="did not settle"):
+        experiment._advance_past_ready_holds(participant, _new_hold())
+
+    assert experiment.timeline.get_current_elt.call_count == _MAX_READY_HOLD_SKIP_STEPS
 
 
 def test_finalize_pending_hold_without_checks_relocks_the_participant(monkeypatch):
