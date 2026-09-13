@@ -1580,6 +1580,41 @@ def test_process_response_does_not_wait_when_participant_row_is_locked(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
+def test_unready_hold_resume_does_not_lock_the_waiter_row(
+    in_experiment_directory, db_session
+):
+    """A still-waiting overlay check must not hold ``FOR UPDATE``.
+
+    Last-arrival locks waiters with ``NOWAIT``. If this POST kept the row,
+    that query would fail for the whole group and leave partners on the
+    overlay until the poller.
+    """
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    group_type = f"unready_resume_{uuid.uuid4().hex[:8]}"
+    exp.timeline = _stacked_partner_timeline(group_type)
+    try:
+        first, _last = _working_participants(exp, 2)
+        assert _json_timeline(exp, first).status_code == 200
+        first = Participant.query.get(first.id)
+        first_id = first.id
+        hold_uuid = first.page_uuid
+        assert getattr(
+            exp.timeline.get_current_elt(exp, first), "is_timeline_hold", False
+        )
+
+        resumed = _process_response(exp, first, hold_uuid, timeline_hold_resume=True)
+        assert resumed.payload["submission"] == "approved"
+        assert getattr(resumed.page, "is_timeline_hold", False)
+        assert resumed.skip_write is True
+        assert not _participant_row_is_locked(first_id)
+    finally:
+        exp.timeline = original_timeline
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
 def test_two_response_finalizers_claim_one_barrier_instance(
     in_experiment_directory, db_session
 ):

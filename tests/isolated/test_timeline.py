@@ -824,13 +824,13 @@ def test_finalize_pending_ready_hold_commits_before_arrival_checks(monkeypatch):
     assert len(timeouts) > len(captured["timeouts_before"])
 
 
-def test_process_response_unready_hold_does_not_recheck_readiness(monkeypatch):
-    """An unsuccessful hold-resume must not call ``prepare_resume_if_ready`` twice."""
+def test_process_response_unready_hold_resume_does_not_lock_or_recheck(monkeypatch):
+    """A still-waiting overlay check must not take FOR UPDATE or settle the hold."""
     from flask import Flask
 
     hold = MagicMock()
     hold.is_timeline_hold = True
-    hold.prepare_resume_if_ready.return_value = False
+    hold.is_ready_to_resume.return_value = False
     hold.time_estimate = 1.5
     participant = SimpleNamespace(
         id=1,
@@ -839,7 +839,7 @@ def test_process_response_unready_hold_does_not_recheck_readiness(monkeypatch):
         current_trial=None,
     )
     query = MagicMock()
-    query.with_for_update.return_value.populate_existing.return_value.get.return_value = participant
+    query.populate_existing.return_value.get.return_value = participant
     experiment = Experiment.__new__(Experiment)
     experiment._participant_request_query = MagicMock(return_value=query)
     experiment.timeline = MagicMock()
@@ -866,10 +866,14 @@ def test_process_response_unready_hold_does_not_recheck_readiness(monkeypatch):
             timeline_hold_resume=True,
         )
 
-    hold.prepare_resume_if_ready.assert_called_once_with(experiment, participant)
-    hold.account_wait.assert_called_once_with(participant, settle=False)
+    query.with_for_update.assert_not_called()
+    hold.is_ready_to_resume.assert_called_once_with(experiment, participant)
+    hold.prepare_resume_if_ready.assert_not_called()
+    hold.account_wait.assert_not_called()
     experiment._advance_past_ready_holds.assert_not_called()
+    assert participant.client_ip_address is None
     assert result.page is hold
+    assert result.skip_write is True
 
 
 def test_template_fragment_input_wraps_main_body_content():

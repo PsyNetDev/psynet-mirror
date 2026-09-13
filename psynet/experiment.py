@@ -186,6 +186,7 @@ class ResponseResult:
     payload: dict
     page: Optional[Any] = None
     flask_response: Optional[Any] = None
+    skip_write: bool = False
 
 
 def error_response(*args, **kwargs):
@@ -3269,28 +3270,34 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         Parameters
         ----------
         timeline_hold_resume : bool
-            If True, lock the participant with ``NOWAIT`` so last-arrival is
-            not blocked. A submitted ``page_uuid`` that still matches this
-            participant's hold record is a catch-up after a partner already
-            advanced the waiter, for both hold-resume and ordinary submits,
-            including leftover overlays already on a later hold.
-            Keyword-only; overrides should accept ``**kwargs`` or this
-            argument.
+            If True, a still-waiting overlay check does not take ``FOR UPDATE``
+            so last-arrival can still lock waiters with ``NOWAIT``. A resume
+            that will advance locks the participant with ``NOWAIT`` so it
+            cannot sit in ``lock_timeout`` behind that GET. A submitted
+            ``page_uuid`` that still matches this participant's hold record is
+            a catch-up after a partner already advanced the waiter, for both
+            hold-resume and ordinary submits, including leftover overlays
+            already on a later hold. Keyword-only; overrides should accept
+            ``**kwargs`` or this argument.
         """
         _p = get_translator(context=True)
         logger.info(
             f"Received a response from participant {participant_id} on page {page_uuid}."
         )
-        # Hold-resume must not sit in lock_timeout while the last arriver holds
-        # this row: a blocking wait freezes the worker and can stall that
-        # arriver's first GET /timeline. Ordinary Next submits still wait up to
-        # ``timeline_lock_timeout_seconds`` and the browser retries one busy 503.
-        participant = (
-            self._participant_request_query()
-            .with_for_update(of=Participant, nowait=timeline_hold_resume)
-            .populate_existing()
-            .get(participant_id)
-        )
+        # Ordinary Next submits wait up to ``timeline_lock_timeout_seconds``.
+        # Hold-resume that will write uses ``NOWAIT`` so it cannot freeze a
+        # worker behind last-arrival. A still-waiting overlay check skips the
+        # row lock entirely: keeping it would fail last-arrival's waiter
+        # ``NOWAIT`` query for the whole group.
+        query = self._participant_request_query()
+        if timeline_hold_resume:
+            participant = query.populate_existing().get(participant_id)
+        else:
+            participant = (
+                query.with_for_update(of=Participant)
+                .populate_existing()
+                .get(participant_id)
+            )
 
         if answer is not NoArgumentProvided and not isinstance(participant, Bot):
             raise ValueError(
@@ -3299,8 +3306,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             )
 
         try:
-            if not isinstance(participant, Bot):
-                participant.client_ip_address = client_ip_address
             # Use Experiment. so mocked experiment instances still run this
             # guard. Skip-page recovery leaves the trial cursor in place, so
             # a second tab must not keep advancing after the plan is committed.
@@ -3316,6 +3321,18 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                         ),
                     }
                 )
+            if timeline_hold_resume:
+                still_waiting = self._unready_hold_resume_result(participant, page_uuid)
+                if still_waiting is not None:
+                    return still_waiting
+                participant = (
+                    self._participant_request_query()
+                    .with_for_update(of=Participant, nowait=True)
+                    .populate_existing()
+                    .get(participant_id)
+                )
+            if not isinstance(participant, Bot):
+                participant.client_ip_address = client_ip_address
             event = self.timeline.get_current_elt(self, participant)
             if page_uuid != participant.page_uuid:
                 page = self._page_for_stale_hold_resume(
@@ -3408,6 +3425,27 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 ),
             )
 
+    def _unready_hold_resume_result(self, participant, page_uuid):
+        """Return a still-waiting overlay result, or ``None`` if this POST must write.
+
+        Read-only: ``is_ready_to_resume`` does not apply timeout or fail.
+        Timed-out and already-released holds fall through so the locked path
+        can settle them. Accidental identity-map dirties are rolled back when
+        ``route_response`` sees ``skip_write``.
+        """
+        if page_uuid != participant.page_uuid:
+            return None
+        event = self.timeline.get_current_elt(self, participant)
+        if not getattr(event, "is_timeline_hold", False):
+            return None
+        if event.is_ready_to_resume(self, participant):
+            return None
+        return ResponseResult(
+            payload=self._approved_payload(participant, event),
+            page=event,
+            skip_write=True,
+        )
+
     def _page_for_stale_hold_resume(
         self,
         participant,
@@ -3439,7 +3477,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         Callers must already hold the participant row. Last-arrival uses this
         so released partners leave the wait overlay; ``POST /response`` uses it
-        while that write still holds the row (``NOWAIT`` on hold-resume);
+        while that write still holds the row (``NOWAIT`` on a hold-resume that
+        will advance; a still-waiting overlay check does not lock the row);
         ``GET /timeline`` uses it only after ``_skip_ready_hold_on_get`` takes
         blocking ``FOR UPDATE``.
 
@@ -6350,12 +6389,20 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             raise
         clock.close("process")
 
-        pending_barrier_checks = _take_pending_barrier_checks()
-        barrier_checks = len(pending_barrier_checks)
         page = result.page
         submission = (result.payload or {}).get("submission")
         if result.flask_response is not None:
             return finish(result.flask_response)
+        if result.skip_write:
+            # Drop any identity-map dirties from the read-only overlay check
+            # so this POST cannot keep FOR UPDATE or commit wait accounting.
+            db.session.rollback()
+            clock.close("barriers")
+            clock.close("render")
+            return finish(success_response(**result.payload))
+
+        pending_barrier_checks = _take_pending_barrier_checks()
+        barrier_checks = len(pending_barrier_checks)
 
         from .timeline_hold import _defer_timeline_hold_wakes
 

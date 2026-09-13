@@ -639,6 +639,16 @@ test("timeline hold client overlay and busy retry stay on a live hold", { tag: "
         submitEnables: 0,
         scheduleCalls: 0
       };
+      // The client-behavior probe reconnects the hold websocket. onOpen can
+      // leave resumeRequested/resumeInFlight set before this synthetic 503.
+      const controller = psynet.timelineHold;
+      if (controller) {
+        controller.resumeRequested = false;
+        controller.resumeInFlight = false;
+        clearTimeout(controller.busyRetryTimer);
+        controller.busyRetryTimer = null;
+      }
+      psynet.nextPagePending = false;
       psynet.alert = () => {
         effects.alerts += 1;
       };

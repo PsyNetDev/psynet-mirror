@@ -427,8 +427,10 @@ dedicated relock.
 Those routes do not share a lock protocol:
 
 * Ordinary ``POST /response`` waits up to ``timeline_lock_timeout_seconds``.
-  Hold-resume POSTs take the participant with ``NOWAIT`` so they cannot sit
-  behind the last arriver's row lock. ``POST /response`` still reports
+  Hold-resume POSTs that still wait do not take the participant row, so
+  last-arrival can lock waiters with ``NOWAIT``. A hold-resume that will
+  advance takes the participant with ``NOWAIT`` so it cannot sit behind the
+  last arriver's row lock. ``POST /response`` still reports
   ``Server-Timing`` phases (``process``, ``barriers``, ``render``, ``app``).
   ``GET /timeline`` reports ``lock``, ``page``, ``barriers``, ``render``, and
   ``app``. ``lock`` is the participant ``FOR UPDATE`` load; ``page`` is
