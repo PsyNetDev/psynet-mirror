@@ -2145,8 +2145,112 @@ class Page(Elt):
 
         return codes
 
+    _RAW_TEXT_ELEMENT_OPEN = re.compile(
+        r"<(script|style|template)\b",
+        re.IGNORECASE,
+    )
+    _DIV_OPEN = re.compile(r"<div\b", re.IGNORECASE)
+    _DIV_CLOSE = re.compile(r"</div\s*>", re.IGNORECASE)
+    _SCRIPT_OPEN = re.compile(r"<script(\s[^>]*)?>", re.IGNORECASE)
+    _SCRIPT_TYPE_ATTR = re.compile(
+        r"""type\s*=\s*(?:(['"])(.*?)\1|([^\s>]+))""",
+        re.IGNORECASE,
+    )
+    _EXECUTABLE_SCRIPT_TYPES = {
+        "",
+        "application/ecmascript",
+        "application/javascript",
+        "text/ecmascript",
+        "text/javascript",
+    }
+
+    @staticmethod
+    def _skip_raw_text_element(html, pos):
+        """Return the index after a script, style, or template element at ``pos``."""
+        match = Page._RAW_TEXT_ELEMENT_OPEN.match(html, pos)
+        if match is None:
+            return None
+        tag = match.group(1)
+        close = re.search(rf"</{re.escape(tag)}\s*>", html[pos:], re.IGNORECASE)
+        if close is None:
+            return len(html)
+        return pos + close.end()
+
+    @staticmethod
+    def _timeline_fragment_inner_html(html):
+        """Return the inner HTML of ``#psynet-timeline-fragment`` without parsing.
+
+        Partial-mode templates emit that wrapper as the document root. Nested
+        ``div`` matching skips ``script``, ``style``, and ``template`` bodies so
+        JSON or markup inside those tags cannot close the fragment early.
+        """
+        marker = 'id="psynet-timeline-fragment"'
+        marker_idx = html.find(marker)
+        if marker_idx < 0:
+            marker = "id='psynet-timeline-fragment'"
+            marker_idx = html.find(marker)
+        if marker_idx < 0:
+            return None
+        tag_start = html.rfind("<", 0, marker_idx)
+        tag_end = html.find(">", marker_idx)
+        if tag_start < 0 or tag_end < 0:
+            return None
+        inner_start = tag_end + 1
+        depth = 1
+        pos = inner_start
+        length = len(html)
+        while pos < length and depth:
+            next_lt = html.find("<", pos)
+            if next_lt < 0:
+                return None
+            skip_to = Page._skip_raw_text_element(html, next_lt)
+            if skip_to is not None:
+                pos = skip_to
+                continue
+            open_match = Page._DIV_OPEN.match(html, next_lt)
+            close_match = Page._DIV_CLOSE.match(html, next_lt)
+            if close_match is not None:
+                depth -= 1
+                if depth == 0:
+                    return html[inner_start : close_match.start()]
+                pos = close_match.end()
+                continue
+            if open_match is not None:
+                depth += 1
+                pos = open_match.end()
+                continue
+            pos = next_lt + 1
+        return None
+
+    @staticmethod
+    def _inert_executable_script_tags(html):
+        """Mark executable ``<script>`` tags inert without parsing the document."""
+
+        def replace(match):
+            attrs = match.group(1) or ""
+            type_match = Page._SCRIPT_TYPE_ATTR.search(attrs)
+            if type_match is None:
+                script_type = ""
+            else:
+                script_type = (type_match.group(2) or type_match.group(3) or "").strip()
+                script_type = script_type.lower()
+            if script_type not in Page._EXECUTABLE_SCRIPT_TYPES:
+                return match.group(0)
+            if type_match is not None:
+                attrs = Page._SCRIPT_TYPE_ATTR.sub(
+                    'type="text/psynet-script"', attrs, count=1
+                )
+                return f"<script{attrs}>"
+            return f'<script{attrs} type="text/psynet-script">'
+
+        return Page._SCRIPT_OPEN.sub(replace, html)
+
     @staticmethod
     def _extract_partial_render(rendered_html):
+        Page._check_embedded_script_contract(rendered_html)
+        inner = Page._timeline_fragment_inner_html(rendered_html or "")
+        if inner is not None:
+            return Page._inert_executable_script_tags(inner)
         soup = BeautifulSoup(rendered_html, "html.parser")
         Page._check_embedded_script_contract(soup)
         Page._make_embedded_scripts_inert(soup)
@@ -2180,24 +2284,15 @@ class Page(Elt):
     @staticmethod
     def _make_embedded_scripts_inert(soup):
         """Make rendered HTML scripts inert until the fragment is activated."""
-        parsed_from_string = isinstance(soup, str)
-        if parsed_from_string:
-            soup = BeautifulSoup(soup, "html.parser")
+        if isinstance(soup, str):
+            return Page._inert_executable_script_tags(soup)
 
-        executable_script_types = {
-            "",
-            "application/ecmascript",
-            "application/javascript",
-            "text/ecmascript",
-            "text/javascript",
-        }
+        executable_script_types = Page._EXECUTABLE_SCRIPT_TYPES
         for script in soup.find_all("script"):
             script_type = (script.get("type") or "").strip().lower()
             if script_type not in executable_script_types:
                 continue
             script["type"] = "text/psynet-script"
-        if parsed_from_string:
-            return str(soup)
         return soup
 
     @staticmethod

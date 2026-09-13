@@ -150,6 +150,33 @@ def test_embedded_module_is_rejected(html):
         Page._check_embedded_script_contract(html)
 
 
+def test_partial_render_skips_beautifulsoup_for_fragment_roots(monkeypatch):
+    """In-place fragments must not BeautifulSoup the timeline shell unless needed."""
+    import psynet.timeline as timeline_mod
+
+    calls = {"n": 0}
+    real_init = timeline_mod.BeautifulSoup.__init__
+
+    def tracking_init(self, *args, **kwargs):
+        calls["n"] += 1
+        return real_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(timeline_mod.BeautifulSoup, "__init__", tracking_init)
+    html = """
+    <div id="psynet-timeline-fragment">
+      <div id="main-body"><p>Hello</p><div>nested</div></div>
+      <script>var x = 1;</script>
+      <script type="application/json">{"html": "</div>"}</script>
+    </div>
+    """
+    rendered = Page._extract_partial_render(html)
+    assert calls["n"] == 0
+    assert "main-body" in rendered
+    assert "nested" in rendered
+    assert 'type="text/psynet-script"' in rendered
+    assert '{"html": "</div>"}' in rendered
+
+
 def test_embedded_script_contract_skips_parsing_pages_without_modules(monkeypatch):
     """Full-page render must not BeautifulSoup the timeline shell unless needed."""
     import psynet.timeline as timeline_mod
