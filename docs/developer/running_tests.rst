@@ -154,7 +154,9 @@ not a missed wake; still assert that the resume reason is not
 wake token plus an approved hold-resume POST still counts as a server wake.
 Hold-release summaries print ``Server-Timing`` ``app`` versus browser wall
 time (``queue~``) for the last arriver's request and the waiter's hold-resume
-POST. ``GET /timeline`` also prints ``lock``, ``page``, ``barriers``, and
+POST. Overlay linger is wake→end minus that hold-resume ``queue~``, then
+compared with ``max(1800ms, app + 500ms)``. Waiter-release spread still uses
+raw overlay leave times and does not subtract ``queue~``. ``GET /timeline`` also prints ``lock``, ``page``, ``barriers``, and
 ``render``. Blocking-request checks use ``app`` when that header is present, so
 worker-pool queueing is not treated as a slow handler. The 2500ms entry
 budget applies to ``GET /timeline`` and ``POST /load-participant``, not to

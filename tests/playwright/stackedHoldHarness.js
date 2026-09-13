@@ -123,6 +123,25 @@ function overlayLingerBudgetMs(holdResumePost) {
   );
 }
 
+function holdResumeQueueMs(holdResumePost) {
+  const serverMs = holdResumePost?.serverTimingMs;
+  const wallMs = holdResumePost?.durationMs;
+  if (serverMs == null || wallMs == null) {
+    return 0;
+  }
+  return Math.max(0, wallMs - serverMs);
+}
+
+function overlayLingerForBudgetMs(wakeToEndMs, holdResumePost) {
+  // The overlay cannot leave until the hold-resume POST is dequeued. That
+  // listen-queue wait is `queue~`, not handler time. Subtract it so linger
+  // still tracks Server-Timing app against max(1800, app + 500).
+  if (wakeToEndMs == null) {
+    return null;
+  }
+  return Math.max(0, wakeToEndMs - holdResumeQueueMs(holdResumePost));
+}
+
 function publishedWakeTokens(holdFrames) {
   const tokens = [];
   for (const frame of holdFrames) {
@@ -184,6 +203,7 @@ function holdReleaseSummary({
   resumeLog = [],
   holdFrames = [],
   waitingWakeToken = null,
+  overlayLingerMs: rawLingerMs = null,
   label = "waiter"
 }) {
   const reasons = (probe.resumeReasons || [])
@@ -201,6 +221,11 @@ function holdReleaseSummary({
     : "work";
   const lastWorkDetail = requestTimingDetail(lastArriverWork, clickToPaintMs);
   const lingerBudget = overlayLingerBudgetMs(holdResumePost);
+  const lingerForBudgetMs = overlayLingerForBudgetMs(rawLingerMs, holdResumePost);
+  const lingerLabel =
+    rawLingerMs == null
+      ? "overlay linger missing"
+      : `overlay linger ${Math.round(rawLingerMs)}ms (${Math.round(lingerForBudgetMs)}ms excl. queue)`;
   const responseNotes =
     resumeLog
       .filter((entry) => entry.kind)
@@ -230,7 +255,7 @@ function holdReleaseSummary({
     `waiter ${Math.round(afterPaintMs)}ms after ${afterPaintLabel}` +
     `${afterReleaseNote} ` +
     `(${Math.round(afterClickMs)}ms ${afterClickLabel}; ` +
-    `hold-resume POST ${holdResumeDetail}; overlay budget ${Math.round(lingerBudget)}ms; extra GET /timeline ${extraTimelineGets}; ` +
+    `hold-resume POST ${holdResumeDetail}; ${lingerLabel}; overlay budget ${Math.round(lingerBudget)}ms; extra GET /timeline ${extraTimelineGets}; ` +
     `inplace=${isInplaceTimelineModeEnabled()}; ` +
     `${wake}; resumes ${reasons}; ${responseNotes}; ` +
     `hold resumes ${probe.nextPageHoldResumes?.length || 0}; ` +
@@ -683,6 +708,7 @@ async function assertWaiterReleasedWithLastArriver(
     clockKind: clock.kind,
     holdResumePostMs,
     holdResumePost: holdResumePosts[0] || null,
+    overlayLingerMs: wakeToEndMs,
     lastArriverWork,
     extraTimelineGets: laterTimeline.length,
     probe: {
@@ -717,13 +743,13 @@ async function assertWaiterReleasedWithLastArriver(
       ).toBeGreaterThan(0);
     } else {
       expect(
-        wakeToEndMs,
+        overlayLingerForBudgetMs(wakeToEndMs, holdResumePosts[0] || null),
         `${session.label} hold overlay lingered after the wake (${summary})`
       ).toBeLessThan(lingerBudgetMs);
     }
   } else if (wakeToEndMs != null) {
     expect(
-      wakeToEndMs,
+      overlayLingerForBudgetMs(wakeToEndMs, holdResumePosts[0] || null),
       `${session.label} hold overlay lingered after the wake (${summary})`
     ).toBeLessThan(lingerBudgetMs);
   }
@@ -894,6 +920,7 @@ module.exports = {
   enterWaitingHold,
   lastArriverReleaseAtMs,
   lastArriverWorkRecord,
+  overlayLingerForBudgetMs,
   responsesSince,
   startHoldExperiment,
   stopExperiment,
