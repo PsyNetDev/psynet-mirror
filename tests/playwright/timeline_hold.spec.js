@@ -222,16 +222,17 @@ async function probeTimelineHoldClientBehavior(page) {
           sendCount,
           error: String(error && error.message ? error.message : error)
         };
-      })
-      .finally(() => {
-        window.XMLHttpRequest = OriginalXHR;
-        psynet.handleApprovedResponse = originalApproved;
-        psynet.alert = originalAlert;
-        psynet.nextPagePending = pendingBefore;
-        psynet.scheduleTimelineHoldCheck = originalSchedule;
-        psynet.scheduleTimelineHoldTimeout = originalTimeout;
-        PsyNetWebSocketChannel.connect = originalConnect;
       });
+    window.__holdClientRestore = () => {
+      window.XMLHttpRequest = OriginalXHR;
+      psynet.handleApprovedResponse = originalApproved;
+      psynet.alert = originalAlert;
+      psynet.nextPagePending = pendingBefore;
+      psynet.scheduleTimelineHoldCheck = originalSchedule;
+      psynet.scheduleTimelineHoldTimeout = originalTimeout;
+      PsyNetWebSocketChannel.connect = originalConnect;
+    };
+    window.__holdClientOriginalApproved = originalApproved;
 
     return {
       closedWithoutChannel,
@@ -250,8 +251,12 @@ async function probeTimelineHoldClientBehavior(page) {
     throw new Error(nextPage.error);
   }
 
-  const rest = await evaluateOnLivePage(page, () => {
-    const controller = psynet.timelineHold;
+  await page.waitForFunction(
+    () => Boolean(window.psynet && window.psynet.timelineHold),
+    { timeout: 15000 }
+  );
+
+  const clocks = await evaluateOnLivePage(page, () => {
     const probe = window.__psynetHoldReleaseProbe;
     let clocksReset = false;
     if (probe) {
@@ -264,13 +269,6 @@ async function probeTimelineHoldClientBehavior(page) {
         probe.wakeReceivedAtMs === null &&
         probe.wakeReason === null;
     }
-
-    let reloadedHoldPayload = 0;
-    const originalReload = psynet.loadNextTimelinePageWithReload;
-    psynet.loadNextTimelinePageWithReload = () => {
-      reloadedHoldPayload += 1;
-    };
-    const hold = controller ? { ...controller.hold } : {};
     const originalReplace = window.location.replace.bind(window.location);
     window.location.replace = (url) => {
       throw new Error(`lucid terminated during hold: ${url}`);
@@ -280,41 +278,28 @@ async function probeTimelineHoldClientBehavior(page) {
     }
     const originalLucidFlag = psynetTemplateData.flags.lucidRecruitment;
     const originalLucid = { ...psynetTemplateData.lucid };
-    try {
-      psynet.handleApprovedResponse({
-        page: {
-          attributes: {
-            timeline_hold: hold,
-            requires_full_page_reload: true,
-            page_uuid: hold.page_uuid
-          }
-        }
-      });
-      psynetTemplateData.flags.lucidRecruitment = true;
-      Object.assign(psynetTemplateData.lucid, {
-        inactivityTimeoutMs: 1,
-        inactivityTimeoutS: 0,
-        noFocusTimeoutMs: 1,
-        noFocusTimeoutReason: "no-focus-",
-        overallTimeoutS: 600,
-        secondsLeft: 600,
-        shouldWarnOnBeforeUnload: false
-      });
-      psynet.initLucidTermination();
-    } finally {
-      psynet.loadNextTimelinePageWithReload = originalReload;
-      window.__holdClientLucid = {
-        originalReplace,
-        originalLucidFlag,
-        originalLucid
-      };
-    }
-    return { clocksReset, reloadedHoldPayload };
+    psynetTemplateData.flags.lucidRecruitment = true;
+    Object.assign(psynetTemplateData.lucid, {
+      inactivityTimeoutMs: 1,
+      inactivityTimeoutS: 0,
+      noFocusTimeoutMs: 1,
+      noFocusTimeoutReason: "no-focus-",
+      overallTimeoutS: 600,
+      secondsLeft: 600,
+      shouldWarnOnBeforeUnload: false
+    });
+    psynet.initLucidTermination();
+    window.__holdClientLucid = {
+      originalReplace,
+      originalLucidFlag,
+      originalLucid
+    };
+    return { clocksReset };
   });
 
   await new Promise((resolve) => setTimeout(resolve, 1200));
 
-  await evaluateOnLivePage(page, () => {
+  const rest = await evaluateOnLivePage(page, () => {
     const lucid = window.__holdClientLucid;
     psynet.clearLucidTermination();
     if (lucid) {
@@ -323,13 +308,41 @@ async function probeTimelineHoldClientBehavior(page) {
       window.location.replace = lucid.originalReplace;
       window.__holdClientLucid = null;
     }
-    if (!psynet.timelineHold) {
-      return false;
+
+    let reloadedHoldPayload = 0;
+    const originalReload = psynet.loadNextTimelinePageWithReload;
+    psynet.loadNextTimelinePageWithReload = () => {
+      reloadedHoldPayload += 1;
+    };
+    const originalApproved = psynet.handleApprovedResponse;
+    psynet.handleApprovedResponse =
+      window.__holdClientOriginalApproved || originalApproved;
+    const liveHold = psynet.timelineHold ? { ...psynet.timelineHold.hold } : {};
+    try {
+      psynet.handleApprovedResponse({
+        page: {
+          attributes: {
+            timeline_hold: liveHold,
+            requires_full_page_reload: true,
+            page_uuid: liveHold.page_uuid
+          }
+        }
+      });
+    } finally {
+      psynet.handleApprovedResponse = originalApproved;
+      psynet.loadNextTimelinePageWithReload = originalReload;
     }
-    const hold = { ...psynet.timelineHold.hold };
-    psynet.stopTimelineHold();
-    psynet.beginTimelineHold(hold);
-    return true;
+    if (typeof window.__holdClientRestore === "function") {
+      window.__holdClientRestore();
+      window.__holdClientRestore = null;
+    }
+    if (liveHold.page_uuid) {
+      if (psynet.timelineHold) {
+        psynet.stopTimelineHold();
+      }
+      psynet.beginTimelineHold(liveHold);
+    }
+    return { reloadedHoldPayload };
   });
 
   return {
@@ -337,7 +350,7 @@ async function probeTimelineHoldClientBehavior(page) {
     sendCount: nextPage.sendCount,
     approved: nextPage.approved,
     passed: nextPage.passed,
-    clocksReset: rest.clocksReset,
+    clocksReset: clocks.clocksReset,
     reloadedHoldPayload: rest.reloadedHoldPayload,
     lucidHoldPausedClocks: true
   };
