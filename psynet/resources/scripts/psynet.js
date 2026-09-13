@@ -3250,7 +3250,7 @@
     psynet.requiresFullPageReloadTransition = function (response) {
       return Boolean(
         psynet.page.attributes?.requires_full_page_reload ||
-          response.page.attributes?.requires_full_page_reload,
+          response.page?.attributes?.requires_full_page_reload,
       );
     };
 

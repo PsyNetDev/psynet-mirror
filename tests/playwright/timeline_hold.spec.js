@@ -72,7 +72,42 @@ async function startBackgroundHold(page, { trackLucidUnload = false } = {}) {
 
 async function probeTimelineHoldClientBehavior(page) {
   await installTimelineHoldReleaseProbe(page);
-  return evaluateOnLivePage(page, async () => {
+  // Intercept native XHR from Playwright. An in-page FakeXHR can leave
+  // submitGenericResponse's Promise pending forever if send() throws before
+  // onreadystatechange, and psynet.alert() waits for a click that never comes.
+  let sendCount = 0;
+  const fulfillHoldResume = async (route) => {
+    if (route.request().method() !== "POST") {
+      await route.continue();
+      return;
+    }
+    sendCount += 1;
+    if (sendCount === 1) {
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({
+          status: "busy",
+          submission: "busy",
+          message: "The experiment is temporarily busy. Please try again."
+        })
+      });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        submission: "approved",
+        page: { contents: "", attributes: {} }
+      })
+    });
+  };
+  await page.route("**/response", fulfillHoldResume);
+  let timer;
+  try {
+    const result = await Promise.race([
+      evaluateOnLivePage(page, async () => {
     const controller = psynet.timelineHold;
     if (!controller) {
       throw new Error("timeline hold is not active");
@@ -140,58 +175,41 @@ async function probeTimelineHoldClientBehavior(page) {
         "#psynet-timeline-hold-indicator .psynet-timeline-hold-message"
       )?.innerHTML;
 
-      const OriginalXHR = window.XMLHttpRequest;
-      let sendCount = 0;
-      window.XMLHttpRequest = function FakeXHR() {
-        const xhr = {
-          readyState: 0,
-          status: 0,
-          response: "",
-          timeout: 0,
-          onreadystatechange: null,
-          open() {},
-          setRequestHeader() {},
-          abort() {},
-          send() {
-            sendCount += 1;
-            xhr.readyState = 4;
-            if (sendCount === 1) {
-              xhr.status = 503;
-              xhr.response = JSON.stringify({
-                status: "busy",
-                submission: "busy",
-                message: "The experiment is temporarily busy. Please try again."
-              });
-            } else {
-              xhr.status = 200;
-              xhr.response = JSON.stringify({
-                submission: "approved",
-                page: { contents: "", attributes: {} }
-              });
-            }
-            if (xhr.onreadystatechange) {
-              xhr.onreadystatechange();
-            }
-          }
-        };
-        return xhr;
-      };
       const originalApproved = psynet.handleApprovedResponse;
+      const originalAlert = psynet.alert;
       let approved = 0;
       psynet.handleApprovedResponse = async () => {
         approved += 1;
         return true;
       };
+      psynet.alert = (text) => {
+        throw new Error(
+          `unexpected psynet.alert during hold client probe: ${text}`
+        );
+      };
       const pendingBefore = psynet.nextPagePending;
       psynet.nextPagePending = false;
       let passed = false;
       try {
-        passed = await psynet.nextPage(null, {}, {}, undefined, {
-          timelineHoldResume: true
-        });
+        passed = await Promise.race([
+          psynet.nextPage(null, {}, {}, undefined, {
+            timelineHoldResume: true
+          }),
+          new Promise((_, reject) =>
+            setTimeout(() => {
+              reject(
+                new Error(
+                  "timed out waiting for hold-resume nextPage " +
+                    `(pageReady=${psynet.pageReady}, ` +
+                    `pending=${psynet.nextPagePending})`
+                )
+              );
+            }, 8000)
+          )
+        ]);
       } finally {
-        window.XMLHttpRequest = OriginalXHR;
         psynet.handleApprovedResponse = originalApproved;
+        psynet.alert = originalAlert;
         psynet.nextPagePending = pendingBefore;
       }
 
@@ -261,7 +279,6 @@ async function probeTimelineHoldClientBehavior(page) {
         noticeClearedWithoutChannel,
         closedOnBeginHold,
         updatedMessage,
-        sendCount,
         approved,
         passed,
         clocksReset,
@@ -278,7 +295,20 @@ async function probeTimelineHoldClientBehavior(page) {
         psynet.beginTimelineHold(hold);
       }
     }
-  }, 30000);
+      }, 30000),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          reject(
+            new Error("hold client probe evaluate did not finish within 20s")
+          );
+        }, 20000);
+      })
+    ]);
+    return { ...result, sendCount };
+  } finally {
+    clearTimeout(timer);
+    await page.unroute("**/response", fulfillHoldResume);
+  }
 }
 
 test("wait_while preserves the submitted page and wakes after async work", { tag: "@both" }, async ({
@@ -474,8 +504,10 @@ test("timeline hold client overlay and busy retry stay on a live hold", { tag: "
     await expect(
       experimentPage.locator("#psynet-timeline-hold-indicator")
     ).toBeVisible({ timeout: STEP_TIMEOUT_MS });
-    await waitForTimelinePageReady(experimentPage, STEP_TIMEOUT_MS);
+    // Silence before pageReady: a safety-poll resume during that wait can
+    // POST /response and leave nextPagePending set for the client probe.
     await silenceTimelineHoldSafetyPoll(experimentPage);
+    await waitForTimelinePageReady(experimentPage, STEP_TIMEOUT_MS);
 
     const holdClient = await probeTimelineHoldClientBehavior(experimentPage);
     expect(holdClient).toEqual({
