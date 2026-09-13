@@ -60,6 +60,7 @@ from psynet.timeline_hold import (
     _enqueue_timeline_hold_wake,
     _queue_arrival_update,
     _timeline_hold_channel,
+    _TimelineHoldPage,
     default_group_barrier_arrival_message,
 )
 from psynet.utils import get_config
@@ -1608,6 +1609,146 @@ def test_unready_hold_resume_does_not_lock_the_waiter_row(
         assert getattr(resumed.page, "is_timeline_hold", False)
         assert resumed.skip_write is True
         assert not _participant_row_is_locked(first_id)
+    finally:
+        exp.timeline = original_timeline
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_last_arrival_releases_waiters_during_unready_hold_resume(
+    in_experiment_directory, db_session, monkeypatch
+):
+    """Last-arrival must still lock and release waiters during an overlay check.
+
+    Pause the still-waiting hold-resume after the unlocked readiness check.
+    If that POST took ``FOR UPDATE``, waiter ``NOWAIT`` would fail and this
+    GET would first-paint a hold instead of skipping to the action page.
+    """
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    group_type = f"unready_overlap_{uuid.uuid4().hex[:8]}"
+    exp.timeline = _stacked_partner_timeline(group_type)
+    resume_started = threading.Event()
+    resume_finish = threading.Event()
+    resume_result = []
+    resume_errors = []
+    original_unready = Experiment._unready_hold_resume_result
+
+    def pausing_unready(self, participant, page_uuid):
+        result = original_unready(self, participant, page_uuid)
+        if result is not None:
+            resume_started.set()
+            assert resume_finish.wait(timeout=5)
+        return result
+
+    monkeypatch.setattr(Experiment, "_unready_hold_resume_result", pausing_unready)
+    resume_thread = None
+    try:
+        first, last = _working_participants(exp, 2)
+        assert _json_timeline(exp, first).status_code == 200
+        first = Participant.query.get(first.id)
+        first_id = first.id
+        last_id = last.id
+        last_uid = last.unique_id
+        hold_uuid = first.page_uuid
+        assert getattr(
+            exp.timeline.get_current_elt(exp, first), "is_timeline_hold", False
+        )
+
+        def hold_resume():
+            try:
+                participant = Participant.query.get(first_id)
+                resume_result.append(
+                    _process_response(
+                        exp, participant, hold_uuid, timeline_hold_resume=True
+                    )
+                )
+            except Exception as err:  # pragma: no cover - surfaced by the caller
+                resume_errors.append(err)
+            finally:
+                db.session.remove()
+
+        resume_thread = threading.Thread(target=hold_resume, daemon=True)
+        resume_thread.start()
+        assert resume_started.wait(timeout=2)
+        assert not _participant_row_is_locked(first_id)
+
+        last = Participant.query.filter_by(unique_id=last_uid).one()
+        last_response = _json_timeline(exp, last)
+        assert last_response.status_code == 200
+        assert last_response.get_json()["attributes"]["type"] == "ModularPage"
+        _assert_on_action_page(exp, [first_id, last_id])
+        assert not _participant_row_is_locked(first_id)
+        assert not _participant_row_is_locked(last_id)
+    finally:
+        resume_finish.set()
+        if resume_thread is not None:
+            resume_thread.join(timeout=5)
+        exp.timeline = original_timeline
+
+    assert resume_errors == []
+    assert resume_thread is not None
+    assert not resume_thread.is_alive()
+    assert len(resume_result) == 1
+    resumed = resume_result[0]
+    assert resumed.payload["submission"] == "approved"
+    assert getattr(resumed.page, "is_timeline_hold", False)
+    assert resumed.skip_write is True
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_ready_hold_resume_does_not_wait_when_participant_row_is_locked(
+    in_experiment_directory, db_session, monkeypatch
+):
+    """A hold that can resume must fail the waiter lock immediately.
+
+    Timed-out and already-released overlays still take ``FOR UPDATE NOWAIT``.
+    Blocking here would freeze a worker behind last-arrival's ``lock_timeout``.
+    """
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    group_type = f"ready_resume_nowait_{uuid.uuid4().hex[:8]}"
+    exp.timeline = _stacked_partner_timeline(group_type)
+    try:
+        first, _last = _working_participants(exp, 2)
+        assert _json_timeline(exp, first).status_code == 200
+        first = Participant.query.get(first.id)
+        participant_id = first.id
+        hold_uuid = first.page_uuid
+        assert getattr(
+            exp.timeline.get_current_elt(exp, first), "is_timeline_hold", False
+        )
+        monkeypatch.setattr(
+            _TimelineHoldPage,
+            "is_ready_to_resume",
+            lambda self, experiment, participant: True,
+        )
+        db.session.expire_all()
+
+        with db.engine.connect() as conn:
+            trans = conn.begin()
+            try:
+                conn.execute(
+                    text("SELECT id FROM participant WHERE id = :id FOR UPDATE"),
+                    {"id": participant_id},
+                )
+                started_at = time.perf_counter()
+                with pytest.raises(OperationalError) as excinfo:
+                    _process_response(
+                        exp,
+                        SimpleNamespace(id=participant_id),
+                        hold_uuid,
+                        timeline_hold_resume=True,
+                    )
+                elapsed = time.perf_counter() - started_at
+            finally:
+                trans.rollback()
+
+        assert elapsed < 0.5
+        assert Experiment._is_transient_transaction_error(excinfo.value)
     finally:
         exp.timeline = original_timeline
 

@@ -876,6 +876,64 @@ def test_process_response_unready_hold_resume_does_not_lock_or_recheck(monkeypat
     assert result.skip_write is True
 
 
+def test_process_response_ready_hold_resume_locks_with_nowait(monkeypatch):
+    """A hold that can resume must still take ``FOR UPDATE NOWAIT`` and settle."""
+    from flask import Flask
+
+    hold = MagicMock()
+    hold.is_timeline_hold = True
+    hold.is_ready_to_resume.return_value = True
+    hold.prepare_resume_if_ready.return_value = True
+    hold.time_estimate = 1.5
+    next_page = MagicMock()
+    next_page.is_timeline_hold = False
+    participant = SimpleNamespace(
+        id=1,
+        page_uuid="hold-uuid",
+        client_ip_address=None,
+        current_trial=None,
+        inc_progress=MagicMock(),
+    )
+    query = MagicMock()
+    query.populate_existing.return_value.get.return_value = participant
+    query.with_for_update.return_value.populate_existing.return_value.get.return_value = participant
+    experiment = Experiment.__new__(Experiment)
+    experiment._participant_request_query = MagicMock(return_value=query)
+    experiment.timeline = MagicMock()
+    experiment.timeline.get_current_elt.return_value = hold
+    experiment._advance_past_ready_holds = MagicMock(return_value=next_page)
+    experiment._approved_payload = lambda _participant, page: {
+        "submission": "approved",
+        "page": page,
+    }
+    monkeypatch.setattr(
+        Experiment,
+        "_skipped_error_recovery_should_render_error_page",
+        classmethod(lambda *_args, **_kwargs: False),
+    )
+
+    with Flask(__name__).test_request_context("/response"):
+        result = experiment.process_response(
+            1,
+            None,
+            {},
+            {},
+            "hold-uuid",
+            "127.0.0.1",
+            timeline_hold_resume=True,
+        )
+
+    query.with_for_update.assert_called_once_with(of=Participant, nowait=True)
+    hold.prepare_resume_if_ready.assert_called_once_with(experiment, participant)
+    hold.account_wait.assert_called_once_with(participant, settle=True)
+    participant.inc_progress.assert_called_once_with(1.5)
+    experiment.timeline.advance_page.assert_called_once_with(experiment, participant)
+    experiment._advance_past_ready_holds.assert_called_once()
+    assert participant.client_ip_address == "127.0.0.1"
+    assert result.page is next_page
+    assert result.skip_write is False
+
+
 def test_template_fragment_input_wraps_main_body_content():
     page = Page(template_fragment_str="<p id='fragment-only'>Fragment content</p>")
 
