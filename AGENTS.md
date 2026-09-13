@@ -185,7 +185,7 @@ When adding or updating Playwright E2E tests, follow these rules to reduce CI fl
     - Last-arrival ``GET /timeline`` can 302 after ``page_uuid`` advances; first-paint waits for the 200 HTML body.
     - Clock waiter resume against the last arriver's grouping request finish, not against a slow legacy client paint.
     - Playwright CI uses ``psynet debug --legacy`` (gunicorn). Hold tests set workers to the session count so last-arrival GET can overlap every waiter hold-resume POST. Both jobs use gunicorn; the default vs legacy job is in-place vs full reload. Ordinary ``psynet debug local`` is one Flask process; there is no worker-count flag on that path.
-    - A short HTTP 503 on hold-resume is the ``NOWAIT`` busy retry when those requests hit the same participant row; fail only if that busy retry lasts 500ms or more.
+    - A short HTTP 503 on hold-resume is the ``NOWAIT`` busy retry when those requests hit the same participant row; fail only if that busy retry lasts 500ms or more. After the in-request retry, a delayed ``queued hold wake`` must run rather than waiting for the silenced safety poll or the hold timeout.
 
 ## Automatic code review
 

@@ -145,9 +145,9 @@ probe, treat the page as a cleared hold (wake token and hold-resume POST)
 instead of failing on the destroyed context.
 
 Overlay linger after a published wake is bounded by
-``max(1800ms, hold-resume POST duration + 500ms)``. A slow approved POST is
+``max(1800ms, hold-resume Server-Timing app + 500ms)``. A slow approved POST is
 not a missed wake; still assert that the resume reason is not
-``safety poll``. If a legacy reload drops in-page wake clocks, a published
+``safety poll`` or ``hold timeout``. If a legacy reload drops in-page wake clocks, a published
 wake token plus an approved hold-resume POST still counts as a server wake.
 Hold-release summaries print ``Server-Timing`` ``app`` versus browser wall
 time (``queue~``) for the last arriver's request and the waiter's hold-resume
@@ -158,7 +158,9 @@ run ``psynet debug --legacy`` (gunicorn). Playwright hold tests set the worker
 count to the session count so last-arrival work can overlap every waiter
 hold-resume POST. A short HTTP 503 on hold-resume is the
 ``NOWAIT`` busy retry when those requests hit the same participant row;
-the suite still fails a busy retry that lasts 500ms or more. Both Playwright
+the in-request retry waits 250ms; if that is still busy, one delayed
+``queued hold wake`` runs. The suite still fails a busy retry that lasts
+500ms or more. Both Playwright
 CI jobs use gunicorn; the default vs legacy job is in-place vs full reload.
 Worker-pool ``queue~`` is therefore not reload-specific.
 

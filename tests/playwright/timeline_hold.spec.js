@@ -577,16 +577,30 @@ test("timeline hold client overlay and busy retry stay on a live hold", { tag: "
       const isBusy = psynet.isBusyResponse(request);
       await psynet.handleBusyResponse(request, { timelineHoldResume: true });
       const resumeRequested = Boolean(psynet.timelineHold?.resumeRequested);
+      const busyRetryUsed = Boolean(psynet.timelineHold?.busyRetryUsed);
+      const delayedWakeMs = psynet.timelineHoldBusyRetryMs;
+      clearTimeout(psynet.timelineHold?.busyRetryTimer);
+      if (psynet.timelineHold) {
+        psynet.timelineHold.busyRetryTimer = null;
+      }
       psynet.alert = originalAlert;
       psynet.response.enable = originalResponseEnable;
       psynet.submit.enable = originalSubmitEnable;
       psynet.scheduleTimelineHoldCheck = originalSchedule;
-      return { isBusy, resumeRequested, ...effects };
+      return {
+        isBusy,
+        resumeRequested,
+        busyRetryUsed,
+        delayedWakeMs,
+        ...effects
+      };
     });
     expect(busyHoldEffects).toEqual({
       isBusy: true,
       resumeRequested: false,
-      scheduleCalls: 1,
+      busyRetryUsed: true,
+      delayedWakeMs: 250,
+      scheduleCalls: 0,
       alerts: 0,
       responseEnables: 0,
       submitEnables: 0
@@ -682,9 +696,12 @@ test("timeline hold client overlay and busy retry stay on a live hold", { tag: "
         return {
           queuedWakes: effects.queuedWakes,
           scheduleCalls: effects.scheduleCalls,
-          resumeRequested: Boolean(psynet.timelineHold?.resumeRequested)
+          resumeRequested: Boolean(psynet.timelineHold?.resumeRequested),
+          busyRetryUsed: Boolean(psynet.timelineHold?.busyRetryUsed)
         };
       } finally {
+        clearTimeout(controller.busyRetryTimer);
+        controller.busyRetryTimer = null;
         psynet.nextPage = originalNextPage;
         psynet.scheduleTimelineHoldCheck = originalSchedule;
         psynet.resumeTimelineHold = originalResume;
@@ -693,8 +710,9 @@ test("timeline hold client overlay and busy retry stay on a live hold", { tag: "
     });
     expect(busyLivelock).toEqual({
       queuedWakes: 0,
-      scheduleCalls: 2,
-      resumeRequested: false
+      scheduleCalls: 1,
+      resumeRequested: false,
+      busyRetryUsed: true
     });
 
     const pendingEffects = await experimentPage.evaluate(async () => {

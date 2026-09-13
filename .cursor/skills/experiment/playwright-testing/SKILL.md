@@ -77,12 +77,12 @@ When a partner is already on a hold, use `stackedHoldHarness.js`:
 arms `waitForHeldParticipantToResume` before the last arriver consents.
 `assertWaiterReleasedWithLastArriver` then checks that overlay leave
 (`resumedAtMs`) is timed from `lastArriverReleaseAtMs` (the grouping request
-finish, not the follow-up HTML 200), resume is `server notification` (not
-`safety poll`), there is no busy hold-resume retry, inplace mode issues no
+finish, not the follow-up HTML 200), resume is `server notification` or
+`queued hold wake` (not `safety poll` or `hold timeout`), inplace mode issues no
 extra `GET /timeline`, and overlay linger stays under
-`max(1800ms, hold-resume Server-Timing app + 500ms)`. Do not fold gunicorn
-`queue~` into linger or waiter spread. Spread is overlay leave times, at most
-1500ms:
+`max(1800ms, hold-resume Server-Timing app + 500ms)`. A short HTTP 503 may
+retry once; do not fold gunicorn `queue~` into linger or waiter spread. Spread
+is overlay leave times, at most 1500ms:
 
 ```js
 await enterWaitingHold(first, { holdText: "Waiting for your partner" });

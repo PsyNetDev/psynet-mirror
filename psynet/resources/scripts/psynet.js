@@ -1098,6 +1098,8 @@
       controller.stopped = true;
       clearTimeout(controller.safetyTimer);
       clearTimeout(controller.timeoutTimer);
+      clearTimeout(controller.busyRetryTimer);
+      controller.busyRetryTimer = null;
       if (controller.connection) {
         controller.connection.close();
       }
@@ -1150,6 +1152,8 @@
         hold: hold,
         resumeInFlight: false,
         resumeRequested: false,
+        busyRetryUsed: false,
+        busyRetryTimer: null,
         safetyTimer: null,
         stopped: false,
         timeoutTimer: null,
@@ -3387,6 +3391,24 @@
       }
     };
 
+    psynet.timelineHoldBusyRetryMs = 250;
+
+    psynet.scheduleTimelineHoldBusyRetry = function (controller) {
+      if (!controller || controller.stopped) {
+        return;
+      }
+      if (controller.busyRetryTimer != null) {
+        return;
+      }
+      controller.busyRetryTimer = setTimeout(() => {
+        controller.busyRetryTimer = null;
+        if (controller.stopped || psynet.timelineHold !== controller) {
+          return;
+        }
+        psynet.resumeTimelineHold("queued hold wake");
+      }, psynet.timelineHoldBusyRetryMs);
+    };
+
     psynet.handleHoldResumeTransportFailure = async function (request) {
       let status = request && request.status;
       psynet.log.warn(
@@ -3395,9 +3417,8 @@
           "); keeping the preserved page.",
       );
       if (psynet.timelineHold) {
-        // Match busy 503: reschedule the safety poll and do not set
-        // resumeRequested, or the in-flight resume's finally would wake
-        // again immediately.
+        // Match busy 503: do not set resumeRequested, or the in-flight
+        // resume's finally would wake again immediately.
         psynet.scheduleTimelineHoldCheck(psynet.timelineHold);
       }
       return false;
@@ -3415,9 +3436,16 @@
       if (options.timelineHoldResume) {
         psynet.log.warn("A timeline hold resume check was busy: " + message);
         if (psynet.timelineHold) {
-          // A second busy 503 must not set resumeRequested. The in-flight
-          // resume's finally would immediately wake again and livelock.
-          psynet.scheduleTimelineHoldCheck(psynet.timelineHold);
+          // The same POST already retried one busy 503. Do not set
+          // resumeRequested (that livelocks in finally) and do not wait for
+          // the safety poll: stacked-hold tests silence it, and the hold
+          // timeout is much slower than a partner wake.
+          if (!psynet.timelineHold.busyRetryUsed) {
+            psynet.timelineHold.busyRetryUsed = true;
+            psynet.scheduleTimelineHoldBusyRetry(psynet.timelineHold);
+          } else {
+            psynet.scheduleTimelineHoldCheck(psynet.timelineHold);
+          }
         }
         return false;
       }
