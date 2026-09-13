@@ -257,3 +257,6 @@ dump.rdb
 # Deployment-test audit trail: local-only analyses and raw artifacts
 # (logs, exports, recruiter JSON). Do not commit this tree.
 deployment-tests/
+
+# Local agent scratch packages
+.deps/

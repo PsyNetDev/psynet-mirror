@@ -264,6 +264,55 @@ def test_browse_falls_back_to_static_when_not_a_tty(tmp_path, monkeypatch):
     assert "deploy.succeeded" in output.getvalue()
 
 
+def test_textual_history_app_filters_and_arrows():
+    import asyncio
+
+    from psynet.deployment_history_app import DeploymentHistoryApp
+
+    events = [
+        {
+            "event": "deploy.succeeded",
+            "at": "2026-01-01T00:00:00Z",
+            "argv": ["psynet", "deploy", "ssh"],
+        },
+        {
+            "event": "export.failed",
+            "at": "2026-01-01T00:01:00Z",
+            "error": "boom",
+            "argv": ["psynet", "export", "ssh"],
+        },
+        {
+            "event": "comment",
+            "at": "2026-01-01T00:02:00Z",
+            "text": "hi",
+            "argv": ["psynet", "comment"],
+        },
+    ]
+
+    async def run():
+        app = DeploymentHistoryApp(events)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            assert app.type_filter == "all"
+            await pilot.press("f")
+            await pilot.pause()
+            assert app.type_filter == "failures"
+            assert len(app._visible_events()) == 1
+            await pilot.press("up")
+            await pilot.pause()
+            await pilot.press("c")
+            await pilot.pause()
+            assert app.type_filter == "comments"
+            await pilot.press("a")
+            await pilot.pause()
+            await pilot.press("3")
+            await pilot.pause()
+            assert app.command_filter == "export"
+            assert [e["event"] for e in app._visible_events()] == ["export.failed"]
+
+    asyncio.run(run())
+
+
 def test_history_no_interactive_flag(tmp_path):
     from psynet.command_line import psynet
     from psynet.deployment_events import append_deployment_event

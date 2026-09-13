@@ -33,10 +33,16 @@ Add a free-floating note (optionally associated with a local ID or app):
     psynet comment --id gibbs "Lab booth B"
     psynet comment --app my-app "Paused recruitment overnight"
 
-Browse the log interactively (full-screen Rich TUI when run in a terminal).
-Use ↑/↓ to move, ``t`` to filter by type (failures/comments/…), ``c`` to filter
-by command family, and ``q`` to quit. Non-interactive environments fall back to
-a static timeline:
+Browse the log interactively with a Textual full-screen browser when run in a
+terminal. The footer lists the keys; the top bar shows the active filters.
+
+* ``↑`` / ``↓`` (or ``j`` / ``k``) move
+* ``a`` / ``f`` / ``c`` / ``s`` filter by type (all / failures / comments / succeeded)
+* ``0``–``6`` filter by command family
+* ``?`` help in the detail pane
+* ``q`` quit
+
+Non-interactive environments fall back to a static timeline:
 
 .. code-block:: bash
 
