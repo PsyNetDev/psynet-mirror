@@ -1616,6 +1616,69 @@ def test_unready_hold_resume_does_not_lock_the_waiter_row(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
+def test_route_response_unready_hold_resume_rolls_back_identity_map_dirties(
+    in_experiment_directory, db_session
+):
+    """``skip_write`` must drop overlay dirties before the route's outer commit.
+
+    Isolated tests usually call ``process_response``. ``get_current_elt`` can
+    dirty ``elt_id_max``; without rollback, ``with_transaction`` would commit
+    that and wait accounting. Inject a dirty so this POST proves the route
+    rolls it back.
+    """
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    group_type = f"unready_route_{uuid.uuid4().hex[:8]}"
+    exp.timeline = _stacked_partner_timeline(group_type)
+    original_get = exp.timeline.get_current_elt
+    try:
+        first, _last = _working_participants(exp, 2)
+        assert _json_timeline(exp, first).status_code == 200
+        first = Participant.query.get(first.id)
+        first_id = first.id
+        hold_uuid = first.page_uuid
+        credit_before = first.time_credit
+        wait_before = first.total_wait_page_time
+        elt_max_before = list(first.elt_id_max or [])
+        record = TimelineHoldRecord.query.filter_by(
+            participant_id=first_id, page_uuid=hold_uuid
+        ).one()
+        actual_before = record.actual_wait_seconds
+
+        def dirtying_get(experiment, participant):
+            page = original_get(experiment, participant)
+            participant.time_credit = (participant.time_credit or 0.0) + 99
+            participant.total_wait_page_time = (
+                participant.total_wait_page_time or 0.0
+            ) + 99
+            participant.elt_id_max = list(participant.elt_id_max or []) + [99]
+            participant.client_ip_address = "9.9.9.9"
+            return page
+
+        exp.timeline.get_current_elt = dirtying_get
+        response = _route_hold_resume(first_id, hold_uuid)
+        assert response.status_code == 200
+        body = json.loads(response.get_data())
+        assert body["status"] == "success"
+        assert body["submission"] == "approved"
+        db.session.expire_all()
+        first = Participant.query.get(first_id)
+        assert first.time_credit == credit_before
+        assert first.total_wait_page_time == wait_before
+        assert list(first.elt_id_max or []) == elt_max_before
+        assert first.client_ip_address != "9.9.9.9"
+        record = TimelineHoldRecord.query.filter_by(
+            participant_id=first_id, page_uuid=hold_uuid
+        ).one()
+        assert record.actual_wait_seconds == actual_before
+        assert not _participant_row_is_locked(first_id)
+    finally:
+        exp.timeline = original_timeline
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
 def test_last_arrival_releases_waiters_during_unready_hold_resume(
     in_experiment_directory, db_session, monkeypatch
 ):
@@ -2385,6 +2448,24 @@ def _process_response(exp, participant, page_uuid, *, timeline_hold_resume=False
         )
 
 
+def _route_hold_resume(participant_id, page_uuid):
+    """POST ``/response`` as a hold-resume overlay, including ``skip_write``."""
+    payload = {
+        "participant_id": participant_id,
+        "page_uuid": page_uuid,
+        "metadata": {},
+        "timeline_hold_resume": True,
+        "include_timeline_fragment": False,
+    }
+    with Flask(__name__).test_request_context(
+        "/response",
+        method="POST",
+        data={"json": json.dumps(payload)},
+        environ_base={"REMOTE_ADDR": "127.0.0.1"},
+    ):
+        return Experiment.route_response()
+
+
 def _working_participants(exp, count):
     """Create ``count`` working participants for stacked-hold arrival tests."""
     participants = [new_participant(exp) for _ in range(count)]
@@ -3096,6 +3177,71 @@ def test_last_arrival_retries_an_unclaimed_barrier_check_once(
         assert seen["count"] >= 2
     finally:
         exp.timeline = original_timeline
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_last_arrival_releases_waiters_when_nowait_retry_sees_unlocked_row(
+    in_experiment_directory, db_session, monkeypatch
+):
+    """A waiter ``FOR UPDATE`` that drops before the immediate retry must release.
+
+    The retry is immediate; this test rolls back the partner lock between
+    attempts so the second ``NOWAIT`` can take the row.
+    """
+    from psynet.sync import _run_pending_barrier_checks as original_run
+
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    original_advance = exp._advance_past_ready_holds
+    first, last = _pair_sync_group(exp, db_session)[0]
+    first_id = first.id
+    last_id = last.id
+    barrier = GroupBarrier(id_="finalize_nowait_retry_drop", group_type="main")
+    page = _DummyFinalizePage()
+    exp.timeline = SimpleNamespace(get_current_elt=lambda _e, _p: page)
+    exp._advance_past_ready_holds = lambda participant, current_page: current_page
+    checks = _queued_last_arrival_checks(exp, barrier, first, last)
+    result = SimpleNamespace(page=object(), payload={"page": "stale"})
+    claimed_flags = []
+    blocker = db.engine.connect()
+    blocker_trans = blocker.begin()
+    blocker.execute(
+        text("SELECT id FROM participant WHERE id = :id FOR UPDATE"),
+        {"id": first_id},
+    )
+
+    def run_then_drop(instance_ids):
+        claimed = original_run(instance_ids)
+        claimed_flags.append(claimed)
+        if len(claimed_flags) == 1 and blocker_trans.is_active:
+            blocker_trans.rollback()
+        return claimed
+
+    monkeypatch.setattr("psynet.sync._run_pending_barrier_checks", run_then_drop)
+    try:
+        started_at = time.perf_counter()
+        Experiment._finalize_barrier_arrivals(
+            exp,
+            participant_id=last_id,
+            checks=checks,
+            result=result,
+        )
+        elapsed = time.perf_counter() - started_at
+    finally:
+        if blocker_trans.is_active:
+            blocker_trans.rollback()
+        blocker.close()
+        exp.timeline = original_timeline
+        exp._advance_past_ready_holds = original_advance
+
+    assert elapsed < 1
+    assert claimed_flags[0] is False
+    assert claimed_flags[1] is True
+    assert _barrier_link_released(first_id, barrier.id) is True
+    assert _barrier_link_released(last_id, barrier.id) is True
+    assert result.page is page
 
 
 @pytest.mark.parametrize(
