@@ -557,7 +557,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         Indicates whether the experiment needs internet access. Can be set to ``False`` for lab or field studies.
         Default: ``True``.
 
-
+    snapshot_on_participant_finish: ``bool``
+        If ``True`` (default), a managed local live deployment snapshots the
+        database when a participant finishes. Disable this in ``config.txt`` or
+        ``Experiment.config`` if finish-time snapshots are too costly. See
+        :doc:`/deploy/local`.
 
     Parameters
     ----------
@@ -1350,27 +1354,77 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             safe(exp.backup_basic_data)()
             safe(exp.backup_database)()
 
+    @staticmethod
+    def _managed_local_live_deployment_info():
+        """Return deployment info for a managed local live run, else ``None``."""
+        if not deployment_info.is_available():
+            return None
+        from .local_deployment import is_managed_local_live_deployment
+
+        info = deployment_info.read_all()
+        if not is_managed_local_live_deployment(info):
+            return None
+        return info
+
+    def mark_local_snapshot_needed_on_shutdown(self):
+        """Remember that shutdown must snapshot: a participant has started."""
+        if self._managed_local_live_deployment_info() is None:
+            return
+        self.var.local_snapshot_needed_on_shutdown = True
+
+    def _has_unfinished_participants(self, excluding=None):
+        """Return whether another participant is still collecting data."""
+        query = Participant.query.filter_by(
+            status="working", failed=False, complete=False
+        )
+        if excluding is not None and getattr(excluding, "id", None) is not None:
+            query = query.filter(Participant.id != excluding.id)
+        return query.count() > 0
+
+    @classmethod
+    def create_local_deployment_snapshot(cls, reason: str):
+        """Create a recovery snapshot for the current managed local live run."""
+        info = cls._managed_local_live_deployment_info()
+        if info is None:
+            return None
+        from .local_deployment import create_snapshot
+
+        return create_snapshot(
+            info["local_experiment_path"],
+            info["local_id"],
+            reason=reason,
+            deployment_id=info["deployment_id"],
+            resumed_from=info.get("resumed_from"),
+        )
+
+    def maybe_snapshot_after_participant_finish(self, participant=None):
+        """Snapshot a local live deployment after a participant finishes.
+
+        Controlled by ``snapshot_on_participant_finish`` (default ``True``).
+        If nobody else is still collecting data, shutdown can skip a redundant
+        termination snapshot.
+        """
+        if get_config().get("snapshot_on_participant_finish", True) is False:
+            return None
+        try:
+            snapshot = self.create_local_deployment_snapshot("participant_finished")
+        except Exception:
+            logger.exception(
+                "Failed to create participant-finish local deployment snapshot."
+            )
+            return None
+        if snapshot is not None and not self._has_unfinished_participants(
+            excluding=participant
+        ):
+            self.var.local_snapshot_needed_on_shutdown = False
+        return snapshot
+
     @scheduled_task("interval", seconds=600, max_instances=1)
     @staticmethod
     def snapshot_local_deployment():
         """Create a periodic snapshot for a managed local live deployment."""
-        info = deployment_info.read_all()
-        if not (
-            info.get("is_local_deployment")
-            and info.get("mode") == "live"
-            and info.get("local_id") is not None
-        ):
-            return
-        from .local_deployment import create_snapshot
-
         try:
-            create_snapshot(
-                info["local_experiment_path"],
-                info["local_id"],
-                reason="periodic",
-                deployment_id=info["deployment_id"],
-                resumed_from=info.get("resumed_from"),
-            )
+            Experiment.create_local_deployment_snapshot("periodic")
         except Exception:
             logger.exception("Failed to create periodic local deployment snapshot.")
 
@@ -1489,6 +1543,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         recruiter = self.recruiter
         if hasattr(recruiter, "link_lucid_rid_to_participant"):
             recruiter.link_lucid_rid_to_participant(participant)
+        self.mark_local_snapshot_needed_on_shutdown()
         return participant
 
     def initialize_bot(self, bot):
@@ -2086,6 +2141,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             "inplace_timeline_transitions": True,
             "legacy_js_var_globals": "warn",
             "needs_internet_access": True,
+            "snapshot_on_participant_finish": True,
             "check_participant_opened_devtools": False,
             "supported_locales": "[]",
             "wage_per_hour": 9.0,
@@ -3801,6 +3857,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         config.register("slack_channel_name", str)
         config.register("slack_bot_token", str, sensitive=True)
         config.register("needs_internet_access", bool)
+        config.register("snapshot_on_participant_finish", bool)
 
         def is_positive_float(value):
             assert float(value) > 0

@@ -78,6 +78,7 @@ class DatabaseOwner:
     deployment_id: Optional[str]
     label: Optional[str]
     readable: bool = True
+    snapshot_needed_on_shutdown: bool = True
 
     @property
     def managed(self) -> bool:
@@ -118,6 +119,26 @@ UNREADABLE_DATABASE_OWNER = DatabaseOwner(
     label=None,
     readable=False,
 )
+
+
+def is_managed_local_live_deployment(info: dict) -> bool:
+    """Return whether ``info`` describes a managed local live deployment."""
+    return bool(
+        info.get("is_local_deployment")
+        and info.get("mode") == "live"
+        and info.get("local_id") is not None
+        and info.get("local_experiment_path")
+    )
+
+
+def should_skip_shutdown_snapshot(owner: Optional[DatabaseOwner]) -> bool:
+    """Return whether shutdown can reuse the last participant-finish snapshot.
+
+    After a participant finishes, PsyNet snapshots the database. If nobody else
+    has started since that snapshot, the termination snapshot would contain no
+    new collected data.
+    """
+    return owner is not None and owner.managed and not owner.snapshot_needed_on_shutdown
 
 
 def validate_local_id(value: str) -> str:
@@ -590,6 +611,7 @@ def read_database_owner(db_url: Optional[str] = None) -> Optional[DatabaseOwner]
             )
             return UNREADABLE_DATABASE_OWNER
         experiment_path = variables.get("local_experiment_path")
+        needed = variables.get("local_snapshot_needed_on_shutdown")
         return DatabaseOwner(
             local_id=variables.get("local_deployment_id"),
             experiment_path=Path(experiment_path).resolve()
@@ -597,6 +619,7 @@ def read_database_owner(db_url: Optional[str] = None) -> Optional[DatabaseOwner]
             else None,
             deployment_id=variables.get("deployment_id"),
             label=variables.get("label"),
+            snapshot_needed_on_shutdown=True if needed is None else bool(needed),
         )
     finally:
         connection.close()

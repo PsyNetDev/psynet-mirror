@@ -686,3 +686,297 @@ def test_protect_existing_database_skips_clean_shutdown(tmp_path, monkeypatch):
 
     assert protect_existing_database(tmp_path / "new", "second") is None
     create_snapshot.assert_not_called()
+
+
+def test_managed_local_live_deployment_requires_id_and_live_mode():
+    from psynet.local_deployment import is_managed_local_live_deployment
+
+    assert not is_managed_local_live_deployment({})
+    assert not is_managed_local_live_deployment(
+        {
+            "is_local_deployment": True,
+            "mode": "debug",
+            "local_id": "gibbs",
+            "local_experiment_path": "/tmp/exp",
+        }
+    )
+    assert is_managed_local_live_deployment(
+        {
+            "is_local_deployment": True,
+            "mode": "live",
+            "local_id": "gibbs",
+            "local_experiment_path": "/tmp/exp",
+        }
+    )
+
+
+def test_should_skip_shutdown_snapshot_only_after_finish_with_no_new_start(tmp_path):
+    from psynet.local_deployment import DatabaseOwner, should_skip_shutdown_snapshot
+
+    owner = DatabaseOwner("gibbs", tmp_path, "launch-1", "Example")
+    assert not should_skip_shutdown_snapshot(owner)
+    assert not should_skip_shutdown_snapshot(None)
+    assert should_skip_shutdown_snapshot(
+        DatabaseOwner(
+            "gibbs",
+            tmp_path,
+            "launch-1",
+            "Example",
+            snapshot_needed_on_shutdown=False,
+        )
+    )
+    assert not should_skip_shutdown_snapshot(
+        DatabaseOwner(
+            None,
+            None,
+            "launch-1",
+            "Example",
+            snapshot_needed_on_shutdown=False,
+        )
+    )
+
+
+def test_deploy_local_skips_redundant_shutdown_snapshot(tmp_path, monkeypatch):
+    from psynet.command_line import psynet
+    from psynet.local_deployment import DatabaseOwner, Snapshot
+    from psynet.utils import working_directory
+
+    (tmp_path / "experiment.py").write_text("")
+    archive = tmp_path / "data/snapshots/gibbs/000004.zip"
+    archive.parent.mkdir(parents=True)
+    _write_archive(archive)
+    latest = Snapshot(
+        sequence=4,
+        path=archive,
+        metadata_path=archive.with_suffix(".json"),
+        created_at="2026-09-13T12:00:00Z",
+        reason="participant_finished",
+        deployment_id="launch-1",
+        parent_sequence=3,
+        participant_count=1,
+        sha256=None,
+    )
+    events = []
+    snapshot_calls = []
+
+    @contextmanager
+    def unlocked(*_args):
+        yield
+
+    monkeypatch.setattr("psynet.command_line.local_deployment_lock", unlocked)
+    monkeypatch.setattr(
+        "psynet.services.ensure_local_services", Mock(return_value=True)
+    )
+    monkeypatch.setattr(
+        "psynet.command_line.protect_existing_database", lambda *_args, **_kwargs: None
+    )
+    monkeypatch.setattr(
+        "psynet.command_line.choose_snapshot", lambda *_args, **_kwargs: latest
+    )
+    monkeypatch.setattr(
+        "psynet.command_line._run_local", lambda *_args, **_kwargs: None
+    )
+    monkeypatch.setattr(
+        "psynet.command_line.read_database_owner",
+        lambda: DatabaseOwner(
+            "gibbs",
+            tmp_path,
+            "launch-1",
+            "Example",
+            snapshot_needed_on_shutdown=False,
+        ),
+    )
+    monkeypatch.setattr(
+        "psynet.command_line.list_snapshots", lambda *_args, **_kwargs: [latest]
+    )
+    monkeypatch.setattr(
+        "psynet.command_line.create_snapshot",
+        lambda *args, **kwargs: snapshot_calls.append((args, kwargs)) or latest,
+    )
+    monkeypatch.setattr(
+        "psynet.command_line.append_deployment_event",
+        lambda *args, **kwargs: events.append((args, kwargs)),
+    )
+
+    with working_directory(tmp_path):
+        result = CliRunner().invoke(
+            psynet,
+            ["deploy", "local", "--id", "gibbs", "--snapshot", "latest"],
+        )
+
+    assert result.exit_code == 0, result.output
+    assert snapshot_calls == []
+    assert [args[1] for args, _kwargs in events] == [
+        "deploy.requested",
+        "deploy.stopped",
+    ]
+    stopped = events[-1][1]
+    assert stopped["saved"] is True
+    assert stopped["snapshot"] == 4
+    assert stopped["shutdown_snapshot"] is False
+
+
+def test_maybe_snapshot_after_participant_finish_clears_shutdown_need(monkeypatch):
+    from types import SimpleNamespace
+
+    from psynet.experiment import Experiment
+
+    snapshot = Mock()
+    config = Mock()
+    config.get.return_value = True
+    monkeypatch.setattr("psynet.experiment.get_config", lambda: config)
+
+    class Dummy:
+        var = SimpleNamespace()
+
+        def create_local_deployment_snapshot(self, reason):
+            assert reason == "participant_finished"
+            return snapshot
+
+        def _has_unfinished_participants(self, excluding=None):
+            return False
+
+        maybe_snapshot_after_participant_finish = (
+            Experiment.maybe_snapshot_after_participant_finish
+        )
+
+    dummy = Dummy()
+    assert dummy.maybe_snapshot_after_participant_finish(Mock(id=1)) is snapshot
+    assert dummy.var.local_snapshot_needed_on_shutdown is False
+
+
+def test_maybe_snapshot_after_participant_finish_can_be_disabled(monkeypatch):
+    from psynet.experiment import Experiment
+
+    config = Mock()
+    config.get.return_value = False
+    monkeypatch.setattr("psynet.experiment.get_config", lambda: config)
+
+    class Dummy:
+        create_local_deployment_snapshot = Mock()
+        maybe_snapshot_after_participant_finish = (
+            Experiment.maybe_snapshot_after_participant_finish
+        )
+
+    dummy = Dummy()
+    assert dummy.maybe_snapshot_after_participant_finish() is None
+    dummy.create_local_deployment_snapshot.assert_not_called()
+
+
+def test_maybe_snapshot_keeps_shutdown_need_when_another_participant_is_working(
+    monkeypatch,
+):
+    from types import SimpleNamespace
+
+    from psynet.experiment import Experiment
+
+    config = Mock()
+    config.get.return_value = True
+    monkeypatch.setattr("psynet.experiment.get_config", lambda: config)
+
+    class Dummy:
+        var = SimpleNamespace(local_snapshot_needed_on_shutdown=True)
+        create_local_deployment_snapshot = Mock(return_value=Mock())
+        _has_unfinished_participants = Mock(return_value=True)
+        maybe_snapshot_after_participant_finish = (
+            Experiment.maybe_snapshot_after_participant_finish
+        )
+
+    dummy = Dummy()
+    dummy.maybe_snapshot_after_participant_finish(Mock(id=1))
+    assert dummy.var.local_snapshot_needed_on_shutdown is True
+    dummy._has_unfinished_participants.assert_called_once()
+
+
+def test_create_local_deployment_snapshot_ignores_non_live_runs(monkeypatch):
+    from psynet.experiment import Experiment
+
+    monkeypatch.setattr("psynet.experiment.deployment_info.is_available", lambda: True)
+    monkeypatch.setattr(
+        "psynet.experiment.deployment_info.read_all",
+        lambda: {
+            "is_local_deployment": True,
+            "mode": "debug",
+            "local_id": "gibbs",
+            "local_experiment_path": "/tmp/exp",
+        },
+    )
+    create_snapshot = Mock()
+    monkeypatch.setattr("psynet.local_deployment.create_snapshot", create_snapshot)
+
+    assert Experiment.create_local_deployment_snapshot("periodic") is None
+    create_snapshot.assert_not_called()
+
+
+def test_create_local_deployment_snapshot_writes_for_live_runs(monkeypatch):
+    from psynet.experiment import Experiment
+
+    snapshot = Mock()
+    monkeypatch.setattr("psynet.experiment.deployment_info.is_available", lambda: True)
+    monkeypatch.setattr(
+        "psynet.experiment.deployment_info.read_all",
+        lambda: {
+            "is_local_deployment": True,
+            "mode": "live",
+            "local_id": "gibbs",
+            "local_experiment_path": "/tmp/exp",
+            "deployment_id": "launch-1",
+            "resumed_from": 3,
+        },
+    )
+    create_snapshot = Mock(return_value=snapshot)
+    monkeypatch.setattr("psynet.local_deployment.create_snapshot", create_snapshot)
+
+    assert Experiment.create_local_deployment_snapshot("periodic") is snapshot
+    create_snapshot.assert_called_once_with(
+        "/tmp/exp",
+        "gibbs",
+        reason="periodic",
+        deployment_id="launch-1",
+        resumed_from=3,
+    )
+
+
+def test_end_logic_snapshots_after_the_debrief():
+    import inspect
+
+    from psynet.end import EndLogic
+
+    source = inspect.getsource(EndLogic.resolve)
+    assert "snapshot_after_participant_finish" in source
+
+
+def test_starting_a_participant_marks_shutdown_snapshot_needed():
+    from types import SimpleNamespace
+
+    from psynet.experiment import Experiment
+
+    class Dummy:
+        var = SimpleNamespace()
+        _managed_local_live_deployment_info = staticmethod(
+            lambda: {"local_id": "gibbs"}
+        )
+        mark_local_snapshot_needed_on_shutdown = (
+            Experiment.mark_local_snapshot_needed_on_shutdown
+        )
+
+    dummy = Dummy()
+    dummy.mark_local_snapshot_needed_on_shutdown()
+    assert dummy.var.local_snapshot_needed_on_shutdown is True
+
+
+def test_starting_a_participant_does_not_mark_debug_runs():
+    from types import SimpleNamespace
+
+    from psynet.experiment import Experiment
+
+    class Dummy:
+        var = SimpleNamespace()
+        _managed_local_live_deployment_info = staticmethod(lambda: None)
+        mark_local_snapshot_needed_on_shutdown = (
+            Experiment.mark_local_snapshot_needed_on_shutdown
+        )
+
+    dummy = Dummy()
+    dummy.mark_local_snapshot_needed_on_shutdown()
+    assert not hasattr(dummy.var, "local_snapshot_needed_on_shutdown")

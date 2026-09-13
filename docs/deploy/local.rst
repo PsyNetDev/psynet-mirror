@@ -25,10 +25,22 @@ instead.
 Snapshots
 ---------
 
-PsyNet creates a database snapshot every ten minutes while the experiment is
-running and another after a normal shutdown. Snapshots are private,
-non-anonymized recovery files for resuming on the same machine. They do not
-include assets or replace a full :ref:`data export <data>`.
+PsyNet creates a database snapshot when a participant finishes, every ten
+minutes while the experiment is running, and after a normal shutdown.
+Snapshots are private, non-anonymized recovery files for resuming on the same
+machine. They do not include assets or replace a full :ref:`data export <data>`.
+
+Finish-time snapshots are on by default for managed local live deployments.
+Disable them in ``config.txt`` or ``Experiment.config`` if they are too costly
+on the machine you are using::
+
+    snapshot_on_participant_finish = false
+
+If the last snapshot was taken because a participant finished, and no later
+participant started, PsyNet skips the shutdown snapshot. There is no new
+collected data to save. Shutdown still snapshots when a participant is in
+progress, when finish-time snapshots are disabled, or when nobody has finished
+yet.
 
 Running the same command again displays the ten most recent snapshots and asks
 which one to resume. The latest is selected by default. Scripts can bypass the

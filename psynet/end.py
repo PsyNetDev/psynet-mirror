@@ -41,6 +41,7 @@ class EndLogic(ExitLogic):
             CodeBlock(self.prepare_debrief),
             PageMaker(self.debrief_participant, time_estimate=0.0),
             CodeBlock(self.after_debrief),
+            CodeBlock(self.snapshot_after_participant_finish),
             PageMaker(self.release_participant, time_estimate=0.0),
         )
 
@@ -74,6 +75,10 @@ class EndLogic(ExitLogic):
 
         if isinstance(participant, Bot):
             participant.status = "approved"
+
+    def snapshot_after_participant_finish(self, experiment, participant) -> None:
+        """Back up a local live deployment after this participant finishes."""
+        experiment.maybe_snapshot_after_participant_finish(participant)
 
     def debrief_page(
         self, content, experiment, participant, show_finish_button=True

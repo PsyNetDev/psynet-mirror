@@ -1,0 +1,1 @@
+Local live deployments now snapshot the database when a participant finishes (``snapshot_on_participant_finish``, default on). Shutdown skips that extra snapshot when nobody started after the last finish.

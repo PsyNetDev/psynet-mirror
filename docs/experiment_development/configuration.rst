@@ -232,6 +232,14 @@ General
     Indicates whether the experiment needs internet access. Can be set to ``False`` for lab or field studies.
     Default: ``True``.
 
+``snapshot_on_participant_finish`` *bool* |psynet-icon|
+    If ``True`` (default), a managed local live deployment
+    (``psynet deploy local --id``) writes a database recovery snapshot when a
+    participant finishes. Set this to ``False`` to keep only the periodic
+    (ten-minute) and shutdown snapshots. If the last snapshot was a
+    finish-time snapshot and no later participant started, PsyNet skips the
+    shutdown snapshot. See :doc:`/deploy/local`.
+
 ``protected_routes`` *str* |dlgr-icon|
     An optional JSON array of Flask route rule names which should be made inaccessible.
     Example::

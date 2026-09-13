@@ -67,10 +67,12 @@ from .local_deployment import (
     append_deployment_event,
     choose_snapshot,
     create_snapshot,
+    list_snapshots,
     local_database_lock,
     local_deployment_lock,
     protect_existing_database,
     read_database_owner,
+    should_skip_shutdown_snapshot,
     validate_local_id,
 )
 from .log import bold
@@ -1501,35 +1503,48 @@ def deploy__local(
                     "The stopped database does not match the local deployment "
                     f"ID '{local_id}'; refusing to save it as that deployment."
                 )
-            try:
-                final_snapshot = create_snapshot(
-                    experiment_path,
-                    local_id,
-                    reason="shutdown",
-                    deployment_id=owner.deployment_id,
-                    resumed_from=(
-                        selected_snapshot.sequence
-                        if selected_snapshot is not None
-                        else None
-                    ),
-                )
-            except Exception:
+            if should_skip_shutdown_snapshot(owner):
+                snapshots = list_snapshots(experiment_path, local_id)
+                latest = snapshots[-1] if snapshots else None
                 append_deployment_event(
                     experiment_path,
                     "deploy.stopped",
                     local_id,
                     deployment_id=owner.deployment_id,
-                    saved=False,
+                    saved=latest is not None,
+                    snapshot=latest.sequence if latest is not None else None,
+                    shutdown_snapshot=False,
                 )
-                raise
-            append_deployment_event(
-                experiment_path,
-                "deploy.stopped",
-                local_id,
-                deployment_id=owner.deployment_id,
-                saved=True,
-                snapshot=final_snapshot.sequence,
-            )
+            else:
+                try:
+                    final_snapshot = create_snapshot(
+                        experiment_path,
+                        local_id,
+                        reason="shutdown",
+                        deployment_id=owner.deployment_id,
+                        resumed_from=(
+                            selected_snapshot.sequence
+                            if selected_snapshot is not None
+                            else None
+                        ),
+                    )
+                except Exception:
+                    append_deployment_event(
+                        experiment_path,
+                        "deploy.stopped",
+                        local_id,
+                        deployment_id=owner.deployment_id,
+                        saved=False,
+                    )
+                    raise
+                append_deployment_event(
+                    experiment_path,
+                    "deploy.stopped",
+                    local_id,
+                    deployment_id=owner.deployment_id,
+                    saved=True,
+                    snapshot=final_snapshot.sequence,
+                )
     except RuntimeError as error:
         raise click.ClickException(str(error)) from error
 
