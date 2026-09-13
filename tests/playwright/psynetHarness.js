@@ -1316,9 +1316,17 @@ async function installTimelineHoldReleaseProbeOnContext(context) {
 
 function isDestroyedExecutionContext(error) {
   const message = String(error && error.message ? error.message : error);
+  // Legacy hold resume reloads the document. Playwright sometimes reports
+  // that as "Execution context was destroyed", and sometimes as a locator
+  // assertion whose received count is undefined instead of 0 or 1.
   return (
     message.includes("Execution context was destroyed") ||
-    /because of a navigation/i.test(message)
+    /because of a navigation/i.test(message) ||
+    /Target (closed|page, context or browser has been closed)/i.test(message) ||
+    (/Received:\s*undefined/i.test(message) &&
+      /locator\(|toHaveCount|toContainText|toHaveClass|waitForFunction/i.test(
+        message
+      ))
   );
 }
 
@@ -1450,6 +1458,8 @@ async function waitForHeldParticipantToResume(
   page,
   { prompt, timeout = 120000, resumeLog = [] } = {}
 ) {
+  // Legacy hold resume reloads this document. Locator assertions can fail with
+  // Received: undefined; treat that as navigation and retry after load.
   if (!prompt) {
     throw new Error("waitForHeldParticipantToResume requires a prompt.");
   }

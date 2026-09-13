@@ -61,9 +61,13 @@ test("two late trio members arriving together release every waiter", { tag: "@bo
   // first paint so a hold that clears before Playwright looks at the chip still
   // has to prove a wake token, hold-resume POST, and server-driven resume.
   // In legacy mode that clear can reload the document while the probe is
-  // attaching; treat the destroyed execution context as a cleared hold. A late
-  // member who only resumes via websocket reconnect is still a last arriver, not
-  // a waiter that must show a partner wake→end clock.
+  // attaching or while waitForHeldParticipantToResume is waiting for the hold
+  // chip to leave; treat a destroyed execution context (including Playwright
+  // toHaveCount Received: undefined) as a cleared hold. Concurrent POST
+  // /participant calls serialize in Dallinger, so signup wall time uses the
+  // start-page budget, not the GET /timeline handler budget. A late member who
+  // only resumes via websocket reconnect is still a last arriver, not a waiter
+  // that must show a partner wake→end clock.
   const { experiment, sessions } = await startHoldExperiment(browser, TRIO_DIR, [
     "trio_wait",
     "trio_late_a",

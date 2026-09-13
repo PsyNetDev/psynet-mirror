@@ -140,9 +140,12 @@ Hold-resume probes
 
 Legacy hold resumes reload the document, which destroys Playwright's execution
 context. ``wrapTimelineHoldResumeProbe`` retries ``page.evaluate`` after that
-navigation. If a stacked last-arrival hold clears while the test is arming the
-probe, treat the page as a cleared hold (wake token and hold-resume POST)
-instead of failing on the destroyed context.
+navigation. ``waitForHeldParticipantToResume`` treats the same navigation as a
+retry, including Playwright ``toHaveCount`` failures that report
+``Received: undefined`` instead of ``Execution context was destroyed``. If a
+stacked last-arrival hold clears while the test is arming the probe, treat the
+page as a cleared hold (wake token and hold-resume POST) instead of failing on
+the destroyed context.
 
 Overlay linger after a published wake is bounded by
 ``max(1800ms, hold-resume Server-Timing app + 500ms)``. A slow approved POST is
@@ -153,7 +156,12 @@ Hold-release summaries print ``Server-Timing`` ``app`` versus browser wall
 time (``queue~``) for the last arriver's request and the waiter's hold-resume
 POST. ``GET /timeline`` also prints ``lock``, ``page``, ``barriers``, and
 ``render``. Blocking-request checks use ``app`` when that header is present, so
-worker-pool queueing is not treated as a slow handler. GitLab Playwright jobs
+worker-pool queueing is not treated as a slow handler. The 2500ms entry
+budget applies to ``GET /timeline`` and ``POST /load-participant``, not to
+``POST /participant``: Dallinger ``@db.serialized`` serializes concurrent
+signups, so two late arrivals can spend a few seconds in that view. That wall
+time is not last-arrival GET work; ``consent→timeline`` still has the 6000ms
+start-page budget. GitLab Playwright jobs
 run ``psynet debug --legacy`` (gunicorn). Playwright hold tests set the worker
 count to the session count so last-arrival work can overlap every waiter
 hold-resume POST. A short HTTP 503 on hold-resume is the

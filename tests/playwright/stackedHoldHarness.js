@@ -47,10 +47,13 @@ const LATE_ARRIVAL_RESUME_REASONS = new Set([
 ]);
 
 function entryPathRequests(records) {
+  // GET /timeline (and load-participant) use the 2500ms handler budget.
+  // POST /participant does not: Dallinger `@db.serialized` serializes
+  // concurrent signups, so two late arrivals can spend ~3s in that view.
+  // That wall time is not last-arrival GET work. consent→timeline still
+  // has START_PAGE_MAX_MS.
   return records.filter((record) =>
-    ["create_participant", "load_participant", "timeline_document"].includes(
-      record.kind
-    )
+    ["load_participant", "timeline_document"].includes(record.kind)
   );
 }
 
@@ -255,6 +258,15 @@ function assertEntryWasResponsive(entry, label) {
     unexpectedBlockingRequests(entryRequests, ENTRY_REQUEST_MAX_MS),
     `${label} unexpected entry blocking: ${summary}`
   ).toEqual([]);
+  const createParticipant = entry.tracker.records.find(
+    (record) => record.kind === "create_participant"
+  );
+  if (createParticipant != null) {
+    expect(
+      createParticipant.durationMs,
+      `${label} POST /participant took ${Math.round(createParticipant.durationMs)}ms (${summary})`
+    ).toBeLessThan(START_PAGE_MAX_MS);
+  }
   const grouping = lastArriverWorkRecord(entry);
   if (grouping != null) {
     expect(
