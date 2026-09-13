@@ -154,18 +154,18 @@ def test_embedded_script_contract_skips_parsing_pages_without_modules(monkeypatc
     """Full-page render must not BeautifulSoup the timeline shell unless needed."""
     import psynet.timeline as timeline_mod
 
-    calls = []
-    real_soup = timeline_mod.BeautifulSoup
+    calls = {"n": 0}
+    real_init = timeline_mod.BeautifulSoup.__init__
 
-    def tracking_soup(*args, **kwargs):
-        calls.append(1)
-        return real_soup(*args, **kwargs)
+    def tracking_init(self, *args, **kwargs):
+        calls["n"] += 1
+        return real_init(self, *args, **kwargs)
 
-    monkeypatch.setattr(timeline_mod, "BeautifulSoup", tracking_soup)
+    monkeypatch.setattr(timeline_mod.BeautifulSoup, "__init__", tracking_init)
     Page._check_embedded_script_contract(
         "<script>var x = 1;</script><script type='text/javascript'>ok()</script>"
     )
-    assert calls == []
+    assert calls["n"] == 0
 
 
 def test_partial_body_extraction_uses_named_fragment_wrapper():
