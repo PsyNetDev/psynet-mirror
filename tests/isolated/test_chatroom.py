@@ -343,7 +343,7 @@ class TestHandleMessage:
     def test_message_publishes_untargeted_history(
         self, in_experiment_directory, db_session
     ):
-        """Persisting a line republishes the room log so late joiners catch up."""
+        """Persisting a line republishes the room log so an empty feed can catch up."""
         handler, exp = self._handler_and_exp()
         experiment = get_experiment()
         participant = _new_participant(experiment)

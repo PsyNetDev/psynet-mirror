@@ -3746,6 +3746,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 ),
                 (
                     resources.files("psynet")
+                    / "static/scripts/chatroom-history-merge.mjs",
+                    "/static/scripts/chatroom-history-merge.mjs",
+                ),
+                (
+                    resources.files("psynet")
                     / "resources/scripts/execute-front-end-js.js",
                     "/static/scripts/execute-front-end-js.js",
                 ),

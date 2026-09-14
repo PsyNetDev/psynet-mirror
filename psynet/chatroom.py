@@ -10,10 +10,11 @@ That snapshot can still be empty when ``request_state`` runs on another
 worker before the persist commits. When ``show_history`` is true, the
 widget waits for the first snapshot before enabling Send or painting
 live lines. Frames that arrive during that wait are appended after the
-snapshot. After that, live relays append as usual. An empty first
-snapshot still completes the load. The server republishes history after
-persist so a partner who missed both the wait window and the live relay
-can still fill an empty feed.
+snapshot, consuming snapshot matches as a multiset so two identical
+lines are not collapsed to one. After that, live relays append as usual.
+An empty first snapshot still completes the load. The server republishes
+history after persist so a partner who missed both the wait window and
+the live relay can still fill an empty feed.
 
 Maintainers should treat the JSON ``type`` values (``join_room``,
 ``leave_room``, ``request_state``, ``message``, ``occupancy_update``,
@@ -121,8 +122,8 @@ class EnableChatrooms(NullElt, WebSocketElt):
                 self._broadcast_occupancy(experiment, room_id)
 
         elif msg_type == "request_state":
-            # Sent once on initial connection; sends back history and
-            # current room occupancy.
+            # Join and reconnect before history has arrived; sends back
+            # history and current room occupancy.
             self._broadcast_occupancy(experiment, room_id)
             if participant is not None:
                 self._send_history(experiment, room_id, participant=participant)

@@ -3,6 +3,8 @@
 // This script is activated for each hosting page through ChatRoom's
 // get_js_page_modules() hook. Per-page state stays inside activate(), and the
 // returned cleanup function owns all listeners and the WebSocket it creates.
+import { leftoverLiveAfterHistory } from "./chatroom-history-merge.mjs";
+
 export async function activate({root, vars}) {
     var CONFIG       = vars["chatroom_config"] || {};
     var ROOM_ID      = CONFIG.room_id;
@@ -15,9 +17,9 @@ export async function activate({root, vars}) {
     var leftChat       = false;
     var sendButton     = null;
     var input          = null;
-    // When show_history is set, the widget is not active until the first
-    // history snapshot arrives. Live frames that race that snapshot are held
-    // and appended afterwards.
+    // When show_history is set, Send stays off until the first history
+    // snapshot arrives (empty still counts). Live frames that race that
+    // snapshot are held and appended afterwards by count, not existence.
     var historyReady   = !SHOW_HISTORY;
     var pendingLive    = [];
 
@@ -108,11 +110,6 @@ export async function activate({root, vars}) {
         return String(msg.target_participant_id) === MY_ID;
     }
 
-    function sameChatLine(left, right) {
-        return String(left.sender) === String(right.sender)
-            && String(left.content || "") === String(right.content || "");
-    }
-
     function enableChat() {
         if (leftChat || !sendButton) return;
         sendButton.disabled = false;
@@ -135,12 +132,7 @@ export async function activate({root, vars}) {
             return;
         }
         applyHistorySnapshot(messages);
-        pendingLive.forEach(function (liveMsg) {
-            var already = messages.some(function (historyMsg) {
-                return sameChatLine(historyMsg, liveMsg);
-            });
-            if (!already) renderMessage(liveMsg);
-        });
+        leftoverLiveAfterHistory(messages, pendingLive).forEach(renderMessage);
         pendingLive = [];
         historyReady = true;
         enableChat();
