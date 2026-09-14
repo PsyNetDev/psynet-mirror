@@ -1055,8 +1055,14 @@ async function assertNoSessionErrors(sessions) {
   for (const session of sessions) {
     if (session.entry?.tracker) {
       await session.entry.tracker.flush();
+      // POST /participant is bounded by SERIALIZED_SIGNUP_MAX_MS /
+      // START_PAGE_MAX_MS at entry. Dallinger `@db.serialized` retry sleep
+      // is not timeline-handler blocking.
+      const records = session.entry.tracker.records.filter(
+        (record) => record.kind !== "create_participant"
+      );
       expect(
-        unexpectedBlockingRequests(session.entry.tracker.records, BLOCKING_REQUEST_MS),
+        unexpectedBlockingRequests(records, BLOCKING_REQUEST_MS),
         `${session.label} unexpected blocking: ${summarizeParticipantRequests(
           session.entry.tracker.records
         )}`
