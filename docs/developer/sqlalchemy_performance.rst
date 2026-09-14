@@ -249,7 +249,8 @@ Barrier last-arrival SQL budgets
 
 Isolated tests in ``tests/isolated/test_barrier_arrival_queries.py`` pin
 statement counts for the post-commit coordination path
-(``_run_pending_barrier_checks`` and ``_finalize_barrier_arrivals``). The
+(``_run_pending_barrier_checks``, ``Experiment._run_queued_barrier_checks``,
+and ``Experiment._run_finalized_barrier_arrivals``). The
 numbers are a snapshot of the current ORM path, not a ceiling to preserve.
 Fewer statements, fewer commits, or fewer per-waiter lazy loads are
 improvements: update the expected numbers in that test and in this section.
@@ -299,6 +300,9 @@ The check, plus two ``lock_timeout`` SETs, a participant GET and its
 ``expire_all``, then a participant ``FOR UPDATE`` without ``NOWAIT``.
 Grand total: 23. Profiler commits: 3 (1 nested update + 2 outer
 ``session.commit()`` calls that still issue PostgreSQL ``COMMIT``).
+The check commit is on ``Experiment._run_queued_barrier_checks``; the
+relock commit is on ``Experiment._run_finalized_barrier_arrivals``.
+The budget's ``finalize_commits`` count includes both callsites.
 
 Arrival notice (recipient already loaded, *N* - 1 waiters)
 ----------------------------------------------------------

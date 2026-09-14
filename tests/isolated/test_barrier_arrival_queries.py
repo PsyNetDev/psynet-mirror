@@ -67,11 +67,18 @@ def _statement_count(profiler, pattern):
     )
 
 
-def _commit_count(profiler, needle):
+def _commit_count(profiler, *needles):
+    """Count profiler commits whose callsite mentions any of ``needles``.
+
+    Finalize's check ``session.commit()`` lives on
+    ``_run_queued_barrier_checks``; the relock commit stays on
+    ``_run_finalized_barrier_arrivals``. Count both so extracting the
+    retry helper does not look like a missing outer commit.
+    """
     return sum(
         stat.count
         for stat in profiler.get_commit_stats(top_n=None)
-        if needle in stat.callsite
+        if any(needle in stat.callsite for needle in needles)
     )
 
 
@@ -82,7 +89,11 @@ def _budget(profiler):
         "queries": profiler.total_count,
         "commits": profiler.commit_total_count,
         "nested_commits": _commit_count(profiler, "_run_pending_barrier_checks"),
-        "finalize_commits": _commit_count(profiler, "_run_finalized_barrier_arrivals"),
+        "finalize_commits": _commit_count(
+            profiler,
+            "_run_finalized_barrier_arrivals",
+            "_run_queued_barrier_checks",
+        ),
         "for_update": for_update,
         "nowait": nowait,
         "relock_for_update": for_update - nowait,
