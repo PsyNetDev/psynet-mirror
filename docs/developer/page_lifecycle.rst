@@ -459,10 +459,12 @@ Those routes do not share a lock protocol:
   ``max(1800ms, Server-Timing app + 500ms)``. A short HTTP 503 on hold-resume is ``NOWAIT``
   overlap, not a missed wake.
 * After the arrival write commits, queued barrier checks run in short
-  transactions. Websocket wakes from those inner commits wait until the last
-  arriver finishes rendering the next page. Last-arrival pins those visits in
-  Redis for the rest of the request so the 0.5 s poller cannot publish the
-  same wakes while HTML is still being built. Last-arrival waits for the
+  transactions.   Websocket wakes from those inner commits wait until the last
+  arriver finishes rendering the next page. After that request actually
+  releases waiters, it pins those visits in Redis for the rest of the
+  request so the 0.5 s poller cannot publish the same wakes while HTML is
+  still being built. A waiter GET that first-paints an unfilled hold does
+  not pin, so the poller can still finish that barrier. Last-arrival waits for the
   instance advisory claim (the lock the 0.5 s poller tries) so a GET does not
   first-paint a hold while the poller still owns that visit. Waiter rows stay
   ``NOWAIT``. If a partner row is still busy, that GET retries the check once

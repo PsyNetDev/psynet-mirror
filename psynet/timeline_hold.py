@@ -6,9 +6,11 @@ record and the internal page protocol shared by barriers and ``wait_while``.
 Hold-release websocket wakes publish after the next database commit. Last-arrival
 finalize and the barrier poller can defer those publishes until stacked checks
 finish so waiting partners are not woken while later checks still lock their
-rows. Last-arrival also marks those visits in Redis until HTML/JSON render
-returns, so the 0.5 s poller (a different process) does not publish the same
-wakes while that request is still building the next page. The poller uses a
+rows. After a request actually releases waiters, it marks those visits in Redis
+until HTML/JSON render returns, so the 0.5 s poller (a different process) does
+not publish the same wakes while that request is still building the next page.
+Unfilled waiter GETs do not pin, so the poller can still finish those visits.
+The poller uses a
 fresh session per visit, so wake deferral is stored in a context variable
 rather than ``session.info``.
 ``GET /timeline`` and ``POST /response`` skip ready holds under a participant
@@ -71,14 +73,16 @@ def _last_arrival_render_key(instance_id):
 
 @contextmanager
 def _last_arrival_render_gate():
-    """Keep the barrier poller off visits this request is still rendering.
+    """Keep the barrier poller off visits this request released and is rendering.
 
     Inner last-arrival commits release waiter rows before HTML/JSON render.
     The poller is a different process, so ``_defer_timeline_hold_wakes``
-    cannot hide those rows from it. Redis refcounts the visits this request
-    marked; the poller skips them until this context exits (after wakes
-    publish). Nested last-arrival requests INCR the same key so an overlapping
-    GET cannot clear the mark while the other is still rendering.
+    cannot hide those rows from it. Redis refcounts visits this request
+    actually released; the poller skips them until this context exits (after
+    wakes publish). Unfilled waiter holds are not marked, so the poller can
+    still finish those barriers. Nested last-arrival requests INCR the same
+    key so an overlapping GET cannot clear the mark while the other is still
+    rendering.
     """
     active_token = _last_arrival_render_active.set(True)
     ids_token = _last_arrival_render_ids.set(frozenset())
@@ -91,7 +95,7 @@ def _last_arrival_render_gate():
 
 
 def _mark_last_arrival_render_instance(instance_id):
-    """Pin ``instance_id`` until the current last-arrival request finishes render."""
+    """Pin a visit this request released until last-arrival render finishes."""
     if instance_id is None or not _last_arrival_render_active.get():
         return
     owned = _last_arrival_render_ids.get()

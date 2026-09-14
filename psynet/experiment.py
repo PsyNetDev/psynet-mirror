@@ -3512,22 +3512,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 continue
             live = self.timeline.get_current_elt(self, participant)
             if self._is_same_timeline_hold(page, live):
-                self._mark_last_arrival_render_for_page(participant, live)
                 return live
             page = live
         raise RuntimeError(
             "Timeline hold skip did not settle after "
             f"{_MAX_READY_HOLD_SKIP_STEPS} steps."
-        )
-
-    @staticmethod
-    def _mark_last_arrival_render_for_page(participant, page):
-        """Pin a still-waiting visit so the poller cannot wake it during render."""
-        from .sync import _hold_instance_id_for_page
-        from .timeline_hold import _mark_last_arrival_render_instance
-
-        _mark_last_arrival_render_instance(
-            _hold_instance_id_for_page(participant, page)
         )
 
     @staticmethod
@@ -5580,8 +5569,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
             # Keep last-arrival wakes unpublished through HTML/JSON render so
             # waiting partners do not stampede this worker while it is still
-            # building the last arriver's page. Redis pins those visits so the
-            # 0.5 s poller (another process) does not publish them either.
+            # building the last arriver's page. Redis pins visits this request
+            # released so the 0.5 s poller (another process) does not publish
+            # them either. Unfilled waiter holds are not pinned.
             with _last_arrival_render_gate():
                 with _defer_timeline_hold_wakes():
                     participant, page = cls._finalize_pending_timeline_barriers(
@@ -6090,8 +6080,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         through page render so waiting partners are not told to resume while a
         later stacked check still locks their rows or while this request is
         still rendering. Callers that wrap this with
-        ``_last_arrival_render_gate`` also pin those visits in Redis so the
-        poller cannot publish the same wakes during render.
+        ``_last_arrival_render_gate`` also pin visits this request released
+        so the poller cannot publish the same wakes during render.
 
         ``serialize_page`` is for ``POST /response`` inplace JSON. ``GET
         /timeline`` renders HTML from ``result.page`` and skips that extra
@@ -6138,13 +6128,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             _hold_instance_id_for_page,
             _take_pending_barrier_checks,
         )
-        from .timeline_hold import _mark_last_arrival_render_instance
 
         processed = set()
         rechecked = set()
         while checks:
-            for instance_id in checks:
-                _mark_last_arrival_render_instance(instance_id)
             processed.update(checks)
             _set_transaction_lock_timeout(
                 get_config().get("timeline_lock_timeout_seconds")

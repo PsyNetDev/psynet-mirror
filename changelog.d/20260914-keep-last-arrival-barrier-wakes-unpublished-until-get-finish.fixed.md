@@ -1,1 +1,1 @@
-Last-arrival barrier wakes stay unpublished until the arriver's page has finished rendering, so waiting partners are not told to resume while that request is still building HTML.
+Last-arrival barrier wakes stay unpublished until the arriver's page has finished rendering, so waiting partners are not told to resume while that request is still building HTML. Only visits that request actually released are pinned; waiter GETs that first-paint an unfilled hold do not block the 0.5 s poller.

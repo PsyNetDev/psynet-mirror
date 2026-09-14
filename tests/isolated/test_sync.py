@@ -45,6 +45,7 @@ from psynet.sync import (
     _check_claimed_barrier_instance,
     _claim_barrier_instance,
     _has_active_sync_group,
+    _hold_instance_id_for_page,
     _process_barrier_instance,
     _run_pending_barrier_checks,
     _take_pending_barrier_checks,
@@ -58,6 +59,7 @@ from psynet.timeline_hold import (
     TimelineHoldRecord,
     _defer_timeline_hold_wakes,
     _enqueue_timeline_hold_wake,
+    _last_arrival_render_in_progress,
     _queue_arrival_update,
     _timeline_hold_channel,
     _TimelineHoldPage,
@@ -2604,10 +2606,13 @@ def test_poller_does_not_wake_waiters_during_last_arrival_render(
     publications = _hold_wake_publications(monkeypatch)
     wakes_during_render = []
     original_render = Experiment._render_timeline_page_read_only
+    pins_during_render = []
+    released_id = [None]
 
     def tracking_render(*args, **kwargs):
         from psynet.timeline_hold import _deferred_wake_stash, _wake_defer_depth
 
+        pins_during_render.append(_last_arrival_render_in_progress(released_id[0]))
         wakes_during_render.append(_released_wake_count(publications))
         # The clock poller is a different process. Reset this request's wake
         # deferral so the sweep publishes immediately if it is not skipped.
@@ -2624,6 +2629,10 @@ def test_poller_does_not_wake_waiters_during_last_arrival_render(
     try:
         first, last = _working_participants(exp, 2)
         assert _json_timeline(exp, first).status_code == 200
+        first = Participant.query.get(first.id)
+        first_page = exp.timeline.get_current_elt(exp, first)
+        released_id[0] = _hold_instance_id_for_page(first, first_page)
+        assert released_id[0]
         publications.clear()
         monkeypatch.setattr(
             Experiment, "_render_timeline_page_read_only", tracking_render
@@ -2631,9 +2640,48 @@ def test_poller_does_not_wake_waiters_during_last_arrival_render(
         last_response = _json_timeline(exp, last)
         assert last_response.status_code == 200
         assert last_response.get_json()["attributes"]["type"] == "ModularPage"
+        assert pins_during_render == [True]
         assert wakes_during_render == [0, 0]
         assert _released_wake_count(publications) >= 1
         _assert_on_action_page(exp, [first.id, last.id])
+    finally:
+        exp.timeline = original_timeline
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_waiter_hold_render_does_not_pin_unreleased_visit(
+    in_experiment_directory, db_session, monkeypatch
+):
+    """A waiter GET that first-paints an unfilled hold must not block the poller."""
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    group_type = f"stack_waiter_pin_{uuid.uuid4().hex[:8]}"
+    exp.timeline = _stacked_partner_timeline(group_type)
+    pins_during_render = []
+    original_render = Experiment._render_timeline_page_read_only
+
+    def tracking_render(*args, **kwargs):
+        from psynet.timeline_hold import _last_arrival_render_ids
+
+        pins_during_render.append(frozenset(_last_arrival_render_ids.get()))
+        return original_render(*args, **kwargs)
+
+    try:
+        first, _last = _working_participants(exp, 2)
+        monkeypatch.setattr(
+            Experiment, "_render_timeline_page_read_only", tracking_render
+        )
+        first_response = _json_timeline(exp, first)
+        assert first_response.status_code == 200
+        assert first_response.get_json()["attributes"]["type"] == "_BarrierHoldPage"
+        assert pins_during_render == [frozenset()]
+        first = Participant.query.get(first.id)
+        first_page = exp.timeline.get_current_elt(exp, first)
+        instance_id = _hold_instance_id_for_page(first, first_page)
+        assert instance_id
+        assert _last_arrival_render_in_progress(instance_id) is False
     finally:
         exp.timeline = original_timeline
 

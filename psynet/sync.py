@@ -136,6 +136,7 @@ from psynet.serialize import serialize_callable
 from psynet.timeline import CodeBlock, EltCollection, conditional
 from psynet.timeline_hold import (
     _defer_timeline_hold_wakes,
+    _mark_last_arrival_render_instance,
     _queue_arrival_update,
     _queue_timeline_hold_wake,
     _TimelineHoldPage,
@@ -744,6 +745,11 @@ class Barrier(EltCollection):
 
             for participant in participants_to_release:
                 self.release(participant)
+            if instance is not None:
+                # Pin only after this request actually released waiters. Pinning
+                # an unfilled visit (waiter GET / still-waiting skip) keeps the
+                # 0.5 s poller from finishing the same barrier.
+                _mark_last_arrival_render_instance(instance.id)
             self._advance_released_hold_waiters(participants_to_release)
         if instance is not None:
             instance.active = any(
@@ -2054,10 +2060,6 @@ def _check_claimed_barrier_instance(instance, *, wait=False):
             instance.active = True
     if not _claim_barrier_instance(instance.id, wait=wait):
         return False
-    if wait:
-        from .timeline_hold import _mark_last_arrival_render_instance
-
-        _mark_last_arrival_render_instance(instance.id)
     barrier = instance.get_barrier()
     if not isinstance(barrier, Barrier):
         raise RuntimeError(f"Barrier instance '{instance.id}' is missing or invalid.")
@@ -2145,10 +2147,12 @@ def check_barriers():
     waiter ``NOWAIT``. If a partner row stays busy, this poller finishes the
     stacked skip: walk newly created holds in this sweep and keep wake
     publishes unpublished until that walk returns, so waiters do not
-    hold-resume onto the next barrier one at a time. Skip visits whose
-    last-arrival GET is still rendering; that request pins them in Redis so
-    this process cannot publish during HTML/JSON render. Each visit still
-    commits in its own session so a locked waiter cannot poison sibling checks.
+    hold-resume onto the next barrier one at a time. Skip visits a last-arrival
+    request already released and is still rendering; that request pins those
+    in Redis so this process cannot publish during HTML/JSON render. Unfilled
+    waiter GETs do not pin, so this poller can still finish those visits.
+    Each visit still commits in its own session so a locked waiter cannot
+    poison sibling checks.
     """
     seen = set()
     with _defer_timeline_hold_wakes():
