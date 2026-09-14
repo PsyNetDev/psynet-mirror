@@ -3486,7 +3486,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         """Skip holds that are already clear after this request's writes.
 
         Callers must already hold the participant row. Last-arrival uses this
-        so released partners leave the wait overlay; ``POST /response`` uses it
+        after the barrier-check commit so released partners leave the wait
+        overlay without keeping every waiter locked; ``POST /response`` uses it
         while that write still holds the row (``NOWAIT`` on a hold-resume that
         will advance; a still-waiting overlay check does not lock the row);
         ``GET /timeline`` uses it only after ``_skip_ready_hold_on_get`` takes
@@ -6112,16 +6113,25 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         transaction to commit. If both miss, the caller first-paints the live
         cursor and the 0.5s poller finishes the skip.
         """
-        from .sync import _run_pending_barrier_checks
+        from .sync import (
+            _advance_released_hold_waiters_after_commit,
+            _run_pending_barrier_checks,
+            _take_released_hold_waiter_ids,
+        )
 
         all_claimed = _run_pending_barrier_checks(checks)
         # Barrier checks can lock every waiter at the instance. Release those
-        # partner locks before reacquiring the submitting participant.
+        # partner locks before skipping hold waiters or reacquiring the
+        # submitting participant.
+        released_ids = _take_released_hold_waiter_ids()
         db.session.commit()
+        _advance_released_hold_waiters_after_commit(released_ids)
         if all_claimed:
             return True
         all_claimed = _run_pending_barrier_checks(checks)
+        released_ids = _take_released_hold_waiter_ids()
         db.session.commit()
+        _advance_released_hold_waiters_after_commit(released_ids)
         return all_claimed
 
     @classmethod

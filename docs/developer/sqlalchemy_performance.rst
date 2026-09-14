@@ -260,11 +260,13 @@ these budgets on Playwright or the full ``/timeline`` / ``/response`` stack.
 See :ref:`sqlalchemy_profiling`.
 
 The counts below were predicted from the code and then checked against a
-profiler dump. Locks, advisory claims, spec reconstruction, finalize commit
-count, and the check *statement* count must stay constant as group size *N*
-grows. Per-row writes still scale with *N*, but SQLAlchemy flushes them as
-one ``executemany`` statement per table. A new *kind* of statement that
-grows with *N* should fail the tests.
+profiler dump. Locks, advisory claims, spec reconstruction, check *statement*
+count, and the check/relock commit counts must stay constant as group size
+*N* grows. Per-row writes still scale with *N*, but SQLAlchemy flushes them as
+one ``executemany`` statement per table. After the check commits, released
+hold waiters are skipped one row at a time, so skip commits, skip
+``NOWAIT`` loads, and skip ``lock_timeout`` SETs grow with *N*. A new *kind*
+of statement that grows with *N* on the check window should fail the tests.
 
 Do not add extra ``joinedload`` options to the waiter ``FOR UPDATE`` query.
 PostgreSQL cannot lock the nullable side of an outer join, and joining
@@ -298,11 +300,18 @@ Finalize window (same check, then relock the last arriver)
 The check, plus two ``lock_timeout`` SETs, a participant GET and its
 ``active_barriers`` / ``module_state`` select-in reloads after
 ``expire_all``, then a participant ``FOR UPDATE`` without ``NOWAIT``.
-Grand total: 23. Profiler commits: 3 (1 nested update + 2 outer
-``session.commit()`` calls that still issue PostgreSQL ``COMMIT``).
-The check commit is on ``Experiment._run_queued_barrier_checks``; the
-relock commit is on ``Experiment._run_finalized_barrier_arrivals``.
-The budget's ``finalize_commits`` count includes both callsites.
+Released hold waiters are then skipped one row at a time (``lock_timeout``
+plus participant ``FOR UPDATE NOWAIT``, then commit). Dummy finalize (the
+page is not a hold) still pays that per-waiter lock so partner rows are not
+held across skip. Grand total: ``23 + 2N``. Profiler commits: ``3 + N``
+(1 nested update + 2 outer ``session.commit()`` calls on the check/relock
+path + *N* skip commits). The check commit is on
+``Experiment._run_queued_barrier_checks``; the relock commit is on
+``Experiment._run_finalized_barrier_arrivals``; skip commits are on
+``_advance_released_hold_waiters_after_commit``. The budget's
+``finalize_commits`` count includes only the check and relock callsites.
+``skip_commits`` and skip ``NOWAIT`` grow with *N*; waiter-join ``NOWAIT``
+and relock ``FOR UPDATE`` stay 1.
 
 Arrival notice (recipient already loaded, *N* - 1 waiters)
 ----------------------------------------------------------
@@ -313,16 +322,19 @@ cached for that call.
 Stacked last-arrival finalize (grouper + two GroupBarriers)
 -----------------------------------------------------------
 
-Three check iterations, independent of group size: 9 profiler commits
-(3 nested + 2 outer per iteration), 3 waiter ``NOWAIT`` locks, 3 participant
-relocks. Each check waits for ``pg_advisory_xact_lock`` (the poller still
+Three check iterations, independent of group size for the check/relock
+work: 3 nested + 2 outer commits per iteration, 3 waiter ``NOWAIT`` joins,
+3 participant relocks. Skip-after-commit then locks each released waiter
+alone, so skip commits, skip ``NOWAIT``, and skip ``lock_timeout`` grow as
+``3N``. Each check waits for ``pg_advisory_xact_lock`` (the poller still
 uses ``pg_try_advisory_xact_lock``). Creating the next two instances adds 2
 more blocking ``pg_advisory_xact_lock`` calls (O(stack), not O(*N*)). Spec SELECT is 3
 (one deferred load per check). Instance insert uses ``ON CONFLICT DO NOTHING``
 instead of a SAVEPOINT, so a just-created instance does not expire extra
 spec reloads onto the stacked path.
 Query *count* still grows with *N* because each released waiter is advanced
-onto the next hold. The stacked test allows at most 35 extra statements per
+onto the next hold in its own skip transaction (the identity map expires at
+each skip commit). The stacked test allows at most 80 extra statements per
 extra member as a loose cap on that advancement SQL, not as a target.
 
 ``GET /timeline`` Server-Timing splits that work from HTML render. In one

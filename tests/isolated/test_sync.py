@@ -42,13 +42,18 @@ from psynet.sync import (
     GroupBarrier,
     SimpleGrouper,
     SimpleSyncGroup,
+    _advance_released_hold_waiters_after_commit,
     _check_claimed_barrier_instance,
-    _claim_barrier_instance,
+    _claim_barrier_instance_session,
+    _commit_and_advance_released_hold_waiters,
     _has_active_sync_group,
     _hold_instance_id_for_page,
     _process_barrier_instance,
+    _queue_barrier_check,
+    _release_barrier_instance_session,
     _run_pending_barrier_checks,
     _take_pending_barrier_checks,
+    _take_released_hold_waiter_ids,
     arrival_notice_payload,
     check_barriers,
     check_sync_groups,
@@ -1035,7 +1040,7 @@ def _commit_barrier_arrivals():
     checks = _take_pending_barrier_checks()
     if checks:
         _run_pending_barrier_checks(checks)
-        db.session.commit()
+        _commit_and_advance_released_hold_waiters()
 
 
 def _barrier_link_released(participant_id, barrier_id):
@@ -1447,6 +1452,97 @@ def test_finalize_drops_partner_locks_before_submitter_relock(
     assert result.page is page
     assert _barrier_link_released(first_id, barrier.id) is True
     assert _barrier_link_released(last_id, barrier.id) is True
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_finalize_skips_released_hold_waiters_without_holding_all_partner_rows(
+    in_experiment_directory, db_session
+):
+    """Last-arrival must drop partner FOR UPDATE locks before skipping holds.
+
+    Skipping while every waiter is still locked is what made GET /timeline
+    hit ``timeline_lock_timeout_seconds`` during rock-paper-scissors
+    parallel bots.
+    """
+    exp = get_experiment()
+    first, last = _pair_sync_group(exp, db_session)[0]
+    first_id, last_id = first.id, last.id
+    barrier = GroupBarrier(id_="finalize_skip_after_unlock", group_type="main")
+    hold_page = SimpleNamespace(
+        is_timeline_hold=True,
+        hold_id="skip_after_unlock",
+        __json__=lambda _participant: {"label": "hold"},
+    )
+    exp.timeline = SimpleNamespace(get_current_elt=lambda _e, _p: hold_page)
+    locks = []
+
+    def advance(participant, current_page):
+        locks.append(
+            {
+                "participant_id": participant.id,
+                "first_locked": _participant_row_is_locked(first_id),
+                "last_locked": _participant_row_is_locked(last_id),
+            }
+        )
+        return current_page
+
+    exp._advance_past_ready_holds = advance
+    checks = _queued_last_arrival_checks(exp, barrier, first, last)
+    result = SimpleNamespace(page=object(), payload={})
+
+    Experiment._finalize_barrier_arrivals(
+        exp,
+        participant_id=last_id,
+        checks=checks,
+        result=result,
+    )
+
+    partner_skips = [row for row in locks if row["participant_id"] == first_id]
+    assert partner_skips, "released partners must still be skipped after the check"
+    assert all(row["last_locked"] is False for row in partner_skips)
+    assert not any(row["first_locked"] and row["last_locked"] for row in locks)
+    assert _barrier_link_released(first_id, barrier.id) is True
+    assert _barrier_link_released(last_id, barrier.id) is True
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_skip_after_commit_keeps_queued_checks_when_a_partner_row_is_busy(
+    in_experiment_directory, db_session
+):
+    """A NOWAIT miss must not discard stacked checks queued by an earlier skip."""
+    exp = get_experiment()
+    first, last = _pair_sync_group(exp, db_session)[0]
+    first_id, last_id = first.id, last.id
+    hold_page = SimpleNamespace(
+        is_timeline_hold=True,
+        hold_id="busy_partner_skip",
+    )
+    exp.timeline = SimpleNamespace(get_current_elt=lambda _e, _p: hold_page)
+    queued_id = f"stacked-{uuid.uuid4().hex}"
+
+    def advance(participant, current_page):
+        if participant.id == first_id:
+            _queue_barrier_check(queued_id)
+        return current_page
+
+    exp._advance_past_ready_holds = advance
+    blocker = db.engine.connect()
+    blocker_trans = blocker.begin()
+    try:
+        blocker.execute(
+            text("SELECT id FROM participant WHERE id = :id FOR UPDATE"),
+            {"id": last_id},
+        )
+        _advance_released_hold_waiters_after_commit([first_id, last_id])
+    finally:
+        blocker_trans.rollback()
+        blocker.close()
+
+    assert queued_id in _take_pending_barrier_checks()
 
 
 @pytest.mark.parametrize(
@@ -3443,20 +3539,26 @@ def test_last_arrival_follows_poller_skip_after_claim_wait(
 
         def poller_skip():
             try:
-                with transaction():
-                    _set_transaction_lock_timeout(
-                        get_config().get("timeline_lock_timeout_seconds")
-                    )
-                    instance = BarrierInstance.query.get(instance_id)
-                    assert _claim_barrier_instance(instance.id, wait=True)
-                    claim_held.set()
-                    if not last_joined.wait(timeout=5):
-                        raise TimeoutError("Last arriver did not join the visit.")
-                    _check_claimed_barrier_instance(instance, wait=False)
+                _claim_barrier_instance_session(instance_id, wait=True)
+                claim_held.set()
+                if not last_joined.wait(timeout=5):
+                    raise TimeoutError("Last arriver did not join the visit.")
+                _set_transaction_lock_timeout(
+                    get_config().get("timeline_lock_timeout_seconds")
+                )
+                instance = BarrierInstance.query.get(instance_id)
+                assert _check_claimed_barrier_instance(instance, wait=False)
+                released_ids = _take_released_hold_waiter_ids()
+                db.session.commit()
+                _advance_released_hold_waiters_after_commit(released_ids)
             except Exception as err:  # pragma: no cover - surfaced by the caller
                 holder_error.append(err)
                 db.session.rollback()
             finally:
+                try:
+                    _release_barrier_instance_session(instance_id)
+                except Exception as err:  # pragma: no cover - surfaced by the caller
+                    holder_error.append(err)
                 db.session.remove()
 
         holder = threading.Thread(target=poller_skip, daemon=True)

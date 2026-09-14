@@ -144,7 +144,9 @@ needs to update. When the last participant
 arrives at a barrier, PsyNet commits the normal write phase and evaluates the
 barrier in a short coordination transaction before rendering. This preserves
 the fast route without holding partner rows through author code or
-``pre_render()``. Websocket wakes from those coordination commits stay unpublished
+``pre_render()``. Released hold waiters are then skipped one at a time after
+that check commits, so a partner ``GET /timeline`` can lock its own row.
+Websocket wakes from those coordination commits stay unpublished
 until the last arriver finishes rendering the next page, so a waiting partner
 is not told to resume while a later entry check still holds their row or while
 that request is still building HTML. Last-arrival also pins those visits in
@@ -422,10 +424,10 @@ Resume protocol
 ^^^^^^^^^^^^^^^
 
 Skipping a ready hold is one step, ``Experiment._advance_past_ready_holds``.
-The caller must already hold the participant row. Last-arrival uses it so
-released partners leave the overlay; ``POST /response`` uses it in the same
-write that processed the submit; ``GET /timeline`` uses it only after a
-dedicated relock.
+The caller must already hold the participant row. Last-arrival uses it after
+the check commit so released partners leave the overlay without keeping every
+waiter locked; ``POST /response`` uses it in the same write that processed
+the submit; ``GET /timeline`` uses it only after a dedicated relock.
 
 Those routes do not share a lock protocol:
 
@@ -468,7 +470,9 @@ Those routes do not share a lock protocol:
   still being built. A waiter GET that first-paints an unfilled hold does
   not pin, so the poller can still finish that barrier. Last-arrival waits for the
   instance advisory claim (the lock the 0.5 s poller tries) so a GET does not
-  first-paint a hold while the poller still owns that visit. Waiter rows stay
+  first-paint a hold while the poller still owns that visit. The poller keeps
+  a session-level claim until skip-after-commit finishes, so that wait covers
+  the gap after partner row locks drop. Waiter rows stay
   ``NOWAIT``. If a partner row is still busy, that GET retries the check once
   immediately (still no lock wait). It does not wait for the other request to
   commit. If the retry still misses, the poller finishes the same stacked
