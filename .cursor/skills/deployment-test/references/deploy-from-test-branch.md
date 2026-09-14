@@ -13,12 +13,16 @@ A full deployment test covers two experiments in `tests/deployment`:
 - `tests/deployment/audio_gibbs`: an audio Gibbs sampler experiment that
   additionally exercises audio synthesis (parselmouth), asset
   generation/storage, async worker processes, and a headphone prescreen.
-  Its default `experiment.py` uses HotAir. Prolific and Lucid variants
-  (`experiment.py.prolific` and `experiment.py.lucid`, with matching config
-  files) are deployed from temporary worktrees.
+  Like `payment_flows_prolific`, it has a single `experiment.py` and selects
+  the Prolific recruiter via the config file (`config.txt` defaults to
+  `recruiter = devprolific`; `config.txt.prolific` sets
+  `recruiter = prolific`). The Lucid variant remains a separate
+  `experiment.py.lucid` (with `config.txt.lucid`) because its timeline and
+  Experiment class genuinely differ; the paid variants are deployed from
+  temporary worktrees.
 
-Both experiments' defaults cannot spend money (devprolific simulates the
-Prolific API locally; HotAir does not recruit at all), so running a directory
+Both experiments default to `recruiter = devprolific`, which simulates the
+Prolific API locally (requests are logged, not sent), so running a directory
 directly cannot accidentally start paid recruitment; every paid deployment
 swaps in an explicit recruiter variant first. All paid variants show the approved
 cultural-foundation consent (vendored `consents_cococo` package in each
@@ -158,9 +162,14 @@ git checkout <previous-deployment-branch> -- tests/deployment/payment_flows_prol
      `prolific_is_custom_screening=False`, `auto_recruit=True`,
      `initial_recruitment_size=12`.
    - `payment_flows_prolific/config.txt.prolific`: `recruiter = prolific`.
-   - `audio_gibbs/experiment.py`: recruiter `hotair` (safe local default).
-   - `audio_gibbs/experiment.py.prolific`: `auto_recruit=True`,
-     `initial_recruitment_size=3`, `target_n_participants=5`.
+   - `audio_gibbs/config.txt`: `recruiter = devprolific` (safe simulated
+     default).
+   - `audio_gibbs/experiment.py` (shared by both Prolific recruiters):
+     `auto_recruit=True`, `initial_recruitment_size=3`,
+     `target_n_participants=5`, `prolific_screen_out_slots` set.
+     `on_launch` aborts unless the recruiter is `prolific` or
+     `devprolific`.
+   - `audio_gibbs/config.txt.prolific`: `recruiter = prolific`.
    - `audio_gibbs/experiment.py.lucid`: `initial_recruitment_size=10` equal to
      `target_n_participants=10`, so the Lucid survey is created with its full
      quota (the marketplace UI shows the full expected completes and fields
