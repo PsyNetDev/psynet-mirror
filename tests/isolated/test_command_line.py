@@ -451,7 +451,7 @@ class TestCommandLine(object):
 #             bot=False,
 #             proxy=None,
 #             no_browsers=False,
-#             exp_config={"threads": "1"},
+#             exp_config={"threads": "2"},
 #             archive=None,
 #         )
 #
@@ -482,10 +482,68 @@ class TestCommandLine(object):
 #             bot=True,
 #             proxy="5001",
 #             no_browsers=True,
-#             exp_config={"threads": "1"},
+#             exp_config={"threads": "2"},
 #         )
 #
-#
+
+
+def test_debug_legacy_starts_four_gunicorn_workers(monkeypatch):
+    """Legacy debug defaults to four workers so a quartet extra waiter can POST."""
+    from psynet.command_line import LEGACY_DEBUG_GUNICORN_THREADS, _debug_legacy
+
+    calls = []
+
+    class _Ctx:
+        def invoke(self, _command, **kwargs):
+            calls.append(kwargs)
+
+    monkeypatch.delenv("PSYNET_LEGACY_DEBUG_GUNICORN_THREADS", raising=False)
+    monkeypatch.setattr("psynet.command_line.db.session.commit", lambda: None)
+    monkeypatch.setattr("psynet.command_line.reset_console", lambda: None)
+
+    _debug_legacy(_Ctx(), archive=None, no_browsers=True)
+
+    assert LEGACY_DEBUG_GUNICORN_THREADS == "4"
+    assert calls == [
+        {
+            "verbose": True,
+            "bot": False,
+            "proxy": None,
+            "no_browsers": True,
+            "exp_config": {"threads": "4"},
+        }
+    ]
+
+
+def test_debug_legacy_gunicorn_workers_follow_env(monkeypatch):
+    """Playwright hold tests set workers to the live session count."""
+    from psynet.command_line import _debug_legacy
+
+    calls = []
+
+    class _Ctx:
+        def invoke(self, _command, **kwargs):
+            calls.append(kwargs)
+
+    monkeypatch.setenv("PSYNET_LEGACY_DEBUG_GUNICORN_THREADS", "5")
+    monkeypatch.setattr("psynet.command_line.db.session.commit", lambda: None)
+    monkeypatch.setattr("psynet.command_line.reset_console", lambda: None)
+
+    _debug_legacy(_Ctx(), archive=None, no_browsers=True)
+
+    assert calls[0]["exp_config"] == {"threads": "5"}
+
+
+@pytest.mark.parametrize("raw", ["0", "-1", "two"])
+def test_debug_legacy_gunicorn_workers_reject_invalid_env(monkeypatch, raw):
+    """A bad worker override must fail before gunicorn starts with one process."""
+    from psynet.command_line import _legacy_debug_gunicorn_threads
+
+    monkeypatch.setenv("PSYNET_LEGACY_DEBUG_GUNICORN_THREADS", raw)
+    with pytest.raises(click.UsageError, match="positive integer"):
+        _legacy_debug_gunicorn_threads()
+
+
 # @pytest.mark.parametrize("experiment_directory", [path_to_test_experiment("timeline")], indirect=True)
 # @pytest.mark.usefixtures("in_experiment_directory")
 # class TestDeploy:

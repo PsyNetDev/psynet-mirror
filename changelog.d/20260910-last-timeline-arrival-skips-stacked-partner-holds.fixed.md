@@ -1,1 +1,0 @@
-The last group member's first timeline request now finishes stacked entry barriers (grouper, trial-maker init, and prepare) and advances every released partner past those holds, so that participant lands on the next action page instead of another "Waiting for your partner" overlay.

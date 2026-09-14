@@ -97,6 +97,8 @@ test("default barriers hold the current page until websocket release", { tag: "@
       withFreshParticipantIds(recruitmentUrl, "barrier_hold_second")
     );
 
+    // Both participants enter together, so this spec does not cover a
+    // last-arriver first paint. See stacked_entry_holds.spec.js.
     await Promise.all([
       completeInitialGateway(firstParticipant),
       completeInitialGateway(secondParticipant)
@@ -111,6 +113,10 @@ test("default barriers hold the current page until websocket release", { tag: "@
         { timeout: STEP_TIMEOUT_MS }
       )
     ]);
+    await secondParticipant.waitForFunction(
+      () => Boolean(window.psynet?.arrivalUpdates?.connection?.isOpen?.()),
+      { timeout: STEP_TIMEOUT_MS }
+    );
 
     const pageErrors = [];
     firstParticipant.on("pageerror", (error) => pageErrors.push(error.message));
@@ -126,6 +132,8 @@ test("default barriers hold the current page until websocket release", { tag: "@
     await expect(
       firstParticipant.locator(".psynet-timeline-hold-progress")
     ).toHaveCount(0);
+    // The partner is still on choose_action. Grouped pages must subscribe to
+    // arrival_updates even when sync_group_links was not already loaded.
     const arrivalNotice = secondParticipant.locator("#psynet-arrival-notice");
     await expect(arrivalNotice).toHaveText("Your partner is ready.", {
       timeout: STEP_TIMEOUT_MS

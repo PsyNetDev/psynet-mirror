@@ -1,0 +1,1 @@
+Pages omit the arrival-update websocket unless the participant is in an active sync group. Already-loaded empty membership skips further queries; otherwise a cheap membership check decides whether to open the websocket. That check is memoized for the rest of the request.

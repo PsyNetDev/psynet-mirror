@@ -764,28 +764,39 @@
       return root.querySelector("#" + id);
     };
 
+    psynet.getFragmentAssetScope = function (root = document) {
+      return (
+        psynet.getElementById(root, "psynet-fragment-assets") ||
+        root
+      );
+    };
+
     psynet.getPageCssLinks = function (root = document) {
-      let cssTemplate = psynet.getElementById(root, "psynet-page-css-links");
-      if (!cssTemplate) {
+      let scope = psynet.getFragmentAssetScope(root);
+      let cssTemplate = psynet.getElementById(scope, "psynet-page-css-links");
+      let searchRoot = scope.id === "psynet-fragment-assets" ? scope : cssTemplate;
+      if (!searchRoot) {
         return [];
       }
-      if (cssTemplate.content) {
+      if (searchRoot.content) {
         return Array.from(
-          cssTemplate.content.querySelectorAll("link[rel='stylesheet']"),
+          searchRoot.content.querySelectorAll("link[rel='stylesheet']"),
         );
       }
-      return Array.from(cssTemplate.querySelectorAll("link[rel='stylesheet']"));
+      return Array.from(searchRoot.querySelectorAll("link[rel='stylesheet']"));
     };
 
     psynet.getPageStyles = function (root = document) {
-      let cssTemplate = psynet.getElementById(root, "psynet-page-css");
-      if (!cssTemplate) {
+      let scope = psynet.getFragmentAssetScope(root);
+      let cssTemplate = psynet.getElementById(scope, "psynet-page-css");
+      let searchRoot = scope.id === "psynet-fragment-assets" ? scope : cssTemplate;
+      if (!searchRoot) {
         return [];
       }
-      if (cssTemplate.content) {
-        return Array.from(cssTemplate.content.querySelectorAll("style"));
+      if (searchRoot.content) {
+        return Array.from(searchRoot.content.querySelectorAll("style"));
       }
-      return Array.from(cssTemplate.querySelectorAll("style"));
+      return Array.from(searchRoot.querySelectorAll("style"));
     };
 
     psynet.removePageStylesheetLinks = function () {
@@ -939,10 +950,33 @@
       psynet.arrivalUpdates = null;
     };
 
+    psynet.fetchArrivalNotice = function () {
+      if (psynet.participantId === undefined || typeof $ === "undefined") {
+        return;
+      }
+      $.ajax({
+        url: "/timeline/arrival_notice",
+        cache: false,
+        data: { participantId: psynet.participantId },
+      }).done(function (data) {
+        if (!psynet.arrivalUpdates) {
+          return;
+        }
+        psynet.applyArrivalNotice(data && data.notice);
+      });
+    };
+
     psynet.ensureArrivalUpdates = function (config) {
-      if (!config?.channel) return;
+      if (!config?.channel || psynet.timelineHold) {
+        psynet.stopArrivalUpdates();
+        psynet.hideArrivalNotice();
+        return;
+      }
       if (psynet.arrivalUpdates?.channel === config.channel) {
         psynet.applyArrivalNotice(config.notice);
+        if (!config.notice) {
+          psynet.fetchArrivalNotice();
+        }
         return;
       }
       psynet.stopArrivalUpdates();
@@ -951,6 +985,7 @@
         connection: PsyNetWebSocketChannel.connect({
           channel: config.channel,
           onMessage: psynet.handleArrivalUpdateMessage,
+          onOpen: psynet.fetchArrivalNotice,
         }),
       };
       psynet.applyArrivalNotice(config.notice);
@@ -1021,6 +1056,8 @@
       );
     };
 
+    psynet.timelineHoldResumeTimeoutMs = 30000;
+
     psynet.resumeTimelineHold = async function (reason) {
       let controller = psynet.timelineHold;
       if (!controller || controller.stopped) {
@@ -1072,6 +1109,8 @@
       controller.stopped = true;
       clearTimeout(controller.safetyTimer);
       clearTimeout(controller.timeoutTimer);
+      clearTimeout(controller.busyRetryTimer);
+      controller.busyRetryTimer = null;
       if (controller.connection) {
         controller.connection.close();
       }
@@ -1105,9 +1144,13 @@
     };
 
     psynet.beginTimelineHold = function (hold) {
+      psynet.stopArrivalUpdates();
       let active = psynet.timelineHold;
       if (active?.hold.page_uuid === hold.page_uuid) {
         active.hold = hold;
+        if (hold.message) {
+          psynet.updateTimelineHoldMessage(hold.message);
+        }
         psynet.scheduleTimelineHoldCheck(active);
         psynet.scheduleTimelineHoldTimeout(active);
         return;
@@ -1120,6 +1163,8 @@
         hold: hold,
         resumeInFlight: false,
         resumeRequested: false,
+        busyRetryUsed: false,
+        busyRetryTimer: null,
         safetyTimer: null,
         stopped: false,
         timeoutTimer: null,
@@ -1340,6 +1385,7 @@
     };
 
     psynet.handleTimelineTransitionFailure = async function (error, message) {
+      psynet.stopTimelineHold();
       psynet.setPageReady(false);
       psynet.nextPagePending = false;
       psynet.setTimelineTransitionBusy(false);
@@ -3204,7 +3250,7 @@
     psynet.requiresFullPageReloadTransition = function (response) {
       return Boolean(
         psynet.page.attributes?.requires_full_page_reload ||
-          response.page.attributes?.requires_full_page_reload,
+          response.page?.attributes?.requires_full_page_reload,
       );
     };
 
@@ -3261,6 +3307,12 @@
 
     psynet.handleApprovedResponse = async function (response) {
       psynet.log.debug("Response received successfully.");
+
+      if (response.page?.attributes?.requires_full_page_reload) {
+        psynet.stopTimelineHold();
+        psynet.loadNextTimelinePageWithReload();
+        return true;
+      }
 
       let hold = response.page?.attributes?.timeline_hold;
       if (hold) {
@@ -3325,9 +3377,9 @@
         psynet.log.warn(
           "A timeline hold resume check was rejected: " + response.message,
         );
-        // The write may already have committed (stale fragment after hold
-        // release). Reload the authoritative timeline instead of polling the
-        // overlay with a rejected page_uuid.
+        // Genuine rejects (multi-tab mismatch, missing hold record) still
+        // reload the authoritative timeline instead of polling the overlay
+        // with a rejected page_uuid.
         psynet.stopTimelineHold();
         psynet.loadNextTimelinePageWithReload();
       } else {
@@ -3350,6 +3402,39 @@
       }
     };
 
+    psynet.timelineHoldBusyRetryMs = 250;
+
+    psynet.scheduleTimelineHoldBusyRetry = function (controller) {
+      if (!controller || controller.stopped) {
+        return;
+      }
+      if (controller.busyRetryTimer != null) {
+        return;
+      }
+      controller.busyRetryTimer = setTimeout(() => {
+        controller.busyRetryTimer = null;
+        if (controller.stopped || psynet.timelineHold !== controller) {
+          return;
+        }
+        psynet.resumeTimelineHold("queued hold wake");
+      }, psynet.timelineHoldBusyRetryMs);
+    };
+
+    psynet.handleHoldResumeTransportFailure = async function (request) {
+      let status = request && request.status;
+      psynet.log.warn(
+        "A timeline hold resume check failed (" +
+          (status || "network") +
+          "); keeping the preserved page.",
+      );
+      if (psynet.timelineHold) {
+        // Match busy 503: do not set resumeRequested, or the in-flight
+        // resume's finally would wake again immediately.
+        psynet.scheduleTimelineHoldCheck(psynet.timelineHold);
+      }
+      return false;
+    };
+
     psynet.handleBusyResponse = async function (request, options = {}) {
       let body = {};
       try {
@@ -3361,6 +3446,18 @@
         body.message || "The experiment is temporarily busy. Please try again.";
       if (options.timelineHoldResume) {
         psynet.log.warn("A timeline hold resume check was busy: " + message);
+        if (psynet.timelineHold) {
+          // The same POST already retried one busy 503. Do not set
+          // resumeRequested (that livelocks in finally) and do not wait for
+          // the safety poll: stacked-hold tests silence it, and the hold
+          // timeout is much slower than a partner wake.
+          if (!psynet.timelineHold.busyRetryUsed) {
+            psynet.timelineHold.busyRetryUsed = true;
+            psynet.scheduleTimelineHoldBusyRetry(psynet.timelineHold);
+          }
+          // A later busy 503 lets resumeTimelineHold's finally schedule the
+          // safety poll once. Scheduling here as well double-counts it.
+        }
         return false;
       }
       psynet.log.warn("The experiment was busy: " + message);
@@ -3417,7 +3514,7 @@
       }
     };
 
-    let prepareJsonSubmission = function (rawAnswer, metadata) {
+    let prepareJsonSubmission = function (rawAnswer, metadata, options = {}) {
       var currentTime = new Date();
 
       var allMetadata = {
@@ -3442,6 +3539,7 @@
         metadata: allMetadata,
         include_timeline_fragment: !psynet.page.attributes
           ?.requires_full_page_reload,
+        timeline_hold_resume: Boolean(options.timelineHoldResume),
       });
     };
 
@@ -3464,7 +3562,7 @@
       }
       $(" .response, .submit ").prop("disabled", true);
 
-      const json = prepareJsonSubmission(rawAnswer, metadata);
+      const json = prepareJsonSubmission(rawAnswer, metadata, options);
 
       var formData = new FormData();
       formData.append("json", json);
@@ -3479,11 +3577,7 @@
           let request = new XMLHttpRequest();
           request.onreadystatechange = async function () {
             if (request.readyState !== 4) return;
-            if (
-              psynet.isBusyResponse(request) &&
-              !options.timelineHoldResume &&
-              attempt === 0
-            ) {
+            if (psynet.isBusyResponse(request) && attempt === 0) {
               attempt += 1;
               psynet.log.warn(
                 "The experiment was busy; retrying the submission.",
@@ -3506,12 +3600,19 @@
                   request,
                   options,
                 );
+              } else if (options.timelineHoldResume) {
+                passedValidation =
+                  await psynet.handleHoldResumeTransportFailure(request);
               } else {
                 psynet.log.debug("Something went wrong.");
                 onErrorResponse(request);
               }
             } catch (error) {
-              if (psynetTemplateData.flags.inplaceTimelineTransitions) {
+              if (options.timelineHoldResume && request.status !== 200) {
+                psynet.log.warn(error.stack || String(error));
+                passedValidation =
+                  await psynet.handleHoldResumeTransportFailure(request);
+              } else if (psynetTemplateData.flags.inplaceTimelineTransitions) {
                 await psynet.handleTimelineTransitionFailure(error);
               } else {
                 psynet.log.error(error.stack || String(error));
@@ -3522,6 +3623,9 @@
             }
           };
           request.open("POST", "/response");
+          if (options.timelineHoldResume) {
+            request.timeout = psynet.timelineHoldResumeTimeoutMs;
+          }
           request.send(formData);
         };
         send();
@@ -3666,8 +3770,10 @@
 
   let updateProgressAndReward = function () {
     if (psynet.participantId !== undefined) {
-      $.get("/timeline/progress_and_reward", {
-        participantId: psynet.participantId,
+      $.ajax({
+        url: "/timeline/progress_and_reward",
+        cache: false,
+        data: { participantId: psynet.participantId },
       }).done(function (data) {
         let progressPercentage = data["progressPercentage"];
         let progressPercentageStr = progressPercentage + "%";
@@ -3687,6 +3793,7 @@
       });
     }
   };
+  psynet.updateProgressAndReward = updateProgressAndReward;
 
   if (psynetTemplateData.flags.dynamicallyUpdateProgressBarAndReward) {
     setInterval(updateProgressAndReward, 1000);
@@ -3804,7 +3911,12 @@
     function updateClocks() {
       let msg = "";
 
-      if (document.hasFocus()) {
+      if (psynet.timelineHold) {
+        // Overlay waits replace WaitPage reloads. Sitting on a hold is not
+        // inactivity or no-focus; overall HIT time still counts below.
+        noFocusSince = 0;
+        noActivitySince = 0;
+      } else if (document.hasFocus()) {
         noFocusSince = 0;
       } else {
         noFocusSince += POLLING_INTERVAL;
@@ -3822,7 +3934,9 @@
         }
       }
 
-      noActivitySince += POLLING_INTERVAL;
+      if (!psynet.timelineHold) {
+        noActivitySince += POLLING_INTERVAL;
+      }
       const noActivityTimeout = psynetTemplateData.lucid.inactivityTimeoutMs;
       if (noActivitySince > noActivityTimeout) {
         terminateParticipant(

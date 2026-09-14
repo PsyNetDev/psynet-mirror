@@ -1,0 +1,1 @@
+Fixed stacked-hold Playwright first-paint capture so a last-arrival ``GET /timeline`` 302 is followed to the 200 HTML document, and compared waiter release clocks with that grouping request rather than a slow legacy client paint.

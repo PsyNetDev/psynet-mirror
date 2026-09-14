@@ -3,10 +3,20 @@
 Timeline holds preserve the currently rendered participant page while the
 server waits for a condition to clear. This module owns the durable accounting
 record and the internal page protocol shared by barriers and ``wait_while``.
+Hold-release websocket wakes publish after the next database commit. Last-arrival
+finalize and the barrier poller can defer those publishes until stacked checks
+finish so waiting partners are not woken while later checks still lock their
+rows. The poller uses a fresh session per visit, so that deferral is stored in
+a context variable rather than ``session.info``.
+``GET /timeline`` and ``POST /response`` skip ready holds under a participant
+row lock, but they do not share that lock protocol. The page lifecycle
+developer docs describe the resume protocol.
 """
 
 import json
 import uuid
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import timedelta
 
 from dallinger import db
@@ -37,27 +47,44 @@ def _timeline_hold_channel(participant_id):
 
 
 _PENDING_WAKE_KEY = "psynet_timeline_hold_wakes"
+_NESTED_WAKE_SNAPSHOTS_KEY = "psynet_nested_timeline_hold_wake_keys"
+_wake_defer_depth = ContextVar("psynet_timeline_hold_wake_defer_depth", default=0)
+_deferred_wake_stash = ContextVar("psynet_timeline_hold_deferred_wakes", default=None)
 logger = get_logger()
 
 
-def _enqueue_timeline_hold_wake(participant_id, *, page_uuid=None, reason=None):
-    """Queue a targeted hold wake for publication after the next commit."""
-    if page_uuid is None:
-        from psynet.participant import Participant
+def _enqueue_timeline_hold_wake(
+    participant_id, *, page_uuid=None, reason=None, hold=None
+):
+    """Queue a targeted hold wake for publication after the next commit.
 
-        page_uuid = (
-            Participant.query.with_entities(Participant.page_uuid)
-            .filter_by(id=participant_id)
-            .scalar()
-        )
+    Pass ``hold`` when the caller already has the unresumed record so this
+    path does not look it up again.
+    """
+    if hold is not None:
+        if hold.resumed_at is not None:
+            return
+        page_uuid = hold.page_uuid if page_uuid is None else page_uuid
+        active_hold = hold
+    else:
+        if page_uuid is None:
+            from psynet.participant import Participant
+
+            page_uuid = (
+                Participant.query.with_entities(Participant.page_uuid)
+                .filter_by(id=participant_id)
+                .scalar()
+            )
+        if page_uuid is None:
+            return
+        active_hold = TimelineHoldRecord.query.filter_by(
+            participant_id=participant_id,
+            page_uuid=page_uuid,
+            resumed_at=None,
+        ).first()
+        if active_hold is None:
+            return
     if page_uuid is None:
-        return
-    active_hold = TimelineHoldRecord.query.filter_by(
-        participant_id=participant_id,
-        page_uuid=page_uuid,
-        resumed_at=None,
-    ).first()
-    if active_hold is None:
         return
     wake = {
         "wake_token": active_hold.wake_token,
@@ -67,13 +94,16 @@ def _enqueue_timeline_hold_wake(participant_id, *, page_uuid=None, reason=None):
     db.session.info.setdefault(_PENDING_WAKE_KEY, {})[active_hold.wake_token] = wake
 
 
-def _queue_timeline_hold_wake(participant_id, *, page_uuid=None, reason=None):
+def _queue_timeline_hold_wake(
+    participant_id, *, page_uuid=None, reason=None, hold=None
+):
     """Queue a wake without allowing notification failure to break core work."""
     try:
         _enqueue_timeline_hold_wake(
             participant_id,
             page_uuid=page_uuid,
             reason=reason,
+            hold=hold,
         )
     except Exception:
         logger.warning(
@@ -116,15 +146,15 @@ def default_group_barrier_arrival_message(
     if kind == "hold":
         if group_size <= 2 or remaining == 0:
             return None
-        return _p("timeline_hold", "{remaining} of {total} not ready yet").format(
-            remaining=remaining,
-            total=group_size,
+        return _p("timeline_hold", "{REMAINING} of {TOTAL} not ready yet").format(
+            REMAINING=remaining,
+            TOTAL=group_size,
         )
     if group_size == 2:
         return _p("timeline_hold", "Your partner is ready.")
-    return _p("timeline_hold", "{arrived}/{total} of your group are ready.").format(
-        arrived=waiting_count,
-        total=group_size,
+    return _p("timeline_hold", "{ARRIVED}/{TOTAL} of your group are ready.").format(
+        ARRIVED=waiting_count,
+        TOTAL=group_size,
     )
 
 
@@ -139,18 +169,67 @@ def _html_overlay_line(text):
 
 def compose_hold_overlay_html(title_html, progress_text=None):
     """Join a hold title with an optional progress line."""
+    title = f'<span class="psynet-timeline-hold-title">{title_html}</span>'
     if not progress_text:
-        return title_html
+        return title
     return (
-        f'<span class="psynet-timeline-hold-title">{title_html}</span>'
+        f"{title}"
         f'<span class="psynet-timeline-hold-progress">'
         f"{_html_overlay_line(progress_text)}</span>"
     )
 
 
-@event.listens_for(db.session, "after_commit")
-def _publish_timeline_hold_wakes(session):
-    wakes = list(session.info.pop(_PENDING_WAKE_KEY, {}).values())
+def _copy_pending_wakes(wakes):
+    """Copy queued wakes so later publish can pop ``participant_id`` safely."""
+    return {key: dict(wake) for key, wake in wakes.items()}
+
+
+@contextmanager
+def _defer_timeline_hold_wakes():
+    """Hold Redis wake publishes across inner commits, then flush on exit.
+
+    Stacked last-arrival finalize commits after each barrier check. Publishing
+    on those commits would wake waiting partners while later checks still lock
+    their rows. ``GET /timeline`` and ``POST /response`` nest this context
+    through page render so waiters also stay unpublished until the last arriver
+    has a response body. The barrier poller uses the same context around a
+    sweep: each visit commits in its own session, so the stash lives in a
+    context variable that survives ``session.remove()``. SAVEPOINT releases are
+    not durable: nested ``after_commit`` does not publish or stash. Nested
+    rollback restores pending wakes to the keys that existed when that
+    savepoint began. Root rollback still discards uncommitted pending wakes;
+    already committed wakes stay deferred and flush here even if a later
+    check fails.
+    """
+    depth = _wake_defer_depth.get()
+    depth_token = _wake_defer_depth.set(depth + 1)
+    stash_token = None
+    if depth == 0:
+        stash_token = _deferred_wake_stash.set({})
+    try:
+        yield
+    finally:
+        _wake_defer_depth.reset(depth_token)
+        if depth == 0:
+            deferred = _deferred_wake_stash.get() or {}
+            if stash_token is not None:
+                _deferred_wake_stash.reset(stash_token)
+            _publish_wakes(list(deferred.values()))
+
+
+def _stash_committed_wakes(pending):
+    """Move committed wakes into the deferred stash instead of publishing."""
+    if not pending:
+        return
+    deferred = _deferred_wake_stash.get()
+    if deferred is None:
+        _publish_wakes(list(pending.values()))
+        return
+    deferred.update(_copy_pending_wakes(pending))
+
+
+def _publish_wakes(wakes):
+    """Publish copied wake payloads on their participant Redis channels."""
     if not wakes:
         return
     try:
@@ -158,13 +237,14 @@ def _publish_timeline_hold_wakes(session):
 
         by_channel = defaultdict(list)
         for wake in wakes:
-            participant_id = wake.pop("participant_id", None)
+            payload = dict(wake)
+            participant_id = payload.pop("participant_id", None)
             channel = (
                 _timeline_hold_channel(participant_id)
                 if participant_id is not None
                 else _TIMELINE_HOLD_CHANNEL
             )
-            by_channel[channel].append(wake)
+            by_channel[channel].append(payload)
         for channel, targets in by_channel.items():
             db.redis_conn.publish(
                 channel,
@@ -174,9 +254,51 @@ def _publish_timeline_hold_wakes(session):
         logger.warning("Failed to publish timeline hold wake.", exc_info=True)
 
 
+@event.listens_for(db.session, "after_transaction_create")
+def _snapshot_pending_wakes_for_nested(session, transaction):
+    """Remember pending wake keys so a SAVEPOINT rollback can restore them."""
+    if not transaction.nested:
+        return
+    pending = session.info.get(_PENDING_WAKE_KEY) or {}
+    session.info.setdefault(_NESTED_WAKE_SNAPSHOTS_KEY, []).append(set(pending))
+
+
+@event.listens_for(db.session, "after_commit")
+def _publish_timeline_hold_wakes(session):
+    if session.in_nested_transaction():
+        return
+    pending = session.info.pop(_PENDING_WAKE_KEY, None) or {}
+    if _wake_defer_depth.get():
+        _stash_committed_wakes(pending)
+        return
+    _publish_wakes(list(pending.values()))
+
+
 @event.listens_for(db.session, "after_rollback")
 def _discard_timeline_hold_wakes(session):
+    """Restore pre-savepoint wakes on nested rollback; drop pending on root rollback.
+
+    Detect the SAVEPOINT via the snapshot stack. ``in_nested_transaction()``
+    may already be false when this handler runs.
+    """
+    stack = session.info.get(_NESTED_WAKE_SNAPSHOTS_KEY) or []
+    if stack:
+        keys_before = stack[-1]
+        pending = session.info.get(_PENDING_WAKE_KEY) or {}
+        session.info[_PENDING_WAKE_KEY] = {
+            key: wake for key, wake in pending.items() if key in keys_before
+        }
+        return
     session.info.pop(_PENDING_WAKE_KEY, None)
+
+
+@event.listens_for(db.session, "after_transaction_end")
+def _pop_nested_wake_snapshot(session, transaction):
+    if not transaction.nested:
+        return
+    stack = session.info.get(_NESTED_WAKE_SNAPSHOTS_KEY)
+    if stack:
+        stack.pop()
 
 
 @register_table
@@ -255,6 +377,20 @@ class TimelineHoldRecord(SQLBase, SQLMixin):
                 participant.inc_time_credit(target_credit - previous_credit)
             self.credited_wait_seconds = target_credit
 
+    @classmethod
+    def for_stale_hold_resume(cls, participant, submitted_page_uuid):
+        """Return the submitted hold when it is still a catch-up from a wait page.
+
+        One indexed lookup. Last-arrival can already have advanced this waiter
+        onto a later hold or off the stack; the client's POST still sends the
+        old uuid. A matching record is catch-up for both ordinary submits and
+        hold-resume overlays.
+        """
+        return cls.query.filter_by(
+            participant_id=participant.id,
+            page_uuid=submitted_page_uuid,
+        ).one_or_none()
+
     @property
     def deadline(self):
         """Return the authoritative timeout deadline, if configured."""
@@ -326,15 +462,20 @@ class _TimelineHoldPage(Page):
         """Run subclass-specific linking after creating the hold record."""
 
     def get_hold_record(self, participant):
-        """Return the record belonging to the participant's current hold page."""
+        """Return the record belonging to the participant's current hold page.
+
+        Returns ``None`` when the cursor has already left this hold, so a
+        stale GET ``/timeline`` page object cannot crash on ``.one()``.
+        """
         cached = getattr(participant, "_timeline_hold_record", None)
         if cached is not None and cached.page_uuid == participant.page_uuid:
             return cached
         record = TimelineHoldRecord.query.filter_by(
             participant_id=participant.id,
             page_uuid=participant.page_uuid,
-        ).one()
-        participant._timeline_hold_record = record
+        ).one_or_none()
+        if record is not None:
+            participant._timeline_hold_record = record
         return record
 
     def participant_can_resume(self, experiment, participant):
@@ -343,14 +484,37 @@ class _TimelineHoldPage(Page):
 
     def participant_timed_out(self, participant):
         """Return whether the authoritative hold deadline has passed."""
-        deadline = self.get_hold_record(participant).deadline
+        record = self.get_hold_record(participant)
+        if record is None:
+            return False
+        deadline = record.deadline
         return deadline is not None and timenow() >= deadline
+
+    def is_ready_to_resume(self, experiment, participant):
+        """Return whether this hold can resume, without timeout side effects.
+
+        ``GET /timeline`` uses this to decide whether to relock before
+        ``prepare_resume_if_ready``. Applying timeout or fail before
+        ``FOR UPDATE`` can stall a worker or fail a waiter a partner already
+        advanced.
+        """
+        if participant.pending_redirect is not None or participant.failed:
+            return True
+        if getattr(participant, "page_uuid", None) is not None:
+            if self.get_hold_record(participant) is None:
+                return False
+        if self.participant_timed_out(participant):
+            return True
+        return bool(self.participant_can_resume(experiment, participant))
 
     def prepare_resume_if_ready(self, experiment, participant):
         """Prepare a cleared or timed-out hold and return whether it can resume."""
         if participant.pending_redirect is not None or participant.failed:
             self.prepare_to_resume(participant)
             return True
+        if getattr(participant, "page_uuid", None) is not None:
+            if self.get_hold_record(participant) is None:
+                return False
         if self.participant_timed_out(participant):
             self.prepare_to_resume(participant)
             self.apply_timeout(participant)
@@ -382,6 +546,8 @@ class _TimelineHoldPage(Page):
     def account_wait(self, participant, settle=False):
         """Update actual wait diagnostics and compensation."""
         record = self.get_hold_record(participant)
+        if record is None:
+            return
         if settle:
             record.settle(participant)
         else:
@@ -421,8 +587,14 @@ class _TimelineHoldPage(Page):
         return None
 
     def timeline_hold_payload(self, participant):
-        """Return browser configuration for this hold visit."""
+        """Return browser configuration for this hold visit.
+
+        Returns ``None`` when the hold record is already gone, so a stale
+        page object cannot crash while building attributes.
+        """
         record = self.get_hold_record(participant)
+        if record is None:
+            return None
         remaining_timeout_ms = None
         if record.deadline is not None:
             remaining_timeout_ms = max(
@@ -440,7 +612,9 @@ class _TimelineHoldPage(Page):
 
     def attributes(self, participant):
         attributes = super().attributes(participant)
-        attributes["timeline_hold"] = self.timeline_hold_payload(participant)
+        payload = self.timeline_hold_payload(participant)
+        if payload is not None:
+            attributes["timeline_hold"] = payload
         return attributes
 
     def get_bot_response(self, experiment, bot):

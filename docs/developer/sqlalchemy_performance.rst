@@ -52,15 +52,18 @@ Load relationships for the request that needs them
 --------------------------------------------------
 
 ``Participant`` relationships such as module states and active barriers use
-select-in loading because that is efficient when loading many participants.
-Participant-facing routes normally load exactly one participant, and many
-pages do not use all these relationships.
+select-in loading because that is efficient for dashboards and other queries
+that load many participants. Participant-facing routes normally load exactly
+one participant, and many pages do not use all these relationships.
 
 A request-specific query can override those relationships to ordinary lazy
 loading. This avoids unconditional statements while preserving normal
 relationship access later in the request. Keep this override private to the
 request path: public participant getters may be used after their session is
 detached and should retain their established eager-loading behavior.
+
+Barrier last-arrival checks are the opposite problem: one request locks many
+waiters. See :ref:`barrier-arrival-sql-budgets`.
 
 Filter before ORM hydration
 ---------------------------
@@ -238,3 +241,105 @@ Checklist for future investigations
    manipulation.
 #. Record why an attractive approach was rejected and what evidence would
    justify revisiting it.
+
+.. _barrier-arrival-sql-budgets:
+
+Barrier last-arrival SQL budgets
+================================
+
+Isolated tests in ``tests/isolated/test_barrier_arrival_queries.py`` pin
+statement counts for the post-commit coordination path
+(``_run_pending_barrier_checks``, ``Experiment._run_queued_barrier_checks``,
+and ``Experiment._run_finalized_barrier_arrivals``). The
+numbers are a snapshot of the current ORM path, not a ceiling to preserve.
+Fewer statements, fewer commits, or fewer per-waiter lazy loads are
+improvements: update the expected numbers in that test and in this section.
+
+Use the profiler as a statement-count gate, not a duration gate. Do not put
+these budgets on Playwright or the full ``/timeline`` / ``/response`` stack.
+See :ref:`sqlalchemy_profiling`.
+
+The counts below were predicted from the code and then checked against a
+profiler dump. Locks, advisory claims, spec reconstruction, finalize commit
+count, and the check *statement* count must stay constant as group size *N*
+grows. Per-row writes still scale with *N*, but SQLAlchemy flushes them as
+one ``executemany`` statement per table. A new *kind* of statement that
+grows with *N* should fail the tests.
+
+Do not add extra ``joinedload`` options to the waiter ``FOR UPDATE`` query.
+PostgreSQL cannot lock the nullable side of an outer join, and joining
+collections causes a cartesian product. Use ``selectinload`` follow-up
+``IN`` queries so extra rows are not locked.
+
+Check window (one GroupBarrier, group already formed)
+-----------------------------------------------------
+
+17 statements, independent of *N*:
+
+* instance PK, SAVEPOINT, ``pg_advisory_xact_lock``, deferred ``spec``
+  load, one waiter ``FOR UPDATE NOWAIT`` join (this already inner-joins
+  ``participant``);
+* ``module_state`` select-in, ``active_barriers`` select-in, ``timeline_hold``
+  select-in;
+* one explicit ``sync_group_links`` ``IN`` query (populated with
+  ``set_committed_value`` — ``selectinload`` on that relationship makes later
+  arrival-notice walks lazy-load the collection per member);
+* ``sync_group`` PK, group-membership load;
+* three ``executemany`` UPDATEs (link release, hold ``released_at``,
+  participant wait credit), group UPDATE, instance UPDATE, RELEASE SAVEPOINT.
+
+The wake path is given the already-loaded hold, so it does not look the row
+up again. Nested ``begin_nested()`` records one profiler commit (the
+savepoint release that flushes the updates).
+
+Finalize window (same check, then relock the last arriver)
+----------------------------------------------------------
+
+The check, plus two ``lock_timeout`` SETs, a participant GET and its
+``active_barriers`` / ``module_state`` select-in reloads after
+``expire_all``, then a participant ``FOR UPDATE`` without ``NOWAIT``.
+Grand total: 23. Profiler commits: 3 (1 nested update + 2 outer
+``session.commit()`` calls that still issue PostgreSQL ``COMMIT``).
+The check commit is on ``Experiment._run_queued_barrier_checks``; the
+relock commit is on ``Experiment._run_finalized_barrier_arrivals``.
+The budget's ``finalize_commits`` count includes both callsites.
+
+Arrival notice (recipient already loaded, *N* - 1 waiters)
+----------------------------------------------------------
+
+``5 + 3(N - 1)`` statements. Spec SELECT stays 1 because reconstructs are
+cached for that call.
+
+Stacked last-arrival finalize (grouper + two GroupBarriers)
+-----------------------------------------------------------
+
+Three check iterations, independent of group size: 9 profiler commits
+(3 nested + 2 outer per iteration), 3 waiter ``NOWAIT`` locks, 3 participant
+relocks. Each check waits for ``pg_advisory_xact_lock`` (the poller still
+uses ``pg_try_advisory_xact_lock``). Creating the next two instances adds 2
+more blocking ``pg_advisory_xact_lock`` calls (O(stack), not O(*N*)). Spec SELECT is 3
+(one deferred load per check). Instance insert uses ``ON CONFLICT DO NOTHING``
+instead of a SAVEPOINT, so a just-created instance does not expire extra
+spec reloads onto the stacked path.
+Query *count* still grows with *N* because each released waiter is advanced
+onto the next hold. The stacked test allows at most 35 extra statements per
+extra member as a loose cap on that advancement SQL, not as a target.
+
+``GET /timeline`` Server-Timing splits that work from HTML render. In one
+local Playwright last-arrival run, a trio skip was about 180 ms
+``barriers`` plus 300 ms ``render`` (total ~500 ms). A quartet skip was
+about 370 ms ``barriers`` plus 200 ms ``render`` (total ~580 ms).
+``lock`` and ``page`` stayed under 40 ms. CI ~1 s last-arrival GETs are
+these two phases under load, not participant-row lock wait. Waiter
+hold-resume ``queue~`` behind that GET is worker-pool saturation on gunicorn
+(both Playwright job modes). Hold tests set workers to the session count so
+the last-arrival request can overlap every waiter POST. Remaining ``queue~``
+on those POSTs is occupancy to diagnose (HTML ``render`` used to rebuild the
+full document shell on every inplace fragment); do not subtract it from
+overlay linger or waiter-release spread.
+
+Leftover inactive visits are outside this budget. Last-arrival keeps
+``instance.active``, so ``Barrier._other_active_pool`` does not look up a
+second pool on that path. Migrating waiters onto the live visit is extra SQL
+only when the instance is already inactive. See
+:ref:`timeline-hold-resume-protocol`.

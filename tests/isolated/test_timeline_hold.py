@@ -18,6 +18,7 @@ from psynet.timeline_hold import (
     _ConditionHoldPage,
     _queue_timeline_hold_wake,
     _TimelineHoldPage,
+    compose_hold_overlay_html,
 )
 from psynet.utils import serialise
 
@@ -233,8 +234,15 @@ def test_hold_overlay_html_matches_markup_and_plain_text():
         if getattr(elt, "is_timeline_hold", False)
     )
 
-    assert plain.overlay_html() == str(escape("<strong>Waiting</strong>"))
-    assert trusted.overlay_html() == "<strong>Waiting</strong>"
+    assert plain.overlay_html() == (
+        '<span class="psynet-timeline-hold-title">'
+        f"{escape('<strong>Waiting</strong>')}"
+        "</span>"
+    )
+    assert (
+        trusted.overlay_html()
+        == '<span class="psynet-timeline-hold-title"><strong>Waiting</strong></span>'
+    )
 
 
 def test_safe_hold_wake_does_not_propagate_notification_errors(monkeypatch, caplog):
@@ -282,6 +290,9 @@ def test_timeout_wins_over_simultaneous_release():
     hold = ResumeTestHold(can_resume=True, timed_out=True)
     participant = SimpleNamespace(pending_redirect=None, failed=False)
 
+    assert hold.is_ready_to_resume(object(), participant)
+    assert not hold.prepared
+    assert not hold.timeout_applied
     assert hold.prepare_resume_if_ready(object(), participant)
     assert hold.prepared
     assert hold.timeout_applied
@@ -335,3 +346,33 @@ def test_hold_timeout_fails_participant_with_hold_tags():
     _TimelineHoldPage.apply_timeout(hold, participant)
 
     assert tags == ["timeline_hold:test", "fail_on_timeout", "failed"]
+
+
+def test_timeline_hold_payload_is_omitted_without_a_record():
+    """A stale hold page object must not crash while building browser attributes."""
+
+    class Hold(_TimelineHoldPage):
+        def participant_can_resume(self, experiment, participant):
+            return False
+
+    page = Hold(
+        hold_id="missing",
+        expected_wait=1,
+        max_wait_time=20,
+        fix_time_credit=False,
+        check_interval=2,
+    )
+    participant = SimpleNamespace(id=1, page_uuid="gone")
+    page.get_hold_record = lambda _participant: None
+    assert page.timeline_hold_payload(participant) is None
+
+
+def test_compose_hold_overlay_html_always_emits_the_title_span():
+    assert (
+        compose_hold_overlay_html("Waiting for your partner")
+        == '<span class="psynet-timeline-hold-title">Waiting for your partner</span>'
+    )
+    html = compose_hold_overlay_html("Waiting for your group", "1 of 3 not ready yet")
+    assert 'class="psynet-timeline-hold-title"' in html
+    assert 'class="psynet-timeline-hold-progress"' in html
+    assert "1 of 3 not ready yet" in html

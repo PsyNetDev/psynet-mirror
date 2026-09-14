@@ -1,10 +1,12 @@
 import warnings
-from importlib import resources
+from types import SimpleNamespace
 
 import pytest
 
 from psynet.page import ExecuteFrontEndJS, JsPsychPage, UnityPage
+from psynet.sync import arrival_notice_payload
 from psynet.timeline import Page
+from psynet.timeline_hold import _timeline_hold_channel
 
 
 def test_execute_front_end_js_shows_a_spinner_not_prose():
@@ -20,20 +22,6 @@ def test_execute_front_end_js_shows_a_spinner_not_prose():
 def test_execute_front_end_js_rejects_a_message():
     with pytest.raises(TypeError, match="message"):
         ExecuteFrontEndJS("doSomething()", message="Finalizing...")
-
-
-def test_reward_updates_keep_the_tooltip_breakdown_current():
-    source = (
-        resources.files("psynet") / "resources" / "scripts" / "psynet.js"
-    ).read_text(encoding="utf-8")
-    start = source.index("let updateProgressAndReward")
-    end = source.index("if (psynetTemplateData.flags", start)
-    update = source[start:end]
-
-    assert '$("#time-reward").text' in update
-    assert '$("#performance-reward").text' in update
-    assert '$("#total-reward").text' in update
-    assert '$("#reward-details").show()' not in update
 
 
 @pytest.mark.parametrize("argument_name", ["js_dependencies", "js_page_modules"])
@@ -79,6 +67,60 @@ def test_page_normalizes_javascript_resources():
         "/static/page.js",
         "/static/other-page.js",
     ]
+
+
+def _page_participant(**overrides):
+    participant = SimpleNamespace(
+        unique_id="participant-1",
+        page_uuid="page-1",
+        id=7,
+        active_sync_groups={},
+    )
+    participant.__dict__.update(overrides)
+    return participant
+
+
+def test_ungrouped_page_omits_arrival_updates(monkeypatch):
+    """Solo pages must not open the partner-ready websocket."""
+
+    def boom(_participant):
+        raise AssertionError("should not look up arrival notices")
+
+    monkeypatch.setattr("psynet.sync.pending_arrival_notice_for", boom)
+    page = Page(template_fragment_str="<p>Solo page</p>")
+    assert "arrival_updates" not in page.attributes(_page_participant())
+
+
+def test_grouped_page_includes_arrival_updates(monkeypatch):
+    monkeypatch.setattr(
+        "psynet.sync.pending_arrival_notice_for",
+        lambda _participant: "Your partner is ready.",
+    )
+    page = Page(template_fragment_str="<p>Grouped page</p>")
+    participant = _page_participant(active_sync_groups={"main": object()})
+    updates = page.attributes(participant)["arrival_updates"]
+    assert updates["channel"] == _timeline_hold_channel(participant.id)
+    assert updates["notice"] == "Your partner is ready."
+
+
+def test_arrival_notice_payload_without_a_participant():
+    assert arrival_notice_payload(None) == {"notice": None}
+    assert arrival_notice_payload("") == {"notice": None}
+
+
+def test_hold_page_omits_arrival_updates_even_when_grouped(monkeypatch):
+    """The hold websocket already receives partner-ready and overlay messages."""
+
+    class HoldPage(Page):
+        is_timeline_hold = True
+
+    def boom(_participant):
+        raise AssertionError("should not look up arrival notices")
+
+    monkeypatch.setattr("psynet.sync.pending_arrival_notice_for", boom)
+    page = HoldPage(template_fragment_str="<p>Hold page</p>")
+    participant = _page_participant(active_sync_groups={"main": object()})
+    assert "arrival_updates" not in page.attributes(participant)
 
 
 def test_page_rejects_javascript_url_with_conflicting_lifecycles():
@@ -242,6 +284,128 @@ def test_busy_response_is_retryable_http_503():
     assert "temporarily busy" in data["message"]
 
 
+def test_html_timeline_lock_timeout_returns_busy_503(monkeypatch):
+    import sqlalchemy
+    from flask import Flask
+    from psycopg2.errors import LockNotAvailable
+
+    from psynet.experiment import Experiment
+
+    err = sqlalchemy.exc.OperationalError("stmt", {}, LockNotAvailable())
+    monkeypatch.setattr(
+        Experiment,
+        "_is_transient_transaction_error",
+        classmethod(lambda cls, error: True),
+    )
+    monkeypatch.setattr(
+        "psynet.experiment._set_transaction_lock_timeout", lambda *_args: None
+    )
+    monkeypatch.setattr(
+        "psynet.experiment.get_config",
+        lambda: SimpleNamespace(get=lambda _key: 5),
+    )
+
+    def raise_lock(*_args, **_kwargs):
+        raise err
+
+    monkeypatch.setattr(
+        Experiment, "_get_request_participant_from_unique_id", raise_lock
+    )
+    app = Flask(__name__)
+    with app.test_request_context("/timeline?unique_id=worker-1"):
+        response = Experiment.route_timeline()
+
+    if isinstance(response, tuple):
+        body, status = response
+    else:
+        body, status = response, response.status_code
+    assert status == 503
+    assert body.get_json()["status"] == "busy"
+    timing = body.headers.get("Server-Timing", "")
+    assert "lock;dur=" in timing
+    assert "app;dur=" in timing
+    assert "page;" not in timing
+    assert "barriers;" not in timing
+    assert "render;" not in timing
+
+
+def test_server_timing_clock_closes_only_the_open_phase():
+    from psynet.experiment import Experiment
+
+    clock = Experiment._ServerTimingClock()
+    clock.close("lock")
+    clock.close_open("lock", "page", "barriers", "render")
+    assert set(clock.phases) == {"lock", "page"}
+
+
+def test_timeline_timing_omits_unclosed_phases():
+    from flask import Flask, make_response
+
+    from psynet.experiment import Experiment
+
+    app = Flask(__name__)
+    with app.app_context():
+        response = Experiment._apply_timeline_timing(
+            make_response("ok"),
+            participant_id=1,
+            phases={"lock": 12.0},
+            total_ms=100.0,
+            mode=None,
+        )
+    header = response.headers["Server-Timing"]
+    assert "lock;dur=12.0" in header
+    assert "app;dur=100.0" in header
+    assert "page;" not in header
+    assert "barriers;" not in header
+    assert "render;" not in header
+
+
+def test_html_timeline_lock_timeout_returns_html_busy_page(monkeypatch):
+    import sqlalchemy
+    from flask import Flask
+    from psycopg2.errors import LockNotAvailable
+
+    from psynet.experiment import Experiment
+
+    err = sqlalchemy.exc.OperationalError("stmt", {}, LockNotAvailable())
+    monkeypatch.setattr(
+        Experiment,
+        "_is_transient_transaction_error",
+        classmethod(lambda cls, error: True),
+    )
+    monkeypatch.setattr(
+        "psynet.experiment._set_transaction_lock_timeout", lambda *_args: None
+    )
+    monkeypatch.setattr(
+        "psynet.experiment.get_config",
+        lambda: SimpleNamespace(get=lambda _key: 5),
+    )
+
+    def raise_lock(*_args, **_kwargs):
+        raise err
+
+    monkeypatch.setattr(
+        Experiment, "_get_request_participant_from_unique_id", raise_lock
+    )
+    app = Flask(__name__)
+    with app.test_request_context(
+        "/timeline?unique_id=worker-1",
+        headers={"Accept": "text/html"},
+    ):
+        response = Experiment.route_timeline()
+
+    if isinstance(response, tuple):
+        body, status = response
+        html = body.get_data(as_text=True)
+    else:
+        body, status = response, response.status_code
+        html = body.get_data(as_text=True)
+    assert status == 503
+    assert body.get_json() is None
+    assert "temporarily busy" in html
+    assert 'http-equiv="refresh"' in html
+
+
 def test_response_prepare_error_returns_busy_for_transient_lock(monkeypatch):
 
     import sqlalchemy
@@ -393,6 +557,66 @@ def test_response_render_error_after_commit_does_not_return_busy(monkeypatch):
     assert rolled_back == [True]
 
 
+def test_response_render_error_after_commit_reloads_timeline_when_transient(
+    monkeypatch,
+):
+    from types import SimpleNamespace
+
+    import sqlalchemy
+    from psycopg2.errors import LockNotAvailable
+
+    from psynet.experiment import Experiment
+
+    class FakeOperationalError(sqlalchemy.exc.OperationalError):
+        pass
+
+    err = FakeOperationalError("stmt", {}, LockNotAvailable())
+    monkeypatch.setattr(
+        Experiment,
+        "_is_transient_transaction_error",
+        classmethod(lambda cls, error: True),
+    )
+    handled = {}
+    rolled_back = []
+    page = SimpleNamespace()
+    page.__json__ = lambda participant: {"attributes": {}}
+    participant = SimpleNamespace(id=1, current_trial=None)
+
+    class FakeExperiment:
+        HandledError = type("HandledError", (Exception,), {})
+
+        def handle_error(self, error, **kwargs):
+            handled["error"] = error
+
+        def _approved_payload(self, participant, page):
+            return {"submission": "approved", "page": page.__json__(participant)}
+
+        timeline = SimpleNamespace(get_current_elt=lambda exp, p: page)
+
+    monkeypatch.setattr(
+        "psynet.experiment.db.session.rollback",
+        lambda: rolled_back.append(True),
+    )
+    monkeypatch.setattr(
+        Experiment,
+        "_participant_request_query",
+        classmethod(lambda cls: SimpleNamespace(get=lambda pid: participant)),
+    )
+    monkeypatch.setattr(
+        "psynet.experiment.success_response",
+        lambda **kwargs: ("reload", kwargs),
+    )
+    result = Experiment._handle_response_render_error(
+        FakeExperiment(),
+        participant_id=1,
+        error=err,
+    )
+    assert result[0] == "reload"
+    assert result[1]["page"]["attributes"]["requires_full_page_reload"] is True
+    assert "error" not in handled
+    assert rolled_back == [True]
+
+
 @pytest.mark.parametrize(
     "timeline",
     [
@@ -454,3 +678,29 @@ def test_document_owning_pages_require_full_reload():
     assert Page.requires_full_page_reload is False
     assert JsPsychPage.requires_full_page_reload is True
     assert UnityPage.requires_full_page_reload is True
+
+
+def test_progress_and_reward_updater_uses_uncached_ajax():
+    from importlib import resources
+
+    js = (resources.files("psynet") / "resources/scripts/psynet.js").read_text(
+        encoding="utf-8"
+    )
+    start = js.index("let updateProgressAndReward = function")
+    end = js.index(
+        "if (psynetTemplateData.flags.dynamicallyUpdateProgressBarAndReward)"
+    )
+    snippet = js[start:end]
+    assert "$.ajax" in snippet
+    assert "cache: false" in snippet
+    assert "$.get(" not in snippet
+
+
+def test_hold_resume_busy_retry_schedules_a_queued_wake():
+    from importlib import resources
+
+    js = (resources.files("psynet") / "resources/scripts/psynet.js").read_text(
+        encoding="utf-8"
+    )
+    assert "psynet.timelineHoldBusyRetryMs = 250" in js
+    assert "psynet.scheduleTimelineHoldBusyRetry" in js

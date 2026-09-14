@@ -4,6 +4,7 @@ import io
 import os
 import shutil
 import tempfile
+import time
 from typing import List, Optional
 from zipfile import ZipFile
 
@@ -700,34 +701,44 @@ dallinger.db.Base.metadata.drop_all = drop_all_db_tables
 # This would have been useful for importing data, however in practice
 # it caused the import process to hang.
 #
+def _drop_foreign_key_constraints(*, max_attempts=5, wait_sec=0.05):
+    """Drop every foreign key, retrying deadlocks with the live experiment.
+
+    Ingest runs against a database whose clock still queries barrier tables.
+    Dropping those constraints needs ``ACCESS EXCLUSIVE`` and can deadlock
+    with the 0.5 s barrier poller. Retry the whole drop batch; a partial
+    drop rolls back with the aborted transaction.
+    """
+    from sqlalchemy.exc import OperationalError
+
+    from .db import is_transient_transaction_error
+
+    db.session.commit()
+    for attempt in range(max_attempts):
+        all_fkeys, _tables = list_fkeys()
+        try:
+            for fkey in all_fkeys:
+                db.session.execute(DropConstraint(fkey))
+            db.session.commit()
+            return
+        except OperationalError as err:
+            db.session.rollback()
+            if not is_transient_transaction_error(err) or attempt == max_attempts - 1:
+                raise
+            logger.warning(
+                "Retrying foreign-key drops after a transient lock error "
+                "(attempt %s/%s).",
+                attempt + 1,
+                max_attempts,
+            )
+            if wait_sec:
+                time.sleep(wait_sec * (2**attempt))
+
+
 @contextlib.contextmanager
 def disable_foreign_key_constraints():
-    db.session.commit()
-    # con = db.engine.connect()
-    # trans = con.begin()
-
-    all_fkeys, tables = list_fkeys()
-
-    for fkey in all_fkeys:
-        # con.execute(DropConstraint(fkey))
-        db.session.execute(DropConstraint(fkey))
-
-    db.session.commit()
-
+    _drop_foreign_key_constraints()
     yield
-
-    # This code was meant to re-add the constraints afterwards, but it causes an error that we have not been
-    # able to debug, so we have disabled it. It should not be too much of a problem, though; SQLAlchemy
-    # should protect us from foreign key misuse anyway.
-    #
-    # for fkey in all_fkeys:
-    #     # con.execute(AddConstraint(fkey))
-    #     print(fkey)
-    #     db.session.execute(AddConstraint(fkey))
-    #
-    # db.session.commit()
-
-    # trans.commit()
 
 
 def _sql_dallinger_base_classes():

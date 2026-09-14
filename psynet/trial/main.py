@@ -1661,7 +1661,7 @@ class TrialMaker(Module):
             # Otherwise we go ahead and initialize the participant.
             self._requires_sync_group_initialization_barrier,
             logic_if_true=GroupBarrier(
-                "init_participant",
+                self.with_namespace("init_participant"),
                 on_release=self._init_participants_in_sync_group,
                 **self._sync_group_barrier_kwargs(),
             ),
@@ -2340,7 +2340,7 @@ class TrialMaker(Module):
                 ),
                 join(
                     GroupBarrier(
-                        id_="prepare_trial",
+                        id_=self.with_namespace("prepare_trial"),
                         on_release=self._try_to_prepare_trial_group,
                         fix_time_credit=False,  # we're already within a while loop with fixed time credit
                         **self._sync_group_barrier_kwargs(),

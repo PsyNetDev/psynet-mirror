@@ -135,6 +135,54 @@ Example:
       // ...
     });
 
+Hold-resume probes
+^^^^^^^^^^^^^^^^^^
+
+Legacy hold resumes reload the document, which destroys Playwright's execution
+context. ``wrapTimelineHoldResumeProbe`` retries ``page.evaluate`` after that
+navigation. ``waitForHeldParticipantToResume`` treats the same navigation as a
+retry, including Playwright ``toHaveCount`` failures that report
+``Received: undefined`` instead of ``Execution context was destroyed``. If a
+stacked last-arrival hold clears while the test is arming the probe, treat the
+page as a cleared hold (wake token and hold-resume POST) instead of failing on
+the destroyed context.
+
+Overlay linger after a published wake is bounded by
+``max(1800ms, hold-resume Server-Timing app + 500ms)``. That comparison uses
+wake→end wallclock, including gunicorn listen-queue. A slow approved POST is
+not a missed wake; still assert that the resume reason is not
+``safety poll`` or ``hold timeout``. If a legacy reload drops in-page wake clocks, a published
+wake token plus an approved hold-resume POST still counts as a server wake.
+Hold-release summaries print ``Server-Timing`` ``app`` versus browser wall
+time (``queue~``) for the last arriver's request and the waiter's hold-resume
+POST so a long linger can be split into handler time versus pool occupancy.
+Do not subtract ``queue~`` from overlay linger or from waiter-release spread.
+``GET /timeline`` also prints ``lock``, ``page``, ``barriers``, and
+``render``. Blocking-request checks use ``app`` when that header is present, so
+worker-pool queueing is not treated as a slow handler. The 2500ms entry
+budget applies to ``GET /timeline`` and ``POST /load-participant``, not to
+``POST /participant``: Dallinger ``@db.serialized`` serializes concurrent
+signups, so two late arrivals can spend a few seconds in that view. That wall
+time is not last-arrival GET work; ``consent→timeline`` still has the 6000ms
+start-page budget. GitLab Playwright jobs
+run ``psynet debug --legacy`` (gunicorn). Playwright hold tests set the worker
+count to the session count so last-arrival work can overlap every waiter
+hold-resume POST. A short HTTP 503 on hold-resume is the
+``NOWAIT`` busy retry when those requests hit the same participant row;
+the in-request retry waits 250ms; if that is still busy, one delayed
+``queued hold wake`` runs. The suite still fails a busy retry that lasts
+500ms or more. Both Playwright
+CI jobs use gunicorn; the default vs legacy job is in-place vs full reload.
+Worker-pool ``queue~`` is therefore not reload-specific.
+
+Last-arrival ``GET /timeline`` can 302 when ``page_uuid`` advances during
+read-only render. First-paint assertions wait for the following 200 HTML
+document. Waiter release clocks are compared with the last arriver's grouping
+request (the first GET or the choice POST), not with how long that browser
+took to paint after a legacy reload. ``waitForHeldParticipantToResume`` keeps
+the previous ``holdEndedAtMs`` across a later ``timelineHoldStarted`` and
+falls back to the context ``resumeLog``.
+
 Faster local iteration for Playwright tests
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -170,11 +218,22 @@ Playwright harness startup options
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 The Playwright harness launches experiments with ``psynet debug local`` by default
-and does not force legacy mode.
+and does not force legacy mode. That Flask reloader is one process; use
+``PSYNET_USE_LEGACY_DEBUG=1`` (or ``psynet debug --legacy``) for gunicorn
+workers. GitLab Playwright jobs set
+``PSYNET_USE_LEGACY_DEBUG=1`` so those runs use gunicorn. ``psynet debug
+--legacy`` starts four gunicorn workers by default. Playwright stacked-hold
+tests set ``PSYNET_LEGACY_DEBUG_GUNICORN_THREADS`` to the session count so
+last-arrival ``GET /timeline`` can overlap every waiter hold-resume POST. The
+default vs legacy *job* split is still in-place vs full reload
+(``inplace_timeline_transitions``), not Flask vs gunicorn.
 
 Optional environment variables:
 
 - ``PSYNET_USE_LEGACY_DEBUG=1``: add ``--legacy`` to the debug command.
+- ``PSYNET_LEGACY_DEBUG_GUNICORN_THREADS``: gunicorn worker processes for
+  ``psynet debug --legacy`` (default ``4``). Stacked-hold tests set this to
+  the session count.
 - ``PSYNET_DEBUG_EXTRA_FLAGS="..."``: append extra flags to the debug command
   (for local troubleshooting).
 - ``PSYNET_USE_UV_RUN=1``: launch via ``uv run`` instead of invoking ``psynet``
