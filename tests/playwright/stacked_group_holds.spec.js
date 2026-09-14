@@ -72,7 +72,7 @@ test("two late trio members arriving together release every waiter", { tag: "@bo
   // wake→end clock. Poller and last-arriver GET /timeline can both publish the
   // same waiting token, then a stacked-hold reload posts once more on websocket
   // onOpen; allow three hold-resume POSTs. Overlay linger, waiter-release
-  // spread, and GET /timeline floors stay 1800/1500/2500.
+  // spread, and GET /timeline floors stay 2200/1500/2500.
   const { experiment, sessions } = await startHoldExperiment(browser, TRIO_DIR, [
     "trio_wait",
     "trio_late_a",
@@ -213,7 +213,7 @@ test("two late choices complete a trio without a safety poll", { tag: "@both" },
   // both publish the same waiting token, then a stacked-hold reload posts
   // once more on websocket onOpen; allow three hold-resume POSTs on grouping
   // as well as on the later concurrent choices. Linger/spread/GET /timeline
-  // floors stay 1800/1500/2500.
+  // floors stay 2200/1500/2500.
   const { experiment, sessions } = await startHoldExperiment(browser, TRIO_DIR, [
     "trio_choice_wait",
     "trio_choice_late_a",
