@@ -42,18 +42,13 @@ from psynet.sync import (
     GroupBarrier,
     SimpleGrouper,
     SimpleSyncGroup,
-    _advance_released_hold_waiters_after_commit,
     _check_claimed_barrier_instance,
-    _claim_barrier_instance_session,
-    _commit_and_advance_released_hold_waiters,
+    _claim_barrier_instance,
     _has_active_sync_group,
     _hold_instance_id_for_page,
     _process_barrier_instance,
-    _queue_barrier_check,
-    _release_barrier_instance_session,
     _run_pending_barrier_checks,
     _take_pending_barrier_checks,
-    _take_released_hold_waiter_ids,
     arrival_notice_payload,
     check_barriers,
     check_sync_groups,
@@ -991,6 +986,29 @@ def test_check_barriers_skips_failure(in_experiment_directory, db_session):
     assert "b_good" in processed_barriers
 
 
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_poller_does_not_leave_advisory_locks_after_success_or_failure(
+    in_experiment_directory, db_session
+):
+    """A poller sweep must return advisory locks to baseline, including failures."""
+    exp = get_experiment()
+    baseline = _advisory_lock_count()
+    processed_barriers.clear()
+    bad_barrier = ExplodingBarrier(id_="a_bad_lock")
+    good_barrier = RecordingBarrier(id_="b_good_lock")
+    participants = [new_participant(exp) for _ in range(2)]
+    bad_barrier.receive_participant(participants[0])
+    good_barrier.receive_participant(participants[1])
+    db.session.commit()
+
+    check_barriers()
+
+    assert "b_good_lock" in processed_barriers
+    assert _advisory_lock_count() == baseline
+
+
 _group_release_calls = []
 
 
@@ -1040,7 +1058,7 @@ def _commit_barrier_arrivals():
     checks = _take_pending_barrier_checks()
     if checks:
         _run_pending_barrier_checks(checks)
-        _commit_and_advance_released_hold_waiters()
+        db.session.commit()
 
 
 def _barrier_link_released(participant_id, barrier_id):
@@ -1457,22 +1475,22 @@ def test_finalize_drops_partner_locks_before_submitter_relock(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
-def test_finalize_skips_released_hold_waiters_without_holding_all_partner_rows(
+def test_finalize_skips_only_the_submitter_without_holding_partner_rows(
     in_experiment_directory, db_session
 ):
-    """Last-arrival must drop partner FOR UPDATE locks before skipping holds.
+    """Last-arrival must drop partner FOR UPDATE locks before skipping its own hold.
 
     Skipping while every waiter is still locked is what made GET /timeline
     hit ``timeline_lock_timeout_seconds`` during rock-paper-scissors
-    parallel bots.
+    parallel bots. Partners resume on their own request.
     """
     exp = get_experiment()
     first, last = _pair_sync_group(exp, db_session)[0]
     first_id, last_id = first.id, last.id
-    barrier = GroupBarrier(id_="finalize_skip_after_unlock", group_type="main")
+    barrier = GroupBarrier(id_="finalize_skip_own_cursor", group_type="main")
     hold_page = SimpleNamespace(
         is_timeline_hold=True,
-        hold_id="skip_after_unlock",
+        hold_id="skip_own_cursor",
         __json__=lambda _participant: {"label": "hold"},
     )
     exp.timeline = SimpleNamespace(get_current_elt=lambda _e, _p: hold_page)
@@ -1499,50 +1517,16 @@ def test_finalize_skips_released_hold_waiters_without_holding_all_partner_rows(
         result=result,
     )
 
-    partner_skips = [row for row in locks if row["participant_id"] == first_id]
-    assert partner_skips, "released partners must still be skipped after the check"
-    assert all(row["last_locked"] is False for row in partner_skips)
-    assert not any(row["first_locked"] and row["last_locked"] for row in locks)
+    assert [row["participant_id"] for row in locks] == [last_id]
+    assert locks == [
+        {
+            "participant_id": last_id,
+            "first_locked": False,
+            "last_locked": True,
+        }
+    ]
     assert _barrier_link_released(first_id, barrier.id) is True
     assert _barrier_link_released(last_id, barrier.id) is True
-
-
-@pytest.mark.parametrize(
-    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
-)
-def test_skip_after_commit_keeps_queued_checks_when_a_partner_row_is_busy(
-    in_experiment_directory, db_session
-):
-    """A NOWAIT miss must not discard stacked checks queued by an earlier skip."""
-    exp = get_experiment()
-    first, last = _pair_sync_group(exp, db_session)[0]
-    first_id, last_id = first.id, last.id
-    hold_page = SimpleNamespace(
-        is_timeline_hold=True,
-        hold_id="busy_partner_skip",
-    )
-    exp.timeline = SimpleNamespace(get_current_elt=lambda _e, _p: hold_page)
-    queued_id = f"stacked-{uuid.uuid4().hex}"
-
-    def advance(participant, current_page):
-        if participant.id == first_id:
-            _queue_barrier_check(queued_id)
-        return current_page
-
-    exp._advance_past_ready_holds = advance
-    blocker = db.engine.connect()
-    blocker_trans = blocker.begin()
-    try:
-        blocker.execute(
-            text("SELECT id FROM participant WHERE id = :id FOR UPDATE"),
-            {"id": last_id},
-        )
-        _advance_released_hold_waiters_after_commit([first_id, last_id])
-    finally:
-        blocker_trans.rollback()
-        blocker.close()
-
-    assert queued_id in _take_pending_barrier_checks()
 
 
 @pytest.mark.parametrize(
@@ -1838,8 +1822,7 @@ def test_last_arrival_releases_waiters_during_unready_hold_resume(
         last = Participant.query.filter_by(unique_id=last_uid).one()
         last_response = _json_timeline(exp, last)
         assert last_response.status_code == 200
-        assert last_response.get_json()["attributes"]["type"] == "ModularPage"
-        _assert_on_action_page(exp, [first_id, last_id])
+        _assert_still_on_hold(exp, [first_id])
         assert not _participant_row_is_locked(first_id)
         assert not _participant_row_is_locked(last_id)
     finally:
@@ -1961,13 +1944,13 @@ def test_two_response_finalizers_claim_one_barrier_instance(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
-def test_barrier_release_advances_every_released_hold_waiter(
+def test_barrier_release_does_not_advance_released_hold_waiters(
     in_experiment_directory, db_session
 ):
-    """Released partners must leave the hold in the same check, not their next request."""
+    """A barrier check releases links; partners skip on their own request."""
     exp = get_experiment()
     first, last = _pair_sync_group(exp, db_session)[0]
-    barrier = GroupBarrier(id_="advance_all_released", group_type="main")
+    barrier = GroupBarrier(id_="release_without_skip", group_type="main")
     advanced = []
     exp.timeline = SimpleNamespace(
         get_current_elt=lambda _experiment, participant: barrier.waiting_logic
@@ -1981,7 +1964,9 @@ def test_barrier_release_advances_every_released_hold_waiter(
     _arrive_at_group_barrier(exp, barrier, last)
     _commit_barrier_arrivals()
 
-    assert set(advanced) == {first.id, last.id}
+    assert advanced == []
+    assert _barrier_link_released(first.id, barrier.id) is True
+    assert _barrier_link_released(last.id, barrier.id) is True
 
 
 @pytest.mark.parametrize(
@@ -2596,6 +2581,42 @@ def _assert_still_holding(exp, participant_ids):
         assert participant.sync_group is None
 
 
+def _assert_still_on_hold(exp, participant_ids):
+    """Listed participants must still be on a timeline hold after a release."""
+    db.session.expire_all()
+    for participant_id in participant_ids:
+        participant = Participant.query.get(participant_id)
+        page = exp.timeline.get_current_elt(exp, participant)
+        assert getattr(page, "is_timeline_hold", False)
+
+
+def _catch_up_until_action(exp, participant_ids, *, rounds=20):
+    """Advance each participant on their own GET until the action page."""
+    participant_ids = list(participant_ids)
+    for _ in range(rounds):
+        db.session.expire_all()
+        remaining = []
+        for participant_id in participant_ids:
+            participant = Participant.query.get(participant_id)
+            page = exp.timeline.get_current_elt(exp, participant)
+            if getattr(page, "label", None) != "choose_action":
+                remaining.append(participant)
+        if not remaining:
+            _assert_on_action_page(exp, participant_ids)
+            return
+        for participant in remaining:
+            assert _json_timeline(exp, participant).status_code == 200
+    _assert_on_action_page(exp, participant_ids)
+
+
+def _advisory_lock_count():
+    """Return how many advisory locks the database currently holds."""
+    with db.engine.connect() as conn:
+        return conn.execute(
+            text("SELECT count(*) FROM pg_locks WHERE locktype = 'advisory'")
+        ).scalar()
+
+
 def _assert_stacked_finalize_defers_wakes(exp, monkeypatch, group_size):
     """Waiters stay unpublished until stacked last-arrival finalize returns."""
     original_timeline = exp.timeline
@@ -2638,7 +2659,6 @@ def _assert_stacked_finalize_defers_wakes(exp, monkeypatch, group_size):
 
         last_response = _json_timeline(exp, last)
         assert last_response.status_code == 200
-        assert last_response.get_json()["attributes"]["type"] == "ModularPage"
         assert released_at_inner_commit
         assert all(count == 0 for count in released_at_inner_commit)
         published = {
@@ -2648,7 +2668,7 @@ def _assert_stacked_finalize_defers_wakes(exp, monkeypatch, group_size):
             if target.get("reason") == "barrier_released" and target.get("wake_token")
         }
         assert tokens <= published
-        _assert_on_action_page(exp, [participant.id for participant in participants])
+        _assert_still_on_hold(exp, [waiter.id for waiter in waiters])
     finally:
         exp.timeline = original_timeline
 
@@ -2681,7 +2701,6 @@ def test_last_arrival_get_defers_wakes_until_after_render(
         )
         last_response = _json_timeline(exp, last)
         assert last_response.status_code == 200
-        assert last_response.get_json()["attributes"]["type"] == "ModularPage"
         assert wakes_during_render == [0]
         assert _released_wake_count(publications) >= 1
     finally:
@@ -2726,6 +2745,7 @@ def test_poller_does_not_wake_waiters_during_last_arrival_render(
         first, last = _working_participants(exp, 2)
         assert _json_timeline(exp, first).status_code == 200
         first = Participant.query.get(first.id)
+        first_id = first.id
         first_page = exp.timeline.get_current_elt(exp, first)
         released_id[0] = _hold_instance_id_for_page(first, first_page)
         assert released_id[0]
@@ -2735,11 +2755,10 @@ def test_poller_does_not_wake_waiters_during_last_arrival_render(
         )
         last_response = _json_timeline(exp, last)
         assert last_response.status_code == 200
-        assert last_response.get_json()["attributes"]["type"] == "ModularPage"
         assert pins_during_render == [True]
         assert wakes_during_render == [0, 0]
         assert _released_wake_count(publications) >= 1
-        _assert_on_action_page(exp, [first.id, last.id])
+        _assert_still_on_hold(exp, [first_id])
     finally:
         exp.timeline = original_timeline
 
@@ -2785,10 +2804,10 @@ def test_waiter_hold_render_does_not_pin_unreleased_visit(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
-def test_last_timeline_arrival_skips_stacked_partner_holds(
+def test_last_timeline_arrival_skips_own_released_hold(
     in_experiment_directory, db_session
 ):
-    """The second group member's first /timeline paint must skip every entry hold."""
+    """The last member skips the hold they released; partners catch up themselves."""
     exp = get_experiment()
     original_timeline = exp.timeline
     group_type = f"stack_{uuid.uuid4().hex[:8]}"
@@ -2806,21 +2825,24 @@ def test_last_timeline_arrival_skips_stacked_partner_holds(
         first_page = exp.timeline.get_current_elt(exp, first)
         assert getattr(first_page, "is_timeline_hold", False)
         assert first.sync_group is None
+        first_hold_id = getattr(first_page, "hold_id", None)
 
         last_response = _json_timeline(exp, last)
         assert last_response.status_code == 200
-        assert last_response.get_json()["attributes"]["type"] == "ModularPage"
-
         last = Participant.query.get(last.id)
         first = Participant.query.get(first.id)
         last_page = exp.timeline.get_current_elt(exp, last)
         first_page = exp.timeline.get_current_elt(exp, first)
-        assert not getattr(last_page, "is_timeline_hold", False)
-        assert last_page.label == "choose_action"
-        assert not getattr(first_page, "is_timeline_hold", False)
-        assert first_page.label == "choose_action"
+        assert getattr(first_page, "is_timeline_hold", False)
+        assert getattr(first_page, "hold_id", None) == first_hold_id
         assert last.sync_group is not None
         assert first.sync_group.id == last.sync_group.id
+        assert getattr(last_page, "hold_id", None) != first_hold_id or not getattr(
+            last_page, "is_timeline_hold", False
+        )
+        _catch_up_until_action(exp, [first.id, last.id])
+        last_page = exp.timeline.get_current_elt(exp, Participant.query.get(last.id))
+        assert last_page.label == "choose_action"
     finally:
         exp.timeline = original_timeline
 
@@ -2828,15 +2850,14 @@ def test_last_timeline_arrival_skips_stacked_partner_holds(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
-def test_check_barriers_skips_stacked_holds_in_one_sweep(
+def test_check_barriers_releases_without_skipping_waiters(
     in_experiment_directory, db_session, monkeypatch
 ):
-    """One poller sweep must skip stacked entry holds when last-arrival cannot.
+    """The poller releases links; waiters skip on their own later request.
 
     Concurrent last-arrival GETs can leave partner rows locked, so the
-    poller finishes the release. Publishing a wake after the grouper only
-    would make waiters hold-resume onto the next barrier, then the next,
-    which is the extra POST /response storm Playwright flags.
+    poller finishes the release. It must not advance waiters onto the next
+    stacked hold from this sweep.
     """
     exp = get_experiment()
     original_timeline = exp.timeline
@@ -2845,6 +2866,7 @@ def test_check_barriers_skips_stacked_holds_in_one_sweep(
     publications = _hold_wake_publications(monkeypatch)
     wakes_during_instances = []
     original_process = _process_barrier_instance
+    original_finalize = Experiment._finalize_pending_timeline_barriers
 
     def tracking_process(*args, **kwargs):
         result = original_process(*args, **kwargs)
@@ -2869,15 +2891,18 @@ def test_check_barriers_skips_stacked_holds_in_one_sweep(
         assert _json_timeline(exp, last).status_code == 200
         monkeypatch.setattr("psynet.sync._process_barrier_instance", tracking_process)
         check_barriers()
-        _assert_on_action_page(exp, [first_id, last_id])
+        _assert_still_on_hold(exp, [first_id, last_id])
         assert wakes_during_instances
         assert all(count == 0 for count in wakes_during_instances)
         assert _released_wake_count(publications) >= 1
+        monkeypatch.setattr(
+            Experiment, "_finalize_pending_timeline_barriers", original_finalize
+        )
         resumed = _process_response(
             exp, Participant.query.get(first_id), hold_uuid, timeline_hold_resume=True
         )
         assert resumed.payload["submission"] == "approved"
-        assert resumed.page.label == "choose_action"
+        _catch_up_until_action(exp, [first_id, last_id])
     finally:
         exp.timeline = original_timeline
 
@@ -2923,10 +2948,10 @@ def test_second_of_three_still_paints_stacked_group_holds(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
-def test_last_of_three_skips_stacked_holds_and_releases_waiters(
+def test_last_of_three_releases_waiters_without_skipping_them(
     in_experiment_directory, db_session
 ):
-    """The third member's first /timeline paint must release both waiters."""
+    """The third member's first /timeline paint releases both waiters' links."""
     exp = get_experiment()
     original_timeline = exp.timeline
     group_type = f"stack3_{uuid.uuid4().hex[:8]}"
@@ -2945,18 +2970,10 @@ def test_last_of_three_skips_stacked_holds_and_releases_waiters(
         )
         last_response = _json_timeline(exp, last)
         assert last_response.status_code == 200
-        assert last_response.get_json()["attributes"]["type"] == "ModularPage"
-
-        pages = []
-        groups = []
-        for participant_id in (first.id, second.id, last.id):
-            participant = Participant.query.get(participant_id)
-            page = exp.timeline.get_current_elt(exp, participant)
-            pages.append(page)
-            groups.append(participant.sync_group.id)
-            assert not getattr(page, "is_timeline_hold", False)
-            assert page.label == "choose_action"
-        assert len(set(groups)) == 1
+        _assert_still_on_hold(exp, [first.id, second.id])
+        last = Participant.query.get(last.id)
+        assert last.sync_group is not None
+        _catch_up_until_action(exp, [first.id, second.id, last.id])
     finally:
         exp.timeline = original_timeline
 
@@ -2985,11 +3002,10 @@ def test_stale_hold_resume_approves_the_current_page_after_last_arrival(
 
         last_response = _json_timeline(exp, last)
         assert last_response.status_code == 200
-        assert last_response.get_json()["attributes"]["type"] == "ModularPage"
         db.session.expire_all()
         first = Participant.query.get(first.id)
-        assert first.page_uuid != hold_uuid
-        assert not getattr(
+        assert first.page_uuid == hold_uuid
+        assert getattr(
             exp.timeline.get_current_elt(exp, first), "is_timeline_hold", False
         )
 
@@ -3001,19 +3017,11 @@ def test_stale_hold_resume_approves_the_current_page_after_last_arrival(
         )
         assert unknown.payload["submission"] == "rejected"
 
-        progress_before = first.progress
         current_page = exp.timeline.get_current_elt(exp, first)
         approved = _process_response(exp, first, hold_uuid)
         assert approved.payload["submission"] == "approved"
-        assert approved.page.label == "choose_action"
-        assert approved.payload["page"]["attributes"]["type"] == "ModularPage"
-        assert approved.payload["page"]["attributes"]["page_uuid"] == first.page_uuid
-        assert "timeline_hold" not in approved.payload["page"]["attributes"]
-        assert first.progress == progress_before
-
         leftover = exp._page_for_stale_hold_resume(first, hold_uuid, current_page)
         assert leftover is not None
-        assert leftover.label == "choose_action"
     finally:
         exp.timeline = original_timeline
 
@@ -3049,12 +3057,13 @@ def test_stale_hold_uuid_catches_up_onto_a_later_hold(
         db.session.expire_all()
         first = Participant.query.get(first.id)
         current_page = exp.timeline.get_current_elt(exp, first)
-        assert first.page_uuid != hold_uuid
+        assert first.page_uuid == hold_uuid
         assert getattr(current_page, "is_timeline_hold", False)
 
         resumed = _process_response(exp, first, hold_uuid, timeline_hold_resume=True)
         assert resumed.payload["submission"] == "approved"
         assert getattr(resumed.page, "is_timeline_hold", False)
+        assert first.page_uuid != hold_uuid
         assert resumed.payload["page"]["attributes"]["page_uuid"] == first.page_uuid
 
         first = Participant.query.get(first.id)
@@ -3109,10 +3118,10 @@ def test_stale_wait_while_uuid_is_catch_up_after_get_skip(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
-def test_waiter_get_timeline_survives_stale_hold_after_partner_advance(
+def test_waiter_get_timeline_survives_stale_hold_after_own_advance(
     in_experiment_directory, db_session, monkeypatch
 ):
-    """GET /timeline must paint the live page if a partner already advanced the waiter."""
+    """GET /timeline must paint the live page if this waiter already advanced."""
     exp = get_experiment()
     original_timeline = exp.timeline
     group_type = f"stack_get_{uuid.uuid4().hex[:8]}"
@@ -3131,8 +3140,13 @@ def test_waiter_get_timeline_survives_stale_hold_after_partner_advance(
         assert last_response.status_code == 200
         db.session.expire_all()
         first = Participant.query.get(first.id)
+        assert first.page_uuid == hold_uuid
+
+        catch_up = _json_timeline(exp, first)
+        assert catch_up.status_code == 200
+        db.session.expire_all()
+        first = Participant.query.get(first.id)
         assert first.page_uuid != hold_uuid
-        assert hold_page.prepare_resume_if_ready(exp, first) is False
 
         original_get = Experiment.get_current_page
 
@@ -3146,8 +3160,7 @@ def test_waiter_get_timeline_survives_stale_hold_after_partner_advance(
         monkeypatch.setattr(Experiment, "get_current_page", stale_get)
         response = _json_timeline(exp, first)
         assert response.status_code == 200
-        assert response.get_json()["attributes"]["type"] == "ModularPage"
-        assert response.get_json()["attributes"]["page_uuid"] == first.page_uuid
+        assert response.get_json()["attributes"]["page_uuid"] != hold_uuid
     finally:
         exp.timeline = original_timeline
 
@@ -3206,12 +3219,7 @@ def test_two_late_trio_arrivals_release_the_waiting_member(
         assert not thread_b.is_alive()
         assert result_a.get("status") == 200
         assert result_b.get("status") == 200
-
-        for participant_id in (first_id, late_a_id, late_b_id):
-            participant = Participant.query.get(participant_id)
-            page = exp.timeline.get_current_elt(exp, participant)
-            assert not getattr(page, "is_timeline_hold", False)
-            assert page.label == "choose_action"
+        _catch_up_until_action(exp, [first_id, late_a_id, late_b_id])
     finally:
         exp.timeline = original_timeline
 
@@ -3220,7 +3228,7 @@ def test_two_late_trio_arrivals_release_the_waiting_member(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
 @pytest.mark.parametrize("group_size", [4, 5])
-def test_last_of_n_skips_stacked_holds_and_releases_waiters(
+def test_last_of_n_releases_waiters_without_skipping_them(
     in_experiment_directory, db_session, group_size
 ):
     """The last member's first /timeline paint must release every waiter."""
@@ -3231,6 +3239,7 @@ def test_last_of_n_skips_stacked_holds_and_releases_waiters(
     try:
         participants = _working_participants(exp, group_size)
         waiter_ids = [participant.id for participant in participants[:-1]]
+        last_id = participants[-1].id
         for waiter in participants[:-1]:
             response = _json_timeline(exp, waiter)
             assert response.status_code == 200
@@ -3239,8 +3248,10 @@ def test_last_of_n_skips_stacked_holds_and_releases_waiters(
 
         last_response = _json_timeline(exp, participants[-1])
         assert last_response.status_code == 200
-        assert last_response.get_json()["attributes"]["type"] == "ModularPage"
-        _assert_on_action_page(exp, [participant.id for participant in participants])
+        _assert_still_on_hold(exp, waiter_ids)
+        last = Participant.query.get(last_id)
+        assert last.sync_group is not None
+        _catch_up_until_action(exp, [participant.id for participant in participants])
     finally:
         exp.timeline = original_timeline
 
@@ -3302,7 +3313,7 @@ def test_two_late_arrivals_complete_a_group_of_four(
         assert not thread_b.is_alive()
         assert result_a.get("status") == 200
         assert result_b.get("status") == 200
-        _assert_on_action_page(exp, [first_id, second_id, late_a_id, late_b_id])
+        _catch_up_until_action(exp, [first_id, second_id, late_a_id, late_b_id])
     finally:
         exp.timeline = original_timeline
 
@@ -3326,7 +3337,7 @@ def test_finalize_rechecks_current_hold_when_follow_up_queue_is_dropped(
         return checks
 
     monkeypatch.setattr("psynet.sync._take_pending_barrier_checks", drop_follow_ups)
-    test_last_timeline_arrival_skips_stacked_partner_holds(
+    test_last_timeline_arrival_skips_own_released_hold(
         in_experiment_directory, db_session
     )
     assert seen["count"] > 1
@@ -3364,9 +3375,11 @@ def test_last_arrival_retries_an_unclaimed_barrier_check_once(
         monkeypatch.setattr("psynet.sync._run_pending_barrier_checks", fail_first)
         last_response = _json_timeline(exp, last)
         assert last_response.status_code == 200
-        assert last_response.get_json()["attributes"]["type"] == "ModularPage"
-        _assert_on_action_page(exp, [first.id, last.id])
+        _assert_still_on_hold(exp, [first.id])
+        last = Participant.query.get(last.id)
+        assert last.sync_group is not None
         assert seen["count"] >= 2
+        _catch_up_until_action(exp, [first.id, last.id])
     finally:
         exp.timeline = original_timeline
 
@@ -3496,8 +3509,10 @@ def test_last_arrival_waits_for_a_busy_barrier_claim(
         assert errors == []
         assert not thread.is_alive()
         assert result.get("status") == 200
-        assert result.get("type") == "ModularPage"
-        _assert_on_action_page(exp, [first.id, last.id])
+        last = Participant.query.get(last.id)
+        assert last.sync_group is not None
+        _assert_still_on_hold(exp, [first.id])
+        _catch_up_until_action(exp, [first.id, last.id])
     finally:
         release_claim.set()
         exp.timeline = original_timeline
@@ -3506,14 +3521,14 @@ def test_last_arrival_waits_for_a_busy_barrier_claim(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
-def test_last_arrival_follows_poller_skip_after_claim_wait(
+def test_last_arrival_follows_poller_release_after_claim_wait(
     in_experiment_directory, db_session
 ):
-    """If the poller already skipped stacked holds, last-arrival must not paint one.
+    """If the poller already released the visit, last-arrival must skip that hold.
 
-    Playwright last-of-three first-paint fails when this GET waits for the
-    visit claim, the poller releases everyone, and the empty locking SELECT
-    then first-paints ``_BarrierHoldPage``. Follow the live cursor instead.
+    Last-arrival waits for the visit claim on a separate connection. The poller
+    releases links without advancing waiters. This GET then skips its own
+    released hold instead of first-painting it.
     """
     exp = get_experiment()
     original_timeline = exp.timeline
@@ -3533,35 +3548,33 @@ def test_last_arrival_follows_poller_skip_after_claim_wait(
             "_BarrierHoldPage"
         )
         first = Participant.query.get(first.id)
+        first_page = exp.timeline.get_current_elt(exp, first)
+        first_hold_id = getattr(first_page, "hold_id", None)
         instance_id = next(iter(first.active_barriers.values())).barrier_instance_id
         last_uid = last.unique_id
         last_id = last.id
+        first_id = first.id
+        second_id = second.id
 
-        def poller_skip():
+        def poller_release():
             try:
-                _claim_barrier_instance_session(instance_id, wait=True)
-                claim_held.set()
-                if not last_joined.wait(timeout=5):
-                    raise TimeoutError("Last arriver did not join the visit.")
                 _set_transaction_lock_timeout(
                     get_config().get("timeline_lock_timeout_seconds")
                 )
+                assert _claim_barrier_instance(instance_id, wait=True)
+                claim_held.set()
+                if not last_joined.wait(timeout=5):
+                    raise TimeoutError("Last arriver did not join the visit.")
                 instance = BarrierInstance.query.get(instance_id)
                 assert _check_claimed_barrier_instance(instance, wait=False)
-                released_ids = _take_released_hold_waiter_ids()
                 db.session.commit()
-                _advance_released_hold_waiters_after_commit(released_ids)
             except Exception as err:  # pragma: no cover - surfaced by the caller
                 holder_error.append(err)
                 db.session.rollback()
             finally:
-                try:
-                    _release_barrier_instance_session(instance_id)
-                except Exception as err:  # pragma: no cover - surfaced by the caller
-                    holder_error.append(err)
                 db.session.remove()
 
-        holder = threading.Thread(target=poller_skip, daemon=True)
+        holder = threading.Thread(target=poller_release, daemon=True)
         holder.start()
         assert claim_held.wait(timeout=2)
         thread, result, errors = _route_timeline_in_thread(exp, last_uid)
@@ -3594,8 +3607,14 @@ def test_last_arrival_follows_poller_skip_after_claim_wait(
         assert errors == []
         assert not thread.is_alive()
         assert result.get("status") == 200
-        assert result.get("type") == "ModularPage"
-        _assert_on_action_page(exp, [first.id, second.id, last_id])
+        last = Participant.query.get(last_id)
+        last_page = exp.timeline.get_current_elt(exp, last)
+        assert last.sync_group is not None
+        assert getattr(last_page, "hold_id", None) != first_hold_id or not getattr(
+            last_page, "is_timeline_hold", False
+        )
+        _assert_still_on_hold(exp, [first_id, second_id])
+        _catch_up_until_action(exp, [first_id, second_id, last_id])
     finally:
         last_joined.set()
         exp.timeline = original_timeline
@@ -3620,6 +3639,7 @@ def test_check_barriers_skips_locked_waiters_and_continues(
     db.session.commit()
     locked_id = locked_participant.id
     free_id = free_participant.id
+    baseline = _advisory_lock_count()
 
     with db.engine.connect() as conn:
         trans = conn.begin()
@@ -3634,9 +3654,11 @@ def test_check_barriers_skips_locked_waiters_and_continues(
 
     assert locked_released is False
     assert free_released is True
+    assert _advisory_lock_count() == baseline
 
     check_barriers()
     assert _barrier_link_released(locked_id, "a_locked") is True
+    assert _advisory_lock_count() == baseline
 
 
 @pytest.mark.parametrize(
@@ -4510,7 +4532,6 @@ def test_stacked_finalize_defers_hold_wakes_until_it_returns(
         ):
             last_response = Experiment._route_timeline(exp, last, mode="json")
         assert last_response.status_code == 200
-        assert last_response.get_json()["attributes"]["type"] == "ModularPage"
         assert released_at_inner_commit
         assert all(count == 0 for count in released_at_inner_commit)
         assert _released_wake_count(publications) >= 1
@@ -4572,7 +4593,6 @@ def test_trio_stacked_finalize_defers_wakes_for_every_waiter(
 
         last_response = _json_timeline(exp, last)
         assert last_response.status_code == 200
-        assert last_response.get_json()["attributes"]["type"] == "ModularPage"
         assert released_at_inner_commit
         assert all(count == 0 for count in released_at_inner_commit)
         published = {

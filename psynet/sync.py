@@ -50,20 +50,15 @@ When a participant reaches a barrier, ``Barrier.receive_participant``:
 A scheduled task in ``Experiment._check_barriers`` calls ``check_barriers`` in
 this module. That loop:
 
-- Finds waiting barrier instances, including visits created earlier in the
-  same sweep when released waiters were advanced onto the next stacked hold.
-- Claims each with a PostgreSQL advisory lock. Last-arrival uses a
-  transaction-level claim. The poller uses a session-level claim that lasts
-  until skip-after-commit finishes, leaving definition and instance
-  metadata available to arrival requests.
+- Finds waiting barrier instances.
+- Claims each with a PostgreSQL advisory transaction lock, leaving definition
+  and instance metadata available to arrival requests.
 - Locks waiters with ``FOR UPDATE NOWAIT``. If any waiter is already locked
   (for example by ``POST /response``), it skips that barrier this tick instead
   of blocking the poller.
-- Evaluates the barrier's release hooks in an isolated transaction, then
-  skips released hold waiters one row at a time after that commit.
+- Evaluates the barrier's release hooks in an isolated transaction.
 - Logs and skips failures per barrier so one bad barrier does not stall others.
-- Keeps hold-wake publishes unpublished until the sweep returns, so a waiter
-  is not told to resume onto the next stacked hold one barrier at a time.
+- Keeps hold-wake publishes unpublished until the sweep returns.
 
 Each default barrier visit links to a durable ``TimelineHoldRecord``. Releasing
 the link accounts waiting through the release time and queues a targeted browser
@@ -76,16 +71,15 @@ arrival transaction commits, the response route evaluates the barrier in a
 short coordination transaction before rendering. That lets a ``Grouper`` form
 groups and a ``GroupBarrier`` release the group without waiting for the poller,
 while waiter locks remain outside the main write transaction. After that
-check commits, released hold waiters are skipped one row at a time so a
-partner ``GET /timeline`` can lock itself. The poller holds a session-level
-advisory claim until that skip finishes, so last-arrival's transaction-level
-wait cannot first-paint a hold in the gap after partner row locks drop.
-Last-arrival waits for the same instance advisory claim the poller tries, so
-it does not first-paint a hold while the poller still owns the visit. It also
-pins those
-visits in Redis until HTML/JSON render returns, so this poller (another
-process) does not publish hold wakes during that render. Waiter rows stay
-``NOWAIT`` so a locked partner cannot stall that request for ``lock_timeout``.
+check commits, the same request skips only its own participant past holds
+that are already clear, so it does not first-paint the wait it just released.
+Partners stay on that overlay until their own hold-resume POST or
+``GET /timeline``. Last-arrival waits for the same instance advisory claim
+the poller tries, so it does not first-paint a hold while the poller still
+owns the visit. It also pins those visits in Redis until HTML/JSON render
+returns, so this poller (another process) does not publish hold wakes during
+that render. Waiter rows stay ``NOWAIT`` so a locked partner cannot stall
+that request for ``lock_timeout``.
 
 Callable attributes on barriers (e.g., ``on_release``) persist through
 :mod:`psynet.barrier_spec` so each ``BarrierInstance`` keeps stable release
@@ -135,6 +129,7 @@ from psynet.data import SQLBase, SQLMixin, register_table
 from psynet.db import (
     _set_transaction_lock_timeout,
     is_transient_transaction_error,
+    transaction,
 )
 from psynet.field import PythonClass
 from psynet.page import UnsuccessfulEndPage
@@ -154,7 +149,6 @@ from psynet.utils import call_function_with_context, get_config, get_logger
 logger = get_logger()
 
 _PENDING_BARRIER_CHECKS_KEY = "psynet_pending_barrier_checks"
-_RELEASED_HOLD_WAITER_IDS_KEY = "psynet_released_hold_waiter_ids"
 
 
 def _queue_barrier_check(barrier_instance_id):
@@ -167,36 +161,6 @@ def _queue_barrier_check(barrier_instance_id):
 def _take_pending_barrier_checks():
     """Take the barrier checks queued by the preceding successful transaction."""
     return sorted(db.session.info.pop(_PENDING_BARRIER_CHECKS_KEY, set()))
-
-
-def _queue_released_hold_waiters(participants):
-    """Remember released waiters so they can be skipped after partner locks drop."""
-    db.session.info.setdefault(_RELEASED_HOLD_WAITER_IDS_KEY, []).extend(
-        participant.id for participant in participants
-    )
-
-
-def _take_released_hold_waiter_ids():
-    """Take waiter ids queued by the barrier check that just ran."""
-    ids = db.session.info.pop(_RELEASED_HOLD_WAITER_IDS_KEY, [])
-    return sorted(set(ids))
-
-
-def _rollback_preserving_barrier_queues():
-    """Roll back without dropping queued post-commit barrier work.
-
-    Skip-after-commit may ``NOWAIT``-miss a waiter whose own request already
-    holds the row. PostgreSQL aborts that transaction, so the session must
-    roll back before the next waiter. ``after_rollback`` would otherwise
-    discard stacked checks queued by a waiter this loop already skipped.
-    """
-    pending = set(db.session.info.get(_PENDING_BARRIER_CHECKS_KEY, set()))
-    released = list(db.session.info.get(_RELEASED_HOLD_WAITER_IDS_KEY, []))
-    db.session.rollback()
-    if pending:
-        db.session.info[_PENDING_BARRIER_CHECKS_KEY] = pending
-    if released:
-        db.session.info[_RELEASED_HOLD_WAITER_IDS_KEY] = released
 
 
 def _hold_instance_id_for_page(participant, page):
@@ -218,7 +182,6 @@ def _hold_instance_id_for_page(participant, page):
 @event.listens_for(db.session, "after_rollback")
 def _discard_pending_barrier_checks(session):
     session.info.pop(_PENDING_BARRIER_CHECKS_KEY, None)
-    session.info.pop(_RELEASED_HOLD_WAITER_IDS_KEY, None)
 
 
 def _claim_barrier_instance(instance_id, *, wait=False):
@@ -226,9 +189,7 @@ def _claim_barrier_instance(instance_id, *, wait=False):
 
     ``pg_advisory_xact_lock`` returns void, so a blocking claim must not use
     ``bool(scalar())`` — that would look like a missed claim after a wait.
-    Last-arrival uses this transaction-level claim. The poller also holds a
-    session-level claim on the same key until skip-after-commit finishes, so
-    a GET cannot first-paint a hold in the gap after waiter row locks drop.
+    Last-arrival and the poller both use this transaction-level claim.
     """
     if wait:
         db.session.execute(
@@ -241,36 +202,6 @@ def _claim_barrier_instance(instance_id, *, wait=False):
             text("SELECT pg_try_advisory_xact_lock(hashtextextended(:instance_id, 0))"),
             {"instance_id": instance_id},
         ).scalar()
-    )
-
-
-def _claim_barrier_instance_session(instance_id, *, wait=False):
-    """Hold a visit claim that survives the check commit until skip finishes.
-
-    Transaction-level claims drop when the check commits, which is required
-    so partner ``GET /timeline`` can lock waiter rows. Session-level claims
-    stay until ``_release_barrier_instance_session``, so last-arrival still
-    waits through skip-after-commit.
-    """
-    if wait:
-        db.session.execute(
-            text("SELECT pg_advisory_lock(hashtextextended(:instance_id, 0))"),
-            {"instance_id": instance_id},
-        )
-        return True
-    return bool(
-        db.session.execute(
-            text("SELECT pg_try_advisory_lock(hashtextextended(:instance_id, 0))"),
-            {"instance_id": instance_id},
-        ).scalar()
-    )
-
-
-def _release_barrier_instance_session(instance_id):
-    """Drop the poller's session-level visit claim."""
-    db.session.execute(
-        text("SELECT pg_advisory_unlock(hashtextextended(:instance_id, 0))"),
-        {"instance_id": instance_id},
     )
 
 
@@ -742,9 +673,6 @@ class Barrier(EltCollection):
         Last-arrival keeps ``instance.active``, so looking for that other
         pool stays off the budgeted path.
 
-        Released hold waiters are queued and skipped after this check
-        commits, so partner row locks do not span ``_advance_past_ready_holds``.
-
         Returns
         -------
         list of Participant
@@ -825,7 +753,6 @@ class Barrier(EltCollection):
                 # an unfilled visit (waiter GET / still-waiting skip) keeps the
                 # 0.5 s poller from finishing the same barrier.
                 _mark_last_arrival_render_instance(instance.id)
-            _queue_released_hold_waiters(participants_to_release)
         if instance is not None:
             instance.active = any(
                 not participant.active_barriers[self.id].released
@@ -839,61 +766,6 @@ class Barrier(EltCollection):
         return waiting_participants
 
 
-def _advance_released_hold_waiters_after_commit(participant_ids):
-    """Skip each released hold waiter after partner row locks are dropped.
-
-    Partners otherwise stay at this hold until their next request, so the
-    last arriver would immediately sit on the next barrier (often with the
-    same wait copy) until those clients catch up. The waiter's later
-    hold-resume POST still carries the hold page's uuid; ``process_response``
-    treats that as an in-place catch-up when it is still this waiter's
-    hold uuid, rather than a sync failure.
-
-    Each waiter is locked alone so a partner ``GET /timeline`` can take
-    ``FOR UPDATE`` on itself. ``NOWAIT`` skips a waiter whose own request
-    already holds the row.
-    """
-    from .experiment import get_experiment
-
-    if not participant_ids:
-        return
-    experiment = get_experiment()
-    for participant_id in participant_ids:
-        try:
-            _set_transaction_lock_timeout(
-                get_config().get("timeline_lock_timeout_seconds")
-            )
-            participant = (
-                experiment._participant_request_query()
-                .with_for_update(of=Participant, nowait=True)
-                .populate_existing()
-                .get(participant_id)
-            )
-        except Exception as err:
-            _rollback_preserving_barrier_queues()
-            if is_transient_transaction_error(err):
-                logger.debug(
-                    "Released waiter %s is advancing in another request.",
-                    participant_id,
-                )
-                continue
-            raise
-        if participant is None:
-            _rollback_preserving_barrier_queues()
-            continue
-        page = experiment.timeline.get_current_elt(experiment, participant)
-        if getattr(page, "is_timeline_hold", False):
-            experiment._advance_past_ready_holds(participant, page)
-        db.session.commit()
-
-
-def _commit_and_advance_released_hold_waiters():
-    """Drop barrier-check partner locks, then skip released hold waiters."""
-    released_ids = _take_released_hold_waiter_ids()
-    db.session.commit()
-    _advance_released_hold_waiters_after_commit(released_ids)
-
-
 class GroupBarrier(Barrier):
     """
     A GroupBarrier is a Barrier that waits until all participants in a given :class:`~psynet.sync.SyncGroup`
@@ -905,8 +777,9 @@ class GroupBarrier(Barrier):
 
     After the arrival write commits, the same request evaluates the barrier in
     a short transaction so partners are released without waiting for the 0.5 s
-    poller. On the default hold path that arriver then skips the wait indicator.
-    If a partner wait row is locked, the poller finishes the release.
+    poller. On the default hold path that arriver then skips its own wait
+    indicator. Partners resume themselves after the wake. If a partner wait
+    row is locked, the poller finishes the release.
     ``on_release`` receives the reconstructed registry barrier; see
     :class:`Barrier` for the live-versus-reconstructed method split.
 
@@ -2185,19 +2058,16 @@ def _run_pending_barrier_checks(instance_ids):
     Last-arrival must not first-paint a hold because the 0.5 s poller already
     holds this visit. Waiting for the claim (not for waiter rows) serializes
     with that poller and with concurrent last-arrival requests. Waiter rows
-    stay ``FOR UPDATE NOWAIT``. Released hold waiters are collected here and
-    skipped by the caller after the check commits, so partner row locks do
-    not span ``_advance_past_ready_holds``.
+    stay ``FOR UPDATE NOWAIT``. The caller commits after this returns so
+    partner row locks do not span the submitter's own hold skip.
     """
     all_claimed = True
-    released_ids = []
     for instance_id in instance_ids:
         instance = BarrierInstance.query.get(instance_id)
         try:
             with db.session.begin_nested():
                 claimed = _check_claimed_barrier_instance(instance, wait=True)
                 all_claimed = all_claimed and claimed
-                released_ids.extend(_take_released_hold_waiter_ids())
         except Exception as err:
             all_claimed = False
             if is_transient_transaction_error(err):
@@ -2212,8 +2082,6 @@ def _run_pending_barrier_checks(instance_ids):
                 instance.barrier_id if instance is not None else None,
                 instance_id,
             )
-    if released_ids:
-        db.session.info[_RELEASED_HOLD_WAITER_IDS_KEY] = sorted(set(released_ids))
     return all_claimed
 
 
@@ -2228,25 +2096,17 @@ def _process_barrier_instance(instance_id, *, retry=False):
         )
         return False
     barrier_id = None
-    released_ids = []
-    session_locked = False
     try:
-        if not _claim_barrier_instance_session(instance_id):
-            db.session.rollback()
-            return True
-        session_locked = True
-        _set_transaction_lock_timeout(get_config().get("timeline_lock_timeout_seconds"))
-        instance = BarrierInstance.query.get(instance_id)
-        if instance is None:
-            return False
-        barrier_id = instance.barrier_id
-        _check_claimed_barrier_instance(instance)
-        released_ids = _take_released_hold_waiter_ids()
-        db.session.commit()
-        _advance_released_hold_waiters_after_commit(released_ids)
-        return False
+        with transaction():
+            _set_transaction_lock_timeout(
+                get_config().get("timeline_lock_timeout_seconds")
+            )
+            instance = BarrierInstance.query.get(instance_id)
+            if instance is None:
+                return False
+            barrier_id = instance.barrier_id
+            _check_claimed_barrier_instance(instance)
     except Exception as err:
-        db.session.rollback()
         if is_transient_transaction_error(err):
             qualifier = " still locked on retry" if retry else " deferred"
             logger.debug(
@@ -2263,38 +2123,20 @@ def _process_barrier_instance(instance_id, *, retry=False):
             instance_id,
             qualifier,
         )
-        return False
-    finally:
-        if session_locked:
-            try:
-                if db.session.in_transaction():
-                    db.session.rollback()
-                _release_barrier_instance_session(instance_id)
-                db.session.commit()
-            except Exception:
-                logger.exception(
-                    "Failed to unlock barrier instance %s session claim.",
-                    instance_id,
-                )
-                db.session.rollback()
+    return False
 
 
 def check_barriers():
-    """Process waiting barrier visits, including stacked holds created here.
+    """Process waiting barrier visits.
 
     Last-arrival GET waits for this poller's instance claim, then still uses
-    waiter ``NOWAIT``. The poller keeps a session-level claim until
-    skip-after-commit finishes, so last-arrival cannot first-paint a hold in
-    the gap after partner row locks drop. If a partner row stays busy, this
-    poller finishes the stacked skip: walk newly created holds in this sweep
-    and keep wake publishes unpublished until that walk returns, so waiters do
-    not
-    hold-resume onto the next barrier one at a time. Skip visits a last-arrival
-    request already released and is still rendering; that request pins those
-    in Redis so this process cannot publish during HTML/JSON render. Unfilled
-    waiter GETs do not pin, so this poller can still finish those visits.
-    Each visit still commits before the next check so a locked waiter cannot
-    poison sibling checks.
+    waiter ``NOWAIT``. The poller releases ready visits; it does not advance
+    waiters' timelines. Each participant skips ready holds on their own
+    request. Skip visits a last-arrival request already released and is still
+    rendering; that request pins those in Redis so this process cannot publish
+    during HTML/JSON render. Unfilled waiter GETs do not pin, so this poller
+    can still finish those visits. Each visit still commits in its own
+    session so a locked waiter cannot poison sibling checks.
     """
     seen = set()
     with _defer_timeline_hold_wakes():

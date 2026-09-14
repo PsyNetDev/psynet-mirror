@@ -31,7 +31,6 @@ from psynet.sync import (
     ParticipantLinkBarrier,
     SimpleGrouper,
     SimpleSyncGroup,
-    _commit_and_advance_released_hold_waiters,
     _run_pending_barrier_checks,
     _take_pending_barrier_checks,
     pending_arrival_notice_for,
@@ -47,19 +46,14 @@ pytestmark = [
     pytest.mark.usefixtures("in_experiment_directory"),
 ]
 
-# Precise snapshot of the current ORM path (check = 17, finalize = 23 + 2N).
+# Precise snapshot of the current ORM path (check = 17, finalize = 23).
 # Statement-by-statement analysis:
 # docs/developer/sqlalchemy_performance.rst ("Barrier last-arrival SQL budgets").
 # Lower counts are an improvement: update these constants and that section.
 # Per-row writes still scale with group size; SQLAlchemy flushes them as one
 # executemany statement per table, so UPDATE *statement* count stays 1.
-# Skip-after-commit locks each released waiter alone (2 statements + 1 commit
-# per waiter on the dummy finalize path).
 _CHECK_QUERIES = 17
 _FINALIZE_OVERHEAD_QUERIES = 6
-_FINALIZE_SKIP_QUERIES_PER_WAITER = 2
-_STACKED_BARRIER_COUNT = 3  # grouper + two GroupBarriers
-_STACKED_QUERIES_PER_EXTRA_MEMBER = 80  # loose cap, not a target
 
 
 def _statement_count(profiler, pattern):
@@ -77,9 +71,7 @@ def _commit_count(profiler, *needles):
     Finalize's check ``session.commit()`` lives on
     ``_run_queued_barrier_checks``; the relock commit stays on
     ``_run_finalized_barrier_arrivals``. Count both so extracting the
-    retry helper does not look like a missing outer commit. Skip-after-commit
-    lives on ``_advance_released_hold_waiters_after_commit`` and is counted
-    separately as ``skip_commits``.
+    retry helper does not look like a missing outer commit.
     """
     return sum(
         stat.count
@@ -99,9 +91,6 @@ def _budget(profiler):
             profiler,
             "_run_finalized_barrier_arrivals",
             "_run_queued_barrier_checks",
-        ),
-        "skip_commits": _commit_count(
-            profiler, "_advance_released_hold_waiters_after_commit"
         ),
         "for_update": for_update,
         "nowait": nowait,
@@ -215,7 +204,7 @@ def _commit_barrier_arrivals():
     checks = _take_pending_barrier_checks()
     if checks:
         _run_pending_barrier_checks(checks)
-        _commit_and_advance_released_hold_waiters()
+        db.session.commit()
 
 
 def _queued_last_arrival_checks(exp, barrier, waiters, last):
@@ -302,7 +291,6 @@ def _check_expected(n):
         "savepoint": 1,
         "release_savepoint": 1,
         "lock_timeout": 0,
-        "skip_commits": 0,
         "waiter_join": 1,
         "update_link": 1,
         "update_hold_release": 1,
@@ -317,7 +305,7 @@ def _check_expected(n):
 
 
 def _finalize_expected(n):
-    """Return the finalize-window snapshot: check, relock, then per-waiter skip.
+    """Return the finalize-window snapshot: check plus six overhead statements.
 
     See docs/developer/sqlalchemy_performance.rst (Barrier last-arrival SQL
     budgets). Update both places if an improvement lowers these counts.
@@ -325,51 +313,115 @@ def _finalize_expected(n):
     expected = _check_expected(n)
     expected.update(
         {
-            "queries": (
-                expected["queries"]
-                + _FINALIZE_OVERHEAD_QUERIES
-                + _FINALIZE_SKIP_QUERIES_PER_WAITER * n
-            ),
-            "commits": 3 + n,
+            "queries": expected["queries"] + _FINALIZE_OVERHEAD_QUERIES,
+            "commits": 3,
             "finalize_commits": 2,
-            "skip_commits": n,
-            "for_update": 2 + n,
-            "nowait": 1 + n,
+            "for_update": 2,
             "relock_for_update": 1,
-            "lock_timeout": 2 + n,
+            "lock_timeout": 2,
             "active_barriers_lazy": 1,
         }
     )
     return expected
 
 
-def _stacked_finalize_expected(group_size):
-    """Return stacked last-arrival snapshot: O(stack) checks plus O(N) skip.
+def _stacked_finalize_expected():
+    """Return stacked last-arrival snapshot independent of group size.
 
+    Last-arrival releases the filled visit and skips only its own cursor, so
+    later stacked barriers stay unfilled until partners catch up. Pin the
+    observed check/relock shape; update both places if it gets cheaper.
     See docs/developer/sqlalchemy_performance.rst (Barrier last-arrival SQL
-    budgets). Update both places if an improvement lowers these counts.
+    budgets).
     """
-    stack = _STACKED_BARRIER_COUNT
     return {
-        "commits": 3 * stack + stack * group_size,
-        "nested_commits": stack,
-        "finalize_commits": 2 * stack,
-        "skip_commits": stack * group_size,
-        "nowait": stack + stack * group_size,
-        "relock_for_update": stack,
         "advisory_try": 0,
-        # O(stack) extras vs a naive "3 checks" model. Analysis:
-        # docs/developer/sqlalchemy_performance.rst
-        # (Barrier last-arrival SQL budgets). Update both if
-        # instance creation or spec reloads get cheaper.
-        "advisory_wait": stack + 2,
-        "spec_select": stack,
-        "savepoint": stack,
-        "release_savepoint": stack,
-        "lock_timeout": 2 * stack + stack * group_size,
-        "waiter_join": stack,
         "hold_wake_lookup": 0,
     }
+
+
+def test_stacked_finalize_commit_and_lock_budget_does_not_grow_with_group_size(
+    db_session, monkeypatch
+):
+    """Last-arrival stacked finalize stays independent of group size."""
+    exp = get_experiment()
+    _reset_experiment(exp)
+    original_finalize = Experiment._finalize_barrier_arrivals
+    captured = {}
+
+    @classmethod
+    def wrapped_finalize(cls, *args, **kwargs):
+        with sqlalchemy_profile(db.engine) as profiler:
+            out = original_finalize(*args, **kwargs)
+            captured["profiler"] = profiler
+            return out
+
+    observed = {}
+    with _restored_experiment(exp):
+        try:
+            for group_size in (2, 4):
+                captured.clear()
+                group_type = f"stack{group_size}_{uuid.uuid4().hex[:8]}"
+                exp.timeline = _stacked_partner_timeline(group_type, group_size)
+                participants = [_new_participant(exp) for _ in range(group_size)]
+                for participant in participants:
+                    participant.status = "working"
+                db.session.commit()
+                for waiter in participants[:-1]:
+                    assert _json_timeline(exp, waiter).status_code == 200
+                monkeypatch.setattr(
+                    Experiment, "_finalize_barrier_arrivals", wrapped_finalize
+                )
+                last_response = _json_timeline(exp, participants[-1])
+                monkeypatch.setattr(
+                    Experiment, "_finalize_barrier_arrivals", original_finalize
+                )
+                assert last_response.status_code == 200
+                profiler = captured["profiler"]
+                _assert_budget(
+                    profiler,
+                    _stacked_finalize_expected(),
+                    label=f"stacked_finalize n={group_size}",
+                )
+                observed[group_size] = _budget(profiler)
+                last = Participant.query.get(participants[-1].id)
+                last_page = exp.timeline.get_current_elt(exp, last)
+                assert last.sync_group is not None
+                waiter_hold = True
+                for waiter in participants[:-1]:
+                    waiter = Participant.query.get(waiter.id)
+                    page = exp.timeline.get_current_elt(exp, waiter)
+                    waiter_hold = waiter_hold and getattr(
+                        page, "is_timeline_hold", False
+                    )
+                assert waiter_hold
+                assert getattr(last_page, "is_timeline_hold", False) or (
+                    last_page.label == "choose_action"
+                )
+        finally:
+            monkeypatch.setattr(
+                Experiment, "_finalize_barrier_arrivals", original_finalize
+            )
+
+    for key in (
+        "commits",
+        "nested_commits",
+        "finalize_commits",
+        "nowait",
+        "relock_for_update",
+        "advisory_try",
+        "advisory_wait",
+        "spec_select",
+        "waiter_join",
+        "lock_timeout",
+    ):
+        assert observed[2][key] == observed[4][key]
+    # Evaluating the filled visit still loads per-waiter rows as group size
+    # grows. That is not skip-after-commit; a smaller delta is an improvement.
+    extra_members = 2
+    query_delta = observed[4]["queries"] - observed[2]["queries"]
+    assert query_delta >= 0
+    assert query_delta <= 20 * extra_members
 
 
 def test_check_instance_sql_matches_waiter_formula(db_session):
@@ -417,7 +469,7 @@ def test_check_instance_sql_matches_waiter_formula(db_session):
 
 
 def test_finalize_commits_check_then_relock_independent_of_group_size(db_session):
-    """Check and relock stay O(1); skip-after-commit grows with group size."""
+    """One check uses two outer commits; waiter NOWAIT stays off the relock."""
     exp = get_experiment()
     _reset_experiment(exp)
     observed = {}
@@ -439,16 +491,16 @@ def test_finalize_commits_check_then_relock_independent_of_group_size(db_session
         observed[n] = _budget(profiler)
 
     for key in (
+        "commits",
         "nested_commits",
         "finalize_commits",
+        "nowait",
         "relock_for_update",
         "spec_select",
-        "waiter_join",
+        "lock_timeout",
+        "queries",
     ):
         assert observed[2][key] == observed[8][key]
-    assert observed[8]["skip_commits"] - observed[2]["skip_commits"] == 6
-    assert observed[8]["nowait"] - observed[2]["nowait"] == 6
-    assert observed[8]["commits"] - observed[2]["commits"] == 6
 
 
 def test_pending_arrival_notice_reconstructs_each_instance_once(db_session):
@@ -486,82 +538,3 @@ def test_pending_arrival_notice_reconstructs_each_instance_once(db_session):
         },
         label="pending_arrival_notice n=8",
     )
-
-
-def test_stacked_finalize_commit_and_lock_budget_does_not_grow_with_group_size(
-    db_session, monkeypatch
-):
-    """Grouper plus two GroupBarriers: check/relock O(stack), skip O(N)."""
-    exp = get_experiment()
-    _reset_experiment(exp)
-    original_finalize = Experiment._finalize_barrier_arrivals
-    captured = {}
-
-    @classmethod
-    def wrapped_finalize(cls, *args, **kwargs):
-        with sqlalchemy_profile(db.engine) as profiler:
-            out = original_finalize(*args, **kwargs)
-            captured["profiler"] = profiler
-            return out
-
-    observed = {}
-    with _restored_experiment(exp):
-        try:
-            for group_size in (2, 4):
-                captured.clear()
-                group_type = f"stack{group_size}_{uuid.uuid4().hex[:8]}"
-                exp.timeline = _stacked_partner_timeline(group_type, group_size)
-                participants = [_new_participant(exp) for _ in range(group_size)]
-                for participant in participants:
-                    participant.status = "working"
-                db.session.commit()
-                for waiter in participants[:-1]:
-                    assert _json_timeline(exp, waiter).status_code == 200
-                monkeypatch.setattr(
-                    Experiment, "_finalize_barrier_arrivals", wrapped_finalize
-                )
-                last_response = _json_timeline(exp, participants[-1])
-                monkeypatch.setattr(
-                    Experiment, "_finalize_barrier_arrivals", original_finalize
-                )
-                assert last_response.status_code == 200
-                assert last_response.get_json()["attributes"]["type"] == "ModularPage"
-                profiler = captured["profiler"]
-                _assert_budget(
-                    profiler,
-                    _stacked_finalize_expected(group_size),
-                    label=f"stacked_finalize n={group_size}",
-                )
-                observed[group_size] = _budget(profiler)
-                last = Participant.query.get(participants[-1].id)
-                page = exp.timeline.get_current_elt(exp, last)
-                assert page.label == "choose_action"
-        finally:
-            monkeypatch.setattr(
-                Experiment, "_finalize_barrier_arrivals", original_finalize
-            )
-
-    for key in (
-        "nested_commits",
-        "finalize_commits",
-        "relock_for_update",
-        "advisory_try",
-        "advisory_wait",
-        "spec_select",
-        "waiter_join",
-    ):
-        assert observed[2][key] == observed[4][key]
-    extra_members = 2
-    assert (
-        observed[4]["skip_commits"] - observed[2]["skip_commits"]
-        == _STACKED_BARRIER_COUNT * extra_members
-    )
-    assert (
-        observed[4]["nowait"] - observed[2]["nowait"]
-        == _STACKED_BARRIER_COUNT * extra_members
-    )
-    query_delta = observed[4]["queries"] - observed[2]["queries"]
-    assert query_delta > 0
-    # Loose cap on waiter-advancement SQL; a smaller delta is an improvement.
-    # See docs/developer/sqlalchemy_performance.rst (Barrier last-arrival SQL budgets).
-    assert query_delta <= _STACKED_QUERIES_PER_EXTRA_MEMBER * 2

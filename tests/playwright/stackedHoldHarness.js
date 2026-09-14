@@ -1044,6 +1044,30 @@ async function enterPossiblyHeldArrival(
   return { entry, held: false };
 }
 
+async function enterLastArrival(
+  session,
+  { holdText, prompt = ACTION_PROMPT, timeout = STEP_TIMEOUT_MS } = {}
+) {
+  // Last-arrival skips only its own released hold. A later stacked barrier
+  // can still first-paint while partners catch up. Arm that overlay so the
+  // following wake, not a safety poll, finishes the stack.
+  const arrival = await enterPossiblyHeldArrival(session, {
+    holdText,
+    prompt,
+    timeout
+  });
+  if (arrival.held && session.resumePromise) {
+    await session.resumePromise;
+  }
+  await expect(session.page.locator("#main-body")).toContainText(prompt, {
+    timeout
+  });
+  await expect(session.page.locator("#psynet-timeline-hold-indicator")).toHaveCount(
+    0
+  );
+  return arrival.entry;
+}
+
 async function assertActionOrPrompt(page, prompt, timeout = STEP_TIMEOUT_MS) {
   await waitForTimelinePageReady(page, timeout);
   await expect(page.locator("#main-body")).toContainText(prompt, { timeout });
@@ -1099,6 +1123,7 @@ module.exports = {
   assertStillHeld,
   assertWaiterReleasedWithLastArriver,
   enterPossiblyHeldArrival,
+  enterLastArrival,
   closeHoldSessions,
   createHoldSession,
   enterSkippingHold,

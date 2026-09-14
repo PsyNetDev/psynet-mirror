@@ -412,11 +412,11 @@ Timeline-hold resume checks use the durable hold record directly. They do not
 create :class:`~psynet.timeline.Response` rows or call the internal hold page's
 ``process_response()``, validation, or ``on_complete()`` hooks. Analyze waiting
 through ``TimelineHoldRecord`` and participant wait-time fields rather than by
-counting response rows. If the last arriver already advanced the waiter, the
-hold-resume POST still carries the hold page's uuid. The server recognizes
-that uuid when it still matches this participant's hold record. Ordinary
-submits and hold-resume overlays both catch up onto a later hold. An unknown
-uuid is still a sync mismatch.
+counting response rows. If this waiter's later request already advanced the
+cursor, the hold-resume POST still carries the hold page's uuid. The server
+recognizes that uuid when it still matches this participant's hold record.
+Ordinary submits and hold-resume overlays both catch up onto a later hold. An
+unknown uuid is still a sync mismatch.
 
 .. _timeline-hold-resume-protocol:
 
@@ -425,9 +425,10 @@ Resume protocol
 
 Skipping a ready hold is one step, ``Experiment._advance_past_ready_holds``.
 The caller must already hold the participant row. Last-arrival uses it after
-the check commit so released partners leave the overlay without keeping every
-waiter locked; ``POST /response`` uses it in the same write that processed
-the submit; ``GET /timeline`` uses it only after a dedicated relock.
+the check commit so this request does not first-paint the hold it just
+released; partners resume on their own hold-resume POST or ``GET /timeline``.
+``POST /response`` uses it in the same write that processed the submit;
+``GET /timeline`` uses it only after a dedicated relock.
 
 Those routes do not share a lock protocol:
 
@@ -470,21 +471,15 @@ Those routes do not share a lock protocol:
   still being built. A waiter GET that first-paints an unfilled hold does
   not pin, so the poller can still finish that barrier. Last-arrival waits for the
   instance advisory claim (the lock the 0.5 s poller tries) so a GET does not
-  first-paint a hold while the poller still owns that visit. The poller keeps
-  a session-level claim until skip-after-commit finishes, so that wait covers
-  the gap after partner row locks drop. Waiter rows stay
+  first-paint a hold while the poller still owns that visit. Waiter rows stay
   ``NOWAIT``. If a partner row is still busy, that GET retries the check once
   immediately (still no lock wait). It does not wait for the other request to
-  commit. If the retry still misses, the poller finishes the same stacked
-  skip in one sweep and keeps those wakes unpublished until the sweep
-  returns. If the poller already released the visit, the last arriver's
-  claim can see zero waiters. Waiters may already have hold-resumed onto
-  the next stacked hold from that poller wake; a later websocket onOpen
-  after a legacy reload can post once more. That extra POST is not a missed
-  wake. The last arriver's GET expires its identity map, follows the
-  live cursor (including a stale hold page whose record is gone), and
-  evaluates the live hold once more when a locking ``SELECT`` missed waiters
-  that still belong to the visit. ``get_current_elt`` may return a new object
+  commit. If the retry still misses, the poller finishes the release. If the
+  poller already released the visit, the last arriver's claim can see zero
+  waiters. The last arriver's GET expires its identity map, skips the hold it
+  just cleared, and follows the live cursor. Partners catch up on their own
+  requests; a later stacked wait while they do so is expected, not a sync
+  failure. ``get_current_elt`` may return a new object
   for the same barrier hold when a trial page maker reconstructs the wait.
   That is still this wait, not a cursor move; comparing Python identity would
   loop until the hold times out.
@@ -512,9 +507,9 @@ Bots
 
 Bot submissions do not request timeline fragments. Bots advance server state
 and obtain the next page through the normal server-side page interface. If
-last-arrival has already skipped them onto a later hold, an ordinary POST of
-the previous hold uuid is catch-up, not a multi-tab reject. Hold-resume
-overlays catch up the same way so the browser can swap in place.
+this waiter already advanced, or last-arrival skipped its own later hold, an
+ordinary POST of the previous hold uuid is catch-up, not a multi-tab reject.
+Hold-resume overlays catch up the same way so the browser can swap in place.
 
 Adding new frontend components
 ------------------------------

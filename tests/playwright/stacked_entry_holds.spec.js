@@ -7,7 +7,7 @@ const {
   assertNoSessionErrors,
   assertStillHeld,
   closeHoldSessions,
-  enterSkippingHold,
+  enterLastArrival,
   enterWaitingHold,
   ENTRY_REQUEST_MAX_MS,
   lastArriverWorkRecord,
@@ -21,12 +21,13 @@ const { requestHandlerMs } = require("./psynetHarness");
 
 const RPS_DIR = path.resolve("demos/experiments/rock_paper_scissors");
 
-test("last arriver's first timeline page skips stacked partner holds", { tag: "@both" }, async ({
+test("last arriver skips the released hold and partners catch up", { tag: "@both" }, async ({
   browser
 }) => {
-  // Enter one participant at a time. The last arriver's first GET /timeline
-  // document must already be the action page. The waiting partner must leave
-  // their hold from the server wake, without a safety poll or busy retry.
+  // Enter one participant at a time. The last arriver skips the hold they
+  // released and may briefly wait at the next stacked barrier while the
+  // partner catch-up. The waiting partner must leave their hold from the
+  // server wake, without a safety poll as the success path.
   const { experiment, sessions } = await startHoldExperiment(browser, RPS_DIR, [
     "stacked_hold_first",
     "stacked_hold_second"
@@ -42,7 +43,10 @@ test("last arriver's first timeline page skips stacked partner holds", { tag: "@
     // hide behind the next scheduled check.
     await first.page.waitForTimeout(SETTLE_HOLD_MS);
     await assertStillHeld(first, PAIR_HOLD_TEXT);
-    const lastEntry = await enterSkippingHold(last);
+    const lastEntry = await enterLastArrival(last, {
+      holdText: PAIR_HOLD_TEXT,
+      prompt: ACTION_PROMPT
+    });
     const lastWork = lastArriverWorkRecord(lastEntry);
     const firstWork = lastArriverWorkRecord(first.entry);
     expect(
@@ -77,7 +81,10 @@ test("last choice releases the waiting partner without a safety poll", { tag: "@
       holdText: PAIR_HOLD_TEXT,
       prompt: ACTION_PROMPT
     });
-    const lastEntry = await enterSkippingHold(last);
+    const lastEntry = await enterLastArrival(last, {
+      holdText: PAIR_HOLD_TEXT,
+      prompt: ACTION_PROMPT
+    });
     await assertWaiterReleasedWithLastArriver(first, lastEntry);
 
     await armChoiceHold(first, {

@@ -11,7 +11,7 @@ const {
   assertWaiterReleasedWithLastArriver,
   closeHoldSessions,
   enterPossiblyHeldArrival,
-  enterSkippingHold,
+  enterLastArrival,
   enterWaitingHold,
   pickConcurrentLastArriver,
   startHoldExperiment,
@@ -22,11 +22,12 @@ const {
 
 const TRIO_DIR = path.resolve("tests/playwright/experiments/stacked_group_holds");
 
-test("last of three skips stacked holds and releases every waiter", { tag: "@both" }, async ({
+test("last of three releases waiters and they catch up", { tag: "@both" }, async ({
   browser
 }) => {
-  // The second member must still first-paint a hold. Only the third member
-  // skips, and both waiters must leave from the server wake.
+  // The second member must still first-paint a hold. The third member skips
+  // the hold they released and may wait at the next stacked barrier while
+  // partners catch up. Waiters leave from the server wake.
   const { experiment, sessions } = await startHoldExperiment(browser, TRIO_DIR, [
     "trio_first",
     "trio_second",
@@ -44,7 +45,10 @@ test("last of three skips stacked holds and releases every waiter", { tag: "@bot
       prompt: ACTION_PROMPT
     });
     await assertStillHeld(first, GROUP_HOLD_TEXT);
-    const lastEntry = await enterSkippingHold(last);
+    const lastEntry = await enterLastArrival(last, {
+      holdText: GROUP_HOLD_TEXT,
+      prompt: ACTION_PROMPT
+    });
     await expect(last.page.getByRole("button", { name: "go" })).toBeVisible();
     await assertAllWaitersReleasedTogether([first, second], lastEntry);
     await assertNoSessionErrors(sessions);
@@ -142,7 +146,10 @@ test("last of three choices releases both waiting members", { tag: "@both" }, as
       holdText: GROUP_HOLD_TEXT,
       prompt: ACTION_PROMPT
     });
-    const lastEntry = await enterSkippingHold(last);
+    const lastEntry = await enterLastArrival(last, {
+      holdText: GROUP_HOLD_TEXT,
+      prompt: ACTION_PROMPT
+    });
     await assertAllWaitersReleasedTogether([first, second], lastEntry);
 
     await armChoiceHold(first, {
@@ -164,7 +171,7 @@ test("last of three choices releases both waiting members", { tag: "@both" }, as
   }
 });
 
-test("last of four skips stacked holds and releases every waiter", { tag: "@both" }, async ({
+test("last of four releases waiters and they catch up", { tag: "@both" }, async ({
   browser
 }) => {
   // A larger group adds more wake targets on the same last-arriver request.
@@ -194,7 +201,10 @@ test("last of four skips stacked holds and releases every waiter", { tag: "@both
     });
     await assertStillHeld(first, GROUP_HOLD_TEXT);
     await assertStillHeld(second, GROUP_HOLD_TEXT);
-    const lastEntry = await enterSkippingHold(last);
+    const lastEntry = await enterLastArrival(last, {
+      holdText: GROUP_HOLD_TEXT,
+      prompt: ACTION_PROMPT
+    });
     await expect(last.page.getByRole("button", { name: "go" })).toBeVisible();
     await assertAllWaitersReleasedTogether([first, second, third], lastEntry);
     await assertNoSessionErrors(sessions);
@@ -232,7 +242,10 @@ test("two late choices complete a trio without a safety poll", { tag: "@both" },
       holdText: GROUP_HOLD_TEXT,
       prompt: ACTION_PROMPT
     });
-    const lastEntry = await enterSkippingHold(lateB);
+    const lastEntry = await enterLastArrival(lateB, {
+      holdText: GROUP_HOLD_TEXT,
+      prompt: ACTION_PROMPT
+    });
     await assertAllWaitersReleasedTogether([first, lateA], lastEntry, {
       allowWebsocketResume: true,
       maxHoldResumePosts: 3

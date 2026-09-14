@@ -1,1 +1,1 @@
-Released hold waiters are skipped one at a time after the barrier check commits, so a partner GET /timeline can lock its own row instead of waiting out timeline_lock_timeout_seconds.
+Barrier checks release waiting partners without advancing their timelines. Each request skips only its own participant past holds that are already clear, so last-arrival does not keep partner rows locked and partners resume themselves after the wake.

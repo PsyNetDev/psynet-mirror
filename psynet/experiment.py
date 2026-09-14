@@ -3464,11 +3464,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     ):
         """Return the live page when a submit still carries a released hold uuid.
 
-        The last arriver or a ready GET skip can already have advanced this
-        waiter, rotating ``participant.page_uuid``. The client's POST still
-        sends the hold page's uuid. If that uuid belongs to this participant,
-        settle the old hold if needed and skip any later holds that are
-        already clear, instead of treating it as a multi-tab mismatch.
+        A ready GET skip or this waiter's later request can already have
+        advanced the cursor, rotating ``participant.page_uuid``. The client's
+        POST still sends the hold page's uuid. If that uuid belongs to this
+        participant, settle the old hold if needed and skip any later holds
+        that are already clear, instead of treating it as a multi-tab mismatch.
         """
         from .timeline_hold import TimelineHoldRecord
 
@@ -3486,12 +3486,13 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         """Skip holds that are already clear after this request's writes.
 
         Callers must already hold the participant row. Last-arrival uses this
-        after the barrier-check commit so released partners leave the wait
-        overlay without keeping every waiter locked; ``POST /response`` uses it
-        while that write still holds the row (``NOWAIT`` on a hold-resume that
-        will advance; a still-waiting overlay check does not lock the row);
-        ``GET /timeline`` uses it only after ``_skip_ready_hold_on_get`` takes
-        blocking ``FOR UPDATE``.
+        after the barrier-check commit so this request does not first-paint the
+        hold it just released; partners resume on their own hold-resume POST or
+        ``GET /timeline``. ``POST /response`` uses it while that write still
+        holds the row (``NOWAIT`` on a hold-resume that will advance; a
+        still-waiting overlay check does not lock the row); ``GET /timeline``
+        uses it only after ``_skip_ready_hold_on_get`` takes blocking
+        ``FOR UPDATE``.
 
         ``page`` can be a stale hold object from earlier in the request. If
         that hold is not ready but the live cursor has already left it
@@ -6110,28 +6111,22 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         Each attempt waits for the instance advisory claim, then locks waiters
         with ``NOWAIT``. The second attempt does not wait for a partner
-        transaction to commit. If both miss, the caller first-paints the live
-        cursor and the 0.5s poller finishes the skip.
+        transaction to commit. Reinstall ``lock_timeout`` before that retry
+        because ``SET LOCAL`` ends at the check commit. If both miss, the
+        caller first-paints the live cursor and the 0.5s poller finishes the
+        release.
         """
-        from .sync import (
-            _advance_released_hold_waiters_after_commit,
-            _run_pending_barrier_checks,
-            _take_released_hold_waiter_ids,
-        )
+        from .sync import _run_pending_barrier_checks
 
         all_claimed = _run_pending_barrier_checks(checks)
-        # Barrier checks can lock every waiter at the instance. Release those
-        # partner locks before skipping hold waiters or reacquiring the
-        # submitting participant.
-        released_ids = _take_released_hold_waiter_ids()
+        # Barrier checks can lock every waiter at the instance. Drop those
+        # partner locks before reacquiring the submitting participant.
         db.session.commit()
-        _advance_released_hold_waiters_after_commit(released_ids)
         if all_claimed:
             return True
+        _set_transaction_lock_timeout(get_config().get("timeline_lock_timeout_seconds"))
         all_claimed = _run_pending_barrier_checks(checks)
-        released_ids = _take_released_hold_waiter_ids()
         db.session.commit()
-        _advance_released_hold_waiters_after_commit(released_ids)
         return all_claimed
 
     @classmethod
