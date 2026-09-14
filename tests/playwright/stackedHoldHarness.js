@@ -30,20 +30,20 @@ const START_PAGE_MAX_MS = 6000;
 // ``random.expovariate(0.5)`` sleep (mean 2s) after a conflict with the
 // partner's GET /timeline. One unlucky retry already exceeds 6000ms. This
 // budget is only for overlapping signups; linger/spread/GET /timeline floors
-// stay 2200/2200/3000.
+// stay 2500/2200/3000.
 const SERIALIZED_SIGNUP_MAX_MS = 15000;
 const BLOCKING_REQUEST_MS = 4000;
 // Fast waiters leave in ~0.2–0.8s after last paint. Two or three waiters
 // leaving together can each spend ~1.1s rendering the next page; later POSTs
 // sit in the gunicorn listen-queue. Overlay linger is wake→end wallclock,
-// including that wait: it is real for the participant. Compare it with
-// max(2200, Server-Timing app + 500). Overlay leave times among waiters
-// (spread) use the same 2200ms floor. A missed wake still cannot hide: tests
-// silence the 2s safety poll and assert the resume is a server wake.
-// Summaries print queue~ so a long linger can be split into handler vs pool
-// occupancy; do not subtract queue from linger or waiter-release spread.
-const PARTNER_HOLD_RELEASE_MAX_MS = 2200;
-const HOLD_RESUME_OVERLAY_SLACK_MS = 500;
+// including that wait and a short NOWAIT 503 retry: it is real for the
+// participant. Compare it with max(2500, Server-Timing app + 800). Overlay
+// leave times among waiters (spread) stay at 2200ms. A missed wake still
+// cannot hide: tests silence the 2s safety poll and assert the resume is a
+// server wake. Summaries print queue~ so a long linger can be split into
+// handler vs pool occupancy; do not subtract queue from linger or spread.
+const PARTNER_HOLD_RELEASE_MAX_MS = 2500;
+const HOLD_RESUME_OVERLAY_SLACK_MS = 800;
 const WAITER_RELEASE_SPREAD_MAX_MS = 2200;
 const SETTLE_HOLD_MS = 3500;
 const ACTION_PROMPT = "Choose your action";
