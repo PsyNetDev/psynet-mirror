@@ -55,7 +55,50 @@ fold these checks into `psynet test local`.
 
 Wait for the effect the last action was supposed to produce: a durable prompt,
 a control becoming enabled, or a URL change. Do not assert countdown text or
-short-lived status labels.
+short-lived status labels. When the contract is first paint — for example the
+last group member skipping a partner wait — assert the first `GET /timeline`
+HTML. An eventual prompt can arrive from the poller after a hold was already
+shown. `entry.timeline.durationMs` is that HTML 200 (or 503). Last-arrival
+grouping work is `lastArriverWorkRecord` (the 302, or the submit POST), not
+the follow-up body:
+
+```js
+const entry = await enterTimelineAfterGateway(page);
+expect(entry.paint.type).toBe("ModularPage");
+expect(entry.paint.showsHold).toBe(false);
+expect(entry.timeline.busy).toBe(false);
+expect(entry.timeline.durationMs).toBeLessThan(2500);
+expect(requestHandlerMs(lastArriverWorkRecord(entry))).toBeLessThan(2500);
+expect(entry.start.consentToTimelineMs).toBeLessThan(6000);
+```
+
+When a partner is already on a hold, use `stackedHoldHarness.js`:
+`enterWaitingHold` wraps the resume probe, silences the 2s safety poll, and
+arms `waitForHeldParticipantToResume` before the last arriver consents.
+`assertWaiterReleasedWithLastArriver` then checks that overlay leave
+(`resumedAtMs`) is timed from `lastArriverReleaseAtMs` (the grouping request
+finish, not the follow-up HTML 200), resume is `server notification` or
+`queued hold wake` (not `safety poll` or `hold timeout`), inplace mode issues no
+extra `GET /timeline`, and overlay linger (wake→end wallclock, including
+gunicorn listen-queue) stays under
+`max(1800ms, hold-resume Server-Timing app + 500ms)`. A short HTTP 503 may
+retry once; do not fold gunicorn `queue~` into linger or waiter spread. Print
+`queue~` in summaries so a long wait can be split into handler time versus
+pool occupancy. Spread is overlay leave times, at most 1500ms:
+
+```js
+await enterWaitingHold(first, { holdText: "Waiting for your partner" });
+const lastEntry = await enterSkippingHold(last);
+await assertWaiterReleasedWithLastArriver(first, lastEntry);
+```
+
+Legacy reload mode may issue one follow-up timeline document.
+
+Concurrent late arrivals must wrap and arm at first paint, inside the same
+`Promise.all` as consent. If the hold chip is already gone, still assert the
+first-paint `wake_token`, a hold-resume POST, and no extra GET `/timeline` in
+inplace mode. Those late waiters may resume from `websocket connection` as well
+as `server notification`.
 
 Gateway, consent, and timeline pages have different DOM. Do not assume
 `#main-body` exists on the ad page. If the timeline is known in advance, encode

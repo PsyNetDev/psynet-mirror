@@ -135,7 +135,7 @@ class TestExpWithExport:
     def test_experiment_feedback(self, database_dir):
         df = load_export_table(database_dir, "response")
 
-        df_ = df.query("question == 'liked_experiment'")
+        df_ = df.query("question == 'liked_experiment'").sort_values("participant_id")
         assert df_.shape[0] == 6
         assert list(df_.participant_id) == [1, 2, 3, 4, 5, 6]
         assert (
@@ -143,12 +143,16 @@ class TestExpWithExport:
             == ["I'm a bot so I don't really have feelings..."] * 6
         )
 
-        df_ = df.query("question == 'find_experiment_difficult'")
+        df_ = df.query("question == 'find_experiment_difficult'").sort_values(
+            "participant_id"
+        )
         assert df_.shape[0] == 6
         assert list(df_.participant_id) == [1, 2, 3, 4, 5, 6]
         assert _feedback_answers(df_) == ["I'm a bot so I found it pretty easy..."] * 6
 
-        df_ = df.query("question == 'encountered_technical_problems'")
+        df_ = df.query("question == 'encountered_technical_problems'").sort_values(
+            "participant_id"
+        )
         assert df_.shape[0] == 6
         assert list(df_.participant_id) == [1, 2, 3, 4, 5, 6]
         assert _feedback_answers(df_) == ["No technical problems."] * 6

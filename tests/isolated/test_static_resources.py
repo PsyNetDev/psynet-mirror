@@ -290,6 +290,22 @@ def test_experiment_after_request_versions_literal_percent_filename(tmp_path):
     assert response.cache_control.immutable
 
 
+@pytest.mark.parametrize(
+    "path",
+    ["/timeline/arrival_notice", "/timeline/progress_and_reward"],
+)
+def test_experiment_after_request_does_not_store_live_timeline_json(path):
+    """Partner-ready and progress JSON must re-hit the server, not a cached GET."""
+    from psynet.experiment import Experiment
+
+    app = Flask("timeline-json-cache")
+    with app.test_request_context(path) as request_context:
+        Experiment.before_request()
+        response = Experiment.after_request(request_context.request, Response())
+
+    assert response.headers.get("Cache-Control") == "no-store"
+
+
 def test_participant_font_references_use_their_content_versions():
     css_root = resources.files("psynet") / "resources/css"
     css = css_root.joinpath("participant.css").read_text(encoding="utf-8")

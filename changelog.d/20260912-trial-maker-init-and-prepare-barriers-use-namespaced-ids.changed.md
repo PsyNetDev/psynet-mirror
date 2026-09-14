@@ -1,0 +1,1 @@
+Trial-maker ``GroupBarrier`` ids for participant init and trial prepare are namespaced with the trial-maker id (``{id}__init_participant``, ``{id}__prepare_trial``), so two trial makers in one timeline no longer share a waiting pool.

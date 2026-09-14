@@ -197,7 +197,6 @@ dump.rdb
 /tests/experiments/**/README.md
 /tests/experiments/**/Dockerfile
 /tests/experiments/**/Dockertag
-/tests/experiments/**/README.md
 /tests/experiments/**/__init__.py
 /tests/experiments/**/config.txt
 /tests/experiments/**/constraints.txt
@@ -214,7 +213,6 @@ dump.rdb
 /tests/playwright/experiments/**/README.md
 /tests/playwright/experiments/**/Dockerfile
 /tests/playwright/experiments/**/Dockertag
-/tests/playwright/experiments/**/README.md
 /tests/playwright/experiments/**/__init__.py
 /tests/playwright/experiments/**/config.txt
 /tests/playwright/experiments/**/constraints.txt
@@ -235,7 +233,6 @@ dump.rdb
 !/tests/deployment/**/consents_cococo/README.md
 /tests/deployment/**/Dockerfile
 /tests/deployment/**/Dockertag
-/tests/deployment/**/README.md
 /tests/deployment/**/__init__.py
 /tests/deployment/**/config.txt
 /tests/deployment/**/constraints.txt
@@ -245,7 +242,6 @@ dump.rdb
 /tests/deployment/**/test.py
 # Vendored consent packages under deployment tests are real Python packages.
 !/tests/deployment/**/consents_cococo/__init__.py
-!/tests/deployment/**/consents_cococo/README.md
 
 # ASV benchmark artifacts
 .asv/

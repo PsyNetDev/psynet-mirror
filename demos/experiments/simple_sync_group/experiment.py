@@ -18,7 +18,7 @@ ROLE_SETS = {
 
 
 def waiting_page(participant: Participant):
-    active_barrier = participant.active_barriers.get("main_grouper", None)
+    active_barrier = next(iter(participant.active_barriers.values()), None)
     if active_barrier:
         all_participants = active_barrier.get_waiting_participants()
         all_participants.sort(key=lambda p: p.id)
@@ -75,6 +75,7 @@ class Exp(psynet.experiment.Experiment):
     timeline = Timeline(
         SimpleGrouper(
             group_type="main",
+            id_="main_grouper_of_3",
             initial_group_size=3,
             waiting_logic=PageMaker(waiting_page, time_estimate=5),
             max_wait_time=20,
@@ -89,6 +90,7 @@ class Exp(psynet.experiment.Experiment):
         GroupCloser(group_type="main"),
         SimpleGrouper(
             group_type="main",
+            id_="main_grouper_of_2",
             initial_group_size=2,
             waiting_logic=PageMaker(waiting_page, time_estimate=5),
             max_wait_time=20,

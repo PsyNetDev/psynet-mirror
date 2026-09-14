@@ -922,11 +922,15 @@ def test_sync_trial_maker_wait_content_is_used_by_internal_barriers():
     holds = [
         elt
         for elt in trial_maker.elts
-        if getattr(elt, "barrier_id", None) in {"init_participant", "prepare_trial"}
+        if getattr(elt, "barrier_id", None)
+        in {
+            trial_maker.with_namespace("init_participant"),
+            trial_maker.with_namespace("prepare_trial"),
+        }
     ]
     assert {hold.barrier_id for hold in holds} == {
-        "init_participant",
-        "prepare_trial",
+        trial_maker.with_namespace("init_participant"),
+        trial_maker.with_namespace("prepare_trial"),
     }
     assert all(hold.content == "Waiting for your partner" for hold in holds)
     assert all(

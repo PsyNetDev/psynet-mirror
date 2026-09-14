@@ -1,0 +1,1 @@
+Documented how timeline holds resume: skip under a participant row lock, run barrier checks in short transactions, and migrate leftover waiters only from inactive visits. ``GET /timeline`` re-reads the live cursor, skips a ready hold, or recovers a dropped last-arrival check without sharing ``POST /response`` lock rules.

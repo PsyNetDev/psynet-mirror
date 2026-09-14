@@ -95,6 +95,31 @@ def test_deadlock_pgcode_matches_psycopg2_deadlock_class():
     )
 
 
+def test_drop_foreign_key_constraints_retries_deadlock(monkeypatch):
+    """Ingest must retry exclusive FK drops that deadlock with the poller."""
+    from psynet import data as data_mod
+
+    calls = {"n": 0}
+
+    class FakeSession:
+        def commit(self):
+            return None
+
+        def rollback(self):
+            return None
+
+        def execute(self, statement):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise operational_error(FakeDeadlock())
+
+    monkeypatch.setattr(data_mod.db, "session", FakeSession())
+    monkeypatch.setattr(data_mod, "list_fkeys", lambda: ([object()], []))
+    monkeypatch.setattr(data_mod, "DropConstraint", lambda fkey: fkey)
+    data_mod._drop_foreign_key_constraints(wait_sec=0)
+    assert calls["n"] == 2
+
+
 def test_stop_debug_experiment_process_still_stops_when_flush_fails(monkeypatch):
     """Flush failures must not skip server/worker shutdown."""
     stop_calls = []
