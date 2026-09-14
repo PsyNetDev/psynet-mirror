@@ -62,7 +62,12 @@ from psynet.timeline_hold import (
     TimelineHoldRecord,
     _defer_timeline_hold_wakes,
     _enqueue_timeline_hold_wake,
+    _last_arrival_follow_in_progress,
+    _last_arrival_render_gate,
     _last_arrival_render_in_progress,
+    _mark_last_arrival_follow_instance,
+    _mark_last_arrival_render_instance,
+    _parked_hold_wake_key,
     _publish_wakes,
     _queue_arrival_update,
     _timeline_hold_channel,
@@ -1085,18 +1090,75 @@ def test_skip_failure_after_waiter_lock_releases_row_and_claim(
     db.session.commit()
     bad_id = bad_participant.id
     original_advance = Experiment._advance_past_ready_holds
+    original_get = type(exp.timeline).get_current_elt
+    boom_calls = []
+
+    def hold_elt(self, experiment, participant):
+        if participant.id == bad_id:
+            return SimpleNamespace(is_timeline_hold=True)
+        return original_get(self, experiment, participant)
 
     def boom(self, participant, page):
         if participant.id == bad_id:
+            boom_calls.append(participant.id)
             raise RuntimeError("skip failed after lock")
         return original_advance(self, participant, page)
 
+    monkeypatch.setattr(type(exp.timeline), "get_current_elt", hold_elt)
     monkeypatch.setattr(Experiment, "_advance_past_ready_holds", boom)
     check_barriers()
 
+    assert boom_calls == [bad_id]
     assert "b_skip_ok" in processed_barriers
     assert _participant_row_is_locked(bad_id) is False
     assert _advisory_lock_count() == baseline
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_pending_checks_run_every_instance_after_a_false_result(
+    in_experiment_directory, db_session, monkeypatch
+):
+    """A waiter NOWAIT miss must not skip later queued instance checks."""
+    from contextlib import contextmanager
+
+    seen = []
+
+    @contextmanager
+    def fake_claim(_instance_id, **_kwargs):
+        yield True
+
+    def fake_check(instance_id):
+        seen.append(instance_id)
+        return False
+
+    monkeypatch.setattr("psynet.sync._hold_barrier_instance_claim", fake_claim)
+    monkeypatch.setattr("psynet.sync._check_and_skip_held_instance", fake_check)
+    assert _run_pending_barrier_checks(["first-id", "second-id"]) is False
+    assert seen == ["first-id", "second-id"]
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_last_arrival_nontransient_check_error_propagates(
+    in_experiment_directory, db_session, monkeypatch
+):
+    """A deterministic last-arrival check failure must not first-paint a hold."""
+    exp = get_experiment()
+    first, last = _pair_sync_group(exp, db_session)[0]
+    barrier = GroupBarrier(id_="last_arrival_boom", group_type="main")
+    _arrive_at_group_barrier(exp, barrier, first)
+    _commit_barrier_arrivals()
+    _arrive_at_group_barrier(exp, barrier, last)
+
+    def boom(self, waiting_participants):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(GroupBarrier, "check_waiting_participants", boom)
+    with pytest.raises(RuntimeError, match="boom"):
+        _commit_barrier_arrivals()
 
 
 _group_release_calls = []
@@ -2923,7 +2985,7 @@ def test_poller_wins_does_not_wake_until_last_arrival_render_returns(
     publications = _hold_wake_publications(monkeypatch)
     original_render = Experiment._render_timeline_page_read_only
     original_publish = _publish_wakes
-    from psynet.timeline_hold import _mark_last_arrival_render_instance as original_mark
+    original_follow = _mark_last_arrival_follow_instance
 
     claim_held = threading.Event()
     last_waiting = threading.Event()
@@ -2935,7 +2997,7 @@ def test_poller_wins_does_not_wake_until_last_arrival_render_returns(
     released_id = [None]
 
     def tracking_mark(instance_id):
-        original_mark(instance_id)
+        original_follow(instance_id)
         if instance_id == released_id[0]:
             last_waiting.set()
 
@@ -2944,7 +3006,7 @@ def test_poller_wins_does_not_wake_until_last_arrival_render_returns(
         return original_publish(wakes)
 
     def tracking_render(*args, **kwargs):
-        pins_during_render.append(_last_arrival_render_in_progress(released_id[0]))
+        pins_during_render.append(_last_arrival_follow_in_progress(released_id[0]))
         wakes_during_render.append(_released_wake_count(publications))
         render_started.set()
         assert poller_tried_publish.wait(timeout=5)
@@ -2969,7 +3031,7 @@ def test_poller_wins_does_not_wake_until_last_arrival_render_returns(
                         claim_held.set()
                         if not last_waiting.wait(timeout=5):
                             raise TimeoutError(
-                                "Last arriver did not pin before waiting."
+                                "Last arriver did not follow-pin before waiting."
                             )
                         _set_transaction_lock_timeout(
                             get_config().get("timeline_lock_timeout_seconds")
@@ -2990,10 +3052,10 @@ def test_poller_wins_does_not_wake_until_last_arrival_render_returns(
                 db.session.remove()
 
         monkeypatch.setattr(
-            "psynet.timeline_hold._mark_last_arrival_render_instance", tracking_mark
+            "psynet.timeline_hold._mark_last_arrival_follow_instance", tracking_mark
         )
         monkeypatch.setattr(
-            "psynet.sync._mark_last_arrival_render_instance", tracking_mark
+            "psynet.sync._mark_last_arrival_follow_instance", tracking_mark
         )
         monkeypatch.setattr("psynet.timeline_hold._publish_wakes", tracking_publish)
         monkeypatch.setattr(
@@ -3057,6 +3119,168 @@ def test_waiter_hold_render_does_not_pin_unreleased_visit(
         assert _last_arrival_render_in_progress(instance_id) is False
     finally:
         exp.timeline = original_timeline
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_waiter_claim_miss_does_not_render_pin(
+    in_experiment_directory, db_session, monkeypatch
+):
+    """An unfilled waiter GET that loses the claim must not skip poller process."""
+    from contextlib import contextmanager
+
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    group_type = f"stack_waiter_miss_{uuid.uuid4().hex[:8]}"
+    exp.timeline = _stacked_partner_timeline(group_type, group_size=3)
+    original_render = Experiment._render_timeline_page_read_only
+    original_follow = _mark_last_arrival_follow_instance
+    original_hold = _hold_barrier_instance_claim
+    claim_held = threading.Event()
+    follow_pinned = threading.Event()
+    entered_wait = threading.Event()
+    release_claim = threading.Event()
+    holder_error = []
+    render_pins = []
+    released_id = [None]
+
+    def tracking_follow(instance_id):
+        original_follow(instance_id)
+        if instance_id == released_id[0]:
+            follow_pinned.set()
+
+    @contextmanager
+    def tracking_hold(instance_id, wait=False):
+        if wait:
+            entered_wait.set()
+        with original_hold(instance_id, wait=wait) as claimed:
+            yield claimed
+
+    def tracking_render(*args, **kwargs):
+        render_pins.append(_last_arrival_render_in_progress(released_id[0]))
+        return original_render(*args, **kwargs)
+
+    try:
+        first, second, _last = _working_participants(exp, 3)
+        assert _json_timeline(exp, first).status_code == 200
+        first = Participant.query.get(first.id)
+        first_page = exp.timeline.get_current_elt(exp, first)
+        released_id[0] = _hold_instance_id_for_page(first, first_page)
+        assert released_id[0]
+        instance_id = released_id[0]
+        second_uid = second.unique_id
+
+        def holder():
+            try:
+                with original_hold(instance_id, wait=True):
+                    claim_held.set()
+                    if not release_claim.wait(timeout=8):
+                        raise TimeoutError("Waiter GET did not finish.")
+            except Exception as err:  # pragma: no cover - surfaced by the caller
+                holder_error.append(err)
+            finally:
+                db.session.remove()
+
+        monkeypatch.setattr(
+            "psynet.timeline_hold._mark_last_arrival_follow_instance", tracking_follow
+        )
+        monkeypatch.setattr(
+            "psynet.sync._mark_last_arrival_follow_instance", tracking_follow
+        )
+        monkeypatch.setattr("psynet.sync._hold_barrier_instance_claim", tracking_hold)
+        monkeypatch.setattr(
+            Experiment, "_render_timeline_page_read_only", tracking_render
+        )
+        holder_thread = threading.Thread(target=holder, daemon=True)
+        holder_thread.start()
+        assert claim_held.wait(timeout=2)
+        thread, result, errors = _route_timeline_in_thread(exp, second_uid)
+        assert follow_pinned.wait(timeout=5)
+        assert entered_wait.wait(timeout=5)
+        assert _last_arrival_render_in_progress(instance_id) is False
+        assert _last_arrival_follow_in_progress(instance_id) is True
+        release_claim.set()
+        thread.join(timeout=8)
+        holder_thread.join(timeout=8)
+        assert holder_error == []
+        assert errors == []
+        assert not thread.is_alive()
+        assert result.get("status") == 200
+        assert result.get("type") == "_BarrierHoldPage"
+        assert render_pins == [False]
+    finally:
+        release_claim.set()
+        exp.timeline = original_timeline
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_follow_pin_parks_publish_without_skipping_poller_process(
+    in_experiment_directory, db_session, monkeypatch
+):
+    """A follow pin parks wakes but leaves poller processing free."""
+    participant = new_participant(get_experiment())
+    hold = _participant_hold(participant, "follow-park", "follow")
+    db_session.commit()
+    publications = _hold_wake_publications(monkeypatch)
+    instance_id = f"follow-{uuid.uuid4().hex}"
+    wake = {
+        "participant_id": participant.id,
+        "reason": "barrier_released",
+        "wake_token": hold.wake_token,
+        "instance_id": instance_id,
+    }
+    with _last_arrival_render_gate():
+        _mark_last_arrival_follow_instance(instance_id)
+        assert _last_arrival_render_in_progress(instance_id) is False
+        assert _last_arrival_follow_in_progress(instance_id) is True
+        _publish_wakes([wake])
+        assert _released_wake_count(publications) == 0
+    assert _released_wake_count(publications) == 1
+    assert _last_arrival_follow_in_progress(instance_id) is False
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_park_during_unpin_publishes_wake_once(
+    in_experiment_directory, db_session, monkeypatch
+):
+    """A publisher that races the gate unpin must still emit the wake once."""
+    participant = new_participant(get_experiment())
+    hold = _participant_hold(participant, "park-unpin", "park")
+    db_session.commit()
+    publications = _hold_wake_publications(monkeypatch)
+    instance_id = f"park-{uuid.uuid4().hex}"
+    wake = {
+        "participant_id": participant.id,
+        "reason": "barrier_released",
+        "wake_token": hold.wake_token,
+        "instance_id": instance_id,
+    }
+    for _ in range(25):
+        publications.clear()
+        ready = threading.Barrier(2)
+        errors = []
+
+        def publisher():
+            try:
+                ready.wait(timeout=2)
+                _publish_wakes([dict(wake)])
+            except Exception as err:  # pragma: no cover - surfaced by the caller
+                errors.append(err)
+
+        with _last_arrival_render_gate():
+            _mark_last_arrival_render_instance(instance_id)
+            thread = threading.Thread(target=publisher)
+            thread.start()
+            ready.wait(timeout=2)
+        thread.join(timeout=2)
+        assert errors == []
+        assert _released_wake_count(publications) == 1
+        assert not db.redis_conn.llen(_parked_hold_wake_key(instance_id))
 
 
 @pytest.mark.parametrize(

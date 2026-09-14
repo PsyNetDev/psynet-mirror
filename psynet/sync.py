@@ -142,6 +142,7 @@ from psynet.serialize import serialize_callable
 from psynet.timeline import CodeBlock, EltCollection, conditional
 from psynet.timeline_hold import (
     _defer_timeline_hold_wakes,
+    _mark_last_arrival_follow_instance,
     _mark_last_arrival_render_instance,
     _queue_arrival_update,
     _queue_timeline_hold_wake,
@@ -2178,7 +2179,8 @@ def _check_and_skip_held_instance(instance_id):
 
     Sets the ORM ``lock_timeout`` so check/commit cannot wait forever while
     the extra connection holds the visit key. Nested waiter ``NOWAIT`` misses
-    return ``False`` so last-arrival can retry. Skip errors propagate.
+    return ``False`` so last-arrival can retry. Non-transient check errors
+    and skip errors propagate so ``GET /timeline`` does not first-paint a hold.
     """
     _set_transaction_lock_timeout(get_config().get("timeline_lock_timeout_seconds"))
     instance = BarrierInstance.query.get(instance_id)
@@ -2198,7 +2200,7 @@ def _check_and_skip_held_instance(instance_id):
             instance.barrier_id if instance is not None else None,
             instance_id,
         )
-        return False
+        raise
     released_ids = _take_released_hold_waiter_ids()
     db.session.commit()
     _advance_released_hold_waiters_after_commit(released_ids)
@@ -2217,26 +2219,25 @@ def _run_pending_barrier_checks(instance_ids):
     A blocking claim wait that hits ``lock_timeout`` raises so ``GET
     /timeline`` can return HTTP 503 rather than first-painting the live hold.
     A waiter-row ``NOWAIT`` miss still returns ``False`` so the caller can
-    retry immediately.
+    retry immediately. Follow-pin before the try-lock so poller publish
+    cannot fire in the gap after a missed claim. That pin parks publish
+    only; unfilled waiter GETs still leave poller processing free.
     """
     all_claimed = True
     for instance_id in instance_ids:
         try:
+            _mark_last_arrival_follow_instance(instance_id)
             ran = False
             with _hold_barrier_instance_claim(instance_id, wait=False) as claimed:
                 if claimed:
                     ran = True
-                    all_claimed = all_claimed and _check_and_skip_held_instance(
-                        instance_id
-                    )
+                    if not _check_and_skip_held_instance(instance_id):
+                        all_claimed = False
             if ran:
                 continue
-            # Another worker holds the visit claim. Pin before the blocking
-            # wait so poller publish cannot fire after that worker drops the
-            # key and before this GET starts rendering.
-            _mark_last_arrival_render_instance(instance_id)
             with _hold_barrier_instance_claim(instance_id, wait=True):
-                all_claimed = all_claimed and _check_and_skip_held_instance(instance_id)
+                if not _check_and_skip_held_instance(instance_id):
+                    all_claimed = False
         except Exception as err:
             if is_transient_transaction_error(err):
                 raise
@@ -2308,10 +2309,11 @@ def check_barriers():
     and keep wake publishes unpublished until that walk returns, so waiters do
     not hold-resume onto the next barrier one at a time. Skip visits a
     last-arrival request already released and is still rendering; that request
-    pins those in Redis so this process cannot publish during HTML/JSON
-    render. Publish also parks wakes whose visit is Redis-pinned, including a
-    last-arrival GET that is still waiting for this claim. Unfilled waiter
-    GETs do not pin, so this poller can still finish those visits. Each visit
+    render-pins those in Redis so this process cannot process or publish
+    during HTML/JSON render. Publish also parks wakes whose visit has a
+    render or follow pin, including a GET that is still waiting for this
+    claim. Unfilled waiter GETs never take the render pin, so this poller
+    can still finish those visits. Each visit
     still commits before the next check so a locked waiter cannot poison
     sibling checks.
     """

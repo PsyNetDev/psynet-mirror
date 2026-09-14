@@ -5576,10 +5576,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
             # Keep last-arrival wakes unpublished through HTML/JSON render so
             # waiting partners do not stampede this worker while it is still
-            # building the last arriver's page. Redis pins visits this request
-            # released, and visits it has to wait to follow, so the 0.5 s
-            # poller (another process) does not publish them either. Unfilled
-            # waiter holds are not pinned.
+            # building the last arriver's page. Redis render-pins visits this
+            # request released (poller process skip + publish park) and
+            # follow-pins visits it is about to claim (publish park only).
+            # Unfilled waiter holds never take the render pin.
             with _last_arrival_render_gate():
                 with _defer_timeline_hold_wakes():
                     participant, page = cls._finalize_pending_timeline_barriers(
@@ -6088,9 +6088,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         through page render so waiting partners are not told to resume while a
         later stacked check still locks their rows or while this request is
         still rendering. Callers that wrap this with
-        ``_last_arrival_render_gate`` also pin visits this request released
-        or is waiting to follow so the poller cannot publish the same wakes
-        during render.
+        ``_last_arrival_render_gate`` also render-pin visits this request
+        released (poller process skip + publish park) and follow-pin visits it
+        is about to claim (publish park only).
 
         ``serialize_page`` is for ``POST /response`` inplace JSON. ``GET
         /timeline`` renders HTML from ``result.page`` and skips that extra
