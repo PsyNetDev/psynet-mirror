@@ -1048,9 +1048,10 @@ async function enterLastArrival(
   session,
   { holdText, prompt = ACTION_PROMPT, timeout = STEP_TIMEOUT_MS } = {}
 ) {
-  // Last-arrival skips only its own released hold. A later stacked barrier
-  // can still first-paint while partners catch up. Arm that overlay so the
-  // following wake, not a safety poll, finishes the stack.
+  // Last-arrival skips released stacked holds, including waiting partners.
+  // If a later stacked barrier still first-paints because a waiter row was
+  // busy, arm that overlay so the following wake, not a safety poll, finishes
+  // the stack. Sequential grouping last-arrivers use enterSkippingHold.
   const arrival = await enterPossiblyHeldArrival(session, {
     holdText,
     prompt,

@@ -146,7 +146,10 @@ barrier in a short coordination transaction before rendering. This preserves
 the fast route without holding partner rows through author code or
 ``pre_render()``. Released hold waiters are then skipped one at a time after
 that check commits, so a partner ``GET /timeline`` can lock its own row.
-Websocket wakes from those coordination commits stay unpublished
+The visit claim is held on a second connection's transaction lock until that
+skip finishes, so last-arrival ``GET /timeline`` still waits for the same key
+after waiter row locks drop. The ORM session does not take that key while the
+extra transaction is open. Websocket wakes from those coordination commits stay unpublished
 until the last arriver finishes rendering the next page, so a waiting partner
 is not told to resume while a later entry check still holds their row or while
 that request is still building HTML. Last-arrival also pins those visits in
@@ -471,15 +474,16 @@ Those routes do not share a lock protocol:
   still being built. A waiter GET that first-paints an unfilled hold does
   not pin, so the poller can still finish that barrier. Last-arrival waits for the
   instance advisory claim (the lock the 0.5 s poller tries) so a GET does not
-  first-paint a hold while the poller still owns that visit. Waiter rows stay
+  first-paint a hold while the poller still owns that visit. That claim is a
+  transaction lock on a dedicated connection, held until skip-after-commit
+  finishes. Waiter rows stay
   ``NOWAIT``. If a partner row is still busy, that GET retries the check once
   immediately (still no lock wait). It does not wait for the other request to
-  commit. If the retry still misses, the poller finishes the release. If the
+  commit. If the retry still misses, the poller finishes the skip. If the
   poller already released the visit, the last arriver's claim can see zero
   waiters. The last arriver's GET expires its identity map, skips the hold it
-  just cleared, and follows the live cursor. Partners catch up on their own
-  requests; a later stacked wait while they do so is expected, not a sync
-  failure. ``get_current_elt`` may return a new object
+  just cleared, and follows the live cursor. Released partners are skipped
+  after the check commit, one row at a time. ``get_current_elt`` may return a new object
   for the same barrier hold when a trial page maker reconstructs the wait.
   That is still this wait, not a cursor move; comparing Python identity would
   loop until the hold times out.

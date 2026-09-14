@@ -3487,8 +3487,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         Callers must already hold the participant row. Last-arrival uses this
         after the barrier-check commit so this request does not first-paint the
-        hold it just released; partners resume on their own hold-resume POST or
-        ``GET /timeline``. ``POST /response`` uses it while that write still
+        hold it just released. Released partners are skipped the same way, one
+        row at a time, after that commit drops their ``FOR UPDATE`` locks. ``POST /response`` uses it while that write still
         holds the row (``NOWAIT`` on a hold-resume that will advance; a
         still-waiting overlay check does not lock the row); ``GET /timeline``
         uses it only after ``_skip_ready_hold_on_get`` takes blocking
@@ -6109,12 +6109,13 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     def _run_queued_barrier_checks(cls, checks):
         """Run queued checks, retrying waiter ``NOWAIT`` immediately once.
 
-        Each attempt waits for the instance advisory claim, then locks waiters
-        with ``NOWAIT``. The second attempt does not wait for a partner
+        Each attempt waits for the extra-connection instance claim, then locks
+        waiters with ``NOWAIT``. The second attempt does not wait for a partner
         transaction to commit. Reinstall ``lock_timeout`` before that retry
         because ``SET LOCAL`` ends at the check commit. If both miss, the
         caller first-paints the live cursor and the 0.5s poller finishes the
-        release.
+        skip. Each successful check already skipped released waiters while
+        holding that extra claim.
         """
         from .sync import _run_pending_barrier_checks
 

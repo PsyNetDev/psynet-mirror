@@ -260,11 +260,11 @@ these budgets on Playwright or the full ``/timeline`` / ``/response`` stack.
 See :ref:`sqlalchemy_profiling`.
 
 The counts below were predicted from the code and then checked against a
-profiler dump. Locks, advisory claims, spec reconstruction, finalize commit
-count, and the check *statement* count must stay constant as group size *N*
-grows. Per-row writes still scale with *N*, but SQLAlchemy flushes them as
-one ``executemany`` statement per table. A new *kind* of statement that
-grows with *N* should fail the tests.
+profiler dump. Locks, advisory claims, spec reconstruction, and waiter-join
+``NOWAIT`` *kinds* must stay constant as group size *N* grows. Skip-after-commit
+adds ``2N`` statements and *N* commits. Per-row writes still scale with *N*,
+but SQLAlchemy flushes them as one ``executemany`` statement per table. A new
+*kind* of statement that grows with *N* should fail the tests.
 
 Do not add extra ``joinedload`` options to the waiter ``FOR UPDATE`` query.
 PostgreSQL cannot lock the nullable side of an outer join, and joining
@@ -274,9 +274,13 @@ collections causes a cartesian product. Use ``selectinload`` follow-up
 Check window (one GroupBarrier, group already formed)
 -----------------------------------------------------
 
-17 statements, independent of *N*:
+17 statements for the filled visit, plus one extra-connection ``lock_timeout``
+and ``2N`` skip-after-commit statements (``lock_timeout`` + waiter
+``FOR UPDATE NOWAIT``), so ``18 + 2N`` total:
 
-* instance PK, SAVEPOINT, ``pg_advisory_xact_lock``, deferred ``spec``
+* extra-connection ``lock_timeout`` and ``pg_advisory_xact_lock`` (the ORM
+  session does not take that same key);
+* instance PK, SAVEPOINT, deferred ``spec``
   load, one waiter ``FOR UPDATE NOWAIT`` join (this already inner-joins
   ``participant``);
 * ``module_state`` select-in, ``active_barriers`` select-in, ``timeline_hold``
@@ -286,11 +290,15 @@ Check window (one GroupBarrier, group already formed)
   arrival-notice walks lazy-load the collection per member);
 * ``sync_group`` PK, group-membership load;
 * three ``executemany`` UPDATEs (link release, hold ``released_at``,
-  participant wait credit), group UPDATE, instance UPDATE, RELEASE SAVEPOINT.
+  participant wait credit), group UPDATE, instance UPDATE, RELEASE SAVEPOINT;
+* after that check commits, one ``lock_timeout`` plus ``FOR UPDATE NOWAIT``
+  per released waiter.
 
 The wake path is given the already-loaded hold, so it does not look the row
 up again. Nested ``begin_nested()`` records one profiler commit (the
-savepoint release that flushes the updates).
+savepoint release that flushes the updates). The extra-connection transaction
+records a second commit on the check callsite. Skip-after-commit records one
+commit per waiter.
 
 Finalize window (same check, then relock the last arriver)
 ----------------------------------------------------------
@@ -298,12 +306,14 @@ Finalize window (same check, then relock the last arriver)
 The check, plus two ``lock_timeout`` SETs, a participant GET and its
 ``active_barriers`` / ``module_state`` select-in reloads after
 ``expire_all``, then a participant ``FOR UPDATE`` without ``NOWAIT``.
-Grand total: 23. Profiler commits: 3 (1 nested update + 2 outer
-``session.commit()`` calls that still issue PostgreSQL ``COMMIT``).
-The check commit is on ``Experiment._run_queued_barrier_checks``; the
+Grand total: ``24 + 2N``. Profiler commits: ``4 + N`` (check + extra
+connection + *N* skip commits + queued + relock).
+The check commit is on ``_run_pending_barrier_checks``; the
 relock commit is on ``Experiment._run_finalized_barrier_arrivals``.
-The budget's ``finalize_commits`` count includes both callsites.
-Waiter-join ``NOWAIT`` and relock ``FOR UPDATE`` stay 1.
+The budget's ``finalize_commits`` count includes ``_run_queued_barrier_checks``
+and ``_run_finalized_barrier_arrivals``.
+Waiter-join ``NOWAIT`` stays 1; skip adds *N* more ``NOWAIT`` locks. Relock
+``FOR UPDATE`` stays 1.
 
 Arrival notice (recipient already loaded, *N* - 1 waiters)
 ----------------------------------------------------------
@@ -314,15 +324,16 @@ cached for that call.
 Stacked last-arrival finalize (grouper + two GroupBarriers)
 -----------------------------------------------------------
 
-Last-arrival releases the filled visit and skips only its own cursor. Partners
-are not advanced in that request, so later stacked barriers stay unfilled
-until those clients catch up. Check/relock *kinds* stay independent of group
-size *N*. Each check waits for ``pg_advisory_xact_lock`` (the poller still
-uses ``pg_try_advisory_xact_lock``). Creating the next instance adds a
+Last-arrival releases the filled visit and skips released waiters after that
+check commits, holding the visit claim on a second connection until skip
+finishes. Check/relock *kinds* for the filled visit stay independent of group
+size *N* aside from per-waiter skip. Each check waits for
+``pg_advisory_xact_lock`` on that extra connection (the poller still uses
+``pg_try_advisory_xact_lock``). Creating the next instance adds a
 blocking ``pg_advisory_xact_lock`` (O(stack), not O(*N*)). Query *count* can
-still grow with *N* because the filled visit's waiter loads grow; the stacked
-test allows at most 20 extra statements per extra member as a loose cap, not
-as a target.
+still grow with *N* because the filled visit's waiter loads and skip-after-commit
+grow; the stacked test allows at most 80 extra statements per extra member as a
+loose cap, not as a target.
 
 ``GET /timeline`` Server-Timing splits that work from HTML render. In one
 local Playwright last-arrival run, a trio skip was about 180 ms

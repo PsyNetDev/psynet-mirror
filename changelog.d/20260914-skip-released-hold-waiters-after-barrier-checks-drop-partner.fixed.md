@@ -1,1 +1,1 @@
-Barrier checks release waiting partners without advancing their timelines. Each request skips only its own participant past holds that are already clear, so last-arrival does not keep partner rows locked and partners resume themselves after the wake.
+Barrier checks skip released hold waiters after the check commits, one participant at a time, so last-arrival does not first-paint the next stacked wait. The visit claim is a transaction lock on a second connection until that skip finishes, so a concurrent GET still waits for the same key after partner row locks drop.
