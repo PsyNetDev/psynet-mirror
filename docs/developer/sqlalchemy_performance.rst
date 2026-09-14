@@ -274,12 +274,14 @@ collections causes a cartesian product. Use ``selectinload`` follow-up
 Check window (one GroupBarrier, group already formed)
 -----------------------------------------------------
 
-17 statements for the filled visit, plus one extra-connection ``lock_timeout``
-and ``2N`` skip-after-commit statements (``lock_timeout`` + waiter
-``FOR UPDATE NOWAIT``), so ``18 + 2N`` total:
+17 statements for the filled visit, plus extra-connection and ORM
+``lock_timeout`` SETs and ``2N`` skip-after-commit statements (``lock_timeout``
++ waiter ``FOR UPDATE NOWAIT``), so ``19 + 2N`` total:
 
-* extra-connection ``lock_timeout`` and ``pg_advisory_xact_lock`` (the ORM
-  session does not take that same key);
+* extra-connection ``lock_timeout`` and ``pg_try_advisory_xact_lock`` (the ORM
+  session does not take that same key; last-arrival only issues a blocking
+  ``pg_advisory_xact_lock`` when the try misses);
+* ORM ``lock_timeout`` for the check/commit on ``db.session``;
 * instance PK, SAVEPOINT, deferred ``spec``
   load, one waiter ``FOR UPDATE NOWAIT`` join (this already inner-joins
   ``participant``);
@@ -306,7 +308,7 @@ Finalize window (same check, then relock the last arriver)
 The check, plus two ``lock_timeout`` SETs, a participant GET and its
 ``active_barriers`` / ``module_state`` select-in reloads after
 ``expire_all``, then a participant ``FOR UPDATE`` without ``NOWAIT``.
-Grand total: ``24 + 2N``. Profiler commits: ``4 + N`` (check + extra
+Grand total: ``25 + 2N``. Profiler commits: ``4 + N`` (check + extra
 connection + *N* skip commits + queued + relock).
 The check commit is on ``_run_pending_barrier_checks``; the
 relock commit is on ``Experiment._run_finalized_barrier_arrivals``.
@@ -327,9 +329,10 @@ Stacked last-arrival finalize (grouper + two GroupBarriers)
 Last-arrival releases the filled visit and skips released waiters after that
 check commits, holding the visit claim on a second connection until skip
 finishes. Check/relock *kinds* for the filled visit stay independent of group
-size *N* aside from per-waiter skip. Each check waits for
-``pg_advisory_xact_lock`` on that extra connection (the poller still uses
-``pg_try_advisory_xact_lock``). Creating the next instance adds a
+size *N* aside from per-waiter skip. Each check tries
+``pg_try_advisory_xact_lock`` on that extra connection and only waits with
+``pg_advisory_xact_lock`` when the try misses (the poller never waits).
+Creating the next instance adds a
 blocking ``pg_advisory_xact_lock`` (O(stack), not O(*N*)). Query *count* can
 still grow with *N* because the filled visit's waiter loads and skip-after-commit
 grow; the stacked test allows at most 80 extra statements per extra member as a

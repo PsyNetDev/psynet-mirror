@@ -876,10 +876,14 @@ def _advance_released_hold_waiters_after_commit(participant_ids):
         if participant is None:
             _rollback_preserving_barrier_queues()
             continue
-        page = experiment.timeline.get_current_elt(experiment, participant)
-        if getattr(page, "is_timeline_hold", False):
-            experiment._advance_past_ready_holds(participant, page)
-        db.session.commit()
+        try:
+            page = experiment.timeline.get_current_elt(experiment, participant)
+            if getattr(page, "is_timeline_hold", False):
+                experiment._advance_past_ready_holds(participant, page)
+            db.session.commit()
+        except Exception:
+            _rollback_preserving_barrier_queues()
+            raise
 
 
 class GroupBarrier(Barrier):
@@ -2023,6 +2027,7 @@ class ParticipantLinkBarrier(SQLBase, SQLMixin):
                 page_uuid=self.timeline_hold.page_uuid,
                 reason="barrier_released",
                 hold=self.timeline_hold,
+                instance_id=self.barrier_instance_id,
             )
 
 
@@ -2168,6 +2173,38 @@ def _check_claimed_barrier_instance(instance, *, wait=False, already_claimed=Fal
     return True
 
 
+def _check_and_skip_held_instance(instance_id):
+    """Evaluate one visit whose extra-connection claim is already held.
+
+    Sets the ORM ``lock_timeout`` so check/commit cannot wait forever while
+    the extra connection holds the visit key. Nested waiter ``NOWAIT`` misses
+    return ``False`` so last-arrival can retry. Skip errors propagate.
+    """
+    _set_transaction_lock_timeout(get_config().get("timeline_lock_timeout_seconds"))
+    instance = BarrierInstance.query.get(instance_id)
+    try:
+        with db.session.begin_nested():
+            ok = _check_claimed_barrier_instance(instance, already_claimed=True)
+    except Exception as err:
+        if is_transient_transaction_error(err):
+            logger.debug(
+                "Barrier '%s' instance %s deferred because a waiter is locked.",
+                instance.barrier_id if instance is not None else None,
+                instance_id,
+            )
+            return False
+        logger.exception(
+            "Barrier '%s' instance %s failed during a last-arrival check.",
+            instance.barrier_id if instance is not None else None,
+            instance_id,
+        )
+        return False
+    released_ids = _take_released_hold_waiter_ids()
+    db.session.commit()
+    _advance_released_hold_waiters_after_commit(released_ids)
+    return ok
+
+
 def _run_pending_barrier_checks(instance_ids):
     """Run post-commit checks, waiting for each instance advisory claim.
 
@@ -2176,47 +2213,33 @@ def _run_pending_barrier_checks(instance_ids):
     rows) serializes with that poller through skip-after-commit. Waiter rows
     stay ``FOR UPDATE NOWAIT``. Each check commits before skip so partner
     row locks do not span ``_advance_past_ready_holds``.
+
+    A blocking claim wait that hits ``lock_timeout`` raises so ``GET
+    /timeline`` can return HTTP 503 rather than first-painting the live hold.
+    A waiter-row ``NOWAIT`` miss still returns ``False`` so the caller can
+    retry immediately.
     """
     all_claimed = True
     for instance_id in instance_ids:
         try:
-            with _hold_barrier_instance_claim(instance_id, wait=True) as claimed:
-                if not claimed:
-                    all_claimed = False
-                    continue
-                instance = BarrierInstance.query.get(instance_id)
-                try:
-                    with db.session.begin_nested():
-                        ok = _check_claimed_barrier_instance(
-                            instance, already_claimed=True
-                        )
-                        all_claimed = all_claimed and ok
-                except Exception as err:
-                    all_claimed = False
-                    if is_transient_transaction_error(err):
-                        logger.debug(
-                            "Barrier '%s' instance %s deferred because a waiter is locked.",
-                            instance.barrier_id if instance is not None else None,
-                            instance_id,
-                        )
-                        continue
-                    logger.exception(
-                        "Barrier '%s' instance %s failed during a last-arrival check.",
-                        instance.barrier_id if instance is not None else None,
-                        instance_id,
+            ran = False
+            with _hold_barrier_instance_claim(instance_id, wait=False) as claimed:
+                if claimed:
+                    ran = True
+                    all_claimed = all_claimed and _check_and_skip_held_instance(
+                        instance_id
                     )
-                    continue
-                released_ids = _take_released_hold_waiter_ids()
-                db.session.commit()
-                _advance_released_hold_waiters_after_commit(released_ids)
-        except Exception as err:
-            all_claimed = False
-            if is_transient_transaction_error(err):
-                logger.debug(
-                    "Barrier instance %s deferred because the visit claim is busy.",
-                    instance_id,
-                )
+            if ran:
                 continue
+            # Another worker holds the visit claim. Pin before the blocking
+            # wait so poller publish cannot fire after that worker drops the
+            # key and before this GET starts rendering.
+            _mark_last_arrival_render_instance(instance_id)
+            with _hold_barrier_instance_claim(instance_id, wait=True):
+                all_claimed = all_claimed and _check_and_skip_held_instance(instance_id)
+        except Exception as err:
+            if is_transient_transaction_error(err):
+                raise
             logger.exception(
                 "Barrier instance %s failed while waiting for its visit claim.",
                 instance_id,
@@ -2240,6 +2263,9 @@ def _process_barrier_instance(instance_id, *, retry=False):
         with _hold_barrier_instance_claim(instance_id, wait=False) as claimed:
             if not claimed:
                 return False
+            _set_transaction_lock_timeout(
+                get_config().get("timeline_lock_timeout_seconds")
+            )
             instance = BarrierInstance.query.get(instance_id)
             if instance is None:
                 return False
@@ -2251,6 +2277,7 @@ def _process_barrier_instance(instance_id, *, retry=False):
             _advance_released_hold_waiters_after_commit(released_ids)
             return False
     except Exception as err:
+        db.session.rollback()
         if is_transient_transaction_error(err):
             qualifier = " still locked on retry" if retry else " deferred"
             logger.debug(
@@ -2282,9 +2309,11 @@ def check_barriers():
     not hold-resume onto the next barrier one at a time. Skip visits a
     last-arrival request already released and is still rendering; that request
     pins those in Redis so this process cannot publish during HTML/JSON
-    render. Unfilled waiter GETs do not pin, so this poller can still finish
-    those visits. Each visit still commits before the next check so a locked
-    waiter cannot poison sibling checks.
+    render. Publish also parks wakes whose visit is Redis-pinned, including a
+    last-arrival GET that is still waiting for this claim. Unfilled waiter
+    GETs do not pin, so this poller can still finish those visits. Each visit
+    still commits before the next check so a locked waiter cannot poison
+    sibling checks.
     """
     seen = set()
     with _defer_timeline_hold_wakes():

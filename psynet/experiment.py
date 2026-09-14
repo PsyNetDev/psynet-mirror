@@ -5577,8 +5577,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             # Keep last-arrival wakes unpublished through HTML/JSON render so
             # waiting partners do not stampede this worker while it is still
             # building the last arriver's page. Redis pins visits this request
-            # released so the 0.5 s poller (another process) does not publish
-            # them either. Unfilled waiter holds are not pinned.
+            # released, and visits it has to wait to follow, so the 0.5 s
+            # poller (another process) does not publish them either. Unfilled
+            # waiter holds are not pinned.
             with _last_arrival_render_gate():
                 with _defer_timeline_hold_wakes():
                     participant, page = cls._finalize_pending_timeline_barriers(
@@ -6088,7 +6089,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         later stacked check still locks their rows or while this request is
         still rendering. Callers that wrap this with
         ``_last_arrival_render_gate`` also pin visits this request released
-        so the poller cannot publish the same wakes during render.
+        or is waiting to follow so the poller cannot publish the same wakes
+        during render.
 
         ``serialize_page`` is for ``POST /response`` inplace JSON. ``GET
         /timeline`` renders HTML from ``result.page`` and skips that extra
@@ -6109,13 +6111,15 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     def _run_queued_barrier_checks(cls, checks):
         """Run queued checks, retrying waiter ``NOWAIT`` immediately once.
 
-        Each attempt waits for the extra-connection instance claim, then locks
-        waiters with ``NOWAIT``. The second attempt does not wait for a partner
-        transaction to commit. Reinstall ``lock_timeout`` before that retry
-        because ``SET LOCAL`` ends at the check commit. If both miss, the
-        caller first-paints the live cursor and the 0.5s poller finishes the
-        skip. Each successful check already skipped released waiters while
-        holding that extra claim.
+        Each attempt tries the extra-connection instance claim, then waits
+        only if another worker already holds it. Waiter rows stay ``NOWAIT``.
+        A blocking claim wait that times out raises (HTTP 503). The second
+        attempt does not wait for a partner transaction to commit; it only
+        retries waiter ``NOWAIT``. Reinstall ``lock_timeout`` before that
+        retry because ``SET LOCAL`` ends at the check commit. If both miss
+        waiter rows, the caller first-paints the live cursor and the 0.5s
+        poller finishes the skip. Each successful check already skipped
+        released waiters while holding that extra claim.
         """
         from .sync import _run_pending_barrier_checks
 

@@ -149,12 +149,15 @@ that check commits, so a partner ``GET /timeline`` can lock its own row.
 The visit claim is held on a second connection's transaction lock until that
 skip finishes, so last-arrival ``GET /timeline`` still waits for the same key
 after waiter row locks drop. The ORM session does not take that key while the
-extra transaction is open. Websocket wakes from those coordination commits stay unpublished
+extra transaction is open. A blocking wait for that claim that hits
+``lock_timeout`` returns HTTP 503 rather than first-painting the live hold.
+Websocket wakes from those coordination commits stay unpublished
 until the last arriver finishes rendering the next page, so a waiting partner
 is not told to resume while a later entry check still holds their row or while
 that request is still building HTML. Last-arrival also pins those visits in
-Redis until that response is ready, so the 0.5 s poller (another process)
-does not publish the same wakes during HTML render. Last-arrival waits for the instance
+Redis until that response is ready, including a GET that is still waiting for
+the claim, so the 0.5 s poller (another process) does not publish the same
+wakes during HTML render. Last-arrival waits for the instance
 advisory claim the poller uses, then locks waiters with ``NOWAIT``. If a waiter
 row is still busy, the request retries that check once immediately (still
 ``NOWAIT``). It does not wait for the other request to commit; if the retry
@@ -476,7 +479,10 @@ Those routes do not share a lock protocol:
   instance advisory claim (the lock the 0.5 s poller tries) so a GET does not
   first-paint a hold while the poller still owns that visit. That claim is a
   transaction lock on a dedicated connection, held until skip-after-commit
-  finishes. Waiter rows stay
+  finishes. If the wait for that claim times out, ``GET /timeline`` returns
+  HTTP 503 rather than rendering the live hold. A GET that has to wait for
+  the claim pins the visit before that wait so poller publish cannot fire
+  after the claim drops. Waiter rows stay
   ``NOWAIT``. If a partner row is still busy, that GET retries the check once
   immediately (still no lock wait). It does not wait for the other request to
   commit. If the retry still misses, the poller finishes the skip. If the

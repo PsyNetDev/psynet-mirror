@@ -8,8 +8,12 @@ finalize and the barrier poller can defer those publishes until stacked checks
 finish so waiting partners are not woken while later checks still lock their
 rows. After a request actually releases waiters, it marks those visits in Redis
 until HTML/JSON render returns, so the 0.5 s poller (a different process) does
-not publish the same wakes while that request is still building the next page.
-Unfilled waiter GETs do not pin, so the poller can still finish those visits.
+not process or publish those visits while that request is still building the next
+page. A last-arrival GET that must wait for the visit claim also pins before
+that blocking wait, even if the poller already released the visit, so poller
+publish cannot fire in the gap after the claim drops. Publish parks Redis-pinned
+wakes until the pin clears. Unfilled waiter GETs do not pin, so the poller can
+still finish those visits.
 The poller uses a
 fresh session per visit, so wake deferral is stored in a context variable
 rather than ``session.info``.
@@ -56,6 +60,7 @@ _NESTED_WAKE_SNAPSHOTS_KEY = "psynet_nested_timeline_hold_wake_keys"
 _wake_defer_depth = ContextVar("psynet_timeline_hold_wake_defer_depth", default=0)
 _deferred_wake_stash = ContextVar("psynet_timeline_hold_deferred_wakes", default=None)
 _LAST_ARRIVAL_RENDER_PREFIX = "psynet:last-arrival-render:"
+_LAST_ARRIVAL_PARKED_WAKE_PREFIX = "psynet:last-arrival-parked-wakes:"
 _LAST_ARRIVAL_RENDER_TTL_SECONDS = 15
 _last_arrival_render_active = ContextVar(
     "psynet_last_arrival_render_active", default=False
@@ -71,6 +76,11 @@ def _last_arrival_render_key(instance_id):
     return f"{_LAST_ARRIVAL_RENDER_PREFIX}{instance_id}"
 
 
+def _parked_hold_wake_key(instance_id):
+    """Return the Redis list that holds wakes until last-arrival render unpins."""
+    return f"{_LAST_ARRIVAL_PARKED_WAKE_PREFIX}{instance_id}"
+
+
 @contextmanager
 def _last_arrival_render_gate():
     """Keep the barrier poller off visits this request released and is rendering.
@@ -78,11 +88,11 @@ def _last_arrival_render_gate():
     Inner last-arrival commits release waiter rows before HTML/JSON render.
     The poller is a different process, so ``_defer_timeline_hold_wakes``
     cannot hide those rows from it. Redis refcounts visits this request
-    actually released; the poller skips them until this context exits (after
-    wakes publish). Unfilled waiter holds are not marked, so the poller can
-    still finish those barriers. Nested last-arrival requests INCR the same
-    key so an overlapping GET cannot clear the mark while the other is still
-    rendering.
+    released or is waiting to follow; the poller skips processing released
+    visits and parks publish for any pinned visit until this context exits.
+    Unfilled waiter holds are not marked, so the poller can still finish
+    those barriers. Nested last-arrival requests INCR the same key so an
+    overlapping GET cannot clear the mark while the other is still rendering.
     """
     active_token = _last_arrival_render_active.set(True)
     ids_token = _last_arrival_render_ids.set(frozenset())
@@ -95,7 +105,7 @@ def _last_arrival_render_gate():
 
 
 def _mark_last_arrival_render_instance(instance_id):
-    """Pin a visit this request released until last-arrival render finishes."""
+    """Pin a visit this request released or is following until render finishes."""
     if instance_id is None or not _last_arrival_render_active.get():
         return
     owned = _last_arrival_render_ids.get()
@@ -132,7 +142,8 @@ def _last_arrival_render_in_progress(instance_id):
 
 
 def _clear_last_arrival_render_marks():
-    """Drop this request's last-arrival render pins."""
+    """Drop this request's last-arrival render pins and publish parked wakes."""
+    parked = []
     for instance_id in _last_arrival_render_ids.get():
         key = _last_arrival_render_key(instance_id)
         try:
@@ -145,15 +156,18 @@ def _clear_last_arrival_render_marks():
                 instance_id,
                 exc_info=True,
             )
+        parked.extend(_take_parked_hold_wakes(instance_id))
+    _publish_wakes(parked)
 
 
 def _enqueue_timeline_hold_wake(
-    participant_id, *, page_uuid=None, reason=None, hold=None
+    participant_id, *, page_uuid=None, reason=None, hold=None, instance_id=None
 ):
     """Queue a targeted hold wake for publication after the next commit.
 
     Pass ``hold`` when the caller already has the unresumed record so this
-    path does not look it up again.
+    path does not look it up again. ``instance_id`` lets publish park the wake
+    while last-arrival is still rendering that visit.
     """
     if hold is not None:
         if hold.resumed_at is not None:
@@ -185,11 +199,13 @@ def _enqueue_timeline_hold_wake(
         "reason": reason,
         "participant_id": participant_id,
     }
+    if instance_id is not None:
+        wake["instance_id"] = instance_id
     db.session.info.setdefault(_PENDING_WAKE_KEY, {})[active_hold.wake_token] = wake
 
 
 def _queue_timeline_hold_wake(
-    participant_id, *, page_uuid=None, reason=None, hold=None
+    participant_id, *, page_uuid=None, reason=None, hold=None, instance_id=None
 ):
     """Queue a wake without allowing notification failure to break core work."""
     try:
@@ -198,6 +214,7 @@ def _queue_timeline_hold_wake(
             page_uuid=page_uuid,
             reason=reason,
             hold=hold,
+            instance_id=instance_id,
         )
     except Exception:
         logger.warning(
@@ -322,17 +339,84 @@ def _stash_committed_wakes(pending):
     deferred.update(_copy_pending_wakes(pending))
 
 
+def _park_hold_wakes(instance_id, wakes):
+    """Store wakes until the last-arrival pin for ``instance_id`` clears."""
+    if instance_id is None or not wakes:
+        return
+    key = _parked_hold_wake_key(instance_id)
+    try:
+        pipe = db.redis_conn.pipeline()
+        for wake in wakes:
+            pipe.rpush(key, json.dumps(wake))
+        pipe.expire(key, _LAST_ARRIVAL_RENDER_TTL_SECONDS)
+        pipe.execute()
+    except Exception:
+        logger.warning(
+            "Failed to park hold wakes for barrier instance %s.",
+            instance_id,
+            exc_info=True,
+        )
+
+
+def _take_parked_hold_wakes(instance_id):
+    """Pop parked wakes for ``instance_id``, or return an empty list."""
+    if instance_id is None:
+        return []
+    key = _parked_hold_wake_key(instance_id)
+    try:
+        pipe = db.redis_conn.pipeline()
+        pipe.lrange(key, 0, -1)
+        pipe.delete(key)
+        raw, _deleted = pipe.execute()
+    except Exception:
+        logger.warning(
+            "Failed to take parked hold wakes for barrier instance %s.",
+            instance_id,
+            exc_info=True,
+        )
+        return []
+    wakes = []
+    for item in raw or []:
+        try:
+            wakes.append(json.loads(item))
+        except Exception:
+            logger.warning(
+                "Failed to decode a parked hold wake for barrier instance %s.",
+                instance_id,
+                exc_info=True,
+            )
+    return wakes
+
+
 def _publish_wakes(wakes):
-    """Publish copied wake payloads on their participant Redis channels."""
+    """Publish copied wake payloads on their participant Redis channels.
+
+    Wakes whose visit is still pinned by last-arrival render are parked in
+    Redis instead of published, then flushed when that pin clears.
+    """
     if not wakes:
+        return
+    remaining = []
+    parked = {}
+    for wake in wakes:
+        payload = dict(wake)
+        instance_id = payload.get("instance_id")
+        if instance_id and _last_arrival_render_in_progress(instance_id):
+            parked.setdefault(instance_id, []).append(payload)
+            continue
+        remaining.append(payload)
+    for instance_id, blocked in parked.items():
+        _park_hold_wakes(instance_id, blocked)
+    if not remaining:
         return
     try:
         from collections import defaultdict
 
         by_channel = defaultdict(list)
-        for wake in wakes:
+        for wake in remaining:
             payload = dict(wake)
             participant_id = payload.pop("participant_id", None)
+            payload.pop("instance_id", None)
             channel = (
                 _timeline_hold_channel(participant_id)
                 if participant_id is not None

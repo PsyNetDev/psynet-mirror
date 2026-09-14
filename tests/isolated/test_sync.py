@@ -42,13 +42,16 @@ from psynet.sync import (
     GroupBarrier,
     SimpleGrouper,
     SimpleSyncGroup,
+    _advance_released_hold_waiters_after_commit,
     _check_claimed_barrier_instance,
     _claim_barrier_instance,
     _has_active_sync_group,
+    _hold_barrier_instance_claim,
     _hold_instance_id_for_page,
     _process_barrier_instance,
     _run_pending_barrier_checks,
     _take_pending_barrier_checks,
+    _take_released_hold_waiter_ids,
     arrival_notice_payload,
     check_barriers,
     check_sync_groups,
@@ -60,6 +63,7 @@ from psynet.timeline_hold import (
     _defer_timeline_hold_wakes,
     _enqueue_timeline_hold_wake,
     _last_arrival_render_in_progress,
+    _publish_wakes,
     _queue_arrival_update,
     _timeline_hold_channel,
     _TimelineHoldPage,
@@ -1030,6 +1034,68 @@ def test_skip_after_commit_releases_extra_claim_on_failure(
     monkeypatch.setattr("psynet.sync._advance_released_hold_waiters_after_commit", boom)
     with pytest.raises(RuntimeError, match="skip failed"):
         _commit_barrier_arrivals()
+    assert _advisory_lock_count() == baseline
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_already_claimed_skips_orm_visit_key(
+    in_experiment_directory, db_session, monkeypatch
+):
+    """Check-and-skip must not take the visit key on ``db.session``."""
+    exp = get_experiment()
+    first, last = _pair_sync_group(exp, db_session)[0]
+    barrier = GroupBarrier(id_="already_claimed_key", group_type="main")
+    _arrive_at_group_barrier(exp, barrier, first)
+    _commit_barrier_arrivals()
+    _arrive_at_group_barrier(exp, barrier, last)
+    db.session.commit()
+    instance_id = next(iter(last.active_barriers.values())).barrier_instance_id
+    instance = BarrierInstance.query.get(instance_id)
+
+    with _hold_barrier_instance_claim(instance_id, wait=True):
+        assert _claim_barrier_instance(instance_id, wait=False) is False
+
+        def forbid_orm_claim(*_args, **_kwargs):
+            raise AssertionError("ORM session must not take the visit key")
+
+        monkeypatch.setattr("psynet.sync._claim_barrier_instance", forbid_orm_claim)
+        assert _check_claimed_barrier_instance(instance, already_claimed=True) is True
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_skip_failure_after_waiter_lock_releases_row_and_claim(
+    in_experiment_directory, db_session, monkeypatch
+):
+    """A skip that already holds a participant row must still drop that lock."""
+    exp = get_experiment()
+    baseline = _advisory_lock_count()
+    processed_barriers.clear()
+    bad = ReleaseAllBarrier(id_="a_skip_lock")
+    good = RecordingBarrier(id_="b_skip_ok")
+    bad_participant = new_participant(exp)
+    good_participant = new_participant(exp)
+    bad_participant.status = "working"
+    good_participant.status = "working"
+    bad.receive_participant(bad_participant)
+    good.receive_participant(good_participant)
+    db.session.commit()
+    bad_id = bad_participant.id
+    original_advance = Experiment._advance_past_ready_holds
+
+    def boom(self, participant, page):
+        if participant.id == bad_id:
+            raise RuntimeError("skip failed after lock")
+        return original_advance(self, participant, page)
+
+    monkeypatch.setattr(Experiment, "_advance_past_ready_holds", boom)
+    check_barriers()
+
+    assert "b_skip_ok" in processed_barriers
+    assert _participant_row_is_locked(bad_id) is False
     assert _advisory_lock_count() == baseline
 
 
@@ -2649,6 +2715,54 @@ def _advisory_lock_count():
         ).scalar()
 
 
+def _short_timeline_lock_timeout(monkeypatch, seconds=0.3):
+    """Bound claim and ORM lock waits so timeout tests stay fast."""
+    real_get_config = get_config
+
+    def wrapped():
+        cfg = real_get_config()
+
+        def getter(key, default=None):
+            if key == "timeline_lock_timeout_seconds":
+                return seconds
+            return cfg.get(key, default)
+
+        return SimpleNamespace(get=getter)
+
+    monkeypatch.setattr("psynet.sync.get_config", wrapped)
+    monkeypatch.setattr("psynet.experiment.get_config", wrapped)
+
+
+def _json_timeline_via_route(participant):
+    """Run ``GET /timeline?mode=json`` through the busy-503 wrapper."""
+    with Flask(__name__).test_request_context(
+        f"/timeline?unique_id={participant.unique_id}&mode=json",
+        environ_base={"REMOTE_ADDR": "127.0.0.1"},
+    ):
+        return Experiment.route_timeline()
+
+
+def _route_timeline_via_route_in_thread(unique_id):
+    """Run ``route_timeline`` on a thread-local session and request context."""
+    result = {}
+    errors = []
+
+    def target():
+        try:
+            participant = Participant.query.filter_by(unique_id=unique_id).one()
+            response = _json_timeline_via_route(participant)
+            result["status"] = response.status_code
+            result["payload"] = response.get_json()
+        except Exception as err:  # pragma: no cover - surfaced by the caller
+            errors.append(err)
+        finally:
+            db.session.remove()
+
+    thread = threading.Thread(target=target, daemon=True)
+    thread.start()
+    return thread, result, errors
+
+
 def _assert_stacked_finalize_defers_wakes(exp, monkeypatch, group_size):
     """Waiters stay unpublished until stacked last-arrival finalize returns."""
     original_timeline = exp.timeline
@@ -2792,6 +2906,118 @@ def test_poller_does_not_wake_waiters_during_last_arrival_render(
         assert _released_wake_count(publications) >= 1
         _assert_on_action_page(exp, [first_id, last.id])
     finally:
+        exp.timeline = original_timeline
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_poller_wins_does_not_wake_until_last_arrival_render_returns(
+    in_experiment_directory, db_session, monkeypatch
+):
+    """If the poller releases first, wakes wait until last-arrival HTML is ready."""
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    group_type = f"stack_poller_wins_{uuid.uuid4().hex[:8]}"
+    exp.timeline = _stacked_partner_timeline(group_type)
+    publications = _hold_wake_publications(monkeypatch)
+    original_render = Experiment._render_timeline_page_read_only
+    original_publish = _publish_wakes
+    from psynet.timeline_hold import _mark_last_arrival_render_instance as original_mark
+
+    claim_held = threading.Event()
+    last_waiting = threading.Event()
+    render_started = threading.Event()
+    poller_tried_publish = threading.Event()
+    holder_error = []
+    wakes_during_render = []
+    pins_during_render = []
+    released_id = [None]
+
+    def tracking_mark(instance_id):
+        original_mark(instance_id)
+        if instance_id == released_id[0]:
+            last_waiting.set()
+
+    def tracking_publish(wakes):
+        poller_tried_publish.set()
+        return original_publish(wakes)
+
+    def tracking_render(*args, **kwargs):
+        pins_during_render.append(_last_arrival_render_in_progress(released_id[0]))
+        wakes_during_render.append(_released_wake_count(publications))
+        render_started.set()
+        assert poller_tried_publish.wait(timeout=5)
+        wakes_during_render.append(_released_wake_count(publications))
+        return original_render(*args, **kwargs)
+
+    try:
+        first, last = _working_participants(exp, 2)
+        assert _json_timeline(exp, first).status_code == 200
+        first = Participant.query.get(first.id)
+        first_id = first.id
+        first_page = exp.timeline.get_current_elt(exp, first)
+        released_id[0] = _hold_instance_id_for_page(first, first_page)
+        assert released_id[0]
+        last_uid = last.unique_id
+        instance_id = released_id[0]
+
+        def poller_holder():
+            try:
+                with _defer_timeline_hold_wakes():
+                    with _hold_barrier_instance_claim(instance_id, wait=True):
+                        claim_held.set()
+                        if not last_waiting.wait(timeout=5):
+                            raise TimeoutError(
+                                "Last arriver did not pin before waiting."
+                            )
+                        _set_transaction_lock_timeout(
+                            get_config().get("timeline_lock_timeout_seconds")
+                        )
+                        instance = BarrierInstance.query.get(instance_id)
+                        with db.session.begin_nested():
+                            _check_claimed_barrier_instance(
+                                instance, already_claimed=True
+                            )
+                        released_ids = _take_released_hold_waiter_ids()
+                        db.session.commit()
+                        _advance_released_hold_waiters_after_commit(released_ids)
+                    if not render_started.wait(timeout=5):
+                        raise TimeoutError("Last arriver did not start rendering.")
+            except Exception as err:  # pragma: no cover - surfaced by the caller
+                holder_error.append(err)
+            finally:
+                db.session.remove()
+
+        monkeypatch.setattr(
+            "psynet.timeline_hold._mark_last_arrival_render_instance", tracking_mark
+        )
+        monkeypatch.setattr(
+            "psynet.sync._mark_last_arrival_render_instance", tracking_mark
+        )
+        monkeypatch.setattr("psynet.timeline_hold._publish_wakes", tracking_publish)
+        monkeypatch.setattr(
+            Experiment, "_render_timeline_page_read_only", tracking_render
+        )
+        publications.clear()
+        holder = threading.Thread(target=poller_holder, daemon=True)
+        holder.start()
+        assert claim_held.wait(timeout=2)
+        thread, result, errors = _route_timeline_in_thread(exp, last_uid)
+        thread.join(timeout=8)
+        holder.join(timeout=8)
+        assert holder_error == []
+        assert errors == []
+        assert not thread.is_alive()
+        assert result.get("status") == 200
+        assert pins_during_render == [True]
+        assert wakes_during_render == [0, 0]
+        assert _released_wake_count(publications) >= 1
+        _assert_on_action_page(exp, [first_id, last.id])
+    finally:
+        last_waiting.set()
+        render_started.set()
+        poller_tried_publish.set()
         exp.timeline = original_timeline
 
 
@@ -3617,6 +3843,226 @@ def test_last_arrival_follows_poller_release_after_claim_wait(
     finally:
         last_joined.set()
         exp.timeline = original_timeline
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_concurrent_get_waits_for_claim_through_skip(
+    in_experiment_directory, db_session, monkeypatch
+):
+    """A concurrent GET must stay blocked on the visit claim until skip finishes."""
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    group_type = f"stack_skip_claim_{uuid.uuid4().hex[:8]}"
+    exp.timeline = _stacked_partner_timeline(group_type)
+    original_skip = _advance_released_hold_waiters_after_commit
+    pause = threading.Event()
+    resume = threading.Event()
+
+    def paused_skip(participant_ids):
+        if participant_ids:
+            pause.set()
+            assert resume.wait(timeout=5)
+        return original_skip(participant_ids)
+
+    monkeypatch.setattr(
+        "psynet.sync._advance_released_hold_waiters_after_commit", paused_skip
+    )
+    try:
+        first, last = _working_participants(exp, 2)
+        assert _json_timeline(exp, first).status_code == 200
+        first = Participant.query.get(first.id)
+        instance_id = next(iter(first.active_barriers.values())).barrier_instance_id
+        last_uid = last.unique_id
+        last_thread, last_result, last_errors = _route_timeline_in_thread(exp, last_uid)
+        assert pause.wait(timeout=5)
+        claim_errors = []
+
+        def wait_for_claim():
+            try:
+                _run_pending_barrier_checks([instance_id])
+            except Exception as err:  # pragma: no cover - surfaced by the caller
+                claim_errors.append(err)
+            finally:
+                db.session.remove()
+
+        claim_thread = threading.Thread(target=wait_for_claim, daemon=True)
+        claim_thread.start()
+        claim_thread.join(timeout=0.4)
+        assert claim_thread.is_alive()
+        resume.set()
+        last_thread.join(timeout=8)
+        claim_thread.join(timeout=8)
+        assert last_errors == []
+        assert claim_errors == []
+        assert not last_thread.is_alive()
+        assert not claim_thread.is_alive()
+        assert last_result.get("status") == 200
+        _assert_on_action_page(exp, [first.id, last.id])
+    finally:
+        resume.set()
+        exp.timeline = original_timeline
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_last_arrival_claim_timeout_returns_busy_503(
+    in_experiment_directory, db_session, monkeypatch
+):
+    """A claim wait that hits lock_timeout must be HTTP 503, not a hold page."""
+    _short_timeline_lock_timeout(monkeypatch, seconds=0.3)
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    group_type = f"stack_claim_503_{uuid.uuid4().hex[:8]}"
+    exp.timeline = _stacked_partner_timeline(group_type)
+    release_claim = threading.Event()
+    claim_held = threading.Event()
+    holder_error = []
+    try:
+        first, last = _working_participants(exp, 2)
+        assert _json_timeline(exp, first).get_json()["attributes"]["type"] == (
+            "_BarrierHoldPage"
+        )
+        first = Participant.query.get(first.id)
+        instance_id = next(iter(first.active_barriers.values())).barrier_instance_id
+        last_uid = last.unique_id
+
+        def hold_claim():
+            try:
+                with db.engine.connect() as conn:
+                    trans = conn.begin()
+                    conn.execute(
+                        text(
+                            "SELECT pg_advisory_xact_lock("
+                            "hashtextextended(:instance_id, 0))"
+                        ),
+                        {"instance_id": instance_id},
+                    )
+                    claim_held.set()
+                    release_claim.wait(timeout=5)
+                    trans.rollback()
+            except Exception as err:  # pragma: no cover - surfaced by the caller
+                holder_error.append(err)
+
+        holder = threading.Thread(target=hold_claim, daemon=True)
+        holder.start()
+        assert claim_held.wait(timeout=2)
+        started = time.perf_counter()
+        thread, result, errors = _route_timeline_via_route_in_thread(last_uid)
+        thread.join(timeout=5)
+        elapsed = time.perf_counter() - started
+        release_claim.set()
+        holder.join(timeout=5)
+        assert holder_error == []
+        assert errors == []
+        assert not thread.is_alive()
+        assert elapsed >= 0.25
+        assert result.get("status") == 503
+        assert result.get("payload", {}).get("status") == "busy"
+        assert result.get("payload", {}).get("submission") == "busy"
+    finally:
+        release_claim.set()
+        exp.timeline = original_timeline
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_poller_orm_check_timeout_releases_visit_claim(
+    in_experiment_directory, db_session, monkeypatch
+):
+    """A blocked poller check commit must time out and drop the extra claim."""
+    _short_timeline_lock_timeout(monkeypatch, seconds=0.3)
+    exp = get_experiment()
+    baseline = _advisory_lock_count()
+    participant = new_participant(exp)
+    participant.status = "working"
+    barrier = ReleaseAllBarrier(id_="orm_timeout_claim")
+    barrier.receive_participant(participant)
+    db.session.commit()
+    instance_id = next(iter(participant.active_barriers.values())).barrier_instance_id
+
+    with db.engine.connect() as conn:
+        trans = conn.begin()
+        conn.execute(
+            text("SELECT id FROM barrier_instance WHERE id = :id FOR UPDATE"),
+            {"id": instance_id},
+        )
+        started = time.perf_counter()
+        deferred = _process_barrier_instance(instance_id)
+        elapsed = time.perf_counter() - started
+        trans.rollback()
+
+    assert deferred is True
+    assert elapsed >= 0.25
+    assert elapsed < 3
+    assert _advisory_lock_count() == baseline
+    assert _participant_row_is_locked(participant.id) is False
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_skip_nowait_miss_still_releases_extra_claim(
+    in_experiment_directory, db_session, monkeypatch
+):
+    """A locked waiter during skip must not leak the extra-connection claim."""
+    exp = get_experiment()
+    baseline = _advisory_lock_count()
+    first, second, last = _sync_group_of(exp, db_session, 3)[0]
+    barrier = GroupBarrier(id_="skip_nowait_claim", group_type="main")
+    original_skip = _advance_released_hold_waiters_after_commit
+    pause = threading.Event()
+    resume = threading.Event()
+    errors = []
+
+    def paused_skip(participant_ids):
+        if participant_ids:
+            pause.set()
+            assert resume.wait(timeout=5)
+        return original_skip(participant_ids)
+
+    monkeypatch.setattr(
+        "psynet.sync._advance_released_hold_waiters_after_commit", paused_skip
+    )
+    _arrive_at_group_barrier(exp, barrier, first)
+    _commit_barrier_arrivals()
+    _arrive_at_group_barrier(exp, barrier, second)
+    _commit_barrier_arrivals()
+    _arrive_at_group_barrier(exp, barrier, last)
+    checks = _commit_arrival_write()
+    first_id = first.id
+
+    def run_checks():
+        try:
+            _run_pending_barrier_checks(checks)
+            db.session.commit()
+        except Exception as err:  # pragma: no cover - surfaced by the caller
+            errors.append(err)
+        finally:
+            db.session.remove()
+
+    thread = threading.Thread(target=run_checks, daemon=True)
+    thread.start()
+    assert pause.wait(timeout=5)
+    with db.engine.connect() as blocker:
+        blocker_trans = blocker.begin()
+        blocker.execute(
+            text("SELECT id FROM participant WHERE id = :id FOR UPDATE"),
+            {"id": first_id},
+        )
+        resume.set()
+        thread.join(timeout=8)
+        blocker_trans.rollback()
+
+    assert errors == []
+    assert not thread.is_alive()
+    assert _advisory_lock_count() == baseline
+    assert _barrier_link_released(first_id, barrier.id) is True
+    assert _barrier_link_released(second.id, barrier.id) is True
+    assert _barrier_link_released(last.id, barrier.id) is True
 
 
 @pytest.mark.parametrize(

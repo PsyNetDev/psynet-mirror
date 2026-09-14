@@ -47,15 +47,16 @@ pytestmark = [
 ]
 
 # Precise snapshot of the current ORM path.
-# Check = 18 + 2N (original 17 plus extra-connection lock_timeout, plus
-# skip-after-commit lock_timeout + FOR UPDATE NOWAIT per waiter).
+# Check = 19 + 2N (original 17 plus extra-connection lock_timeout, ORM
+# lock_timeout, plus skip-after-commit lock_timeout + FOR UPDATE NOWAIT per
+# waiter).
 # Finalize = check + 6 overhead statements.
 # Statement-by-statement analysis:
 # docs/developer/sqlalchemy_performance.rst ("Barrier last-arrival SQL budgets").
 # Lower counts are an improvement: update these constants and that section.
 # Per-row writes still scale with group size; SQLAlchemy flushes them as one
 # executemany statement per table, so UPDATE *statement* count stays 1.
-_CHECK_BASE_QUERIES = 18
+_CHECK_BASE_QUERIES = 19
 _SKIP_QUERIES_PER_WAITER = 2
 _FINALIZE_OVERHEAD_QUERIES = 6
 
@@ -73,9 +74,9 @@ def _commit_count(profiler, *needles):
     """Count profiler commits whose callsite mentions any of ``needles``.
 
     Finalize's check ``session.commit()`` lives on
-    ``_run_queued_barrier_checks``; the relock commit stays on
+    ``_check_and_skip_held_instance``; the relock commit stays on
     ``_run_finalized_barrier_arrivals``. Count both so extracting the
-    retry helper does not look like a missing outer commit.
+    check helper does not look like a missing outer commit.
     """
     return sum(
         stat.count
@@ -90,7 +91,11 @@ def _budget(profiler):
     return {
         "queries": profiler.total_count,
         "commits": profiler.commit_total_count,
-        "nested_commits": _commit_count(profiler, "_run_pending_barrier_checks"),
+        "nested_commits": _commit_count(
+            profiler,
+            "_run_pending_barrier_checks",
+            "_check_and_skip_held_instance",
+        ),
         "finalize_commits": _commit_count(
             profiler,
             "_run_finalized_barrier_arrivals",
@@ -289,12 +294,12 @@ def _check_expected(n):
         "for_update": 1 + n,
         "nowait": 1 + n,
         "relock_for_update": 0,
-        "advisory_try": 0,
-        "advisory_wait": 1,
+        "advisory_try": 1,
+        "advisory_wait": 0,
         "spec_select": 1,
         "savepoint": 1,
         "release_savepoint": 1,
-        "lock_timeout": 1 + n,
+        "lock_timeout": 2 + n,
         "waiter_join": 1,
         "update_link": 1,
         "update_hold_release": 1,
@@ -338,7 +343,6 @@ def _stacked_finalize_expected():
     budgets).
     """
     return {
-        "advisory_try": 0,
         "hold_wake_lookup": 0,
     }
 
@@ -444,7 +448,6 @@ def test_check_instance_sql_matches_waiter_formula(db_session):
         _assert_budget(profiler, _check_expected(n), label=f"check n={n}")
 
     for key in (
-        "advisory_wait",
         "spec_select",
         "waiter_join",
         "savepoint",
@@ -456,7 +459,8 @@ def test_check_instance_sql_matches_waiter_formula(db_session):
         "update_participant_wait",
     ):
         assert observed[2][key] == observed[8][key] == 1
-    assert observed[2]["advisory_try"] == observed[8]["advisory_try"] == 0
+    assert observed[2]["advisory_try"] == observed[8]["advisory_try"] == 1
+    assert observed[2]["advisory_wait"] == observed[8]["advisory_wait"] == 0
     assert observed[2]["queries"] == _CHECK_BASE_QUERIES + _SKIP_QUERIES_PER_WAITER * 2
     assert observed[8]["queries"] == _CHECK_BASE_QUERIES + _SKIP_QUERIES_PER_WAITER * 8
     assert observed[2]["nowait"] == 3
