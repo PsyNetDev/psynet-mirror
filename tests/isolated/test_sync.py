@@ -43,6 +43,7 @@ from psynet.sync import (
     SimpleGrouper,
     SimpleSyncGroup,
     _advance_released_hold_waiters_after_commit,
+    _check_and_skip_held_instance,
     _check_claimed_barrier_instance,
     _claim_barrier_instance,
     _has_active_sync_group,
@@ -50,6 +51,8 @@ from psynet.sync import (
     _hold_instance_id_for_page,
     _pending_checks_should_wait_for_claim,
     _process_barrier_instance,
+    _queue_barrier_check,
+    _queue_released_hold_waiters,
     _run_pending_barrier_checks,
     _take_pending_barrier_checks,
     _take_released_hold_waiter_ids,
@@ -1387,6 +1390,72 @@ def test_finalize_barrier_arrivals_peeks_nested_checks_before_waiting(monkeypatc
     )
 
     assert waits == [True, False]
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_nested_rollback_keeps_pre_savepoint_barrier_queues(
+    in_experiment_directory, db_session
+):
+    """A later instance's SAVEPOINT miss must not wipe an earlier skip's queues."""
+    _queue_barrier_check("outer-id")
+    _queue_released_hold_waiters([SimpleNamespace(id=1)])
+    with pytest.raises(RuntimeError, match="boom"):
+        with db.session.begin_nested():
+            _queue_barrier_check("inner-id")
+            _queue_released_hold_waiters([SimpleNamespace(id=2)])
+            raise RuntimeError("boom")
+    assert _take_pending_barrier_checks() == ["outer-id"]
+    assert _take_released_hold_waiter_ids() == [1]
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_check_and_skip_rereads_instance_after_a_release_peek(
+    in_experiment_directory, db_session, monkeypatch
+):
+    """A claim wait must not evaluate the identity-map snapshot from the peek."""
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    group_type = f"peek_stale_{uuid.uuid4().hex[:8]}"
+    exp.timeline = _stacked_partner_timeline(group_type)
+    checks = []
+    try:
+        first, _last = _working_participants(exp, 2)
+        assert _json_timeline(exp, first).status_code == 200
+        first = Participant.query.get(first.id)
+        instance_id = next(iter(first.active_barriers.values())).barrier_instance_id
+        instance = BarrierInstance.query.get(instance_id)
+        assert instance.active is True
+        assert _visit_check_would_release(instance_id) is False
+        monkeypatch.setattr(
+            Barrier, "_check_instance", lambda self, check_id: checks.append(check_id)
+        )
+        with db.engine.connect() as conn:
+            with conn.begin():
+                conn.execute(
+                    text(
+                        "UPDATE participant_link_barrier "
+                        "SET released = true "
+                        "WHERE barrier_instance_id = :id"
+                    ),
+                    {"id": instance_id},
+                )
+                conn.execute(
+                    text("UPDATE barrier_instance SET active = false WHERE id = :id"),
+                    {"id": instance_id},
+                )
+        assert instance.active is True
+        with _hold_barrier_instance_claim(instance_id, wait=False) as claimed:
+            assert claimed is True
+            assert _check_and_skip_held_instance(instance_id) is True
+        assert checks == []
+        db.session.expire_all()
+        assert BarrierInstance.query.get(instance_id).active is False
+    finally:
+        exp.timeline = original_timeline
 
 
 @pytest.mark.parametrize(

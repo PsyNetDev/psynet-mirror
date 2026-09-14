@@ -156,6 +156,7 @@ logger = get_logger()
 
 _PENDING_BARRIER_CHECKS_KEY = "psynet_pending_barrier_checks"
 _RELEASED_HOLD_WAITER_IDS_KEY = "psynet_released_hold_waiter_ids"
+_NESTED_BARRIER_QUEUE_SNAPSHOTS_KEY = "psynet_nested_barrier_queue_snapshots"
 
 
 class _BarrierAuthorHookError(Exception):
@@ -283,10 +284,50 @@ def _pending_checks_should_wait_for_claim(instance_ids):
     return any(_visit_check_would_release(instance_id) for instance_id in instance_ids)
 
 
+@event.listens_for(db.session, "after_transaction_create")
+def _snapshot_pending_barrier_queues_for_nested(session, transaction):
+    """Remember queued checks so a SAVEPOINT rollback can restore them."""
+    if not transaction.nested:
+        return
+    pending = set(session.info.get(_PENDING_BARRIER_CHECKS_KEY, set()))
+    released = list(session.info.get(_RELEASED_HOLD_WAITER_IDS_KEY, []))
+    session.info.setdefault(_NESTED_BARRIER_QUEUE_SNAPSHOTS_KEY, []).append(
+        (pending, released)
+    )
+
+
 @event.listens_for(db.session, "after_rollback")
 def _discard_pending_barrier_checks(session):
+    """Restore pre-savepoint queues on nested rollback; drop them on root rollback.
+
+    Detect the SAVEPOINT via the snapshot stack. ``in_nested_transaction()``
+    may already be false when this handler runs. A later instance's waiter
+    ``NOWAIT`` miss must not wipe stacked checks queued by an earlier skip
+    in the same ``_run_pending_barrier_checks`` sweep.
+    """
+    stack = session.info.get(_NESTED_BARRIER_QUEUE_SNAPSHOTS_KEY) or []
+    if stack:
+        pending, released = stack[-1]
+        if pending:
+            session.info[_PENDING_BARRIER_CHECKS_KEY] = set(pending)
+        else:
+            session.info.pop(_PENDING_BARRIER_CHECKS_KEY, None)
+        if released:
+            session.info[_RELEASED_HOLD_WAITER_IDS_KEY] = list(released)
+        else:
+            session.info.pop(_RELEASED_HOLD_WAITER_IDS_KEY, None)
+        return
     session.info.pop(_PENDING_BARRIER_CHECKS_KEY, None)
     session.info.pop(_RELEASED_HOLD_WAITER_IDS_KEY, None)
+
+
+@event.listens_for(db.session, "after_transaction_end")
+def _pop_nested_barrier_queue_snapshot(session, transaction):
+    if not transaction.nested:
+        return
+    stack = session.info.get(_NESTED_BARRIER_QUEUE_SNAPSHOTS_KEY)
+    if stack:
+        stack.pop()
 
 
 def _execute_advisory_xact_lock(bind, instance_id, *, wait):
@@ -2291,8 +2332,11 @@ def _check_and_skip_held_instance(instance_id):
     return ``False`` so last-arrival can retry. Author ``on_release`` and spec
     errors also return ``False`` so the group stays waiting. Other
     non-transient check errors and skip errors propagate so
-    ``GET /timeline`` does not first-paint a hold.
+    ``GET /timeline`` does not first-paint a hold. Expire the identity map
+    first so a release peek that ran before the claim wait cannot hide
+    visit or group mutations from the worker that held the claim.
     """
+    db.session.expire_all()
     _set_transaction_lock_timeout(get_config().get("timeline_lock_timeout_seconds"))
     instance = BarrierInstance.query.get(instance_id)
     try:
