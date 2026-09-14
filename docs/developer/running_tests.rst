@@ -147,7 +147,7 @@ stacked last-arrival hold clears while the test is arming the probe, treat the
 page as a cleared hold (wake token and hold-resume POST) instead of failing on
 the destroyed context.
 
-Overlay linger after a published wake is bounded by
+Overlay linger after a published wake is last-wake→last-end, bounded by
 ``max(1800ms, hold-resume Server-Timing app + 500ms)``. That comparison uses
 wake→end wallclock, including gunicorn listen-queue. A slow approved POST is
 not a missed wake; still assert that the resume reason is not
@@ -166,13 +166,17 @@ signups with ``expovariate(0.5)`` sleep (mean 2s); overlapping
 ``consent→timeline`` uses a 15000ms serialized-signup budget. Sequential
 starts still have the 6000ms start-page budget. GitLab Playwright jobs
 run ``psynet debug --legacy`` (gunicorn). Playwright hold tests set the worker
-count to the session count plus one spare so last-arrival work can overlap
-every waiter hold-resume POST without starving a waiter Redis subscribe.
+count to the session count plus two spares so concurrent last-arrival work can
+overlap every waiter hold-resume POST without starving a waiter Redis subscribe.
 A short HTTP 503 on hold-resume is the
 ``NOWAIT`` busy retry when those requests hit the same participant row;
 the in-request retry waits 250ms; if that is still busy, one delayed
 ``queued hold wake`` runs. The suite still fails a busy retry that lasts
-500ms or more. Both Playwright
+500ms or more. Concurrent last arrivals may post a third hold-resume when the
+poller and ``GET /timeline`` both publish, then a stacked-hold reload posts
+again on websocket onOpen; sequential last arrivals stay at two. Overlay linger
+is last-wake→last-end, compared with ``max(1800ms, that POST's Server-Timing
+app + 500ms)``. Both Playwright
 CI jobs use gunicorn; the default vs legacy job is in-place vs full reload.
 Worker-pool ``queue~`` is therefore not reload-specific.
 
@@ -225,7 +229,7 @@ workers. GitLab Playwright jobs set
 ``PSYNET_USE_LEGACY_DEBUG=1`` so those runs use gunicorn. ``psynet debug
 --legacy`` starts four gunicorn workers by default. Playwright stacked-hold
 tests set ``PSYNET_LEGACY_DEBUG_GUNICORN_THREADS`` to the session count plus
-one spare so last-arrival ``GET /timeline`` can overlap every waiter
+two spares so concurrent last-arrival ``GET /timeline`` can overlap every waiter
 hold-resume POST without starving a waiter Redis subscribe. The
 default vs legacy *job* split is still in-place vs full reload
 (``inplace_timeline_transitions``), not Flask vs gunicorn.
@@ -235,7 +239,7 @@ Optional environment variables:
 - ``PSYNET_USE_LEGACY_DEBUG=1``: add ``--legacy`` to the debug command.
 - ``PSYNET_LEGACY_DEBUG_GUNICORN_THREADS``: gunicorn worker processes for
   ``psynet debug --legacy`` (default ``4``). Stacked-hold tests set this to
-  the session count plus one spare.
+  the session count plus two spares.
 - ``PSYNET_DEBUG_EXTRA_FLAGS="..."``: append extra flags to the debug command
   (for local troubleshooting).
 - ``PSYNET_USE_UV_RUN=1``: launch via ``uv run`` instead of invoking ``psynet``

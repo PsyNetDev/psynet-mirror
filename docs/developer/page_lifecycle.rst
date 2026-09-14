@@ -449,7 +449,7 @@ Those routes do not share a lock protocol:
   Flask vs gunicorn. Worker-pool ``queue~`` happens in both job modes: the
   last arriver's request (entry ``GET /timeline``, or a later last-arrival
   ``POST /response``) occupies one worker while each waiter POSTs hold-resume.
-  Playwright hold tests set workers to the session count plus one spare.
+  Playwright hold tests set workers to the session count plus two spares.
   Remaining ``queue~``
   means the pool is still busy: diagnose worker occupancy (often HTML
   ``render``) rather than subtracting that wait from overlay linger or waiter
@@ -466,7 +466,10 @@ Those routes do not share a lock protocol:
   commit. If the retry still misses, the poller finishes the same stacked
   skip in one sweep and keeps those wakes unpublished until the sweep
   returns. If the poller already released the visit, the last arriver's
-  claim can see zero waiters. That GET expires its identity map, follows the
+  claim can see zero waiters. Waiters may already have hold-resumed onto
+  the next stacked hold from that poller wake; a later websocket onOpen
+  after a legacy reload can post once more. That extra POST is not a missed
+  wake. The last arriver's GET expires its identity map, follows the
   live cursor (including a stale hold page whose record is gone), and
   evaluates the live hold once more when a locking ``SELECT`` missed waiters
   that still belong to the visit. ``get_current_elt`` may return a new object

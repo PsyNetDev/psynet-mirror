@@ -64,10 +64,10 @@ function entryPathRequests(records) {
   );
 }
 
-function overlayLingerMs(probe, resumeLog, sinceMs) {
-  if (probe.holdEndedAtMs != null && probe.wakeReceivedAtMs != null) {
-    return probe.holdEndedAtMs - probe.wakeReceivedAtMs;
-  }
+function overlayWakeAndEndMs(probe, resumeLog, sinceMs) {
+  // Poller and last-arrival can both wake a stacked hold. First-wake→last-end
+  // spans those hops and looks like overlay linger. Pair the last end with
+  // the last wake that preceded it.
   const wakes = (resumeLog || []).filter(
     (entry) => entry.kind === "wake" && (sinceMs == null || entry.atMs >= sinceMs)
   );
@@ -76,9 +76,33 @@ function overlayLingerMs(probe, resumeLog, sinceMs) {
       entry.kind === "holdEnded" && (sinceMs == null || entry.atMs >= sinceMs)
   );
   if (wakes.length && ends.length) {
-    return ends[ends.length - 1].atMs - wakes[0].atMs;
+    const lastEndAtMs = ends[ends.length - 1].atMs;
+    const lastWake = [...wakes]
+      .reverse()
+      .find((entry) => entry.atMs <= lastEndAtMs);
+    if (lastWake != null) {
+      return { lingerMs: lastEndAtMs - lastWake.atMs, lastWakeAtMs: lastWake.atMs };
+    }
   }
-  return null;
+  if (probe.holdEndedAtMs != null && probe.wakeReceivedAtMs != null) {
+    return {
+      lingerMs: probe.holdEndedAtMs - probe.wakeReceivedAtMs,
+      lastWakeAtMs: probe.wakeReceivedAtMs
+    };
+  }
+  return { lingerMs: null, lastWakeAtMs: null };
+}
+
+function overlayEndingHoldResumePosts(holdResumePosts, lastWakeAtMs) {
+  if (lastWakeAtMs == null) {
+    return holdResumePosts;
+  }
+  const overlapping = holdResumePosts.filter((post) => {
+    const startedAtMs = post.startedAtMs ?? 0;
+    const endedAtMs = startedAtMs + (post.durationMs ?? 0);
+    return endedAtMs >= lastWakeAtMs;
+  });
+  return overlapping.length ? overlapping : holdResumePosts;
 }
 
 function lastArriverWorkRecord(lastEntry) {
@@ -157,8 +181,16 @@ function responsesOverlappingLastArriver(records, sinceMs) {
   });
 }
 
-function overlayLingerBudgetMs(holdResumePost) {
-  const postMs = requestHandlerMs(holdResumePost);
+function overlayLingerBudgetMs(holdResumePosts) {
+  const posts = Array.isArray(holdResumePosts)
+    ? holdResumePosts
+    : holdResumePosts
+      ? [holdResumePosts]
+      : [];
+  const postMs = posts.reduce(
+    (maxMs, post) => Math.max(maxMs, requestHandlerMs(post)),
+    0
+  );
   return Math.max(
     PARTNER_HOLD_RELEASE_MAX_MS,
     postMs + HOLD_RESUME_OVERLAY_SLACK_MS
@@ -227,6 +259,8 @@ function holdReleaseSummary({
   holdFrames = [],
   waitingWakeToken = null,
   overlayLingerMs: rawLingerMs = null,
+  lingerBudgetMs = null,
+  holdResumePostCount = null,
   label = "waiter"
 }) {
   const reasons = (probe.resumeReasons || [])
@@ -243,7 +277,7 @@ function holdReleaseSummary({
     ? `${lastArriverWork.method} ${lastArriverWork.path}`
     : "work";
   const lastWorkDetail = requestTimingDetail(lastArriverWork, clickToPaintMs);
-  const lingerBudget = overlayLingerBudgetMs(holdResumePost);
+  const lingerBudget = lingerBudgetMs ?? overlayLingerBudgetMs(holdResumePost);
   const lingerLabel =
     rawLingerMs == null
       ? "overlay linger missing"
@@ -277,7 +311,7 @@ function holdReleaseSummary({
     `waiter ${Math.round(afterPaintMs)}ms after ${afterPaintLabel}` +
     `${afterReleaseNote} ` +
     `(${Math.round(afterClickMs)}ms ${afterClickLabel}; ` +
-    `hold-resume POST ${holdResumeDetail}; ${lingerLabel}; overlay budget ${Math.round(lingerBudget)}ms; extra GET /timeline ${extraTimelineGets}; ` +
+    `hold-resume POST ${holdResumeDetail}; ${lingerLabel}; overlay budget ${Math.round(lingerBudget)}ms; hold-resume POSTs ${holdResumePostCount ?? (holdResumePost ? 1 : 0)}; extra GET /timeline ${extraTimelineGets}; ` +
     `inplace=${isInplaceTimelineModeEnabled()}; ` +
     `${wake}; resumes ${reasons}; ${responseNotes}; ` +
     `hold resumes ${probe.nextPageHoldResumes?.length || 0}; ` +
@@ -413,12 +447,13 @@ async function closeHoldSessions(sessions) {
 async function startHoldExperiment(browser, experimentDir, labels, options = {}) {
   const env = { ...(options.env || {}) };
   if (env.PSYNET_LEGACY_DEBUG_GUNICORN_THREADS == null) {
-    // Last-arrival GET /timeline plus one hold-resume POST per waiter is
-    // *n* HTTP slots. A spare process keeps a waiter Redis subscribe off
-    // the last-arrival SQL worker; otherwise that gevent worker never
-    // reaches Listening before the wake.
+    // Sequential last-arrival needs n HTTP slots (GET + waiter POSTs) plus
+    // one spare so a waiter Redis subscribe is not on the last-arrival SQL
+    // worker. Concurrent last arrivals occupy two GET /timeline workers at
+    // once, so tests use n + 2. Otherwise a hold-resume POST sits in the
+    // listen queue and overlay linger includes that wait.
     env.PSYNET_LEGACY_DEBUG_GUNICORN_THREADS = String(
-      Math.max(labels.length + 1, 2)
+      Math.max(labels.length + 2, 2)
     );
   }
   const experiment = startExperiment(experimentDir, { ...options, env });
@@ -761,7 +796,8 @@ async function assertWaiterReleasedWithLastArriver(
   {
     prompt = ACTION_PROMPT,
     timeout = STEP_TIMEOUT_MS,
-    allowWebsocketResume = false
+    allowWebsocketResume = false,
+    maxHoldResumePosts = 2
   } = {}
 ) {
   const resume = await session.resumePromise;
@@ -799,8 +835,19 @@ async function assertWaiterReleasedWithLastArriver(
       record.status === 200 &&
       record.holdResume === true
   );
-  const holdResumePostMs = holdResumePosts[0]?.durationMs ?? null;
-  const lingerBudgetMs = overlayLingerBudgetMs(holdResumePosts[0] || null);
+  const overlayClock = overlayWakeAndEndMs(
+    probe,
+    session.resumeLog || [],
+    sinceMs
+  );
+  const lingerPosts = overlayEndingHoldResumePosts(
+    holdResumePosts,
+    overlayClock.lastWakeAtMs
+  );
+  const overlayHoldResumePost =
+    lingerPosts[lingerPosts.length - 1] || holdResumePosts[0] || null;
+  const holdResumePostMs = overlayHoldResumePost?.durationMs ?? null;
+  const lingerBudgetMs = overlayLingerBudgetMs(lingerPosts);
   const lastArriverWork = lastArriverWorkRecord(lastEntry);
   const reasonsAfterLast = (session.resumeLog || [])
     .filter((entry) => {
@@ -816,11 +863,7 @@ async function assertWaiterReleasedWithLastArriver(
       );
     })
     .map((entry) => entry.reason);
-  const wakeToEndMs = overlayLingerMs(
-    probe,
-    session.resumeLog || [],
-    sinceMs
-  );
+  const wakeToEndMs = overlayClock.lingerMs;
   const publishedWakes = publishedWakeTokens(session.sockets?.frames || []);
   const sawPublishedWake = publishedWakes.includes(session.waitingWakeToken);
   const summary = holdReleaseSummary({
@@ -830,8 +873,10 @@ async function assertWaiterReleasedWithLastArriver(
     afterReleaseMs,
     clockKind: clock.kind,
     holdResumePostMs,
-    holdResumePost: holdResumePosts[0] || null,
+    holdResumePost: overlayHoldResumePost,
     overlayLingerMs: wakeToEndMs,
+    lingerBudgetMs,
+    holdResumePostCount: holdResumePosts.length,
     lastArriverWork,
     extraTimelineGets: laterTimeline.length,
     probe: {
@@ -888,9 +933,9 @@ async function assertWaiterReleasedWithLastArriver(
     unexpectedBlockingRequests(resumeRequests, ENTRY_REQUEST_MAX_MS),
     `${session.label} hold-resume blocking: ${summary}`
   ).toEqual([]);
-  // Hold tests set gunicorn workers to the session count plus one spare so
-  // last-arrival GET /timeline can overlap every waiter hold-resume POST
-  // without starving a waiter Redis subscribe. A short HTTP 503 is NOWAIT
+  // Hold tests set gunicorn workers to the session count plus two spares so
+  // concurrent last-arrival GET /timeline can overlap every waiter hold-resume
+  // POST without starving a waiter Redis subscribe. A short HTTP 503 is NOWAIT
   // when a POST hits the same participant row as that participant's GET.
   // unexpectedBlockingRequests still fails a busy retry that lasts 500ms
   // or more.
@@ -928,9 +973,14 @@ async function assertWaiterReleasedWithLastArriver(
   expect(
     holdResumePosts.length,
     `${session.label} extra hold-resume requests: ${summary}`
-  ).toBeLessThanOrEqual(2);
+  ).toBeLessThanOrEqual(maxHoldResumePosts);
   console.log(summary);
-  return { resume, probe, summary, holdResumePost: holdResumePosts[0] || null };
+  return {
+    resume,
+    probe,
+    summary,
+    holdResumePost: overlayHoldResumePost
+  };
 }
 
 async function assertAllWaitersReleasedTogether(sessions, lastEntry, options = {}) {

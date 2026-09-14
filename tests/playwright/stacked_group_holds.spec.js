@@ -69,7 +69,10 @@ test("two late trio members arriving together release every waiter", { tag: "@bo
   // the GET /timeline handler budget. A skipper filled the barrier; a slower
   // first-paint hold is a waiter. A late member who only resumes via websocket
   // reconnect is still a last arriver, not a waiter that must show a partner
-  // wake→end clock.
+  // wake→end clock. Poller and last-arriver GET /timeline can both publish the
+  // same waiting token, then a stacked-hold reload posts once more on websocket
+  // onOpen; allow three hold-resume POSTs. Overlay linger, waiter-release
+  // spread, and GET /timeline floors stay 1800/1500/2500.
   const { experiment, sessions } = await startHoldExperiment(browser, TRIO_DIR, [
     "trio_wait",
     "trio_late_a",
@@ -93,7 +96,10 @@ test("two late trio members arriving together release every waiter", { tag: "@bo
       })
     ]);
     const laterEntry = pickConcurrentLastArriver([arrivalA, arrivalB]).entry;
-    await assertWaiterReleasedWithLastArriver(first, laterEntry);
+    await assertWaiterReleasedWithLastArriver(first, laterEntry, {
+      allowWebsocketResume: true,
+      maxHoldResumePosts: 3
+    });
     const heldLate = [];
     if (arrivalA.held) {
       heldLate.push(lateA);
@@ -103,7 +109,8 @@ test("two late trio members arriving together release every waiter", { tag: "@bo
     }
     if (heldLate.length) {
       await assertAllWaitersReleasedTogether(heldLate, laterEntry, {
-        allowWebsocketResume: true
+        allowWebsocketResume: true,
+        maxHoldResumePosts: 3
       });
     }
     await assertNoSessionErrors(sessions);
@@ -202,7 +209,9 @@ test("two late choices complete a trio without a safety poll", { tag: "@both" },
   // on the post-choice barrier while the other two submit together. A skipper
   // filled that barrier. A late submit that first-paints a hold, even if the
   // chip is already gone, still has to resume from a server-driven
-  // hold-resume rather than a skip.
+  // hold-resume rather than a skip. Concurrent last-choice POSTs can overlap
+  // the poller the same way as concurrent entry; allow three hold-resume
+  // POSTs. Linger/spread/GET /timeline floors stay 1800/1500/2500.
   const { experiment, sessions } = await startHoldExperiment(browser, TRIO_DIR, [
     "trio_choice_wait",
     "trio_choice_late_a",
@@ -238,7 +247,9 @@ test("two late choices complete a trio without a safety poll", { tag: "@both" },
     ]);
     const laterChoice = pickConcurrentLastArriver([choiceA, choiceB]);
     await assertWaiterReleasedWithLastArriver(first, laterChoice, {
-      prompt: RESULTS_PROMPT
+      prompt: RESULTS_PROMPT,
+      allowWebsocketResume: true,
+      maxHoldResumePosts: 3
     });
     const heldLate = [];
     if (choiceA.held) {
@@ -250,7 +261,8 @@ test("two late choices complete a trio without a safety poll", { tag: "@both" },
     if (heldLate.length) {
       await assertAllWaitersReleasedTogether(heldLate, laterChoice, {
         prompt: RESULTS_PROMPT,
-        allowWebsocketResume: true
+        allowWebsocketResume: true,
+        maxHoldResumePosts: 3
       });
     }
     await assertNoSessionErrors(sessions);
