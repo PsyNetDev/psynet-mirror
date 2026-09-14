@@ -179,3 +179,21 @@ def test_retry_busy_http_does_not_retry_success():
 
     assert result.status_code == 200
     assert calls["n"] == 1
+
+
+def test_retry_busy_http_honors_extra_attempts():
+    responses = [
+        _http_response(503, {"status": "busy", "submission": "busy"}),
+        _http_response(503, {"status": "busy", "submission": "busy"}),
+        _http_response(200),
+    ]
+    calls = {"n": 0}
+
+    def send():
+        calls["n"] += 1
+        return responses[calls["n"] - 1]
+
+    result = _retry_busy_http(send, delay_s=0, attempts=3)
+
+    assert result.status_code == 200
+    assert calls["n"] == 3

@@ -487,9 +487,11 @@ Those routes do not share a lock protocol:
   GET that first-paints an unfilled hold never takes the
   render pin, so the poller can still finish that barrier. Last-arrival waits for the
   instance advisory claim (the lock the 0.5 s poller tries) so a GET does not
-  first-paint a hold while the poller still owns that visit. That claim is a
+  first-paint a hold while the poller still owns that visit. A waiter arrival
+  whose pending check would not release anyone tries that claim without
+  waiting, so it does not occupy a worker in ``lock_timeout``. That claim is a
   transaction lock on a dedicated connection, held until skip-after-commit
-  finishes. If the wait for that claim times out, ``GET /timeline`` returns
+  finishes. If the last arriver's wait for that claim times out, ``GET /timeline`` returns
   HTTP 503 rather than rendering the live hold. Waiter rows stay
   ``NOWAIT``. If a partner row is still busy, that GET retries the check once
   immediately (still no lock wait). It does not wait for the other request to
@@ -507,6 +509,11 @@ Those routes do not share a lock protocol:
   and fail must not run yet), skips, commits, and re-reads again. If the hold
   is not ready, GET may recover a dropped last-arrival check without
   ``FOR UPDATE``, so the last arriver can still lock waiters with ``NOWAIT``.
+  That recovery tries the visit claim and first-paints the hold on a miss; it
+  does not wait for last-arrival to drop the claim. Bots POST
+  ``timeline_hold_resume`` on hold overlays and pause briefly while still
+  waiting, so parallel drivers do not take blocking ``FOR UPDATE`` on an
+  unready hold.
   When that skip advances ``page_uuid`` during read-only render, GET returns
   302 to the same URL so the next document follows the live cursor. First-paint
   checks must wait for the following 200 HTML, not the empty redirect body.
@@ -524,10 +531,16 @@ Bots
 ~~~~
 
 Bot submissions do not request timeline fragments. Bots advance server state
-and obtain the next page through the normal server-side page interface. If
-this waiter already advanced, or last-arrival skipped its own later hold, an
-ordinary POST of the previous hold uuid is catch-up, not a multi-tab reject.
-Hold-resume overlays catch up the same way so the browser can swap in place.
+and obtain the next page through the normal server-side page interface. Hold
+overlays POST ``timeline_hold_resume`` so a still-waiting driver does not take
+blocking ``FOR UPDATE`` on the participant row. If the overlay is still
+waiting after that submit, the driver pauses briefly before the next page
+instead of busy-looping ordinary Next. Timeline GETs use ``mode=json`` and
+retry structured busy 503s a few times so a partner skip that briefly holds
+the row does not fail the bot. If this waiter already advanced, or
+last-arrival skipped its own later hold, an ordinary POST of the previous hold
+uuid is catch-up, not a multi-tab reject. Hold-resume overlays catch up the
+same way so the browser can swap in place.
 
 Adding new frontend components
 ------------------------------
@@ -577,6 +590,7 @@ Key implementation and test locations
 * ``psynet/experiment.py`` — GET hold resolution (``_resolve_get_timeline_hold``,
   ``_skip_ready_hold_on_get``) and the shared skip
   (``_advance_past_ready_holds``).
+* ``psynet/sync.py`` — visit-claim waits gated by ``Barrier.would_release``.
 * ``tests/isolated/test_timeline.py`` — render/fragment contracts.
 * ``tests/playwright/inplace_timeline_transitions.spec.js`` — browser lifecycle
   and failure boundaries.

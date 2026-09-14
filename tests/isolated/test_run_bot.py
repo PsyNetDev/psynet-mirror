@@ -39,6 +39,7 @@ class TestRunBot:
         assert status["page"]["id"] == ["main", 0]
         assert status["page"]["label"] == "favourite_colour"
         assert status["page"]["time_estimate"] == 5
+        assert status["page"]["is_timeline_hold"] is False
         assert status["page"]["bot_response"]["answer"] == "red"
         assert len(response_files) == 0
 
@@ -221,3 +222,47 @@ def test_submit_response_does_not_retry_when_the_page_uuid_is_unchanged(
         driver._submit_response(driver.status, {})
 
     assert posted == ["hold-a"]
+
+
+def test_submit_response_sends_hold_resume_for_timeline_holds(monkeypatch):
+    """Parallel bots must not take blocking FOR UPDATE on an unready hold."""
+    driver = ParticipantDriver.__new__(ParticipantDriver)
+    driver.id = 7
+    driver.experiment = SimpleNamespace(base_url="http://psynet.test")
+    driver.response_files = {}
+    driver.status = _driver_page_status("hold-a")
+    driver.status["page"]["is_timeline_hold"] = True
+    posted = []
+
+    def fake_post(_url, data=None, files=None):
+        posted.append(json.loads(data["json"]))
+        return _driver_http_response({"submission": "approved"})
+
+    monkeypatch.setattr("psynet.participant.requests.post", fake_post)
+    monkeypatch.setattr(driver, "_fetch_status", lambda: None)
+    monkeypatch.setattr("psynet.participant.db.session.expire_all", lambda: None)
+
+    driver._submit_response(driver.status, {})
+
+    assert posted[0]["timeline_hold_resume"] is True
+
+
+def test_take_page_pauses_when_still_on_timeline_hold(monkeypatch):
+    """Hold polling must not busy-loop ordinary Next against last-arrival."""
+    from psynet.participant import _TIMELINE_HOLD_POLL_SECONDS
+
+    driver = ParticipantDriver.__new__(ParticipantDriver)
+    driver.status = _driver_page_status("hold-a")
+    driver.status["status"] = "working"
+    driver.status["page"]["is_timeline_hold"] = True
+    driver.response_files = {}
+    sleeps = []
+    monkeypatch.setattr(driver, "_simulate_page_time", lambda *a, **k: None)
+    monkeypatch.setattr(driver, "_submit_response", lambda *a, **k: None)
+    monkeypatch.setattr(driver, "_render_page", lambda: None)
+    monkeypatch.setattr(driver, "refresh_status", lambda: None)
+    monkeypatch.setattr("psynet.participant.time.sleep", lambda s: sleeps.append(s))
+
+    driver.take_page()
+
+    assert sleeps == [_TIMELINE_HOLD_POLL_SECONDS]

@@ -1,0 +1,1 @@
+Unfilled waiter ``GET /timeline`` tries the visit claim without waiting unless that check would release partners, and automated drivers POST hold-resume then pause on still-waiting overlays, so parallel bots no longer stall last-arrival skip behind ``lock_timeout`` 503s.

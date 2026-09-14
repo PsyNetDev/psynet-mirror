@@ -233,6 +233,43 @@ def _hold_instance_id_for_page(participant, page):
     return link.barrier_instance_id
 
 
+def _visit_check_would_release(instance_id):
+    """Return whether evaluating this visit would release waiters.
+
+    Read-only: used by GET /timeline before deciding to wait for the claim.
+    """
+    instance = BarrierInstance.query.get(instance_id)
+    if instance is None:
+        return False
+    barrier = instance.get_barrier()
+    if not isinstance(barrier, Barrier):
+        return True
+    waiting = _get_waiting_participants(
+        instance.barrier_id,
+        instance.id,
+        for_update=False,
+        nowait=False,
+    )
+    try:
+        return bool(barrier.would_release(waiting))
+    except Exception:
+        logger.exception(
+            "Barrier '%s' instance %s failed a side-effect-free release peek.",
+            instance.barrier_id,
+            instance_id,
+        )
+        return True
+
+
+def _pending_checks_should_wait_for_claim(instance_ids):
+    """Return whether GET may block on the visit claim for these checks.
+
+    Waiter arrivals that cannot release must not occupy a worker behind
+    last-arrival. A filled visit still waits so stacked holds skip in one GET.
+    """
+    return any(_visit_check_would_release(instance_id) for instance_id in instance_ids)
+
+
 @event.listens_for(db.session, "after_rollback")
 def _discard_pending_barrier_checks(session):
     session.info.pop(_PENDING_BARRIER_CHECKS_KEY, None)
@@ -601,6 +638,18 @@ class Barrier(EltCollection):
         A list of participants to be released.
         """
         raise NotImplementedError
+
+    def would_release(self, waiting_participants: List[Participant]) -> bool:
+        """Return whether evaluating this visit would release anyone.
+
+        ``GET /timeline`` uses this to decide whether to wait for the visit
+        claim. It must not mutate participants, groups, or the session.
+        Last-arrival skip-in-one-GET waits only when this is true. Custom
+        barriers that override :meth:`choose_who_to_release` should override
+        this too. The default is ``True`` whenever anyone is waiting, so a
+        missing override still waits rather than first-painting a hold.
+        """
+        return bool(waiting_participants)
 
     def resolve(self):
         from psynet.timeline import join, while_loop
@@ -1221,6 +1270,24 @@ class GroupBarrier(Barrier):
 
         return participants_to_release
 
+    def would_release(self, waiting_participants: List[Participant]) -> bool:
+        """Return whether this group visit would release, without mutating state."""
+        waiting_ids = {participant.id for participant in waiting_participants}
+        for group in self.get_waiting_groups(waiting_participants).values():
+            if group.n_active_participants < group.min_group_size:
+                if not group.accepts_top_ups:
+                    return True
+                continue
+            if all(
+                participant.id in waiting_ids
+                for participant in group.active_participants
+            ):
+                return True
+        return any(
+            self.group_type not in participant.active_sync_groups
+            for participant in waiting_participants
+        )
+
     def check_waiting_participants(self, waiting_participants: List[Participant]):
         for group in self.get_waiting_groups(waiting_participants).values():
             group.check_numbers()
@@ -1413,6 +1480,10 @@ class Grouper(Barrier):
                     participants_to_release.append(_participant)
 
         return participants_to_release
+
+    def would_release(self, waiting_participants: List[Participant]) -> bool:
+        """Return whether this grouper would form groups, without creating them."""
+        return bool(self.ready_to_group(waiting_participants))
 
     def select_leader(self, participants: List[Participant]) -> Participant:
         """
@@ -2236,8 +2307,8 @@ def _check_and_skip_held_instance(instance_id):
     return ok
 
 
-def _run_pending_barrier_checks(instance_ids):
-    """Run post-commit checks, waiting for each instance advisory claim.
+def _run_pending_barrier_checks(instance_ids, *, wait=True):
+    """Run post-commit checks, optionally waiting for each instance claim.
 
     Last-arrival must not first-paint a hold because the 0.5 s poller already
     holds this visit. Waiting for the extra-connection claim (not for waiter
@@ -2251,6 +2322,12 @@ def _run_pending_barrier_checks(instance_ids):
     retry immediately. Follow-pin every queued visit before the try-lock so
     poller publish cannot fire in the gap after a missed claim. That pin parks
     publish only; unfilled waiter GETs still leave poller processing free.
+
+    Unfilled waiter GET recovery must pass ``wait=False``. Those requests try
+    the claim so a dropped last-arrival check can still finish, but they must
+    not occupy a worker in ``lock_timeout`` while last-arrival already holds
+    the visit. Try-miss first-paints the live hold and leaves the skip to
+    last-arrival or the poller.
     """
     for instance_id in instance_ids:
         _mark_last_arrival_follow_instance(instance_id)
@@ -2265,6 +2342,9 @@ def _run_pending_barrier_checks(instance_ids):
                     if not _check_and_skip_held_instance(instance_id):
                         all_claimed = False
             if ran:
+                continue
+            if not wait:
+                all_claimed = False
                 continue
             with _hold_barrier_instance_claim(instance_id, wait=True):
                 if not _check_and_skip_held_instance(instance_id):

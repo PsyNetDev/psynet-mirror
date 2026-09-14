@@ -5395,6 +5395,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 "label": current_page.label,
                 "text": current_page.plain_text,
                 "time_estimate": current_page.time_estimate,
+                "is_timeline_hold": bool(
+                    getattr(current_page, "is_timeline_hold", False)
+                ),
                 "bot_response": bot_response.__json__(),
             }
         else:
@@ -5968,7 +5971,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         """
         from types import SimpleNamespace
 
-        participant, page, checks = cls._resolve_get_timeline_hold(
+        participant, page, checks, wait_for_claim = cls._resolve_get_timeline_hold(
             experiment, participant, page
         )
         if not checks:
@@ -5980,6 +5983,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             checks,
             result,
             serialize_page=False,
+            wait_for_claim=wait_for_claim,
         )
         return cls._reapply_lock_timeout_and_prepare(
             experiment, participant, result.page, commit=True
@@ -5994,17 +5998,27 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         not be sent back onto that hold. A ready hold may skip only after
         blocking ``FOR UPDATE``. An unreleased barrier hold may recover a
         dropped last-arrival check without that lock, so the last arriver can
-        still take waiters with ``NOWAIT``.
+        still take waiters with ``NOWAIT``. Recovered waiter GETs try that
+        visit claim but do not wait for it. Pending checks from this request
+        wait only when ``Barrier.would_release`` is true, so a waiter arrival
+        does not occupy a worker behind last-arrival while last-arrival still
+        skips stacked holds in one GET.
 
         Returns
         -------
-        participant, page, checks
-            Remaining barrier instance ids to evaluate. An empty list means
-            this GET can render ``page``.
+        participant, page, checks, wait_for_claim
+            Remaining barrier instance ids to evaluate, and whether this GET
+            may block on the visit claim. An empty ``checks`` list means this
+            GET can render ``page``.
         """
-        from .sync import _hold_instance_id_for_page, _take_pending_barrier_checks
+        from .sync import (
+            _hold_instance_id_for_page,
+            _pending_checks_should_wait_for_claim,
+            _take_pending_barrier_checks,
+        )
 
         checks = _take_pending_barrier_checks()
+        wait_for_claim = bool(checks) and _pending_checks_should_wait_for_claim(checks)
         if getattr(page, "is_timeline_hold", False):
             page = experiment.timeline.get_current_elt(experiment, participant)
             if not getattr(page, "is_timeline_hold", False):
@@ -6012,7 +6026,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     participant, page = cls._reapply_lock_timeout_and_prepare(
                         experiment, participant, page
                     )
-                    return participant, page, []
+                    return participant, page, [], False
         if not checks and getattr(page, "is_timeline_hold", False):
             if cls._timeline_hold_is_ready_to_resume(page, experiment, participant):
                 participant, page, checks = cls._skip_ready_hold_on_get(
@@ -6022,12 +6036,14 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     participant, page = cls._reapply_lock_timeout_and_prepare(
                         experiment, participant, page
                     )
-                    return participant, page, []
+                    return participant, page, [], False
+                wait_for_claim = True
             else:
                 instance_id = _hold_instance_id_for_page(participant, page)
                 if instance_id:
                     checks = [instance_id]
-        return participant, page, checks
+                    wait_for_claim = False
+        return participant, page, checks, wait_for_claim
 
     @staticmethod
     def _timeline_hold_is_ready_to_resume(page, experiment, participant):
@@ -6081,7 +6097,14 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @classmethod
     def _finalize_barrier_arrivals(
-        cls, experiment, participant_id, checks, result, *, serialize_page=True
+        cls,
+        experiment,
+        participant_id,
+        checks,
+        result,
+        *,
+        serialize_page=True,
+        wait_for_claim=True,
     ):
         """Run queued arrival checks in short transactions before rendering.
 
@@ -6097,7 +6120,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         ``serialize_page`` is for ``POST /response`` inplace JSON. ``GET
         /timeline`` renders HTML from ``result.page`` and skips that extra
-        ``__json__``.
+        ``__json__``. ``wait_for_claim`` is for last-arrival and ready-hold
+        skip. Unfilled waiter GET recovery passes ``False`` so those requests
+        do not sit in ``lock_timeout`` behind the visit claim.
         """
         from .timeline_hold import _defer_timeline_hold_wakes
 
@@ -6108,38 +6133,46 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 checks,
                 result,
                 serialize_page=serialize_page,
+                wait_for_claim=wait_for_claim,
             )
 
     @classmethod
-    def _run_queued_barrier_checks(cls, checks):
+    def _run_queued_barrier_checks(cls, checks, *, wait=True):
         """Run queued checks, retrying waiter ``NOWAIT`` immediately once.
 
         Each attempt tries the extra-connection instance claim, then waits
-        only if another worker already holds it. Waiter rows stay ``NOWAIT``.
-        A blocking claim wait that times out raises (HTTP 503). The second
-        attempt does not wait for a partner transaction to commit; it only
-        retries waiter ``NOWAIT``. Reinstall ``lock_timeout`` before that
-        retry because ``SET LOCAL`` ends at the check commit. If both miss
-        waiter rows, the caller first-paints the live cursor and the 0.5s
-        poller finishes the skip. Each successful check already skipped
-        released waiters while holding that extra claim.
+        only if ``wait`` is true and another worker already holds it. Waiter
+        rows stay ``NOWAIT``. A blocking claim wait that times out raises
+        (HTTP 503). The second attempt does not wait for a partner transaction
+        to commit; it only retries waiter ``NOWAIT``. Reinstall
+        ``lock_timeout`` before that retry because ``SET LOCAL`` ends at the
+        check commit. If both miss waiter rows, the caller first-paints the
+        live cursor and the 0.5s poller finishes the skip. Each successful
+        check already skipped released waiters while holding that extra claim.
         """
         from .sync import _run_pending_barrier_checks
 
-        all_claimed = _run_pending_barrier_checks(checks)
+        all_claimed = _run_pending_barrier_checks(checks, wait=wait)
         # Barrier checks can lock every waiter at the instance. Drop those
         # partner locks before reacquiring the submitting participant.
         db.session.commit()
         if all_claimed:
             return True
         _set_transaction_lock_timeout(get_config().get("timeline_lock_timeout_seconds"))
-        all_claimed = _run_pending_barrier_checks(checks)
+        all_claimed = _run_pending_barrier_checks(checks, wait=wait)
         db.session.commit()
         return all_claimed
 
     @classmethod
     def _run_finalized_barrier_arrivals(
-        cls, experiment, participant_id, checks, result, *, serialize_page=True
+        cls,
+        experiment,
+        participant_id,
+        checks,
+        result,
+        *,
+        serialize_page=True,
+        wait_for_claim=True,
     ):
         """Evaluate queued checks, committing after each before the next lock."""
         from .sync import (
@@ -6149,12 +6182,13 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         processed = set()
         rechecked = set()
+        wait_this = wait_for_claim
         while checks:
             processed.update(checks)
             _set_transaction_lock_timeout(
                 get_config().get("timeline_lock_timeout_seconds")
             )
-            all_claimed = cls._run_queued_barrier_checks(checks)
+            all_claimed = cls._run_queued_barrier_checks(checks, wait=wait_this)
             if not all_claimed:
                 # Follow the live cursor even when it is still a hold, so a
                 # later stacked wait is not first-painted as the hold this
@@ -6203,10 +6237,15 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     and instance_id not in rechecked
                     and getattr(page, "is_timeline_hold", False)
                 ):
+                    if not wait_for_claim:
+                        # Waiter recovery already evaluated this unfilled
+                        # visit. Do not wait for the claim on a second pass.
+                        break
                     # An empty locking SELECT can miss waiters that still
                     # belong to this visit. Evaluate it once more.
                     rechecked.add(instance_id)
                     checks = [instance_id]
+            wait_this = True
         return participant
 
     @staticmethod

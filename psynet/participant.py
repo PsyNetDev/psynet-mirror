@@ -221,15 +221,31 @@ def _is_psynet_busy_response(response):
     return body.get("status") == "busy" or body.get("submission") == "busy"
 
 
-def _retry_busy_http(send, *, delay_s=0.25):
-    """Call ``send`` and retry once after a short delay on a busy HTTP 503.
+_TIMELINE_HOLD_POLL_SECONDS = 0.1
+_BOT_TIMELINE_BUSY_ATTEMPTS = 5
+
+
+def _status_is_timeline_hold(status):
+    """Return whether cached driver status is a timeline hold overlay."""
+    page = (status or {}).get("page") or {}
+    return bool(page.get("is_timeline_hold"))
+
+
+def _retry_busy_http(send, *, delay_s=0.25, attempts=2):
+    """Call ``send`` and retry structured busy HTTP 503 responses.
 
     Browser submissions retry a structured busy response once; automated
-    drivers follow the same policy so lock timeouts do not fail the bot on
-    the first hit. Generic or malformed 503s are not retried.
+    drivers follow the same policy by default so lock timeouts do not fail
+    the bot on the first hit. Timeline GETs may pass a higher ``attempts``
+    count because a partner skip can hold the participant row for more than
+    one ``lock_timeout``. Generic or malformed 503s are not retried.
     """
+    if attempts < 1:
+        raise ValueError("attempts must be at least 1.")
     response = send()
-    if _is_psynet_busy_response(response):
+    for _ in range(attempts - 1):
+        if not _is_psynet_busy_response(response):
+            break
         time.sleep(delay_s)
         response = send()
     _raise_for_status_with_server_details(response)
@@ -1270,6 +1286,11 @@ class ParticipantDriver:
             self._render_page()
             # GET /timeline can skip a ready hold after the submit fetch.
             self.refresh_status()
+        if _status_is_timeline_hold(self.status):
+            # Ordinary Next on an unready hold takes FOR UPDATE and busy-loops
+            # parallel bots. Hold-resume already skipped the row lock; pause
+            # so last-arrival can skip this waiter.
+            time.sleep(_TIMELINE_HOLD_POLL_SECONDS)
 
         return True
 
@@ -1323,8 +1344,10 @@ class ParticipantDriver:
         _retry_busy_http(
             lambda: requests.get(
                 f"{self.experiment.base_url}/timeline",
-                params={"unique_id": self.participant_unique_id},
-            )
+                params={"unique_id": self.participant_unique_id, "mode": "json"},
+                headers={"Accept": "application/json"},
+            ),
+            attempts=_BOT_TIMELINE_BUSY_ATTEMPTS,
         )
 
     def _simulate_page_time(self, time_factor):
@@ -1417,6 +1440,8 @@ class ParticipantDriver:
             # Drivers fetch status separately and do not consume SPA fragments.
             "include_timeline_fragment": False,
         }
+        if _status_is_timeline_hold(status):
+            submission_data["timeline_hold_resume"] = True
 
         if "time_taken" not in submission_data["metadata"]:
             submission_data["metadata"]["time_taken"] = time_estimate
