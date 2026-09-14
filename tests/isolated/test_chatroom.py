@@ -353,14 +353,14 @@ class TestHandleMessage:
             handler,
             exp,
             participant,
-            {"type": "message", "room_id": "room_C", "content": "hello"},
+            {"type": "message", "room_id": "room_C_history", "content": "hello"},
         )
 
         payloads = _published_payloads(exp)
         assert len(payloads) == 1
         history = payloads[0]
         assert history["type"] == "history"
-        assert history["room_id"] == "room_C"
+        assert history["room_id"] == "room_C_history"
         assert "target_participant_id" not in history
         assert history["messages"] == [
             {"content": "hello", "sender": str(participant.id)}
