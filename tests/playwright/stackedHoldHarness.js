@@ -26,6 +26,12 @@ const {
 const STEP_TIMEOUT_MS = 120000;
 const ENTRY_REQUEST_MAX_MS = 2500;
 const START_PAGE_MAX_MS = 6000;
+// Dallinger `@db.serialized` retries POST /participant with
+// ``random.expovariate(0.5)`` sleep (mean 2s) after a conflict with the
+// partner's GET /timeline. One unlucky retry already exceeds 6000ms. This
+// budget is only for overlapping signups; linger/spread/GET /timeline floors
+// stay 1800/1500/2500.
+const SERIALIZED_SIGNUP_MAX_MS = 15000;
 const BLOCKING_REQUEST_MS = 4000;
 // Fast waiters leave in ~0.2–0.8s after last paint. Keep this floor under the
 // 2s safety poll so a missed wake cannot hide inside the budget. Overlay linger
@@ -50,9 +56,9 @@ const LATE_ARRIVAL_RESUME_REASONS = new Set([
 function entryPathRequests(records) {
   // GET /timeline (and load-participant) use the 2500ms handler budget.
   // POST /participant does not: Dallinger `@db.serialized` serializes
-  // concurrent signups, so two late arrivals can spend ~3s in that view.
-  // That wall time is not last-arrival GET work. consent→timeline still
-  // has START_PAGE_MAX_MS.
+  // concurrent signups and retries with expovariate sleep. Overlapping
+  // consent→timeline uses SERIALIZED_SIGNUP_MAX_MS. Sequential starts still
+  // have START_PAGE_MAX_MS.
   return records.filter((record) =>
     ["load_participant", "timeline_document"].includes(record.kind)
   );
@@ -114,6 +120,41 @@ function lastArriverReleaseAtMs(lastEntry) {
     return finishedAtMs;
   }
   return lastArriverClock(lastEntry).paintedAtMs;
+}
+
+function arrivalWorkEntry(arrival) {
+  return arrival.entry || arrival;
+}
+
+function pickConcurrentLastArriver(arrivals) {
+  // A skipper filled the barrier. A slower first-paint hold is a waiter,
+  // even if Playwright recorded a later paint time after the overlay left.
+  if (!arrivals.length) {
+    throw new Error("pickConcurrentLastArriver needs at least one arrival");
+  }
+  const skippers = arrivals.filter((arrival) => !arrival.held);
+  const pool = skippers.length ? skippers : arrivals;
+  return pool.reduce((best, current) =>
+    lastArriverReleaseAtMs(arrivalWorkEntry(current)) >=
+    lastArriverReleaseAtMs(arrivalWorkEntry(best))
+      ? current
+      : best
+  );
+}
+
+function responsesOverlappingLastArriver(records, sinceMs) {
+  // Websocket onOpen can start a hold-resume POST before the last arriver
+  // clicks. Count that POST if it finished after they started.
+  return records.filter((record) => {
+    if (record.kind !== "response") {
+      return false;
+    }
+    const finishedAtMs = requestFinishedAtMs(record);
+    if (finishedAtMs != null) {
+      return finishedAtMs >= sinceMs;
+    }
+    return (record.startedAtMs ?? 0) >= sinceMs;
+  });
 }
 
 function overlayLingerBudgetMs(holdResumePost) {
@@ -246,7 +287,11 @@ function holdReleaseSummary({
   );
 }
 
-function assertEntryWasResponsive(entry, label) {
+function assertEntryWasResponsive(
+  entry,
+  label,
+  { signupMaxMs = START_PAGE_MAX_MS } = {}
+) {
   const summary = summarizeParticipantRequests(entry.tracker.records);
   const entryRequests = entryPathRequests(entry.tracker.records);
   expect(
@@ -271,7 +316,7 @@ function assertEntryWasResponsive(entry, label) {
     expect(
       createParticipant.durationMs,
       `${label} POST /participant took ${Math.round(createParticipant.durationMs)}ms (${summary})`
-    ).toBeLessThan(START_PAGE_MAX_MS);
+    ).toBeLessThan(signupMaxMs);
   }
   const grouping = lastArriverWorkRecord(entry);
   if (grouping != null) {
@@ -286,8 +331,8 @@ function assertEntryWasResponsive(entry, label) {
   ).toBeLessThan(ENTRY_REQUEST_MAX_MS);
   expect(
     entry.start.consentToTimelineMs,
-    `${label} stayed on Starting experiment... for ${entry.start.consentToTimelineMs}ms (${summary})`
-  ).toBeLessThan(START_PAGE_MAX_MS);
+      `${label} stayed on Starting experiment... for ${entry.start.consentToTimelineMs}ms (${summary})`
+    ).toBeLessThan(signupMaxMs);
 }
 
 async function createHoldSession(browser, recruitmentUrl, label) {
@@ -329,8 +374,13 @@ async function closeHoldSessions(sessions) {
 async function startHoldExperiment(browser, experimentDir, labels, options = {}) {
   const env = { ...(options.env || {}) };
   if (env.PSYNET_LEGACY_DEBUG_GUNICORN_THREADS == null) {
-    // Last-arrival GET /timeline plus one hold-resume POST per waiter.
-    env.PSYNET_LEGACY_DEBUG_GUNICORN_THREADS = String(Math.max(labels.length, 1));
+    // Last-arrival GET /timeline plus one hold-resume POST per waiter is
+    // *n* HTTP slots. A spare process keeps a waiter Redis subscribe off
+    // the last-arrival SQL worker; otherwise that gevent worker never
+    // reaches Listening before the wake.
+    env.PSYNET_LEGACY_DEBUG_GUNICORN_THREADS = String(
+      Math.max(labels.length + 1, 2)
+    );
   }
   const experiment = startExperiment(experimentDir, { ...options, env });
   const recruitmentUrl = await experiment.urlPromise;
@@ -422,6 +472,7 @@ async function armVisibleHold(
     session.waitingWakeToken = await session.page.evaluate(
       () => psynet.timelineHold?.hold?.wake_token || null
     );
+    session.resumeSinceMs = Date.now();
   } catch (error) {
     if (!isDestroyedExecutionContext(error)) {
       throw error;
@@ -694,7 +745,7 @@ async function assertWaiterReleasedWithLastArriver(
   const sinceMs = clock.clickedAtMs;
   const releaseAtMs = lastArriverReleaseAtMs(lastEntry);
   const extraTimelineSinceMs = releaseAtMs;
-  const resumeRequests = responsesSince(records, sinceMs);
+  const resumeRequests = responsesOverlappingLastArriver(records, sinceMs);
   const afterClickMs = resume.resumedAtMs - clock.clickedAtMs;
   const afterPaintMs = resume.resumedAtMs - clock.paintedAtMs;
   const afterReleaseMs = resume.resumedAtMs - releaseAtMs;
@@ -713,7 +764,18 @@ async function assertWaiterReleasedWithLastArriver(
   const lingerBudgetMs = overlayLingerBudgetMs(holdResumePosts[0] || null);
   const lastArriverWork = lastArriverWorkRecord(lastEntry);
   const reasonsAfterLast = (session.resumeLog || [])
-    .filter((entry) => entry.atMs >= sinceMs && entry.reason)
+    .filter((entry) => {
+      if (!entry.reason) {
+        return false;
+      }
+      if (sinceMs == null || entry.atMs >= sinceMs) {
+        return true;
+      }
+      return (
+        entry.reason === "websocket connection" &&
+        resume.resumedAtMs >= sinceMs
+      );
+    })
     .map((entry) => entry.reason);
   const wakeToEndMs = overlayLingerMs(
     probe,
@@ -787,10 +849,11 @@ async function assertWaiterReleasedWithLastArriver(
     unexpectedBlockingRequests(resumeRequests, ENTRY_REQUEST_MAX_MS),
     `${session.label} hold-resume blocking: ${summary}`
   ).toEqual([]);
-  // Hold tests set gunicorn workers to the session count so last-arrival GET
-  // /timeline can overlap every waiter hold-resume POST. A short HTTP 503 is
-  // NOWAIT when a POST hits the same participant row as that participant's
-  // GET. unexpectedBlockingRequests still fails a busy retry that lasts 500ms
+  // Hold tests set gunicorn workers to the session count plus one spare so
+  // last-arrival GET /timeline can overlap every waiter hold-resume POST
+  // without starving a waiter Redis subscribe. A short HTTP 503 is NOWAIT
+  // when a POST hits the same participant row as that participant's GET.
+  // unexpectedBlockingRequests still fails a busy retry that lasts 500ms
   // or more.
   if (isInplaceTimelineModeEnabled()) {
     expect(
@@ -852,7 +915,9 @@ async function enterPossiblyHeldArrival(
 ) {
   const entry = await enterTimelineAfterGateway(session.page, timeout);
   session.entry = entry;
-  assertEntryWasResponsive(entry, session.label);
+  assertEntryWasResponsive(entry, session.label, {
+    signupMaxMs: SERIALIZED_SIGNUP_MAX_MS
+  });
   await waitForTimelinePageReady(session.page, timeout);
   await wrapTimelineHoldResumeProbe(session.page);
   const stillHeld = await waitForHoldOrPrompt(session.page, {
@@ -923,6 +988,7 @@ module.exports = {
   PAIR_HOLD_TEXT,
   PARTNER_HOLD_RELEASE_MAX_MS,
   RESULTS_PROMPT,
+  SERIALIZED_SIGNUP_MAX_MS,
   SETTLE_HOLD_MS,
   START_PAGE_MAX_MS,
   STEP_TIMEOUT_MS,
@@ -942,6 +1008,7 @@ module.exports = {
   enterWaitingHold,
   lastArriverReleaseAtMs,
   lastArriverWorkRecord,
+  pickConcurrentLastArriver,
   responsesSince,
   startHoldExperiment,
   stopExperiment,

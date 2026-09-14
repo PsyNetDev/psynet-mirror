@@ -1425,12 +1425,15 @@ async function silenceTimelineHoldSafetyPoll(page) {
     if (!controller) {
       return false;
     }
-    clearTimeout(controller.safetyTimer);
-    controller.safetyTimer = null;
     if (controller.hold) {
       controller.hold.safety_poll_ms = 60000;
     }
-    window.psynet.scheduleTimelineHoldCheck = function () {};
+    if (typeof psynet.scheduleTimelineHoldCheck === "function") {
+      psynet.scheduleTimelineHoldCheck(controller);
+    } else {
+      clearTimeout(controller.safetyTimer);
+      controller.safetyTimer = null;
+    }
     return true;
   });
 }

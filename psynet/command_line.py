@@ -844,12 +844,15 @@ def run_pre_auto_reload_checks():
 # Dallinger ``threads`` is gunicorn worker *processes*. Last-arrival GET
 # /timeline occupies one process while each waiting partner POSTs hold-resume.
 # A group of size *n* therefore wants *n* workers at the wake, or extra waiters
-# sit in the listen queue. That is closer to deploy (``threads=auto``) than a
-# single worker. One worker saved ~1s of startup in 2022; local gunicorn does
-# not pay a Heroku dyno cost, and performance-test / Playwright duration
-# checks need overlap rather than serialized queueing. Playwright hold tests
-# set ``PSYNET_LEGACY_DEBUG_GUNICORN_THREADS`` to the session count. The
-# default covers the largest stacked-hold group in that suite (four).
+# sit in the listen queue. Blocking SQL on a gevent worker also starves that
+# worker's Redis listen greenlet, so Playwright hold tests use *n* + 1: the
+# spare keeps a waiter subscribe off the last-arrival SQL worker. That is
+# closer to deploy (``threads=auto``) than a single worker. One worker saved
+# ~1s of startup in 2022; local gunicorn does not pay a Heroku dyno cost, and
+# performance-test / Playwright duration checks need overlap rather than
+# serialized queueing. The default covers the largest stacked-hold group in
+# that suite (four) for interactive debug; tests override with session count
+# plus one.
 LEGACY_DEBUG_GUNICORN_THREADS = "4"
 LEGACY_DEBUG_GUNICORN_THREADS_ENV = "PSYNET_LEGACY_DEBUG_GUNICORN_THREADS"
 

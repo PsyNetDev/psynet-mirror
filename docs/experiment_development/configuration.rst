@@ -871,8 +871,9 @@ Heroku
     than ``auto``. Ordinary ``psynet debug local`` is the Flask reloader (one
     process); there is no worker-count flag on that path. Playwright stacked-hold
     tests set
-    ``PSYNET_LEGACY_DEBUG_GUNICORN_THREADS`` to the number of sessions so a
-    last-arrival ``GET /timeline`` can overlap every waiter hold-resume POST.
+    ``PSYNET_LEGACY_DEBUG_GUNICORN_THREADS`` to the number of sessions plus one
+    spare so a last-arrival ``GET /timeline`` can overlap every waiter
+    hold-resume POST without starving a waiter Redis subscribe.
 
 ``worker_multiplier`` *float* |dlgr-icon|
     Multiplier used to determine the number of gunicorn web worker processes

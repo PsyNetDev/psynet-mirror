@@ -516,7 +516,7 @@ def test_debug_legacy_starts_four_gunicorn_workers(monkeypatch):
 
 
 def test_debug_legacy_gunicorn_workers_follow_env(monkeypatch):
-    """Playwright hold tests set workers to the live session count."""
+    """Playwright hold tests set workers to the session count plus one spare."""
     from psynet.command_line import _debug_legacy
 
     calls = []

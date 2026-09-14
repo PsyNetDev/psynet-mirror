@@ -332,8 +332,9 @@ about 370 ms ``barriers`` plus 200 ms ``render`` (total ~580 ms).
 ``lock`` and ``page`` stayed under 40 ms. CI ~1 s last-arrival GETs are
 these two phases under load, not participant-row lock wait. Waiter
 hold-resume ``queue~`` behind that GET is worker-pool saturation on gunicorn
-(both Playwright job modes). Hold tests set workers to the session count so
-the last-arrival request can overlap every waiter POST. Remaining ``queue~``
+(both Playwright job modes). Hold tests set workers to the session count plus
+one spare so the last-arrival request can overlap every waiter POST without
+starving a waiter Redis subscribe. Remaining ``queue~``
 on those POSTs is occupancy to diagnose (HTML ``render`` used to rebuild the
 full document shell on every inplace fragment); do not subtract it from
 overlay linger or waiter-release spread.

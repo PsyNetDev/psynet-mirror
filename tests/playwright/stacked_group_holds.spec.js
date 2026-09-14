@@ -13,7 +13,7 @@ const {
   enterPossiblyHeldArrival,
   enterSkippingHold,
   enterWaitingHold,
-  lastArriverReleaseAtMs,
+  pickConcurrentLastArriver,
   startHoldExperiment,
   stopExperiment,
   submitChoiceMaybeHeld,
@@ -64,10 +64,12 @@ test("two late trio members arriving together release every waiter", { tag: "@bo
   // attaching or while waitForHeldParticipantToResume is waiting for the hold
   // chip to leave; treat a destroyed execution context (including Playwright
   // toHaveCount Received: undefined) as a cleared hold. Concurrent POST
-  // /participant calls serialize in Dallinger, so signup wall time uses the
-  // start-page budget, not the GET /timeline handler budget. A late member who
-  // only resumes via websocket reconnect is still a last arriver, not a waiter
-  // that must show a partner wake→end clock.
+  // /participant calls serialize in Dallinger and retry with expovariate
+  // sleep, so overlapping signup wall time uses SERIALIZED_SIGNUP_MAX_MS, not
+  // the GET /timeline handler budget. A skipper filled the barrier; a slower
+  // first-paint hold is a waiter. A late member who only resumes via websocket
+  // reconnect is still a last arriver, not a waiter that must show a partner
+  // wake→end clock.
   const { experiment, sessions } = await startHoldExperiment(browser, TRIO_DIR, [
     "trio_wait",
     "trio_late_a",
@@ -90,10 +92,7 @@ test("two late trio members arriving together release every waiter", { tag: "@bo
         prompt: ACTION_PROMPT
       })
     ]);
-    const laterEntry =
-      lastArriverReleaseAtMs(arrivalA.entry) >= lastArriverReleaseAtMs(arrivalB.entry)
-        ? arrivalA.entry
-        : arrivalB.entry;
+    const laterEntry = pickConcurrentLastArriver([arrivalA, arrivalB]).entry;
     await assertWaiterReleasedWithLastArriver(first, laterEntry);
     const heldLate = [];
     if (arrivalA.held) {
@@ -200,9 +199,10 @@ test("two late choices complete a trio without a safety poll", { tag: "@both" },
   browser
 }) => {
   // After grouping, the remaining race is POST /response. One member waits
-  // on the post-choice barrier while the other two submit together. A late
-  // submit that first-paints a hold, even if the chip is already gone, still
-  // has to resume from a server-driven hold-resume rather than a skip.
+  // on the post-choice barrier while the other two submit together. A skipper
+  // filled that barrier. A late submit that first-paints a hold, even if the
+  // chip is already gone, still has to resume from a server-driven
+  // hold-resume rather than a skip.
   const { experiment, sessions } = await startHoldExperiment(browser, TRIO_DIR, [
     "trio_choice_wait",
     "trio_choice_late_a",
@@ -236,10 +236,7 @@ test("two late choices complete a trio without a safety poll", { tag: "@both" },
         prompt: RESULTS_PROMPT
       })
     ]);
-    const laterChoice =
-      lastArriverReleaseAtMs(choiceA) >= lastArriverReleaseAtMs(choiceB)
-        ? choiceA
-        : choiceB;
+    const laterChoice = pickConcurrentLastArriver([choiceA, choiceB]);
     await assertWaiterReleasedWithLastArriver(first, laterChoice, {
       prompt: RESULTS_PROMPT
     });

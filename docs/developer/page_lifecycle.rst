@@ -449,7 +449,8 @@ Those routes do not share a lock protocol:
   Flask vs gunicorn. Worker-pool ``queue~`` happens in both job modes: the
   last arriver's request (entry ``GET /timeline``, or a later last-arrival
   ``POST /response``) occupies one worker while each waiter POSTs hold-resume.
-  Playwright hold tests set workers to the session count. Remaining ``queue~``
+  Playwright hold tests set workers to the session count plus one spare.
+  Remaining ``queue~``
   means the pool is still busy: diagnose worker occupancy (often HTML
   ``render``) rather than subtracting that wait from overlay linger or waiter
   spread. Overlay linger is wake→end wallclock compared with
