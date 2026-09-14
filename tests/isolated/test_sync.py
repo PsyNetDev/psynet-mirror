@@ -63,8 +63,10 @@ from psynet.timeline_hold import (
     _defer_timeline_hold_wakes,
     _enqueue_timeline_hold_wake,
     _last_arrival_follow_in_progress,
+    _last_arrival_follow_key,
     _last_arrival_render_gate,
     _last_arrival_render_in_progress,
+    _last_arrival_render_key,
     _mark_last_arrival_follow_instance,
     _mark_last_arrival_render_instance,
     _parked_hold_wake_key,
@@ -1159,6 +1161,33 @@ def test_last_arrival_nontransient_check_error_propagates(
     monkeypatch.setattr(GroupBarrier, "check_waiting_participants", boom)
     with pytest.raises(RuntimeError, match="boom"):
         _commit_barrier_arrivals()
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_last_arrival_spec_error_leaves_the_group_waiting(
+    in_experiment_directory, db_session, monkeypatch
+):
+    """A malformed barrier spec must roll back the check and keep the group waiting."""
+    exp = get_experiment()
+    first, last = _pair_sync_group(exp, db_session)[0]
+    barrier = GroupBarrier(id_="last_arrival_spec", group_type="main")
+    _arrive_at_group_barrier(exp, barrier, first)
+    _commit_barrier_arrivals()
+    _arrive_at_group_barrier(exp, barrier, last)
+
+    def boom(_spec):
+        raise BarrierSpecError("malformed spec")
+
+    monkeypatch.setattr("psynet.sync.barrier_from_spec_json", boom)
+    _commit_barrier_arrivals()
+    db_session.refresh(first)
+    db_session.refresh(last)
+    assert first.failed is False
+    assert last.failed is False
+    assert _barrier_link_released(first.id, barrier.id) is False
+    assert _barrier_link_released(last.id, barrier.id) is False
 
 
 _group_release_calls = []
@@ -3221,6 +3250,8 @@ def test_follow_pin_parks_publish_without_skipping_poller_process(
     in_experiment_directory, db_session, monkeypatch
 ):
     """A follow pin parks wakes but leaves poller processing free."""
+    from contextlib import contextmanager
+
     participant = new_participant(get_experiment())
     hold = _participant_hold(participant, "follow-park", "follow")
     db_session.commit()
@@ -3232,12 +3263,24 @@ def test_follow_pin_parks_publish_without_skipping_poller_process(
         "wake_token": hold.wake_token,
         "instance_id": instance_id,
     }
+    claimed = []
+    original_hold = _hold_barrier_instance_claim
+
+    @contextmanager
+    def tracking_hold(instance_id_, wait=False):
+        claimed.append(instance_id_)
+        with original_hold(instance_id_, wait=wait) as ok:
+            yield ok
+
+    monkeypatch.setattr("psynet.sync._hold_barrier_instance_claim", tracking_hold)
     with _last_arrival_render_gate():
         _mark_last_arrival_follow_instance(instance_id)
         assert _last_arrival_render_in_progress(instance_id) is False
         assert _last_arrival_follow_in_progress(instance_id) is True
         _publish_wakes([wake])
         assert _released_wake_count(publications) == 0
+        _process_barrier_instance(instance_id)
+        assert instance_id in claimed
     assert _released_wake_count(publications) == 1
     assert _last_arrival_follow_in_progress(instance_id) is False
 
@@ -3281,6 +3324,85 @@ def test_park_during_unpin_publishes_wake_once(
         assert errors == []
         assert _released_wake_count(publications) == 1
         assert not db.redis_conn.llen(_parked_hold_wake_key(instance_id))
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_last_arrival_pin_incr_sets_ttl(in_experiment_directory, db_session):
+    """Pin acquisition must not leave a Redis key without TTL."""
+    instance_id = f"ttl-{uuid.uuid4().hex}"
+    with _last_arrival_render_gate():
+        _mark_last_arrival_render_instance(instance_id)
+        assert db.redis_conn.ttl(_last_arrival_render_key(instance_id)) > 0
+        _mark_last_arrival_follow_instance(instance_id)
+        assert db.redis_conn.ttl(_last_arrival_follow_key(instance_id)) > 0
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_poller_rechecks_render_pin_after_claim(
+    in_experiment_directory, db_session, monkeypatch
+):
+    """A poller that claimed after last-arrival pinned must still skip process."""
+    from contextlib import contextmanager
+
+    seen = []
+
+    def tracking_pin(_instance_id):
+        seen.append(1)
+        return len(seen) >= 2
+
+    @contextmanager
+    def fake_claim(_instance_id, wait=False):
+        yield True
+
+    def forbid_timeout(*_args, **_kwargs):
+        raise AssertionError("poller should not start the ORM check")
+
+    monkeypatch.setattr(
+        "psynet.timeline_hold._last_arrival_render_in_progress", tracking_pin
+    )
+    monkeypatch.setattr("psynet.sync._hold_barrier_instance_claim", fake_claim)
+    monkeypatch.setattr("psynet.sync._set_transaction_lock_timeout", forbid_timeout)
+    assert _process_barrier_instance("after-claim-pin") is False
+    assert len(seen) == 2
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_follow_pin_is_set_before_arrival_commit(
+    in_experiment_directory, db_session, monkeypatch
+):
+    """Queued visits must be follow-pinned before the arrival write is visible."""
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    group_type = f"stack_follow_before_commit_{uuid.uuid4().hex[:8]}"
+    exp.timeline = _stacked_partner_timeline(group_type)
+    try:
+        first, last = _working_participants(exp, 2)
+        assert _json_timeline(exp, first).status_code == 200
+        first = Participant.query.get(first.id)
+        first_page = exp.timeline.get_current_elt(exp, first)
+        instance_id = _hold_instance_id_for_page(first, first_page)
+        assert instance_id
+        pins_at_commit = []
+        real_commit = db.session.commit
+
+        def tracking_commit(*args, **kwargs):
+            pins_at_commit.append(_last_arrival_follow_in_progress(instance_id))
+            return real_commit(*args, **kwargs)
+
+        monkeypatch.setattr(db.session, "commit", tracking_commit)
+        last_response = _json_timeline(exp, last)
+        assert last_response.status_code == 200
+        assert pins_at_commit
+        assert pins_at_commit[0] is True
+        _assert_on_action_page(exp, [first.id, last.id])
+    finally:
+        exp.timeline = original_timeline
 
 
 @pytest.mark.parametrize(

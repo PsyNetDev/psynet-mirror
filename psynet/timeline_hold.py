@@ -97,6 +97,17 @@ if redis.call('exists', KEYS[2]) == 0 and redis.call('exists', KEYS[3]) == 0 the
 end
 return {}
 """
+# INCR without EXPIRE can leave a pin that outlives this request.
+_PIN_AND_EXPIRE_LUA = """
+if ARGV[2] == '1' then
+  redis.call('incr', KEYS[1])
+end
+if redis.call('exists', KEYS[1]) == 1 then
+  redis.call('expire', KEYS[1], tonumber(ARGV[1]))
+  return 1
+end
+return 0
+"""
 
 
 def _last_arrival_render_key(instance_id):
@@ -145,12 +156,15 @@ def _incr_last_arrival_pin(instance_id, *, ids_var, key_for):
         return
     owned = ids_var.get()
     key = key_for(instance_id)
+    incr = "1" if instance_id not in owned else "0"
     try:
-        if instance_id in owned:
-            db.redis_conn.expire(key, _LAST_ARRIVAL_RENDER_TTL_SECONDS)
-            return
-        db.redis_conn.incr(key)
-        db.redis_conn.expire(key, _LAST_ARRIVAL_RENDER_TTL_SECONDS)
+        ok = db.redis_conn.eval(
+            _PIN_AND_EXPIRE_LUA,
+            1,
+            key,
+            _LAST_ARRIVAL_RENDER_TTL_SECONDS,
+            incr,
+        )
     except Exception:
         logger.warning(
             "Failed to mark last-arrival pin for barrier instance %s.",
@@ -158,7 +172,8 @@ def _incr_last_arrival_pin(instance_id, *, ids_var, key_for):
             exc_info=True,
         )
         return
-    ids_var.set(owned | {instance_id})
+    if incr == "1" and ok:
+        ids_var.set(owned | {instance_id})
 
 
 def _mark_last_arrival_render_instance(instance_id):

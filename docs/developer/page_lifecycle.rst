@@ -154,15 +154,15 @@ extra transaction is open. A blocking wait for that claim that hits
 Websocket wakes from those coordination commits stay unpublished
 until the last arriver finishes rendering the next page, so a waiting partner
 is not told to resume while a later entry check still holds their row or while
-that request is still building HTML. After a request actually releases
+that request is still building HTML. A GET follow-pins queued visits
+before the arrival commit (publish park only) so the 0.5 s poller cannot
+publish in the gap after that commit. After a request actually releases
 waiters, it takes a Redis render pin until that response is ready so the
-0.5 s poller (another process) does not process or publish those visits
-during HTML render. A GET follow-pins a visit before the claim try/wait
-(publish park only) so poller publish cannot fire in the gap after the
-claim drops. Park and unpin are atomic Redis scripts: a wake cannot be
-appended after the last pin is gone with nobody left to drain it. Unfilled
-waiter GETs never take the render pin, so the poller can still finish those
-barriers. Last-arrival waits for the instance
+poller does not process or publish those visits during HTML render. Park
+and unpin are atomic Redis scripts: a wake cannot be appended after the
+last pin is gone with nobody left to drain it. Unfilled waiter GETs never
+take the render pin, so the poller can still finish those barriers.
+Last-arrival waits for the instance
 advisory claim the poller uses, then locks waiters with ``NOWAIT``. If a waiter
 row is still busy, the request retries that check once immediately (still
 ``NOWAIT``). It does not wait for the other request to commit; if the retry
@@ -479,10 +479,12 @@ Those routes do not share a lock protocol:
   arriver finishes rendering the next page. After that request actually
   releases waiters, it render-pins those visits in Redis for the rest of the
   request so the 0.5 s poller cannot process or publish the same wakes while
-  HTML is still being built. A GET follow-pins a visit before it tries the
-  claim (publish park only). Park and unpin are one Redis script each, so a
-  publisher cannot leave a wake on the parked list after the last pin is
-  gone. A waiter GET that first-paints an unfilled hold never takes the
+  HTML is still being built. A GET follow-pins queued visits before the
+  arrival commit (publish park only) so poller publish cannot fire in that
+  gap, and again before it tries the claim. Park and unpin are one Redis
+  script each, so a publisher cannot leave a wake on the parked list after
+  the last pin is gone. Pin INCR also sets TTL in that same script. A waiter
+  GET that first-paints an unfilled hold never takes the
   render pin, so the poller can still finish that barrier. Last-arrival waits for the
   instance advisory claim (the lock the 0.5 s poller tries) so a GET does not
   first-paint a hold while the poller still owns that visit. That claim is a

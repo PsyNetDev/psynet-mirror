@@ -5567,8 +5567,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 experiment.prepare_voluntary_exit_plan(participant)
             participant_id = participant.id
             unique_id = participant.unique_id
-            db.session.commit()
-            close("page")
+            from .sync import _follow_pin_pending_barrier_checks
             from .timeline_hold import (
                 _defer_timeline_hold_wakes,
                 _last_arrival_render_gate,
@@ -5576,11 +5575,15 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
             # Keep last-arrival wakes unpublished through HTML/JSON render so
             # waiting partners do not stampede this worker while it is still
-            # building the last arriver's page. Redis render-pins visits this
-            # request released (poller process skip + publish park) and
-            # follow-pins visits it is about to claim (publish park only).
-            # Unfilled waiter holds never take the render pin.
+            # building the last arriver's page. Follow-pin queued visits before
+            # the arrival commit so the 0.5 s poller cannot publish in that
+            # gap. Redis render-pins visits this request released (poller
+            # process skip + publish park). Unfilled waiter holds never take
+            # the render pin.
             with _last_arrival_render_gate():
+                _follow_pin_pending_barrier_checks()
+                db.session.commit()
+                close("page")
                 with _defer_timeline_hold_wakes():
                     participant, page = cls._finalize_pending_timeline_barriers(
                         experiment, participant, page
@@ -6478,6 +6481,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 approved = payload.get("submission") == "approved"
                 submission = payload.get("submission")
                 if approved and pending_barrier_checks:
+                    from .sync import _follow_pin_barrier_instances
+
+                    _follow_pin_barrier_instances(pending_barrier_checks)
                     db.session.commit()
                     write_committed = True
                     participant = cls._finalize_barrier_arrivals(

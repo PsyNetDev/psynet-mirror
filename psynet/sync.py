@@ -174,6 +174,19 @@ def _take_pending_barrier_checks():
     return sorted(db.session.info.pop(_PENDING_BARRIER_CHECKS_KEY, set()))
 
 
+def _follow_pin_barrier_instances(instance_ids):
+    """Park publish for queued visits before their arrival becomes visible."""
+    for instance_id in instance_ids:
+        _mark_last_arrival_follow_instance(instance_id)
+
+
+def _follow_pin_pending_barrier_checks():
+    """Follow-pin checks still sitting in this request's session.info."""
+    _follow_pin_barrier_instances(
+        db.session.info.get(_PENDING_BARRIER_CHECKS_KEY) or []
+    )
+
+
 def _queue_released_hold_waiters(participants):
     """Remember released waiters so they can be skipped after partner locks drop."""
     db.session.info.setdefault(_RELEASED_HOLD_WAITER_IDS_KEY, []).extend(
@@ -2235,10 +2248,12 @@ def _run_pending_barrier_checks(instance_ids):
     A blocking claim wait that hits ``lock_timeout`` raises so ``GET
     /timeline`` can return HTTP 503 rather than first-painting the live hold.
     A waiter-row ``NOWAIT`` miss still returns ``False`` so the caller can
-    retry immediately. Follow-pin before the try-lock so poller publish
-    cannot fire in the gap after a missed claim. That pin parks publish
-    only; unfilled waiter GETs still leave poller processing free.
+    retry immediately. Follow-pin every queued visit before the try-lock so
+    poller publish cannot fire in the gap after a missed claim. That pin parks
+    publish only; unfilled waiter GETs still leave poller processing free.
     """
+    for instance_id in instance_ids:
+        _mark_last_arrival_follow_instance(instance_id)
     all_claimed = True
     for instance_id in instance_ids:
         try:
@@ -2279,6 +2294,12 @@ def _process_barrier_instance(instance_id, *, retry=False):
     try:
         with _hold_barrier_instance_claim(instance_id, wait=False) as claimed:
             if not claimed:
+                return False
+            if _last_arrival_render_in_progress(instance_id):
+                logger.debug(
+                    "Barrier instance %s skipped because last-arrival started rendering.",
+                    instance_id,
+                )
                 return False
             _set_transaction_lock_timeout(
                 get_config().get("timeline_lock_timeout_seconds")
