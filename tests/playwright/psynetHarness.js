@@ -1425,15 +1425,20 @@ async function silenceTimelineHoldSafetyPoll(page) {
     if (!controller) {
       return false;
     }
+    clearTimeout(controller.safetyTimer);
+    controller.safetyTimer = null;
     if (controller.hold) {
       controller.hold.safety_poll_ms = 60000;
     }
-    if (typeof psynet.scheduleTimelineHoldCheck === "function") {
-      psynet.scheduleTimelineHoldCheck(controller);
-    } else {
-      clearTimeout(controller.safetyTimer);
-      controller.safetyTimer = null;
-    }
+    // Keep deferred wake retries. A later beginTimelineHold would otherwise
+    // schedule a fresh 2s poll while a concurrent last arriver is still in
+    // serialized POST /participant (often >2s).
+    psynet.scheduleTimelineHoldCheck = function (target) {
+      if (target && target.resumeRequested) {
+        target.resumeRequested = false;
+        setTimeout(() => psynet.resumeTimelineHold("queued hold wake"), 0);
+      }
+    };
     return true;
   });
 }

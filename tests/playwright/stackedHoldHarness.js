@@ -331,8 +331,46 @@ function assertEntryWasResponsive(
   ).toBeLessThan(ENTRY_REQUEST_MAX_MS);
   expect(
     entry.start.consentToTimelineMs,
-      `${label} stayed on Starting experiment... for ${entry.start.consentToTimelineMs}ms (${summary})`
-    ).toBeLessThan(signupMaxMs);
+    `${label} stayed on Starting experiment... for ${entry.start.consentToTimelineMs}ms (${summary})`
+  ).toBeLessThan(signupMaxMs);
+}
+
+function silenceHoldSafetyPollOnNewDocuments() {
+  // Runs in every document, including legacy hold-resume reloads. A later
+  // beginTimelineHold would otherwise schedule a fresh 2s poll while a
+  // concurrent last arriver is still in serialized POST /participant.
+  const silence = (psynet) => {
+    if (!psynet || psynet.__psynetHoldSafetyPollSilenced) {
+      return;
+    }
+    psynet.scheduleTimelineHoldCheck = function (target) {
+      if (target && target.resumeRequested) {
+        target.resumeRequested = false;
+        setTimeout(() => psynet.resumeTimelineHold("queued hold wake"), 0);
+      }
+      if (target) {
+        clearTimeout(target.safetyTimer);
+        target.safetyTimer = null;
+        if (target.hold) {
+          target.hold.safety_poll_ms = 60000;
+        }
+      }
+    };
+    psynet.__psynetHoldSafetyPollSilenced = true;
+  };
+  let currentPsynet = window.psynet;
+  Object.defineProperty(window, "psynet", {
+    configurable: true,
+    enumerable: true,
+    get() {
+      return currentPsynet;
+    },
+    set(value) {
+      currentPsynet = value;
+      silence(value);
+    }
+  });
+  silence(currentPsynet);
 }
 
 async function createHoldSession(browser, recruitmentUrl, label) {
@@ -344,6 +382,7 @@ async function createHoldSession(browser, recruitmentUrl, label) {
       atMs: Date.now()
     });
   });
+  await context.addInitScript(silenceHoldSafetyPollOnNewDocuments);
   await installTimelineHoldReleaseProbeOnContext(context);
   const page = await beginExperiment(
     await context.newPage(),
