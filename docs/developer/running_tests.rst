@@ -157,9 +157,10 @@ Hold-release summaries print ``Server-Timing`` ``app`` versus browser wall
 time (``queue~``) for the last arriver's request and the waiter's hold-resume
 POST so a long linger can be split into handler time versus pool occupancy.
 Do not subtract ``queue~`` from overlay linger or from waiter-release spread.
+Waiter-release spread (overlay leave times among waiters) is at most 2200ms.
 ``GET /timeline`` also prints ``lock``, ``page``, ``barriers``, and
 ``render``. Blocking-request checks use ``app`` when that header is present, so
-worker-pool queueing is not treated as a slow handler. The 2500ms entry
+worker-pool queueing is not treated as a slow handler. The 3000ms entry
 budget applies to ``GET /timeline`` and ``POST /load-participant``, not to
 ``POST /participant``. Dallinger ``@db.serialized`` retries concurrent
 signups with ``expovariate(0.5)`` sleep (mean 2s); overlapping

@@ -456,7 +456,9 @@ Those routes do not share a lock protocol:
   means the pool is still busy: two waiters leaving together can overlap
   next-page ``render``. Do not subtract that wait from overlay linger or waiter
   spread. Overlay linger is wake→end wallclock compared with
-  ``max(2200ms, Server-Timing app + 500ms)``. A short HTTP 503 on hold-resume is ``NOWAIT``
+  ``max(2200ms, Server-Timing app + 500ms)``. Waiter-release spread is at most
+  2200ms. ``GET /timeline`` and load-participant handler checks use 3000ms.
+  A short HTTP 503 on hold-resume is ``NOWAIT``
   overlap, not a missed wake.
 * After the arrival write commits, queued barrier checks run in short
   transactions.   Websocket wakes from those inner commits wait until the last

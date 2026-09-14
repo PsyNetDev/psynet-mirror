@@ -67,8 +67,8 @@ const entry = await enterTimelineAfterGateway(page);
 expect(entry.paint.type).toBe("ModularPage");
 expect(entry.paint.showsHold).toBe(false);
 expect(entry.timeline.busy).toBe(false);
-expect(entry.timeline.durationMs).toBeLessThan(2500);
-expect(requestHandlerMs(lastArriverWorkRecord(entry))).toBeLessThan(2500);
+expect(entry.timeline.durationMs).toBeLessThan(3000);
+expect(requestHandlerMs(lastArriverWorkRecord(entry))).toBeLessThan(3000);
 expect(entry.start.consentToTimelineMs).toBeLessThan(6000);
 ```
 
@@ -84,7 +84,7 @@ gunicorn listen-queue) stays under
 `max(2200ms, hold-resume Server-Timing app + 500ms)`. A short HTTP 503 may
 retry once; do not fold gunicorn `queue~` into linger or waiter spread. Print
 `queue~` in summaries so a long wait can be split into handler time versus
-pool occupancy. Spread is overlay leave times, at most 1500ms:
+pool occupancy. Spread is overlay leave times, at most 2200ms:
 
 ```js
 await enterWaitingHold(first, { holdText: "Waiting for your partner" });

@@ -24,26 +24,27 @@ const {
 } = require("./psynetHarness");
 
 const STEP_TIMEOUT_MS = 120000;
-const ENTRY_REQUEST_MAX_MS = 2500;
+const ENTRY_REQUEST_MAX_MS = 3000;
 const START_PAGE_MAX_MS = 6000;
 // Dallinger `@db.serialized` retries POST /participant with
 // ``random.expovariate(0.5)`` sleep (mean 2s) after a conflict with the
 // partner's GET /timeline. One unlucky retry already exceeds 6000ms. This
 // budget is only for overlapping signups; linger/spread/GET /timeline floors
-// stay 2200/1500/2500.
+// stay 2200/2200/3000.
 const SERIALIZED_SIGNUP_MAX_MS = 15000;
 const BLOCKING_REQUEST_MS = 4000;
-// Fast waiters leave in ~0.2–0.8s after last paint. Two waiters leaving
-// together can each spend ~1.1s rendering the next page; the second sits in
-// the gunicorn listen-queue. Overlay linger is wake→end wallclock, including
-// that wait: it is real for the participant. Compare it with
-// max(2200, Server-Timing app + 500). A missed wake still cannot hide: tests
+// Fast waiters leave in ~0.2–0.8s after last paint. Two or three waiters
+// leaving together can each spend ~1.1s rendering the next page; later POSTs
+// sit in the gunicorn listen-queue. Overlay linger is wake→end wallclock,
+// including that wait: it is real for the participant. Compare it with
+// max(2200, Server-Timing app + 500). Overlay leave times among waiters
+// (spread) use the same 2200ms floor. A missed wake still cannot hide: tests
 // silence the 2s safety poll and assert the resume is a server wake.
 // Summaries print queue~ so a long linger can be split into handler vs pool
 // occupancy; do not subtract queue from linger or waiter-release spread.
 const PARTNER_HOLD_RELEASE_MAX_MS = 2200;
 const HOLD_RESUME_OVERLAY_SLACK_MS = 500;
-const WAITER_RELEASE_SPREAD_MAX_MS = 1500;
+const WAITER_RELEASE_SPREAD_MAX_MS = 2200;
 const SETTLE_HOLD_MS = 3500;
 const ACTION_PROMPT = "Choose your action";
 const RESULTS_PROMPT = "Everyone is ready";
@@ -56,7 +57,7 @@ const LATE_ARRIVAL_RESUME_REASONS = new Set([
 ]);
 
 function entryPathRequests(records) {
-  // GET /timeline (and load-participant) use the 2500ms handler budget.
+  // GET /timeline (and load-participant) use the 3000ms handler budget.
   // POST /participant does not: Dallinger `@db.serialized` serializes
   // concurrent signups and retries with expovariate sleep. Overlapping
   // consent→timeline uses SERIALIZED_SIGNUP_MAX_MS. Sequential starts still

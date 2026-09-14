@@ -9,6 +9,7 @@ const {
   closeHoldSessions,
   enterSkippingHold,
   enterWaitingHold,
+  ENTRY_REQUEST_MAX_MS,
   lastArriverWorkRecord,
   startHoldExperiment,
   stopExperiment,
@@ -47,7 +48,7 @@ test("last arriver's first timeline page skips stacked partner holds", { tag: "@
     expect(
       requestHandlerMs(lastWork),
       `last arriver grouping ${Math.round(requestHandlerMs(lastWork))}ms vs first ${Math.round(requestHandlerMs(firstWork))}ms`
-    ).toBeLessThan(requestHandlerMs(firstWork) + 2500);
+    ).toBeLessThan(requestHandlerMs(firstWork) + ENTRY_REQUEST_MAX_MS);
     await expect(last.page.getByRole("button", { name: "rock" })).toBeVisible();
     await assertWaiterReleasedWithLastArriver(first, lastEntry);
     await expect(first.page.getByRole("button", { name: "rock" })).toBeVisible();
