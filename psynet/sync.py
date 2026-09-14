@@ -126,6 +126,7 @@ from sqlalchemy.orm import (
 from sqlalchemy.orm.attributes import set_committed_value
 
 from psynet.barrier_spec import (
+    BarrierSpecError,
     barrier_from_spec_json,
     barrier_spec_json,
     behavior_hash_from_json,
@@ -155,6 +156,10 @@ logger = get_logger()
 
 _PENDING_BARRIER_CHECKS_KEY = "psynet_pending_barrier_checks"
 _RELEASED_HOLD_WAITER_IDS_KEY = "psynet_released_hold_waiter_ids"
+
+
+class _BarrierAuthorHookError(Exception):
+    """Author ``on_release`` failed; last-arrival keeps the group waiting."""
 
 
 def _queue_barrier_check(barrier_instance_id):
@@ -1176,12 +1181,19 @@ class GroupBarrier(Barrier):
                 group.last_barrier_pass_time = timenow()
 
                 if self.on_release:
-                    self.on_release(
-                        group=group,
-                        participants=group.active_participants,
-                        participant=group.leader,
-                        barrier=self,
-                    )
+                    try:
+                        self.on_release(
+                            group=group,
+                            participants=group.active_participants,
+                            participant=group.leader,
+                            barrier=self,
+                        )
+                    except Exception as err:
+                        if is_transient_transaction_error(err):
+                            raise
+                        raise _BarrierAuthorHookError(
+                            f"Barrier '{self.id}' on_release failed."
+                        ) from err
 
         participants_to_release_ids = {p.id for p in participants_to_release}
         for participant in waiting_participants:
@@ -2179,8 +2191,10 @@ def _check_and_skip_held_instance(instance_id):
 
     Sets the ORM ``lock_timeout`` so check/commit cannot wait forever while
     the extra connection holds the visit key. Nested waiter ``NOWAIT`` misses
-    return ``False`` so last-arrival can retry. Non-transient check errors
-    and skip errors propagate so ``GET /timeline`` does not first-paint a hold.
+    return ``False`` so last-arrival can retry. Author ``on_release`` and spec
+    errors also return ``False`` so the group stays waiting. Other
+    non-transient check errors and skip errors propagate so
+    ``GET /timeline`` does not first-paint a hold.
     """
     _set_transaction_lock_timeout(get_config().get("timeline_lock_timeout_seconds"))
     instance = BarrierInstance.query.get(instance_id)
@@ -2200,6 +2214,8 @@ def _check_and_skip_held_instance(instance_id):
             instance.barrier_id if instance is not None else None,
             instance_id,
         )
+        if isinstance(err, (BarrierSpecError, _BarrierAuthorHookError)):
+            return False
         raise
     released_ids = _take_released_hold_waiter_ids()
     db.session.commit()
