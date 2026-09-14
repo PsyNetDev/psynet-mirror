@@ -347,6 +347,43 @@ async function startHoldExperiment(browser, experimentDir, labels, options = {})
   return { experiment, sessions, recruitmentUrl };
 }
 
+async function silenceVisibleHoldSafetyPoll(page, timeout = 5000) {
+  // Server-rendered hold HTML can paint the indicator before
+  // ``psynet.timelineHold`` attaches. A last arriver can also clear the
+  // overlay during that gap. Wait for the controller, or treat a gone
+  // indicator as an already-cleared hold.
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    try {
+      if (
+        (await page.locator("#psynet-timeline-hold-indicator").count()) === 0
+      ) {
+        return "cleared";
+      }
+      if (await silenceTimelineHoldSafetyPoll(page)) {
+        return "silenced";
+      }
+    } catch (error) {
+      if (isDestroyedExecutionContext(error)) {
+        return "cleared";
+      }
+      throw error;
+    }
+    const remaining = Math.max(50, deadline - Date.now());
+    await page
+      .waitForFunction(
+        () =>
+          Boolean(
+            !document.getElementById("psynet-timeline-hold-indicator") ||
+              (window.psynet && window.psynet.timelineHold)
+          ),
+        { timeout: remaining }
+      )
+      .catch(() => {});
+  }
+  return "missing";
+}
+
 async function armVisibleHold(
   session,
   { holdText, prompt, timeout = STEP_TIMEOUT_MS }
@@ -374,13 +411,17 @@ async function armVisibleHold(
       wrapped,
       `${session.label} hold-resume probe was not attached`
     ).toBe(true);
+    const silenceState = await silenceVisibleHoldSafetyPoll(session.page);
+    if (silenceState === "cleared") {
+      return false;
+    }
+    expect(
+      silenceState,
+      `${session.label} hold safety poll was not running`
+    ).toBe("silenced");
     session.waitingWakeToken = await session.page.evaluate(
       () => psynet.timelineHold?.hold?.wake_token || null
     );
-    expect(
-      await silenceTimelineHoldSafetyPoll(session.page),
-      `${session.label} hold safety poll was not running`
-    ).toBe(true);
   } catch (error) {
     if (!isDestroyedExecutionContext(error)) {
       throw error;
