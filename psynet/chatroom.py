@@ -1,3 +1,22 @@
+"""Modular-page chat rooms on a shared WebSocket channel.
+
+This module exists so :class:`~psynet.modular_page.ModularPage` can embed a
+chat UI without each experiment reimplementing occupancy, persistence, and
+catch-up. Dallinger relays inbound frames to every current subscriber
+immediately. :class:`EnableChatrooms` then persists ``message`` frames and
+publishes an authoritative history snapshot for the room.
+
+That snapshot can still be empty when ``request_state`` runs on another
+worker before the persist commits. The widget must apply catch-up without
+dropping live lines that already arrived, and the server republishes history
+after each persist so a partner who missed the live relay still catches up.
+
+Maintainers should treat the JSON ``type`` values (``join_room``,
+``leave_room``, ``request_state``, ``message``, ``occupancy_update``,
+``history``) as the public protocol between :class:`ChatRoom` and
+:class:`EnableChatrooms`.
+"""
+
 import json
 
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
@@ -102,7 +121,7 @@ class EnableChatrooms(NullElt, WebSocketElt):
             # current room occupancy.
             self._broadcast_occupancy(experiment, room_id)
             if participant is not None:
-                self._send_history(experiment, participant, room_id)
+                self._send_history(experiment, room_id, participant=participant)
 
         elif msg_type == "leave_room":
             if participant is not None:
@@ -126,6 +145,9 @@ class EnableChatrooms(NullElt, WebSocketElt):
                 )
             )
             db.session.commit()
+            # Join-time request_state can race this commit on another worker.
+            # Republish the room log so late subscribers still catch up.
+            self._send_history(experiment, room_id)
 
     def _occupant_ids(self, room_id):
         """Return participant IDs currently subscribed to this room."""
@@ -156,7 +178,14 @@ class EnableChatrooms(NullElt, WebSocketElt):
             channel_name=self.channel,
         )
 
-    def _send_history(self, experiment, participant, room_id):
+    def _send_history(self, experiment, room_id, participant=None):
+        """Publish the persisted message log for ``room_id``.
+
+        When ``participant`` is set, only that participant's widget applies the
+        snapshot. That is the join-time catch-up path. When omitted, every
+        widget in the room applies it, which recovers partners whose
+        ``request_state`` raced the persist of a just-sent line.
+        """
         messages = [
             {"content": m.content, "sender": str(m.participant_id)}
             for m in (
@@ -165,15 +194,15 @@ class EnableChatrooms(NullElt, WebSocketElt):
                 .all()
             )
         ]
+        payload = {
+            "type": "history",
+            "room_id": room_id,
+            "messages": messages,
+        }
+        if participant is not None:
+            payload["target_participant_id"] = str(participant.id)
         experiment.publish_to_subscribers(
-            json.dumps(
-                {
-                    "type": "history",
-                    "room_id": room_id,
-                    "messages": messages,
-                    "target_participant_id": str(participant.id),
-                }
-            ),
+            json.dumps(payload),
             channel_name=self.channel,
         )
 
@@ -194,7 +223,9 @@ class ChatRoom(JavaScriptContributor):
     show_participants
         Whether to display a sidebar listing current participants.
     show_history
-        Whether to deliver prior messages to a participant when they join.
+        Whether to deliver the persisted room log when a participant joins.
+        The server also republishes that log after each new message so a
+        partner whose join-time snapshot raced persist still catches up.
     """
 
     channel = EnableChatrooms.channel

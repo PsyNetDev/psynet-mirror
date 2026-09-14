@@ -97,6 +97,24 @@ export async function activate({root, vars}) {
         feed.scrollTop = feed.scrollHeight;
     }
 
+    function historyIsForMe(msg) {
+        if (msg.target_participant_id == null || msg.target_participant_id === "") {
+            return true;
+        }
+        return String(msg.target_participant_id) === MY_ID;
+    }
+
+    function applyHistorySnapshot(messages) {
+        var feed = root.querySelector("#chatroom-messages");
+        // Live relays can arrive before catch-up. Filling an already-drawn
+        // feed would duplicate those lines; clearing it would drop them when
+        // the snapshot is still empty.
+        if (!messages.length || feed.childElementCount > 0) {
+            return;
+        }
+        messages.forEach(renderMessage);
+    }
+
     function rebuildParticipantList(ids) {
         var list = root.querySelector("#chatroom-participants");
         list.innerHTML = "";
@@ -155,10 +173,8 @@ export async function activate({root, vars}) {
                 } else if (msg.type === "occupancy_update") {
                     if (SHOW_PARTS) rebuildParticipantList(msg.participants || []);
                 } else if (msg.type === "history") {
-                    if (SHOW_HISTORY && String(msg.target_participant_id) === MY_ID) {
-                        // Clear before re-rendering to avoid duplicates on reconnect.
-                        root.querySelector("#chatroom-messages").innerHTML = "";
-                        (msg.messages || []).forEach(renderMessage);
+                    if (SHOW_HISTORY && historyIsForMe(msg)) {
+                        applyHistorySnapshot(msg.messages || []);
                     }
                 }
             },

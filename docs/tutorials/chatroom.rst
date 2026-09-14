@@ -78,10 +78,10 @@ Options
     Defaults to ``False``.
 
 ``show_history``
-    Deliver all prior messages for this room to a participant when they first
-    join.  Useful when a participant might reconnect mid-session or when
-    a group needs shared context from an earlier page.
-    Defaults to ``False``.
+    Deliver the persisted log for this room when a participant joins. The
+    server also republishes that log after each new message, so a partner
+    who missed the live relay still sees the conversation. Defaults to
+    ``False``.
 
 Message storage
 ---------------

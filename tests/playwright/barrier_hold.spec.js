@@ -244,6 +244,20 @@ test("default barriers hold the current page until websocket release", { tag: "@
     delayedChatSocket.initial.release();
     await delayedChatSocket.initial.opened;
     await expect(sendButton).toBeEnabled();
+    // Wait until both widgets have joined. The first participant still sends
+    // immediately after that; catch-up must not depend on occupancy alone,
+    // because request_state can still race persist on another worker.
+    await Promise.all([
+      expect(
+        firstParticipant.locator("#chatroom-participants li")
+      ).toHaveCount(2, { timeout: STEP_TIMEOUT_MS }),
+      expect(
+        secondParticipant.locator("#chatroom-participants li")
+      ).toHaveCount(2, { timeout: STEP_TIMEOUT_MS }),
+      expect(
+        secondParticipant.locator("#chatroom-send-btn")
+      ).toBeEnabled({ timeout: STEP_TIMEOUT_MS })
+    ]);
     await sendButton.click();
     await Promise.all([
       expect(firstParticipant.locator("#chatroom-messages")).toContainText(
