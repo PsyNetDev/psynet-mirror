@@ -209,9 +209,11 @@ test("two late choices complete a trio without a safety poll", { tag: "@both" },
   // on the post-choice barrier while the other two submit together. A skipper
   // filled that barrier. A late submit that first-paints a hold, even if the
   // chip is already gone, still has to resume from a server-driven
-  // hold-resume rather than a skip. Concurrent last-choice POSTs can overlap
-  // the poller the same way as concurrent entry; allow three hold-resume
-  // POSTs. Linger/spread/GET /timeline floors stay 1800/1500/2500.
+  // hold-resume rather than a skip. Poller and last-arriver GET /timeline can
+  // both publish the same waiting token, then a stacked-hold reload posts
+  // once more on websocket onOpen; allow three hold-resume POSTs on grouping
+  // as well as on the later concurrent choices. Linger/spread/GET /timeline
+  // floors stay 1800/1500/2500.
   const { experiment, sessions } = await startHoldExperiment(browser, TRIO_DIR, [
     "trio_choice_wait",
     "trio_choice_late_a",
@@ -229,7 +231,10 @@ test("two late choices complete a trio without a safety poll", { tag: "@both" },
       prompt: ACTION_PROMPT
     });
     const lastEntry = await enterSkippingHold(lateB);
-    await assertAllWaitersReleasedTogether([first, lateA], lastEntry);
+    await assertAllWaitersReleasedTogether([first, lateA], lastEntry, {
+      allowWebsocketResume: true,
+      maxHoldResumePosts: 3
+    });
 
     await armChoiceHold(first, {
       holdText: GROUP_HOLD_TEXT,

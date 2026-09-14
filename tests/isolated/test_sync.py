@@ -2593,6 +2593,54 @@ def test_last_arrival_get_defers_wakes_until_after_render(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
+def test_poller_does_not_wake_waiters_during_last_arrival_render(
+    in_experiment_directory, db_session, monkeypatch
+):
+    """The clock poller must not publish while last-arrival HTML is still building."""
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    group_type = f"stack_poller_render_{uuid.uuid4().hex[:8]}"
+    exp.timeline = _stacked_partner_timeline(group_type)
+    publications = _hold_wake_publications(monkeypatch)
+    wakes_during_render = []
+    original_render = Experiment._render_timeline_page_read_only
+
+    def tracking_render(*args, **kwargs):
+        from psynet.timeline_hold import _deferred_wake_stash, _wake_defer_depth
+
+        wakes_during_render.append(_released_wake_count(publications))
+        # The clock poller is a different process. Reset this request's wake
+        # deferral so the sweep publishes immediately if it is not skipped.
+        depth_token = _wake_defer_depth.set(0)
+        stash_token = _deferred_wake_stash.set(None)
+        try:
+            check_barriers()
+        finally:
+            _wake_defer_depth.reset(depth_token)
+            _deferred_wake_stash.reset(stash_token)
+        wakes_during_render.append(_released_wake_count(publications))
+        return original_render(*args, **kwargs)
+
+    try:
+        first, last = _working_participants(exp, 2)
+        assert _json_timeline(exp, first).status_code == 200
+        publications.clear()
+        monkeypatch.setattr(
+            Experiment, "_render_timeline_page_read_only", tracking_render
+        )
+        last_response = _json_timeline(exp, last)
+        assert last_response.status_code == 200
+        assert last_response.get_json()["attributes"]["type"] == "ModularPage"
+        assert wakes_during_render == [0, 0]
+        assert _released_wake_count(publications) >= 1
+        _assert_on_action_page(exp, [first.id, last.id])
+    finally:
+        exp.timeline = original_timeline
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
 def test_last_timeline_arrival_skips_stacked_partner_holds(
     in_experiment_directory, db_session
 ):

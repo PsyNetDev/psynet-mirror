@@ -625,7 +625,7 @@ def test_finalize_pending_unreleased_hold_rechecks_without_relock(monkeypatch):
     )
     captured = {}
 
-    def fake_finalize(cls, _experiment, participant_id, checks, result):
+    def fake_finalize(cls, _experiment, participant_id, checks, result, **_kwargs):
         captured["checks"] = checks
         captured["participant_id"] = participant_id
         result.page = hold
@@ -675,7 +675,7 @@ def test_finalize_pending_hold_without_is_ready_does_not_prepare(monkeypatch):
     )
     captured = {}
 
-    def fake_finalize(cls, _experiment, participant_id, checks, result):
+    def fake_finalize(cls, _experiment, participant_id, checks, result, **_kwargs):
         captured["checks"] = checks
         result.page = hold
         return participant
@@ -824,7 +824,7 @@ def test_finalize_pending_ready_hold_commits_before_arrival_checks(monkeypatch):
     )
     captured = {}
 
-    def fake_finalize(cls, _experiment, participant_id, checks, result):
+    def fake_finalize(cls, _experiment, participant_id, checks, result, **_kwargs):
         captured["checks"] = list(checks)
         captured["commits_before"] = list(commits)
         captured["timeouts_before"] = list(timeouts)

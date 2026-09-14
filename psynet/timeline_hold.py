@@ -6,8 +6,11 @@ record and the internal page protocol shared by barriers and ``wait_while``.
 Hold-release websocket wakes publish after the next database commit. Last-arrival
 finalize and the barrier poller can defer those publishes until stacked checks
 finish so waiting partners are not woken while later checks still lock their
-rows. The poller uses a fresh session per visit, so that deferral is stored in
-a context variable rather than ``session.info``.
+rows. Last-arrival also marks those visits in Redis until HTML/JSON render
+returns, so the 0.5 s poller (a different process) does not publish the same
+wakes while that request is still building the next page. The poller uses a
+fresh session per visit, so wake deferral is stored in a context variable
+rather than ``session.info``.
 ``GET /timeline`` and ``POST /response`` skip ready holds under a participant
 row lock, but they do not share that lock protocol. The page lifecycle
 developer docs describe the resume protocol.
@@ -50,7 +53,94 @@ _PENDING_WAKE_KEY = "psynet_timeline_hold_wakes"
 _NESTED_WAKE_SNAPSHOTS_KEY = "psynet_nested_timeline_hold_wake_keys"
 _wake_defer_depth = ContextVar("psynet_timeline_hold_wake_defer_depth", default=0)
 _deferred_wake_stash = ContextVar("psynet_timeline_hold_deferred_wakes", default=None)
+_LAST_ARRIVAL_RENDER_PREFIX = "psynet:last-arrival-render:"
+_LAST_ARRIVAL_RENDER_TTL_SECONDS = 15
+_last_arrival_render_active = ContextVar(
+    "psynet_last_arrival_render_active", default=False
+)
+_last_arrival_render_ids = ContextVar(
+    "psynet_last_arrival_render_ids", default=frozenset()
+)
 logger = get_logger()
+
+
+def _last_arrival_render_key(instance_id):
+    """Return the Redis key that marks a visit still owned by last-arrival render."""
+    return f"{_LAST_ARRIVAL_RENDER_PREFIX}{instance_id}"
+
+
+@contextmanager
+def _last_arrival_render_gate():
+    """Keep the barrier poller off visits this request is still rendering.
+
+    Inner last-arrival commits release waiter rows before HTML/JSON render.
+    The poller is a different process, so ``_defer_timeline_hold_wakes``
+    cannot hide those rows from it. Redis refcounts the visits this request
+    marked; the poller skips them until this context exits (after wakes
+    publish). Nested last-arrival requests INCR the same key so an overlapping
+    GET cannot clear the mark while the other is still rendering.
+    """
+    active_token = _last_arrival_render_active.set(True)
+    ids_token = _last_arrival_render_ids.set(frozenset())
+    try:
+        yield
+    finally:
+        _clear_last_arrival_render_marks()
+        _last_arrival_render_ids.reset(ids_token)
+        _last_arrival_render_active.reset(active_token)
+
+
+def _mark_last_arrival_render_instance(instance_id):
+    """Pin ``instance_id`` until the current last-arrival request finishes render."""
+    if instance_id is None or not _last_arrival_render_active.get():
+        return
+    owned = _last_arrival_render_ids.get()
+    key = _last_arrival_render_key(instance_id)
+    try:
+        if instance_id in owned:
+            db.redis_conn.expire(key, _LAST_ARRIVAL_RENDER_TTL_SECONDS)
+            return
+        db.redis_conn.incr(key)
+        db.redis_conn.expire(key, _LAST_ARRIVAL_RENDER_TTL_SECONDS)
+    except Exception:
+        logger.warning(
+            "Failed to mark last-arrival render for barrier instance %s.",
+            instance_id,
+            exc_info=True,
+        )
+        return
+    _last_arrival_render_ids.set(owned | {instance_id})
+
+
+def _last_arrival_render_in_progress(instance_id):
+    """Return whether a last-arrival request is still rendering this visit."""
+    if instance_id is None:
+        return False
+    try:
+        return bool(db.redis_conn.get(_last_arrival_render_key(instance_id)))
+    except Exception:
+        logger.warning(
+            "Failed to read last-arrival render mark for barrier instance %s.",
+            instance_id,
+            exc_info=True,
+        )
+        return False
+
+
+def _clear_last_arrival_render_marks():
+    """Drop this request's last-arrival render pins."""
+    for instance_id in _last_arrival_render_ids.get():
+        key = _last_arrival_render_key(instance_id)
+        try:
+            remaining = db.redis_conn.decr(key)
+            if remaining is None or int(remaining) <= 0:
+                db.redis_conn.delete(key)
+        except Exception:
+            logger.warning(
+                "Failed to clear last-arrival render mark for barrier instance %s.",
+                instance_id,
+                exc_info=True,
+            )
 
 
 def _enqueue_timeline_hold_wake(

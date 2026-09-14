@@ -3512,11 +3512,22 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 continue
             live = self.timeline.get_current_elt(self, participant)
             if self._is_same_timeline_hold(page, live):
+                self._mark_last_arrival_render_for_page(participant, live)
                 return live
             page = live
         raise RuntimeError(
             "Timeline hold skip did not settle after "
             f"{_MAX_READY_HOLD_SKIP_STEPS} steps."
+        )
+
+    @staticmethod
+    def _mark_last_arrival_render_for_page(participant, page):
+        """Pin a still-waiting visit so the poller cannot wake it during render."""
+        from .sync import _hold_instance_id_for_page
+        from .timeline_hold import _mark_last_arrival_render_instance
+
+        _mark_last_arrival_render_instance(
+            _hold_instance_id_for_page(participant, page)
         )
 
     @staticmethod
@@ -5562,30 +5573,35 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             unique_id = participant.unique_id
             db.session.commit()
             close("page")
-            from .timeline_hold import _defer_timeline_hold_wakes
+            from .timeline_hold import (
+                _defer_timeline_hold_wakes,
+                _last_arrival_render_gate,
+            )
 
             # Keep last-arrival wakes unpublished through HTML/JSON render so
             # waiting partners do not stampede this worker while it is still
-            # building the last arriver's page.
-            with _defer_timeline_hold_wakes():
-                participant, page = cls._finalize_pending_timeline_barriers(
-                    experiment, participant, page
-                )
-                page_uuid = participant.page_uuid
-                # Close any implicit transaction opened by expire-on-commit
-                # reloads or ``pre_render()`` so read-only rendering can start.
-                db.session.commit()
-                close("barriers")
-                rendered = cls._render_timeline_page_read_only(
-                    experiment=experiment,
-                    participant_id=participant_id,
-                    unique_id=unique_id,
-                    page_uuid=page_uuid,
-                    page=page,
-                    mode=mode,
-                )
-                close("render")
-                return rendered
+            # building the last arriver's page. Redis pins those visits so the
+            # 0.5 s poller (another process) does not publish them either.
+            with _last_arrival_render_gate():
+                with _defer_timeline_hold_wakes():
+                    participant, page = cls._finalize_pending_timeline_barriers(
+                        experiment, participant, page
+                    )
+                    page_uuid = participant.page_uuid
+                    # Close any implicit transaction opened by expire-on-commit
+                    # reloads or ``pre_render()`` so read-only rendering can start.
+                    db.session.commit()
+                    close("barriers")
+                    rendered = cls._render_timeline_page_read_only(
+                        experiment=experiment,
+                        participant_id=participant_id,
+                        unique_id=unique_id,
+                        page_uuid=page_uuid,
+                        page=page,
+                        mode=mode,
+                    )
+                    close("render")
+                    return rendered
         except cls.HandledError as err:
             # HandledError.error_page re-fetches and prepares recovery. Those
             # writes must happen after rollback, not in a read-only transaction.
@@ -5962,6 +5978,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             participant.id,
             checks,
             result,
+            serialize_page=False,
         )
         return cls._reapply_lock_timeout_and_prepare(
             experiment, participant, result.page, commit=True
@@ -6062,7 +6079,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         return participant, page, checks
 
     @classmethod
-    def _finalize_barrier_arrivals(cls, experiment, participant_id, checks, result):
+    def _finalize_barrier_arrivals(
+        cls, experiment, participant_id, checks, result, *, serialize_page=True
+    ):
         """Run queued arrival checks in short transactions before rendering.
 
         Hold-release websocket wakes from these inner commits stay unpublished
@@ -6070,13 +6089,23 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         exits. ``GET /timeline`` and ``POST /response`` keep that outer defer
         through page render so waiting partners are not told to resume while a
         later stacked check still locks their rows or while this request is
-        still rendering.
+        still rendering. Callers that wrap this with
+        ``_last_arrival_render_gate`` also pin those visits in Redis so the
+        poller cannot publish the same wakes during render.
+
+        ``serialize_page`` is for ``POST /response`` inplace JSON. ``GET
+        /timeline`` renders HTML from ``result.page`` and skips that extra
+        ``__json__``.
         """
         from .timeline_hold import _defer_timeline_hold_wakes
 
         with _defer_timeline_hold_wakes():
             return cls._run_finalized_barrier_arrivals(
-                experiment, participant_id, checks, result
+                experiment,
+                participant_id,
+                checks,
+                result,
+                serialize_page=serialize_page,
             )
 
     @classmethod
@@ -6102,17 +6131,20 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @classmethod
     def _run_finalized_barrier_arrivals(
-        cls, experiment, participant_id, checks, result
+        cls, experiment, participant_id, checks, result, *, serialize_page=True
     ):
         """Evaluate queued checks, committing after each before the next lock."""
         from .sync import (
             _hold_instance_id_for_page,
             _take_pending_barrier_checks,
         )
+        from .timeline_hold import _mark_last_arrival_render_instance
 
         processed = set()
         rechecked = set()
         while checks:
+            for instance_id in checks:
+                _mark_last_arrival_render_instance(instance_id)
             processed.update(checks)
             _set_transaction_lock_timeout(
                 get_config().get("timeline_lock_timeout_seconds")
@@ -6128,7 +6160,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 page = experiment.timeline.get_current_elt(experiment, participant)
                 if page is not None:
                     result.page = page
-                    result.payload["page"] = page.__json__(participant)
+                    if serialize_page:
+                        result.payload["page"] = page.__json__(participant)
                 return participant
             # ``SET LOCAL lock_timeout`` expires at the check commit. Expire
             # the identity map so a poller that already released this visit
@@ -6152,7 +6185,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 experiment.timeline.get_current_elt(experiment, participant),
             )
             result.page = page
-            result.payload["page"] = page.__json__(participant)
+            if serialize_page:
+                result.payload["page"] = page.__json__(participant)
             db.session.commit()
             checks = _take_pending_barrier_checks()
             if not checks:
@@ -6426,10 +6460,13 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         pending_barrier_checks = _take_pending_barrier_checks()
         barrier_checks = len(pending_barrier_checks)
 
-        from .timeline_hold import _defer_timeline_hold_wakes
+        from .timeline_hold import (
+            _defer_timeline_hold_wakes,
+            _last_arrival_render_gate,
+        )
 
         write_committed = False
-        with _defer_timeline_hold_wakes():
+        with _last_arrival_render_gate(), _defer_timeline_hold_wakes():
             try:
                 payload = result.payload
                 participant = None

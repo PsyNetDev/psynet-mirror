@@ -147,7 +147,9 @@ the fast route without holding partner rows through author code or
 ``pre_render()``. Websocket wakes from those coordination commits stay unpublished
 until the last arriver finishes rendering the next page, so a waiting partner
 is not told to resume while a later entry check still holds their row or while
-that request is still building HTML. Last-arrival waits for the instance
+that request is still building HTML. Last-arrival also pins those visits in
+Redis until that response is ready, so the 0.5 s poller (another process)
+does not publish the same wakes during HTML render. Last-arrival waits for the instance
 advisory claim the poller uses, then locks waiters with ``NOWAIT``. If a waiter
 row is still busy, the request retries that check once immediately (still
 ``NOWAIT``). It does not wait for the other request to commit; if the retry
@@ -458,7 +460,9 @@ Those routes do not share a lock protocol:
   overlap, not a missed wake.
 * After the arrival write commits, queued barrier checks run in short
   transactions. Websocket wakes from those inner commits wait until the last
-  arriver finishes rendering the next page. Last-arrival waits for the
+  arriver finishes rendering the next page. Last-arrival pins those visits in
+  Redis for the rest of the request so the 0.5 s poller cannot publish the
+  same wakes while HTML is still being built. Last-arrival waits for the
   instance advisory claim (the lock the 0.5 s poller tries) so a GET does not
   first-paint a hold while the poller still owns that visit. Waiter rows stay
   ``NOWAIT``. If a partner row is still busy, that GET retries the check once

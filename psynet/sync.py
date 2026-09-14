@@ -74,7 +74,9 @@ short coordination transaction before rendering. That lets a ``Grouper`` form
 groups and a ``GroupBarrier`` release the group without waiting for the poller,
 while waiter locks remain outside the main write transaction. Last-arrival
 waits for the same instance advisory claim the poller tries, so it does not
-first-paint a hold while the poller still owns the visit. Waiter rows stay
+first-paint a hold while the poller still owns the visit. It also pins those
+visits in Redis until HTML/JSON render returns, so this poller (another
+process) does not publish hold wakes during that render. Waiter rows stay
 ``NOWAIT`` so a locked partner cannot stall that request for ``lock_timeout``.
 
 Callable attributes on barriers (e.g., ``on_release``) persist through
@@ -165,7 +167,10 @@ def _hold_instance_id_for_page(participant, page):
     barrier_id = getattr(page, "barrier_id", None)
     if barrier_id is None:
         return None
-    link = participant.active_barriers.get(barrier_id)
+    barriers = getattr(participant, "active_barriers", None)
+    if not barriers:
+        return None
+    link = barriers.get(barrier_id)
     if link is None or link.released or link.barrier_instance_id is None:
         return None
     return link.barrier_instance_id
@@ -2049,6 +2054,10 @@ def _check_claimed_barrier_instance(instance, *, wait=False):
             instance.active = True
     if not _claim_barrier_instance(instance.id, wait=wait):
         return False
+    if wait:
+        from .timeline_hold import _mark_last_arrival_render_instance
+
+        _mark_last_arrival_render_instance(instance.id)
     barrier = instance.get_barrier()
     if not isinstance(barrier, Barrier):
         raise RuntimeError(f"Barrier instance '{instance.id}' is missing or invalid.")
@@ -2090,6 +2099,14 @@ def _run_pending_barrier_checks(instance_ids):
 
 def _process_barrier_instance(instance_id, *, retry=False):
     """Try one barrier visit and report whether waiter contention deferred it."""
+    from .timeline_hold import _last_arrival_render_in_progress
+
+    if _last_arrival_render_in_progress(instance_id):
+        logger.debug(
+            "Barrier instance %s skipped because last-arrival is still rendering.",
+            instance_id,
+        )
+        return False
     barrier_id = None
     try:
         with transaction():
@@ -2128,8 +2145,10 @@ def check_barriers():
     waiter ``NOWAIT``. If a partner row stays busy, this poller finishes the
     stacked skip: walk newly created holds in this sweep and keep wake
     publishes unpublished until that walk returns, so waiters do not
-    hold-resume onto the next barrier one at a time. Each visit still commits
-    in its own session so a locked waiter cannot poison sibling checks.
+    hold-resume onto the next barrier one at a time. Skip visits whose
+    last-arrival GET is still rendering; that request pins them in Redis so
+    this process cannot publish during HTML/JSON render. Each visit still
+    commits in its own session so a locked waiter cannot poison sibling checks.
     """
     seen = set()
     with _defer_timeline_hold_wakes():
