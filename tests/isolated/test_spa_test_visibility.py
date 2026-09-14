@@ -197,3 +197,39 @@ def test_retry_busy_http_honors_extra_attempts():
 
     assert result.status_code == 200
     assert calls["n"] == 3
+
+
+def test_retry_busy_http_retries_stale_timeline_409():
+    responses = [
+        _http_response(409, {"status": "stale", "message": "advanced"}),
+        _http_response(200),
+    ]
+    calls = {"n": 0}
+
+    def send():
+        calls["n"] += 1
+        return responses[calls["n"] - 1]
+
+    result = _retry_busy_http(send, delay_s=0)
+
+    assert result.status_code == 200
+    assert calls["n"] == 2
+
+
+def test_retry_busy_http_does_not_retry_stale_early_exit_409():
+    calls = {"n": 0}
+
+    def send():
+        calls["n"] += 1
+        return _http_response(
+            409,
+            {
+                "status": "error",
+                "error_code": "stale_early_exit_offer",
+            },
+        )
+
+    result = _retry_busy_http(send, delay_s=0)
+
+    assert result.status_code == 409
+    assert calls["n"] == 1

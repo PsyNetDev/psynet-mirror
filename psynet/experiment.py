@@ -6000,9 +6000,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         dropped last-arrival check without that lock, so the last arriver can
         still take waiters with ``NOWAIT``. Recovered waiter GETs try that
         visit claim but do not wait for it. Pending checks from this request
-        wait only when ``Barrier.would_release`` is true, so a waiter arrival
-        does not occupy a worker behind last-arrival while last-arrival still
-        skips stacked holds in one GET.
+        and checks queued after a ready-hold skip wait only when
+        ``Barrier.would_release`` is true, so a waiter arrival does not occupy
+        a worker behind last-arrival while last-arrival still skips stacked
+        holds in one GET.
 
         Returns
         -------
@@ -6037,7 +6038,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                         experiment, participant, page
                     )
                     return participant, page, [], False
-                wait_for_claim = True
+                wait_for_claim = _pending_checks_should_wait_for_claim(checks)
             else:
                 instance_id = _hold_instance_id_for_page(participant, page)
                 if instance_id:
@@ -6120,9 +6121,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         ``serialize_page`` is for ``POST /response`` inplace JSON. ``GET
         /timeline`` renders HTML from ``result.page`` and skips that extra
-        ``__json__``. ``wait_for_claim`` is for last-arrival and ready-hold
-        skip. Unfilled waiter GET recovery passes ``False`` so those requests
-        do not sit in ``lock_timeout`` behind the visit claim.
+        ``__json__``. ``wait_for_claim`` is the first-pass gate from
+        ``Barrier.would_release``. Nested checks after a skip peek again.
+        Unfilled waiter GET recovery passes ``False`` so those requests do
+        not sit in ``lock_timeout`` behind the visit claim.
         """
         from .timeline_hold import _defer_timeline_hold_wakes
 
@@ -6177,6 +6179,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         """Evaluate queued checks, committing after each before the next lock."""
         from .sync import (
             _hold_instance_id_for_page,
+            _pending_checks_should_wait_for_claim,
             _take_pending_barrier_checks,
         )
 
@@ -6245,7 +6248,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     # belong to this visit. Evaluate it once more.
                     rechecked.add(instance_id)
                     checks = [instance_id]
-            wait_this = True
+            wait_this = bool(checks) and _pending_checks_should_wait_for_claim(checks)
         return participant
 
     @staticmethod
@@ -6520,7 +6523,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 approved = payload.get("submission") == "approved"
                 submission = payload.get("submission")
                 if approved and pending_barrier_checks:
-                    from .sync import _follow_pin_barrier_instances
+                    from .sync import (
+                        _follow_pin_barrier_instances,
+                        _pending_checks_should_wait_for_claim,
+                    )
 
                     _follow_pin_barrier_instances(pending_barrier_checks)
                     db.session.commit()
@@ -6530,6 +6536,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                         participant_id,
                         pending_barrier_checks,
                         result,
+                        wait_for_claim=_pending_checks_should_wait_for_claim(
+                            pending_barrier_checks
+                        ),
                     )
                     payload = result.payload
                     page = result.page

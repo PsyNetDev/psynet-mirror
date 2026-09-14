@@ -489,7 +489,10 @@ Those routes do not share a lock protocol:
   instance advisory claim (the lock the 0.5 s poller tries) so a GET does not
   first-paint a hold while the poller still owns that visit. A waiter arrival
   whose pending check would not release anyone tries that claim without
-  waiting, so it does not occupy a worker in ``lock_timeout``. That claim is a
+  waiting, so it does not occupy a worker in ``lock_timeout``. ``POST
+  /response`` uses the same peek after the arrival write commits, as do
+  checks queued after a ready-hold skip. A spec error during that peek
+  leaves the group waiting instead of failing the arriver. That claim is a
   transaction lock on a dedicated connection, held until skip-after-commit
   finishes. If the last arriver's wait for that claim times out, ``GET /timeline`` returns
   HTTP 503 rather than rendering the live hold. Waiter rows stay
@@ -536,8 +539,10 @@ overlays POST ``timeline_hold_resume`` so a still-waiting driver does not take
 blocking ``FOR UPDATE`` on the participant row. If the overlay is still
 waiting after that submit, the driver pauses briefly before the next page
 instead of busy-looping ordinary Next. Timeline GETs use ``mode=json`` and
-retry structured busy 503s a few times so a partner skip that briefly holds
-the row does not fail the bot. If this waiter already advanced, or
+retry structured busy 503s and JSON 409 ``status: stale`` a few times so a
+partner skip that briefly holds the row, or advances this waiter between
+write and render, does not fail the bot. Bot POSTs retry those busy 503s
+the same way. If this waiter already advanced, or
 last-arrival skipped its own later hold, an ordinary POST of the previous hold
 uuid is catch-up, not a multi-tab reject. Hold-resume overlays catch up the
 same way so the browser can swap in place.

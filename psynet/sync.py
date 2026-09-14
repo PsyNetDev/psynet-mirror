@@ -236,36 +236,49 @@ def _hold_instance_id_for_page(participant, page):
 def _visit_check_would_release(instance_id):
     """Return whether evaluating this visit would release waiters.
 
-    Read-only: used by GET /timeline before deciding to wait for the claim.
+    Read-only: used before deciding to wait for the visit claim. Spec errors
+    match the check path (do not wait, do not fail the arriver). Other
+    non-transient peek failures wait so last-arrival still skips in one GET.
+    Transient database errors propagate so the request can return HTTP 503.
     """
-    instance = BarrierInstance.query.get(instance_id)
-    if instance is None:
-        return False
-    barrier = instance.get_barrier()
-    if not isinstance(barrier, Barrier):
-        return True
-    waiting = _get_waiting_participants(
-        instance.barrier_id,
-        instance.id,
-        for_update=False,
-        nowait=False,
-    )
     try:
-        return bool(barrier.would_release(waiting))
-    except Exception:
+        with db.session.begin_nested():
+            instance = BarrierInstance.query.get(instance_id)
+            if instance is None:
+                return False
+            barrier = instance.get_barrier()
+            if not isinstance(barrier, Barrier):
+                return True
+            waiting = _get_waiting_participants(
+                instance.barrier_id,
+                instance.id,
+                for_update=False,
+                nowait=False,
+            )
+            return bool(barrier.would_release(waiting))
+    except BarrierSpecError:
         logger.exception(
-            "Barrier '%s' instance %s failed a side-effect-free release peek.",
-            instance.barrier_id,
+            "Barrier instance %s failed a side-effect-free release peek "
+            "because of a spec error.",
+            instance_id,
+        )
+        return False
+    except Exception as err:
+        if is_transient_transaction_error(err):
+            raise
+        logger.exception(
+            "Barrier instance %s failed a side-effect-free release peek.",
             instance_id,
         )
         return True
 
 
 def _pending_checks_should_wait_for_claim(instance_ids):
-    """Return whether GET may block on the visit claim for these checks.
+    """Return whether this request may block on the visit claim for these checks.
 
     Waiter arrivals that cannot release must not occupy a worker behind
-    last-arrival. A filled visit still waits so stacked holds skip in one GET.
+    last-arrival. A filled visit still waits so stacked holds skip in one
+    request. ``GET /timeline`` and ``POST /response`` both use this peek.
     """
     return any(_visit_check_would_release(instance_id) for instance_id in instance_ids)
 

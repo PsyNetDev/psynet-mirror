@@ -200,6 +200,21 @@ def _extract_server_error_details(response_text):
     return None
 
 
+def _response_json_dict(response):
+    """Return a JSON object body, or ``None`` if the response is not JSON."""
+    try:
+        json_fn = getattr(response, "json", None)
+        if callable(json_fn):
+            body = json_fn()
+        else:
+            body = json.loads(getattr(response, "text", "") or "")
+    except (TypeError, ValueError, AttributeError):
+        return None
+    if not isinstance(body, dict):
+        return None
+    return body
+
+
 def _is_psynet_busy_response(response):
     """Return whether a response is a structured PsyNet busy 503.
 
@@ -208,17 +223,25 @@ def _is_psynet_busy_response(response):
     """
     if getattr(response, "status_code", None) != 503:
         return False
-    try:
-        json_fn = getattr(response, "json", None)
-        if callable(json_fn):
-            body = json_fn()
-        else:
-            body = json.loads(getattr(response, "text", "") or "")
-    except (TypeError, ValueError, AttributeError):
-        return False
-    if not isinstance(body, dict):
+    body = _response_json_dict(response)
+    if body is None:
         return False
     return body.get("status") == "busy" or body.get("submission") == "busy"
+
+
+def _is_psynet_stale_timeline_response(response):
+    """Return whether JSON ``GET /timeline`` reported a mid-render cursor move.
+
+    HTML GETs redirect in that case. JSON returns HTTP 409 with
+    ``status: stale``. Automated drivers should retry; a Leave-offer 409 is
+    a different body and is not retried here.
+    """
+    if getattr(response, "status_code", None) != 409:
+        return False
+    body = _response_json_dict(response)
+    if body is None:
+        return False
+    return body.get("status") == "stale"
 
 
 _TIMELINE_HOLD_POLL_SECONDS = 0.1
@@ -232,19 +255,25 @@ def _status_is_timeline_hold(status):
 
 
 def _retry_busy_http(send, *, delay_s=0.25, attempts=2):
-    """Call ``send`` and retry structured busy HTTP 503 responses.
+    """Call ``send`` and retry structured busy 503 and stale-timeline 409.
 
     Browser submissions retry a structured busy response once; automated
     drivers follow the same policy by default so lock timeouts do not fail
-    the bot on the first hit. Timeline GETs may pass a higher ``attempts``
-    count because a partner skip can hold the participant row for more than
-    one ``lock_timeout``. Generic or malformed 503s are not retried.
+    the bot on the first hit. Timeline GETs and bot POSTs may pass a higher
+    ``attempts`` count because a partner skip can hold the participant row
+    for more than one ``lock_timeout``. JSON ``GET /timeline`` also retries
+    HTTP 409 ``status: stale`` when last-arrival advanced this waiter
+    between write and render. Generic or malformed 503s and other 409s are
+    not retried.
     """
     if attempts < 1:
         raise ValueError("attempts must be at least 1.")
     response = send()
     for _ in range(attempts - 1):
-        if not _is_psynet_busy_response(response):
+        if not (
+            _is_psynet_busy_response(response)
+            or _is_psynet_stale_timeline_response(response)
+        ):
             break
         time.sleep(delay_s)
         response = send()
@@ -1463,7 +1492,7 @@ class ParticipantDriver:
                     files=files,
                 )
 
-            http_response = _retry_busy_http(send)
+            http_response = _retry_busy_http(send, attempts=_BOT_TIMELINE_BUSY_ATTEMPTS)
         resp_json = http_response.json()
         if resp_json.get("submission") != "approved":
             if self._retry_submit_after_page_advanced(

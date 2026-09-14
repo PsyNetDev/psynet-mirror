@@ -53,6 +53,7 @@ from psynet.sync import (
     _run_pending_barrier_checks,
     _take_pending_barrier_checks,
     _take_released_hold_waiter_ids,
+    _visit_check_would_release,
     arrival_notice_payload,
     check_barriers,
     check_sync_groups,
@@ -1184,6 +1185,208 @@ def test_grouper_would_release_only_when_the_batch_is_full(
         assert not getattr(last_page, "is_timeline_hold", False)
     finally:
         exp.timeline = original_timeline
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_visit_check_would_release_spec_error_does_not_wait(
+    in_experiment_directory, db_session, monkeypatch
+):
+    """A spec error during the release peek must not fail the arriver."""
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    group_type = f"peek_spec_{uuid.uuid4().hex[:8]}"
+    exp.timeline = _stacked_partner_timeline(group_type)
+    try:
+        first, _last = _working_participants(exp, 2)
+        assert _json_timeline(exp, first).status_code == 200
+        first = Participant.query.get(first.id)
+        instance_id = next(iter(first.active_barriers.values())).barrier_instance_id
+
+        def boom(self):
+            raise BarrierSpecError("missing callback")
+
+        monkeypatch.setattr(BarrierInstance, "get_barrier", boom)
+        assert _visit_check_would_release(instance_id) is False
+        _set_transaction_lock_timeout(0.3)
+        assert db.session.execute(text("SELECT 1")).scalar() == 1
+    finally:
+        exp.timeline = original_timeline
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_visit_check_would_release_db_error_keeps_the_session_usable(
+    in_experiment_directory, db_session, monkeypatch
+):
+    """A failed peek must roll back its savepoint before the claim wait."""
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    group_type = f"peek_db_{uuid.uuid4().hex[:8]}"
+    exp.timeline = _stacked_partner_timeline(group_type)
+    try:
+        first, _last = _working_participants(exp, 2)
+        assert _json_timeline(exp, first).status_code == 200
+        first = Participant.query.get(first.id)
+        instance_id = next(iter(first.active_barriers.values())).barrier_instance_id
+
+        def boom(*args, **kwargs):
+            db.session.execute(text("SELECT 1 FROM psynet_peek_missing_table"))
+
+        monkeypatch.setattr("psynet.sync._get_waiting_participants", boom)
+        assert _visit_check_would_release(instance_id) is True
+        _set_transaction_lock_timeout(0.3)
+        assert db.session.execute(text("SELECT 1")).scalar() == 1
+    finally:
+        exp.timeline = original_timeline
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_visit_check_would_release_transient_error_propagates(
+    in_experiment_directory, db_session, monkeypatch
+):
+    """A lock timeout during the peek must still become HTTP 503."""
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    group_type = f"peek_transient_{uuid.uuid4().hex[:8]}"
+    exp.timeline = _stacked_partner_timeline(group_type)
+    try:
+        first, _last = _working_participants(exp, 2)
+        assert _json_timeline(exp, first).status_code == 200
+        first = Participant.query.get(first.id)
+        instance_id = next(iter(first.active_barriers.values())).barrier_instance_id
+
+        class _Orig:
+            pgcode = "55P03"
+
+        def boom(*args, **kwargs):
+            raise OperationalError("SELECT", {}, _Orig())
+
+        monkeypatch.setattr("psynet.sync._get_waiting_participants", boom)
+        with pytest.raises(OperationalError):
+            _visit_check_would_release(instance_id)
+    finally:
+        exp.timeline = original_timeline
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_waiter_get_spec_error_peek_returns_hold(
+    in_experiment_directory, db_session, monkeypatch
+):
+    """GET must first-paint the hold when the peek hits a spec error."""
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    group_type = f"peek_get_spec_{uuid.uuid4().hex[:8]}"
+    exp.timeline = _stacked_partner_timeline(group_type)
+    try:
+        first, _last = _working_participants(exp, 2)
+
+        def boom(self):
+            raise BarrierSpecError("missing callback")
+
+        monkeypatch.setattr(BarrierInstance, "get_barrier", boom)
+        response = _json_timeline(exp, first)
+        assert response.status_code == 200
+        assert response.get_json()["attributes"]["type"] == "_BarrierHoldPage"
+        first = Participant.query.get(first.id)
+        assert first.failed is False
+    finally:
+        exp.timeline = original_timeline
+
+
+def test_resolve_get_timeline_hold_peeks_after_skip_ready(monkeypatch):
+    """A ready-hold skip must not wait for the next visit unless it would release."""
+    participant = SimpleNamespace(id=1)
+    hold = SimpleNamespace(is_timeline_hold=True)
+    experiment = SimpleNamespace(
+        timeline=SimpleNamespace(get_current_elt=lambda e, p: hold),
+    )
+    seen = []
+    monkeypatch.setattr("psynet.sync._take_pending_barrier_checks", lambda: [])
+    monkeypatch.setattr(
+        Experiment,
+        "_timeline_hold_is_ready_to_resume",
+        staticmethod(lambda *a, **k: True),
+    )
+    monkeypatch.setattr(
+        Experiment,
+        "_skip_ready_hold_on_get",
+        classmethod(lambda cls, e, p: (p, hold, ["after-skip"])),
+    )
+    monkeypatch.setattr(
+        "psynet.sync._pending_checks_should_wait_for_claim",
+        lambda ids: seen.append(list(ids)) or False,
+    )
+    _, _, checks, wait = Experiment._resolve_get_timeline_hold(
+        experiment, participant, hold
+    )
+    assert checks == ["after-skip"]
+    assert wait is False
+    assert seen == [["after-skip"]]
+
+
+def test_finalize_barrier_arrivals_peeks_nested_checks_before_waiting(monkeypatch):
+    """Stacked checks after a skip must peek before occupying a claim wait."""
+    waits = []
+    participant = SimpleNamespace(id=1)
+
+    class Page:
+        def __json__(self, participant):
+            return {"participant_id": participant.id}
+
+    page = Page()
+
+    class Query:
+        def with_for_update(self, **kwargs):
+            return self
+
+        def populate_existing(self):
+            return self
+
+        def get(self, participant_id):
+            return participant
+
+    experiment = SimpleNamespace(
+        _participant_request_query=lambda: Query(),
+        _advance_past_ready_holds=lambda participant, current_page: current_page,
+        timeline=SimpleNamespace(get_current_elt=lambda experiment, participant: page),
+    )
+    result = SimpleNamespace(page=None, payload={})
+    pending = {"nested": ["nested-id"]}
+
+    monkeypatch.setattr(
+        "psynet.experiment._set_transaction_lock_timeout", lambda seconds: None
+    )
+    monkeypatch.setattr(
+        "psynet.sync._run_pending_barrier_checks",
+        lambda checks, **kwargs: waits.append(kwargs.get("wait", True)) or True,
+    )
+    monkeypatch.setattr(
+        "psynet.sync._take_pending_barrier_checks",
+        lambda: pending.pop("nested", []),
+    )
+    monkeypatch.setattr(
+        "psynet.sync._pending_checks_should_wait_for_claim",
+        lambda ids: False,
+    )
+    monkeypatch.setattr(db.session, "commit", lambda: None)
+    monkeypatch.setattr(db.session, "expire_all", lambda: None)
+
+    Experiment._finalize_barrier_arrivals(
+        experiment,
+        participant_id=1,
+        checks=["first-id"],
+        result=result,
+        wait_for_claim=True,
+    )
+
+    assert waits == [True, False]
 
 
 @pytest.mark.parametrize(
