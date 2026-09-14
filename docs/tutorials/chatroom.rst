@@ -78,10 +78,11 @@ Options
     Defaults to ``False``.
 
 ``show_history``
-    Deliver the persisted log for this room when a participant joins. The
-    server also republishes that log after each new message, so a partner
-    who missed the live relay still sees the conversation. Defaults to
-    ``False``.
+    Wait for the persisted log before enabling the chatroom. Live
+    messages that arrive during that wait are shown after the snapshot;
+    after that, new messages append as usual. The server also republishes
+    the log after each persist so a partner who missed the live relay
+    still sees the conversation. Defaults to ``False``.
 
 Message storage
 ---------------

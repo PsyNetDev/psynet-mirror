@@ -1,1 +1,1 @@
-Modular-page chatrooms keep live messages when a join-time history snapshot is still empty, and republish the persisted log after each message so a partner who missed the live relay still catches up.
+Modular-page chatrooms wait for the join-time history snapshot before enabling Send, append live messages that arrived during that wait after the snapshot, and republish the persisted log after each message so a partner who missed the live relay still catches up.

@@ -7,9 +7,13 @@ immediately. :class:`EnableChatrooms` then persists ``message`` frames and
 publishes an authoritative history snapshot for the room.
 
 That snapshot can still be empty when ``request_state`` runs on another
-worker before the persist commits. The widget must apply catch-up without
-dropping live lines that already arrived, and the server republishes history
-after each persist so a partner who missed the live relay still catches up.
+worker before the persist commits. When ``show_history`` is true, the
+widget waits for the first snapshot before enabling Send or painting
+live lines. Frames that arrive during that wait are appended after the
+snapshot. After that, live relays append as usual. An empty first
+snapshot still completes the load. The server republishes history after
+persist so a partner who missed both the wait window and the live relay
+can still fill an empty feed.
 
 Maintainers should treat the JSON ``type`` values (``join_room``,
 ``leave_room``, ``request_state``, ``message``, ``occupancy_update``,
@@ -223,9 +227,11 @@ class ChatRoom(JavaScriptContributor):
     show_participants
         Whether to display a sidebar listing current participants.
     show_history
-        Whether to deliver the persisted room log when a participant joins.
-        The server also republishes that log after each new message so a
-        partner whose join-time snapshot raced persist still catches up.
+        Whether to wait for the persisted room log before enabling the
+        chatroom. Live messages that arrive during that wait are shown
+        after the snapshot. The server also republishes the log after
+        each new message so a partner whose first snapshot raced persist
+        still catches up.
     """
 
     channel = EnableChatrooms.channel

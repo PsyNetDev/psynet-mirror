@@ -13,9 +13,13 @@ export async function activate({root, vars}) {
 
     var chatConnection = null;
     var leftChat       = false;
-    var firstOpen      = true;
     var sendButton     = null;
     var input          = null;
+    // When show_history is set, the widget is not active until the first
+    // history snapshot arrives. Live frames that race that snapshot are held
+    // and appended afterwards.
+    var historyReady   = !SHOW_HISTORY;
+    var pendingLive    = [];
 
     function leaveChat() {
         if (leftChat) return;
@@ -104,15 +108,42 @@ export async function activate({root, vars}) {
         return String(msg.target_participant_id) === MY_ID;
     }
 
+    function sameChatLine(left, right) {
+        return String(left.sender) === String(right.sender)
+            && String(left.content || "") === String(right.content || "");
+    }
+
+    function enableChat() {
+        if (leftChat || !sendButton) return;
+        sendButton.disabled = false;
+    }
+
     function applyHistorySnapshot(messages) {
-        var feed = root.querySelector("#chatroom-messages");
-        // Live relays can arrive before catch-up. Filling an already-drawn
-        // feed would duplicate those lines; clearing it would drop them when
-        // the snapshot is still empty.
-        if (!messages.length || feed.childElementCount > 0) {
+        messages.forEach(renderMessage);
+    }
+
+    function finishHistoryLoad(messages) {
+        messages = messages || [];
+        if (historyReady) {
+            // After the first snapshot, history is only catch-up for an
+            // empty feed (a persist republish after the partner missed live).
+            var feed = root.querySelector("#chatroom-messages");
+            if (!messages.length || feed.childElementCount > 0) {
+                return;
+            }
+            applyHistorySnapshot(messages);
             return;
         }
-        messages.forEach(renderMessage);
+        applyHistorySnapshot(messages);
+        pendingLive.forEach(function (liveMsg) {
+            var already = messages.some(function (historyMsg) {
+                return sameChatLine(historyMsg, liveMsg);
+            });
+            if (!already) renderMessage(liveMsg);
+        });
+        pendingLive = [];
+        historyReady = true;
+        enableChat();
     }
 
     function rebuildParticipantList(ids) {
@@ -145,17 +176,15 @@ export async function activate({root, vars}) {
                         room_id: ROOM_ID,
                         sender: MY_ID,
                     });
-                    if (firstOpen) {
-                        if (SHOW_HISTORY) {
-                            chatConnection.send({
-                                type: "request_state",
-                                room_id: ROOM_ID,
-                                sender: MY_ID,
-                            });
-                        }
-                        firstOpen = false;
+                    if (SHOW_HISTORY && !historyReady) {
+                        chatConnection.send({
+                            type: "request_state",
+                            room_id: ROOM_ID,
+                            sender: MY_ID,
+                        });
+                        return;
                     }
-                    sendButton.disabled = false;
+                    enableChat();
                 } catch (error) {
                     sendButton.disabled = true;
                     console.warn("Chatroom connection closed while joining.", error);
@@ -169,12 +198,16 @@ export async function activate({root, vars}) {
                 if (String(msg.room_id) !== String(ROOM_ID)) return;
 
                 if (msg.type === "message") {
+                    if (!historyReady) {
+                        pendingLive.push(msg);
+                        return;
+                    }
                     renderMessage(msg);
                 } else if (msg.type === "occupancy_update") {
                     if (SHOW_PARTS) rebuildParticipantList(msg.participants || []);
                 } else if (msg.type === "history") {
                     if (SHOW_HISTORY && historyIsForMe(msg)) {
-                        applyHistorySnapshot(msg.messages || []);
+                        finishHistoryLoad(msg.messages || []);
                     }
                 }
             },
