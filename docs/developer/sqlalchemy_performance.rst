@@ -261,8 +261,9 @@ See :ref:`sqlalchemy_profiling`.
 
 The counts below were predicted from the code and then checked against a
 profiler dump. Locks, advisory claims, spec reconstruction, and waiter-join
-``NOWAIT`` *kinds* must stay constant as group size *N* grows. Skip-after-commit
-adds ``2N`` statements and *N* commits. Per-row writes still scale with *N*,
+``NOWAIT`` *kinds* must stay constant as group size *N* grows. Last-arrival
+does not skip partner cursors after the check, so there is no per-waiter
+skip-after-commit term. Per-row writes still scale with *N*,
 but SQLAlchemy flushes them as one ``executemany`` statement per table. A new
 *kind* of statement that grows with *N* should fail the tests.
 
@@ -275,8 +276,7 @@ Check window (one GroupBarrier, group already formed)
 -----------------------------------------------------
 
 17 statements for the filled visit, plus extra-connection and ORM
-``lock_timeout`` SETs and ``2N`` skip-after-commit statements (``lock_timeout``
-+ waiter ``FOR UPDATE NOWAIT``), so ``19 + 2N`` total:
+``lock_timeout`` SETs, so ``19`` total (no per-waiter skip-after-commit):
 
 * extra-connection ``lock_timeout`` and ``pg_try_advisory_xact_lock`` (the ORM
   session does not take that same key; last-arrival only issues a blocking
@@ -292,15 +292,13 @@ Check window (one GroupBarrier, group already formed)
   arrival-notice walks lazy-load the collection per member);
 * ``sync_group`` PK, group-membership load;
 * three ``executemany`` UPDATEs (link release, hold ``released_at``,
-  participant wait credit), group UPDATE, instance UPDATE, RELEASE SAVEPOINT;
-* after that check commits, one ``lock_timeout`` plus ``FOR UPDATE NOWAIT``
-  per released waiter.
+  participant wait credit), group UPDATE, instance UPDATE, RELEASE SAVEPOINT.
 
 The wake path is given the already-loaded hold, so it does not look the row
 up again. Nested ``begin_nested()`` records one profiler commit (the
 savepoint release that flushes the updates). The extra-connection transaction
-records a second commit on the check callsite. Skip-after-commit records one
-commit per waiter.
+records a second commit on the check callsite. Last-arrival drains released
+waiter ids without a per-waiter skip commit.
 
 Finalize window (same check, then relock the last arriver)
 ----------------------------------------------------------
@@ -308,15 +306,14 @@ Finalize window (same check, then relock the last arriver)
 The check, plus two ``lock_timeout`` SETs, a participant GET and its
 ``active_barriers`` / ``module_state`` select-in reloads after
 ``expire_all``, then a participant ``FOR UPDATE`` without ``NOWAIT``.
-Grand total: ``25 + 2N``. Profiler commits: ``4 + N`` (check + extra
-connection + *N* skip commits + queued + relock).
+Grand total: ``25``. Profiler commits: ``4`` (check + extra
+connection + queued + relock).
 The check commit is on ``_run_pending_barrier_checks``; the
 relock commit is on ``Experiment._run_finalized_barrier_arrivals``.
 The budget's ``finalize_commits`` count includes
 ``_attempt_queued_barrier_checks`` (the queued-check commit) and
 ``_run_finalized_barrier_arrivals``.
-Waiter-join ``NOWAIT`` stays 1; skip adds *N* more ``NOWAIT`` locks. Relock
-``FOR UPDATE`` stays 1.
+Waiter-join ``NOWAIT`` stays 1. Relock ``FOR UPDATE`` stays 1.
 
 Arrival notice (recipient already loaded, *N* - 1 waiters)
 ----------------------------------------------------------
@@ -327,16 +324,17 @@ cached for that call.
 Stacked last-arrival finalize (grouper + two GroupBarriers)
 -----------------------------------------------------------
 
-Last-arrival releases the filled visit and skips released waiters after that
-check commits, holding the visit claim on a second connection until skip
-finishes. Check/relock *kinds* for the filled visit stay independent of group
-size *N* aside from per-waiter skip. Each check tries
+Last-arrival releases the filled visit and self-skips remaining holds in
+that request. It does not skip partner cursors after the check; partners
+leave on overlay wake. The visit claim stays on a second connection until
+the check finishes. Check/relock *kinds* for the filled visit stay
+independent of group size *N*. Each check tries
 ``pg_try_advisory_xact_lock`` on that extra connection and only waits with
 ``pg_advisory_xact_lock`` when the try misses (the poller never waits).
 Creating the next instance adds a
 blocking ``pg_advisory_xact_lock`` (O(stack), not O(*N*)). Query *count* can
-still grow with *N* because the filled visit's waiter loads and skip-after-commit
-grow; the stacked test allows at most 80 extra statements per extra member as a
+still grow with *N* because the filled visit's waiter loads grow; the stacked
+test allows at most 80 extra statements per extra member as a
 loose cap, not as a target.
 
 ``GET /timeline`` Server-Timing splits that work from HTML render. In one

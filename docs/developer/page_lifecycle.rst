@@ -144,37 +144,31 @@ needs to update. When the last participant
 arrives at a barrier, PsyNet commits the normal write phase and evaluates the
 barrier in a short coordination transaction before rendering. This preserves
 the fast route without holding partner rows through author code or
-``pre_render()``. Released hold waiters are then skipped one at a time after
-that check commits, so a partner ``GET /timeline`` can lock its own row.
-The visit claim is held on a second connection's transaction lock until that
-skip finishes, so last-arrival ``GET /timeline`` still waits for the same key
-after waiter row locks drop. The ORM session does not take that key while the
-extra transaction is open. A blocking wait for that claim that hits
-``lock_timeout`` returns HTTP 503 rather than first-painting the live hold.
-Websocket wakes from those coordination commits stay unpublished
-until the last arriver finishes rendering the next page, so a waiting partner
-is not told to resume while a later entry check still holds their row or while
-that request is still building HTML. A GET follow-pins queued visits
-before the arrival commit (publish park only) so the 0.5 s poller cannot
-publish in the gap after that commit. After a request actually releases
-waiters, it takes a Redis render pin until that response is ready so the
-poller does not process or publish those visits during HTML render. Park
-and unpin are atomic Redis scripts: a wake cannot be appended after the
-last pin is gone with nobody left to drain it. Unfilled waiter GETs never
-take the render pin, so the poller can still finish those barriers.
-Last-arrival waits for the instance
-advisory claim the poller uses, then locks waiters with ``NOWAIT``. If a waiter
-row is still busy, the request retries that check once immediately (still
-``NOWAIT``). It does not wait for the other request to commit; if the retry
-still misses, the 0.5 s poller finishes the skip. SAVEPOINT releases inside a
-check are not treated as durable commits for those wakes; a later root
-rollback discards them. The barrier poller locks waiters with
-``FOR UPDATE NOWAIT`` so a participant write cannot stall other groups; if any
-waiter is busy, that barrier is skipped until the next tick. When a release
-advances waiters onto the next stacked hold, the same poller sweep processes
-that new visit before publishing wakes, so those partners do not hold-resume
-onto each remaining barrier one tick at a time. The sync-group
-recount job likewise skip-locks one group at a time.
+``pre_render()``. Last-arrival does not skip partner timeline cursors after
+that check commits; partners leave on overlay wake (websocket on-open, a 2 s
+safety poll, or a later GET). The last arriver self-skips the hold they just
+released. A hold consumed immediately after that skip is marked silent so the
+overlay stays a spinner until partners catch up. The overlay chip and
+websocket are reused when the next page is also a hold.
+The visit claim is held on a second connection until that check finishes.
+The ORM session does not take that key while the extra transaction is open.
+A blocking wait for that claim that hits ``lock_timeout`` returns HTTP 503
+rather than first-painting the live hold. Websocket wakes from those
+coordination commits publish as soon as the release commits, so waiting
+partners may overlay-resume while this request still renders. Last-arrival
+waits for the instance advisory claim the poller uses, then locks waiters
+with ``NOWAIT``. If a waiter row is still busy, the request retries that
+check once immediately (still ``NOWAIT``). It does not wait for the other
+request to commit; if the retry still misses, the last arriver first-paints
+the live cursor. SAVEPOINT releases inside a check are not treated as
+durable commits for those wakes; a later root rollback discards them. The
+barrier poller locks waiters with ``FOR UPDATE NOWAIT`` so a participant
+write cannot stall other groups; if any waiter is busy, that barrier is
+skipped until the next tick. When the **poller** releases waiters, it skips
+those waiters after that commit and keeps wake publishes unpublished until
+the sweep returns, so those partners do not hold-resume onto each remaining
+barrier one tick at a time. The sync-group recount job likewise skip-locks
+one group at a time.
 
 The fragment must contain the elements the persistent document replaces:
 
@@ -479,40 +473,34 @@ Those routes do not share a lock protocol:
   A short HTTP 503 on hold-resume is ``NOWAIT``
   overlap, not a missed wake.
 * After the arrival write commits, queued barrier checks run in short
-  transactions.   Websocket wakes from those inner commits wait until the last
-  arriver finishes rendering the next page. After that request actually
-  releases waiters, it render-pins those visits in Redis for the rest of the
-  request so the 0.5 s poller cannot process or publish the same wakes while
-  HTML is still being built. A GET follow-pins queued visits before the
-  arrival commit (publish park only) so poller publish cannot fire in that
-  gap, and again before it tries the claim. Park and unpin are one Redis
-  script each, so a publisher cannot leave a wake on the parked list after
-  the last owner token is gone. Adding an owner token also sets TTL in that
-  same script. A waiter
-  GET that first-paints an unfilled hold never takes the
-  render pin, so the poller can still finish that barrier. Last-arrival waits for the
-  instance advisory claim (the lock the 0.5 s poller tries) so a GET does not
-  first-paint a hold while the poller still owns that visit. A waiter arrival
-  whose pending check would not release anyone tries that claim without
-  waiting, so it does not occupy a worker in ``lock_timeout``. ``POST
-  /response`` uses the same peek after the arrival write commits, as do
-  checks queued after a ready-hold skip. A spec error during that peek
-  leaves the group waiting instead of failing the arriver. That claim is a
-  transaction lock on a dedicated connection, held until skip-after-commit
-  finishes. If the last arriver's wait for that claim times out, ``GET /timeline`` returns
-  HTTP 503 rather than rendering the live hold. Waiter rows stay
-  ``NOWAIT``. If a partner row is still busy, that GET retries the check once
-  immediately (still no lock wait), then pauses briefly and retries again so
-  skip-after-commit can drop a partner it still holds. It does not wait for
-  the other request to commit. If those retries still miss, the poller
-  finishes the skip. A missed check still relocks this arriver and skips a
-  hold that is already released, so first-paint is not that hold. If the
-  poller already released the visit, the last arriver's claim can see zero
-  waiters. The last arriver's GET expires its identity map, skips the hold it
-  just cleared, and follows the live cursor. Released partners are skipped
-  after the check commit, one row at a time. ``get_current_elt`` may return a new object
-  for the same barrier hold when a trial page maker reconstructs the wait.
-  That is still this wait, not a cursor move; comparing Python identity would
+  transactions. Websocket wakes from those inner commits publish as soon
+  as the release commits, so waiting partners may overlay-resume while
+  this request still renders. Last-arrival waits for the instance
+  advisory claim (the lock the 0.5 s poller tries) so a GET does not
+  first-paint a hold while the poller still owns that visit. A waiter
+  arrival whose pending check would not release anyone tries that claim
+  without waiting, so it does not occupy a worker in ``lock_timeout``.
+  ``POST /response`` uses the same peek after the arrival write commits,
+  as do checks queued after a ready-hold skip. A spec error during that
+  peek leaves the group waiting instead of failing the arriver. That
+  claim is a transaction lock on a dedicated connection, held until the
+  check finishes. The poller keeps the claim until its own
+  skip-after-commit finishes. If the last arriver's wait for that claim
+  times out, ``GET /timeline`` returns HTTP 503 rather than rendering the
+  live hold. Waiter rows stay ``NOWAIT``. If a partner row is still busy,
+  that GET retries the check once immediately (still no lock wait). It
+  does not wait for the other request to commit. If that retry still
+  misses, the last arriver first-paints the live cursor; the poller
+  finishes the skip only when it won the release. A missed check still
+  relocks this arriver and self-skips a hold that is already released,
+  so first-paint is not that hold. If the poller already released the
+  visit, the last arriver's claim can see zero waiters. The last
+  arriver's GET expires its identity map, skips the hold it just
+  cleared, and follows the live cursor. Last-arrival does not skip
+  partner timeline cursors after the check commit; partners leave on
+  overlay wake. ``get_current_elt`` may return a new object for the same
+  barrier hold when a trial page maker reconstructs the wait. That is
+  still this wait, not a cursor move; comparing Python identity would
   loop until the hold times out.
 * ``GET /timeline`` then re-reads the live cursor. If a partner already
   advanced this waiter, GET prepares that live page. If the hold is ready,
@@ -548,12 +536,12 @@ blocking ``FOR UPDATE`` on the participant row. If the overlay is still
 waiting after that submit, the driver pauses briefly before the next page
 instead of busy-looping ordinary Next. Timeline GETs use ``mode=json`` and
 retry structured busy 503s and JSON 409 ``status: stale`` a few times so a
-partner skip that briefly holds the row, or advances this waiter between
-write and render, does not fail the bot. Bot POSTs retry those busy 503s
-the same way. If this waiter already advanced, or
-last-arrival skipped its own later hold, an ordinary POST of the previous hold
-uuid is catch-up, not a multi-tab reject. Hold-resume overlays catch up the
-same way so the browser can swap in place.
+poller skip that briefly holds the row, or a partner GET that advances this
+waiter between write and render, does not fail the bot. Bot POSTs retry those
+busy 503s the same way. If this waiter already advanced, or last-arrival
+skipped its own later hold, an ordinary POST of the previous hold uuid is
+catch-up, not a multi-tab reject. Hold-resume overlays catch up the same way
+so the browser can swap in place.
 
 Adding new frontend components
 ------------------------------

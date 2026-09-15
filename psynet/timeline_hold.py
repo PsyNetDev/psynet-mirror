@@ -4,23 +4,17 @@ Timeline holds preserve the currently rendered participant page while the
 server waits for a condition to clear. This module owns the durable accounting
 record and the internal page protocol shared by barriers and ``wait_while``.
 Hold-release websocket wakes publish after the next database commit. Last-arrival
-finalize and the barrier poller can defer those publishes until stacked checks
-finish so waiting partners are not woken while later checks still lock their
-rows. After a request actually releases waiters, it takes a Redis render pin
-until HTML/JSON render returns, so the 0.5 s poller (a different process) does
-not process or publish those visits while that request is still building the next
-page. A GET that is about to claim or follow a visit takes a follow pin first
-(publish park only) so poller publish cannot fire in the gap after the claim
-drops. Park and unpin use atomic Redis scripts so a wake cannot land on the
-parked list after the last owner token is gone. Each request stores a
-distinct owner token in the pin set so a stale exit after TTL expiry
-cannot drop a later owner's pin. Unfilled waiter GETs never take the
-render pin, so the poller can still finish those visits. The poller uses a
-fresh session per visit, so wake deferral is stored in a context variable
-rather than ``session.info``.
-``GET /timeline`` and ``POST /response`` skip ready holds under a participant
-row lock, but they do not share that lock protocol. The page lifecycle
-developer docs describe the resume protocol.
+checks publish those wakes as soon as the release commits; partners catch up
+on overlay resume rather than last-arrival advancing their cursors. The barrier
+poller can still defer publishes until stacked checks in that sweep finish so
+waiting partners are not woken while later poller skips still lock their rows.
+The poller uses a fresh session per visit, so wake deferral is stored in a
+context variable rather than ``session.info``.
+A hold consumed immediately after skipping a released wait is marked
+``silent`` on the durable record so catch-up overlays stay a spinner for that
+visit. ``GET /timeline`` and ``POST /response`` skip ready holds under a
+participant row lock, but they do not share that lock protocol. The page
+lifecycle developer docs describe the resume protocol.
 """
 
 import json
@@ -60,294 +54,35 @@ _PENDING_WAKE_KEY = "psynet_timeline_hold_wakes"
 _NESTED_WAKE_SNAPSHOTS_KEY = "psynet_nested_timeline_hold_wake_keys"
 _wake_defer_depth = ContextVar("psynet_timeline_hold_wake_defer_depth", default=0)
 _deferred_wake_stash = ContextVar("psynet_timeline_hold_deferred_wakes", default=None)
-_LAST_ARRIVAL_RENDER_PREFIX = "psynet:last-arrival-render:"
-_LAST_ARRIVAL_FOLLOW_PREFIX = "psynet:last-arrival-follow:"
-_LAST_ARRIVAL_PARKED_WAKE_PREFIX = "psynet:last-arrival-parked-wakes:"
-_LAST_ARRIVAL_RENDER_TTL_SECONDS = 15
-_last_arrival_render_active = ContextVar(
-    "psynet_last_arrival_render_active", default=False
-)
-_last_arrival_render_ids = ContextVar(
-    "psynet_last_arrival_render_ids", default=frozenset()
-)
-_last_arrival_follow_ids = ContextVar(
-    "psynet_last_arrival_follow_ids", default=frozenset()
-)
-_last_arrival_pin_owner = ContextVar("psynet_last_arrival_pin_owner", default="")
+_next_hold_is_catchup = ContextVar("psynet_next_hold_is_catchup", default=False)
 logger = get_logger()
 
-# Park and unpin must be atomic: a publisher that sees a pin and then RPUSH
-# after the last owner leaves would otherwise leave a wake that nobody drains.
-# Pins are sets of per-request owner tokens, not integer refcounts, so a stale
-# owner whose key expired cannot remove a later generation's token.
-_PARK_WAKE_IF_PINNED_LUA = """
-if redis.call('exists', KEYS[1]) == 1 or redis.call('exists', KEYS[2]) == 1 then
-  redis.call('rpush', KEYS[3], ARGV[1])
-  redis.call('expire', KEYS[3], tonumber(ARGV[2]))
-  return 1
-end
-return 0
-"""
-_UNPIN_AND_DRAIN_LUA = """
-if redis.call('exists', KEYS[1]) == 1 then
-  redis.call('srem', KEYS[1], ARGV[1])
-  if redis.call('scard', KEYS[1]) == 0 then
-    redis.call('del', KEYS[1])
-  end
-end
-if redis.call('exists', KEYS[2]) == 0 and redis.call('exists', KEYS[3]) == 0 then
-  local wakes = redis.call('lrange', KEYS[4], 0, -1)
-  redis.call('del', KEYS[4])
-  return wakes
-end
-return {}
-"""
-# SADD without EXPIRE can leave a pin that outlives this request.
-_PIN_AND_EXPIRE_LUA = """
-if ARGV[2] == '1' then
-  redis.call('sadd', KEYS[1], ARGV[3])
-end
-if redis.call('exists', KEYS[1]) == 1 then
-  redis.call('expire', KEYS[1], tonumber(ARGV[1]))
-  return 1
-end
-return 0
-"""
+
+def mark_next_hold_catchup():
+    """Mark the next hold this request consumes as a silent catch-up wait."""
+    _next_hold_is_catchup.set(True)
 
 
-def _last_arrival_render_key(instance_id):
-    """Return the Redis key that marks a visit still owned by last-arrival render."""
-    return f"{_LAST_ARRIVAL_RENDER_PREFIX}{instance_id}"
+def clear_next_hold_catchup():
+    """Drop an unused catch-up mark after skipping onto a non-hold page."""
+    _next_hold_is_catchup.set(False)
 
 
-def _last_arrival_follow_key(instance_id):
-    """Return the Redis key that parks publish while a GET follows this visit."""
-    return f"{_LAST_ARRIVAL_FOLLOW_PREFIX}{instance_id}"
-
-
-def _parked_hold_wake_key(instance_id):
-    """Return the Redis list that holds wakes until last-arrival pins clear."""
-    return f"{_LAST_ARRIVAL_PARKED_WAKE_PREFIX}{instance_id}"
-
-
-@contextmanager
-def _last_arrival_render_gate():
-    """Keep the barrier poller off visits this request released and is rendering.
-
-    Inner last-arrival commits release waiter rows before HTML/JSON render.
-    The poller is a different process, so ``_defer_timeline_hold_wakes``
-    cannot hide those rows from it. Redis records visits this request
-    released (process skip + publish park) and visits it is about to claim
-    (publish park only). Unfilled waiter GETs do not take the render pin, so
-    the poller can still finish those barriers. Nested last-arrival requests
-    add distinct owner tokens to the same set so an overlapping GET cannot
-    clear the mark while the other is still rendering. A stale owner whose
-    key expired cannot remove a later generation.
-    """
-    active_token = _last_arrival_render_active.set(True)
-    ids_token = _last_arrival_render_ids.set(frozenset())
-    follow_token = _last_arrival_follow_ids.set(frozenset())
-    owner_token = _last_arrival_pin_owner.set(uuid.uuid4().hex)
-    try:
-        yield
-    finally:
-        _clear_last_arrival_render_marks()
-        _last_arrival_pin_owner.reset(owner_token)
-        _last_arrival_follow_ids.reset(follow_token)
-        _last_arrival_render_ids.reset(ids_token)
-        _last_arrival_render_active.reset(active_token)
-
-
-def _incr_last_arrival_pin(instance_id, *, ids_var, key_for):
-    """Add this request's owner token to one last-arrival Redis pin."""
-    owner = _last_arrival_pin_owner.get()
-    if instance_id is None or not _last_arrival_render_active.get() or not owner:
-        return
-    owned = ids_var.get()
-    key = key_for(instance_id)
-    incr = "1" if instance_id not in owned else "0"
-    try:
-        ok = db.redis_conn.eval(
-            _PIN_AND_EXPIRE_LUA,
-            1,
-            key,
-            _LAST_ARRIVAL_RENDER_TTL_SECONDS,
-            incr,
-            owner,
-        )
-    except Exception:
-        logger.warning(
-            "Failed to mark last-arrival pin for barrier instance %s.",
-            instance_id,
-            exc_info=True,
-        )
-        return
-    if incr == "1" and ok:
-        ids_var.set(owned | {instance_id})
-
-
-def _mark_last_arrival_render_instance(instance_id):
-    """Pin a visit this request released until last-arrival render finishes."""
-    _incr_last_arrival_pin(
-        instance_id,
-        ids_var=_last_arrival_render_ids,
-        key_for=_last_arrival_render_key,
-    )
-
-
-def _mark_last_arrival_follow_instance(instance_id):
-    """Park publish for a visit this request is about to claim or follow.
-
-    Does not skip poller processing. Unfilled waiter GETs may take this pin
-    under claim contention; the 0.5 s poller can still finish the barrier.
-    """
-    _incr_last_arrival_pin(
-        instance_id,
-        ids_var=_last_arrival_follow_ids,
-        key_for=_last_arrival_follow_key,
-    )
-
-
-def _last_arrival_render_in_progress(instance_id):
-    """Return whether a last-arrival request is still rendering this visit."""
-    if instance_id is None:
-        return False
-    try:
-        return bool(db.redis_conn.exists(_last_arrival_render_key(instance_id)))
-    except Exception:
-        logger.warning(
-            "Failed to read last-arrival render mark for barrier instance %s.",
-            instance_id,
-            exc_info=True,
-        )
-        return False
-
-
-def _last_arrival_follow_in_progress(instance_id):
-    """Return whether a GET is still following this visit for publish parking."""
-    if instance_id is None:
-        return False
-    try:
-        return bool(db.redis_conn.exists(_last_arrival_follow_key(instance_id)))
-    except Exception:
-        logger.warning(
-            "Failed to read last-arrival follow mark for barrier instance %s.",
-            instance_id,
-            exc_info=True,
-        )
-        return False
-
-
-def _any_last_arrival_pin_in_progress(instance_ids):
-    """Return whether a follow or render pin currently owns any of these visits."""
-    instance_ids = tuple(instance_ids)
-    keys = []
-    for instance_id in instance_ids:
-        if instance_id is None:
-            continue
-        keys.append(_last_arrival_follow_key(instance_id))
-        keys.append(_last_arrival_render_key(instance_id))
-    if not keys:
-        return False
-    try:
-        return bool(db.redis_conn.exists(*keys))
-    except Exception:
-        logger.warning(
-            "Failed to read last-arrival pins for barrier instances %s.",
-            instance_ids,
-            exc_info=True,
-        )
-        return False
-
-
-def _clear_last_arrival_render_marks():
-    """Drop this request's last-arrival pins and publish atomically drained wakes."""
-    parked = []
-    for instance_id in _last_arrival_render_ids.get():
-        parked.extend(_unpin_and_drain_hold_wakes(instance_id, kind="render"))
-    for instance_id in _last_arrival_follow_ids.get():
-        parked.extend(_unpin_and_drain_hold_wakes(instance_id, kind="follow"))
-    _publish_wakes(parked)
-
-
-def _park_wake_if_pinned(instance_id, wake):
-    """Atomically park ``wake`` when a render or follow pin still exists.
-
-    Returns
-    -------
-    bool
-        ``True`` if the wake was parked. ``False`` if the caller should publish.
-    """
-    if instance_id is None:
-        return False
-    try:
-        parked = db.redis_conn.eval(
-            _PARK_WAKE_IF_PINNED_LUA,
-            3,
-            _last_arrival_render_key(instance_id),
-            _last_arrival_follow_key(instance_id),
-            _parked_hold_wake_key(instance_id),
-            json.dumps(wake),
-            _LAST_ARRIVAL_RENDER_TTL_SECONDS,
-        )
-    except Exception:
-        logger.warning(
-            "Failed to park a hold wake for barrier instance %s.",
-            instance_id,
-            exc_info=True,
-        )
-        return False
-    return bool(parked)
-
-
-def _unpin_and_drain_hold_wakes(instance_id, *, kind):
-    """Remove this request's owner token and drain parked wakes if no pin remains."""
-    owner = _last_arrival_pin_owner.get()
-    if not owner:
-        return []
-    this_key = (
-        _last_arrival_render_key(instance_id)
-        if kind == "render"
-        else _last_arrival_follow_key(instance_id)
-    )
-    try:
-        raw = db.redis_conn.eval(
-            _UNPIN_AND_DRAIN_LUA,
-            4,
-            this_key,
-            _last_arrival_render_key(instance_id),
-            _last_arrival_follow_key(instance_id),
-            _parked_hold_wake_key(instance_id),
-            owner,
-        )
-    except Exception:
-        logger.warning(
-            "Failed to unpin last-arrival marks for barrier instance %s.",
-            instance_id,
-            exc_info=True,
-        )
-        return []
-    wakes = []
-    for item in raw or []:
-        try:
-            wakes.append(json.loads(item))
-        except Exception:
-            logger.warning(
-                "Failed to decode a parked hold wake for barrier instance %s.",
-                instance_id,
-                exc_info=True,
-            )
-    return wakes
+def consume_next_hold_catchup():
+    """Return and clear whether the hold being created is a catch-up wait."""
+    silent = _next_hold_is_catchup.get()
+    if silent:
+        _next_hold_is_catchup.set(False)
+    return silent
 
 
 def _enqueue_timeline_hold_wake(
-    participant_id, *, page_uuid=None, reason=None, hold=None, instance_id=None
+    participant_id, *, page_uuid=None, reason=None, hold=None
 ):
     """Queue a targeted hold wake for publication after the next commit.
 
     Pass ``hold`` when the caller already has the unresumed record so this
-    path does not look it up again. ``instance_id`` lets publish park the wake
-    while last-arrival is still rendering that visit.
+    path does not look it up again.
     """
     if hold is not None:
         if hold.resumed_at is not None:
@@ -379,13 +114,11 @@ def _enqueue_timeline_hold_wake(
         "reason": reason,
         "participant_id": participant_id,
     }
-    if instance_id is not None:
-        wake["instance_id"] = instance_id
     db.session.info.setdefault(_PENDING_WAKE_KEY, {})[active_hold.wake_token] = wake
 
 
 def _queue_timeline_hold_wake(
-    participant_id, *, page_uuid=None, reason=None, hold=None, instance_id=None
+    participant_id, *, page_uuid=None, reason=None, hold=None
 ):
     """Queue a wake without allowing notification failure to break core work."""
     try:
@@ -394,7 +127,6 @@ def _queue_timeline_hold_wake(
             page_uuid=page_uuid,
             reason=reason,
             hold=hold,
-            instance_id=instance_id,
         )
     except Exception:
         logger.warning(
@@ -479,18 +211,16 @@ def _copy_pending_wakes(wakes):
 def _defer_timeline_hold_wakes():
     """Hold Redis wake publishes across inner commits, then flush on exit.
 
-    Stacked last-arrival finalize commits after each barrier check. Publishing
-    on those commits would wake waiting partners while later checks still lock
-    their rows. ``GET /timeline`` and ``POST /response`` nest this context
-    through page render so waiters also stay unpublished until the last arriver
-    has a response body. The barrier poller uses the same context around a
-    sweep: each visit commits in its own session, so the stash lives in a
-    context variable that survives ``session.remove()``. SAVEPOINT releases are
-    not durable: nested ``after_commit`` does not publish or stash. Nested
-    rollback restores pending wakes to the keys that existed when that
-    savepoint began. Root rollback still discards uncommitted pending wakes;
-    already committed wakes stay deferred and flush here even if a later
-    check fails.
+    The barrier poller nests this context around a sweep so stacked poller
+    skips can finish before partners overlay-resume. Last-arrival GET/POST do
+    not use this wrapper: those checks publish wakes as soon as the release
+    commits. Each poller visit commits in its own session, so the stash lives
+    in a context variable that survives ``session.remove()``. SAVEPOINT
+    releases are not durable: nested ``after_commit`` does not publish or
+    stash. Nested rollback restores pending wakes to the keys that existed
+    when that savepoint began. Root rollback still discards uncommitted
+    pending wakes; already committed wakes stay deferred and flush here even
+    if a later check fails.
     """
     depth = _wake_defer_depth.get()
     depth_token = _wake_defer_depth.set(depth + 1)
@@ -520,28 +250,14 @@ def _stash_committed_wakes(pending):
 
 
 def _publish_wakes(wakes):
-    """Publish copied wake payloads on their participant Redis channels.
-
-    Wakes whose visit still has a last-arrival render or follow pin are
-    parked atomically in Redis instead of published. The gate drains that
-    list when both pins are gone.
-    """
+    """Publish copied wake payloads on their participant Redis channels."""
     if not wakes:
-        return
-    remaining = []
-    for wake in wakes:
-        payload = dict(wake)
-        instance_id = payload.get("instance_id")
-        if instance_id is not None and _park_wake_if_pinned(instance_id, payload):
-            continue
-        remaining.append(payload)
-    if not remaining:
         return
     try:
         from collections import defaultdict
 
         by_channel = defaultdict(list)
-        for wake in remaining:
+        for wake in wakes:
             payload = dict(wake)
             participant_id = payload.pop("participant_id", None)
             payload.pop("instance_id", None)
@@ -631,6 +347,7 @@ class TimelineHoldRecord(SQLBase, SQLMixin):
     fix_time_credit = Column(Boolean, default=False)
     actual_wait_seconds = Column(Float, default=0.0)
     credited_wait_seconds = Column(Float, default=0.0)
+    silent = Column(Boolean, default=False, nullable=False)
 
     def _elapsed_at(self, timestamp):
         return max(0.0, (timestamp - self.started_at).total_seconds())
@@ -759,6 +476,7 @@ class _TimelineHoldPage(Page):
             fix_time_credit=self.fix_time_credit,
             actual_wait_seconds=0.0,
             credited_wait_seconds=0.0,
+            silent=consume_next_hold_catchup(),
         )
         db.session.add(record)
         participant._timeline_hold_record = record
@@ -859,6 +577,13 @@ class _TimelineHoldPage(Page):
         else:
             record.account_until(participant, timenow())
 
+    def _is_silent_for(self, participant):
+        """Return whether this participant's current hold should hide wait copy."""
+        if participant is None:
+            return False
+        record = self.get_hold_record(participant)
+        return bool(record is not None and record.silent)
+
     def translated_content(self):
         """Translate framework-provided hold messages for this participant."""
         _p = get_translator(context=True)
@@ -877,6 +602,8 @@ class _TimelineHoldPage(Page):
         Trusted ``Markup`` is preserved; plain strings are escaped so a refresh
         and an in-place overlay show the same text.
         """
+        if self._is_silent_for(participant):
+            return compose_hold_overlay_html("", None)
         content = self.translated_content()
         if content is None:
             title_html = ""
@@ -914,6 +641,7 @@ class _TimelineHoldPage(Page):
             "wake_token": record.wake_token,
             "safety_poll_ms": round(self.check_interval * 1000),
             "timeout_ms": remaining_timeout_ms,
+            "silent": bool(record.silent),
         }
 
     def attributes(self, participant):

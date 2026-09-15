@@ -182,12 +182,6 @@ INITIAL_RECRUITMENT_SIZE = 1
 # Page makers reconstruct barrier holds on each ``get_current_elt``. Bound
 # the skip loop so a cursor that never settles cannot run until timeout.
 _MAX_READY_HOLD_SKIP_STEPS = 32
-# After two immediate waiter ``NOWAIT`` misses, last-arrival pauses and
-# retries. Skip-after-commit can still hold a partner for tens of
-# milliseconds after this request wins the visit claim; giving up then
-# first-paints ``_BarrierHoldPage``.
-_LAST_ARRIVAL_NOWAIT_RETRY_PAUSE_SECONDS = 0.05
-_LAST_ARRIVAL_NOWAIT_EXTRA_ATTEMPTS = 5
 
 
 @dataclass
@@ -3463,29 +3457,13 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         a partner already advanced this waiter is the ``page_uuid`` mismatch
         path (``_page_for_stale_hold_resume``). Accidental identity-map
         dirties are rolled back when ``route_response`` sees ``skip_write``.
-
-        Last-arrival follow/render pins also stay on this unlocked path, even
-        when the overlay looks ready or still carries a released hold uuid.
-        ``active_barriers`` hides released links, so the pin lookup uses
-        ``barrier_links``. The hold overlay POSTs as soon as its websocket
-        opens; after last-arrival commits the release that overlay can look
-        ready. Taking ``FOR UPDATE NOWAIT`` then makes last-arrival miss
-        waiter ``NOWAIT`` and first-paint ``_BarrierHoldPage``.
         """
-        from .sync import _hold_visit_pinned_by_last_arrival
-
         event = self.timeline.get_current_elt(self, participant)
         on_submitted_hold = page_uuid == participant.page_uuid and getattr(
             event, "is_timeline_hold", False
         )
         if on_submitted_hold and self._hold_resume_must_settle(participant, event):
             return None
-        if _hold_visit_pinned_by_last_arrival(participant):
-            return ResponseResult(
-                payload=self._approved_payload(participant, event),
-                page=event,
-                skip_write=True,
-            )
         if page_uuid != participant.page_uuid:
             return None
         if not getattr(event, "is_timeline_hold", False):
@@ -3529,12 +3507,13 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         Callers must already hold the participant row. Last-arrival uses this
         after the barrier-check commit so this request does not first-paint the
-        hold it just released. Released partners are skipped the same way, one
-        row at a time, after that commit drops their ``FOR UPDATE`` locks. ``POST /response`` uses it while that write still
+        hold it just released. ``POST /response`` uses it while that write still
         holds the row (``NOWAIT`` on a hold-resume that will advance; a
         still-waiting overlay check does not lock the row); ``GET /timeline``
         uses it only after ``_skip_ready_hold_on_get`` takes blocking
-        ``FOR UPDATE``.
+        ``FOR UPDATE``. A hold consumed immediately after skipping a released
+        wait is marked silent so the overlay stays a spinner until partners
+        catch up.
 
         ``page`` can be a stale hold object from earlier in the request. If
         that hold is not ready but the live cursor has already left it
@@ -3545,14 +3524,22 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         a still-waiting visit is a new object with the same ``hold_id``. Treat
         that as the same wait; identity ``is`` would loop until timeout.
         """
+        from .timeline_hold import (
+            clear_next_hold_catchup,
+            mark_next_hold_catchup,
+        )
+
         for _ in range(_MAX_READY_HOLD_SKIP_STEPS):
             if not getattr(page, "is_timeline_hold", False):
                 return page
             if page.prepare_resume_if_ready(self, participant):
                 page.account_wait(participant, settle=True)
                 participant.inc_progress(page.time_estimate)
+                mark_next_hold_catchup()
                 self.timeline.advance_page(self, participant)
                 page = self.timeline.get_current_elt(self, participant)
+                if not getattr(page, "is_timeline_hold", False):
+                    clear_next_hold_catchup()
                 continue
             live = self.timeline.get_current_elt(self, participant)
             if self._is_same_timeline_hold(page, live):
@@ -5612,42 +5599,24 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 experiment.prepare_voluntary_exit_plan(participant)
             participant_id = participant.id
             unique_id = participant.unique_id
-            from .sync import _follow_pin_pending_barrier_checks
-            from .timeline_hold import (
-                _defer_timeline_hold_wakes,
-                _last_arrival_render_gate,
+            db.session.commit()
+            close("page")
+            participant, page = cls._finalize_pending_timeline_barriers(
+                experiment, participant, page
             )
-
-            # Keep last-arrival wakes unpublished through HTML/JSON render so
-            # waiting partners do not stampede this worker while it is still
-            # building the last arriver's page. Follow-pin queued visits before
-            # the arrival commit so the 0.5 s poller cannot publish in that
-            # gap. Redis render-pins visits this request released (poller
-            # process skip + publish park). Unfilled waiter holds never take
-            # the render pin.
-            with _last_arrival_render_gate():
-                _follow_pin_pending_barrier_checks()
-                db.session.commit()
-                close("page")
-                with _defer_timeline_hold_wakes():
-                    participant, page = cls._finalize_pending_timeline_barriers(
-                        experiment, participant, page
-                    )
-                    page_uuid = participant.page_uuid
-                    # Close any implicit transaction opened by expire-on-commit
-                    # reloads or ``pre_render()`` so read-only rendering can start.
-                    db.session.commit()
-                    close("barriers")
-                    rendered = cls._render_timeline_page_read_only(
-                        experiment=experiment,
-                        participant_id=participant_id,
-                        unique_id=unique_id,
-                        page_uuid=page_uuid,
-                        page=page,
-                        mode=mode,
-                    )
-                    close("render")
-                    return rendered
+            page_uuid = participant.page_uuid
+            db.session.commit()
+            close("barriers")
+            rendered = cls._render_timeline_page_read_only(
+                experiment=experiment,
+                participant_id=participant_id,
+                unique_id=unique_id,
+                page_uuid=page_uuid,
+                page=page,
+                mode=mode,
+            )
+            close("render")
+            return rendered
         except cls.HandledError as err:
             # HandledError.error_page re-fetches and prepares recovery. Those
             # writes must happen after rollback, not in a read-only transaction.
@@ -6044,8 +6013,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         visit claim but do not wait for it. Pending checks from this request
         and checks queued after a ready-hold skip wait only when
         ``Barrier.would_release`` is true, so a waiter arrival does not occupy
-        a worker behind last-arrival while last-arrival still skips stacked
-        holds in one GET.
+        a worker behind last-arrival. Last-arrival self-skips released holds
+        in this GET; partners catch up on overlay wake.
 
         Returns
         -------
@@ -6151,15 +6120,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     ):
         """Run queued arrival checks in short transactions before rendering.
 
-        Hold-release websocket wakes from these inner commits stay unpublished
-        until this call returns, or until an outer ``_defer_timeline_hold_wakes``
-        exits. ``GET /timeline`` and ``POST /response`` keep that outer defer
-        through page render so waiting partners are not told to resume while a
-        later stacked check still locks their rows or while this request is
-        still rendering. Callers that wrap this with
-        ``_last_arrival_render_gate`` also render-pin visits this request
-        released (poller process skip + publish park) and follow-pin visits it
-        is about to claim (publish park only).
+        Hold-release websocket wakes from these inner commits publish as soon
+        as each check commits. Last-arrival does not skip partner cursors, so
+        partners may overlay-resume while this request still renders.
 
         ``serialize_page`` is for ``POST /response`` inplace JSON. ``GET
         /timeline`` renders HTML from ``result.page`` and skips that extra
@@ -6168,17 +6131,14 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         Unfilled waiter GET recovery passes ``False`` so those requests do
         not sit in ``lock_timeout`` behind the visit claim.
         """
-        from .timeline_hold import _defer_timeline_hold_wakes
-
-        with _defer_timeline_hold_wakes():
-            return cls._run_finalized_barrier_arrivals(
-                experiment,
-                participant_id,
-                checks,
-                result,
-                serialize_page=serialize_page,
-                wait_for_claim=wait_for_claim,
-            )
+        return cls._run_finalized_barrier_arrivals(
+            experiment,
+            participant_id,
+            checks,
+            result,
+            serialize_page=serialize_page,
+            wait_for_claim=wait_for_claim,
+        )
 
     @classmethod
     def _attempt_queued_barrier_checks(cls, checks, *, wait):
@@ -6201,29 +6161,16 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         (HTTP 503). The second attempt does not wait for a partner transaction
         to commit; it only retries waiter ``NOWAIT``. Reinstall
         ``lock_timeout`` before that retry because ``SET LOCAL`` ends at the
-        check commit. Last-arrival (``wait=True``) then pauses briefly and
-        retries again so skip-after-commit can drop a partner row it still
-        holds. If those misses continue, the caller first-paints the live
-        cursor and the 0.5s poller finishes the skip. Each successful check
-        already skipped released waiters while holding that extra claim.
-        Unfilled waiter recovery (``wait=False``) stops after the two
-        immediate attempts so it does not occupy a worker behind last-arrival.
+        check commit. If those misses continue, the caller first-paints the
+        live cursor. Partners catch up on overlay wake; the 0.5s poller skips
+        waiters only when it won the release. Unfilled waiter recovery
+        (``wait=False``) also stops after the two immediate attempts so it
+        does not occupy a worker behind last-arrival.
         """
         if cls._attempt_queued_barrier_checks(checks, wait=wait):
             return True
         _set_transaction_lock_timeout(get_config().get("timeline_lock_timeout_seconds"))
-        if cls._attempt_queued_barrier_checks(checks, wait=wait):
-            return True
-        if not wait:
-            return False
-        for _ in range(_LAST_ARRIVAL_NOWAIT_EXTRA_ATTEMPTS):
-            time.sleep(_LAST_ARRIVAL_NOWAIT_RETRY_PAUSE_SECONDS)
-            _set_transaction_lock_timeout(
-                get_config().get("timeline_lock_timeout_seconds")
-            )
-            if cls._attempt_queued_barrier_checks(checks, wait=wait):
-                return True
-        return False
+        return cls._attempt_queued_barrier_checks(checks, wait=wait)
 
     @classmethod
     def _run_finalized_barrier_arrivals(
@@ -6584,113 +6531,99 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         pending_barrier_checks = _take_pending_barrier_checks()
         barrier_checks = len(pending_barrier_checks)
 
-        from .timeline_hold import (
-            _defer_timeline_hold_wakes,
-            _last_arrival_render_gate,
-        )
-
         write_committed = False
-        with _last_arrival_render_gate(), _defer_timeline_hold_wakes():
-            try:
-                payload = result.payload
-                participant = None
-                page = result.page
-                page_uuid_after_response = None
-                render_fragment = False
-                approved = payload.get("submission") == "approved"
-                submission = payload.get("submission")
-                if approved and pending_barrier_checks:
-                    from .sync import (
-                        _follow_pin_barrier_instances,
-                        _pending_checks_should_wait_for_claim,
-                    )
+        try:
+            payload = result.payload
+            participant = None
+            page = result.page
+            page_uuid_after_response = None
+            render_fragment = False
+            approved = payload.get("submission") == "approved"
+            submission = payload.get("submission")
+            if approved and pending_barrier_checks:
+                from .sync import _pending_checks_should_wait_for_claim
 
-                    _follow_pin_barrier_instances(pending_barrier_checks)
-                    db.session.commit()
-                    write_committed = True
-                    participant = cls._finalize_barrier_arrivals(
-                        exp,
-                        participant_id,
-                        pending_barrier_checks,
-                        result,
-                        wait_for_claim=_pending_checks_should_wait_for_claim(
-                            pending_barrier_checks
-                        ),
-                    )
-                    payload = result.payload
-                    page = result.page
-                    submission = payload.get("submission")
-                clock.close("barriers")
-                if (
-                    approved
-                    and include_timeline_fragment
-                    and get_config().get("inplace_timeline_transitions")
-                ):
-                    if page is None:
-                        raise RuntimeError(
-                            "Approved response did not retain its resolved page."
-                        )
-                    if not page.is_timeline_hold:
-                        render_fragment = not page.requires_full_page_reload
-                        if render_fragment:
-                            if participant is None:
-                                participant = cls._participant_request_query().get(
-                                    participant_id
-                                )
-                            page_uuid_after_response = (
-                                cls._prepare_approved_inplace_page(
-                                    exp, participant, page, payload
-                                )
-                            )
                 db.session.commit()
                 write_committed = True
-            except Exception as err:
-                clock.close_open("barriers", "render")
-                if write_committed:
-                    return finish(
-                        cls._handle_response_render_error(exp, participant_id, err)
-                    )
-                return finish(
-                    cls._handle_response_prepare_error(exp, participant_id, err)
+                participant = cls._finalize_barrier_arrivals(
+                    exp,
+                    participant_id,
+                    pending_barrier_checks,
+                    result,
+                    wait_for_claim=_pending_checks_should_wait_for_claim(
+                        pending_barrier_checks
+                    ),
                 )
-
-            if render_fragment:
-                try:
-                    fragment = cls._render_page_read_only(
-                        page=page,
-                        experiment=exp,
-                        participant_id=participant_id,
-                        page_uuid=page_uuid_after_response,
-                        kind="fragment",
+                payload = result.payload
+                page = result.page
+                submission = payload.get("submission")
+            clock.close("barriers")
+            if (
+                approved
+                and include_timeline_fragment
+                and get_config().get("inplace_timeline_transitions")
+            ):
+                if page is None:
+                    raise RuntimeError(
+                        "Approved response did not retain its resolved page."
                     )
-                except Exception as err:
-                    clock.close("render")
-                    if os.getenv("PASSTHROUGH_ERRORS"):
-                        raise
-                    return finish(
-                        cls._handle_response_render_error(exp, participant_id, err)
-                    )
-                clock.close("render")
-                if fragment is None:
-                    _p = get_translator(context=True)
-                    submission = "rejected"
-                    return finish(
-                        exp.response_rejected(
-                            message=_p(
-                                "timeline_problem",
-                                "Synchronization problem detected. "
-                                "Are you running the same experiment in multiple browser tabs? "
-                                "Please close all other tabs and refresh the page.",
+                if not page.is_timeline_hold:
+                    render_fragment = not page.requires_full_page_reload
+                    if render_fragment:
+                        if participant is None:
+                            participant = cls._participant_request_query().get(
+                                participant_id
                             )
+                        page_uuid_after_response = cls._prepare_approved_inplace_page(
+                            exp, participant, page, payload
+                        )
+            db.session.commit()
+            write_committed = True
+        except Exception as err:
+            clock.close_open("barriers", "render")
+            if write_committed:
+                return finish(
+                    cls._handle_response_render_error(exp, participant_id, err)
+                )
+            return finish(cls._handle_response_prepare_error(exp, participant_id, err))
+
+        if render_fragment:
+            try:
+                fragment = cls._render_page_read_only(
+                    page=page,
+                    experiment=exp,
+                    participant_id=participant_id,
+                    page_uuid=page_uuid_after_response,
+                    kind="fragment",
+                )
+            except Exception as err:
+                clock.close("render")
+                if os.getenv("PASSTHROUGH_ERRORS"):
+                    raise
+                return finish(
+                    cls._handle_response_render_error(exp, participant_id, err)
+                )
+            clock.close("render")
+            if fragment is None:
+                _p = get_translator(context=True)
+                submission = "rejected"
+                return finish(
+                    exp.response_rejected(
+                        message=_p(
+                            "timeline_problem",
+                            "Synchronization problem detected. "
+                            "Are you running the same experiment in multiple browser tabs? "
+                            "Please close all other tabs and refresh the page.",
                         )
                     )
-                payload["timeline_fragment"] = fragment
-                return finish(success_response(**payload))
-
-            clock.close("render")
-            if payload.get("submission") == "rejected":
-                return finish(exp.response_rejected(payload["message"]))
+                )
+            payload["timeline_fragment"] = fragment
             return finish(success_response(**payload))
+
+        clock.close("render")
+        if payload.get("submission") == "rejected":
+            return finish(exp.response_rejected(payload["message"]))
+        return finish(success_response(**payload))
 
     @classmethod
     def _handle_response_prepare_error(cls, experiment, participant_id, error):

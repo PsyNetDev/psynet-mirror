@@ -1,10 +1,9 @@
-"""Reachable-state witnesses for the timeline-hold lock and pin protocol.
+"""Reachable-state witnesses for the timeline-hold lock protocol.
 
 The GET/POST tests pause at transaction boundaries and assert HTTP and
 first-paint outcomes. They do not monkeypatch ``is_ready_to_resume``, and
 they do not treat a ready overlay on an unreleased ``active_barriers``
-link as a protocol witness. ``test_overlapping_render_pin_owners_publish_wake_once``
-is a Lua/owner-token witness: it drives Redis pins directly. See
+link as a protocol witness. See
 ``docs/developer/timeline_hold_traces.rst``.
 """
 
@@ -21,19 +20,10 @@ from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.sync import (
     _hold_instance_id_for_page,
-    _hold_visit_pinned_by_last_arrival,
     _run_pending_barrier_checks,
     check_barriers,
 )
-from psynet.timeline_hold import (
-    TimelineHoldRecord,
-    _last_arrival_follow_in_progress,
-    _last_arrival_render_gate,
-    _last_arrival_render_key,
-    _mark_last_arrival_render_instance,
-    _parked_hold_wake_key,
-    _publish_wakes,
-)
+from psynet.timeline_hold import TimelineHoldRecord
 
 _ISOLATED_DIR = Path(__file__).resolve().parent
 if str(_ISOLATED_DIR) not in sys.path:
@@ -41,13 +31,11 @@ if str(_ISOLATED_DIR) not in sys.path:
 from timeline_hold_helpers import (  # noqa: E402
     _assert_on_action_page,
     _barrier_link_released,
-    _hold_wake_publications,
     _json_timeline,
     _json_timeline_via_route,
     _lock_participant_row,
     _participant_row_is_locked,
     _process_response,
-    _released_wake_count,
     _route_timeline_via_route_in_thread,
     _using_stacked_timeline,
     _working_participants,
@@ -131,16 +119,14 @@ def test_both_nowait_misses_first_paint_live_hold_not_503(
 
 @CONSENTS
 @pytest.mark.parametrize("settle_how", ["fail", "pending_redirect"])
-def test_fail_or_redirect_hold_resume_settles_under_live_follow_pin(
+def test_fail_or_redirect_hold_resume_settles_during_last_arrival(
     in_experiment_directory, db_session, monkeypatch, settle_how
 ):
-    """I5: fail and ``pending_redirect`` settle even while a follow pin is live.
+    """I5: fail and ``pending_redirect`` settle even while last-arrival is in flight.
 
-    Last-arrival is paused after the arrival commit and follow pin, before
-    the check can release. The overlay looks ready because of fail/redirect,
-    not because ``active_barriers`` dropped the link. The follow pin TTL is
-    15 s and is not refreshed while last-arrival is parked here; keep this
-    window well under that.
+    Last-arrival is paused after the arrival commit, before the check can
+    release. The overlay looks ready because of fail/redirect, not because
+    ``active_barriers`` dropped the link.
     """
     exp = get_experiment()
     group_type = f"i5_{settle_how}_{uuid.uuid4().hex[:8]}"
@@ -176,8 +162,6 @@ def test_fail_or_redirect_hold_resume_settles_under_live_follow_pin(
             db.session.expire_all()
             first = Participant.query.get(first_id)
             page = exp.timeline.get_current_elt(exp, first)
-            assert _last_arrival_follow_in_progress(instance_id)
-            assert _hold_visit_pinned_by_last_arrival(first)
             assert _hold_instance_id_for_page(first, page) == instance_id
             assert not page.is_ready_to_resume(exp, first)
             if settle_how == "fail":
@@ -190,7 +174,6 @@ def test_fail_or_redirect_hold_resume_settles_under_live_follow_pin(
             page = exp.timeline.get_current_elt(exp, first)
             assert page.is_ready_to_resume(exp, first)
             assert _hold_instance_id_for_page(first, page) == instance_id
-            assert _hold_visit_pinned_by_last_arrival(first)
             resumed = _process_response(
                 exp, first, hold_uuid, timeline_hold_resume=True
             )
@@ -207,118 +190,3 @@ def test_fail_or_redirect_hold_resume_settles_under_live_follow_pin(
         assert result.get("status") == 200
         assert not _participant_row_is_locked(first_id)
         assert not _participant_row_is_locked(last_id)
-
-
-@CONSENTS
-def test_overlapping_render_pin_owners_publish_wake_once(
-    in_experiment_directory, db_session, monkeypatch
-):
-    """T8 Lua: the last overlapping render-pin owner drains a parked wake once.
-
-    This drives the last-arrival gate and ``_publish_wakes`` on a fabricated
-    instance id. It is not a reachable GET witness.
-    """
-    publications = _hold_wake_publications(monkeypatch)
-    instance_id = f"overlap-{uuid.uuid4().hex}"
-    wake = {
-        "participant_id": 0,
-        "reason": "barrier_released",
-        "wake_token": "lua-overlap-token",
-        "instance_id": instance_id,
-    }
-    a_pinned = threading.Event()
-    b_pinned = threading.Event()
-    a_may_exit = threading.Event()
-    b_may_exit = threading.Event()
-    errors = []
-
-    def owner(pinned, may_exit):
-        try:
-            with _last_arrival_render_gate():
-                _mark_last_arrival_render_instance(instance_id)
-                pinned.set()
-                assert may_exit.wait(timeout=5)
-        except Exception as err:  # pragma: no cover - surfaced by the caller
-            errors.append(err)
-
-    thread_a = threading.Thread(target=owner, args=(a_pinned, a_may_exit), daemon=True)
-    thread_b = threading.Thread(target=owner, args=(b_pinned, b_may_exit), daemon=True)
-    thread_a.start()
-    thread_b.start()
-    try:
-        assert a_pinned.wait(timeout=5)
-        assert b_pinned.wait(timeout=5)
-        assert db.redis_conn.scard(_last_arrival_render_key(instance_id)) == 2
-        _publish_wakes([dict(wake)])
-        assert _released_wake_count(publications) == 0
-        assert db.redis_conn.llen(_parked_hold_wake_key(instance_id)) == 1
-        a_may_exit.set()
-        thread_a.join(timeout=5)
-        assert not thread_a.is_alive()
-        assert db.redis_conn.scard(_last_arrival_render_key(instance_id)) == 1
-        assert _released_wake_count(publications) == 0
-        b_may_exit.set()
-        thread_b.join(timeout=5)
-        assert not thread_b.is_alive()
-    finally:
-        a_may_exit.set()
-        b_may_exit.set()
-    assert errors == []
-    assert _released_wake_count(publications) == 1
-    assert not db.redis_conn.llen(_parked_hold_wake_key(instance_id))
-    assert not db.redis_conn.exists(_last_arrival_render_key(instance_id))
-
-
-@CONSENTS
-def test_stale_render_pin_owner_does_not_drop_newer_generation(
-    in_experiment_directory, db_session, monkeypatch
-):
-    """A live owner whose pin expired must not unpin a later generation."""
-    publications = _hold_wake_publications(monkeypatch)
-    instance_id = f"ttl-gen-{uuid.uuid4().hex}"
-    wake = {
-        "participant_id": 0,
-        "reason": "barrier_released",
-        "wake_token": "lua-ttl-gen-token",
-        "instance_id": instance_id,
-    }
-    a_pinned = threading.Event()
-    b_pinned = threading.Event()
-    a_may_exit = threading.Event()
-    b_may_exit = threading.Event()
-    errors = []
-
-    def owner(pinned, may_exit):
-        try:
-            with _last_arrival_render_gate():
-                _mark_last_arrival_render_instance(instance_id)
-                pinned.set()
-                assert may_exit.wait(timeout=5)
-        except Exception as err:  # pragma: no cover - surfaced by the caller
-            errors.append(err)
-
-    thread_a = threading.Thread(target=owner, args=(a_pinned, a_may_exit), daemon=True)
-    thread_b = threading.Thread(target=owner, args=(b_pinned, b_may_exit), daemon=True)
-    thread_a.start()
-    try:
-        assert a_pinned.wait(timeout=5)
-        db.redis_conn.delete(_last_arrival_render_key(instance_id))
-        thread_b.start()
-        assert b_pinned.wait(timeout=5)
-        assert db.redis_conn.scard(_last_arrival_render_key(instance_id)) == 1
-        _publish_wakes([dict(wake)])
-        assert _released_wake_count(publications) == 0
-        a_may_exit.set()
-        thread_a.join(timeout=5)
-        assert not thread_a.is_alive()
-        assert db.redis_conn.scard(_last_arrival_render_key(instance_id)) == 1
-        assert _released_wake_count(publications) == 0
-        b_may_exit.set()
-        thread_b.join(timeout=5)
-        assert not thread_b.is_alive()
-    finally:
-        a_may_exit.set()
-        b_may_exit.set()
-    assert errors == []
-    assert _released_wake_count(publications) == 1
-    assert not db.redis_conn.exists(_last_arrival_render_key(instance_id))

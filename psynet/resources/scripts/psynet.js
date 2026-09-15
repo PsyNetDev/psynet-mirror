@@ -933,7 +933,11 @@
         return;
       }
       (message.targets || []).forEach((target) => {
-        if (target.hold_message && psynet.timelineHold) {
+        if (
+          target.hold_message &&
+          psynet.timelineHold &&
+          !psynet.timelineHold.hold.silent
+        ) {
           psynet.updateTimelineHoldMessage(target.hold_message);
         }
         if (Object.prototype.hasOwnProperty.call(target, "notice")) {
@@ -1143,38 +1147,9 @@
       );
     };
 
-    psynet.beginTimelineHold = function (hold) {
-      psynet.stopArrivalUpdates();
-      let active = psynet.timelineHold;
-      if (active?.hold.page_uuid === hold.page_uuid) {
-        active.hold = hold;
-        if (hold.message) {
-          psynet.updateTimelineHoldMessage(hold.message);
-        }
-        psynet.scheduleTimelineHoldCheck(active);
-        psynet.scheduleTimelineHoldTimeout(active);
-        return;
-      }
-
-      psynet.stopTimelineHold();
-      psynet.showTimelineHoldIndicator(hold.message);
-      let controller = {
-        connection: null,
-        hold: hold,
-        resumeInFlight: false,
-        resumeRequested: false,
-        busyRetryUsed: false,
-        busyRetryTimer: null,
-        safetyTimer: null,
-        stopped: false,
-        timeoutTimer: null,
-      };
-      psynet.timelineHold = controller;
-      psynet.scheduleTimelineHoldCheck(controller);
-      psynet.scheduleTimelineHoldTimeout(controller);
-
+    psynet._connectTimelineHoldSocket = function (controller) {
       controller.connection = PsyNetWebSocketChannel.connect({
-        channel: hold.channel,
+        channel: controller.hold.channel,
         onOpen() {
           if (!controller.stopped) {
             psynet.resumeTimelineHold("websocket connection");
@@ -1201,6 +1176,48 @@
           }
         },
       });
+    };
+
+    psynet.beginTimelineHold = function (hold) {
+      psynet.stopArrivalUpdates();
+      let active = psynet.timelineHold;
+      if (active && !active.stopped) {
+        let sameChannel = active.hold.channel === hold.channel;
+        active.hold = hold;
+        if (active.busyRetryTimer != null) {
+          clearTimeout(active.busyRetryTimer);
+          active.busyRetryTimer = null;
+        }
+        active.busyRetryUsed = false;
+        psynet.showTimelineHoldIndicator(hold.message);
+        psynet.scheduleTimelineHoldCheck(active);
+        psynet.scheduleTimelineHoldTimeout(active);
+        if (!sameChannel) {
+          if (active.connection) {
+            active.connection.close();
+          }
+          psynet._connectTimelineHoldSocket(active);
+        }
+        return;
+      }
+
+      psynet.stopTimelineHold();
+      psynet.showTimelineHoldIndicator(hold.message);
+      let controller = {
+        connection: null,
+        hold: hold,
+        resumeInFlight: false,
+        resumeRequested: false,
+        busyRetryUsed: false,
+        busyRetryTimer: null,
+        safetyTimer: null,
+        stopped: false,
+        timeoutTimer: null,
+      };
+      psynet.timelineHold = controller;
+      psynet.scheduleTimelineHoldCheck(controller);
+      psynet.scheduleTimelineHoldTimeout(controller);
+      psynet._connectTimelineHoldSocket(controller);
       window.dispatchEvent(
         new CustomEvent("timelineHoldStarted", {
           detail: {holdId: hold.hold_id},

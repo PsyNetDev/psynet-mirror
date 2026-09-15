@@ -153,14 +153,23 @@ function arrivalWorkEntry(arrival) {
   return arrival.entry || arrival;
 }
 
+function arrivalLooksLikeReleaser(arrival) {
+  if (!arrival.held) {
+    return true;
+  }
+  const paint = arrivalWorkEntry(arrival).paint || arrival.entry?.paint;
+  return Boolean(paint?.silentHold);
+}
+
 function pickConcurrentLastArriver(arrivals) {
-  // A skipper filled the barrier. A slower first-paint hold is a waiter,
-  // even if Playwright recorded a later paint time after the overlay left.
+  // The releaser first-paints a silent catch-up hold or the action page.
+  // An authored wait overlay is a waiter, even if Playwright recorded a
+  // later paint time after the overlay left.
   if (!arrivals.length) {
     throw new Error("pickConcurrentLastArriver needs at least one arrival");
   }
-  const skippers = arrivals.filter((arrival) => !arrival.held);
-  const pool = skippers.length ? skippers : arrivals;
+  const releasers = arrivals.filter(arrivalLooksLikeReleaser);
+  const pool = releasers.length ? releasers : arrivals;
   return pool.reduce((best, current) =>
     lastArriverReleaseAtMs(arrivalWorkEntry(current)) >=
     lastArriverReleaseAtMs(arrivalWorkEntry(best))
@@ -601,13 +610,36 @@ async function enterWaitingHold(session, { holdText, prompt, timeout = STEP_TIME
 }
 
 async function enterSkippingHold(session, { timeout = STEP_TIMEOUT_MS } = {}) {
+  await session.page.evaluate(() => {
+    window.__psynetHoldEndedCount = window.__psynetHoldEndedCount || 0;
+    if (!window.__psynetHoldEndedHooked) {
+      window.__psynetHoldEndedHooked = true;
+      window.addEventListener("timelineHoldEnded", () => {
+        window.__psynetHoldEndedCount += 1;
+      });
+    }
+  });
   session.entry = await enterTimelineAfterGateway(session.page, timeout);
   assertEntryWasResponsive(session.entry, session.label);
+  const paint = session.entry.paint;
+  const silentHold =
+    paint.type === "_BarrierHoldPage" && Boolean(paint.silentHold);
+  const actionPage = paint.type === "ModularPage" && !paint.showsHold;
   expect(
-    session.entry.paint.type,
-    `${session.label} first timeline HTML was not a ModularPage (status=${session.entry.timeline.status}, type=${session.entry.paint.type})`
-  ).toBe("ModularPage");
-  expect(session.entry.paint.showsHold).toBe(false);
+    silentHold || actionPage,
+    `${session.label} first timeline HTML was not a silent catch-up hold or ModularPage (status=${session.entry.timeline.status}, type=${paint.type}, silent=${paint.silentHold})`
+  ).toBe(true);
+  if (silentHold) {
+    await expect(
+      session.page.locator(".psynet-timeline-hold-title")
+    ).toHaveText("");
+    await expect(
+      session.page.locator(".psynet-timeline-hold-progress")
+    ).toHaveCount(0);
+    await expect(
+      session.page.locator("#psynet-timeline-hold-indicator")
+    ).toHaveCount(1);
+  }
   await waitForTimelinePageReady(session.page, timeout);
   await expect(session.page.locator("#main-body")).toContainText(ACTION_PROMPT, {
     timeout
@@ -616,6 +648,15 @@ async function enterSkippingHold(session, { timeout = STEP_TIMEOUT_MS } = {}) {
     0
   );
   await expect(session.page.locator("body")).not.toHaveClass(/timeline-held/);
+  const endedCount = await session.page.evaluate(
+    () => window.__psynetHoldEndedCount || 0
+  );
+  if (silentHold) {
+    expect(
+      endedCount,
+      `${session.label} stacked catch-up holds must reuse the overlay chip (timelineHoldEnded fired ${endedCount} times)`
+    ).toBeLessThanOrEqual(1);
+  }
   return session.entry;
 }
 
@@ -1064,10 +1105,9 @@ async function enterLastArrival(
   session,
   { holdText, prompt = ACTION_PROMPT, timeout = STEP_TIMEOUT_MS } = {}
 ) {
-  // Last-arrival skips released stacked holds, including waiting partners.
-  // If a later stacked barrier still first-paints because a waiter row was
-  // busy, arm that overlay so the following wake, not a safety poll, finishes
-  // the stack. Sequential grouping last-arrivers use enterSkippingHold.
+  // Last-arrival self-skips released stacked holds. Partners catch up on
+  // overlay wake. Sequential grouping last-arrivers use enterSkippingHold,
+  // which allows a silent catch-up hold before the action page.
   const arrival = await enterPossiblyHeldArrival(session, {
     holdText,
     prompt,

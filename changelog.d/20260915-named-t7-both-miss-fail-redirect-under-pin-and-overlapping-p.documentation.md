@@ -1,1 +1,1 @@
-Documented T7 both-miss, fail-or-redirect-under-pin, and overlapping pin-owner traces, with witnesses labeled as protocol, pin-lookup, retry-unit, unit, or Lua.
+Documented T7 both-miss and fail-or-redirect-during-last-arrival traces, with witnesses labeled as protocol, retry-unit, or unit.

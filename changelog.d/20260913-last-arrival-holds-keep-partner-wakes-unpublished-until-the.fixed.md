@@ -1,1 +1,1 @@
-Last-arrival ``GET /timeline`` and ``POST /response`` keep partner hold wakes unpublished until the next page has been rendered.
+Last-arrival ``GET /timeline`` and ``POST /response`` publish partner hold wakes as soon as the barrier release commits.

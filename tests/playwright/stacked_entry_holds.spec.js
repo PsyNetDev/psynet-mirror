@@ -24,10 +24,10 @@ const RPS_DIR = path.resolve("demos/experiments/rock_paper_scissors");
 test("last arriver skips stacked entry holds", { tag: "@both" }, async ({
   browser
 }) => {
-  // Enter one participant at a time. The last arriver skips the released
-  // stacked waits, including waiting partners, so first-paint is the action
-  // page. The waiting partner must leave their hold from the server wake,
-  // without a safety poll as the success path.
+  // Enter one participant at a time. The last arriver self-skips released
+  // stacked waits and may first-paint a silent catch-up hold. Waiting
+  // partners stay on the authored overlay until the server wake, without a
+  // safety poll as the success path.
   const { experiment, sessions } = await startHoldExperiment(browser, RPS_DIR, [
     "stacked_hold_first",
     "stacked_hold_second"

@@ -1,1 +1,1 @@
-Fixed a case where the last participant to arrive at a barrier could briefly see the waiting overlay when a partner's browser checked its own hold at the same moment.
+Last-arrival self-skips stacked waits without first-painting authored wait copy when a partner overlay checks at the same moment. A hold consumed immediately after that skip stays a silent spinner for that visit, and the overlay chip is reused across stacked holds.

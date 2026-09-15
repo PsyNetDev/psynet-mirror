@@ -5,6 +5,7 @@ an empty test file. Import it from the ``tests/isolated`` directory.
 """
 
 import json
+import re
 import threading
 import uuid
 from contextlib import contextmanager
@@ -107,6 +108,24 @@ def _process_response(exp, participant, page_uuid, *, timeline_hold_resume=False
         )
 
 
+def _route_approved_response(participant, *, raw_answer=True):
+    """POST ``/response`` as an ordinary Next, including last-arrival finalize."""
+    payload = {
+        "participant_id": participant.id,
+        "page_uuid": participant.page_uuid,
+        "raw_answer": raw_answer,
+        "metadata": {"time_taken": 1},
+        "include_timeline_fragment": False,
+    }
+    with Flask(__name__).test_request_context(
+        "/response",
+        method="POST",
+        data={"json": json.dumps(payload)},
+        environ_base={"REMOTE_ADDR": "127.0.0.1"},
+    ):
+        return Experiment.route_response()
+
+
 def _working_participants(exp, count):
     """Create ``count`` working participants for stacked-hold arrival tests."""
     participants = [new_participant(exp) for _ in range(count)]
@@ -114,6 +133,30 @@ def _working_participants(exp, count):
         participant.status = "working"
     db.session.commit()
     return participants
+
+
+def _json_hold_is_silent(payload):
+    """Return whether a JSON timeline page is a silent catch-up hold."""
+    attributes = (payload or {}).get("attributes") or {}
+    hold = attributes.get("timeline_hold") or {}
+    if hold.get("silent"):
+        return True
+    message = hold.get("message") or ""
+    return not re.sub(r"<[^>]+>", "", message).strip()
+
+
+def _assert_cursor_unchanged(participant_id, page_uuid):
+    """This participant must still be on the given hold page uuid."""
+    db.session.expire_all()
+    participant = Participant.query.get(participant_id)
+    assert participant.page_uuid == page_uuid
+
+
+def _assert_left_hold_uuid(participant_id, page_uuid):
+    """This participant must have left the given hold page uuid."""
+    db.session.expire_all()
+    participant = Participant.query.get(participant_id)
+    assert participant.page_uuid != page_uuid
 
 
 def _assert_on_action_page(exp, participant_ids):

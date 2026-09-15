@@ -1,1 +1,1 @@
-Last-arrival GET retries waiter ``NOWAIT`` after a short pause, so a partner whose skip still holds the row does not cause the last arriver to first-paint a waiting hold.
+Last-arrival GET retries waiter ``NOWAIT`` once immediately when a partner row is still locked, then first-paints the live cursor if that retry still misses.

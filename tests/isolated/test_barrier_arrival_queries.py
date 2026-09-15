@@ -47,9 +47,8 @@ pytestmark = [
 ]
 
 # Precise snapshot of the current ORM path.
-# Check = 19 + 2N (original 17 plus extra-connection lock_timeout, ORM
-# lock_timeout, plus skip-after-commit lock_timeout + FOR UPDATE NOWAIT per
-# waiter).
+# Check = 19 (original 17 plus extra-connection lock_timeout, ORM
+# lock_timeout). Last-arrival no longer skip-after-commits partners.
 # Finalize = check + 6 overhead statements.
 # Statement-by-statement analysis:
 # docs/developer/sqlalchemy_performance.rst ("Barrier last-arrival SQL budgets").
@@ -57,7 +56,7 @@ pytestmark = [
 # Per-row writes still scale with group size; SQLAlchemy flushes them as one
 # executemany statement per table, so UPDATE *statement* count stays 1.
 _CHECK_BASE_QUERIES = 19
-_SKIP_QUERIES_PER_WAITER = 2
+_SKIP_QUERIES_PER_WAITER = 0
 _FINALIZE_OVERHEAD_QUERIES = 6
 
 
@@ -74,7 +73,7 @@ def _commit_count(profiler, *needles):
     """Count profiler commits whose callsite mentions any of ``needles``.
 
     Finalize's check ``session.commit()`` lives on
-    ``_check_and_skip_held_instance``; the queued-check commit lives on
+    ``_check_held_instance``; the queued-check commit lives on
     ``_attempt_queued_barrier_checks``; the relock commit stays on
     ``_run_finalized_barrier_arrivals``. Count those so extracting a
     helper does not look like a missing outer commit.
@@ -95,6 +94,7 @@ def _budget(profiler):
         "nested_commits": _commit_count(
             profiler,
             "_run_pending_barrier_checks",
+            "_check_held_instance",
             "_check_and_skip_held_instance",
         ),
         "finalize_commits": _commit_count(
@@ -291,17 +291,17 @@ def _check_expected(n):
     """
     return {
         "queries": _CHECK_BASE_QUERIES + _SKIP_QUERIES_PER_WAITER * n,
-        "commits": 2 + n,
+        "commits": 2,
         "nested_commits": 2,
-        "for_update": 1 + n,
-        "nowait": 1 + n,
+        "for_update": 1,
+        "nowait": 1,
         "relock_for_update": 0,
         "advisory_try": 1,
         "advisory_wait": 0,
         "spec_select": 1,
         "savepoint": 1,
         "release_savepoint": 1,
-        "lock_timeout": 2 + n,
+        "lock_timeout": 2,
         "waiter_join": 1,
         "update_link": 1,
         "update_hold_release": 1,
@@ -339,7 +339,7 @@ def _finalize_expected(n):
 def _stacked_finalize_expected():
     """Return stacked last-arrival snapshot independent of skip-per-waiter growth.
 
-    Last-arrival releases the filled visit and skips waiters after that commit.
+    Last-arrival releases the filled visit and self-skips; partners stay waiting.
     Pin the observed check/relock shape; update both places if it gets cheaper.
     See docs/developer/sqlalchemy_performance.rst (Barrier last-arrival SQL
     budgets).
@@ -352,7 +352,7 @@ def _stacked_finalize_expected():
 def test_stacked_finalize_commit_and_lock_budget_does_not_grow_with_group_size(
     db_session, monkeypatch
 ):
-    """Last-arrival stacked finalize skips waiters; lock kinds stay stable."""
+    """Last-arrival stacked finalize self-skips; lock kinds stay stable."""
     exp = get_experiment()
     _reset_experiment(exp)
     original_finalize = Experiment._finalize_barrier_arrivals
@@ -400,8 +400,7 @@ def test_stacked_finalize_commit_and_lock_budget_does_not_grow_with_group_size(
                 for waiter in participants[:-1]:
                     waiter = Participant.query.get(waiter.id)
                     page = exp.timeline.get_current_elt(exp, waiter)
-                    assert not getattr(page, "is_timeline_hold", False)
-                    assert page.label == "choose_action"
+                    assert getattr(page, "is_timeline_hold", False)
         finally:
             monkeypatch.setattr(
                 Experiment, "_finalize_barrier_arrivals", original_finalize
@@ -415,18 +414,15 @@ def test_stacked_finalize_commit_and_lock_budget_does_not_grow_with_group_size(
     ):
         assert observed[2][key] == observed[4][key]
     # Evaluating the filled visit still loads per-waiter rows as group size
-    # grows, and skip-after-commit walks each waiter. A smaller delta is an
-    # improvement.
+    # grows. A smaller delta is an improvement.
     extra_members = 2
     query_delta = observed[4]["queries"] - observed[2]["queries"]
     assert query_delta >= 0
-    # Skip-after-commit walks each extra member through the stack
-    # (grouper + two GroupBarriers). A smaller delta is an improvement.
     assert query_delta <= 80 * extra_members
 
 
 def test_check_instance_sql_matches_waiter_formula(db_session):
-    """Last-arrival checks stay O(1) in statement kinds; skip grows with *N*."""
+    """Last-arrival checks stay O(1) in statement kinds as group size grows."""
     exp = get_experiment()
     _reset_experiment(exp)
     observed = {}
@@ -465,13 +461,12 @@ def test_check_instance_sql_matches_waiter_formula(db_session):
     assert observed[2]["advisory_wait"] == observed[8]["advisory_wait"] == 0
     assert observed[2]["queries"] == _CHECK_BASE_QUERIES + _SKIP_QUERIES_PER_WAITER * 2
     assert observed[8]["queries"] == _CHECK_BASE_QUERIES + _SKIP_QUERIES_PER_WAITER * 8
-    assert observed[2]["nowait"] == 3
-    assert observed[8]["nowait"] == 9
+    assert observed[2]["nowait"] == observed[8]["nowait"] == 1
     assert observed[2]["hold_wake_lookup"] == observed[8]["hold_wake_lookup"] == 0
 
 
 def test_finalize_commits_check_then_relock_independent_of_group_size(db_session):
-    """Check kinds stay O(1); skip-after-commit and commits grow with *N*."""
+    """Check kinds stay O(1); last-arrival does not add per-waiter skip SQL."""
     exp = get_experiment()
     _reset_experiment(exp)
     observed = {}
