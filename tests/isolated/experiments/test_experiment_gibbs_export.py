@@ -15,7 +15,10 @@ from psynet.bot import BotDriver
 from psynet.command_line import export__local, populate_db_from_zip_file
 from psynet.export import load_export_table, unpack_json_column
 from psynet.participant import Participant
-from psynet.pytest_psynet import path_to_test_experiment
+from psynet.pytest_psynet import (
+    _stop_debug_experiment_process,
+    path_to_test_experiment,
+)
 from psynet.timeline import Response
 from psynet.trial.main import Trial
 
@@ -69,8 +72,14 @@ def _build_canonical_gibbs_export(data_root_dir):
 
 
 @pytest.fixture(scope="class")
-def canonical_gibbs_export(data_root_dir, launched_experiment):
+def canonical_gibbs_export(data_root_dir, launched_experiment, debug_server_process):
+    """Build the export zip, then stop gunicorn before later tests touch the DB.
+
+    ``populate_db_from_zip_file`` runs ``DROP TABLE ... CASCADE`` on the same
+    database the debug workers and 0.5 s barrier poller still query.
+    """
     _build_canonical_gibbs_export(data_root_dir)
+    _stop_debug_experiment_process(debug_server_process)
     return data_root_dir
 
 
@@ -181,38 +190,34 @@ class TestExpWithExport:
             else:
                 assert csv_name in exported_csv_files
 
+    def test_populate_db_from_canonical_export_archive(
+        self, database_dir, coin_class, tmp_path
+    ):
+        """Reload a canonical export zip whose empty table CSVs have been omitted."""
+        from psynet.chatroom import ChatMessage
+        from psynet.command_line import _install_archive_template
 
-@pytest.mark.parametrize(
-    "experiment_directory", [path_to_test_experiment("gibbs")], indirect=True
-)
-def test_populate_db_from_canonical_export_archive(
-    canonical_gibbs_export, database_dir, coin_class, tmp_path
-):
-    """Reload a canonical export zip whose empty table CSVs have been omitted."""
-    from psynet.chatroom import ChatMessage
-    from psynet.command_line import _install_archive_template
+        assert (Path(database_dir) / "participant.csv").exists()
+        assert not (Path(database_dir) / "chat_message.csv").exists()
 
-    assert (Path(database_dir) / "participant.csv").exists()
-    assert not (Path(database_dir) / "chat_message.csv").exists()
+        archive = tmp_path / "export.zip"
+        _install_archive_template(database_dir, str(archive))
+        populate_db_from_zip_file(str(archive))
 
-    archive = tmp_path / "export.zip"
-    _install_archive_template(database_dir, str(archive))
-    populate_db_from_zip_file(str(archive))
+        trials = Trial.query.all()
+        assert len(trials) > 15
+        assert all(t.participant_id in [1, 2, 3, 4, 5, 6] for t in trials)
 
-    trials = Trial.query.all()
-    assert len(trials) > 15
-    assert all(t.participant_id in [1, 2, 3, 4, 5, 6] for t in trials)
+        participants = Participant.query.all()
+        assert len(participants) == 6
+        assert sorted([p.id for p in participants]) == [1, 2, 3, 4, 5, 6]
 
-    participants = Participant.query.all()
-    assert len(participants) == 6
-    assert sorted([p.id for p in participants]) == [1, 2, 3, 4, 5, 6]
+        responses = Response.query.all()
+        assert len(responses) > 15
+        assert all(r.participant_id in [1, 2, 3, 4, 5, 6] for r in responses)
 
-    responses = Response.query.all()
-    assert len(responses) > 15
-    assert all(r.participant_id in [1, 2, 3, 4, 5, 6] for r in responses)
+        coins = coin_class.query.all()
+        assert len(coins) == 6
+        assert all(c.participant_id in [1, 2, 3, 4, 5, 6] for c in coins)
 
-    coins = coin_class.query.all()
-    assert len(coins) == 6
-    assert all(c.participant_id in [1, 2, 3, 4, 5, 6] for c in coins)
-
-    assert ChatMessage.query.count() == 0
+        assert ChatMessage.query.count() == 0
