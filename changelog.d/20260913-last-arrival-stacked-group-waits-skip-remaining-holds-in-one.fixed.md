@@ -1,1 +1,1 @@
-Last-arrival self-skips stacked group waits in the same ``GET /timeline`` or ``POST /response`` after releasing the filled visit. Waiting partners stay on their overlay until they resume.
+Last-arrival self-skips stacked group waits that are already released or ready in the same ``GET /timeline`` or ``POST /response`` after releasing the filled visit. It may land on a silent catch-up hold while partners remain behind. Waiting partners stay on their overlay until they resume.

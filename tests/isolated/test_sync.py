@@ -3440,6 +3440,89 @@ def test_poller_catchup_hold_stays_silent(in_experiment_directory, db_session):
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
+def test_hold_resume_post_catchup_hold_stays_silent(
+    in_experiment_directory, db_session
+):
+    """A ready overlay POST that lands on a later wait marks that hold silent."""
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    group_type = f"stack_post_silent_{uuid.uuid4().hex[:8]}"
+    exp.timeline = _stacked_partner_timeline(group_type, group_size=3)
+    try:
+        first, second, last = _working_participants(exp, 3)
+        first_id, second_id, last_id = first.id, second.id, last.id
+        assert _json_timeline(exp, first).status_code == 200
+        first = Participant.query.get(first_id)
+        first_hold_uuid = first.page_uuid
+        assert _json_timeline(exp, second).status_code == 200
+        assert _json_timeline(exp, last).status_code == 200
+        _assert_cursor_unchanged(first_id, first_hold_uuid)
+        resumed = _process_response(
+            exp,
+            Participant.query.get(first_id),
+            first_hold_uuid,
+            timeline_hold_resume=True,
+        )
+        first = Participant.query.get(first_id)
+        assert first.page_uuid != first_hold_uuid
+        assert getattr(resumed.page, "is_timeline_hold", False)
+        record = TimelineHoldRecord.query.filter_by(
+            participant_id=first_id, page_uuid=first.page_uuid
+        ).one()
+        assert record.silent is True
+        _catch_up_until_action(exp, [first_id, second_id, last_id])
+    finally:
+        exp.timeline = original_timeline
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_check_barriers_catchup_holds_stay_silent(
+    in_experiment_directory, db_session, monkeypatch
+):
+    """Poller-won stacked skips mark later holds silent before they are skipped."""
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    group_type = f"stack_poller_check_silent_{uuid.uuid4().hex[:8]}"
+    exp.timeline = _stacked_partner_timeline(group_type, group_size=3)
+
+    @classmethod
+    def skip_finalize(cls, experiment, participant, page):
+        return participant, page
+
+    try:
+        first, second, last = _working_participants(exp, 3)
+        first_id, second_id, last_id = first.id, second.id, last.id
+        assert _json_timeline(exp, first).status_code == 200
+        first = Participant.query.get(first_id)
+        first_hold_uuid = first.page_uuid
+        first_hold = TimelineHoldRecord.query.filter_by(
+            participant_id=first_id, page_uuid=first_hold_uuid
+        ).one()
+        assert first_hold.silent is False
+        assert _json_timeline(exp, second).status_code == 200
+        monkeypatch.setattr(
+            Experiment, "_finalize_pending_timeline_barriers", skip_finalize
+        )
+        assert _json_timeline(exp, last).status_code == 200
+        check_barriers()
+        holds = (
+            TimelineHoldRecord.query.filter_by(participant_id=first_id)
+            .order_by(TimelineHoldRecord.id)
+            .all()
+        )
+        assert holds[0].page_uuid == first_hold_uuid
+        assert holds[0].silent is False
+        assert any(record.silent for record in holds[1:])
+        _assert_on_action_page(exp, [first_id, second_id, last_id])
+    finally:
+        exp.timeline = original_timeline
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
 def test_check_barriers_skips_released_waiters_after_commit(
     in_experiment_directory, db_session, monkeypatch
 ):

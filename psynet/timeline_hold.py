@@ -78,7 +78,7 @@ def holding_next_hold_catchup():
         _next_hold_is_catchup.reset(token)
 
 
-def consume_next_hold_catchup():
+def _consume_next_hold_catchup():
     """Return and clear whether the hold being created is a catch-up wait."""
     silent = _next_hold_is_catchup.get()
     if silent:
@@ -485,7 +485,7 @@ class _TimelineHoldPage(Page):
             fix_time_credit=self.fix_time_credit,
             actual_wait_seconds=0.0,
             credited_wait_seconds=0.0,
-            silent=consume_next_hold_catchup(),
+            silent=_consume_next_hold_catchup(),
         )
         db.session.add(record)
         participant._timeline_hold_record = record

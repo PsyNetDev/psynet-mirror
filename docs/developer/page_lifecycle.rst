@@ -78,9 +78,11 @@ Timeline requests separate state mutation from rendering:
 1. A short write transaction locks the participant, advances or records the
    timeline state, and resolves the provisional page.
 2. If that phase records barrier arrivals, PsyNet commits them and evaluates
-   the affected barrier instances in short coordination transactions. Hold-wake
-   publishes from those inner commits wait until this stacked finalize
-   finishes, so waiting partners are not notified while later checks still
+   the affected barrier instances in short coordination transactions.
+   Last-arrival hold-wake publishes go out as soon as each of those inner
+   commits lands, so waiting partners can overlay-resume while this request
+   still renders. The barrier poller still defers wakes until its sweep
+   returns, so it does not notify partners while later poller skips still
    lock their rows.
 3. PsyNet resolves the final page, runs ``pre_render()``, and commits any
    preparation writes, releasing locks. Remaining queued hold wakes publish

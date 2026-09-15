@@ -150,7 +150,21 @@ _RELEASED_HOLD_WAITER_IDS_KEY = "psynet_released_hold_waiter_ids"
 _NESTED_BARRIER_QUEUE_SNAPSHOTS_KEY = "psynet_nested_barrier_queue_snapshots"
 # Shared cap for last-arrival finalize, ready-hold skip, and the poller sweep.
 # Each pass can mint a fresh visit; without a bound those walks occupy a worker.
+# Walkers observe once more after the last work unit so a walk that settles on
+# the cap still succeeds.
 _MAX_BARRIER_WALK_PASSES = 32
+
+
+def _barrier_walk_budget():
+    """Yield True for each allowed work unit, then False to observe the result.
+
+    Callers must return if the walk has already settled, and raise if this
+    yield is False and more work remains. That extra observation is what lets
+    a walk that finishes on the last allowed unit succeed.
+    """
+    for _ in range(_MAX_BARRIER_WALK_PASSES):
+        yield True
+    yield False
 
 
 class _BarrierAuthorHookError(Exception):
@@ -2454,7 +2468,7 @@ def check_barriers():
     """
     seen = set()
     with _defer_timeline_hold_wakes():
-        for _ in range(_MAX_BARRIER_WALK_PASSES):
+        for can_work in _barrier_walk_budget():
             waiting = [
                 instance_id
                 for instance_id in _waiting_barrier_instance_ids()
@@ -2462,6 +2476,11 @@ def check_barriers():
             ]
             if not waiting:
                 return
+            if not can_work:
+                raise RuntimeError(
+                    "Barrier poller sweep did not settle after "
+                    f"{_MAX_BARRIER_WALK_PASSES} passes."
+                )
             deferred_ids = []
             for instance_id in waiting:
                 seen.add(instance_id)
@@ -2469,10 +2488,6 @@ def check_barriers():
                     deferred_ids.append(instance_id)
             for instance_id in deferred_ids:
                 _process_barrier_instance(instance_id, retry=True)
-        raise RuntimeError(
-            "Barrier poller sweep did not settle after "
-            f"{_MAX_BARRIER_WALK_PASSES} passes."
-        )
 
 
 def check_sync_groups():

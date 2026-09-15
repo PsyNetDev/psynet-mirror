@@ -381,7 +381,7 @@ def test_advance_past_ready_holds_skips_a_cleared_hold():
 
 def test_advance_past_ready_holds_clears_catchup_mark_if_advance_raises():
     """A skip that raises must not leave silent=True for later holds."""
-    from psynet.timeline_hold import consume_next_hold_catchup
+    from psynet.timeline_hold import _consume_next_hold_catchup
 
     hold = MagicMock()
     hold.is_timeline_hold = True
@@ -396,7 +396,7 @@ def test_advance_past_ready_holds_clears_catchup_mark_if_advance_raises():
     with pytest.raises(RuntimeError, match="boom"):
         experiment._advance_past_ready_holds(participant, hold)
 
-    assert consume_next_hold_catchup() is False
+    assert _consume_next_hold_catchup() is False
 
 
 def test_finalize_barrier_arrivals_stops_after_max_passes(monkeypatch):
@@ -434,6 +434,42 @@ def test_finalize_barrier_arrivals_stops_after_max_passes(monkeypatch):
         )
 
 
+def test_finalize_barrier_arrivals_settles_on_the_last_allowed_pass(monkeypatch):
+    """Emptying the queue on the cap pass must not raise."""
+    participant = SimpleNamespace(id=1)
+    hold = SimpleNamespace(is_timeline_hold=True)
+    n = {"i": 0}
+
+    def _next(*_a, **_k):
+        n["i"] += 1
+        return [] if n["i"] >= 3 else ["next-id"]
+
+    monkeypatch.setattr("psynet.sync._MAX_BARRIER_WALK_PASSES", 3)
+    monkeypatch.setattr(
+        "psynet.experiment._set_transaction_lock_timeout", lambda seconds: None
+    )
+    monkeypatch.setattr(
+        Experiment, "_run_queued_barrier_checks", classmethod(lambda *a, **k: True)
+    )
+    monkeypatch.setattr(
+        Experiment,
+        "_relock_arriver_after_barrier_check",
+        classmethod(lambda *a, **k: (participant, hold)),
+    )
+    monkeypatch.setattr(Experiment, "_next_stacked_barrier_checks", staticmethod(_next))
+    monkeypatch.setattr(
+        "psynet.sync._pending_checks_should_wait_for_claim", lambda ids: False
+    )
+
+    Experiment._finalize_barrier_arrivals(
+        experiment=SimpleNamespace(),
+        participant_id=1,
+        checks=["first-id"],
+        result=SimpleNamespace(page=None, payload={}),
+    )
+    assert n["i"] == 3
+
+
 def test_check_barriers_stops_after_max_passes(monkeypatch):
     """A sweep that mints a new visit each pass must not occupy the poller."""
     from psynet.sync import check_barriers
@@ -451,7 +487,27 @@ def test_check_barriers_stops_after_max_passes(monkeypatch):
     with pytest.raises(RuntimeError, match="poller sweep did not settle"):
         check_barriers()
 
-    assert n["i"] == 3
+    assert n["i"] == 4
+
+
+def test_check_barriers_settles_on_the_last_allowed_pass(monkeypatch):
+    """A sweep that empties on the cap pass must not raise."""
+    from psynet.sync import check_barriers
+
+    n = {"i": 0}
+
+    def _waiting():
+        n["i"] += 1
+        if n["i"] <= 3:
+            return [f"inst-{n['i']}"]
+        return []
+
+    monkeypatch.setattr("psynet.sync._MAX_BARRIER_WALK_PASSES", 3)
+    monkeypatch.setattr("psynet.sync._waiting_barrier_instance_ids", _waiting)
+    monkeypatch.setattr("psynet.sync._process_barrier_instance", lambda *a, **k: False)
+
+    check_barriers()
+    assert n["i"] == 4
 
 
 def test_timeline_hold_payload_warns_when_the_record_is_missing(caplog):
@@ -568,7 +624,75 @@ def test_advance_past_ready_holds_stops_after_max_skip_steps():
     with pytest.raises(RuntimeError, match="did not settle"):
         experiment._advance_past_ready_holds(participant, _new_hold())
 
-    assert experiment.timeline.get_current_elt.call_count == _MAX_BARRIER_WALK_PASSES
+    assert (
+        experiment.timeline.get_current_elt.call_count == _MAX_BARRIER_WALK_PASSES + 1
+    )
+
+
+def test_advance_past_ready_holds_settles_on_the_last_allowed_skip(monkeypatch):
+    """Skipping exactly the cap number of ready holds must return the landing page."""
+    monkeypatch.setattr("psynet.sync._MAX_BARRIER_WALK_PASSES", 3)
+    landing = MagicMock()
+    landing.is_timeline_hold = False
+    n = {"i": 0}
+
+    def _next_page(*_args, **_kwargs):
+        n["i"] += 1
+        if n["i"] < 3:
+            hold = MagicMock()
+            hold.is_timeline_hold = True
+            hold.prepare_resume_if_ready.return_value = True
+            hold.time_estimate = 1
+            return hold
+        return landing
+
+    first = MagicMock()
+    first.is_timeline_hold = True
+    first.prepare_resume_if_ready.return_value = True
+    first.time_estimate = 1
+    experiment = Experiment.__new__(Experiment)
+    experiment.timeline = MagicMock()
+    experiment.timeline.get_current_elt.side_effect = _next_page
+    participant = SimpleNamespace(inc_progress=MagicMock())
+
+    page = experiment._advance_past_ready_holds(participant, first)
+
+    assert page is landing
+    assert experiment.timeline.advance_page.call_count == 3
+
+
+def test_advance_past_ready_holds_settles_on_a_wait_after_the_last_skip(monkeypatch):
+    """Landing on a still-waiting hold after the last skip must not raise."""
+    monkeypatch.setattr("psynet.sync._MAX_BARRIER_WALK_PASSES", 3)
+    waiting = MagicMock()
+    waiting.is_timeline_hold = True
+    waiting.hold_id = "barrier:catchup"
+    waiting.prepare_resume_if_ready.return_value = False
+    n = {"i": 0}
+
+    def _next_page(*_args, **_kwargs):
+        n["i"] += 1
+        if n["i"] < 3:
+            hold = MagicMock()
+            hold.is_timeline_hold = True
+            hold.prepare_resume_if_ready.return_value = True
+            hold.time_estimate = 1
+            return hold
+        return waiting
+
+    first = MagicMock()
+    first.is_timeline_hold = True
+    first.prepare_resume_if_ready.return_value = True
+    first.time_estimate = 1
+    experiment = Experiment.__new__(Experiment)
+    experiment.timeline = MagicMock()
+    experiment.timeline.get_current_elt.side_effect = _next_page
+    participant = SimpleNamespace(inc_progress=MagicMock())
+
+    page = experiment._advance_past_ready_holds(participant, first)
+
+    assert page is waiting
+    assert experiment.timeline.advance_page.call_count == 3
 
 
 def test_finalize_pending_hold_without_checks_relocks_the_participant(monkeypatch):

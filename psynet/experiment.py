@@ -3537,24 +3537,30 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         Page makers reconstruct barrier holds on each ``get_current_elt``, so
         a still-waiting visit is a new object with the same ``hold_id``. Treat
         that as the same wait; identity ``is`` would loop until timeout.
+        After the last allowed skip, this walk observes the landing page so
+        settling on the cap still succeeds.
         """
-        from .sync import _MAX_BARRIER_WALK_PASSES
+        from .sync import _MAX_BARRIER_WALK_PASSES, _barrier_walk_budget
         from .timeline_hold import holding_next_hold_catchup
 
-        for _ in range(_MAX_BARRIER_WALK_PASSES):
+        for can_work in _barrier_walk_budget():
             if not getattr(page, "is_timeline_hold", False):
                 return page
-            if page.prepare_resume_if_ready(self, participant):
-                page.account_wait(participant, settle=True)
-                participant.inc_progress(page.time_estimate)
-                with holding_next_hold_catchup():
-                    self.timeline.advance_page(self, participant)
-                    page = self.timeline.get_current_elt(self, participant)
+            if not page.prepare_resume_if_ready(self, participant):
+                live = self.timeline.get_current_elt(self, participant)
+                if self._is_same_timeline_hold(page, live):
+                    return live
+                if not can_work:
+                    break
+                page = live
                 continue
-            live = self.timeline.get_current_elt(self, participant)
-            if self._is_same_timeline_hold(page, live):
-                return live
-            page = live
+            if not can_work:
+                break
+            page.account_wait(participant, settle=True)
+            participant.inc_progress(page.time_estimate)
+            with holding_next_hold_catchup():
+                self.timeline.advance_page(self, participant)
+                page = self.timeline.get_current_elt(self, participant)
         raise RuntimeError(
             f"Timeline hold skip did not settle after {_MAX_BARRIER_WALK_PASSES} steps."
         )
@@ -6248,6 +6254,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         """
         from .sync import (
             _MAX_BARRIER_WALK_PASSES,
+            _barrier_walk_budget,
             _pending_checks_should_wait_for_claim,
         )
 
@@ -6261,7 +6268,12 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             wait_this=wait_for_claim,
             allow_unfilled_recheck=wait_for_claim,
         )
-        for _ in range(_MAX_BARRIER_WALK_PASSES):
+        for can_work in _barrier_walk_budget():
+            if not can_work:
+                raise RuntimeError(
+                    "Barrier arrival finalize did not settle after "
+                    f"{_MAX_BARRIER_WALK_PASSES} passes."
+                )
             walk.processed.update(checks)
             cls._reapply_timeline_lock_timeout()
             all_claimed = cls._run_queued_barrier_checks(checks, wait=walk.wait_this)
@@ -6284,10 +6296,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             )
             if not checks:
                 return participant
-        raise RuntimeError(
-            "Barrier arrival finalize did not settle after "
-            f"{_MAX_BARRIER_WALK_PASSES} passes."
-        )
 
     @staticmethod
     def _render_prepared_partial_timeline_payload(page, experiment, participant):

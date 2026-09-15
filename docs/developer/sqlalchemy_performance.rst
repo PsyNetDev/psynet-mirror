@@ -324,9 +324,10 @@ cached for that call.
 Stacked last-arrival finalize (grouper + two GroupBarriers)
 -----------------------------------------------------------
 
-Last-arrival releases the filled visit and self-skips remaining holds in
-that request. It does not skip partner cursors after the check; partners
-leave on overlay wake. The visit claim stays on a second connection until
+Last-arrival releases the filled visit and self-skips holds that are
+already released or ready. It may land on a later silent catch-up hold
+while partners remain on their overlay. It does not skip partner cursors
+after the check; partners leave on overlay wake. The visit claim stays on a second connection until
 the check finishes. Check/relock *kinds* for the filled visit stay
 independent of group size *N*. Each check tries
 ``pg_try_advisory_xact_lock`` on that extra connection and only waits with
