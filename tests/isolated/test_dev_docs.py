@@ -575,3 +575,30 @@ def test_live_preview_requires_html_target(source_checkout, monkeypatch):
     with working_directory(source_checkout):
         with pytest.raises(ValueError, match="only supported for the html docs target"):
             docs_module.make_command(target="dirhtml", live_preview=True)
+
+
+def test_timeline_hold_trace_witnesses_exist():
+    """Every ``test_...`` named on the traces page must exist in the suite."""
+    from psynet.light_utils import get_psynet_root
+
+    root = get_psynet_root()
+    traces = (root / "docs" / "developer" / "timeline_hold_traces.rst").read_text(
+        encoding="utf-8"
+    )
+    cited = set(re.findall(r"``(test_[a-z0-9_]+)``", traces))
+    assert cited, "timeline_hold_traces.rst must cite at least one test"
+
+    defined = set()
+    for path in (root / "tests").rglob("test_*.py"):
+        defined.update(
+            re.findall(
+                r"^def (test_[a-z0-9_]+)\(",
+                path.read_text(encoding="utf-8"),
+                re.M,
+            )
+        )
+    missing = sorted(cited - defined)
+    assert not missing, (
+        "docs/developer/timeline_hold_traces.rst cites tests that do not exist: "
+        + ", ".join(missing)
+    )

@@ -91,6 +91,7 @@ if str(_ISOLATED_DIR) not in sys.path:
     sys.path.insert(0, str(_ISOLATED_DIR))
 from timeline_hold_helpers import (  # noqa: E402
     _assert_on_action_page,
+    _barrier_link_released,
     _catch_up_until_action,
     _hold_wake_publications,
     _json_timeline,
@@ -1565,21 +1566,6 @@ def _commit_barrier_arrivals():
     if checks:
         _run_pending_barrier_checks(checks)
         db.session.commit()
-
-
-def _barrier_link_released(participant_id, barrier_id):
-    with db.engine.connect() as conn:
-        return conn.execute(
-            text(
-                """
-                SELECT released
-                FROM participant_link_barrier
-                WHERE participant_id = :participant_id
-                  AND barrier_id = :barrier_id
-                """
-            ),
-            {"participant_id": participant_id, "barrier_id": barrier_id},
-        ).scalar()
 
 
 class _DummyFinalizePage:

@@ -1,9 +1,11 @@
 """Reachable-state witnesses for the timeline-hold lock and pin protocol.
 
-These tests pause at transaction boundaries and assert HTTP/first-paint
-outcomes. They do not monkeypatch ``is_ready_to_resume``, and they do not
-treat a ready overlay on an unreleased ``active_barriers`` link as a
-protocol witness. See ``docs/developer/timeline_hold_traces.rst``.
+The GET/POST tests pause at transaction boundaries and assert HTTP and
+first-paint outcomes. They do not monkeypatch ``is_ready_to_resume``, and
+they do not treat a ready overlay on an unreleased ``active_barriers``
+link as a protocol witness. ``test_overlapping_render_pin_owners_publish_wake_once``
+is a Lua/refcount witness: it drives Redis pins directly. See
+``docs/developer/timeline_hold_traces.rst``.
 """
 
 import sys
@@ -37,19 +39,18 @@ _ISOLATED_DIR = Path(__file__).resolve().parent
 if str(_ISOLATED_DIR) not in sys.path:
     sys.path.insert(0, str(_ISOLATED_DIR))
 from timeline_hold_helpers import (  # noqa: E402
-    _catch_up_until_action,
+    _assert_on_action_page,
+    _barrier_link_released,
     _hold_wake_publications,
     _json_timeline,
     _json_timeline_via_route,
     _lock_participant_row,
-    _participant_hold,
     _participant_row_is_locked,
     _process_response,
     _released_wake_count,
     _route_timeline_via_route_in_thread,
     _using_stacked_timeline,
     _working_participants,
-    new_participant,
 )
 
 CONSENTS = pytest.mark.parametrize(
@@ -73,10 +74,6 @@ def _track_barrier_check_claims(monkeypatch):
     return claimed
 
 
-def _current_hold_instance_id(participant):
-    return next(iter(participant.active_barriers.values())).barrier_instance_id
-
-
 @CONSENTS
 def test_both_nowait_misses_first_paint_live_hold_not_503(
     in_experiment_directory, db_session, monkeypatch
@@ -84,7 +81,8 @@ def test_both_nowait_misses_first_paint_live_hold_not_503(
     """T7: two waiter ``NOWAIT`` misses first-paint the live hold, not HTTP 503.
 
     The extra connection holds the waiter's row through both check attempts.
-    After that lock drops, the poller finishes the skip.
+    After that lock drops, ``check_barriers()`` must finish the skip without a
+    catch-up GET.
     """
     exp = get_experiment()
     group_type = f"t7_both_miss_{uuid.uuid4().hex[:8]}"
@@ -98,6 +96,7 @@ def test_both_nowait_misses_first_paint_live_hold_not_503(
         last = Participant.query.get(last_id)
         page = exp.timeline.get_current_elt(exp, first)
         assert getattr(page, "is_timeline_hold", False)
+        barrier_id = page.barrier_id
         hold_uuid = first.page_uuid
         assert (
             TimelineHoldRecord.query.filter_by(
@@ -113,7 +112,7 @@ def test_both_nowait_misses_first_paint_live_hold_not_503(
             assert claimed == [False, False]
             assert last_response.status_code == 200
             payload = last_response.get_json() or {}
-            assert (payload.get("attributes") or {}).get("type") != "ModularPage"
+            assert payload["attributes"]["type"] == "_BarrierHoldPage"
             db.session.expire_all()
             last = Participant.query.get(last_id)
             first = Participant.query.get(first_id)
@@ -123,8 +122,10 @@ def test_both_nowait_misses_first_paint_live_hold_not_503(
             assert getattr(
                 exp.timeline.get_current_elt(exp, first), "is_timeline_hold", False
             )
+            assert _barrier_link_released(first_id, barrier_id) is False
+            assert _barrier_link_released(last_id, barrier_id) is False
         check_barriers()
-        _catch_up_until_action(exp, [first_id, last_id])
+        _assert_on_action_page(exp, [first_id, last_id])
 
 
 @CONSENTS
@@ -136,7 +137,9 @@ def test_fail_or_redirect_hold_resume_settles_under_live_follow_pin(
 
     Last-arrival is paused after the arrival commit and follow pin, before
     the check can release. The overlay looks ready because of fail/redirect,
-    not because ``active_barriers`` dropped the link.
+    not because ``active_barriers`` dropped the link. The follow pin TTL is
+    15 s and is not refreshed while last-arrival is parked here; keep this
+    window well under that.
     """
     exp = get_experiment()
     group_type = f"i5_{settle_how}_{uuid.uuid4().hex[:8]}"
@@ -162,10 +165,10 @@ def test_fail_or_redirect_hold_resume_settles_under_live_follow_pin(
         db.session.expire_all()
         first = Participant.query.get(first_id)
         hold_uuid = first.page_uuid
-        instance_id = _current_hold_instance_id(first)
         page = exp.timeline.get_current_elt(exp, first)
+        instance_id = _hold_instance_id_for_page(first, page)
+        assert instance_id
         assert not page.is_ready_to_resume(exp, first)
-        assert _hold_instance_id_for_page(first, page) == instance_id
         thread, result, errors = _route_timeline_via_route_in_thread(last_uid)
         try:
             assert entered.wait(timeout=10)
@@ -209,17 +212,17 @@ def test_fail_or_redirect_hold_resume_settles_under_live_follow_pin(
 def test_overlapping_render_pin_owners_publish_wake_once(
     in_experiment_directory, db_session, monkeypatch
 ):
-    """T8: the last overlapping render-pin owner drains a parked wake once."""
-    participant = new_participant(get_experiment())
-    participant.status = "working"
-    hold = _participant_hold(participant, "overlap-pin", "overlap")
-    db.session.commit()
+    """T8 Lua: the last overlapping render-pin owner drains a parked wake once.
+
+    This drives the last-arrival gate and ``_publish_wakes`` on a fabricated
+    instance id. It is not a reachable GET witness.
+    """
     publications = _hold_wake_publications(monkeypatch)
     instance_id = f"overlap-{uuid.uuid4().hex}"
     wake = {
-        "participant_id": participant.id,
+        "participant_id": 0,
         "reason": "barrier_released",
-        "wake_token": hold.wake_token,
+        "wake_token": "lua-overlap-token",
         "instance_id": instance_id,
     }
     a_pinned = threading.Event()

@@ -407,9 +407,12 @@ def _get_waiting_participants(
 
     Per-waiter collections use ``selectinload``, not extra ``joinedload`` on
     this query. The lock clause already targets the link and participant
-    rows; joining ``timeline_hold`` or collections would add outer joins to a
-    ``FOR UPDATE`` statement (a PostgreSQL footgun) or a cartesian product.
-    The follow-up ``IN`` queries do not take extra row locks.
+    rows; joining ``timeline_hold`` or those collections would add more
+    outer joins to a ``FOR UPDATE`` statement (a PostgreSQL footgun) or a
+    cartesian product. ``Participant._current_trial`` is already
+    ``lazy="joined"``, so this query inherits one outer join to ``trial``;
+    that alias is not in the ``OF`` list. The follow-up ``IN`` queries do
+    not take extra row locks.
 
     ``sync_group_links`` is populated separately; see
     ``_populate_sync_group_links``.
@@ -2408,6 +2411,8 @@ def _run_pending_barrier_checks(instance_ids, *, wait=True):
     all_claimed = True
     for instance_id in instance_ids:
         try:
+            # Refresh the 15 s follow-pin TTL on a long queue. INCR is
+            # skipped for ids this request already owns in the pre-loop.
             _mark_last_arrival_follow_instance(instance_id)
             ran = False
             with _hold_barrier_instance_claim(instance_id, wait=False) as claimed:

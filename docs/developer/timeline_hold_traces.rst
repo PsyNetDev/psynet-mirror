@@ -12,14 +12,26 @@ server path: real timeline requests and barrier transitions, paused at
 transaction boundaries. Monkeypatching ``is_ready_to_resume``, overlaying
 a ready hold on an unreleased ``active_barriers`` link, or inserting a
 Redis pin with ``SET`` instead of the last-arrival gate does not support
-a protocol trace. Pin-lookup and retry-unit tests may still use those
-shortcuts. Low-level Lua tests may drive Redis directly.
+a protocol trace.
+
+Witness lists below name the test, its file, and its kind:
+
+* **Protocol** — reachable GET/POST, paused at a transaction boundary.
+* **Pin-lookup** — may ``SET`` a Redis pin or rotate ``page_uuid`` by hand.
+* **Retry-unit** — stubs a check/retry helper, or uses a dummy timeline.
+* **Unit** — MagicMock or stubbed ``is_ready_to_resume`` on ``process_response``.
+* **Lua** — drives Redis pins and ``_publish_wakes`` directly.
+
+Pin-lookup, retry-unit, unit, and Lua tests may use those shortcuts.
+They are not substitutes for a protocol witness.
+
+Traces live in ``tests/isolated/test_timeline_hold_protocol.py`` (T7,
+fail/redirect I5, T8 Lua), ``tests/isolated/test_sync.py``, and
+``tests/isolated/test_timeline.py``. Shared request helpers live in
+``tests/isolated/timeline_hold_helpers.py``.
 
 The lock protocol itself is in :ref:`timeline-hold-resume-protocol`.
-This page only lists **who may hold what, in which order**. Isolated
-reachable-state witnesses live in
-``tests/isolated/test_timeline_hold_protocol.py``. Shared request helpers
-live in ``tests/isolated/timeline_hold_helpers.py``.
+This page only lists **who may hold what, in which order**.
 
 Resources
 ---------
@@ -27,9 +39,12 @@ Resources
 Four resources matter. A request may hold more than one at once.
 
 Waiter row
-    PostgreSQL ``FOR UPDATE`` on ``participant``. Last-arrival skip and
-    a ready hold-resume both take it with ``NOWAIT``. An unready overlay
-    check must not take it.
+    PostgreSQL ``FOR UPDATE`` on ``participant``. Last-arrival skip takes
+    **partner** rows with ``NOWAIT``. A ready hold-resume takes this
+    waiter's row with ``NOWAIT``. Last-arrival's **own** row is a blocking
+    ``FOR UPDATE`` under ``lock_timeout`` in ``_skip_ready_hold_on_get``
+    and ``_run_finalized_barrier_arrivals``. An unready overlay check must
+    not take it.
 
 Visit claim
     Extra-connection transaction lock on the barrier instance. Last-arrival
@@ -65,9 +80,12 @@ The partner is still waiting. Last-arrival has not committed a release.
                                 first-paint action page
 
 Witness:
-``test_unready_hold_resume_does_not_lock_the_waiter_row``,
-``test_last_arrival_releases_waiters_during_unready_hold_resume``,
-``test_process_response_unready_hold_resume_does_not_lock_or_recheck``.
+
+* Protocol (``tests/isolated/test_sync.py``):
+  ``test_unready_hold_resume_does_not_lock_the_waiter_row``,
+  ``test_last_arrival_releases_waiters_during_unready_hold_resume``.
+* Unit (``tests/isolated/test_timeline.py``, stubbed ``is_ready_to_resume``):
+  ``test_process_response_unready_hold_resume_does_not_lock_or_recheck``.
 
 T2 — Ready overlay after release commit, before skip
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -92,9 +110,12 @@ If the overlay took ``FOR UPDATE`` here, skip would miss twice and
 first-paint the live hold.
 
 Witness:
-``test_ready_hold_resume_skips_write_while_last_arrival_pin``
-(follow and render),
-``test_last_arrival_skips_while_ready_partner_hold_resume_overlaps``.
+
+* Protocol (``tests/isolated/test_sync.py``):
+  ``test_last_arrival_skips_while_ready_partner_hold_resume_overlaps``.
+* Pin-lookup (``tests/isolated/test_sync.py``, ``SET`` pin):
+  ``test_ready_hold_resume_skips_write_while_last_arrival_pin``
+  (follow and render).
 
 T3 — Stale hold uuid while a pin is still set
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -103,26 +124,40 @@ Skip already rotated ``participant.page_uuid``. The overlay still
 posts the old hold uuid. Last-arrival may be in a later stacked check
 that still needs waiter ``NOWAIT``.
 
+T3 under a pin has no protocol witness.
+
 Witness:
-``test_stale_hold_resume_skips_write_while_last_arrival_pin``.
-Catch-up without a pin remains
-``test_stale_hold_resume_approves_the_current_page_after_last_arrival``.
+
+* Pin-lookup (``tests/isolated/test_sync.py``, ``SET`` pin and hand-rotated
+  ``page_uuid``):
+  ``test_stale_hold_resume_skips_write_while_last_arrival_pin``.
+* Protocol without a pin (catch-up after skip):
+  ``test_stale_hold_resume_approves_the_current_page_after_last_arrival``.
 
 T4 — Timeout or fail under a live pin
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Timed-out, failed, and redirected holds must still take
+On the submitted hold (matching ``page_uuid``, current element is a
+hold), timed-out, failed, and redirected resumes must still take
 ``FOR UPDATE NOWAIT`` and settle. A pin must not strand them on
 ``skip_write``. Fail and ``pending_redirect`` become ready while the
 barrier link is still unreleased, so ``_hold_instance_id_for_page``
-still returns an id.
+still returns an id. A failed or redirected participant whose uuid is
+already stale is not this trace; that POST can still take the pin
+branch.
 
 Witness:
-``test_timed_out_hold_resume_still_writes_under_last_arrival_pin``,
-``test_fail_or_redirect_hold_resume_settles_under_live_follow_pin``.
-Ready resume without a pin:
-``test_process_response_ready_hold_resume_locks_with_nowait``,
-``test_ready_hold_resume_does_not_wait_when_participant_row_is_locked``.
+
+* Protocol (``tests/isolated/test_timeline_hold_protocol.py``, matching
+  uuid, live follow pin):
+  ``test_fail_or_redirect_hold_resume_settles_under_live_follow_pin``.
+* Pin-lookup (``tests/isolated/test_sync.py``, ``SET`` pin; timeout only):
+  ``test_timed_out_hold_resume_still_writes_under_last_arrival_pin``.
+* Unit (``tests/isolated/test_timeline.py``, stubbed ``is_ready_to_resume``):
+  ``test_process_response_ready_hold_resume_locks_with_nowait``.
+* Retry-unit (``tests/isolated/test_sync.py``, stubbed
+  ``is_ready_to_resume``):
+  ``test_ready_hold_resume_does_not_wait_when_participant_row_is_locked``.
 
 T5 — Visit-claim wait times out
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -131,8 +166,10 @@ Last-arrival would release, but waiting for the extra-connection claim
 hits ``lock_timeout``. The GET returns HTTP 503, not a first-paint hold.
 
 Witness:
-``test_last_arrival_claim_timeout_returns_busy_503``,
-``test_last_arrival_waits_for_a_busy_barrier_claim``.
+
+* Protocol (``tests/isolated/test_sync.py``):
+  ``test_last_arrival_claim_timeout_returns_busy_503``,
+  ``test_last_arrival_waits_for_a_busy_barrier_claim``.
 
 T6 — Unfilled waiter GET
 ~~~~~~~~~~~~~~~~~~~~~~~~
@@ -141,7 +178,9 @@ A waiter GET that does not fill the group must not take the render pin.
 It may follow-pin and try the claim without waiting.
 
 Witness:
-``test_waiter_claim_miss_does_not_render_pin``.
+
+* Protocol (``tests/isolated/test_sync.py``):
+  ``test_waiter_claim_miss_does_not_render_pin``.
 
 T7 — Waiter ``NOWAIT`` miss
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -150,13 +189,27 @@ Skip misses a locked waiter row. Last-arrival retries once, still
 ``NOWAIT``. A second miss first-paints the live cursor; the 0.5 s
 poller finishes the skip. That is not HTTP 503.
 
-The retry-succeed tests below drop the waiter lock between attempts.
-The both-miss terminal branch keeps that lock through both attempts.
+The three tests below are different shapes:
+
+* ``test_last_arrival_retries_an_unclaimed_barrier_check_once`` stubs
+  ``_run_pending_barrier_checks`` so the first call returns ``False``.
+  It never takes a waiter lock.
+* ``test_last_arrival_releases_waiters_when_nowait_retry_sees_unlocked_row``
+  rolls back a real blocker connection between attempts.
+* ``test_both_nowait_misses_first_paint_live_hold_not_503`` keeps that
+  lock through both attempts, then calls ``check_barriers()`` and
+  asserts both participants are off the hold **before** any catch-up
+  GET.
 
 Witness:
-``test_last_arrival_retries_an_unclaimed_barrier_check_once``,
-``test_last_arrival_releases_waiters_when_nowait_retry_sees_unlocked_row``,
-``test_both_nowait_misses_first_paint_live_hold_not_503``.
+
+* Protocol (``tests/isolated/test_timeline_hold_protocol.py``):
+  ``test_both_nowait_misses_first_paint_live_hold_not_503``.
+* Retry-unit (``tests/isolated/test_sync.py``, stubbed first check):
+  ``test_last_arrival_retries_an_unclaimed_barrier_check_once``.
+* Retry-unit (``tests/isolated/test_sync.py``, dummy timeline, real
+  waiter lock dropped between attempts):
+  ``test_last_arrival_releases_waiters_when_nowait_retry_sees_unlocked_row``.
 
 T8 — Overlapping pin owners
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -165,8 +218,13 @@ Overlapping last-arrival requests ``INCR`` the same Redis pin. One
 owner exiting must ``DECR``, not delete the key, so a parked wake stays
 unpublished until the last owner exits, then publishes exactly once.
 
+This has a Lua witness only. Two server requests co-owning a pin on one
+``BarrierInstance`` is not covered here.
+
 Witness:
-``test_overlapping_render_pin_owners_publish_wake_once``.
+
+* Lua (``tests/isolated/test_timeline_hold_protocol.py``):
+  ``test_overlapping_render_pin_owners_publish_wake_once``.
 
 Invariants
 ----------
@@ -187,7 +245,9 @@ I3
 I4
     I3 still holds when the submitted ``page_uuid`` is stale.
 I5
-    Timeout, fail, and ``pending_redirect`` ignore the pin and settle.
+    On the submitted hold, timeout, fail, and ``pending_redirect``
+    ignore the pin and settle. Fail and ``pending_redirect`` have a
+    protocol witness; timeout-under-pin is pin-lookup only.
 I6
     Last-arrival first-paints the action page when T1 or T2 overlaps
     skip, not ``_BarrierHoldPage``.
@@ -199,7 +259,7 @@ I8
 I9
     A waiter-row ``NOWAIT`` miss is ``all_claimed=False`` plus one
     retry, not HTTP 503. Two misses still first-paint the live cursor;
-    the poller finishes the skip.
+    ``check_barriers()`` then finishes the skip without a catch-up GET.
 I10
     Overlapping render-pin owners must not drain parked wakes while
     another owner still holds the visit.
@@ -213,3 +273,8 @@ overlay, or author ``on_release`` raising. Playwright ``@both`` covers
 in-place vs full-reload **delivery** of the same server protocol; it
 is not a substitute for T2. A model checker (for example TLA+) would
 be the next step if the lock and pin state machine needs a real proof.
+
+T3 under a pin, timeout-under-pin, fail/redirect under a **render**
+pin, and two requests co-owning a pin on one ``BarrierInstance`` have
+no protocol witness. Pin lookup currently scans every
+``barrier_links`` row.

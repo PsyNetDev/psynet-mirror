@@ -4,8 +4,6 @@ This module is not named ``test_*.py`` so isolated CI does not collect it as
 an empty test file. Import it from the ``tests/isolated`` directory.
 """
 
-from __future__ import annotations
-
 import json
 import threading
 import uuid
@@ -232,6 +230,22 @@ def _released_wake_count(publications):
         for target in payload.get("targets", [])
         if target.get("reason") == "barrier_released"
     )
+
+
+def _barrier_link_released(participant_id, barrier_id):
+    """Return whether this participant's link to ``barrier_id`` is released."""
+    with db.engine.connect() as conn:
+        return conn.execute(
+            text(
+                """
+                SELECT released
+                FROM participant_link_barrier
+                WHERE participant_id = :participant_id
+                  AND barrier_id = :barrier_id
+                """
+            ),
+            {"participant_id": participant_id, "barrier_id": barrier_id},
+        ).scalar()
 
 
 def _participant_hold(participant, page_uuid, hold_id):
