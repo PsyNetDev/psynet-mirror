@@ -14,6 +14,7 @@ const {
   enterSkippingHold,
   enterWaitingHold,
   pickConcurrentLastArriver,
+  isAuthoredWaiterArrival,
   startHoldExperiment,
   stopExperiment,
   submitChoiceMaybeHeld,
@@ -96,16 +97,17 @@ test("two late trio members arriving together release every waiter", { tag: "@bo
         prompt: ACTION_PROMPT
       })
     ]);
-    const laterEntry = pickConcurrentLastArriver([arrivalA, arrivalB]).entry;
+    const laterArrival = pickConcurrentLastArriver([arrivalA, arrivalB]);
+    const laterEntry = laterArrival.entry;
     await assertWaiterReleasedWithLastArriver(first, laterEntry, {
       allowWebsocketResume: true,
       maxHoldResumePosts: 3
     });
     const heldLate = [];
-    if (arrivalA.held) {
+    if (isAuthoredWaiterArrival(arrivalA)) {
       heldLate.push(lateA);
     }
-    if (arrivalB.held) {
+    if (isAuthoredWaiterArrival(arrivalB)) {
       heldLate.push(lateB);
     }
     if (heldLate.length) {
@@ -262,10 +264,10 @@ test("two late choices complete a trio without a safety poll", { tag: "@both" },
       maxHoldResumePosts: 3
     });
     const heldLate = [];
-    if (choiceA.held) {
+    if (isAuthoredWaiterArrival(choiceA)) {
       heldLate.push(lateA);
     }
-    if (choiceB.held) {
+    if (isAuthoredWaiterArrival(choiceB)) {
       heldLate.push(lateB);
     }
     if (heldLate.length) {

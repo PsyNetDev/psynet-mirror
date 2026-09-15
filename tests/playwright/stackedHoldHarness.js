@@ -161,6 +161,11 @@ function arrivalLooksLikeReleaser(arrival) {
   return Boolean(paint?.silentHold);
 }
 
+function isAuthoredWaiterArrival(arrival) {
+  // A silent catch-up hold is last-arrival self-skip, not a partner waiter.
+  return Boolean(arrival.held) && !arrivalLooksLikeReleaser(arrival);
+}
+
 function pickConcurrentLastArriver(arrivals) {
   // The releaser first-paints a silent catch-up hold or the action page.
   // An authored wait overlay is a waiter, even if Playwright recorded a
@@ -1209,6 +1214,7 @@ module.exports = {
   lastArriverReleaseAtMs,
   lastArriverWorkRecord,
   pickConcurrentLastArriver,
+  isAuthoredWaiterArrival,
   responsesSince,
   startHoldExperiment,
   stopExperiment,
