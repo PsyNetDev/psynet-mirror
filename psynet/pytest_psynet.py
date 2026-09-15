@@ -531,7 +531,7 @@ def debug_experiment(
         # next test class resets the database; a short Ctrl-C + log flush is
         # not enough and can leave backends holding locks during drop_all.
         try:
-            _stop_debug_experiment_process(p)
+            stop_debug_experiment_process(p)
         finally:
             kill_psynet_chrome_processes()
             kill_chromedriver_processes()
@@ -541,7 +541,7 @@ def debug_experiment(
 dallinger.pytest_dallinger.debug_experiment = debug_experiment
 
 
-def _stop_debug_experiment_process(process):
+def stop_debug_experiment_process(process):
     """Flush logs best-effort, then always stop the debug process and workers."""
     try:
         flush_output(process, timeout=0.1)

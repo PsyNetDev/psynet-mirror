@@ -3715,6 +3715,66 @@ def test_stop_local_debug_process_reaps_workers_even_if_terminate_fails():
     kill_workers.assert_called_once()
 
 
+def test_run_local_stops_leftover_workers_before_prepare():
+    from psynet.command_line import _run_local
+
+    order = []
+    with (
+        patch(
+            "psynet.command_line._stop_leftover_debug_processes",
+            lambda: order.append("stop"),
+        ),
+        patch(
+            "psynet.command_line._pre_launch",
+            lambda *args, **kwargs: order.append("pre_launch"),
+        ),
+        patch(
+            "psynet.command_line._cleanup_before_debug",
+            lambda: order.append("cleanup"),
+        ),
+        patch(
+            "psynet.command_line._debug_auto_reload",
+            lambda *args, **kwargs: order.append("debug"),
+        ),
+        patch("psynet.command_line.kill_psynet_worker_processes"),
+        patch("psynet.command_line._cleanup_exp_directory"),
+    ):
+        _run_local(
+            Mock(),
+            docker=False,
+            archive=None,
+            legacy=False,
+            no_browsers=True,
+            mode="debug",
+            context_group=Mock(),
+        )
+    assert order == ["stop", "pre_launch", "cleanup", "debug"]
+
+
+def test_prepare_refuses_when_database_in_use(monkeypatch):
+    from psynet.command_line import DatabaseInUseError, _prepare
+
+    monkeypatch.setattr("psynet.command_line.redis_vars.clear", lambda: None)
+    monkeypatch.setattr(
+        "psynet.command_line.assert_database_idle_for_replace",
+        lambda: (_ for _ in ()).throw(DatabaseInUseError("busy")),
+    )
+    with pytest.raises(click.ClickException, match="busy"):
+        _prepare()
+
+
+def test_load_converts_database_in_use_error_to_click_exception(monkeypatch):
+    from psynet.command_line import DatabaseInUseError, load
+
+    monkeypatch.setattr("psynet.experiment.import_local_experiment", lambda: None)
+    monkeypatch.setattr(
+        "psynet.command_line.populate_db_from_zip_file",
+        lambda path: (_ for _ in ()).throw(DatabaseInUseError("busy")),
+    )
+    with pytest.raises(click.ClickException, match="busy"):
+        load.callback.__wrapped__("export.zip")
+
+
 def test_terminate_server_process_escalates_when_sendcontrol_raises_oserror():
     from psynet.command_line import _terminate_server_process
 

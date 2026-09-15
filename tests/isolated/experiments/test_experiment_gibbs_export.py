@@ -16,8 +16,8 @@ from psynet.command_line import export__local, populate_db_from_zip_file
 from psynet.export import load_export_table, unpack_json_column
 from psynet.participant import Participant
 from psynet.pytest_psynet import (
-    _stop_debug_experiment_process,
     path_to_test_experiment,
+    stop_debug_experiment_process,
 )
 from psynet.timeline import Response
 from psynet.trial.main import Trial
@@ -80,7 +80,7 @@ def canonical_gibbs_export(data_root_dir, launched_experiment, debug_server_proc
     after the zip is written.
     """
     _build_canonical_gibbs_export(data_root_dir)
-    _stop_debug_experiment_process(debug_server_process)
+    stop_debug_experiment_process(debug_server_process)
     return data_root_dir
 
 

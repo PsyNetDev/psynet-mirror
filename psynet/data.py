@@ -630,26 +630,48 @@ def drop_all_db_tables(bind=db.engine, *, max_attempts=5, wait_sec=0.05):
     ``psynet load`` refuses that path while another client with this database
     role is still connected, including before each leftover-lock retry.
     """
+
+    def _run():
+        _drop_all_db_tables_once(bind)
+
+    def _before_attempt():
+        if _refuse_other_clients_on_drop.get():
+            assert_database_idle_for_replace()
+
+    _retry_on_transient_lock(
+        _run,
+        max_attempts=max_attempts,
+        wait_sec=wait_sec,
+        before_attempt=_before_attempt,
+        warning="Retrying drop_all after a transient lock error (attempt %s/%s).",
+    )
+
+
+def _retry_on_transient_lock(
+    run,
+    *,
+    max_attempts=5,
+    wait_sec=0.05,
+    warning,
+    before_attempt=None,
+):
+    """Run ``run`` again after deadlock, lock timeout, or serialization failure."""
     from sqlalchemy.exc import OperationalError
 
     from .db import is_transient_transaction_error
 
     db.session.commit()
     for attempt in range(max_attempts):
-        if _refuse_other_clients_on_drop.get():
-            _assert_database_idle_for_replace()
+        if before_attempt is not None:
+            before_attempt()
         try:
-            _drop_all_db_tables_once(bind)
+            run()
             return
         except OperationalError as err:
             db.session.rollback()
             if not is_transient_transaction_error(err) or attempt == max_attempts - 1:
                 raise
-            logger.warning(
-                "Retrying drop_all after a transient lock error (attempt %s/%s).",
-                attempt + 1,
-                max_attempts,
-            )
+            logger.warning(warning, attempt + 1, max_attempts)
             if wait_sec:
                 time.sleep(wait_sec * (2**attempt))
 
@@ -724,37 +746,27 @@ dallinger.db.Base.metadata.drop_all = drop_all_db_tables
 # it caused the import process to hang.
 #
 def _drop_foreign_key_constraints(*, max_attempts=5, wait_sec=0.05):
-    """Drop every foreign key, retrying deadlocks with the live experiment.
+    """Drop every foreign key, retrying leftover lock errors.
 
-    Ingest runs against a database whose clock still queries barrier tables.
-    Dropping those constraints needs ``ACCESS EXCLUSIVE`` and can deadlock
-    with the 0.5 s barrier poller. Retry the whole drop batch; a partial
-    drop rolls back with the aborted transaction.
+    Ingest dropping constraints needs ``ACCESS EXCLUSIVE`` and can deadlock
+    with a leftover backend. Retry the whole drop batch; a partial drop
+    rolls back with the aborted transaction.
     """
-    from sqlalchemy.exc import OperationalError
 
-    from .db import is_transient_transaction_error
-
-    db.session.commit()
-    for attempt in range(max_attempts):
+    def _run():
         all_fkeys, _tables = list_fkeys()
-        try:
-            for fkey in all_fkeys:
-                db.session.execute(DropConstraint(fkey))
-            db.session.commit()
-            return
-        except OperationalError as err:
-            db.session.rollback()
-            if not is_transient_transaction_error(err) or attempt == max_attempts - 1:
-                raise
-            logger.warning(
-                "Retrying foreign-key drops after a transient lock error "
-                "(attempt %s/%s).",
-                attempt + 1,
-                max_attempts,
-            )
-            if wait_sec:
-                time.sleep(wait_sec * (2**attempt))
+        for fkey in all_fkeys:
+            db.session.execute(DropConstraint(fkey))
+        db.session.commit()
+
+    _retry_on_transient_lock(
+        _run,
+        max_attempts=max_attempts,
+        wait_sec=wait_sec,
+        warning=(
+            "Retrying foreign-key drops after a transient lock error (attempt %s/%s)."
+        ),
+    )
 
 
 @contextlib.contextmanager
@@ -1040,7 +1052,7 @@ def _format_other_database_clients(clients):
     return ", ".join(labels)
 
 
-def _assert_database_idle_for_replace():
+def assert_database_idle_for_replace():
     """Refuse to drop tables while another same-role client is connected."""
     from .db import list_other_database_clients
 
@@ -1065,7 +1077,7 @@ def populate_db_from_zip_file(zip_path):
     from dallinger import data as dallinger_data
 
     db.session.commit()  # The process can freeze without this
-    _assert_database_idle_for_replace()
+    assert_database_idle_for_replace()
     with _refuse_other_clients_while_dropping():
         init_db(drop_all=True)
     dallinger_data.ingest_zip(zip_path)

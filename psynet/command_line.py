@@ -46,6 +46,7 @@ from . import deployment_info
 from .bootstrap_commands import register_bootstrap_commands
 from .data import (
     DatabaseInUseError,
+    assert_database_idle_for_replace,
     drop_all_db_tables,
     ingest_zip,
     init_db,
@@ -269,7 +270,11 @@ def _prepare(archive=None):
 
         _install_archive_template(archive, database_template_path)
 
-    db.init_db(drop_all=True)
+    try:
+        assert_database_idle_for_replace()
+        db.init_db(drop_all=True)
+    except DatabaseInUseError as err:
+        raise click.ClickException(str(err)) from err
     experiment = get_experiment()
     experiment.pre_deploy(redeploying_from_archive=archive is not None)
     db.session.flush()
@@ -464,6 +469,7 @@ def _run_local(ctx, docker, archive, legacy, no_browsers, mode, context_group):
             "It is not possible to select both --legacy and --docker modes simultaneously."
         )
 
+    _stop_leftover_debug_processes()
     _pre_launch(ctx, mode=mode, archive=archive, local_=True, docker=docker, app=None)
     _cleanup_before_debug()
 
@@ -782,11 +788,15 @@ def run_prepare_in_subprocess():
     run_subprocess_with_live_output(prepare_cmd)
 
 
-def _cleanup_before_debug():
+def _stop_leftover_debug_processes():
+    """Stop leftover local debug workers before resetting the database."""
     kill_psynet_worker_processes()
-
     if not os.getenv("KEEP_OLD_CHROME_WINDOWS_IN_DEBUG_MODE"):
         kill_psynet_chrome_processes()
+
+
+def _cleanup_before_debug():
+    _stop_leftover_debug_processes()
 
     # This is important for resetting the state before _debug_legacy;
     # otherwise `dallinger verify` throws an error.

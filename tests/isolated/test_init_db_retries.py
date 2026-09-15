@@ -219,6 +219,29 @@ def test_drop_all_db_tables_non_transient_error_propagates(monkeypatch):
     assert engine.connections[0].closed
 
 
+def test_drop_all_db_tables_retries_when_old_drop_all_deadlocks(monkeypatch):
+    """Enum cleanup after CASCADE must retry the whole drop on deadlock."""
+    from psynet import data as data_mod
+
+    calls = {"n": 0, "old": 0}
+
+    def execute(statement):
+        calls["n"] += 1
+
+    def old_drop(bind=None):
+        calls["old"] += 1
+        if calls["old"] == 1:
+            raise operational_error(FakeDeadlock())
+
+    _stub_drop_all_session(monkeypatch)
+    monkeypatch.setattr(data_mod, "_old_drop_all", old_drop)
+    monkeypatch.setattr(data_mod, "list_fkeys", lambda: ([], [object()]))
+    engine = _FakeEngine(execute)
+    data_mod.drop_all_db_tables(bind=engine, wait_sec=0)
+    assert calls["old"] == 2
+    assert calls["n"] == 2
+
+
 def test_stop_debug_experiment_process_still_stops_when_flush_fails(monkeypatch):
     """Flush failures must not skip server/worker shutdown."""
     stop_calls = []
@@ -234,7 +257,7 @@ def test_stop_debug_experiment_process_still_stops_when_flush_fails(monkeypatch)
     )
 
     process = object()
-    pytest_psynet._stop_debug_experiment_process(process)
+    pytest_psynet.stop_debug_experiment_process(process)
     assert stop_calls == [process]
 
 

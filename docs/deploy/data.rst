@@ -296,6 +296,8 @@ Loading an export
 ``psynet load export.zip`` replaces the local database with the archive.
 Stop ``psynet debug`` first. PsyNet refuses to drop tables while another
 client using the same database role is still connected to that database.
+``psynet debug`` itself stops leftover workers before prepare resets the
+database.
 
 Analysing database tables
 =========================
