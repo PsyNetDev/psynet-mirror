@@ -2468,6 +2468,8 @@ def check_barriers():
     """
     seen = set()
     with _defer_timeline_hold_wakes():
+        # Settle on an empty snapshot *before* more work. The False yield is
+        # the observation after the last processed generation.
         for can_work in _barrier_walk_budget():
             waiting = [
                 instance_id

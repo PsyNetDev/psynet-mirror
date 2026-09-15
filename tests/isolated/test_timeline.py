@@ -470,6 +470,14 @@ def test_finalize_barrier_arrivals_settles_on_the_last_allowed_pass(monkeypatch)
     assert n["i"] == 3
 
 
+def test_barrier_walk_budget_observes_once_after_the_last_work_unit(monkeypatch):
+    """The shared cap is N work units plus one terminal observation."""
+    from psynet.sync import _barrier_walk_budget
+
+    monkeypatch.setattr("psynet.sync._MAX_BARRIER_WALK_PASSES", 3)
+    assert list(_barrier_walk_budget()) == [True, True, True, False]
+
+
 def test_check_barriers_stops_after_max_passes(monkeypatch):
     """A sweep that mints a new visit each pass must not occupy the poller."""
     from psynet.sync import check_barriers

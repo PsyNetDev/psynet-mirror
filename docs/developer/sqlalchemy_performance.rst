@@ -327,15 +327,15 @@ Stacked last-arrival finalize (grouper + two GroupBarriers)
 Last-arrival releases the filled visit and self-skips holds that are
 already released or ready. It may land on a later silent catch-up hold
 while partners remain on their overlay. It does not skip partner cursors
-after the check; partners leave on overlay wake. The visit claim stays on a second connection until
-the check finishes. Check/relock *kinds* for the filled visit stay
-independent of group size *N*. Each check tries
-``pg_try_advisory_xact_lock`` on that extra connection and only waits with
-``pg_advisory_xact_lock`` when the try misses (the poller never waits).
-Creating the next instance adds a
-blocking ``pg_advisory_xact_lock`` (O(stack), not O(*N*)). Query *count* can
-still grow with *N* because the filled visit's waiter loads grow; the stacked
-test allows at most 80 extra statements per extra member as a
+after the check; partners leave on overlay wake. The visit claim stays
+on a second connection until the check finishes. Check/relock *kinds*
+for the filled visit stay independent of group size *N*. Each check
+tries ``pg_try_advisory_xact_lock`` on that extra connection and only
+waits with ``pg_advisory_xact_lock`` when the try misses (the poller
+never waits). Creating the next instance adds a blocking
+``pg_advisory_xact_lock`` (O(stack), not O(*N*)). Query *count* can
+still grow with *N* because the filled visit's waiter loads grow; the
+stacked test allows at most 80 extra statements per extra member as a
 loose cap, not as a target.
 
 ``GET /timeline`` Server-Timing splits that work from HTML render. In one
