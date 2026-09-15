@@ -3055,6 +3055,18 @@ def test_check_barriers_recovers_inactive_grouped_instance_with_waiters(
     assert _barrier_link_released(first_id, barrier_id) is False
 
 
+def _arrival_hold_messages(publications, participant_id):
+    """Return arrival-update overlay HTML published to one participant."""
+    channel = _timeline_hold_channel(participant_id)
+    return [
+        target.get("hold_message")
+        for published_channel, payload in publications
+        if published_channel == channel
+        for target in payload.get("targets", [])
+        if target.get("reason") == "arrival_update"
+    ]
+
+
 def _route_hold_resume(participant_id, page_uuid):
     """POST ``/response`` as a hold-resume overlay, including ``skip_write``."""
     payload = {
@@ -3324,42 +3336,61 @@ def test_last_arrival_post_does_not_skip_partner_cursors(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
-def test_last_arrival_catchup_hold_stays_silent(in_experiment_directory, db_session):
+def test_last_arrival_catchup_hold_stays_silent(
+    in_experiment_directory, db_session, monkeypatch
+):
     """A hold consumed after skipping a released wait stays a silent spinner."""
     from psynet.timeline_hold import compose_hold_overlay_html
 
     exp = get_experiment()
     original_timeline = exp.timeline
     group_type = f"stack_silent_{uuid.uuid4().hex[:8]}"
-    exp.timeline = _stacked_partner_timeline(group_type)
+    exp.timeline = _stacked_partner_timeline(group_type, group_size=3)
+    publications = _hold_wake_publications(monkeypatch)
     try:
-        first, last = _working_participants(exp, 2)
+        first, second, last = _working_participants(exp, 3)
+        first_id, second_id, last_id = first.id, second.id, last.id
         assert _json_timeline(exp, first).status_code == 200
-        first = Participant.query.get(first.id)
+        first = Participant.query.get(first_id)
+        first_hold_uuid = first.page_uuid
         first_hold = TimelineHoldRecord.query.filter_by(
-            participant_id=first.id, page_uuid=first.page_uuid
+            participant_id=first_id, page_uuid=first_hold_uuid
         ).one()
         assert first_hold.silent is False
+        assert _json_timeline(exp, second).status_code == 200
         last_response = _json_timeline(exp, last)
         assert last_response.status_code == 200
         payload = last_response.get_json() or {}
         assert (payload.get("attributes") or {}).get("type") == "_BarrierHoldPage"
         assert _json_hold_is_silent(payload)
-        last = Participant.query.get(last.id)
+        last = Participant.query.get(last_id)
+        last_hold_uuid = last.page_uuid
         last_hold = TimelineHoldRecord.query.filter_by(
-            participant_id=last.id, page_uuid=last.page_uuid
+            participant_id=last_id, page_uuid=last_hold_uuid
         ).one()
         assert last_hold.silent is True
         page = exp.timeline.get_current_elt(exp, last)
         assert page.overlay_html(last) == compose_hold_overlay_html("", None)
         resumed = _process_response(
-            exp, last, last.page_uuid, timeline_hold_resume=True
+            exp, last, last_hold_uuid, timeline_hold_resume=True
         )
         assert resumed.skip_write is True
         assert _json_hold_is_silent(resumed.payload["page"])
-        first = Participant.query.get(first.id)
+        first = Participant.query.get(first_id)
         first_page = exp.timeline.get_current_elt(exp, first)
         assert "Waiting for your partner" in (first_page.overlay_html(first) or "")
+        publications.clear()
+        first_resume = _route_hold_resume(first_id, first_hold_uuid)
+        assert first_resume.status_code == 200
+        last = Participant.query.get(last_id)
+        last_hold = TimelineHoldRecord.query.filter_by(
+            participant_id=last_id, page_uuid=last_hold_uuid
+        ).one()
+        assert last_hold.silent is True
+        last_page = exp.timeline.get_current_elt(exp, last)
+        assert last_page.overlay_html(last) == compose_hold_overlay_html("", None)
+        assert _arrival_hold_messages(publications, last_id) == []
+        _catch_up_until_action(exp, [first_id, second_id, last_id])
     finally:
         exp.timeline = original_timeline
 

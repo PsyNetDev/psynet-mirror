@@ -129,13 +129,43 @@ async function probeTimelineHoldClientBehavior(page) {
     const closedOnBeginHold =
       arrivalClosed === 2 && psynet.arrivalUpdates === null;
 
+    const reusedIndicator = document.getElementById(
+      "psynet-timeline-hold-indicator"
+    );
+    let hopEnded = 0;
+    const hopEndedListener = () => {
+      hopEnded += 1;
+    };
+    window.addEventListener("timelineHoldEnded", hopEndedListener);
     psynet.beginTimelineHold({
       ...hold,
+      page_uuid: "hop-page-uuid",
+      wake_token: "hop-wake-token",
       message: "Updated wait copy"
     });
+    window.removeEventListener("timelineHoldEnded", hopEndedListener);
+    const hopReusedChip =
+      document.getElementById("psynet-timeline-hold-indicator") ===
+      reusedIndicator;
     const updatedMessage = document.querySelector(
       "#psynet-timeline-hold-indicator .psynet-timeline-hold-message"
     )?.innerHTML;
+    const originalSilent = Boolean(controller.hold.silent);
+    controller.hold.silent = true;
+    psynet.handleArrivalUpdateMessage({
+      type: "timeline_hold_wake",
+      targets: [
+        {
+          hold_message:
+            '<span class="psynet-timeline-hold-title">Waiting for other participants…</span>'
+        }
+      ]
+    });
+    const silentIgnoredArrival =
+      document.querySelector(
+        "#psynet-timeline-hold-indicator .psynet-timeline-hold-message"
+      )?.innerHTML === updatedMessage;
+    controller.hold.silent = originalSilent;
 
     const OriginalXHR = window.XMLHttpRequest;
     let sendCount = 0;
@@ -238,7 +268,10 @@ async function probeTimelineHoldClientBehavior(page) {
       closedWithoutChannel,
       noticeClearedWithoutChannel,
       closedOnBeginHold,
-      updatedMessage
+      hopEnded,
+      hopReusedChip,
+      updatedMessage,
+      silentIgnoredArrival
     };
   });
 
@@ -559,7 +592,10 @@ test("timeline hold client overlay and busy retry stay on a live hold", { tag: "
       closedWithoutChannel: true,
       noticeClearedWithoutChannel: true,
       closedOnBeginHold: true,
+      hopEnded: 0,
+      hopReusedChip: true,
       updatedMessage: "Updated wait copy",
+      silentIgnoredArrival: true,
       sendCount: 2,
       approved: 1,
       passed: true,
