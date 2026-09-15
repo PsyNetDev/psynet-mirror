@@ -154,6 +154,29 @@ def _driver_http_response(body):
     )
 
 
+def test_render_page_requests_html_timeline(monkeypatch):
+    """``render_pages=True`` must compile templates, not fetch a JSON snapshot."""
+    seen = {}
+
+    def fake_get(url, params=None, headers=None, **kwargs):
+        seen["url"] = url
+        seen["params"] = dict(params or {})
+        seen["headers"] = dict(headers or {})
+        response = SimpleNamespace(status_code=200, text="<html></html>")
+        response.raise_for_status = lambda: None
+        return response
+
+    monkeypatch.setattr("psynet.participant.requests.get", fake_get)
+    driver = ParticipantDriver.__new__(ParticipantDriver)
+    driver.experiment = SimpleNamespace(base_url="http://psynet.test")
+    driver.participant_unique_id = "abc"
+    driver._render_page()
+    assert seen["url"] == "http://psynet.test/timeline"
+    assert seen["params"] == {"unique_id": "abc"}
+    assert seen["params"].get("mode") != "json"
+    assert seen["headers"].get("Accept") != "application/json"
+
+
 def test_submit_response_retries_once_when_the_page_uuid_rotated(monkeypatch):
     """Last-arrival skip can rotate page_uuid between status fetch and POST."""
     driver = ParticipantDriver.__new__(ParticipantDriver)

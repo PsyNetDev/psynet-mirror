@@ -179,14 +179,6 @@ DEFAULT_LOCALE = "en"
 INITIAL_RECRUITMENT_SIZE = 1
 
 
-# Page makers reconstruct barrier holds on each ``get_current_elt``. Bound
-# the skip loop so a cursor that never settles cannot run until timeout.
-_MAX_READY_HOLD_SKIP_STEPS = 32
-# Stacked last-arrival finalize evaluates one visit per pass. Bound the loop
-# so a timeline that mints a fresh instance each skip cannot occupy a worker.
-_MAX_FINALIZE_BARRIER_CHECK_PASSES = 32
-
-
 @dataclass
 class ResponseResult:
     """Carry response state from the write phase to HTTP rendering."""
@@ -195,6 +187,23 @@ class ResponseResult:
     page: Optional[Any] = None
     flask_response: Optional[Any] = None
     skip_write: bool = False
+
+
+@dataclass
+class _BarrierFinalizeWalk:
+    """Cursor for one last-arrival stacked-barrier finalize.
+
+    ``processed`` is every instance already evaluated. ``rechecked`` is the
+    unfilled visits last-arrival may peek a second time. ``wait_this`` is
+    whether this pass should wait for the extra-connection claim.
+    ``allow_unfilled_recheck`` is the first-pass ``would_release`` gate;
+    waiter recovery must not wait on a second pass.
+    """
+
+    processed: set
+    rechecked: set
+    wait_this: bool
+    allow_unfilled_recheck: bool
 
 
 def error_response(*args, **kwargs):
@@ -3529,9 +3538,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         a still-waiting visit is a new object with the same ``hold_id``. Treat
         that as the same wait; identity ``is`` would loop until timeout.
         """
+        from .sync import _MAX_BARRIER_WALK_PASSES
         from .timeline_hold import holding_next_hold_catchup
 
-        for _ in range(_MAX_READY_HOLD_SKIP_STEPS):
+        for _ in range(_MAX_BARRIER_WALK_PASSES):
             if not getattr(page, "is_timeline_hold", False):
                 return page
             if page.prepare_resume_if_ready(self, participant):
@@ -3546,8 +3556,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 return live
             page = live
         raise RuntimeError(
-            "Timeline hold skip did not settle after "
-            f"{_MAX_READY_HOLD_SKIP_STEPS} steps."
+            f"Timeline hold skip did not settle after {_MAX_BARRIER_WALK_PASSES} steps."
         )
 
     @staticmethod
@@ -6153,14 +6162,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         return participant, page
 
     @staticmethod
-    def _next_stacked_barrier_checks(
-        participant,
-        page,
-        *,
-        processed,
-        rechecked,
-        allow_unfilled_recheck,
-    ):
+    def _next_stacked_barrier_checks(participant, page, walk):
         """Return the next instance ids to evaluate after a self-skip.
 
         Newly queued checks from the skip run first. An unprocessed live hold
@@ -6175,16 +6177,16 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         if checks:
             return checks
         instance_id = _hold_instance_id_for_page(participant, page)
-        if instance_id and instance_id not in processed:
+        if instance_id and instance_id not in walk.processed:
             return [instance_id]
         if (
             instance_id
-            and instance_id not in rechecked
+            and instance_id not in walk.rechecked
             and getattr(page, "is_timeline_hold", False)
         ):
-            if not allow_unfilled_recheck:
+            if not walk.allow_unfilled_recheck:
                 return []
-            rechecked.add(instance_id)
+            walk.rechecked.add(instance_id)
             return [instance_id]
         return []
 
@@ -6244,19 +6246,25 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         Unfilled waiter GET recovery passes ``False`` so those requests do
         not sit in ``lock_timeout`` behind the visit claim.
         """
-        from .sync import _pending_checks_should_wait_for_claim
+        from .sync import (
+            _MAX_BARRIER_WALK_PASSES,
+            _pending_checks_should_wait_for_claim,
+        )
 
         if not checks:
             raise RuntimeError(
                 "Barrier arrival finalize requires at least one queued check."
             )
-        processed = set()
-        rechecked = set()
-        wait_this = wait_for_claim
-        for _ in range(_MAX_FINALIZE_BARRIER_CHECK_PASSES):
-            processed.update(checks)
+        walk = _BarrierFinalizeWalk(
+            processed=set(),
+            rechecked=set(),
+            wait_this=wait_for_claim,
+            allow_unfilled_recheck=wait_for_claim,
+        )
+        for _ in range(_MAX_BARRIER_WALK_PASSES):
+            walk.processed.update(checks)
             cls._reapply_timeline_lock_timeout()
-            all_claimed = cls._run_queued_barrier_checks(checks, wait=wait_this)
+            all_claimed = cls._run_queued_barrier_checks(checks, wait=walk.wait_this)
             participant, page = cls._relock_arriver_after_barrier_check(
                 experiment,
                 participant_id,
@@ -6270,19 +6278,15 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             )
             if not all_claimed:
                 return participant
-            checks = cls._next_stacked_barrier_checks(
-                participant,
-                page,
-                processed=processed,
-                rechecked=rechecked,
-                allow_unfilled_recheck=wait_for_claim,
+            checks = cls._next_stacked_barrier_checks(participant, page, walk)
+            walk.wait_this = bool(checks) and _pending_checks_should_wait_for_claim(
+                checks
             )
-            wait_this = bool(checks) and _pending_checks_should_wait_for_claim(checks)
             if not checks:
                 return participant
         raise RuntimeError(
             "Barrier arrival finalize did not settle after "
-            f"{_MAX_FINALIZE_BARRIER_CHECK_PASSES} passes."
+            f"{_MAX_BARRIER_WALK_PASSES} passes."
         )
 
     @staticmethod

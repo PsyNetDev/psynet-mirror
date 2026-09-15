@@ -147,9 +147,10 @@ the fast route without holding partner rows through author code or
 ``pre_render()``. Last-arrival does not skip partner timeline cursors after
 that check commits; partners leave on overlay wake (websocket on-open, a 2 s
 safety poll, or a later GET). The last arriver self-skips the hold they just
-released. A hold consumed immediately after that skip is marked silent so the
-overlay stays a spinner until partners catch up. The overlay chip and
-websocket are reused when the next page is also a hold.
+released. A hold consumed immediately after skipping a released wait
+(last-arrival self-skip, overlay resume, GET recovery, or a poller skip)
+is marked silent so the overlay stays a spinner until partners catch up.
+The overlay chip and websocket are reused when the next page is also a hold.
 The visit claim is held on a second connection until that check finishes.
 The ORM session does not take that key while the extra transaction is open.
 A blocking wait for that claim that hits ``lock_timeout`` returns HTTP 503
@@ -534,11 +535,11 @@ and obtain the next page through the normal server-side page interface. Hold
 overlays POST ``timeline_hold_resume`` so a still-waiting driver does not take
 blocking ``FOR UPDATE`` on the participant row. If the overlay is still
 waiting after that submit, the driver pauses briefly before the next page
-instead of busy-looping ordinary Next. Timeline GETs use ``mode=json`` and
-retry structured busy 503s and JSON 409 ``status: stale`` a few times so a
-poller skip that briefly holds the row, or a partner GET that advances this
-waiter between write and render, does not fail the bot. Bot POSTs retry those
-busy 503s the same way. If this waiter already advanced, or last-arrival
+instead of busy-looping ordinary Next. Timeline GETs use HTML so
+``render_pages=True`` still compiles page templates, and retry structured
+busy 503s a few times so a poller skip that briefly holds the row does not
+fail the bot. A stale HTML render redirects to the live page. Bot POSTs
+retry those busy 503s the same way. If this waiter already advanced, or last-arrival
 skipped its own later hold, an ordinary POST of the previous hold uuid is
 catch-up, not a multi-tab reject. Hold-resume overlays catch up the same way
 so the browser can swap in place.

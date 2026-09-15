@@ -3380,15 +3380,18 @@ def test_last_arrival_catchup_hold_stays_silent(
         first_page = exp.timeline.get_current_elt(exp, first)
         assert "Waiting for your partner" in (first_page.overlay_html(first) or "")
         publications.clear()
-        first_resume = _route_hold_resume(first_id, first_hold_uuid)
-        assert first_resume.status_code == 200
+        first_get = _json_timeline(exp, first)
+        assert first_get.status_code == 200
         first = Participant.query.get(first_id)
         first_page = exp.timeline.get_current_elt(exp, first)
-        if getattr(first_page, "is_timeline_hold", False):
-            first_catchup = TimelineHoldRecord.query.filter_by(
-                participant_id=first_id, page_uuid=first.page_uuid
-            ).one()
-            assert first_catchup.silent is True
+        assert getattr(first_page, "is_timeline_hold", False)
+        first_catchup = TimelineHoldRecord.query.filter_by(
+            participant_id=first_id, page_uuid=first.page_uuid
+        ).one()
+        assert first_catchup.silent is True
+        assert _json_hold_is_silent(first_get.get_json())
+        first_resume = _route_hold_resume(first_id, first.page_uuid)
+        assert first_resume.status_code == 200
         last = Participant.query.get(last_id)
         last_hold = TimelineHoldRecord.query.filter_by(
             participant_id=last_id, page_uuid=last_hold_uuid
@@ -3397,6 +3400,38 @@ def test_last_arrival_catchup_hold_stays_silent(
         last_page = exp.timeline.get_current_elt(exp, last)
         assert last_page.overlay_html(last) == compose_hold_overlay_html("", None)
         assert _arrival_hold_messages(publications, last_id) == []
+        _catch_up_until_action(exp, [first_id, second_id, last_id])
+    finally:
+        exp.timeline = original_timeline
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_poller_catchup_hold_stays_silent(in_experiment_directory, db_session):
+    """Waiters the poller skips onto a later hold consume it as a silent spinner."""
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    group_type = f"stack_poller_silent_{uuid.uuid4().hex[:8]}"
+    exp.timeline = _stacked_partner_timeline(group_type, group_size=3)
+    try:
+        first, second, last = _working_participants(exp, 3)
+        first_id, second_id, last_id = first.id, second.id, last.id
+        assert _json_timeline(exp, first).status_code == 200
+        first = Participant.query.get(first_id)
+        first_hold_uuid = first.page_uuid
+        assert _json_timeline(exp, second).status_code == 200
+        assert _json_timeline(exp, last).status_code == 200
+        _assert_cursor_unchanged(first_id, first_hold_uuid)
+        _advance_released_hold_waiters_after_commit([first_id])
+        first = Participant.query.get(first_id)
+        assert first.page_uuid != first_hold_uuid
+        page = exp.timeline.get_current_elt(exp, first)
+        assert getattr(page, "is_timeline_hold", False)
+        record = TimelineHoldRecord.query.filter_by(
+            participant_id=first_id, page_uuid=first.page_uuid
+        ).one()
+        assert record.silent is True
         _catch_up_until_action(exp, [first_id, second_id, last_id])
     finally:
         exp.timeline = original_timeline

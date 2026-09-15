@@ -58,14 +58,9 @@ _next_hold_is_catchup = ContextVar("psynet_next_hold_is_catchup", default=False)
 logger = get_logger()
 
 
-def mark_next_hold_catchup():
+def _mark_next_hold_catchup():
     """Mark the next hold this request consumes as a silent catch-up wait."""
     return _next_hold_is_catchup.set(True)
-
-
-def clear_next_hold_catchup():
-    """Drop an unused catch-up mark after skipping onto a non-hold page."""
-    _next_hold_is_catchup.set(False)
 
 
 @contextmanager
@@ -76,7 +71,7 @@ def holding_next_hold_catchup():
     ``get_current_elt`` raises, so a poller or keep-alive request cannot
     leak ``silent=True`` onto later holds.
     """
-    token = mark_next_hold_catchup()
+    token = _mark_next_hold_catchup()
     try:
         yield
     finally:
@@ -641,6 +636,11 @@ class _TimelineHoldPage(Page):
         """
         record = self.get_hold_record(participant)
         if record is None:
+            logger.warning(
+                "Timeline hold '%s' for participant %s has no durable record.",
+                self.hold_id,
+                getattr(participant, "id", None),
+            )
             return None
         remaining_timeout_ms = None
         if record.deadline is not None:

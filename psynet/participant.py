@@ -1367,14 +1367,16 @@ class ParticipantDriver:
         self.status_time_fetched = time.monotonic()
 
     def _render_page(self):
-        """
-        Render the current page for the participant.
+        """Compile the current page template so automation still catches Jinja errors.
+
+        Uses the HTML ``GET /timeline`` path (``kind="full"``). JSON snapshots
+        skip template compilation. Busy 503s are retried; a stale cursor
+        redirects to the live page, which ``requests`` follows.
         """
         _retry_busy_http(
             lambda: requests.get(
                 f"{self.experiment.base_url}/timeline",
-                params={"unique_id": self.participant_unique_id, "mode": "json"},
-                headers={"Accept": "application/json"},
+                params={"unique_id": self.participant_unique_id},
             ),
             attempts=_BOT_TIMELINE_BUSY_ATTEMPTS,
         )

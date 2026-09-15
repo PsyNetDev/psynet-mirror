@@ -1508,16 +1508,6 @@ async function waitForHeldParticipantToResume(
   throw lastError;
 }
 
-function holdMessageIsSilent(message) {
-  if (message == null || message === "") {
-    return true;
-  }
-  return String(message)
-    .replace(/<[^>]*>/g, " ")
-    .replace(/\s+/g, " ")
-    .trim() === "";
-}
-
 function readTimelinePageFromHtml(html) {
   const match = html.match(
     /<script id="psynet-template-data" type="application\/json">\s*([\s\S]*?)\s*<\/script>/
@@ -1531,7 +1521,7 @@ function readTimelinePageFromHtml(html) {
     type: payload?.page?.attributes?.type ?? null,
     showsHold: html.includes('id="psynet-timeline-hold-indicator"'),
     wakeToken: hold?.wake_token ?? null,
-    silentHold: Boolean(hold?.silent) || holdMessageIsSilent(hold?.message)
+    silentHold: Boolean(hold?.silent)
   };
 }
 

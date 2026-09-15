@@ -21,7 +21,7 @@ from psynet.exit import (
     PaymentDecision,
     PaymentState,
 )
-from psynet.experiment import _MAX_READY_HOLD_SKIP_STEPS, Experiment
+from psynet.experiment import Experiment
 from psynet.page import InfoPage, SuccessfulEndPage, UnsuccessfulEndPage
 from psynet.participant import Participant
 from psynet.timeline import (
@@ -404,7 +404,7 @@ def test_finalize_barrier_arrivals_stops_after_max_passes(monkeypatch):
     participant = SimpleNamespace(id=1)
     hold = SimpleNamespace(is_timeline_hold=True)
 
-    monkeypatch.setattr("psynet.experiment._MAX_FINALIZE_BARRIER_CHECK_PASSES", 3)
+    monkeypatch.setattr("psynet.sync._MAX_BARRIER_WALK_PASSES", 3)
     monkeypatch.setattr(
         "psynet.experiment._set_transaction_lock_timeout", lambda seconds: None
     )
@@ -432,6 +432,46 @@ def test_finalize_barrier_arrivals_stops_after_max_passes(monkeypatch):
             checks=["first-id"],
             result=SimpleNamespace(page=None, payload={}),
         )
+
+
+def test_check_barriers_stops_after_max_passes(monkeypatch):
+    """A sweep that mints a new visit each pass must not occupy the poller."""
+    from psynet.sync import check_barriers
+
+    n = {"i": 0}
+
+    def _waiting():
+        n["i"] += 1
+        return [f"inst-{n['i']}"]
+
+    monkeypatch.setattr("psynet.sync._MAX_BARRIER_WALK_PASSES", 3)
+    monkeypatch.setattr("psynet.sync._waiting_barrier_instance_ids", _waiting)
+    monkeypatch.setattr("psynet.sync._process_barrier_instance", lambda *a, **k: False)
+
+    with pytest.raises(RuntimeError, match="poller sweep did not settle"):
+        check_barriers()
+
+    assert n["i"] == 3
+
+
+def test_timeline_hold_payload_warns_when_the_record_is_missing(caplog):
+    """A hold page without a durable record must not fail silently."""
+    from psynet.timeline_hold import _TimelineHoldPage
+
+    page = _TimelineHoldPage(
+        hold_id="barrier:missing",
+        expected_wait=1,
+        max_wait_time=None,
+        fix_time_credit=False,
+        check_interval=2,
+    )
+    page.get_hold_record = lambda _participant: None
+    participant = SimpleNamespace(id=7, page_uuid="gone")
+
+    with caplog.at_level("WARNING"):
+        assert page.timeline_hold_payload(participant) is None
+    assert "no durable record" in caplog.text
+    assert "barrier:missing" in caplog.text
 
 
 def test_advance_past_ready_holds_follows_live_page_when_hold_is_stale():
@@ -518,6 +558,8 @@ def test_advance_past_ready_holds_stops_after_max_skip_steps():
         hold.prepare_resume_if_ready.return_value = False
         return hold
 
+    from psynet.sync import _MAX_BARRIER_WALK_PASSES
+
     experiment = Experiment.__new__(Experiment)
     experiment.timeline = MagicMock()
     experiment.timeline.get_current_elt.side_effect = _new_hold
@@ -526,7 +568,7 @@ def test_advance_past_ready_holds_stops_after_max_skip_steps():
     with pytest.raises(RuntimeError, match="did not settle"):
         experiment._advance_past_ready_holds(participant, _new_hold())
 
-    assert experiment.timeline.get_current_elt.call_count == _MAX_READY_HOLD_SKIP_STEPS
+    assert experiment.timeline.get_current_elt.call_count == _MAX_BARRIER_WALK_PASSES
 
 
 def test_finalize_pending_hold_without_checks_relocks_the_participant(monkeypatch):

@@ -5,7 +5,6 @@ an empty test file. Import it from the ``tests/isolated`` directory.
 """
 
 import json
-import re
 import threading
 import uuid
 from contextlib import contextmanager
@@ -139,10 +138,7 @@ def _json_hold_is_silent(payload):
     """Return whether a JSON timeline page is a silent catch-up hold."""
     attributes = (payload or {}).get("attributes") or {}
     hold = attributes.get("timeline_hold") or {}
-    if hold.get("silent"):
-        return True
-    message = hold.get("message") or ""
-    return not re.sub(r"<[^>]+>", "", message).strip()
+    return hold.get("silent") is True
 
 
 def _assert_cursor_unchanged(participant_id, page_uuid):

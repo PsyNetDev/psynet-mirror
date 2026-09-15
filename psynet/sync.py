@@ -148,6 +148,9 @@ logger = get_logger()
 _PENDING_BARRIER_CHECKS_KEY = "psynet_pending_barrier_checks"
 _RELEASED_HOLD_WAITER_IDS_KEY = "psynet_released_hold_waiter_ids"
 _NESTED_BARRIER_QUEUE_SNAPSHOTS_KEY = "psynet_nested_barrier_queue_snapshots"
+# Shared cap for last-arrival finalize, ready-hold skip, and the poller sweep.
+# Each pass can mint a fresh visit; without a bound those walks occupy a worker.
+_MAX_BARRIER_WALK_PASSES = 32
 
 
 class _BarrierAuthorHookError(Exception):
@@ -2363,6 +2366,8 @@ def _check_held_instance_with_claim(instance_id, *, wait):
 
     A free claim is taken without waiting. Last-arrival may then wait for
     a held claim; unfilled waiter GET recovery must pass ``wait=False``.
+    Each peek uses an extra pooled connection; last-arrival can open one
+    per queued instance when the first peek misses.
     """
     with _hold_barrier_instance_claim(instance_id, wait=False) as claimed:
         if claimed:
@@ -2449,14 +2454,14 @@ def check_barriers():
     """
     seen = set()
     with _defer_timeline_hold_wakes():
-        while True:
+        for _ in range(_MAX_BARRIER_WALK_PASSES):
             waiting = [
                 instance_id
                 for instance_id in _waiting_barrier_instance_ids()
                 if instance_id not in seen
             ]
             if not waiting:
-                break
+                return
             deferred_ids = []
             for instance_id in waiting:
                 seen.add(instance_id)
@@ -2464,6 +2469,10 @@ def check_barriers():
                     deferred_ids.append(instance_id)
             for instance_id in deferred_ids:
                 _process_barrier_instance(instance_id, retry=True)
+        raise RuntimeError(
+            "Barrier poller sweep did not settle after "
+            f"{_MAX_BARRIER_WALK_PASSES} passes."
+        )
 
 
 def check_sync_groups():

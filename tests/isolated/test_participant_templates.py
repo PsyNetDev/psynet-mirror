@@ -820,6 +820,7 @@ def test_hold_chip_stacks_under_the_leave_modal():
     assert 'getElementById("comment-button")' in hold_fn
     assert 'getElementById("early-exit-button")' not in hold_fn
     assert 'dataset.timelineHoldDynamic === "true"' in hold_fn
+    assert '!indicator || indicator.dataset.timelineHoldDynamic === "true"' in hold_fn
     assert "commentButtonWasDisabled === undefined" in hold_fn
 
 

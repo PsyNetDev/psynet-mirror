@@ -286,6 +286,56 @@ def test_timeline_render_discards_page_advanced_during_render(db_session):
     assert rendered is None
 
 
+class CompileTrackingPage(Page):
+    def __init__(self):
+        super().__init__(
+            template_fragment_str="<p>Rendered</p>",
+            time_estimate=0,
+            label="track",
+        )
+        self.render_calls = 0
+
+    def render(self, experiment, participant, partial_mode=False):
+        self.render_calls += 1
+        raise RuntimeError("template compiled")
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_full_timeline_render_compiles_templates_json_does_not(db_session):
+    """``render_pages=True`` must hit HTML render, which compiles Jinja."""
+    from flask import Flask
+
+    participant = new_participant()
+    db_session.flush()
+    participant_id = participant.id
+    page_uuid = participant.page_uuid
+    experiment = get_experiment()
+    db_session.commit()
+    page = CompileTrackingPage()
+
+    with Flask(__name__).test_request_context():
+        json_response = Experiment._render_page_read_only(
+            experiment=experiment,
+            participant_id=participant_id,
+            page_uuid=page_uuid,
+            page=page,
+            kind="json",
+        )
+        assert json_response is not None
+        assert page.render_calls == 0
+        with pytest.raises(RuntimeError, match="template compiled"):
+            Experiment._render_page_read_only(
+                experiment=experiment,
+                participant_id=participant_id,
+                page_uuid=page_uuid,
+                page=page,
+                kind="full",
+            )
+    assert page.render_calls == 1
+
+
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
