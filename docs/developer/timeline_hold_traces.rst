@@ -5,13 +5,20 @@ Timeline-hold traces and invariants
 
 This page is a checking tool, not a proof. Last-arrival skip, overlay
 resume, Redis pins, and the 0.5 s poller are concurrent. These traces
-name the interleavings tests must witness. If a test constructs a state
-the server cannot reach (for example a “ready” barrier hold whose
-``active_barriers`` link is still unreleased), it does not support the
-trace.
+name the interleavings tests must witness.
+
+A protocol witness must establish its preconditions on a reachable
+server path: real timeline requests and barrier transitions, paused at
+transaction boundaries. Monkeypatching ``is_ready_to_resume``, overlaying
+a ready hold on an unreleased ``active_barriers`` link, or inserting a
+Redis pin with ``SET`` instead of the last-arrival gate does not support
+a protocol trace. Pin-lookup and retry-unit tests may still use those
+shortcuts. Low-level Lua tests may drive Redis directly.
 
 The lock protocol itself is in :ref:`timeline-hold-resume-protocol`.
-This page only lists **who may hold what, in which order**.
+This page only lists **who may hold what, in which order**. Isolated
+reachable-state witnesses live in
+``tests/isolated/test_timeline_hold_protocol.py``.
 
 Resources
 ---------
@@ -105,10 +112,13 @@ T4 — Timeout or fail under a live pin
 
 Timed-out, failed, and redirected holds must still take
 ``FOR UPDATE NOWAIT`` and settle. A pin must not strand them on
-``skip_write``.
+``skip_write``. Fail and ``pending_redirect`` become ready while the
+barrier link is still unreleased, so ``_hold_instance_id_for_page``
+still returns an id.
 
 Witness:
-``test_timed_out_hold_resume_still_writes_under_last_arrival_pin``.
+``test_timed_out_hold_resume_still_writes_under_last_arrival_pin``,
+``test_fail_or_redirect_hold_resume_settles_under_live_follow_pin``.
 Ready resume without a pin:
 ``test_process_response_ready_hold_resume_locks_with_nowait``,
 ``test_ready_hold_resume_does_not_wait_when_participant_row_is_locked``.
@@ -139,9 +149,23 @@ Skip misses a locked waiter row. Last-arrival retries once, still
 ``NOWAIT``. A second miss first-paints the live cursor; the 0.5 s
 poller finishes the skip. That is not HTTP 503.
 
+The retry-succeed tests below drop the waiter lock between attempts.
+The both-miss terminal branch keeps that lock through both attempts.
+
 Witness:
 ``test_last_arrival_retries_an_unclaimed_barrier_check_once``,
-``test_last_arrival_releases_waiters_when_nowait_retry_sees_unlocked_row``.
+``test_last_arrival_releases_waiters_when_nowait_retry_sees_unlocked_row``,
+``test_both_nowait_misses_first_paint_live_hold_not_503``.
+
+T8 — Overlapping pin owners
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Overlapping last-arrival requests ``INCR`` the same Redis pin. One
+owner exiting must ``DECR``, not delete the key, so a parked wake stays
+unpublished until the last owner exits, then publishes exactly once.
+
+Witness:
+``test_overlapping_render_pin_owners_publish_wake_once``.
 
 Invariants
 ----------
@@ -173,7 +197,11 @@ I8
     Unfilled waiter GETs never take the render pin.
 I9
     A waiter-row ``NOWAIT`` miss is ``all_claimed=False`` plus one
-    retry, not HTTP 503.
+    retry, not HTTP 503. Two misses still first-paint the live cursor;
+    the poller finishes the skip.
+I10
+    Overlapping render-pin owners must not drain parked wakes while
+    another owner still holds the visit.
 
 What this does not prove
 ------------------------
