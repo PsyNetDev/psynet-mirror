@@ -1856,6 +1856,31 @@ def deploy__docker_ssh(ctx, app, archive, dns_host, server, comment):
         reset_console()
 
 
+def _resolved_remote_app_name(result, requested_app=None):
+    """Return the remote app name, including names Dallinger generated."""
+    if requested_app:
+        return requested_app
+    info_app = deployment_info.read_all().get("app")
+    if info_app:
+        return info_app
+    logs_dir = Path("deploy_logs")
+    if logs_dir.is_dir():
+        logs = sorted(logs_dir.glob("*.txt"), key=lambda path: path.stat().st_mtime)
+        if logs:
+            return logs[-1].stem
+    link = (result or {}).get("dashboard_link") or ""
+    # https://user:pass@app.example.com/dashboard
+    try:
+        from urllib.parse import urlparse
+
+        hostname = urlparse(link).hostname
+    except Exception:
+        hostname = None
+    if hostname and "." in hostname:
+        return hostname.split(".", 1)[0]
+    return hostname
+
+
 def _post_deploy(result, **event_extras):
     assert isinstance(result, dict)
     assert "dashboard_user" in result
@@ -1865,6 +1890,9 @@ def _post_deploy(result, **event_extras):
         **result,
     )
     info = deployment_info.read_all()
+    resolved_app = _resolved_remote_app_name(result, info.get("app"))
+    if resolved_app and resolved_app != info.get("app"):
+        deployment_info.write(app=resolved_app)
     mode = info.get("mode")
     if mode == "live":
         event_name = "deploy.succeeded"
@@ -1877,7 +1905,7 @@ def _post_deploy(result, **event_extras):
         event_name,
         mode=mode,
         target="ssh" if info.get("is_ssh_deployment") else "heroku",
-        app=info.get("app"),
+        app=resolved_app,
         server=info.get("server"),
         deployment_id=info.get("deployment_id"),
         **details,

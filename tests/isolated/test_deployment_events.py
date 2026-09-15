@@ -222,6 +222,51 @@ def test_post_deploy_records_sandbox_succeeded(monkeypatch, tmp_path):
     assert event["argv"][0:3] == ["psynet", "debug", "heroku"]
 
 
+def test_post_deploy_records_generated_app_name(monkeypatch, tmp_path):
+    from psynet.command_line import _post_deploy
+    from psynet.utils import working_directory
+
+    (tmp_path / "experiment.py").write_text("")
+    written = {}
+    monkeypatch.setattr(
+        "psynet.command_line.export_launch_data",
+        lambda **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "psynet.command_line.deployment_info.read",
+        lambda key: "deployment-1",
+    )
+    monkeypatch.setattr(
+        "psynet.command_line.deployment_info.read_all",
+        lambda: {
+            "mode": "live",
+            "is_ssh_deployment": True,
+            "app": None,
+            "server": "lab",
+            "deployment_id": "deployment-1",
+        },
+    )
+    monkeypatch.setattr(
+        "psynet.command_line.deployment_info.write",
+        lambda **kwargs: written.update(kwargs),
+    )
+
+    with working_directory(tmp_path):
+        _post_deploy(
+            {
+                "dashboard_user": "u",
+                "dashboard_password": "p",
+                "dashboard_link": "https://u:p@dlgr-a1b2c3d4.lab.example.com/dashboard",
+            },
+            argv=["psynet", "deploy", "ssh"],
+        )
+
+    event = json.loads((tmp_path / "data/deployment-events.jsonl").read_text().strip())
+    assert event["event"] == "deploy.succeeded"
+    assert event["app"] == "dlgr-a1b2c3d4"
+    assert written["app"] == "dlgr-a1b2c3d4"
+
+
 def test_destroy_records_comment_on_success(monkeypatch, tmp_path):
     from psynet.command_line import _destroy
     from psynet.utils import working_directory
