@@ -3751,16 +3751,23 @@ def test_run_local_stops_leftover_workers_before_prepare():
     assert order == ["stop", "pre_launch", "cleanup", "debug"]
 
 
-def test_prepare_refuses_when_database_in_use(monkeypatch):
-    from psynet.command_line import DatabaseInUseError, _prepare
+def test_prepare_does_not_refuse_other_database_clients(monkeypatch):
+    """Debug/deploy launch must still reset the DB after leftover workers stop."""
+    from psynet.command_line import _prepare
 
+    inits = []
+    experiment = Mock()
     monkeypatch.setattr("psynet.command_line.redis_vars.clear", lambda: None)
     monkeypatch.setattr(
-        "psynet.command_line.assert_database_idle_for_replace",
-        lambda: (_ for _ in ()).throw(DatabaseInUseError("busy")),
+        "dallinger.db.init_db",
+        lambda drop_all=False: inits.append(drop_all) or "session",
     )
-    with pytest.raises(click.ClickException, match="busy"):
-        _prepare()
+    monkeypatch.setattr("psynet.experiment.get_experiment", lambda: experiment)
+    monkeypatch.setattr("psynet.command_line.clean_sys_modules", lambda: None)
+    monkeypatch.setattr("psynet.command_line.update_docker_tag", lambda: None)
+    _prepare()
+    assert inits == [True]
+    experiment.pre_deploy.assert_called_once_with(redeploying_from_archive=False)
 
 
 def test_load_converts_database_in_use_error_to_click_exception(monkeypatch):

@@ -46,7 +46,6 @@ from . import deployment_info
 from .bootstrap_commands import register_bootstrap_commands
 from .data import (
     DatabaseInUseError,
-    assert_database_idle_for_replace,
     drop_all_db_tables,
     ingest_zip,
     init_db,
@@ -270,11 +269,7 @@ def _prepare(archive=None):
 
         _install_archive_template(archive, database_template_path)
 
-    try:
-        assert_database_idle_for_replace()
-        db.init_db(drop_all=True)
-    except DatabaseInUseError as err:
-        raise click.ClickException(str(err)) from err
+    db.init_db(drop_all=True)
     experiment = get_experiment()
     experiment.pre_deploy(redeploying_from_archive=archive is not None)
     db.session.flush()

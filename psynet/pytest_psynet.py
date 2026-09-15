@@ -543,16 +543,19 @@ dallinger.pytest_dallinger.debug_experiment = debug_experiment
 
 def stop_debug_experiment_process(process):
     """Flush logs best-effort, then always stop the debug process and workers."""
+    if getattr(process, "closed", False):
+        return
+
     try:
         flush_output(process, timeout=0.1)
-    except (OSError, pexpect.exceptions.EOF) as err:
+    except (OSError, ValueError, pexpect.exceptions.EOF) as err:
         logger.warning("Error while flushing debug experiment output: %s", err)
     except Exception:
         logger.exception("Unexpected error while flushing debug experiment output")
 
     try:
         stop_local_debug_process(process)
-    except (OSError, pexpect.exceptions.EOF) as err:
+    except (OSError, ValueError, pexpect.exceptions.EOF) as err:
         logger.warning("Error while stopping the debug experiment process: %s", err)
     except Exception:
         logger.exception("Unexpected error while stopping the debug experiment process")

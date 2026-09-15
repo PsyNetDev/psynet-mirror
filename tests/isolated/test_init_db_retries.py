@@ -18,6 +18,13 @@ def operational_error(orig):
 
 
 @pytest.fixture
+def no_idle_drain(monkeypatch):
+    from psynet import data as data_mod
+
+    monkeypatch.setattr(data_mod, "_IDLE_CLIENT_DRAIN_SEC", 0)
+
+
+@pytest.fixture
 def terminate_calls(monkeypatch):
     """Replace terminate_other_postgres_connections with a counting stub."""
     calls = []
@@ -261,6 +268,21 @@ def test_stop_debug_experiment_process_still_stops_when_flush_fails(monkeypatch)
     assert stop_calls == [process]
 
 
+def test_stop_debug_experiment_process_skips_already_closed_process(monkeypatch):
+    stop_calls = []
+    monkeypatch.setattr(
+        pytest_psynet,
+        "stop_local_debug_process",
+        lambda process: stop_calls.append(process),
+    )
+
+    class ClosedProcess:
+        closed = True
+
+    pytest_psynet.stop_debug_experiment_process(ClosedProcess())
+    assert stop_calls == []
+
+
 def test_drop_all_refuses_clients_that_appear_during_retry(monkeypatch):
     """Load must not retry DROP TABLE after a live client appears."""
     from psynet import data as data_mod
@@ -288,7 +310,9 @@ def test_drop_all_refuses_clients_that_appear_during_retry(monkeypatch):
     assert calls["lists"] == 2
 
 
-def test_populate_db_from_zip_file_refuses_listed_clients(monkeypatch, tmp_path):
+def test_populate_db_from_zip_file_refuses_listed_clients(
+    monkeypatch, tmp_path, no_idle_drain
+):
     from psynet import data as data_mod
 
     dropped = []
@@ -303,6 +327,23 @@ def test_populate_db_from_zip_file_refuses_listed_clients(monkeypatch, tmp_path)
     with pytest.raises(data_mod.DatabaseInUseError, match="pid 123"):
         data_mod.populate_db_from_zip_file(str(tmp_path / "export.zip"))
     assert dropped == []
+
+
+def test_assert_database_idle_drains_then_succeeds(monkeypatch):
+    from psynet import data as data_mod
+
+    calls = {"n": 0}
+
+    def fake_list(release_local=True):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return [(1, "dallinger", "", "idle")]
+        return []
+
+    monkeypatch.setattr("psynet.db.list_other_database_clients", fake_list)
+    monkeypatch.setattr(data_mod, "_IDLE_CLIENT_POLL_SEC", 0)
+    data_mod.assert_database_idle_for_replace(wait_sec=1)
+    assert calls["n"] == 2
 
 
 def test_populate_db_from_zip_file_runs_when_idle(monkeypatch, tmp_path):
@@ -321,7 +362,9 @@ def test_populate_db_from_zip_file_runs_when_idle(monkeypatch, tmp_path):
     assert calls == ["init", zip_path]
 
 
-def test_populate_db_from_zip_file_refuses_a_live_backend(monkeypatch, tmp_path):
+def test_populate_db_from_zip_file_refuses_a_live_backend(
+    monkeypatch, tmp_path, no_idle_drain
+):
     from sqlalchemy import create_engine, text
 
     from psynet import data as data_mod

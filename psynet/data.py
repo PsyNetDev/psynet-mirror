@@ -636,7 +636,7 @@ def drop_all_db_tables(bind=db.engine, *, max_attempts=5, wait_sec=0.05):
 
     def _before_attempt():
         if _refuse_other_clients_on_drop.get():
-            assert_database_idle_for_replace()
+            assert_database_idle_for_replace(wait_sec=0)
 
     _retry_on_transient_lock(
         _run,
@@ -659,6 +659,9 @@ def _retry_on_transient_lock(
     from sqlalchemy.exc import OperationalError
 
     from .db import is_transient_transaction_error
+
+    if max_attempts < 1:
+        raise ValueError("max_attempts must be at least 1.")
 
     db.session.commit()
     for attempt in range(max_attempts):
@@ -1043,27 +1046,48 @@ def _refuse_other_clients_while_dropping():
         _refuse_other_clients_on_drop.reset(token)
 
 
+_IDLE_CLIENT_DRAIN_SEC = 2.0
+_IDLE_CLIENT_POLL_SEC = 0.05
+
+
 def _format_other_database_clients(clients):
     labels = []
     for row in clients:
         pid = row[0]
         app = (row[2] or "").strip()
-        labels.append(f"pid {pid} ({app})" if app else f"pid {pid}")
+        state = (row[3] or "").strip() or "unknown"
+        detail = f"{app}, {state}" if app else state
+        labels.append(f"Postgres backend pid {pid} ({detail})")
     return ", ".join(labels)
 
 
-def assert_database_idle_for_replace():
-    """Refuse to drop tables while another same-role client is connected."""
+def assert_database_idle_for_replace(*, wait_sec=None):
+    """Refuse to drop tables while another same-role client is connected.
+
+    Closes this process's ORM sessions and connection pool first so idle
+    pooled connections here are not counted. When ``wait_sec`` is positive,
+    leftover backends that disappear after a just-killed debug server are
+    allowed to drain before refusing.
+    """
     from .db import list_other_database_clients
 
-    clients = list_other_database_clients()
-    if not clients:
-        return
-    raise DatabaseInUseError(
-        "Cannot replace the local database while other clients with this "
-        f"database role are still connected ({_format_other_database_clients(clients)}). "
-        "Stop `psynet debug` or any other process using this database and retry."
-    )
+    if wait_sec is None:
+        wait_sec = _IDLE_CLIENT_DRAIN_SEC
+    deadline = time.monotonic() + wait_sec
+    while True:
+        clients = list_other_database_clients()
+        if not clients:
+            return
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise DatabaseInUseError(
+                "Cannot replace the local database while other clients with this "
+                "database role are still connected "
+                f"({_format_other_database_clients(clients)}). "
+                "Stop `psynet debug` first. Those pids are Postgres backends, "
+                "not OS processes to kill."
+            )
+        time.sleep(min(_IDLE_CLIENT_POLL_SEC, remaining))
 
 
 def populate_db_from_zip_file(zip_path):
