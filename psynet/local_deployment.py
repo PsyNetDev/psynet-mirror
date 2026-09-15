@@ -111,10 +111,17 @@ class DatabaseOwner:
 
         ``psynet debug local`` databases are disposable by definition, and a
         database that was only ever prepared has no collected data to lose. A
-        live or sandbox run, or a database whose identity could not be read, is
-        never treated as disposable.
+        live or sandbox run, a database whose identity could not be read, or a
+        database whose deployment ID does not identify its mode, is never
+        treated as disposable.
         """
-        return self.readable and self.mode not in ("live", "sandbox")
+        if not self.readable:
+            return False
+        if self.mode in ("live", "sandbox"):
+            return False
+        if self.deployment_id and self.mode is None:
+            return False
+        return True
 
 
 # Returned when the database holds an experiment whose identity cannot be read.
@@ -705,7 +712,8 @@ def protect_existing_database(
     if not owner.managed:
         # Unreadable identity may be a locked managed deployment; never discard
         # it just because this path ignores ordinary unmanaged databases.
-        if ignore_unmanaged and owner.readable:
+        # ``ignore_unmanaged`` only skips disposable debug/prepare leftovers.
+        if ignore_unmanaged and owner.disposable:
             return None
         if owner.disposable and not adopt_existing:
             Console().print(

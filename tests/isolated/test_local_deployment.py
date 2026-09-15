@@ -616,6 +616,8 @@ def test_read_database_owner_survives_a_locked_experiment_table(monkeypatch):
         (None, True),
         ("gibbs-demo__mode=live__launch=2026-08-29--16-37-05", False),
         ("gibbs-demo__mode=sandbox__launch=2026-08-29--16-37-05", False),
+        ("legacy-experiment-without-mode", False),
+        ("gibbs-demo__mode=__launch=2026-08-29--16-37-05", False),
     ],
 )
 def test_protect_existing_database_discards_disposable_databases(
@@ -636,6 +638,49 @@ def test_protect_existing_database_discards_disposable_databases(
     else:
         with pytest.raises(RuntimeError, match="--adopt-existing"):
             protect_existing_database(tmp_path, "yolo")
+    create_snapshot.assert_not_called()
+
+
+def test_protect_existing_database_ignore_unmanaged_does_not_discard_live(
+    tmp_path, monkeypatch
+):
+    from psynet.local_deployment import DatabaseOwner, protect_existing_database
+
+    monkeypatch.setattr(
+        "psynet.local_deployment.read_database_owner",
+        lambda: DatabaseOwner(
+            None,
+            None,
+            "gibbs-demo__mode=live__launch=2026-08-29--16-37-05",
+            "Gibbs demo",
+        ),
+    )
+    create_snapshot = Mock()
+    monkeypatch.setattr("psynet.local_deployment.create_snapshot", create_snapshot)
+
+    with pytest.raises(RuntimeError, match="--adopt-existing"):
+        protect_existing_database(tmp_path, "yolo", ignore_unmanaged=True)
+    create_snapshot.assert_not_called()
+
+
+def test_protect_existing_database_ignore_unmanaged_still_discards_debug(
+    tmp_path, monkeypatch
+):
+    from psynet.local_deployment import DatabaseOwner, protect_existing_database
+
+    monkeypatch.setattr(
+        "psynet.local_deployment.read_database_owner",
+        lambda: DatabaseOwner(
+            None,
+            None,
+            "gibbs-demo__mode=debug__launch=2026-08-29--16-37-05",
+            "Gibbs demo",
+        ),
+    )
+    create_snapshot = Mock()
+    monkeypatch.setattr("psynet.local_deployment.create_snapshot", create_snapshot)
+
+    assert protect_existing_database(tmp_path, "yolo", ignore_unmanaged=True) is None
     create_snapshot.assert_not_called()
 
 
