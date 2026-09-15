@@ -2978,7 +2978,7 @@ def load(path):
     """Replace the local database with a provided zip file.
 
     Stop ``psynet debug`` first. The command refuses to drop tables while
-    another client is still connected to the database.
+    another client using the same database role is still connected.
     """
     from .experiment import import_local_experiment
 

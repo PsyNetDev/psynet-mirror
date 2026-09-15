@@ -44,7 +44,8 @@ def list_other_database_clients(*, release_local=True):
     ----------
     release_local : bool
         If True (default), close this process's pooled connections first so
-        they are not counted as another client.
+        they are not counted as another client. This disposes the SQLAlchemy
+        engine pool and should only be used from destructive load/reset paths.
     """
     if release_local:
         release_local_database_connections()

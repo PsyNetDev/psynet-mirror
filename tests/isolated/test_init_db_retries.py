@@ -238,6 +238,33 @@ def test_stop_debug_experiment_process_still_stops_when_flush_fails(monkeypatch)
     assert stop_calls == [process]
 
 
+def test_drop_all_refuses_clients_that_appear_during_retry(monkeypatch):
+    """Load must not retry DROP TABLE after a live client appears."""
+    from psynet import data as data_mod
+
+    calls = {"n": 0, "lists": 0}
+
+    def execute(statement):
+        calls["n"] += 1
+        raise operational_error(FakeDeadlock())
+
+    def fake_list(release_local=True):
+        calls["lists"] += 1
+        if calls["lists"] == 1:
+            return []
+        return [(99, "dallinger", "gunicorn", "active")]
+
+    _stub_drop_all_session(monkeypatch)
+    monkeypatch.setattr("psynet.db.list_other_database_clients", fake_list)
+    monkeypatch.setattr(data_mod, "list_fkeys", lambda: ([], [object()]))
+    engine = _FakeEngine(execute)
+    with data_mod._refuse_other_clients_while_dropping():
+        with pytest.raises(data_mod.DatabaseInUseError, match="pid 99"):
+            data_mod.drop_all_db_tables(bind=engine, wait_sec=0)
+    assert calls["n"] == 1
+    assert calls["lists"] == 2
+
+
 def test_populate_db_from_zip_file_refuses_listed_clients(monkeypatch, tmp_path):
     from psynet import data as data_mod
 

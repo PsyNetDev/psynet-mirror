@@ -5,6 +5,7 @@ import os
 import shutil
 import tempfile
 import time
+from contextvars import ContextVar
 from typing import List, Optional
 from zipfile import ZipFile
 
@@ -626,7 +627,8 @@ def drop_all_db_tables(bind=db.engine, *, max_attempts=5, wait_sec=0.05):
     ``DROP TABLE`` needs ``ACCESS EXCLUSIVE`` and can still deadlock with a
     leftover backend after the experiment server should have stopped. Retry
     the whole drop; a partial drop rolls back with the aborted transaction.
-    ``psynet load`` refuses that path while another client is still connected.
+    ``psynet load`` refuses that path while another client with this database
+    role is still connected, including before each leftover-lock retry.
     """
     from sqlalchemy.exc import OperationalError
 
@@ -634,6 +636,8 @@ def drop_all_db_tables(bind=db.engine, *, max_attempts=5, wait_sec=0.05):
 
     db.session.commit()
     for attempt in range(max_attempts):
+        if _refuse_other_clients_on_drop.get():
+            _assert_database_idle_for_replace()
         try:
             _drop_all_db_tables_once(bind)
             return
@@ -1012,6 +1016,21 @@ class DatabaseInUseError(RuntimeError):
     """Raised when replacing the local database while another client is connected."""
 
 
+_refuse_other_clients_on_drop = ContextVar(
+    "psynet_refuse_other_clients_on_drop", default=False
+)
+
+
+@contextlib.contextmanager
+def _refuse_other_clients_while_dropping():
+    """Recheck for live clients before every drop_all attempt, including retries."""
+    token = _refuse_other_clients_on_drop.set(True)
+    try:
+        yield
+    finally:
+        _refuse_other_clients_on_drop.reset(token)
+
+
 def _format_other_database_clients(clients):
     labels = []
     for row in clients:
@@ -1029,8 +1048,8 @@ def _assert_database_idle_for_replace():
     if not clients:
         return
     raise DatabaseInUseError(
-        "Cannot replace the local database while other clients are still "
-        f"connected ({_format_other_database_clients(clients)}). "
+        "Cannot replace the local database while other clients with this "
+        f"database role are still connected ({_format_other_database_clients(clients)}). "
         "Stop `psynet debug` or any other process using this database and retry."
     )
 
@@ -1047,7 +1066,8 @@ def populate_db_from_zip_file(zip_path):
 
     db.session.commit()  # The process can freeze without this
     _assert_database_idle_for_replace()
-    init_db(drop_all=True)
+    with _refuse_other_clients_while_dropping():
+        init_db(drop_all=True)
     dallinger_data.ingest_zip(zip_path)
 
 
