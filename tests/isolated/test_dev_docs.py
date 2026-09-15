@@ -578,7 +578,7 @@ def test_live_preview_requires_html_target(source_checkout, monkeypatch):
 
 
 def test_timeline_hold_trace_witnesses_exist():
-    """Every ``test_...`` named on the traces page must exist in the suite."""
+    """Every ``test_...`` named on the traces page must exist in the cited file."""
     from psynet.light_utils import get_psynet_root
 
     root = get_psynet_root()
@@ -588,17 +588,48 @@ def test_timeline_hold_trace_witnesses_exist():
     cited = set(re.findall(r"``(test_[a-z0-9_]+)``", traces))
     assert cited, "timeline_hold_traces.rst must cite at least one test"
 
-    defined = set()
+    defined = {}
     for path in (root / "tests").rglob("test_*.py"):
-        defined.update(
-            re.findall(
-                r"^def (test_[a-z0-9_]+)\(",
-                path.read_text(encoding="utf-8"),
-                re.M,
-            )
+        names = re.findall(
+            r"^def (test_[a-z0-9_]+)\(",
+            path.read_text(encoding="utf-8"),
+            re.M,
         )
-    missing = sorted(cited - defined)
+        rel = path.relative_to(root).as_posix()
+        for name in names:
+            defined.setdefault(name, set()).add(rel)
+
+    missing = sorted(name for name in cited if name not in defined)
     assert not missing, (
         "docs/developer/timeline_hold_traces.rst cites tests that do not exist: "
         + ", ".join(missing)
+    )
+
+    kind_re = re.compile(r"^\* (Protocol|Pin-lookup|Retry-unit|Unit|Lua) \(``([^`]+)``")
+    lines = traces.splitlines()
+    mismatches = []
+    i = 0
+    while i < len(lines):
+        match = kind_re.match(lines[i])
+        if match is None:
+            i += 1
+            continue
+        _kind, cited_file = match.groups()
+        block = [lines[i]]
+        i += 1
+        while i < len(lines) and (
+            lines[i].startswith("  ")
+            or (lines[i] == "" and i + 1 < len(lines) and lines[i + 1].startswith("  "))
+        ):
+            block.append(lines[i])
+            i += 1
+        for name in re.findall(r"``(test_[a-z0-9_]+)``", "\n".join(block)):
+            files = defined.get(name, set())
+            if cited_file not in files:
+                mismatches.append(
+                    f"{name} cited in {cited_file}, defined in {sorted(files)}"
+                )
+    assert not mismatches, (
+        "docs/developer/timeline_hold_traces.rst cites tests in the wrong file: "
+        + "; ".join(mismatches)
     )

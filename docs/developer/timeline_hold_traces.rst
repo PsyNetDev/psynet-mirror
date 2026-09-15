@@ -8,15 +8,21 @@ resume, Redis pins, and the 0.5 s poller are concurrent. These traces
 name the interleavings tests must witness.
 
 A protocol witness must establish its preconditions on a reachable
-server path: real timeline requests and barrier transitions, paused at
-transaction boundaries. Monkeypatching ``is_ready_to_resume``, overlaying
-a ready hold on an unreleased ``active_barriers`` link, or inserting a
-Redis pin with ``SET`` instead of the last-arrival gate does not support
-a protocol trace.
+server path: live participants, real barrier links, and timeline GET or
+``process_response`` against that state (not MagicMock pages). The
+strongest traces pause a real GET at a transaction boundary. Sequential
+``process_response`` checks still count when they use that reachable
+state; they are not a substitute for a paused overlap. Going through
+``route_response`` is not required. Monkeypatching ``is_ready_to_resume``,
+overlaying a ready hold on an unreleased ``active_barriers`` link, or
+inserting a Redis pin with ``SET`` instead of the last-arrival gate does
+not support a protocol trace.
 
 Witness lists below name the test, its file, and its kind:
 
-* **Protocol** — reachable GET/POST, paused at a transaction boundary.
+* **Protocol** — live participants and barrier links, via timeline GET or
+  ``process_response``. The strongest traces pause a real GET at a
+  transaction boundary.
 * **Pin-lookup** — may ``SET`` a Redis pin or rotate ``page_uuid`` by hand.
 * **Retry-unit** — stubs a check/retry helper, or uses a dummy timeline.
 * **Unit** — MagicMock or stubbed ``is_ready_to_resume`` on ``process_response``.
@@ -186,8 +192,8 @@ T7 — Waiter ``NOWAIT`` miss
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Skip misses a locked waiter row. Last-arrival retries once, still
-``NOWAIT``. A second miss first-paints the live cursor; the 0.5 s
-poller finishes the skip. That is not HTTP 503.
+``NOWAIT``. A second miss first-paints the live cursor; ``check_barriers()``
+(the poller body) finishes the skip. That is not HTTP 503.
 
 The three tests below are different shapes:
 
@@ -214,17 +220,24 @@ Witness:
 T8 — Overlapping pin owners
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Overlapping last-arrival requests ``INCR`` the same Redis pin. One
-owner exiting must ``DECR``, not delete the key, so a parked wake stays
-unpublished until the last owner exits, then publishes exactly once.
+Overlapping last-arrival requests add distinct owner tokens to the same
+Redis set. One owner exiting must remove only its token, so a parked
+wake stays unpublished until the last owner exits, then publishes
+exactly once. A stale token after TTL expiry must not remove a later
+generation.
 
-This has a Lua witness only. Two server requests co-owning a pin on one
+The observable guarantee is no publication while another owner remains.
+An intermediate Lua drain that sees the remaining pin and reparks is
+the same outcome; deleting the shared key on first exit is the failure.
+
+This has Lua witnesses only. Two server requests co-owning a pin on one
 ``BarrierInstance`` is not covered here.
 
 Witness:
 
 * Lua (``tests/isolated/test_timeline_hold_protocol.py``):
-  ``test_overlapping_render_pin_owners_publish_wake_once``.
+  ``test_overlapping_render_pin_owners_publish_wake_once``,
+  ``test_stale_render_pin_owner_does_not_drop_newer_generation``.
 
 Invariants
 ----------
@@ -261,18 +274,19 @@ I9
     retry, not HTTP 503. Two misses still first-paint the live cursor;
     ``check_barriers()`` then finishes the skip without a catch-up GET.
 I10
-    Overlapping render-pin owners must not drain parked wakes while
+    Overlapping render-pin owners must not publish a parked wake while
     another owner still holds the visit.
 
 What this does not prove
 ------------------------
 
 These traces do not model gunicorn listen-queue delay, Redis TTL
-expiry of a crashed worker’s pin, browser reload destroying the
-overlay, or author ``on_release`` raising. Playwright ``@both`` covers
-in-place vs full-reload **delivery** of the same server protocol; it
-is not a substitute for T2. A model checker (for example TLA+) would
-be the next step if the lock and pin state machine needs a real proof.
+expiry of a crashed worker’s pin with no later owner, browser reload
+destroying the overlay, or author ``on_release`` raising. Playwright
+``@both`` covers in-place vs full-reload **delivery** of the same server
+protocol; it is not a substitute for T2. A model checker (for example
+TLA+) would be the next step if the lock and pin state machine needs a
+real proof.
 
 T3 under a pin, timeout-under-pin, fail/redirect under a **render**
 pin, and two requests co-owning a pin on one ``BarrierInstance`` have

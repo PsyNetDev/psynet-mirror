@@ -1,1 +1,1 @@
-Documented last-arrival timeline-hold traces and the invariants tests must witness, with each cited test labeled as protocol, pin-lookup, retry-unit, unit, or Lua.
+Documented last-arrival timeline-hold traces and the invariants tests must witness, with each cited test labeled as protocol, pin-lookup, retry-unit, unit, or Lua. Protocol witnesses may use process_response on live barrier state. Overlapping pin owners must not publish while another owner remains.
