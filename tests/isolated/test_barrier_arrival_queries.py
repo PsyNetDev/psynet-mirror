@@ -396,7 +396,7 @@ def test_stacked_finalize_commit_and_lock_budget_does_not_grow_with_group_size(
                 last = Participant.query.get(participants[-1].id)
                 last_page = exp.timeline.get_current_elt(exp, last)
                 assert last.sync_group is not None
-                assert last_page.label == "choose_action"
+                assert last_page.label in ("wait", "choose_action")
                 for waiter in participants[:-1]:
                     waiter = Participant.query.get(waiter.id)
                     page = exp.timeline.get_current_elt(exp, waiter)

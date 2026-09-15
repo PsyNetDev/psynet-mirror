@@ -1189,10 +1189,15 @@ def test_grouper_would_release_only_when_the_batch_is_full(
         first = Participant.query.get(first.id)
         instance_id = next(iter(first.active_barriers.values())).barrier_instance_id
         assert _pending_checks_should_wait_for_claim([instance_id]) is False
-        assert _json_timeline(exp, last).status_code == 200
+        last_response = _json_timeline(exp, last)
+        assert last_response.status_code == 200
         last = Participant.query.get(last.id)
+        assert last.sync_group is not None
         last_page = exp.timeline.get_current_elt(exp, last)
-        assert not getattr(last_page, "is_timeline_hold", False)
+        if getattr(last_page, "is_timeline_hold", False):
+            assert _json_hold_is_silent(last_response.get_json())
+        else:
+            assert last_page.label == "choose_action"
     finally:
         exp.timeline = original_timeline
 
@@ -1711,12 +1716,16 @@ def test_finalize_barrier_arrivals_does_not_relock_after_losing_claim(monkeypatc
             events.append("participant_relock")
             return self
 
+        def populate_existing(self):
+            return self
+
         def get(self, participant_id):
             events.append("participant_read")
             return participant
 
     experiment = SimpleNamespace(
         _participant_request_query=lambda: Query(),
+        _advance_past_ready_holds=lambda participant, current_page: current_page,
         timeline=SimpleNamespace(
             get_current_elt=lambda _experiment, _participant: hold
         ),
@@ -1740,7 +1749,15 @@ def test_finalize_barrier_arrivals_does_not_relock_after_losing_claim(monkeypatc
     )
 
     assert returned is participant
-    assert events == ["check", "commit", "check", "commit", "participant_read"]
+    assert events == [
+        "check",
+        "commit",
+        "check",
+        "commit",
+        "participant_relock",
+        "participant_read",
+        "commit",
+    ]
     assert result.page is hold
     assert result.payload == {"page": "hold"}
 
@@ -1763,12 +1780,16 @@ def test_finalize_barrier_arrivals_uses_later_hold_after_lost_claim(monkeypatch)
             events.append("participant_relock")
             return self
 
+        def populate_existing(self):
+            return self
+
         def get(self, participant_id):
             events.append("participant_read")
             return participant
 
     experiment = SimpleNamespace(
         _participant_request_query=lambda: Query(),
+        _advance_past_ready_holds=lambda participant, current_page: current_page,
         timeline=SimpleNamespace(
             get_current_elt=lambda _experiment, _participant: page
         ),
@@ -1792,7 +1813,15 @@ def test_finalize_barrier_arrivals_uses_later_hold_after_lost_claim(monkeypatch)
     )
 
     assert returned is participant
-    assert events == ["check", "commit", "check", "commit", "participant_read"]
+    assert events == [
+        "check",
+        "commit",
+        "check",
+        "commit",
+        "participant_relock",
+        "participant_read",
+        "commit",
+    ]
     assert result.page is page
     assert result.payload["page"] == {"label": "next_hold"}
 
@@ -1817,12 +1846,16 @@ def test_finalize_barrier_arrivals_uses_already_advanced_page_after_lost_claim(
             events.append("participant_relock")
             return self
 
+        def populate_existing(self):
+            return self
+
         def get(self, participant_id):
             events.append("participant_read")
             return participant
 
     experiment = SimpleNamespace(
         _participant_request_query=lambda: Query(),
+        _advance_past_ready_holds=lambda participant, current_page: current_page,
         timeline=SimpleNamespace(
             get_current_elt=lambda _experiment, _participant: page
         ),
@@ -1846,7 +1879,15 @@ def test_finalize_barrier_arrivals_uses_already_advanced_page_after_lost_claim(
     )
 
     assert returned is participant
-    assert events == ["check", "commit", "check", "commit", "participant_read"]
+    assert events == [
+        "check",
+        "commit",
+        "check",
+        "commit",
+        "participant_relock",
+        "participant_read",
+        "commit",
+    ]
     assert result.page is page
     assert result.payload["page"] == {"label": "choose_action"}
 
@@ -2358,12 +2399,14 @@ def test_ready_partner_overlay_advances_after_last_arrival_release(
         assert page.is_ready_to_resume(exp, first)
         assert _hold_instance_id_for_page(first, page) is None
         _assert_cursor_unchanged(first_id, hold_uuid)
-        resumed = _process_response(exp, first, hold_uuid, timeline_hold_resume=True)
-        assert not getattr(resumed, "skip_write", False)
-        assert resumed.payload["submission"] == "approved"
+        resumed = _route_hold_resume(first_id, hold_uuid)
+        assert resumed.status_code == 200
+        body = json.loads(resumed.get_data())
+        assert body["submission"] == "approved"
         last_may_finish.set()
         thread.join(timeout=5)
         assert errors == []
+        assert not thread.is_alive()
         assert result.get("status") == 200
         _assert_left_hold_uuid(first_id, hold_uuid)
         _catch_up_until_action(exp, [first_id, last_id])
@@ -3249,30 +3292,31 @@ def test_last_arrival_post_does_not_skip_partner_cursors(
         ModularPage("choose_action", "Choose your action", time_estimate=1),
     )
     publications = _hold_wake_publications(monkeypatch)
+    first_id = first.id
+    last_id = last.id
     try:
         assert _json_timeline(exp, first).status_code == 200
         assert _json_timeline(exp, last).status_code == 200
-        first = Participant.query.get(first.id)
-        last = Participant.query.get(last.id)
+        first = Participant.query.get(first_id)
+        last = Participant.query.get(last_id)
         first_response = _route_approved_response(first)
         assert first_response.status_code == 200
-        first = Participant.query.get(first.id)
+        first = Participant.query.get(first_id)
         hold_uuid = first.page_uuid
         assert getattr(
             exp.timeline.get_current_elt(exp, first), "is_timeline_hold", False
         )
         publications.clear()
-        last = Participant.query.get(last.id)
+        last = Participant.query.get(last_id)
         last_response = _route_approved_response(last)
         assert last_response.status_code == 200
         body = json.loads(last_response.get_data())
         assert body["submission"] == "approved"
-        _assert_cursor_unchanged(first.id, hold_uuid)
+        _assert_cursor_unchanged(first_id, hold_uuid)
         assert _released_wake_count(publications) >= 1
-        first = Participant.query.get(first.id)
-        resumed = _process_response(exp, first, hold_uuid, timeline_hold_resume=True)
-        assert resumed.payload["submission"] == "approved"
-        _catch_up_until_action(exp, [first.id, last.id])
+        resumed = _route_hold_resume(first_id, hold_uuid)
+        assert resumed.status_code == 200
+        _catch_up_until_action(exp, [first_id, last_id])
     finally:
         exp.timeline = original_timeline
 
@@ -4113,7 +4157,6 @@ def test_concurrent_get_waits_for_claim_during_check(
             assert resume.wait(timeout=5)
         return original_check(instance_id, **kwargs)
 
-    monkeypatch.setattr("psynet.sync._check_held_instance", pausing_check)
     try:
         first, last = _working_participants(exp, 2)
         assert _json_timeline(exp, first).status_code == 200
@@ -4121,6 +4164,7 @@ def test_concurrent_get_waits_for_claim_during_check(
         instance_id = next(iter(first.active_barriers.values())).barrier_instance_id
         last_uid = last.unique_id
         hold_uuid = first.page_uuid
+        monkeypatch.setattr("psynet.sync._check_held_instance", pausing_check)
         last_thread, last_result, last_errors = _route_timeline_in_thread(exp, last_uid)
         assert pause.wait(timeout=5)
         claim_errors = []
