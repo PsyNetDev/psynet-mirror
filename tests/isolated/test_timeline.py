@@ -854,12 +854,15 @@ def test_process_response_unready_hold_resume_does_not_lock_or_recheck(monkeypat
     hold = MagicMock()
     hold.is_timeline_hold = True
     hold.is_ready_to_resume.return_value = False
+    hold.participant_timed_out.return_value = False
     hold.time_estimate = 1.5
     participant = SimpleNamespace(
         id=1,
         page_uuid="hold-uuid",
         client_ip_address=None,
         current_trial=None,
+        pending_redirect=None,
+        failed=False,
     )
     query = MagicMock()
     query.populate_existing.return_value.get.return_value = participant
@@ -906,6 +909,7 @@ def test_process_response_ready_hold_resume_locks_with_nowait(monkeypatch):
     hold = MagicMock()
     hold.is_timeline_hold = True
     hold.is_ready_to_resume.return_value = True
+    hold.participant_timed_out.return_value = False
     hold.prepare_resume_if_ready.return_value = True
     hold.time_estimate = 1.5
     next_page = MagicMock()
@@ -916,6 +920,8 @@ def test_process_response_ready_hold_resume_locks_with_nowait(monkeypatch):
         client_ip_address=None,
         current_trial=None,
         inc_progress=MagicMock(),
+        pending_redirect=None,
+        failed=False,
     )
     query = MagicMock()
     query.populate_existing.return_value.get.return_value = participant

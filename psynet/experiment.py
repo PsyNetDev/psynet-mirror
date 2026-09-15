@@ -3430,6 +3430,21 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 ),
             )
 
+    @staticmethod
+    def _hold_resume_must_settle(participant, event):
+        """Return whether fail, redirect, or timeout must take the locked path.
+
+        Missing ``pending_redirect`` / ``failed`` attributes are treated as
+        not set. Only an exact ``True`` timeout settles, so a dummy hold
+        object without a real timeout method does not take this path.
+        """
+        if getattr(participant, "pending_redirect", None) is not None:
+            return True
+        if getattr(participant, "failed", False):
+            return True
+        timed_out = getattr(event, "participant_timed_out", None)
+        return callable(timed_out) and timed_out(participant) is True
+
     def _unready_hold_resume_result(self, participant, page_uuid):
         """Return a still-waiting overlay result, or ``None`` if this POST must write.
 
@@ -3457,11 +3472,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         on_submitted_hold = page_uuid == participant.page_uuid and getattr(
             event, "is_timeline_hold", False
         )
-        if on_submitted_hold and (
-            participant.pending_redirect is not None
-            or participant.failed
-            or event.participant_timed_out(participant)
-        ):
+        if on_submitted_hold and self._hold_resume_must_settle(participant, event):
             return None
         if _hold_visit_pinned_by_last_arrival(participant):
             return ResponseResult(
