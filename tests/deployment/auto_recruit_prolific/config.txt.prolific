@@ -1,0 +1,6 @@
+[Parameters]
+aws_region = us-east-1
+publish_experiment = true
+
+# Paid deployment variant: recruits real participants through Prolific.
+recruiter = prolific

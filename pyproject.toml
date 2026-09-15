@@ -180,6 +180,7 @@ extend-exclude = [
     # https://gitlab.com/computational-audition-lab/cococo-shared;
     # kept byte-identical to upstream, so not linted/formatted here.
     "tests/deployment/audio_gibbs/consents_cococo",
+    "tests/deployment/auto_recruit_prolific/consents_cococo",
     "tests/deployment/payment_flows_prolific/consents_cococo",
 ]
 
