@@ -601,8 +601,17 @@ def read_database_owner(db_url: Optional[str] = None) -> Optional[DatabaseOwner]
 
 
 def local_database_lock_path() -> Path:
-    """Return the machine-wide lock file for local PostgreSQL access."""
-    return Path.home() / "psynet-data" / "local-deployment.lock"
+    """Return the lock file that serializes local PostgreSQL access.
+
+    Local deployments share one PostgreSQL database per machine, including
+    across OS users, so the lock lives in ``/tmp`` rather than a home
+    directory. Tests and unusual hosts may override the path with
+    ``PSYNET_LOCAL_DATABASE_LOCK``.
+    """
+    override = os.environ.get("PSYNET_LOCAL_DATABASE_LOCK")
+    if override:
+        return Path(override)
+    return Path("/tmp/psynet-local-deployment.lock")
 
 
 def _read_lock_holder(path: Path) -> Optional[dict]:
@@ -677,43 +686,43 @@ def local_database_lock(
         validate_local_id(local_id)
     path = local_database_lock_path()
     outermost = False
+    _database_lock_guard.acquire()
     try:
-        with _database_lock_guard:
-            if _database_lock_depth == 0:
-                lock_context, file = _acquire_lock_file(path, wait_seconds)
-                _database_lock_context = lock_context
-                outermost = True
-            else:
-                file = None
-            _database_lock_depth += 1
-        if outermost:
-            file.seek(0)
-            file.truncate()
-            file.write(
-                json.dumps(
-                    {
-                        "pid": os.getpid(),
-                        "experiment_path": (
-                            str(Path(experiment_path).resolve())
-                            if experiment_path is not None
-                            else None
-                        ),
-                        "id": local_id,
-                    }
+        if _database_lock_depth == 0:
+            lock_context, file = _acquire_lock_file(path, wait_seconds)
+            _database_lock_context = lock_context
+            outermost = True
+        _database_lock_depth += 1
+        try:
+            if outermost:
+                file.seek(0)
+                file.truncate()
+                file.write(
+                    json.dumps(
+                        {
+                            "pid": os.getpid(),
+                            "experiment_path": (
+                                str(Path(experiment_path).resolve())
+                                if experiment_path is not None
+                                else None
+                            ),
+                            "id": local_id,
+                        }
+                    )
                 )
-            )
-            file.flush()
-        yield
-    except BlockingIOError as error:
-        raise concurrent_deployment_error(path) from error
-    finally:
-        with _database_lock_guard:
+                file.flush()
+            yield
+        finally:
             if _database_lock_depth > 0:
                 _database_lock_depth -= 1
             if _database_lock_depth == 0 and _database_lock_context is not None:
                 lock_context = _database_lock_context
                 _database_lock_context = None
                 lock_context.__exit__(None, None, None)
+    except BlockingIOError as error:
+        raise concurrent_deployment_error(path) from error
+    finally:
+        _database_lock_guard.release()
 
 
 def _describe_owner(owner: DatabaseOwner) -> str:

@@ -372,6 +372,54 @@ def test_local_database_lock_waits_out_a_deployment_that_is_stopping(
     assert len(attempts) == 2
 
 
+def test_local_database_lock_serializes_threads(tmp_path, monkeypatch):
+    import threading
+    import time
+
+    from psynet.local_deployment import local_database_lock
+
+    monkeypatch.setattr(
+        "psynet.local_deployment.local_database_lock_path",
+        lambda: tmp_path / "local-deployment.lock",
+    )
+    order = []
+    entered = threading.Event()
+    release = threading.Event()
+
+    def holder():
+        with local_database_lock(tmp_path, "first"):
+            order.append("enter-first")
+            entered.set()
+            release.wait(timeout=5)
+            order.append("exit-first")
+
+    def waiter():
+        with local_database_lock(tmp_path, "second"):
+            order.append("enter-second")
+
+    first = threading.Thread(target=holder)
+    second = threading.Thread(target=waiter)
+    first.start()
+    assert entered.wait(timeout=5)
+    second.start()
+    time.sleep(0.2)
+    assert order == ["enter-first"]
+    release.set()
+    first.join(timeout=5)
+    second.join(timeout=5)
+    assert order == ["enter-first", "exit-first", "enter-second"]
+
+
+def test_local_database_lock_path_is_shared_across_users(monkeypatch):
+    from psynet.local_deployment import local_database_lock_path
+
+    monkeypatch.delenv("PSYNET_LOCAL_DATABASE_LOCK", raising=False)
+    monkeypatch.setenv("HOME", "/home/someone")
+    assert local_database_lock_path() == Path("/tmp/psynet-local-deployment.lock")
+    monkeypatch.setenv("PSYNET_LOCAL_DATABASE_LOCK", "/var/lock/psynet.lock")
+    assert local_database_lock_path() == Path("/var/lock/psynet.lock")
+
+
 def test_second_process_is_told_to_stop_the_running_experiment(tmp_path, monkeypatch):
     import os
     import subprocess
@@ -381,6 +429,8 @@ def test_second_process_is_told_to_stop_the_running_experiment(tmp_path, monkeyp
     from psynet.local_deployment import local_database_lock
 
     monkeypatch.setenv("HOME", str(tmp_path))
+    lock_path = tmp_path / "psynet-data" / "local-deployment.lock"
+    monkeypatch.setenv("PSYNET_LOCAL_DATABASE_LOCK", str(lock_path))
     holder = subprocess.Popen(
         [
             sys.executable,
@@ -391,9 +441,12 @@ def test_second_process_is_told_to_stop_the_running_experiment(tmp_path, monkeyp
             "with local_database_lock(Path('/lab/gibbs'), 'gibbs'):\n"
             "    time.sleep(30)\n",
         ],
-        env={**os.environ, "HOME": str(tmp_path)},
+        env={
+            **os.environ,
+            "HOME": str(tmp_path),
+            "PSYNET_LOCAL_DATABASE_LOCK": str(lock_path),
+        },
     )
-    lock_path = tmp_path / "psynet-data" / "local-deployment.lock"
     try:
         deadline = time.time() + 5
         while time.time() < deadline:
