@@ -502,8 +502,11 @@ Those routes do not share a lock protocol:
   finishes. If the last arriver's wait for that claim times out, ``GET /timeline`` returns
   HTTP 503 rather than rendering the live hold. Waiter rows stay
   ``NOWAIT``. If a partner row is still busy, that GET retries the check once
-  immediately (still no lock wait). It does not wait for the other request to
-  commit. If the retry still misses, the poller finishes the skip. If the
+  immediately (still no lock wait), then pauses briefly and retries again so
+  skip-after-commit can drop a partner it still holds. It does not wait for
+  the other request to commit. If those retries still miss, the poller
+  finishes the skip. A missed check still relocks this arriver and skips a
+  hold that is already released, so first-paint is not that hold. If the
   poller already released the visit, the last arriver's claim can see zero
   waiters. The last arriver's GET expires its identity map, skips the hold it
   just cleared, and follows the live cursor. Released partners are skipped

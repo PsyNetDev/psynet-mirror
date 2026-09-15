@@ -78,9 +78,9 @@ def _track_barrier_check_claims(monkeypatch):
 def test_both_nowait_misses_first_paint_live_hold_not_503(
     in_experiment_directory, db_session, monkeypatch
 ):
-    """T7: two waiter ``NOWAIT`` misses first-paint the live hold, not HTTP 503.
+    """T7: waiter ``NOWAIT`` misses first-paint the live hold, not HTTP 503.
 
-    The extra connection holds the waiter's row through both check attempts.
+    The extra connection holds the waiter's row through every check attempt.
     After that lock drops, ``check_barriers()`` must finish the skip without a
     catch-up GET.
     """
@@ -109,7 +109,8 @@ def test_both_nowait_misses_first_paint_live_hold_not_503(
             assert _participant_row_is_locked(first_id)
             last = Participant.query.filter_by(unique_id=last_uid).one()
             last_response = _json_timeline_via_route(last)
-            assert claimed == [False, False]
+            assert all(flag is False for flag in claimed)
+            assert len(claimed) >= 2
             assert last_response.status_code == 200
             payload = last_response.get_json() or {}
             assert payload["attributes"]["type"] == "_BarrierHoldPage"

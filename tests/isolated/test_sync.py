@@ -4395,6 +4395,61 @@ def test_last_arrival_releases_waiters_when_nowait_retry_sees_unlocked_row(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
+def test_last_arrival_skips_when_waiter_unlocks_after_both_immediate_nowait_misses(
+    in_experiment_directory, db_session, monkeypatch
+):
+    """A waiter lock that outlasts both immediate NOWAIT attempts must still skip.
+
+    Playwright entry-skip first-paints ``_BarrierHoldPage`` when skip-after-commit
+    still holds a partner after those two misses. Last-arrival retries again
+    after a short pause so this GET can follow the skip.
+    """
+    from psynet.sync import _run_pending_barrier_checks as original_run
+
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    group_type = f"stack_nowait_pause_{uuid.uuid4().hex[:8]}"
+    exp.timeline = _stacked_partner_timeline(group_type)
+    blocker = db.engine.connect()
+    blocker_trans = blocker.begin()
+    try:
+        first, last = _working_participants(exp, 2)
+        assert _json_timeline(exp, first).status_code == 200
+        first_id, last_id = first.id, last.id
+        seen = []
+        blocker.execute(
+            text("SELECT id FROM participant WHERE id = :id FOR UPDATE"),
+            {"id": first_id},
+        )
+
+        def run_then_drop_after_two_misses(instance_ids, **kwargs):
+            claimed = original_run(instance_ids, **kwargs)
+            seen.append(claimed)
+            if len(seen) == 2 and claimed is False and blocker_trans.is_active:
+                blocker_trans.rollback()
+            return claimed
+
+        monkeypatch.setattr(
+            "psynet.sync._run_pending_barrier_checks", run_then_drop_after_two_misses
+        )
+        last_response = _json_timeline(exp, last)
+        assert last_response.status_code == 200
+        payload = last_response.get_json() or {}
+        assert payload["attributes"]["type"] == "ModularPage"
+        assert seen[0] is False
+        assert seen[1] is False
+        assert True in seen[2:]
+        _assert_on_action_page(exp, [first_id, last_id])
+    finally:
+        if blocker_trans.is_active:
+            blocker_trans.rollback()
+        blocker.close()
+        exp.timeline = original_timeline
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
 def test_last_arrival_waits_for_a_busy_barrier_claim(
     in_experiment_directory, db_session
 ):

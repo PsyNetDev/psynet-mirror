@@ -191,19 +191,23 @@ Witness:
 T7 — Waiter ``NOWAIT`` miss
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Skip misses a locked waiter row. Last-arrival retries once, still
-``NOWAIT``. A second miss first-paints the live cursor; ``check_barriers()``
+Skip misses a locked waiter row. Last-arrival retries once immediately,
+still ``NOWAIT``, then pauses briefly and retries again. If the waiter is
+still locked, it first-paints the live cursor; ``check_barriers()``
 (the poller body) finishes the skip. That is not HTTP 503.
 
-The three tests below are different shapes:
+The tests below are different shapes:
 
 * ``test_last_arrival_retries_an_unclaimed_barrier_check_once`` stubs
   ``_run_pending_barrier_checks`` so the first call returns ``False``.
   It never takes a waiter lock.
 * ``test_last_arrival_releases_waiters_when_nowait_retry_sees_unlocked_row``
-  rolls back a real blocker connection between attempts.
+  rolls back a real blocker connection between the two immediate attempts.
+* ``test_last_arrival_skips_when_waiter_unlocks_after_both_immediate_nowait_misses``
+  keeps that lock through both immediate attempts, then drops it so a
+  paused last-arrival retry can skip to the action page.
 * ``test_both_nowait_misses_first_paint_live_hold_not_503`` keeps that
-  lock through both attempts, then calls ``check_barriers()`` and
+  lock through every attempt, then calls ``check_barriers()`` and
   asserts both participants are off the hold **before** any catch-up
   GET.
 
@@ -216,6 +220,9 @@ Witness:
 * Retry-unit (``tests/isolated/test_sync.py``, dummy timeline, real
   waiter lock dropped between attempts):
   ``test_last_arrival_releases_waiters_when_nowait_retry_sees_unlocked_row``.
+* Retry-unit (``tests/isolated/test_sync.py``, stacked timeline, lock
+  dropped after both immediate misses):
+  ``test_last_arrival_skips_when_waiter_unlocks_after_both_immediate_nowait_misses``.
 
 T8 — Overlapping pin owners
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -271,8 +278,10 @@ I8
     Unfilled waiter GETs never take the render pin.
 I9
     A waiter-row ``NOWAIT`` miss is ``all_claimed=False`` plus one
-    retry, not HTTP 503. Two misses still first-paint the live cursor;
-    ``check_barriers()`` then finishes the skip without a catch-up GET.
+    immediate retry, not HTTP 503. Last-arrival then pauses briefly and
+    retries again. A waiter that stays locked still first-paints the live
+    cursor; ``check_barriers()`` then finishes the skip without a catch-up
+    GET.
 I10
     Overlapping render-pin owners must not publish a parked wake while
     another owner still holds the visit.

@@ -312,8 +312,9 @@ Grand total: ``25 + 2N``. Profiler commits: ``4 + N`` (check + extra
 connection + *N* skip commits + queued + relock).
 The check commit is on ``_run_pending_barrier_checks``; the
 relock commit is on ``Experiment._run_finalized_barrier_arrivals``.
-The budget's ``finalize_commits`` count includes ``_run_queued_barrier_checks``
-and ``_run_finalized_barrier_arrivals``.
+The budget's ``finalize_commits`` count includes
+``_attempt_queued_barrier_checks`` (the queued-check commit) and
+``_run_finalized_barrier_arrivals``.
 Waiter-join ``NOWAIT`` stays 1; skip adds *N* more ``NOWAIT`` locks. Relock
 ``FOR UPDATE`` stays 1.
 

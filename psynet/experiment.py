@@ -182,6 +182,12 @@ INITIAL_RECRUITMENT_SIZE = 1
 # Page makers reconstruct barrier holds on each ``get_current_elt``. Bound
 # the skip loop so a cursor that never settles cannot run until timeout.
 _MAX_READY_HOLD_SKIP_STEPS = 32
+# After two immediate waiter ``NOWAIT`` misses, last-arrival pauses and
+# retries. Skip-after-commit can still hold a partner for tens of
+# milliseconds after this request wins the visit claim; giving up then
+# first-paints ``_BarrierHoldPage``.
+_LAST_ARRIVAL_NOWAIT_RETRY_PAUSE_SECONDS = 0.05
+_LAST_ARRIVAL_NOWAIT_EXTRA_ATTEMPTS = 5
 
 
 @dataclass
@@ -6175,6 +6181,17 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             )
 
     @classmethod
+    def _attempt_queued_barrier_checks(cls, checks, *, wait):
+        """Run one queued-check pass and drop partner locks before returning."""
+        from .sync import _run_pending_barrier_checks
+
+        all_claimed = _run_pending_barrier_checks(checks, wait=wait)
+        # Barrier checks can lock every waiter at the instance. Drop those
+        # partner locks before reacquiring the submitting participant.
+        db.session.commit()
+        return all_claimed
+
+    @classmethod
     def _run_queued_barrier_checks(cls, checks, *, wait=True):
         """Run queued checks, retrying waiter ``NOWAIT`` immediately once.
 
@@ -6184,22 +6201,29 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         (HTTP 503). The second attempt does not wait for a partner transaction
         to commit; it only retries waiter ``NOWAIT``. Reinstall
         ``lock_timeout`` before that retry because ``SET LOCAL`` ends at the
-        check commit. If both miss waiter rows, the caller first-paints the
-        live cursor and the 0.5s poller finishes the skip. Each successful
-        check already skipped released waiters while holding that extra claim.
+        check commit. Last-arrival (``wait=True``) then pauses briefly and
+        retries again so skip-after-commit can drop a partner row it still
+        holds. If those misses continue, the caller first-paints the live
+        cursor and the 0.5s poller finishes the skip. Each successful check
+        already skipped released waiters while holding that extra claim.
+        Unfilled waiter recovery (``wait=False``) stops after the two
+        immediate attempts so it does not occupy a worker behind last-arrival.
         """
-        from .sync import _run_pending_barrier_checks
-
-        all_claimed = _run_pending_barrier_checks(checks, wait=wait)
-        # Barrier checks can lock every waiter at the instance. Drop those
-        # partner locks before reacquiring the submitting participant.
-        db.session.commit()
-        if all_claimed:
+        if cls._attempt_queued_barrier_checks(checks, wait=wait):
             return True
         _set_transaction_lock_timeout(get_config().get("timeline_lock_timeout_seconds"))
-        all_claimed = _run_pending_barrier_checks(checks, wait=wait)
-        db.session.commit()
-        return all_claimed
+        if cls._attempt_queued_barrier_checks(checks, wait=wait):
+            return True
+        if not wait:
+            return False
+        for _ in range(_LAST_ARRIVAL_NOWAIT_EXTRA_ATTEMPTS):
+            time.sleep(_LAST_ARRIVAL_NOWAIT_RETRY_PAUSE_SECONDS)
+            _set_transaction_lock_timeout(
+                get_config().get("timeline_lock_timeout_seconds")
+            )
+            if cls._attempt_queued_barrier_checks(checks, wait=wait):
+                return True
+        return False
 
     @classmethod
     def _run_finalized_barrier_arrivals(
@@ -6229,17 +6253,34 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             )
             all_claimed = cls._run_queued_barrier_checks(checks, wait=wait_this)
             if not all_claimed:
-                # Follow the live cursor even when it is still a hold, so a
-                # later stacked wait is not first-painted as the hold this
-                # request submitted.
-                participant = experiment._participant_request_query().get(
-                    participant_id
+                # Waiter ``NOWAIT`` missed a partner, but this request or the
+                # poller may already have released this arriver's hold.
+                # Relock and skip that released hold instead of first-painting
+                # it. An unreleased live hold is the T7 first-paint.
+                db.session.expire_all()
+                _set_transaction_lock_timeout(
+                    get_config().get("timeline_lock_timeout_seconds")
                 )
-                page = experiment.timeline.get_current_elt(experiment, participant)
+                participant = (
+                    experiment._participant_request_query()
+                    .with_for_update(of=Participant)
+                    .populate_existing()
+                    .get(participant_id)
+                )
+                if participant is None:
+                    raise RuntimeError(
+                        f"Participant {participant_id} disappeared after a "
+                        "missed barrier arrival check."
+                    )
+                page = experiment._advance_past_ready_holds(
+                    participant,
+                    experiment.timeline.get_current_elt(experiment, participant),
+                )
                 if page is not None:
                     result.page = page
                     if serialize_page:
                         result.payload["page"] = page.__json__(participant)
+                db.session.commit()
                 return participant
             # ``SET LOCAL lock_timeout`` expires at the check commit. Expire
             # the identity map so a poller that already released this visit
