@@ -14,9 +14,10 @@ has lasting effect or real cost from the experiment directory:
 Disposable ``psynet debug local`` sessions are not recorded.
 
 Each event is one JSON object with at least ``schema_version``, ``at``
-(UTC), and ``event``. Action events also include the full command ``argv``
-and, when provided, a ``comment`` field. Failures record an ``error``
-message when available.
+(UTC), and ``event``. Action events also include the command ``argv``
+with known credential flags such as ``--password`` redacted, and, when
+provided, a ``comment`` field. Failures record an ``error`` message when
+available.
 
 Attach a comment to a command:
 

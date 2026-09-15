@@ -29,6 +29,40 @@ def test_append_event_includes_comment_and_argv(tmp_path):
     assert event["app"] == "demo"
 
 
+def test_event_details_redacts_password_and_username():
+    from psynet.deployment_events import event_details, redact_command_argv
+
+    assert redact_command_argv(
+        ["psynet", "export", "ssh", "--password", "s3cret", "--app", "demo"]
+    ) == [
+        "psynet",
+        "export",
+        "ssh",
+        "--password",
+        "<redacted>",
+        "--app",
+        "demo",
+    ]
+    assert redact_command_argv(
+        ["psynet", "export", "ssh", "--password=s3cret", "--username=lab"]
+    ) == [
+        "psynet",
+        "export",
+        "ssh",
+        "--password=<redacted>",
+        "--username=<redacted>",
+    ]
+    details = event_details(argv=["psynet", "export", "local", "--password", "hunter2"])
+    assert details["argv"] == [
+        "psynet",
+        "export",
+        "local",
+        "--password",
+        "<redacted>",
+    ]
+    assert "hunter2" not in details["argv"]
+
+
 def test_comment_is_free_floating(tmp_path):
     from psynet.command_line import psynet
     from psynet.utils import working_directory

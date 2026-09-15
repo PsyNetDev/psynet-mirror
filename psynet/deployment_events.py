@@ -130,7 +130,42 @@ def append_deployment_event(
 
 def command_argv() -> list[str]:
     """Return the current process argv for deployment-event context."""
-    return list(sys.argv)
+    return redact_command_argv(list(sys.argv))
+
+
+_SENSITIVE_CLI_OPTIONS = frozenset(
+    {
+        "--password",
+        "--username",
+        "--dashboard-password",
+        "--token",
+        "--api-key",
+        "--api_key",
+        "--secret",
+    }
+)
+
+
+def redact_command_argv(argv: list) -> list[str]:
+    """Return argv with known credential option values removed."""
+    redacted: list[str] = []
+    hide_next = False
+    for part in argv:
+        text = str(part)
+        if hide_next:
+            redacted.append("<redacted>")
+            hide_next = False
+            continue
+        name, sep, value = text.partition("=")
+        if name in _SENSITIVE_CLI_OPTIONS:
+            if sep:
+                redacted.append(f"{name}=<redacted>")
+            else:
+                redacted.append(text)
+                hide_next = True
+            continue
+        redacted.append(text)
+    return redacted
 
 
 def normalize_comment(comment: Optional[str]) -> Optional[str]:
@@ -155,7 +190,9 @@ def event_details(
 ):
     """Build common deployment-event fields for a CLI action."""
     details = dict(extra)
-    details["argv"] = list(argv) if argv is not None else command_argv()
+    details["argv"] = redact_command_argv(
+        list(argv) if argv is not None else command_argv()
+    )
     normalized = normalize_comment(comment)
     if normalized is not None:
         details["comment"] = normalized
