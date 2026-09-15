@@ -617,44 +617,62 @@ def init_db(drop_all=False, bind=db.engine):
 dallinger.db.init_db = init_db
 
 
-def drop_all_db_tables(bind=db.engine):
-    """
-    Drops all tables from the Postgres database.
-    Includes a workaround for the fact that SQLAlchemy doesn't provide a CASCADE option to ``drop_all``,
-    which was causing errors with Dallinger's version of database resetting in ``init_db``.
+def drop_all_db_tables(bind=db.engine, *, max_attempts=5, wait_sec=0.05):
+    """Drop every table, retrying deadlocks with a live experiment.
 
-    (https://github.com/pallets-eco/flask-sqlalchemy/issues/722)
+    SQLAlchemy's ``drop_all`` has no CASCADE option, which used to break
+    Dallinger's ``init_db`` reset
+    (https://github.com/pallets-eco/flask-sqlalchemy/issues/722).
+    ``psynet load`` also hits this path while gunicorn workers and the 0.5 s
+    barrier poller may still query the same database. ``DROP TABLE`` needs
+    ``ACCESS EXCLUSIVE`` and can deadlock with those backends, so retry the
+    whole drop; a partial drop rolls back with the aborted transaction.
     """
-    from sqlalchemy.exc import ProgrammingError
+    from sqlalchemy.exc import OperationalError
 
-    engine = bind
+    from .db import is_transient_transaction_error
 
     db.session.commit()
-
-    con = engine.connect()
-    trans = con.begin()
-
-    all_fkeys, tables = list_fkeys()
-
-    for fkey in all_fkeys:
+    for attempt in range(max_attempts):
         try:
-            con.execute(DropConstraint(fkey))
-        except ProgrammingError as err:
-            if "UndefinedTable" in str(err):
-                pass
-            else:
+            _drop_all_db_tables_once(bind)
+            return
+        except OperationalError as err:
+            db.session.rollback()
+            if not is_transient_transaction_error(err) or attempt == max_attempts - 1:
                 raise
+            logger.warning(
+                "Retrying drop_all after a transient lock error (attempt %s/%s).",
+                attempt + 1,
+                max_attempts,
+            )
+            if wait_sec:
+                time.sleep(wait_sec * (2**attempt))
 
-    for table in tables:
-        try:
-            con.execute(DropTable(table))
-        except ProgrammingError as err:
-            if "UndefinedTable" in str(err):
-                pass
-            else:
-                raise
 
-    trans.commit()
+def _drop_all_db_tables_once(bind):
+    from sqlalchemy.exc import ProgrammingError
+
+    with bind.connect() as con:
+        with con.begin():
+            all_fkeys, tables = list_fkeys()
+            for fkey in all_fkeys:
+                try:
+                    con.execute(DropConstraint(fkey))
+                except ProgrammingError as err:
+                    if "UndefinedTable" in str(err):
+                        pass
+                    else:
+                        raise
+
+            for table in tables:
+                try:
+                    con.execute(DropTable(table))
+                except ProgrammingError as err:
+                    if "UndefinedTable" in str(err):
+                        pass
+                    else:
+                        raise
 
     # Calling _old_drop_all helps clear up edge cases, such as the dropping of enum types
     _old_drop_all(bind=bind)

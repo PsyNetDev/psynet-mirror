@@ -120,6 +120,105 @@ def test_drop_foreign_key_constraints_retries_deadlock(monkeypatch):
     assert calls["n"] == 2
 
 
+class _FakeBegin:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+
+class _FakeConn:
+    def __init__(self, execute):
+        self._execute = execute
+        self.closed = False
+
+    def execute(self, statement):
+        return self._execute(statement)
+
+    def begin(self):
+        return _FakeBegin()
+
+    def close(self):
+        self.closed = True
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        self.close()
+        return False
+
+
+class _FakeEngine:
+    def __init__(self, execute):
+        self._execute = execute
+        self.connections = []
+
+    def connect(self):
+        conn = _FakeConn(self._execute)
+        self.connections.append(conn)
+        return conn
+
+
+def _stub_drop_all_session(monkeypatch):
+    from psynet import data as data_mod
+
+    class FakeSession:
+        def commit(self):
+            return None
+
+        def rollback(self):
+            return None
+
+    monkeypatch.setattr(data_mod.db, "session", FakeSession())
+    monkeypatch.setattr(data_mod, "_old_drop_all", lambda bind=None: None)
+    monkeypatch.setattr(data_mod, "DropConstraint", lambda fkey: fkey)
+    monkeypatch.setattr(data_mod, "DropTable", lambda table: table)
+
+
+def test_drop_all_db_tables_retries_deadlock(monkeypatch):
+    """Loading an export must retry exclusive table drops that deadlock with the poller."""
+    from psynet import data as data_mod
+
+    calls = {"n": 0}
+
+    def execute(statement):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise operational_error(FakeDeadlock())
+
+    old_drop_calls = []
+    _stub_drop_all_session(monkeypatch)
+    monkeypatch.setattr(
+        data_mod, "_old_drop_all", lambda bind=None: old_drop_calls.append(bind)
+    )
+    monkeypatch.setattr(data_mod, "list_fkeys", lambda: ([], [object()]))
+    engine = _FakeEngine(execute)
+    data_mod.drop_all_db_tables(bind=engine, wait_sec=0)
+    assert calls["n"] == 2
+    assert old_drop_calls == [engine]
+    assert [conn.closed for conn in engine.connections] == [True, True]
+
+
+def test_drop_all_db_tables_non_transient_error_propagates(monkeypatch):
+    from psynet import data as data_mod
+
+    calls = {"n": 0}
+
+    def execute(statement):
+        calls["n"] += 1
+        raise operational_error(FakeOtherError())
+
+    _stub_drop_all_session(monkeypatch)
+    monkeypatch.setattr(data_mod, "list_fkeys", lambda: ([], [object()]))
+    engine = _FakeEngine(execute)
+    with pytest.raises(sqlalchemy.exc.OperationalError):
+        data_mod.drop_all_db_tables(bind=engine, wait_sec=0)
+    assert calls["n"] == 1
+    assert engine.connections[0].closed
+
+
 def test_stop_debug_experiment_process_still_stops_when_flush_fails(monkeypatch):
     """Flush failures must not skip server/worker shutdown."""
     stop_calls = []
