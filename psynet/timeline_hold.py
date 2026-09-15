@@ -60,12 +60,27 @@ logger = get_logger()
 
 def mark_next_hold_catchup():
     """Mark the next hold this request consumes as a silent catch-up wait."""
-    _next_hold_is_catchup.set(True)
+    return _next_hold_is_catchup.set(True)
 
 
 def clear_next_hold_catchup():
     """Drop an unused catch-up mark after skipping onto a non-hold page."""
     _next_hold_is_catchup.set(False)
+
+
+@contextmanager
+def holding_next_hold_catchup():
+    """Mark holds consumed in this block as silent catch-up waits.
+
+    Always resets the catch-up flag, including when ``advance_page`` or
+    ``get_current_elt`` raises, so a poller or keep-alive request cannot
+    leak ``silent=True`` onto later holds.
+    """
+    token = mark_next_hold_catchup()
+    try:
+        yield
+    finally:
+        _next_hold_is_catchup.reset(token)
 
 
 def consume_next_hold_catchup():
@@ -260,7 +275,6 @@ def _publish_wakes(wakes):
         for wake in wakes:
             payload = dict(wake)
             participant_id = payload.pop("participant_id", None)
-            payload.pop("instance_id", None)
             channel = (
                 _timeline_hold_channel(participant_id)
                 if participant_id is not None

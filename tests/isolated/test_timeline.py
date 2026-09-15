@@ -379,6 +379,61 @@ def test_advance_past_ready_holds_skips_a_cleared_hold():
     experiment.timeline.advance_page.assert_called_once_with(experiment, participant)
 
 
+def test_advance_past_ready_holds_clears_catchup_mark_if_advance_raises():
+    """A skip that raises must not leave silent=True for later holds."""
+    from psynet.timeline_hold import consume_next_hold_catchup
+
+    hold = MagicMock()
+    hold.is_timeline_hold = True
+    hold.prepare_resume_if_ready.return_value = True
+    hold.time_estimate = 1
+    experiment = Experiment.__new__(Experiment)
+    experiment.timeline = MagicMock()
+    experiment.timeline.advance_page.side_effect = RuntimeError("boom")
+    participant = SimpleNamespace()
+    participant.inc_progress = MagicMock()
+
+    with pytest.raises(RuntimeError, match="boom"):
+        experiment._advance_past_ready_holds(participant, hold)
+
+    assert consume_next_hold_catchup() is False
+
+
+def test_finalize_barrier_arrivals_stops_after_max_passes(monkeypatch):
+    """A timeline that mints a new visit each skip must not occupy a worker."""
+    participant = SimpleNamespace(id=1)
+    hold = SimpleNamespace(is_timeline_hold=True)
+
+    monkeypatch.setattr("psynet.experiment._MAX_FINALIZE_BARRIER_CHECK_PASSES", 3)
+    monkeypatch.setattr(
+        "psynet.experiment._set_transaction_lock_timeout", lambda seconds: None
+    )
+    monkeypatch.setattr(
+        Experiment, "_run_queued_barrier_checks", classmethod(lambda *a, **k: True)
+    )
+    monkeypatch.setattr(
+        Experiment,
+        "_relock_arriver_after_barrier_check",
+        classmethod(lambda *a, **k: (participant, hold)),
+    )
+    monkeypatch.setattr(
+        Experiment,
+        "_next_stacked_barrier_checks",
+        staticmethod(lambda *a, **k: ["next-id"]),
+    )
+    monkeypatch.setattr(
+        "psynet.sync._pending_checks_should_wait_for_claim", lambda ids: False
+    )
+
+    with pytest.raises(RuntimeError, match="did not settle"):
+        Experiment._finalize_barrier_arrivals(
+            experiment=SimpleNamespace(),
+            participant_id=1,
+            checks=["first-id"],
+            result=SimpleNamespace(page=None, payload={}),
+        )
+
+
 def test_advance_past_ready_holds_follows_live_page_when_hold_is_stale():
     """A stale hold object must not first-paint after another session advanced us."""
     hold = MagicMock()

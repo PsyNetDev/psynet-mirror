@@ -147,6 +147,14 @@ async function probeTimelineHoldClientBehavior(page) {
     const hopReusedChip =
       document.getElementById("psynet-timeline-hold-indicator") ===
       reusedIndicator;
+    const hopKeptPageInert = Boolean(
+      document.getElementById("main-body")?.inert
+    );
+    const commentStashAfterHop = document.getElementById(
+      "psynet-timeline-hold-indicator"
+    )?.dataset.commentButtonWasDisabled;
+    const hopPreservedCommentStash =
+      commentStashAfterHop === undefined || commentStashAfterHop === "false";
     const updatedMessage = document.querySelector(
       "#psynet-timeline-hold-indicator .psynet-timeline-hold-message"
     )?.innerHTML;
@@ -270,6 +278,8 @@ async function probeTimelineHoldClientBehavior(page) {
       closedOnBeginHold,
       hopEnded,
       hopReusedChip,
+      hopKeptPageInert,
+      hopPreservedCommentStash,
       updatedMessage,
       silentIgnoredArrival
     };
@@ -594,6 +604,8 @@ test("timeline hold client overlay and busy retry stay on a live hold", { tag: "
       closedOnBeginHold: true,
       hopEnded: 0,
       hopReusedChip: true,
+      hopKeptPageInert: true,
+      hopPreservedCommentStash: true,
       updatedMessage: "Updated wait copy",
       silentIgnoredArrival: true,
       sendCount: 2,

@@ -182,6 +182,9 @@ INITIAL_RECRUITMENT_SIZE = 1
 # Page makers reconstruct barrier holds on each ``get_current_elt``. Bound
 # the skip loop so a cursor that never settles cannot run until timeout.
 _MAX_READY_HOLD_SKIP_STEPS = 32
+# Stacked last-arrival finalize evaluates one visit per pass. Bound the loop
+# so a timeline that mints a fresh instance each skip cannot occupy a worker.
+_MAX_FINALIZE_BARRIER_CHECK_PASSES = 32
 
 
 @dataclass
@@ -3365,11 +3368,13 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 should_resume = event.prepare_resume_if_ready(self, participant)
                 event.account_wait(participant, settle=should_resume)
                 if should_resume:
+                    from .timeline_hold import holding_next_hold_catchup
+
                     participant.inc_progress(event.time_estimate)
-                    self.timeline.advance_page(self, participant)
-                    page = self._advance_past_ready_holds(
-                        participant, self.timeline.get_current_elt(self, participant)
-                    )
+                    with holding_next_hold_catchup():
+                        self.timeline.advance_page(self, participant)
+                        page = self.timeline.get_current_elt(self, participant)
+                    page = self._advance_past_ready_holds(participant, page)
                 else:
                     page = event
                 return ResponseResult(
@@ -3524,10 +3529,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         a still-waiting visit is a new object with the same ``hold_id``. Treat
         that as the same wait; identity ``is`` would loop until timeout.
         """
-        from .timeline_hold import (
-            clear_next_hold_catchup,
-            mark_next_hold_catchup,
-        )
+        from .timeline_hold import holding_next_hold_catchup
 
         for _ in range(_MAX_READY_HOLD_SKIP_STEPS):
             if not getattr(page, "is_timeline_hold", False):
@@ -3535,11 +3537,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             if page.prepare_resume_if_ready(self, participant):
                 page.account_wait(participant, settle=True)
                 participant.inc_progress(page.time_estimate)
-                mark_next_hold_catchup()
-                self.timeline.advance_page(self, participant)
-                page = self.timeline.get_current_elt(self, participant)
-                if not getattr(page, "is_timeline_hold", False):
-                    clear_next_hold_catchup()
+                with holding_next_hold_catchup():
+                    self.timeline.advance_page(self, participant)
+                    page = self.timeline.get_current_elt(self, participant)
                 continue
             live = self.timeline.get_current_elt(self, participant)
             if self._is_same_timeline_hold(page, live):
@@ -6246,10 +6246,14 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         """
         from .sync import _pending_checks_should_wait_for_claim
 
+        if not checks:
+            raise RuntimeError(
+                "Barrier arrival finalize requires at least one queued check."
+            )
         processed = set()
         rechecked = set()
         wait_this = wait_for_claim
-        while checks:
+        for _ in range(_MAX_FINALIZE_BARRIER_CHECK_PASSES):
             processed.update(checks)
             cls._reapply_timeline_lock_timeout()
             all_claimed = cls._run_queued_barrier_checks(checks, wait=wait_this)
@@ -6274,7 +6278,12 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 allow_unfilled_recheck=wait_for_claim,
             )
             wait_this = bool(checks) and _pending_checks_should_wait_for_claim(checks)
-        return participant
+            if not checks:
+                return participant
+        raise RuntimeError(
+            "Barrier arrival finalize did not settle after "
+            f"{_MAX_FINALIZE_BARRIER_CHECK_PASSES} passes."
+        )
 
     @staticmethod
     def _render_prepared_partial_timeline_payload(page, experiment, participant):

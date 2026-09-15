@@ -819,6 +819,8 @@ def test_hold_chip_stacks_under_the_leave_modal():
     ]
     assert 'getElementById("comment-button")' in hold_fn
     assert 'getElementById("early-exit-button")' not in hold_fn
+    assert 'dataset.timelineHoldDynamic === "true"' in hold_fn
+    assert "commentButtonWasDisabled === undefined" in hold_fn
 
 
 def test_footer_exit_uses_an_in_page_confirmation():

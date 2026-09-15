@@ -3382,6 +3382,13 @@ def test_last_arrival_catchup_hold_stays_silent(
         publications.clear()
         first_resume = _route_hold_resume(first_id, first_hold_uuid)
         assert first_resume.status_code == 200
+        first = Participant.query.get(first_id)
+        first_page = exp.timeline.get_current_elt(exp, first)
+        if getattr(first_page, "is_timeline_hold", False):
+            first_catchup = TimelineHoldRecord.query.filter_by(
+                participant_id=first_id, page_uuid=first.page_uuid
+            ).one()
+            assert first_catchup.silent is True
         last = Participant.query.get(last_id)
         last_hold = TimelineHoldRecord.query.filter_by(
             participant_id=last_id, page_uuid=last_hold_uuid

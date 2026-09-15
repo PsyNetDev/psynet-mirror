@@ -1003,9 +1003,11 @@
       let indicator = document.getElementById(
         "psynet-timeline-hold-indicator",
       );
-      // A server-rendered indicator means this document is already the neutral
-      // fallback. Only preserved participant pages need their main body inert.
-      let preservesVisiblePage = !indicator;
+      // A server-rendered indicator (no dynamic flag) means this document is
+      // already the neutral fallback. A dynamic chip, including one reused
+      // across hold-to-hold hops, still covers a preserved participant page.
+      let preservesVisiblePage =
+        !indicator || indicator.dataset.timelineHoldDynamic === "true";
       if (!indicator) {
         indicator = document.createElement("div");
         indicator.id = "psynet-timeline-hold-indicator";
@@ -1034,9 +1036,11 @@
       }
       let commentButton = document.getElementById("comment-button");
       if (commentButton) {
-        indicator.dataset.commentButtonWasDisabled = String(
-          commentButton.disabled,
-        );
+        if (indicator.dataset.commentButtonWasDisabled === undefined) {
+          indicator.dataset.commentButtonWasDisabled = String(
+            commentButton.disabled,
+          );
+        }
         commentButton.disabled = true;
       }
     };
