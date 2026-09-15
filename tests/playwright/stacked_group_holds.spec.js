@@ -25,9 +25,9 @@ const TRIO_DIR = path.resolve("tests/playwright/experiments/stacked_group_holds"
 test("last of three skips stacked group holds", { tag: "@both" }, async ({
   browser
 }) => {
-  // The second member must still first-paint a hold. The third member skips
-  // the released stacked waits, including waiting partners. Waiters leave
-  // from the server wake.
+  // The second member must still first-paint a hold. The third member
+  // self-skips released stacked waits and may first-paint a silent catch-up
+  // hold. Waiting partners leave on overlay wake.
   const { experiment, sessions } = await startHoldExperiment(browser, TRIO_DIR, [
     "trio_first",
     "trio_second",
@@ -169,9 +169,11 @@ test("last of four releases waiters and they catch up", { tag: "@both" }, async 
   browser
 }) => {
   // A larger group adds more wake targets on the same last-arriver request.
-  // Members 1-3 must stay held until member 4 lands, then leave together.
-  // Three overlapping next-page renders can spread overlay leave times on CI;
-  // waiter-release spread stays 2200ms. Overlay linger uses 2500ms.
+  // Members 1-3 must stay held until member 4 lands, then overlay-hop the
+  // remaining stacked waits. Each hop can need its own hold-resume POST
+  // (grouper, then init, then prepare). Three overlapping next-page renders
+  // can spread overlay leave times on CI; waiter-release spread stays 2200ms.
+  // Overlay linger uses 2500ms.
   const { experiment, sessions } = await startHoldExperiment(
     browser,
     TRIO_DIR,

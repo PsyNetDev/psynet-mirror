@@ -857,7 +857,9 @@ async function assertWaiterReleasedWithLastArriver(
     prompt = ACTION_PROMPT,
     timeout = STEP_TIMEOUT_MS,
     allowWebsocketResume = false,
-    maxHoldResumePosts = 2
+    // Partners overlay-hop stacked waits after last-arrival. Each remaining
+    // hold (grouper, init, prepare) can need its own hold-resume POST.
+    maxHoldResumePosts = 3
   } = {}
 ) {
   const resume = await session.resumePromise;
