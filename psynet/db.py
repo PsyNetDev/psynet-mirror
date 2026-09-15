@@ -7,6 +7,19 @@ from sqlalchemy import event, text
 
 TRANSIENT_TRANSACTION_PGCODES = {"40001", "40P01", "55P03"}
 
+_OTHER_DATABASE_CLIENTS_WHERE = (
+    "datname = current_database() AND pid <> pg_backend_pid() "
+    "AND usename = current_user"
+)
+OTHER_DATABASE_CLIENTS_SQL = text(
+    "SELECT pid, usename, application_name, state FROM pg_stat_activity "
+    f"WHERE {_OTHER_DATABASE_CLIENTS_WHERE}"
+)
+TERMINATE_OTHER_DATABASE_CLIENTS_SQL = text(
+    "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+    f"WHERE {_OTHER_DATABASE_CLIENTS_WHERE}"
+)
+
 
 def is_transient_transaction_error(error):
     """Return whether a database error is lock timeout, deadlock, or serialization failure."""
@@ -14,6 +27,29 @@ def is_transient_transaction_error(error):
         getattr(getattr(error, "orig", None), "pgcode", None)
         in TRANSIENT_TRANSACTION_PGCODES
     )
+
+
+def release_local_database_connections():
+    """Close this process's ORM sessions and dispose its connection pool."""
+    from sqlalchemy.orm.session import close_all_sessions
+
+    close_all_sessions()
+    dallinger.db.engine.dispose()
+
+
+def list_other_database_clients(*, release_local=True):
+    """Return other same-role backends connected to this database.
+
+    Parameters
+    ----------
+    release_local : bool
+        If True (default), close this process's pooled connections first so
+        they are not counted as another client.
+    """
+    if release_local:
+        release_local_database_connections()
+    with dallinger.db.engine.connect() as con:
+        return list(con.execute(OTHER_DATABASE_CLIENTS_SQL))
 
 
 _transaction_depth = ContextVar("psynet_transaction_depth", default=0)

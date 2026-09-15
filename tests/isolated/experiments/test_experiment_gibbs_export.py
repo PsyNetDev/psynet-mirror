@@ -75,8 +75,9 @@ def _build_canonical_gibbs_export(data_root_dir):
 def canonical_gibbs_export(data_root_dir, launched_experiment, debug_server_process):
     """Build the export zip, then stop gunicorn before later tests touch the DB.
 
-    ``populate_db_from_zip_file`` runs ``DROP TABLE ... CASCADE`` on the same
-    database the debug workers and 0.5 s barrier poller still query.
+    ``populate_db_from_zip_file`` refuses to drop tables while gunicorn
+    workers still hold the database, so this fixture stops that server
+    after the zip is written.
     """
     _build_canonical_gibbs_export(data_root_dir)
     _stop_debug_experiment_process(debug_server_process)

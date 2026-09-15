@@ -618,15 +618,15 @@ dallinger.db.init_db = init_db
 
 
 def drop_all_db_tables(bind=db.engine, *, max_attempts=5, wait_sec=0.05):
-    """Drop every table, retrying deadlocks with a live experiment.
+    """Drop every table, retrying leftover lock errors.
 
     SQLAlchemy's ``drop_all`` has no CASCADE option, which used to break
     Dallinger's ``init_db`` reset
     (https://github.com/pallets-eco/flask-sqlalchemy/issues/722).
-    ``psynet load`` also hits this path while gunicorn workers and the 0.5 s
-    barrier poller may still query the same database. ``DROP TABLE`` needs
-    ``ACCESS EXCLUSIVE`` and can deadlock with those backends, so retry the
-    whole drop; a partial drop rolls back with the aborted transaction.
+    ``DROP TABLE`` needs ``ACCESS EXCLUSIVE`` and can still deadlock with a
+    leftover backend after the experiment server should have stopped. Retry
+    the whole drop; a partial drop rolls back with the aborted transaction.
+    ``psynet load`` refuses that path while another client is still connected.
     """
     from sqlalchemy.exc import OperationalError
 
@@ -1008,15 +1008,45 @@ dallinger.data.ingest_zip = ingest_zip
 dallinger.data.ingest_to_model = ingest_to_model
 
 
+class DatabaseInUseError(RuntimeError):
+    """Raised when replacing the local database while another client is connected."""
+
+
+def _format_other_database_clients(clients):
+    labels = []
+    for row in clients:
+        pid = row[0]
+        app = (row[2] or "").strip()
+        labels.append(f"pid {pid} ({app})" if app else f"pid {pid}")
+    return ", ".join(labels)
+
+
+def _assert_database_idle_for_replace():
+    """Refuse to drop tables while another same-role client is connected."""
+    from .db import list_other_database_clients
+
+    clients = list_other_database_clients()
+    if not clients:
+        return
+    raise DatabaseInUseError(
+        "Cannot replace the local database while other clients are still "
+        f"connected ({_format_other_database_clients(clients)}). "
+        "Stop `psynet debug` or any other process using this database and retry."
+    )
+
+
 def populate_db_from_zip_file(zip_path):
     """Replace the contents of the local database with an exported archive.
 
     This drops every table first, so it must only be used where losing the
-    current local database is the point (``psynet load``).
+    current local database is the point (``psynet load``). The experiment
+    server must be stopped first; a connected ``psynet debug`` process is
+    refused rather than dropped out from under.
     """
     from dallinger import data as dallinger_data
 
     db.session.commit()  # The process can freeze without this
+    _assert_database_idle_for_replace()
     init_db(drop_all=True)
     dallinger_data.ingest_zip(zip_path)
 

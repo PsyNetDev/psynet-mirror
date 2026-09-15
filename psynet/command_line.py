@@ -45,6 +45,7 @@ from psynet.version import (
 from . import deployment_info
 from .bootstrap_commands import register_bootstrap_commands
 from .data import (
+    DatabaseInUseError,
     drop_all_db_tables,
     ingest_zip,
     init_db,
@@ -2974,11 +2975,18 @@ def rpdb(ip, port):
 @click.argument("path")
 @require_exp_directory
 def load(path):
-    "Populates the local database with a provided zip file."
+    """Replace the local database with a provided zip file.
+
+    Stop ``psynet debug`` first. The command refuses to drop tables while
+    another client is still connected to the database.
+    """
     from .experiment import import_local_experiment
 
     import_local_experiment()
-    populate_db_from_zip_file(path)
+    try:
+        populate_db_from_zip_file(path)
+    except DatabaseInUseError as err:
+        raise click.ClickException(str(err)) from err
 
 
 @psynet.command(

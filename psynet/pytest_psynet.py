@@ -588,20 +588,14 @@ def terminate_other_postgres_connections():
     still be terminated, so this must only run when no other component holds
     a database connection (as is the case at the test-setup call sites).
     """
-    from sqlalchemy import text
-    from sqlalchemy.orm.session import close_all_sessions
+    from .db import (
+        TERMINATE_OTHER_DATABASE_CLIENTS_SQL,
+        release_local_database_connections,
+    )
 
-    close_all_sessions()
-    db.engine.dispose()
-
+    release_local_database_connections()
     with db.engine.connect() as con:
-        con.execute(
-            text(
-                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-                "WHERE datname = current_database() AND pid <> pg_backend_pid() "
-                "AND usename = current_user"
-            )
-        )
+        con.execute(TERMINATE_OTHER_DATABASE_CLIENTS_SQL)
 
 
 # Postgres SQLSTATE code for "deadlock detected"; matching on the code rather

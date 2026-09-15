@@ -178,7 +178,7 @@ def _stub_drop_all_session(monkeypatch):
 
 
 def test_drop_all_db_tables_retries_deadlock(monkeypatch):
-    """Loading an export must retry exclusive table drops that deadlock with the poller."""
+    """Leftover exclusive table drops must retry a deadlock."""
     from psynet import data as data_mod
 
     calls = {"n": 0}
@@ -236,3 +236,59 @@ def test_stop_debug_experiment_process_still_stops_when_flush_fails(monkeypatch)
     process = object()
     pytest_psynet._stop_debug_experiment_process(process)
     assert stop_calls == [process]
+
+
+def test_populate_db_from_zip_file_refuses_listed_clients(monkeypatch, tmp_path):
+    from psynet import data as data_mod
+
+    dropped = []
+    monkeypatch.setattr(
+        "psynet.db.list_other_database_clients",
+        lambda release_local=True: [(123, "dallinger", "gunicorn", "idle")],
+    )
+    monkeypatch.setattr(
+        data_mod, "init_db", lambda drop_all=False: dropped.append(drop_all)
+    )
+    monkeypatch.setattr("dallinger.data.ingest_zip", lambda path: dropped.append(path))
+    with pytest.raises(data_mod.DatabaseInUseError, match="pid 123"):
+        data_mod.populate_db_from_zip_file(str(tmp_path / "export.zip"))
+    assert dropped == []
+
+
+def test_populate_db_from_zip_file_runs_when_idle(monkeypatch, tmp_path):
+    from psynet import data as data_mod
+
+    calls = []
+    monkeypatch.setattr(
+        "psynet.db.list_other_database_clients", lambda release_local=True: []
+    )
+    monkeypatch.setattr(
+        data_mod, "init_db", lambda drop_all=False: calls.append("init")
+    )
+    monkeypatch.setattr("dallinger.data.ingest_zip", lambda path: calls.append(path))
+    zip_path = str(tmp_path / "export.zip")
+    data_mod.populate_db_from_zip_file(zip_path)
+    assert calls == ["init", zip_path]
+
+
+def test_populate_db_from_zip_file_refuses_a_live_backend(monkeypatch, tmp_path):
+    from sqlalchemy import create_engine, text
+
+    from psynet import data as data_mod
+
+    dropped = []
+    monkeypatch.setattr(
+        data_mod, "init_db", lambda drop_all=False: dropped.append(drop_all)
+    )
+    monkeypatch.setattr("dallinger.data.ingest_zip", lambda path: dropped.append(path))
+
+    other = create_engine(data_mod.db.engine.url)
+    conn = other.connect()
+    try:
+        conn.execute(text("SELECT 1"))
+        with pytest.raises(data_mod.DatabaseInUseError, match="other clients"):
+            data_mod.populate_db_from_zip_file(str(tmp_path / "export.zip"))
+    finally:
+        conn.close()
+        other.dispose()
+    assert dropped == []
