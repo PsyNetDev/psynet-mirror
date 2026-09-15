@@ -18,7 +18,8 @@ shortcuts. Low-level Lua tests may drive Redis directly.
 The lock protocol itself is in :ref:`timeline-hold-resume-protocol`.
 This page only lists **who may hold what, in which order**. Isolated
 reachable-state witnesses live in
-``tests/isolated/test_timeline_hold_protocol.py``.
+``tests/isolated/test_timeline_hold_protocol.py``. Shared request helpers
+live in ``tests/isolated/timeline_hold_helpers.py``.
 
 Resources
 ---------

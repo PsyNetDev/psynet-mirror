@@ -6,31 +6,23 @@ treat a ready overlay on an unreleased ``active_barriers`` link as a
 protocol witness. See ``docs/developer/timeline_hold_traces.rst``.
 """
 
-import json
+import sys
 import threading
 import uuid
-from contextlib import contextmanager
+from pathlib import Path
 
 import pytest
 from dallinger import db
-from dallinger.models import timenow
-from flask import Flask
-from sqlalchemy import text
-from sqlalchemy.exc import OperationalError
 
 from psynet.experiment import Experiment, get_experiment
-from psynet.modular_page import ModularPage
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.sync import (
-    GroupBarrier,
-    SimpleGrouper,
     _hold_instance_id_for_page,
     _hold_visit_pinned_by_last_arrival,
     _run_pending_barrier_checks,
     check_barriers,
 )
-from psynet.timeline import Timeline
 from psynet.timeline_hold import (
     TimelineHoldRecord,
     _last_arrival_follow_in_progress,
@@ -41,211 +33,30 @@ from psynet.timeline_hold import (
     _publish_wakes,
 )
 
+_ISOLATED_DIR = Path(__file__).resolve().parent
+if str(_ISOLATED_DIR) not in sys.path:
+    sys.path.insert(0, str(_ISOLATED_DIR))
+from timeline_hold_helpers import (  # noqa: E402
+    _catch_up_until_action,
+    _hold_wake_publications,
+    _json_timeline,
+    _json_timeline_via_route,
+    _lock_participant_row,
+    _participant_hold,
+    _participant_row_is_locked,
+    _process_response,
+    _released_wake_count,
+    _route_timeline_via_route_in_thread,
+    _using_stacked_timeline,
+    _working_participants,
+    new_participant,
+)
+
 CONSENTS = pytest.mark.parametrize(
     "experiment_directory",
     [path_to_test_experiment("consents")],
     indirect=True,
 )
-
-
-def _new_participant(experiment):
-    participant = Participant(
-        experiment=experiment,
-        recruiter_id="hotair",
-        worker_id=str(uuid.uuid4()),
-        hit_id="XYZ",
-        assignment_id=str(uuid.uuid4()),
-        mode="debug",
-    )
-    db.session.add(participant)
-    return participant
-
-
-def _stacked_partner_timeline(group_type, group_size=2):
-    """RPS-like grouper plus two entry barriers before the first action page."""
-    hold_content = "Waiting for your partner"
-    return Timeline(
-        SimpleGrouper(
-            group_type=group_type,
-            initial_group_size=group_size,
-            content=hold_content,
-        ),
-        GroupBarrier(
-            id_=f"{group_type}_init",
-            group_type=group_type,
-            content=hold_content,
-        ),
-        GroupBarrier(
-            id_=f"{group_type}_prepare",
-            group_type=group_type,
-            content=hold_content,
-        ),
-        ModularPage("choose_action", "Choose your action", time_estimate=1),
-    )
-
-
-@contextmanager
-def _using_stacked_timeline(exp, group_type, **kwargs):
-    original = exp.timeline
-    exp.timeline = _stacked_partner_timeline(group_type, **kwargs)
-    try:
-        yield
-    finally:
-        exp.timeline = original
-
-
-def _json_timeline(exp, participant):
-    """Run ``GET /timeline?mode=json`` for ``participant`` in a request context."""
-    with Flask(__name__).test_request_context(
-        f"/timeline?unique_id={participant.unique_id}",
-        environ_base={"REMOTE_ADDR": "127.0.0.1"},
-    ):
-        return Experiment._route_timeline(exp, participant, mode="json")
-
-
-def _json_timeline_via_route(participant):
-    """Run ``GET /timeline?mode=json`` through the busy-503 wrapper."""
-    with Flask(__name__).test_request_context(
-        f"/timeline?unique_id={participant.unique_id}&mode=json",
-        environ_base={"REMOTE_ADDR": "127.0.0.1"},
-    ):
-        return Experiment.route_timeline()
-
-
-def _process_response(exp, participant, page_uuid, *, timeline_hold_resume=False):
-    """Run ``process_response`` for ``participant`` in a request context."""
-    with Flask(__name__).test_request_context(
-        "/response",
-        environ_base={"REMOTE_ADDR": "127.0.0.1"},
-    ):
-        return exp.process_response(
-            participant.id,
-            None,
-            {},
-            {},
-            page_uuid,
-            "127.0.0.1",
-            timeline_hold_resume=timeline_hold_resume,
-        )
-
-
-def _working_participants(exp, count):
-    participants = [_new_participant(exp) for _ in range(count)]
-    for participant in participants:
-        participant.status = "working"
-    db.session.commit()
-    return participants
-
-
-def _assert_on_action_page(exp, participant_ids):
-    db.session.expire_all()
-    groups = []
-    for participant_id in participant_ids:
-        participant = Participant.query.get(participant_id)
-        page = exp.timeline.get_current_elt(exp, participant)
-        assert not getattr(page, "is_timeline_hold", False)
-        assert page.label == "choose_action"
-        assert participant.sync_group is not None
-        groups.append(participant.sync_group.id)
-    assert len(set(groups)) == 1
-
-
-def _catch_up_until_action(exp, participant_ids, *, rounds=20):
-    participant_ids = list(participant_ids)
-    for _ in range(rounds):
-        db.session.expire_all()
-        remaining = []
-        for participant_id in participant_ids:
-            participant = Participant.query.get(participant_id)
-            page = exp.timeline.get_current_elt(exp, participant)
-            if getattr(page, "label", None) != "choose_action":
-                remaining.append(participant)
-        if not remaining:
-            _assert_on_action_page(exp, participant_ids)
-            return
-        for participant in remaining:
-            assert _json_timeline(exp, participant).status_code == 200
-    _assert_on_action_page(exp, participant_ids)
-
-
-def _participant_row_is_locked(participant_id):
-    """Return whether another connection holds ``FOR UPDATE`` on this participant."""
-    with db.engine.connect() as conn:
-        trans = conn.begin()
-        try:
-            conn.execute(
-                text("SELECT id FROM participant WHERE id = :id FOR UPDATE NOWAIT"),
-                {"id": participant_id},
-            )
-        except OperationalError as err:
-            if getattr(getattr(err, "orig", None), "pgcode", None) == "55P03":
-                return True
-            raise
-        else:
-            return False
-        finally:
-            trans.rollback()
-
-
-@contextmanager
-def _lock_participant_row(participant_id):
-    """Hold ``FOR UPDATE`` on ``participant_id`` from an extra connection."""
-    conn = db.engine.connect()
-    trans = conn.begin()
-    try:
-        conn.execute(
-            text("SELECT id FROM participant WHERE id = :id FOR UPDATE"),
-            {"id": participant_id},
-        )
-        yield
-    finally:
-        if trans.is_active:
-            trans.rollback()
-        conn.close()
-
-
-def _route_timeline_via_route_in_thread(unique_id):
-    result = {}
-    errors = []
-
-    def target():
-        try:
-            participant = Participant.query.filter_by(unique_id=unique_id).one()
-            response = _json_timeline_via_route(participant)
-            result["status"] = response.status_code
-            payload = response.get_json()
-            result["payload"] = payload
-            attributes = (payload or {}).get("attributes") or {}
-            result["type"] = attributes.get("type")
-        except Exception as err:  # pragma: no cover - surfaced by the caller
-            errors.append(err)
-        finally:
-            db.session.remove()
-
-    thread = threading.Thread(target=target, daemon=True)
-    thread.start()
-    return thread, result, errors
-
-
-def _hold_wake_publications(monkeypatch):
-    publications = []
-    monkeypatch.setattr(
-        db.redis_conn,
-        "publish",
-        lambda channel_name, data: publications.append(
-            (channel_name, json.loads(data))
-        ),
-    )
-    return publications
-
-
-def _released_wake_count(publications):
-    return sum(
-        1
-        for _, payload in publications
-        for target in payload.get("targets", [])
-        if target.get("reason") == "barrier_released"
-    )
 
 
 def _track_barrier_check_claims(monkeypatch):
@@ -399,19 +210,9 @@ def test_overlapping_render_pin_owners_publish_wake_once(
     in_experiment_directory, db_session, monkeypatch
 ):
     """T8: the last overlapping render-pin owner drains a parked wake once."""
-    participant = _new_participant(get_experiment())
+    participant = new_participant(get_experiment())
     participant.status = "working"
-    participant.page_uuid = "overlap-pin"
-    hold = TimelineHoldRecord(
-        participant=participant,
-        page_uuid="overlap-pin",
-        hold_id="overlap",
-        started_at=timenow(),
-        expected_wait=1,
-        max_wait_time=20,
-        fix_time_credit=False,
-    )
-    db.session.add(hold)
+    hold = _participant_hold(participant, "overlap-pin", "overlap")
     db.session.commit()
     publications = _hold_wake_publications(monkeypatch)
     instance_id = f"overlap-{uuid.uuid4().hex}"
