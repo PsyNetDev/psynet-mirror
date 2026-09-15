@@ -15,7 +15,7 @@ from psynet.bot import BotDriver
 from psynet.command_line import export__local, populate_db_from_zip_file
 from psynet.export import load_export_table, unpack_json_column
 from psynet.participant import Participant
-from psynet.pytest_psynet import path_to_test_experiment
+from psynet.pytest_psynet import _stop_debug_experiment_process, path_to_test_experiment
 from psynet.timeline import Response
 from psynet.trial.main import Trial
 
@@ -68,9 +68,15 @@ def _build_canonical_gibbs_export(data_root_dir):
     )
 
 
-@pytest.fixture(scope="class")
-def canonical_gibbs_export(data_root_dir, launched_experiment):
+def _write_canonical_export_then_stop(data_root_dir, debug_experiment):
+    """Write the export, then stop the debug server before any later drop_all."""
     _build_canonical_gibbs_export(data_root_dir)
+    _stop_debug_experiment_process(debug_experiment)
+
+
+@pytest.fixture(scope="class")
+def canonical_gibbs_export(data_root_dir, launched_experiment, debug_experiment):
+    _write_canonical_export_then_stop(data_root_dir, debug_experiment)
     return data_root_dir
 
 
@@ -178,11 +184,28 @@ class TestExpWithExport:
                 assert csv_name in exported_csv_files
 
 
+def test_write_canonical_export_stops_debug_process_before_returning(monkeypatch):
+    """The export fixture must stop the clock before a later drop_all can run."""
+    calls = []
+
+    monkeypatch.setattr(
+        f"{__name__}._build_canonical_gibbs_export",
+        lambda data_root_dir: calls.append(("build", data_root_dir)),
+    )
+    monkeypatch.setattr(
+        f"{__name__}._stop_debug_experiment_process",
+        lambda process: calls.append(("stop", process)),
+    )
+    process = object()
+    _write_canonical_export_then_stop("/tmp/gibbs-export", process)
+    assert calls == [("build", "/tmp/gibbs-export"), ("stop", process)]
+
+
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("gibbs")], indirect=True
 )
 def test_populate_db_from_canonical_export_archive(
-    canonical_gibbs_export, database_dir, coin_class, tmp_path
+    canonical_gibbs_export, database_dir, coin_class, tmp_path, debug_experiment
 ):
     """Reload a canonical export zip whose empty table CSVs have been omitted."""
     from psynet.chatroom import ChatMessage
@@ -190,6 +213,7 @@ def test_populate_db_from_canonical_export_archive(
 
     assert (Path(database_dir) / "participant.csv").exists()
     assert not (Path(database_dir) / "chat_message.csv").exists()
+    assert not debug_experiment.isalive()
 
     archive = tmp_path / "export.zip"
     _install_archive_template(database_dir, str(archive))
