@@ -3706,6 +3706,17 @@ def _destroy(
                     error=_error_text(error),
                     **extras,
                 )
+            except Exception as error:
+                spinner.fail("✗")
+                _append_deployment_event_if_in_experiment(
+                    "destroy.failed",
+                    target="ssh" if server else "heroku",
+                    app=app,
+                    server=server,
+                    error=_error_text(error),
+                    **extras,
+                )
+                raise
 
 
 @destroy.command("ssh")

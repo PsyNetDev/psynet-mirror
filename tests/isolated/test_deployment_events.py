@@ -3,6 +3,7 @@
 import json
 import sys
 
+import pytest
 from click.testing import CliRunner
 from rich.console import Console
 
@@ -303,6 +304,41 @@ def test_destroy_records_comment_on_success(monkeypatch, tmp_path):
     assert events[-1]["comment"] == "Wrong country"
     assert events[-1]["app"] == "demo-app"
     assert "argv" in events[-1]
+
+
+def test_destroy_records_failure_for_generic_exceptions(monkeypatch, tmp_path):
+    from psynet.command_line import _destroy
+    from psynet.utils import working_directory
+
+    (tmp_path / "experiment.py").write_text("")
+
+    class DummyCtx:
+        def invoke(self, f_destroy, **kwargs):
+            return f_destroy(**kwargs)
+
+    def fake_destroy(**kwargs):
+        raise RuntimeError("SSH connection reset")
+
+    monkeypatch.setattr("psynet.command_line.user_confirms", lambda *a, **k: True)
+    monkeypatch.setattr("psynet.command_line.get_args", lambda func: ())
+
+    with working_directory(tmp_path):
+        with pytest.raises(RuntimeError, match="SSH connection reset"):
+            _destroy(
+                DummyCtx(),
+                fake_destroy,
+                app="demo-app",
+            )
+
+    events = [
+        json.loads(line)
+        for line in (tmp_path / "data/deployment-events.jsonl").read_text().splitlines()
+    ]
+    assert [event["event"] for event in events] == [
+        "destroy.requested",
+        "destroy.failed",
+    ]
+    assert "SSH connection reset" in events[-1]["error"]
 
 
 def test_filter_deployment_events_by_type_and_command():
