@@ -235,10 +235,12 @@ General
 ``snapshot_on_participant_finish`` *bool* |psynet-icon|
     If ``True`` (default), a managed local live deployment
     (``psynet deploy local --id``) writes a database recovery snapshot when a
-    participant finishes. Set this to ``False`` to rely on shutdown and
-    next-launch recovery snapshots only. If the last snapshot was a
-    finish-time snapshot and no later participant started, PsyNet skips the
-    shutdown snapshot. See :doc:`/deploy/local`.
+    participant finishes. A ten-minute timer also writes a snapshot when the
+    ``response`` table has grown since the last archive. Set
+    ``snapshot_on_participant_finish`` to ``False`` to skip finish-time
+    snapshots and rely on the timer, shutdown, and next-launch recovery. If
+    the last snapshot was a finish-time snapshot and no later participant
+    started, PsyNet skips the shutdown snapshot. See :doc:`/deploy/local`.
 
 ``protected_routes`` *str* |dlgr-icon|
     An optional JSON array of Flask route rule names which should be made inaccessible.

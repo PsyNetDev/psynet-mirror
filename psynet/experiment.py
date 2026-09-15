@@ -1445,6 +1445,41 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 db.session.commit()
         return snapshot
 
+    @classmethod
+    def maybe_create_periodic_local_snapshot(cls):
+        """Snapshot a managed local live run if new responses exist.
+
+        The ten-minute timer would otherwise write identical archives during
+        long quiet stretches. Skip when the response table has not grown
+        since the last snapshot.
+        """
+        info = cls._managed_local_live_deployment_info()
+        if info is None:
+            return None
+        from .local_deployment import list_snapshots, read_response_watermark
+
+        current = read_response_watermark()
+        if current is None or current <= 0:
+            return None
+        snapshots = list_snapshots(info["local_experiment_path"], info["local_id"])
+        latest = snapshots[-1] if snapshots else None
+        if (
+            latest is not None
+            and latest.max_response_id is not None
+            and current <= latest.max_response_id
+        ):
+            return None
+        return cls.create_local_deployment_snapshot("periodic")
+
+    @scheduled_task("interval", seconds=600, max_instances=1)
+    @staticmethod
+    def snapshot_local_deployment():
+        """Create a periodic snapshot for a managed local live deployment."""
+        try:
+            Experiment.maybe_create_periodic_local_snapshot()
+        except Exception:
+            logger.exception("Failed to create periodic local deployment snapshot.")
+
     @staticmethod
     def _after_request_with_finish_snapshot(response):
         """Commit pending ORM state, then take a deferred finish snapshot."""
