@@ -3606,6 +3606,35 @@ def performance_test__local(
     console_handler.setFormatter(logging.Formatter("%(message)s"))
     root_logger.addHandler(console_handler)
 
+    results = _run_performance_test_local(
+        existing=existing,
+        n_bots=n_bots,
+        stagger=stagger,
+        time_factor=time_factor,
+        duration_minutes=duration_minutes,
+        json_output=json_output,
+        debug=debug,
+        no_export=no_export,
+    )
+
+    for line in format_performance_summary(results):
+        logger.info(line)
+
+    print("✓ Performance test completed")
+
+
+def _run_performance_test_local(
+    *,
+    existing,
+    n_bots,
+    stagger,
+    time_factor,
+    duration_minutes,
+    json_output,
+    debug,
+    no_export=False,
+):
+    """Run a local performance test and return its result records."""
     from psynet.experiment import get_experiment
 
     exp = get_experiment()
@@ -3646,9 +3675,6 @@ def performance_test__local(
         )
     finished_at = datetime.datetime.now().isoformat(timespec="seconds")
 
-    for line in format_performance_summary(results):
-        logger.info(line)
-
     if json_output and results:
         experiment_label = exp.label
         bot_counts = [r["n_bots"] for r in results]
@@ -3671,7 +3697,7 @@ def performance_test__local(
         )
         print(f"Performance results (JSON): {json_output}")
 
-    print("✓ Performance test completed")
+    return results
 
 
 def _collect_run_metadata(experiment_label):
