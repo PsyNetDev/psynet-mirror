@@ -5,8 +5,36 @@ PsyNet's ``n_participants`` recruitment criterion to request one more place,
 until ten participants have completed the experiment. This deliberately
 tests nine sequential calls to Prolific's incremental recruitment API.
 
-Copy ``config.txt.devprolific`` to ``config.txt`` for safe local testing.
-Copy ``config.txt.prolific`` instead before a paid deployment.
+``StaticTrialMaker`` uses ``recruit_mode="n_participants"`` and
+``target_n_participants=10``. ``Exp.config`` sets ``auto_recruit=True`` and
+``initial_recruitment_size=1``. Keeping the initial size at one makes the
+top-ups observable and avoids filling the target in the first batch.
+Participant 10 reaches the target, so no eleventh place should be added.
+
+The recruiter is selected via the config file rather than in this experiment
+file:
+
+- ``config.txt.devprolific`` sets ``recruiter = devprolific`` (simulated
+  Prolific API; copy it to ``config.txt`` for local ``psynet test local``).
+- ``config.txt.prolific`` sets ``recruiter = prolific``; copy it to
+  ``config.txt`` immediately before a paid ``psynet deploy ssh``.
+
+``config.txt`` is gitignored. Keep the named variants unchanged so the
+selected recruiter is always explicit.
+
+On a paid run, check:
+
+1. The Prolific study begins with exactly one available place.
+2. After each of the first nine completions, a new participant can enter.
+3. No eleventh place is added after participant 10 completes.
+4. PsyNet logs ``Conclusion: recruiting another participant`` after
+   completions 1–9, then ``Conclusion: no recruitment required`` after 10.
+5. Prolific shows ten completed submissions and no unexplained pause
+   between them.
+
+If the logs request another participant but Prolific does not expose a new
+place, the failure is downstream of the recruitment criterion (the Prolific
+API interaction), not ``need_more_participants``.
 """
 
 import json
