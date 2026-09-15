@@ -464,7 +464,6 @@ def _run_local(ctx, docker, archive, legacy, no_browsers, mode, context_group):
             "It is not possible to select both --legacy and --docker modes simultaneously."
         )
 
-    _stop_leftover_debug_processes()
     _pre_launch(ctx, mode=mode, archive=archive, local_=True, docker=docker, app=None)
     _cleanup_before_debug()
 
@@ -783,8 +782,20 @@ def run_prepare_in_subprocess():
     run_subprocess_with_live_output(prepare_cmd)
 
 
+def _prepare_after_stopping_local_workers(ctx, archive):
+    """Stop leftover local debug workers, then reset the local database.
+
+    Every launch path runs ``prepare`` against this machine's Postgres, so
+    leftover ``dallinger_heroku_*`` backends must be gone first. Chrome
+    windows are left alone here so a remote deploy does not close the
+    author's browser.
+    """
+    kill_psynet_worker_processes()
+    ctx.invoke(prepare, archive=archive)
+
+
 def _stop_leftover_debug_processes():
-    """Stop leftover local debug workers before resetting the database."""
+    """Stop leftover local debug workers and Chrome windows."""
     kill_psynet_worker_processes()
     if not os.getenv("KEEP_OLD_CHROME_WINDOWS_IN_DEBUG_MODE"):
         kill_psynet_chrome_processes()
@@ -1256,7 +1267,7 @@ def _pre_launch(
     if config.get("check_dallinger_version"):
         check_installed_dallinger_version_is_recommended()
 
-    ctx.invoke(prepare, archive=archive)
+    _prepare_after_stopping_local_workers(ctx, archive)
 
     _forget_tables_defined_in_experiment_directory()
 
@@ -2982,8 +2993,9 @@ def rpdb(ip, port):
 def load(path):
     """Replace the local database with a provided zip file.
 
-    Stop ``psynet debug`` first. The command refuses to drop tables while
-    another client using the same database role is still connected.
+    Stop ``psynet debug`` and any other client using this database role first.
+    The command refuses to drop tables while another client using the same
+    database role is still connected.
     """
     from .experiment import import_local_experiment
 

@@ -618,6 +618,72 @@ def init_db(drop_all=False, bind=db.engine):
 dallinger.db.init_db = init_db
 
 
+class DatabaseInUseError(RuntimeError):
+    """Raised when replacing the local database while another client is connected."""
+
+
+_refuse_other_clients_on_drop = ContextVar(
+    "psynet_refuse_other_clients_on_drop", default=False
+)
+
+
+@contextlib.contextmanager
+def _refuse_other_clients_while_dropping():
+    """Recheck for live clients before every drop_all attempt, including retries."""
+    token = _refuse_other_clients_on_drop.set(True)
+    try:
+        yield
+    finally:
+        _refuse_other_clients_on_drop.reset(token)
+
+
+_IDLE_CLIENT_DRAIN_SEC = 2.0
+_IDLE_CLIENT_POLL_SEC = 0.05
+
+
+def _format_other_database_clients(clients):
+    labels = []
+    for row in clients:
+        pid = row[0]
+        app = (row[2] or "").strip()
+        state = (row[3] or "").strip() or "unknown"
+        detail = f"{app}, {state}" if app else state
+        labels.append(f"Postgres backend pid {pid} ({detail})")
+    return ", ".join(labels)
+
+
+def assert_database_idle_for_replace(*, wait_sec=None):
+    """Refuse to drop tables while another same-role client is connected.
+
+    Closes this process's ORM sessions and connection pool first so idle
+    pooled connections here are not counted. When ``wait_sec`` is positive,
+    leftover backends that disappear after a just-killed debug server are
+    allowed to drain before refusing. The pool is released once; later polls
+    only list other backends.
+    """
+    from .db import list_other_database_clients, release_local_database_connections
+
+    if wait_sec is None:
+        wait_sec = _IDLE_CLIENT_DRAIN_SEC
+    release_local_database_connections()
+    deadline = time.monotonic() + wait_sec
+    while True:
+        clients = list_other_database_clients(release_local=False)
+        if not clients:
+            return
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise DatabaseInUseError(
+                "Cannot replace the local database while other clients with this "
+                "database role are still connected "
+                f"({_format_other_database_clients(clients)}). "
+                "Stop `psynet debug` and any other client using this database "
+                "role first. Those pids are Postgres backends, not OS processes "
+                "to kill."
+            )
+        time.sleep(min(_IDLE_CLIENT_POLL_SEC, remaining))
+
+
 def drop_all_db_tables(bind=db.engine, *, max_attempts=5, wait_sec=0.05):
     """Drop every table, retrying leftover lock errors.
 
@@ -684,7 +750,7 @@ def _drop_all_db_tables_once(bind):
 
     with bind.connect() as con:
         with con.begin():
-            all_fkeys, tables = list_fkeys()
+            all_fkeys, tables = list_fkeys(bind)
             for fkey in all_fkeys:
                 try:
                     con.execute(DropConstraint(fkey))
@@ -707,8 +773,8 @@ def _drop_all_db_tables_once(bind):
     _old_drop_all(bind=bind)
 
 
-def list_fkeys():
-    inspector = sqlalchemy.inspect(db.engine)
+def list_fkeys(bind=None):
+    inspector = sqlalchemy.inspect(bind if bind is not None else db.engine)
 
     # We need to re-create a minimal metadata with only the required things to
     # successfully emit drop constraints and tables commands for postgres (based
@@ -1025,69 +1091,6 @@ def ingest_zip(path, engine=None):
 
 dallinger.data.ingest_zip = ingest_zip
 dallinger.data.ingest_to_model = ingest_to_model
-
-
-class DatabaseInUseError(RuntimeError):
-    """Raised when replacing the local database while another client is connected."""
-
-
-_refuse_other_clients_on_drop = ContextVar(
-    "psynet_refuse_other_clients_on_drop", default=False
-)
-
-
-@contextlib.contextmanager
-def _refuse_other_clients_while_dropping():
-    """Recheck for live clients before every drop_all attempt, including retries."""
-    token = _refuse_other_clients_on_drop.set(True)
-    try:
-        yield
-    finally:
-        _refuse_other_clients_on_drop.reset(token)
-
-
-_IDLE_CLIENT_DRAIN_SEC = 2.0
-_IDLE_CLIENT_POLL_SEC = 0.05
-
-
-def _format_other_database_clients(clients):
-    labels = []
-    for row in clients:
-        pid = row[0]
-        app = (row[2] or "").strip()
-        state = (row[3] or "").strip() or "unknown"
-        detail = f"{app}, {state}" if app else state
-        labels.append(f"Postgres backend pid {pid} ({detail})")
-    return ", ".join(labels)
-
-
-def assert_database_idle_for_replace(*, wait_sec=None):
-    """Refuse to drop tables while another same-role client is connected.
-
-    Closes this process's ORM sessions and connection pool first so idle
-    pooled connections here are not counted. When ``wait_sec`` is positive,
-    leftover backends that disappear after a just-killed debug server are
-    allowed to drain before refusing.
-    """
-    from .db import list_other_database_clients
-
-    if wait_sec is None:
-        wait_sec = _IDLE_CLIENT_DRAIN_SEC
-    deadline = time.monotonic() + wait_sec
-    while True:
-        clients = list_other_database_clients()
-        if not clients:
-            return
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            raise DatabaseInUseError(
-                "Cannot replace the local database while other clients with this "
-                "database role are still connected "
-                f"({_format_other_database_clients(clients)}). "
-                "Stop `psynet debug` first. Those pids are Postgres backends, "
-                "not OS processes to kill."
-            )
-        time.sleep(min(_IDLE_CLIENT_POLL_SEC, remaining))
 
 
 def populate_db_from_zip_file(zip_path):

@@ -121,7 +121,7 @@ def test_drop_foreign_key_constraints_retries_deadlock(monkeypatch):
                 raise operational_error(FakeDeadlock())
 
     monkeypatch.setattr(data_mod.db, "session", FakeSession())
-    monkeypatch.setattr(data_mod, "list_fkeys", lambda: ([object()], []))
+    monkeypatch.setattr(data_mod, "list_fkeys", lambda bind=None: ([object()], []))
     monkeypatch.setattr(data_mod, "DropConstraint", lambda fkey: fkey)
     data_mod._drop_foreign_key_constraints(wait_sec=0)
     assert calls["n"] == 2
@@ -200,7 +200,7 @@ def test_drop_all_db_tables_retries_deadlock(monkeypatch):
     monkeypatch.setattr(
         data_mod, "_old_drop_all", lambda bind=None: old_drop_calls.append(bind)
     )
-    monkeypatch.setattr(data_mod, "list_fkeys", lambda: ([], [object()]))
+    monkeypatch.setattr(data_mod, "list_fkeys", lambda bind=None: ([], [object()]))
     engine = _FakeEngine(execute)
     data_mod.drop_all_db_tables(bind=engine, wait_sec=0)
     assert calls["n"] == 2
@@ -218,7 +218,7 @@ def test_drop_all_db_tables_non_transient_error_propagates(monkeypatch):
         raise operational_error(FakeOtherError())
 
     _stub_drop_all_session(monkeypatch)
-    monkeypatch.setattr(data_mod, "list_fkeys", lambda: ([], [object()]))
+    monkeypatch.setattr(data_mod, "list_fkeys", lambda bind=None: ([], [object()]))
     engine = _FakeEngine(execute)
     with pytest.raises(sqlalchemy.exc.OperationalError):
         data_mod.drop_all_db_tables(bind=engine, wait_sec=0)
@@ -242,7 +242,7 @@ def test_drop_all_db_tables_retries_when_old_drop_all_deadlocks(monkeypatch):
 
     _stub_drop_all_session(monkeypatch)
     monkeypatch.setattr(data_mod, "_old_drop_all", old_drop)
-    monkeypatch.setattr(data_mod, "list_fkeys", lambda: ([], [object()]))
+    monkeypatch.setattr(data_mod, "list_fkeys", lambda bind=None: ([], [object()]))
     engine = _FakeEngine(execute)
     data_mod.drop_all_db_tables(bind=engine, wait_sec=0)
     assert calls["old"] == 2
@@ -301,13 +301,37 @@ def test_drop_all_refuses_clients_that_appear_during_retry(monkeypatch):
 
     _stub_drop_all_session(monkeypatch)
     monkeypatch.setattr("psynet.db.list_other_database_clients", fake_list)
-    monkeypatch.setattr(data_mod, "list_fkeys", lambda: ([], [object()]))
+    monkeypatch.setattr(data_mod, "list_fkeys", lambda bind=None: ([], [object()]))
     engine = _FakeEngine(execute)
     with data_mod._refuse_other_clients_while_dropping():
         with pytest.raises(data_mod.DatabaseInUseError, match="pid 99"):
             data_mod.drop_all_db_tables(bind=engine, wait_sec=0)
     assert calls["n"] == 1
     assert calls["lists"] == 2
+
+
+def test_drop_all_retries_deadlock_without_refusing_other_clients(monkeypatch):
+    """Generic drop_all (debug, pytest) must still retry leftover locks."""
+    from psynet import data as data_mod
+
+    calls = {"n": 0, "lists": 0}
+
+    def execute(statement):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise operational_error(FakeDeadlock())
+
+    def fake_list(release_local=True):
+        calls["lists"] += 1
+        return [(99, "dallinger", "gunicorn", "idle")]
+
+    _stub_drop_all_session(monkeypatch)
+    monkeypatch.setattr("psynet.db.list_other_database_clients", fake_list)
+    monkeypatch.setattr(data_mod, "list_fkeys", lambda bind=None: ([], [object()]))
+    engine = _FakeEngine(execute)
+    data_mod.drop_all_db_tables(bind=engine, wait_sec=0)
+    assert calls["n"] == 2
+    assert calls["lists"] == 0
 
 
 def test_populate_db_from_zip_file_refuses_listed_clients(
@@ -332,18 +356,25 @@ def test_populate_db_from_zip_file_refuses_listed_clients(
 def test_assert_database_idle_drains_then_succeeds(monkeypatch):
     from psynet import data as data_mod
 
-    calls = {"n": 0}
+    calls = {"n": 0, "release_local": [], "releases": []}
 
     def fake_list(release_local=True):
         calls["n"] += 1
+        calls["release_local"].append(release_local)
         if calls["n"] == 1:
             return [(1, "dallinger", "", "idle")]
         return []
 
     monkeypatch.setattr("psynet.db.list_other_database_clients", fake_list)
+    monkeypatch.setattr(
+        "psynet.db.release_local_database_connections",
+        lambda: calls["releases"].append("release"),
+    )
     monkeypatch.setattr(data_mod, "_IDLE_CLIENT_POLL_SEC", 0)
     data_mod.assert_database_idle_for_replace(wait_sec=1)
     assert calls["n"] == 2
+    assert calls["releases"] == ["release"]
+    assert calls["release_local"] == [False, False]
 
 
 def test_populate_db_from_zip_file_runs_when_idle(monkeypatch, tmp_path):
@@ -353,13 +384,18 @@ def test_populate_db_from_zip_file_runs_when_idle(monkeypatch, tmp_path):
     monkeypatch.setattr(
         "psynet.db.list_other_database_clients", lambda release_local=True: []
     )
-    monkeypatch.setattr(
-        data_mod, "init_db", lambda drop_all=False: calls.append("init")
-    )
+    monkeypatch.setattr("psynet.db.release_local_database_connections", lambda: None)
+
+    def fake_init(drop_all=False):
+        assert data_mod._refuse_other_clients_on_drop.get() is True
+        calls.append("init")
+
+    monkeypatch.setattr(data_mod, "init_db", fake_init)
     monkeypatch.setattr("dallinger.data.ingest_zip", lambda path: calls.append(path))
     zip_path = str(tmp_path / "export.zip")
     data_mod.populate_db_from_zip_file(zip_path)
     assert calls == ["init", zip_path]
+    assert data_mod._refuse_other_clients_on_drop.get() is False
 
 
 def test_populate_db_from_zip_file_refuses_a_live_backend(

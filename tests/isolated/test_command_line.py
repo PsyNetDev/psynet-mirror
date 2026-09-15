@@ -3715,15 +3715,11 @@ def test_stop_local_debug_process_reaps_workers_even_if_terminate_fails():
     kill_workers.assert_called_once()
 
 
-def test_run_local_stops_leftover_workers_before_prepare():
+def test_run_local_prepares_before_legacy_cleanup():
     from psynet.command_line import _run_local
 
     order = []
     with (
-        patch(
-            "psynet.command_line._stop_leftover_debug_processes",
-            lambda: order.append("stop"),
-        ),
         patch(
             "psynet.command_line._pre_launch",
             lambda *args, **kwargs: order.append("pre_launch"),
@@ -3748,15 +3744,78 @@ def test_run_local_stops_leftover_workers_before_prepare():
             mode="debug",
             context_group=Mock(),
         )
-    assert order == ["stop", "pre_launch", "cleanup", "debug"]
+    assert order == ["pre_launch", "cleanup", "debug"]
+
+
+def test_prepare_after_stopping_local_workers_kills_then_prepares():
+    from psynet.command_line import _prepare_after_stopping_local_workers, prepare
+
+    order = []
+    ctx = Mock()
+    ctx.invoke.side_effect = lambda *args, **kwargs: order.append("prepare")
+    with patch(
+        "psynet.command_line.kill_psynet_worker_processes",
+        lambda: order.append("kill"),
+    ):
+        _prepare_after_stopping_local_workers(ctx, archive="export.zip")
+    assert order == ["kill", "prepare"]
+    ctx.invoke.assert_called_once_with(prepare, archive="export.zip")
+
+
+def test_pre_launch_stops_workers_before_prepare(monkeypatch):
+    from psynet.command_line import _pre_launch
+
+    calls = []
+    monkeypatch.setattr(
+        "psynet.command_line._check_experiment_directory", lambda *a, **k: None
+    )
+    monkeypatch.setattr("psynet.services.ensure_local_services", lambda **k: None)
+    monkeypatch.setattr("psynet.command_line.redis_vars.clear", lambda: None)
+    monkeypatch.setattr("psynet.command_line.deployment_info.init", lambda **k: None)
+    monkeypatch.setattr("psynet.command_line.deployment_info.write", lambda **k: None)
+    monkeypatch.setattr("psynet.command_line.run_pre_checks", lambda *a, **k: None)
+    monkeypatch.setattr("psynet.command_line.is_in_repo_experiment", lambda: True)
+    experiment = Mock()
+    experiment.update_deployment_id.return_value = None
+    monkeypatch.setattr("psynet.experiment.get_experiment", lambda: experiment)
+    config = Mock()
+    config.get.return_value = False
+    monkeypatch.setattr("psynet.command_line.get_config", lambda: config)
+    monkeypatch.setattr(
+        "psynet.command_line._prepare_after_stopping_local_workers",
+        lambda ctx, archive: calls.append(("prepare", archive)),
+    )
+    monkeypatch.setattr(
+        "psynet.command_line._forget_tables_defined_in_experiment_directory",
+        lambda: calls.append("forget"),
+    )
+    _pre_launch(Mock(), mode="debug", archive=None, local_=True, docker=False)
+    assert calls == [("prepare", None), "forget"]
 
 
 def test_prepare_does_not_refuse_other_database_clients(monkeypatch):
-    """Debug/deploy launch must still reset the DB after leftover workers stop."""
+    """Idle pooled backends must not abort debug/deploy prepare."""
+    from psynet import data as data_mod
     from psynet.command_line import _prepare
 
+    idle_calls = []
     inits = []
     experiment = Mock()
+
+    def boom(**kwargs):
+        idle_calls.append(kwargs)
+        raise AssertionError("idle check must not run during prepare")
+
+    monkeypatch.setattr(data_mod, "assert_database_idle_for_replace", boom)
+    monkeypatch.setattr(
+        "psynet.command_line.assert_database_idle_for_replace",
+        boom,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "psynet.db.list_other_database_clients",
+        lambda release_local=True: [(1, "dallinger", "pytest", "idle")],
+    )
     monkeypatch.setattr("psynet.command_line.redis_vars.clear", lambda: None)
     monkeypatch.setattr(
         "dallinger.db.init_db",
@@ -3767,6 +3826,7 @@ def test_prepare_does_not_refuse_other_database_clients(monkeypatch):
     monkeypatch.setattr("psynet.command_line.update_docker_tag", lambda: None)
     _prepare()
     assert inits == [True]
+    assert idle_calls == []
     experiment.pre_deploy.assert_called_once_with(redeploying_from_archive=False)
 
 
