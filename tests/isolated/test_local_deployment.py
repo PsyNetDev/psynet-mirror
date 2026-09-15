@@ -973,6 +973,9 @@ def test_maybe_snapshot_after_participant_finish_clears_shutdown_need(monkeypatc
         maybe_snapshot_after_participant_finish = (
             Experiment.maybe_snapshot_after_participant_finish
         )
+        _create_participant_finish_snapshot = (
+            Experiment._create_participant_finish_snapshot
+        )
 
     dummy = Dummy()
     assert dummy.maybe_snapshot_after_participant_finish(Mock(id=1)) is snapshot
@@ -1015,11 +1018,68 @@ def test_maybe_snapshot_keeps_shutdown_need_when_another_participant_is_working(
         maybe_snapshot_after_participant_finish = (
             Experiment.maybe_snapshot_after_participant_finish
         )
+        _create_participant_finish_snapshot = (
+            Experiment._create_participant_finish_snapshot
+        )
 
     dummy = Dummy()
     dummy.maybe_snapshot_after_participant_finish(Mock(id=1))
     assert dummy.var.local_snapshot_needed_on_shutdown is True
     dummy._has_unfinished_participants.assert_called_once()
+
+
+def test_maybe_snapshot_defers_until_after_request_commit(monkeypatch):
+    from types import SimpleNamespace
+
+    from flask import Flask
+
+    from psynet.experiment import Experiment
+
+    snapshot = Mock()
+    config = Mock()
+    config.get.return_value = True
+    monkeypatch.setattr("psynet.experiment.get_config", lambda: config)
+
+    class Dummy:
+        var = SimpleNamespace(local_snapshot_needed_on_shutdown=True)
+        create_local_deployment_snapshot = Mock(return_value=snapshot)
+        _has_unfinished_participants = Mock(return_value=False)
+        maybe_snapshot_after_participant_finish = (
+            Experiment.maybe_snapshot_after_participant_finish
+        )
+        _create_participant_finish_snapshot = (
+            Experiment._create_participant_finish_snapshot
+        )
+
+    dummy = Dummy()
+    monkeypatch.setattr("psynet.experiment.get_experiment", lambda: dummy)
+    session = Mock()
+    monkeypatch.setattr("psynet.experiment.db.session", session)
+    participant = Mock(id=7)
+
+    class FakeQuery:
+        def get(self, id_):
+            assert id_ == 7
+            return participant
+
+    monkeypatch.setattr(
+        "psynet.participant.Participant",
+        SimpleNamespace(query=FakeQuery()),
+    )
+
+    app = Flask(__name__)
+    with app.test_request_context("/timeline"):
+        assert dummy.maybe_snapshot_after_participant_finish(participant) is None
+        dummy.create_local_deployment_snapshot.assert_not_called()
+        assert dummy.var.local_snapshot_needed_on_shutdown is True
+        result = Experiment._run_deferred_participant_finish_snapshot()
+
+    assert result is snapshot
+    dummy.create_local_deployment_snapshot.assert_called_once_with(
+        "participant_finished"
+    )
+    assert dummy.var.local_snapshot_needed_on_shutdown is False
+    assert session.commit.call_count >= 1
 
 
 def test_create_local_deployment_snapshot_ignores_non_live_runs(monkeypatch):

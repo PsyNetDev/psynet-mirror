@@ -1011,12 +1011,12 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             # Media players issue many Range requests while seeking/buffering.
             # Logging each one floods the request table; keep full-file fetches only.
             if request.headers.get("Range"):
-                return response
+                return Experiment._after_request_with_finish_snapshot(response)
             endpoint = _redacted_asset_request_path(path)
         elif path in relevant_endpoints:
             endpoint = path
         else:
-            return response
+            return Experiment._after_request_with_finish_snapshot(response)
 
         params = dict(request.args)
         request_obj = Request(
@@ -1029,7 +1029,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         )
         db.session.add(request_obj)
         db.session.commit()
-        return response
+        return Experiment._after_request_with_finish_snapshot(response)
 
     @staticmethod
     @with_transaction
@@ -1411,9 +1411,25 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         Controlled by ``snapshot_on_participant_finish`` (default ``True``).
         If nobody else is still collecting data, shutdown can skip a redundant
         termination snapshot.
+
+        During an HTTP request the snapshot is deferred until after the
+        request transaction commits, so the archive includes the finishing
+        participant's committed response and completion state.
         """
         if get_config().get("snapshot_on_participant_finish", True) is False:
             return None
+        from flask import g, has_request_context
+
+        if has_request_context():
+            g.psynet_finish_snapshot_needed = True
+            g.psynet_finish_snapshot_participant_id = getattr(participant, "id", None)
+            return None
+        return self._create_participant_finish_snapshot(participant)
+
+    def _create_participant_finish_snapshot(
+        self, participant=None, *, commit_flag=False
+    ):
+        """Write the finish snapshot and maybe clear the shutdown-needed flag."""
         try:
             snapshot = self.create_local_deployment_snapshot("participant_finished")
         except Exception:
@@ -1425,7 +1441,40 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             excluding=participant
         ):
             self.var.local_snapshot_needed_on_shutdown = False
+            if commit_flag:
+                db.session.commit()
         return snapshot
+
+    @staticmethod
+    def _after_request_with_finish_snapshot(response):
+        """Commit pending ORM state, then take a deferred finish snapshot."""
+        Experiment._run_deferred_participant_finish_snapshot()
+        return response
+
+    @staticmethod
+    def _run_deferred_participant_finish_snapshot():
+        from flask import g, has_request_context
+
+        if not has_request_context() or not getattr(
+            g, "psynet_finish_snapshot_needed", False
+        ):
+            return None
+        g.psynet_finish_snapshot_needed = False
+        participant_id = getattr(g, "psynet_finish_snapshot_participant_id", None)
+        try:
+            db.session.commit()
+        except Exception:
+            logger.exception(
+                "Failed to commit before participant-finish local deployment snapshot."
+            )
+            return None
+        exp = get_experiment()
+        participant = None
+        if participant_id is not None:
+            from .participant import Participant
+
+            participant = Participant.query.get(participant_id)
+        return exp._create_participant_finish_snapshot(participant, commit_flag=True)
 
     @classmethod
     def backup_database(cls):
