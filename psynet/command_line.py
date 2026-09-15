@@ -1525,15 +1525,26 @@ def deploy__local(
 
             workers_stopped = kill_psynet_worker_processes()
             owner = read_database_owner()
-            if owner is None or owner.local_id != local_id:
+            if owner is None:
                 raise RuntimeError(
-                    "The stopped database does not match the local deployment "
-                    f"ID '{local_id}'; refusing to save it as that deployment."
+                    "The stopped database does not contain a PsyNet experiment; "
+                    f"refusing to save it as local deployment '{local_id}'."
                 )
-            snapshots = list_snapshots(experiment_path, local_id)
+            save_path = experiment_path
+            save_id = local_id
+            if owner.local_id != local_id:
+                if not owner.managed:
+                    raise RuntimeError(
+                        "The stopped database does not match the local deployment "
+                        f"ID '{local_id}'; refusing to save it as that deployment."
+                    )
+                save_path = owner.experiment_path
+                save_id = owner.local_id
+            snapshots = list_snapshots(save_path, save_id)
             latest = snapshots[-1] if snapshots else None
             if (
-                workers_stopped
+                owner.local_id == local_id
+                and workers_stopped
                 and should_skip_shutdown_snapshot(owner)
                 and latest_snapshot_covers_owner(owner, latest)
             ):
@@ -1550,8 +1561,8 @@ def deploy__local(
             else:
                 try:
                     final_snapshot = create_snapshot(
-                        experiment_path,
-                        local_id,
+                        save_path,
+                        save_id,
                         reason="shutdown",
                         deployment_id=owner.deployment_id,
                         resumed_from=(
@@ -1577,8 +1588,16 @@ def deploy__local(
                     deployment_id=owner.deployment_id,
                     saved=True,
                     snapshot=final_snapshot.sequence,
+                    id_saved_as=save_id if save_id != local_id else None,
                     **extras,
                 )
+                if owner.local_id != local_id:
+                    raise RuntimeError(
+                        "The stopped database belongs to local deployment "
+                        f"'{owner.local_id}', not '{local_id}'. "
+                        f"Saved shutdown snapshot {final_snapshot.sequence:06d} "
+                        "under the owning ID."
+                    )
     except RuntimeError as error:
         raise click.ClickException(str(error)) from error
 

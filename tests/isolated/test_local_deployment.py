@@ -1124,6 +1124,77 @@ def test_deploy_local_writes_shutdown_snapshot_if_workers_survive(
     assert snapshot_calls[0][1]["reason"] == "shutdown"
 
 
+def test_deploy_local_saves_shutdown_under_owner_id_on_mismatch(tmp_path, monkeypatch):
+    from psynet.command_line import psynet
+    from psynet.local_deployment import DatabaseOwner, Snapshot
+    from psynet.utils import working_directory
+
+    (tmp_path / "experiment.py").write_text("")
+    owner_path = tmp_path / "owner"
+    owner_path.mkdir()
+    archive = tmp_path / "data/snapshots/gibbs/000001.zip"
+    archive.parent.mkdir(parents=True)
+    _write_archive(archive)
+    latest = Snapshot(
+        sequence=1,
+        path=archive,
+        metadata_path=archive.with_suffix(".json"),
+        created_at="2026-09-15T12:00:00Z",
+        reason="periodic",
+        deployment_id="launch-1",
+        parent_sequence=None,
+        participant_count=1,
+        sha256=None,
+    )
+    snapshot_calls = []
+
+    @contextmanager
+    def unlocked(*_args):
+        yield
+
+    monkeypatch.setattr("psynet.command_line.local_database_lock", unlocked)
+    monkeypatch.setattr(
+        "psynet.services.ensure_local_services", Mock(return_value=True)
+    )
+    monkeypatch.setattr(
+        "psynet.command_line.protect_existing_database", lambda *_args, **_kwargs: None
+    )
+    monkeypatch.setattr(
+        "psynet.command_line.choose_snapshot", lambda *_args, **_kwargs: None
+    )
+    monkeypatch.setattr(
+        "psynet.command_line._run_local", lambda *_args, **_kwargs: None
+    )
+    monkeypatch.setattr(
+        "psynet.command_line.kill_psynet_worker_processes", lambda: True
+    )
+    monkeypatch.setattr(
+        "psynet.command_line.read_database_owner",
+        lambda: DatabaseOwner("other", owner_path, "launch-1", "Example"),
+    )
+    monkeypatch.setattr(
+        "psynet.command_line.create_snapshot",
+        lambda *args, **kwargs: snapshot_calls.append((args, kwargs)) or latest,
+    )
+    monkeypatch.setattr(
+        "psynet.command_line.append_deployment_event",
+        lambda *args, **kwargs: None,
+    )
+
+    with working_directory(tmp_path):
+        result = CliRunner().invoke(
+            psynet,
+            ["deploy", "local", "--id", "gibbs"],
+        )
+
+    assert result.exit_code != 0
+    assert snapshot_calls
+    assert snapshot_calls[0][0][0] == owner_path
+    assert snapshot_calls[0][0][1] == "other"
+    assert snapshot_calls[0][1]["reason"] == "shutdown"
+    assert "Saved shutdown snapshot" in result.output
+
+
 def test_maybe_snapshot_after_participant_finish_clears_shutdown_need(monkeypatch):
     from types import SimpleNamespace
 
