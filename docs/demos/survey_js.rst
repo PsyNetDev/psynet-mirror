@@ -1,7 +1,7 @@
 SurveyJS
 ========
 
-Source: ``demos/survey_js``
+Source: ``demos/experiments/survey_js``
 
 PsyNet integrates with SurveyJS, a flexible survey design tool that is particularly
 good for implementing questionnaires and multi-response interfaces.

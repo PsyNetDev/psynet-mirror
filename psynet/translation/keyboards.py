@@ -90,6 +90,7 @@ class KeyboardPage(Page):
         super().__init__(
             time_estimate=time_estimate,
             template_str=get_template("keyboard.html"),
+            framework_owned_template=True,
             js_vars={
                 "cssStyle": css_style,
                 "highlightKeys": highlight_keys,

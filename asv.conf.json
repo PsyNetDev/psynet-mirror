@@ -11,7 +11,7 @@
         "python -m pip wheel --no-deps --wheel-dir {build_cache_dir} {build_dir}"
     ],
     "install_command": [
-        "in-dir={env_dir} python -m pip install {wheel_file}"
+        "in-dir={env_dir} python -m pip install '{build_dir}[experiment,demos]'"
     ],
     "benchmark_dir": "benchmarks",
     "env_dir": ".asv/env",

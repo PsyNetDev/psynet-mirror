@@ -39,6 +39,7 @@ def _base_result(**overrides):
         "max_trial_count": 5,
         "n_succeeded_bots": 2,
         "n_rq_workers": 2,
+        "q_delay_median": 0.02,
     }
     result.update(overrides)
     return result
@@ -46,6 +47,17 @@ def _base_result(**overrides):
 
 def _join(lines):
     return "\n".join(lines)
+
+
+def test_random_stagger_is_bounded_relative_to_configured_interval():
+    tester = PerformanceTester(
+        authenticated_session=Mock(),
+        base_url="http://localhost",
+        stagger_interval_s=0.1,
+    )
+
+    with patch("psynet.perf_test.random.gammavariate", side_effect=[0.6, 0.4]):
+        assert tester._bounded_random_stagger() == 0.4
 
 
 # --- colorize_success_rate ---
@@ -153,6 +165,7 @@ def test_format_test_results_process_stats():
                     "p95": 0.2,
                     "max": 0.3,
                     "q_avg": 0.01,
+                    "q_median": 0.015,
                     "q_p95": 0.02,
                     "q_share": 0.05,
                 }
@@ -164,6 +177,7 @@ def test_format_test_results_process_stats():
     assert "2 workers" in text
     assert "tm1" in text
     assert "create_trial" in text
+    assert "Q Med" in text
 
 
 def test_format_test_results_no_process_stats():
@@ -186,6 +200,10 @@ def test_format_performance_summary_single_result():
     lines = format_performance_summary([_base_result()])
     text = _join(lines)
     assert "CUMULATIVE PERFORMANCE TEST SUMMARY" in text
+    assert "Req/s" in text
+    assert "1.6" in text
+    assert "Resp Med (s)" in text
+    assert "0.04" in text
 
 
 def test_format_performance_summary_none_metrics():
@@ -199,8 +217,8 @@ def test_format_performance_summary_none_metrics():
 
 
 def test_format_performance_summary_scaling():
-    r1 = _base_result(n_bots=1, p95_response_time=0.1, q_delay_p95=0.05)
-    r2 = _base_result(n_bots=2, p95_response_time=0.2, q_delay_p95=0.1)
+    r1 = _base_result(n_bots=1, median_response_time=0.1, q_delay_median=0.05)
+    r2 = _base_result(n_bots=2, median_response_time=0.2, q_delay_median=0.1)
     lines = format_performance_summary([r1, r2])
     text = _join(lines)
     assert "2.0x" in text

@@ -12,7 +12,7 @@ Contributing a feature/bugfix
 Step 1: Creating an issue
 +++++++++++++++++++++++++
 
-The process begins with identifying a particular *issue* that deserves to be fixed in PsyNet. This issue could be a problem with existing functionality (a *bug*) or a lack of desirable functionality (a missing *feature* ). Most version-control platforms (e.g., GitHub, GitLab) provide pages where project developers and user can file issues. For example, the PsyNet issues page can be found `here <https://gitlab.com/computational-audition-lab/PsyNet/-/issues>`__, and looks something like this:
+The process begins with identifying a particular *issue* that deserves to be fixed in PsyNet. This issue could be a problem with existing functionality (a *bug*) or a lack of desirable functionality (a missing *feature* ). Most version-control platforms (e.g., GitHub, GitLab) provide pages where project developers and user can file issues. For example, the PsyNet issues page can be found `here <https://gitlab.com/PsyNetDev/PsyNet/-/work_items>`__, and looks something like this:
 
 .. figure:: ../_static/images/developer/workflow/psynet_issues.png
   :width: 700
@@ -130,7 +130,7 @@ Something to note here is that PsyNet contains pre-commit hooks that run various
 Step 4: Adding documentation
 ++++++++++++++++++++++++++++
 
-So that future people can benefit from these new properties, we'd better add some documentation. It is conventional to document Python code using docstrings, which can be found at the top of class/function/method definitions. These follow standardized formatting conventions; Python follows in particular the `NumPy Docstring Style <https://www.google.com/search?q=numpy+docstring+style&rlz=1C5CHFA_enDE972GB973&oq=numpy+docstring+&aqs=chrome.1.69i57j0i512l3j0i20i263i512j0i512l5.3306j0j7&sourceid=chrome&ie=UTF-8#:~:text=Style%20guide%20%E2%80%94%20numpydoc,io%20%E2%80%BA%20latest%20%E2%80%BA%20format>`_ convention. The main thing though is simply to be consistent, and follow the formatting style of the neighboring parts of PsyNet.
+So that future people can benefit from these new properties, we'd better add some documentation. It is conventional to document Python code using docstrings, which can be found at the top of class/function/method definitions. These follow standardized formatting conventions; Python follows in particular the `NumPy Docstring Style <https://numpydoc.readthedocs.io/en/stable/format.html>`_ convention. The main thing though is simply to be consistent, and follow the formatting style of the neighboring parts of PsyNet.
 
 In the present case, we need to edit the docstring for the ``TrialNetwork`` definition. This docstring already contains documentation for lots of other attributes, so we'll just add our new attribute definitions to the list.
 
@@ -149,7 +149,7 @@ In the present case, we need to edit the docstring for the ``TrialNetwork`` defi
       If the network has no such :class:`~psynet.trial.main.TrialSource`
       then an error is thrown.
 
-More extensive documentation files can be found in the ``docs``  directory of PsyNet. This contains lots of ``rst`` files that are compiled to HTML files when PsyNet generates its documentation website. Here is a `brief introduction <https://learnxinyminutes.com/docs/rst/#:~:text=RST%2C%20Restructured%20Text%2C%20is%20a,lightweight%20and%20easier%20to%20read.>`_ to RST formatting, for more info you can also look `here <https://thomas-cokelaer.info/tutorials/sphinx/rest_syntax.html>`__.
+More extensive documentation files can be found in the ``docs``  directory of PsyNet. This contains lots of ``rst`` files that are compiled to HTML files when PsyNet generates its documentation website. Here is a `brief introduction <https://learnxinyminutes.com/docs/rst/>`_ to RST formatting. For Sphinx-specific syntax, see the `reStructuredText primer <https://www.sphinx-doc.org/en/master/usage/restructuredtext/basics.html>`_.
 
 Step 5: Adding tests
 ++++++++++++++++++++

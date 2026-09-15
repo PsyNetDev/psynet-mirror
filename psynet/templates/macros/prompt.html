@@ -11,10 +11,10 @@
         </div>
     {% endif %}
     <script>
-        let loop = {{ params.loop | tojson }};
+        psynet.page.prompt.loop = {{ params.loop | tojson }};
 
         psynet.trial.onEvent("trialFinished", function() {
-            if (loop) {
+            if (psynet.page.prompt.loop) {
                 psynet.trial.restart();
             }
         });
@@ -35,15 +35,20 @@
             Object.assign(options, providedOptions);
 
             let sound = psynet.audio.prompt.play(options);
-            sound.source.addEventListener("ended", function() {
-                if (!sound.manuallyStopped) {
-                    psynet.trial.registerEvent("promptEnd");
-                }
-            });
+            psynet.addPageEventListener(
+                sound.source,
+                "ended",
+                function() {
+                    if (!sound.manuallyStopped) {
+                        psynet.trial.registerEvent("promptEnd");
+                    }
+                },
+                { once: true },
+            );
         };
 
         psynet.page.prompt.stop = function(providedOptions) {
-            psynet.media.stopAllAudio();
+            return psynet.media.stopAllAudio();
         }
 
         psynet.trial.onEvent("promptStart", psynet.page.prompt.play);
@@ -92,20 +97,18 @@
         {% endif %}
     </div>
     <script>
-    $(document).ready(function() {
-        $("#audio-prompt-play").on("click", function() {
-            psynet.trial.restart();
-        });
-        $("#audio-prompt-stop").on("click", function() {
-            psynet.trial.stop();
-        });
-        $("#audio-prompt-loop-input").on("change", function(event) {
-            loop = event.target.checked;
-        });
-        psynet.trial.onEvent("trialStop", psynet.media.stopAllAudio);
-    });
+    psynet.trial.onEvent("trialStop", psynet.media.stopAllAudio);
 
     psynet.trial.onEvent("trialConstruct", function() {
+        $("#audio-prompt-play").off("click.psynetAudioPrompt").on("click.psynetAudioPrompt", function() {
+            psynet.trial.restart();
+        });
+        $("#audio-prompt-stop").off("click.psynetAudioPrompt").on("click.psynetAudioPrompt", function() {
+            psynet.trial.stop();
+        });
+        $("#audio-prompt-loop-input").off("change.psynetAudioPrompt").on("change.psynetAudioPrompt", function(event) {
+            psynet.page.prompt.loop = event.target.checked;
+        });
         $(".audio-prompt-button").prop("disabled", false)
     });
     </script>
@@ -166,14 +169,18 @@
             if (endAt !== null) {
                 console.assert(startAt !== null);
                 let duration = endAt - startAt
-                videoStopTimer = setTimeout(
+                videoStopTimer = psynet.trial.setTimer(
                     () => psynet.page.prompt.stop({manual: false}),
                     duration * 1000
                 );
             }
         };
 
-        videoPlayer.addEventListener("ended", () => psynet.page.prompt.stop({manual: false}));
+        psynet.addPageEventListener(
+            videoPlayer,
+            "ended",
+            () => psynet.page.prompt.stop({manual: false}),
+        );
 
         psynet.page.prompt.stop = function(providedOptions) {
             let options = {
@@ -267,15 +274,18 @@
     {{ simple(params) }}
     {{ audio_controls(params) }}
 
-    <script src="/static/scripts/Tonejs/Tone.js"></script>
-    <script src="/static/scripts/js-synthesizer/instruments.js"></script>
-    <script src="/static/scripts/js-synthesizer/synthesis.js"></script>
+    <script src="{{ url_for('static', filename='scripts/Tonejs/Tone.js') }}"></script>
+    <script src="{{ url_for('static', filename='scripts/js-synthesizer/instruments.js') }}"></script>
+    <script src="{{ url_for('static', filename='scripts/js-synthesizer/synthesis.js') }}"></script>
 
     <script>
         let stimulus = {{ params.stimulus | tojson }};
         let options = {{ params.options | tojson }};
+        let jsSynthState = psynet.getJsSynthState();
+        jsSynthState.stimulus = stimulus;
+        jsSynthState.options = options;
 
-        var DEFAULT_PARAMS = { // Default parameters to use if not otherwise specified by backend.
+        jsSynthState.defaultParams = { // Default parameters to use if not otherwise specified by backend.
             "attack": 0.2, // Attack phase duration in seconds
             "decay": 0.1, // Decay phase duration in seconds
             "sustain_amp": 0.8, // Amplitude fraction to decay to relative to max amplitude
@@ -299,13 +309,49 @@
         DEFAULT_PARAMS.max_num_octave_transpositions = options.max_num_octave_transpositions;
         DEFAULT_PARAMS.max_num_pitches = options.max_num_pitches;
 
-        let LOADED_INSTRUMENTS = {};
-        let ACTIVE_NODES;
+        jsSynthState.loadedInstruments = {};
+        jsSynthState.activeNodes = undefined;
 
         let sleep = async function(time) {
             await new Promise((resolve) => {
-                setTimeout(() => resolve(), time * 1000);
+                setTimeout(resolve, time * 1000);
             });
+        }
+
+        let cleanupJsSynthState = function() {
+            if (typeof stop_all_tonejs_audio === "function") {
+                stop_all_tonejs_audio();
+            }
+
+            let activeNodes = jsSynthState.activeNodes;
+            if (activeNodes) {
+                if (activeNodes.envelope && typeof activeNodes.envelope.dispose === "function") {
+                    activeNodes.envelope.dispose();
+                }
+                for (const key in activeNodes) {
+                    if (!key.startsWith("complex_")) {
+                        continue;
+                    }
+                    for (const row of activeNodes[key]) {
+                        for (const cell of row) {
+                            cell.forEach(function(node) {
+                                if (node && typeof node.dispose === "function") {
+                                    node.dispose();
+                                }
+                            });
+                        }
+                    }
+                }
+            }
+
+            Object.values(jsSynthState.loadedInstruments || {}).forEach(function(instrument) {
+                if (instrument && typeof instrument.dispose === "function") {
+                    instrument.dispose();
+                }
+            });
+
+            jsSynthState.loadedInstruments = {};
+            jsSynthState.activeNodes = undefined;
         }
 
         psynet.trial.onEvent("trialPrepare", async function() {
@@ -326,29 +372,12 @@
         });
 
         psynet.trial.onEvent("promptStart", () => play_stimulus(stimulus));
+        psynet.trial.onEvent("trialStop", cleanupJsSynthState);
     </script>
 {% endmacro %}
 
 {% macro abc_notation(params) %}
     {{ simple(params) }}
-
-    <script src="/static/scripts/abc-js/abcjs-basic.js"></script>
-
-    <script>
-        let abcScore = "{{ params.content | safe }}";
-
-        function renderABCscore() {
-            $("#abcScore").css("visibility", "block")
-            ABCJS.renderAbc("abcScore", abcScore);
-        }
-
-        function hideABCscore() {
-            $("#abcScore").css("visibility", "hidden")
-        }
-
-        psynet.trial.onEvent("promptStart", renderABCscore);
-        psynet.trial.onEvent("promptEnd", hideABCscore);
-    </script>
 
     <div id="abcScore"></div>
 

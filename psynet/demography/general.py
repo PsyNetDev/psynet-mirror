@@ -766,6 +766,8 @@ class HouseholdIncomePerYear(ModularPage):
             control=control,
             time_estimate=self.time_estimate,
             save_answer=label,
+            # Twelve income brackets cannot fit a laptop window.
+            expect_scrolling=True,
         )
 
 

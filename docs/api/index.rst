@@ -13,6 +13,7 @@ API Documentation
    consent
    data
    demography
+   end
    error
    experiment
    field
@@ -27,6 +28,7 @@ API Documentation
    recruiters
    redis
    serialize
+   static_resources
    sync
    timeline
    trial/index

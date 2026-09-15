@@ -1,0 +1,1 @@
+Expanded the stock deployment exclusions for credentials, exports, and local IDE metadata; required a Git commit for remote deployments; and aligned PsyNet's recommended Dallinger series with the temporary 12.4 pre-release dependency.

@@ -141,9 +141,6 @@ class BotResponse:
 
         blobs :
             A dictionary of blobs returned from the front-end.
-
-        client_ip_address :
-            The client's IP address.
     """
 
     def __init__(
@@ -153,7 +150,6 @@ class BotResponse:
         answer=NoArgumentProvided,
         metadata=NoArgumentProvided,
         blobs=NoArgumentProvided,
-        client_ip_address=NoArgumentProvided,
     ):
         if raw_answer != NoArgumentProvided and answer != NoArgumentProvided:
             raise ValueError(
@@ -169,14 +165,10 @@ class BotResponse:
         if metadata == NoArgumentProvided:
             metadata = {}
 
-        if client_ip_address == NoArgumentProvided:
-            client_ip_address = None
-
         self.raw_answer = raw_answer
         self.answer = answer
         self.metadata = metadata
         self.blobs = blobs
-        self.client_ip_address = client_ip_address
 
     def __json__(self):
         data = {}

@@ -1,5 +1,5 @@
 const path = require("path");
-const { test, expect } = require("@playwright/test");
+const { test, expect } = require("../fixtures");
 
 const {
   advanceUntilFinish,
@@ -82,7 +82,7 @@ async function assertFeedbackPlayback(page) {
     .toBeGreaterThan(promptEndBaseline);
 }
 
-test("static_audio demo", async ({ page, context }) => {
+test("static_audio demo", { tag: "@both" }, async ({ page, context }) => {
   const absDir = path.resolve("demos/experiments/static_audio");
   await withExperiment(page, context, absDir, async (experimentPage) => {
     const submitTracker = startResponseSubmitTracker(experimentPage);

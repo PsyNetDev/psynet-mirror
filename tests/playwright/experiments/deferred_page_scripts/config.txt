@@ -1,0 +1,10 @@
+[Config]
+title = Embedded script lifecycle test
+description = Test experiment for in-place timeline script ordering.
+contact_email_on_error = test@example.com
+organization_name = PsyNet
+
+recruiter = generic
+currency = $
+wage_per_hour = 12.0
+inplace_timeline_transitions = true

@@ -23,7 +23,7 @@ The following subclasses of :class:`~psynet.modular_page.Prompt` exist:
 
 * :class:`~psynet.modular_page.VideoPrompt`
 
-* :class:`~psynet.graphic.GraphicPrompt`
+* :class:`~psynet.graphics.GraphicPrompt`
 
 
 
@@ -86,7 +86,7 @@ Audio/Video controls
   :width: 580
   :alt: VideoSliderControl
 
-* :class:`~psynet.graphic.GraphicControl`
+* :class:`~psynet.graphics.GraphicControl`
 
 Option controls
 ~~~~~~~~~~~~~~~

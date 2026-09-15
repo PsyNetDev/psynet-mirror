@@ -118,13 +118,17 @@ example_js_synth_3 = ModularPage(
     events={
         "playMelody": Event(
             is_triggered_by="sliderChange",
-            js="stimulus.notes[1].pitches = [info.outputValue]; psynet.trial.restart();",
+            js=(
+                "psynet.getJsSynthState().stimulus.notes[1].pitches = "
+                "[info.outputValue]; psynet.trial.restart();"
+            ),
         ),
         "disableSlider": Event(
-            is_triggered_by="promptStart", js="slider.disabled = true;"
+            is_triggered_by="promptStart",
+            js="psynet.page.control.slider.disable(true);",
         ),
         "enableSlider": Event(
-            is_triggered_by="promptEnd", js="slider.disabled = false;"
+            is_triggered_by="promptEnd", js="psynet.page.control.slider.enable(true);"
         ),
     },
 )
@@ -213,63 +217,7 @@ example_preloading = PageMaker(
                 },
             }
         ),
-        css=[
-            """
-        @font-face {
-            font-family: "SnapshotInter";
-            src: url("/static/css/fonts/font-files/Inter-Regular.woff2") format("woff2");
-            font-style: normal;
-            font-weight: 400;
-            font-display: block;
-        }
-
-        @font-face {
-            font-family: "SnapshotInter";
-            src: url("/static/css/fonts/font-files/Inter-Medium.woff2") format("woff2");
-            font-style: normal;
-            font-weight: 500;
-            font-display: block;
-        }
-
-        @font-face {
-            font-family: "SnapshotInter";
-            src: url("/static/css/fonts/font-files/Inter-Bold.woff2") format("woff2");
-            font-style: normal;
-            font-weight: 700;
-            font-display: block;
-        }
-
-        #main-body {
-            font-family: "SnapshotInter", sans-serif !important;
-            letter-spacing: 0 !important;
-            font-kerning: none !important;
-            font-variant-ligatures: none !important;
-            font-feature-settings: "kern" 0, "liga" 0, "calt" 0 !important;
-            font-synthesis: none !important;
-            text-rendering: geometricPrecision !important;
-            -webkit-font-smoothing: antialiased !important;
-        }
-
-        #main-body .btn {
-            font-family: "SnapshotInter", sans-serif !important;
-            letter-spacing: 0 !important;
-            font-kerning: none !important;
-            font-variant-ligatures: none !important;
-            font-feature-settings: "kern" 0, "liga" 0, "calt" 0 !important;
-            font-synthesis: none !important;
-            text-rendering: geometricPrecision !important;
-            -webkit-font-smoothing: antialiased !important;
-        }
-
-        #audio-preloading-controls {
-            width: fit-content;
-        }
-
-        .btn {
-            margin: 2px
-        }
-        """
-        ],
+        css_links=["/static/audio-preloading.css"],
     ),
     time_estimate=5,
 )
@@ -584,16 +532,3 @@ example_record_audio_video = join(
 
 class Exp(psynet.experiment.Experiment):
     timeline = get_timeline()
-
-    @property
-    def ad_requirements(self):
-        return super().ad_requirements + [
-            'You must be wearing <span style="font-weight: bold;">headphones</span> and sitting in a quiet place.'
-        ]
-
-    @property
-    def ad_payment_information(self):
-        return (
-            super().ad_payment_information
-            + '<br>Send us your <span style="font-weight: bold;">bank account information</span> to receive refunds.'
-        )

@@ -8,7 +8,7 @@ via the laptop microphone, and fed back to the PsyNet server which extracts the 
 using a signal-processing pipeline.
 
 
-Source: ``demos/tapping_iterated``
+Source: ``demos/experiments/tapping_iterated``
 
 .. literalinclude:: ../../demos/experiments/tapping_iterated/experiment.py
    :language: python

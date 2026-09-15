@@ -19,15 +19,6 @@ def make_example(args):
         Output slider value is <strong id="slider-output-value">NA</strong>
         (phase = <strong id="phase">NA</strong>, random wrap = <strong id="random-wrap">NA</strong>)
         {print_dict(args)}
-        <script>
-            update_value = function() {{
-                document.getElementById("slider-raw-value").innerHTML = parseFloat(slider.getAttribute("raw-value")).toFixed(2);
-                document.getElementById("slider-output-value").innerHTML = parseFloat(slider.getAttribute("output-value")).toFixed(2);
-                document.getElementById("phase").innerHTML = parseFloat(slider.getAttribute("phase")).toFixed(2);
-                document.getElementById("random-wrap").innerHTML = slider.getAttribute("random-wrap");
-            }}
-            psynet.trial.onEvent("trialConstruct", () => setInterval(update_value, 100));
-        </script>
         """
     )
 
@@ -37,6 +28,7 @@ def make_example(args):
             prompt,
             control=SliderControl(**args),
             time_estimate=5,
+            js_page_modules=["/static/slider-debug.js"],
         ),
         DebugResponsePage(),
     )

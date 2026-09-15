@@ -16,7 +16,7 @@ Version control
 It's important to have some system for tracking changes to your code over time.
 We recommend using Git alongside some Git host such as GitHub or GitLab.
 There are lots of good Git tutorials available online;
-see `version control with Git <../tutorials/version_control_with_git.html>`_
+see :doc:`version control with Git </tutorials/version_control_with_git>`
 for a PsyNet-oriented introduction to Git.
 
 
@@ -37,20 +37,28 @@ This should involve creating a virtual environment for your project (typically i
 and then install the experiment's dependencies into this virtual environment.
 This list of dependencies is stored in the ``requirements.txt`` and ``constraints.txt`` files.
 
+PsyNet supports Python 3.11 through 3.14 and recommends Python 3.13 for
+experiment development.
+
 To create the environment and install the dependencies, run the following in your terminal:
 
 .. code-block:: bash
 
     uv venv  # you can specify a particular Python version if you want, e.g. uv venv --python 3.13
     source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-    uv pip install -r requirements.txt -c constraints.txt
+    uv pip install psynet
+    psynet setup
+
+``psynet setup`` scaffolds any missing boilerplate, reuses ``constraints.txt``
+when it is already up to date with ``requirements.txt`` (otherwise regenerates
+it), and synchronizes the environment with ``uv pip sync``.
 
 .. note::
 
     If you haven't got uv installed, you can install it by running ``pip install uv``.
 
-Once the uv command has completed, you should be able to use ``psynet`` commands in your terminal.
-See `Command line <../introduction/command_line.html>`_ for an overview of PsyNet commands.
+Once setup has completed, you should be able to use ``psynet`` commands in your terminal.
+See :doc:`/introduction/command_line` for an overview of PsyNet commands.
 
 
 Local debug mode

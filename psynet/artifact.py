@@ -3,6 +3,7 @@ import os
 import shutil
 import tempfile
 import urllib.parse
+import warnings
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -27,8 +28,10 @@ class ArtifactStorage:
     EXPERIMENT_STATUS_FILE = "experiment_status.json"
     RECRUITMENT_STATUS_FILE = "recruitment_status.json"
     BASIC_DATA_FILE = "basic_data.json"
-    PSYNET_EXPORT_FILE = "psynet.zip"
-    DATABASE_EXPORT_FILE = "database.zip"
+    EXPORT_FILE = "export.zip"
+    # Backward-compatible aliases.
+    PSYNET_EXPORT_FILE = EXPORT_FILE
+    DATABASE_EXPORT_FILE = EXPORT_FILE
 
     DEPLOYMENT_FOLDER = "deployments"
     ARCHIVE_FOLDER = "archive"
@@ -361,39 +364,43 @@ class ArtifactStorage:
         """
         assert os.path.exists(export_path)
         filename = os.path.basename(export_path)
-        assert filename in (self.PSYNET_EXPORT_FILE, self.DATABASE_EXPORT_FILE)
+        assert filename == self.EXPORT_FILE
         self.upload(export_path, self.prepare_path(deployment_id, filename))
 
     def download_export(
-        self, export_type: str, destination: str, deployment_id: Optional[str] = None
+        self,
+        destination: str,
+        deployment_id: Optional[str] = None,
+        export_type: Optional[str] = None,
     ):
         """
         Download an export file from the storage.
 
         Parameters
         ----------
-        export_type : str
-            Type of the export file ('psynet' or 'database').
         destination : str
             Local path where the export file should be downloaded.
         deployment_id : str
             ID of the deployment where the export is stored.
-
-        Returns
-        -------
-        str
-            Local path to the downloaded export file.
+        export_type : str, optional
+            Deprecated. Ignored; exports are always ``export.zip``.
         """
+        if destination in ("psynet", "database") and deployment_id is not None:
+            warnings.warn(
+                "Passing export_type as the first positional argument is "
+                "deprecated; pass destination first.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            destination, deployment_id, export_type = (
+                deployment_id,
+                export_type,
+                destination,
+            )
         if deployment_id is None:
             deployment_id = self.experiment.deployment_id
 
-        filename = f"{export_type}.zip"
-
-        assert filename in (
-            self.PSYNET_EXPORT_FILE,
-            self.DATABASE_EXPORT_FILE,
-        ), f"Invalid export type: {export_type}"
-
+        filename = self.EXPORT_FILE
         self.download(self.prepare_path(deployment_id, filename), destination)
 
     def _switch_folders(

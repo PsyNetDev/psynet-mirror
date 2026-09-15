@@ -69,7 +69,7 @@ You can define a custom Gibbs sampling experiment through the following steps:
     The demo included here also incorporates demonstrations of various other
     complex features that are not necessarily needed for most Gibbs experiments.
 
-Source: ``demos/gibbs``
+Source: ``demos/experiments/gibbs``
 
 .. literalinclude:: ../../demos/experiments/gibbs/experiment.py
    :language: python

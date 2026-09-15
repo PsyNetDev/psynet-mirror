@@ -8,6 +8,13 @@ AttentionTest
 .. autoclass:: psynet.prescreen.AttentionTest
     :members:
 
+=====================
+AudioForcedChoiceTest
+=====================
+
+.. autoclass:: psynet.prescreen.AudioForcedChoiceTest
+    :members:
+
 ==================
 ColorBlindnessTest
 ==================

@@ -1,0 +1,1 @@
+Deprecated reading page JavaScript variables from ``window`` in favor of ``psynet.var``. Compatibility can warn, raise an informative error, or be disabled with ``legacy_js_var_globals``, while leaving existing or externally locked ``window`` properties untouched.

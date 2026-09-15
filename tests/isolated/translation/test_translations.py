@@ -5,13 +5,11 @@ To run translation tests locally:
 
     pytest tests/isolated/translation/test_translations.py -v
 
-To check if translations are up to date (normally only runs on release branches):
+To check if translations are up to date (only runs on release branches):
 
     CI_COMMIT_REF_NAME=release-test pytest tests/isolated/translation/test_translations.py::test_psynet_translations_up_to_date -v
 
 """
-
-import os
 
 import polib
 import pytest
@@ -22,13 +20,7 @@ from psynet.translation.check import (
 )
 from psynet.translation.check import check_translations as check_translations_internal
 from psynet.translation.translate import check_translations
-from psynet.utils import get_psynet_root, working_directory
-
-
-def is_release_branch():
-    """Check if we're running on a release branch in CI."""
-    branch_name = os.environ.get("CI_COMMIT_REF_NAME", "")
-    return branch_name.startswith("release-")
+from psynet.utils import get_psynet_root, is_release_branch, working_directory
 
 
 def make_entry(msgid="", msgstr=""):
@@ -117,7 +109,7 @@ def test_multiple_entries():
 
 @pytest.mark.skipif(
     not is_release_branch(),
-    reason="Translation up-to-date check only runs on release branches",
+    reason="This test only runs on release branches",
 )
 def test_psynet_translations_up_to_date():
     """

@@ -14,8 +14,6 @@ logger = get_logger()
 
 
 class AudioRecordTrial(RecordTrial):
-    __extra_vars__ = {}
-
     def sanitize_recording(self, path):
         recode_wav(path)
 

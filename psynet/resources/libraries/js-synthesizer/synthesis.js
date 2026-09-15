@@ -119,11 +119,21 @@ const ADDITIVE_TYPES = {
   "bonang": BonangTone
 }
 
+var ACTIVE_TONE_PARTS = typeof ACTIVE_TONE_PARTS !== "undefined" ? ACTIVE_TONE_PARTS : [];
+var JS_SYNTH_PLAYBACK_GENERATION = typeof JS_SYNTH_PLAYBACK_GENERATION !== "undefined" ? JS_SYNTH_PLAYBACK_GENERATION : 0;
+
 play_stimulus = function (stimulus) {
   note_list = stimulus["notes"]
   var n = note_list.length;
   var onsets = new Array(n).fill(0);
   var note_events = []
+
+  cancel_scheduled_tonejs_audio()
+  JS_SYNTH_PLAYBACK_GENERATION += 1
+  const playback_generation = JS_SYNTH_PLAYBACK_GENERATION
+  const active_nodes = ACTIVE_NODES
+  const default_params = {...DEFAULT_PARAMS}
+  const loaded_instruments = {...LOADED_INSTRUMENTS}
 
   Tone.Transport.cancel()
   Tone.Transport.stop()
@@ -133,14 +143,18 @@ play_stimulus = function (stimulus) {
     note_events = note_events.concat([{time: note.onset, note: note_list[i]}])
   }
 
-  new Tone.Part(((time, value) => {
-    play_note(ACTIVE_NODES, stimulus, value.note, 0.1 + time);
+  const part = new Tone.Part(((time, value) => {
+    if (playback_generation !== JS_SYNTH_PLAYBACK_GENERATION) {
+      return;
+    }
+    play_note(active_nodes, stimulus, value.note, 0.1 + time, default_params, loaded_instruments);
   }), note_events).start(0);
+  ACTIVE_TONE_PARTS.push(part)
 
   Tone.Transport.start("+0.1");
 }
 
-play_note = function (active_nodes, stimulus, note_dict, time) {
+play_note = function (active_nodes, stimulus, note_dict, time, default_params = DEFAULT_PARAMS, loaded_instruments = LOADED_INSTRUMENTS) {
     let note = {...note_dict};
     let pitches = note["pitches"];
     let pan = note["pan"];
@@ -149,9 +163,9 @@ play_note = function (active_nodes, stimulus, note_dict, time) {
     let duration = note["duration"];
     let volume = note["volume"];
 
-    for (key in DEFAULT_PARAMS) {
+    for (key in default_params) {
       if (!(key in specs)){
-        specs[key] = DEFAULT_PARAMS[key]
+        specs[key] = default_params[key]
       }
     }
 
@@ -167,8 +181,8 @@ play_note = function (active_nodes, stimulus, note_dict, time) {
       let synthesizer = new ADDITIVE_TYPES[specs["type"]](specs)
       freqs = util.post_pad(freqs, specs["max_num_pitches"], 0) // 0 frequency signifies no output
       custom_timbre_synth(active_nodes, freqs, synthesizer, specs, time, duration, pan, volume)
-    } else if (Object.keys(LOADED_INSTRUMENTS).includes(specs["type"])) {
-      let instrument = LOADED_INSTRUMENTS[specs["type"]]
+    } else if (Object.keys(loaded_instruments).includes(specs["type"])) {
+      let instrument = loaded_instruments[specs["type"]]
       instrument.triggerAttackRelease(freqs, duration, time, volume)
     } else {
       throw {name : "NotImplementedError", message : "Timbre type not implemented!"};
@@ -199,14 +213,14 @@ util_complex = function (num_harmonics,roll_off) {
 
 }
 
-util_shepard = function (num_octave_transpositions,max_num_octave_transpositions,freq,octave_definition) {
+util_shepard = function (num_octave_transpositions,max_num_octave_transpositions,freq,octave_definition, default_params = DEFAULT_PARAMS) {
   var weights = []
   var norm = 0
   gamma = Math.log2(octave_definition) // inharmonic rescaling factor
 
   for (n=0;n<2*num_octave_transpositions+1;n++){
       curr_freq = util.freq2midi(freq * Math.pow(octave_definition,n - num_octave_transpositions))
-      weight = util.gaussian(curr_freq, gamma * DEFAULT_PARAMS["shepard_center"], gamma * DEFAULT_PARAMS["shepard_width"]) // a Gaussian weight centered at the mid point of the midi scale, rescaled if needed for inharmonic compatability
+      weight = util.gaussian(curr_freq, gamma * default_params["shepard_center"], gamma * default_params["shepard_width"]) // a Gaussian weight centered at the mid point of the midi scale, rescaled if needed for inharmonic compatability
       weights = weights.concat([weight])
       norm = norm + Math.pow(weight,2)
   }
@@ -242,7 +256,7 @@ custom_timbre_synth = function(active_nodes,freqs,synth,specs,time,duration,pan,
     if (freq == 0) {
       sweights = util.post_pad([], 2 * specs["max_num_octave_transpositions"] + 1, 0)
     } else {
-      sweights = util.shepard(specs["num_octave_transpositions"], specs["max_num_octave_transpositions"], freq, synth.octave_definition) // generate shepard weight tower around freq of width num_octave_transpositions, and then zero-pad to width max_num_octave_transpositions
+      sweights = util.shepard(specs["num_octave_transpositions"], specs["max_num_octave_transpositions"], freq, synth.octave_definition, specs) // generate shepard weight tower around freq of width num_octave_transpositions, and then zero-pad to width max_num_octave_transpositions
     }
 
     for (j = 0; j < 2 * specs["max_num_octave_transpositions"] + 1; j++){
@@ -340,7 +354,22 @@ util = {
   post_pad: util_post_pad
 }
 
+function cancel_scheduled_tonejs_audio() {
+    JS_SYNTH_PLAYBACK_GENERATION += 1;
+    for (const part of ACTIVE_TONE_PARTS) {
+        if (part && typeof part.dispose === "function") {
+            part.dispose();
+        }
+    }
+    ACTIVE_TONE_PARTS = [];
+    if (typeof Tone !== 'undefined') {
+        Tone.Transport.cancel();
+        Tone.Transport.stop();
+    }
+}
+
 function stop_all_tonejs_audio() {
+    cancel_scheduled_tonejs_audio();
     // Stop custom timbre notes (ACTIVE_NODES)
     if (typeof ACTIVE_NODES !== "undefined") {
         const active_nodes = ACTIVE_NODES;
@@ -356,10 +385,5 @@ function stop_all_tonejs_audio() {
                 }
             }
         }
-    }
-    // Stop ToneJS transport and scheduled events
-    if (typeof Tone !== 'undefined') {
-        Tone.Transport.cancel();
-        Tone.Transport.stop();
     }
 }

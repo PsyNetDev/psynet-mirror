@@ -1,0 +1,108 @@
+{
+    "survey": {
+        "CountryLanguageID": "8",
+        "FulcrumExchangeAllocation": 0,
+        "FulcrumExchangeHedgeAccess": true,
+        "IndustryID": 30,
+        "StudyTypeID": 1,
+        "UniqueIPAddress": true,
+        "UniquePID": true
+    },
+    "qualifications": [
+        {
+            "Name": "MS_is_mobile",
+            "QuestionID": 8214,
+            "LogicalOperator": "NOT",
+            "NumberOfRequiredConditions": 0,
+            "IsActive": true,
+            "Order": 1,
+            "PreCodes": [
+                "true"
+            ]
+        },
+        {
+            "Name": "MS_is_tablet",
+            "QuestionID": 8213,
+            "LogicalOperator": "NOT",
+            "NumberOfRequiredConditions": 0,
+            "IsActive": true,
+            "Order": 1,
+            "PreCodes": [
+                "true"
+            ]
+        },
+        {
+            "Name": "MS_browser_type_Non_Wurfl",
+            "QuestionID": 1035,
+            "LogicalOperator": "OR",
+            "NumberOfRequiredConditions": 0,
+            "IsActive": true,
+            "Order": 2,
+            "PreCodes": [
+                "Chrome"
+            ]
+        },
+        {
+            "Name": "BORN_IN_COUNTRY",
+            "QuestionID": 200306,
+            "LogicalOperator": "OR",
+            "NumberOfRequiredConditions": 1,
+            "IsActive": true,
+            "PreCodes": [
+                "1"
+            ],
+            "QuestionText": "Were you born in the United Kingdom?",
+            "OptionsTextDict": {
+                "1": "Yes",
+                "2": "No"
+            },
+            "QuestionTranslation": "Were you born in the United Kingdom?",
+            "OptionsTranslationDict": {
+                "1": "Yes",
+                "2": "No"
+            }
+        },
+        {
+            "Name": "LIVE_IN_COUNTRY",
+            "QuestionID": 210590,
+            "LogicalOperator": "OR",
+            "NumberOfRequiredConditions": 1,
+            "IsActive": true,
+            "PreCodes": [
+                "1"
+            ],
+            "QuestionText": "Are you currently living in the United Kingdom?\t",
+            "OptionsTextDict": {
+                "1": "Yes",
+                "2": "No"
+            },
+            "QuestionTranslation": "Are you currently living in the United Kingdom?\t",
+            "OptionsTranslationDict": {
+                "1": "Yes",
+                "2": "No"
+            }
+        },
+        {
+            "Name": "TIMEOUT",
+            "QuestionID": 191148,
+            "LogicalOperator": "OR",
+            "NumberOfRequiredConditions": 1,
+            "IsActive": true,
+            "PreCodes": [
+                "1"
+            ],
+            "QuestionText": "This survey requires you to stay on the website. When you switch tabs or leave the window, your participation will be terminated earlier.\nIf you wish to end the survey earlier, please press the early \"termination\" button provided on each survey page.\nPlease note that early termination will not result in compensation.",
+            "OptionsTextDict": {
+                "1": "Agree",
+                "2": "Disagree"
+            },
+            "QuestionTranslation": "This survey requires you to stay on the website. When you switch tabs or leave the window, your participation will be terminated earlier.\nIf you wish to end the survey earlier, please press the early \"termination\" button provided on each survey page.\nPlease note that early termination will not result in compensation.",
+            "OptionsTranslationDict": {
+                "1": "Agree",
+                "2": "Disagree"
+            }
+        }
+    ],
+    "country": "GB",
+    "language": "ENG"
+}

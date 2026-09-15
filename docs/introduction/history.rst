@@ -5,7 +5,7 @@ History
 
 The PsyNet project began in 2020 as a collaboration between Peter Harrison and Nori Jacoby,
 attempting to build a higher level of abstraction
-around the `Dallinger platform <https://dallinger.readthedocs.io/en/latest/>`_.
+around the `Dallinger platform <https://dallinger.readthedocs.io/latest/>`_.
 Highlights of Dallinger included sophisticated code for deploying online experiments onto
 Heroku webservers, an advanced system for representing network-based experiments as graph-based
 structures, and excellent integration with Amazon Mechanical Turk. However, implementing

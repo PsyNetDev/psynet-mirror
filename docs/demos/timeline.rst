@@ -1,7 +1,7 @@
 Timeline
 ========
 
-Source: ``demos/timeline``
+Source: ``demos/experiments/timeline``
 
 This demo illustrates the PsyNet timeline in more detail.
 It covers a variety of core control logic constructs, such as

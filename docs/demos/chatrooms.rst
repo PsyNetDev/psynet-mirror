@@ -4,7 +4,7 @@
 Multi-chatroom demo
 ===================
 
-Source: ``demos/experiments/chatrooms``
+Source: ``demos/features/websocket_chatroom``
 
 This demo shows how to build a real-time multi-room chat experiment using
 PsyNet's WebSocket infrastructure. Participants first choose from N configurable
@@ -50,5 +50,5 @@ The demo is configurable via ``config.txt``:
 - ``chatroom_show_history`` — whether to load prior messages when a participant joins (default true).
 
 
-.. literalinclude:: ../../demos/experiments/chatrooms/experiment.py
+.. literalinclude:: ../../demos/features/websocket_chatroom/experiment.py
    :language: python

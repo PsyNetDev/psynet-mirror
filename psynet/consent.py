@@ -16,7 +16,7 @@ class Consent(Elt):
     element in your timeline.
     """
 
-    pass
+    is_consent = True
 
 
 class NoConsent(Consent, NullElt):
@@ -75,6 +75,8 @@ class LabRecruiterStandardConsent(Module):
             Time estimated for the page.
         """
 
+        expect_scrolling = True
+
         def __init__(
             self,
             time_estimate: Optional[float] = 30,
@@ -84,6 +86,7 @@ class LabRecruiterStandardConsent(Module):
                 template_str=get_template(
                     "consents/cap-recruiter_standard_consent.html"
                 ),
+                framework_owned_template=True,
             )
 
         def format_answer(self, raw_answer, **kwargs):
@@ -146,6 +149,8 @@ class LabRecruiterAudiovisualConsent(Module):
             Time estimated for the page.
         """
 
+        expect_scrolling = True
+
         def __init__(
             self,
             time_estimate: Optional[float] = 30,
@@ -155,6 +160,7 @@ class LabRecruiterAudiovisualConsent(Module):
                 template_str=get_template(
                     "consents/cap-recruiter_audiovisual_consent.html"
                 ),
+                framework_owned_template=True,
             )
 
         def format_answer(self, raw_answer, **kwargs):
@@ -223,6 +229,8 @@ class LucidConsent(Module):
             Time estimated for the page.
         """
 
+        expect_scrolling = True
+
         def __init__(
             self,
             time_estimate: Optional[float] = 30,
@@ -230,6 +238,7 @@ class LucidConsent(Module):
             super().__init__(
                 time_estimate=time_estimate,
                 template_str=get_template("consents/lucid_consent.html"),
+                framework_owned_template=True,
             )
 
         def format_answer(self, raw_answer, **kwargs):
@@ -286,6 +295,8 @@ class PrincetonConsent(Module):
             Time estimated for the page.
         """
 
+        expect_scrolling = True
+
         def __init__(
             self,
             time_estimate: Optional[float] = 30,
@@ -293,6 +304,7 @@ class PrincetonConsent(Module):
             super().__init__(
                 time_estimate=time_estimate,
                 template_str=get_template("consents/princeton_consent.html"),
+                framework_owned_template=True,
             )
 
         def format_answer(self, raw_answer, **kwargs):
@@ -347,6 +359,8 @@ class PrincetonLabRecruiterConsent(Module):
             Time estimated for the page.
         """
 
+        expect_scrolling = True
+
         def __init__(
             self,
             time_estimate: Optional[float] = 30,
@@ -356,6 +370,7 @@ class PrincetonLabRecruiterConsent(Module):
                 template_str=get_template(
                     "consents/princeton_lab_recruiter_consent.html"
                 ),
+                framework_owned_template=True,
             )
 
         def format_answer(self, raw_answer, **kwargs):
@@ -414,6 +429,8 @@ class MainConsent(Module):
             Time estimated for the page.
         """
 
+        expect_scrolling = True
+
         def __init__(
             self,
             time_estimate: Optional[float] = 30,
@@ -421,6 +438,7 @@ class MainConsent(Module):
             super().__init__(
                 time_estimate=time_estimate,
                 template_str=get_template("consents/main_consent.html"),
+                framework_owned_template=True,
             )
 
         def format_answer(self, raw_answer, **kwargs):
@@ -477,6 +495,8 @@ class DatabaseConsent(Module):
             Time estimated for the page.
         """
 
+        expect_scrolling = True
+
         def __init__(
             self,
             time_estimate: Optional[float] = 30,
@@ -484,6 +504,7 @@ class DatabaseConsent(Module):
             super().__init__(
                 time_estimate=time_estimate,
                 template_str=get_template("consents/database_consent.html"),
+                framework_owned_template=True,
             )
 
         def format_answer(self, raw_answer, **kwargs):
@@ -540,6 +561,8 @@ class AudiovisualConsent(Module):
             Time estimated for the page.
         """
 
+        expect_scrolling = True
+
         def __init__(
             self,
             time_estimate: Optional[float] = 30,
@@ -547,6 +570,7 @@ class AudiovisualConsent(Module):
             super().__init__(
                 time_estimate=time_estimate,
                 template_str=get_template("consents/audiovisual_consent.html"),
+                framework_owned_template=True,
             )
 
         def format_answer(self, raw_answer, **kwargs):
@@ -603,6 +627,8 @@ class OpenScienceConsent(Module):
             Time estimated for the page.
         """
 
+        expect_scrolling = True
+
         def __init__(
             self,
             time_estimate: Optional[float] = 30,
@@ -610,6 +636,7 @@ class OpenScienceConsent(Module):
             super().__init__(
                 time_estimate=time_estimate,
                 template_str=get_template("consents/open_science_consent.html"),
+                framework_owned_template=True,
             )
 
         def format_answer(self, raw_answer, **kwargs):
@@ -669,6 +696,8 @@ class VoluntaryWithNoCompensationConsent(Module):
             Time estimated for the page.
         """
 
+        expect_scrolling = True
+
         def __init__(
             self,
             time_estimate: Optional[float] = 30,
@@ -678,6 +707,7 @@ class VoluntaryWithNoCompensationConsent(Module):
                 template_str=get_template(
                     "consents/voluntary_with_no_compensation_consent.html"
                 ),
+                framework_owned_template=True,
             )
 
         def format_answer(self, raw_answer, **kwargs):

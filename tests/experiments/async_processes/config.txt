@@ -1,0 +1,9 @@
+[Config]
+title = Async process performance test
+description = Test experiment for benchmarking async process queue delay.
+contact_email_on_error = test@example.com
+organization_name = PsyNet
+
+recruiter = generic
+currency = $
+wage_per_hour = 12.0

@@ -7,12 +7,15 @@ const { expect } = require("@playwright/test");
 
 const URL_IN_TEXT_RE = /https?:\/\/[^\s"'<>]+/g;
 
-const PSYNET_ERROR_SELECTORS = ["#error-text", "#error-text-main"];
+const PSYNET_ERROR_SELECTORS = ["#error-text"];
 let latestBackendLogPath = null;
 const DEBUG_PORT = Number(process.env.PSYNET_DEBUG_PORT || 5000);
 
-function parseBoolEnv(name) {
-  const value = String(process.env[name] || "").trim().toLowerCase();
+function parseBoolEnv(name, defaultValue = false) {
+  if (process.env[name] === undefined) {
+    return defaultValue;
+  }
+  const value = String(process.env[name]).trim().toLowerCase();
   return value === "1" || value === "true" || value === "yes";
 }
 
@@ -178,6 +181,7 @@ function resolvePsynetLaunch() {
   };
 }
 
+// ---- Backend process lifecycle ---------------------------------------------
 function startExperiment(experimentDir) {
   const launch = resolvePsynetLaunch();
   if (!launch || !launch.cmd) {
@@ -323,6 +327,7 @@ async function stopExperiment(proc) {
   }
 }
 
+// ---- Browser page selection / backend error detection ----------------------
 async function beginExperiment(page, context, url) {
   const isPostAdParticipantPageUrl = (candidateUrl) =>
     /http:\/\/(?:localhost|127\.0\.0\.1):\d+\/(consent|start|timeline|questionnaire|recruiter-exit)\b/.test(
@@ -373,7 +378,7 @@ async function getPossibleBackendError(page) {
       const headerText = (document.querySelector("#header")?.textContent || "").trim();
       const errorText = (document.querySelector("#error-text")?.textContent || "").trim();
       const detailText = (
-        document.querySelector("#error-text-main")?.textContent || ""
+        document.querySelector("#automatic-early-exit-ready")?.textContent || ""
       ).trim();
 
       return {
@@ -423,6 +428,7 @@ async function getPageUuid(page) {
   }
 }
 
+// ---- Timeline interaction helpers ------------------------------------------
 async function waitForPageChange(page, oldUuid, timeoutMs) {
   if (!oldUuid) {
     await page.waitForTimeout(500);
@@ -442,7 +448,85 @@ async function waitForPageChange(page, oldUuid, timeoutMs) {
   throw new Error(`Timed out waiting for page change after ${timeoutMs}ms.`);
 }
 
+async function waitForTimelinePageReady(page, timeoutMs = 30000) {
+  await expect
+    .poll(
+      async () => {
+        await assertNoBackendError(page);
+        return page
+          .evaluate(() => ({
+            readyFlag: !!window.psynet?.pageReady,
+            readyMarker:
+              document.getElementById("main-body")?.getAttribute("data-page-ready") ||
+              null
+          }))
+          .catch(() => ({ readyFlag: false, readyMarker: null }));
+      },
+      { timeout: timeoutMs }
+    )
+    .toEqual({
+      readyFlag: true,
+      readyMarker: "true"
+    });
+}
+
+async function assertInplaceTimelinePathActive(page, timeoutMs = 10000) {
+  await waitForTimelinePageReady(page, Math.max(timeoutMs, 5000));
+  await expect
+    .poll(
+      async () => {
+        await assertNoBackendError(page);
+        return page
+          .evaluate(() => ({
+            flag:
+              window.psynetTemplateData?.flags?.inplaceTimelineTransitions ?? null,
+            directFragmentTransport:
+              typeof window.psynet?.loadNextTimelinePageFromResponse === "function"
+          }))
+          .catch(() => ({ flag: null, directFragmentTransport: false }));
+      },
+      { timeout: timeoutMs }
+    )
+    .toEqual({
+      flag: true,
+      directFragmentTransport: true
+    });
+}
+
+async function assertLegacyTimelinePathActive(page, timeoutMs = 10000) {
+  await waitForTimelinePageReady(page, Math.max(timeoutMs, 5000));
+  await expect
+    .poll(
+      async () => {
+        await assertNoBackendError(page);
+        return page
+          .evaluate(() => ({
+            flag:
+              window.psynetTemplateData?.flags?.inplaceTimelineTransitions ?? null
+          }))
+          .catch(() => ({ flag: null }));
+      },
+      { timeout: timeoutMs }
+    )
+    .toEqual({
+      flag: false
+    });
+}
+
+function isInplaceTimelineModeEnabled() {
+  return parseBoolEnv("inplace_timeline_transitions", true);
+}
+
+async function assertExpectedTimelinePathActive(page, timeoutMs = 10000) {
+  if (isInplaceTimelineModeEnabled()) {
+    await assertInplaceTimelinePathActive(page, timeoutMs);
+    return;
+  }
+  await assertLegacyTimelinePathActive(page, timeoutMs);
+}
+
 async function kickoffTrial(page) {
+  await waitForTimelinePageReady(page, 30000);
   if ((await page.locator("#audio-prompt-play").count()) > 0) {
     if (await page.locator("#audio-prompt-play").isEnabled()) {
       await page.click("#audio-prompt-play", { force: true }).catch(() => {});
@@ -672,6 +756,39 @@ async function advanceUntilPromptContains(page, text, options = {}) {
   throw new Error(`Did not reach prompt containing "${text}" within ${maxSteps} steps.`);
 }
 
+async function waitForPromptContains(page, text, timeout = 90000) {
+  await expect
+    .poll(
+      () =>
+        page
+          .evaluate((expectedText) => {
+            const promptText = document.getElementById("prompt-text")?.innerText || "";
+            const mainBodyText = document.getElementById("main-body")?.innerText || "";
+            return (
+              promptText.includes(expectedText) || mainBodyText.includes(expectedText)
+            );
+          }, text)
+          .catch(() => false),
+      { timeout }
+    )
+    .toBe(true);
+}
+
+async function waitForMainBodyContains(page, text, timeout = 90000) {
+  await expect
+    .poll(
+      () =>
+        page
+          .evaluate((expectedText) => {
+            const mainBodyText = document.getElementById("main-body")?.innerText || "";
+            return mainBodyText.includes(expectedText);
+          }, text)
+          .catch(() => false),
+      { timeout }
+    )
+    .toBe(true);
+}
+
 async function withExperiment(page, context, experimentDir, runTest) {
   const reuseRecruitmentUrl = process.env.PSYNET_RECRUITMENT_URL || null;
   const usingExistingBackend = !!reuseRecruitmentUrl;
@@ -782,9 +899,10 @@ async function waitForTrialEvents(
     .toBe(true);
 }
 
-function withFreshParticipantIds(rawUrl) {
+function withFreshParticipantIds(rawUrl, label = null) {
   const url = new URL(rawUrl);
-  const suffix = Math.random().toString(36).slice(2, 10);
+  const randomSuffix = Math.random().toString(36).slice(2, 10);
+  const suffix = label ? `${label}_${randomSuffix}` : randomSuffix;
   if (url.searchParams.has("assignmentId")) {
     url.searchParams.set("assignmentId", `a_${suffix}`);
   }
@@ -874,18 +992,27 @@ module.exports = {
   assertNoBackendError,
   beginExperiment,
   clickConsentButton,
+  clickFinish,
   clickNextAndWait,
   completeInitialGateway,
   captureTrialEventBaseline,
+  assertExpectedTimelinePathActive,
+  assertInplaceTimelinePathActive,
+  assertLegacyTimelinePathActive,
   getPageUuid,
+  isInplaceTimelineModeEnabled,
   startExperiment,
   startResponseSubmitTracker,
   stopExperiment,
   waitForResponseSubmitIncrement,
+  waitForMainBodyContains,
+  waitForPromptContains,
   waitForTrialEvents,
   waitForAudioRecordingReady,
   waitForVideoRecordingReady,
+  waitForTimelinePageReady,
   withExperiment,
+  withFreshParticipantIds,
   waitForNextEnabled,
   waitForPageChange
 };

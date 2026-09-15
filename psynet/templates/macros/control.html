@@ -7,42 +7,65 @@
 {% endmacro %}
 
 {% macro generic_button(params) %}
-    <button type="button" id="{{ params.id }}" style="{{ params.style }}" class="{{ params.classes }}" {% if params.start_disabled %} disabled {% endif %} onclick="psynet.trial.registerEvent('{{ params.id }}')">
+    <button type="button" id="{{ params.id }}" style="{{ params.style }}" class="{{ params.classes }} generic-button-control" data-trial-event="{{ params.id }}" {% if params.start_disabled %} disabled {% endif %}>
         <span class="button-text">{{ params.text }}</span>
     </button>
+    <script>
+        psynet.trial.onEvent("trialConstruct", function() {
+            let button = document.getElementById("{{ params.id }}");
+            if (!button) {
+                return;
+            }
+            psynet.addPageEventListener(button, "click", function() {
+                psynet.trial.registerEvent(button.dataset.trialEvent);
+            });
+        });
+    </script>
 {% endmacro %}
 
 {% macro next_button(params) %}
     <script>
-        disableButton = function() {
+        let nextButtonState = (psynet.page.control.nextButton = {
+            disable: function() {
             $("#next-button").attr("disabled", true)
             $("#next-button-spinner").show()
             $("#next-button-text").hide();
-        };
+            },
 
-        enableButton = function() {
+            enable: function() {
             $("#next-button").attr("disabled", false)
             $("#next-button-spinner").hide()
             $("#next-button-text").show();
-        }
+            }
+        });
 
-        onNextButton = function() {
+        nextButtonState.handleClick = function() {
             let width = $("#next-button").width();
             let height = $("#next-button").height();
             $("#next-button").width(width); // Locks the button width to the current width
             $("#next-button").height(height);
 
-            disableButton();
+            nextButtonState.disable();
 
             function onRejection() {
-                enableButton();
+                nextButtonState.enable();
             }
 
             psynet.submitResponse(onRejection);
-        }
+        };
+
+        psynet.trial.onEvent("trialConstruct", function() {
+            let button = document.getElementById("next-button");
+            if (!button) {
+                return;
+            }
+            psynet.addPageEventListener(button, "click", function() {
+                nextButtonState.handleClick();
+            });
+        });
     </script>
 
-    <button type="button" id="next-button" class="btn btn-primary btn-lg submit" onclick="onNextButton();" disabled="true">
+    <button type="button" id="next-button" class="btn btn-primary btn-lg submit" disabled="true">
         <span id="next-button-spinner" class="spinner-border spinner-border-sm" role="status" aria-hidden="true" style="display: none"></span>
         <span id="next-button-text">{{ gettext("Next") }}</span>
     </button>
@@ -50,31 +73,49 @@
 
 {% macro reset_button(params) %}
     <script>
+        let resetButtonState = (psynet.page.control.resetButton = {
+            handleClick: function() {
+                $('input[type={{ params.input_type }}]').prop('checked', false);
+                {% if params.show_reset_button == "on_selection" %}
+                $("#reset-button").css({"display": "none"});
+                {% endif %}
+                $("#reset-button").prop('disabled', true);
+            },
+
+            updateVisibility: function() {
+                {% if params.show_reset_button == "on_selection" %}
+                $("#reset-button").css({"display": "block"});
+                {% endif %}
+                if (!$('input[type={{ params.input_type }}]').is(':checked'))
+                {
+                    $("#reset-button").prop('disabled', true);
+                } else {
+                    $("#reset-button").prop('disabled', false);
+                }
+            }
+        });
+
         {% if params.show_reset_button == "on_selection" %}
         $("#reset-button").css({"display": "block"});
         {% endif %}
-        onResetButton = function() {
-            $('input[type={{ params.input_type }}]').prop('checked', false);
-            {% if params.show_reset_button == "on_selection" %}
-            $("#reset-button").css({"display": "none"});
-            {% endif %}
-            $("#reset-button").prop('disabled', true);
-        }
 
-        $('input[type={{ params.input_type }}]').click(function() {
-            {% if params.show_reset_button == "on_selection" %}
-            $("#reset-button").css({"display": "block"});
-            {% endif %}
-            if (!$('input[type={{ params.input_type }}]').is(':checked'))
-            {
-                $("#reset-button").prop('disabled', true);
-            } else {
-                $("#reset-button").prop('disabled', false);
+        psynet.trial.onEvent("trialConstruct", function() {
+            let resetButton = document.getElementById("reset-button");
+            if (resetButton) {
+                psynet.addPageEventListener(resetButton, "click", function() {
+                    resetButtonState.handleClick();
+                });
             }
+
+            document.querySelectorAll('input[type={{ params.input_type }}]').forEach(function(input) {
+                psynet.addPageEventListener(input, "click", function() {
+                    resetButtonState.updateVisibility();
+                });
+            });
         });
     </script>
 
-    <button type="button" id="reset-button" class="btn btn-primary btn-lg" style="{% if params.show_reset_button == 'on_selection' %}display: none{% endif %}; margin-right: 30px;" onclick="onResetButton();" disabled>
+    <button type="button" id="reset-button" class="btn btn-primary btn-lg" style="{% if params.show_reset_button == 'on_selection' %}display: none{% endif %}" disabled>
         {{ gettext("Reset") }}
     </button>
     {% endmacro %}
@@ -84,7 +125,6 @@
             type="button"
             class="btn push-button btn-primary response {% if params.timed == true %} timed {% else %} submit {% endif %}"
             id="{{ params.id }}"
-            onclick="clickedButton(this, this.id);"
             style="{{ params.style }}" ,
             disabled="true"
     >
@@ -95,17 +135,7 @@
 {% endmacro %}
 
 {% macro push_buttons(params) %}
-    <style>
-        .push-button-container {
-            display: {% if params.arrange_vertically %}grid{% else %}flex{% endif %};
-            flex-wrap: wrap;
-            justify-content: center;
-            max-height: 420px;
-            overflow-y: auto;
-        }
-    </style>
-
-    <div class="push-button-container">
+    <div class="push-button-container{% if params.arrange_vertically %} push-button-container--vertical{% endif %}">
         {% for button in params.push_buttons %}
             {{ push_button(button) }}
         {% endfor %}
@@ -117,24 +147,29 @@
     {% endif %}
 
     <script>
-        let buttonTimers = {};
+        let pushButtonState = (psynet.page.control.pushButtons = {
+            timers: {},
+        });
 
-        clickedButton = function(button, id) {
+        pushButtonState.handleClick = function(button, id) {
             psynet.trial.registerEvent("pushButtonClicked", {info: {buttonId: id}});
 
             {% if params.timed == true %}
                 let buttonHighlightDuration = {{ params.button_highlight_duration }};
-                if (buttonTimers[id] !== undefined) {
-                    clearTimeout(buttonTimers[id]);
+                if (pushButtonState.timers[id] !== undefined) {
+                    clearTimeout(pushButtonState.timers[id]);
                 }
                 highlightButton(button);
-                buttonTimers[id] = setTimeout(unhighlightButton, buttonHighlightDuration * 1000, button);
+                pushButtonState.timers[id] = psynet.trial.setTimer(
+                    () => unhighlightButton(button),
+                    buttonHighlightDuration * 1000,
+                );
             {% else %}
                 psynet.response.disable();
                 psynet.submit.disable();
                 psynet.nextPage(id);
             {% endif %}
-        }
+        };
 
         highlightButton = function(button) {
             button.classList.remove("btn-primary");
@@ -144,7 +179,15 @@
         unhighlightButton = function(button) {
             button.classList.add("btn-primary");
             button.classList.remove("btn-success");
-        }
+        };
+
+        psynet.trial.onEvent("trialConstruct", function() {
+            document.querySelectorAll(".push-button").forEach(function(button) {
+                psynet.addPageEventListener(button, "click", function() {
+                    pushButtonState.handleClick(button, button.id);
+                });
+            });
+        });
     </script>
 {% endmacro %}
 
@@ -152,47 +195,39 @@
     {{ push_buttons(params) }}
     <script>
         const keyCodeIdx = JSON.parse(`{{ params.keys | tojson }}`);
-        document.addEventListener("keydown", function(event) {
-            let keyCode = event.code;
-            // keyCode in keyCodeIdx
-            if (keyCodeIdx.includes(keyCode)) {
-                let buttonIdx = keyCodeIdx.indexOf(keyCode);
-                let buttons = document.getElementsByClassName("push-button");
-                let button = buttons[buttonIdx];
-                if (button.disabled) {
-                    psynet.alert("Cannot select the button because it is disabled.");
-                } else {
-                    clickedButton(button, button.id);
+        psynet.trial.onEvent("trialConstruct", function() {
+            psynet.addPageEventListener(document, "keydown", function(event) {
+                let keyCode = event.code;
+                // keyCode in keyCodeIdx
+                if (keyCodeIdx.includes(keyCode)) {
+                    let buttonIdx = keyCodeIdx.indexOf(keyCode);
+                    let buttons = document.getElementsByClassName("push-button");
+                    let button = buttons[buttonIdx];
+                    if (button.disabled) {
+                        psynet.alert("Cannot select the button because it is disabled.");
+                    } else {
+                        psynet.page.control.pushButtons.handleClick(button, button.id);
+                    }
                 }
-            }
+            });
         });
     </script>
 {% endmacro %}
 
 {% macro checkbox(params) %}
-    <label style="margin-left: 15px; cursor: pointer;">
+    <label class="psynet-option">
         <input
             type="checkbox"
             id="{{ params.id }}"
             name="{{ params.name }}"
             class="response"
-            style="cursor: pointer;"
         />
-        <span>{{ params.label }}</span>
+        <span class="psynet-option-label">{{ params.label }}</span>
     </label>
 {% endmacro %}
 
 {% macro checkboxes(params) %}
-    <style>
-        .control-container {
-            display: {% if params.arrange_vertically %}grid{% else %}flex{% endif %};
-            flex-wrap: wrap;
-            justify-content: center;
-            max-height: 420px;
-            overflow-y: auto;
-        }
-    </style>
-    <div class="control-container">
+    <div class="control-container psynet-options{% if not params.arrange_vertically %} psynet-options--horizontal{% endif %}">
         {% for _checkbox in params.checkboxes %}
             {{ checkbox(_checkbox) }}
         {% endfor %}
@@ -200,13 +235,7 @@
     <p class="vspace"></p>
 
     <script>
-        clickedButton = function(id) {
-            psynet.response.disable();
-            psynet.submit.disable();
-            psynet.nextPage(id);
-        }
-
-        retrieveResponse = function() {
+        psynet.setRetrieveResponseHandler(function() {
             let elements = document.getElementsByName('{{ params.name }}')
             checkedValues = Array.from(elements).map(function(element, i) {
                 if (element.checked) {return element.id}
@@ -216,12 +245,12 @@
             return {
                 rawAnswer: checkedValues
             }
-        }
+        })
     </script>
 {% endmacro %}
 
 {% macro radiobutton(params) %}
-    <label style="margin-left: 15px;">
+    <label class="psynet-option">
         <input
             type="radio"
             id="{{ params.id }}"
@@ -229,45 +258,30 @@
             class="response"
             style="{{ params.style }}"
         />
-        <span style="{{ params.style }}">{{ params.label }}</span>
+        <span class="psynet-option-label" style="{{ params.style }}">{{ params.label }}</span>
     </label>
 {% endmacro %}
 
 {% macro radiobuttons(params) %}
-    <style>
-        .control-container {
-            display: {% if params.arrange_vertically %}grid{% else %}flex{% endif %};
-            flex-wrap: wrap;
-            justify-content: center;
-            max-height: 420px;
-            overflow-y: auto;
-        }
-    </style>
-    <div class="control-container">
+    <div class="control-container psynet-options{% if not params.arrange_vertically %} psynet-options--horizontal{% endif %}">
         {% for button in params.radiobuttons %}
             {{ radiobutton(button) }}
         {% endfor %}
     </div>
     <p class="vspace"></p>
     <script>
-        clickedButton = function(id) {
-            psynet.response.disable();
-            psynet.submit.disable();
-            psynet.nextPage(id);
-        }
-
         {% if params.show_free_text_option %}
         psynet.trial.onEvent("responseEnable", function () {
             var elem = $('#free_text')
-            $('#free_text_input').change(function () {
-                elem[0].checked = true;
-            }).click(function (){
-                elem[0].checked = true;
-            })
+            $('#free_text_input')
+                .off("change.psynetFreeText click.psynetFreeText")
+                .on("change.psynetFreeText click.psynetFreeText", function () {
+                    elem[0].checked = true;
+                })
         });
         {% endif %}
 
-        retrieveResponse = function() {
+        psynet.setRetrieveResponseHandler(function() {
             let element = document.querySelector('input[name="{{ params.name }}"]:checked')
             var rawAnswer = (element != null) ? element.id : null;
 
@@ -277,7 +291,7 @@
             }
             {% endif %}
             return {rawAnswer: rawAnswer}
-        }
+        })
     </script>
 {% endmacro %}
 
@@ -304,18 +318,12 @@
     <p class="vspace"></p>
 
     <script>
-        clickedButton = function(id) {
-            psynet.response.disable();
-            psynet.submit.disable();
-            psynet.nextPage(id);
-        }
-
-        retrieveResponse = function() {
+        psynet.setRetrieveResponseHandler(function() {
             let element = document.getElementById("{{ params.name }}");
             return {
                 rawAnswer: (element != null) ? element.value : null
             }
-        }
+        })
     </script>
 {% endmacro %}
 
@@ -370,6 +378,8 @@
     {{ media_slider(params) }}
 
     <script>
+        psynet.page.control.slider = psynet.page.control.slider || {};
+
         playMedia = function () {
             var id = slider.media;
             var sound = psynet.audio[id];
@@ -378,11 +388,16 @@
                 psynet.media.stopAllAudio();
                 psynet.log.debug('Playing sound with ID = ' + id);
                 disableSlider();
-                sound.play().source.addEventListener("ended", enableSlider);
+                psynet.addPageEventListener(
+                    sound.play().source,
+                    "ended",
+                    enableSlider,
+                    { once: true },
+                );
             }
         };
 
-        onSliderEvent = function (eventType) {
+        psynet.page.control.slider.onSliderEvent = function (eventType) {
             slider.media = findClosestMedia(slider);
             if (eventType == "initialise" && autoplay) {
                 playMedia();
@@ -412,6 +427,8 @@
         var disableDuration = {{ params.js_vars.disable_duration | float }};
         {% endautoescape %}
 
+        psynet.page.control.slider = psynet.page.control.slider || {};
+
         const image = document.createElement('img');
         image.id = "slider-current-stimulus";
         image.style.visibility = 'hidden';
@@ -425,10 +442,10 @@
             psynet.log.debug('Showing image with ID = ' + id);
             image.setAttribute("src", content.player.src);
             image.style.visibility='visible';
-            setTimeout(enableSlider, disableDuration * 1000);
+            psynet.trial.setTimer(enableSlider, disableDuration * 1000);
         };
 
-        onSliderEvent = function (eventType) {
+        psynet.page.control.slider.onSliderEvent = function (eventType) {
             slider.media = findClosestMedia(slider);
             if (eventType == "initialise" && autoplay) {
                 playMedia();
@@ -457,6 +474,8 @@
         var disableDuration = {{ params.js_vars.disable_duration | float }};
         {% endautoescape %}
 
+        psynet.page.control.slider = psynet.page.control.slider || {};
+
         const stimulus = document.createElement('div');
         stimulus.id = "slider-current-stimulus";
         $("#media-container").prepend(stimulus);
@@ -470,10 +489,10 @@
             var show = document.getElementById('slider-current-stimulus');
             // get image, parse source text, and insert text into html
             show.innerHTML = html.player.innerHTML;
-            setTimeout(enableSlider, disableDuration * 1000);
+            psynet.trial.setTimer(enableSlider, disableDuration * 1000);
         };
 
-        onSliderEvent = function (eventType) {
+        psynet.page.control.slider.onSliderEvent = function (eventType) {
             slider.media = findClosestMedia(slider);
             if (eventType == "initialise" && autoplay) {
                 playMedia();
@@ -501,6 +520,8 @@
         var disableDuration = {{ params.js_vars.disable_duration | float }};
         {% endautoescape %}
 
+        psynet.page.control.slider = psynet.page.control.slider || {};
+
         playMedia = function () {
             var id = slider.media;
             var video = psynet.video[id];
@@ -517,13 +538,13 @@
             video.player.currentTime = 0;
             video.player.play();
             if (disableDuration == 0) {
-                setTimeout(enableSlider, video.player.duration * 1000)
+                psynet.trial.setTimer(enableSlider, video.player.duration * 1000)
             } else {
-                setTimeout(enableSlider, disableDuration * 1000);
+                psynet.trial.setTimer(enableSlider, disableDuration * 1000);
             }
         };
 
-        onSliderEvent = function (eventType) {
+        psynet.page.control.slider.onSliderEvent = function (eventType) {
             slider.media = findClosestMedia(slider);
             if (eventType == "initialise" && autoplay) {
                 playMedia();
@@ -555,7 +576,9 @@
         }
 
         // Set the color
-        onSliderEvent = function (eventType) {
+        psynet.page.control.slider = psynet.page.control.slider || {};
+
+        psynet.page.control.slider.onSliderEvent = function (eventType) {
             psynet.log.debug("Updating slider background");
             var rHex = parseInt(document.getElementById('red').value, 10).toString(16),
                 gHex = parseInt(document.getElementById('green').value, 10).toString(16),
@@ -564,7 +587,9 @@
             document.body.style.backgroundColor = hex;
         };
 
-        document.addEventListener("load", onSliderEvent);
+        psynet.trial.onEvent("trialConstruct", function () {
+            psynet.page.control.slider.onSliderEvent("initialise");
+        });
     </script>
 {% endmacro %}
 
@@ -579,9 +604,8 @@
         }
         input[type=range]::-webkit-slider-thumb {
             -webkit-appearance: none;
-            border: 1px solid #000000;
-            background-color: #0d6efd;
-            border: 11px solid #0d6efd;
+            background-color: var(--psynet-accent);
+            border: 11px solid var(--psynet-accent);
             border-radius: 1rem;
             {% if params.directional == false %}
             margin-top: -8px;
@@ -590,20 +614,20 @@
         }
         {% if params.directional == false %}
         input[type=range]::-webkit-slider-runnable-track {
-              background: #000000;
-              border: 1px solid #b2b2b2;
-              background-color: #efefef;
+              background-color: var(--psynet-surface-sunken);
+              border: 1px solid var(--psynet-border-strong);
               border-radius: 1rem;
               width: 100%;
               height: 8px;
             }
         {% endif %}
-        input[type=range]:focus::-webkit-slider-thumb {
-            box-shadow: none;
+        input[type=range]:focus-visible::-webkit-slider-thumb {
+            outline: var(--psynet-focus-ring);
+            outline-offset: 2px;
         }
         input[type=range]:disabled::-webkit-slider-thumb {
-            background-color: #86b6fe;
-            border: 11px solid #86b6fe;
+            background-color: var(--psynet-border-strong);
+            border: 11px solid var(--psynet-border-strong);
         }
     </style>
 
@@ -619,15 +643,15 @@
     >
 
     <script>
-        let enableSlider = function() {
-            if (disableWhilePlaying){
+        let enableSlider = function(force = false) {
+            if (disableWhilePlaying || force){
                 slider.disabled=false;
                 psynet.log.debug('Horizontal slider is enabled');
             }
         };
 
-        let disableSlider = function() {
-            if (disableWhilePlaying){
+        let disableSlider = function(force = false) {
+            if (disableWhilePlaying || force){
                 slider.disabled=true;
                 psynet.log.debug('Horizontal slider is disabled');
             }
@@ -706,15 +730,15 @@
 
         psynet.trial.onEvent("trialConstruct", () => $(".knob-container").css("visibility", "visible"));
 
-        let enableSlider = function() { // TODO: add transparent div to disable circular slider instead of hid it
-            if (disableWhilePlaying){
+        let enableSlider = function(force = false) { // TODO: add transparent div to disable circular slider instead of hid it
+            if (disableWhilePlaying || force){
                 $(".knob-container").css("visibility", "visible");
                 psynet.log.debug('Circular slider is enabled');
             }
         };
 
-        let disableSlider = function() {
-            if (disableWhilePlaying){
+        let disableSlider = function(force = false) {
+            if (disableWhilePlaying || force){
                 $(".knob-container").css("visibility", "hidden");
                 psynet.log.debug('Circular slider is disabled');
             }
@@ -734,23 +758,30 @@
 
     <script>
         {% autoescape off %}
+        // ---- Slider configuration -------------------------------------------
         var snapValues = {% if params.js_vars.snap_values is none %}null{% else %}{{ params.js_vars.snap_values }}{% endif %};
         var minimalInteractions = {% if params.js_vars.minimal_interactions is none %}null{% else %}{{ params.js_vars.minimal_interactions }}{% endif %};
         var continuousUpdates = {% if params.js_vars.continuous_updates is not defined or params.js_vars.continuous_updates is none %}null{% else %}{{ params.js_vars.continuous_updates | lower }}{% endif %};
+        var disableWhilePlaying = typeof disableWhilePlaying === "undefined" ? false : disableWhilePlaying;
         var sliderId = '{{ params.slider_id }}';
         var randomWrap = {{ params.random_wrap | lower }}; // Decide whether to add to js_vars
         var minVal = {{ params.min_value }}; // Decide whether to add to js_vars
         var maxVal = {{ params.max_value }}; // Decide whether to add to js_vars
         {% endautoescape %}
 
+        psynet.page.control.slider = psynet.page.control.slider || {};
+
         // This is called each time
         // Todo - refactor this using psynet.trial.onEvent
-        onSliderEvent = function (eventType) {
+        psynet.page.control.slider.onSliderEvent = function (eventType) {
 
         };
 
         // Metadata collection
         var slider = document.getElementById(sliderId);
+        psynet.page.control.slider.element = slider;
+        psynet.page.control.slider.enable = enableSlider;
+        psynet.page.control.slider.disable = disableSlider;
 
         if (continuousUpdates) {
             slider.log = "The slider log is disabled when continuous slider updates are enabled.";
@@ -771,11 +802,12 @@
 
         slider.interactionCount = 0;
 
+        // ---- Slider value formatting / snapping -----------------------------
         let setSliderValue = function(val) {
             {% if params.input_type == "HTML5_range_slider" %}
                 slider.value = val;
             {% elif params.input_type == "circular_slider" %}
-                throw Error("Programmatically seting the slider value is not supported yet");
+                throw Error("Programmatically setting the slider value is not supported yet");
                 $(".circular-slider").val(val).trigger("change");
             {% endif %}
         }
@@ -831,7 +863,26 @@
             return a - (n * Math.floor(a/n));
         };
 
+        let sliderPageActive = true;
+        psynet.addPageCleanupCallback(() => {
+            sliderPageActive = false;
+        });
+
+        let runSliderEvent = function(eventType) {
+            if (!sliderPageActive || !slider.isConnected) {
+                return;
+            }
+            let sliderState = psynet.page.control.slider;
+            if (sliderState && typeof sliderState.onSliderEvent === "function") {
+                sliderState.onSliderEvent(eventType);
+            }
+        };
+
+        // ---- Trial lifecycle wiring -----------------------------------------
         psynet.trial.onEvent("trialPrepare", () => {
+            // Disable the slider during trialPrepare so a participant cannot
+            // interact before the page reaches its response-ready state.
+            disableSlider(true);
             let phase;
             if (randomWrap) {
                 phase = sampleSliderPhase();
@@ -843,10 +894,14 @@
             psynet.log.debug("Slider phase:" + phase);
             snapSlider();
             formatSliderValue();
-            onSliderEvent("initialise");
+            runSliderEvent("initialise");
             slider.updateLog();
             hadMinimalInteractions = false;
             checkMinimalInteractions();
+        });
+
+        psynet.trial.onEvent("responseEnable", () => {
+            enableSlider(true);
         });
 
         let hadMinimalInteractions = false;
@@ -864,7 +919,7 @@
             }
             formatSliderValue();
             if (continuousUpdates) {
-                onSliderEvent("sliderChanged");
+                runSliderEvent("sliderChanged");
                 slider.updateLog();
             }
         };
@@ -873,7 +928,7 @@
             // Triggered whenever the slider is released on a new value
             if (!continuousUpdates) {
                 snapSlider();
-                onSliderEvent("sliderChanged");
+                runSliderEvent("sliderChanged");
                 slider.updateLog();
             }
             slider.interactionCount += 1;
@@ -885,14 +940,15 @@
             });
         }
 
-        slider.addEventListener("input", sliderOnInput, false);
-        slider.addEventListener("change", sliderOnChange, false);
-
         psynet.trial.onEvent("trialConstruct", () => {
+            psynet.addPageEventListener(slider, "input", sliderOnInput, false);
+            psynet.addPageEventListener(slider, "change", sliderOnChange, false);
             checkMinimalInteractions();
         });
 
-        retrieveResponse = function() {
+        psynet.setRetrieveResponseHandler(function() {
+            // Slider responses preserve both the snapped output value and the
+            // raw slider state so analyses can recover either interpretation.
             let outputValue = parseFloat(slider.getAttribute("output-value"));
             let rawAnswer = outputValue;
             let metadata = {
@@ -904,7 +960,7 @@
                 rawAnswer: rawAnswer,
                 metadata: metadata
             }
-        };
+        });
     </script>
     {% if params.template_filename %}
         {% include params.template_filename %}
@@ -953,12 +1009,12 @@
                     $(this).html(value);
                 });
 
-                range.on('input', function(){
+                range.off('input.psynetSliderCollection').on('input.psynetSliderCollection', function(){
                     $(this).next(value).html(this.value);
                 });
             });
         };
-        window.addEventListener("load", initSliders);
+        psynet.trial.onEvent("trialConstruct", initSliders);
     </script>
 
     <div class="slider-collection">
@@ -983,28 +1039,22 @@
 {% endmacro %}
 
 {% macro audio_meter(params) %}
-    <style>
-        .audio-meter-block {
-            margin-top: 20px;
-            margin-bottom: 20px;
-        }
-    </style>
     <div class="audio-meter-block">
-        <table style="width: 500px; padding: 10px">
-            <tbody>
-                <tr align="left" valign="middle">
-                    <td width="300px">
-                        <div style="width: 300px; height: 50px">
-                            <canvas style=" background-color: var(--bs-secondary-bg);" id="audio-meter" width="300" height="50"></canvas>
-                        </div>
-                    </td>
-                    <td width="20px"></td>
-                    <td align="left">
-                        <p id="audio-meter-text" style="font-weight: bold; margin: 0px; display: none;"></p>
-                    </td>
-                </tr>
-            </tbody>
-        </table>
+        <div class="audio-meter">
+            <div
+                id="audio-meter"
+                class="audio-meter__track"
+                role="meter"
+                aria-valuemin="0"
+                aria-valuemax="100"
+                aria-valuenow="0"
+                aria-label="{{ pgettext('audio_meter', 'Microphone level') }}"
+            >
+                <div class="audio-meter__fill"></div>
+            </div>
+            <p id="audio-meter-text" class="audio-meter__text" aria-live="polite"></p>
+            <p id="audio-meter-device-name" class="audio-meter__device"></p>
+        </div>
 
         {% if params.calibrate %}
             {{ audio_meter_calibrate(params) }}
@@ -1013,7 +1063,7 @@
 
     <script>
         {% include "macros/control/audio_meter.js" %}
-        audioMeterControl.init('{{ params.to_json() }}');
+        psynet.page.control.audioMeter.init('{{ params.to_json() }}');
 
     </script>
 {% endmacro %}
@@ -1062,7 +1112,12 @@
     </div>
 
     <script>
-        setInterval(() => audioMeterControl.updateFromSliders(), 50);
+        psynet.trial.onEvent("trialConstruct", function () {
+            psynet.page.control.audioMeter.updateFromSliders();
+            psynet.trial.setRepeatingTimer(function () {
+                psynet.page.control.audioMeter.updateFromSliders();
+            }, 50);
+        });
     </script>
 {% endmacro %}
 
@@ -1120,42 +1175,70 @@
     {% endif %}
 
     <script>
-        $(document).ready(function() {
-            $(".auto-reset").on("click", function() {
-                this.disabled = true;
-                setTimeout(() => this.disabled = false, 500);
+        let recorderState = (psynet.page.control.recorder = {
+            replayMode: false,
+            loopPlayback: {{ params.loop_playback | tojson }},
+            controlsEnabled: {{ params.controls | lower }},
+        });
+
+        psynet.trial.onEvent("trialConstruct", function() {
+            document.querySelectorAll(".auto-reset").forEach(function(button) {
+                psynet.addPageEventListener(button, "click", function() {
+                    button.disabled = true;
+                    psynet.trial.setTimer(() => {
+                        button.disabled = false;
+                    }, 500);
+                });
             });
 
-            $("#btn-record-record").on("click", function() {
-                replayMode = false;
-                psynet.trial.restart();
-            });
+            let recordButton = document.getElementById("btn-record-record");
+            if (recordButton) {
+                psynet.addPageEventListener(recordButton, "click", function() {
+                    recorderState.replayMode = false;
+                    psynet.trial.restart();
+                });
+            }
 
-            $("#btn-record-play-all").on("click", function() {
-                replayMode = true;
-                psynet.media.stopAllAudio();
-                psynet.trial.restart();
-            });
+            let playAllButton = document.getElementById("btn-record-play-all");
+            if (playAllButton) {
+                psynet.addPageEventListener(playAllButton, "click", function() {
+                    recorderState.replayMode = true;
+                    psynet.media.stopAllAudio();
+                    psynet.trial.restart();
+                });
+            }
 
-            $("#btn-record-play-prompt").on("click", async function() {
-                await psynet.media.stopAllAudio();
-                await psynet.trial.restart({from: "promptStart"});
-            });
+            let playPromptButton = document.getElementById("btn-record-play-prompt");
+            if (playPromptButton) {
+                psynet.addPageEventListener(playPromptButton, "click", async function() {
+                    await psynet.media.stopAllAudio();
+                    await psynet.trial.restart({from: "promptStart"});
+                });
+            }
 
-            $("#btn-record-play-recording").on("click", async function() {
-                await psynet.media.stopAllAudio();
-                await psynet.trial.stop();
-                await psynet.page.control.playRecording();
-            });
+            let playRecordingButton = document.getElementById("btn-record-play-recording");
+            if (playRecordingButton) {
+                psynet.addPageEventListener(playRecordingButton, "click", async function() {
+                    await psynet.media.stopAllAudio();
+                    await psynet.trial.stop();
+                    await psynet.page.control.playRecording();
+                });
+            }
 
-            $("#btn-record-stop").on("click", async function() {
-                await psynet.trial.stop();
-                await psynet.page.control.stopRecordingPlayback();
-            });
+            let stopButton = document.getElementById("btn-record-stop");
+            if (stopButton) {
+                psynet.addPageEventListener(stopButton, "click", async function() {
+                    await psynet.trial.stop();
+                    await psynet.page.control.stopRecordingPlayback();
+                });
+            }
 
-            $("#record-loop-input").on("change", function(event) {
-                loopRecorder = event.target.checked;
-            });
+            let loopInput = document.getElementById("record-loop-input");
+            if (loopInput) {
+                psynet.addPageEventListener(loopInput, "change", function(event) {
+                    recorderState.loopPlayback = event.target.checked;
+                });
+            }
 
             {#$("#btn-record-upload").on("click", function() {#}
             {#    let button = $(this);#}
@@ -1175,13 +1258,9 @@
             {#});#}
         });
 
-        let recorderControls = {{ params.controls | lower }};
-        let replayMode = false;
-        let loopRecorder = {{ params.loop_playback | tojson }};
-
         psynet.trial.onEvent("recordEnd", function() {
-            if (!replayMode) {
-                hasRecorded = true;
+            if (!recorderState.replayMode) {
+                recorderState.hasRecorded = true;
             }
             $("#btn-record-play-recording").attr("disabled", false);
             $("#btn-record-play-all").attr("disabled", false);
@@ -1199,7 +1278,7 @@
         });
 
         psynet.trial.onEvent("trialFinished", function() {
-            if (loopRecorder) {
+            if (recorderState.loopPlayback) {
                 psynet.trial.restart();
             }
         });
@@ -1209,7 +1288,7 @@
         });
 
         let supportedPrompts = ["audio", "video"];
-        if (!supportedPrompts.includes(modular_page_components.prompt)) {
+        if (!supportedPrompts.includes(psynet.var.modular_page_components.prompt)) {
             $("#btn-record-play-prompt").hide();
             $("#btn-record-play-all").hide();
         }
@@ -1247,8 +1326,10 @@
         {% include "macros/control/recorder.js" %}
 
         var recorder;
-        var hasRecorded = false;
         var recordingBlob;
+        var audioRecordingStream = null;
+        var audioRecordingInput = null;
+        recorderState.hasRecorded = false;
 
         psynet.page.control.playRecording = async function() {
             await psynet.audio.recording.play();
@@ -1259,7 +1340,7 @@
         }
 
         psynet.trial.onEvent("recordStart", function() {
-            if (replayMode) {
+            if (recorderState.replayMode) {
                 psynet.audio.recording.play();
             } else {
                 recorder.clear();
@@ -1274,7 +1355,7 @@
         }
 
         psynet.trial.onEvent("recordEnd", async function() {
-            if (!replayMode) {
+            if (!recorderState.replayMode) {
                 await recorder.stop();
                 recordingBlob = await getAudioRecording();
                 psynet.response.staged.blobs["audioRecording"] = recordingBlob;
@@ -1297,10 +1378,22 @@
                 video: false
             }).then(function(stream) {
                 psynet.log.debug("Initialising audio recorder.");
-                let input = psynet.media.audioContext.createMediaStreamSource(stream);
+                audioRecordingStream = stream;
+                audioRecordingInput = psynet.media.audioContext.createMediaStreamSource(stream);
                 let microphoneMetadata = psynet.media.getMicrophoneMetadataFromAudioStream(stream);
                 Object.assign(psynet.response.staged.metadata, microphoneMetadata);
-                recorder = new Recorder(input, channelCount);
+                recorder = new Recorder(audioRecordingInput, channelCount);
+                psynet.addPageCleanupCallback(function() {
+                    if (recorder) {
+                        recorder.stop();
+                    }
+                    if (audioRecordingInput && typeof audioRecordingInput.disconnect === "function") {
+                        audioRecordingInput.disconnect();
+                    }
+                    audioRecordingInput = null;
+                    psynet.media.stopStream(audioRecordingStream);
+                    audioRecordingStream = null;
+                });
                 psynet.trial.registerEvent("audioRecorderReady");
                 resolve();
             });
@@ -1349,6 +1442,7 @@
             let cameraStream = null;
             var videoRecorder = null;
             let audioSettings = null;
+            let recordedVideoObjectUrl = null;
 
             if ({{ params.record_audio | lower }}) {
                 audioSettings = {
@@ -1375,7 +1469,7 @@
             })
 
             psynet.trial.onEvent("trialPrepare", () => {
-                if (!replayMode) {
+                if (!recorderState.replayMode) {
                     videoRecorder = new RecordRTCPromisesHandler(cameraStream, {
                         mimeType: "video/webm",
                     });
@@ -1390,7 +1484,12 @@
             psynet.page.control.playRecording = async function() {
                 await loadRecordedVideo();
                 videoPreviewPlayer.play();
-                videoPreviewPlayer.addEventListener("ended", loadCameraPreview, {once: true});
+                psynet.addPageEventListener(
+                    videoPreviewPlayer,
+                    "ended",
+                    loadCameraPreview,
+                    { once: true },
+                );
             };
 
             psynet.page.control.stopRecordingPlayback = async function() {
@@ -1406,7 +1505,12 @@
                 videoPreviewPlayer.src = null;
                 videoPreviewPlayer.srcObject = null;
                 let blob = psynet.media.data.videoBlob;
-                videoPreviewPlayer.src = URL.createObjectURL(blob);
+                if (recordedVideoObjectUrl !== null) {
+                    psynet.media.revokeObjectUrl(recordedVideoObjectUrl);
+                    recordedVideoObjectUrl = null;
+                }
+                recordedVideoObjectUrl = psynet.media.registerObjectUrl(URL.createObjectURL(blob));
+                videoPreviewPlayer.src = recordedVideoObjectUrl;
                 videoPreviewPlayer.muted = false;
                 await videoPreviewPlayer.pause();
                 videoDisplayMode = "playback";
@@ -1425,7 +1529,7 @@
             }
 
             psynet.trial.onEvent("recordStart", async function() {
-                if (replayMode) {
+                if (recorderState.replayMode) {
                     await psynet.page.control.playRecording();
                 } else {
                     await videoRecorder.startRecording(videoRecorder.stream);
@@ -1433,7 +1537,7 @@
             });
 
             psynet.trial.onEvent("recordEnd", async function() {
-                if (!replayMode) {
+                if (!recorderState.replayMode) {
                     await videoRecorder.stopRecording();
                     psynet.media.data["videoBlob"] = await videoRecorder.getBlob();
                     await videoRecorder.reset();
@@ -1449,6 +1553,17 @@
                     await videoRecorder.reset();
                 }
                 await loadCameraPreview();
+            });
+
+            psynet.addPageCleanupCallback(function() {
+                psynet.media.stopStream(cameraStream);
+                cameraStream = null;
+                if (recordedVideoObjectUrl !== null) {
+                    psynet.media.revokeObjectUrl(recordedVideoObjectUrl);
+                    recordedVideoObjectUrl = null;
+                }
+                videoPreviewPlayer.srcObject = null;
+                videoPreviewPlayer.removeAttribute("src");
             });
         }
 
@@ -1469,7 +1584,7 @@
             }));
 
             psynet.trial.onEvent("trialPrepare", () => {
-                if (!replayMode) {
+                if (!recorderState.replayMode) {
                     screenRecorder = new RecordRTCPromisesHandler(screenStream, {
                         mimeType: 'video/webm'
                     });
@@ -1478,13 +1593,13 @@
             });
 
             psynet.trial.onEvent("recordStart", function() {
-                if (!replayMode) {
+                if (!recorderState.replayMode) {
                     screenRecorder.startRecording();
                 }
             });
 
             psynet.trial.onEvent("recordEnd", async function() {
-                if (!replayMode) {
+                if (!recorderState.replayMode) {
                     await screenRecorder.stopRecording();
                     psynet.media.data["screenBlob"] = await screenRecorder.getBlob();
                     await screenRecorder.reset();
@@ -1497,6 +1612,11 @@
                     await screenRecorder.stopRecording();
                 }
                 await screenRecorder.reset();
+            });
+
+            psynet.addPageCleanupCallback(function() {
+                psynet.media.stopStream(screenStream);
+                screenStream = null;
             });
 
         }
@@ -1523,11 +1643,11 @@
     <p class="vspace"></p>
 
     <script>
-        retrieveResponse = function() {
+        psynet.setRetrieveResponseHandler(function() {
             return {
                 rawAnswer: $("#text-input").get(0).value
             }
-        }
+        })
 
         psynet.trial.onEvent("responseEnable", function() {
             document.getElementById('text-input').focus();
@@ -1556,11 +1676,11 @@
     <p class="vspace"></p>
 
     <script>
-        retrieveResponse = function() {
+        psynet.setRetrieveResponseHandler(function() {
             return {
                 rawAnswer: $("#number-input").get(0).value
             }
-        }
+        })
 
         psynet.trial.onEvent("responseEnable", function() {
             document.getElementById('number-input').focus();
@@ -1591,10 +1711,9 @@
         }
         input[type=range]::-webkit-slider-thumb {
             -webkit-appearance: none;
-            border: 1px solid #000000;
             height: 36px;
-            background-color: #efefef;
-            border: 11px solid #b2b2b2;
+            background-color: var(--psynet-accent);
+            border: 11px solid var(--psynet-accent);
             border-radius: 5px;
             {% if params.directional == false %}
             margin-top: -8px;
@@ -1603,14 +1722,17 @@
         }
         {% if params.directional == false %}
         input[type=range]::-webkit-slider-runnable-track {
-              background: #000000;
-              border: 1px solid #b2b2b2;
-              background-color: #efefef;
+              background-color: var(--psynet-surface-sunken);
+              border: 1px solid var(--psynet-border-strong);
               border-radius: 5px;
               width: 100%;
               height: 8px;
             }
         {% endif %}
+        input[type=range]:focus-visible::-webkit-slider-thumb {
+            outline: var(--psynet-focus-ring);
+            outline-offset: 2px;
+        }
     </style>
 
     <div id="slider-video-container">
@@ -1632,24 +1754,48 @@
     </div>
 
     <script>
-        function updateVideoFromSlider() {
-            let slider_value = document.getElementById("slider").value;
-            let video = document.getElementById("slider-video");
+        let sliderVideoAnimationFrame = null;
+        let sliderVideoActive = true;
 
+        function stopSliderVideoAnimation() {
+            sliderVideoActive = false;
+            if (sliderVideoAnimationFrame !== null) {
+                cancelAnimationFrame(sliderVideoAnimationFrame);
+                sliderVideoAnimationFrame = null;
+            }
+        }
+
+        psynet.addPageCleanupCallback(stopSliderVideoAnimation);
+
+        function updateVideoFromSlider() {
+            let slider = document.getElementById("slider");
+            let video = document.getElementById("slider-video");
+            if (!sliderVideoActive || slider === null || video === null) {
+                sliderVideoAnimationFrame = null;
+                return;
+            }
+
+            let slider_value = slider.value;
             video.currentTime = slider_value * video.duration;
-            window.requestAnimationFrame(updateVideoFromSlider);
+            sliderVideoAnimationFrame = window.requestAnimationFrame(updateVideoFromSlider);
         };
 
         psynet.trial.onEvent("responseEnable", function() {
             $("#slider-video").css("visibility", "visible");
-            updateVideoFromSlider()
+            if (sliderVideoAnimationFrame === null) {
+                updateVideoFromSlider();
+            }
         });
 
-        retrieveResponse = function() {
+        psynet.trial.onEvent("trialStop", function() {
+            stopSliderVideoAnimation();
+        });
+
+        psynet.setRetrieveResponseHandler(function() {
             return {
                 rawAnswer: parseFloat($("#slider").get(0).value)
             }
-        }
+        })
     </script>
 {% endmacro %}
 
@@ -1684,16 +1830,21 @@
         // survey.showCompleteButton = false; // only available in SurveyJS v2.0.0
         survey.showNavigationButtons = false;
 
-        psynet.stageResponse = () => {
+        let psynetSurveyCompletionStarted = false;
+        psynet.setStageResponseHandler(() => {
             // This will actually do more than stage the response,
             // it'll trigger the full submission.
-            let success = survey.completeLastPage()
+            psynetSurveyCompletionStarted = false;
+            let success = survey.completeLastPage();
+            if (psynetSurveyCompletionStarted) {
+                return psynet.SUBMISSION_HANDLED;
+            }
             if (!success) {
                 throw new Error(
                     "The participant failed SurveyJS's validation checks (e.g. because they forgot to answer a question). They will be asked to try again."
                 );
             }
-        }
+        })
 
         {% endif %}
 
@@ -1705,6 +1856,7 @@
             // See https://github.com/surveyjs/survey-library/issues/1242 for a discussion.
             options.allowComplete = false;
             options.allowCompleting = false;
+            psynetSurveyCompletionStarted = true;
             asyncPostResults(sender);
         }
 
@@ -1718,7 +1870,9 @@
 
             const success = await psynet.nextPage(results);
             if (success) {
-                sender.doComplete();
+                if (survey === sender) {
+                    sender.doComplete();
+                }
             } else {
                 $("#main-body").show()
                 survey.onCompleting.add(handleSurveyCompletion);
@@ -1733,12 +1887,21 @@
         });
         survey.onCompleting.add(handleSurveyCompletion);
 
-        $(function() {
-            $("#surveyContainer").Survey({ model: survey });
+        $("#surveyContainer").Survey({ model: survey });
+
+        psynet.addPageCleanupCallback(function() {
+            if (survey) {
+                survey.onCompleting.remove(handleSurveyCompletion);
+                if (typeof survey.dispose === "function") {
+                    survey.dispose();
+                }
+                survey = null;
+            }
+            $("#surveyContainer").empty();
         });
     }
 
-    document.addEventListener("DOMContentLoaded", initSurvey);
+    psynet.trial.onEvent("trialConstruct", initSurvey);
 
     </script>
 
@@ -1746,23 +1909,13 @@
 
 
 {% macro terminate_control(params) %}
-    <style>
-        .push-button-container {
-            display: {% if params.arrange_vertically %}grid{% else %}flex{% endif %};
-            flex-wrap: wrap;
-            justify-content: center;
-            max-height: 420px;
-            overflow-y: auto;
-        }
-    </style>
-
-    <div class="push-button-container">
+    <div class="push-button-container{% if params.arrange_vertically %} push-button-container--vertical{% endif %}">
         {% for item in params.items %}
         <button
                 type="button"
                 id="{{ item.id }}"
                 class="{{ item.class }}"
-                onclick="clickedButton(this, this.id, {{ item.allowed | tojson }});"
+                data-allowed="{{ item.allowed | tojson }}"
         >
             {% autoescape off %}
             {{ item.label }}
@@ -1772,14 +1925,24 @@
     </div>
 
     <script>
-
-        clickedButton = function(button, id, allowed) {
+        let handleTerminateControlClick = function(button, id, allowed) {
             if (allowed) {
                 psynet.nextPage(id);
             } else {
                 terminateParticipant("{{ params.label }}_" + id)
             }
         };
+
+        psynet.trial.onEvent("trialConstruct", function() {
+            document
+                .querySelectorAll(".push-button-container > button")
+                .forEach(function(button) {
+                    psynet.addPageEventListener(button, "click", function() {
+                        let allowed = button.dataset.allowed === "true";
+                        handleTerminateControlClick(button, button.id, allowed);
+                    });
+                });
+        });
     </script>
 {% endmacro %}
 
@@ -1821,8 +1984,8 @@
     }
 
 
-    psynet.stageResponse = async function (){
+    psynet.setStageResponseHandler(async function (){
         psynet.response.staged.rawAnswer = await getMonitorInformation()
-    }
+    })
 </script>
 {% endmacro %}

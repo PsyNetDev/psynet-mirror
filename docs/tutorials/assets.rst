@@ -25,6 +25,29 @@ We recommend most users go for this option as it offers the best performance.
 However, other backends are possible, for example to store assets on Amazon S3.
 See the :class:`~psynet.asset.S3Storage` class for more details.
 
+Managed assets are stored by SHA-256 content identity under paths of the form
+``objects/sha256/<digest>``. Local and on-demand browser access uses a stable,
+random access token:
+
+.. code-block:: text
+
+    /asset/<access_token>
+
+The token is an unguessable capability associated with the Asset row; it is not
+derived from the content hash. S3-backed managed assets use a direct public
+object URL instead (bytes are not proxied through PsyNet). External assets keep
+their raw URL and are not proxied through PsyNet. On-demand assets are also
+served via ``/asset/<access_token>`` and are generated when requested rather
+than deposited into object storage by default.
+
+Deposited managed assets receive a long-lived immutable cache policy. Local
+asset responses are marked private so shared proxies do not retain participant
+media. If a local asset is deposited again with different contents, PsyNet
+rotates its access token and the old URL stops working. S3-backed assets instead
+change their direct, content-addressed object URL when their contents change.
+On-demand assets continue to revalidate because their bytes are generated at
+request time.
+
 .. warning::
     PsyNet's asset management system currently has some performance overhead that can make it slow
     to deploy large experiments (e.g. 1000s of files). For an alternative manual approach, see
@@ -285,28 +308,26 @@ By default, PsyNet organizes your storage back-end in a sensible hierarchy
 so that you can easily look up assets generated from a given historic experiment
 deployment. However, there are some limitations of working with this format:
 
-- The file names often contain obfuscation components for security purposes,
-  for example ``config_variables__abfe4815-f038-4a47-b59d-8c462d3d5b28.txt``,
-  which are ugly to retain in the long term.
-- Cached files won't be included in the experiment directory, so if you want
-  to construct a full set of your experiment's assets for your research paper's
-  Supplementary Materials, you'll have to do some extra work digging those out
-  from elsewhere in your storage back-end.
+- Server-side managed assets use content-addressed ``objects/sha256/<digest>``
+  paths. Exported archives instead use each asset's semantic ``export_path``.
+- Cached files are omitted from the export. If you need a full set of stimuli
+  for supplementary materials, copy them from the experiment directory or from
+  storage.
 
 PsyNet therefore provides an additional workflow for exporting assets.
 This workflow is accessed via the standard ``psynet export`` command
 that is responsible for exporting the database contents once an experiment is finished.
-The current default behaviour is to export assets
-that are not marked as cached (because such assets typically correspond to pregenerated stimuli)
-and not generated using functions (because such assets can typically be generated on demand).
-To export more liberally, you can set ``--assets all`` to export all assets.
-You can alternatively set ``--assets none`` to export none.
+By default (``--assets collected``), PsyNet exports managed assets deposited
+during the experiment — for example recordings. Cached stimuli, external URLs,
+and on-demand assets are omitted. Use ``--assets none`` to skip asset files.
+See :doc:`/deploy/data` for the export layout.
 
 .. warning::
-    The ``psynet export`` workflow for exporting assets is still somewhat basic,
-    and not optimized well for large experiments. In such cases, it might be better
-    to export with ``--assets none`` and then manually download the assets you need
-    from the storage back-end. If you are using an SSH server, you can do this using the
+    Large experiments can still take a while to export when many collected
+    assets are included. SSH command-line exports reuse a local object cache
+    and copy missing files with ``rsync``. You can
+    also export with ``--assets none`` and download selected files from storage.
+    If you are using an SSH server, you can do this using the
     ``scp`` command, for example:
 
     ::
@@ -316,7 +337,7 @@ You can alternatively set ``--assets none`` to export none.
             ~/Downloads/my-experiment-assets
 
     If you are unfamiliar with the ``scp`` command, you can read more about it
-    `here <https://linux.die.net/man/1/scp>`_.
+    `here <https://man7.org/linux/man-pages/man1/scp.1.html>`_.
 
     If you are using S3 storage, you can download the assets using the ``aws s3 cp`` command.
     for example:

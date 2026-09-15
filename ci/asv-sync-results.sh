@@ -2,8 +2,17 @@
 # Sync ASV benchmark results with the `benchmark-results` orphan branch.
 #
 # Bootstraps the branch on first run, attaches it as a git worktree at
-# `.asv/results/`, runs `asv run` (forwarding any arguments), commits any
-# new result files back to the branch, then detaches the worktree.
+# `.asv/results/`, runs an ASV command (default: `asv run`, forwarding any
+# arguments), commits any new result files back to the branch, then detaches
+# the worktree.
+#
+# ASV command modes:
+#   - `asv run` benchmarks the selected commit(s) and records their results.
+#     In CI we use this for result publishing when we only need fresh data.
+#   - `asv continuous BASE HEAD` benchmarks BASE and HEAD back-to-back on the
+#     same runner, compares the results, and exits non-zero if HEAD regresses.
+#     In CI we use this when benchmark results should both be published and act
+#     as a regression gate.
 #
 # Flags:
 #   --init-only         Ensure the branch exists, then exit.
@@ -12,6 +21,9 @@
 #                       `asv.conf.json` (typically `master`). Generated
 #                       results are NOT committed to `benchmark-results`
 #                       in this mode — use it for local iteration only.
+#   --continuous        Run `asv continuous` instead of `asv run`. The ASV exit
+#                       status is preserved, but result files are committed
+#                       before the script exits.
 #
 # Push manually after running: `git push <remote> benchmark-results`.
 set -euo pipefail
@@ -24,11 +36,12 @@ ATTACHED=0
 TMP_CONF=""
 USE_CURRENT_BRANCH=0
 INIT_ONLY=0
+ASV_COMMAND="run"
 
 # shellcheck source=ci/asv-worktree-lib.sh
 source "$(dirname "$0")/asv-worktree-lib.sh"
 
-# Parse our own flags; everything else is forwarded to `asv run`.
+# Parse our own flags; everything else is forwarded to the selected ASV command.
 ASV_RUN_ARGS=()
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -38,6 +51,10 @@ while [ $# -gt 0 ]; do
             ;;
         --current-branch)
             USE_CURRENT_BRANCH=1
+            shift
+            ;;
+        --continuous)
+            ASV_COMMAND="continuous"
             shift
             ;;
         *)
@@ -91,12 +108,13 @@ if [ "$USE_CURRENT_BRANCH" = "1" ]; then
 fi
 
 asv "${ASV_CONF_ARGS[@]}" machine --yes --machine "${ASV_MACHINE_NAME:-$(hostname)}"
-asv "${ASV_CONF_ARGS[@]}" run "${ASV_RUN_ARGS[@]}"
+ASV_STATUS=0
+asv "${ASV_CONF_ARGS[@]}" "$ASV_COMMAND" "${ASV_RUN_ARGS[@]}" || ASV_STATUS=$?
 
 if [ "$USE_CURRENT_BRANCH" = "1" ]; then
     echo "Skipping commit (--current-branch). Result files were written under $RESULTS_DIR but will not be committed."
     echo "The worktree can only be cleanly removed once those files are deleted; otherwise it will be left in place with a warning."
-    exit 0
+    exit "$ASV_STATUS"
 fi
 
 cd "$RESULTS_DIR"
@@ -107,3 +125,5 @@ if [ -n "$(git status --porcelain)" ]; then
 else
     echo "No new results to commit"
 fi
+
+exit "$ASV_STATUS"

@@ -72,6 +72,8 @@ class ColorSliderPage(ModularPage):
                 },
             ),
             time_estimate=time_estimate,
+            css_links=["/static/color-slider.css"],
+            js_page_modules=["/static/color-slider.js"],
         )
 
     def metadata(self, **kwargs):
@@ -93,7 +95,7 @@ class CustomNetwork(GibbsNetwork):
         logger.info(
             "Running custom async_post_grow_network function (network id = %i)", self.id
         )
-        if self.n_alive_nodes > 1:
+        if len(self.alive_nodes) > 1:
             if self.head.id % 3 == 0:
                 assert False, "Intentional failure in async_post_grow_network"
             elif self.head.id % 4 == 0:
@@ -238,14 +240,14 @@ class Exp(psynet.experiment.Experiment):
         assert not trials[1].failed
 
         assert trials[2].failed
-        assert trials[2].failed_reason.startswith(
-            "Exception in asynchronous process: AssertionError"
-        )
+        # call_async_post_trial fails the trial before the process cascade, so the
+        # durable reason is async_post_trial_failed (not the outer process message).
+        assert trials[2].failed_reason.startswith("async_post_trial_failed")
+        assert trials[2].async_post_trial_failed
 
         assert trials[3].failed
-        assert trials[3].failed_reason.startswith(
-            "Exception in asynchronous process: JobTimeoutException"
-        )
+        assert trials[3].failed_reason.startswith("async_post_trial_failed")
+        assert trials[3].async_post_trial_failed
 
     def test_experiment(self):
         super().test_experiment()

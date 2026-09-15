@@ -118,7 +118,7 @@ class Notifier:
     def export_url_message(self):
         return self.url(
             "Trigger export",
-            f"{self.exp.dashboard_url}/export/trigger?anonymize=both&assets=none&type=psynet",
+            f"{self.exp.dashboard_url}/export/trigger?assets=none",
         )
 
     def on_launch(self):

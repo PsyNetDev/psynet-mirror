@@ -5,6 +5,8 @@ Demography
 General
 +++++++
 
+.. automodule:: psynet.demography.general
+
 ===============
 BasicDemography
 ===============

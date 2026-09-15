@@ -1,5 +1,7 @@
 # Agent instructions
 
+On Windows, develop in WSL (Ubuntu) using Linux commands. Native Windows is not supported.
+
 Start by following `psynet/resources/experiment_scripts/AGENTS.md`.
 
 Then act on the following PsyNet developer instructions:
@@ -171,13 +173,49 @@ When adding or updating Playwright E2E tests, follow these rules to reduce CI fl
     - For `VideoPrompt`, verify `video#prompt` playback behavior.
     - Align assertions with how that step is implemented in experiment/template code.
 
-## Branch review command
+## Automatic code review
 
-When reviewing the current PsyNet branch against `master`, prefer the repo-local
-Cursor command `/review`.
+Before finalizing a merge request, prompt the user to run an automatic code
+review. Suggest the repo-local Cursor command `/branch-review`, which invokes
+the `branch-review` skill at `.cursor/skills/branch-review/SKILL.md`. This
+specific command name avoids ambiguity with generic Cursor-provided review
+commands.
 
-- `/review` is defined in `.cursor/commands/review.md`
-- its detailed workflow lives in `.cursor/skills/branch-review/SKILL.md`
+If the user runs `/branch-review`, address any actionable findings before
+finalizing the merge request. If the user declines or the review is not run,
+record that explicitly in the merge request description.
+
+## Merge request descriptions
+
+Use `.gitlab/merge_request_templates/Default.md` as the template.
+Write for experiment authors, not only for maintainers: prefer plain language
+over internal jargon, and include short code examples when the change affects
+a public API or migration.
+
+When running `/branch-review`, always update the merge request title and
+description so they match the committed branch diff.
+
+## CLI development
+
+Use Click for new and refactored command-line interfaces, following the
+project's existing command patterns.
+
+## Simplification and refactoring
+
+When a change seems to require adding substantial new code, pause to consider
+whether package functionality or behavior can be simplified instead. Prefer
+solutions that avoid unnecessary code growth, remove obsolete code, or reuse
+existing abstractions, and call out promising refactoring opportunities to the
+user when they are relevant.
+
+## Framework improvements
+
+When developing or documenting a workflow, identify missing PsyNet abstractions
+that make experiment code override private methods, repeat framework
+bookkeeping, or use public hooks for unintended purposes. Propose a framework
+improvement alongside the experiment-level workflow and clearly distinguish it
+from APIs that already exist. If the user approves the proposal, implement it
+with focused tests and update the workflow to use the new public interface.
 
 ## Testing
 
@@ -185,6 +223,34 @@ Non-trivial code changes should be tested.
 Prefer red/green test-driven development, but avoid committing overly verbose tests in the final PR.
 Implement sensible unit tests where appropriate.
 Verify changes end-to-end by running `psynet test local` within a relevant demo.
+Prefer concise tests that exercise real/public interfaces.
+Avoid very long tests with extensive monkeypatching unless there is no practical
+alternative; if monkeypatching is necessary, keep it minimal and focused on
+observable behavior rather than internal implementation details.
+
+## Code organization and documentation
+
+- Prefer marking module-internal helper functions with a leading underscore. Keep public-looking names for functions that are intended to be imported or called from outside the module.
+- When adding a feature that operates heavily within a module and that module lacks an explanatory module docstring, add one. The docstring should explain why the module exists, the important design constraints, and how maintainers should interact with it. When you add such a docstring, explicitly suggest that the user reviews it.
+- When adding or changing documentation, use Sphinx-native cross references for internal documentation and API links. Prefer roles such as `:doc:`, `:ref:`, `:class:`, `:func:`, and `:meth:` over raw relative `.html` links so links remain valid across builders and directory moves. If a URL must be ignored by linkcheck, keep the ignore pattern as narrow as possible and document why.
+- After editing a skill or a docs page, review it as described in `.cursor/skills/create-skill/SKILL.md` (section "After writing").
+
+## Error handling policy
+
+Avoid silently suppressing broad exceptions (for example `except Exception: pass`).
+If a broad exception must be caught for resilience, emit at least a warning-level log
+with useful context unless the path is intentionally noisy best-effort cleanup.
+
+## Database migrations
+
+We assume PsyNet experiments are short-lived and their databases do not need
+to persist across PsyNet version upgrades. As a result, avoid complicating
+code to support database migrations or backward-compatible schema changes.
+
+## Docstrings
+
+Prefer including function docstrings. Short docstrings are fine; often a brief
+descriptive summary line is sufficient.
 
 ## Finishing up changes
 
@@ -196,7 +262,7 @@ When you make changes to the PsyNet codebase:
    psynet dev changelog new <category> "<short description>"
    ```
 
-   `<category>` is one of `breaking`, `added`, `changed`, `deprecated`, `removed`, `fixed`, `updated`, or `documentation`. The helper writes a fragment `changelog.d/<YYYYMMDD>-<slug>.<category>.md` containing your description as a stub, which you then edit to the final entry (e.g. `Added support for X.`). Do not include author or reviewer metadata in changelog fragments. End each entry with a period. The date prefix keeps fragments roughly chronological and the slug makes them descriptive at a glance; same-day collisions are caught by the helper, in which case use a more specific description. Each entry should summarize the overall user-facing change rather than the incremental process of building it.
+   `<category>` is one of `breaking`, `added`, `changed`, `deprecated`, `removed`, `fixed`, `updated`, or `documentation`. The helper writes a fragment `changelog.d/<YYYYMMDD>-<slug>.<category>.md` containing your description as a stub, which you then edit to the final entry (e.g. `Added support for X.`). Do not include author or reviewer metadata in changelog fragments. End each entry with a period. The date prefix keeps fragments roughly chronological and the slug makes them descriptive at a glance; same-day collisions are caught by the helper, in which case use a more specific description. Each entry should summarize the overall user-facing change rather than the incremental process of building it. Do not describe undoing, reverting, or revising content that was created earlier in the same merge request; describe only the final result that the merge request delivers.
 
    Do **not** commit a regenerated `CHANGELOG.md` from your MR — `CHANGELOG.md` is a generated artifact, rebuilt by the maintainer at release time. Committing fragments only avoids merge conflicts on `CHANGELOG.md` between MRs. Run `psynet dev changelog preview` locally from a PsyNet source checkout if you want to preview how the fragments will render; it prints the preview to stdout and leaves `CHANGELOG.md` unchanged. Maintainers cut a release from a PsyNet source checkout with `psynet dev changelog release <version> <date>`, which consumes fragments and inserts a versioned section. Alpha versions do not get changelog release sections. Stable releases consume matching beta/release-candidate sections plus any remaining fragments.
 
@@ -211,4 +277,13 @@ When you make changes to the PsyNet codebase:
 
    If pre-commit is not installed, install it first with `pip3 install pre-commit`.
 
-3. **Commit and push**: Commit all changes including changelog fragments (but not a regenerated `CHANGELOG.md`) and any pre-commit formatting fixes.
+3. **Do not update package catalogs**: Merge requests should not edit
+   `psynet/locales` (`.po` / `.pot` files). Refresh them on the release
+   branch with `psynet translate`, where `test_psynet_translations_up_to_date`
+   runs. Until then a missing PsyNet catalog entry falls back to English with
+   a warning during test runs; `psynet debug` and experiment-owned catalogs
+   still raise. Tests that pin translated PsyNet copy should use
+   `is_release_branch()` from `psynet.utils`, or `release_branch_only` from
+   `psynet.pytest_psynet`.
+
+4. **Commit and push**: Commit all changes including changelog fragments (but not a regenerated `CHANGELOG.md`) and any pre-commit formatting fixes.

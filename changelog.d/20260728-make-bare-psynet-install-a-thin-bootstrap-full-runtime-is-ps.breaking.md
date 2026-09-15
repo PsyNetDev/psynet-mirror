@@ -1,0 +1,1 @@
+Breaking: ``pip install psynet`` now installs only a small bootstrap CLI. Run ``psynet setup`` in your experiment (or ``pip install -e '.[dev]'`` from a PsyNet source checkout) to get the full runtime.

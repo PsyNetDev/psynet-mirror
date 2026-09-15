@@ -1,6 +1,9 @@
+import importlib
 import inspect
 import pickle
+import types
 import warnings
+from dataclasses import dataclass
 from functools import cached_property
 
 import dominate.tags
@@ -11,10 +14,143 @@ from jsonpickle.unpickler import Unpickler, loadclass
 from jsonpickle.util import importable_name
 from markupsafe import Markup
 
-from .data import SQLBase
-from .utils import get_logger
+from .data import SQLBase, get_primary_key_values
+from .utils import NoArgumentProvided, call_function_with_context, get_logger
 
 logger = get_logger()
+
+
+class CallableSerializationError(ValueError):
+    """
+    Raised when a callable cannot be serialized safely.
+    """
+
+
+@dataclass
+class SerializedCallable:
+    function: callable
+    arguments: dict
+
+    def __call__(
+        self,
+        *,
+        participant=NoArgumentProvided,
+        experiment=NoArgumentProvided,
+        **kwargs,
+    ):
+        # TODO: Generalize this context forwarding to cover the other
+        # callback/context args too, such as group, participants, barrier,
+        # assets, nodes, trial_maker, and trial.
+        # Should ideally do this without hardcoding the arguments.
+        if participant is not NoArgumentProvided:
+            kwargs["participant"] = participant
+        if experiment is not NoArgumentProvided:
+            kwargs["experiment"] = experiment
+        merged = {**(self.arguments or {}), **kwargs}
+        return call_function_with_context(self.function, **merged)
+
+
+def serialize_callable(callable_obj, context: str):
+    """
+    Serialize a callable with centralized validation and error messaging.
+    """
+    if callable_obj is None or isinstance(callable_obj, SerializedCallable):
+        return callable_obj
+    if not callable(callable_obj):
+        raise CallableSerializationError(
+            _format_callable_error(
+                context,
+                f"Received {type(callable_obj).__name__}, which is not callable.",
+            )
+        )
+
+    if inspect.ismethod(callable_obj) and callable_obj.__self__ is not None:
+        method_self = callable_obj.__self__
+        if isinstance(method_self, type):
+            function, arguments = prepare_function_for_serialization(callable_obj, {})
+            return SerializedCallable(function=function, arguments=arguments)
+        if _is_trial_maker(method_self):
+            return SerializedCallable(
+                function=_call_trial_maker_method,
+                arguments={
+                    "trial_maker_id": method_self.id,
+                    "method_name": callable_obj.__name__,
+                },
+            )
+        if isinstance(method_self, SQLBase):
+            _ensure_sql_primary_key(method_self, context)
+            function, arguments = prepare_function_for_serialization(callable_obj, {})
+            return SerializedCallable(function=function, arguments=arguments)
+
+        raise CallableSerializationError(
+            _format_callable_error(
+                context,
+                f"Provided a bound instance method ('{callable_obj.__qualname__}').",
+            )
+        )
+
+    try:
+        function, arguments = prepare_function_for_serialization(callable_obj, {})
+    except Exception as err:
+        raise CallableSerializationError(
+            _format_callable_error(context, str(err))
+        ) from err
+    return SerializedCallable(function=function, arguments=arguments)
+
+
+def _format_callable_error(context: str, detail: str) -> str:
+    return (
+        f"{context} must be a module-level function, a @staticmethod/@classmethod, "
+        "or an instance method on a TrialMaker or ORM model with a primary key. "
+        f"{detail}"
+    )
+
+
+def _is_trial_maker(instance) -> bool:
+    from psynet.trial.main import TrialMaker
+
+    return isinstance(instance, TrialMaker)
+
+
+def _call_trial_maker_method(
+    trial_maker_id: str,
+    method_name: str,
+    group=None,
+    participants=None,
+    participant=None,
+    barrier=None,
+    experiment=None,
+):
+    from psynet.experiment import get_trial_maker
+
+    if not trial_maker_id:
+        raise CallableSerializationError(
+            _format_callable_error(
+                "TrialMaker callable",
+                "TrialMaker is missing an id. Ensure the TrialMaker is initialized.",
+            )
+        )
+    trial_maker = get_trial_maker(trial_maker_id)
+    method = getattr(trial_maker, method_name)
+    return call_function_with_context(
+        method,
+        group=group,
+        participants=participants,
+        participant=participant,
+        barrier=barrier,
+        experiment=experiment,
+    )
+
+
+def _ensure_sql_primary_key(instance, context: str) -> None:
+    primary_keys = get_primary_key_values(instance)
+    if any(key is None for key in primary_keys.values()):
+        raise CallableSerializationError(
+            _format_callable_error(
+                context,
+                f"The ORM instance is missing a primary key: {primary_keys}.",
+            )
+        )
 
 
 # Without jsonpickle.ext.numpy.register_handlers(), numpy arrays are serialized very verbosely, e.g.
@@ -184,8 +320,7 @@ class SQLHandler(jsonpickle.handlers.BaseHandler):
     """
 
     def get_primary_keys(self, obj):
-        primary_key_cols = [c.name for c in obj.__class__.__table__.primary_key.columns]
-        return {key: getattr(obj, key) for key in primary_key_cols}
+        return get_primary_key_values(obj)
 
     def flatten(self, obj, state):
         primary_keys = self.get_primary_keys(obj)
@@ -214,6 +349,46 @@ class DominateHandler(jsonpickle.handlers.BaseHandler):
 
 
 jsonpickle.register(dominate.dom_tag.dom_tag, DominateHandler, base=True)
+
+
+def _callable_to_path(function):
+    if inspect.ismethod(function):
+        if function.__self__ is not None and not inspect.isclass(function.__self__):
+            raise TypeError("Cannot serialize bound instance methods.")
+        function = function.__func__
+
+    if getattr(function, "__name__", None) == "<lambda>":
+        raise TypeError("Cannot serialize lambda functions.")
+
+    if "<locals>" in getattr(function, "__qualname__", ""):
+        raise TypeError("Cannot serialize functions defined within other functions.")
+
+    module = getattr(function, "__module__", None)
+    if not module:
+        raise TypeError("Cannot serialize callables without a module.")
+
+    return f"{module}.{function.__qualname__}"
+
+
+def _callable_from_path(path):
+    module_name, qualname = path.split(".", 1)
+    module = importlib.import_module(module_name)
+    target = module
+    for attr in qualname.split("."):
+        target = getattr(target, attr)
+    return target
+
+
+class CallableHandler(jsonpickle.handlers.BaseHandler):
+    def flatten(self, obj, state):
+        return {"py/function": _callable_to_path(obj)}
+
+    def restore(self, state):
+        return _callable_from_path(state["py/function"])
+
+
+jsonpickle.register(types.FunctionType, CallableHandler, base=True)
+jsonpickle.register(types.MethodType, CallableHandler, base=True)
 
 
 def prepare_function_for_serialization(function, arguments):

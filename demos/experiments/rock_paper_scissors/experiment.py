@@ -68,11 +68,15 @@ class RockPaperScissorsTrial(StaticTrial):
             )
             tags.h2("Now chat with your partner about the round you just played!")
 
+        # Derive the room from this trial's sync group (``self.sync_group``)
+        # rather than ``participant.sync_group``, which raises an error if the
+        # participant belongs to more than one active sync group. Both members
+        # share the same ``self.sync_group.id``, so they meet in the same room.
         return ModularPage(
             "results",
             prompt,
             chatroom=ChatRoom(
-                room_id=f"rps_room_{participant.sync_group.id}",
+                room_id=f"rps_room_{self.sync_group.id}",
                 show_participants=True,
                 show_history=True,
             ),
@@ -207,5 +211,5 @@ class Exp(psynet.experiment.Experiment):
         bots[1].take_page()
         advance_past_wait_pages(bots)
 
-        assert "That's the end of the experiment!" in bots[0].current_page_text
-        assert "That's the end of the experiment!" in bots[1].current_page_text
+        assert "That's the end!" in bots[0].current_page_text
+        assert "That's the end!" in bots[1].current_page_text

@@ -33,6 +33,7 @@ variables:
   REDIS_URL: redis://redis:6379
   HEADLESS: "TRUE"
   DOCKER_LOCAL_TAG: psynet-build
+  PYTHON_VERSION: "3.13"
   DOCKER_HOST: tcp://docker:2375
   DOCKER_DRIVER: overlay2
   DOCKER_TLS_CERTDIR: ""
@@ -42,7 +43,7 @@ before_script:
   - export REDIS_IP=$(getent ahostsv4 redis | awk '{ print $1 }' | tail -n 1)
   - echo $POSTGRES_IP
   - echo $REDIS_IP
-  - docker build --tag $DOCKER_LOCAL_TAG .
+  - docker build --build-arg PYTHON_VERSION=$PYTHON_VERSION --tag $DOCKER_LOCAL_TAG .
 
 .default_rules: &default_rules
   rules:
@@ -61,11 +62,19 @@ pre_commit:
   script:
     - pre-commit run --all-files
 
+validate_agent_skills:
+  image: python:3.13
+  <<: *default_rules
+  before_script:
+    - pip install pyyaml skills-ref
+  script:
+    - python scripts/validate_agent_skills.py
+
 changelog_check:
   image: python:3.13
   stage: test
   before_script:
-    - python -m pip install -e .
+    - python -m pip install -e '.[dev]'
   script:
     - |
       git fetch --unshallow origin || git fetch --depth=100 origin
@@ -76,14 +85,35 @@ changelog_check:
     # Release branches regenerate CHANGELOG.md from fragments.
     - if: $CI_COMMIT_BRANCH =~ /^release-/ || $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^release-/
       when: never
+    # Post-release version bumps are release bookkeeping, not user-facing changes.
+    - if: $CI_COMMIT_BRANCH == "bump-master-post-release" || $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "bump-master-post-release"
+      when: never
     - if: $CI_MERGE_REQUEST_ID
       when: always
     - when: never
 
-tests:
+.release_branch_only: &release_branch_only
+  rules:
+    - if: $CI_COMMIT_BRANCH =~ /^release-/ || $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^release-/
+      when: always
+    - when: never
+
+# Shared definition of a PsyNet test-suite job, parameterized by PYTHON_VERSION
+# and TEST_SCOPE.
+#
+# run-ci-tests.sh splits tests by CI_NODE_INDEX/CI_NODE_TOTAL, but GitLab owns
+# those variables: for `parallel:matrix` jobs it numbers them across all
+# permutations rather than within one, so a matrix job cannot set them directly.
+# Shard coordinates therefore travel as SHARD_INDEX/SHARD_TOTAL and are mapped
+# on to CI_NODE_* below, falling back to GitLab's own numbering when unset. That
+# keeps plain `parallel: N` jobs working unchanged while letting matrix jobs
+# declare a shard dimension of their own.
+.test_suite:
   parallel: 10
   stage: test
   <<: *default_rules
+  variables:
+    TEST_SCOPE: full
   script:
     - export PSYNET_WORKSPACE=/root/workspaces/PsyNet
     - docker run
@@ -91,8 +121,12 @@ tests:
       --add-host=redis:$REDIS_IP
       -e HEADLESS=TRUE -e REDIS_URL -e DATABASE_URL -e POSTGRES_DB -e POSTGRES_USER -e POSTGRES_PASSWORD
       -e AWS_ACCESS_KEY_ID -e AWS_DEFAULT_REGION -e AWS_SECRET_ACCESS_KEY
-      -e CI -e CI_NODE_TOTAL -e CI_NODE_INDEX
+      -e CI
+      -e CI_NODE_TOTAL="${SHARD_TOTAL:-$CI_NODE_TOTAL}"
+      -e CI_NODE_INDEX="${SHARD_INDEX:-$CI_NODE_INDEX}"
       -e CI_COMMIT_REF_NAME
+      -e SKIP_PYTHON_VERSION_CHECK
+      -e PYTHON_VERSION -e TEST_SCOPE
       -e PSYNET_WORKSPACE
       -v "$PWD:$PSYNET_WORKSPACE"
       -v "$PWD/public:/public"
@@ -102,7 +136,42 @@ tests:
     paths:
       - public/
 
-playwright_e2e:
+tests_python_3_13:
+  extends: .test_suite
+  # Stated explicitly rather than inherited from the global default, so this
+  # job keeps testing 3.13 even if the default Python version changes.
+  variables:
+    PYTHON_VERSION: "3.13"
+
+# To reduce CI cost, non-recommended Python versions (3.11, 3.12, 3.14) are
+# only verified on release branches: day-to-day MRs rarely affect version
+# compatibility. Note that regular pipelines validate dependency resolution
+# only for the default Python version (via the Docker build's `uv pip
+# compile`); all supported versions are resolution-checked when maintainers
+# run `psynet dev ci update-dallinger-constraints`, and fully tested on
+# release-branch pipelines.
+tests_python_3_14:
+  extends: .test_suite
+  <<: *release_branch_only
+  variables:
+    PYTHON_VERSION: "3.14"
+    SKIP_PYTHON_VERSION_CHECK: "1"
+
+# GitLab does not allow combining `parallel: N` with a matrix, so the shard is
+# added as its own matrix dimension; see the SHARD_* note on `.test_suite`.
+compatibility_tests:
+  extends: .test_suite
+  <<: *release_branch_only
+  parallel:
+    matrix:
+      - PYTHON_VERSION: ["3.11", "3.12"]
+        SHARD_INDEX: ["1", "2", "3", "4", "5"]
+        SHARD_TOTAL: "5"
+  variables:
+    SKIP_PYTHON_VERSION_CHECK: "1"
+    TEST_SCOPE: isolated
+
+playwright_e2e_legacy:
   stage: test
   <<: *default_rules
   script:
@@ -114,11 +183,12 @@ playwright_e2e:
       --add-host=redis:$REDIS_IP
       -e HEADLESS=TRUE -e REDIS_URL -e DATABASE_URL -e POSTGRES_DB -e POSTGRES_USER -e POSTGRES_PASSWORD
       -e AWS_ACCESS_KEY_ID -e AWS_DEFAULT_REGION -e AWS_SECRET_ACCESS_KEY
-      -e PLAYWRIGHT_JUNIT_OUTPUT_NAME=public/playwright-junit.xml
+      -e PLAYWRIGHT_JUNIT_OUTPUT_NAME=public/playwright-junit-legacy.xml
       -e PSYNET_WORKSPACE
+      -e inplace_timeline_transitions=false
       -v "$PWD:$PSYNET_WORKSPACE"
       -w $PSYNET_WORKSPACE
-      $DOCKER_LOCAL_TAG-playwright bash -c "uv pip install --no-cache --system --no-deps -e \"$PSYNET_WORKSPACE\" && npm ci && npx playwright test tests/playwright/demos --reporter=line,junit,html"
+      $DOCKER_LOCAL_TAG-playwright bash -c "uv pip install --no-cache --system --no-deps -e \"$PSYNET_WORKSPACE\" && npm ci && node tests/playwright/check-mode-tags.js && npx playwright test --grep '@both|@legacy-only' --reporter=line,junit,html"
   artifacts:
     when: always
     paths:
@@ -126,14 +196,48 @@ playwright_e2e:
       - test-results/
       - playwright-report/
     reports:
-      junit: public/playwright-junit.xml
+      junit: public/playwright-junit-legacy.xml
+
+playwright_e2e_default:
+  stage: test
+  <<: *default_rules
+  script:
+    - export PSYNET_WORKSPACE=/root/workspaces/PsyNet
+    - mkdir -p public test-results
+    - docker build --build-arg BASE_IMAGE=$DOCKER_LOCAL_TAG --tag $DOCKER_LOCAL_TAG-playwright -f Dockerfile.playwright .
+    - docker run
+      --add-host=postgres:$POSTGRES_IP
+      --add-host=redis:$REDIS_IP
+      -e HEADLESS=TRUE -e REDIS_URL -e DATABASE_URL -e POSTGRES_DB -e POSTGRES_USER -e POSTGRES_PASSWORD
+      -e AWS_ACCESS_KEY_ID -e AWS_DEFAULT_REGION -e AWS_SECRET_ACCESS_KEY
+      -e PLAYWRIGHT_JUNIT_OUTPUT_NAME=public/playwright-junit-default.xml
+      -e PSYNET_WORKSPACE
+      -v "$PWD:$PSYNET_WORKSPACE"
+      -w $PSYNET_WORKSPACE
+      $DOCKER_LOCAL_TAG-playwright bash -c "uv pip install --no-cache --system --no-deps -e \"$PSYNET_WORKSPACE\" && npm ci && node tests/playwright/check-mode-tags.js && npx playwright test --grep '@both|@inplace-only' --reporter=line,junit,html"
+  artifacts:
+    when: always
+    paths:
+      - public/
+      - test-results/
+      - playwright-report/
+    reports:
+      junit: public/playwright-junit-default.xml
 
 merge_test_results:
   image: python:3.13-alpine
   stage: test
   <<: *default_rules
-  needs: ["tests", "playwright_e2e"]
-  dependencies: ["tests", "playwright_e2e"]
+  needs:
+    - "tests_python_3_13"
+    # tests_python_3_14 and compatibility_tests only exist on
+    # release-branch pipelines.
+    - job: "tests_python_3_14"
+      optional: true
+    - job: "compatibility_tests"
+      optional: true
+    - "playwright_e2e_legacy"
+    - "playwright_e2e_default"
   when: always
   before_script:
     - pip install -q junitparser
@@ -144,9 +248,22 @@ merge_test_results:
     reports:
       junit: junit.xml
 
+# Full ASV suite for default-branch result publishing and regression checking.
+# Runs `asv continuous` so the previous and current default-branch commits are
+# benchmarked back-to-back on the same runner. Result files are still pushed to
+# the benchmark-results branch before the job propagates any regression failure.
 asv_benchmarks:
   stage: test
+  allow_failure: true
   resource_group: benchmark-results
+  variables:
+    # Full clone: the previous default-branch commit may be unreachable in the
+    # default shallow clone, but we need it as the regression baseline.
+    GIT_DEPTH: "0"
+    # Slow experiment load-test medians commonly swing ~1.2-1.3x on GitLab
+    # runners without a code change, so this job uses 2 rather than the fast
+    # merge-request gate's 1.25.
+    ASV_REGRESSION_FACTOR: "2"
   cache:
     key:
       files:
@@ -162,17 +279,27 @@ asv_benchmarks:
     - git config user.name "PsyNet CI"
     - git branch -f "$CI_COMMIT_REF_NAME" HEAD
     - 'sed -i "s|\"branches\": \[[^]]*\]|\"branches\": [\"$CI_COMMIT_REF_NAME\"]|" asv.conf.json'
-    - docker run
-      --add-host=postgres:$POSTGRES_IP
-      --add-host=redis:$REDIS_IP
-      -e HEADLESS=TRUE -e REDIS_URL -e DATABASE_URL -e POSTGRES_DB -e POSTGRES_USER -e POSTGRES_PASSWORD
-      -e CI -e CI_COMMIT_REF_NAME
-      -e PSYNET_WORKSPACE
-      -e ASV_MACHINE_NAME=gitlab-ci
-      -v "$PWD:$PSYNET_WORKSPACE"
-      -w $PSYNET_WORKSPACE
-      $DOCKER_LOCAL_TAG bash -c "uv pip install --no-cache --system --no-deps -e \"$PSYNET_WORKSPACE\" && uv pip install --no-cache --system asv virtualenv && bash ci/asv-sync-results.sh"
+    - export ASV_BASE="$(git rev-parse HEAD^1)"
+    - export ASV_HEAD="$CI_COMMIT_SHA"
+    - echo "Comparing full ASV benchmark suite $ASV_BASE -> $ASV_HEAD"
+    - rm -f .asv/asv-benchmarks-status
+    - |
+      set +e
+      docker run \
+        --add-host=postgres:$POSTGRES_IP \
+        --add-host=redis:$REDIS_IP \
+        -e HEADLESS=TRUE -e REDIS_URL -e DATABASE_URL -e POSTGRES_DB -e POSTGRES_USER -e POSTGRES_PASSWORD \
+        -e CI -e CI_COMMIT_REF_NAME \
+        -e PSYNET_WORKSPACE \
+        -e ASV_MACHINE_NAME=gitlab-ci \
+        -v "$PWD:$PSYNET_WORKSPACE" \
+        -w $PSYNET_WORKSPACE \
+        $DOCKER_LOCAL_TAG bash -c "uv pip install --no-cache --system --no-deps -e \"$PSYNET_WORKSPACE\" && uv pip install --no-cache --system asv virtualenv && bash ci/asv-sync-results.sh --continuous --factor \"$ASV_REGRESSION_FACTOR\" --split --show-stderr \"$ASV_BASE\" \"$ASV_HEAD\""
+      status=$?
+      set -e
+      echo "$status" > .asv/asv-benchmarks-status
     - git push "$ASV_RESULTS_REMOTE" benchmark-results
+    - exit "$(cat .asv/asv-benchmarks-status)"
   artifacts:
     when: on_failure
     paths:
@@ -182,25 +309,26 @@ asv_benchmarks:
       when: always
     - when: never
 
-# Gate merge requests on benchmark regressions. Runs `asv continuous`, which
-# builds and benchmarks both commits back-to-back on the same runner (so
-# runner-to-runner noise cancels out) and exits non-zero if any benchmark
-# regressed past --factor. The base is the MR's merge base with the target
-# branch (CI_MERGE_REQUEST_DIFF_BASE_SHA), and the head is the source branch
-# tip -- comparing those two real commits isolates exactly the MR's own
-# changes, independent of how far master has moved. Results are not committed
-# to the benchmark-results branch; this job is a gate only.
+# Gate merge requests on fast benchmark regressions. Runs `asv continuous`,
+# which builds and benchmarks both commits back-to-back on the same runner (so
+# runner-to-runner noise cancels out) and exits non-zero if any selected
+# benchmark regressed past --factor. Slow end-to-end experiment benchmarks stay
+# out of the MR gate and run only in the default-branch result publishing job
+# above. The base is the MR's merge base with the target branch
+# (CI_MERGE_REQUEST_DIFF_BASE_SHA), and the head is the source branch tip --
+# comparing those two real commits isolates exactly the MR's own changes,
+# independent of how far master has moved. Results are not committed to the
+# benchmark-results branch; this job is a gate only.
 asv_regression:
   stage: test
-  resource_group: benchmark-results
-  allow_failure: true
-  # Runs the full benchmark suite twice (base + head); generous enough to
-  # absorb a cold .asv/env cache and a slow shared runner without flaking.
-  timeout: 90m
+  # Still allows for a cold .asv/env cache and Docker startup, but the selected
+  # benchmark set should remain small enough for normal MR iteration.
+  timeout: 45m
   variables:
     # Full clone: the merge base can be far back in the target branch's
     # history and is otherwise unreachable in the default shallow clone.
     GIT_DEPTH: "0"
+    ASV_FAST_BENCHMARKS: "^fast\\."
   cache:
     key:
       files:
@@ -220,6 +348,7 @@ asv_regression:
     # pipeline it is empty and CI_COMMIT_SHA is itself the source branch tip.
     - export ASV_HEAD="${CI_MERGE_REQUEST_SOURCE_BRANCH_SHA:-$CI_COMMIT_SHA}"
     - echo "Comparing benchmark base $ASV_BASE -> head $ASV_HEAD"
+    - 'echo "Running fast ASV benchmark selector: $ASV_FAST_BENCHMARKS"'
     - docker run
       --add-host=postgres:$POSTGRES_IP
       --add-host=redis:$REDIS_IP
@@ -229,7 +358,7 @@ asv_regression:
       -e ASV_MACHINE_NAME=gitlab-ci
       -v "$PWD:$PSYNET_WORKSPACE"
       -w $PSYNET_WORKSPACE
-      $DOCKER_LOCAL_TAG bash -c "uv pip install --no-cache --system --no-deps -e \"$PSYNET_WORKSPACE\" && uv pip install --no-cache --system asv virtualenv && asv machine --yes --machine gitlab-ci && asv continuous --factor 1.25 --split --show-stderr $ASV_BASE $ASV_HEAD"
+      $DOCKER_LOCAL_TAG bash -c "uv pip install --no-cache --system --no-deps -e \"$PSYNET_WORKSPACE\" && uv pip install --no-cache --system asv virtualenv && asv machine --yes --machine gitlab-ci && asv continuous --factor 1.25 --split --show-stderr --bench \"$ASV_FAST_BENCHMARKS\" $ASV_BASE $ASV_HEAD"
   rules:
     - if: $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "issues/9123-performance-benchmark-site"
       when: never
@@ -267,11 +396,39 @@ benchmark_load_sweep:
     - when: manual
       allow_failure: true
 
+# Shared setup for docs CI. Replaces the global Docker before_script
+# and opts out of Docker-in-Docker, Postgres, and Redis.
+.docs_ci:
+  image: python:3.13
+  stage: test
+  <<: *default_rules
+  services: []
+  before_script:
+    - python -m pip install -e '.[dev]'
+
+# Check this commit's Sphinx docs without publishing. Treats warnings as
+# errors, then checks links in the same job so pip install runs once.
+# HTML runs first so an RST/autodoc failure is not mixed with a flaky URL.
+# The ``pages`` job remains the multi-version publish path for the default
+# branch and release tags.
+docs:
+  extends: .docs_ci
+  script:
+    - psynet dev docs make --strict
+    - psynet dev docs linkcheck --no-clean
+  artifacts:
+    when: on_failure
+    paths:
+      - docs/_build/html/
+      - docs/_build/linkcheck/
+    expire_in: 1 week
+
 # To do:
 # - Skip tests if the changes are only in the docs directory
 # Build and publish the multi-version docs site to GitLab Pages.
 # Build logic lives in docs/scripts/build_pages.sh; this job is a thin
 # wrapper that supplies the image, cache, artifacts, and rules.
+# ``services: []`` opts out of Docker-in-Docker, Postgres, and Redis.
 pages:
   image: python:3.13
   stage: deploy
@@ -287,6 +444,7 @@ pages:
     paths:
       - public/
     policy: pull-push
+  services: []
   before_script: []
   script:
     - bash docs/scripts/build_pages.sh
@@ -314,4 +472,3 @@ pages:
     - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+((rc|a)\d+)?$/
       when: always
     - when: never
-

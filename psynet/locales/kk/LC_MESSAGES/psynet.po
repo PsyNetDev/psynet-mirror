@@ -429,6 +429,11 @@ msgid "If so, please provide a few words describing the problem."
 msgstr "Егер солай болса, мәселені сипаттайтын бірнеше сөз жазыңыз."
 
 #: psynet/end.py
+#, fuzzy
+msgid "Finish"
+msgstr "Аяқтау"
+
+#: psynet/end.py
 #, fuzzy, python-brace-format
 msgctxt "final-page-rewards"
 msgid ""

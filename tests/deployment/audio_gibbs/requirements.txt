@@ -1,0 +1,3 @@
+psynet
+praat-parselmouth
+scipy

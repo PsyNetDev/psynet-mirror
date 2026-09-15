@@ -1,0 +1,1 @@
+Raised the default `min_browser_version` from Chrome 80 to Chrome 105, the first release supporting CSS `:has()`, which the default participant theme uses to style selected response options. Experiments that need to admit older browsers can still lower the value in `config.txt`.

@@ -374,7 +374,7 @@ Git will then display you a window like this:
   :width: 700
   :align: center
 
-This is the Vim text editor. It is famously frustrating for people who don’t know how to use it but for some reason it is the default text editor that comes up with people’s Git installations. At the time of writing, the simple question of ‘how do I exit Vim?’ has been viewed 2.5 million times on `StackOverflow <https://stackoverflow.com/questions/11828270/how-do-i-exit-the-vim-editor>`_:
+This is the Vim text editor. It is famously frustrating for people who don’t know how to use it but for some reason it is the default text editor that comes up with people’s Git installations. At the time of writing, the simple question of ‘how do I exit Vim?’ has been viewed 2.5 million times on Stack Overflow (``https://stackoverflow.com/questions/11828270/how-do-i-exit-the-vim-editor``):
 
 .. figure:: ../../_static/images/version_control_with_git/experiment_implementation_workflow/stackoverflow_exit_vim.png
   :width: 600

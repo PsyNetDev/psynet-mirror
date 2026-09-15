@@ -40,8 +40,9 @@ On WSL you can also copy it directly to the Windows clipboard:
 
    cat ~/.ssh/id_rsa.pub | clip.exe
 
-Then navigate to `GitLab SSH keys <https://gitlab.com/-/profile/keys>`_,
-click 'Add new key', paste the key in the 'Key' box,
+Then add the key in GitLab under **User settings → SSH Keys**.
+See `GitLab's SSH documentation <https://docs.gitlab.com/user/ssh/>`_
+for the current steps. Paste the key in the 'Key' box,
 remove the Expiration date if you think it's helpful, then click 'Add key'.
 
 Install ChromeDriver

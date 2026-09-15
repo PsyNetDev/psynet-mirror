@@ -13,7 +13,7 @@ This demo gives a particularly basic example where participants are presented
 with a number and are told to remember and then reproduce it.
 
 
-Source: ``demos/imitation_chain``
+Source: ``demos/experiments/imitation_chain``
 
 .. literalinclude:: ../../demos/experiments/imitation_chain/experiment.py
    :language: python

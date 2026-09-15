@@ -475,6 +475,16 @@
             if (experiment.origin) {
                 origin = `<a href="${experiment.origin}">${experiment.origin}</a>` + makeCopyIcon(experiment.origin);
             }
+            let gitCommit = undefined;
+            if (experiment.git_commit_sha) {
+                gitCommit = `<code>${experiment.git_commit_sha.slice(0, 12)}</code>` + makeCopyIcon(experiment.git_commit_sha);
+            }
+            let gitStatus = undefined;
+            if (experiment.git_dirty === true) {
+                gitStatus = 'dirty';
+            } else if (experiment.git_dirty === false) {
+                gitStatus = 'clean';
+            }
             let labelPopOverContents = {
                 'Last updated': formatDuration(experiment.sinceUpdate) + " (" + (experiment.isOffline ? "offline" : "online") + ")",
                 'Title': experiment.title,
@@ -483,6 +493,8 @@
                 'Folder name': '<code>' + experiment.folder_name + '</code>',
                 'Asset storage': experiment.asset_storage,
                 'Git remote': origin,
+                'Git commit': gitCommit,
+                'Git working tree': gitStatus,
             }
             let label = `<span><span class="${experiment.isOffline ? 'text-danger' : 'text-success'}">⬤</span> ${experiment.label}</span>`
             if (experiment.locale !== "en") {
@@ -680,11 +692,10 @@
                 return formatDuration(diff) + " ago"
             }
 
-            if (experiment.psynet_export_url) {
-                shortcuts += makeIcon("database-fill-down", experiment.psynet_export_url, "PsyNet export (" + lastExport(experiment.psynet_export_timestamp) + ")")
-            }
-            if (experiment.database_export_url) {
-                shortcuts += makeIcon("database-down", experiment.database_export_url, "Database export (" + lastExport(experiment.database_export_timestamp) + ")")
+            if (experiment.export_url || experiment.psynet_export_url) {
+                const url = experiment.export_url || experiment.psynet_export_url;
+                const ts = experiment.export_timestamp || experiment.psynet_export_timestamp;
+                shortcuts += makeIcon("database-fill-down", url, "Export (" + lastExport(ts) + ")")
             }
 
             if (experiment.is_ssh_deployment) {

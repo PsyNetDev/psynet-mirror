@@ -482,7 +482,6 @@ class FreeTappingRecordTest(StaticTrialMaker):
             nodes=nodes,
             expected_trials_per_participant=len(nodes),
             n_repeat_trials=n_repeat_trials,
-            fail_trials_on_premature_exit=False,
             fail_trials_on_participant_performance_check=False,
             check_performance_at_end=True,
         )
@@ -1182,6 +1181,9 @@ class AttentionTest(Module):
                 ),
                 time_estimate=time_estimate_per_trial,
                 bot_response=lambda: None,
+                # The explanation plus eight response options is taller than a
+                # laptop window.
+                expect_scrolling=True,
             ),
             conditional(
                 "exclude_check_1",
@@ -1268,7 +1270,9 @@ class ColorBlindnessTest(StaticTrialMaker):
 
     media_url : string
         The url under which the images to be displayed can be referenced, default:
-        "https://s3.amazonaws.com/ishihara-eye-test/jpg"
+        ``https://s3.amazonaws.com/ishihara-eye-test/jpg``.
+        Files under that prefix are public, for example
+        https://s3.amazonaws.com/ishihara-eye-test/jpg/ishihara-1.jpg.
 
     time_estimate_per_trial : float
         The time estimate in seconds per trial, default: 5.0.
@@ -1304,7 +1308,6 @@ class ColorBlindnessTest(StaticTrialMaker):
             nodes=nodes,
             expected_trials_per_participant=len(nodes),
             check_performance_at_end=True,
-            fail_trials_on_premature_exit=False,
         )
 
     performance_check_type = "score"
@@ -1439,7 +1442,6 @@ class ColorVocabularyTest(StaticTrialMaker):
             nodes=nodes,
             expected_trials_per_participant=len(nodes),
             check_performance_at_end=True,
-            fail_trials_on_premature_exit=False,
         )
 
     performance_check_type = "score"
@@ -1610,7 +1612,6 @@ class GeneralHeadphoneTest(StaticTrialMaker):
             trial_class=self.get_trial_class(),
             nodes=self.get_nodes(media_url),
             check_performance_at_end=True,
-            fail_trials_on_premature_exit=False,
             expected_trials_per_participant=n_trials,
             max_trials_per_participant=n_trials,
         )
@@ -1829,6 +1830,7 @@ class AudioForcedChoiceTest(StaticTrialMaker):
     The audio forced choice test makes sure that the participant can correctly classify a sound.
     In each trial, the participant hears one sound and has to pick one answer from a list.
     Some use-cases where this test can be of use:
+
     - You only have a few stimuli with ground truth annotation and want the participant to annotate the rest. You can
       use the test to make sure that the participant is capable to classify the stimuli correctly.
     - You implemented an experiment that assumes participants are able to classify sounds (e.g., which bird sings the
@@ -1911,7 +1913,6 @@ class AudioForcedChoiceTest(StaticTrialMaker):
             trial_class=trial_class,
             nodes=nodes,
             check_performance_at_end=True,
-            fail_trials_on_premature_exit=False,
             expected_trials_per_participant=num_trials,
             max_trials_per_participant=num_trials,
         )

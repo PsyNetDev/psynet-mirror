@@ -4,9 +4,10 @@
 Installation
 ============
 
-Most users should follow the 'virtual environment' installation instructions below.
-The documentation also supports an alternative 'Docker' installation method, but this is now deprecated
-and not recommended for new users.
+Follow the virtual environment installation instructions below. Docker is still
+used to run and deploy experiments (``psynet debug local --docker`` and Docker
+deploy commands), but the old helper-script install path under ``docker/`` has
+been removed.
 
 .. toctree::
     :maxdepth: 1

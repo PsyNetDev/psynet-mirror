@@ -56,12 +56,14 @@ Basic setup
 Room IDs
 --------
 
-The ``room_id`` can be any string.  Experiments may want separate groups with
-private rooms. In such cases you can use an ID derived from a group
-identifier::
+The ``room_id`` can be any string.  Experiments often want each synchronised
+group of participants to share a private room. Inside a trial, the most robust
+way to obtain a per-group identifier is
+:attr:`Trial.sync_group <psynet.trial.main.Trial.sync_group>`, which returns the
+:class:`~psynet.sync.SyncGroup` matching the trial maker's ``sync_group_type``::
 
     chatroom=ChatRoom(
-        room_id=f"group_{participant.sync_group.id}",
+        room_id=f"group_{self.sync_group.id}",
         show_participants=True,
         show_history=True,
     )
@@ -126,15 +128,59 @@ so every attribute you set on the subclass is accessible inside the template:
     <div id="chatroom-widget">
         ...
     </div>
-    <script>
-        var ROOM_ID = {{ config.room_id | tojson }};
-        var CHANNEL = {{ config.channel | tojson }};
-        var SHOW_PARTS   = {{ "true" if show_participants else "false" }};
-        var SHOW_HISTORY = {{ "true" if show_history else "false" }};
-        var MY_ID        = String(dallinger.identity.participantId);
-        ...
-    </script>
     {% endmacro %}
+
+Keep the macro focused on markup: inline ``<script>`` and ``<style>`` blocks in
+a custom template are rejected under in-place timeline transitions. Instead,
+supply page-local CSS and JavaScript through the component's ``get_css()`` and
+``get_js_page_modules()`` hooks, and supply configuration through
+``get_js_vars()``.
+``ModularPage`` collects these from the chatroom and applies them as managed,
+per-page resources that are refreshed across fragment swaps:
+
+.. code-block:: python
+
+    class MyChatRoom(ChatRoom):
+        macro = "my_chatroom"
+        external_template = "my-chatroom.html"
+
+        def get_css(self):
+            return ["#chatroom-widget { height: 400px; }"]
+
+        def get_js_vars(self):
+            return {
+                "my_chatroom_config": {
+                    "room_id": self.room_id,
+                    "channel": self.channel,
+                }
+            }
+
+        def get_js_page_modules(self):
+            return ["/static/my-chatroom.js"]
+
+The standalone script should read its configuration from ``psynet.var`` (via
+``vars`` in ``activate()``), not ad-hoc globals. Deprecated ``window`` access
+to ``js_vars`` is controlled by ``legacy_js_var_globals``; see
+:doc:`/tutorials/writing_custom_frontends` and
+:doc:`/experiment_development/configuration`.
+
+.. code-block:: javascript
+
+    export async function activate({root, trial, vars}) {
+        const config = vars["my_chatroom_config"];
+        // ... open the websocket and wire up elements beneath root ...
+
+        return async function cleanup() {
+            // ... leave the room and close the socket ...
+        };
+    }
+
+The built-in ``ChatRoom`` uses the same separation between managed resources
+and configuration — see ``get_css``, ``get_js_vars``, and
+``get_js_page_modules`` in ``psynet/chatroom.py``. PsyNet activates its widget
+script for each page and calls the returned cleanup function before leaving. See
+``psynet/static/scripts/chatroom-widget.js`` for the WebSocket protocol,
+message rendering, occupancy updates, and cleanup pattern.
 
 If you only need minor CSS changes (e.g. a different height or colour scheme)
 you can override the built-in IDs (``#chatroom-widget``,

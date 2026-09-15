@@ -11,7 +11,7 @@ as the next state, and a new proposal is generated from that state by making a s
 random jump in the stimulus space.
 
 
-Source: ``demos/mcmcp``
+Source: ``demos/experiments/mcmcp``
 
 .. literalinclude:: ../../demos/experiments/mcmcp/experiment.py
    :language: python

@@ -376,14 +376,15 @@ class PerformanceTester:
                 return x
 
     def _bounded_random_stagger(self, max_multiplier=5.0):
-        """Bounded gamma distribution for bot stagger"""
+        """Return a gamma-distributed stagger bounded relative to its mean."""
         k = 3.0
         theta = self.stagger_interval_s / k
         if not theta:
             return 0.0
+        max_stagger = max_multiplier * self.stagger_interval_s
         while True:
             x = random.gammavariate(k, theta)
-            if x <= max_multiplier:
+            if x <= max_stagger:
                 return x
 
     def _create_bot_launcher(self, bot_state):
@@ -752,6 +753,9 @@ class PerformanceTester:
                 .label("p95"),
                 func.max(AsyncProcess.time_taken).label("max"),
                 func.avg(AsyncProcess.queue_delay).label("q_avg"),
+                func.percentile_cont(0.5)
+                .within_group(AsyncProcess.queue_delay)
+                .label("q_median"),
                 func.percentile_cont(0.95)
                 .within_group(AsyncProcess.queue_delay)
                 .label("q_p95"),
@@ -783,11 +787,23 @@ class PerformanceTester:
                 "p95": row.p95,
                 "max": row.max,
                 "q_avg": row.q_avg,
+                "q_median": row.q_median,
                 "q_p95": row.q_p95,
                 "q_share": row.q_share,
             }
             for row in process_stats_rows
         ]
+
+        q_delay_median = (
+            db.session.query(
+                func.percentile_cont(0.5).within_group(AsyncProcess.queue_delay)
+            )
+            .filter(
+                AsyncProcess.id > initial_state["max_process_id"],
+                AsyncProcess.finished == True,  # noqa: E712
+            )
+            .scalar()
+        )
 
         q_delay_p95 = (
             db.session.query(
@@ -942,6 +958,7 @@ class PerformanceTester:
             "avg_succeeded_duration": avg_succeeded_duration,
             "avg_failed_duration": avg_failed_duration,
             "avg_incomplete_duration": avg_incomplete_duration,
+            "q_delay_median": q_delay_median,
             "q_delay_p95": q_delay_p95,
             "process_stats": process_stats,
             "min_trial_count": min_trial_count,
@@ -1153,7 +1170,7 @@ def format_test_results(result):
         _section(f"ASYNC PROCESS TIMES ({n_procs} completed{worker_info})")
         lines.append("  Avg/Med/P95/Max — statistics on actual execution time")
         lines.append(
-            "  Q Avg/Q P95 — statistics on queue delay (time waiting in RQ queue)"
+            "  Q Avg/Q Med/Q P95 — statistics on queue delay (time waiting in RQ queue)"
         )
         lines.append(
             "  Q Share — avg of per-process queue_delay / (queue_delay + exec_time),"
@@ -1189,6 +1206,7 @@ def format_test_results(result):
                 _fmt(ps["p95"]),
                 _fmt(ps["max"]),
                 _fmt(ps["q_avg"]),
+                _fmt(ps["q_median"]),
                 _fmt(ps["q_p95"]),
                 _color_q_share(ps["q_share"], ps["q_p95"]),
             ]
@@ -1205,6 +1223,7 @@ def format_test_results(result):
                 "P95 (s)",
                 "Max (s)",
                 "Q Avg (s)",
+                "Q Med (s)",
                 "Q P95 (s)",
                 "Q Share",
             ],
@@ -1249,9 +1268,13 @@ def format_performance_summary(results):
     """Format cross-test comparison table. Returns list[str]."""
     lines = []
 
-    show_scaling = len(results) > 1 and results[0].get("p95_response_time") is not None
-    baseline_p95 = results[0].get("p95_response_time") if show_scaling else None
-    baseline_q_p95 = results[0].get("q_delay_p95") if show_scaling else None
+    show_scaling = (
+        len(results) > 1 and results[0].get("median_response_time") is not None
+    )
+    baseline_response_median = (
+        results[0].get("median_response_time") if show_scaling else None
+    )
+    baseline_q_median = results[0].get("q_delay_median") if show_scaling else None
 
     has_export = any(r.get("export_duration_s") is not None for r in results)
     baseline_export = results[0].get("export_duration_s") if show_scaling else None
@@ -1261,11 +1284,11 @@ def format_performance_summary(results):
         "Succeeded",
         "Requests",
         "Req/s",
-        "Resp P95 (s)",
+        "Resp Med (s)",
     ]
     if show_scaling:
         summary_headers.append("vs base")
-    summary_headers.append("Q P95 all (s)")
+    summary_headers.append("Q Med all (s)")
     if show_scaling:
         summary_headers.append("vs base")
     if has_export:
@@ -1275,8 +1298,8 @@ def format_performance_summary(results):
 
     summary_rows = []
     for i, result in enumerate(results):
-        p95 = result.get("p95_response_time")
-        q_p95 = result.get("q_delay_p95")
+        response_median = result.get("median_response_time")
+        q_median = result.get("q_delay_median")
         row = [
             result["n_bots"],
             result["bots_succeeded"],
@@ -1286,21 +1309,25 @@ def format_performance_summary(results):
                 if result.get("requests_per_sec") is not None
                 else "N/A"
             ),
-            _fmt(p95),
+            _fmt(response_median),
         ]
         if show_scaling:
             if i == 0:
                 row.append("\u2014")
-            elif p95 is not None and baseline_p95 and baseline_p95 > 0:
-                row.append(f"{p95 / baseline_p95:.1f}x")
+            elif (
+                response_median is not None
+                and baseline_response_median
+                and baseline_response_median > 0
+            ):
+                row.append(f"{response_median / baseline_response_median:.1f}x")
             else:
                 row.append("N/A")
-        row.append(_fmt(q_p95))
+        row.append(_fmt(q_median))
         if show_scaling:
             if i == 0:
                 row.append("\u2014")
-            elif q_p95 is not None and baseline_q_p95 and baseline_q_p95 > 0:
-                row.append(f"{q_p95 / baseline_q_p95:.1f}x")
+            elif q_median is not None and baseline_q_median and baseline_q_median > 0:
+                row.append(f"{q_median / baseline_q_median:.1f}x")
             else:
                 row.append("N/A")
         if has_export:
@@ -1318,9 +1345,9 @@ def format_performance_summary(results):
     lines.append("")
     lines.append(bold("CUMULATIVE PERFORMANCE TEST SUMMARY\n"))
     lines.append(
-        "  Resp P95 — P95 HTTP response time for key endpoints (/timeline, /response)"
+        "  Resp Med — median HTTP response time for key endpoints (/timeline, /response)"
     )
-    lines.append("  Q P95 all — P95 queue delay across all async processes")
+    lines.append("  Q Med all — median queue delay across all async processes")
     if has_export:
         lines.append("  Export — time to run psynet export local")
     lines.append(

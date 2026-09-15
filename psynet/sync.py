@@ -1,21 +1,103 @@
+"""
+Synchronization primitives for coordinating participants.
+
+This module contains the core building blocks for synchronous experiments.
+If you have not seen PsyNet's synchronization features before, the key idea is
+simple: participants move through a timeline, sometimes waiting for other
+participants to arrive at the same point. We implement that waiting logic with
+barriers, and we implement grouping logic with groupers and sync groups.
+
+Glossary
+--------
+Barrier
+    A timeline element that pauses participants until some release condition is
+    satisfied (for example, "wait until two participants arrive"). Barriers are
+    subclasses of ``Barrier``/``GroupBarrier``. In a timeline they usually wrap
+    a ``WaitPage`` loop so participants see a waiting screen while they wait.
+
+Grouper and sync group
+    A ``SimpleGrouper`` (or other grouper) is a timeline element that forms
+    ``SyncGroup`` rows once enough participants are available. Group barriers
+    rely on these groups to decide who to release together.
+
+Barrier registry
+    Barriers and their waiting participants are persisted in the database via
+    ``BarrierRecord`` and ``ParticipantLinkBarrier``. This replaces the older
+    in-memory registry so multiple worker processes can safely cooperate.
+
+Where this shows up in a timeline
+---------------------------------
+The most common pattern is:
+
+1. A grouper runs early in the timeline to create sync groups.
+2. A ``GroupBarrier`` appears later in the timeline to pause participants until
+   the group is ready.
+3. After release, the timeline continues with shared or individual tasks.
+
+How processing works
+--------------------
+When a participant reaches a barrier, ``Barrier.receive_participant``:
+
+- Ensures a ``BarrierRecord`` exists (storing a lightweight copy of the barrier).
+- Inserts a ``ParticipantLinkBarrier`` row marking the participant as waiting.
+
+A scheduled task in ``Experiment._check_barriers`` calls ``check_barriers`` in
+this module. That loop:
+
+- Finds the next waiting barrier record.
+- Locks it using ``SELECT ... FOR UPDATE SKIP LOCKED`` so only one worker
+  processes a barrier at a time.
+- Calls ``Barrier.check`` in an isolated transaction.
+- Logs and skips failures per barrier so one bad barrier does not stall others.
+
+Callable attributes on barriers (e.g., ``on_release``) are serialized via
+``serialize_callable`` so they can be stored inside ``BarrierRecord`` safely.
+"""
+
+import copy
 import random
 from math import floor
-from typing import Callable, List, Optional, Union
+from typing import Callable, List, Literal, Optional, Union
 
 from dallinger import db
 from dallinger.models import timenow
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String
-from sqlalchemy.ext.associationproxy import association_proxy
-from sqlalchemy.orm import backref, joinedload, relationship
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+)
+from sqlalchemy import inspect as sa_inspect
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.orm import backref, deferred, joinedload, object_session, relationship
 
 from psynet.data import SQLBase, SQLMixin, register_table
-from psynet.field import PythonClass
+from psynet.db import transaction
+from psynet.field import PythonClass, PythonObject
 from psynet.page import UnsuccessfulEndPage, WaitPage
 from psynet.participant import Participant
+from psynet.serialize import serialize_callable
 from psynet.timeline import CodeBlock, EltCollection, conditional
-from psynet.utils import call_function_with_context, get_logger
+from psynet.utils import get_logger
 
 logger = get_logger()
+
+
+class _ReadOnlyParticipantList(list):
+    """A participant list whose membership must be changed through its group."""
+
+    def _raise_mutation_error(self, *args, **kwargs):
+        raise TypeError(
+            "SyncGroup.participants is read-only; use group.add_participant() "
+            "or group.remove_participant() instead."
+        )
+
+    append = clear = extend = insert = pop = remove = reverse = sort = (
+        _raise_mutation_error
+    )
+    __delitem__ = __iadd__ = __imul__ = __setitem__ = _raise_mutation_error
 
 
 class Barrier(EltCollection):
@@ -42,8 +124,7 @@ class Barrier(EltCollection):
 
     max_wait_time
         The maximum amount of time in seconds that the participant will be allowed to wait at the barrier;
-        if this time is exceeded and the participant is still not released, then the participant will be failed
-        and sent to the end of the experiment.
+        if this time is exceeded then the participant will be failed and sent to the end of the experiment.
 
     fix_time_credit
         If set to ``True``, then the amount of time 'credit' that the participant receives will be capped
@@ -65,7 +146,19 @@ class Barrier(EltCollection):
         self.waiting_logic = waiting_logic
         self.waiting_logic_expected_repetitions = waiting_logic_expected_repetitions
         self.max_wait_time = max_wait_time
+        self.max_wait_action = "fail"
         self.fix_time_credit = fix_time_credit
+
+    def for_registry(self):
+        """Return a registry-safe copy of the barrier."""
+        barrier = copy.copy(self)
+        barrier.waiting_logic = None
+        return barrier
+
+    def __setattr__(self, name, value):
+        if name.startswith("on_"):
+            value = serialize_callable(value, f"{self.__class__.__name__}.{name}")
+        super().__setattr__(name, value)
 
     def choose_who_to_release(
         self, waiting_participants: List[Participant]
@@ -100,6 +193,8 @@ class Barrier(EltCollection):
                 expected_repetitions=self.waiting_logic_expected_repetitions,
                 max_loop_time=self.max_wait_time,
                 fix_time_credit=self.fix_time_credit,
+                fail_on_timeout=(self.max_wait_action == "fail"),
+                on_timeout=self.handle_max_wait_timeout,
             ),
             conditional(
                 "participant_failed",
@@ -114,11 +209,20 @@ class Barrier(EltCollection):
 
         return elts
 
+    def handle_max_wait_timeout(self, participant: Participant):
+        """Release the participant's active barrier link after a max-wait timeout."""
+        if self.id in participant.active_barriers:
+            self.release(participant)
+
     def receive_participant(self, participant: Participant):
+        if object_session(participant) is None:
+            db.session.add(participant)
+
+        BarrierRecord.ensure_exists(self.id, self.__class__, barrier=self)
+
         link = ParticipantLinkBarrier(
             participant=participant,
             barrier_id=self.id,
-            barrier_class=self.__class__,
             arrival_time=timenow(),
         )
         participant.active_barriers[self.id] = link
@@ -160,10 +264,13 @@ class Barrier(EltCollection):
                 Participant.status == "working",
             )
             .options(joinedload(ParticipantLinkBarrier.participant, innerjoin=True))
+            .order_by(Participant.id)
         )
 
         if for_update:
-            query = query.with_for_update(of=ParticipantLinkBarrier).populate_existing()
+            query = query.with_for_update(
+                of=[ParticipantLinkBarrier, Participant]
+            ).populate_existing()
 
         links = query.all()
         participants = [link.participant for link in links]
@@ -183,7 +290,10 @@ class Barrier(EltCollection):
         barrier_is_active = self.id in participant.active_barriers
         return not barrier_is_active
 
-    def process_potential_releases(self):
+    def check_waiting_participants(self, waiting_participants: List[Participant]):
+        """Run any side-effecting checks before deciding who to release."""
+
+    def check(self):
         waiting_participants = self.get_waiting_participants(for_update=True)
         waiting_participants.sort(key=lambda p: p.id)
 
@@ -194,6 +304,7 @@ class Barrier(EltCollection):
             ", ".join([str(p.id) for p in waiting_participants]),
         )
 
+        self.check_waiting_participants(waiting_participants)
         participants_to_release = self.choose_who_to_release(waiting_participants)
         participants_to_release.sort(key=lambda p: p.id)
 
@@ -239,13 +350,50 @@ class GroupBarrier(Barrier):
 
     max_wait_time
         The maximum amount of time in seconds that the participant will be allowed to wait at the barrier;
-        if this time is exceeded and the participant is still not released, then the participant will be failed
-        and sent to the end of the experiment.
+        if this time is exceeded, the participant is either failed or kicked (see ``max_wait_action``).
+
+    max_wait_action
+        When ``max_wait_time`` is exceeded: ``"fail"`` fails the participant and sends them to the end of the
+        experiment; ``"kick"`` removes them from the group and lets them continue. Default is ``"fail"``.
+
+    timeout_between_barriers_time
+        The maximum amount of time in seconds that a participant is allowed to reach the barrier, measured from when
+        the group collectively passed the previous barrier. If ``None`` (default), no between-barrier timeout is applied.
+        Only applies from the second barrier onward (time since previous barrier pass).
+
+    timeout_between_barriers_action
+        When a participant exceeds ``timeout_between_barriers_time``: ``"kick"`` removes them from the group (so the
+        rest can proceed without them), or ``"fail"`` fails the participant and sends them to the end of the experiment.
+        Default is ``"fail"``.
+
+    on_release
+        Optional callback invoked when the barrier releases participants.
+        Must be a module-level function, ``@staticmethod``/``@classmethod``,
+        or a bound method on a TrialMaker or ORM instance with a primary key.
+
+    on_release
+        Optional callable invoked when the barrier releases participants.
+        Must be a module-level function, ``@staticmethod``/``@classmethod``,
+        or a bound method on a TrialMaker or ORM instance with a primary key.
 
     fix_time_credit
         If set to ``True``, then the amount of time 'credit' that the participant receives will be fixed
         according to the estimate derived from ``waiting_logic`` and ``waiting_logic_expected_repetitions``.
     """
+
+    @staticmethod
+    def _kick_participant_after_max_wait(
+        participant: Participant, group_type: str
+    ) -> None:
+        """Remove the participant from their sync group when max wait uses action ``'kick'``."""
+        if group_type in participant.active_sync_groups:
+            participant.active_sync_groups[group_type].remove_participant(participant)
+
+    def _validate_max_wait_action(self, max_wait_action):
+        if max_wait_action not in ("fail", "kick"):
+            raise ValueError(
+                f"max_wait_action must be 'fail' or 'kick', got {max_wait_action!r}."
+            )
 
     def __init__(
         self,
@@ -254,9 +402,13 @@ class GroupBarrier(Barrier):
         waiting_logic=None,
         waiting_logic_expected_repetitions=3,
         max_wait_time=20,
+        max_wait_action: Literal["fail", "kick"] = "fail",
         on_release: Optional[Callable] = None,
         fix_time_credit=False,
+        timeout_between_barriers_time: Optional[float] = None,
+        timeout_between_barriers_action: Literal["kick", "fail"] = "fail",
     ):
+        self._validate_max_wait_action(max_wait_action)
         super().__init__(
             id_=id_,
             waiting_logic=waiting_logic,
@@ -264,29 +416,48 @@ class GroupBarrier(Barrier):
             max_wait_time=max_wait_time,
             fix_time_credit=fix_time_credit,
         )
+        self.max_wait_action = max_wait_action
         self.group_type = group_type
         self.on_release = on_release
+        self.timeout_between_barriers_time = timeout_between_barriers_time
+        if timeout_between_barriers_action not in ("kick", "fail"):
+            raise ValueError(
+                "timeout_between_barriers_action must be 'kick' or 'fail', "
+                f"got {timeout_between_barriers_action!r}"
+            )
+        self.timeout_between_barriers_action = timeout_between_barriers_action
+
+    def handle_max_wait_timeout(self, participant: Participant):
+        """Kick from the sync group when requested, then release the barrier link."""
+        if self.max_wait_action == "kick":
+            self._kick_participant_after_max_wait(
+                participant=participant, group_type=self.group_type
+            )
+        super().handle_max_wait_timeout(participant)
 
     def choose_who_to_release(self, waiting_participants: List[Participant]):
-        waiting_participant_ids = [p.id for p in waiting_participants]
+        waiting_participant_ids = {p.id for p in waiting_participants}
         participants_to_release = []
-
-        groups = {
-            participant.active_sync_groups[
-                self.group_type
-            ].id: participant.active_sync_groups[self.group_type]
-            for participant in waiting_participants
-        }
+        groups = self.get_waiting_groups(waiting_participants)
 
         for group in groups.values():
+            group.check_numbers()
+
             if group.n_active_participants < group.min_group_size:
                 # If join_existing_groups is False, then the group will never be able
-                # to get to the minimum size, so we should fail all participants in the group
-                # and release them.
+                # to get to the minimum size, so we remove all participants from the group
+                # and release participants who are waiting at this barrier. Optionally fail them
+                # (when fail_participants_below_min_size is True).
                 if not group.accepts_top_ups:
-                    for participant in group.active_participants:
-                        participant.fail("sync group below minimum size")
-                        participants_to_release.append(participant)
+                    for participant in list(group.active_participants):
+                        if group.fail_participants_below_min_size:
+                            participant.fail("sync group below minimum size")
+                        group.remove_participant(participant)
+                        if participant.id in waiting_participant_ids:
+                            participants_to_release.append(participant)
+                    group.check_numbers()
+                    if group.n_active_participants == 0:
+                        group.close()
                 continue
 
             all_participants_present = all(
@@ -300,14 +471,88 @@ class GroupBarrier(Barrier):
                 for participant in group.active_participants:
                     participants_to_release.append(participant)
 
+                group.last_barrier_pass_time = timenow()
+
                 if self.on_release:
-                    call_function_with_context(
-                        self.on_release,
+                    self.on_release(
                         group=group,
                         participants=group.active_participants,
+                        participant=group.leader,
+                        barrier=self,
                     )
 
+        participants_to_release_ids = {p.id for p in participants_to_release}
+        for participant in waiting_participants:
+            # Release participants who reached this barrier but no longer belong
+            # to the sync group (e.g., max-wait kicks or below-min-size dissolution).
+            if (
+                self.group_type not in participant.active_sync_groups
+                and participant.id not in participants_to_release_ids
+            ):
+                participants_to_release.append(participant)
+                participants_to_release_ids.add(participant.id)
+
         return participants_to_release
+
+    def check_waiting_participants(self, waiting_participants: List[Participant]):
+        for group in self.get_waiting_groups(waiting_participants).values():
+            group.check_numbers()
+            self._timeout_participants_between_barriers(group, waiting_participants)
+
+    def get_waiting_groups(self, waiting_participants: List[Participant]):
+        groups = {
+            participant.active_sync_groups[
+                self.group_type
+            ].id: participant.active_sync_groups[self.group_type]
+            for participant in waiting_participants
+            if self.group_type in participant.active_sync_groups
+        }
+        return groups
+
+    def _timeout_participants_between_barriers(
+        self, group: "SyncGroup", waiting_participants: List[Participant]
+    ):
+        """Kick or fail group members who are late reaching this barrier."""
+        if (
+            self.timeout_between_barriers_time is None
+            or group.last_barrier_pass_time is None
+        ):
+            return
+
+        elapsed_seconds = (timenow() - group.last_barrier_pass_time).total_seconds()
+        if elapsed_seconds <= self.timeout_between_barriers_time:
+            return
+
+        waiting_participant_ids = {p.id for p in waiting_participants}
+        missing = [
+            p for p in group.active_participants if p.id not in waiting_participant_ids
+        ]
+        for participant in missing:
+            if self.timeout_between_barriers_action == "kick":
+                logger.info(
+                    "GroupBarrier '%s': kicking participant %s from group %s (timeout between barriers)",
+                    self.id,
+                    participant.id,
+                    group.id,
+                )
+                group.remove_participant(participant)
+            else:
+                logger.info(
+                    "GroupBarrier '%s': failing participant %s (timeout between barriers)",
+                    self.id,
+                    participant.id,
+                )
+                participant.fail("timeout between barriers")
+
+    def release(self, participant: Participant):
+        link = participant.active_barriers.get(self.id, None)
+        if link is None:
+            raise RuntimeError(
+                "Could not find an appropriate barrier link to release the participant from "
+                f"(participant_id = {participant.id}, barrier_id = '{self.id}')."
+            )
+
+        link.release()
 
 
 class Grouper(Barrier):
@@ -340,6 +585,11 @@ class Grouper(Barrier):
         The maximum amount of time in seconds that the participant will be allowed to wait at the barrier;
         if this time is exceeded and the participant is still not released, then the participant will be failed
         and sent to the end of the experiment.
+
+    fail_participants_below_min_size
+        If ``True`` (default), participants in a group that is below minimum size and does not accept
+        top-ups are failed and released when they hit a GroupBarrier. If ``False``, they are released
+        without being failed. (Only applies to groups that have a minimum size, e.g. created by SimpleGrouper.)
     """
 
     def __init__(
@@ -349,6 +599,7 @@ class Grouper(Barrier):
         waiting_logic=None,
         waiting_logic_expected_repetitions=3,
         max_wait_time=20,
+        fail_participants_below_min_size: bool = True,
     ):
         if not id_:
             id_ = group_type + "_" + "grouper"
@@ -359,6 +610,7 @@ class Grouper(Barrier):
             max_wait_time=max_wait_time,
         )
         self.group_type = group_type
+        self.fail_participants_below_min_size = fail_participants_below_min_size
 
     def ready_to_group(self, participants: List[Participant]) -> bool:
         """
@@ -483,6 +735,10 @@ class SimpleGrouper(Grouper):
         if the participant should be allowed to join the group, and ``False`` otherwise.
         To be used in conjunction with ``join_existing_groups=True``.
 
+    fail_participants_below_min_size
+        If ``True`` (default), participants in a group below minimum size that does not accept top-ups
+        are failed and released at GroupBarriers. If ``False``, they are released without being failed.
+
     kwargs
         Further arguments to pass to Grouper.
     """
@@ -497,6 +753,7 @@ class SimpleGrouper(Grouper):
         batch_size: Union[int, str] = "initial_group_size",
         join_existing_groups: bool = False,
         join_criterion: Optional[Callable] = None,
+        fail_participants_below_min_size: bool = True,
         **kwargs,
     ):
         if "group_size" in kwargs:
@@ -530,6 +787,7 @@ class SimpleGrouper(Grouper):
         self.batch_size = batch_size
         self.join_existing_groups = join_existing_groups
         self.join_criterion = join_criterion
+        self.fail_participants_below_min_size = fail_participants_below_min_size
 
     def resolve(self):
         from .timeline import conditional, join
@@ -580,7 +838,7 @@ class SimpleGrouper(Grouper):
 
         if len(groups) > 0:
             group = groups[0]
-            group.participants.append(participant)
+            group.add_participant(participant)
             assert participant.active_sync_groups[self.group_type] == group
             group.check_numbers()
             group.check_leader()
@@ -605,11 +863,12 @@ class SimpleGrouper(Grouper):
                 min_group_size=self.min_group_size,
                 n_active_participants=len(_participants),
                 accepts_top_ups=self.join_existing_groups,
+                fail_participants_below_min_size=self.fail_participants_below_min_size,
             )
             groups.append(_group)
 
             for _participant in _participants:
-                _group.participants.append(_participant)
+                _group.add_participant(_participant)
 
             _group.leader = self.select_leader(_participants)
 
@@ -639,10 +898,6 @@ class SyncGroup(SQLBase, SQLMixin):
 
     leader : Participant
         The leader of the SyncGroup. This can be reassigned by logic such as ``group.leader = participant``.
-
-    participants : List[Participant]
-        A list of participants in that group. Additional participants can be added by logic such as
-        ``group.participants.append(participant)``.
     """
 
     __tablename__ = "sync_group"
@@ -650,6 +905,7 @@ class SyncGroup(SQLBase, SQLMixin):
     group_type = Column(String)
     active = Column(Boolean, default=True)
     end_time = Column(DateTime)
+    last_barrier_pass_time = Column(DateTime, nullable=True)
     leader_id = Column(Integer, ForeignKey("participant.id"))
 
     participant_links = relationship(
@@ -657,13 +913,25 @@ class SyncGroup(SQLBase, SQLMixin):
         cascade="all, delete-orphan",
     )
 
-    participants = association_proxy(
-        "participant_links",
-        "participant",
-        creator=lambda participant: ParticipantLinkSyncGroup(participant=participant),
-    )
-
     n_active_participants = Column(Integer)
+
+    @property
+    def participants(self) -> List[Participant]:
+        """Read-only list of participants currently in the group (links with ``active=True``).
+
+        Use ``group.add_participant(participant)`` to add a participant.
+        """
+        return _ReadOnlyParticipantList(
+            link.participant
+            for link in self.participant_links
+            if getattr(link, "active", True)
+        )
+
+    def add_participant(self, participant: Participant):
+        """Add a participant to the group (creates an active link)."""
+        self.participant_links.append(
+            ParticipantLinkSyncGroup(participant=participant, active=True)
+        )
 
     @property
     def active_participants(self) -> List[Participant]:
@@ -675,8 +943,11 @@ class SyncGroup(SQLBase, SQLMixin):
     )
 
     def check_leader(self):
-        if self.leader not in self.active_participants:
-            self.leader = sorted(self.active_participants, key=lambda p: p.id)[0]
+        active_participants = sorted(self.active_participants, key=lambda p: p.id)
+        if len(active_participants) == 0:
+            self.leader = None
+        elif self.leader not in active_participants:
+            self.leader = active_participants[0]
 
     @property
     def active_followers(self):
@@ -697,6 +968,18 @@ class SyncGroup(SQLBase, SQLMixin):
     def check_numbers(self):
         self.n_active_participants = len(self.active_participants)
 
+    def remove_participant(self, participant: Participant):
+        for link in self.participant_links:
+            if link.participant_id == participant.id:
+                link.active = False
+        self.check_numbers()
+        if self.n_active_participants == 0 and not getattr(
+            self, "accepts_top_ups", False
+        ):
+            self.close()
+        else:
+            self.check_leader()
+
 
 class SimpleSyncGroup(SyncGroup):
     """
@@ -707,6 +990,93 @@ class SimpleSyncGroup(SyncGroup):
     max_group_size = Column(Integer)
     min_group_size = Column(Integer)
     accepts_top_ups = Column(Boolean)
+    fail_participants_below_min_size = Column(Boolean, default=True)
+
+    def remove_participant(self, participant: Participant):
+        super().remove_participant(participant)
+        self.dissolve_if_below_min_size()
+
+    def dissolve_if_below_min_size(self):
+        if (
+            getattr(self, "_dissolving_below_min_size", False)
+            or self.accepts_top_ups
+            or self.n_active_participants >= self.min_group_size
+        ):
+            return
+
+        self._dissolving_below_min_size = True
+        try:
+            remaining_participants = list(self.active_participants)
+            for participant in remaining_participants:
+                if self.fail_participants_below_min_size:
+                    participant.fail("sync group below minimum size")
+                else:
+                    super().remove_participant(participant)
+
+            self.check_numbers()
+            if self.n_active_participants == 0:
+                self.close()
+        finally:
+            self._dissolving_below_min_size = False
+
+
+def _insert_values_from_state(record) -> dict:
+    """Build insert values from an ORM instance state."""
+    state = sa_inspect(record)
+    mapper = state.mapper
+    if mapper.polymorphic_on is not None:
+        discriminator = mapper.polymorphic_on.key
+        if getattr(record, discriminator) is None:
+            setattr(record, discriminator, mapper.polymorphic_identity)
+    column_keys = {column.key for column in mapper.columns}
+    return {key: value for key, value in state.dict.items() if key in column_keys}
+
+
+@register_table
+class BarrierRecord(SQLBase, SQLMixin):
+    __tablename__ = "barrier"
+
+    id = Column(String, primary_key=True)
+    barrier_class = Column(PythonClass)
+    created_at = Column(DateTime, default=timenow)
+    barrier = deferred(Column(PythonObject))
+
+    participant_links = relationship(
+        "ParticipantLinkBarrier", back_populates="barrier_record"
+    )
+
+    @classmethod
+    def ensure_exists(cls, barrier_id: str, barrier_class, barrier=None):
+        with db.session.no_autoflush:
+            record = cls.query.get(barrier_id)
+            if record is not None:
+                if barrier is not None:
+                    if isinstance(barrier, Barrier):
+                        barrier = barrier.for_registry()
+                    record.barrier = barrier
+                return
+
+            record = cls(
+                id=barrier_id,
+                barrier_class=barrier_class,
+                created_at=timenow(),
+                barrier=(
+                    barrier.for_registry() if isinstance(barrier, Barrier) else barrier
+                ),
+            )
+            values = _insert_values_from_state(record)
+            stmt = (
+                pg_insert(cls)
+                .values(**values)
+                .on_conflict_do_nothing(index_elements=["id"])
+            )
+            result = db.session.execute(stmt)
+            if barrier is not None and result.rowcount == 0:
+                record = cls.query.get(barrier_id)
+                if record is not None:
+                    if isinstance(barrier, Barrier):
+                        barrier = barrier.for_registry()
+                    record.barrier = barrier
 
 
 @register_table
@@ -714,6 +1084,7 @@ class ParticipantLinkSyncGroup(SQLBase, SQLMixin):
     __tablename__ = "participant_link_sync_group"
 
     arrival_time = Column(DateTime)
+    active = Column(Boolean, default=True)
 
     participant_id = Column(Integer, ForeignKey("participant.id"), index=True)
     participant = relationship(
@@ -728,8 +1099,7 @@ class ParticipantLinkSyncGroup(SQLBase, SQLMixin):
 class ParticipantLinkBarrier(SQLBase, SQLMixin):
     __tablename__ = "participant_link_barrier"
 
-    barrier_id = Column(String, index=True)
-    barrier_class = Column(PythonClass)
+    barrier_id = Column(String, ForeignKey("barrier.id"), index=True)
     participant_id = Column(Integer, ForeignKey("participant.id"), index=True)
     participant = relationship(
         "psynet.participant.Participant",
@@ -742,31 +1112,75 @@ class ParticipantLinkBarrier(SQLBase, SQLMixin):
     departure_time = Column(DateTime)
     released = Column(Boolean, default=False)
 
+    barrier_record = relationship("BarrierRecord", back_populates="participant_links")
+
     def get_barrier(self):
-        from .experiment import get_experiment
-
-        exp = get_experiment()
-        timeline = exp.timeline
-
-        elt = timeline.get_current_elt(exp, self.participant)
-
-        try:
-            barrier = elt.links["barrier"]
-            assert barrier.id == self.barrier_id
-            return barrier
-        except (KeyError, AssertionError):
+        barrier_record = BarrierRecord.query.get(self.barrier_id)
+        if barrier_record is None or not isinstance(barrier_record.barrier, Barrier):
             raise RuntimeError(
-                "The barrier can only be retrieved if the participant is currently at the barrier."
+                f"Barrier '{self.barrier_id}' is missing or invalid in the registry."
             )
+        return barrier_record.barrier
 
     def release(self):
         self.departure_time = timenow()
         self.released = True
 
     def get_waiting_participants(self, for_update: bool = False):
-        return self.barrier_class.get_waiting_participants_from_barrier_id(
-            self.barrier_id, for_update=for_update
+        barrier = self.get_barrier()
+        return barrier.get_waiting_participants(for_update=for_update)
+
+
+def _next_waiting_barrier(excluded_ids):
+    """Return the next eligible barrier record, if any."""
+    waiting_barrier_query = BarrierRecord.query.filter(
+        db.session.query(ParticipantLinkBarrier.id)
+        .join(Participant)
+        .filter(
+            ParticipantLinkBarrier.barrier_id == BarrierRecord.id,
+            ~ParticipantLinkBarrier.released,
+            ~Participant.failed,
+            Participant.status == "working",
         )
+        .exists()
+    )
+    if excluded_ids:
+        waiting_barrier_query = waiting_barrier_query.filter(
+            ~BarrierRecord.id.in_(excluded_ids)
+        )
+    return (
+        waiting_barrier_query.order_by(BarrierRecord.id)
+        .with_for_update(skip_locked=True)
+        .populate_existing()
+        .first()
+    )
+
+
+def check_barriers():
+    """Process waiting barriers, isolating failures to individual barriers."""
+    excluded_ids = set()
+
+    while True:
+        barrier_id = None
+        try:
+            with transaction():
+                barrier_record = _next_waiting_barrier(excluded_ids)
+                if barrier_record is None:
+                    return
+                barrier_id = barrier_record.id
+                barrier = barrier_record.barrier
+                if not isinstance(barrier, Barrier):
+                    raise RuntimeError(
+                        f"Barrier '{barrier_record.id}' is missing or invalid."
+                    )
+                barrier.check()
+        except Exception:
+            if barrier_id is None:
+                raise
+            logger.exception("Failed to process barrier '%s'.", barrier_id)
+        finally:
+            if barrier_id is not None:
+                excluded_ids.add(barrier_id)
 
 
 Participant.sync_group_links = relationship(
@@ -774,12 +1188,19 @@ Participant.sync_group_links = relationship(
     cascade="all, delete-orphan",
 )
 
-Participant.sync_groups = association_proxy(
-    "sync_group_links",
-    "sync_group",
-)
 
-# No association proxy for barrier links because barriers aren't represented as database objects (yet)
+def _participant_sync_groups(participant) -> List["SyncGroup"]:
+    """Sync groups with an active participant-group link for this participant."""
+    return [
+        link.sync_group
+        for link in participant.sync_group_links
+        if getattr(link, "active", True)
+    ]
+
+
+Participant.sync_groups = property(lambda self: _participant_sync_groups(self))
+
+# No association proxy for barrier links because barriers are not exposed as objects
 
 
 class GroupCloser(GroupBarrier):
@@ -792,6 +1213,8 @@ class GroupCloser(GroupBarrier):
         if "id_" not in kwargs:
             kwargs["id_"] = f"closer_{group_type}"
 
-        super().__init__(
-            group_type=group_type, on_release=lambda group: group.close(), **kwargs
-        )
+        super().__init__(group_type=group_type, on_release=close_sync_group, **kwargs)
+
+
+def close_sync_group(group):
+    group.close()

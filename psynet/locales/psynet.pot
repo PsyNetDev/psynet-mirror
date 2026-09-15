@@ -366,7 +366,11 @@ msgctxt "experiment-feedback"
 msgid "If so, please provide a few words describing the problem."
 msgstr ""
 
-#: psynet/end.py:89
+#: psynet/end.py:60
+msgid "Finish"
+msgstr ""
+
+#: psynet/end.py:93
 #, python-brace-format
 msgctxt "final-page-rewards"
 msgid ""
@@ -375,39 +379,39 @@ msgid ""
 "performance reward of <strong>{CURRENCY}{PERFORMANCE_REWARD}</strong>! "
 msgstr ""
 
-#: psynet/end.py:115
+#: psynet/end.py:119
 msgctxt "final_page_successful"
 msgid "That's the end of the experiment!"
 msgstr ""
 
-#: psynet/end.py:120 psynet/end.py:178
+#: psynet/end.py:124 psynet/end.py:182
 msgid "Thank you for taking part."
 msgstr ""
 
-#: psynet/end.py:126 psynet/end.py:184
+#: psynet/end.py:130 psynet/end.py:188
 msgid "Please click \"Finish\" to finalize the session."
 msgstr ""
 
-#: psynet/end.py:161
+#: psynet/end.py:165
 msgctxt "final_page_unsuccessful"
 msgid "Unfortunately the experiment must end early."
 msgstr ""
 
-#: psynet/end.py:169
+#: psynet/end.py:173
 msgctxt "final_page_unsuccessful"
 msgid "However, you will still be paid for the time you spent already."
 msgstr ""
 
-#: psynet/end.py:176
+#: psynet/end.py:180 psynet/end.py:217
 msgid "You will be redirected."
 msgstr ""
 
-#: psynet/end.py:201
+#: psynet/end.py:212
 msgctxt "final_page_rejected_consent"
 msgid "Consent was rejected."
 msgstr ""
 
-#: psynet/end.py:202
+#: psynet/end.py:213
 msgctxt "final_page_rejected_consent"
 msgid "End of experiment."
 msgstr ""
@@ -418,12 +422,12 @@ msgid ""
 "grant it."
 msgstr ""
 
-#: psynet/experiment.py:1566
+#: psynet/experiment.py:1464
 msgctxt "error-msg"
 msgid "There has been an error and so you are unable to continue, sorry!"
 msgstr ""
 
-#: psynet/experiment.py:1632
+#: psynet/experiment.py:1530
 #, python-brace-format
 msgctxt "mturk_error"
 msgid ""
@@ -431,91 +435,91 @@ msgid ""
 "describe what led to this error."
 msgstr ""
 
-#: psynet/experiment.py:1636
+#: psynet/experiment.py:1534
 msgctxt "mturk_error"
 msgid "Please also quote the following information:"
 msgstr ""
 
-#: psynet/experiment.py:1659
+#: psynet/experiment.py:1557
 msgctxt "prolific_error"
 msgid "Don't worry, your progress has been recorded."
 msgstr ""
 
-#: psynet/experiment.py:1663
+#: psynet/experiment.py:1561
 msgctxt "prolific_error"
 msgid ""
 "To enquire about compensation, please send the researcher a message via the "
 "Prolific website and describe what led to your error."
 msgstr ""
 
-#: psynet/experiment.py:2510
+#: psynet/experiment.py:2408
 msgctxt "timeline_problem"
 msgid ""
 "Synchronization problem detected. Are you running the same experiment in "
 "multiple browser tabs? Please close all other tabs and refresh the page."
 msgstr ""
 
-#: psynet/modular_page.py:171
+#: psynet/modular_page.py:170
 msgid "Play"
 msgstr ""
 
-#: psynet/modular_page.py:172
+#: psynet/modular_page.py:171
 msgid "Stop"
 msgstr ""
 
-#: psynet/modular_page.py:173
+#: psynet/modular_page.py:172
 msgid "Loop"
 msgstr ""
 
-#: psynet/modular_page.py:1013
+#: psynet/modular_page.py:1012
 msgctxt "validation"
 msgid "You need to check at least one answer!"
 msgstr ""
 
-#: psynet/modular_page.py:1093 psynet/modular_page.py:1473
+#: psynet/modular_page.py:1092 psynet/modular_page.py:1472
 msgctxt "validation"
 msgid "You need to select an answer!"
 msgstr ""
 
-#: psynet/modular_page.py:1523
+#: psynet/modular_page.py:1522
 msgctxt "validation"
 msgid "You need to provide a number!"
 msgstr ""
 
-#: psynet/prescreen/__init__.py:1238
+#: psynet/prescreen/__init__.py:1237
 msgctxt "color_blindness_test"
 msgid "Write down the number in the image."
 msgstr ""
 
-#: psynet/prescreen/__init__.py:1319
+#: psynet/prescreen/__init__.py:1318
 msgctxt "color_blindness_test_intro_1"
 msgid ""
 "We will now perform a quick test to check your ability to perceive colors."
 msgstr ""
 
-#: psynet/prescreen/__init__.py:1323
+#: psynet/prescreen/__init__.py:1322
 msgctxt "color_blindness_test_intro_1"
 msgid ""
 "In each trial, you will be presented with an image that contains a number."
 msgstr ""
 
-#: psynet/prescreen/__init__.py:1331
+#: psynet/prescreen/__init__.py:1330
 #, python-brace-format
 msgctxt "color_blindness_test_intro_1"
 msgid "This image will disappear after {HIDE_AFTER} seconds."
 msgstr ""
 
-#: psynet/prescreen/__init__.py:1337
+#: psynet/prescreen/__init__.py:1336
 msgctxt "color_blindness_test_intro_1"
 msgid "You must enter the number that you see into the text box."
 msgstr ""
 
-#: psynet/prescreen/__init__.py:1766
+#: psynet/prescreen/__init__.py:1765
 msgctxt "Beep-headphone-test"
 msgid "Which sound is different from the other two: 1, 2, or 3?"
 msgstr ""
 
-#: psynet/prescreen/__init__.py:1802
+#: psynet/prescreen/__init__.py:1801
 msgid ""
 "Your task will be to judge <strong>which sound is the odd one out</strong>."
 msgstr ""
@@ -614,34 +618,26 @@ msgstr ""
 msgid "The test will start on the next page."
 msgstr ""
 
-#: psynet/recruiters.py:88
+#: psynet/recruiters.py:76
 msgctxt "recruiter_communication"
 msgid "Communicating with the recruiter..."
 msgstr ""
 
-#: psynet/recruiters.py:156
-msgctxt "screen_out_successful"
-msgid ""
-"You have been credited for the time spent on the experiment. Because you "
-"could not progress to the main experiment your submission will appear as "
-"'screened out' in Prolific. You can now close this browser window."
-msgstr ""
-
-#: psynet/recruiters.py:176
+#: psynet/recruiters.py:133
 msgctxt "return_assignment_instructions"
 msgid ""
 "Please return your submission via the Prolific interface and click Next. We "
 "will then automatically pay you a bonus for your time."
 msgstr ""
 
-#: psynet/recruiters.py:199
+#: psynet/recruiters.py:158
 msgctxt "return_for_bonus_completed"
 msgid ""
 "That worked! You have been credited for the time spent on the experiment. "
 "Thank you for participating. You can now close this browser window."
 msgstr ""
 
-#: psynet/recruiters.py:209
+#: psynet/recruiters.py:168
 msgctxt "assignment_return_retry"
 msgid ""
 "That didn't work. Are you sure you returned the submission for this study? "
@@ -649,7 +645,7 @@ msgid ""
 "submission, then click the 'Next' button."
 msgstr ""
 
-#: psynet/recruiters.py:235
+#: psynet/recruiters.py:194
 msgctxt "return_for_bonus_enabled"
 msgid ""
 "We are sorry that you could not proceed to the main experiment, but we will "
@@ -658,7 +654,7 @@ msgid ""
 "'Next' button below."
 msgstr ""
 
-#: psynet/recruiters.py:254
+#: psynet/recruiters.py:213
 msgctxt "screen_out_return_and_message_experimenter"
 msgid ""
 "We are sorry that you could not proceed to the main experiment. To receive "
@@ -668,7 +664,7 @@ msgid ""
 " you for your understanding. You can now close this browser window."
 msgstr ""
 
-#: psynet/recruiters.py:1284
+#: psynet/recruiters.py:1207
 msgctxt "lucid_error"
 msgid "Redirecting to Lucid Marketplace..."
 msgstr ""
@@ -2265,79 +2261,79 @@ msgstr ""
 msgid "Reset"
 msgstr ""
 
-#: psynet/templates/macros/control.html:1028
+#: psynet/templates/macros/control.html:1030
 msgctxt "audio_meter_calibrate"
 msgid "Sliders"
 msgstr ""
 
-#: psynet/templates/macros/control.html:1031
+#: psynet/templates/macros/control.html:1033
 msgctxt "audio_meter_calibrate"
 msgid "Documentation"
 msgstr ""
 
-#: psynet/templates/macros/control.html:1042
+#: psynet/templates/macros/control.html:1044
 msgctxt "audio_meter_calibrate"
 msgid ""
 "The <strong>decay</strong> parameters determine the amount of smoothing that"
 " happens to the signal, and have units of seconds."
 msgstr ""
 
-#: psynet/templates/macros/control.html:1043
+#: psynet/templates/macros/control.html:1045
 msgctxt "audio_meter_calibrate"
 msgid ""
 "A high decay parameter means that the signal takes a long time to decay "
 "(i.e. high smoothing)."
 msgstr ""
 
-#: psynet/templates/macros/control.html:1044
+#: psynet/templates/macros/control.html:1046
 msgctxt "audio_meter_calibrate"
 msgid ""
 "There are three decay parameters: one for the displayed audio meter, one for"
 " the 'too-high' detector, and one for the 'too-low' detector."
 msgstr ""
 
-#: psynet/templates/macros/control.html:1048
+#: psynet/templates/macros/control.html:1050
 msgctxt "audio_meter_calibrate"
 msgid ""
 "The <strong>threshold</strong> parameters determine the point at which the "
 "volume is determined to be 'too high' or 'too low'."
 msgstr ""
 
-#: psynet/templates/macros/control.html:1052
+#: psynet/templates/macros/control.html:1054
 msgctxt "audio_meter_calibrate"
 msgid ""
 "The <strong>grace</strong> parameters determine how long the volume must be "
 "outside the respective threshold for a warning message to be triggered."
 msgstr ""
 
-#: psynet/templates/macros/control.html:1056
+#: psynet/templates/macros/control.html:1058
 msgctxt "audio_meter_calibrate"
 msgid ""
 "The <strong>message duration</strong> parameters determine how long warning "
 "messages are displayed for."
 msgstr ""
 
-#: psynet/templates/macros/control.html:1093
+#: psynet/templates/macros/control.html:1095
 msgid "Record from start"
 msgstr ""
 
-#: psynet/templates/macros/control.html:1096
+#: psynet/templates/macros/control.html:1098
 msgid "Play all"
 msgstr ""
 
-#: psynet/templates/macros/control.html:1099
+#: psynet/templates/macros/control.html:1101
 msgid "Play prompt"
 msgstr ""
 
-#: psynet/templates/macros/control.html:1102
+#: psynet/templates/macros/control.html:1104
 msgid "Play recording"
 msgstr ""
 
-#: psynet/templates/macros/control.html:1105
+#: psynet/templates/macros/control.html:1107
 msgid "Stop"
 msgstr ""
 
-#: psynet/templates/macros/control.html:1114
+#: psynet/templates/macros/control.html:1116
 msgid "Loop"
 msgstr ""
 
@@ -2447,17 +2443,17 @@ msgctxt "timeline_problem"
 msgid "Terminate the experiment early"
 msgstr ""
 
-#: psynet/templates/timeline-page.html:1313
+#: psynet/templates/timeline-page.html:172
 msgctxt "timeline_problem"
 msgid "Comment stored."
 msgstr ""
 
-#: psynet/templates/timeline-page.html:1414
+#: psynet/templates/timeline-page.html:173
 msgctxt "timeline_problem"
 msgid "Please wait for the page to load."
 msgstr ""
 
-#: psynet/templates/timeline-page.html:1414
+#: psynet/templates/timeline-page.html:173
 msgctxt "timeline_problem"
 msgid "Try again in a couple of seconds."
 msgstr ""

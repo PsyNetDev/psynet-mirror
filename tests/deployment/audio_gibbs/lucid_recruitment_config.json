@@ -1,0 +1,47 @@
+{
+    "survey": {
+        "BidIncidence": 30,
+        "CollectsPII": false,
+        "CountryLanguageID": 9,
+        "FulcrumExchangeAllocation": 0,
+        "FulcrumExchangeHedgeAccess": true,
+        "IndustryID": 30,
+        "StudyTypeID": 1,
+        "UniqueIPAddress": true,
+        "UniquePID": true
+    },
+    "qualifications": [
+        {
+            "Name": "MS_is_mobile",
+            "QuestionID": 8214,
+            "LogicalOperator": "NOT",
+            "NumberOfRequiredConditions": 0,
+            "IsActive": true,
+            "Order": 1,
+            "PreCodes": ["true"]
+        },
+        {
+            "Name": "MS_is_tablet",
+            "QuestionID": 8213,
+            "LogicalOperator": "NOT",
+            "NumberOfRequiredConditions": 0,
+            "IsActive": true,
+            "Order": 1,
+            "PreCodes": ["true"]
+        },
+        {
+            "Name": "HAS_AUDIO v1",
+            "QuestionID": 223188,
+            "LogicalOperator": "OR",
+            "NumberOfRequiredConditions": 1,
+            "IsActive": true,
+            "Order": 2,
+            "PreCodes": ["1"]
+        }
+    ],
+    "inactivity_timeout_in_s": 60,
+    "no_focus_timeout_in_s": 10,
+    "aggressive_no_focus_timeout_in_s": 3,
+    "termination_time_in_s": 600,
+    "initial_response_within_s": 180
+}

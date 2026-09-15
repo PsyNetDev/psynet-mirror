@@ -186,5 +186,5 @@ as well as looking through the resources below.
 Further reading
 ---------------
 
-- `Graphics exercises <../learning/exercises/graphics.html>`_
+- :doc:`Graphics exercises </learning/exercises/graphics>`
 - :doc:`/api/graphics`

@@ -1,9 +1,8 @@
-import re
 from datetime import datetime
 
 from jsonpickle.unpickler import loadclass
 from jsonpickle.util import importable_name
-from sqlalchemy import Boolean, Column, Float, Integer, String, types
+from sqlalchemy import types
 from sqlalchemy.ext.mutable import MutableDict, MutableList
 from sqlalchemy.types import TypeDecorator
 
@@ -90,54 +89,42 @@ class PythonClass(PythonObject):
         return loadclass(value)
 
 
-def register_extra_var(extra_vars, name, overwrite=False, **kwargs):
-    if (not overwrite) and (name in extra_vars):
-        raise ValueError(f"tried to overwrite the variable {name}")
-
-    extra_vars[name] = {**kwargs}
-
-
-# Don't apply this decorator to time consuming operations, especially database queries!
-def extra_var(extra_vars):
-    def real_decorator(function):
-        register_extra_var(extra_vars, function.__name__, overwrite=True)
-        return function
-
-    return real_decorator
-
-
-def claim_field(name: str, extra_vars: dict, field_type=object):
-    # Todo - add new argument corresponding to the default value of the field
-    register_extra_var(extra_vars, name, field_type=field_type)
-
-    if field_type is int:
-        col = Column(Integer, nullable=True)
-    elif field_type is float:
-        col = Column(Float, nullable=True)
-    elif field_type is bool:
-        col = Column(Boolean, nullable=True)
-    elif field_type is str:
-        col = Column(String, nullable=True)
-    elif field_type is list:
-        col = Column(PythonList, nullable=True)
-    elif field_type is dict:
-        col = Column(PythonDict, nullable=True)
-    elif field_type is object:
-        col = Column(PythonObject, nullable=True)
-    else:
-        raise NotImplementedError
-
-    return col
-
-
 def claim_var(
     name,
-    extra_vars: dict,
     use_default=False,
     default=lambda: None,
     serialise=lambda x: x,
     unserialise=lambda x: x,
 ):
+    """Create a property backed by :class:`~psynet.field.VarStore`.
+
+    Parameters
+    ----------
+    name :
+        Variable name stored under ``obj.var``.
+    use_default :
+        If true, return ``default()`` when the variable is missing.
+    default :
+        Zero-argument callable used when ``use_default`` is true.
+    serialise :
+        Transform applied before writing to VarStore.
+    unserialise :
+        Transform applied after reading from VarStore.
+
+    Notes
+    -----
+    Older code passed a second ``extra_vars`` dict
+    (``claim_var("x", __extra_vars__)``). That argument is no longer accepted;
+    passing a dict raises ``TypeError`` so missing vars are not silently turned
+    into ``use_default=True``.
+    """
+    if isinstance(use_default, dict):
+        raise TypeError(
+            "claim_var() no longer accepts an extra_vars dict as its second "
+            "argument. Use claim_var(name) (and optionally use_default=..., "
+            "default=...); the extra_var export registry has been removed."
+        )
+
     @property
     def function(self):
         try:
@@ -150,8 +137,6 @@ def claim_var(
     @function.setter
     def function(self, value):
         setattr(self.var, name, serialise(value))
-
-    register_extra_var(extra_vars, name)
 
     return function
 
@@ -426,10 +411,11 @@ def json_clean(x, details=False, contents=False):
             pass
 
     if details:
-        del x["details"]
+        # Models that drop Dallinger SharedMixin fields (e.g. Trial) omit details.
+        x.pop("details", None)
 
     if contents:
-        del x["contents"]
+        x.pop("contents", None)
 
     if "metadata_" in x and "metadata" in x:
         del x["metadata_"]
@@ -440,26 +426,6 @@ def json_unpack_field(x: dict, field: str, replace: bool = False):
         for key, value in x[field].items():
             if replace or (key not in x):
                 x[key] = value
-    return x
-
-
-def json_add_extra_vars(x, obj):
-    def valid_key(key):
-        return not re.search("^_", key)
-
-    for key in obj.__extra_vars__.keys():
-        if valid_key(key):
-            try:
-                val = getattr(obj, key)
-            except KeyError:
-                val = None
-            x[key] = val
-
-    if hasattr(obj, "var") and isinstance(obj.var, VarStore):
-        for key, value in obj.var.items():
-            if valid_key(key):
-                x[key] = value
-
     return x
 
 

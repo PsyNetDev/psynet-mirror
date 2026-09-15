@@ -1,7 +1,9 @@
 const path = require("path");
-const { test, expect } = require("@playwright/test");
+const { test, expect } = require("../fixtures");
 
 const {
+  assertExpectedTimelinePathActive,
+  clickFinish,
   clickNextAndWait,
   completeInitialGateway,
   captureTrialEventBaseline,
@@ -106,6 +108,10 @@ async function expectAtLeastOne(page, selector, timeout = PROMPT_TIMEOUT_MS) {
     .toBeGreaterThan(0);
 }
 
+async function expectResponseSubmitCount(tracker, expectedCount, timeout = 3000) {
+  await expect.poll(() => tracker.getCount(), { timeout }).toBe(expectedCount);
+}
+
 async function getRenderedTextHeight(locator) {
   return locator.first().evaluate((el) => {
     const bboxHeight =
@@ -128,13 +134,14 @@ async function getRenderedTextHeight(locator) {
   });
 }
 
-test("graphics demo", async ({ page, context }) => {
+test("graphics demo", { tag: "@both" }, async ({ page, context }) => {
   const absDir = path.resolve("demos/experiments/graphics");
   await withExperiment(page, context, absDir, async (experimentPage) => {
     const submitTracker = startResponseSubmitTracker(experimentPage);
     try {
     // Section 0: complete deterministic gateway step.
     await completeInitialGateway(experimentPage);
+    await assertExpectedTimelinePathActive(experimentPage, 20000);
 
     // Section 1: smoke-check intro page and move into graphics-specific pages.
     await expectMainBodyContains(experimentPage, "Graphic components");
@@ -165,9 +172,11 @@ test("graphics demo", async ({ page, context }) => {
       1,
       STEP_TIMEOUT_MS
     );
+    await expectResponseSubmitCount(submitTracker, firstClickBaselineResponses + 1);
 
     const firstDebugAnswer = await experimentPage.locator("#main-body").innerText();
     await expect(experimentPage.locator("#main-body")).toContainText("'clicked_object': 'title'");
+    await expect(experimentPage.locator("#main-body svg")).toHaveCount(0);
     const [firstX, firstY] = extractClickCoordinates(firstDebugAnswer);
     expect(firstX).toBeGreaterThan(0);
     expect(firstY).toBeGreaterThan(0);
@@ -219,11 +228,13 @@ test("graphics demo", async ({ page, context }) => {
       1,
       STEP_TIMEOUT_MS
     );
+    await expectResponseSubmitCount(submitTracker, secondClickBaselineResponses + 1);
 
     const secondDebugAnswer = await experimentPage.locator("#main-body").innerText();
     await expect(experimentPage.locator("#main-body")).toContainText(
       "'clicked_object': 'lots'"
     );
+    await expect(experimentPage.locator("#main-body svg")).toHaveCount(0);
     const [secondX, secondY] = extractClickCoordinates(secondDebugAnswer);
     expect(secondX).toBeGreaterThan(0);
     expect(secondY).toBeGreaterThan(0);
@@ -272,11 +283,7 @@ test("graphics demo", async ({ page, context }) => {
     // Section 9: verify normal experiment termination route remains intact after assertions above.
     const finishButton = experimentPage.locator("#Finish");
     await expect(finishButton).toBeVisible({ timeout: STEP_TIMEOUT_MS });
-    await finishButton.first().click();
-    await experimentPage.waitForURL(
-      (url) => url.toString().includes("recruiter-exit"),
-      { timeout: STEP_TIMEOUT_MS }
-    );
+    await clickFinish(experimentPage, STEP_TIMEOUT_MS);
     } finally {
       submitTracker.stop();
     }

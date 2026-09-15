@@ -13,7 +13,7 @@
 {% block body %}
     {{super()}}
 
-    <h1 style="float: left; background-color: black;" class="p-2 text-white"><img src="/static/images/unity_logo.png" style="float: left; height: 54px;"/>unity debug page</h1>
+    <h1 style="float: left; background-color: black;" class="p-2 text-white"><img src="{{ url_for('static', filename='images/unity_logo.png') }}" style="float: left; height: 54px;"/>unity debug page</h1>
     <h2 style="float: left;" class="p-3">Please go to your Unity IDE!</h2>
     <ul style="clear: both; list-style-type: none;">
       <li><span class="fw-bold" style="font-size: larger; font-weight: bold; text-decoration: underline;">{{ title }}</span></li>

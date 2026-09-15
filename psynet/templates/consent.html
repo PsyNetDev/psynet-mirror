@@ -1,5 +1,14 @@
 {% extends "base/consent.html" %}
-{% include "macros/browser-detect.html" %}
+{% import "macros/browser-detect.html" as browser_detect with context %}
+{# This page extends Dallinger's consent layout rather than psynet_layout.html,
+   so it needs the viewport meta directly. #}
+{% import "macros/head.html" as psynet_head %}
+
+{% block head %}
+    {{ super() }}
+    {{ psynet_head.viewport() }}
+    {{ browser_detect.head() }}
+{% endblock %}
 
 {% block stylesheets %}
     {{ super() }}
@@ -12,9 +21,10 @@
 {% endblock %}
 
 {% block body %}
+    {{ browser_detect.body() }}
     {% if not experiment.with_lucid_recruitment() %}
-        <div class="container d-flex align-items-center justify-content-center" style="height: 95%">
-            <div>
+        <div class="container d-flex align-items-center justify-content-center" style="min-height: 90vh">
+            <div class="psynet-surface">
                 <div class="row overflow-hidden mb-3" style="height: 73px;">
                     <img id="adlogo" style="display: none" alt="Lab Logo" />
                 </div>
@@ -50,12 +60,8 @@
         });
 
         start = function() {
-            {% if config.show_abort_button and experiment.start_experiment_in_popup_window %}
-                if (window.opener !== null) {
-                    window.opener.enableAbortButton();
-                }
-            {% endif %}
-            window.location='/start?{{query_string|safe}}';
+            // Replace so Back from the timeline does not return to this Next page.
+            window.location.replace('/start?{{query_string|safe}}');
         }
         {% if experiment.with_lucid_recruitment() %}
             start();

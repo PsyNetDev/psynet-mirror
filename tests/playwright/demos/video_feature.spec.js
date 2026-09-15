@@ -1,5 +1,5 @@
 const path = require("path");
-const { test, expect } = require("@playwright/test");
+const { test, expect } = require("../fixtures");
 
 const {
   advanceUntilFinish,
@@ -9,6 +9,7 @@ const {
   startResponseSubmitTracker,
   waitForResponseSubmitIncrement,
   waitForAudioRecordingReady,
+  waitForMainBodyContains,
   waitForTrialEvents,
   waitForVideoRecordingReady,
   withExperiment
@@ -115,7 +116,7 @@ async function expectVideoPromptReady(page, timeout = PROMPT_TIMEOUT_MS) {
     .toMatchObject({ hasSource: true, hasDuration: true });
 }
 
-test("video feature demo", async ({ page, context }) => {
+test("video feature demo", { tag: "@both" }, async ({ page, context }) => {
   const absDir = path.resolve("demos/features/video");
   await withExperiment(page, context, absDir, async (experimentPage) => {
     const submitTracker = startResponseSubmitTracker(experimentPage);
@@ -270,7 +271,11 @@ test("video feature demo", async ({ page, context }) => {
       );
 
       // Section 6: ensure playback page appears and finish remaining timeline safely.
-      await expectMainBodyContains(experimentPage, "camera recording", STEP_TIMEOUT_MS);
+      await waitForMainBodyContains(
+        experimentPage,
+        "camera recording",
+        STEP_TIMEOUT_MS
+      );
       await expectVideoPromptReady(experimentPage, STEP_TIMEOUT_MS);
       await advanceUntilFinish(experimentPage);
     } finally {

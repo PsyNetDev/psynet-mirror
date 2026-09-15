@@ -1,18 +1,19 @@
 {% extends "timeline-page.html" %}
 
 {% block stylesheets %}
-    <link rel="stylesheet" href="/static/css/consent.css"/>
+    {{ super() }}
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/consent.css') }}"/>
 {% endblock %}
 
 {% block main_body %}
-  <div class="main-div" style="padding-bottom: 200px;">
+  <div class="main-div">
     <h1>{{ pgettext("consent-title", "We need your consent to proceed") }}</h1>
     <hr>
     <p>
         {{ pgettext("consent-database", "With this privacy policy, we would like to inform you about the personal data we collect when you register for our participant pool and for what purposes we process this data.") }}
         {{ pgettext("consent-database", "In addition, we would like to inform you about your rights with regard to the processing of personal data.") }}
     </p>
-    <div class="text-justify">
+    <div class="consent-body">
         <div class="text-left" style="font-size:18px">
             <h4>{{ pgettext("consent-purpose", "Purposes of Processing") }}</h4>
             <p class="consent-text">
@@ -107,7 +108,7 @@
 
             {{ consent.contact(config) }}
         </div>
-        {{ consent.fixed_buttons(config) }}
+        {{ consent.buttons(config) }}
       </div>
   </div>
 {% endblock %}

@@ -3,6 +3,12 @@ const timeout = Number(process.env.PLAYWRIGHT_TIMEOUT_MS || 10 * 60 * 1000);
 
 /** @type {import('@playwright/test').PlaywrightTestConfig} */
 const config = {
+  // Specs must declare a mode tag so CI can select without hardcoding paths:
+  //   @both         — safe under inplace and legacy reload modes
+  //   @inplace-only — requires default inplace_timeline_transitions
+  //   @legacy-only  — requires inplace_timeline_transitions=false
+  // CI: playwright_e2e_default uses --grep '@both|@inplace-only'
+  //     playwright_e2e_legacy uses --grep '@both|@legacy-only'
   testDir: "tests/playwright",
   workers: 1,
   timeout,

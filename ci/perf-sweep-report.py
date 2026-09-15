@@ -7,7 +7,7 @@ a sweep run shows directly what the regression gate would see at each
 concurrency level -- which is the number to tune n_bots / duration against.
 
 The derived-metric formulas below MUST stay in sync with the ``track_*`` methods
-in ``benchmarks/experiment_performance.py``.
+in ``benchmarks/slow/experiment_performance.py``.
 
 Usage: perf-sweep-report.py <sweep-json> [<sweep-json> ...] Prints a
 GitHub-flavoured Markdown table per input file to stdout.
@@ -37,7 +37,7 @@ _HEADERS = [
 def derived_metrics(result):
     """Derived ASV metrics for one sweep result entry.
 
-    Mirrors the ``track_*`` methods in ``benchmarks/experiment_performance.py``;
+    Mirrors the ``track_*`` methods in ``benchmarks/slow/experiment_performance.py``;
     keep the two in sync. Unlike the benchmark, a zero request rate yields
     ``None`` (rendered "n/a") here rather than raising -- this is a report.
     """

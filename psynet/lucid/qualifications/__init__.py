@@ -352,7 +352,7 @@ class LucidScreeningQuestion(ModularPage):
             ),
             time_estimate=time_estimate,
             show_next_button=False,
-            show_termination_button=False,
+            show_early_exit_button=False,
             aggressive_termination_on_no_focus=aggressive_termination_on_no_focus,
         )
 

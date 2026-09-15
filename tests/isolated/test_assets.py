@@ -1,5 +1,6 @@
 import os
 import tempfile
+from urllib import request
 
 import pytest
 from dallinger import db
@@ -15,6 +16,35 @@ from psynet.asset import (
     asset,
 )
 from psynet.pytest_psynet import path_to_test_experiment
+from psynet.redis import redis_vars
+from psynet.trial.chain import ChainNode
+from psynet.trial.static import StaticTrial
+
+
+def placeholder_function(path, param):
+    with open(path, "w") as f:
+        f.write(f"Generated content: {param}")
+
+
+class FinalizeDefinitionTrial(StaticTrial):
+    time_estimate = 1
+
+    def make_definition(self, experiment, participant):
+        return {"param": "initial"}
+
+    def finalize_definition(self, definition, experiment, participant):
+        self.add_assets(
+            {
+                "generated": OnDemandAsset(
+                    function=placeholder_function,
+                    arguments={},
+                )
+            }
+        )
+        return definition
+
+    def show_trial(self, experiment, participant):
+        raise NotImplementedError
 
 
 class MultiplyAsset(ExperimentAsset):
@@ -257,10 +287,302 @@ def test_access_assets(
         assert t.assets["trial_asset"].export_path.endswith(".txt")
 
 
-# Test function asset - cached
-def placeholder_function(path, param):
-    with open(path, "w") as f:
-        f.write(f"Generated content: {param}")
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("static")], indirect=True
+)
+@pytest.mark.usefixtures("launched_experiment")
+def test_add_asset_does_not_reobfuscate_deposited_asset(trial, launched_experiment):
+    with tempfile.NamedTemporaryFile("w", suffix=".txt") as f:
+        f.write("Hello!")
+        f.flush()
+
+        cached_asset = CachedAsset(
+            local_key="cached_asset",
+            input_path=f.name,
+        )
+        cached_asset.deposit(launched_experiment.asset_storage)
+
+        original_host_path = cached_asset.host_path
+        original_url = cached_asset.url
+        original_local_key = cached_asset.local_key
+        original_access_token = cached_asset.access_token
+        original_object_path = cached_asset.object_path
+        cached_asset.node_definition = {"marker": "original"}
+
+        assert original_host_path.startswith("objects/sha256/")
+        assert original_object_path == original_host_path
+        assert original_url == f"/asset/{original_access_token}"
+
+        trial.add_asset("image_left", cached_asset)
+
+        assert cached_asset.host_path == original_host_path
+        assert cached_asset.object_path == original_object_path
+        assert cached_asset.url == original_url
+        assert cached_asset.access_token == original_access_token
+        assert cached_asset.local_key == original_local_key
+        assert cached_asset.node_definition == {"marker": "original"}
+
+        db.session.commit()
+
+        base_url = redis_vars.get("base_url")
+        assert base_url
+        url = f"{base_url}{cached_asset.url}"
+        with request.urlopen(url) as response:
+            assert response.status == 200
+            assert response.read() == b"Hello!"
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("static")], indirect=True
+)
+@pytest.mark.usefixtures("launched_experiment")
+def test_add_asset_relink_deposited_asset_across_trials(
+    trial_class,
+    experiment_object,
+    participant,
+    node,
+    launched_experiment,
+):
+    trials = [
+        trial_class(
+            experiment=experiment_object,
+            node=node,
+            participant=participant,
+            propagate_failure=False,
+            is_repeat_trial=False,
+        )
+        for _ in range(2)
+    ]
+    for t in trials:
+        db.session.add(t)
+    db.session.commit()
+
+    with tempfile.NamedTemporaryFile("w", suffix=".txt") as f:
+        f.write("Hello!")
+        f.flush()
+
+        cached_asset = CachedAsset(
+            local_key="cached_asset",
+            input_path=f.name,
+        )
+        cached_asset.deposit(launched_experiment.asset_storage)
+
+        original_host_path = cached_asset.host_path
+        original_url = cached_asset.url
+        original_local_key = cached_asset.local_key
+
+        trials[0].add_asset("link_a", cached_asset)
+        trials[1].add_asset("link_b", cached_asset)
+
+        assert cached_asset.host_path == original_host_path
+        assert cached_asset.url == original_url
+        assert cached_asset.local_key == original_local_key
+        assert trials[0].assets["link_a"] is cached_asset
+        assert trials[1].assets["link_b"] is cached_asset
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("static")], indirect=True
+)
+@pytest.mark.usefixtures("launched_experiment")
+def test_add_asset_sets_definition_for_on_demand_asset(trial):
+    on_demand_asset = OnDemandAsset(
+        function=placeholder_function,
+        arguments={},
+    )
+    trial.definition["param"] = "from_definition"
+
+    trial.add_asset("generated", on_demand_asset)
+
+    assert on_demand_asset.arguments["param"] == "from_definition"
+    assert on_demand_asset.node_definition == trial.definition
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("static")], indirect=True
+)
+@pytest.mark.usefixtures("launched_experiment")
+def test_add_asset_does_not_override_definition_for_deposited_on_demand_asset(
+    trial, launched_experiment
+):
+    on_demand_asset = OnDemandAsset(
+        function=placeholder_function,
+        arguments={"param": "original"},
+    )
+    on_demand_asset.deposit(launched_experiment.asset_storage)
+    on_demand_asset.node_definition = {"marker": "original"}
+    trial.definition["param"] = "new"
+
+    trial.add_asset("generated", on_demand_asset)
+
+    assert on_demand_asset.arguments["param"] == "original"
+    assert on_demand_asset.node_definition == {"marker": "original"}
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("static")], indirect=True
+)
+@pytest.mark.usefixtures("launched_experiment")
+def test_add_asset_external_asset_does_not_mutate_url(trial):
+    external_asset = ExternalAsset(
+        "http://example.com/example.mp3",
+        local_key="external_asset",
+    )
+    original_url = external_asset.url
+    original_host_path = external_asset.host_path
+
+    trial.add_asset("external", external_asset)
+
+    assert external_asset.url == original_url
+    assert external_asset.host_path == original_host_path
+    assert trial.assets["external"] is external_asset
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("static")], indirect=True
+)
+@pytest.mark.usefixtures("launched_experiment")
+def test_add_asset_external_asset_sets_missing_metadata(trial):
+    external_asset = ExternalAsset("http://example.com/example.mp3")
+
+    assert external_asset.local_key is None
+
+    trial.add_asset("external", external_asset)
+
+    assert external_asset.parent is trial
+    assert external_asset.local_key == "external"
+    assert external_asset.key_within_module
+    assert "external" in external_asset.key_within_module
+    assert external_asset.export_path
+    assert external_asset.export_path != "common/.mp3"
+    assert trial.assets["external"] is external_asset
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("static")], indirect=True
+)
+@pytest.mark.usefixtures("launched_experiment")
+def test_chain_node_stage_assets_overwrites_undeposited_metadata(
+    launched_experiment, participant
+):
+    with tempfile.NamedTemporaryFile("w", suffix=".txt") as f:
+        f.write("Hello!")
+        f.flush()
+
+        staged_asset = ExperimentAsset(
+            input_path=f.name,
+            local_key="original_key",
+            parent=participant,
+        )
+        node = ChainNode(
+            definition={"seed": "x"},
+            assets={"stimulus": staged_asset},
+            module_id="chain_module",
+        )
+
+        node.stage_assets(launched_experiment)
+
+        assert staged_asset.parent is node
+        assert staged_asset.local_key == "stimulus"
+        assert staged_asset.module_id == "chain_module"
+        assert staged_asset.node_definition == node.definition
+        assert node.assets["stimulus"] is staged_asset
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("static")], indirect=True
+)
+@pytest.mark.usefixtures("launched_experiment")
+def test_update_metadata_clears_module_id_when_parent_missing(launched_experiment):
+    with tempfile.NamedTemporaryFile("w", suffix=".txt") as f:
+        f.write("Hello!")
+        f.flush()
+
+        staged_asset = ExperimentAsset(
+            input_path=f.name,
+            local_key="original_key",
+            module_id="stale_module",
+        )
+        node = ChainNode(
+            definition={"seed": "x"},
+            assets={"stimulus": staged_asset},
+            module_id=None,
+        )
+
+        node.stage_assets(launched_experiment)
+
+        assert staged_asset.module_id is None
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("static")], indirect=True
+)
+@pytest.mark.usefixtures("launched_experiment")
+def test_add_asset_sets_missing_metadata_for_new_assets(trial, participant):
+    with tempfile.NamedTemporaryFile("w", suffix=".txt") as f:
+        f.write("Hello!")
+        f.flush()
+
+        new_asset = ExperimentAsset(
+            input_path=f.name,
+            local_key="original_key",
+            parent=participant,
+        )
+
+        assert new_asset.local_key == "original_key"
+        assert getattr(new_asset, "node_definition", None) is None
+
+        trial.add_asset("image_right", new_asset)
+
+        assert new_asset.local_key == "image_right"
+        assert new_asset.parent is trial
+        assert new_asset.node_definition == trial.definition
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("static")], indirect=True
+)
+@pytest.mark.usefixtures("launched_experiment")
+def test_finalize_assets_does_not_override_deposited_on_demand_asset(
+    trial, launched_experiment
+):
+    on_demand_asset = OnDemandAsset(
+        function=placeholder_function,
+        arguments={"param": "original"},
+    )
+    on_demand_asset.deposit(launched_experiment.asset_storage)
+    on_demand_asset.node_definition = {"marker": "original"}
+
+    trial.add_asset("generated", on_demand_asset)
+    trial.finalize_assets()
+
+    assert on_demand_asset.arguments["param"] == "original"
+    assert on_demand_asset.node_definition == {"marker": "original"}
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("static")], indirect=True
+)
+@pytest.mark.usefixtures("launched_experiment")
+def test_finalize_assets_keeps_deposited_on_demand_asset_definition(
+    experiment_object,
+    node,
+    participant,
+):
+    trial = FinalizeDefinitionTrial(
+        experiment=experiment_object,
+        node=node,
+        participant=participant,
+        propagate_failure=False,
+        is_repeat_trial=False,
+    )
+    asset = trial.assets["generated"]
+    assert asset.arguments["param"] == "initial"
+
+    trial.definition["param"] = "changed"
+    trial.finalize_assets()
+
+    assert asset.arguments["param"] == "initial"
 
 
 def test_asset_constructor():

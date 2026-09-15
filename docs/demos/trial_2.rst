@@ -1,7 +1,7 @@
 Trials (2)
 ==========
 
-Source: ``demos/trial_2``
+Source: ``demos/experiments/trial_2``
 
 This demo follows on from the previous Trial demo. Its key feature is programmatically
 generating audio stimuli. Instead of manually creating a folder of audio stimuli
@@ -30,12 +30,12 @@ When you run an experiment, PsyNet will automatically check the status of these 
 and perform any computations or uploads that are necessary.
 
 
-Source: ``demos/trial_2/experiment.py``
+Source: ``demos/experiments/trial_2/experiment.py``
 
 .. literalinclude:: ../../demos/experiments/trial_2/experiment.py
    :language: python
 
-Source: ``demos/trial_2/custom_synth.py``
+Source: ``demos/experiments/trial_2/custom_synth.py``
 
 .. literalinclude:: ../../demos/experiments/trial_2/custom_synth.py
    :language: python

@@ -429,6 +429,11 @@ msgid "If so, please provide a few words describing the problem."
 msgstr "Jeśli tak, proszę podać kilka słów opisujących problem."
 
 #: psynet/end.py
+#, fuzzy
+msgid "Finish"
+msgstr "Zakończ"
+
+#: psynet/end.py
 #, fuzzy, python-brace-format
 msgctxt "final-page-rewards"
 msgid ""

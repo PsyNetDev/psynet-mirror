@@ -161,11 +161,15 @@ class CreateAndRateNode(CreateAndRateNodeMixin, AudioGibbsNode):
             # is previous iteration
             return winning_target.definition
         else:
-            trial = self.trial_maker.get_finished_creations(self)[0]
-            active_index = trial.active_index
-            vector = trial.updated_vector.copy()
+            initial_index = winning_target.initial_index
+            active_index = winning_target.active_index
+            vector = winning_target.updated_vector.copy()
             vector[active_index] = winning_target.answer
-            return {"vector": vector, "active_index": active_index}
+            return {
+                "vector": vector,
+                "initial_index": initial_index,
+                "active_index": active_index,
+            }
 
 
 class CustomCreateAndRateTrialMaker(CreateAndRateTrialMakerMixin, AudioGibbsTrialMaker):

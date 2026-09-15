@@ -1,0 +1,1 @@
+Data exports now write boolean columns as ``True`` / ``False`` instead of PostgreSQL's raw ``t`` / ``f``, so analysis tools can treat them as logical values. Archives remain loadable with ``psynet load``.

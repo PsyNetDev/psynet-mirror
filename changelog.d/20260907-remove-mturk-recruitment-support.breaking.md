@@ -1,0 +1,1 @@
+Removed MTurk recruitment support ahead of the platform's permanent closure on September 30, 2026. Experiments configured with the MTurk recruiter now stop with a migration error instead of falling back to Dallinger's transitive integration.

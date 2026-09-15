@@ -211,4 +211,4 @@ class Exp(psynet.experiment.Experiment):
 
         texts = [bot.current_page_text for bot in bots]
         for text in texts:
-            assert "That's the end of the experiment!" in text
+            assert "That's the end!" in text

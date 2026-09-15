@@ -52,6 +52,11 @@ The ``generate-constraints`` thereby tries to obtain a list of package versions 
 You should generally run ``psynet generate-constraints`` whenever you make changes to your ``requirements.txt`` file.
 You can commit the resulting ``constraints.txt`` file to your experiment's Git repository.
 
+Bundled demos in the PsyNet source repository are an exception: they use the
+shared development environment and do not track per-demo constraints. When a
+demo is copied into a standalone repository, run ``psynet setup`` and commit the
+generated ``constraints.txt`` there.
+
 In some cases constraints generation might fail with an error indicating that compatible versions cannot be found.
 This is often because Dallinger is overly conservative in its constraints.
 In this case, you can replace the automatically generated ``constraints.txt`` file with your own.

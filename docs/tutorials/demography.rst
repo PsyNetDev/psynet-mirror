@@ -4,7 +4,7 @@ Demography
 
 PsyNet contains various questionnaires for doing demographic research including an implementation of the `Goldsmiths Musical Sophistication Index` questionnaire (GMSI).
 
-The ``demos/demographics`` directory contains several subdirectories each pertaining to a demo with a specific subset of questions.
+The ``demos/features/demography`` directory contains a demo illustrating the available demographic questions.
 
 Questions are grouped into the three main modules `General`, `GMSI`, and `PEI`, whereby `General` has an additional level of grouping, see below.
 
@@ -26,14 +26,14 @@ The :py:mod:`~psynet.demography.general` module contains the following `PsyNet` 
 
 See the source code of these modules for the specific questions contained within each submodule by clicking on the submodule links above.
 
-A demo containing all general demography questions can be found at ``demos/demography/general``.
+A demo containing all general demography questions can be found at ``demos/features/demography``.
 
 
 Goldsmiths Musical Sophistication Index (GMSI)
 ----------------------------------------------
 
 For background information on the GMSI, see https://www.gold.ac.uk/music-mind-brain/gold-msi and
-https://gold-msi.org the latter of which contains an extensive set of resources and also tools which complement the PsyNet's documentation.
+https://shiny.gold-msi.org/gmsi_toplevel/ the latter of which contains an extensive set of resources and also tools which complement the PsyNet's documentation.
 
 Full version
 ++++++++++++
@@ -90,7 +90,7 @@ and the three additional items (subscales):
 * Start Age
 * Absolute Pitch
 
-See ``demos/demography/gmsi`` and ``demos/demography/gmsi_short`` for demos.
+See ``demos/features/demography`` for a demo.
 
 
 PEI (Confidence scale)
@@ -99,7 +99,7 @@ PEI (Confidence scale)
 For measuring the confidence of a participant use the :class:`~psynet.demography.pei.PEI` module:
 Visit the source code for the specific questions contained in this module.
 
-Check out ``demos/demography/pei`` for a demo.
+Check out ``demos/features/demography`` for a demo.
 
 
 Introductionary page

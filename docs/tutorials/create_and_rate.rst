@@ -121,40 +121,22 @@ The TrialMaker class just needs to inherit from `CreateAndRateTrialMakerMixin` a
        pass
 
 It is also possible to customize the behaviour. For example, say we want to separate raters and creators into two
-different groups which is set in ``participant.var.is_rater``. We can then implement the following:
+different groups which is set in ``participant.var.is_rater``. Return that role
+once and let the mixin use it for both chain eligibility and final trial-class
+validation:
 
 ::
 
-    def get_trial_class(self, node, participant, experiment):
-        proposed_role_class = super().get_trial_class(node, participant, experiment)
-        if participant.var.is_rater:
-            if proposed_role_class == self.rater_class:
-                return self.rater_class
-        else:
-            if proposed_role_class == self.creator_class:
-                return self.creator_class
-        return None
+    class CreateAndRateTrialMaker(CreateAndRateTrialMakerMixin, ImitationChainTrialMaker):
+        def get_participant_role(self, participant, experiment):
+            if participant.var.is_rater:
+                return self.RATER_ROLE
+            return self.CREATOR_ROLE
 
-    def custom_network_filter(self, candidates, participant):
-        creation_networks = []
-        rating_networks = []
-        for network in candidates:
-            node = CreateAndRateNode.query.filter_by(
-                network_id=network.id, degree=network.degree
-            ).one()
-            n_creations = CreateTrial.query.filter_by(
-                network_id=network.id, node_id=node.id, failed=False, finalized=True
-            ).count()
-            if n_creations < N_CREATORS:
-                creation_networks.append(network)
-            else:
-                rating_networks.append(network)
-        if participant.var.is_rater:
-            return rating_networks
-        else:
-            return creation_networks
-
-
+Creators then only receive heads that still need creators. Raters receive
+heads that are ready for raters, and they wait or exit on heads whose creator
+slots are filled but not yet finalized. Heads that still need creators are
+not rater-eligible.
 
 Also, you can easily modify the number of trials for creators and raters, e.g.:
 
@@ -180,33 +162,15 @@ Also, you can easily modify the number of trials for creators and raters, e.g.:
                         return True
                 return False
 
-            @staticmethod
-            def get_creation_and_rating_networks(candidates):
-                creation_networks = []
-                rating_networks = []
-                for network in candidates:
-                    node = CreateAndRateNode.query.filter_by(
-                        network_id=network.id, degree=network.degree
-                    ).one()
-                    n_creations = CreateTrial.query.filter_by(
-                        network_id=network.id, node_id=node.id, failed=False, finalized=True
-                    ).count()
-                    if n_creations < N_CREATORS:
-                        creation_networks.append(network)
-                    else:
-                        rating_networks.append(network)
-                return creation_networks, rating_networks
-
-            def custom_network_filter(self, candidates, participant):
+            def custom_chain_filter(self, chains, participant, experiment):
                 if self.has_enough_trials(participant):
                     return []
-                creation_networks, rating_networks = self.get_creation_and_rating_networks(
-                    candidates
-                )
+                return chains
+
+            def get_participant_role(self, participant, experiment):
                 if participant.var.is_rater:
-                    return rating_networks
-                else:
-                    return creation_networks
+                    return self.RATER_ROLE
+                return self.CREATOR_ROLE
 
 
 See the GAP demo for the full example.

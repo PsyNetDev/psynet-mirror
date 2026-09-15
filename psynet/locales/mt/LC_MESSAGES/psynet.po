@@ -430,6 +430,11 @@ msgstr ""
 "Jekk iva, jekk jogħġbok ipprovdi ftit kliem li jiddeskrivu l-problema."
 
 #: psynet/end.py
+#, fuzzy
+msgid "Finish"
+msgstr "Temm"
+
+#: psynet/end.py
 #, fuzzy, python-brace-format
 msgctxt "final-page-rewards"
 msgid ""

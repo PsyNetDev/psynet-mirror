@@ -1,14 +1,16 @@
 const path = require("path");
-const { test, expect } = require("@playwright/test");
+const { test, expect } = require("../fixtures");
 
 const {
   advanceUntilPromptContains,
-  advanceUntilFinish,
   captureTrialEventBaseline,
+  clickFinish,
   clickNextAndWait,
   completeInitialGateway,
   startResponseSubmitTracker,
+  waitForNextEnabled,
   waitForResponseSubmitIncrement,
+  waitForPromptContains,
   waitForTrialEvents,
   waitForVideoRecordingReady,
   withExperiment
@@ -35,10 +37,6 @@ Intentionally not covered:
 
 async function expectMainBodyContains(page, text, timeout = PROMPT_TIMEOUT_MS) {
   await expect(page.locator("#main-body")).toContainText(text, { timeout });
-}
-
-async function expectPromptContains(page, text, timeout = PROMPT_TIMEOUT_MS) {
-  await expect(page.locator("#prompt-text")).toContainText(text, { timeout });
 }
 
 async function getStagedCameraRecordingInfo(page) {
@@ -70,7 +68,50 @@ async function expectVideoPromptReady(page, timeout = PROMPT_TIMEOUT_MS) {
     .toMatchObject({ hasSource: true, hasDuration: true });
 }
 
-test("imitation_chain_video demo", async ({ page, context }) => {
+async function completeRemainingChain(page, timeout = STEP_TIMEOUT_MS) {
+  const finishButton = page.locator("#Finish");
+
+  for (let step = 0; step < 30; step += 1) {
+    if ((await finishButton.count()) > 0 && (await finishButton.isVisible())) {
+      await clickFinish(page, timeout);
+      return;
+    }
+
+    const videoControl = page.locator("#video-control");
+    if ((await videoControl.count()) > 0) {
+      await waitForVideoRecordingReady(page, { timeoutMs: 45000 });
+      await waitForNextEnabled(page, timeout);
+      await clickNextAndWait(page, timeout);
+      continue;
+    }
+
+    const promptText = await page
+      .locator("#prompt-text")
+      .innerText()
+      .catch(() => "");
+    if (
+      promptText.includes(
+        "When you are ready, press next to imitate the figure that you see."
+      )
+    ) {
+      await expectVideoPromptReady(page);
+      await clickNextAndWait(page, timeout);
+      continue;
+    }
+
+    const nextButton = page.locator("#next-button");
+    if ((await nextButton.count()) > 0) {
+      await clickNextAndWait(page, timeout);
+      continue;
+    }
+
+    await page.waitForTimeout(500);
+  }
+
+  throw new Error("Imitation chain did not reach Finish within expected steps.");
+}
+
+test("imitation_chain_video demo", { tag: "@both" }, async ({ page, context }) => {
   const absDir = path.resolve("demos/experiments/imitation_chain_video");
   await withExperiment(page, context, absDir, async (experimentPage) => {
     const submitTracker = startResponseSubmitTracker(experimentPage);
@@ -86,7 +127,7 @@ test("imitation_chain_video demo", async ({ page, context }) => {
       await clickNextAndWait(experimentPage, STEP_TIMEOUT_MS);
 
       // Section 2: verify actual webcam recording flow from UI to submit.
-      await expectPromptContains(experimentPage, "Please trace out a");
+      await waitForPromptContains(experimentPage, "Please trace out a");
       await expect(experimentPage.locator("#video-control")).toBeVisible({
         timeout: PROMPT_TIMEOUT_MS
       });
@@ -167,7 +208,7 @@ test("imitation_chain_video demo", async ({ page, context }) => {
       );
 
       // Section 4: complete remaining trials after verifying core interaction.
-      await advanceUntilFinish(experimentPage);
+      await completeRemainingChain(experimentPage);
     } finally {
       submitTracker.stop();
     }

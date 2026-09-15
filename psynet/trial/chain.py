@@ -1,5 +1,14 @@
+"""Chain-based trial assignment and network growth.
+
+Chain trial makers discover available networks, apply chain eligibility rules,
+then select one chain and resolve its head to the node used for trial creation.
+Static trial makers reuse the availability checks but adapt candidate networks
+to nodes before filtering and selection.
+"""
+
 import random
-from typing import Iterable, List, Optional, Type, Union
+from dataclasses import dataclass
+from typing import Any, Iterable, List, Literal, Optional, Type, Union
 
 from dallinger import db
 from dallinger.models import Vector
@@ -16,7 +25,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.ext.hybrid import hybrid_property
-from sqlalchemy.orm import column_property, relationship, subqueryload
+from sqlalchemy.orm import relationship, subqueryload
 from sqlalchemy.sql.expression import not_, select
 from tqdm import tqdm
 
@@ -37,12 +46,131 @@ from ..utils import (
 from .main import (
     NetworkTrialMaker,
     NetworkTrialMakerState,
+    Selection,
     Trial,
     TrialNetwork,
     TrialNode,
 )
 
 logger = get_logger()
+
+
+@dataclass(frozen=True)
+class Candidate:
+    """Connect a selection-hook value to its already-loaded network.
+
+    ``value`` is the paradigm-specific object exposed to experiment authors:
+    a network for chain trial makers and a node for static trial makers.
+    ``network`` is the backing object used internally for capacity, asynchronous
+    state, and block checks.
+
+    Keeping both references together is intentional. In particular, static
+    discovery must not recover the network through ``node.network``: that
+    reverse ORM relationship is not populated when ``network.head`` is loaded
+    and would issue lazy queries for every candidate.
+    """
+
+    value: Any
+    network: "ChainNetwork"
+
+
+def _count_viable_trials_for_nodes(node_ids: Iterable[int]) -> dict[int, int]:
+    """Return viable trial counts keyed by node ID."""
+
+    ids = list(dict.fromkeys(node_id for node_id in node_ids if node_id is not None))
+    if not ids:
+        return {}
+    rows = (
+        db.session.query(Trial.node_id, func.count(Trial.id))
+        .filter(
+            Trial.node_id.in_(ids),
+            Trial.is_repeat_trial.is_(False),
+            Trial.failed.is_(False),
+        )
+        .group_by(Trial.node_id)
+        .all()
+    )
+    return {node_id: count for node_id, count in rows}
+
+
+def count_viable_trials_for_nodes(node_ids: Iterable[int]) -> dict[int, int]:
+    """Return viable trial counts keyed by node id.
+
+    A viable trial is non-failed and not a repeat trial.
+    """
+    return _count_viable_trials_for_nodes(node_ids)
+
+
+def _viable_trial_count_expression(node_id):
+    """Return a correlated expression counting viable trials for a node ID."""
+
+    return (
+        select(func.count(Trial.id))
+        .where(
+            Trial.node_id == node_id,
+            Trial.is_repeat_trial.is_(False),
+            Trial.failed.is_(False),
+        )
+        .scalar_subquery()
+    )
+
+
+def count_viable_trials_for_node(node_id: int) -> int:
+    """Return the number of viable trials for one node."""
+    return _count_viable_trials_for_nodes([node_id]).get(node_id, 0)
+
+
+def count_completed_trials_for_networks(
+    network_ids: Iterable[int],
+) -> dict[int, int]:
+    """Return completed trial counts keyed by network id.
+
+    Counts completed, non-failed, non-repeat trials.
+    """
+    ids = [network_id for network_id in network_ids if network_id is not None]
+    if not ids:
+        return {}
+    rows = (
+        db.session.query(Trial.network_id, func.count(Trial.id))
+        .filter(
+            Trial.network_id.in_(ids),
+            Trial.failed.is_(False),
+            Trial.complete.is_(True),
+            Trial.is_repeat_trial.is_(False),
+        )
+        .group_by(Trial.network_id)
+        .all()
+    )
+    return {network_id: count for network_id, count in rows}
+
+
+def count_completed_trials_for_network(network_id: int) -> int:
+    """Count completed, non-failed, non-repeat trials in a network."""
+    return count_completed_trials_for_networks([network_id]).get(network_id, 0)
+
+
+def count_participant_trials_in_trial_maker(module_state_id: int) -> int:
+    """Count trials owned by a chain trial-maker module state."""
+    return (
+        db.session.query(func.count(Trial.id))
+        .filter(Trial.module_state_id == module_state_id)
+        .scalar()
+    )
+
+
+def count_participant_trials_in_block(module_state_id: int, block_position: int) -> int:
+    """Count trials for a module state at a given block position.
+
+    ``block_position`` is defined on :class:`ChainTrial`, not the base Trial.
+    """
+    return (
+        db.session.query(func.count(ChainTrial.id))
+        .filter(
+            ChainTrial.module_state_id == module_state_id,
+            ChainTrial.block_position == block_position,
+        )
+        .scalar()
+    )
 
 
 # class HasSeed:
@@ -125,13 +253,6 @@ class ChainNetwork(TrialNetwork):
 
     earliest_async_process_start_time : Optional[datetime]
         Time at which the earliest pending async process was called.
-
-    n_alive_nodes : int
-        Returns the number of non-failed nodes in the network.
-
-    n_completed_trials : int
-        Returns the number of completed and non-failed trials in the network
-        (irrespective of asynchronous processes, but excluding repeat trials).
 
     var : :class:`~psynet.field.VarStore`
         A repository for arbitrary variables; see :class:`~psynet.field.VarStore` for details.
@@ -377,7 +498,7 @@ class ChainNetwork(TrialNetwork):
         if self.full:
             return 0
         else:
-            return self.target_n_trials - self.n_completed_trials
+            return self.target_n_trials - count_completed_trials_for_network(self.id)
 
     @hybrid_property
     def ready_to_spawn(self):
@@ -397,15 +518,13 @@ class ChainNetwork(TrialNetwork):
 
     @hybrid_property
     def n_viable_trials_at_head(self):
-        return self.head.n_viable_trials
+        if self.head is None:
+            return 0
+        return _count_viable_trials_for_nodes([self.head.id]).get(self.head.id, 0)
 
     @n_viable_trials_at_head.expression
     def n_viable_trials_at_head(cls):
-        return (
-            select(ChainNode.n_viable_trials)
-            .where(ChainNode.id == cls.head_id)
-            .scalar_subquery()
-        )
+        return _viable_trial_count_expression(cls.head_id)
 
 
 class ChainNode(TrialNode):
@@ -529,8 +648,6 @@ class ChainNode(TrialNode):
         Returns all viable trials associated with the node,
         i.e. all trials that have not failed.
     """
-
-    __extra_vars__ = TrialNode.__extra_vars__.copy()
 
     key = Column(String, index=True)
     degree = Column(Integer)
@@ -692,10 +809,12 @@ class ChainNode(TrialNode):
         # self.assets = {}
 
         for local_key, asset in self._staged_assets.items():
-            asset.local_key = local_key
-            asset.parent = self
-            asset.receive_node_definition(self.definition)
-            asset.module_id = self.module_id
+            asset.update_metadata(
+                self,
+                local_key,
+                definition=self.definition,
+                module_id=self.module_id,
+            )
 
             experiment.assets.stage(asset)
             self.assets[local_key] = asset
@@ -834,36 +953,21 @@ class ChainNode(TrialNode):
     def failure_cascade(self):
         to_fail = []
         if self.propagate_failure:
-            to_fail.append(self.infos)
+            to_fail.append(lambda: self.alive_trials)
             if self.child:
                 to_fail.append(lambda: [self.child])
         return to_fail
 
-    # @hybrid_property
-    # def n_viable_trials(self):
-    #     return len(self.viable_trials)
-    #
-    # @n_viable_trials.expression
-    # def n_viable_trials(cls):
-    #     return (
-    #         select(func.count(Trial.id))
-    #         .where(
-    #             Trial.node_id == cls.id,
-    #             ~ Trial.is_repeat_trial,
-    #             ~ Trial.failed,
-    #         )
-    #         .scalar_subquery()
-    #     )
+
+def _n_viable_trials(node):
+    """Return the current viable-trial count for a node."""
+
+    return _count_viable_trials_for_nodes([node.id]).get(node.id, 0)
 
 
-TrialNode.n_viable_trials = column_property(
-    select(func.count(Trial.id))
-    .where(
-        Trial.node_id == TrialNode.id,
-        ~Trial.is_repeat_trial,
-        ~Trial.failed,
-    )
-    .scalar_subquery()
+TrialNode.n_viable_trials = hybrid_property(
+    _n_viable_trials,
+    expr=lambda cls: _viable_trial_count_expression(cls.id),
 )
 
 
@@ -891,11 +995,10 @@ class ChainTrial(Trial):
     :meth:`~psynet.trial.chain.ChainTrial.async_post_trial` method
     if they wish to implement asynchronous trial processing.
 
-    This class subclasses the `~psynet.trial.main.Trial` class,
-    which in turn subclasses the :class:`~dallinger.models.Info` class from Dallinger,
-    hence it can be found in the ``Info`` table in the database.
-    It inherits these class's methods, which the user is welcome to use
-    if they seem relevant.
+    This class subclasses :class:`~psynet.trial.main.Trial`.
+    Trials are stored in the physical ``trial`` table, not Dallinger's
+    ``info`` table. Custom trial classes use single-table polymorphism
+    within ``trial``.
 
     Instances can be retrieved using *SQLAlchemy*; for example, the
     following command retrieves the ``ChainTrial`` object with an ID of 1:
@@ -984,7 +1087,6 @@ class ChainTrial(Trial):
     """
 
     # pylint: disable=abstract-method
-    __extra_vars__ = Trial.__extra_vars__.copy()
 
     participant_group = association_proxy("node", "participant_group")
     degree = association_proxy("node", "degree")
@@ -1029,10 +1131,10 @@ class ChainTrial(Trial):
 
     @property
     def failure_cascade(self):
+        """Fail ``node.child`` when this trial is finalized and already has one."""
         to_fail = []
-        if self.propagate_failure:
-            if self.node.child:
-                to_fail.append(lambda: [self.node.child])
+        if self.propagate_failure and self.finalized and self.node.child:
+            to_fail.append(lambda: [self.node.child])
         return to_fail
 
     @property
@@ -1075,25 +1177,25 @@ class ChainTrialMakerState(NetworkTrialMakerState):
         self.set_block_position(self.block_position + 1)
 
 
-ChainTrialMakerState.n_participant_trials_in_trial_maker = column_property(
-    select(func.count(ChainTrial.id))
-    .where(ChainTrial.module_state_id == ChainTrialMakerState.id)
-    .scalar_subquery()
+ChainTrialMakerState.n_participant_trials_in_trial_maker = property(
+    lambda self: count_participant_trials_in_trial_maker(self.id)
 )
 
-ChainTrialMakerState.n_participant_trials_in_block = column_property(
-    select(func.count(ChainTrial.id))
-    .where(
-        ChainTrial.module_state_id == ChainTrialMakerState.id,
-        ChainTrial.block_position == ChainTrialMakerState.block_position,
-    )
-    .scalar_subquery()
+ChainTrialMakerState.n_participant_trials_in_block = property(
+    lambda self: count_participant_trials_in_block(self.id, self.block_position)
 )
 
 
 class ChainTrialMaker(NetworkTrialMaker):
     """
     Administers a sequence of trials in a chain-based paradigm.
+
+    :meth:`~psynet.trial.chain.ChainTrialMaker.find_chains` applies PsyNet's
+    eligibility checks and returns all remaining chains.
+    :meth:`~psynet.trial.chain.ChainTrialMaker.select_chain` then chooses one.
+    Override ``select_chain`` to change assignment among eligible chains;
+    override ``custom_chain_filter`` to change eligibility. Do not override
+    ``find_chains`` unless you need to replace that whole procedure.
 
     Parameters
     ----------
@@ -1196,16 +1298,12 @@ class ChainTrialMaker(NetworkTrialMaker):
         ``recruit_mode="n_participants"``.
 
     fail_trials_on_premature_exit
-        If ``True``, a participant's trials are marked as failed
-        if they leave the experiment prematurely.
-        Defaults to ``False`` because failing such trials can end up destroying
-        large parts of existing chains.
+        See :class:`~psynet.trial.main.TrialMaker`.
 
     fail_trials_on_participant_performance_check
-        If ``True``, a participant's trials are marked as failed
-        if the participant fails a performance check.
-        Defaults to ``False`` because failing such trials can end up destroying
-        large parts of existing chains.
+        See :class:`~psynet.trial.main.TrialMaker`. Defaults to ``False``
+        because failing completed trials can invalidate large amounts of
+        downstream chain data.
 
     propagate_failure
         If ``True``, the failure of a trial is propagated to other
@@ -1246,9 +1344,20 @@ class ChainTrialMaker(NetworkTrialMaker):
 
     sync_group_max_wait_time
         The maximum time that the participant will be allowed to wait for the SyncGroup to be ready.
-        If this time is exceeded then the participant will be failed and the experiment will
-        terminate early. Defaults to 45.0 seconds.
+        If this time is exceeded, the participant is either failed or kicked (see ``sync_group_max_wait_action``).
+        Defaults to 45.0 seconds.
 
+    sync_group_max_wait_action
+        When ``sync_group_max_wait_time`` is exceeded: ``"fail"`` fails the participant; ``"kick"`` removes them
+        from the group and lets them continue. Defaults to ``"fail"``.
+
+    sync_group_timeout_between_barriers_time
+        Optional timeout in seconds (since the group's last barrier pass) after which a participant
+        is considered too slow. When ``None`` (default), no between-barrier timeout is applied.
+
+    sync_group_timeout_between_barriers_action
+        When ``sync_group_timeout_between_barriers_time`` is set: ``"kick"`` removes the participant from the group so
+        the rest can proceed, or ``"fail"`` fails the participant. Defaults to ``"fail"``.
 
     Attributes
     ----------
@@ -1326,6 +1435,9 @@ class ChainTrialMaker(NetworkTrialMaker):
         choose_participant_group: Optional[callable] = None,
         sync_group_type: Optional[str] = None,
         sync_group_max_wait_time: float = 45.0,
+        sync_group_max_wait_action: Literal["fail", "kick"] = "fail",
+        sync_group_timeout_between_barriers_time: Optional[float] = None,
+        sync_group_timeout_between_barriers_action: Literal["kick", "fail"] = "fail",
     ):
         if network_class is None:
             network_class = self.default_network_class
@@ -1438,6 +1550,7 @@ class ChainTrialMaker(NetworkTrialMaker):
         self.chains_per_experiment = chains_per_experiment
         self.max_nodes_per_chain = max_nodes_per_chain
         self.trials_per_node = trials_per_node
+        self._node_capacity_is_unlimited = False
         self.balance_across_chains = balance_across_chains
         # self.balance_strategy = balance_strategy
         self.check_performance_at_end = check_performance_at_end
@@ -1466,6 +1579,9 @@ class ChainTrialMaker(NetworkTrialMaker):
             assets=assets,
             sync_group_type=sync_group_type,
             sync_group_max_wait_time=sync_group_max_wait_time,
+            sync_group_max_wait_action=sync_group_max_wait_action,
+            sync_group_timeout_between_barriers_time=sync_group_timeout_between_barriers_time,
+            sync_group_timeout_between_barriers_action=sync_group_timeout_between_barriers_action,
         )
 
         self.check_initialization()
@@ -1496,8 +1612,45 @@ class ChainTrialMaker(NetworkTrialMaker):
                     f"Got {type(node).__name__} at index {index}."
                 )
 
-    def check_initialization(self):
-        pass
+    def _selection_hook_overrides(self):
+        return [
+            *self._generic_removed_selection_hooks(
+                "Override find_chains(participant, experiment) instead.",
+                "The selected chain's head is now resolved automatically.",
+            ),
+            (
+                ChainTrialMaker,
+                "prioritize_networks",
+                "Override select_chain(chains, participant, experiment) instead.",
+            ),
+            (
+                ChainTrialMaker,
+                "find_nodes",
+                "Chain trial makers now use find_chains(participant, experiment).",
+            ),
+            (
+                ChainTrialMaker,
+                "select_node",
+                "Chain trial makers now use select_chain(chains, participant, experiment).",
+            ),
+            (
+                ChainTrialMaker,
+                "custom_node_filter",
+                "Chain trial makers now use custom_chain_filter(chains, participant, experiment).",
+            ),
+        ]
+
+    def _deprecated_selection_hooks(self):
+        return [
+            (
+                ChainTrialMaker,
+                "custom_network_filter",
+                # TODO: remove this deprecation once downstream packages
+                # (notably psynet-step, https://github.com/pmcharrison/STEP/pull/5)
+                # ship custom_chain_filter for PsyNet 14.
+                "Override custom_chain_filter(chains, participant, experiment) instead.",
+            ),
+        ]
 
     def check_participant_groups(self, networks):
         for n in networks:
@@ -1608,12 +1761,39 @@ class ChainTrialMaker(NetworkTrialMaker):
         #     if trial.block_position == block_position
         # ]
 
+        uses_default_policy = (
+            type(self).should_finish_block is ChainTrialMaker.should_finish_block
+        )
+        if uses_default_policy:
+            if (
+                self.max_trials_per_block is None
+                and self.max_trials_per_participant is None
+            ):
+                return False
+            needs_block_count = self.max_trials_per_block is not None
+            needs_trial_maker_count = self.max_trials_per_participant is not None
+        else:
+            # Custom policies historically received both real counts regardless
+            # of which built-in limits were configured.
+            needs_block_count = True
+            needs_trial_maker_count = True
+
+        n_in_block = (
+            count_participant_trials_in_block(state.id, state.block_position)
+            if needs_block_count
+            else 0
+        )
+        n_in_trial_maker = (
+            count_participant_trials_in_trial_maker(state.id)
+            if needs_trial_maker_count
+            else 0
+        )
         return self.should_finish_block(
             participant,
             state.block,
             state.block_position,
-            state.n_participant_trials_in_block,
-            state.n_participant_trials_in_trial_maker,
+            n_in_block,
+            n_in_trial_maker,
         )
 
     def should_finish_block(
@@ -1663,7 +1843,17 @@ class ChainTrialMaker(NetworkTrialMaker):
     @property
     def n_trials_still_required(self):
         assert self.chain_type == "across"
-        return sum([network.n_trials_still_required for network in self.networks])
+        networks = list(self.networks)
+        for network in networks:
+            assert network.target_n_trials is not None
+        incomplete = [network for network in networks if not network.full]
+        completed = count_completed_trials_for_networks(
+            network.id for network in incomplete
+        )
+        return sum(
+            network.target_n_trials - completed.get(network.id, 0)
+            for network in incomplete
+        )
 
     #########################
     # Participated networks #
@@ -1756,24 +1946,39 @@ class ChainTrialMaker(NetworkTrialMaker):
         return network
 
     @log_time_taken
-    def find_networks(self, participant, experiment):
-        """
+    def find_chains(self, participant, experiment):
+        """Find eligible chains for the participant's next trial.
+
+        This method applies PsyNet's built-in eligibility checks (capacity,
+        blocks, asynchronous processes, and
+        :meth:`~psynet.trial.chain.ChainTrialMaker.custom_chain_filter`).
+        Override ``select_chain`` to change which eligible chain is assigned.
+        To wait, exit, or drop candidates after those built-in checks, override
+        this method, call ``super().find_chains``, then filter or return
+        ``"wait"`` / ``"exit"``. ``select_chain`` cannot return those outcomes.
 
         Parameters
         ----------
         participant
+            The participant receiving the next trial.
         experiment
+            The current experiment.
 
         Returns
         -------
-
-        Either "exit", "wait", or a list of networks.
-
+        "exit", "wait", or list of chains
         """
-        participant.module_state  # type: ChainTrialMakerState
+        return self._find_eligible_candidates(participant, experiment)
+
+    _candidate_label = "chain"
+
+    def _find_eligible_candidates(self, participant, experiment):
+        """Discover, filter, and order candidates for selection."""
+        candidate_plural = f"{self._candidate_label}s"
 
         logger.info(
-            "Looking for networks for participant %i.",
+            "Looking for eligible %s for participant %i.",
+            candidate_plural,
             participant.id,
         )
 
@@ -1797,154 +2002,186 @@ class ChainTrialMaker(NetworkTrialMaker):
                 next_block = participant.module_state.block_order[next_block_position]
                 self.set_block_state(participant, next_block)
 
-        # networks = db.session.query(
-        #     self.network_class.chain_type,
-        #     self.network_class.head,
-        # ,
-        # )
-        #
-        #
-        networks = self.network_class.query.filter_by(
+        chain_query = self.network_class.query.filter_by(
             trial_maker_id=self.id, full=False, failed=False
         ).options(
             subqueryload(self.network_class.head),
         )
 
-        # logger.info(
-        #     "There are %i non-full networks for trialmaker %s.",
-        #     networks.count(),
-        #     self.id,
-        # )
-
         if self.chain_type == "within":
             if self.sync_group_type is not None:
                 sync_group = participant.active_sync_groups[self.sync_group_type]
                 assert sync_group.id is not None
-                networks = networks.filter_by(sync_group_id=sync_group.id)
+                chain_query = chain_query.filter_by(sync_group_id=sync_group.id)
             else:
-                networks = self.filter_by_participant_id(networks, participant)
+                chain_query = self.filter_by_participant_id(chain_query, participant)
         elif (
             self.chain_type == "across"
             and not self.allow_revisiting_networks_in_across_chains
         ):
-            networks = self.exclude_participated(networks, participant)
+            chain_query = self.exclude_participated(chain_query, participant)
 
         participant_group = participant.module_state.participant_group
-        networks = networks.filter_by(participant_group=participant_group)
+        chain_query = chain_query.filter_by(participant_group=participant_group)
 
-        # logger.info(
-        #     "%i of these networks match the current participant group (%s).",
-        #     networks.count(),
-        #     participant_group,
-        # )
-
-        networks = networks.all()
-
-        networks = self.custom_network_filter(
-            candidates=networks,
+        discovered_chains = chain_query.all()
+        # Candidate records let the shared pipeline work with either chains or
+        # static nodes while retaining the network objects loaded by the query.
+        candidates = self._build_candidates(
+            discovered_chains,
             participant=participant,
+            experiment=experiment,
         )
-
-        logger.info("%i remain after applying custom network filters.", len(networks))
-
-        if not isinstance(networks, list):
-            return TypeError("custom_network_filter must return a list of networks")
+        logger.info(
+            "%i eligible %s remain after applying custom filters.",
+            len(candidates),
+            candidate_plural,
+        )
 
         def has_pending_process(network):
             return network.async_post_grow_network_pending or (
                 network.head and network.head.async_on_deploy_pending
             )
 
-        networks_without_pending_processes = [
-            n for n in networks if not has_pending_process(n)
+        available_candidates = [
+            candidate
+            for candidate in candidates
+            if not has_pending_process(candidate.network)
         ]
 
         logger.info(
-            "%i out of %i networks are awaiting async processes (or have nodes awaiting async processes).",
-            len(networks) - len(networks_without_pending_processes),
-            len(networks),
+            "%i out of %i eligible %s await asynchronous processing.",
+            len(candidates) - len(available_candidates),
+            len(candidates),
+            candidate_plural,
         )
 
         if (
-            len(networks_without_pending_processes) == 0
-            and len(networks) > 0
+            len(available_candidates) == 0
+            and len(candidates) > 0
             and self.wait_for_networks
         ):
-            logger.info("Will wait for a network to become available.")
+            logger.info("Will wait for an eligible %s.", self._candidate_label)
             return "wait"
 
-        networks = networks_without_pending_processes
-
-        # find_networks normally takes place in a participant's 'response' call.
-        # This means that the previous trial will exist in the database,
-        # but it might not have been marked as finalized yet.
-        # That's fine if we use `n_viable_trials_at_head` to determine whether there is space,
-        # because this will count that previous trial.
-        networks_with_head_space = [
-            n
-            for n in networks
-            if n.head and n.n_viable_trials_at_head < self.trials_per_node
+        # Discovery normally runs in the response that submits the previous trial.
+        # Counting all viable trials, rather than only finalized trials, includes
+        # that newly submitted trial and prevents over-allocation.
+        needs_viable_counts = (
+            not self._node_capacity_is_unlimited or self.balance_across_chains
+        )
+        viable_counts = (
+            _count_viable_trials_for_nodes(
+                candidate.network.head.id
+                for candidate in available_candidates
+                if candidate.network.head is not None
+            )
+            if needs_viable_counts
+            else {}
+        )
+        candidates_with_head_space = [
+            candidate
+            for candidate in available_candidates
+            if candidate.network.head
+            and (
+                self._node_capacity_is_unlimited
+                or viable_counts.get(candidate.network.head.id, 0)
+                < self.trials_per_node
+            )
         ]
 
-        if len(networks) > 0 and len(networks_with_head_space) == 0:
+        if len(available_candidates) > 0 and len(candidates_with_head_space) == 0:
             logger.info(
-                "All of these chains have head nodes that have already received their full complement of trials. "
-                "They need to grow before a new participant can join them."
+                "All eligible %s have exhausted their current trial capacity.",
+                candidate_plural,
             )
             if self.wait_for_networks:
                 return "wait"
             else:
                 return "exit"
 
-        networks = networks_with_head_space
-
-        if len(networks) == 0:
+        candidates = candidates_with_head_space
+        if len(candidates) == 0:
             return "exit"
 
-        random.shuffle(networks)
+        random.shuffle(candidates)
 
         if self.balance_across_chains:
             # We used to sort by n_completed_trials, but this is likely to be out of date
             # because the completion of the latest trial might not have been committed yet.
-            networks.sort(key=lambda network: network.n_viable_trials_at_head)
-            networks.sort(key=lambda network: network.head.degree)
-
-            # if "across" in self.balance_strategy:
-            #     networks.sort(key=lambda network: network.n_completed_trials)
-            # if "within" in self.balance_strategy:
-            #     networks.sort(
-            #         key=lambda network: len(
-            #             [
-            #                 t
-            #                 for t in network.alive_trials
-            #                 if t.participant_id == participant.id
-            #             ]
-            #         )
-            #     )
-
-        current_block = participant.module_state.block
-        remaining_blocks = participant.module_state.remaining_blocks
-        networks = [n for n in networks if n.block in remaining_blocks]
-        networks.sort(key=lambda network: remaining_blocks.index(network.block))
-
-        networks = self.prioritize_networks(networks, participant, experiment)
-
-        if len(networks) == 0:
-            return "exit"
-
-        chosen = networks[0]
-
-        if chosen.block != current_block:
-            logger.info(
-                f"Advanced from block '{current_block}' to '{chosen.block}' "
-                "because there weren't any spots available in the former."
+            candidates.sort(
+                key=lambda candidate: viable_counts.get(
+                    candidate.network.head.id,
+                    0,
+                )
             )
-            self.set_block_state(participant, chosen.block)
+            candidates.sort(key=lambda candidate: candidate.network.head.degree)
 
-        return [chosen]
+        remaining_blocks = participant.module_state.remaining_blocks
+        candidates = [
+            candidate
+            for candidate in candidates
+            if candidate.network.block in remaining_blocks
+        ]
+        candidates.sort(
+            key=lambda candidate: remaining_blocks.index(candidate.network.block)
+        )
+
+        return [candidate.value for candidate in candidates]
+
+    def _build_candidates(self, discovered_chains, participant, experiment):
+        """Build internal records for chain selection candidates."""
+
+        chains = self._filter_eligible_candidates(
+            discovered_chains,
+            participant=participant,
+            experiment=experiment,
+        )
+        return [Candidate(value=chain, network=chain) for chain in chains]
+
+    def _select_trial_node(self, participant, experiment):
+        selection = self._select_from_discovered(
+            self.find_chains(participant, experiment),
+            participant,
+            experiment,
+            self.select_chain,
+            "select_chain",
+        )
+        if not isinstance(selection, Selection):
+            return selection
+
+        chain = selection.value
+        if chain.head is None:
+            raise RuntimeError(f"Selected chain {chain.id} has no head")
+
+        self._advance_to_selected_block(chain.block, participant)
+        return Selection(value=chain.head, context=selection.context)
+
+    def select_chain(self, chains, participant, experiment):
+        """Select from a nonempty list of eligible chains.
+
+        Return a chain from ``chains`` or ``Selection(value, context)``.
+        Returning ``None`` raises ``TypeError``. The returned chain must be
+        one of the objects in ``chains``, not a re-queried copy.
+        """
+        return chains[0]
+
+    def _advance_to_selected_block(self, chosen_block, participant):
+        current_block = participant.module_state.block
+        if chosen_block != current_block:
+            logger.info(
+                "Advanced from block %r to %r.",
+                current_block,
+                chosen_block,
+            )
+            self.set_block_state(participant, chosen_block)
 
     def prioritize_networks(self, networks, participant, experiment):
-        return networks
+        """Removed selection hook.
+
+        :meta private:
+        """
+        self._raise_unsupported_selection_hook("prioritize_networks")
 
     def set_block_state(self, participant, block):
         new_block_position = participant.module_state.block_order.index(block)
@@ -1955,49 +2192,74 @@ class ChainTrialMaker(NetworkTrialMaker):
         else:
             participant.module_state.set_block_position(new_block_position)
 
-    def custom_network_filter(self, candidates, participant):
+    def _filter_eligible_candidates(self, chains, participant, experiment):
+        """Apply chain eligibility before wait/exit checks."""
+        return self._validate_selection_subset(
+            self.custom_chain_filter(chains, participant, experiment),
+            allowed_values=chains,
+            method_name="custom_chain_filter",
+        )
+
+    def custom_chain_filter(self, chains, participant, experiment):
+        """Filter eligible chains before selection.
+
+        Override this to remove chains the participant must not receive.
+        The default returns the original list, or applies a deprecated
+        ``custom_network_filter`` override when that is the only filter present.
+        Ranking among eligible chains belongs in ``select_chain``.
         """
-        Override this function to define a custom filter for choosing the participant's next network.
+        return self._apply_deprecated_network_filter(
+            chains,
+            participant,
+            replacement_method="custom_chain_filter",
+        )
 
-        Parameters
-        ----------
-        candidates:
-            The current list of candidate networks as defined by the built-in chain procedure.
+    def custom_network_filter(self, candidates, participant):
+        """Deprecated list-based eligibility hook.
 
-        participant:
-            The current participant.
-
-        Returns
-        -------
-
-        An updated list of candidate networks. The default implementation simply returns the original list.
-        The experimenter might alter this function to remove certain networks from the list.
+        Chain trial makers should override
+        :meth:`~psynet.trial.chain.ChainTrialMaker.custom_chain_filter` instead.
+        Static trial makers should override
+        :meth:`~psynet.trial.static.StaticTrialMaker.custom_node_filter`.
+        This method still receives candidate networks as keyword arguments
+        (``candidates`` and ``participant``) and must return a subset of those
+        objects.
         """
         return candidates
 
-    @staticmethod
-    def filter_by_participant_id(networks, participant):
-        query = networks.filter_by(participant_id=participant.id)
-        # logger.info(
-        #     "%i of these belong to participant %i.",
-        #     query.count(),
-        #     participant.id,
-        # )
-        return query
+    def find_nodes(self, participant, experiment):
+        """Wrong-paradigm selection hook.
 
-    def exclude_participated(self, networks, participant):
-        query = networks.filter(
+        :meta private:
+        """
+        self._raise_unsupported_selection_hook("find_nodes")
+
+    def select_node(self, nodes, participant, experiment):
+        """Wrong-paradigm selection hook.
+
+        :meta private:
+        """
+        self._raise_unsupported_selection_hook("select_node")
+
+    def custom_node_filter(self, nodes, participant, experiment):
+        """Wrong-paradigm selection hook.
+
+        :meta private:
+        """
+        self._raise_unsupported_selection_hook("custom_node_filter")
+
+    @staticmethod
+    def filter_by_participant_id(chains, participant):
+        return chains.filter_by(participant_id=participant.id)
+
+    def exclude_participated(self, chains, participant):
+        return chains.filter(
             not_(
                 self.network_class.id.in_(
                     participant.module_state.participated_networks
                 )
             )
         )
-        # logger.info(
-        #     "%i of these are available once you exclude already-visited networks.",
-        #     query.count(),
-        # )
-        return query
 
     @staticmethod
     def _completed_trial_count_for_node(node_cls):
@@ -2160,10 +2422,6 @@ class ChainTrialMaker(NetworkTrialMaker):
             node.check_on_deploy()
             return True
         return False
-
-    @log_time_taken
-    def find_node(self, network, participant, experiment):
-        return network.head
 
     def finalize_trial(self, answer, trial, experiment, participant):
         super().finalize_trial(answer, trial, experiment, participant)

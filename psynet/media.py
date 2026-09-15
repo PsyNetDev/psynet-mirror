@@ -7,7 +7,6 @@ import wave
 from functools import cache
 
 import boto3
-from botocore.config import Config
 from dallinger.config import get_config
 
 from .utils import get_logger
@@ -77,41 +76,24 @@ def get_aws_credentials(capitalize=False):
     return cred
 
 
-def get_s3_endpoint_url():
-    """
-    Get the custom S3 endpoint URL, if configured.
-
-    This reads `PSYNET_S3_ENDPOINT_URL` from the environment. When set, PsyNet
-    will direct boto3 to use the specified S3-compatible endpoint (for example
-    Moto, LocalStack, or MinIO) instead of AWS. This is useful for CI or local
-    testing where real S3 access is not desired.
-    """
-    return os.environ.get("PSYNET_S3_ENDPOINT_URL")
-
-
-def get_s3_client_kwargs():
-    """
-    Build boto3 client/resource kwargs for custom S3 endpoints.
-
-    Returns an empty dict when no custom endpoint is configured. When a custom
-    endpoint is set, this includes `endpoint_url` and path-style addressing,
-    which improves compatibility with S3 emulators.
-    """
-    endpoint_url = get_s3_endpoint_url()
-    if not endpoint_url:
-        return {}
-    return {
-        "endpoint_url": endpoint_url,
-        "config": Config(s3={"addressing_style": "path"}),
-    }
-
-
 def get_s3_client():
-    return boto3.client("s3", **get_aws_credentials(), **get_s3_client_kwargs())
+    from psynet.test_helpers.mock_s3 import get_configured_mock_s3_client
+
+    mock_client = get_configured_mock_s3_client()
+    if mock_client is not None:
+        return mock_client
+
+    return boto3.client("s3", **get_aws_credentials())
 
 
 def get_s3_resource():
-    return boto3.resource("s3", **get_aws_credentials(), **get_s3_client_kwargs())
+    from psynet.test_helpers.mock_s3 import get_configured_mock_s3_resource
+
+    mock_resource = get_configured_mock_s3_resource()
+    if mock_resource is not None:
+        return mock_resource
+
+    return boto3.resource("s3", **get_aws_credentials())
 
 
 def get_s3_bucket(bucket_name: str):

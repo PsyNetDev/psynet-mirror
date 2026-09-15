@@ -91,7 +91,7 @@ def new_command(category: str, description: str) -> int:
             "the day) or rename the existing fragment."
         )
 
-    path.write_text(f"{description.strip()} (author: [Your Name])\n", encoding="utf-8")
+    path.write_text(f"{description.strip()}\n", encoding="utf-8")
     print(path)
     return 0
 
@@ -412,10 +412,13 @@ def remove_spans(text: str, spans: list[tuple[int, int]]) -> str:
 def render_release_heading(version: str, date: str) -> str:
     """Render the canonical PsyNet release heading for a version/date pair."""
     label = classify_release(version)
-    return (
-        f"## [{version}]"
-        f"(https://gitlab.com/PsyNetDev/PsyNet/-/releases/v{version}) {label} - {date}\n"
-    )
+    if label == "Release":
+        url = f"https://gitlab.com/PsyNetDev/PsyNet/-/releases/v{version}"
+    else:
+        # Prereleases are tag-only (no GitLab release entry), so link to
+        # the tag instead of a releases page that would 404.
+        url = f"https://gitlab.com/PsyNetDev/PsyNet/-/tags/v{version}"
+    return f"## [{version}]({url}) {label} - {date}\n"
 
 
 def build_release_section(

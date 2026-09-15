@@ -1,6 +1,12 @@
 Timeline
 ########
 
+==============
+AsyncCodeBlock
+==============
+
+.. autoclass:: psynet.timeline.AsyncCodeBlock
+
 =========
 CodeBlock
 =========
@@ -12,6 +18,30 @@ Conditional statements
 ======================
 
 .. autofunction:: psynet.timeline.conditional
+
+===
+Elt
+===
+
+.. autoclass:: psynet.timeline.Elt
+
+========
+for_loop
+========
+
+.. autofunction:: psynet.timeline.for_loop
+
+====
+join
+====
+
+.. autofunction:: psynet.timeline.join
+
+======
+Module
+======
+
+.. autoclass:: psynet.timeline.Module
 
 .. _Page:
 
@@ -48,6 +78,12 @@ Switch statements
 =================
 
 .. autofunction:: psynet.timeline.switch
+
+========
+Timeline
+========
+
+.. autoclass:: psynet.timeline.Timeline
 
 
 ===========

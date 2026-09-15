@@ -1,8 +1,8 @@
 {% extends "timeline-page.html" %}
 
 {% block main_body %}
-<link rel="stylesheet" href="/static/international-keyboards/international-keyboards.css"/>
-<script src="/static/international-keyboards/international-keyboards.js"></script>
+<link rel="stylesheet" href="{{ url_for('static', filename='international-keyboards/international-keyboards.css') }}"/>
+<script src="{{ url_for('static', filename='international-keyboards/international-keyboards.js') }}"></script>
 
 {% macro keyboard() %}
     <div id="keyboard"></div>
@@ -17,18 +17,14 @@
 </div>
 
 <script>
-    let pressedKeys = [];
-    $(document).on("keypress", function (e) {
-        let keyCode = e.originalEvent.code;
-        pressedKeys.push(keyCode);
-        keyboard.press(keyCode);
+    let keyboardState = (psynet.page.control.keyboard = {
+        pressedKeys: [],
+        instance: undefined,
     });
-
-    let keyboard,
-        keyboardIDs = $('#keyboardIDs');
 
     async function createKeyboard(autoCorrectType = true) {
         $('#keyboard').empty();
+        let keyboardIDs = $('#keyboardIDs');
         let keyboardID = keyboardIDs.val();
         let fallbackType = 'ANSI';
         let keyboardType = fallbackType;
@@ -39,38 +35,24 @@
             keyboardType = currentKeyboard?.getAttribute('type') || fallbackType;
             $('#keyboardType').val(keyboardType);
         }
-        keyboard = new InternationalKeyboard({
+        keyboardState.instance = new InternationalKeyboard({
             keyboardID,
             containerID: 'keyboard',
             addLatinKeys,
             keyboardType,
-            cssStyle,
-            showKeys,
-            highlightedKeys: highlightKeys
+            cssStyle: psynet.var.cssStyle,
+            showKeys: psynet.var.showKeys,
+            highlightedKeys: psynet.var.highlightKeys
         });
     }
 
-
-    $.getJSON('/static/international-keyboards/default-keyboard-layout.json').done(function (defaultLayouts) {
-        console.log(defaultLayouts)
-        Object.entries(defaultLayouts).forEach(([iso, config]) => {
-            let group = `<optgroup label="${config.label}">`;
-            config.variants.forEach(variant => {
-                group += `<option addLatinKeys="${config.addLatinKeys}" keyVariant="${config.keyVariant}" type="${variant.type}" value="${variant.name}">${variant.name}</option>`;
-            });
-            group += "</optgroup>";
-            keyboardIDs.append($(group));
-        });
-
-        $('select').on('change', createKeyboard);
-        createKeyboard(false);
-    });
 
     const isSubset = (array1, array2) => array2.every(element => array1.includes(element));
 
-    function retrieveResponse() {
-        return { 'rawAnswer': keyboardIDs.val() };
-    }
+    psynet.setRetrieveResponseHandler(function() {
+        let keyboardIDs = document.getElementById("keyboardIDs");
+        return { rawAnswer: keyboardIDs ? keyboardIDs.value : null };
+    })
 
     function disableButton() {
         $("#next-button").prop("disabled", true);
@@ -97,9 +79,37 @@
         psynet.submitResponse(onRejection);
     }
 
-    psynet.trial.onEvent("trialStart", function () {
-        $('#next-button').on('click', function () {
-            if (isSubset(pressedKeys, pressKeys)) {
+    psynet.trial.onEvent("trialConstruct", function () {
+        let keyboardIDs = document.getElementById("keyboardIDs");
+        let nextButton = document.getElementById("next-button");
+
+        psynet.addPageEventListener(document, "keypress", function (e) {
+            let keyCode = e.code;
+            keyboardState.pressedKeys.push(keyCode);
+            if (keyboardState.instance) {
+                keyboardState.instance.press(keyCode);
+            }
+        });
+
+        $.getJSON('/static/international-keyboards/default-keyboard-layout.json').done(function (defaultLayouts) {
+            Object.entries(defaultLayouts).forEach(([iso, config]) => {
+                let group = `<optgroup label="${config.label}">`;
+                config.variants.forEach(variant => {
+                    group += `<option addLatinKeys="${config.addLatinKeys}" keyVariant="${config.keyVariant}" type="${variant.type}" value="${variant.name}">${variant.name}</option>`;
+                });
+                group += "</optgroup>";
+                $('#keyboardIDs').append($(group));
+            });
+
+            createKeyboard(false);
+        });
+
+        psynet.addPageEventListener(keyboardIDs, "change", function () {
+            createKeyboard();
+        });
+
+        psynet.addPageEventListener(nextButton, "click", function () {
+            if (isSubset(keyboardState.pressedKeys, psynet.var.pressKeys)) {
                 onNextButton();
             } else {
                 psynet.alert(`{{gettext("You did not press all required keys.")}}`);

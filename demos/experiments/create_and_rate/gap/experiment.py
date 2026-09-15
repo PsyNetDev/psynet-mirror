@@ -3,7 +3,6 @@
 # Imports
 ##########################################################################################
 import random
-import time
 
 from dallinger import db
 from dominate import tags
@@ -39,7 +38,7 @@ from psynet.trial.imitation_chain import (
     ImitationChainTrial,
     ImitationChainTrialMaker,
 )
-from psynet.utils import get_logger
+from psynet.utils import get_logger, wait_until
 
 from .utils import get_instructions
 
@@ -309,43 +308,15 @@ class CreateAndRateTrialMaker(CreateAndRateTrialMakerMixin, ImitationChainTrialM
                 return True
         return False
 
-    @staticmethod
-    def get_creation_and_rating_networks(candidates):
-        creation_networks = []
-        rating_networks = []
-        for network in candidates:
-            node = CreateAndRateNode.query.filter_by(
-                network_id=network.id, degree=network.degree
-            ).one()
-            n_creations = CreateTrial.query.filter_by(
-                network_id=network.id, node_id=node.id, failed=False, finalized=True
-            ).count()
-            if n_creations < N_CREATORS:
-                creation_networks.append(network)
-            else:
-                rating_networks.append(network)
-        return creation_networks, rating_networks
-
-    def custom_network_filter(self, candidates, participant):
+    def custom_chain_filter(self, chains, participant, experiment):
         if self.has_enough_trials(participant):
             return []
-        creation_networks, rating_networks = self.get_creation_and_rating_networks(
-            candidates
-        )
-        if participant.var.is_rater:
-            return rating_networks
-        else:
-            return creation_networks
+        return chains
 
-    def get_trial_class(self, node, participant, experiment):
-        proposed_role_class = super().get_trial_class(node, participant, experiment)
+    def get_participant_role(self, participant, experiment):
         if participant.var.is_rater:
-            if proposed_role_class == self.rater_class:
-                return self.rater_class
-        else:
-            if proposed_role_class == self.creator_class:
-                return self.creator_class
-        return None
+            return self.RATER_ROLE
+        return self.CREATOR_ROLE
 
 
 def is_rater(participant):
@@ -411,7 +382,7 @@ trial_maker = CreateAndRateTrialMaker(
     max_trials_per_participant=NUM_TRIALS_PER_PARTICIPANT,
     start_nodes=start_nodes,
     chains_per_experiment=len(STIMULUS_LINES),
-    balance_across_chains=False,
+    balance_across_chains=True,
     check_performance_at_end=True,
     check_performance_every_trial=False,
     propagate_failure=False,
@@ -443,26 +414,55 @@ class Exp(psynet.experiment.Experiment):
     test_mode = "serial"
 
     def test_experiment(self):
+        def completed_generation():
+            """Return a grown node and its complete create-and-rate parent trials."""
+            db.session.commit()
+            grown_nodes = CreateAndRateNode.query.filter(
+                CreateAndRateNode.degree > 0
+            ).all()
+            for node in grown_nodes:
+                parent = node.parent
+                parent_creations = CreateTrial.query.filter_by(
+                    node_id=parent.id, failed=False, finalized=True, complete=True
+                ).all()
+                parent_ratings = SelectTrial.query.filter_by(
+                    node_id=parent.id, failed=False, finalized=True, complete=True
+                ).all()
+                if (
+                    len(parent_creations) == N_CREATORS
+                    and len(parent_ratings) == N_RATERS
+                ):
+                    rated_urls = {
+                        get_target_url(target)
+                        for rating in parent_ratings
+                        for target in rating.targets
+                    }
+                    if node.definition["url"] in rated_urls:
+                        return node, parent_creations, parent_ratings
+            return None
+
         super().test_experiment()
-        time.sleep(
-            3
-        )  # Wait for any async processes to complete (e.g., summarize_trials)
-        n_expected_nodes = len(start_nodes) * 2  # Seed nodes + iteration 1
+        wait_until(
+            completed_generation,
+            max_wait=10,
+            error_message="No create-and-rate chain completed a full generation.",
+        )
+        generation_node, generation_creations, generation_ratings = (
+            completed_generation()
+        )
         participants = Participant.query.all()
         assert len(participants) == self.test_n_bots
-        participants = sorted(participants, key=lambda p: p.id)
-        assert [p.var.is_rater for p in participants] == [False] * N_CREATORS + [
-            True
-        ] * N_RATERS * 2
-        creations = CreateTrial.query.all()
-        assert len(creations) == 4
-        assert len(set([t.participant_id for t in creations])) == 2
-        ratings = SelectTrial.query.all()
-        assert len(ratings) == 6
-        assert len(set([t.participant_id for t in ratings])) == 6
 
-        all_trials = creations + ratings
-        assert all([t.finalized for t in all_trials])
-        assert all([t.complete for t in all_trials])
-        assert all([t.answer is not None for t in all_trials])
-        assert CreateAndRateNode.query.count() == n_expected_nodes
+        creations = CreateTrial.query.filter_by(failed=False).all()
+        ratings = SelectTrial.query.filter_by(failed=False).all()
+        creator_participant_ids = {t.participant_id for t in creations}
+        rater_participant_ids = {t.participant_id for t in ratings}
+        assert creator_participant_ids.isdisjoint(rater_participant_ids)
+        assert all(not t.participant.var.is_rater for t in creations)
+        assert all(t.participant.var.is_rater for t in ratings)
+
+        generation_trials = generation_creations + generation_ratings
+        assert all(t.finalized for t in generation_trials)
+        assert all(t.complete for t in generation_trials)
+        assert all(t.answer is not None for t in generation_trials)
+        assert generation_node is not None

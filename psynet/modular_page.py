@@ -3,17 +3,28 @@ import random
 import shutil
 import tempfile
 import warnings
+from collections.abc import Mapping
 from typing import Callable, Dict, Iterable, List, Optional, Union
 
 from dominate import tags
 from dominate.dom_tag import dom_tag
 from dominate.util import raw
+from flask import current_app
 from markupsafe import Markup
 
-from .asset import Asset, LocalStorage
+from .asset import _PERSONAL_ARG_REMOVED, Asset, LocalStorage, _reject_personal_arg
 from .bot import BotResponse
 from .chatroom import ChatRoom  # noqa: F401
-from .timeline import Event, FailedValidation, MediaSpec, Page, Trigger, is_list_of
+from .javascript_hooks import JavaScriptContributor
+from .static_resources import package_static_url
+from .timeline import (
+    Event,
+    FailedValidation,
+    MediaSpec,
+    Page,
+    Trigger,
+    is_list_of,
+)
 from .utils import (
     NoArgumentProvided,
     as_plain_text,
@@ -26,6 +37,28 @@ from .utils import (
 )
 
 logger = get_logger()
+
+
+def _merge_js_var_sources(*sources):
+    """Merge JavaScript variable sources, rejecting duplicate keys."""
+    merged = {}
+    owners = {}
+
+    for source_name, values in sources:
+        if not isinstance(values, Mapping):
+            raise TypeError(f"{source_name} must provide a mapping.")
+
+        for key, value in values.items():
+            if key in owners:
+                raise ValueError(
+                    f"Duplicate JavaScript variable {key!r}: "
+                    f"contributed by {owners[key]} and {source_name}."
+                )
+
+            merged[key] = value
+            owners[key] = source_name
+
+    return merged
 
 
 class Blob:
@@ -44,7 +77,7 @@ class Blob:
         return self.file
 
 
-class Prompt:
+class Prompt(JavaScriptContributor):
     """
     The ``Prompt`` class displays some kind of media to the participant,
     to which they will have to respond.
@@ -141,8 +174,22 @@ class Prompt:
     def update_events(self, events):
         pass
 
-    def get_css(self):
-        return []
+    def get_js_vars(self):
+        """Page-local JavaScript variables this component contributes.
+
+        Keys must be unique across all page components and explicit
+        :class:`ModularPage` ``js_vars``.
+        """
+        return {}
+
+    def _collect_spa_markup_contract_codes(self):
+        if self.text_html is None:
+            return []
+
+        return Page._collect_spa_markup_contract_codes(
+            str(self.text_html),
+            allow_scripts=True,
+        )
 
     @property
     def plain_text(self):
@@ -616,7 +663,7 @@ class ColorPrompt(Prompt):
         return {"text": str(self.text), "hsl": self.hsl}
 
 
-class Control:
+class Control(JavaScriptContributor):
     """
     The ``Control`` class provides some kind of controls for the participant,
     with which they will provide their response.
@@ -642,8 +689,6 @@ class Control:
         blobs :
             A dictionary of blobs returned from the front-end.
 
-        client_ip_address :
-            The client's IP address.
 
     buttons :
         An optional list of additional buttons to include on the page.
@@ -702,8 +747,12 @@ class Control:
     def metadata(self):
         return {}
 
-    def get_css(self):
-        return []
+    def get_js_vars(self):
+        """Page-local JavaScript variables this control contributes.
+
+        See :meth:`Prompt.get_js_vars`.
+        """
+        return {}
 
     @property
     def media(self):
@@ -1114,7 +1163,7 @@ class PushButtonControl(OptionControl):
         which the participant will see instead of ``choices``. Default: ``None``.
 
     style:
-        CSS styles to apply to the buttons. Default: ``"min-width: 100px; margin: 10px"``.
+        CSS styles to apply to the buttons. Default: ``"min-width: 100px"``.
 
     arrange_vertically:
         Whether to arrange the buttons vertically. Default: ``True``.
@@ -1124,7 +1173,7 @@ class PushButtonControl(OptionControl):
         self,
         choices: List[Union[str, float, int]],
         labels: Optional[List[str]] = None,
-        style: str = "min-width: 100px; margin: 10px",
+        style: str = "min-width: 100px",
         arrange_vertically: bool = True,
         show_next_button: bool = False,
         **kwargs,
@@ -1252,7 +1301,7 @@ class TimedPushButtonControl(PushButtonControl):
         Defaults to 0.75 s.
 
     style:
-        CSS styles to apply to the buttons. Default: ``"min-width: 100px; margin: 10px"``.
+        CSS styles to apply to the buttons. Default: ``"min-width: 100px"``.
 
     arrange_vertically:
         Whether to arrange the buttons vertically. Default: ``True``.
@@ -1788,7 +1837,8 @@ class ModularPage(Page):
         objects instead.
 
     js_vars
-        Optional dictionary of arguments to instantiate as global Javascript variables.
+        Optional dictionary of page-scoped values exposed to JavaScript through
+        ``psynet.var``.
 
     start_trial_automatically
         If ``True`` (default), the trial starts automatically, e.g. by the playing
@@ -1834,7 +1884,8 @@ class ModularPage(Page):
         If left blank, defaults to ``.default_layout``.
 
     **kwargs
-        Further arguments to be passed to :class:`psynet.timeline.Page`.
+        Further arguments to be passed to :class:`psynet.timeline.Page`,
+        including ``js_dependencies`` and ``js_page_modules``.
     """
 
     default_layout = ["prompt", "media", "progress", "control", "chatroom", "buttons"]
@@ -1916,9 +1967,39 @@ class ModularPage(Page):
         """
         all_media = MediaSpec.merge(media, prompt.media, control.media)
 
-        css = self.prompt.get_css() + self.control.get_css()
-        if "css" in kwargs:
-            css.append(kwargs.pop("css"))
+        # Reusable components contribute page-local assets through hooks so they
+        # do not need inline <style>/<script> (forbidden by the SPA contract).
+        components = list(self._iter_layout_components())
+        assets = self._collect_component_assets(components, kwargs)
+
+        active_roles = {role: component for role, component in components}
+        modular_page_components = {
+            "prompt": (
+                active_roles["prompt"].macro if "prompt" in active_roles else None
+            ),
+            "control": (
+                active_roles["control"].macro if "control" in active_roles else None
+            ),
+            "chatroom": (
+                active_roles["chatroom"].macro if "chatroom" in active_roles else None
+            ),
+        }
+        js_var_sources = [
+            (
+                f"{role} {type(component).__name__}",
+                component.get_js_vars(),
+            )
+            for role, component in components
+        ]
+        js_var_sources.extend(
+            [
+                ("ModularPage js_vars", js_vars),
+                (
+                    "PsyNet internals",
+                    {"modular_page_components": modular_page_components},
+                ),
+            ]
+        )
 
         super().__init__(
             label=label,
@@ -1932,19 +2013,97 @@ class ModularPage(Page):
             },
             media=all_media,
             events=events,
-            js_vars={
-                **js_vars,
-                "modular_page_components": {
-                    "prompt": self.prompt.macro,
-                    "control": self.control.macro,
-                    "chatroom": self.chatroom.macro if chatroom is not None else None,
-                },
-            },
+            js_vars=_merge_js_var_sources(*js_var_sources),
             start_trial_automatically=start_trial_automatically,
             validate=validate,
-            css=css,
+            framework_owned_template=True,
+            **assets,
             **kwargs,
         )
+
+    def _iter_layout_components(self):
+        """Yield layout-active components that contribute page assets."""
+        if "prompt" in self.layout:
+            yield "prompt", self.prompt
+        if "control" in self.layout:
+            yield "control", self.control
+        if self.chatroom is not None and "chatroom" in self.layout:
+            yield "chatroom", self.chatroom
+
+    @staticmethod
+    def _collect_component_assets(components, kwargs):
+        """Collect component assets and merge any matching caller kwargs."""
+        css = [c for _, component in components for c in component.get_css()]
+        css_links = [
+            link for _, component in components for link in component.get_css_links()
+        ]
+        js_dependencies = [
+            dependency
+            for _, component in components
+            for dependency in component.get_js_dependencies()
+        ]
+        js_page_modules = [
+            module
+            for _, component in components
+            for module in component.get_js_page_modules()
+        ]
+        js_page_code = [
+            code for _, component in components for code in component.get_js_page_code()
+        ]
+
+        assets = {
+            "css": css,
+            "css_links": css_links,
+            "js_dependencies": js_dependencies,
+            "js_page_code": js_page_code,
+            "js_page_modules": js_page_modules,
+        }
+        for key, collected in assets.items():
+            if key in kwargs:
+                extra = kwargs.pop(key)
+                collected.extend(extra if isinstance(extra, (list, tuple)) else [extra])
+        return assets
+
+    def _collect_spa_incompatibility_codes(self):
+        codes = super()._collect_spa_incompatibility_codes()
+        if "prompt" in self.layout:
+            codes.extend(self.prompt._collect_spa_markup_contract_codes())
+        codes.extend(self._collect_external_template_contract_codes())
+        return list(dict.fromkeys(codes))
+
+    def _collect_external_template_contract_codes(self):
+        codes = []
+
+        for role, template_name in self._external_template_sources:
+            try:
+                template_source = self._load_external_template_source(template_name)
+            except RuntimeError as exc:
+                # External templates need a Jinja app context. Skip only that
+                # source so non-template SPA codes (legacy_*, js_page_code) still
+                # surface during static checks without an app context.
+                if "application context" in str(exc).lower():
+                    continue
+                raise
+            codes.extend(Page._collect_spa_markup_contract_codes(template_source))
+
+        return codes
+
+    @property
+    def _external_template_sources(self):
+        # Match _iter_layout_components: only check templates that can render.
+        seen = set()
+        for role, component in self._iter_layout_components():
+            template_name = component.external_template
+            if template_name is None or template_name in seen:
+                continue
+            seen.add(template_name)
+            yield role, template_name
+
+    @staticmethod
+    def _load_external_template_source(template_name):
+        loader = current_app.jinja_env.loader
+        source, _, _ = loader.get_source(current_app.jinja_env, template_name)
+        return source
 
     def get_renderers(self, **kwargs):
         return {
@@ -1973,8 +2132,10 @@ class ModularPage(Page):
 
     def prepare_default_events(self):
         events = super().prepare_default_events()
-        self.prompt.update_events(events)
-        self.control.update_events(events)
+        if "prompt" in self.layout:
+            self.prompt.update_events(events)
+        if "control" in self.layout:
+            self.control.update_events(events)
         return events
 
     @property
@@ -2006,10 +2167,14 @@ class ModularPage(Page):
         return self.import_internal_templates + self.import_external_templates
 
     def render_buttons(self):
-        logic = []
+        if not self.buttons:
+            return ""
+
+        logic = ['<div class="psynet-actions">']
         for i, button in enumerate(self.buttons):
             logic.append(f"{{% set button_params = buttons[{i}] %}}")
             logic.append(button.render())
+        logic.append("</div>")
 
         return "\n".join(logic)
 
@@ -3425,10 +3590,6 @@ class AudioRecordControl(RecordControl):
     num_channels
         The number of channels used to record the audio. Default is mono (`num_channels=1`).
 
-    personal
-        Whether the recording should be marked as 'personal' and hence excluded from 'scrubbed' data exports.
-        Default: `True`.
-
     **kwargs
         Further arguments passed to :class:`~psynet.modular_page.RecordControl`
     """
@@ -3442,16 +3603,16 @@ class AudioRecordControl(RecordControl):
         controls: bool = False,
         loop_playback: bool = False,
         num_channels: int = 1,
-        personal=True,
+        personal=_PERSONAL_ARG_REMOVED,
         bot_response_media: Optional[Union[dict, str]] = None,
         **kwargs,
     ):
+        _reject_personal_arg(personal)
         super().__init__(**kwargs)
 
         self.controls = controls
         self.loop_playback = loop_playback
         self.num_channels = num_channels
-        self.personal = personal
         self.bot_response_media = bot_response_media
 
     def format_answer(self, raw_answer, **kwargs):
@@ -3479,7 +3640,6 @@ class AudioRecordControl(RecordControl):
                 input_path=tmp_file.name,
                 extension=self.file_extension,
                 parent=parent,
-                personal=self.personal,
             )
 
             async_ = not isinstance(asset.default_storage, LocalStorage)
@@ -3561,10 +3721,6 @@ class VideoRecordControl(RecordControl):
 
     mirrored
         Whether the preview of the video is displayed as if looking into a mirror. Default: `True`.
-
-    personal
-        Whether the recording should be marked as 'personal' and hence excluded from 'scrubbed' data exports.
-        Default: `True`.
     """
 
     macro = "video_record"
@@ -3581,10 +3737,11 @@ class VideoRecordControl(RecordControl):
         controls: bool = False,
         loop_playback: bool = False,
         mirrored: bool = True,
-        personal: bool = True,
+        personal=_PERSONAL_ARG_REMOVED,
         bot_response_media: Optional[str] = None,
         **kwargs,
     ):
+        _reject_personal_arg(personal)
         super().__init__(**kwargs)
 
         self.recording_source = recording_source
@@ -3595,7 +3752,6 @@ class VideoRecordControl(RecordControl):
         self.controls = controls
         self.loop_playback = loop_playback
         self.mirrored = mirrored
-        self.personal = personal
         self.bot_response_media = bot_response_media
 
         if self.record_audio is False:
@@ -3639,7 +3795,6 @@ class VideoRecordControl(RecordControl):
                     input_path=tmp_file.name,
                     extension=self.file_extension,
                     parent=parent,
-                    personal=self.personal,
                 )
 
                 try:
@@ -3897,14 +4052,18 @@ class SurveyJSControl(Control):
                 with the different button types and the rollover effects.
                 It doesn't seem the worst thing to leave it as is though. */
                 /* background-color: #0d6efd !important; */
-                font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", "Noto Sans", "Liberation Sans", Arial, sans-serif !important;
+                font-family: var(--psynet-font-sans) !important;
                 font-size: 20px !important;
                 font-weight: 400 !important;
                 max-width: 250px !important;
             }
-            /* This removes the grey background from the survey container. */
+            /* The survey sits on the PsyNet content surface, so it should not
+            paint its own background. */
             .sd-container-modern {
-                background-color: #FFFFFF !important;
+                background-color: transparent !important;
+            }
+            .sd-root-modern {
+                --sjs-general-backcolor: transparent;
             }
             /* This removes the shadow from the survey elements. */
             .sd-element--with-frame:not(.sd-element--collapsed) {
@@ -4232,6 +4391,18 @@ class MusicNotationPrompt(Prompt):
         self.content = content
 
     macro = "abc_notation"
+
+    def get_js_dependencies(self):
+        """Load the abcjs rendering library once per browser document."""
+        return [package_static_url("psynet", "libraries/abc-js/abcjs-basic.js")]
+
+    def get_js_page_modules(self):
+        """Activate score rendering for each hosting page."""
+        return [package_static_url("psynet", "scripts/music-notation-prompt.js")]
+
+    def get_js_vars(self):
+        """Provide the ABC notation consumed by the page module."""
+        return {"music_notation_prompt": {"content": self.content}}
 
     def update_events(self, events):
         super().update_events(events)

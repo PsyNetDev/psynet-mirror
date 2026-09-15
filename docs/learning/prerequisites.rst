@@ -20,4 +20,4 @@ with navigating directories using the `cd` command, listing files with `ls`, and
 At some point you will also need to use Git for version control on PsyNet projects.
 It's worth taking an introductory online tutorial for this early on, perhaps via DataCamp.
 For a more detailed introduction to using Git with PsyNet, see
-`version control with Git <../tutorials/version_control_with_git.html>`_.
+:doc:`version control with Git </tutorials/version_control_with_git>`.

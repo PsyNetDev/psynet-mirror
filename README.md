@@ -1,8 +1,8 @@
 ![Logo](https://gitlab.com/PsyNetDev/PsyNet/-/raw/master/psynet/resources/logo.svg)
 
-![Pipeline](https://gitlab.com/PsyNetDev/PsyNet/badges/master/pipeline.svg?ignore_skipped=true)
-![Latest release](https://gitlab.com/PsyNetDev/PsyNet/-/badges/release.svg)
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/pmcharrison/psynet-mirror)
+[![Pipeline](https://gitlab.com/PsyNetDev/PsyNet/badges/master/pipeline.svg?ignore_skipped=true)](https://gitlab.com/PsyNetDev/PsyNet/-/pipelines)
+[![Latest release](https://gitlab.com/PsyNetDev/PsyNet/-/badges/release.svg)](https://gitlab.com/PsyNetDev/PsyNet/-/releases)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/PsyNetDev/psynet-mirror)
 
 PsyNet is a powerful new Python package for designing and running the next generation of online behavioural experiments.
 It builds on the virtual lab framework [Dallinger](https://dallinger.readthedocs.io/)
@@ -15,10 +15,6 @@ high-powered variants of the same experiment in the time it would ordinarily tak
 PsyNet is primarily developed by Peter Harrison, Frank Höger, Pol van Rijn, and Nori Jacoby,
 but we are grateful for many further contributions by other users.
 
-To try some real-world PsyNet experiments for yourself, visit the following repositories:
-
-- [Consonance profiles for carillon bells](https://github.com/pmcharrison/2022-consonance-carillon)
-- [Emotional connotations of musical scales](https://github.com/pmcharrison/2022-musical-scales)
-- [Vocal pitch matching in musical chords](https://github.com/pmcharrison/2022-vertical-processing-test)
+On Windows, use WSL (Ubuntu) and follow the Linux workflow there. Native Windows is not supported.
 
 For more information about PsyNet, visit the [documentation website](https://psynetdev.gitlab.io/PsyNet/).

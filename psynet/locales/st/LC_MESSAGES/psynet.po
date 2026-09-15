@@ -433,6 +433,11 @@ msgstr ""
 "Haeba ho joalo, ka kopo fana ka mantsoe a seng makae a hlalosang bothata."
 
 #: psynet/end.py
+#, fuzzy
+msgid "Finish"
+msgstr "Qeta"
+
+#: psynet/end.py
 #, fuzzy, python-brace-format
 msgctxt "final-page-rewards"
 msgid ""

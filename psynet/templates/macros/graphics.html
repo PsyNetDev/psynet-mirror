@@ -10,8 +10,17 @@
             border-style: {{ params.border_style }};
             border-color: {{ params.border_color }};
             border-width: {{ params.border_width }};
-            height: {{ params.viewport_width * 100}}%;
-            width: {{ params.viewport_width * 100 }}%;
+            /* Caps are expressed as a width: the requested window fraction,
+               the parent content surface, the height cap, and the leftover
+               height after page chrome, floored at --psynet-graphic-min-size.
+               Height then follows from aspect-ratio, so a landscape graphic
+               cannot outgrow the surface, a square graphic cannot make a
+               laptop page scroll, and a short phone window cannot collapse
+               the graphic to zero. A percentage height would collapse against
+               an auto-height parent. */
+            width: {{ params.css_box_width() }};
+            aspect-ratio: {{ params.dimensions[0] }} / {{ params.dimensions[1] }};
+            height: auto;
         }
     </style>
 
@@ -19,7 +28,7 @@
         <div id="graphic-{{ params.id }}"> </div>
     </div>
 
-    <script src="/static/scripts/raphael-2.3.0.min.js"></script>
+    <script src="{{ url_for('static', filename='scripts/raphael-2.3.0.min.js') }}"></script>
 
     <script>
         let graphic_{{ params.id }} = {
@@ -40,7 +49,7 @@
             paper.setViewBox(0, 0, blueprintDim[0], blueprintDim[1], true);
             paper.setSize("100%", "100%");
 
-            let svg = document.querySelector("svg");
+            let svg = paper.canvas;
             svg.removeAttribute("width");
             svg.removeAttribute("height");
 
@@ -62,10 +71,11 @@
             {% for frame in params.frames %}
                 frames.push({
                     duration: {% if frame.duration is not none %} {{ 1000 * frame.duration }} {% else %} null {% endif %},
-                    function: function() {
+                    function: async function() {
 
                         {% if frame.audio_id is not none %}
-                            psynet.audio["{{ frame.audio_id }}"].play();
+                            let sound = await waitForAudioStimulus("{{ frame.audio_id }}");
+                            sound.play();
                         {% endif %}
 
                         {% if frame.activate_control_response %}
@@ -159,13 +169,39 @@
                 });
             };
 
-            let queueFrame = function (i) {
+            let waitForAudioStimulus = async function(audioId) {
+                let timeoutMs = 5000;
+                let pollIntervalMs = 25;
+                let elapsed = 0;
+
+                while (
+                    !(
+                        psynet.audio &&
+                        psynet.audio[audioId] &&
+                        typeof psynet.audio[audioId].play === "function"
+                    )
+                ) {
+                    if (elapsed >= timeoutMs) {
+                        throw new Error(
+                            "Audio stimulus '" + audioId + "' was not ready when graphic frame playback started."
+                        );
+                    }
+                    await new Promise((resolve) => {
+                        psynet.trial.setTimer(resolve, pollIntervalMs);
+                    });
+                    elapsed += pollIntervalMs;
+                }
+
+                return psynet.audio[audioId];
+            };
+
+            let queueFrame = async function (i) {
                 psynet.log.debug("Graphic '" + id + "': queuing frame " + i);
                 let removePersistentObjects = i == 0;
                 clearPaper(removePersistentObjects);
-                frames[i].function();
+                await frames[i].function();
                 if (frames[i].duration !== null) {
-                    setTimeout(function() {
+                    psynet.trial.setTimer(function() {
                         let isLastFrame = (!loop) && (i + 1 == frames.length);
                         if (!isLastFrame) {
                             let nextFrame = (i + 1) % frames.length;
@@ -179,7 +215,7 @@
                 queueFrame(0);
 
                 {% if params.auto_advance_after is defined and params.auto_advance_after is not none %}
-                    setTimeout(function() {
+                    psynet.trial.setTimer(function() {
                         let clickedObject = null;
                         let clickCoordinates = null;
                         submitAnswer(clickedObject, clickCoordinates);

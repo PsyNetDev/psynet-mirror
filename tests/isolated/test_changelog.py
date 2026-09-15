@@ -56,9 +56,7 @@ def test_new_command_creates_date_prefixed_slug_and_detects_collisions(
 
     assert changelog.new_command("fixed", "Fix Selenium flake!") == 0
     fragment = changelog.FRAGMENTS_DIR / "20260516-fix-selenium-flake.fixed.md"
-    assert fragment.read_text(encoding="utf-8") == (
-        "Fix Selenium flake! (author: [Your Name])\n"
-    )
+    assert fragment.read_text(encoding="utf-8") == "Fix Selenium flake!\n"
 
     with pytest.raises(ValueError, match="already exists"):
         changelog.new_command("fixed", "Fix Selenium flake!")

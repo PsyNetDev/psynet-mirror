@@ -193,7 +193,7 @@ video_pages = join(
                 "playSoundtrack": Event(
                     is_triggered_by="promptStart",
                     delay=0.0,
-                    js="psynet.audio.soundtrack.play(fade_in: 0.5, fade_out: 0.5)",
+                    js="psynet.audio.soundtrack.play({fade_in: 0.5, fade_out: 0.5})",
                 ),
                 "stopSoundtrack": Event(
                     is_triggered_by="promptStart",
