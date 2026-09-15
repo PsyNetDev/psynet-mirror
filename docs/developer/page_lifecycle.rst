@@ -487,7 +487,8 @@ Those routes do not share a lock protocol:
   arrival commit (publish park only) so poller publish cannot fire in that
   gap, and again before it tries the claim. Park and unpin are one Redis
   script each, so a publisher cannot leave a wake on the parked list after
-  the last pin is gone. Pin INCR also sets TTL in that same script. A waiter
+  the last owner token is gone. Adding an owner token also sets TTL in that
+  same script. A waiter
   GET that first-paints an unfilled hold never takes the
   render pin, so the poller can still finish that barrier. Last-arrival waits for the
   instance advisory claim (the lock the 0.5 s poller tries) so a GET does not

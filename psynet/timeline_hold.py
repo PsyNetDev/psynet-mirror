@@ -12,7 +12,9 @@ not process or publish those visits while that request is still building the nex
 page. A GET that is about to claim or follow a visit takes a follow pin first
 (publish park only) so poller publish cannot fire in the gap after the claim
 drops. Park and unpin use atomic Redis scripts so a wake cannot land on the
-parked list after the last pin is gone. Unfilled waiter GETs never take the
+parked list after the last owner token is gone. Each request stores a
+distinct owner token in the pin set so a stale exit after TTL expiry
+cannot drop a later owner's pin. Unfilled waiter GETs never take the
 render pin, so the poller can still finish those visits. The poller uses a
 fresh session per visit, so wake deferral is stored in a context variable
 rather than ``session.info``.
@@ -71,10 +73,13 @@ _last_arrival_render_ids = ContextVar(
 _last_arrival_follow_ids = ContextVar(
     "psynet_last_arrival_follow_ids", default=frozenset()
 )
+_last_arrival_pin_owner = ContextVar("psynet_last_arrival_pin_owner", default="")
 logger = get_logger()
 
 # Park and unpin must be atomic: a publisher that sees a pin and then RPUSH
-# after the final DECR would otherwise leave a wake that nobody drains.
+# after the last owner leaves would otherwise leave a wake that nobody drains.
+# Pins are sets of per-request owner tokens, not integer refcounts, so a stale
+# owner whose key expired cannot remove a later generation's token.
 _PARK_WAKE_IF_PINNED_LUA = """
 if redis.call('exists', KEYS[1]) == 1 or redis.call('exists', KEYS[2]) == 1 then
   redis.call('rpush', KEYS[3], ARGV[1])
@@ -85,8 +90,8 @@ return 0
 """
 _UNPIN_AND_DRAIN_LUA = """
 if redis.call('exists', KEYS[1]) == 1 then
-  local remaining = redis.call('decr', KEYS[1])
-  if remaining <= 0 then
+  redis.call('srem', KEYS[1], ARGV[1])
+  if redis.call('scard', KEYS[1]) == 0 then
     redis.call('del', KEYS[1])
   end
 end
@@ -97,10 +102,10 @@ if redis.call('exists', KEYS[2]) == 0 and redis.call('exists', KEYS[3]) == 0 the
 end
 return {}
 """
-# INCR without EXPIRE can leave a pin that outlives this request.
+# SADD without EXPIRE can leave a pin that outlives this request.
 _PIN_AND_EXPIRE_LUA = """
 if ARGV[2] == '1' then
-  redis.call('incr', KEYS[1])
+  redis.call('sadd', KEYS[1], ARGV[3])
 end
 if redis.call('exists', KEYS[1]) == 1 then
   redis.call('expire', KEYS[1], tonumber(ARGV[1]))
@@ -131,28 +136,32 @@ def _last_arrival_render_gate():
 
     Inner last-arrival commits release waiter rows before HTML/JSON render.
     The poller is a different process, so ``_defer_timeline_hold_wakes``
-    cannot hide those rows from it. Redis refcounts visits this request
+    cannot hide those rows from it. Redis records visits this request
     released (process skip + publish park) and visits it is about to claim
     (publish park only). Unfilled waiter GETs do not take the render pin, so
     the poller can still finish those barriers. Nested last-arrival requests
-    INCR the same key so an overlapping GET cannot clear the mark while the
-    other is still rendering.
+    add distinct owner tokens to the same set so an overlapping GET cannot
+    clear the mark while the other is still rendering. A stale owner whose
+    key expired cannot remove a later generation.
     """
     active_token = _last_arrival_render_active.set(True)
     ids_token = _last_arrival_render_ids.set(frozenset())
     follow_token = _last_arrival_follow_ids.set(frozenset())
+    owner_token = _last_arrival_pin_owner.set(uuid.uuid4().hex)
     try:
         yield
     finally:
         _clear_last_arrival_render_marks()
+        _last_arrival_pin_owner.reset(owner_token)
         _last_arrival_follow_ids.reset(follow_token)
         _last_arrival_render_ids.reset(ids_token)
         _last_arrival_render_active.reset(active_token)
 
 
 def _incr_last_arrival_pin(instance_id, *, ids_var, key_for):
-    """INCR one last-arrival Redis pin and remember it on ``ids_var``."""
-    if instance_id is None or not _last_arrival_render_active.get():
+    """Add this request's owner token to one last-arrival Redis pin."""
+    owner = _last_arrival_pin_owner.get()
+    if instance_id is None or not _last_arrival_render_active.get() or not owner:
         return
     owned = ids_var.get()
     key = key_for(instance_id)
@@ -164,6 +173,7 @@ def _incr_last_arrival_pin(instance_id, *, ids_var, key_for):
             key,
             _LAST_ARRIVAL_RENDER_TTL_SECONDS,
             incr,
+            owner,
         )
     except Exception:
         logger.warning(
@@ -203,7 +213,7 @@ def _last_arrival_render_in_progress(instance_id):
     if instance_id is None:
         return False
     try:
-        return bool(db.redis_conn.get(_last_arrival_render_key(instance_id)))
+        return bool(db.redis_conn.exists(_last_arrival_render_key(instance_id)))
     except Exception:
         logger.warning(
             "Failed to read last-arrival render mark for barrier instance %s.",
@@ -218,7 +228,7 @@ def _last_arrival_follow_in_progress(instance_id):
     if instance_id is None:
         return False
     try:
-        return bool(db.redis_conn.get(_last_arrival_follow_key(instance_id)))
+        return bool(db.redis_conn.exists(_last_arrival_follow_key(instance_id)))
     except Exception:
         logger.warning(
             "Failed to read last-arrival follow mark for barrier instance %s.",
@@ -240,7 +250,7 @@ def _any_last_arrival_pin_in_progress(instance_ids):
     if not keys:
         return False
     try:
-        return any(db.redis_conn.mget(*keys))
+        return bool(db.redis_conn.exists(*keys))
     except Exception:
         logger.warning(
             "Failed to read last-arrival pins for barrier instances %s.",
@@ -291,7 +301,10 @@ def _park_wake_if_pinned(instance_id, wake):
 
 
 def _unpin_and_drain_hold_wakes(instance_id, *, kind):
-    """Decrement one pin kind and drain parked wakes if no pin remains."""
+    """Remove this request's owner token and drain parked wakes if no pin remains."""
+    owner = _last_arrival_pin_owner.get()
+    if not owner:
+        return []
     this_key = (
         _last_arrival_render_key(instance_id)
         if kind == "render"
@@ -305,6 +318,7 @@ def _unpin_and_drain_hold_wakes(instance_id, *, kind):
             _last_arrival_render_key(instance_id),
             _last_arrival_follow_key(instance_id),
             _parked_hold_wake_key(instance_id),
+            owner,
         )
     except Exception:
         logger.warning(

@@ -4,7 +4,7 @@ The GET/POST tests pause at transaction boundaries and assert HTTP and
 first-paint outcomes. They do not monkeypatch ``is_ready_to_resume``, and
 they do not treat a ready overlay on an unreleased ``active_barriers``
 link as a protocol witness. ``test_overlapping_render_pin_owners_publish_wake_once``
-is a Lua/refcount witness: it drives Redis pins directly. See
+is a Lua/owner-token witness: it drives Redis pins directly. See
 ``docs/developer/timeline_hold_traces.rst``.
 """
 
@@ -247,14 +247,14 @@ def test_overlapping_render_pin_owners_publish_wake_once(
     try:
         assert a_pinned.wait(timeout=5)
         assert b_pinned.wait(timeout=5)
-        assert int(db.redis_conn.get(_last_arrival_render_key(instance_id))) == 2
+        assert db.redis_conn.scard(_last_arrival_render_key(instance_id)) == 2
         _publish_wakes([dict(wake)])
         assert _released_wake_count(publications) == 0
         assert db.redis_conn.llen(_parked_hold_wake_key(instance_id)) == 1
         a_may_exit.set()
         thread_a.join(timeout=5)
         assert not thread_a.is_alive()
-        assert int(db.redis_conn.get(_last_arrival_render_key(instance_id))) == 1
+        assert db.redis_conn.scard(_last_arrival_render_key(instance_id)) == 1
         assert _released_wake_count(publications) == 0
         b_may_exit.set()
         thread_b.join(timeout=5)
@@ -265,4 +265,59 @@ def test_overlapping_render_pin_owners_publish_wake_once(
     assert errors == []
     assert _released_wake_count(publications) == 1
     assert not db.redis_conn.llen(_parked_hold_wake_key(instance_id))
-    assert db.redis_conn.get(_last_arrival_render_key(instance_id)) is None
+    assert not db.redis_conn.exists(_last_arrival_render_key(instance_id))
+
+
+@CONSENTS
+def test_stale_render_pin_owner_does_not_drop_newer_generation(
+    in_experiment_directory, db_session, monkeypatch
+):
+    """A live owner whose pin expired must not unpin a later generation."""
+    publications = _hold_wake_publications(monkeypatch)
+    instance_id = f"ttl-gen-{uuid.uuid4().hex}"
+    wake = {
+        "participant_id": 0,
+        "reason": "barrier_released",
+        "wake_token": "lua-ttl-gen-token",
+        "instance_id": instance_id,
+    }
+    a_pinned = threading.Event()
+    b_pinned = threading.Event()
+    a_may_exit = threading.Event()
+    b_may_exit = threading.Event()
+    errors = []
+
+    def owner(pinned, may_exit):
+        try:
+            with _last_arrival_render_gate():
+                _mark_last_arrival_render_instance(instance_id)
+                pinned.set()
+                assert may_exit.wait(timeout=5)
+        except Exception as err:  # pragma: no cover - surfaced by the caller
+            errors.append(err)
+
+    thread_a = threading.Thread(target=owner, args=(a_pinned, a_may_exit), daemon=True)
+    thread_b = threading.Thread(target=owner, args=(b_pinned, b_may_exit), daemon=True)
+    thread_a.start()
+    try:
+        assert a_pinned.wait(timeout=5)
+        db.redis_conn.delete(_last_arrival_render_key(instance_id))
+        thread_b.start()
+        assert b_pinned.wait(timeout=5)
+        assert db.redis_conn.scard(_last_arrival_render_key(instance_id)) == 1
+        _publish_wakes([dict(wake)])
+        assert _released_wake_count(publications) == 0
+        a_may_exit.set()
+        thread_a.join(timeout=5)
+        assert not thread_a.is_alive()
+        assert db.redis_conn.scard(_last_arrival_render_key(instance_id)) == 1
+        assert _released_wake_count(publications) == 0
+        b_may_exit.set()
+        thread_b.join(timeout=5)
+        assert not thread_b.is_alive()
+    finally:
+        a_may_exit.set()
+        b_may_exit.set()
+    assert errors == []
+    assert _released_wake_count(publications) == 1
+    assert not db.redis_conn.exists(_last_arrival_render_key(instance_id))
