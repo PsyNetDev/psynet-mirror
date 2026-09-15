@@ -2350,6 +2350,106 @@ def test_last_arrival_releases_waiters_during_unready_hold_resume(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
+def test_ready_hold_resume_skips_write_while_last_arrival_follow_pin(
+    in_experiment_directory, db_session, monkeypatch
+):
+    """A now-ready overlay POST must not lock the waiter during last-arrival skip."""
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    group_type = f"follow_pin_resume_{uuid.uuid4().hex[:8]}"
+    exp.timeline = _stacked_partner_timeline(group_type)
+    try:
+        first, _last = _working_participants(exp, 2)
+        assert _json_timeline(exp, first).status_code == 200
+        first = Participant.query.get(first.id)
+        first_id = first.id
+        hold_uuid = first.page_uuid
+        instance_id = next(iter(first.active_barriers.values())).barrier_instance_id
+        monkeypatch.setattr(
+            _TimelineHoldPage,
+            "is_ready_to_resume",
+            lambda self, experiment, participant: True,
+        )
+        db.redis_conn.set(_last_arrival_follow_key(instance_id), "1")
+        try:
+            resumed = _process_response(
+                exp, first, hold_uuid, timeline_hold_resume=True
+            )
+            assert resumed.skip_write is True
+            assert getattr(resumed.page, "is_timeline_hold", False)
+            assert not _participant_row_is_locked(first_id)
+        finally:
+            db.redis_conn.delete(_last_arrival_follow_key(instance_id))
+    finally:
+        exp.timeline = original_timeline
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_last_arrival_skips_while_ready_partner_hold_resume_overlaps(
+    in_experiment_directory, db_session, monkeypatch
+):
+    """Last-arrival must still skip when a now-ready overlay POST overlaps finalize.
+
+    Playwright last-choice entry failed when ``choice_hold_second`` first-painted
+    ``_BarrierHoldPage``. The waiting partner's websocket opens a hold-resume
+    during that GET; after the wait row commits the overlay looks ready and
+    would take ``FOR UPDATE NOWAIT``.
+    """
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    original_finalize = Experiment._finalize_pending_timeline_barriers
+    group_type = f"ready_overlap_{uuid.uuid4().hex[:8]}"
+    exp.timeline = _stacked_partner_timeline(group_type)
+    follow_committed = threading.Event()
+    last_may_finish = threading.Event()
+    pause_finalize = {"on": False}
+
+    def pausing_finalize(*args, **kwargs):
+        if pause_finalize["on"]:
+            follow_committed.set()
+            assert last_may_finish.wait(timeout=5)
+        return original_finalize(*args, **kwargs)
+
+    monkeypatch.setattr(
+        Experiment, "_finalize_pending_timeline_barriers", pausing_finalize
+    )
+    try:
+        first, last = _working_participants(exp, 2)
+        assert _json_timeline(exp, first).status_code == 200
+        pause_finalize["on"] = True
+        first = Participant.query.get(first.id)
+        first_id = first.id
+        last_id = last.id
+        last_uid = last.unique_id
+        hold_uuid = first.page_uuid
+        original_ready = _TimelineHoldPage.is_ready_to_resume
+
+        def first_looks_ready(self, experiment, participant):
+            if getattr(participant, "id", None) == first_id:
+                return True
+            return original_ready(self, experiment, participant)
+
+        monkeypatch.setattr(_TimelineHoldPage, "is_ready_to_resume", first_looks_ready)
+        thread, result, errors = _route_timeline_in_thread(exp, last_uid)
+        assert follow_committed.wait(timeout=2)
+        first = Participant.query.get(first_id)
+        resumed = _process_response(exp, first, hold_uuid, timeline_hold_resume=True)
+        assert resumed.skip_write is True
+        last_may_finish.set()
+        thread.join(timeout=5)
+        assert errors == []
+        assert result.get("type") == "ModularPage"
+        _assert_on_action_page(exp, [first_id, last_id])
+    finally:
+        last_may_finish.set()
+        exp.timeline = original_timeline
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
 def test_ready_hold_resume_does_not_wait_when_participant_row_is_locked(
     in_experiment_directory, db_session, monkeypatch
 ):

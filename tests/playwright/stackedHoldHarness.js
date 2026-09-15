@@ -581,6 +581,15 @@ async function enterWaitingHold(session, { holdText, prompt, timeout = STEP_TIME
   await waitForTimelinePageReady(session.page, timeout);
   const armed = await armVisibleHold(session, { holdText, prompt, timeout });
   expect(armed, `${session.label} expected a lasting hold`).toBe(true);
+  // Websocket onOpen posts a hold-resume. Wait until that check is idle
+  // so last-arrival skip does not NOWAIT-miss this waiter row.
+  await session.page.waitForFunction(
+    () => {
+      const controller = window.psynet && window.psynet.timelineHold;
+      return Boolean(controller && !controller.resumeInFlight);
+    },
+    { timeout }
+  );
   return session.entry;
 }
 

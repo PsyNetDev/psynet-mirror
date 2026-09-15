@@ -3442,12 +3442,24 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         a partner already advanced this waiter is the ``page_uuid`` mismatch
         path (``_page_for_stale_hold_resume``). Accidental identity-map
         dirties are rolled back when ``route_response`` sees ``skip_write``.
+
+        Last-arrival follow/render pins also stay on this unlocked path. The
+        hold overlay POSTs as soon as its websocket opens; after last-arrival
+        commits the wait row that overlay can look ready. Taking
+        ``FOR UPDATE NOWAIT`` then makes last-arrival miss waiter ``NOWAIT``
+        and first-paint ``_BarrierHoldPage``.
         """
         if page_uuid != participant.page_uuid:
             return None
         event = self.timeline.get_current_elt(self, participant)
         if not getattr(event, "is_timeline_hold", False):
             return None
+        if self._hold_visit_owned_by_last_arrival(participant, event):
+            return ResponseResult(
+                payload=self._approved_payload(participant, event),
+                page=event,
+                skip_write=True,
+            )
         if event.is_ready_to_resume(self, participant):
             return None
         return ResponseResult(
@@ -3455,6 +3467,21 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             page=event,
             skip_write=True,
         )
+
+    def _hold_visit_owned_by_last_arrival(self, participant, page):
+        """Return whether last-arrival currently follow- or render-pins this hold."""
+        from .sync import _hold_instance_id_for_page
+        from .timeline_hold import (
+            _last_arrival_follow_in_progress,
+            _last_arrival_render_in_progress,
+        )
+
+        instance_id = _hold_instance_id_for_page(participant, page)
+        if instance_id is None:
+            return False
+        return _last_arrival_follow_in_progress(
+            instance_id
+        ) or _last_arrival_render_in_progress(instance_id)
 
     def _page_for_stale_hold_resume(
         self,

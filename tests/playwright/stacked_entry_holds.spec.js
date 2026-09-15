@@ -63,10 +63,12 @@ test("last arriver skips stacked entry holds", { tag: "@both" }, async ({
 test("last choice releases the waiting partner without a safety poll", { tag: "@both" }, async ({
   browser
 }) => {
-  // After both players reach the action page, the first submit waits in place.
-  // The second submit is a POST /response last arrival, which is a different
-  // finalize path from the first GET /timeline skip. A last-arrival GET can
-  // 302 after page_uuid advances; first-paint waits for the 200 HTML body.
+    // After both players reach the action page, the first submit waits in place.
+    // The second submit is a POST /response last arrival, which is a different
+    // finalize path from the first GET /timeline skip. A last-arrival GET can
+    // 302 after page_uuid advances; first-paint waits for the 200 HTML body.
+    // Settle the first hold (and its websocket hold-resume) before the last
+    // arriver enters, so that overlay POST cannot NOWAIT-lock the waiter row.
   const { experiment, sessions } = await startHoldExperiment(browser, RPS_DIR, [
     "choice_hold_first",
     "choice_hold_second"
@@ -78,6 +80,8 @@ test("last choice releases the waiting partner without a safety poll", { tag: "@
       holdText: PAIR_HOLD_TEXT,
       prompt: ACTION_PROMPT
     });
+    await first.page.waitForTimeout(SETTLE_HOLD_MS);
+    await assertStillHeld(first, PAIR_HOLD_TEXT);
     const lastEntry = await enterSkippingHold(last);
     await assertWaiterReleasedWithLastArriver(first, lastEntry);
 
