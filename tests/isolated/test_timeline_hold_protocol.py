@@ -332,20 +332,21 @@ def test_fail_or_redirect_hold_resume_settles_under_live_follow_pin(
     original_finalize = Experiment._finalize_pending_timeline_barriers
     entered = threading.Event()
     may_finish = threading.Event()
-
-    @classmethod
-    def pausing_finalize(cls, experiment, participant, page):
-        entered.set()
-        assert may_finish.wait(timeout=10)
-        return original_finalize(experiment, participant, page)
-
-    monkeypatch.setattr(
-        Experiment, "_finalize_pending_timeline_barriers", pausing_finalize
-    )
     with _using_stacked_timeline(exp, group_type):
         first, last = _working_participants(exp, 2)
         first_id, last_id = first.id, last.id
         last_uid = last.unique_id
+
+        @classmethod
+        def pausing_finalize(cls, experiment, participant, page):
+            if participant.id == last_id:
+                entered.set()
+                assert may_finish.wait(timeout=10)
+            return original_finalize(experiment, participant, page)
+
+        monkeypatch.setattr(
+            Experiment, "_finalize_pending_timeline_barriers", pausing_finalize
+        )
         assert _json_timeline(exp, first).status_code == 200
         db.session.expire_all()
         first = Participant.query.get(first_id)
