@@ -228,6 +228,28 @@ def _last_arrival_follow_in_progress(instance_id):
         return False
 
 
+def _any_last_arrival_pin_in_progress(instance_ids):
+    """Return whether a follow or render pin currently owns any of these visits."""
+    instance_ids = tuple(instance_ids)
+    keys = []
+    for instance_id in instance_ids:
+        if instance_id is None:
+            continue
+        keys.append(_last_arrival_follow_key(instance_id))
+        keys.append(_last_arrival_render_key(instance_id))
+    if not keys:
+        return False
+    try:
+        return any(db.redis_conn.mget(*keys))
+    except Exception:
+        logger.warning(
+            "Failed to read last-arrival pins for barrier instances %s.",
+            instance_ids,
+            exc_info=True,
+        )
+        return False
+
+
 def _clear_last_arrival_render_marks():
     """Drop this request's last-arrival pins and publish atomically drained wakes."""
     parked = []

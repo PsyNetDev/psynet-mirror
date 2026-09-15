@@ -142,6 +142,7 @@ from psynet.participant import Participant
 from psynet.serialize import serialize_callable
 from psynet.timeline import CodeBlock, EltCollection, conditional
 from psynet.timeline_hold import (
+    _any_last_arrival_pin_in_progress,
     _defer_timeline_hold_wakes,
     _mark_last_arrival_follow_instance,
     _mark_last_arrival_render_instance,
@@ -232,6 +233,22 @@ def _hold_instance_id_for_page(participant, page):
     if link is None or link.released or link.barrier_instance_id is None:
         return None
     return link.barrier_instance_id
+
+
+def _hold_visit_pinned_by_last_arrival(participant):
+    """Return whether a last-arrival pin currently owns any of this waiter's visits.
+
+    ``active_barriers`` hides released links. After last-arrival commits a
+    release, a partner overlay therefore cannot use
+    ``_hold_instance_id_for_page``. ``barrier_links`` keeps those rows,
+    including after skip rotates ``page_uuid``.
+    """
+    links = getattr(participant, "barrier_links", None) or ()
+    return _any_last_arrival_pin_in_progress(
+        link.barrier_instance_id
+        for link in links
+        if getattr(link, "barrier_instance_id", None)
+    )
 
 
 def _visit_check_would_release(instance_id):

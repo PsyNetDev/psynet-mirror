@@ -49,6 +49,7 @@ from psynet.sync import (
     _has_active_sync_group,
     _hold_barrier_instance_claim,
     _hold_instance_id_for_page,
+    _hold_visit_pinned_by_last_arrival,
     _pending_checks_should_wait_for_claim,
     _process_barrier_instance,
     _queue_barrier_check,
@@ -2347,16 +2348,115 @@ def test_last_arrival_releases_waiters_during_unready_hold_resume(
     assert resumed.skip_write is True
 
 
+def _pin_key(kind, instance_id):
+    """Return the Redis last-arrival pin key for ``kind`` (``follow`` or ``render``)."""
+    if kind == "follow":
+        return _last_arrival_follow_key(instance_id)
+    if kind == "render":
+        return _last_arrival_render_key(instance_id)
+    raise ValueError(kind)
+
+
+def _release_current_barrier_hold(participant):
+    """Commit a barrier release so ``active_barriers`` drops this waiter's link."""
+    link = next(iter(participant.active_barriers.values()))
+    instance_id = link.barrier_instance_id
+    hold_uuid = participant.page_uuid
+    link.release()
+    db.session.commit()
+    db.session.expire_all()
+    return instance_id, hold_uuid
+
+
+@pytest.mark.parametrize("pin_kind", ["follow", "render"])
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
-def test_ready_hold_resume_skips_write_while_last_arrival_follow_pin(
-    in_experiment_directory, db_session, monkeypatch
+def test_ready_hold_resume_skips_write_while_last_arrival_pin(
+    in_experiment_directory, db_session, pin_kind
 ):
-    """A now-ready overlay POST must not lock the waiter during last-arrival skip."""
+    """A released overlay POST must not lock the waiter while last-arrival is pinned.
+
+    ``active_barriers`` hides the released link, so ``is_ready_to_resume`` is
+    naturally true. The pin lookup must still find that visit on
+    ``barrier_links``.
+    """
     exp = get_experiment()
     original_timeline = exp.timeline
-    group_type = f"follow_pin_resume_{uuid.uuid4().hex[:8]}"
+    group_type = f"{pin_kind}_pin_resume_{uuid.uuid4().hex[:8]}"
+    exp.timeline = _stacked_partner_timeline(group_type)
+    try:
+        first, _last = _working_participants(exp, 2)
+        assert _json_timeline(exp, first).status_code == 200
+        first = Participant.query.get(first.id)
+        first_id = first.id
+        instance_id, hold_uuid = _release_current_barrier_hold(first)
+        first = Participant.query.get(first_id)
+        page = exp.timeline.get_current_elt(exp, first)
+        assert _hold_instance_id_for_page(first, page) is None
+        assert page.is_ready_to_resume(exp, first)
+        pin_key = _pin_key(pin_kind, instance_id)
+        db.redis_conn.set(pin_key, "1")
+        try:
+            assert _hold_visit_pinned_by_last_arrival(first)
+            resumed = _process_response(
+                exp, first, hold_uuid, timeline_hold_resume=True
+            )
+            assert resumed.skip_write is True
+            assert getattr(resumed.page, "is_timeline_hold", False)
+            assert not _participant_row_is_locked(first_id)
+        finally:
+            db.redis_conn.delete(pin_key)
+    finally:
+        exp.timeline = original_timeline
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_stale_hold_resume_skips_write_while_last_arrival_pin(
+    in_experiment_directory, db_session
+):
+    """A skip that already rotated ``page_uuid`` must not lock under a live pin."""
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    group_type = f"stale_pin_resume_{uuid.uuid4().hex[:8]}"
+    exp.timeline = _stacked_partner_timeline(group_type)
+    try:
+        first, _last = _working_participants(exp, 2)
+        assert _json_timeline(exp, first).status_code == 200
+        first = Participant.query.get(first.id)
+        first_id = first.id
+        instance_id, hold_uuid = _release_current_barrier_hold(first)
+        first = Participant.query.get(first_id)
+        first.page_uuid = str(uuid.uuid4())
+        db.session.commit()
+        first = Participant.query.get(first_id)
+        assert first.page_uuid != hold_uuid
+        pin_key = _last_arrival_render_key(instance_id)
+        db.redis_conn.set(pin_key, "1")
+        try:
+            resumed = _process_response(
+                exp, first, hold_uuid, timeline_hold_resume=True
+            )
+            assert resumed.skip_write is True
+            assert not _participant_row_is_locked(first_id)
+        finally:
+            db.redis_conn.delete(pin_key)
+    finally:
+        exp.timeline = original_timeline
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_timed_out_hold_resume_still_writes_under_last_arrival_pin(
+    in_experiment_directory, db_session
+):
+    """A timed-out overlay must still settle, even while last-arrival is pinned."""
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    group_type = f"timeout_pin_resume_{uuid.uuid4().hex[:8]}"
     exp.timeline = _stacked_partner_timeline(group_type)
     try:
         first, _last = _working_participants(exp, 2)
@@ -2365,21 +2465,20 @@ def test_ready_hold_resume_skips_write_while_last_arrival_follow_pin(
         first_id = first.id
         hold_uuid = first.page_uuid
         instance_id = next(iter(first.active_barriers.values())).barrier_instance_id
-        monkeypatch.setattr(
-            _TimelineHoldPage,
-            "is_ready_to_resume",
-            lambda self, experiment, participant: True,
-        )
-        db.redis_conn.set(_last_arrival_follow_key(instance_id), "1")
+        record = TimelineHoldRecord.query.filter_by(
+            participant_id=first_id, page_uuid=hold_uuid
+        ).one()
+        record.deadline_at = timenow() - timedelta(seconds=1)
+        db.session.commit()
+        pin_key = _last_arrival_follow_key(instance_id)
+        db.redis_conn.set(pin_key, "1")
         try:
             resumed = _process_response(
                 exp, first, hold_uuid, timeline_hold_resume=True
             )
-            assert resumed.skip_write is True
-            assert getattr(resumed.page, "is_timeline_hold", False)
-            assert not _participant_row_is_locked(first_id)
+            assert not getattr(resumed, "skip_write", False)
         finally:
-            db.redis_conn.delete(_last_arrival_follow_key(instance_id))
+            db.redis_conn.delete(pin_key)
     finally:
         exp.timeline = original_timeline
 
@@ -2390,53 +2489,49 @@ def test_ready_hold_resume_skips_write_while_last_arrival_follow_pin(
 def test_last_arrival_skips_while_ready_partner_hold_resume_overlaps(
     in_experiment_directory, db_session, monkeypatch
 ):
-    """Last-arrival must still skip when a now-ready overlay POST overlaps finalize.
+    """Last-arrival must still skip when a released overlay POST overlaps skip.
 
-    Playwright last-choice entry failed when ``choice_hold_second`` first-painted
-    ``_BarrierHoldPage``. The waiting partner's websocket opens a hold-resume
-    during that GET; after the wait row commits the overlay looks ready and
-    would take ``FOR UPDATE NOWAIT``.
+    Pause after the release commit, before waiter ``NOWAIT``. The overlay then
+    looks ready because ``active_barriers`` no longer contains the link.
     """
     exp = get_experiment()
     original_timeline = exp.timeline
-    original_finalize = Experiment._finalize_pending_timeline_barriers
+    original_advance = _advance_released_hold_waiters_after_commit
     group_type = f"ready_overlap_{uuid.uuid4().hex[:8]}"
     exp.timeline = _stacked_partner_timeline(group_type)
-    follow_committed = threading.Event()
+    released = threading.Event()
     last_may_finish = threading.Event()
-    pause_finalize = {"on": False}
+    pause_advance = {"on": False, "once": False}
 
-    def pausing_finalize(*args, **kwargs):
-        if pause_finalize["on"]:
-            follow_committed.set()
+    def pausing_advance(participant_ids):
+        if pause_advance["on"] and not pause_advance["once"] and participant_ids:
+            pause_advance["once"] = True
+            released.set()
             assert last_may_finish.wait(timeout=5)
-        return original_finalize(*args, **kwargs)
+        return original_advance(participant_ids)
 
     monkeypatch.setattr(
-        Experiment, "_finalize_pending_timeline_barriers", pausing_finalize
+        "psynet.sync._advance_released_hold_waiters_after_commit",
+        pausing_advance,
     )
     try:
         first, last = _working_participants(exp, 2)
         assert _json_timeline(exp, first).status_code == 200
-        pause_finalize["on"] = True
+        pause_advance["on"] = True
         first = Participant.query.get(first.id)
         first_id = first.id
         last_id = last.id
         last_uid = last.unique_id
         hold_uuid = first.page_uuid
-        original_ready = _TimelineHoldPage.is_ready_to_resume
-
-        def first_looks_ready(self, experiment, participant):
-            if getattr(participant, "id", None) == first_id:
-                return True
-            return original_ready(self, experiment, participant)
-
-        monkeypatch.setattr(_TimelineHoldPage, "is_ready_to_resume", first_looks_ready)
         thread, result, errors = _route_timeline_in_thread(exp, last_uid)
-        assert follow_committed.wait(timeout=2)
+        assert released.wait(timeout=5)
         first = Participant.query.get(first_id)
+        page = exp.timeline.get_current_elt(exp, first)
+        assert page.is_ready_to_resume(exp, first)
+        assert _hold_instance_id_for_page(first, page) is None
         resumed = _process_response(exp, first, hold_uuid, timeline_hold_resume=True)
         assert resumed.skip_write is True
+        assert not _participant_row_is_locked(first_id)
         last_may_finish.set()
         thread.join(timeout=5)
         assert errors == []

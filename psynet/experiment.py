@@ -3443,23 +3443,36 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         path (``_page_for_stale_hold_resume``). Accidental identity-map
         dirties are rolled back when ``route_response`` sees ``skip_write``.
 
-        Last-arrival follow/render pins also stay on this unlocked path. The
-        hold overlay POSTs as soon as its websocket opens; after last-arrival
-        commits the wait row that overlay can look ready. Taking
-        ``FOR UPDATE NOWAIT`` then makes last-arrival miss waiter ``NOWAIT``
-        and first-paint ``_BarrierHoldPage``.
+        Last-arrival follow/render pins also stay on this unlocked path, even
+        when the overlay looks ready or still carries a released hold uuid.
+        ``active_barriers`` hides released links, so the pin lookup uses
+        ``barrier_links``. The hold overlay POSTs as soon as its websocket
+        opens; after last-arrival commits the release that overlay can look
+        ready. Taking ``FOR UPDATE NOWAIT`` then makes last-arrival miss
+        waiter ``NOWAIT`` and first-paint ``_BarrierHoldPage``.
         """
-        if page_uuid != participant.page_uuid:
-            return None
+        from .sync import _hold_visit_pinned_by_last_arrival
+
         event = self.timeline.get_current_elt(self, participant)
-        if not getattr(event, "is_timeline_hold", False):
+        on_submitted_hold = page_uuid == participant.page_uuid and getattr(
+            event, "is_timeline_hold", False
+        )
+        if on_submitted_hold and (
+            participant.pending_redirect is not None
+            or participant.failed
+            or event.participant_timed_out(participant)
+        ):
             return None
-        if self._hold_visit_owned_by_last_arrival(participant, event):
+        if _hold_visit_pinned_by_last_arrival(participant):
             return ResponseResult(
                 payload=self._approved_payload(participant, event),
                 page=event,
                 skip_write=True,
             )
+        if page_uuid != participant.page_uuid:
+            return None
+        if not getattr(event, "is_timeline_hold", False):
+            return None
         if event.is_ready_to_resume(self, participant):
             return None
         return ResponseResult(
@@ -3467,21 +3480,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             page=event,
             skip_write=True,
         )
-
-    def _hold_visit_owned_by_last_arrival(self, participant, page):
-        """Return whether last-arrival currently follow- or render-pins this hold."""
-        from .sync import _hold_instance_id_for_page
-        from .timeline_hold import (
-            _last_arrival_follow_in_progress,
-            _last_arrival_render_in_progress,
-        )
-
-        instance_id = _hold_instance_id_for_page(participant, page)
-        if instance_id is None:
-            return False
-        return _last_arrival_follow_in_progress(
-            instance_id
-        ) or _last_arrival_render_in_progress(instance_id)
 
     def _page_for_stale_hold_resume(
         self,
