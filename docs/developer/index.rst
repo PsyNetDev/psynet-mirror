@@ -8,6 +8,7 @@ Contributing to PsyNet
    branch_review
    contributing_a_feature_or_bugfix
    page_lifecycle
+   timeline_hold_traces
    package_static_resources
    prescreening_tasks
    updating_documentation

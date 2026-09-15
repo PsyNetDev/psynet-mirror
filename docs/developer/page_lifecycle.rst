@@ -434,6 +434,10 @@ unknown uuid is still a sync mismatch.
 Resume protocol
 ^^^^^^^^^^^^^^^
 
+Named traces and the invariants tests must witness are in
+:doc:`timeline_hold_traces`. Use that page when checking whether a
+race can happen; the rest of this section is the lock protocol.
+
 Skipping a ready hold is one step, ``Experiment._advance_past_ready_holds``.
 The caller must already hold the participant row. Last-arrival uses it after
 the check commit so this request does not first-paint the hold it just
