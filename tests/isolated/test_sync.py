@@ -1052,7 +1052,7 @@ def test_skip_after_commit_releases_extra_claim_on_failure(
     instance_id = checks[0]
     with pytest.raises(RuntimeError, match="skip failed"):
         with _hold_barrier_instance_claim(instance_id, wait=True):
-            _check_held_instance(instance_id, skip_waiters=True)
+            _check_and_skip_held_instance(instance_id)
     assert _advisory_lock_count() == baseline
 
 
@@ -4424,7 +4424,7 @@ def test_skip_nowait_miss_still_releases_extra_claim(
         try:
             instance_id = checks[0]
             with _hold_barrier_instance_claim(instance_id, wait=True):
-                _check_held_instance(instance_id, skip_waiters=True)
+                _check_and_skip_held_instance(instance_id)
         except Exception as err:  # pragma: no cover - surfaced by the caller
             errors.append(err)
         finally:

@@ -840,8 +840,9 @@ class Barrier(EltCollection):
         Last-arrival keeps ``instance.active``, so looking for that other
         pool stays off the budgeted path.
 
-        Released hold waiters are queued and skipped after this check
-        commits, so partner row locks do not span ``_advance_past_ready_holds``.
+        Released hold waiters are queued so partner row locks drop at the
+        check commit. The poller then skip-advances waiters **it** released;
+        last-arrival drains that queue without moving partner cursors.
 
         Returns
         -------
@@ -2302,16 +2303,16 @@ def _check_claimed_barrier_instance(instance, *, wait=False, already_claimed=Fal
     return True
 
 
-def _check_held_instance(instance_id, *, skip_waiters=False):
-    """Evaluate one visit whose extra-connection claim is already held.
+def _evaluate_held_instance(instance_id):
+    """Evaluate one already-claimed visit and commit.
 
     Sets the ORM ``lock_timeout`` so check/commit cannot wait forever while
     the extra connection holds the visit key. Nested waiter ``NOWAIT`` misses
-    return ``False`` so last-arrival can retry. Author ``on_release`` and spec
-    errors also return ``False`` so the group stays waiting. Other
-    non-transient check errors propagate so ``GET /timeline`` does not
-    first-paint a hold. Last-arrival drains released waiter ids without
-    advancing those partners; the poller passes ``skip_waiters=True``.
+    return ``(False, [])`` so last-arrival can retry. Author ``on_release``
+    and spec errors also return ``(False, [])`` so the group stays waiting.
+    Other non-transient check errors propagate so ``GET /timeline`` does not
+    first-paint a hold. Released waiter ids are drained here so they cannot
+    leak in ``session.info``; last-arrival discards them, the poller skips.
     """
     db.session.expire_all()
     _set_transaction_lock_timeout(get_config().get("timeline_lock_timeout_seconds"))
@@ -2326,25 +2327,50 @@ def _check_held_instance(instance_id, *, skip_waiters=False):
                 instance.barrier_id if instance is not None else None,
                 instance_id,
             )
-            return False
+            return False, []
         logger.exception(
             "Barrier '%s' instance %s failed during a last-arrival check.",
             instance.barrier_id if instance is not None else None,
             instance_id,
         )
         if isinstance(err, (BarrierSpecError, _BarrierAuthorHookError)):
-            return False
+            return False, []
         raise
     released_ids = _take_released_hold_waiter_ids()
     db.session.commit()
-    if skip_waiters:
-        _advance_released_hold_waiters_after_commit(released_ids)
+    return ok, released_ids
+
+
+def _check_held_instance(instance_id):
+    """Evaluate one visit without advancing partner timeline cursors.
+
+    Last-arrival GET/POST uses this path. Released waiter ids are drained
+    so they cannot leak; partners leave on overlay wake.
+    """
+    ok, _released_ids = _evaluate_held_instance(instance_id)
     return ok
 
 
 def _check_and_skip_held_instance(instance_id):
-    """Evaluate one visit and skip waiters the poller just released."""
-    return _check_held_instance(instance_id, skip_waiters=True)
+    """Evaluate one visit and skip waiters this poller just released."""
+    ok, released_ids = _evaluate_held_instance(instance_id)
+    _advance_released_hold_waiters_after_commit(released_ids)
+    return ok
+
+
+def _check_held_instance_with_claim(instance_id, *, wait):
+    """Peek the visit claim, optionally wait, then evaluate without skipping.
+
+    A free claim is taken without waiting. Last-arrival may then wait for
+    a held claim; unfilled waiter GET recovery must pass ``wait=False``.
+    """
+    with _hold_barrier_instance_claim(instance_id, wait=False) as claimed:
+        if claimed:
+            return _check_held_instance(instance_id)
+    if not wait:
+        return False
+    with _hold_barrier_instance_claim(instance_id, wait=True):
+        return _check_held_instance(instance_id)
 
 
 def _run_pending_barrier_checks(instance_ids, *, wait=True):
@@ -2365,20 +2391,8 @@ def _run_pending_barrier_checks(instance_ids, *, wait=True):
     all_claimed = True
     for instance_id in instance_ids:
         try:
-            ran = False
-            with _hold_barrier_instance_claim(instance_id, wait=False) as claimed:
-                if claimed:
-                    ran = True
-                    if not _check_held_instance(instance_id, skip_waiters=False):
-                        all_claimed = False
-            if ran:
-                continue
-            if not wait:
+            if not _check_held_instance_with_claim(instance_id, wait=wait):
                 all_claimed = False
-                continue
-            with _hold_barrier_instance_claim(instance_id, wait=True):
-                if not _check_held_instance(instance_id, skip_waiters=False):
-                    all_claimed = False
         except Exception as err:
             if is_transient_transaction_error(err):
                 raise
@@ -2399,7 +2413,7 @@ def _process_barrier_instance(instance_id, *, retry=False):
                 return False
             instance = BarrierInstance.query.get(instance_id)
             barrier_id = None if instance is None else instance.barrier_id
-            if not _check_held_instance(instance_id, skip_waiters=True):
+            if not _check_and_skip_held_instance(instance_id):
                 return True
             return False
     except Exception as err:

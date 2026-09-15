@@ -73,9 +73,9 @@ def _commit_count(profiler, *needles):
     """Count profiler commits whose callsite mentions any of ``needles``.
 
     Finalize's check ``session.commit()`` lives on
-    ``_check_held_instance``; the queued-check commit lives on
+    ``_evaluate_held_instance``; the queued-check commit lives on
     ``_attempt_queued_barrier_checks``; the relock commit stays on
-    ``_run_finalized_barrier_arrivals``. Count those so extracting a
+    ``_relock_arriver_after_barrier_check``. Count those so extracting a
     helper does not look like a missing outer commit.
     """
     return sum(
@@ -94,12 +94,14 @@ def _budget(profiler):
         "nested_commits": _commit_count(
             profiler,
             "_run_pending_barrier_checks",
+            "_evaluate_held_instance",
             "_check_held_instance",
             "_check_and_skip_held_instance",
         ),
         "finalize_commits": _commit_count(
             profiler,
-            "_run_finalized_barrier_arrivals",
+            "_relock_arriver_after_barrier_check",
+            "_finalize_barrier_arrivals",
             "_run_queued_barrier_checks",
             "_attempt_queued_barrier_checks",
         ),

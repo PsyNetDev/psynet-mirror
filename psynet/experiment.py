@@ -5943,6 +5943,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             experiment.prepare_voluntary_exit_plan(participant)
         return page
 
+    @staticmethod
+    def _reapply_timeline_lock_timeout():
+        """Restore ``SET LOCAL lock_timeout`` after a commit ends the previous one."""
+        _set_transaction_lock_timeout(get_config().get("timeline_lock_timeout_seconds"))
+
     @classmethod
     def _reapply_lock_timeout_and_prepare(
         cls, experiment, participant, page, *, commit=False
@@ -5953,7 +5958,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         previous ``lock_timeout`` is gone. Ready-hold skips also commit
         before preparing the next page.
         """
-        _set_transaction_lock_timeout(get_config().get("timeline_lock_timeout_seconds"))
+        cls._reapply_timeline_lock_timeout()
         page = cls._prepare_resolved_timeline_page(experiment, participant, page)
         if commit and page is not None:
             db.session.commit()
@@ -6080,7 +6085,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         """
         from .sync import _take_pending_barrier_checks
 
-        _set_transaction_lock_timeout(get_config().get("timeline_lock_timeout_seconds"))
+        cls._reapply_timeline_lock_timeout()
         locked = (
             experiment._participant_request_query()
             .with_for_update(of=Participant)
@@ -6108,37 +6113,80 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         return participant, page, checks
 
     @classmethod
-    def _finalize_barrier_arrivals(
+    def _relock_arriver_after_barrier_check(
         cls,
         experiment,
         participant_id,
-        checks,
         result,
         *,
-        serialize_page=True,
-        wait_for_claim=True,
+        serialize_page,
+        disappeared_after,
     ):
-        """Run queued arrival checks in short transactions before rendering.
+        """Expire, relock this arriver, skip ready holds, and commit.
 
-        Hold-release websocket wakes from these inner commits publish as soon
-        as each check commits. Last-arrival does not skip partner cursors, so
-        partners may overlay-resume while this request still renders.
-
-        ``serialize_page`` is for ``POST /response`` inplace JSON. ``GET
-        /timeline`` renders HTML from ``result.page`` and skips that extra
-        ``__json__``. ``wait_for_claim`` is the first-pass gate from
-        ``Barrier.would_release``. Nested checks after a skip peek again.
-        Unfilled waiter GET recovery passes ``False`` so those requests do
-        not sit in ``lock_timeout`` behind the visit claim.
+        Barrier checks drop partner row locks before this runs. Last-arrival
+        self-skips a hold it just released instead of first-painting it. A
+        waiter ``NOWAIT`` miss uses the same path so a hold this request or
+        the poller already released is not first-painted (T7 if still waiting).
         """
-        return cls._run_finalized_barrier_arrivals(
-            experiment,
-            participant_id,
-            checks,
-            result,
-            serialize_page=serialize_page,
-            wait_for_claim=wait_for_claim,
+        db.session.expire_all()
+        cls._reapply_timeline_lock_timeout()
+        participant = (
+            experiment._participant_request_query()
+            .with_for_update(of=Participant)
+            .populate_existing()
+            .get(participant_id)
         )
+        if participant is None:
+            raise RuntimeError(
+                f"Participant {participant_id} disappeared after {disappeared_after}."
+            )
+        page = experiment._advance_past_ready_holds(
+            participant,
+            experiment.timeline.get_current_elt(experiment, participant),
+        )
+        if page is not None:
+            result.page = page
+            if serialize_page:
+                result.payload["page"] = page.__json__(participant)
+        db.session.commit()
+        return participant, page
+
+    @staticmethod
+    def _next_stacked_barrier_checks(
+        participant,
+        page,
+        *,
+        processed,
+        rechecked,
+        allow_unfilled_recheck,
+    ):
+        """Return the next instance ids to evaluate after a self-skip.
+
+        Newly queued checks from the skip run first. An unprocessed live hold
+        is evaluated even if the skip did not queue it. Last-arrival may
+        recheck an already processed unfilled hold once (an empty locking
+        SELECT can miss waiters that still belong to the visit). Waiter
+        recovery must not wait for that claim on a second pass.
+        """
+        from .sync import _hold_instance_id_for_page, _take_pending_barrier_checks
+
+        checks = _take_pending_barrier_checks()
+        if checks:
+            return checks
+        instance_id = _hold_instance_id_for_page(participant, page)
+        if instance_id and instance_id not in processed:
+            return [instance_id]
+        if (
+            instance_id
+            and instance_id not in rechecked
+            and getattr(page, "is_timeline_hold", False)
+        ):
+            if not allow_unfilled_recheck:
+                return []
+            rechecked.add(instance_id)
+            return [instance_id]
+        return []
 
     @classmethod
     def _attempt_queued_barrier_checks(cls, checks, *, wait):
@@ -6169,11 +6217,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         """
         if cls._attempt_queued_barrier_checks(checks, wait=wait):
             return True
-        _set_transaction_lock_timeout(get_config().get("timeline_lock_timeout_seconds"))
+        cls._reapply_timeline_lock_timeout()
         return cls._attempt_queued_barrier_checks(checks, wait=wait)
 
     @classmethod
-    def _run_finalized_barrier_arrivals(
+    def _finalize_barrier_arrivals(
         cls,
         experiment,
         participant_id,
@@ -6183,95 +6231,48 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         serialize_page=True,
         wait_for_claim=True,
     ):
-        """Evaluate queued checks, committing after each before the next lock."""
-        from .sync import (
-            _hold_instance_id_for_page,
-            _pending_checks_should_wait_for_claim,
-            _take_pending_barrier_checks,
-        )
+        """Run queued arrival checks in short transactions before rendering.
+
+        Hold-release websocket wakes from these inner commits publish as soon
+        as each check commits. Last-arrival does not skip partner cursors, so
+        partners may overlay-resume while this request still renders.
+
+        ``serialize_page`` is for ``POST /response`` inplace JSON. ``GET
+        /timeline`` renders HTML from ``result.page`` and skips that extra
+        ``__json__``. ``wait_for_claim`` is the first-pass gate from
+        ``Barrier.would_release``. Nested checks after a skip peek again.
+        Unfilled waiter GET recovery passes ``False`` so those requests do
+        not sit in ``lock_timeout`` behind the visit claim.
+        """
+        from .sync import _pending_checks_should_wait_for_claim
 
         processed = set()
         rechecked = set()
         wait_this = wait_for_claim
         while checks:
             processed.update(checks)
-            _set_transaction_lock_timeout(
-                get_config().get("timeline_lock_timeout_seconds")
-            )
+            cls._reapply_timeline_lock_timeout()
             all_claimed = cls._run_queued_barrier_checks(checks, wait=wait_this)
+            participant, page = cls._relock_arriver_after_barrier_check(
+                experiment,
+                participant_id,
+                result,
+                serialize_page=serialize_page,
+                disappeared_after=(
+                    "a missed barrier arrival check"
+                    if not all_claimed
+                    else "barrier arrival"
+                ),
+            )
             if not all_claimed:
-                # Waiter ``NOWAIT`` missed a partner, but this request or the
-                # poller may already have released this arriver's hold.
-                # Relock and skip that released hold instead of first-painting
-                # it. An unreleased live hold is the T7 first-paint.
-                db.session.expire_all()
-                _set_transaction_lock_timeout(
-                    get_config().get("timeline_lock_timeout_seconds")
-                )
-                participant = (
-                    experiment._participant_request_query()
-                    .with_for_update(of=Participant)
-                    .populate_existing()
-                    .get(participant_id)
-                )
-                if participant is None:
-                    raise RuntimeError(
-                        f"Participant {participant_id} disappeared after a "
-                        "missed barrier arrival check."
-                    )
-                page = experiment._advance_past_ready_holds(
-                    participant,
-                    experiment.timeline.get_current_elt(experiment, participant),
-                )
-                if page is not None:
-                    result.page = page
-                    if serialize_page:
-                        result.payload["page"] = page.__json__(participant)
-                db.session.commit()
                 return participant
-            # ``SET LOCAL lock_timeout`` expires at the check commit. Expire
-            # the identity map so a poller that already released this visit
-            # is not hidden behind objects loaded before that commit.
-            db.session.expire_all()
-            _set_transaction_lock_timeout(
-                get_config().get("timeline_lock_timeout_seconds")
-            )
-            participant = (
-                experiment._participant_request_query()
-                .with_for_update(of=Participant)
-                .populate_existing()
-                .get(participant_id)
-            )
-            if participant is None:
-                raise RuntimeError(
-                    f"Participant {participant_id} disappeared after barrier arrival."
-                )
-            page = experiment._advance_past_ready_holds(
+            checks = cls._next_stacked_barrier_checks(
                 participant,
-                experiment.timeline.get_current_elt(experiment, participant),
+                page,
+                processed=processed,
+                rechecked=rechecked,
+                allow_unfilled_recheck=wait_for_claim,
             )
-            result.page = page
-            if serialize_page:
-                result.payload["page"] = page.__json__(participant)
-            db.session.commit()
-            checks = _take_pending_barrier_checks()
-            if not checks:
-                instance_id = _hold_instance_id_for_page(participant, page)
-                if instance_id and instance_id not in processed:
-                    checks = [instance_id]
-                elif (
-                    instance_id
-                    and instance_id not in rechecked
-                    and getattr(page, "is_timeline_hold", False)
-                ):
-                    if not wait_for_claim:
-                        # Waiter recovery already evaluated this unfilled
-                        # visit. Do not wait for the claim on a second pass.
-                        break
-                    # An empty locking SELECT can miss waiters that still
-                    # belong to this visit. Evaluate it once more.
-                    rechecked.add(instance_id)
-                    checks = [instance_id]
             wait_this = bool(checks) and _pending_checks_should_wait_for_claim(checks)
         return participant
 

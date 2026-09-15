@@ -46,7 +46,7 @@ Waiter row
     **partner** rows with ``NOWAIT``. A ready hold-resume takes this
     waiter's row with ``NOWAIT``. Last-arrival's **own** row is a blocking
     ``FOR UPDATE`` under ``lock_timeout`` in ``_skip_ready_hold_on_get``
-    and ``_run_finalized_barrier_arrivals``. An unready overlay check must
+    and ``_finalize_barrier_arrivals``. An unready overlay check must
     not take it. Last-arrival does not reacquire partner rows after the
     release commit.
 
