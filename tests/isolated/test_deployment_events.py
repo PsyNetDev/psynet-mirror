@@ -63,6 +63,24 @@ def test_event_details_redacts_password_and_username():
     assert "hunter2" not in details["argv"]
 
 
+def test_load_deployment_events_records_truncated_tail(tmp_path):
+    from psynet.deployment_events import (
+        append_deployment_event,
+        deployment_event_log,
+        load_deployment_events,
+    )
+
+    append_deployment_event(tmp_path, "deploy.succeeded", argv=["psynet", "deploy"])
+    path = deployment_event_log(tmp_path)
+    path.write_text(
+        path.read_text(encoding="utf-8") + '{"event":"deploy.fai', encoding="utf-8"
+    )
+    events = load_deployment_events(tmp_path)
+    assert events[0]["event"] == "deploy.succeeded"
+    assert events[-1]["event"] == "log.truncated"
+    assert "Truncated event" in events[-1]["error"]
+
+
 def test_comment_is_free_floating(tmp_path):
     from psynet.command_line import psynet
     from psynet.utils import working_directory

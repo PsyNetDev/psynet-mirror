@@ -210,24 +210,39 @@ def load_deployment_events(
         return []
 
     events: list[dict] = []
-    with path.open(encoding="utf-8") as handle:
-        for line_number, line in enumerate(handle, start=1):
-            text = line.strip()
-            if not text:
-                continue
-            try:
-                payload = json.loads(text)
-            except json.JSONDecodeError:
+    raw = path.read_text(encoding="utf-8")
+    ends_with_newline = raw.endswith("\n")
+    lines = raw.splitlines()
+    for line_number, line in enumerate(lines, start=1):
+        text = line.strip()
+        if not text:
+            continue
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError:
+            is_truncated_tail = line_number == len(lines) and not ends_with_newline
+            if is_truncated_tail:
+                logger.warning(
+                    "Deployment event log %s ends with a truncated line", path
+                )
+                events.append(
+                    {
+                        "schema_version": 1,
+                        "event": "log.truncated",
+                        "error": f"Truncated event at {path}:{line_number}",
+                    }
+                )
+            else:
                 logger.warning(
                     "Skipping malformed deployment event at %s:%s", path, line_number
                 )
-                continue
-            if not isinstance(payload, dict):
-                logger.warning(
-                    "Skipping non-object deployment event at %s:%s", path, line_number
-                )
-                continue
-            events.append(payload)
+            continue
+        if not isinstance(payload, dict):
+            logger.warning(
+                "Skipping non-object deployment event at %s:%s", path, line_number
+            )
+            continue
+        events.append(payload)
 
     if limit is not None and limit >= 0:
         events = events[-limit:]
