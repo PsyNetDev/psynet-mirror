@@ -62,7 +62,9 @@ Follow pin
 
 Render pin
     Redis. Parks poller **processing and publish** for visits this request
-    actually released, until HTML/JSON render returns.
+    actually released, until HTML/JSON render returns. The key TTL is 15 s
+    and is not refreshed during render (follow pins refresh on a long
+    check queue). Practical pages finish well under that bound.
 
 ``Participant.active_barriers`` is only unreleased links. After the
 release commit, the overlay’s ``is_ready_to_resume`` is true because the
@@ -290,7 +292,8 @@ What this does not prove
 ------------------------
 
 These traces do not model gunicorn listen-queue delay, Redis TTL
-expiry of a crashed worker’s pin with no later owner, browser reload
+expiry of a crashed worker’s pin with no later owner, a last-arrival
+``pre_render`` that outlives the 15 s render-pin TTL, browser reload
 destroying the overlay, or author ``on_release`` raising. Playwright
 ``@both`` covers in-place vs full-reload **delivery** of the same server
 protocol; it is not a substitute for T2. A model checker (for example

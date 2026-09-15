@@ -1,1 +1,1 @@
-Loading an export refuses to reset the database while another client using the same database role is still connected, and retries leftover table-drop lock errors. Launch commands stop leftover local debug workers before prepare resets the database.
+Loading an export refuses to reset the database while another client using the same database role is still connected, and retries leftover table-drop lock errors. Every launch path, including SSH, Heroku, and Docker, stops leftover local debug workers first because prepare resets this machine's Postgres.
