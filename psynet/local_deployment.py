@@ -73,6 +73,7 @@ class Snapshot:
     parent_sequence: Optional[int]
     participant_count: Optional[int]
     sha256: Optional[str]
+    max_response_id: Optional[int] = None
 
 
 @dataclass(frozen=True)
@@ -179,6 +180,7 @@ def _snapshot_from_files(path: Path) -> Snapshot:
         parent_sequence=metadata.get("parent_sequence"),
         participant_count=metadata.get("participant_count"),
         sha256=metadata.get("sha256"),
+        max_response_id=metadata.get("max_response_id"),
     )
 
 
@@ -301,6 +303,9 @@ def create_snapshot(
             checksum = _sha256(temporary)
             os.replace(temporary, path)
             path.chmod(0o600)
+            max_response_id = None
+            if exporter is export_database_snapshot:
+                max_response_id = read_response_watermark()
             metadata = {
                 "schema_version": 1,
                 "id": local_id,
@@ -310,6 +315,7 @@ def create_snapshot(
                 "deployment_id": deployment_id,
                 "parent_sequence": parent_sequence,
                 "participant_count": participant_count,
+                "max_response_id": max_response_id,
                 "sha256": checksum,
             }
             _write_json_atomically(metadata_path, metadata)
@@ -338,6 +344,7 @@ def create_snapshot(
         parent_sequence=parent_sequence,
         participant_count=participant_count,
         sha256=checksum,
+        max_response_id=max_response_id,
         duration_seconds=round(duration, 3),
     )
     return _snapshot_from_files(path)
@@ -466,6 +473,50 @@ def export_database_snapshot(destination: Path, db_url: Optional[str] = None) ->
                         archive.write(path, path.relative_to(root))
         connection.rollback()
         return participant_count
+    finally:
+        connection.close()
+
+
+def read_response_watermark(db_url: Optional[str] = None) -> Optional[int]:
+    """Return the highest ``response.id``, or ``0`` if the table is empty.
+
+    Returns ``None`` when the watermark cannot be read, so callers can fail
+    closed instead of treating an unknown database as unchanged.
+    """
+    import psycopg2
+
+    if db_url is None:
+        from dallinger import db
+
+        db_url = db.db_url
+    try:
+        connection = psycopg2.connect(
+            dsn=db_url,
+            connect_timeout=DATABASE_READ_TIMEOUT_SECONDS,
+            options=(
+                f"-c statement_timeout={int(DATABASE_READ_TIMEOUT_SECONDS * 1000)} "
+                f"-c lock_timeout={int(DATABASE_READ_TIMEOUT_SECONDS * 1000)}"
+            ),
+        )
+    except Exception:
+        logger.warning("Could not read response watermark from the local database.")
+        return None
+    try:
+        cursor = connection.cursor()
+        try:
+            cursor.execute("SELECT COALESCE(MAX(id), 0) FROM response")
+        except psycopg2.errors.UndefinedTable:
+            connection.rollback()
+            return 0
+        except (psycopg2.errors.QueryCanceled, psycopg2.errors.LockNotAvailable):
+            connection.rollback()
+            logger.warning("Timed out reading response watermark.")
+            return None
+        row = cursor.fetchone()
+        return int(row[0]) if row and row[0] is not None else 0
+    except Exception:
+        logger.warning("Could not read response watermark from the local database.")
+        return None
     finally:
         connection.close()
 
@@ -677,7 +728,7 @@ def _describe_owner(owner: DatabaseOwner) -> str:
     return f" ({', '.join(details)})" if details else ""
 
 
-def _latest_snapshot_covers_owner(
+def latest_snapshot_covers_owner(
     owner: DatabaseOwner, latest: Optional[Snapshot]
 ) -> bool:
     """Return whether ``latest`` already preserves ``owner``'s collected data."""
@@ -687,6 +738,10 @@ def _latest_snapshot_covers_owner(
         or latest.deployment_id != owner.deployment_id
     ):
         return False
+    if latest.max_response_id is not None:
+        current = read_response_watermark()
+        if current is not None and current > latest.max_response_id:
+            return False
     if latest.reason in {"shutdown", "recovery-before-reset", "adopt-existing"}:
         return True
     # A finish snapshot is terminal only when nobody has started since.
@@ -748,7 +803,7 @@ def protect_existing_database(
 
     snapshots = list_snapshots(owner.experiment_path, owner.local_id)
     latest = snapshots[-1] if snapshots else None
-    if _latest_snapshot_covers_owner(owner, latest):
+    if latest_snapshot_covers_owner(owner, latest):
         return None
 
     return create_snapshot(

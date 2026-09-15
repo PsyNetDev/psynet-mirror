@@ -75,6 +75,7 @@ from .experiment_scaffold import (
 from .local_deployment import (
     choose_snapshot,
     create_snapshot,
+    latest_snapshot_covers_owner,
     list_snapshots,
     local_database_lock,
     protect_existing_database,
@@ -1087,11 +1088,12 @@ def _process_is_defunct(process):
 def kill_psynet_worker_processes(wait_timeout=1):
     """Terminate leftover PsyNet worker processes, best effort.
 
-    Cleanup must never fail a launch or a shutdown, so an unkillable or already
-    defunct worker is reported and otherwise ignored: raising here previously
-    broke every local launch after the first whenever one such process lingered.
-    Only processes that were signalled are waited for, so leftovers cannot slow
-    every launch down.
+    Returns whether every leftover worker stopped. Cleanup must never fail a
+    launch or a shutdown, so an unkillable or already defunct worker is
+    reported and otherwise ignored: raising here previously broke every local
+    launch after the first whenever one such process lingered. Only processes
+    that were signalled are waited for, so leftovers cannot slow every launch
+    down.
     """
     processes = [
         process
@@ -1099,7 +1101,7 @@ def kill_psynet_worker_processes(wait_timeout=1):
         if not _process_is_defunct(process)
     ]
     if len(processes) == 0:
-        return
+        return True
     log(
         f"Found {len(processes)} remaining PsyNet worker process(es), terminating them now."
     )
@@ -1115,6 +1117,8 @@ def kill_psynet_worker_processes(wait_timeout=1):
             "PsyNet worker process(es) did not stop: %s.",
             ", ".join(str(process.pid) for process in unstoppable),
         )
+        return False
+    return True
 
 
 def kill_psynet_chrome_processes():
@@ -1519,15 +1523,20 @@ def deploy__local(
                 )
                 raise
 
+            workers_stopped = kill_psynet_worker_processes()
             owner = read_database_owner()
             if owner is None or owner.local_id != local_id:
                 raise RuntimeError(
                     "The stopped database does not match the local deployment "
                     f"ID '{local_id}'; refusing to save it as that deployment."
                 )
-            if should_skip_shutdown_snapshot(owner):
-                snapshots = list_snapshots(experiment_path, local_id)
-                latest = snapshots[-1] if snapshots else None
+            snapshots = list_snapshots(experiment_path, local_id)
+            latest = snapshots[-1] if snapshots else None
+            if (
+                workers_stopped
+                and should_skip_shutdown_snapshot(owner)
+                and latest_snapshot_covers_owner(owner, latest)
+            ):
                 append_deployment_event(
                     experiment_path,
                     "deploy.stopped",

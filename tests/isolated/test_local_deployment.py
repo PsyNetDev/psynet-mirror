@@ -502,6 +502,9 @@ def test_deploy_local_restores_selected_snapshot_and_saves_shutdown(
     )
     monkeypatch.setattr("psynet.command_line._run_local", run_local)
     monkeypatch.setattr(
+        "psynet.command_line.kill_psynet_worker_processes", lambda: True
+    )
+    monkeypatch.setattr(
         "psynet.command_line.read_database_owner",
         lambda: DatabaseOwner("gibbs", tmp_path, "new-launch", "Example"),
     )
@@ -822,6 +825,36 @@ def test_protect_existing_database_skips_clean_shutdown(tmp_path, monkeypatch):
     create_snapshot.assert_not_called()
 
 
+def test_latest_snapshot_does_not_cover_owner_when_responses_arrived(
+    tmp_path, monkeypatch
+):
+    from dataclasses import replace
+
+    from psynet.local_deployment import (
+        DatabaseOwner,
+        latest_snapshot_covers_owner,
+    )
+    from psynet.local_deployment import (
+        create_snapshot as save_snapshot,
+    )
+
+    owner_path = tmp_path / "owner"
+    owner_path.mkdir()
+    snapshot = save_snapshot(
+        owner_path,
+        "first",
+        reason="shutdown",
+        deployment_id="launch-1",
+        exporter=lambda path: _write_archive(path),
+    )
+    snapshot = replace(snapshot, max_response_id=4)
+    owner = DatabaseOwner("first", owner_path, "launch-1", "Example")
+    monkeypatch.setattr("psynet.local_deployment.read_response_watermark", lambda: 9)
+    assert not latest_snapshot_covers_owner(owner, snapshot)
+    monkeypatch.setattr("psynet.local_deployment.read_response_watermark", lambda: 4)
+    assert latest_snapshot_covers_owner(owner, snapshot)
+
+
 def test_managed_local_live_deployment_requires_id_and_live_mode():
     from psynet.local_deployment import is_managed_local_live_deployment
 
@@ -911,6 +944,13 @@ def test_deploy_local_skips_redundant_shutdown_snapshot(tmp_path, monkeypatch):
         "psynet.command_line._run_local", lambda *_args, **_kwargs: None
     )
     monkeypatch.setattr(
+        "psynet.command_line.kill_psynet_worker_processes", lambda: True
+    )
+    monkeypatch.setattr(
+        "psynet.command_line.latest_snapshot_covers_owner",
+        lambda *_args, **_kwargs: True,
+    )
+    monkeypatch.setattr(
         "psynet.command_line.read_database_owner",
         lambda: DatabaseOwner(
             "gibbs",
@@ -948,6 +988,87 @@ def test_deploy_local_skips_redundant_shutdown_snapshot(tmp_path, monkeypatch):
     assert stopped["saved"] is True
     assert stopped["snapshot"] == 4
     assert stopped["shutdown_snapshot"] is False
+
+
+def test_deploy_local_writes_shutdown_snapshot_if_workers_survive(
+    tmp_path, monkeypatch
+):
+    from psynet.command_line import psynet
+    from psynet.local_deployment import DatabaseOwner, Snapshot
+    from psynet.utils import working_directory
+
+    (tmp_path / "experiment.py").write_text("")
+    archive = tmp_path / "data/snapshots/gibbs/000004.zip"
+    archive.parent.mkdir(parents=True)
+    _write_archive(archive)
+    latest = Snapshot(
+        sequence=4,
+        path=archive,
+        metadata_path=archive.with_suffix(".json"),
+        created_at="2026-09-13T12:00:00Z",
+        reason="participant_finished",
+        deployment_id="launch-1",
+        parent_sequence=3,
+        participant_count=1,
+        sha256=None,
+    )
+    snapshot_calls = []
+
+    @contextmanager
+    def unlocked(*_args):
+        yield
+
+    monkeypatch.setattr("psynet.command_line.local_database_lock", unlocked)
+    monkeypatch.setattr(
+        "psynet.services.ensure_local_services", Mock(return_value=True)
+    )
+    monkeypatch.setattr(
+        "psynet.command_line.protect_existing_database", lambda *_args, **_kwargs: None
+    )
+    monkeypatch.setattr(
+        "psynet.command_line.choose_snapshot", lambda *_args, **_kwargs: latest
+    )
+    monkeypatch.setattr(
+        "psynet.command_line._run_local", lambda *_args, **_kwargs: None
+    )
+    monkeypatch.setattr(
+        "psynet.command_line.kill_psynet_worker_processes", lambda: False
+    )
+    monkeypatch.setattr(
+        "psynet.command_line.latest_snapshot_covers_owner",
+        lambda *_args, **_kwargs: True,
+    )
+    monkeypatch.setattr(
+        "psynet.command_line.read_database_owner",
+        lambda: DatabaseOwner(
+            "gibbs",
+            tmp_path,
+            "launch-1",
+            "Example",
+            snapshot_needed_on_shutdown=False,
+        ),
+    )
+    monkeypatch.setattr(
+        "psynet.command_line.list_snapshots", lambda *_args, **_kwargs: [latest]
+    )
+    monkeypatch.setattr(
+        "psynet.command_line.create_snapshot",
+        lambda *args, **kwargs: snapshot_calls.append((args, kwargs)) or latest,
+    )
+    monkeypatch.setattr(
+        "psynet.command_line.append_deployment_event",
+        lambda *args, **kwargs: None,
+    )
+
+    with working_directory(tmp_path):
+        result = CliRunner().invoke(
+            psynet,
+            ["deploy", "local", "--id", "gibbs", "--snapshot", "latest"],
+        )
+
+    assert result.exit_code == 0, result.output
+    assert snapshot_calls
+    assert snapshot_calls[0][1]["reason"] == "shutdown"
 
 
 def test_maybe_snapshot_after_participant_finish_clears_shutdown_need(monkeypatch):

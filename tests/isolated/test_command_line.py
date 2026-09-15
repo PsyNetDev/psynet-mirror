@@ -3680,7 +3680,7 @@ def test_kill_psynet_worker_processes_warns_instead_of_raising(caplog):
         patch("psynet.command_line.psutil.wait_procs", return_value=([], [survivor])),
         caplog.at_level("WARNING"),
     ):
-        kill_psynet_worker_processes()
+        assert kill_psynet_worker_processes() is False
 
     assert "4242" in caplog.text
     assert "did not stop" in caplog.text
@@ -3702,7 +3702,7 @@ def test_kill_psynet_worker_processes_ignores_zombies(caplog):
         patch("psynet.command_line.psutil.wait_procs", return_value=([], [zombie])),
         caplog.at_level("WARNING"),
     ):
-        kill_psynet_worker_processes()
+        assert kill_psynet_worker_processes() is True
 
     assert "4243" not in caplog.text
 
