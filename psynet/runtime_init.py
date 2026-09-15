@@ -50,14 +50,7 @@ def _initialize_runtime() -> None:
     import warnings
 
     import dominate
-    from dallinger.config import Configuration, experiment_available
-
-    try:
-        from dallinger.config import ConfigSource
-
-        _config_source_defaults = ConfigSource.EXPERIMENT_DEFAULTS
-    except ImportError:
-        _config_source_defaults = None
+    from dallinger.config import ConfigSource, Configuration, experiment_available
 
     import psynet.recruiters  # noqa: F401
     from psynet.utils import (
@@ -89,10 +82,11 @@ def _initialize_runtime() -> None:
                     pass
                 else:
                     raise
-            extend_kwargs = dict(strict=strict)
-            if _config_source_defaults is not None:
-                extend_kwargs["source"] = _config_source_defaults
-            self.extend(Experiment.config_defaults(), **extend_kwargs)
+            self.extend(
+                Experiment.config_defaults(),
+                strict=strict,
+                source=ConfigSource.EXPERIMENT_DEFAULTS,
+            )
 
         # Dallinger's loader imports experiment.py to read its extra
         # parameters, which redeclares the experiment's mapped classes.
