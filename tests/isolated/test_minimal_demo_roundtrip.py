@@ -125,7 +125,6 @@ AUTHORED_TEST_EXPERIMENT_FILENAMES = {
     "DEPLOYMENT_ID",
     "custom_synth.py",
     "pre_deployed_assets.csv",
-    "TEST_PLAN.md",
 }
 
 
