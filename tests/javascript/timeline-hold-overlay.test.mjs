@@ -100,14 +100,13 @@ function loadHoldFns(document) {
   const window = { dispatchEvent() {} };
   const showSrc = extractFunction("showTimelineHoldIndicator");
   const stopSrc = extractFunction("stopTimelineHold");
-  // CI Node has no browser CustomEvent global. Bind one into the eval so
-  // stopTimelineHold's dispatch does not depend on the host runtime.
   const show = new Function(
     "psynet",
     "document",
-    "CustomEvent",
     `${showSrc}; return showTimelineHoldIndicator;`
-  )(psynet, document, FakeCustomEvent);
+  )(psynet, document);
+  // CI Node has no browser CustomEvent global. Bind one into the eval so
+  // stopTimelineHold's dispatch does not depend on the host runtime.
   const stop = new Function(
     "psynet",
     "document",
@@ -153,5 +152,29 @@ describe("timeline hold overlay reuse", () => {
     show("Waiting");
     assert.equal(mainBody.inert, false);
     assert.equal(chip.dataset.timelineHoldDynamic, undefined);
+  });
+
+  it("stops the overlay when CustomEvent is not a global", () => {
+    const original = globalThis.CustomEvent;
+    const hadOwn = Object.prototype.hasOwnProperty.call(
+      globalThis,
+      "CustomEvent"
+    );
+    delete globalThis.CustomEvent;
+    try {
+      assert.equal(typeof globalThis.CustomEvent, "undefined");
+      const { document, mainBody, commentButton } = createDom();
+      const { show, stop } = loadHoldFns(document);
+      show("Waiting");
+      stop();
+      assert.equal(mainBody.inert, false);
+      assert.equal(commentButton.disabled, false);
+    } finally {
+      if (hadOwn) {
+        globalThis.CustomEvent = original;
+      } else {
+        delete globalThis.CustomEvent;
+      }
+    }
   });
 });

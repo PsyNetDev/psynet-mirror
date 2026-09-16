@@ -30,21 +30,24 @@ const START_PAGE_MAX_MS = 6000;
 // ``random.expovariate(0.5)`` sleep (mean 2s) after a conflict with the
 // partner's GET /timeline. One unlucky retry already exceeds 6000ms. This
 // budget is only for overlapping signups; linger/spread/GET /timeline floors
-// stay 2500/2200/3000.
+// stay 2500/2200/3000 for a single hop; stacked catch-up linger adds
+// EXTRA_HOP_CATCHUP_MS per extra hop.
 const SERIALIZED_SIGNUP_MAX_MS = 15000;
 const BLOCKING_REQUEST_MS = 4000;
 // Fast waiters leave in ~0.2–0.8s after last paint. Two or three waiters
 // leaving together can each spend ~1.1s rendering the next page; later POSTs
 // sit in the gunicorn listen-queue. Overlay linger is last-wake→last-end
 // wallclock across stacked catch-up hops, including that wait and a short
-// NOWAIT 503 retry: it is real for the participant. Each hold-resume hop
-// after the last wake gets max(2500, Server-Timing app + 800); the linger
-// budget is the sum of those per-hop budgets. A missed wake still cannot
-// hide: tests silence the 2s safety poll and assert the resume is a server
-// wake. Summaries print queue~ so a long linger can be split into handler
-// vs pool occupancy; do not subtract queue from linger or spread.
+// NOWAIT 503 retry: it is real for the participant. The budget is one
+// 2500ms missed-wake floor plus EXTRA_HOP_CATCHUP_MS for each extra hop,
+// or the sum of each hop's Server-Timing app + 800 if that is larger. A
+// missed wake still cannot hide: tests silence the 2s safety poll and
+// assert the resume is a server wake. Summaries print queue~ so a long
+// linger can be split into handler vs pool occupancy; do not subtract
+// queue from linger or spread.
 const PARTNER_HOLD_RELEASE_MAX_MS = 2500;
 const HOLD_RESUME_OVERLAY_SLACK_MS = 800;
+const EXTRA_HOP_CATCHUP_MS = 1500;
 const WAITER_RELEASE_SPREAD_MAX_MS = 2200;
 const SETTLE_HOLD_MS = 3500;
 const ACTION_PROMPT = "Choose your action";
@@ -101,12 +104,21 @@ function overlayEndingHoldResumePosts(holdResumePosts, lastWakeAtMs) {
   if (lastWakeAtMs == null) {
     return holdResumePosts;
   }
-  const overlapping = holdResumePosts.filter((post) => {
+  const startedAfter = [];
+  const straddling = [];
+  for (const post of holdResumePosts) {
     const startedAtMs = post.startedAtMs ?? 0;
     const endedAtMs = startedAtMs + (post.durationMs ?? 0);
-    return endedAtMs >= lastWakeAtMs;
-  });
-  return overlapping.length ? overlapping : holdResumePosts;
+    if (startedAtMs >= lastWakeAtMs) {
+      startedAfter.push(post);
+    } else if (endedAtMs >= lastWakeAtMs) {
+      straddling.push(post);
+    }
+  }
+  // Hops that started after the last wake, plus at most the in-flight
+  // POST whose tail sits inside the linger window. An empty set keeps
+  // the single-hold 2500ms floor instead of summing every earlier POST.
+  return straddling.concat(startedAfter);
 }
 
 function lastArriverWorkRecord(lastEntry) {
@@ -208,18 +220,19 @@ function overlayLingerBudgetMs(holdResumePosts) {
   if (!posts.length) {
     return PARTNER_HOLD_RELEASE_MAX_MS;
   }
-  // Last-wake→last-end spans stacked catch-up hops. Each hop gets the
-  // original single-hold budget; summing them is what lets a waiter skip
-  // init then prepare without looking like a missed wake.
-  return posts.reduce((budget, post) => {
-    return (
-      budget +
-      Math.max(
-        PARTNER_HOLD_RELEASE_MAX_MS,
-        requestHandlerMs(post) + HOLD_RESUME_OVERLAY_SLACK_MS
-      )
-    );
-  }, 0);
+  // One 2500ms floor catches a missed wake on a single hop. Extra hops
+  // pay a catch-up slice (next-page render + listen-queue), or their
+  // measured handler+slack if that is larger. Paying the full 2500ms
+  // floor once per hop hid unlabeled idle on stacked catch-up.
+  const handlerSumMs = posts.reduce(
+    (sum, post) => sum + requestHandlerMs(post) + HOLD_RESUME_OVERLAY_SLACK_MS,
+    0
+  );
+  const extraHops = Math.max(0, posts.length - 1);
+  return Math.max(
+    PARTNER_HOLD_RELEASE_MAX_MS + extraHops * EXTRA_HOP_CATCHUP_MS,
+    handlerSumMs
+  );
 }
 
 function publishedWakeTokens(holdFrames) {

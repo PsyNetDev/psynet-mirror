@@ -73,8 +73,9 @@ test("two late trio members arriving together release every waiter", { tag: "@bo
   // reconnect is still a last arriver, not a waiter that must show a partner
   // wake→end clock. Poller and last-arriver GET /timeline can both publish the
   // same waiting token, then a stacked-hold reload posts once more on websocket
-  // onOpen; allow three hold-resume POSTs. Overlay linger, waiter-release
-  // spread, and GET /timeline floors stay 2500/2200/3000.
+  // onOpen; allow three hold-resume POSTs. Overlay linger uses one 2500ms
+  // floor plus 1500ms per extra hop; waiter-release spread and GET
+  // /timeline stay 2200/3000.
   const { experiment, sessions } = await startHoldExperiment(browser, TRIO_DIR, [
     "trio_wait",
     "trio_late_a",
@@ -175,7 +176,7 @@ test("last of four releases waiters and they catch up", { tag: "@both" }, async 
   // remaining stacked waits. Each hop can need its own hold-resume POST
   // (grouper, then init, then prepare). Three overlapping next-page renders
   // can spread overlay leave times on CI; waiter-release spread stays 2200ms.
-  // Overlay linger uses 2500ms.
+  // Overlay linger is one 2500ms floor plus 1500ms per extra catch-up hop.
   const { experiment, sessions } = await startHoldExperiment(
     browser,
     TRIO_DIR,
@@ -219,8 +220,9 @@ test("two late choices complete a trio without a safety poll", { tag: "@both" },
   // hold-resume rather than a skip. Poller and last-arriver GET /timeline can
   // both publish the same waiting token, then a stacked-hold reload posts
   // once more on websocket onOpen; allow three hold-resume POSTs on grouping
-  // as well as on the later concurrent choices. Linger/spread/GET /timeline
-  // floors stay 2500/2200/3000.
+  // as well as on the later concurrent choices. Overlay linger uses one
+  // 2500ms floor plus 1500ms per extra hop; spread/GET /timeline stay
+  // 2200/3000.
   const { experiment, sessions } = await startHoldExperiment(browser, TRIO_DIR, [
     "trio_choice_wait",
     "trio_choice_late_a",

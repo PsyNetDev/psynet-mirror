@@ -147,12 +147,13 @@ stacked last-arrival hold clears while the test is arming the probe, treat the
 page as a cleared hold (wake token and hold-resume POST) instead of failing on
 the destroyed context.
 
-Overlay linger after a published wake is last-wake→last-end. Each hold-resume
-hop after that wake is bounded by ``max(2500ms, that POST's Server-Timing
-app + 800ms)``; the linger budget is the sum of those per-hop budgets.
-That comparison uses wake→end wallclock, including gunicorn listen-queue. A slow approved POST is
-not a missed wake; still assert that the resume reason is not
-``safety poll`` or ``hold timeout``. If a legacy reload drops in-page wake clocks, a published
+Overlay linger after a published wake is last-wake→last-end wallclock,
+including gunicorn listen-queue. The budget is one 2500ms floor plus
+1500ms for each extra hold-resume hop after the first, or the sum of
+each hop's ``Server-Timing`` ``app + 800ms`` if that is larger. A slow
+approved POST is not a missed wake; still assert that the resume reason
+is not ``safety poll`` or ``hold timeout``. If a legacy reload drops
+in-page wake clocks, a published
 wake token plus an approved hold-resume POST still counts as a server wake.
 Hold-release summaries print ``Server-Timing`` ``app`` versus browser wall
 time (``queue~``) for the last arriver's request and the waiter's hold-resume
@@ -176,10 +177,8 @@ the in-request retry waits 250ms; if that is still busy, one delayed
 ``queued hold wake`` runs. The suite still fails a busy retry that lasts
 500ms or more. Concurrent last arrivals may post a third hold-resume when the
 poller and ``GET /timeline`` both publish, then a stacked-hold reload posts
-again on websocket onOpen; sequential last arrivals stay at two. Overlay linger
-is last-wake→last-end, compared with the sum of
-``max(2500ms, that POST's Server-Timing app + 800ms)`` across hold-resume
-POSTs after the last wake. Both Playwright
+again on websocket onOpen; sequential last arrivals stay at two. That
+same overlay linger budget applies here. Both Playwright
 CI jobs use gunicorn; the default vs legacy job is in-place vs full reload.
 Worker-pool ``queue~`` is therefore not reload-specific.
 
