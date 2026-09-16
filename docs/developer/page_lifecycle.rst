@@ -471,7 +471,7 @@ Those routes do not share a lock protocol:
   means the pool is still busy: two waiters leaving together can overlap
   next-page ``render``. Do not subtract that wait from overlay linger or waiter
   spread. Overlay linger is last-wake→last-end wallclock compared with one
-  2500ms floor plus 1500ms per extra hold-resume hop after the first
+  2500ms floor plus 2200ms per extra hold-resume hop after the first
   (or the sum of each hop's ``Server-Timing`` ``app + 800ms`` if
   larger). Waiter-release spread is at most
   2200ms. ``GET /timeline`` and load-participant handler checks use 3000ms.
