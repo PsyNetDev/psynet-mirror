@@ -71,6 +71,12 @@ def _build_canonical_gibbs_export(data_root_dir):
     )
 
 
+def _write_canonical_export_then_stop(data_root_dir, debug_process):
+    """Write the export, then stop the debug server before any later drop_all."""
+    _build_canonical_gibbs_export(data_root_dir)
+    stop_debug_experiment_process(debug_process)
+
+
 @pytest.fixture(scope="class")
 def canonical_gibbs_export(data_root_dir, launched_experiment, debug_server_process):
     """Build the export zip, then stop gunicorn before later tests touch the DB.
@@ -79,9 +85,25 @@ def canonical_gibbs_export(data_root_dir, launched_experiment, debug_server_proc
     workers still hold the database, so this fixture stops that server
     after the zip is written.
     """
-    _build_canonical_gibbs_export(data_root_dir)
-    stop_debug_experiment_process(debug_server_process)
+    _write_canonical_export_then_stop(data_root_dir, debug_server_process)
     return data_root_dir
+
+
+def test_write_canonical_export_stops_debug_process_before_returning(monkeypatch):
+    """The export fixture must stop the clock before a later drop_all can run."""
+    calls = []
+
+    monkeypatch.setattr(
+        f"{__name__}._build_canonical_gibbs_export",
+        lambda data_root_dir: calls.append(("build", data_root_dir)),
+    )
+    monkeypatch.setattr(
+        f"{__name__}.stop_debug_experiment_process",
+        lambda process: calls.append(("stop", process)),
+    )
+    process = object()
+    _write_canonical_export_then_stop("/tmp/gibbs-export", process)
+    assert calls == [("build", "/tmp/gibbs-export"), ("stop", process)]
 
 
 @pytest.mark.parametrize(
@@ -192,7 +214,7 @@ class TestExpWithExport:
                 assert csv_name in exported_csv_files
 
     def test_populate_db_from_canonical_export_archive(
-        self, database_dir, coin_class, tmp_path
+        self, database_dir, coin_class, tmp_path, debug_server_process
     ):
         """Reload a canonical export zip whose empty table CSVs have been omitted."""
         from psynet.chatroom import ChatMessage
@@ -200,6 +222,7 @@ class TestExpWithExport:
 
         assert (Path(database_dir) / "participant.csv").exists()
         assert not (Path(database_dir) / "chat_message.csv").exists()
+        assert not debug_server_process.isalive()
 
         archive = tmp_path / "export.zip"
         _install_archive_template(database_dir, str(archive))

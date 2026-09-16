@@ -1097,9 +1097,10 @@ def populate_db_from_zip_file(zip_path):
     """Replace the contents of the local database with an exported archive.
 
     This drops every table first, so it must only be used where losing the
-    current local database is the point (``psynet load``). The experiment
-    server must be stopped first; a connected ``psynet debug`` process is
-    refused rather than dropped out from under.
+    current local database is the point (``psynet load``). Stop any local
+    experiment server first; a connected ``psynet debug`` process is refused
+    rather than dropped out from under, because ``drop_all`` deadlocks if
+    the clock still holds locks.
     """
     from dallinger import data as dallinger_data
 
