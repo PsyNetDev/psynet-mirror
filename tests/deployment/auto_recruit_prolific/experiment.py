@@ -14,13 +14,11 @@ Participant 10 reaches the target, so no eleventh place should be added.
 The recruiter is selected via the config file rather than in this experiment
 file:
 
-- ``config.txt.devprolific`` sets ``recruiter = devprolific`` (simulated
-  Prolific API; copy it to ``config.txt`` for local ``psynet test local``).
+- ``config.txt`` (default) sets ``recruiter = devprolific``, which simulates
+  the Prolific API locally so running this directory cannot accidentally
+  start paid recruitment.
 - ``config.txt.prolific`` sets ``recruiter = prolific``; copy it to
   ``config.txt`` immediately before a paid ``psynet deploy ssh``.
-
-``config.txt`` is gitignored. Keep the named variants unchanged so the
-selected recruiter is always explicit.
 
 On a paid run, check:
 

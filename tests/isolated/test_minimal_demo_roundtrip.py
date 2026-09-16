@@ -110,6 +110,7 @@ TEST_EXPERIMENT_CUSTOM_CONFIGS = {
     "tests/playwright/experiments/same_session_page_update/config.txt",
     "tests/deployment/payment_flows_prolific/config.txt",
     "tests/deployment/audio_gibbs/config.txt",
+    "tests/deployment/auto_recruit_prolific/config.txt",
 }
 
 AUTHORED_TEST_EXPERIMENT_FILENAMES = {

@@ -1,6 +1,0 @@
-[Parameters]
-aws_region = us-east-1
-publish_experiment = true
-
-# Safe local variant: simulates Prolific without recruiting or paying people.
-recruiter = devprolific
