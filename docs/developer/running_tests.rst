@@ -149,8 +149,9 @@ the destroyed context.
 
 Overlay linger after a published wake is last-wake→last-end wallclock,
 including gunicorn listen-queue. The budget is one 2500ms floor plus
-2200ms for each extra hold-resume hop after the first, or the sum of
-each hop's ``Server-Timing`` ``app + 800ms`` if that is larger. A slow
+2500ms for each extra hold-resume hop after the first and 500ms stacked
+slack, or the sum of each hop's ``Server-Timing`` ``app + 800ms`` if
+that is larger. A slow
 approved POST is not a missed wake; still assert that the resume reason
 is not ``safety poll`` or ``hold timeout``. If a legacy reload drops
 in-page wake clocks, a published
