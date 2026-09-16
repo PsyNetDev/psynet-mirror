@@ -3948,6 +3948,9 @@ class TestResolvePerfTestOptions:
     def test_stagger_from_cli(self, exp):
         assert self.resolve(exp, stagger="0.2").get("stagger") == pytest.approx(0.2)
 
+    def test_stagger_zero_not_replaced_by_exp_default(self, exp):
+        assert self.resolve(exp, stagger="0").get("stagger") == pytest.approx(0.0)
+
     def test_time_factor_none_uses_exp_default(self, exp):
         assert self.resolve(exp).get("time_factor") == exp.test_time_factor
 
