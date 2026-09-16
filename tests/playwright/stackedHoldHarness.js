@@ -1040,10 +1040,15 @@ async function assertWaiterReleasedWithLastArriver(
     afterReleaseMs,
     `${session.label} hold-resume clock ran backwards (${summary})`
   ).toBeGreaterThan(-ENTRY_REQUEST_MAX_MS);
+  // Concurrent consent→timeline includes Dallinger `@db.serialized` retry
+  // sleep. Overlay linger is only the last-wake→last-end slice, so entry
+  // afterClick uses SERIALIZED_SIGNUP_MAX_MS rather than START_PAGE_MAX_MS.
+  const startedBudgetMs =
+    clock.kind === "choice" ? START_PAGE_MAX_MS : SERIALIZED_SIGNUP_MAX_MS;
   expect(
     afterClickMs,
     `${session.label} still held after the last arriver started (${summary})`
-  ).toBeLessThan(START_PAGE_MAX_MS + lingerBudgetMs);
+  ).toBeLessThan(startedBudgetMs + lingerBudgetMs);
   expect(
     unexpectedBlockingRequests(resumeRequests, ENTRY_REQUEST_MAX_MS),
     `${session.label} hold-resume blocking: ${summary}`
