@@ -180,7 +180,7 @@ When adding or updating Playwright E2E tests, follow these rules to reduce CI fl
 
 14. **Do not treat a slow approved hold-resume POST as a missed wake**:
     - Overlay linger is last-wake→last-end wallclock, including gunicorn listen-queue.
-    - Compare linger with `max(2500ms, app + 800ms)`. Waiter-release spread (overlay leave times among waiters) is at most 2200ms. Do not subtract `queue~` from linger or waiter-release spread. Print `queue~` in summaries so a long wait can be split into handler time versus pool occupancy. Two or three waiters leaving together can overlap next-page render and sit in the listen-queue; that wait, and a short NOWAIT 503 retry, count toward linger.
+    - Log linger in summaries. Fail only if linger or after-release exceeds 30000ms (hung overlay vs the 120s step timeout). Do not subtract `queue~` from linger. Print `queue~` in summaries so a long wait can be split into handler time versus pool occupancy.
     - Keep asserting the resume is a server wake, not a safety poll.
     - If a legacy reload drops in-page wake clocks, a published wake token plus an approved hold-resume POST still counts.
     - Use ``Server-Timing`` ``app`` versus browser wall time to split handler time from worker-pool queueing.

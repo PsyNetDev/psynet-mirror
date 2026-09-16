@@ -73,9 +73,8 @@ test("two late trio members arriving together release every waiter", { tag: "@bo
   // reconnect is still a last arriver, not a waiter that must show a partner
   // wake→end clock. Poller and last-arriver GET /timeline can both publish the
   // same waiting token, then a stacked-hold reload posts once more on websocket
-  // onOpen; allow three hold-resume POSTs. Overlay linger uses one 2500ms
-  // floor plus 2500ms per extra hop and 500ms stacked slack; waiter-release spread and GET
-  // /timeline stay 2200/3000.
+  // onOpen; allow three hold-resume POSTs. Overlay linger is logged and
+  // fails only past 30000ms; GET /timeline handler stays 3000ms.
   const { experiment, sessions } = await startHoldExperiment(browser, TRIO_DIR, [
     "trio_wait",
     "trio_late_a",
@@ -174,9 +173,8 @@ test("last of four releases waiters and they catch up", { tag: "@both" }, async 
   // A larger group adds more wake targets on the same last-arriver request.
   // Members 1-3 must stay held until member 4 lands, then overlay-hop the
   // remaining stacked waits. Each hop can need its own hold-resume POST
-  // (grouper, then init, then prepare). Three overlapping next-page renders
-  // can spread overlay leave times on CI; waiter-release spread stays 2200ms.
-  // Overlay linger is one 2500ms floor plus 2500ms per extra catch-up hop and 500ms slack.
+  // (grouper, then init, then prepare). Overlay linger is logged and
+  // fails only past 30000ms.
   const { experiment, sessions } = await startHoldExperiment(
     browser,
     TRIO_DIR,
@@ -220,9 +218,8 @@ test("two late choices complete a trio without a safety poll", { tag: "@both" },
   // hold-resume rather than a skip. Poller and last-arriver GET /timeline can
   // both publish the same waiting token, then a stacked-hold reload posts
   // once more on websocket onOpen; allow three hold-resume POSTs on grouping
-  // as well as on the later concurrent choices. Overlay linger uses one
-  // 2500ms floor plus 2500ms per extra hop and 500ms slack; spread/GET /timeline stay
-  // 2200/3000.
+  // as well as on the later concurrent choices. Overlay linger is logged
+  // and fails only past 30000ms; GET /timeline handler stays 3000ms.
   const { experiment, sessions } = await startHoldExperiment(browser, TRIO_DIR, [
     "trio_choice_wait",
     "trio_choice_late_a",

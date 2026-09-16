@@ -350,7 +350,7 @@ two spares so concurrent last-arrival requests can overlap every waiter POST
 without starving a waiter Redis subscribe. Remaining ``queue~``
 on those POSTs is occupancy to diagnose (HTML ``render`` used to rebuild the
 full document shell on every inplace fragment); do not subtract it from
-overlay linger or waiter-release spread.
+overlay linger.
 
 Leftover inactive visits are outside this budget. Last-arrival keeps
 ``instance.active``, so ``Barrier._other_active_pool`` does not look up a

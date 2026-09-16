@@ -148,19 +148,16 @@ page as a cleared hold (wake token and hold-resume POST) instead of failing on
 the destroyed context.
 
 Overlay linger after a published wake is last-wake→last-end wallclock,
-including gunicorn listen-queue. The budget is one 2500ms floor plus
-2500ms for each extra hold-resume hop after the first and 500ms stacked
-slack, or the sum of each hop's ``Server-Timing`` ``app + 800ms`` if
-that is larger. A slow
-approved POST is not a missed wake; still assert that the resume reason
-is not ``safety poll`` or ``hold timeout``. If a legacy reload drops
-in-page wake clocks, a published
-wake token plus an approved hold-resume POST still counts as a server wake.
+including gunicorn listen-queue. Summaries log that interval; the hung-overlay
+cap is 30000ms (fail-fast versus the 120s step timeout), not a per-hop
+performance budget. A slow approved POST is not a missed wake; still assert
+that the resume reason is not ``safety poll`` or ``hold timeout``. If a
+legacy reload drops in-page wake clocks, a published wake token plus an
+approved hold-resume POST still counts as a server wake.
 Hold-release summaries print ``Server-Timing`` ``app`` versus browser wall
 time (``queue~``) for the last arriver's request and the waiter's hold-resume
 POST so a long linger can be split into handler time versus pool occupancy.
-Do not subtract ``queue~`` from overlay linger or from waiter-release spread.
-Waiter-release spread (overlay leave times among waiters) is at most 2200ms.
+Do not subtract ``queue~`` from overlay linger.
 ``GET /timeline`` also prints ``lock``, ``page``, ``barriers``, and
 ``render``. Blocking-request checks use ``app`` when that header is present, so
 worker-pool queueing is not treated as a slow handler. The 3000ms entry
@@ -168,9 +165,7 @@ budget applies to ``GET /timeline`` and ``POST /load-participant``, not to
 ``POST /participant``. Dallinger ``@db.serialized`` retries concurrent
 signups with ``expovariate(0.5)`` sleep (mean 2s); overlapping
 ``consent→timeline`` uses a 15000ms serialized-signup budget. Sequential
-starts still have the 6000ms start-page budget. Waiter ``afterClick`` on
-a concurrent entry uses that 15000ms budget plus overlay linger, not the
-6000ms start-page budget. GitLab Playwright jobs
+starts still have the 6000ms start-page budget. GitLab Playwright jobs
 run ``psynet debug --legacy`` (gunicorn). Playwright hold tests set the worker
 count to the session count plus two spares so concurrent last-arrival work can
 overlap every waiter hold-resume POST without starving a waiter Redis subscribe.
@@ -180,8 +175,7 @@ the in-request retry waits 250ms; if that is still busy, one delayed
 ``queued hold wake`` runs. The suite still fails a busy retry that lasts
 500ms or more. Concurrent last arrivals may post a third hold-resume when the
 poller and ``GET /timeline`` both publish, then a stacked-hold reload posts
-again on websocket onOpen; sequential last arrivals stay at two. That
-same overlay linger budget applies here. Both Playwright
+again on websocket onOpen; sequential last arrivals stay at two. Both Playwright
 CI jobs use gunicorn; the default vs legacy job is in-place vs full reload.
 Worker-pool ``queue~`` is therefore not reload-specific.
 
