@@ -21,13 +21,24 @@ A full deployment test covers two experiments in `tests/deployment`:
   Experiment class genuinely differ; the paid variants are deployed from
   temporary worktrees.
 
-Both experiments default to `recruiter = devprolific`, which simulates the
-Prolific API locally (requests are logged, not sent), so running a directory
+A third experiment, `tests/deployment/auto_recruit_prolific`, is **not part of
+a full deployment test**. Deploy it on demand when you specifically need to
+check sequential automatic recruitment: it opens a Prolific study with one
+place and tops up one place per completion until ten participants finish.
+It follows the same config-file recruiter pattern as the other two
+(`config.txt` defaults to `recruiter = devprolific`; `config.txt.prolific`
+sets `recruiter = prolific`) and needs no worktree, so the preparation steps
+below apply to it unchanged — just add it to the `for exp in ...` loops and
+give it its own app name.
+
+Every experiment above defaults to `recruiter = devprolific`, which simulates
+the Prolific API locally (requests are logged, not sent), so running a directory
 directly cannot accidentally start paid recruitment; every paid deployment
-swaps in an explicit recruiter variant first. All paid variants show the approved
-cultural-foundation consent (vendored `consents_cococo` package in each
-experiment directory): the Prolific variants use the `MAIN` consent and the
-Lucid variant uses the `CINT` consent.
+swaps in an explicit recruiter variant first. Each `experiment.py` also aborts
+in `on_launch` unless the configured recruiter matches that file. All paid
+variants show the approved cultural-foundation consent (vendored
+`consents_cococo` package in each experiment directory): the Prolific variants
+use the `MAIN` consent and the Lucid variant uses the `CINT` consent.
 
 By default a full deployment test produces **three apps**: the two Prolific
 experiments plus the Lucid variant of `audio_gibbs`. Overlap the long
