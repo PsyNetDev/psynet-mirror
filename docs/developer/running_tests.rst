@@ -167,7 +167,9 @@ budget applies to ``GET /timeline`` and ``POST /load-participant``, not to
 ``POST /participant``. Dallinger ``@db.serialized`` retries concurrent
 signups with ``expovariate(0.5)`` sleep (mean 2s); overlapping
 ``consent→timeline`` uses a 15000ms serialized-signup budget. Sequential
-starts still have the 6000ms start-page budget. GitLab Playwright jobs
+starts still have the 6000ms start-page budget. Waiter ``afterClick`` on
+a concurrent entry uses that 15000ms budget plus overlay linger, not the
+6000ms start-page budget. GitLab Playwright jobs
 run ``psynet debug --legacy`` (gunicorn). Playwright hold tests set the worker
 count to the session count plus two spares so concurrent last-arrival work can
 overlap every waiter hold-resume POST without starving a waiter Redis subscribe.
