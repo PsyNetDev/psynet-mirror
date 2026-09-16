@@ -39,6 +39,7 @@ from psynet.serialize import SerializedCallable
 from psynet.sqlalchemy_profiling import assert_query_count
 from psynet.sync import (
     _BARRIER_FROM_SPEC_CACHE_KEY,
+    _HAS_ACTIVE_SYNC_GROUP_ATTR,
     Barrier,
     BarrierDefinition,
     BarrierInstance,
@@ -1248,6 +1249,7 @@ def test_visit_check_would_release_rolls_back_peek_mutations(
         first = Participant.query.get(first.id)
         instance_id = next(iter(first.active_barriers.values())).barrier_instance_id
         original_progress = first.progress
+        reconstructed = BarrierInstance.query.get(instance_id).get_barrier()
 
         def mutating(self, waiting):
             instance = BarrierInstance.query.get(instance_id)
@@ -1256,7 +1258,7 @@ def test_visit_check_would_release_rolls_back_peek_mutations(
             db.session.flush()
             return True
 
-        monkeypatch.setattr(GroupBarrier, "would_release", mutating)
+        monkeypatch.setattr(type(reconstructed), "would_release", mutating)
         assert _visit_check_would_release(instance_id) is True
         instance = BarrierInstance.query.get(instance_id)
         first = Participant.query.get(first.id)
@@ -2744,6 +2746,7 @@ def test_unloaded_grouped_page_includes_arrival_updates(
 )
 def test_has_active_sync_group_is_memoized(in_experiment_directory, db_session):
     """Page render must not repeat the grouped-page membership EXISTS."""
+    db.session.info.pop(_HAS_ACTIVE_SYNC_GROUP_ATTR, None)
     first, _last = _pair_sync_group(get_experiment(), db_session)[0]
     assert _has_active_sync_group(first) is True
     with assert_query_count(max_queries=0):
@@ -2767,6 +2770,7 @@ def test_closing_a_sync_group_forgets_membership_memo(
     in_experiment_directory, db_session
 ):
     """Closed groups must not keep page render on a stale membership memo."""
+    db.session.info.pop(_HAS_ACTIVE_SYNC_GROUP_ATTR, None)
     first, _last = _pair_sync_group(get_experiment(), db_session)[0]
     group = first.sync_group
     assert _has_active_sync_group(first) is True
