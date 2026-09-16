@@ -315,6 +315,36 @@ def test_partial_body_extraction_uses_named_fragment_wrapper():
     assert "spinner" not in fragment
 
 
+def test_timeline_fragment_ignores_commented_div_close():
+    """A commented-out ``</div>`` must not truncate the in-place fragment."""
+    html = """
+    <div id="psynet-timeline-fragment">
+      <div id="main-body">
+        <!-- </div> -->
+        <p id="after-comment">still inside</p>
+      </div>
+    </div>
+    """
+    inner = Page._timeline_fragment_inner_html(html)
+    assert inner is not None
+    assert "still inside" in inner
+    fragment = Page._extract_partial_body(html)
+    assert "after-comment" in fragment
+    assert "still inside" in fragment
+
+
+def test_new_page_uuid_does_not_follow_seeded_random():
+    import random
+
+    from psynet.timeline import new_page_uuid
+
+    random.seed(0)
+    first = new_page_uuid()
+    random.seed(0)
+    second = new_page_uuid()
+    assert first != second
+
+
 def test_partial_body_extraction_requires_named_fragment_wrapper():
     with pytest.raises(ValueError, match="could not find fragment root"):
         Page._extract_partial_body("<div id='main-body'></div>")

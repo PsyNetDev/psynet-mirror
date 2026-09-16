@@ -3762,6 +3762,32 @@ def test_prepare_after_stopping_local_workers_kills_then_prepares():
     ctx.invoke.assert_called_once_with(prepare, archive="export.zip")
 
 
+def test_kill_psynet_worker_processes_warns_with_pids(caplog):
+    import logging
+
+    from psynet.command_line import kill_psynet_worker_processes
+
+    first = Mock()
+    first.pid = 4321
+    second = Mock()
+    second.pid = 4322
+    with (
+        patch(
+            "psynet.command_line.list_psynet_worker_processes",
+            return_value=[first, second],
+        ),
+        patch("psynet.command_line.safely_kill_process") as kill,
+        patch("psynet.command_line.log") as logged,
+        caplog.at_level(logging.WARNING),
+    ):
+        kill_psynet_worker_processes()
+    kill.assert_any_call(first)
+    kill.assert_any_call(second)
+    assert "4321" in caplog.text
+    assert "4322" in caplog.text
+    assert "4321" in str(logged.call_args)
+
+
 def test_pre_launch_stops_workers_before_prepare(monkeypatch):
     from psynet.command_line import _pre_launch
 

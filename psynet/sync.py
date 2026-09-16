@@ -133,7 +133,7 @@ from psynet.field import PythonClass
 from psynet.page import UnsuccessfulEndPage
 from psynet.participant import Participant
 from psynet.serialize import serialize_callable
-from psynet.timeline import CodeBlock, EltCollection, conditional
+from psynet.timeline import CodeBlock, EltCollection, _is_timeline_hold, conditional
 from psynet.timeline_hold import (
     _defer_timeline_hold_wakes,
     _queue_arrival_update,
@@ -148,6 +148,7 @@ logger = get_logger()
 _PENDING_BARRIER_CHECKS_KEY = "psynet_pending_barrier_checks"
 _RELEASED_HOLD_WAITER_IDS_KEY = "psynet_released_hold_waiter_ids"
 _NESTED_BARRIER_QUEUE_SNAPSHOTS_KEY = "psynet_nested_barrier_queue_snapshots"
+_BARRIER_FROM_SPEC_CACHE_KEY = "psynet_barrier_from_spec"
 # Shared cap for last-arrival finalize, ready-hold skip, and the poller sweep.
 # Each pass can mint a fresh visit; without a bound those walks occupy a worker.
 # Walkers observe once more after the last work unit so a walk that settles on
@@ -215,7 +216,7 @@ def _rollback_preserving_barrier_queues():
 
 def _hold_instance_id_for_page(participant, page):
     """Return the unreleased hold instance for this page, if any."""
-    if not getattr(page, "is_timeline_hold", False):
+    if not _is_timeline_hold(page):
         return None
     barrier_id = getattr(page, "barrier_id", None)
     if barrier_id is None:
@@ -238,20 +239,26 @@ def _visit_check_would_release(instance_id):
     Transient database errors propagate so the request can return HTTP 503.
     """
     try:
-        with db.session.begin_nested():
+        nested = db.session.begin_nested()
+        try:
             instance = BarrierInstance.query.get(instance_id)
             if instance is None:
-                return False
-            barrier = instance.get_barrier()
-            if not isinstance(barrier, Barrier):
-                return True
-            waiting = _get_waiting_participants(
-                instance.barrier_id,
-                instance.id,
-                for_update=False,
-                nowait=False,
-            )
-            return bool(barrier.would_release(waiting))
+                result = False
+            else:
+                barrier = instance.get_barrier()
+                if not isinstance(barrier, Barrier):
+                    result = True
+                else:
+                    waiting = _get_waiting_participants(
+                        instance.barrier_id,
+                        instance.id,
+                        for_update=False,
+                        nowait=False,
+                    )
+                    result = bool(barrier.would_release(waiting))
+        finally:
+            nested.rollback()
+        return result
     except BarrierSpecError:
         logger.exception(
             "Barrier instance %s failed a side-effect-free release peek "
@@ -430,6 +437,10 @@ def _populate_sync_group_links(participants):
     up as extra statements in arrival-notice lookups. An explicit ``IN``
     query plus ``set_committed_value`` keeps the check O(1) without that
     side effect.
+
+    Call this before ``add_participant`` in the same transaction, or after
+    ``expire_all``. ``set_committed_value`` replaces the collection and drops
+    pending in-session links that have not been flushed.
     """
     if not participants:
         return
@@ -450,7 +461,7 @@ def _membership_cache():
     session = db.session
     if session is None:
         return None
-    return session.info.setdefault("_psynet_has_active_sync_group", {})
+    return session.info.setdefault(_HAS_ACTIVE_SYNC_GROUP_ATTR, {})
 
 
 def _remember_active_sync_group(participant, participant_id, result):
@@ -967,7 +978,9 @@ def _advance_released_hold_waiters_after_commit(participant_ids):
     if not participant_ids:
         return
     experiment = get_experiment()
-    for participant_id in participant_ids:
+    ids = list(participant_ids)
+    for index, participant_id in enumerate(ids):
+        remaining = ids[index + 1 :]
         try:
             _set_transaction_lock_timeout(
                 get_config().get("timeline_lock_timeout_seconds")
@@ -986,17 +999,29 @@ def _advance_released_hold_waiters_after_commit(participant_ids):
                     participant_id,
                 )
                 continue
+            logger.exception(
+                "Released-hold skip failed for waiter %s; remaining waiters %s "
+                "will recover through overlay wake.",
+                participant_id,
+                remaining,
+            )
             raise
         if participant is None:
             _rollback_preserving_barrier_queues()
             continue
         try:
             page = experiment.timeline.get_current_elt(experiment, participant)
-            if getattr(page, "is_timeline_hold", False):
+            if _is_timeline_hold(page):
                 experiment._advance_past_ready_holds(participant, page)
             db.session.commit()
         except Exception:
             _rollback_preserving_barrier_queues()
+            logger.exception(
+                "Released-hold skip failed for waiter %s; remaining waiters %s "
+                "will recover through overlay wake.",
+                participant_id,
+                remaining,
+            )
             raise
 
 
@@ -1831,6 +1856,8 @@ class SyncGroup(SQLBase, SQLMixin):
     def close(self):
         self.active = False
         self.end_time = timenow()
+        for participant in self.participants:
+            _forget_active_sync_group(participant)
 
     def check_numbers(self):
         self.n_active_participants = len(self.active_participants)
@@ -2074,9 +2101,21 @@ class BarrierInstance(SQLBase, SQLMixin):
         """Return the reconstructed release object for this visit.
 
         This is not the live timeline barrier. See :class:`Barrier` for which
-        methods are safe here.
+        methods are safe here. Reconstructions are memoized on the current
+        SQLAlchemy session so grouped-page render does not re-parse the spec.
         """
-        return barrier_from_spec_json(self.spec)
+        session = object_session(self)
+        cache = None
+        instance_id = getattr(self, "id", None)
+        if session is not None and instance_id is not None:
+            cache = session.info.setdefault(_BARRIER_FROM_SPEC_CACHE_KEY, {})
+            cached = cache.get(instance_id)
+            if cached is not None:
+                return cached
+        barrier = barrier_from_spec_json(self.spec)
+        if cache is not None:
+            cache[instance_id] = barrier
+        return barrier
 
     def _validate_behavior(self, behavior_hash):
         """Reject incompatible reuse of one active waiting pool."""
@@ -2223,11 +2262,32 @@ def arrival_notice_payload(participant_id):
     return {"notice": pending_arrival_notice_for(participant)}
 
 
+def _reconstructed_arrival_barrier(link, reconstructed):
+    """Return a registry barrier for arrival notices, or ``None`` on spec error.
+
+    Page render must not 500 when a stored spec cannot be reconstructed.
+    Failed instance ids are remembered so a group is not retried per member.
+    """
+    instance_id = link.barrier_instance_id
+    if instance_id in reconstructed:
+        return reconstructed[instance_id]
+    try:
+        barrier = link.get_barrier()
+    except BarrierSpecError:
+        logger.exception(
+            "Barrier instance %s failed arrival-notice reconstruction.",
+            instance_id,
+        )
+        barrier = None
+    reconstructed[instance_id] = barrier
+    return barrier
+
+
 def pending_arrival_notice_for(participant):
     """Return a partner-ready notice if this participant is behind a waiter.
 
     Reconstructs registry barriers for this call only. Overlay HTML stays on
-    the live timeline barrier.
+    the live timeline barrier. Unreconstructable specs are skipped.
     """
     if participant is None or getattr(participant, "failed", False):
         return None
@@ -2244,10 +2304,7 @@ def pending_arrival_notice_for(participant):
                 instance = link.barrier_instance
                 if instance is not None and instance.group_id != group.id:
                     continue
-                barrier = reconstructed.get(link.barrier_instance_id)
-                if barrier is None:
-                    barrier = link.get_barrier()
-                    reconstructed[link.barrier_instance_id] = barrier
+                barrier = _reconstructed_arrival_barrier(link, reconstructed)
                 if not isinstance(barrier, GroupBarrier) or not barrier.notify_arrivals:
                     continue
                 if barrier._participant_is_waiting(participant):

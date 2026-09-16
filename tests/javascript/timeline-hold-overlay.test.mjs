@@ -97,7 +97,13 @@ function loadHoldFns(document) {
       hold: { hold_id: "hold-1" },
     },
   };
-  const window = { dispatchEvent() {} };
+  const dispatched = [];
+  const window = {
+    dispatchEvent(event) {
+      dispatched.push(event);
+      return true;
+    },
+  };
   const showSrc = extractFunction("showTimelineHoldIndicator");
   const stopSrc = extractFunction("stopTimelineHold");
   const show = new Function(
@@ -105,8 +111,9 @@ function loadHoldFns(document) {
     "document",
     `${showSrc}; return showTimelineHoldIndicator;`
   )(psynet, document);
-  // CI Node has no browser CustomEvent global. Bind one into the eval so
-  // stopTimelineHold's dispatch does not depend on the host runtime.
+  // CI Node has no browser CustomEvent global. Bind a constructor into the
+  // eval and assert the dispatched event so a dummy CustomEvent cannot
+  // make stop() look successful without actually firing timelineHoldEnded.
   const stop = new Function(
     "psynet",
     "document",
@@ -114,13 +121,13 @@ function loadHoldFns(document) {
     "CustomEvent",
     `${stopSrc}; return stopTimelineHold;`
   )(psynet, document, window, FakeCustomEvent);
-  return { psynet, show, stop };
+  return { psynet, show, stop, dispatched, window };
 }
 
 describe("timeline hold overlay reuse", () => {
   it("keeps the held page inert when the dynamic chip is reused", () => {
     const { document, mainBody, commentButton } = createDom();
-    const { show, stop } = loadHoldFns(document);
+    const { show, stop, dispatched } = loadHoldFns(document);
 
     show("Waiting");
     assert.equal(mainBody.inert, true);
@@ -137,6 +144,9 @@ describe("timeline hold overlay reuse", () => {
     assert.equal(mainBody.inert, false);
     assert.equal(commentButton.disabled, false);
     assert.equal(document.getElementById("psynet-timeline-hold-indicator"), null);
+    assert.equal(dispatched.length, 1);
+    assert.equal(dispatched[0].type, "timelineHoldEnded");
+    assert.equal(dispatched[0].detail.holdId, "hold-1");
   });
 
   it("does not inert a server-rendered fallback chip", () => {
@@ -154,27 +164,16 @@ describe("timeline hold overlay reuse", () => {
     assert.equal(chip.dataset.timelineHoldDynamic, undefined);
   });
 
-  it("stops the overlay when CustomEvent is not a global", () => {
-    const original = globalThis.CustomEvent;
-    const hadOwn = Object.prototype.hasOwnProperty.call(
-      globalThis,
-      "CustomEvent"
-    );
-    delete globalThis.CustomEvent;
-    try {
-      assert.equal(typeof globalThis.CustomEvent, "undefined");
-      const { document, mainBody, commentButton } = createDom();
-      const { show, stop } = loadHoldFns(document);
-      show("Waiting");
-      stop();
-      assert.equal(mainBody.inert, false);
-      assert.equal(commentButton.disabled, false);
-    } finally {
-      if (hadOwn) {
-        globalThis.CustomEvent = original;
-      } else {
-        delete globalThis.CustomEvent;
-      }
-    }
+  it("restores the page when hold-ended dispatch throws", () => {
+    const { document, mainBody, commentButton } = createDom();
+    const { show, stop, window } = loadHoldFns(document);
+    show("Waiting");
+    window.dispatchEvent = () => {
+      throw new Error("dispatch failed");
+    };
+    assert.throws(() => stop(), /dispatch failed/);
+    assert.equal(mainBody.inert, false);
+    assert.equal(commentButton.disabled, false);
+    assert.equal(document.getElementById("psynet-timeline-hold-indicator"), null);
   });
 });

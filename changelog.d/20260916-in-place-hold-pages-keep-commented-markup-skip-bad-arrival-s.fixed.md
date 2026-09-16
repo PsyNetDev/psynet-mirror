@@ -1,0 +1,1 @@
+In-place timeline fragments ignore HTML comments when extracting the page body, so a commented-out ``</div>`` cannot truncate the page. Arrival-notice rendering skips unreconstructable barrier specs instead of returning HTTP 500. The visit-claim release peek always rolls back its savepoint, so a mutating ``would_release`` override cannot leak into the request transaction.

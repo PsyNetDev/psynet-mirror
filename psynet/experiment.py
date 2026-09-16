@@ -141,6 +141,8 @@ from .timeline import (
     Response,
     Timeline,
     WebSocketElt,
+    _is_timeline_hold,
+    new_page_uuid,
 )
 from .translation.check import check_translations
 from .translation.translate import create_pot
@@ -3373,7 +3375,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                         ),
                     }
                 )
-            if event.is_timeline_hold:
+            if _is_timeline_hold(event):
                 should_resume = event.prepare_resume_if_ready(self, participant)
                 event.account_wait(participant, settle=should_resume)
                 if should_resume:
@@ -3473,14 +3475,14 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         dirties are rolled back when ``route_response`` sees ``skip_write``.
         """
         event = self.timeline.get_current_elt(self, participant)
-        on_submitted_hold = page_uuid == participant.page_uuid and getattr(
-            event, "is_timeline_hold", False
+        on_submitted_hold = page_uuid == participant.page_uuid and _is_timeline_hold(
+            event
         )
         if on_submitted_hold and self._hold_resume_must_settle(participant, event):
             return None
         if page_uuid != participant.page_uuid:
             return None
-        if not getattr(event, "is_timeline_hold", False):
+        if not _is_timeline_hold(event):
             return None
         if event.is_ready_to_resume(self, participant):
             return None
@@ -3544,7 +3546,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         from .timeline_hold import holding_next_hold_catchup
 
         for can_work in _barrier_walk_budget():
-            if not getattr(page, "is_timeline_hold", False):
+            if not _is_timeline_hold(page):
                 return page
             if not page.prepare_resume_if_ready(self, participant):
                 live = self.timeline.get_current_elt(self, participant)
@@ -3570,7 +3572,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         """Return whether ``live`` is still the hold represented by ``page``."""
         if page is live:
             return True
-        if not getattr(live, "is_timeline_hold", False):
+        if not _is_timeline_hold(live):
             return False
         page_id = getattr(page, "hold_id", None)
         live_id = getattr(live, "hold_id", None)
@@ -5209,7 +5211,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         committed = plan.mark_committed()
         participant.exit_plan = committed.to_dict()
         if Experiment._skips_error_recovery_ui(recruiter, committed):
-            participant.page_uuid = experiment.make_uuid()
+            participant.page_uuid = new_page_uuid()
         return committed
 
     @staticmethod
@@ -5439,9 +5441,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 "label": current_page.label,
                 "text": current_page.plain_text,
                 "time_estimate": current_page.time_estimate,
-                "is_timeline_hold": bool(
-                    getattr(current_page, "is_timeline_hold", False)
-                ),
+                "is_timeline_hold": _is_timeline_hold(current_page),
                 "bot_response": bot_response.__json__(),
             }
         else:
@@ -6051,15 +6051,15 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         checks = _take_pending_barrier_checks()
         wait_for_claim = bool(checks) and _pending_checks_should_wait_for_claim(checks)
-        if getattr(page, "is_timeline_hold", False):
+        if _is_timeline_hold(page):
             page = experiment.timeline.get_current_elt(experiment, participant)
-            if not getattr(page, "is_timeline_hold", False):
+            if not _is_timeline_hold(page):
                 if not checks:
                     participant, page = cls._reapply_lock_timeout_and_prepare(
                         experiment, participant, page
                     )
                     return participant, page, [], False
-        if not checks and getattr(page, "is_timeline_hold", False):
+        if not checks and _is_timeline_hold(page):
             if cls._timeline_hold_is_ready_to_resume(page, experiment, participant):
                 participant, page, checks = cls._skip_ready_hold_on_get(
                     experiment, participant
@@ -6188,7 +6188,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         if (
             instance_id
             and instance_id not in walk.rechecked
-            and getattr(page, "is_timeline_hold", False)
+            and _is_timeline_hold(page)
         ):
             if not walk.allow_unfilled_recheck:
                 return []
@@ -6589,7 +6589,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     raise RuntimeError(
                         "Approved response did not retain its resolved page."
                     )
-                if not page.is_timeline_hold:
+                if not _is_timeline_hold(page):
                     render_fragment = not page.requires_full_page_reload
                     if render_fragment:
                         if participant is None:

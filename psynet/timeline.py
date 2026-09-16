@@ -1091,6 +1091,20 @@ def _loaded_active_sync_groups(participant):
     return {} if not groups else groups
 
 
+def _is_timeline_hold(page):
+    """Return whether ``page`` is a timeline hold overlay."""
+    return bool(getattr(page, "is_timeline_hold", False))
+
+
+def new_page_uuid():
+    """Return a page uuid that does not depend on seeded ``random``.
+
+    ``Experiment.make_uuid()`` draws from the process RNG, which bots seed.
+    Timeline hold records have a global unique constraint on ``page_uuid``.
+    """
+    return str(uuid.uuid4())
+
+
 def _arrival_updates_for(page, participant):
     """Return partner-ready websocket config, or None when it cannot be used.
 
@@ -1099,7 +1113,7 @@ def _arrival_updates_for(page, participant):
     membership is not already loaded, a cheap existence check decides
     whether to open the websocket.
     """
-    if getattr(page, "is_timeline_hold", False):
+    if _is_timeline_hold(page):
         return None
     groups = _loaded_active_sync_groups(participant)
     if groups is not None:
@@ -1710,9 +1724,7 @@ class Page(Elt):
         return ""
 
     def consume(self, experiment, participant):
-        # Use a real UUID4 so seeded ``random`` (bots/tests) cannot collide
-        # with the global unique constraint on timeline hold page_uuid.
-        participant.page_uuid = str(uuid.uuid4())
+        participant.page_uuid = new_page_uuid()
         participant.page_count += 1
 
     def on_complete(self, experiment, participant):
@@ -2196,7 +2208,18 @@ class Page(Elt):
 
     @staticmethod
     def _skip_raw_text_element(html, pos):
-        """Return the index after a script, style, or template element at ``pos``."""
+        """Return the index after a script, style, template, or HTML comment at ``pos``.
+
+        Comments are skipped like raw-text elements so a commented-out
+        ``</div>`` cannot close the fragment. This scanner still does not
+        handle CDATA or processing instructions; those fall through to
+        BeautifulSoup when fragment matching fails.
+        """
+        if html.startswith("<!--", pos):
+            end = html.find("-->", pos + 4)
+            if end < 0:
+                return len(html)
+            return end + 3
         match = Page._RAW_TEXT_ELEMENT_OPEN.match(html, pos)
         if match is None:
             return None
@@ -2211,8 +2234,9 @@ class Page(Elt):
         """Return the inner HTML of ``#psynet-timeline-fragment`` without parsing.
 
         Partial-mode templates emit that wrapper as the document root. Nested
-        ``div`` matching skips ``script``, ``style``, and ``template`` bodies so
-        JSON or markup inside those tags cannot close the fragment early.
+        ``div`` matching skips ``script``, ``style``, and ``template`` bodies
+        and HTML comments so JSON or markup inside those regions cannot close
+        the fragment early.
         """
         marker = 'id="psynet-timeline-fragment"'
         marker_idx = html.find(marker)
@@ -2650,11 +2674,15 @@ class Timeline:
         from .sync import Barrier
 
         seen = {}
+        hashes = {}
         for elt in self.all_elts:
             barrier = elt if isinstance(elt, Barrier) else elt.links.get("barrier")
             if not isinstance(barrier, Barrier):
                 continue
-            digest = behavior_hash(barrier)
+            digest = hashes.get(id(barrier))
+            if digest is None:
+                digest = behavior_hash(barrier)
+                hashes[id(barrier)] = digest
             previous = seen.get(barrier.id)
             if previous is not None and previous != digest:
                 raise ValueError(

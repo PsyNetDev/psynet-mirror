@@ -1026,10 +1026,26 @@ def safely_kill_process(p):
 
 def kill_psynet_worker_processes():
     processes = list_psynet_worker_processes()
-    if len(processes) > 0:
-        log(
-            f"Found {len(processes)} remaining PsyNet worker process(es), terminating them now."
-        )
+    if not processes:
+        return
+    pids = []
+    for process in processes:
+        try:
+            pids.append(str(process.pid))
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+    pid_list = ", ".join(pids) if pids else "unknown"
+    logger.warning(
+        "Stopping %s leftover local PsyNet worker process(es) (pids %s). "
+        "Launch paths including remote deploy do this so a stale "
+        "dallinger_heroku_* backend cannot hold the shared Postgres database.",
+        len(processes),
+        pid_list,
+    )
+    log(
+        f"Found {len(processes)} remaining PsyNet worker process(es) "
+        f"(pids {pid_list}), terminating them now."
+    )
     for p in processes:
         safely_kill_process(p)
 

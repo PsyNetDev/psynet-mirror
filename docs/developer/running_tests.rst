@@ -165,8 +165,11 @@ budget applies to ``GET /timeline`` and ``POST /load-participant``, not to
 ``POST /participant``. Dallinger ``@db.serialized`` retries concurrent
 signups with ``expovariate(0.5)`` sleep (mean 2s); overlapping
 ``consent→timeline`` uses a 15000ms serialized-signup budget. Sequential
-starts still have the 6000ms start-page budget. GitLab Playwright jobs
-run ``psynet debug --legacy`` (gunicorn). Playwright hold tests set the worker
+starts still have the 6000ms start-page budget. GitLab Playwright jobs always set ``PSYNET_USE_LEGACY_DEBUG=1``, so they
+run ``psynet debug --legacy`` (gunicorn). The default single-process Flask
+reloader (``psynet debug local`` without ``--legacy``) is not exercised in
+CI; run that locally when debugging reloader-only issues. Playwright hold
+tests set the worker
 count to the session count plus two spares so concurrent last-arrival work can
 overlap every waiter hold-resume POST without starving a waiter Redis subscribe.
 A short HTTP 503 on hold-resume is the
@@ -225,7 +228,8 @@ The Playwright harness launches experiments with ``psynet debug local`` by defau
 and does not force legacy mode. That Flask reloader is one process; use
 ``PSYNET_USE_LEGACY_DEBUG=1`` (or ``psynet debug --legacy``) for gunicorn
 workers. GitLab Playwright jobs set
-``PSYNET_USE_LEGACY_DEBUG=1`` so those runs use gunicorn. ``psynet debug
+``PSYNET_USE_LEGACY_DEBUG=1`` so those runs use gunicorn. CI therefore never
+exercises the default single-process Flask debug server. ``psynet debug
 --legacy`` starts four gunicorn workers by default. Playwright stacked-hold
 tests set ``PSYNET_LEGACY_DEBUG_GUNICORN_THREADS`` to the session count plus
 two spares so concurrent last-arrival ``GET /timeline`` can overlap every waiter

@@ -38,6 +38,7 @@ from psynet.pytest_psynet import path_to_test_experiment
 from psynet.serialize import SerializedCallable
 from psynet.sqlalchemy_profiling import assert_query_count
 from psynet.sync import (
+    _BARRIER_FROM_SPEC_CACHE_KEY,
     Barrier,
     BarrierDefinition,
     BarrierInstance,
@@ -1224,6 +1225,43 @@ def test_visit_check_would_release_spec_error_does_not_wait(
 
         monkeypatch.setattr(BarrierInstance, "get_barrier", boom)
         assert _visit_check_would_release(instance_id) is False
+        _set_transaction_lock_timeout(0.3)
+        assert db.session.execute(text("SELECT 1")).scalar() == 1
+    finally:
+        exp.timeline = original_timeline
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_visit_check_would_release_rolls_back_peek_mutations(
+    in_experiment_directory, db_session, monkeypatch
+):
+    """A mutating ``would_release`` override must not leak into the request."""
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    group_type = f"peek_mutate_{uuid.uuid4().hex[:8]}"
+    exp.timeline = _stacked_partner_timeline(group_type)
+    try:
+        first, _last = _working_participants(exp, 2)
+        assert _json_timeline(exp, first).status_code == 200
+        first = Participant.query.get(first.id)
+        instance_id = next(iter(first.active_barriers.values())).barrier_instance_id
+        original_progress = first.progress
+
+        def mutating(self, waiting):
+            instance = BarrierInstance.query.get(instance_id)
+            instance.active = False
+            waiting[0].progress = original_progress + 1
+            db.session.flush()
+            return True
+
+        monkeypatch.setattr(GroupBarrier, "would_release", mutating)
+        assert _visit_check_would_release(instance_id) is True
+        instance = BarrierInstance.query.get(instance_id)
+        first = Participant.query.get(first.id)
+        assert instance.active is True
+        assert first.progress == original_progress
         _set_transaction_lock_timeout(0.3)
         assert db.session.execute(text("SELECT 1")).scalar() == 1
     finally:
@@ -2722,6 +2760,22 @@ def test_has_active_sync_group_is_memoized(in_experiment_directory, db_session):
         assert _has_active_sync_group(other) is True
 
 
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_closing_a_sync_group_forgets_membership_memo(
+    in_experiment_directory, db_session
+):
+    """Closed groups must not keep page render on a stale membership memo."""
+    first, _last = _pair_sync_group(get_experiment(), db_session)[0]
+    group = first.sync_group
+    assert _has_active_sync_group(first) is True
+    group.close()
+    assert _has_active_sync_group(first) is False
+    with assert_query_count(max_queries=0):
+        assert _has_active_sync_group(first) is False
+
+
 def test_check_claimed_barrier_instance_treats_finished_work_as_success():
     """A completed or missing instance is not a lost in-flight claim."""
     assert _check_claimed_barrier_instance(None) is True
@@ -2857,6 +2911,34 @@ def test_leftover_check_evaluates_the_live_instance_barrier(
     assert _check_claimed_barrier_instance(leftover) is True
     assert reconstructed[0] == leftover_id
     assert reconstructed[-1] == newer_id
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_get_barrier_reuses_session_reconstruction(
+    in_experiment_directory, db_session, monkeypatch
+):
+    """Grouped-page render must not re-parse the same visit spec."""
+    exp = get_experiment()
+    first, _last = _pair_sync_group(exp, db_session)[0]
+    barrier = GroupBarrier(id_="cache_spec", group_type="main")
+    _arrive_at_group_barrier(exp, barrier, first)
+    db.session.commit()
+    instance = BarrierInstance.query.filter_by(barrier_id=barrier.id).one()
+    db.session.info.pop(_BARRIER_FROM_SPEC_CACHE_KEY, None)
+    reconstructed = []
+    original = barrier_from_spec_json
+
+    def tracking(serialized):
+        reconstructed.append(serialized)
+        return original(serialized)
+
+    monkeypatch.setattr("psynet.sync.barrier_from_spec_json", tracking)
+    first_barrier = instance.get_barrier()
+    second_barrier = instance.get_barrier()
+    assert first_barrier is second_barrier
+    assert len(reconstructed) == 1
 
 
 @pytest.mark.parametrize(
@@ -4982,6 +5064,30 @@ def test_group_arrival_notifies_partner_still_on_earlier_page(
     overlay = barrier.waiting_logic.overlay_html(first)
     assert "Waiting for your partner" in overlay
     assert "psynet-timeline-hold-progress" not in overlay
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_pending_arrival_notice_for_spec_error_returns_none(
+    in_experiment_directory, db_session, monkeypatch
+):
+    """Page render must not 500 when a stored spec cannot be reconstructed."""
+    exp = get_experiment()
+    first, last = _pair_sync_group(exp, db_session)[0]
+    barrier = GroupBarrier(
+        id_="notify_spec_error",
+        group_type="main",
+        content="Waiting for your partner",
+    )
+    _arrive_at_group_barrier(exp, barrier, first)
+    db_session.commit()
+
+    def boom(self):
+        raise BarrierSpecError("missing callback")
+
+    monkeypatch.setattr(BarrierInstance, "get_barrier", boom)
+    assert pending_arrival_notice_for(last) is None
 
 
 @pytest.mark.parametrize(

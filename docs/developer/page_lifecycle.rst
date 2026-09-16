@@ -462,7 +462,8 @@ Those routes do not share a lock protocol:
   last-arrival and waiter POSTs cannot overlap. There is no worker-count flag
   for that Flask reloader; use ``psynet debug --legacy`` for gunicorn workers.
   ``psynet debug --legacy`` starts gunicorn; both Playwright CI jobs use that
-  path. The default vs legacy *job* split is in-place vs full reload, not
+  path, so CI does not exercise the default single-process Flask reloader.
+  The default vs legacy *job* split is in-place vs full reload, not
   Flask vs gunicorn. Worker-pool ``queue~`` happens in both job modes: the
   last arriver's request (entry ``GET /timeline``, or a later last-arrival
   ``POST /response``) occupies one worker while each waiter POSTs hold-resume.

@@ -233,8 +233,9 @@ def _is_psynet_stale_timeline_response(response):
     """Return whether JSON ``GET /timeline`` reported a mid-render cursor move.
 
     HTML GETs redirect in that case. JSON returns HTTP 409 with
-    ``status: stale``. Automated drivers should retry; a Leave-offer 409 is
-    a different body and is not retried here.
+    ``status: stale``. Shipped bots fetch ``/participant_status`` instead of
+    JSON ``GET /timeline``, so this retry is for custom drivers that use that
+    endpoint. A Leave-offer 409 is a different body and is not retried here.
     """
     if getattr(response, "status_code", None) != 409:
         return False
@@ -263,8 +264,9 @@ def _retry_busy_http(send, *, delay_s=0.25, attempts=2):
     ``attempts`` count because a partner skip can hold the participant row
     for more than one ``lock_timeout``. JSON ``GET /timeline`` also retries
     HTTP 409 ``status: stale`` when last-arrival advanced this waiter
-    between write and render. Generic or malformed 503s and other 409s are
-    not retried.
+    between write and render. Shipped drivers do not issue that JSON GET;
+    they use ``/participant_status``. Generic or malformed 503s and other
+    409s are not retried.
     """
     if attempts < 1:
         raise ValueError("attempts must be at least 1.")
