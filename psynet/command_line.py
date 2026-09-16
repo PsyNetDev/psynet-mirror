@@ -3825,7 +3825,6 @@ def _start_local_server_and_wait_for_ready(
     log_file : file, optional
         If supplied, the caller owns the file handle.
     """
-    _check_port_available()
     print("▶ Starting experiment server...")
 
     externally_managed_log = log_file is not None
@@ -4086,6 +4085,7 @@ def _run_performance_test_with_new_server(
     so each stage gets a clean database.  A single shared log file is used
     across all stages with demarcation lines between them.
     """
+    _check_port_available()
     all_results = []
 
     # Create single shared log files for all stages.

@@ -4002,7 +4002,8 @@ class TestRunPerformanceTestWithNewServer:
         kwargs.setdefault("_run_stage", Mock(return_value=[]))
         kwargs.setdefault("_time_export_fn", Mock(return_value=(1.0, None)))
         kwargs.setdefault("_base_url", "http://localhost:5000")
-        return _run_performance_test_with_new_server(**kwargs)
+        with patch("psynet.command_line._check_port_available"):
+            return _run_performance_test_with_new_server(**kwargs)
 
     def test_restarts_between_stages_for_multiple_bot_counts(self):
         """Each bot count should get its own fresh server."""
@@ -4063,6 +4064,49 @@ class TestRunPerformanceTestWithNewServer:
         mock_export = Mock(return_value=(1.0, None))
         self.subject(do_export=False, _run_stage=mock_run, _time_export_fn=mock_export)
         mock_export.assert_not_called()
+
+    def test_port_check_runs_once_regardless_of_stage_count(self):
+        """_check_port_available called once before the loop, not once per stage."""
+        from psynet.command_line import _run_performance_test_with_new_server
+
+        with patch("psynet.command_line._check_port_available") as mock_check:
+            _run_performance_test_with_new_server(
+                bot_counts=[5, 10, 20],
+                stagger=0.1,
+                time_factor=1.0,
+                duration_minutes=0.5,
+                debug=False,
+                _start_server=Mock(side_effect=lambda *a, **kw: _make_server_info()),
+                _stop_server_fn=Mock(),
+                _run_stage=Mock(return_value=[]),
+                _time_export_fn=Mock(return_value=(1.0, None)),
+                _base_url="http://localhost:5000",
+            )
+        mock_check.assert_called_once()
+
+    def test_port_check_raises_before_any_stage_starts(self):
+        """If _check_port_available raises, no server is started."""
+        from psynet.command_line import _run_performance_test_with_new_server
+
+        mock_start = Mock()
+        with patch(
+            "psynet.command_line._check_port_available",
+            side_effect=Exception("port in use"),
+        ):
+            with pytest.raises(Exception, match="port in use"):
+                _run_performance_test_with_new_server(
+                    bot_counts=[5],
+                    stagger=0.1,
+                    time_factor=1.0,
+                    duration_minutes=0.5,
+                    debug=False,
+                    _start_server=mock_start,
+                    _stop_server_fn=Mock(),
+                    _run_stage=Mock(return_value=[]),
+                    _time_export_fn=Mock(return_value=(1.0, None)),
+                    _base_url="http://localhost:5000",
+                )
+        mock_start.assert_not_called()
 
 
 # --- _time_export tests ---
