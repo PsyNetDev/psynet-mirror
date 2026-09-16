@@ -147,9 +147,10 @@ stacked last-arrival hold clears while the test is arming the probe, treat the
 page as a cleared hold (wake token and hold-resume POST) instead of failing on
 the destroyed context.
 
-Overlay linger after a published wake is last-wake→last-end, bounded by
-``max(2500ms, hold-resume Server-Timing app + 800ms)``. That comparison uses
-wake→end wallclock, including gunicorn listen-queue. A slow approved POST is
+Overlay linger after a published wake is last-wake→last-end. Each hold-resume
+hop after that wake is bounded by ``max(2500ms, that POST's Server-Timing
+app + 800ms)``; the linger budget is the sum of those per-hop budgets.
+That comparison uses wake→end wallclock, including gunicorn listen-queue. A slow approved POST is
 not a missed wake; still assert that the resume reason is not
 ``safety poll`` or ``hold timeout``. If a legacy reload drops in-page wake clocks, a published
 wake token plus an approved hold-resume POST still counts as a server wake.
@@ -176,8 +177,9 @@ the in-request retry waits 250ms; if that is still busy, one delayed
 500ms or more. Concurrent last arrivals may post a third hold-resume when the
 poller and ``GET /timeline`` both publish, then a stacked-hold reload posts
 again on websocket onOpen; sequential last arrivals stay at two. Overlay linger
-is last-wake→last-end, compared with ``max(2500ms, that POST's Server-Timing
-app + 800ms)``. Both Playwright
+is last-wake→last-end, compared with the sum of
+``max(2500ms, that POST's Server-Timing app + 800ms)`` across hold-resume
+POSTs after the last wake. Both Playwright
 CI jobs use gunicorn; the default vs legacy job is in-place vs full reload.
 Worker-pool ``queue~`` is therefore not reload-specific.
 

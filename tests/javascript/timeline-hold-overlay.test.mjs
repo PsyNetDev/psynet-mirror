@@ -80,6 +80,11 @@ function createDom({ commentDisabled = false } = {}) {
   return { document, mainBody, commentButton };
 }
 
+function FakeCustomEvent(type, init = {}) {
+  this.type = type;
+  this.detail = init.detail;
+}
+
 function loadHoldFns(document) {
   const psynet = {
     hideArrivalNotice() {},
@@ -95,17 +100,21 @@ function loadHoldFns(document) {
   const window = { dispatchEvent() {} };
   const showSrc = extractFunction("showTimelineHoldIndicator");
   const stopSrc = extractFunction("stopTimelineHold");
+  // CI Node has no browser CustomEvent global. Bind one into the eval so
+  // stopTimelineHold's dispatch does not depend on the host runtime.
   const show = new Function(
     "psynet",
     "document",
+    "CustomEvent",
     `${showSrc}; return showTimelineHoldIndicator;`
-  )(psynet, document);
+  )(psynet, document, FakeCustomEvent);
   const stop = new Function(
     "psynet",
     "document",
     "window",
+    "CustomEvent",
     `${stopSrc}; return stopTimelineHold;`
-  )(psynet, document, window);
+  )(psynet, document, window, FakeCustomEvent);
   return { psynet, show, stop };
 }
 

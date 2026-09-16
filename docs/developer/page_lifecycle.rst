@@ -470,8 +470,9 @@ Those routes do not share a lock protocol:
   Remaining ``queue~``
   means the pool is still busy: two waiters leaving together can overlap
   next-page ``render``. Do not subtract that wait from overlay linger or waiter
-  spread. Overlay linger is wake→end wallclock compared with
-  ``max(2500ms, Server-Timing app + 800ms)``. Waiter-release spread is at most
+  spread. Overlay linger is last-wake→last-end wallclock compared with the
+  sum of ``max(2500ms, Server-Timing app + 800ms)`` across hold-resume hops
+  after the last wake. Waiter-release spread is at most
   2200ms. ``GET /timeline`` and load-participant handler checks use 3000ms.
   A short HTTP 503 on hold-resume is ``NOWAIT``
   overlap, not a missed wake.

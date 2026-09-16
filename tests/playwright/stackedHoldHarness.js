@@ -35,13 +35,14 @@ const SERIALIZED_SIGNUP_MAX_MS = 15000;
 const BLOCKING_REQUEST_MS = 4000;
 // Fast waiters leave in ~0.2–0.8s after last paint. Two or three waiters
 // leaving together can each spend ~1.1s rendering the next page; later POSTs
-// sit in the gunicorn listen-queue. Overlay linger is wake→end wallclock,
-// including that wait and a short NOWAIT 503 retry: it is real for the
-// participant. Compare it with max(2500, Server-Timing app + 800). Overlay
-// leave times among waiters (spread) stay at 2200ms. A missed wake still
-// cannot hide: tests silence the 2s safety poll and assert the resume is a
-// server wake. Summaries print queue~ so a long linger can be split into
-// handler vs pool occupancy; do not subtract queue from linger or spread.
+// sit in the gunicorn listen-queue. Overlay linger is last-wake→last-end
+// wallclock across stacked catch-up hops, including that wait and a short
+// NOWAIT 503 retry: it is real for the participant. Each hold-resume hop
+// after the last wake gets max(2500, Server-Timing app + 800); the linger
+// budget is the sum of those per-hop budgets. A missed wake still cannot
+// hide: tests silence the 2s safety poll and assert the resume is a server
+// wake. Summaries print queue~ so a long linger can be split into handler
+// vs pool occupancy; do not subtract queue from linger or spread.
 const PARTNER_HOLD_RELEASE_MAX_MS = 2500;
 const HOLD_RESUME_OVERLAY_SLACK_MS = 800;
 const WAITER_RELEASE_SPREAD_MAX_MS = 2200;
@@ -204,14 +205,21 @@ function overlayLingerBudgetMs(holdResumePosts) {
     : holdResumePosts
       ? [holdResumePosts]
       : [];
-  const postMs = posts.reduce(
-    (maxMs, post) => Math.max(maxMs, requestHandlerMs(post)),
-    0
-  );
-  return Math.max(
-    PARTNER_HOLD_RELEASE_MAX_MS,
-    postMs + HOLD_RESUME_OVERLAY_SLACK_MS
-  );
+  if (!posts.length) {
+    return PARTNER_HOLD_RELEASE_MAX_MS;
+  }
+  // Last-wake→last-end spans stacked catch-up hops. Each hop gets the
+  // original single-hold budget; summing them is what lets a waiter skip
+  // init then prepare without looking like a missed wake.
+  return posts.reduce((budget, post) => {
+    return (
+      budget +
+      Math.max(
+        PARTNER_HOLD_RELEASE_MAX_MS,
+        requestHandlerMs(post) + HOLD_RESUME_OVERLAY_SLACK_MS
+      )
+    );
+  }, 0);
 }
 
 function publishedWakeTokens(holdFrames) {

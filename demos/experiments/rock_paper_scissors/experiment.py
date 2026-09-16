@@ -17,17 +17,13 @@ logger = get_logger()
 PARTNER_WAIT_SECONDS = 300
 
 
-def _assert_arrived_without_hold(bot, expected_label):
-    """The last group member should skip the partner hold on the same request."""
-    bot.refresh_status()
-    page = bot.get_current_page()
-    assert not getattr(page, "is_timeline_hold", False)
-    assert bot.current_page_label == expected_label
-
-
-def _refresh_arrived_without_hold(bot, expected_label):
-    """Reload a partner who was advanced on the last arriver's request."""
-    _assert_arrived_without_hold(bot, expected_label)
+def _assert_on_page(bots, expected_label):
+    """Every bot has left its hold overlay and is on ``expected_label``."""
+    for bot in bots:
+        bot.refresh_status()
+        page = bot.get_current_page()
+        assert not getattr(page, "is_timeline_hold", False)
+        assert bot.current_page_label == expected_label
 
 
 class RockPaperScissorsTrialMaker(StaticTrialMaker):
@@ -157,18 +153,19 @@ class Exp(psynet.experiment.Experiment):
     test_mode = "serial"
 
     def test_serial_run_bots(self, bots: List[BotDriver]):
-        for bot in bots:
-            bot.refresh_status()
-            _assert_arrived_without_hold(bot, "choose_action")
+        # Last-arrival does not skip partner cursors. Trial-maker init/prepare
+        # holds may stay up as silent catch-up spinners until each bot resumes.
+        advance_past_wait_pages(bots)
+        _assert_on_page(bots, "choose_action")
 
-        assert bots[0].current_page_label == "choose_action"
         bots[0].take_page(response="rock")
-        assert bots[0].current_page_label == "wait"
+        bots[0].refresh_status()
+        assert getattr(bots[0].get_current_page(), "is_timeline_hold", False)
 
         assert bots[1].current_page_label == "choose_action"
         bots[1].take_page(response="paper")
-        _assert_arrived_without_hold(bots[1], "results")
-        _refresh_arrived_without_hold(bots[0], "results")
+        advance_past_wait_pages(bots)
+        _assert_on_page(bots, "results")
 
         assert (
             "You chose rock, your partner chose paper. You lost."
@@ -188,13 +185,13 @@ class Exp(psynet.experiment.Experiment):
 
         bots[0].take_page()
         bots[1].take_page()
-        _assert_arrived_without_hold(bots[1], "choose_action")
-        _refresh_arrived_without_hold(bots[0], "choose_action")
+        advance_past_wait_pages(bots)
+        _assert_on_page(bots, "choose_action")
 
         bots[0].take_page(response="scissors")
         bots[1].take_page(response="paper")
-        _assert_arrived_without_hold(bots[1], "results")
-        _refresh_arrived_without_hold(bots[0], "results")
+        advance_past_wait_pages(bots)
+        _assert_on_page(bots, "results")
 
         assert (
             "You chose scissors, your partner chose paper. You won!"
@@ -207,13 +204,13 @@ class Exp(psynet.experiment.Experiment):
 
         bots[0].take_page()
         bots[1].take_page()
-        _assert_arrived_without_hold(bots[1], "choose_action")
-        _refresh_arrived_without_hold(bots[0], "choose_action")
+        advance_past_wait_pages(bots)
+        _assert_on_page(bots, "choose_action")
 
         bots[0].take_page(response="scissors")
         bots[1].take_page(response="scissors")
-        _assert_arrived_without_hold(bots[1], "results")
-        _refresh_arrived_without_hold(bots[0], "results")
+        advance_past_wait_pages(bots)
+        _assert_on_page(bots, "results")
 
         assert (
             "You chose scissors, your partner chose scissors. You drew."
