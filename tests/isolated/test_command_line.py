@@ -4209,9 +4209,14 @@ def _patch_new_server_internals(
     return (
         patch("psynet.command_line._start_local_server_and_wait_for_ready", mock_start),
         patch("psynet.command_line._stop_server", mock_stop),
-        patch("psynet.command_line._run_performance_test_with_existing_server", mock_run_stage),
+        patch(
+            "psynet.command_line._run_performance_test_with_existing_server",
+            mock_run_stage,
+        ),
         patch("psynet.command_line._time_export", mock_export),
-        patch("psynet.command_line._load_server_url", return_value="http://localhost:5000"),
+        patch(
+            "psynet.command_line._load_server_url", return_value="http://localhost:5000"
+        ),
         mock_start,
         mock_stop,
         mock_run_stage,
@@ -4239,9 +4244,18 @@ class TestRunPerformanceTestWithNewServer:
         from psynet.command_line import _run_performance_test_with_new_server
 
         p_start, p_stop, p_run, p_export, p_url, ms, mst, mr, me = (
-            _patch_new_server_internals(mock_start, mock_stop, mock_run_stage, mock_export)
+            _patch_new_server_internals(
+                mock_start, mock_stop, mock_run_stage, mock_export
+            )
         )
-        with patch("psynet.command_line._check_port_available"), p_start, p_stop, p_run, p_export, p_url:
+        with (
+            patch("psynet.command_line._check_port_available"),
+            p_start,
+            p_stop,
+            p_run,
+            p_export,
+            p_url,
+        ):
             return _run_performance_test_with_new_server(
                 bot_counts=bot_counts or [5],
                 stagger=stagger,
@@ -4316,8 +4330,14 @@ class TestRunPerformanceTestWithNewServer:
         from psynet.command_line import _run_performance_test_with_new_server
 
         p_start, p_stop, p_run, p_export, p_url, *_ = _patch_new_server_internals()
-        with patch("psynet.command_line._check_port_available") as mock_check, \
-                p_start, p_stop, p_run, p_export, p_url:
+        with (
+            patch("psynet.command_line._check_port_available") as mock_check,
+            p_start,
+            p_stop,
+            p_run,
+            p_export,
+            p_url,
+        ):
             _run_performance_test_with_new_server(
                 bot_counts=[5, 10, 20],
                 stagger=0.1,
@@ -4335,8 +4355,17 @@ class TestRunPerformanceTestWithNewServer:
         p_start, p_stop, p_run, p_export, p_url, *_ = _patch_new_server_internals(
             mock_start=mock_start
         )
-        with patch("psynet.command_line._check_port_available", side_effect=Exception("port in use")), \
-                p_start, p_stop, p_run, p_export, p_url:
+        with (
+            patch(
+                "psynet.command_line._check_port_available",
+                side_effect=Exception("port in use"),
+            ),
+            p_start,
+            p_stop,
+            p_run,
+            p_export,
+            p_url,
+        ):
             with pytest.raises(Exception, match="port in use"):
                 _run_performance_test_with_new_server(
                     bot_counts=[5],
