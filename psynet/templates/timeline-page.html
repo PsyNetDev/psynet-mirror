@@ -1,51 +1,12 @@
 {% extends "macros.html" %}
 {% import "macros/browser-detect.html" as browser_detect with context %}
 {% from "macros/early_exit.html" import early_exit_modal %}
-
-{% macro template_data_script() %}
-    {# Shared bootstrap payload for both full-page loads and inplace fragment swaps. #}
-    <script id="psynet-template-data" type="application/json">
-        {{ {
-            "jsVars": js_vars,
-            "legacyJsLinks": legacy_js_links,
-            "legacyScripts": legacy_scripts,
-            "jsDependencies": js_dependencies,
-            "jsPageCode": js_page_code,
-            "jsPageModules": js_page_modules,
-            "page": page.__json__(participant),
-            "events": events,
-            "mediaRequests": page.media.data,
-            "trialProgressDisplayConfig": trial_progress_display_config,
-            "assignmentId": participant.assignment_id,
-            "participantId": participant.id,
-            "uniqueId": participant.unique_id,
-            "routes": {
-                "setLocaleParticipant": "/set_locale_participant/" ~ participant.id,
-                "participantOpenedDevtools": "/participant_opened_devtools/" ~ unique_id
-            },
-            "flags": {
-                "dynamicallyUpdateProgressBarAndReward": js_vars["dynamicallyUpdateProgressBarAndReward"],
-                "checkParticipantOpenedDevtools": config.check_participant_opened_devtools,
-                "lucidRecruitment": experiment.with_lucid_recruitment(),
-                "inplaceTimelineTransitions": inplace_timeline_transitions,
-                "legacyJsVarGlobals": config.legacy_js_var_globals
-            },
-            "strings": {
-                "commentStored": pgettext("timeline_problem", "Comment stored."),
-                "pageLoadNotReady": pgettext("timeline_problem", "Please wait for the page to load.") ~ " " ~ pgettext("timeline_problem", "Try again in a couple of seconds.")
-            },
-            "lucid": {
-                "noFocusTimeoutMs": ((experiment.recruiter.aggressive_no_focus_timeout_in_s if aggressive_termination_on_no_focus else experiment.recruiter.no_focus_timeout_in_s) * 1000) if experiment.with_lucid_recruitment() else 0,
-                "noFocusTimeoutReason": ("aggressive-no-focus-timeout-" if aggressive_termination_on_no_focus else "no-focus-timeout-") if experiment.with_lucid_recruitment() else "",
-                "overallTimeoutS": experiment.recruiter.termination_time_in_s if experiment.with_lucid_recruitment() else 0,
-                "secondsLeft": experiment.recruiter.time_until_termination_in_s(participant.assignment_id) if experiment.with_lucid_recruitment() else 0,
-                "inactivityTimeoutS": experiment.recruiter.inactivity_timeout_in_s if experiment.with_lucid_recruitment() else 0,
-                "inactivityTimeoutMs": (experiment.recruiter.inactivity_timeout_in_s * 1000) if experiment.with_lucid_recruitment() else 0,
-                "shouldWarnOnBeforeUnload": (not page.is_unity_page and not page.skip_beforeunload) if experiment.with_lucid_recruitment() else false
-            }
-        } | tojson }}
-    </script>
-{% endmacro %}
+{% from "macros/timeline-shell.html" import
+    template_data_script,
+    timeline_header,
+    timeline_hold_region,
+    timeline_footer
+    with context %}
 
 {% block stylesheets %}
     {# theme.html arrives via psynet_layout.html's stylesheets block. #}
@@ -60,6 +21,110 @@
         </style>
     {% endif %}
 
+    <style>
+        body.timeline-held #main-body {
+            pointer-events: none;
+        }
+
+        /* The indicator floats over the page so that starting or ending a hold
+           never reflows the participant's content. It clears the progress bar
+           and sits inside the top margin of #main-body when unscrolled. */
+        #timeline-hold-region {
+            align-items: center;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            justify-content: center;
+            left: 0;
+            padding: 0 1rem;
+            pointer-events: none;
+            position: fixed;
+            right: 0;
+            top: {% if config.show_progress_bar %}1.5rem{% else %}0.5rem{% endif %};
+            /* Below #early-exit-modal (1050) so Leave confirmation covers the
+               wait chip. Leave stays clickable during a hold. */
+            z-index: 1040;
+        }
+
+        #timeline-hold-region:empty {
+            display: none;
+        }
+
+        #psynet-timeline-hold-indicator {
+            align-items: center;
+            background: var(--bs-body-bg);
+            border: 1px solid var(--bs-border-color);
+            border-radius: 999px;
+            box-shadow: 0 0.25rem 1rem rgba(0, 0, 0, 0.12);
+            color: var(--bs-body-color);
+            display: flex;
+            gap: 0.6rem;
+            max-width: 100%;
+            padding: 0.65rem 1rem;
+            pointer-events: auto;
+        }
+
+        .psynet-timeline-hold-message {
+            align-items: center;
+            display: flex;
+            flex-direction: column;
+            gap: 0.15rem;
+            line-height: 1.25;
+            text-align: center;
+        }
+
+        .psynet-timeline-hold-progress {
+            font-size: 0.85em;
+            opacity: 0.8;
+            text-align: center;
+        }
+
+        /* Partner-ready notices sit on the progress bar (or the top of the
+           page when there is no bar). They do not reflow #main-body. */
+        #timeline-header {
+            position: relative;
+            z-index: 1040;
+        }
+
+        #timeline-header:has(#psynet-arrival-notice) #timeline-progress-label {
+            display: none;
+        }
+
+        #psynet-arrival-notice {
+            background: var(--bs-body-bg);
+            border: 1px solid var(--bs-border-color);
+            border-radius: 999px;
+            box-shadow: 0 0.25rem 1rem rgba(0, 0, 0, 0.14);
+            color: var(--bs-body-color);
+            font-size: 0.95rem;
+            font-weight: 500;
+            left: 50%;
+            line-height: 1.25;
+            max-width: calc(100% - 1.5rem);
+            overflow: hidden;
+            padding: 0.55rem 1.1rem;
+            pointer-events: auto;
+            position: absolute;
+            text-overflow: ellipsis;
+            top: 0.2rem;
+            transform: translateX(-50%);
+            white-space: nowrap;
+            z-index: 1;
+        }
+
+        @media (max-width: 720px) {
+            #psynet-arrival-notice {
+                font-size: 0.8rem;
+                padding: 0.28rem 0.8rem;
+            }
+
+            #timeline-header:not(:has(.progress)) #psynet-arrival-notice {
+                font-size: 0.75rem;
+                padding: 0.12rem 0.7rem;
+            }
+        }
+    </style>
+
     {% for x in css %}
         <style data-psynet-fragment-style="true">
             {{ x }}
@@ -72,23 +137,6 @@
 {% endblock %}
 
 {% block body %}
-    {% macro timeline_header() %}
-        <div id="timeline-header" class="header">
-            {% if config.show_progress_bar %}
-                <div class="progress">
-                    <div id="timeline-progress-bar" class="progress-bar" role="progressbar"
-                         aria-valuenow="{{ progress_percentage }}" aria-valuemin="0" aria-valuemax="100"
-                         style="width:{{ progress_percentage }}%"></div>
-                    {# Centred on the track rather than inside the fill, which is
-                       too narrow to hold it early on; participant.css puts it on
-                       a pill so one colour reads over both. #}
-                    <span id="timeline-progress-label" aria-hidden="true"
-                          data-progress="{{ progress_percentage }}%"></span>
-                </div>
-            {% endif %}
-        </div>
-    {% endmacro %}
-
     {% macro timeline_main_body() %}
         <div id="main-body" class="container psynet-surface" style="clear: both;"
              data-page-ready="false"
@@ -127,85 +175,12 @@
         </div>
     {% endmacro %}
 
-    {% macro media_download_bar() %}
-        {# Rides the footer's top edge when there is a footer, and the bottom
-           edge of the window when there is not; participant.css owns which.
-           Only the per-render width is set here. #}
-        <div id="media-download-progress-bar" style="width: {{ initial_download_progress }}%"></div>
-    {% endmacro %}
-
-    {% macro timeline_footer() %}
-        {# Omit the footer element when it is hidden or has no content.
-           Appearance and in-flow placement live in participant.css. #}
-        {% set show_comment_button = config.get("leave_comments_on_every_page") %}
-        {# Page.early_exit_available has already combined the page, recruiter and
-           config settings, and suppressed Leave for participants who are
-           finishing. #}
-        {% set footer_has_content = experiment.show_reward or show_comment_button or show_early_exit_button %}
-        {% if config.show_footer != false and footer_has_content %}
-        <nav id="footer" class="navbar">
-            {{ media_download_bar() }}
-                <div class="container py-2 d-flex flex-wrap align-items-center gap-2">
-                    {% if experiment.show_reward %}
-                        <span class="psynet-tooltip">
-                            <span id="reward-summary"
-                                  class="psynet-tooltip__trigger"
-                                  tabindex="0"
-                                  aria-describedby="reward-tooltip">
-                                <span class="visually-hidden">{{ pgettext("timeline", "Reward") }}: </span>
-                                <strong>{{ config.currency }}<span id="total-reward">{{ total_reward }}</span></strong>
-                                {# The readout has no border of its own, so this marks it as
-                                   explaining itself on hover or focus. #}
-                                <svg class="psynet-info" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false">
-                                    <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14Zm0-1.5A5.5 5.5 0 1 0 8 2.5a5.5 5.5 0 0 0 0 11ZM7.25 6.5a.75.75 0 1 1 1.5 0v4a.75.75 0 0 1-1.5 0v-4ZM8 3.75a.9.9 0 1 1 0 1.8.9.9 0 0 1 0-1.8Z"/>
-                                </svg>
-                            </span>
-                            <span id="reward-tooltip"
-                                  class="psynet-tooltip__content"
-                                  role="tooltip">
-                                {{ pgettext("timeline_reward", "Reward earned so far") }}:
-                                {{ config.currency }}<span id="time-reward">{{ time_reward }}</span>
-                                {{ pgettext("timeline_reward", "for time") }} +
-                                {{ config.currency }}<span id="performance-reward">{{ performance_reward }}</span>
-                                {{ pgettext("timeline_reward", "for performance") }}.
-                            </span>
-                        </span>
-                    {% endif %}
-
-                    {% if show_comment_button %}
-                        <button type="button" class="btn btn-light"
-                                id="comment-button">{{ pgettext("timeline", "Comment") }}</button>
-                    {% endif %}
-
-                    {% if show_early_exit_button %}
-                        <span class="psynet-tooltip psynet-tooltip--end">
-                            <button id="early-exit-button"
-                                    class="btn btn-danger psynet-tooltip__trigger"
-                                    aria-describedby="exit-tooltip">
-                                {{ pgettext("timeline_problem", "Leave") }}
-                            </button>
-                            <span id="exit-tooltip"
-                                  class="psynet-tooltip__content"
-                                  role="tooltip">
-                                {{ pgettext("timeline_problem", "Leave without finishing.") }}
-                            </span>
-                        </span>
-                    {% endif %}
-                </div>
-        </nav>
-        {% else %}
-            {# A standalone completed bar reads as a stray stripe. Footerless
-               pages only need the bar while they have media to download. #}
-            {% if page.media.num_files > 0 %}
-                {{ media_download_bar() }}
-            {% endif %}
-        {% endif %}
-    {% endmacro %}
-
     {% if partial_mode %}
-        {# Fragment response used only by inplace transitions. #}
+        {# Fallback when this file is the template root. Child templates that
+           extend timeline-page.html are rewritten to timeline-fragment.html. #}
         <div id="psynet-timeline-fragment">
             {{ timeline_header() }}
+            {{ timeline_hold_region() }}
             {{ timeline_main_body() }}
             {{ timeline_footer() }}
             {% if early_exit_offer_id %}
@@ -224,6 +199,7 @@
         {{ browser_detect.body() }}
         <div id="timeline-root">
             {{ timeline_header() }}
+            {{ timeline_hold_region() }}
             {{ timeline_main_body() }}
 
             {% block modals %}
@@ -299,6 +275,7 @@
     {% if not partial_mode %}
         {{ template_data_script() }}
     {% endif %}
+    <script src="{{ url_for('static', filename='scripts/websocket-channel.js') }}"></script>
     <script src="{{ url_for('static', filename='scripts/psynet.js') }}"></script>
 
     {# Last in the head block: everything it emits is valid head content. #}
