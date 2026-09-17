@@ -53,12 +53,29 @@ Check that the experiment folder has:
 
 ## Deployment records
 
-`DEPLOYMENT_LOG.md` is not a core PsyNet file. It is an emerging lab
-practice for making deployments recoverable by humans and agents. If a folder
-uses another deployment record, inspect that instead. If no record exists,
-recommend creating one.
+By default PsyNet maintains a `deployment-events.jsonl` file in `<experiment_directory>/data`.
+An entry is appended whenever an important PsyNet command is invoked, e.g. `psynet deploy`,
+`psynet export`, `psynet destroy`. It also stores comments that can be registered alongside
+PsyNet commands with the `--comment` argument, e.g.
 
-A useful deployment record should include:
+```shell
+psynet deploy ssh --comment "Trying again with fixed Python version"
+```
+
+It is also possible to store comments independently:
+
+```shell
+psynet comment "Oops I'm out of memory."
+```
+
+You should regularly use this commenting functionality to provide contextual history.
+
+`deployment-events.jsonl` is purposefully machine-readable, and can be easily queried to answer
+questions about the history of an experiment. Humans can view this history with `psynet history`.
+
+Alongside `deployment-events.jsonl`, we encourage the agents to maintain a human-readable
+`DEPLOYMENT_LOG.md` to record individual deployments. This document is more freeform and can
+contain more bespoke information, for example:
 
 - folder path
 - app name
