@@ -55,7 +55,6 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from consents_cococo.consent_cultural_foundation import (  # noqa: E402
     consent_irb_cultural_foundation,
-    debrief_page,
 )
 
 INITIAL_RECRUITMENT_SIZE = 1
@@ -147,10 +146,11 @@ class Exp(psynet.experiment.Experiment):
         ),
         trial_maker,
         InfoPage(
-            "Thank you. Your response was recorded successfully.",
-            time_estimate=5,
+            "Thank you. This was a short technical test of our recruitment "
+            "software, not a scientific study. Your response will not be used "
+            "as research data. Questions: computational.audition@gmail.com.",
+            time_estimate=15,
         ),
-        debrief_page(),
         SuccessfulEndPage(),
     )
 
