@@ -524,6 +524,7 @@ def test_browse_falls_back_to_static_when_not_a_tty(tmp_path, monkeypatch):
 def test_textual_history_app_filters_and_arrows():
     import asyncio
 
+    pytest.importorskip("textual")
     from psynet.deployment_history_app import DeploymentHistoryApp
 
     events = [

@@ -3911,6 +3911,8 @@ def test_pre_launch_stops_workers_before_prepare(monkeypatch, skip_protect):
 
 def test_prepare_does_not_refuse_other_database_clients(monkeypatch):
     """Idle pooled backends must not abort debug/deploy prepare."""
+    from contextlib import contextmanager
+
     from psynet import data as data_mod
     from psynet.command_line import _prepare
 
@@ -3922,6 +3924,14 @@ def test_prepare_does_not_refuse_other_database_clients(monkeypatch):
         idle_calls.append(kwargs)
         raise AssertionError("idle check must not run during prepare")
 
+    @contextmanager
+    def locked(*_args, **_kwargs):
+        yield
+
+    monkeypatch.setattr("psynet.command_line.local_database_lock", locked)
+    monkeypatch.setattr(
+        "psynet.command_line.protect_existing_database", lambda *_args, **_kwargs: None
+    )
     monkeypatch.setattr(data_mod, "assert_database_idle_for_replace", boom)
     monkeypatch.setattr(
         "psynet.command_line.assert_database_idle_for_replace",

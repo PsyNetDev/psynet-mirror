@@ -768,6 +768,76 @@ def test_protect_existing_database_discards_disposable_databases(
     create_snapshot.assert_not_called()
 
 
+def test_protect_existing_database_adopts_unmanaged_live(tmp_path, monkeypatch):
+    from psynet.local_deployment import (
+        DatabaseOwner,
+        Snapshot,
+        protect_existing_database,
+    )
+
+    adopted = Mock(spec=Snapshot)
+    events = []
+    create_snapshot = Mock(return_value=adopted)
+    monkeypatch.setattr(
+        "psynet.local_deployment.read_database_owner",
+        lambda: DatabaseOwner(
+            None,
+            None,
+            "gibbs-demo__mode=live__launch=2026-08-29--16-37-05",
+            "Gibbs demo",
+        ),
+    )
+    monkeypatch.setattr(
+        "psynet.local_deployment.append_deployment_event",
+        lambda *args, **kwargs: events.append((args, kwargs)),
+    )
+    monkeypatch.setattr("psynet.local_deployment.create_snapshot", create_snapshot)
+
+    result = protect_existing_database(tmp_path, "gibbs", adopt_existing=True)
+
+    assert result is adopted
+    assert events[0][0][1] == "database.adopted"
+    assert events[0][0][2] == "gibbs"
+    create_snapshot.assert_called_once_with(
+        tmp_path.resolve(),
+        "gibbs",
+        reason="adopt-existing",
+        deployment_id="gibbs-demo__mode=live__launch=2026-08-29--16-37-05",
+    )
+
+
+def test_deploy_local_passes_adopt_existing_to_protect(tmp_path, monkeypatch):
+    from psynet.command_line import psynet
+    from psynet.utils import working_directory
+
+    (tmp_path / "experiment.py").write_text("")
+    calls = []
+
+    @contextmanager
+    def unlocked(*_args):
+        yield
+
+    def protect(*_args, **kwargs):
+        calls.append(kwargs)
+        raise RuntimeError("stop-after-protect")
+
+    monkeypatch.setattr("psynet.command_line.local_database_lock", unlocked)
+    monkeypatch.setattr(
+        "psynet.services.ensure_local_services", Mock(return_value=True)
+    )
+    monkeypatch.setattr("psynet.command_line.protect_existing_database", protect)
+
+    with working_directory(tmp_path):
+        result = CliRunner().invoke(
+            psynet,
+            ["deploy", "local", "--id", "gibbs", "--adopt-existing"],
+        )
+
+    assert calls == [{"adopt_existing": True}]
+    assert result.exit_code != 0
+    assert "stop-after-protect" in result.output
+
+
 def test_protect_existing_database_ignore_unmanaged_does_not_discard_live(
     tmp_path, monkeypatch
 ):
