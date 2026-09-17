@@ -461,20 +461,20 @@ def test_local_database_lock_maps_permission_error(tmp_path, monkeypatch):
     from psynet.local_deployment import local_database_lock
 
     lock_path = tmp_path / "denied.lock"
-    lock_path.write_text("")
-    lock_path.chmod(0o000)
     monkeypatch.setattr(
         "psynet.local_deployment.local_database_lock_path",
         lambda: lock_path,
     )
-    try:
-        with pytest.raises(
-            RuntimeError, match="Cannot access the local PsyNet database lock"
-        ):
-            with local_database_lock(tmp_path, "gibbs"):
-                pass
-    finally:
-        lock_path.chmod(0o666)
+
+    def denied(*_args, **_kwargs):
+        raise PermissionError("denied")
+
+    monkeypatch.setattr("psynet.deployment_events.os.open", denied)
+    with pytest.raises(
+        RuntimeError, match="Cannot access the local PsyNet database lock"
+    ):
+        with local_database_lock(tmp_path, "gibbs"):
+            pass
 
 
 def test_local_database_lock_does_not_follow_symlink(tmp_path, monkeypatch):
