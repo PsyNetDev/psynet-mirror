@@ -1,0 +1,151 @@
+{# Shared timeline chrome for the full document and the inplace fragment.
+   Imported with context so macros see page, participant, config, and experiment. #}
+
+{% macro template_data_script() %}
+    {# Shared bootstrap payload for both full-page loads and inplace fragment swaps. #}
+    <script id="psynet-template-data" type="application/json">
+        {{ {
+            "jsVars": js_vars,
+            "legacyJsLinks": legacy_js_links,
+            "legacyScripts": legacy_scripts,
+            "jsDependencies": js_dependencies,
+            "jsPageCode": js_page_code,
+            "jsPageModules": js_page_modules,
+            "page": page.__json__(participant),
+            "events": events,
+            "mediaRequests": page.media.data,
+            "trialProgressDisplayConfig": trial_progress_display_config,
+            "assignmentId": participant.assignment_id,
+            "participantId": participant.id,
+            "uniqueId": participant.unique_id,
+            "routes": {
+                "setLocaleParticipant": "/set_locale_participant/" ~ participant.id,
+                "participantOpenedDevtools": "/participant_opened_devtools/" ~ unique_id
+            },
+            "flags": {
+                "dynamicallyUpdateProgressBarAndReward": js_vars["dynamicallyUpdateProgressBarAndReward"],
+                "checkParticipantOpenedDevtools": config.check_participant_opened_devtools,
+                "lucidRecruitment": experiment.with_lucid_recruitment(),
+                "inplaceTimelineTransitions": inplace_timeline_transitions,
+                "legacyJsVarGlobals": config.legacy_js_var_globals
+            },
+            "strings": {
+                "commentStored": pgettext("timeline_problem", "Comment stored."),
+                "pageLoadNotReady": pgettext("timeline_problem", "Please wait for the page to load.") ~ " " ~ pgettext("timeline_problem", "Try again in a couple of seconds.")
+            },
+            "lucid": {
+                "noFocusTimeoutMs": ((experiment.recruiter.aggressive_no_focus_timeout_in_s if aggressive_termination_on_no_focus else experiment.recruiter.no_focus_timeout_in_s) * 1000) if experiment.with_lucid_recruitment() else 0,
+                "noFocusTimeoutReason": ("aggressive-no-focus-timeout-" if aggressive_termination_on_no_focus else "no-focus-timeout-") if experiment.with_lucid_recruitment() else "",
+                "overallTimeoutS": experiment.recruiter.termination_time_in_s if experiment.with_lucid_recruitment() else 0,
+                "secondsLeft": experiment.recruiter.time_until_termination_in_s(participant.assignment_id) if experiment.with_lucid_recruitment() else 0,
+                "inactivityTimeoutS": experiment.recruiter.inactivity_timeout_in_s if experiment.with_lucid_recruitment() else 0,
+                "inactivityTimeoutMs": (experiment.recruiter.inactivity_timeout_in_s * 1000) if experiment.with_lucid_recruitment() else 0,
+                "shouldWarnOnBeforeUnload": (not page.is_unity_page and not page.skip_beforeunload) if experiment.with_lucid_recruitment() else false
+            }
+        } | tojson }}
+    </script>
+{% endmacro %}
+
+{% macro timeline_header() %}
+    <div id="timeline-header" class="header">
+        {% if config.show_progress_bar %}
+            <div class="progress">
+                <div id="timeline-progress-bar" class="progress-bar" role="progressbar"
+                     aria-valuenow="{{ progress_percentage }}" aria-valuemin="0" aria-valuemax="100"
+                     style="width:{{ progress_percentage }}%"></div>
+                {# Centred on the track rather than inside the fill, which is
+                   too narrow to hold it early on; participant.css puts it on
+                   a pill so one colour reads over both. #}
+                <span id="timeline-progress-label" aria-hidden="true"
+                      data-progress="{{ progress_percentage }}%"></span>
+            </div>
+        {% endif %}
+    </div>
+{% endmacro %}
+
+{% macro timeline_hold_region() %}
+    <div id="timeline-hold-region">
+        {% if page.is_timeline_hold %}
+            <div id="psynet-timeline-hold-indicator"
+                 role="status" aria-live="polite">
+                <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+                <span class="psynet-timeline-hold-message">{{ page.overlay_html(participant) | safe }}</span>
+            </div>
+        {% endif %}
+    </div>
+{% endmacro %}
+
+{% macro media_download_bar() %}
+    {# Rides the footer's top edge when there is a footer, and the bottom
+       edge of the window when there is not; participant.css owns which.
+       Only the per-render width is set here. #}
+    <div id="media-download-progress-bar" style="width: {{ initial_download_progress }}%"></div>
+{% endmacro %}
+
+{% macro timeline_footer() %}
+    {# Omit the footer element when it is hidden or has no content.
+       Appearance and in-flow placement live in participant.css. #}
+    {% set show_comment_button = config.get("leave_comments_on_every_page") %}
+    {# Page.early_exit_available has already combined the page, recruiter and
+       config settings, and suppressed Leave for participants who are
+       finishing. #}
+    {% set footer_has_content = experiment.show_reward or show_comment_button or show_early_exit_button %}
+    {% if config.show_footer != false and footer_has_content %}
+    <nav id="footer" class="navbar">
+        {{ media_download_bar() }}
+            <div class="container py-2 d-flex flex-wrap align-items-center gap-2">
+                {% if experiment.show_reward %}
+                    <span class="psynet-tooltip">
+                        <span id="reward-summary"
+                              class="psynet-tooltip__trigger"
+                              tabindex="0"
+                              aria-describedby="reward-tooltip">
+                            <span class="visually-hidden">{{ pgettext("timeline", "Reward") }}: </span>
+                            <strong>{{ config.currency }}<span id="total-reward">{{ total_reward }}</span></strong>
+                            {# The readout has no border of its own, so this marks it as
+                               explaining itself on hover or focus. #}
+                            <svg class="psynet-info" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false">
+                                <path d="M8 15A7 7 0 1 1 8 1a7 7 0 1 0 0 14Zm0-1.5A5.5 5.5 0 1 0 8 2.5a5.5 5.5 0 0 0 0 11ZM7.25 6.5a.75.75 0 1 1 1.5 0v4a.75.75 0 0 1-1.5 0v-4ZM8 3.75a.9.9 0 1 1 0 1.8.9.9 0 0 1 0-1.8Z"/>
+                            </svg>
+                        </span>
+                        <span id="reward-tooltip"
+                              class="psynet-tooltip__content"
+                              role="tooltip">
+                            {{ pgettext("timeline_reward", "Reward earned so far") }}:
+                            {{ config.currency }}<span id="time-reward">{{ time_reward }}</span>
+                            {{ pgettext("timeline_reward", "for time") }} +
+                            {{ config.currency }}<span id="performance-reward">{{ performance_reward }}</span>
+                            {{ pgettext("timeline_reward", "for performance") }}.
+                        </span>
+                    </span>
+                {% endif %}
+
+                {% if show_comment_button %}
+                    <button type="button" class="btn btn-light"
+                            id="comment-button">{{ pgettext("timeline", "Comment") }}</button>
+                {% endif %}
+
+                {% if show_early_exit_button %}
+                    <span class="psynet-tooltip psynet-tooltip--end">
+                        <button id="early-exit-button"
+                                class="btn btn-danger psynet-tooltip__trigger"
+                                aria-describedby="exit-tooltip">
+                            {{ pgettext("timeline_problem", "Leave") }}
+                        </button>
+                        <span id="exit-tooltip"
+                              class="psynet-tooltip__content"
+                              role="tooltip">
+                            {{ pgettext("timeline_problem", "Leave without finishing.") }}
+                        </span>
+                    </span>
+                {% endif %}
+            </div>
+    </nav>
+    {% else %}
+        {# A standalone completed bar reads as a stray stripe. Footerless
+           pages only need the bar while they have media to download. #}
+        {% if page.media.num_files > 0 %}
+            {{ media_download_bar() }}
+        {% endif %}
+    {% endif %}
+{% endmacro %}

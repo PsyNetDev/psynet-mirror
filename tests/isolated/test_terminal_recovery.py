@@ -75,6 +75,7 @@ def test_fatal_response_prepares_recovery_in_the_same_request(db_session):
     participant_id = participant.id
 
     event = MagicMock()
+    event.is_timeline_hold = False
     event.process_response.side_effect = ValueError("boom")
     experiment = get_experiment()
 
@@ -105,7 +106,7 @@ def test_fatal_response_prepares_recovery_in_the_same_request(db_session):
             client_ip_address="127.0.0.1",
         )
 
-    assert result == "json error"
+    assert result.flask_response == "json error"
     error_response.assert_called_once()
 
     db.session.commit()
@@ -214,6 +215,7 @@ def test_skipped_recovery_rejects_a_later_timeline_response(db_session):
     )
     db.session.commit()
     event = MagicMock()
+    event.is_timeline_hold = False
 
     with (
         Flask(__name__).test_request_context("/response"),
@@ -250,9 +252,8 @@ def test_skipped_recovery_rejects_a_later_timeline_response(db_session):
 
     event.process_response.assert_not_called()
     for result in (stale, matching):
-        payload = result.get_json()
-        assert payload["submission"] == "rejected"
-        assert "already ended" in payload["message"]
+        assert result.payload["submission"] == "rejected"
+        assert "already ended" in result.payload["message"]
 
 
 def test_prepare_commits_a_leftover_prepared_generic_recovery_plan(db_session):
