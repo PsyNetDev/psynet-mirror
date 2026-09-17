@@ -1,0 +1,1 @@
+Fixed the shared local database lock so it does not follow a symlink or report a permission problem as a concurrent experiment, and so the ten-minute snapshot timer still writes a backup when the response watermark cannot be read.

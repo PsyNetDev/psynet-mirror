@@ -58,6 +58,7 @@ logger = logging.getLogger("psynet")
 _database_lock_guard = threading.RLock()
 _database_lock_context = None
 _database_lock_depth = 0
+_database_already_protected = False
 
 
 @dataclass(frozen=True)
@@ -650,6 +651,16 @@ def _read_lock_holder(path: Path) -> Optional[dict]:
     return holder
 
 
+def lock_access_error(lock_path: Path) -> RuntimeError:
+    """Explain that the shared database lock file could not be opened."""
+    return RuntimeError(
+        f"Cannot access the local PsyNet database lock ({lock_path}). "
+        "Another user may own it, or the file is not writable. "
+        "If an experiment is running, stop it first; otherwise fix the "
+        "lock file permissions."
+    )
+
+
 def concurrent_deployment_error(lock_path: Optional[Path] = None) -> RuntimeError:
     """Explain that another local experiment must be stopped before starting this one."""
     message = (
@@ -699,7 +710,7 @@ def local_database_lock(
     wait_seconds: float = DATABASE_LOCK_WAIT_SECONDS,
 ):
     """Serialize destructive access to the shared local PostgreSQL database."""
-    global _database_lock_context, _database_lock_depth
+    global _database_lock_context, _database_lock_depth, _database_already_protected
 
     if local_id is not None:
         validate_local_id(local_id)
@@ -713,7 +724,7 @@ def local_database_lock(
             except BlockingIOError as error:
                 raise concurrent_deployment_error(path) from error
             except PermissionError as error:
-                raise concurrent_deployment_error(path) from error
+                raise lock_access_error(path) from error
             _database_lock_context = lock_context
             outermost = True
         _database_lock_depth += 1
@@ -742,6 +753,7 @@ def local_database_lock(
             if _database_lock_depth == 0 and _database_lock_context is not None:
                 lock_context = _database_lock_context
                 _database_lock_context = None
+                _database_already_protected = False
                 lock_context.__exit__(None, None, None)
     finally:
         _database_lock_guard.release()
@@ -788,9 +800,36 @@ def protect_existing_database(
     requested_local_id: str,
     *,
     adopt_existing: bool = False,
-    ignore_unmanaged: bool = False,
+    ignore_disposable: bool = False,
 ) -> Optional[Snapshot]:
-    """Snapshot unsaved database state before a destructive local launch."""
+    """Snapshot unsaved database state before a destructive local launch.
+
+    A second call under the same ``local_database_lock`` is a no-op. ``deploy
+    local`` already snapshotted or adopted before nested ``prepare`` runs.
+    """
+    global _database_already_protected
+
+    if _database_lock_depth > 0 and _database_already_protected:
+        return None
+    snapshot = _protect_existing_database(
+        requested_experiment_path,
+        requested_local_id,
+        adopt_existing=adopt_existing,
+        ignore_disposable=ignore_disposable,
+    )
+    if _database_lock_depth > 0:
+        _database_already_protected = True
+    return snapshot
+
+
+def _protect_existing_database(
+    requested_experiment_path: Path | str,
+    requested_local_id: str,
+    *,
+    adopt_existing: bool = False,
+    ignore_disposable: bool = False,
+) -> Optional[Snapshot]:
+    """Snapshot unsaved database state; callers must go through the public wrapper."""
     owner = read_database_owner()
     if owner is None:
         return None
@@ -798,9 +837,9 @@ def protect_existing_database(
     requested_path = Path(requested_experiment_path).resolve()
     if not owner.managed:
         # Unreadable identity may be a locked managed deployment; never discard
-        # it just because this path ignores ordinary unmanaged databases.
-        # ``ignore_unmanaged`` only skips disposable debug/prepare leftovers.
-        if ignore_unmanaged and owner.disposable:
+        # it just because this path ignores ordinary unmanaged leftovers.
+        # ``ignore_disposable`` only skips debug/prepare databases.
+        if ignore_disposable and owner.disposable:
             return None
         if owner.disposable and not adopt_existing:
             Console().print(

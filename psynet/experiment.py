@@ -1506,8 +1506,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         """Snapshot a managed local live run if new responses exist.
 
         The ten-minute timer would otherwise write identical archives during
-        long quiet stretches. Skip when the response table has not grown
-        since the last snapshot.
+        long quiet stretches. Skip when the response table is empty or has
+        not grown since the last snapshot. If the watermark cannot be read,
+        snapshot anyway rather than skip a backup.
         """
         info = cls._managed_local_live_deployment_info()
         if info is None:
@@ -1515,12 +1516,13 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         from .local_deployment import list_snapshots, read_response_watermark
 
         current = read_response_watermark()
-        if current is None or current <= 0:
+        if current == 0:
             return None
         snapshots = list_snapshots(info["local_experiment_path"], info["local_id"])
         latest = snapshots[-1] if snapshots else None
         if (
-            latest is not None
+            current is not None
+            and latest is not None
             and latest.max_response_id is not None
             and current <= latest.max_response_id
         ):

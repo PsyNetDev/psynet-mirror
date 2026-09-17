@@ -468,11 +468,32 @@ def test_local_database_lock_maps_permission_error(tmp_path, monkeypatch):
         lambda: lock_path,
     )
     try:
-        with pytest.raises(RuntimeError, match="already running"):
+        with pytest.raises(
+            RuntimeError, match="Cannot access the local PsyNet database lock"
+        ):
             with local_database_lock(tmp_path, "gibbs"):
                 pass
     finally:
         lock_path.chmod(0o666)
+
+
+def test_local_database_lock_does_not_follow_symlink(tmp_path, monkeypatch):
+    from psynet.local_deployment import local_database_lock
+
+    victim = tmp_path / "secret"
+    victim.write_text("keep")
+    victim.chmod(0o600)
+    lock_path = tmp_path / "local-deployment.lock"
+    lock_path.symlink_to(victim)
+    monkeypatch.setattr(
+        "psynet.local_deployment.local_database_lock_path",
+        lambda: lock_path,
+    )
+    with pytest.raises(RuntimeError, match="symlink"):
+        with local_database_lock(tmp_path, "gibbs"):
+            pass
+    assert victim.read_text() == "keep"
+    assert victim.stat().st_mode & 0o777 == 0o600
 
 
 def test_local_database_lock_does_not_remap_permission_error_inside_body(
@@ -648,7 +669,6 @@ def test_deploy_local_restores_selected_snapshot_and_saves_shutdown(
     assert calls["run"][1]["local_id"] == "gibbs"
     assert calls["run"][1]["resumed_from"] == 4
     assert calls["run"][1]["services_ready"] is True
-    assert calls["run"][1]["skip_protect"] is True
     ensure_services.assert_called_once_with(assume_yes=False, strict=True)
     assert calls["snapshot"][1]["reason"] == "shutdown"
     assert calls["snapshot"][1]["resumed_from"] == 4
@@ -806,6 +826,49 @@ def test_protect_existing_database_adopts_unmanaged_live(tmp_path, monkeypatch):
     )
 
 
+def test_protect_existing_database_skips_second_call_under_the_lock(
+    tmp_path, monkeypatch
+):
+    from psynet.local_deployment import (
+        DatabaseOwner,
+        local_database_lock,
+        protect_existing_database,
+    )
+
+    adopted = Mock()
+    create_snapshot = Mock(return_value=adopted)
+    monkeypatch.setattr(
+        "psynet.local_deployment.local_database_lock_path",
+        lambda: tmp_path / "local-deployment.lock",
+    )
+    monkeypatch.setattr(
+        "psynet.local_deployment.read_database_owner",
+        lambda: DatabaseOwner(
+            None,
+            None,
+            "gibbs-demo__mode=live__launch=2026-08-29--16-37-05",
+            "Gibbs demo",
+        ),
+    )
+    monkeypatch.setattr(
+        "psynet.local_deployment.append_deployment_event",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr("psynet.local_deployment.create_snapshot", create_snapshot)
+
+    with local_database_lock(tmp_path, "gibbs"):
+        assert (
+            protect_existing_database(tmp_path, "gibbs", adopt_existing=True) is adopted
+        )
+        assert (
+            protect_existing_database(tmp_path, "prepare", ignore_disposable=True)
+            is None
+        )
+    create_snapshot.assert_called_once()
+    with pytest.raises(RuntimeError, match="--adopt-existing"):
+        protect_existing_database(tmp_path, "gibbs")
+
+
 def test_deploy_local_passes_adopt_existing_to_protect(tmp_path, monkeypatch):
     from psynet.command_line import psynet
     from psynet.utils import working_directory
@@ -838,7 +901,7 @@ def test_deploy_local_passes_adopt_existing_to_protect(tmp_path, monkeypatch):
     assert "stop-after-protect" in result.output
 
 
-def test_protect_existing_database_ignore_unmanaged_does_not_discard_live(
+def test_protect_existing_database_ignore_disposable_does_not_discard_live(
     tmp_path, monkeypatch
 ):
     from psynet.local_deployment import DatabaseOwner, protect_existing_database
@@ -856,11 +919,11 @@ def test_protect_existing_database_ignore_unmanaged_does_not_discard_live(
     monkeypatch.setattr("psynet.local_deployment.create_snapshot", create_snapshot)
 
     with pytest.raises(RuntimeError, match="--adopt-existing"):
-        protect_existing_database(tmp_path, "yolo", ignore_unmanaged=True)
+        protect_existing_database(tmp_path, "yolo", ignore_disposable=True)
     create_snapshot.assert_not_called()
 
 
-def test_protect_existing_database_ignore_unmanaged_still_discards_debug(
+def test_protect_existing_database_ignore_disposable_still_discards_debug(
     tmp_path, monkeypatch
 ):
     from psynet.local_deployment import DatabaseOwner, protect_existing_database
@@ -877,7 +940,7 @@ def test_protect_existing_database_ignore_unmanaged_still_discards_debug(
     create_snapshot = Mock()
     monkeypatch.setattr("psynet.local_deployment.create_snapshot", create_snapshot)
 
-    assert protect_existing_database(tmp_path, "yolo", ignore_unmanaged=True) is None
+    assert protect_existing_database(tmp_path, "yolo", ignore_disposable=True) is None
     create_snapshot.assert_not_called()
 
 
@@ -897,7 +960,7 @@ def test_protect_existing_database_never_discards_an_unreadable_database(
     with pytest.raises(RuntimeError, match="identity unreadable"):
         protect_existing_database(tmp_path, "yolo")
     with pytest.raises(RuntimeError, match="identity unreadable"):
-        protect_existing_database(tmp_path, "yolo", ignore_unmanaged=True)
+        protect_existing_database(tmp_path, "yolo", ignore_disposable=True)
 
 
 def test_protect_existing_database_skips_clean_participant_finish(

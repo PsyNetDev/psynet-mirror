@@ -302,7 +302,7 @@ def _prepare(archive=None):
         protect_existing_database(
             Path.cwd(),
             "prepare",
-            ignore_unmanaged=True,
+            ignore_disposable=True,
         )
         return _prepare_unlocked(archive)
 
@@ -511,7 +511,6 @@ def _run_local(
     local_id=None,
     resumed_from=None,
     services_ready=False,
-    skip_protect=False,
 ):
     with local_database_lock(Path.cwd(), local_id):
         return _run_local_unlocked(
@@ -525,7 +524,6 @@ def _run_local(
             local_id,
             resumed_from,
             services_ready,
-            skip_protect=skip_protect,
         )
 
 
@@ -540,7 +538,6 @@ def _run_local_unlocked(
     local_id=None,
     resumed_from=None,
     services_ready=False,
-    skip_protect=False,
 ):
     """
     Debug the experiment locally (this should normally be your first choice).
@@ -565,7 +562,6 @@ def _run_local_unlocked(
         local_id=local_id,
         resumed_from=resumed_from,
         services_ready=services_ready,
-        skip_protect=skip_protect,
     )
     _cleanup_before_debug()
 
@@ -884,23 +880,15 @@ def run_prepare_in_subprocess():
     run_subprocess_with_live_output(prepare_cmd)
 
 
-def _prepare_after_stopping_local_workers(ctx, archive, *, skip_protect=False):
+def _prepare_after_stopping_local_workers(ctx, archive):
     """Stop leftover local debug workers, then reset the local database.
 
     Every launch path runs ``prepare`` against this machine's Postgres, so
     leftover ``dallinger_heroku_*`` backends must be gone first. Chrome
     windows are left alone here so a remote deploy does not close the
     author's browser.
-
-    ``skip_protect`` is for ``psynet deploy local``, which already snapshotted
-    or adopted the live database under the shared lock. Nested ``prepare``
-    would otherwise re-check that still-unmanaged database and abort.
-    The caller must already hold ``local_database_lock``.
     """
     kill_psynet_worker_processes()
-    if skip_protect:
-        _prepare_unlocked(archive)
-        return
     ctx.invoke(prepare, archive=archive)
 
 
@@ -1382,7 +1370,6 @@ def _pre_launch(
     local_id=None,
     resumed_from=None,
     services_ready=False,
-    skip_protect=False,
 ):
     from .experiment import get_experiment
 
@@ -1448,7 +1435,7 @@ def _pre_launch(
     if config.get("check_dallinger_version"):
         check_installed_dallinger_version_is_recommended()
 
-    _prepare_after_stopping_local_workers(ctx, archive, skip_protect=skip_protect)
+    _prepare_after_stopping_local_workers(ctx, archive)
 
     _forget_tables_defined_in_experiment_directory()
 
@@ -1600,7 +1587,6 @@ def deploy__local(
                         else None
                     ),
                     services_ready=True,
-                    skip_protect=True,
                 )
             except SystemExit as error:
                 if error.code != 0:

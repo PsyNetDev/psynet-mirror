@@ -32,9 +32,10 @@ start another experiment. Snapshots are private, non-anonymized recovery
 files for resuming on the same machine. They do not include assets or
 replace a full :ref:`data export <data>`.
 
-The ten-minute timer does not write an archive when no new row has been
-added to the ``response`` table. Long-running experiments therefore do not
-accumulate identical backups during quiet periods.
+The ten-minute timer does not write an archive when the ``response`` table
+is empty or has not grown. If the watermark cannot be read, the timer still
+writes a snapshot rather than skipping a backup. Long-running experiments
+therefore do not accumulate identical backups during quiet periods.
 
 Finish-time snapshots are on by default for managed local live deployments.
 Disable them in ``config.txt`` or ``Experiment.config`` if they are too costly

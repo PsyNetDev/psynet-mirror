@@ -13,6 +13,7 @@ before writing a new object.
 
 from __future__ import annotations
 
+import errno
 import json
 import logging
 import os
@@ -62,21 +63,46 @@ def validate_local_id(value: str) -> str:
     return value
 
 
+def _open_unfollowed_lock(path: Path):
+    """Open ``path`` without following a final symlink component."""
+    flags = os.O_RDWR | os.O_CREAT
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    if nofollow:
+        flags |= nofollow
+    try:
+        fd = os.open(path, flags, 0o666)
+    except OSError as error:
+        if getattr(error, "errno", None) == errno.ELOOP:
+            raise RuntimeError(
+                "Refusing to follow a symlink at the local database lock path "
+                f"({path})."
+            ) from error
+        raise
+    try:
+        return os.fdopen(fd, "a+")
+    except Exception:
+        os.close(fd)
+        raise
+
+
 @contextmanager
 def file_lock(path: Path, *, blocking: bool = True, world_writable: bool = False):
     """Lock ``path`` for the duration of the context.
 
     ``world_writable`` is for the shared local-database lock in ``/tmp`` so
-    every OS user on the machine can serialize PostgreSQL access. Snapshot and
-    history locks stay at the creating process's umask.
+    every OS user on the machine can serialize PostgreSQL access. Those locks
+    are opened with ``O_NOFOLLOW`` and ``fchmod`` so a symlink cannot retarget
+    the chmod. Snapshot and history locks stay at the creating process's umask.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
-    file = path.open("a+")
     if world_writable:
+        file = _open_unfollowed_lock(path)
         try:
-            path.chmod(0o666)
+            os.fchmod(file.fileno(), 0o666)
         except OSError:
             logger.warning("Could not make lock file world-writable: %s", path)
+    else:
+        file = path.open("a+")
     using_fallback = False
     try:
         try:

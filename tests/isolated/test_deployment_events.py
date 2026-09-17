@@ -628,6 +628,28 @@ def test_periodic_local_snapshot_skips_when_no_new_responses(monkeypatch):
     create.assert_not_called()
 
 
+def test_periodic_local_snapshot_skips_when_response_table_empty(monkeypatch):
+    from psynet.experiment import Experiment
+
+    monkeypatch.setattr(
+        "psynet.experiment.Experiment._managed_local_live_deployment_info",
+        staticmethod(
+            lambda: {
+                "local_experiment_path": "/tmp/exp",
+                "local_id": "gibbs",
+                "deployment_id": "launch-1",
+            }
+        ),
+    )
+    monkeypatch.setattr("psynet.local_deployment.read_response_watermark", lambda: 0)
+    create = Mock()
+    monkeypatch.setattr(
+        "psynet.experiment.Experiment.create_local_deployment_snapshot", create
+    )
+    assert Experiment.maybe_create_periodic_local_snapshot() is None
+    create.assert_not_called()
+
+
 def test_periodic_local_snapshot_writes_when_responses_grew(monkeypatch):
     from psynet.experiment import Experiment
     from psynet.local_deployment import Snapshot
@@ -644,6 +666,45 @@ def test_periodic_local_snapshot_writes_when_responses_grew(monkeypatch):
         ),
     )
     monkeypatch.setattr("psynet.local_deployment.read_response_watermark", lambda: 9)
+    latest = Snapshot(
+        sequence=2,
+        path=None,
+        metadata_path=None,
+        created_at="2026-09-15T12:00:00Z",
+        reason="periodic",
+        deployment_id="launch-1",
+        parent_sequence=1,
+        participant_count=1,
+        sha256="abc",
+        max_response_id=4,
+    )
+    monkeypatch.setattr(
+        "psynet.local_deployment.list_snapshots", lambda *_args, **_kwargs: [latest]
+    )
+    monkeypatch.setattr(
+        "psynet.experiment.Experiment.create_local_deployment_snapshot",
+        Mock(return_value=snapshot),
+    )
+    assert Experiment.maybe_create_periodic_local_snapshot() is snapshot
+    Experiment.create_local_deployment_snapshot.assert_called_once_with("periodic")
+
+
+def test_periodic_local_snapshot_writes_when_watermark_unreadable(monkeypatch):
+    from psynet.experiment import Experiment
+    from psynet.local_deployment import Snapshot
+
+    snapshot = Mock()
+    monkeypatch.setattr(
+        "psynet.experiment.Experiment._managed_local_live_deployment_info",
+        staticmethod(
+            lambda: {
+                "local_experiment_path": "/tmp/exp",
+                "local_id": "gibbs",
+                "deployment_id": "launch-1",
+            }
+        ),
+    )
+    monkeypatch.setattr("psynet.local_deployment.read_response_watermark", lambda: None)
     latest = Snapshot(
         sequence=2,
         path=None,
