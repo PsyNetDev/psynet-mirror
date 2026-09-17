@@ -1,1 +1,0 @@
-Synchronized trial makers accept ``sync_group_wait_content`` so their own grouping waits use the same overlay copy as the experiment's grouper and ``GroupBarrier`` waits. The rock-paper-scissors, chatroom, create-and-rate, and Gibbs sync demos now pass that argument.

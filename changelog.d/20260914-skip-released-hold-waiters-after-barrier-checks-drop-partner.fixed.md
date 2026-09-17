@@ -1,1 +1,0 @@
-Last-arrival barrier checks release waiters without advancing those partners' timeline cursors. Partners leave on overlay wake. The last arriver still self-skips the hold they just released. The 0.5 s poller still skips waiters it released in that tick.

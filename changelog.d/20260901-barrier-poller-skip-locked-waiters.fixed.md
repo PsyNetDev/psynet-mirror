@@ -1,1 +1,0 @@
-Barrier and synchronization pollers now skip locked waiters and groups instead of blocking unrelated participants. Deferred barriers are retried once per sweep, and sync-group recounts use short isolated transactions.

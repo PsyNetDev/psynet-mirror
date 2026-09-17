@@ -1,1 +1,0 @@
-Group barriers now release as soon as the last group member arrives, so that participant skips the wait indicator on the default hold path. If a partner's wait row is locked, the existing 0.5-second barrier check still finishes the release.

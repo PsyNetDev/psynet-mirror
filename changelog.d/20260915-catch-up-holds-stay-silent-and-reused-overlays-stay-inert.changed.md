@@ -1,1 +1,0 @@
-A hold consumed immediately after skipping a released wait stays a silent spinner for that visit, whether the skip was last-arrival self-skip, overlay resume, GET recovery, or a poller skip. The overlay chip and websocket are reused across stacked holds, and a reused chip keeps the preserved page inert.

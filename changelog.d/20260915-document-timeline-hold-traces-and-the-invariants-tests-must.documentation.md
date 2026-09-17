@@ -1,1 +1,0 @@
-Documented last-arrival timeline-hold traces and the invariants tests must witness, with each cited test labeled as protocol, retry-unit, or unit. Protocol witnesses may use process_response on live barrier state.
