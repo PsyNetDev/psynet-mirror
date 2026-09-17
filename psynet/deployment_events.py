@@ -7,6 +7,8 @@ with ``psynet comment``, and browse the log with ``psynet history``.
 
 The JSONL schema is the integration surface for a future Dallinger provisioning
 hook: one object per line with ``schema_version``, ``at``, and ``event``.
+A crash mid-write is repaired on the next append by ending the incomplete line
+before writing a new object.
 """
 
 from __future__ import annotations
@@ -90,6 +92,30 @@ def file_lock(path: Path, *, blocking: bool = True):
         file.close()
 
 
+def _write_all(descriptor: int, data: bytes) -> None:
+    """Write ``data`` to ``descriptor``, raising if the write stalls."""
+    remaining = memoryview(data)
+    while remaining:
+        written = os.write(descriptor, remaining)
+        if written == 0:
+            raise OSError("Failed to append deployment event.")
+        remaining = remaining[written:]
+
+
+def _terminate_incomplete_jsonl_tail(descriptor: int) -> bool:
+    """End a partial last line so the next JSON object starts on a new line.
+
+    Returns whether a newline was written.
+    """
+    size = os.fstat(descriptor).st_size
+    if size == 0:
+        return False
+    if os.pread(descriptor, 1, size - 1) == b"\n":
+        return False
+    _write_all(descriptor, b"\n")
+    return True
+
+
 def append_deployment_event(
     experiment_path: Path | str,
     event: str,
@@ -114,14 +140,10 @@ def append_deployment_event(
         json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n"
     ).encode()
     with file_lock(path.parent / ".deployment-events.lock"):
-        descriptor = os.open(path, os.O_APPEND | os.O_CREAT | os.O_WRONLY, 0o600)
+        descriptor = os.open(path, os.O_APPEND | os.O_CREAT | os.O_RDWR, 0o600)
         try:
-            remaining = memoryview(line)
-            while remaining:
-                written = os.write(descriptor, remaining)
-                if written == 0:
-                    raise OSError("Failed to append deployment event.")
-                remaining = remaining[written:]
+            _terminate_incomplete_jsonl_tail(descriptor)
+            _write_all(descriptor, line)
             os.fsync(descriptor)
         finally:
             os.close(descriptor)
@@ -225,17 +247,17 @@ def load_deployment_events(
                 logger.warning(
                     "Deployment event log %s ends with a truncated line", path
                 )
-                events.append(
-                    {
-                        "schema_version": 1,
-                        "event": "log.truncated",
-                        "error": f"Truncated event at {path}:{line_number}",
-                    }
-                )
             else:
                 logger.warning(
                     "Skipping malformed deployment event at %s:%s", path, line_number
                 )
+            events.append(
+                {
+                    "schema_version": 1,
+                    "event": "log.truncated",
+                    "error": f"Truncated event at {path}:{line_number}",
+                }
+            )
             continue
         if not isinstance(payload, dict):
             logger.warning(

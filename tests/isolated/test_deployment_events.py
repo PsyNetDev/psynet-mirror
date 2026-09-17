@@ -83,6 +83,31 @@ def test_load_deployment_events_records_truncated_tail(tmp_path):
     assert "Truncated event" in events[-1]["error"]
 
 
+def test_append_starts_a_new_line_after_a_truncated_tail(tmp_path):
+    from psynet.deployment_events import (
+        append_deployment_event,
+        deployment_event_log,
+        load_deployment_events,
+    )
+
+    append_deployment_event(tmp_path, "deploy.succeeded", argv=["psynet", "deploy"])
+    path = deployment_event_log(tmp_path)
+    path.write_bytes(path.read_bytes() + b'{"event":"deploy.fai')
+
+    append_deployment_event(tmp_path, "comment", text="after crash")
+
+    names = [event["event"] for event in load_deployment_events(tmp_path)]
+    assert names[0] == "deploy.succeeded"
+    assert "log.truncated" in names
+    assert names[-1] == "comment"
+    assert names.index("log.truncated") < names.index("comment")
+
+    last_line = path.read_bytes().splitlines()[-1]
+    payload = json.loads(last_line)
+    assert payload["event"] == "comment"
+    assert payload["text"] == "after crash"
+
+
 def test_comment_is_free_floating(tmp_path):
     from psynet.command_line import psynet
     from psynet.utils import working_directory
