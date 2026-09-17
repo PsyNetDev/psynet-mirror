@@ -391,6 +391,11 @@ General
 ``show_progress_bar`` *bool* |psynet-icon|
     If ``True`` (default), then a progress bar is displayed at the top of the page.
 
+``timeline_lock_timeout_seconds`` *float* |psynet-icon|
+    Maximum time participant-facing timeline writes wait for a database lock
+    before returning a temporary-busy response. Set to ``0`` to disable the
+    timeout. Default: ``5.0``.
+
 ``whimsical`` *bool* |dlgr-icon|
     When set to True, this config variable enables 'whimsical' tone on Dallinger email notifications
     to the experimenter. When ``False`` (default), the notifications have a matter-of-fact tone.
@@ -872,6 +877,13 @@ Heroku
     When given the default value of ``auto`` the number of worker processes will be calculated
     using the formula ``round(multiprocessing.cpu_count() * worker_multiplier)) + 1`` by making use
     of the ``worker_multiplier`` config variable. Default: ``auto``.
+    ``psynet debug --legacy`` currently starts four workers by default rather
+    than ``auto``. Ordinary ``psynet debug local`` is the Flask reloader (one
+    process); there is no worker-count flag on that path. Playwright stacked-hold
+    tests set
+    ``PSYNET_LEGACY_DEBUG_GUNICORN_THREADS`` to the number of sessions plus two
+    spares so concurrent last-arrival ``GET /timeline`` can overlap every waiter
+    hold-resume POST without starving a waiter Redis subscribe.
 
 ``worker_multiplier`` *float* |dlgr-icon|
     Multiplier used to determine the number of gunicorn web worker processes

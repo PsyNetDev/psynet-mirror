@@ -279,6 +279,13 @@ class AsyncProcess(SQLBase, SQLMixin):
                 process.fail(f"Exception in asynchronous process: {repr(err)}")
 
         finally:
+            if process is not None and process.participant_id is not None:
+                from psynet.timeline_hold import _queue_timeline_hold_wake
+
+                _queue_timeline_hold_wake(
+                    process.participant_id,
+                    reason="async_process_finished",
+                )
             db.session.commit()
 
     @classmethod
@@ -428,6 +435,13 @@ class WorkerAsyncProcess(AsyncProcess):
             p.fail(
                 "Asynchronous process timed out",
             )
+            if p.participant_id is not None:
+                from psynet.timeline_hold import _queue_timeline_hold_wake
+
+                _queue_timeline_hold_wake(
+                    p.participant_id,
+                    reason="async_process_timed_out",
+                )
             db.session.commit()
 
     @property
@@ -439,6 +453,13 @@ class WorkerAsyncProcess(AsyncProcess):
         self.pending = False
         self.fail("Cancelled asynchronous process")
         self.redis_job.cancel()
+        if self.participant_id is not None:
+            from psynet.timeline_hold import _queue_timeline_hold_wake
+
+            _queue_timeline_hold_wake(
+                self.participant_id,
+                reason="async_process_cancelled",
+            )
         db.session.commit()
 
     # @classmethod

@@ -41,6 +41,8 @@ def test_experiment_passes_client_ip_to_legacy_page_response_override(monkeypatc
         pass
 
     class LegacyPage:
+        is_timeline_hold = False
+
         def process_response(
             self,
             raw_answer,

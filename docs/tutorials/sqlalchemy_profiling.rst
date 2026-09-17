@@ -84,5 +84,5 @@ Developer investigation notes
 Framework contributors should also read the
 :doc:`SQLAlchemy performance investigation notes <../developer/sqlalchemy_performance>`.
 They record profiling methodology, retained optimization patterns, approaches
-that were considered but rejected, and conditions for revisiting those
-decisions.
+that were considered but rejected, conditions for revisiting those
+decisions, and the current :ref:`last-arrival barrier SQL budgets <barrier-arrival-sql-budgets>`.

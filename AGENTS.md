@@ -173,6 +173,23 @@ When adding or updating Playwright E2E tests, follow these rules to reduce CI fl
     - For `VideoPrompt`, verify `video#prompt` playback behavior.
     - Align assertions with how that step is implemented in experiment/template code.
 
+13. **Retry evaluate after a hold-resume reload**:
+    - A legacy hold can navigate while the test is attaching the resume probe.
+    - Retry `page.evaluate` after load; if the hold chip is already gone, treat it as a cleared hold.
+    - Playwright `toHaveCount` can fail with `Received: undefined` when the document reloads mid-wait. Treat that as a destroyed execution context, not a missing hold chip.
+
+14. **Do not treat a slow approved hold-resume POST as a missed wake**:
+    - Overlay linger is last-wake→last-end wallclock, including gunicorn listen-queue.
+    - Log linger in summaries. Fail only if linger or after-release exceeds 30000ms (hung overlay vs the 120s step timeout). Do not subtract `queue~` from linger. Print `queue~` in summaries so a long wait can be split into handler time versus pool occupancy.
+    - Keep asserting the resume is a server wake, not a safety poll.
+    - If a legacy reload drops in-page wake clocks, a published wake token plus an approved hold-resume POST still counts.
+    - Use ``Server-Timing`` ``app`` versus browser wall time to split handler time from worker-pool queueing.
+    - Last-arrival ``GET /timeline`` can 302 after ``page_uuid`` advances; first-paint waits for the 200 HTML body.
+    - Clock waiter resume against the last arriver's grouping request finish, not against a slow legacy client paint.
+    - Do not apply the GET `/timeline` 3000ms handler budget to `POST /participant`. Dallinger `@db.serialized` serializes concurrent signups and retries with expovariate sleep; that wall time is not last-arrival GET work. Overlapping `consent→timeline` uses the 15000ms serialized-signup budget; sequential starts still have 6000ms.
+    - Playwright CI uses ``psynet debug --legacy`` (gunicorn). Hold tests set workers to the session count plus two spares so concurrent last-arrival GET can overlap every waiter hold-resume POST without starving a waiter Redis subscribe. Both jobs use gunicorn; the default vs legacy job is in-place vs full reload. CI does not exercise ordinary ``psynet debug local`` (one Flask process; there is no worker-count flag on that path).
+    - A short HTTP 503 on hold-resume is the ``NOWAIT`` busy retry when those requests hit the same participant row; fail only if that busy retry lasts 500ms or more. After the in-request retry, a delayed ``queued hold wake`` must run rather than waiting for the silenced safety poll or the hold timeout.
+
 ## Automatic code review
 
 Before finalizing a merge request, prompt the user to run an automatic code

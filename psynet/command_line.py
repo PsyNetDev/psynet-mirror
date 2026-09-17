@@ -45,6 +45,7 @@ from psynet.version import (
 from . import deployment_info
 from .bootstrap_commands import register_bootstrap_commands
 from .data import (
+    DatabaseInUseError,
     drop_all_db_tables,
     ingest_zip,
     init_db,
@@ -836,7 +837,11 @@ def sql_profiled_command(func):
 @debug.command("local")
 @click.option("--docker", is_flag=True, help="Docker mode.")
 @click.option("--archive", default=None, help="Optional path to an experiment archive.")
-@click.option("--legacy", is_flag=True, help="Legacy mode.")
+@click.option(
+    "--legacy",
+    is_flag=True,
+    help="Use gunicorn instead of Flask auto-reload (default four worker processes).",
+)
 @click.option("--no-browsers", is_flag=True, help="Skip opening browsers.")
 @_add_sql_profile_options
 @click.pass_context
@@ -875,11 +880,27 @@ def run_prepare_in_subprocess():
     run_subprocess_with_live_output(prepare_cmd)
 
 
-def _cleanup_before_debug():
-    kill_psynet_worker_processes()
+def _prepare_after_stopping_local_workers(ctx, archive):
+    """Stop leftover local debug workers, then reset the local database.
 
+    Every launch path runs ``prepare`` against this machine's Postgres, so
+    leftover ``dallinger_heroku_*`` backends must be gone first. Chrome
+    windows are left alone here so a remote deploy does not close the
+    author's browser.
+    """
+    kill_psynet_worker_processes()
+    ctx.invoke(prepare, archive=archive)
+
+
+def _stop_leftover_debug_processes():
+    """Stop leftover local debug workers and Chrome windows."""
+    kill_psynet_worker_processes()
     if not os.getenv("KEEP_OLD_CHROME_WINDOWS_IN_DEBUG_MODE"):
         kill_psynet_chrome_processes()
+
+
+def _cleanup_before_debug():
+    _stop_leftover_debug_processes()
 
     # This is important for resetting the state before _debug_legacy;
     # otherwise `dallinger verify` throws an error.
@@ -935,6 +956,43 @@ def run_pre_auto_reload_checks():
             )
 
 
+# Dallinger ``threads`` is gunicorn worker *processes*. Last-arrival GET
+# /timeline occupies one process while each waiting partner POSTs hold-resume.
+# A group of size *n* therefore wants *n* workers at the wake, or extra waiters
+# sit in the listen queue. Concurrent last arrivals occupy two GET workers at
+# once. Blocking SQL on a gevent worker also starves that worker's Redis listen
+# greenlet, so Playwright hold tests use *n* + 2: one spare keeps a waiter
+# subscribe off the last-arrival SQL worker, and the second spare covers the
+# overlapping GET. That is closer to deploy (``threads=auto``) than a single
+# worker. One worker saved ~1s of startup in 2022; local gunicorn does not pay
+# a Heroku dyno cost, and performance-test / Playwright duration checks need
+# overlap rather than serialized queueing. The default covers the largest
+# stacked-hold group in that suite (four) for interactive debug; tests override
+# with session count plus two.
+LEGACY_DEBUG_GUNICORN_THREADS = "4"
+LEGACY_DEBUG_GUNICORN_THREADS_ENV = "PSYNET_LEGACY_DEBUG_GUNICORN_THREADS"
+
+
+def _legacy_debug_gunicorn_threads():
+    """Return gunicorn worker processes for ``psynet debug --legacy``."""
+    raw = os.environ.get(LEGACY_DEBUG_GUNICORN_THREADS_ENV)
+    if raw is None or str(raw).strip() == "":
+        return LEGACY_DEBUG_GUNICORN_THREADS
+    try:
+        workers = int(raw)
+    except ValueError as err:
+        raise click.UsageError(
+            f"{LEGACY_DEBUG_GUNICORN_THREADS_ENV} must be a positive integer, "
+            f"got {raw!r}."
+        ) from err
+    if workers < 1:
+        raise click.UsageError(
+            f"{LEGACY_DEBUG_GUNICORN_THREADS_ENV} must be a positive integer, "
+            f"got {raw!r}."
+        )
+    return str(workers)
+
+
 def _debug_legacy(ctx, archive, no_browsers):
     if archive:
         raise click.UsageError(
@@ -952,7 +1010,7 @@ def _debug_legacy(ctx, archive, no_browsers):
             bot=False,
             proxy=None,
             no_browsers=no_browsers,
-            exp_config={"threads": "1"},
+            exp_config={"threads": _legacy_debug_gunicorn_threads()},
         )
     finally:
         db.session.commit()
@@ -1093,7 +1151,8 @@ def kill_psynet_worker_processes(wait_timeout=1):
     reported and otherwise ignored: raising here previously broke every local
     launch after the first whenever one such process lingered. Only processes
     that were signalled are waited for, so leftovers cannot slow every launch
-    down.
+    down. Launch paths including remote deploy do this so a stale
+    ``dallinger_heroku_*`` backend cannot hold the shared Postgres database.
     """
     processes = [
         process
@@ -1102,8 +1161,23 @@ def kill_psynet_worker_processes(wait_timeout=1):
     ]
     if len(processes) == 0:
         return True
+    pids = []
+    for process in processes:
+        try:
+            pids.append(str(process.pid))
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+    pid_list = ", ".join(pids) if pids else "unknown"
+    logger.warning(
+        "Stopping %s leftover local PsyNet worker process(es) (pids %s). "
+        "Launch paths including remote deploy do this so a stale "
+        "dallinger_heroku_* backend cannot hold the shared Postgres database.",
+        len(processes),
+        pid_list,
+    )
     log(
-        f"Found {len(processes)} remaining PsyNet worker process(es), terminating them now."
+        f"Found {len(processes)} remaining PsyNet worker process(es) "
+        f"(pids {pid_list}), terminating them now."
     )
     signalled = [process for process in processes if safely_kill_process(process)]
     unstoppable = [process for process in processes if process not in signalled]
@@ -1361,7 +1435,7 @@ def _pre_launch(
     if config.get("check_dallinger_version"):
         check_installed_dallinger_version_is_recommended()
 
-    ctx.invoke(prepare, archive=archive)
+    _prepare_after_stopping_local_workers(ctx, archive)
 
     _forget_tables_defined_in_experiment_directory()
 
@@ -1417,7 +1491,11 @@ def deploy():
 )
 @click.option("--docker", is_flag=True, help="Docker mode.")
 @click.option("--archive", default=None, help="Optional path to an experiment archive.")
-@click.option("--legacy", is_flag=True, help="Legacy mode.")
+@click.option(
+    "--legacy",
+    is_flag=True,
+    help="Use gunicorn instead of Flask auto-reload (default four worker processes).",
+)
 @click.option("--no-browsers", is_flag=True, help="Skip opening browsers.")
 @option_comment
 @click.pass_context
@@ -3561,11 +3639,19 @@ def rpdb(ip, port):
 @click.argument("path")
 @require_exp_directory
 def load(path):
-    "Populates the local database with a provided zip file."
+    """Replace the local database with a provided zip file.
+
+    Stop ``psynet debug`` and any other client using this database role first.
+    The command refuses to drop tables while another client using the same
+    database role is still connected.
+    """
     from .experiment import import_local_experiment
 
     import_local_experiment()
-    populate_db_from_zip_file(path)
+    try:
+        populate_db_from_zip_file(path)
+    except DatabaseInUseError as err:
+        raise click.ClickException(str(err)) from err
 
 
 @psynet.command(
@@ -4598,8 +4684,9 @@ def _run_performance_test_with_new_server(
     n_bots, stagger, time_factor, duration_minutes, debug, json_output=None
 ):
     """Run performance test after starting a new experiment server"""
-    # Prefer legacy debug: it more closely matches a real deployed server than
-    # the auto-reload develop path used by normal ``psynet debug local``.
+    # Prefer legacy debug: gunicorn with several workers is closer to a deployed
+    # server than the auto-reload develop path used by normal
+    # ``psynet debug local``.
     server_info = _start_local_server_and_wait_for_ready(
         ["debug", "local", "--legacy", "--no-browsers"],
         debug=debug,

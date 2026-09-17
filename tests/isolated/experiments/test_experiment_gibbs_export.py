@@ -15,7 +15,10 @@ from psynet.bot import BotDriver
 from psynet.command_line import export__local, populate_db_from_zip_file
 from psynet.export import load_export_table, unpack_json_column
 from psynet.participant import Participant
-from psynet.pytest_psynet import path_to_test_experiment
+from psynet.pytest_psynet import (
+    path_to_test_experiment,
+    stop_debug_experiment_process,
+)
 from psynet.timeline import Response
 from psynet.trial.main import Trial
 
@@ -68,10 +71,39 @@ def _build_canonical_gibbs_export(data_root_dir):
     )
 
 
-@pytest.fixture(scope="class")
-def canonical_gibbs_export(data_root_dir, launched_experiment):
+def _write_canonical_export_then_stop(data_root_dir, debug_process):
+    """Write the export, then stop the debug server before any later drop_all."""
     _build_canonical_gibbs_export(data_root_dir)
+    stop_debug_experiment_process(debug_process)
+
+
+@pytest.fixture(scope="class")
+def canonical_gibbs_export(data_root_dir, launched_experiment, debug_server_process):
+    """Build the export zip, then stop gunicorn before later tests touch the DB.
+
+    ``populate_db_from_zip_file`` refuses to drop tables while gunicorn
+    workers still hold the database, so this fixture stops that server
+    after the zip is written.
+    """
+    _write_canonical_export_then_stop(data_root_dir, debug_server_process)
     return data_root_dir
+
+
+def test_write_canonical_export_stops_debug_process_before_returning(monkeypatch):
+    """The export fixture must stop the clock before a later drop_all can run."""
+    calls = []
+
+    monkeypatch.setattr(
+        f"{__name__}._build_canonical_gibbs_export",
+        lambda data_root_dir: calls.append(("build", data_root_dir)),
+    )
+    monkeypatch.setattr(
+        f"{__name__}.stop_debug_experiment_process",
+        lambda process: calls.append(("stop", process)),
+    )
+    process = object()
+    _write_canonical_export_then_stop("/tmp/gibbs-export", process)
+    assert calls == [("build", "/tmp/gibbs-export"), ("stop", process)]
 
 
 @pytest.mark.parametrize(
@@ -135,7 +167,7 @@ class TestExpWithExport:
     def test_experiment_feedback(self, database_dir):
         df = load_export_table(database_dir, "response")
 
-        df_ = df.query("question == 'liked_experiment'")
+        df_ = df.query("question == 'liked_experiment'").sort_values("participant_id")
         assert df_.shape[0] == 6
         assert list(df_.participant_id) == [1, 2, 3, 4, 5, 6]
         assert (
@@ -143,12 +175,16 @@ class TestExpWithExport:
             == ["I'm a bot so I don't really have feelings..."] * 6
         )
 
-        df_ = df.query("question == 'find_experiment_difficult'")
+        df_ = df.query("question == 'find_experiment_difficult'").sort_values(
+            "participant_id"
+        )
         assert df_.shape[0] == 6
         assert list(df_.participant_id) == [1, 2, 3, 4, 5, 6]
         assert _feedback_answers(df_) == ["I'm a bot so I found it pretty easy..."] * 6
 
-        df_ = df.query("question == 'encountered_technical_problems'")
+        df_ = df.query("question == 'encountered_technical_problems'").sort_values(
+            "participant_id"
+        )
         assert df_.shape[0] == 6
         assert list(df_.participant_id) == [1, 2, 3, 4, 5, 6]
         assert _feedback_answers(df_) == ["No technical problems."] * 6
@@ -177,38 +213,35 @@ class TestExpWithExport:
             else:
                 assert csv_name in exported_csv_files
 
+    def test_populate_db_from_canonical_export_archive(
+        self, database_dir, coin_class, tmp_path, debug_server_process
+    ):
+        """Reload a canonical export zip whose empty table CSVs have been omitted."""
+        from psynet.chatroom import ChatMessage
+        from psynet.command_line import _install_archive_template
 
-@pytest.mark.parametrize(
-    "experiment_directory", [path_to_test_experiment("gibbs")], indirect=True
-)
-def test_populate_db_from_canonical_export_archive(
-    canonical_gibbs_export, database_dir, coin_class, tmp_path
-):
-    """Reload a canonical export zip whose empty table CSVs have been omitted."""
-    from psynet.chatroom import ChatMessage
-    from psynet.command_line import _install_archive_template
+        assert (Path(database_dir) / "participant.csv").exists()
+        assert not (Path(database_dir) / "chat_message.csv").exists()
+        assert not debug_server_process.isalive()
 
-    assert (Path(database_dir) / "participant.csv").exists()
-    assert not (Path(database_dir) / "chat_message.csv").exists()
+        archive = tmp_path / "export.zip"
+        _install_archive_template(database_dir, str(archive))
+        populate_db_from_zip_file(str(archive))
 
-    archive = tmp_path / "export.zip"
-    _install_archive_template(database_dir, str(archive))
-    populate_db_from_zip_file(str(archive))
+        trials = Trial.query.all()
+        assert len(trials) > 15
+        assert all(t.participant_id in [1, 2, 3, 4, 5, 6] for t in trials)
 
-    trials = Trial.query.all()
-    assert len(trials) > 15
-    assert all(t.participant_id in [1, 2, 3, 4, 5, 6] for t in trials)
+        participants = Participant.query.all()
+        assert len(participants) == 6
+        assert sorted([p.id for p in participants]) == [1, 2, 3, 4, 5, 6]
 
-    participants = Participant.query.all()
-    assert len(participants) == 6
-    assert sorted([p.id for p in participants]) == [1, 2, 3, 4, 5, 6]
+        responses = Response.query.all()
+        assert len(responses) > 15
+        assert all(r.participant_id in [1, 2, 3, 4, 5, 6] for r in responses)
 
-    responses = Response.query.all()
-    assert len(responses) > 15
-    assert all(r.participant_id in [1, 2, 3, 4, 5, 6] for r in responses)
+        coins = coin_class.query.all()
+        assert len(coins) == 6
+        assert all(c.participant_id in [1, 2, 3, 4, 5, 6] for c in coins)
 
-    coins = coin_class.query.all()
-    assert len(coins) == 6
-    assert all(c.participant_id in [1, 2, 3, 4, 5, 6] for c in coins)
-
-    assert ChatMessage.query.count() == 0
+        assert ChatMessage.query.count() == 0

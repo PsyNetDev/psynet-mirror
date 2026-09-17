@@ -13,6 +13,13 @@ marker = object()
 
 
 class PythonObject(TypeDecorator):
+    cache_ok = True
+    """Whether SQLAlchemy may cache compiled statements that use this type.
+
+    SQLAlchemy 2 requires an explicit value. Serialization is deterministic
+    for a given value, so statement caching is safe.
+    """
+
     @property
     def python_type(self):
         return object
@@ -467,8 +474,6 @@ def json_format_vars(x):
 
 
 class _PythonDict(PythonObject):
-    cache_ok = True
-
     @classmethod
     def serialize(cls, value):
         return super().serialize(dict(value))

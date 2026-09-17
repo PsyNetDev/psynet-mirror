@@ -451,7 +451,7 @@ class TestCommandLine(object):
 #             bot=False,
 #             proxy=None,
 #             no_browsers=False,
-#             exp_config={"threads": "1"},
+#             exp_config={"threads": "2"},
 #             archive=None,
 #         )
 #
@@ -482,10 +482,68 @@ class TestCommandLine(object):
 #             bot=True,
 #             proxy="5001",
 #             no_browsers=True,
-#             exp_config={"threads": "1"},
+#             exp_config={"threads": "2"},
 #         )
 #
-#
+
+
+def test_debug_legacy_starts_four_gunicorn_workers(monkeypatch):
+    """Legacy debug defaults to four workers so a quartet extra waiter can POST."""
+    from psynet.command_line import LEGACY_DEBUG_GUNICORN_THREADS, _debug_legacy
+
+    calls = []
+
+    class _Ctx:
+        def invoke(self, _command, **kwargs):
+            calls.append(kwargs)
+
+    monkeypatch.delenv("PSYNET_LEGACY_DEBUG_GUNICORN_THREADS", raising=False)
+    monkeypatch.setattr("psynet.command_line.db.session.commit", lambda: None)
+    monkeypatch.setattr("psynet.command_line.reset_console", lambda: None)
+
+    _debug_legacy(_Ctx(), archive=None, no_browsers=True)
+
+    assert LEGACY_DEBUG_GUNICORN_THREADS == "4"
+    assert calls == [
+        {
+            "verbose": True,
+            "bot": False,
+            "proxy": None,
+            "no_browsers": True,
+            "exp_config": {"threads": "4"},
+        }
+    ]
+
+
+def test_debug_legacy_gunicorn_workers_follow_env(monkeypatch):
+    """Playwright hold tests set workers to the session count plus two spares."""
+    from psynet.command_line import _debug_legacy
+
+    calls = []
+
+    class _Ctx:
+        def invoke(self, _command, **kwargs):
+            calls.append(kwargs)
+
+    monkeypatch.setenv("PSYNET_LEGACY_DEBUG_GUNICORN_THREADS", "5")
+    monkeypatch.setattr("psynet.command_line.db.session.commit", lambda: None)
+    monkeypatch.setattr("psynet.command_line.reset_console", lambda: None)
+
+    _debug_legacy(_Ctx(), archive=None, no_browsers=True)
+
+    assert calls[0]["exp_config"] == {"threads": "5"}
+
+
+@pytest.mark.parametrize("raw", ["0", "-1", "two"])
+def test_debug_legacy_gunicorn_workers_reject_invalid_env(monkeypatch, raw):
+    """A bad worker override must fail before gunicorn starts with one process."""
+    from psynet.command_line import _legacy_debug_gunicorn_threads
+
+    monkeypatch.setenv("PSYNET_LEGACY_DEBUG_GUNICORN_THREADS", raw)
+    with pytest.raises(click.UsageError, match="positive integer"):
+        _legacy_debug_gunicorn_threads()
+
+
 # @pytest.mark.parametrize("experiment_directory", [path_to_test_experiment("timeline")], indirect=True)
 # @pytest.mark.usefixtures("in_experiment_directory")
 # class TestDeploy:
@@ -3705,6 +3763,167 @@ def test_kill_psynet_worker_processes_ignores_zombies(caplog):
         assert kill_psynet_worker_processes() is True
 
     assert "4243" not in caplog.text
+
+
+def test_run_local_prepares_before_legacy_cleanup():
+    from psynet.command_line import _run_local
+
+    order = []
+    with (
+        patch(
+            "psynet.command_line._pre_launch",
+            lambda *args, **kwargs: order.append("pre_launch"),
+        ),
+        patch(
+            "psynet.command_line._cleanup_before_debug",
+            lambda: order.append("cleanup"),
+        ),
+        patch(
+            "psynet.command_line._debug_auto_reload",
+            lambda *args, **kwargs: order.append("debug"),
+        ),
+        patch("psynet.command_line.kill_psynet_worker_processes"),
+        patch("psynet.command_line._cleanup_exp_directory"),
+    ):
+        _run_local(
+            Mock(),
+            docker=False,
+            archive=None,
+            legacy=False,
+            no_browsers=True,
+            mode="debug",
+            context_group=Mock(),
+        )
+    assert order == ["pre_launch", "cleanup", "debug"]
+
+
+def test_prepare_after_stopping_local_workers_kills_then_prepares():
+    from psynet.command_line import _prepare_after_stopping_local_workers, prepare
+
+    order = []
+    ctx = Mock()
+    ctx.invoke.side_effect = lambda *args, **kwargs: order.append("prepare")
+    with patch(
+        "psynet.command_line.kill_psynet_worker_processes",
+        lambda: order.append("kill"),
+    ):
+        _prepare_after_stopping_local_workers(ctx, archive="export.zip")
+    assert order == ["kill", "prepare"]
+    ctx.invoke.assert_called_once_with(prepare, archive="export.zip")
+
+
+def test_kill_psynet_worker_processes_warns_with_pids(caplog):
+    import logging
+
+    import psutil
+
+    from psynet.command_line import kill_psynet_worker_processes
+
+    first = Mock()
+    first.pid = 4321
+    first.status.return_value = psutil.STATUS_RUNNING
+    second = Mock()
+    second.pid = 4322
+    second.status.return_value = psutil.STATUS_RUNNING
+    with (
+        patch(
+            "psynet.command_line.list_psynet_worker_processes",
+            return_value=[first, second],
+        ),
+        patch("psynet.command_line.safely_kill_process") as kill,
+        patch(
+            "psynet.command_line.psutil.wait_procs",
+            return_value=([first, second], []),
+        ),
+        patch("psynet.command_line.log") as logged,
+        caplog.at_level(logging.WARNING),
+    ):
+        assert kill_psynet_worker_processes() is True
+    kill.assert_any_call(first)
+    kill.assert_any_call(second)
+    assert "4321" in caplog.text
+    assert "4322" in caplog.text
+    assert "4321" in str(logged.call_args)
+
+
+def test_pre_launch_stops_workers_before_prepare(monkeypatch):
+    from psynet.command_line import _pre_launch
+
+    calls = []
+    monkeypatch.setattr(
+        "psynet.command_line._check_experiment_directory", lambda *a, **k: None
+    )
+    monkeypatch.setattr("psynet.services.ensure_local_services", lambda **k: None)
+    monkeypatch.setattr("psynet.command_line.redis_vars.clear", lambda: None)
+    monkeypatch.setattr("psynet.command_line.deployment_info.init", lambda **k: None)
+    monkeypatch.setattr("psynet.command_line.deployment_info.write", lambda **k: None)
+    monkeypatch.setattr("psynet.command_line.run_pre_checks", lambda *a, **k: None)
+    monkeypatch.setattr("psynet.command_line.is_in_repo_experiment", lambda: True)
+    experiment = Mock()
+    experiment.update_deployment_id.return_value = None
+    monkeypatch.setattr("psynet.experiment.get_experiment", lambda: experiment)
+    config = Mock()
+    config.get.return_value = False
+    monkeypatch.setattr("psynet.command_line.get_config", lambda: config)
+    monkeypatch.setattr(
+        "psynet.command_line._prepare_after_stopping_local_workers",
+        lambda ctx, archive: calls.append(("prepare", archive)),
+    )
+    monkeypatch.setattr(
+        "psynet.command_line._forget_tables_defined_in_experiment_directory",
+        lambda: calls.append("forget"),
+    )
+    _pre_launch(Mock(), mode="debug", archive=None, local_=True, docker=False)
+    assert calls == [("prepare", None), "forget"]
+
+
+def test_prepare_does_not_refuse_other_database_clients(monkeypatch):
+    """Idle pooled backends must not abort debug/deploy prepare."""
+    from psynet import data as data_mod
+    from psynet.command_line import _prepare
+
+    idle_calls = []
+    inits = []
+    experiment = Mock()
+
+    def boom(**kwargs):
+        idle_calls.append(kwargs)
+        raise AssertionError("idle check must not run during prepare")
+
+    monkeypatch.setattr(data_mod, "assert_database_idle_for_replace", boom)
+    monkeypatch.setattr(
+        "psynet.command_line.assert_database_idle_for_replace",
+        boom,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "psynet.db.list_other_database_clients",
+        lambda release_local=True: [(1, "dallinger", "pytest", "idle")],
+    )
+    monkeypatch.setattr("psynet.command_line.redis_vars.clear", lambda: None)
+    monkeypatch.setattr(
+        "dallinger.db.init_db",
+        lambda drop_all=False: inits.append(drop_all) or "session",
+    )
+    monkeypatch.setattr("psynet.experiment.get_experiment", lambda: experiment)
+    monkeypatch.setattr("psynet.command_line.clean_sys_modules", lambda: None)
+    monkeypatch.setattr("psynet.command_line.update_docker_tag", lambda: None)
+    _prepare()
+    assert inits == [True]
+    assert idle_calls == []
+    experiment.pre_deploy.assert_called_once_with(redeploying_from_archive=False)
+
+
+def test_load_converts_database_in_use_error_to_click_exception(monkeypatch):
+    from psynet.command_line import DatabaseInUseError, load
+
+    monkeypatch.setattr("psynet.experiment.import_local_experiment", lambda: None)
+    monkeypatch.setattr(
+        "psynet.command_line.populate_db_from_zip_file",
+        lambda path: (_ for _ in ()).throw(DatabaseInUseError("busy")),
+    )
+    with pytest.raises(click.ClickException, match="busy"):
+        load.callback.__wrapped__("export.zip")
 
 
 def test_terminate_server_process_escalates_when_sendcontrol_raises_oserror():

@@ -78,10 +78,15 @@ Options
     Defaults to ``False``.
 
 ``show_history``
-    Deliver all prior messages for this room to a participant when they first
-    join.  Useful when a participant might reconnect mid-session or when
-    a group needs shared context from an earlier page.
-    Defaults to ``False``.
+    Wait for the persisted log before enabling the chatroom. An empty
+    snapshot still counts as loaded and enables Send. Live messages that
+    arrive during that wait are shown after the snapshot; identical lines
+    are consumed by count, not by existence, so two copies of the same
+    text are not collapsed to one. After that, new messages append as
+    usual. Later persist-history frames only fill an empty feed. The
+    server also republishes the log after each persist so a partner who
+    missed the live relay still sees the conversation. Defaults to
+    ``False``.
 
 Message storage
 ---------------

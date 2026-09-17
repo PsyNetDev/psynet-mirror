@@ -1,13 +1,15 @@
 # Prepare recruiter variants
 
 
-The experiments' defaults cannot start paid recruitment (devprolific for
-`payment_flows_prolific`, HotAir for `audio_gibbs`). Before starting the
-three staggered deploy commands above, swap in the paid variants.
+Both experiments default to `devprolific`, which cannot start paid
+recruitment. Before starting the three staggered deploy commands above, swap
+in the paid variants.
 
-Copy the matching `experiment.py` and `config.txt`, then **diff-check**
-before deploy and **inspect the running container** after launch: a
-wrong `experiment.py` still starts a paid survey.
+Copy the matching variant files, then **diff-check** before deploy and
+**inspect the running container** after launch. A paid Prolific
+`config.txt` or Lucid `experiment.py` still starts a paid survey. Launch
+aborts if the copied `experiment.py` does not match the configured
+recruiter.
 
 1. `payment_flows_prolific` selects its recruiter via the config file, so
    swap in the paid config directly on the deployment branch and commit
@@ -26,17 +28,19 @@ git push
    them in separate temporary worktrees on branches off the deployment
    branch; each worktree branch records exactly what was deployed.
 
+   Prolific uses the same `experiment.py` as local runs and selects the
+   recruiter via the config file. Lucid still needs `experiment.py.lucid`.
+
 ```bash
 cd <psynet-root>
 git worktree add -b deployment-tests/<base-name>-audio-gibbs-prolific \
   /tmp/psynet-audio-gibbs-prolific-deploy deployment-tests/<base-name>
 cd /tmp/psynet-audio-gibbs-prolific-deploy/tests/deployment/audio_gibbs
-cp experiment.py.prolific experiment.py
 cp config.txt.prolific config.txt
 # config.txt is gitignored under tests/deployment/.
-diff -q experiment.py experiment.py.prolific
-git add experiment.py && git add -f config.txt
-git commit -m "Switch audio_gibbs to Prolific variant for deployment"
+diff -q config.txt config.txt.prolific
+git add -f config.txt
+git commit -m "Switch audio_gibbs to Prolific recruiter for deployment"
 git push -u origin deployment-tests/<base-name>-audio-gibbs-prolific
 
 cd <psynet-root>
@@ -69,10 +73,10 @@ PY"
 
    Lucid app must print `recruiter lucid-recruiter` and `has_stop_lucid True`.
    Prolific app must print `recruiter prolific` and `has_stop_lucid False`.
-   Each paid variant also aborts in `on_launch` (before recruitment
+   Each `experiment.py` also aborts in `on_launch` (before recruitment
    opens) unless the configured recruiter matches that file: Lucid
-   requires `lucid-recruiter`, Prolific requires `prolific` or
-   `devprolific`.
+   requires `lucid-recruiter`; the shared Prolific file requires
+   `prolific` or `devprolific`.
    If either check fails, close any live Lucid survey immediately, destroy
    the app, and redeploy from a worktree that passed the file diffs. Do
    not keep watching a mismatched app.
