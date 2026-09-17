@@ -182,7 +182,7 @@ function resolvePsynetLaunch() {
 }
 
 // ---- Backend process lifecycle ---------------------------------------------
-function startExperiment(experimentDir) {
+function startExperiment(experimentDir, options = {}) {
   const launch = resolvePsynetLaunch();
   if (!launch || !launch.cmd) {
     throw new Error("Unable to resolve psynet command.");
@@ -201,7 +201,8 @@ function startExperiment(experimentDir) {
       ...process.env,
       KEEP_OLD_CHROME_WINDOWS_IN_DEBUG_MODE: "1",
       BROWSER: "false",
-      SKIP_PYTHON_VERSION_CHECK: "1"
+      SKIP_PYTHON_VERSION_CHECK: "1",
+      ...(options.env || {})
     },
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -857,7 +858,671 @@ async function completeInitialGateway(page, timeout = 120000) {
   const gatewayButton = page.locator("#consent");
   await expect(gatewayButton).toBeVisible({ timeout });
   await expect(gatewayButton).toBeEnabled({ timeout });
+  const consentClickedAtMs = Date.now();
   await gatewayButton.click();
+  return { consentClickedAtMs };
+}
+
+function isTimelineDocumentResponse(response) {
+  let url;
+  try {
+    url = new URL(response.url());
+  } catch {
+    return false;
+  }
+  if (response.request().method() !== "GET" || url.pathname !== "/timeline") {
+    return false;
+  }
+  // JSON fragments use mode=. Last-arrival skip can 302 GET /timeline when
+  // page_uuid advances during read-only render; first-paint must wait for the
+  // following HTML document, not the empty redirect body.
+  if (url.searchParams.has("mode")) {
+    return false;
+  }
+  return response.status() === 200 || response.status() === 503;
+}
+
+function parseTrackedParticipantRequest(urlLike, method) {
+  let url;
+  try {
+    url = new URL(urlLike);
+  } catch {
+    return null;
+  }
+  const path = url.pathname;
+  if (method === "POST" && path === "/participant") {
+    return { kind: "create_participant", method, path };
+  }
+  if (method === "POST" && path === "/load-participant") {
+    return { kind: "load_participant", method, path };
+  }
+  if (method === "GET" && path === "/start") {
+    return { kind: "start_page", method, path };
+  }
+  if (method === "GET" && path === "/timeline") {
+    return {
+      kind: url.searchParams.has("mode") ? "timeline_json" : "timeline_document",
+      method,
+      path
+    };
+  }
+  if (method === "POST" && path === "/response") {
+    return { kind: "response", method, path };
+  }
+  return null;
+}
+
+function requestDurationMs(request, fallbackMs) {
+  const timing = request.timing();
+  if (timing && timing.responseEnd >= 0) {
+    return timing.responseEnd;
+  }
+  return fallbackMs;
+}
+
+function parseServerTiming(header) {
+  const metrics = {};
+  if (!header) {
+    return metrics;
+  }
+  for (const part of String(header).split(",")) {
+    const pieces = part.trim().split(";");
+    const name = pieces[0];
+    if (!name) {
+      continue;
+    }
+    const dur = pieces.find((piece) => piece.trim().startsWith("dur="));
+    if (dur) {
+      const value = Number(dur.trim().slice(4));
+      if (Number.isFinite(value)) {
+        metrics[name] = value;
+      }
+    }
+  }
+  return metrics;
+}
+
+function wakeTokenFromResponseBody(body) {
+  if (!body || body[0] !== "{") {
+    return null;
+  }
+  try {
+    const payload = JSON.parse(body);
+    return payload?.page?.attributes?.timeline_hold?.wake_token || null;
+  } catch {
+    return null;
+  }
+}
+
+function startParticipantRequestTracker(page) {
+  const records = [];
+  const pending = [];
+  const startedAt = new WeakMap();
+  const onRequest = (request) => {
+    if (parseTrackedParticipantRequest(request.url(), request.method())) {
+      startedAt.set(request, Date.now());
+    }
+  };
+  const onResponse = (response) => {
+    const request = response.request();
+    const parsed = parseTrackedParticipantRequest(response.url(), request.method());
+    if (!parsed) {
+      return;
+    }
+    const task = (async () => {
+      await response.finished().catch(() => {});
+      const wallMs = Date.now() - (startedAt.get(request) || Date.now());
+      const extras = {
+        serverTiming: parseServerTiming(response.headers()["server-timing"]),
+      };
+      extras.serverTimingMs = extras.serverTiming.app ?? null;
+      if (parsed.kind === "response") {
+        const posted = request.postData() || "";
+        extras.holdResume =
+          posted.includes('"timeline_hold_resume": true') ||
+          posted.includes('"timeline_hold_resume":true');
+        extras.responseWakeToken = wakeTokenFromResponseBody(
+          await response.text().catch(() => "")
+        );
+      }
+      records.push({
+        ...parsed,
+        ...extras,
+        status: response.status(),
+        durationMs: requestDurationMs(request, wallMs),
+        busy: response.status() === 503,
+        startedAtMs: startedAt.get(request) || Date.now(),
+        finishedAtMs: Date.now()
+      });
+    })();
+    pending.push(task);
+  };
+  page.on("request", onRequest);
+  page.on("response", onResponse);
+  return {
+    records,
+    async flush() {
+      await Promise.all(pending);
+    },
+    stop() {
+      page.off("request", onRequest);
+      page.off("response", onResponse);
+    }
+  };
+}
+
+function summarizeParticipantRequests(records) {
+  if (!records.length) {
+    return "no tracked requests";
+  }
+  return records
+    .map((record) => {
+      const duration = record.durationMs == null ? "?" : `${Math.round(record.durationMs)}ms`;
+      const extra =
+        record.kind === "response" && record.holdResume != null
+          ? ` holdResume=${record.holdResume}${formatServerTimingExtra(record)}`
+          : formatServerTimingExtra(record);
+      return `${record.method} ${record.path} ${record.status} ${duration}${
+        record.busy ? " busy" : ""
+      }${extra}`;
+    })
+    .join("; ");
+}
+
+function formatServerTimingExtra(record) {
+  const detail = serverQueueDetail(record);
+  return detail ? ` ${detail}` : "";
+}
+
+function requestHandlerMs(record) {
+  if (record?.serverTimingMs != null) {
+    return record.serverTimingMs;
+  }
+  return record?.durationMs ?? 0;
+}
+
+function serverQueueDetail(record) {
+  const serverMs = record?.serverTimingMs;
+  if (serverMs == null) {
+    return "";
+  }
+  const timing = record.serverTiming || {};
+  const queueMs =
+    record.durationMs != null ? Math.max(0, record.durationMs - serverMs) : null;
+  const parts = [`server=${Math.round(serverMs)}ms`];
+  for (const name of ["lock", "page", "process", "barriers", "render"]) {
+    if (timing[name] != null) {
+      parts.push(`${name}=${Math.round(timing[name])}`);
+    }
+  }
+  if (queueMs != null) {
+    parts.push(`queue~${Math.round(queueMs)}`);
+  }
+  return parts.join(" ");
+}
+
+function requestTimingDetail(record, fallbackMs) {
+  if (record == null && fallbackMs == null) {
+    return "missing";
+  }
+  const wallMs = record?.durationMs ?? fallbackMs;
+  const wallLabel = wallMs == null ? "missing" : `${Math.round(wallMs)}ms`;
+  const extra = serverQueueDetail(record);
+  return extra ? `${wallLabel} ${extra}` : wallLabel;
+}
+
+function unexpectedBlockingRequests(records, maxDurationMs, options = {}) {
+  const busyMs = options.busyMs ?? 500;
+  return records.filter((record) => {
+    const handlerMs = requestHandlerMs(record);
+    if (handlerMs >= maxDurationMs) {
+      return true;
+    }
+    return Boolean(record.busy) && (record.durationMs ?? 0) >= busyMs;
+  });
+}
+
+async function enterTimelineAfterGateway(page, timeout = 120000) {
+  const tracker = startParticipantRequestTracker(page);
+  // Ignore 302s from last-arrival skip; paint comes from the 200 HTML body.
+  const timelineResponsePromise = page.waitForResponse(isTimelineDocumentResponse, {
+    timeout
+  });
+  let startSeenAt = null;
+  page
+    .locator("#starting-experiment")
+    .waitFor({ state: "visible", timeout })
+    .then(() => {
+      startSeenAt = Date.now();
+    })
+    .catch(() => {});
+  const { consentClickedAtMs } = await completeInitialGateway(page, timeout);
+  const timelineResponse = await timelineResponsePromise;
+  await timelineResponse.finished().catch(() => {});
+  const timelineAtMs = Date.now();
+  const html = await timelineResponse.text().catch(() => "");
+  await tracker.flush();
+  return {
+    html,
+    tracker,
+    paint: html.includes("psynet-template-data")
+      ? readTimelinePageFromHtml(html)
+      : {
+          type: null,
+          showsHold: false,
+          silentHold: false
+        },
+    timeline: {
+      status: timelineResponse.status(),
+      durationMs: requestDurationMs(
+        timelineResponse.request(),
+        timelineAtMs - consentClickedAtMs
+      ),
+      busy: timelineResponse.status() === 503,
+      busyPage: html.includes("temporarily busy")
+    },
+    start: {
+      sawStartPage: startSeenAt !== null,
+      dwellMs: startSeenAt !== null ? timelineAtMs - startSeenAt : 0,
+      consentToTimelineMs: timelineAtMs - consentClickedAtMs,
+      consentClickedAtMs,
+      timelineAtMs
+    }
+  };
+}
+
+async function captureFirstTimelineAfterGateway(page, timeout = 120000) {
+  const entry = await enterTimelineAfterGateway(page, timeout);
+  entry.tracker.stop();
+  return entry.html;
+}
+
+function timelineHoldReleaseProbeScript() {
+  // Listeners belong on every document. Wrapping resumeTimelineHold happens
+  // later, after window.psynet exists, via wrapTimelineHoldResumeProbe.
+  const storedNumber = (key) => {
+    try {
+      const raw = sessionStorage.getItem(key);
+      const value = raw == null ? null : Number(raw);
+      return Number.isFinite(value) ? value : null;
+    } catch (error) {
+      return null;
+    }
+  };
+  const storedText = (key) => {
+    try {
+      return sessionStorage.getItem(key);
+    } catch (error) {
+      return null;
+    }
+  };
+  const probe = window.__psynetHoldReleaseProbe || {
+    wakeReceivedAtMs: storedNumber("__psynetHoldWakeReceivedAtMs"),
+    holdEndedAtMs: storedNumber("__psynetHoldEndedAtMs"),
+    previousHoldEndedAtMs: storedNumber("__psynetPrevHoldEndedAtMs"),
+    wakeReason: storedText("__psynetHoldWakeReason"),
+    resumeReasons: [],
+    nextPageHoldResumes: [],
+    wrappedResume: false,
+    wrappedNextPage: false
+  };
+  window.__psynetHoldReleaseProbe = probe;
+
+  const persistClock = (key, value) => {
+    try {
+      if (value == null) {
+        sessionStorage.removeItem(key);
+      } else {
+        sessionStorage.setItem(key, String(value));
+      }
+    } catch (error) {
+      // Private mode can block sessionStorage; the in-memory probe still works.
+    }
+  };
+
+  if (!window.__psynetHoldReleaseProbeListeners) {
+    window.__psynetHoldReleaseProbeListeners = true;
+    window.addEventListener("timelineHoldWakeReceived", (event) => {
+      if (probe.wakeReceivedAtMs == null) {
+        probe.wakeReceivedAtMs = Date.now();
+        probe.wakeReason = event.detail?.reason || null;
+        persistClock("__psynetHoldWakeReceivedAtMs", probe.wakeReceivedAtMs);
+        persistClock("__psynetHoldWakeReason", probe.wakeReason);
+        if (typeof window.__psynetRecordHoldResume === "function") {
+          window.__psynetRecordHoldResume({
+            kind: "wake",
+            reason: event.detail?.reason || null
+          });
+        }
+      }
+    });
+    window.addEventListener("timelineHoldEnded", () => {
+      if (probe.holdEndedAtMs == null) {
+        probe.holdEndedAtMs = Date.now();
+        persistClock("__psynetHoldEndedAtMs", probe.holdEndedAtMs);
+        if (typeof window.__psynetRecordHoldResume === "function") {
+          window.__psynetRecordHoldResume({ kind: "holdEnded" });
+        }
+      }
+    });
+    window.addEventListener("timelineHoldStarted", () => {
+      const current = window.__psynetHoldReleaseProbe;
+      if (!current) {
+        return;
+      }
+      // Keep the previous hold's end clock. A later hold, or a legacy reload
+      // that starts a hold controller, must not erase the resume we already saw.
+      current.previousHoldEndedAtMs = current.holdEndedAtMs;
+      persistClock("__psynetPrevHoldEndedAtMs", current.holdEndedAtMs);
+      current.wakeReceivedAtMs = null;
+      current.holdEndedAtMs = null;
+      current.wakeReason = null;
+      persistClock("__psynetHoldWakeReceivedAtMs", null);
+      persistClock("__psynetHoldEndedAtMs", null);
+      persistClock("__psynetHoldWakeReason", null);
+    });
+  }
+
+  const wrapNamed = (object, name, record) => {
+    const current = object[name];
+    if (typeof current !== "function") {
+      return false;
+    }
+    if (current.__psynetProbeWrapped) {
+      return true;
+    }
+    const wrapped = async function () {
+      record(arguments);
+      return current.apply(this, arguments);
+    };
+    wrapped.__psynetProbeWrapped = true;
+    object[name] = wrapped;
+    return true;
+  };
+
+  window.__psynetHoldReleaseProbeInstallWrap = () => {
+    const object = window.psynet;
+    if (!object) {
+      return false;
+    }
+    probe.wrappedResume = wrapNamed(object, "resumeTimelineHold", (args) => {
+      probe.resumeReasons.push({ reason: args[0], atMs: Date.now() });
+      if (typeof window.__psynetRecordHoldResume === "function") {
+        window.__psynetRecordHoldResume({ reason: args[0] });
+      }
+    });
+    probe.wrappedNextPage = wrapNamed(object, "nextPage", (args) => {
+      const options = args[4] || {};
+      if (options.timelineHoldResume) {
+        probe.nextPageHoldResumes.push({ atMs: Date.now() });
+      }
+    });
+    probe.wrappedApproved = wrapNamed(object, "handleApprovedResponse", (args) => {
+      const response = args[0] || {};
+      const details = {
+        kind: "approved",
+        hasFragment: Boolean(response.timeline_fragment),
+        hasHold: Boolean(response.page && response.page.attributes && response.page.attributes.timeline_hold),
+        pageType: (response.page && response.page.attributes && response.page.attributes.type) || null,
+        requiresReload: object.requiresFullPageReloadTransition
+          ? object.requiresFullPageReloadTransition(response)
+          : null,
+        inplace:
+          window.psynetTemplateData && window.psynetTemplateData.flags
+            ? window.psynetTemplateData.flags.inplaceTimelineTransitions
+            : null
+      };
+      probe.approvedResponses = probe.approvedResponses || [];
+      probe.approvedResponses.push(details);
+      if (typeof window.__psynetRecordHoldResume === "function") {
+        window.__psynetRecordHoldResume(details);
+      }
+    });
+    probe.wrappedRejected = wrapNamed(object, "handleRejectedResponse", (args) => {
+      const response = args[0] || {};
+      const details = {
+        kind: "rejected",
+        message: response.message || null
+      };
+      if (typeof window.__psynetRecordHoldResume === "function") {
+        window.__psynetRecordHoldResume(details);
+      }
+    });
+    probe.wrappedReload = wrapNamed(object, "loadNextTimelinePageWithReload", () => {
+      if (typeof window.__psynetRecordHoldResume === "function") {
+        window.__psynetRecordHoldResume({ kind: "reload" });
+      }
+    });
+    return Boolean(probe.wrappedResume);
+  };
+
+  // Wrap as soon as window.psynet exists. Concurrent late waiters can resume
+  // before Playwright's page.evaluate runs, and those resumes must still land
+  // in resumeLog.
+  const pollWrap = () => {
+    if (window.__psynetHoldReleaseProbeInstallWrap()) {
+      return;
+    }
+    const delay =
+      document.getElementById("psynet-template-data") || window.psynet ? 0 : 50;
+    setTimeout(pollWrap, delay);
+  };
+  pollWrap();
+}
+
+async function installTimelineHoldReleaseProbeOnContext(context) {
+  // Install before navigation so a later full-page resume cannot drop the probe.
+  await context.addInitScript(timelineHoldReleaseProbeScript);
+}
+
+function isDestroyedExecutionContext(error) {
+  const message = String(error && error.message ? error.message : error);
+  // Legacy hold resume reloads the document. Playwright sometimes reports
+  // that as "Execution context was destroyed", and sometimes as a locator
+  // assertion whose received count is undefined instead of 0 or 1.
+  return (
+    message.includes("Execution context was destroyed") ||
+    /because of a navigation/i.test(message) ||
+    /Target (closed|page, context or browser has been closed)/i.test(message) ||
+    (/Received:\s*undefined/i.test(message) &&
+      /locator\(|toHaveCount|toContainText|toHaveClass|waitForFunction/i.test(
+        message
+      ))
+  );
+}
+
+async function evaluateOnLivePage(page, pageFunction, timeout = 10000) {
+  const deadline = Date.now() + timeout;
+  let lastError;
+  while (Date.now() < deadline) {
+    try {
+      return await page.evaluate(pageFunction);
+    } catch (error) {
+      lastError = error;
+      if (!isDestroyedExecutionContext(error)) {
+        throw error;
+      }
+      await page.waitForLoadState("domcontentloaded").catch(() => {});
+      const remaining = Math.max(250, deadline - Date.now());
+      // Legacy hold resume can land on the HTML busy page first. Wait for
+      // psynet.js before retrying so the next evaluate is not a ReferenceError.
+      await page
+        .waitForFunction(() => window.psynet, { timeout: remaining })
+        .catch(() => {});
+    }
+  }
+  throw lastError;
+}
+
+async function installTimelineHoldReleaseProbe(page) {
+  // Record the first hold-wake and hold-ended browser events. These are
+  // hold-controller signals, not a live eventLog poll.
+  await evaluateOnLivePage(page, timelineHoldReleaseProbeScript);
+}
+
+function startTimelineHoldSocketTracker(page) {
+  const frames = [];
+  const onWebSocket = (ws) => {
+    ws.on("framereceived", (event) => {
+      const payload = String(event.payload || "");
+      if (
+        payload.includes("timeline_hold_wake") ||
+        payload.includes("wake_token")
+      ) {
+        frames.push(payload);
+      }
+    });
+  };
+  page.on("websocket", onWebSocket);
+  return {
+    frames,
+    stop() {
+      page.off("websocket", onWebSocket);
+    }
+  };
+}
+
+async function readTimelineHoldReleaseProbe(page) {
+  // Legacy hold resumes reload the document. Retry on the live page instead
+  // of treating a destroyed context as missing clocks.
+  return evaluateOnLivePage(page, () => window.__psynetHoldReleaseProbe || null)
+    .then(
+      (probe) =>
+        probe || {
+          wakeReceivedAtMs: null,
+          holdEndedAtMs: null,
+          previousHoldEndedAtMs: null,
+          wakeReason: null,
+          resumeReasons: [],
+          nextPageHoldResumes: [],
+          wrappedResume: false
+        }
+    )
+    .catch(() => ({
+      wakeReceivedAtMs: null,
+      holdEndedAtMs: null,
+      previousHoldEndedAtMs: null,
+      wakeReason: null,
+      resumeReasons: [],
+      nextPageHoldResumes: [],
+      wrappedResume: false
+    }));
+}
+
+async function wrapTimelineHoldResumeProbe(page) {
+  // Legacy hold resume reloads the document. Retry after that navigation
+  // instead of treating a destroyed execution context as a test failure.
+  return evaluateOnLivePage(page, () => {
+    if (typeof window.__psynetHoldReleaseProbeInstallWrap === "function") {
+      return window.__psynetHoldReleaseProbeInstallWrap();
+    }
+    return false;
+  });
+}
+
+async function silenceTimelineHoldSafetyPoll(page) {
+  return evaluateOnLivePage(page, () => {
+    const controller = window.psynet && window.psynet.timelineHold;
+    if (!controller) {
+      return false;
+    }
+    clearTimeout(controller.safetyTimer);
+    controller.safetyTimer = null;
+    if (controller.hold) {
+      controller.hold.safety_poll_ms = 60000;
+    }
+    // Keep deferred wake retries. A later beginTimelineHold would otherwise
+    // schedule a fresh 2s poll while a concurrent last arriver is still in
+    // serialized POST /participant (often >2s).
+    psynet.scheduleTimelineHoldCheck = function (target) {
+      if (target && target.resumeRequested) {
+        target.resumeRequested = false;
+        setTimeout(() => psynet.resumeTimelineHold("queued hold wake"), 0);
+      }
+    };
+    return true;
+  });
+}
+
+function resumeReasonsSince(probe, startedAtMs) {
+  return (probe.resumeReasons || []).filter(
+    (entry) => entry.atMs >= startedAtMs
+  );
+}
+
+function holdEndedAtMsFromProbe(probe, resumeLog = []) {
+  if (probe?.holdEndedAtMs != null) {
+    return probe.holdEndedAtMs;
+  }
+  if (probe?.previousHoldEndedAtMs != null) {
+    return probe.previousHoldEndedAtMs;
+  }
+  const loggedEnd = [...resumeLog]
+    .reverse()
+    .find((entry) => entry.kind === "holdEnded");
+  return loggedEnd?.atMs ?? null;
+}
+
+async function waitForHeldParticipantToResume(
+  page,
+  { prompt, timeout = 120000, resumeLog = [] } = {}
+) {
+  // Legacy hold resume reloads this document. Locator assertions can fail with
+  // Received: undefined; treat that as navigation and retry after load.
+  if (!prompt) {
+    throw new Error("waitForHeldParticipantToResume requires a prompt.");
+  }
+  const deadline = Date.now() + timeout;
+  let lastError;
+  while (Date.now() < deadline) {
+    const remaining = Math.max(250, deadline - Date.now());
+    try {
+      await expect(page.locator("#main-body")).toContainText(prompt, {
+        timeout: remaining
+      });
+      await expect(page.locator("#psynet-timeline-hold-indicator")).toHaveCount(
+        0,
+        { timeout: remaining }
+      );
+      await expect(page.locator("body")).not.toHaveClass(/timeline-held/, {
+        timeout: remaining
+      });
+      const probe = await readTimelineHoldReleaseProbe(page);
+      const endedAtMs = holdEndedAtMsFromProbe(probe, resumeLog);
+      if (endedAtMs == null) {
+        lastError = new Error(
+          "waitForHeldParticipantToResume missing holdEndedAtMs; the probe did not see timelineHoldEnded."
+        );
+        await page.waitForTimeout(50);
+        continue;
+      }
+      return { resumedAtMs: endedAtMs };
+    } catch (error) {
+      lastError = error;
+      if (!isDestroyedExecutionContext(error)) {
+        throw error;
+      }
+      await page.waitForLoadState("domcontentloaded").catch(() => {});
+    }
+  }
+  throw lastError;
+}
+
+function readTimelinePageFromHtml(html) {
+  const match = html.match(
+    /<script id="psynet-template-data" type="application\/json">\s*([\s\S]*?)\s*<\/script>/
+  );
+  if (!match) {
+    throw new Error("Timeline HTML is missing #psynet-template-data.");
+  }
+  const payload = JSON.parse(match[1]);
+  const hold = payload?.page?.attributes?.timeline_hold;
+  return {
+    type: payload?.page?.attributes?.type ?? null,
+    showsHold: html.includes('id="psynet-timeline-hold-indicator"'),
+    wakeToken: hold?.wake_token ?? null,
+    silentHold: Boolean(hold?.silent)
+  };
 }
 
 async function clickConsentButton(page, timeout = 120000) {
@@ -991,6 +1656,18 @@ module.exports = {
   advanceUntilPromptContains,
   assertNoBackendError,
   beginExperiment,
+  captureFirstTimelineAfterGateway,
+  enterTimelineAfterGateway,
+  installTimelineHoldReleaseProbe,
+  installTimelineHoldReleaseProbeOnContext,
+  startTimelineHoldSocketTracker,
+  readTimelineHoldReleaseProbe,
+  waitForHeldParticipantToResume,
+  silenceTimelineHoldSafetyPoll,
+  wrapTimelineHoldResumeProbe,
+  evaluateOnLivePage,
+  isDestroyedExecutionContext,
+  resumeReasonsSince,
   clickConsentButton,
   clickFinish,
   clickNextAndWait,
@@ -1011,6 +1688,12 @@ module.exports = {
   waitForAudioRecordingReady,
   waitForVideoRecordingReady,
   waitForTimelinePageReady,
+  readTimelinePageFromHtml,
+  startParticipantRequestTracker,
+  summarizeParticipantRequests,
+  requestHandlerMs,
+  requestTimingDetail,
+  unexpectedBlockingRequests,
   withExperiment,
   withFreshParticipantIds,
   waitForNextEnabled,

@@ -222,6 +222,10 @@ class StaticTrialMaker(ChainTrialMaker):
         of each SyncGroup. The other members of this SyncGroup will follow that leader around,
         so that in every given trial the SyncGroup works on the same node together.
 
+    sync_group_wait_content
+        Message shown by the trial maker's own sync-group waits. See
+        :class:`~psynet.trial.main.TrialMaker`.
+
     Attributes
     ----------
 
@@ -290,6 +294,7 @@ class StaticTrialMaker(ChainTrialMaker):
         sync_group_max_wait_action: Literal["fail", "kick"] = "fail",
         sync_group_timeout_between_barriers_time: Optional[float] = None,
         sync_group_timeout_between_barriers_action: Literal["kick", "fail"] = "fail",
+        sync_group_wait_content=None,
     ):
         # balance_across_chains = (
         #     active_balancing_across_participants or active_balancing_within_participants
@@ -387,6 +392,7 @@ class StaticTrialMaker(ChainTrialMaker):
             sync_group_max_wait_action=sync_group_max_wait_action,
             sync_group_timeout_between_barriers_time=sync_group_timeout_between_barriers_time,
             sync_group_timeout_between_barriers_action=sync_group_timeout_between_barriers_action,
+            sync_group_wait_content=sync_group_wait_content,
         )
         self._node_capacity_is_unlimited = target_trials_per_node is None
 

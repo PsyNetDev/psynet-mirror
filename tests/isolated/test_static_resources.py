@@ -178,6 +178,7 @@ def test_psynet_registers_its_static_resource_root():
     )
 
     assert package.root.joinpath("scripts/music-notation-prompt.js").is_file()
+    assert package.root.joinpath("scripts/chatroom-history-merge.mjs").is_file()
     assert package.extra_file[1] == "/static/packages/psynet"
 
 
@@ -194,6 +195,7 @@ def test_experiment_stages_registered_static_packages():
     source, destination = package_files[0]
     assert os.path.isdir(os.fspath(source))
     assert source.joinpath("scripts/music-notation-prompt.js").is_file()
+    assert source.joinpath("scripts/chatroom-history-merge.mjs").is_file()
     assert destination == "/static/packages/psynet"
 
 
@@ -210,6 +212,21 @@ def test_psynet_layout_script_is_staged():
     source, destination = staged[0]
     assert Path(os.fspath(source)).is_file()
     assert Path(os.fspath(source)).name == "psynet.layout.js"
+
+
+def test_chatroom_history_merge_script_is_staged():
+    from psynet.experiment import Experiment
+
+    staged = [
+        (source, destination)
+        for source, destination in Experiment.extra_files()
+        if destination == "/static/scripts/chatroom-history-merge.mjs"
+    ]
+
+    assert len(staged) == 1
+    source, destination = staged[0]
+    assert Path(os.fspath(source)).is_file()
+    assert Path(os.fspath(source)).name == "chatroom-history-merge.mjs"
 
 
 def test_static_url_version_tracks_file_contents(tmp_path):
@@ -288,6 +305,22 @@ def test_experiment_after_request_versions_literal_percent_filename(tmp_path):
         response = Experiment.after_request(request_context.request, Response())
 
     assert response.cache_control.immutable
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["/timeline/arrival_notice", "/timeline/progress_and_reward"],
+)
+def test_experiment_after_request_does_not_store_live_timeline_json(path):
+    """Partner-ready and progress JSON must re-hit the server, not a cached GET."""
+    from psynet.experiment import Experiment
+
+    app = Flask("timeline-json-cache")
+    with app.test_request_context(path) as request_context:
+        Experiment.before_request()
+        response = Experiment.after_request(request_context.request, Response())
+
+    assert response.headers.get("Cache-Control") == "no-store"
 
 
 def test_participant_font_references_use_their_content_versions():
