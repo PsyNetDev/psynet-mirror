@@ -9,6 +9,29 @@ from click.testing import CliRunner
 from rich.console import Console
 
 
+def test_file_lock_keeps_private_mode_by_default(tmp_path):
+    import os
+
+    from psynet.deployment_events import file_lock
+
+    path = tmp_path / "data" / ".deployment-events.lock"
+    old_umask = os.umask(0o022)
+    try:
+        with file_lock(path):
+            mode = path.stat().st_mode & 0o777
+    finally:
+        os.umask(old_umask)
+    assert mode == 0o644
+
+
+def test_file_lock_world_writable_sets_shared_mode(tmp_path):
+    from psynet.deployment_events import file_lock
+
+    path = tmp_path / "shared.lock"
+    with file_lock(path, world_writable=True):
+        assert path.stat().st_mode & 0o777 == 0o666
+
+
 def test_append_event_includes_comment_and_argv(tmp_path):
     from psynet.deployment_events import append_deployment_event, load_deployment_events
 

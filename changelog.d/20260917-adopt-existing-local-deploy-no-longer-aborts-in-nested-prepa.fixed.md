@@ -1,0 +1,1 @@
+Fixed ``psynet deploy local --adopt-existing`` so nested prepare does not abort on the still-unmanaged live database. Permission errors inside a held database lock are no longer reported as a concurrent deployment, and only the shared local database lock file is made world-writable.

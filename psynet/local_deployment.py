@@ -675,7 +675,7 @@ def _acquire_lock_file(path: Path, wait_seconds: float):
     deadline = time.monotonic() + wait_seconds
     waited = False
     while True:
-        lock_context = file_lock(path, blocking=False)
+        lock_context = file_lock(path, blocking=False, world_writable=True)
         try:
             return lock_context, lock_context.__enter__()
         except BlockingIOError:
@@ -708,7 +708,12 @@ def local_database_lock(
     _database_lock_guard.acquire()
     try:
         if _database_lock_depth == 0:
-            lock_context, file = _acquire_lock_file(path, wait_seconds)
+            try:
+                lock_context, file = _acquire_lock_file(path, wait_seconds)
+            except BlockingIOError as error:
+                raise concurrent_deployment_error(path) from error
+            except PermissionError as error:
+                raise concurrent_deployment_error(path) from error
             _database_lock_context = lock_context
             outermost = True
         _database_lock_depth += 1
@@ -738,10 +743,6 @@ def local_database_lock(
                 lock_context = _database_lock_context
                 _database_lock_context = None
                 lock_context.__exit__(None, None, None)
-    except BlockingIOError as error:
-        raise concurrent_deployment_error(path) from error
-    except PermissionError as error:
-        raise concurrent_deployment_error(path) from error
     finally:
         _database_lock_guard.release()
 

@@ -3812,6 +3812,28 @@ def test_prepare_after_stopping_local_workers_kills_then_prepares():
     ctx.invoke.assert_called_once_with(prepare, archive="export.zip")
 
 
+def test_prepare_after_stopping_skips_protect_when_already_protected():
+    from psynet.command_line import _prepare_after_stopping_local_workers
+
+    order = []
+    ctx = Mock()
+    with (
+        patch(
+            "psynet.command_line.kill_psynet_worker_processes",
+            lambda: order.append("kill"),
+        ),
+        patch(
+            "psynet.command_line._prepare_unlocked",
+            lambda archive: order.append(("prepare_unlocked", archive)),
+        ),
+    ):
+        _prepare_after_stopping_local_workers(
+            ctx, archive="export.zip", skip_protect=True
+        )
+    assert order == ["kill", ("prepare_unlocked", "export.zip")]
+    ctx.invoke.assert_not_called()
+
+
 def test_kill_psynet_worker_processes_warns_with_pids(caplog):
     import logging
 
@@ -3846,7 +3868,8 @@ def test_kill_psynet_worker_processes_warns_with_pids(caplog):
     assert "4321" in str(logged.call_args)
 
 
-def test_pre_launch_stops_workers_before_prepare(monkeypatch):
+@pytest.mark.parametrize("skip_protect", [False, True])
+def test_pre_launch_stops_workers_before_prepare(monkeypatch, skip_protect):
     from psynet.command_line import _pre_launch
 
     calls = []
@@ -3867,14 +3890,23 @@ def test_pre_launch_stops_workers_before_prepare(monkeypatch):
     monkeypatch.setattr("psynet.command_line.get_config", lambda: config)
     monkeypatch.setattr(
         "psynet.command_line._prepare_after_stopping_local_workers",
-        lambda ctx, archive: calls.append(("prepare", archive)),
+        lambda ctx, archive, **kwargs: calls.append(
+            ("prepare", archive, kwargs.get("skip_protect", False))
+        ),
     )
     monkeypatch.setattr(
         "psynet.command_line._forget_tables_defined_in_experiment_directory",
         lambda: calls.append("forget"),
     )
-    _pre_launch(Mock(), mode="debug", archive=None, local_=True, docker=False)
-    assert calls == [("prepare", None), "forget"]
+    _pre_launch(
+        Mock(),
+        mode="debug",
+        archive=None,
+        local_=True,
+        docker=False,
+        skip_protect=skip_protect,
+    )
+    assert calls == [("prepare", None, skip_protect), "forget"]
 
 
 def test_prepare_does_not_refuse_other_database_clients(monkeypatch):

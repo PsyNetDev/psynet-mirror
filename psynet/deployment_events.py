@@ -63,14 +63,20 @@ def validate_local_id(value: str) -> str:
 
 
 @contextmanager
-def file_lock(path: Path, *, blocking: bool = True):
-    """Lock ``path`` for the duration of the context."""
+def file_lock(path: Path, *, blocking: bool = True, world_writable: bool = False):
+    """Lock ``path`` for the duration of the context.
+
+    ``world_writable`` is for the shared local-database lock in ``/tmp`` so
+    every OS user on the machine can serialize PostgreSQL access. Snapshot and
+    history locks stay at the creating process's umask.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     file = path.open("a+")
-    try:
-        path.chmod(0o666)
-    except OSError:
-        logger.warning("Could not make lock file world-writable: %s", path)
+    if world_writable:
+        try:
+            path.chmod(0o666)
+        except OSError:
+            logger.warning("Could not make lock file world-writable: %s", path)
     using_fallback = False
     try:
         try:

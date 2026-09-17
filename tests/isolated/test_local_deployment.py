@@ -475,6 +475,21 @@ def test_local_database_lock_maps_permission_error(tmp_path, monkeypatch):
         lock_path.chmod(0o666)
 
 
+def test_local_database_lock_does_not_remap_permission_error_inside_body(
+    tmp_path, monkeypatch
+):
+    from psynet.local_deployment import local_database_lock
+
+    lock_path = tmp_path / "ok.lock"
+    monkeypatch.setattr(
+        "psynet.local_deployment.local_database_lock_path",
+        lambda: lock_path,
+    )
+    with pytest.raises(PermissionError, match="inside the lock"):
+        with local_database_lock(tmp_path, "gibbs"):
+            raise PermissionError("inside the lock")
+
+
 def test_second_process_is_told_to_stop_the_running_experiment(tmp_path, monkeypatch):
     import os
     import subprocess
@@ -633,6 +648,7 @@ def test_deploy_local_restores_selected_snapshot_and_saves_shutdown(
     assert calls["run"][1]["local_id"] == "gibbs"
     assert calls["run"][1]["resumed_from"] == 4
     assert calls["run"][1]["services_ready"] is True
+    assert calls["run"][1]["skip_protect"] is True
     ensure_services.assert_called_once_with(assume_yes=False, strict=True)
     assert calls["snapshot"][1]["reason"] == "shutdown"
     assert calls["snapshot"][1]["resumed_from"] == 4
