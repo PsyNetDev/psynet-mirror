@@ -4073,11 +4073,6 @@ def _run_performance_test_with_new_server(
     duration_minutes,
     debug,
     do_export=True,
-    _start_server=_start_local_server_and_wait_for_ready,
-    _stop_server_fn=_stop_server,
-    _run_stage=_run_performance_test_with_existing_server,
-    _time_export_fn=_time_export,
-    _base_url=None,
 ):
     """Run performance test after starting a new experiment server. Returns results list.
 
@@ -4111,14 +4106,14 @@ def _run_performance_test_with_new_server(
             shared_bot_log.write(demarcation.encode())
             shared_bot_log.flush()
 
-            server_info = _start_server(
+            server_info = _start_local_server_and_wait_for_ready(
                 ["debug", "local", "--legacy", "--no-browsers"],
                 debug=debug,
                 log_file=shared_server_log,
             )
             try:
-                base_url = _base_url or _load_server_url(server_info)
-                stage_results = _run_stage(
+                base_url = _load_server_url(server_info)
+                stage_results = _run_performance_test_with_existing_server(
                     bot_counts=[count],
                     stagger=stagger,
                     time_factor=time_factor,
@@ -4127,12 +4122,12 @@ def _run_performance_test_with_new_server(
                     bot_log_file=shared_bot_log,
                 )
                 if do_export and stage_results:
-                    export_duration, export_error = _time_export_fn()
+                    export_duration, export_error = _time_export()
                     stage_results[0]["export_duration_s"] = export_duration
                     stage_results[0]["export_error"] = export_error
                 all_results.extend(stage_results)
             finally:
-                _stop_server_fn(server_info)
+                _stop_server(server_info)
     finally:
         shared_server_log.close()
         shared_bot_log.close()

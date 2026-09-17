@@ -3983,27 +3983,62 @@ class TestResolvePerfTestOptions:
         assert self.resolve(exp, duration_minutes=0.5).get("duration_minutes") == 0.5
 
 
+def _patch_new_server_internals(
+    mock_start=None, mock_stop=None, mock_run_stage=None, mock_export=None
+):
+    """Patch the four module-level functions called by _run_performance_test_with_new_server."""
+    if mock_start is None:
+        mock_start = Mock(side_effect=lambda *args, **kw: _make_server_info())
+    if mock_stop is None:
+        mock_stop = Mock()
+    if mock_run_stage is None:
+        mock_run_stage = Mock(return_value=[])
+    if mock_export is None:
+        mock_export = Mock(return_value=(1.0, None))
+    return (
+        patch("psynet.command_line._start_local_server_and_wait_for_ready", mock_start),
+        patch("psynet.command_line._stop_server", mock_stop),
+        patch("psynet.command_line._run_performance_test_with_existing_server", mock_run_stage),
+        patch("psynet.command_line._time_export", mock_export),
+        patch("psynet.command_line._load_server_url", return_value="http://localhost:5000"),
+        mock_start,
+        mock_stop,
+        mock_run_stage,
+        mock_export,
+    )
+
+
 class TestRunPerformanceTestWithNewServer:
     """Tests for multi-stage server orchestration in _run_performance_test_with_new_server."""
 
-    def subject(self, **kwargs):
+    def subject(
+        self,
+        *,
+        bot_counts=None,
+        stagger=0.1,
+        time_factor=1.0,
+        duration_minutes=0.5,
+        debug=False,
+        do_export=True,
+        mock_start=None,
+        mock_stop=None,
+        mock_run_stage=None,
+        mock_export=None,
+    ):
         from psynet.command_line import _run_performance_test_with_new_server
 
-        kwargs.setdefault("bot_counts", [5])
-        kwargs.setdefault("stagger", 0.1)
-        kwargs.setdefault("time_factor", 1.0)
-        kwargs.setdefault("duration_minutes", 0.5)
-        kwargs.setdefault("debug", False)
-        kwargs.setdefault("do_export", True)
-        kwargs.setdefault(
-            "_start_server", Mock(side_effect=lambda *args, **kw: _make_server_info())
+        p_start, p_stop, p_run, p_export, p_url, ms, mst, mr, me = (
+            _patch_new_server_internals(mock_start, mock_stop, mock_run_stage, mock_export)
         )
-        kwargs.setdefault("_stop_server_fn", Mock())
-        kwargs.setdefault("_run_stage", Mock(return_value=[]))
-        kwargs.setdefault("_time_export_fn", Mock(return_value=(1.0, None)))
-        kwargs.setdefault("_base_url", "http://localhost:5000")
-        with patch("psynet.command_line._check_port_available"):
-            return _run_performance_test_with_new_server(**kwargs)
+        with patch("psynet.command_line._check_port_available"), p_start, p_stop, p_run, p_export, p_url:
+            return _run_performance_test_with_new_server(
+                bot_counts=bot_counts or [5],
+                stagger=stagger,
+                time_factor=time_factor,
+                duration_minutes=duration_minutes,
+                debug=debug,
+                do_export=do_export,
+            )
 
     def test_restarts_between_stages_for_multiple_bot_counts(self):
         """Each bot count should get its own fresh server."""
@@ -4012,9 +4047,9 @@ class TestRunPerformanceTestWithNewServer:
         mock_run = Mock(return_value=[])
         self.subject(
             bot_counts=[5, 10],
-            _start_server=mock_start,
-            _stop_server_fn=mock_stop,
-            _run_stage=mock_run,
+            mock_start=mock_start,
+            mock_stop=mock_stop,
+            mock_run_stage=mock_run,
         )
         assert mock_start.call_count == 2
         assert mock_stop.call_count == 2
@@ -4026,7 +4061,7 @@ class TestRunPerformanceTestWithNewServer:
         """Single bot count should start/stop once."""
         mock_start = Mock(side_effect=lambda *args, **kw: _make_server_info())
         mock_stop = Mock()
-        self.subject(_start_server=mock_start, _stop_server_fn=mock_stop)
+        self.subject(mock_start=mock_start, mock_stop=mock_stop)
         assert mock_start.call_count == 1
         assert mock_stop.call_count == 1
 
@@ -4035,52 +4070,49 @@ class TestRunPerformanceTestWithNewServer:
         mock_stop = Mock()
         with pytest.raises(RuntimeError, match="stage failed"):
             self.subject(
-                _stop_server_fn=mock_stop,
-                _run_stage=Mock(side_effect=RuntimeError("stage failed")),
+                mock_stop=mock_stop,
+                mock_run_stage=Mock(side_effect=RuntimeError("stage failed")),
             )
         mock_stop.assert_called_once()
 
     def test_collects_results_from_all_stages(self):
         """Results returned by each stage are accumulated into the final list."""
         mock_run = Mock(return_value=[{"n_bots": 1}])
-        results = self.subject(bot_counts=[5, 10], _run_stage=mock_run)
+        results = self.subject(bot_counts=[5, 10], mock_run_stage=mock_run)
         assert len(results) == 2
 
     def test_runs_export_per_stage_when_enabled(self):
-        """_time_export_fn called once per stage when do_export=True."""
+        """_time_export called once per stage when do_export=True."""
         mock_run = Mock(return_value=[{"n_bots": 1}])
         mock_export = Mock(return_value=(1.0, None))
         self.subject(
             bot_counts=[5, 10],
             do_export=True,
-            _run_stage=mock_run,
-            _time_export_fn=mock_export,
+            mock_run_stage=mock_run,
+            mock_export=mock_export,
         )
         assert mock_export.call_count == 2
 
     def test_skips_export_when_disabled(self):
-        """_time_export_fn not called when do_export=False."""
+        """_time_export not called when do_export=False."""
         mock_run = Mock(return_value=[{"n_bots": 1}])
         mock_export = Mock(return_value=(1.0, None))
-        self.subject(do_export=False, _run_stage=mock_run, _time_export_fn=mock_export)
+        self.subject(do_export=False, mock_run_stage=mock_run, mock_export=mock_export)
         mock_export.assert_not_called()
 
     def test_port_check_runs_once_regardless_of_stage_count(self):
         """_check_port_available called once before the loop, not once per stage."""
         from psynet.command_line import _run_performance_test_with_new_server
 
-        with patch("psynet.command_line._check_port_available") as mock_check:
+        p_start, p_stop, p_run, p_export, p_url, *_ = _patch_new_server_internals()
+        with patch("psynet.command_line._check_port_available") as mock_check, \
+                p_start, p_stop, p_run, p_export, p_url:
             _run_performance_test_with_new_server(
                 bot_counts=[5, 10, 20],
                 stagger=0.1,
                 time_factor=1.0,
                 duration_minutes=0.5,
                 debug=False,
-                _start_server=Mock(side_effect=lambda *a, **kw: _make_server_info()),
-                _stop_server_fn=Mock(),
-                _run_stage=Mock(return_value=[]),
-                _time_export_fn=Mock(return_value=(1.0, None)),
-                _base_url="http://localhost:5000",
             )
         mock_check.assert_called_once()
 
@@ -4089,10 +4121,11 @@ class TestRunPerformanceTestWithNewServer:
         from psynet.command_line import _run_performance_test_with_new_server
 
         mock_start = Mock()
-        with patch(
-            "psynet.command_line._check_port_available",
-            side_effect=Exception("port in use"),
-        ):
+        p_start, p_stop, p_run, p_export, p_url, *_ = _patch_new_server_internals(
+            mock_start=mock_start
+        )
+        with patch("psynet.command_line._check_port_available", side_effect=Exception("port in use")), \
+                p_start, p_stop, p_run, p_export, p_url:
             with pytest.raises(Exception, match="port in use"):
                 _run_performance_test_with_new_server(
                     bot_counts=[5],
@@ -4100,11 +4133,6 @@ class TestRunPerformanceTestWithNewServer:
                     time_factor=1.0,
                     duration_minutes=0.5,
                     debug=False,
-                    _start_server=mock_start,
-                    _stop_server_fn=Mock(),
-                    _run_stage=Mock(return_value=[]),
-                    _time_export_fn=Mock(return_value=(1.0, None)),
-                    _base_url="http://localhost:5000",
                 )
         mock_start.assert_not_called()
 
