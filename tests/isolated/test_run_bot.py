@@ -1,9 +1,14 @@
+import json
+from types import SimpleNamespace
+from unittest.mock import MagicMock
+
 import pytest
 
 from psynet.asset import Asset
 from psynet.bot import BotDriver
 from psynet.experiment import Request
 from psynet.modular_page import ModularPage
+from psynet.participant import ParticipantDriver
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.timeline import Response
 
@@ -34,6 +39,7 @@ class TestRunBot:
         assert status["page"]["id"] == ["main", 0]
         assert status["page"]["label"] == "favourite_colour"
         assert status["page"]["time_estimate"] == 5
+        assert status["page"]["is_timeline_hold"] is False
         assert status["page"]["bot_response"]["answer"] == "red"
         assert len(response_files) == 0
 
@@ -100,3 +106,219 @@ class TestRunBot:
         page = bot.get_current_page()
         assert isinstance(page, ModularPage)
         assert page.label == "favourite_colour"
+
+
+def test_advance_past_wait_pages_refreshes_status_when_server_already_advanced():
+    """Last-arrival skip must refresh bot drivers, not leave cached hold copy."""
+    from psynet.bot import advance_past_wait_pages
+
+    bot = MagicMock()
+    bot.get_current_page.return_value = SimpleNamespace(is_timeline_hold=False)
+    advance_past_wait_pages([bot])
+    bot.take_page.assert_not_called()
+    bot.refresh_status.assert_called_once()
+
+
+def test_advance_past_wait_pages_refreshes_before_each_wait_iteration():
+    """A partner skipped mid-loop must not submit a stale wait-page uuid."""
+    from psynet.bot import advance_past_wait_pages
+
+    bot = MagicMock()
+
+    def current_page():
+        if bot.take_page.call_count:
+            return SimpleNamespace(is_timeline_hold=False)
+        return SimpleNamespace(is_timeline_hold=True)
+
+    bot.get_current_page.side_effect = current_page
+    advance_past_wait_pages([bot])
+    assert bot.take_page.call_count == 1
+    assert bot.refresh_status.call_count == 2
+
+
+def _driver_page_status(page_uuid, answer="ok"):
+    return {
+        "page_uuid": page_uuid,
+        "page": {
+            "time_estimate": 1,
+            "bot_response": {"answer": answer, "metadata": {}, "blobs": {}},
+        },
+    }
+
+
+def _driver_http_response(body):
+    return SimpleNamespace(
+        status_code=200,
+        json=lambda: body,
+        raise_for_status=lambda: None,
+    )
+
+
+def test_render_page_requests_html_timeline(monkeypatch):
+    """``render_pages=True`` must compile templates, not fetch a JSON snapshot."""
+    seen = {}
+
+    def fake_get(url, params=None, headers=None, **kwargs):
+        seen["url"] = url
+        seen["params"] = dict(params or {})
+        seen["headers"] = dict(headers or {})
+        response = SimpleNamespace(status_code=200, text="<html></html>")
+        response.raise_for_status = lambda: None
+        return response
+
+    monkeypatch.setattr("psynet.participant.requests.get", fake_get)
+    driver = ParticipantDriver.__new__(ParticipantDriver)
+    driver.experiment = SimpleNamespace(base_url="http://psynet.test")
+    driver.participant_unique_id = "abc"
+    driver._render_page()
+    assert seen["url"] == "http://psynet.test/timeline"
+    assert seen["params"] == {"unique_id": "abc"}
+    assert seen["params"].get("mode") != "json"
+    assert seen["headers"].get("Accept") != "application/json"
+
+
+def test_submit_response_retries_once_when_the_page_uuid_rotated(monkeypatch):
+    """Last-arrival skip can rotate page_uuid between status fetch and POST."""
+    driver = ParticipantDriver.__new__(ParticipantDriver)
+    driver.id = 7
+    driver.experiment = SimpleNamespace(base_url="http://psynet.test")
+    driver.response_files = {}
+    driver.status = _driver_page_status("hold-a", "first")
+    posted = []
+
+    def fake_post(_url, data=None, files=None):
+        payload = json.loads(data["json"])
+        posted.append(payload["page_uuid"])
+        if payload["page_uuid"] == "hold-a":
+            return _driver_http_response(
+                {
+                    "submission": "rejected",
+                    "message": "Synchronization problem detected.",
+                }
+            )
+        return _driver_http_response({"submission": "approved"})
+
+    def fake_fetch():
+        driver.status = _driver_page_status("hold-b", "second")
+        driver.response_files = {}
+        driver.status_time_fetched = 0
+
+    monkeypatch.setattr("psynet.participant.requests.post", fake_post)
+    monkeypatch.setattr(driver, "_fetch_status", fake_fetch)
+    monkeypatch.setattr("psynet.participant.db.session.expire_all", lambda: None)
+
+    driver._submit_response(driver.status, {})
+
+    assert posted == ["hold-a", "hold-b"]
+
+
+def test_submit_response_does_not_retry_when_the_page_uuid_is_unchanged(
+    monkeypatch,
+):
+    driver = ParticipantDriver.__new__(ParticipantDriver)
+    driver.id = 7
+    driver.experiment = SimpleNamespace(base_url="http://psynet.test")
+    driver.response_files = {}
+    driver.status = _driver_page_status("hold-a")
+    posted = []
+
+    def fake_post(_url, data=None, files=None):
+        payload = json.loads(data["json"])
+        posted.append(payload["page_uuid"])
+        return _driver_http_response(
+            {
+                "submission": "rejected",
+                "message": "Synchronization problem detected.",
+            }
+        )
+
+    def fake_fetch():
+        driver.status = _driver_page_status("hold-a")
+        driver.response_files = {}
+        driver.status_time_fetched = 0
+
+    monkeypatch.setattr("psynet.participant.requests.post", fake_post)
+    monkeypatch.setattr(driver, "_fetch_status", fake_fetch)
+    monkeypatch.setattr("psynet.participant.db.session.expire_all", lambda: None)
+
+    with pytest.raises(RuntimeError, match="Synchronization problem detected"):
+        driver._submit_response(driver.status, {})
+
+    assert posted == ["hold-a"]
+
+
+def test_submit_response_sends_hold_resume_for_timeline_holds(monkeypatch):
+    """Parallel bots must not take blocking FOR UPDATE on an unready hold."""
+    driver = ParticipantDriver.__new__(ParticipantDriver)
+    driver.id = 7
+    driver.experiment = SimpleNamespace(base_url="http://psynet.test")
+    driver.response_files = {}
+    driver.status = _driver_page_status("hold-a")
+    driver.status["page"]["is_timeline_hold"] = True
+    posted = []
+
+    def fake_post(_url, data=None, files=None):
+        posted.append(json.loads(data["json"]))
+        return _driver_http_response({"submission": "approved"})
+
+    monkeypatch.setattr("psynet.participant.requests.post", fake_post)
+    monkeypatch.setattr(driver, "_fetch_status", lambda: None)
+    monkeypatch.setattr("psynet.participant.db.session.expire_all", lambda: None)
+
+    driver._submit_response(driver.status, {})
+
+    assert posted[0]["timeline_hold_resume"] is True
+
+
+def test_submit_response_retries_structured_busy_like_timeline_gets(monkeypatch):
+    """Hold-resume POST can hit skip's NOWAIT; bots must not fail on the first 503."""
+    from psynet.participant import _BOT_TIMELINE_BUSY_ATTEMPTS
+
+    driver = ParticipantDriver.__new__(ParticipantDriver)
+    driver.id = 7
+    driver.experiment = SimpleNamespace(base_url="http://psynet.test")
+    driver.response_files = {}
+    driver.status = _driver_page_status("hold-a")
+    driver.status["page"]["is_timeline_hold"] = True
+    calls = {"n": 0}
+
+    def fake_post(_url, data=None, files=None):
+        calls["n"] += 1
+        if calls["n"] < _BOT_TIMELINE_BUSY_ATTEMPTS:
+            return SimpleNamespace(
+                status_code=503,
+                json=lambda: {"status": "busy", "submission": "busy"},
+                text='{"status": "busy", "submission": "busy"}',
+                raise_for_status=lambda: None,
+            )
+        return _driver_http_response({"submission": "approved"})
+
+    monkeypatch.setattr("psynet.participant.requests.post", fake_post)
+    monkeypatch.setattr(driver, "_fetch_status", lambda: None)
+    monkeypatch.setattr("psynet.participant.db.session.expire_all", lambda: None)
+    monkeypatch.setattr("psynet.participant.time.sleep", lambda s: None)
+
+    driver._submit_response(driver.status, {})
+
+    assert calls["n"] == _BOT_TIMELINE_BUSY_ATTEMPTS
+
+
+def test_take_page_pauses_when_still_on_timeline_hold(monkeypatch):
+    """Hold polling must not busy-loop ordinary Next against last-arrival."""
+    from psynet.participant import _TIMELINE_HOLD_POLL_SECONDS
+
+    driver = ParticipantDriver.__new__(ParticipantDriver)
+    driver.status = _driver_page_status("hold-a")
+    driver.status["status"] = "working"
+    driver.status["page"]["is_timeline_hold"] = True
+    driver.response_files = {}
+    sleeps = []
+    monkeypatch.setattr(driver, "_simulate_page_time", lambda *a, **k: None)
+    monkeypatch.setattr(driver, "_submit_response", lambda *a, **k: None)
+    monkeypatch.setattr(driver, "_render_page", lambda: None)
+    monkeypatch.setattr(driver, "refresh_status", lambda: None)
+    monkeypatch.setattr("psynet.participant.time.sleep", lambda s: sleeps.append(s))
+
+    driver.take_page()
+
+    assert sleeps == [_TIMELINE_HOLD_POLL_SECONDS]

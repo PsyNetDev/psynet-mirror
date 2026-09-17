@@ -185,9 +185,9 @@ dump.rdb
 /demos/**/test.py
 
 # Scaffold and dependency files generated inside test experiments.
-# Stock config.txt is ignored like demos; already-tracked custom configs stay
-# tracked. Use ``git add -f path/to/config.txt`` when first adding a new custom
-# config under these trees.
+# Stock config.txt and README.md are ignored like other scaffold files;
+# already-tracked custom copies stay tracked. Use ``git add -f`` when first
+# adding a new custom config or README under these trees.
 /tests/experiments/**/.dockerignore
 /tests/experiments/**/.gitignore
 /tests/experiments/**/.python-version

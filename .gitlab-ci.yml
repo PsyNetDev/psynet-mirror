@@ -185,6 +185,7 @@ playwright_e2e_legacy:
       -e AWS_ACCESS_KEY_ID -e AWS_DEFAULT_REGION -e AWS_SECRET_ACCESS_KEY
       -e PLAYWRIGHT_JUNIT_OUTPUT_NAME=public/playwright-junit-legacy.xml
       -e PSYNET_WORKSPACE
+      -e PSYNET_USE_LEGACY_DEBUG=1
       -e inplace_timeline_transitions=false
       -v "$PWD:$PSYNET_WORKSPACE"
       -w $PSYNET_WORKSPACE
@@ -212,6 +213,7 @@ playwright_e2e_default:
       -e AWS_ACCESS_KEY_ID -e AWS_DEFAULT_REGION -e AWS_SECRET_ACCESS_KEY
       -e PLAYWRIGHT_JUNIT_OUTPUT_NAME=public/playwright-junit-default.xml
       -e PSYNET_WORKSPACE
+      -e PSYNET_USE_LEGACY_DEBUG=1
       -v "$PWD:$PSYNET_WORKSPACE"
       -w $PSYNET_WORKSPACE
       $DOCKER_LOCAL_TAG-playwright bash -c "uv pip install --no-cache --system --no-deps -e \"$PSYNET_WORKSPACE\" && npm ci && node tests/playwright/check-mode-tags.js && npx playwright test --grep '@both|@inplace-only' --reporter=line,junit,html"

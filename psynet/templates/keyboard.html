@@ -68,6 +68,7 @@
 
     function onNextButton() {
         let button = $("#next-button");
+        psynet.captureSubmissionControlState();
         button.width(button.width());
         button.height(button.height());
         disableButton();

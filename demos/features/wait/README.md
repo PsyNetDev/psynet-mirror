@@ -1,9 +1,13 @@
 # README
 
-`wait_while` polls a condition and holds the participant until it becomes false
-(with `expected_wait` and `check_interval` for progress estimates). Here it
-simply waits about four seconds from a stored start time — the same helper is
-often used to wait for uploads or async work to finish.
+`wait_while` preserves the current page with a compact waiting indicator until
+its condition becomes false. Framework events wake the browser promptly;
+`check_interval` remains the fallback for arbitrary conditions such as the
+time-based example here. `expected_wait` controls progress estimation, while
+actual visible waiting time determines time credit by default.
+
+Pass `wait_page=WaitPage` explicitly when a dedicated waiting screen is
+preferred.
 
 ## Usage
 

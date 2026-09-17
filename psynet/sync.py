@@ -12,18 +12,22 @@ Glossary
 Barrier
     A timeline element that pauses participants until some release condition is
     satisfied (for example, "wait until two participants arrive"). Barriers are
-    subclasses of ``Barrier``/``GroupBarrier``. In a timeline they usually wrap
-    a ``WaitPage`` loop so participants see a waiting screen while they wait.
+    subclasses of ``Barrier``/``GroupBarrier``. By default the browser preserves
+    the current page and shows a lightweight hold indicator while it waits.
 
 Grouper and sync group
     A ``SimpleGrouper`` (or other grouper) is a timeline element that forms
     ``SyncGroup`` rows once enough participants are available. Group barriers
     rely on these groups to decide who to release together.
 
-Barrier registry
-    Barriers and their waiting participants are persisted in the database via
-    ``BarrierRecord`` and ``ParticipantLinkBarrier``. This replaces the older
-    in-memory registry so multiple worker processes can safely cooperate.
+Barrier definition and instance
+    A ``BarrierDefinition`` identifies the public waiting area. A
+    ``BarrierInstance`` stores the stable behavior for one group visit.
+    ``ParticipantLinkBarrier`` rows attach participants to that visit. At most
+    one active instance exists per group visit, and ungrouped barriers share
+    one active pool per barrier ID. Keeping definition, visit, and work-claim
+    identities separate lets multiple worker processes cooperate without using
+    mutable metadata as a mutex.
 
 Where this shows up in a timeline
 ---------------------------------
@@ -38,24 +42,52 @@ How processing works
 --------------------
 When a participant reaches a barrier, ``Barrier.receive_participant``:
 
-- Ensures a ``BarrierRecord`` exists (storing a lightweight copy of the barrier).
+- Registers the definition and resolves a stable instance in the request's
+  transaction. Group barriers use one instance per sync-group visit; groupers
+  retain a shared waiting-pool instance.
 - Inserts a ``ParticipantLinkBarrier`` row marking the participant as waiting.
 
 A scheduled task in ``Experiment._check_barriers`` calls ``check_barriers`` in
 this module. That loop:
 
-- Finds the next waiting barrier record.
-- Locks it using ``SELECT ... FOR UPDATE SKIP LOCKED`` so only one worker
-  processes a barrier at a time.
-- Calls ``Barrier.check`` in an isolated transaction.
+- Finds waiting barrier instances.
+- Claims each with a PostgreSQL advisory transaction lock on a dedicated
+  connection, leaving definition and instance metadata available to arrival
+  requests. That extra transaction stays open until this poller's
+  skip-after-commit finishes.
+- Locks waiters with ``FOR UPDATE NOWAIT``. If any waiter is already locked
+  (for example by ``POST /response``), it skips that barrier this tick instead
+  of blocking the poller.
+- Evaluates the barrier's release hooks in an isolated transaction, then
+  skips waiters **this poller** released, one row at a time, after that commit.
 - Logs and skips failures per barrier so one bad barrier does not stall others.
+- Keeps hold-wake publishes unpublished until the sweep returns.
 
-Callable attributes on barriers (e.g., ``on_release``) are serialized via
-``serialize_callable`` so they can be stored inside ``BarrierRecord`` safely.
+Each default barrier visit links to a durable ``TimelineHoldRecord``. Releasing
+the link accounts waiting through the release time and queues a targeted browser
+wake. Each participant's hold channel (`psynet_timeline_hold:<id>`) publishes
+that wake only after the database transaction commits; the browser then
+rechecks the authoritative link state.
+
+``Barrier`` also queues those hooks when a participant arrives. After the
+arrival transaction commits, the response route evaluates the barrier in a
+short coordination transaction before rendering. That lets a ``Grouper`` form
+groups and a ``GroupBarrier`` release the group without waiting for the poller.
+Last-arrival does not skip partner timeline cursors after that commit; partners
+leave on overlay wake (or this poller, if it won the release). Waiter rows stay
+``NOWAIT`` during the check so a locked partner cannot stall that request for
+``lock_timeout``.
+
+Callable attributes on barriers (e.g., ``on_release``) persist through
+:mod:`psynet.barrier_spec` so each ``BarrierInstance`` keeps stable release
+behavior without pickling waiting pages. The reconstructed object is a
+release/callback receiver, not a wait page. See :class:`Barrier` for which
+methods are live-only.
 """
 
-import copy
 import random
+import uuid
+from contextlib import contextmanager
 from math import floor
 from typing import Callable, List, Literal, Optional, Union
 
@@ -66,23 +98,493 @@ from sqlalchemy import (
     Column,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
+    Text,
+    event,
+    text,
 )
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.orm import backref, deferred, joinedload, object_session, relationship
+from sqlalchemy.orm import (
+    Session,
+    backref,
+    deferred,
+    joinedload,
+    object_session,
+    relationship,
+    selectinload,
+)
+from sqlalchemy.orm.attributes import set_committed_value
 
+from psynet.barrier_spec import (
+    BarrierSpecError,
+    barrier_from_spec_json,
+    barrier_spec_json,
+    behavior_hash_from_json,
+)
 from psynet.data import SQLBase, SQLMixin, register_table
-from psynet.db import transaction
-from psynet.field import PythonClass, PythonObject
-from psynet.page import UnsuccessfulEndPage, WaitPage
+from psynet.db import (
+    _set_transaction_lock_timeout,
+    is_transient_transaction_error,
+)
+from psynet.field import PythonClass
+from psynet.page import UnsuccessfulEndPage
 from psynet.participant import Participant
 from psynet.serialize import serialize_callable
-from psynet.timeline import CodeBlock, EltCollection, conditional
-from psynet.utils import get_logger
+from psynet.timeline import CodeBlock, EltCollection, _is_timeline_hold, conditional
+from psynet.timeline_hold import (
+    _defer_timeline_hold_wakes,
+    _queue_arrival_update,
+    _queue_timeline_hold_wake,
+    _TimelineHoldPage,
+    default_group_barrier_arrival_message,
+)
+from psynet.utils import call_function_with_context, get_config, get_logger
 
 logger = get_logger()
+
+_PENDING_BARRIER_CHECKS_KEY = "psynet_pending_barrier_checks"
+_RELEASED_HOLD_WAITER_IDS_KEY = "psynet_released_hold_waiter_ids"
+_NESTED_BARRIER_QUEUE_SNAPSHOTS_KEY = "psynet_nested_barrier_queue_snapshots"
+_BARRIER_FROM_SPEC_CACHE_KEY = "psynet_barrier_from_spec"
+
+
+def _forget_barrier_from_spec(instance_id):
+    """Drop a reconstructed barrier so a later check cannot reuse peek mutations.
+
+    The visit-claim peek rolls back its savepoint, which undoes ORM writes.
+    Python attributes on the cached registry object would otherwise survive.
+    """
+    session = db.session
+    if session is None or instance_id is None:
+        return
+    cache = session.info.get(_BARRIER_FROM_SPEC_CACHE_KEY)
+    if cache:
+        cache.pop(instance_id, None)
+
+
+# Shared cap for last-arrival finalize, ready-hold skip, and the poller sweep.
+# Each pass can mint a fresh visit; without a bound those walks occupy a worker.
+# Walkers observe once more after the last work unit so a walk that settles on
+# the cap still succeeds.
+_MAX_BARRIER_WALK_PASSES = 32
+
+
+def _barrier_walk_budget():
+    """Yield True for each allowed work unit, then False to observe the result.
+
+    Callers must return if the walk has already settled, and raise if this
+    yield is False and more work remains. That extra observation is what lets
+    a walk that finishes on the last allowed unit succeed.
+    """
+    for _ in range(_MAX_BARRIER_WALK_PASSES):
+        yield True
+    yield False
+
+
+class _BarrierAuthorHookError(Exception):
+    """Author ``on_release`` failed; last-arrival keeps the group waiting."""
+
+
+def _queue_barrier_check(barrier_instance_id):
+    """Queue one instance for checking after the arrival transaction commits."""
+    db.session.info.setdefault(_PENDING_BARRIER_CHECKS_KEY, set()).add(
+        barrier_instance_id
+    )
+
+
+def _take_pending_barrier_checks():
+    """Take the barrier checks queued by the preceding successful transaction."""
+    return sorted(db.session.info.pop(_PENDING_BARRIER_CHECKS_KEY, set()))
+
+
+def _queue_released_hold_waiters(participants):
+    """Remember released waiters so the poller can skip them after its own check."""
+    db.session.info.setdefault(_RELEASED_HOLD_WAITER_IDS_KEY, []).extend(
+        participant.id for participant in participants
+    )
+
+
+def _take_released_hold_waiter_ids():
+    """Take waiter ids queued by the barrier check that just ran."""
+    ids = db.session.info.pop(_RELEASED_HOLD_WAITER_IDS_KEY, [])
+    return sorted(set(ids))
+
+
+def _rollback_preserving_barrier_queues():
+    """Roll back without dropping queued post-commit barrier work.
+
+    Skip-after-commit may ``NOWAIT``-miss a waiter whose own request already
+    holds the row. PostgreSQL aborts that transaction, so the session must
+    roll back before the next waiter. ``after_rollback`` would otherwise
+    discard stacked checks queued by a waiter this loop already skipped.
+    """
+    pending = set(db.session.info.get(_PENDING_BARRIER_CHECKS_KEY, set()))
+    released = list(db.session.info.get(_RELEASED_HOLD_WAITER_IDS_KEY, []))
+    db.session.rollback()
+    if pending:
+        db.session.info[_PENDING_BARRIER_CHECKS_KEY] = pending
+    if released:
+        db.session.info[_RELEASED_HOLD_WAITER_IDS_KEY] = released
+
+
+def _hold_instance_id_for_page(participant, page):
+    """Return the unreleased hold instance for this page, if any."""
+    if not _is_timeline_hold(page):
+        return None
+    barrier_id = getattr(page, "barrier_id", None)
+    if barrier_id is None:
+        return None
+    barriers = getattr(participant, "active_barriers", None)
+    if not barriers:
+        return None
+    link = barriers.get(barrier_id)
+    if link is None or link.released or link.barrier_instance_id is None:
+        return None
+    return link.barrier_instance_id
+
+
+def _visit_check_would_release(instance_id):
+    """Return whether evaluating this visit would release waiters.
+
+    Read-only: used before deciding to wait for the visit claim. Spec errors
+    match the check path (do not wait, do not fail the arriver). Other
+    non-transient peek failures wait so last-arrival still skips in one GET.
+    Transient database errors propagate so the request can return HTTP 503.
+    """
+    try:
+        nested = db.session.begin_nested()
+        try:
+            instance = BarrierInstance.query.get(instance_id)
+            if instance is None:
+                result = False
+            else:
+                barrier = instance.get_barrier()
+                if not isinstance(barrier, Barrier):
+                    result = True
+                else:
+                    waiting = _get_waiting_participants(
+                        instance.barrier_id,
+                        instance.id,
+                        for_update=False,
+                        nowait=False,
+                    )
+                    result = bool(barrier.would_release(waiting))
+        finally:
+            nested.rollback()
+            _forget_barrier_from_spec(instance_id)
+        return result
+    except BarrierSpecError:
+        logger.exception(
+            "Barrier instance %s failed a side-effect-free release peek "
+            "because of a spec error.",
+            instance_id,
+        )
+        return False
+    except Exception as err:
+        if is_transient_transaction_error(err):
+            raise
+        logger.exception(
+            "Barrier instance %s failed a side-effect-free release peek.",
+            instance_id,
+        )
+        return True
+
+
+def _pending_checks_should_wait_for_claim(instance_ids):
+    """Return whether this request may block on the visit claim for these checks.
+
+    Waiter arrivals that cannot release must not occupy a worker behind
+    last-arrival. A filled visit still waits so stacked holds skip in one
+    request. ``GET /timeline`` and ``POST /response`` both use this peek.
+    """
+    return any(_visit_check_would_release(instance_id) for instance_id in instance_ids)
+
+
+@event.listens_for(db.session, "after_transaction_create")
+def _snapshot_pending_barrier_queues_for_nested(session, transaction):
+    """Remember queued checks so a SAVEPOINT rollback can restore them."""
+    if not transaction.nested:
+        return
+    pending = set(session.info.get(_PENDING_BARRIER_CHECKS_KEY, set()))
+    released = list(session.info.get(_RELEASED_HOLD_WAITER_IDS_KEY, []))
+    session.info.setdefault(_NESTED_BARRIER_QUEUE_SNAPSHOTS_KEY, []).append(
+        (pending, released)
+    )
+
+
+@event.listens_for(db.session, "after_rollback")
+def _discard_pending_barrier_checks(session):
+    """Restore pre-savepoint queues on nested rollback; drop them on root rollback.
+
+    Detect the SAVEPOINT via the snapshot stack. ``in_nested_transaction()``
+    may already be false when this handler runs. A later instance's waiter
+    ``NOWAIT`` miss must not wipe stacked checks queued by an earlier skip
+    in the same ``_run_pending_barrier_checks`` sweep.
+    """
+    stack = session.info.get(_NESTED_BARRIER_QUEUE_SNAPSHOTS_KEY) or []
+    if stack:
+        pending, released = stack[-1]
+        if pending:
+            session.info[_PENDING_BARRIER_CHECKS_KEY] = set(pending)
+        else:
+            session.info.pop(_PENDING_BARRIER_CHECKS_KEY, None)
+        if released:
+            session.info[_RELEASED_HOLD_WAITER_IDS_KEY] = list(released)
+        else:
+            session.info.pop(_RELEASED_HOLD_WAITER_IDS_KEY, None)
+        return
+    session.info.pop(_PENDING_BARRIER_CHECKS_KEY, None)
+    session.info.pop(_RELEASED_HOLD_WAITER_IDS_KEY, None)
+
+
+@event.listens_for(db.session, "after_transaction_end")
+def _pop_nested_barrier_queue_snapshot(session, transaction):
+    if not transaction.nested:
+        return
+    stack = session.info.get(_NESTED_BARRIER_QUEUE_SNAPSHOTS_KEY)
+    if stack:
+        stack.pop()
+
+
+def _execute_advisory_xact_lock(bind, instance_id, *, wait):
+    """Take or try the visit xact claim on ``bind``.
+
+    ``pg_advisory_xact_lock`` returns void, so a blocking claim must not use
+    ``bool(scalar())`` — that would look like a missed claim after a wait.
+    """
+    if wait:
+        bind.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:instance_id, 0))"),
+            {"instance_id": instance_id},
+        )
+        return True
+    return bool(
+        bind.execute(
+            text("SELECT pg_try_advisory_xact_lock(hashtextextended(:instance_id, 0))"),
+            {"instance_id": instance_id},
+        ).scalar()
+    )
+
+
+def _claim_barrier_instance(instance_id, *, wait=False):
+    """Claim one barrier visit on the ORM session.
+
+    Instance *creation* uses this on a scope key distinct from the visit id.
+    Check-and-skip holds the visit id on a dedicated connection instead, so
+    the ORM session does not wait on itself.
+    """
+    return _execute_advisory_xact_lock(db.session, instance_id, wait=wait)
+
+
+@contextmanager
+def _hold_barrier_instance_claim(instance_id, *, wait=False):
+    """Hold the visit xact claim on a dedicated connection until the caller exits.
+
+    Check and skip run on ``db.session`` and must not acquire this same key
+    while the extra transaction is open. Ending this transaction drops the
+    claim even if skip raises, so the lock cannot leak into the pool.
+    """
+    with db.engine.connect() as conn:
+        with conn.begin():
+            timeout = get_config().get("timeline_lock_timeout_seconds")
+            conn.execute(
+                text("SELECT set_config('lock_timeout', :timeout, true)"),
+                {"timeout": f"{timeout}s"},
+            )
+            acquired = _execute_advisory_xact_lock(conn, instance_id, wait=wait)
+            yield acquired
+
+
+def _get_waiting_participants(
+    barrier_id: str,
+    barrier_instance_id: str,
+    *,
+    for_update: bool,
+    nowait: bool,
+) -> List[Participant]:
+    """Return active waiters for one persisted barrier visit.
+
+    Per-waiter collections use ``selectinload``, not extra ``joinedload`` on
+    this query. The lock clause already targets the link and participant
+    rows; joining ``timeline_hold`` or those collections would add more
+    outer joins to a ``FOR UPDATE`` statement (a PostgreSQL footgun) or a
+    cartesian product. ``Participant._current_trial`` is already
+    ``lazy="joined"``, so this query inherits one outer join to ``trial``;
+    that alias is not in the ``OF`` list. The follow-up ``IN`` queries do
+    not take extra row locks.
+
+    ``sync_group_links`` is populated separately; see
+    ``_populate_sync_group_links``.
+    """
+    query = (
+        ParticipantLinkBarrier.query.join(Participant)
+        .filter(
+            ParticipantLinkBarrier.barrier_id == barrier_id,
+            ParticipantLinkBarrier.barrier_instance_id == barrier_instance_id,
+            ~ParticipantLinkBarrier.released,
+            ~Participant.failed,
+            Participant.status == "working",
+        )
+        .options(
+            joinedload(ParticipantLinkBarrier.participant, innerjoin=True).options(
+                selectinload(Participant.active_barriers),
+            ),
+            selectinload(ParticipantLinkBarrier.timeline_hold),
+        )
+        .order_by(Participant.id)
+    )
+    if for_update:
+        query = query.with_for_update(
+            of=[ParticipantLinkBarrier, Participant],
+            nowait=nowait,
+        ).populate_existing()
+    waiters = [link.participant for link in query.all()]
+    _populate_sync_group_links(waiters)
+    return waiters
+
+
+def _populate_sync_group_links(participants):
+    """Batch-load ``sync_group_links`` without a relationship loader option.
+
+    ``selectinload(Participant.sync_group_links)`` on the waiter query makes
+    later group walks lazy-load that collection once per member, which shows
+    up as extra statements in arrival-notice lookups. An explicit ``IN``
+    query plus ``set_committed_value`` keeps the check O(1) without that
+    side effect.
+
+    Call this before ``add_participant`` in the same transaction, or after
+    ``expire_all``. ``set_committed_value`` replaces the collection and drops
+    pending in-session links that have not been flushed.
+    """
+    if not participants:
+        return
+    grouped = {participant.id: [] for participant in participants}
+    for link in ParticipantLinkSyncGroup.query.filter(
+        ParticipantLinkSyncGroup.participant_id.in_(list(grouped))
+    ):
+        grouped[link.participant_id].append(link)
+    for participant in participants:
+        set_committed_value(participant, "sync_group_links", grouped[participant.id])
+
+
+_HAS_ACTIVE_SYNC_GROUP_ATTR = "_psynet_has_active_sync_group"
+
+
+def _membership_cache():
+    """Return the per-session membership memo, or ``None`` if no session."""
+    session = db.session
+    if session is None:
+        return None
+    return session.info.setdefault(_HAS_ACTIVE_SYNC_GROUP_ATTR, {})
+
+
+def _remember_active_sync_group(participant, participant_id, result):
+    """Memoize a membership check on the instance and the current session."""
+    participant.__dict__[_HAS_ACTIVE_SYNC_GROUP_ATTR] = result
+    cache = _membership_cache()
+    if cache is not None:
+        cache[participant_id] = result
+    return result
+
+
+def _forget_active_sync_group(participant):
+    """Drop a stale membership memo after grouping changes."""
+    participant_id = getattr(participant, "id", None)
+    if participant_id is not None:
+        participant.__dict__.pop(_HAS_ACTIVE_SYNC_GROUP_ATTR, None)
+        cache = _membership_cache()
+        if cache is not None:
+            cache.pop(participant_id, None)
+
+
+def _has_active_sync_group(participant):
+    """Return whether this participant currently belongs to an active sync group.
+
+    This is a cheap ``EXISTS`` query, memoized for the rest of the session so
+    page rendering does not repeat it. Callers that already loaded
+    ``sync_group_links`` should inspect ``active_sync_groups`` instead so
+    ungrouped pages skip even this lookup.
+    """
+    participant_id = getattr(participant, "id", None)
+    if participant_id is None:
+        return False
+    cache = _membership_cache()
+    if cache is not None and participant_id in cache:
+        return cache[participant_id]
+    cached = participant.__dict__.get(_HAS_ACTIVE_SYNC_GROUP_ATTR)
+    if cached is not None:
+        return _remember_active_sync_group(participant, participant_id, cached)
+    result = (
+        db.session.query(ParticipantLinkSyncGroup.id)
+        .join(ParticipantLinkSyncGroup.sync_group)
+        .filter(
+            ParticipantLinkSyncGroup.participant_id == participant_id,
+            ParticipantLinkSyncGroup.active.is_(True),
+            SyncGroup.active.is_(True),
+        )
+        .first()
+        is not None
+    )
+    return _remember_active_sync_group(participant, participant_id, result)
+
+
+class _BarrierHoldPage(_TimelineHoldPage):
+    """Internal timeline checkpoint that preserves the preceding browser page."""
+
+    def __init__(self, barrier):
+        self.barrier = barrier
+        self.barrier_id = barrier.id
+        super().__init__(
+            hold_id=f"barrier:{barrier.id}",
+            expected_wait=barrier.expected_wait,
+            max_wait_time=barrier.max_wait_time,
+            fix_time_credit=barrier.fix_time_credit,
+            check_interval=2.0,
+            content=barrier.content,
+            message_kind="barrier" if barrier.content is None else None,
+            on_timeout=barrier.handle_max_wait_timeout,
+        )
+
+    @property
+    def fail_on_timeout(self):
+        return self.barrier.max_wait_action == "fail"
+
+    def participant_can_resume(self, experiment, participant):
+        """Return whether the barrier released this participant.
+
+        Check the in-session ``released`` flag. SQLAlchemy does not drop a
+        just-released link from ``active_barriers`` until the collection
+        expires, so membership alone would hide a same-request last-arrival
+        release from ``_advance_past_ready_holds``.
+        """
+        link = participant.active_barriers.get(self.barrier_id)
+        return link is None or bool(link.released)
+
+    def on_hold_record_created(self, participant, record):
+        link = participant.active_barriers.get(self.barrier_id)
+        if link is None:
+            raise RuntimeError(
+                f"Participant {participant.id} has no active link for barrier "
+                f"'{self.barrier_id}'."
+            )
+        link.timeline_hold = record
+        self.barrier._queue_check_on_arrival(link.barrier_instance)
+        self.barrier._notify_arrivals(participant)
+
+    def hold_progress_text(self, participant):
+        """Return arrival progress for a participant waiting at this barrier."""
+        if participant is None:
+            return None
+        return self.barrier._hold_progress_text(participant)
+
+    def prepare_to_resume(self, participant):
+        if (
+            participant.pending_redirect is not None or participant.failed
+        ) and self.barrier_id in participant.active_barriers:
+            participant.active_barriers[self.barrier_id].release()
 
 
 class _ReadOnlyParticipantList(list):
@@ -106,6 +608,19 @@ class Barrier(EltCollection):
     are satisfied to release them. The decision about which participants to release at any given point is taken by
     the ``choose_who_to_release`` method, which the user is expected to provide.
 
+    Timeline construction and wait UI run on this live object. Barrier checks,
+    ``on_release``, and arrival-notice lookups reconstruct a separate object
+    from :func:`~psynet.barrier_spec.barrier_from_spec_json`. That reconstructed
+    object has ``id``, custom release state, scalar presentation (``content``,
+    timeouts), and notification settings. It does not include wait-page
+    construction (``waiting_logic``, ``_uses_timeline_hold``,
+    ``waiting_logic_expected_repetitions``).
+
+    Call :meth:`check_waiting_participants`, :meth:`choose_who_to_release`,
+    and :meth:`release` on reconstructed objects. Keep
+    :meth:`receive_participant` on the live timeline barrier; arrival overlay
+    notify (``_notify_arrivals``) is live-only as well.
+
     Parameters
     ----------
 
@@ -115,20 +630,32 @@ class Barrier(EltCollection):
 
     waiting_logic
         Either a single timeline element or a list of timeline elements (created by ``join``) that is to be displayed
-        to the participant while they are waiting at the barrier. If left at the default value of ``None``
-        then the participant will be shown a default waiting page.
+        to the participant while they are waiting at the barrier. If left at the
+        default value of ``None``, the current page remains visible beneath a
+        lightweight waiting indicator.
 
     waiting_logic_expected_repetitions
-        The number of times that the participant is expected to experience the waiting_logic during a given barrier
-        visit. This is used for time estimation.
+        Expected repetitions for explicit ``waiting_logic``. For a default
+        hold, this is used only to derive the legacy ``expected_wait`` when no
+        explicit estimate is supplied.
 
     max_wait_time
         The maximum amount of time in seconds that the participant will be allowed to wait at the barrier;
         if this time is exceeded then the participant will be failed and sent to the end of the experiment.
 
     fix_time_credit
-        If set to ``True``, then the amount of time 'credit' that the participant receives will be capped
-        according to the estimate derived from ``waiting_logic`` and ``waiting_logic_expected_repetitions``.
+        If set to ``True``, award fixed expected time credit. Otherwise default
+        holds credit actual visible waiting time up to ``max_wait_time``.
+
+    expected_wait
+        Expected duration of a default timeline hold. If omitted, preserves the
+        historical default estimate of 0.5 seconds multiplied by
+        ``waiting_logic_expected_repetitions``.
+
+    content
+        Message displayed by the default timeline hold overlay. Only used when
+        ``waiting_logic`` is omitted. If omitted, participants see
+        "Waiting for other participants…".
     """
 
     def __init__(
@@ -138,22 +665,33 @@ class Barrier(EltCollection):
         waiting_logic_expected_repetitions=3,
         max_wait_time=20,
         fix_time_credit=False,
+        expected_wait=None,
+        content=None,
     ):
-        if waiting_logic is None:
-            waiting_logic = WaitPage(wait_time=0.5)
-
         self.id = id_
-        self.waiting_logic = waiting_logic
-        self.waiting_logic_expected_repetitions = waiting_logic_expected_repetitions
         self.max_wait_time = max_wait_time
-        self.max_wait_action = "fail"
         self.fix_time_credit = fix_time_credit
+        self.waiting_logic_expected_repetitions = waiting_logic_expected_repetitions
+        self.content = content
+        self._uses_timeline_hold = waiting_logic is None
+        if waiting_logic is not None and expected_wait is not None:
+            raise ValueError(
+                "expected_wait only applies when waiting_logic is omitted."
+            )
+        if waiting_logic is not None and content is not None:
+            raise ValueError("content only applies when waiting_logic is omitted.")
+        self.expected_wait = (
+            0.5 * waiting_logic_expected_repetitions
+            if expected_wait is None
+            else expected_wait
+        )
+        if self.expected_wait < 0:
+            raise ValueError("expected_wait must be non-negative.")
+        if waiting_logic is None:
+            waiting_logic = _BarrierHoldPage(self)
 
-    def for_registry(self):
-        """Return a registry-safe copy of the barrier."""
-        barrier = copy.copy(self)
-        barrier.waiting_logic = None
-        return barrier
+        self.waiting_logic = waiting_logic
+        self.max_wait_action = "fail"
 
     def __setattr__(self, name, value):
         if name.startswith("on_"):
@@ -167,6 +705,8 @@ class Barrier(EltCollection):
         Given a list of waiting participants, decides which of these participants should be released
         from the barrier.
 
+        Runs on the reconstructed registry barrier during evaluation.
+
         Parameters
         ----------
         waiting_participants
@@ -179,12 +719,25 @@ class Barrier(EltCollection):
         """
         raise NotImplementedError
 
+    def would_release(self, waiting_participants: List[Participant]) -> bool:
+        """Return whether evaluating this visit would release anyone.
+
+        ``GET /timeline`` uses this to decide whether to wait for the visit
+        claim. It must not mutate participants, groups, or the session.
+        Last-arrival skip-in-one-GET waits only when this is true. Custom
+        barriers that override :meth:`choose_who_to_release` should override
+        this too. The default is ``True`` whenever anyone is waiting, so a
+        missing override still waits rather than first-painting a hold.
+        """
+        return bool(waiting_participants)
+
     def resolve(self):
         from psynet.timeline import join, while_loop
 
-        elts = join(
-            CodeBlock(lambda participant: self.receive_participant(participant)),
-            while_loop(
+        if self._uses_timeline_hold:
+            waiting_elts = self.waiting_logic
+        else:
+            waiting_elts = while_loop(
                 label=f"barrier:{self.id}",
                 condition=lambda participant: (
                     not self.can_participant_exit(participant)
@@ -195,7 +748,11 @@ class Barrier(EltCollection):
                 fix_time_credit=self.fix_time_credit,
                 fail_on_timeout=(self.max_wait_action == "fail"),
                 on_timeout=self.handle_max_wait_timeout,
-            ),
+            )
+
+        elts = join(
+            CodeBlock(lambda participant: self.receive_participant(participant)),
+            waiting_elts,
             conditional(
                 "participant_failed",
                 condition=lambda participant: participant.failed,
@@ -215,67 +772,45 @@ class Barrier(EltCollection):
             self.release(participant)
 
     def receive_participant(self, participant: Participant):
+        """Register this participant on the live timeline barrier.
+
+        Live timeline only. Default holds queue the release check from the
+        hold page after the wait row exists.
+        """
         if object_session(participant) is None:
             db.session.add(participant)
 
-        BarrierRecord.ensure_exists(self.id, self.__class__, barrier=self)
+        barrier_instance = BarrierInstance.for_arrival(self, participant)
 
         link = ParticipantLinkBarrier(
             participant=participant,
             barrier_id=self.id,
+            barrier_instance=barrier_instance,
             arrival_time=timenow(),
         )
         participant.active_barriers[self.id] = link
+        if not self._uses_timeline_hold:
+            self._queue_check_on_arrival(barrier_instance)
+            self._notify_arrivals(participant)
 
-    def get_waiting_participants(self, for_update: bool = False):
-        return self.get_waiting_participants_from_barrier_id(
-            self.id, for_update=for_update
-        )
+    def _queue_check_on_arrival(self, barrier_instance):
+        """Schedule the fast release check for immediately after commit."""
+        _queue_barrier_check(barrier_instance.id)
 
-    @classmethod
-    def get_waiting_participants_from_barrier_id(
-        cls, barrier_id: str, for_update: bool = False
-    ) -> List[Participant]:
+    def _notify_arrivals(self, arriving_participant):
+        """Optionally tell the group that someone arrived at this barrier.
+
+        Live timeline only. Overlay HTML comes from ``waiting_logic``.
         """
-        Gets the participants currently waiting at a barrier.
 
-        Parameters
-        ----------
-        barrier_id
-            The ID of the barrier to check.
+    def _hold_progress_text(self, participant):
+        """Return hold-overlay progress copy, if this barrier publishes arrivals."""
+        return None
 
-        for_update
-            Set to ``True`` if you plan to update the resulting participant objects and their barrier links.
-            The objects will be locked for update in the database
-            and only released at the end of the transaction.
-
-        Returns
-        -------
-
-        A list of waiting participants. Note that this only includes currently active participants
-        (not participants who failed and left the experiment).
-        """
-        query = (
-            ParticipantLinkBarrier.query.join(Participant)
-            .filter(
-                ParticipantLinkBarrier.barrier_id == barrier_id,
-                ~ParticipantLinkBarrier.released,
-                ~Participant.failed,
-                Participant.status == "working",
-            )
-            .options(joinedload(ParticipantLinkBarrier.participant, innerjoin=True))
-            .order_by(Participant.id)
-        )
-
-        if for_update:
-            query = query.with_for_update(
-                of=[ParticipantLinkBarrier, Participant]
-            ).populate_existing()
-
-        links = query.all()
-        participants = [link.participant for link in links]
-
-        return participants
+    def _participant_is_waiting(self, participant):
+        """Return whether this participant is still waiting at this barrier."""
+        link = participant.active_barriers.get(self.id)
+        return link is not None and not bool(link.released)
 
     def release(self, participant: Participant):
         link = participant.active_barriers.get(self.id, None)
@@ -290,11 +825,83 @@ class Barrier(EltCollection):
         barrier_is_active = self.id in participant.active_barriers
         return not barrier_is_active
 
-    def check_waiting_participants(self, waiting_participants: List[Participant]):
-        """Run any side-effecting checks before deciding who to release."""
+    def get_waiting_participants(self, participant=None, *, for_update: bool = False):
+        """Return people currently waiting at this barrier visit.
 
-    def check(self):
-        waiting_participants = self.get_waiting_participants(for_update=True)
+        Pass ``participant`` to scope the list to that person's instance.
+        Ungrouped barriers (groupers) fall back to the one active pool for
+        this barrier ID. Grouped barriers require a participant; see
+        :meth:`GroupBarrier.get_waiting_participants`. This listing does
+        not take extra row locks unless ``for_update`` is true.
+
+        Parameters
+        ----------
+        participant
+            A waiter whose ``active_barriers`` link identifies the visit.
+            Must be a participant, not a boolean; ``for_update`` is
+            keyword-only.
+        for_update
+            Lock the waiter rows until the current transaction ends.
+
+        Returns
+        -------
+        list of Participant
+            Active, unreleased waiters at this visit.
+        """
+        if isinstance(participant, bool):
+            raise TypeError(
+                "get_waiting_participants() takes a Participant as the first "
+                "argument; pass for_update as a keyword."
+            )
+        if participant is not None:
+            link = participant.active_barriers.get(self.id)
+            if link is None:
+                return []
+            instance_id = link.barrier_instance_id
+        else:
+            instance = BarrierInstance._active_instance(self.id, None)
+            instance_id = None if instance is None else instance.id
+        if instance_id is None:
+            return []
+        return _get_waiting_participants(
+            self.id,
+            instance_id,
+            for_update=for_update,
+            nowait=False,
+        )
+
+    def check_waiting_participants(self, waiting_participants: List[Participant]):
+        """Run any side-effecting checks before deciding who to release.
+
+        Runs on the reconstructed registry barrier during evaluation.
+        """
+
+    def _check_instance(self, barrier_instance_id: str):
+        """Lock waiters, release whoever is ready, and return the locked waiters.
+
+        Runs on the reconstructed registry barrier. An inactive leftover with
+        waiters is moved onto the live pool before release runs, so those
+        people join the active visit instead of stealing its unique index.
+        Last-arrival keeps ``instance.active``, so looking for that other
+        pool stays off the budgeted path.
+
+        Released hold waiters are queued so partner row locks drop at the
+        check commit. The poller then skip-advances waiters **it** released;
+        last-arrival drains that queue without moving partner cursors.
+
+        Returns
+        -------
+        list of Participant
+            Participants locked for this check, including people who were not
+            released. Last-arrival handling uses this to drop partner row locks
+            before the rest of the HTTP request continues.
+        """
+        waiting_participants = _get_waiting_participants(
+            self.id,
+            barrier_instance_id,
+            for_update=True,
+            nowait=True,
+        )
         waiting_participants.sort(key=lambda p: p.id)
 
         logger.info(
@@ -304,6 +911,45 @@ class Barrier(EltCollection):
             ", ".join([str(p.id) for p in waiting_participants]),
         )
 
+        instance = BarrierInstance.query.get(barrier_instance_id)
+        other = self._other_active_pool(instance)
+        if other is not None:
+            self._migrate_leftover_waiters(waiting_participants, other)
+            instance.active = False
+            db.session.flush()
+            live = other.get_barrier()
+            if not isinstance(live, Barrier):
+                raise RuntimeError(
+                    f"Barrier instance '{other.id}' is missing or invalid."
+                )
+            return live._check_instance(other.id)
+        return self._release_ready_waiters(waiting_participants, instance)
+
+    def _other_active_pool(self, instance):
+        """Return the live visit that an inactive leftover must not steal.
+
+        Last-arrival keeps ``instance.active`` true, so this lookup stays off
+        that budgeted path.
+        """
+        if instance is None or instance.active:
+            return None
+        other = BarrierInstance._active_instance(instance.barrier_id, instance.group_id)
+        if other is not None and other.id != instance.id:
+            return other
+        return None
+
+    def _migrate_leftover_waiters(self, waiting_participants, other):
+        """Move unreleased leftover waiters onto the live pool."""
+        for participant in waiting_participants:
+            link = participant.active_barriers.get(self.id)
+            if link is None or link.released:
+                continue
+            if link.barrier_instance_id == other.id:
+                continue
+            link.barrier_instance_id = other.id
+
+    def _release_ready_waiters(self, waiting_participants, instance):
+        """Release whoever is ready and record whether the visit still waits."""
         self.check_waiting_participants(waiting_participants)
         participants_to_release = self.choose_who_to_release(waiting_participants)
         participants_to_release.sort(key=lambda p: p.id)
@@ -318,6 +964,82 @@ class Barrier(EltCollection):
 
             for participant in participants_to_release:
                 self.release(participant)
+            _queue_released_hold_waiters(participants_to_release)
+        if instance is not None:
+            instance.active = any(
+                not participant.active_barriers[self.id].released
+                for participant in waiting_participants
+                if self.id in participant.active_barriers
+            )
+            if not waiting_participants and not instance.active:
+                # A locking SELECT can miss waiters that ``EXISTS`` still
+                # sees. Do not mark the visit finished from that snapshot.
+                instance.active = _barrier_instance_has_waiters(instance)
+        return waiting_participants
+
+
+def _advance_released_hold_waiters_after_commit(participant_ids):
+    """Skip waiters this request just released, after their row locks drop.
+
+    The 0.5 s poller uses this for visits **it** released. Last-arrival does
+    not skip partner cursors; those partners leave on overlay wake. The
+    waiter's later hold-resume POST still carries the hold page's uuid;
+    ``process_response`` treats that as an in-place catch-up.
+
+    Each waiter is locked alone so a partner ``GET /timeline`` or overlay
+    POST can take ``FOR UPDATE`` on itself. ``NOWAIT`` skips a waiter whose
+    own request already holds the row.
+    """
+    from .experiment import get_experiment
+
+    if not participant_ids:
+        return
+    experiment = get_experiment()
+    ids = list(participant_ids)
+    for index, participant_id in enumerate(ids):
+        remaining = ids[index + 1 :]
+        try:
+            _set_transaction_lock_timeout(
+                get_config().get("timeline_lock_timeout_seconds")
+            )
+            participant = (
+                experiment._participant_request_query()
+                .with_for_update(of=Participant, nowait=True)
+                .populate_existing()
+                .get(participant_id)
+            )
+        except Exception as err:
+            _rollback_preserving_barrier_queues()
+            if is_transient_transaction_error(err):
+                logger.debug(
+                    "Released waiter %s is advancing in another request.",
+                    participant_id,
+                )
+                continue
+            logger.exception(
+                "Released-hold skip failed for waiter %s; remaining waiters %s "
+                "will recover through overlay wake.",
+                participant_id,
+                remaining,
+            )
+            raise
+        if participant is None:
+            _rollback_preserving_barrier_queues()
+            continue
+        try:
+            page = experiment.timeline.get_current_elt(experiment, participant)
+            if _is_timeline_hold(page):
+                experiment._advance_past_ready_holds(participant, page)
+            db.session.commit()
+        except Exception:
+            _rollback_preserving_barrier_queues()
+            logger.exception(
+                "Released-hold skip failed for waiter %s; remaining waiters %s "
+                "will recover through overlay wake.",
+                participant_id,
+                remaining,
+            )
+            raise
 
 
 class GroupBarrier(Barrier):
@@ -328,6 +1050,14 @@ class GroupBarrier(Barrier):
     If ``accepts_top_ups=True`` for that group, it'll wait just in case new participants join the group.
     If ``accepts_top_ups=False``, then there's no hope for new participants, so the group will be released
     and failed.
+
+    After the arrival write commits, the same request evaluates the barrier in
+    a short transaction so partners are released without waiting for the 0.5 s
+    poller. On the default hold path that arriver then skips their own wait
+    indicator. Partners leave on overlay wake; the poller skips waiters only
+    when it won the release.
+    ``on_release`` receives the reconstructed registry barrier; see
+    :class:`Barrier` for the live-versus-reconstructed method split.
 
     Parameters
     ----------
@@ -341,12 +1071,15 @@ class GroupBarrier(Barrier):
 
     waiting_logic
         Either a single timeline element or a list of timeline elements (created by ``join``) that is to be displayed
-        to the participant while they are waiting at the barrier. If left at the default value of ``None``
-        then the participant will be shown a default waiting page.
+        to the participant while they are waiting at the barrier. If left at
+        ``None``, the current page remains visible beneath a lightweight
+        waiting indicator. Pass ``content`` to customize that indicator's
+        message.
 
     waiting_logic_expected_repetitions
-        The number of times that the participant is expected to experience the waiting_logic during a given barrier
-        visit. This is used for time estimation.
+        Expected repetitions for explicit ``waiting_logic``. For a default
+        hold, this is used only to derive the legacy ``expected_wait`` when no
+        explicit estimate is supplied.
 
     max_wait_time
         The maximum amount of time in seconds that the participant will be allowed to wait at the barrier;
@@ -370,15 +1103,44 @@ class GroupBarrier(Barrier):
         Optional callback invoked when the barrier releases participants.
         Must be a module-level function, ``@staticmethod``/``@classmethod``,
         or a bound method on a TrialMaker or ORM instance with a primary key.
-
-    on_release
-        Optional callable invoked when the barrier releases participants.
-        Must be a module-level function, ``@staticmethod``/``@classmethod``,
-        or a bound method on a TrialMaker or ORM instance with a primary key.
+        The ``barrier`` argument is the reconstructed registry object for this
+        visit (scalar presentation and notification settings, not wait pages).
 
     fix_time_credit
-        If set to ``True``, then the amount of time 'credit' that the participant receives will be fixed
-        according to the estimate derived from ``waiting_logic`` and ``waiting_logic_expected_repetitions``.
+        If set to ``True``, award fixed expected time credit. Otherwise default
+        holds credit actual visible waiting time up to ``max_wait_time``.
+
+    expected_wait
+        Expected duration of a default timeline hold. If omitted, preserves the
+        historical default estimate.
+
+    content
+        Message displayed by the default timeline hold overlay. Only used when
+        ``waiting_logic`` is omitted. If omitted, participants see
+        "Waiting for other participants…". Independent of a preceding
+        :class:`~psynet.sync.Grouper`'s ``content`` and of trial-maker
+        ``sync_group_wait_content``.
+
+    notify_arrivals
+        If ``True`` (default), group members who have not reached this barrier
+        yet see a pill on the progress bar, and waiting participants in groups
+        of three or more see remaining-not-ready copy on the hold overlay.
+        Pairs keep the hold title only. Set ``False`` to disable both.
+        Passing ``on_arrival_message`` implies ``True``.
+
+    on_arrival_message
+        Optional callable that returns copy for one recipient. It receives
+        ``kind`` (``"hold"`` or ``"notice"``), ``waiting_count``,
+        ``group_size``, and the usual context arguments (``recipient``,
+        ``group``, ``barrier``, ``experiment``). Return ``None`` to hide that
+        surface. Same serialization rules as ``on_release``. The default pair
+        notice is "Your partner is ready."; pair holds omit a second line.
+        Groups of three or more default to ``"{REMAINING} of {TOTAL} not ready yet"``
+        on the hold and ``"{ARRIVED}/{TOTAL} of your group are ready."`` on the
+        pill. Notice copy stays on one line (overflow ellipsizes) and sits
+        on the progress bar, so keep ``kind="notice"`` return values to a
+        short sentence. Hold overlay copy may use a second line.
+
     """
 
     @staticmethod
@@ -407,6 +1169,10 @@ class GroupBarrier(Barrier):
         fix_time_credit=False,
         timeout_between_barriers_time: Optional[float] = None,
         timeout_between_barriers_action: Literal["kick", "fail"] = "fail",
+        expected_wait=None,
+        content=None,
+        notify_arrivals: bool = True,
+        on_arrival_message: Optional[Callable] = None,
     ):
         self._validate_max_wait_action(max_wait_action)
         super().__init__(
@@ -415,10 +1181,14 @@ class GroupBarrier(Barrier):
             waiting_logic_expected_repetitions=waiting_logic_expected_repetitions,
             max_wait_time=max_wait_time,
             fix_time_credit=fix_time_credit,
+            expected_wait=expected_wait,
+            content=content,
         )
         self.max_wait_action = max_wait_action
         self.group_type = group_type
         self.on_release = on_release
+        self.on_arrival_message = on_arrival_message
+        self.notify_arrivals = bool(notify_arrivals) or on_arrival_message is not None
         self.timeout_between_barriers_time = timeout_between_barriers_time
         if timeout_between_barriers_action not in ("kick", "fail"):
             raise ValueError(
@@ -426,6 +1196,98 @@ class GroupBarrier(Barrier):
                 f"got {timeout_between_barriers_action!r}"
             )
         self.timeout_between_barriers_action = timeout_between_barriers_action
+
+    def get_waiting_participants(self, participant=None, *, for_update: bool = False):
+        """Return people waiting at this group visit.
+
+        Grouped barriers have no ungrouped pool, so ``participant`` is
+        required to identify the visit. Use the visit link
+        ``participant.active_barriers[...].get_waiting_participants()``
+        when you already have it.
+        """
+        if participant is None:
+            raise TypeError(
+                "GroupBarrier.get_waiting_participants() needs a participant "
+                "to identify the visit; use the visit link "
+                "participant.active_barriers[...].get_waiting_participants()."
+            )
+        return super().get_waiting_participants(participant, for_update=for_update)
+
+    def _hold_progress_text(self, participant):
+        """Return hold-overlay progress when arrival notices are enabled."""
+        if not self.notify_arrivals or not self._participant_is_waiting(participant):
+            return None
+        group = participant.active_sync_groups.get(self.group_type)
+        if group is None:
+            return None
+        waiting_count = sum(
+            1
+            for member in group.active_participants
+            if self._participant_is_waiting(member)
+        )
+        return self._call_arrival_message(
+            kind="hold",
+            waiting_count=waiting_count,
+            group_size=len(group.active_participants),
+            recipient=participant,
+            group=group,
+        )
+
+    def _call_arrival_message(self, **kwargs):
+        """Return author or default arrival copy for one recipient.
+
+        Safe on reconstructed registry barriers.
+        """
+        callback = self.on_arrival_message
+        if callback is None:
+            return call_function_with_context(
+                default_group_barrier_arrival_message, barrier=self, **kwargs
+            )
+        return callback(barrier=self, **kwargs)
+
+    def _notify_arrivals(self, arriving_participant):
+        """Publish hold progress and partner-ready notices after an arrival.
+
+        Live timeline only. Overlay HTML comes from ``waiting_logic``.
+        """
+        if not self.notify_arrivals:
+            return
+        if arriving_participant.failed or not self._participant_is_waiting(
+            arriving_participant
+        ):
+            return
+        group = arriving_participant.active_sync_groups.get(self.group_type)
+        if group is None:
+            return
+        waiting_count = sum(
+            1
+            for member in group.active_participants
+            if self._participant_is_waiting(member)
+        )
+        group_size = len(group.active_participants)
+        for member in group.active_participants:
+            if member.failed:
+                continue
+            if self._participant_is_waiting(member):
+                hold_html = None
+                if self._uses_timeline_hold:
+                    waiting = self.waiting_logic
+                    if getattr(
+                        waiting, "_is_silent_for", None
+                    ) and waiting._is_silent_for(member):
+                        continue
+                    hold_html = waiting.overlay_html(member)
+                _queue_arrival_update(member.id, hold_message=hold_html)
+                continue
+            text = self._call_arrival_message(
+                kind="notice",
+                waiting_count=waiting_count,
+                group_size=group_size,
+                recipient=member,
+                group=group,
+            )
+            if text:
+                _queue_arrival_update(member.id, notice=str(text))
 
     def handle_max_wait_timeout(self, participant: Participant):
         """Kick from the sync group when requested, then release the barrier link."""
@@ -474,12 +1336,19 @@ class GroupBarrier(Barrier):
                 group.last_barrier_pass_time = timenow()
 
                 if self.on_release:
-                    self.on_release(
-                        group=group,
-                        participants=group.active_participants,
-                        participant=group.leader,
-                        barrier=self,
-                    )
+                    try:
+                        self.on_release(
+                            group=group,
+                            participants=group.active_participants,
+                            participant=group.leader,
+                            barrier=self,
+                        )
+                    except Exception as err:
+                        if is_transient_transaction_error(err):
+                            raise
+                        raise _BarrierAuthorHookError(
+                            f"Barrier '{self.id}' on_release failed."
+                        ) from err
 
         participants_to_release_ids = {p.id for p in participants_to_release}
         for participant in waiting_participants:
@@ -493,6 +1362,24 @@ class GroupBarrier(Barrier):
                 participants_to_release_ids.add(participant.id)
 
         return participants_to_release
+
+    def would_release(self, waiting_participants: List[Participant]) -> bool:
+        """Return whether this group visit would release, without mutating state."""
+        waiting_ids = {participant.id for participant in waiting_participants}
+        for group in self.get_waiting_groups(waiting_participants).values():
+            if group.n_active_participants < group.min_group_size:
+                if not group.accepts_top_ups:
+                    return True
+                continue
+            if all(
+                participant.id in waiting_ids
+                for participant in group.active_participants
+            ):
+                return True
+        return any(
+            self.group_type not in participant.active_sync_groups
+            for participant in waiting_participants
+        )
 
     def check_waiting_participants(self, waiting_participants: List[Participant]):
         for group in self.get_waiting_groups(waiting_participants).values():
@@ -544,16 +1431,6 @@ class GroupBarrier(Barrier):
                 )
                 participant.fail("timeout between barriers")
 
-    def release(self, participant: Participant):
-        link = participant.active_barriers.get(self.id, None)
-        if link is None:
-            raise RuntimeError(
-                "Could not find an appropriate barrier link to release the participant from "
-                f"(participant_id = {participant.id}, barrier_id = '{self.id}')."
-            )
-
-        link.release()
-
 
 class Grouper(Barrier):
     """
@@ -574,17 +1451,33 @@ class Grouper(Barrier):
 
     waiting_logic
         Either a single timeline element or a list of timeline elements (created by ``join``) that is to be displayed
-        to the participant while they are waiting at the barrier. If left at the default value of ``None``
-        then the participant will be shown a default waiting page.
+        to the participant while they are waiting at the barrier. If left at
+        ``None``, the current page remains visible beneath a lightweight
+        waiting indicator.
 
     waiting_logic_expected_repetitions
-        The number of times that the participant is expected to experience the waiting_logic during a given barrier
-        visit. This is used for time estimation.
+        Expected repetitions for explicit ``waiting_logic``. For a default
+        hold, this is used only to derive the legacy ``expected_wait`` when no
+        explicit estimate is supplied.
 
     max_wait_time
         The maximum amount of time in seconds that the participant will be allowed to wait at the barrier;
         if this time is exceeded and the participant is still not released, then the participant will be failed
         and sent to the end of the experiment.
+
+    expected_wait
+        Expected duration of a default timeline hold. If omitted, preserves the
+        historical default estimate.
+
+    content
+        Message displayed by the default timeline hold overlay. Only used when
+        ``waiting_logic`` is omitted. This Grouper's overlay is independent of
+        trial-maker ``sync_group_wait_content``; pass ``content`` here and on
+        later :class:`~psynet.sync.GroupBarrier` waits if they should match.
+
+    fix_time_credit
+        If ``True``, award fixed ``expected_wait`` credit instead of actual
+        visible waiting time.
 
     fail_participants_below_min_size
         If ``True`` (default), participants in a group that is below minimum size and does not accept
@@ -600,14 +1493,20 @@ class Grouper(Barrier):
         waiting_logic_expected_repetitions=3,
         max_wait_time=20,
         fail_participants_below_min_size: bool = True,
+        expected_wait=None,
+        fix_time_credit=False,
+        content=None,
     ):
         if not id_:
-            id_ = group_type + "_" + "grouper"
+            id_ = f"{group_type}_grouper"
         super().__init__(
             id_=id_,
             waiting_logic=waiting_logic,
             waiting_logic_expected_repetitions=waiting_logic_expected_repetitions,
             max_wait_time=max_wait_time,
+            expected_wait=expected_wait,
+            fix_time_credit=fix_time_credit,
+            content=content,
         )
         self.group_type = group_type
         self.fail_participants_below_min_size = fail_participants_below_min_size
@@ -675,6 +1574,10 @@ class Grouper(Barrier):
 
         return participants_to_release
 
+    def would_release(self, waiting_participants: List[Participant]) -> bool:
+        """Return whether this grouper would form groups, without creating them."""
+        return bool(self.ready_to_group(waiting_participants))
+
     def select_leader(self, participants: List[Participant]) -> Participant:
         """
         By default the leader is randomly chosen from the list of available participants.
@@ -707,7 +1610,10 @@ class SimpleGrouper(Grouper):
         subsequent GroupBarriers.
 
     initial_group_size
-        Size of the groups to create.
+        Size of the groups to create. The default barrier ID is
+        ``{group_type}_grouper_{initial_group_size}``, so sequential groupers
+        of different sizes do not share a waiting pool. Pass ``id_`` only when
+        two groupers should share one pool and have the same release behavior.
 
     max_group_size
         If ``join_existing_groups=True``, then participants will be allowed to join groups until
@@ -765,6 +1671,8 @@ class SimpleGrouper(Grouper):
         if initial_group_size is None:
             raise ValueError("initial_group_size must be provided.")
 
+        if not kwargs.get("id_"):
+            kwargs["id_"] = f"{group_type}_grouper_{initial_group_size}"
         super().__init__(group_type=group_type, **kwargs)
 
         if max_group_size == "initial_group_size":
@@ -929,6 +1837,7 @@ class SyncGroup(SQLBase, SQLMixin):
 
     def add_participant(self, participant: Participant):
         """Add a participant to the group (creates an active link)."""
+        _forget_active_sync_group(participant)
         self.participant_links.append(
             ParticipantLinkSyncGroup(participant=participant, active=True)
         )
@@ -964,11 +1873,14 @@ class SyncGroup(SQLBase, SQLMixin):
     def close(self):
         self.active = False
         self.end_time = timenow()
+        for participant in self.participants:
+            _forget_active_sync_group(participant)
 
     def check_numbers(self):
         self.n_active_participants = len(self.active_participants)
 
     def remove_participant(self, participant: Participant):
+        _forget_active_sync_group(participant)
         for link in self.participant_links:
             if link.participant_id == participant.id:
                 link.active = False
@@ -1033,50 +1945,215 @@ def _insert_values_from_state(record) -> dict:
 
 
 @register_table
-class BarrierRecord(SQLBase, SQLMixin):
+class BarrierDefinition(SQLBase, SQLMixin):
+    """Identify a public barrier waiting area without storing mutable visits."""
+
     __tablename__ = "barrier"
 
     id = Column(String, primary_key=True)
     barrier_class = Column(PythonClass)
     created_at = Column(DateTime, default=timenow)
-    barrier = deferred(Column(PythonObject))
 
+    instances = relationship("BarrierInstance", back_populates="definition")
+
+    @classmethod
+    def ensure_exists(cls, barrier_id: str, barrier_class):
+        """Register a definition in the caller's transaction."""
+        record = cls(
+            id=barrier_id,
+            barrier_class=barrier_class,
+            created_at=timenow(),
+        )
+        values = _insert_values_from_state(record)
+        db.session.execute(
+            pg_insert(cls)
+            .values(**values)
+            .on_conflict_do_nothing(index_elements=["id"])
+        )
+        existing = cls.query.get(barrier_id)
+        if existing.barrier_class is not barrier_class:
+            raise ValueError(
+                f"Barrier ID '{barrier_id}' already identifies "
+                f"{existing.barrier_class.__name__}, not {barrier_class.__name__}. "
+                "Use a different barrier ID."
+            )
+
+
+@register_table
+class BarrierInstance(SQLBase, SQLMixin):
+    """Persist one stable barrier behavior for a coordination visit.
+
+    At most one active row exists per ``(barrier_id, group_id)``. Ungrouped
+    barriers (``group_id`` is null), including groupers, share one active
+    waiting pool per barrier ID.
+    """
+
+    __tablename__ = "barrier_instance"
+
+    id = Column(String, primary_key=True)
+    barrier_id = Column(String, ForeignKey("barrier.id"), index=True)
+    group_id = Column(Integer, ForeignKey("sync_group.id"), nullable=True, index=True)
+    active = Column(Boolean, default=True, index=True)
+    spec = deferred(Column(Text))
+    behavior_hash = Column(String(64))
+
+    definition = relationship("BarrierDefinition", back_populates="instances")
+    group = relationship("SyncGroup")
     participant_links = relationship(
-        "ParticipantLinkBarrier", back_populates="barrier_record"
+        "ParticipantLinkBarrier", back_populates="barrier_instance"
+    )
+    __table_args__ = (
+        Index(
+            "ix_barrier_instance_active_group",
+            "barrier_id",
+            "group_id",
+            unique=True,
+            postgresql_where=text("active IS true AND group_id IS NOT NULL"),
+        ),
+        Index(
+            "ix_barrier_instance_active_ungrouped",
+            "barrier_id",
+            unique=True,
+            postgresql_where=text("active IS true AND group_id IS NULL"),
+        ),
     )
 
     @classmethod
-    def ensure_exists(cls, barrier_id: str, barrier_class, barrier=None):
-        with db.session.no_autoflush:
-            record = cls.query.get(barrier_id)
-            if record is not None:
-                if barrier is not None:
-                    if isinstance(barrier, Barrier):
-                        barrier = barrier.for_registry()
-                    record.barrier = barrier
-                return
+    def for_arrival(cls, barrier, participant):
+        """Return the stable instance that should receive this participant."""
+        # Group links may have been created immediately before this barrier.
+        # Flush so association-backed ``active_sync_groups`` resolves the group.
+        db.session.flush()
+        BarrierDefinition.ensure_exists(barrier.id, barrier.__class__)
+        group_id = cls._group_id(barrier, participant)
+        spec = barrier_spec_json(barrier)
+        behavior_hash = behavior_hash_from_json(spec)
+        instance = cls._active_instance(barrier.id, group_id)
+        if instance is not None:
+            instance._validate_behavior(behavior_hash)
+            return instance
 
-            record = cls(
-                id=barrier_id,
-                barrier_class=barrier_class,
-                created_at=timenow(),
-                barrier=(
-                    barrier.for_registry() if isinstance(barrier, Barrier) else barrier
-                ),
+        scope = f"{barrier.id}:group:{group_id}" if group_id is not None else barrier.id
+        _claim_barrier_instance(scope, wait=True)
+
+        instance = cls._active_instance(barrier.id, group_id)
+        if instance is not None:
+            instance._validate_behavior(behavior_hash)
+            return instance
+
+        instance = cls._waiting_inactive_instance(barrier.id, group_id)
+        if instance is not None:
+            instance._validate_behavior(behavior_hash)
+            instance.active = True
+            db.session.flush()
+            return instance
+
+        record = cls(
+            id=str(uuid.uuid4()),
+            barrier_id=barrier.id,
+            group_id=group_id,
+            active=True,
+            spec=spec,
+            behavior_hash=behavior_hash,
+        )
+        # Partial unique indexes make a SAVEPOINT-plus-IntegrityError insert
+        # show up as extra profiler commits. ON CONFLICT DO NOTHING reuses the
+        # committed winner without opening a nested transaction.
+        values = _insert_values_from_state(record)
+        values["spec"] = spec
+        db.session.execute(pg_insert(cls).values(**values).on_conflict_do_nothing())
+        instance = cls._active_instance(barrier.id, group_id)
+        if instance is None:
+            raise RuntimeError(
+                f"Failed to create or load barrier instance '{barrier.id}'."
             )
-            values = _insert_values_from_state(record)
-            stmt = (
-                pg_insert(cls)
-                .values(**values)
-                .on_conflict_do_nothing(index_elements=["id"])
+        if instance.id != record.id:
+            instance._validate_behavior(behavior_hash)
+        return instance
+
+    @classmethod
+    def _active_instance(cls, barrier_id, group_id):
+        """Return the active instance for one waiting pool."""
+        return (
+            cls.query.filter_by(
+                barrier_id=barrier_id,
+                group_id=group_id,
+                active=True,
             )
-            result = db.session.execute(stmt)
-            if barrier is not None and result.rowcount == 0:
-                record = cls.query.get(barrier_id)
-                if record is not None:
-                    if isinstance(barrier, Barrier):
-                        barrier = barrier.for_registry()
-                    record.barrier = barrier
+            .order_by(cls.id)
+            .first()
+        )
+
+    @classmethod
+    def _waiting_inactive_instance(cls, barrier_id, group_id):
+        """Return an inactive visit in this pool that still has working waiters.
+
+        Last-arrival can mark a visit inactive from a snapshot that missed a
+        concurrent arriver. The next arrival must join that visit instead of
+        opening a second active instance for the same pool.
+        """
+        waiter_exists = (
+            db.session.query(ParticipantLinkBarrier.id)
+            .join(Participant)
+            .filter(
+                ParticipantLinkBarrier.barrier_instance_id == cls.id,
+                ~ParticipantLinkBarrier.released,
+                ~Participant.failed,
+                Participant.status == "working",
+            )
+            .exists()
+        )
+        query = cls.query.filter(
+            cls.barrier_id == barrier_id,
+            cls.active.is_(False),
+            waiter_exists,
+        )
+        if group_id is None:
+            query = query.filter(cls.group_id.is_(None))
+        else:
+            query = query.filter(cls.group_id == group_id)
+        return query.order_by(cls.id).first()
+
+    def get_barrier(self):
+        """Return the reconstructed release object for this visit.
+
+        This is not the live timeline barrier. See :class:`Barrier` for which
+        methods are safe here. Reconstructions are memoized on the current
+        SQLAlchemy session so grouped-page render does not re-parse the spec.
+        The visit-claim peek drops that memo after it rolls back.
+        """
+        session = object_session(self)
+        cache = None
+        instance_id = getattr(self, "id", None)
+        if session is not None and instance_id is not None:
+            cache = session.info.setdefault(_BARRIER_FROM_SPEC_CACHE_KEY, {})
+            cached = cache.get(instance_id)
+            if cached is not None:
+                return cached
+        barrier = barrier_from_spec_json(self.spec)
+        if cache is not None:
+            cache[instance_id] = barrier
+        return barrier
+
+    def _validate_behavior(self, behavior_hash):
+        """Reject incompatible reuse of one active waiting pool."""
+        if self.behavior_hash != behavior_hash:
+            raise ValueError(
+                f"Barrier ID '{self.barrier_id}' was reused with different behavior "
+                "while its waiting pool is active. Use a different barrier ID."
+            )
+
+    @staticmethod
+    def _group_id(barrier, participant):
+        if not isinstance(barrier, GroupBarrier):
+            return None
+        group = participant.active_sync_groups.get(barrier.group_type)
+        if group is None:
+            raise RuntimeError(
+                f"Participant {participant.id} has no active sync group "
+                f"of type '{barrier.group_type}' for barrier '{barrier.id}'."
+            )
+        return group.id
 
 
 @register_table
@@ -1100,6 +2177,7 @@ class ParticipantLinkBarrier(SQLBase, SQLMixin):
     __tablename__ = "participant_link_barrier"
 
     barrier_id = Column(String, ForeignKey("barrier.id"), index=True)
+    barrier_instance_id = Column(String, ForeignKey("barrier_instance.id"), index=True)
     participant_id = Column(Integer, ForeignKey("participant.id"), index=True)
     participant = relationship(
         "psynet.participant.Participant",
@@ -1111,76 +2189,427 @@ class ParticipantLinkBarrier(SQLBase, SQLMixin):
     arrival_time = Column(DateTime)
     departure_time = Column(DateTime)
     released = Column(Boolean, default=False)
+    timeline_hold_id = Column(Integer, ForeignKey("timeline_hold.id"), index=True)
+    timeline_hold = relationship("TimelineHoldRecord", backref="barrier_links")
 
-    barrier_record = relationship("BarrierRecord", back_populates="participant_links")
+    barrier_instance = relationship(
+        "BarrierInstance", back_populates="participant_links"
+    )
 
     def get_barrier(self):
-        barrier_record = BarrierRecord.query.get(self.barrier_id)
-        if barrier_record is None or not isinstance(barrier_record.barrier, Barrier):
+        if self.barrier_instance is None:
             raise RuntimeError(
-                f"Barrier '{self.barrier_id}' is missing or invalid in the registry."
+                f"Barrier instance '{self.barrier_instance_id}' is missing or invalid."
             )
-        return barrier_record.barrier
+        barrier = self.barrier_instance.get_barrier()
+        if not isinstance(barrier, Barrier):
+            raise RuntimeError(
+                f"Barrier instance '{self.barrier_instance_id}' is missing or invalid."
+            )
+        return barrier
+
+    def get_waiting_participants(self, *, for_update: bool = False):
+        """Return people waiting at this visit.
+
+        Does not take extra row locks unless ``for_update`` is true.
+        ``for_update`` is keyword-only, matching :meth:`Barrier.get_waiting_participants`.
+        """
+        return _get_waiting_participants(
+            self.barrier_id,
+            self.barrier_instance_id,
+            for_update=for_update,
+            nowait=False,
+        )
 
     def release(self):
-        self.departure_time = timenow()
+        timestamp = timenow()
+        self.departure_time = timestamp
         self.released = True
+        if self.timeline_hold is not None:
+            self.timeline_hold.mark_released(self.participant, timestamp)
+            _queue_timeline_hold_wake(
+                self.participant_id,
+                page_uuid=self.timeline_hold.page_uuid,
+                reason="barrier_released",
+                hold=self.timeline_hold,
+            )
 
-    def get_waiting_participants(self, for_update: bool = False):
-        barrier = self.get_barrier()
-        return barrier.get_waiting_participants(for_update=for_update)
+
+def _waiting_barrier_instance_ids():
+    """Snapshot barrier visits that still have working waiters.
+
+    Include inactive rows. A last-arrival snapshot can mark the visit
+    finished while a concurrent arriver's link committed after that SELECT.
+    """
+    with Session(bind=db.engine) as session:
+        return [
+            instance_id
+            for (instance_id,) in (
+                session.query(BarrierInstance.id)
+                .filter(
+                    session.query(ParticipantLinkBarrier.id)
+                    .join(Participant)
+                    .filter(
+                        ParticipantLinkBarrier.barrier_instance_id
+                        == BarrierInstance.id,
+                        ~ParticipantLinkBarrier.released,
+                        ~Participant.failed,
+                        Participant.status == "working",
+                    )
+                    .exists(),
+                )
+                .order_by(BarrierInstance.id)
+            )
+        ]
 
 
-def _next_waiting_barrier(excluded_ids):
-    """Return the next eligible barrier record, if any."""
-    waiting_barrier_query = BarrierRecord.query.filter(
+def arrival_notice_payload(participant_id):
+    """Return the partner-ready notice snapshot for one participant.
+
+    Redis arrival wakes are fire-and-forget. The browser fetches this when
+    the arrival websocket opens so a partner who arrived during connect is
+    still shown.
+    """
+    from psynet.participant import Participant
+
+    if participant_id is None or participant_id == "":
+        return {"notice": None}
+    participant = Participant.query.get(participant_id)
+    if participant is None:
+        return {"notice": None}
+    return {"notice": pending_arrival_notice_for(participant)}
+
+
+def _reconstructed_arrival_barrier(link, reconstructed):
+    """Return a registry barrier for arrival notices, or ``None`` on spec error.
+
+    Page render must not 500 when a stored spec cannot be reconstructed.
+    Failed instance ids are remembered so a group is not retried per member.
+    """
+    instance_id = link.barrier_instance_id
+    if instance_id in reconstructed:
+        return reconstructed[instance_id]
+    try:
+        barrier = link.get_barrier()
+    except BarrierSpecError:
+        logger.exception(
+            "Barrier instance %s failed arrival-notice reconstruction.",
+            instance_id,
+        )
+        barrier = None
+    reconstructed[instance_id] = barrier
+    return barrier
+
+
+def pending_arrival_notice_for(participant):
+    """Return a partner-ready notice if this participant is behind a waiter.
+
+    Reconstructs registry barriers for this call only. Overlay HTML stays on
+    the live timeline barrier. Unreconstructable specs are skipped.
+    """
+    if participant is None or getattr(participant, "failed", False):
+        return None
+    groups = getattr(participant, "active_sync_groups", None) or {}
+    reconstructed = {}
+    notice = None
+    for group in groups.values():
+        for member in group.active_participants:
+            if member.id == participant.id:
+                continue
+            for link in list(member.active_barriers.values()):
+                if link.released:
+                    continue
+                instance = link.barrier_instance
+                if instance is not None and instance.group_id != group.id:
+                    continue
+                barrier = _reconstructed_arrival_barrier(link, reconstructed)
+                if not isinstance(barrier, GroupBarrier) or not barrier.notify_arrivals:
+                    continue
+                if barrier._participant_is_waiting(participant):
+                    continue
+                waiting_count = sum(
+                    1
+                    for other in group.active_participants
+                    if barrier._participant_is_waiting(other)
+                )
+                if waiting_count == 0:
+                    continue
+                text = barrier._call_arrival_message(
+                    kind="notice",
+                    waiting_count=waiting_count,
+                    group_size=len(group.active_participants),
+                    recipient=participant,
+                    group=group,
+                )
+                if text:
+                    notice = str(text)
+    return notice
+
+
+def _barrier_instance_has_waiters(instance):
+    """Return whether a visit still has an unreleased working participant."""
+    return (
         db.session.query(ParticipantLinkBarrier.id)
         .join(Participant)
         .filter(
-            ParticipantLinkBarrier.barrier_id == BarrierRecord.id,
+            ParticipantLinkBarrier.barrier_instance_id == instance.id,
             ~ParticipantLinkBarrier.released,
             ~Participant.failed,
             Participant.status == "working",
         )
-        .exists()
-    )
-    if excluded_ids:
-        waiting_barrier_query = waiting_barrier_query.filter(
-            ~BarrierRecord.id.in_(excluded_ids)
-        )
-    return (
-        waiting_barrier_query.order_by(BarrierRecord.id)
-        .with_for_update(skip_locked=True)
-        .populate_existing()
         .first()
+        is not None
     )
+
+
+def _check_claimed_barrier_instance(instance, *, wait=False, already_claimed=False):
+    """Evaluate one instance, or report that the work is already done.
+
+    Last-arrival and the poller hold the visit claim on a dedicated
+    connection (``already_claimed=True``) so this ORM session does not take
+    the same key. Instance creation still uses ``wait`` on the ORM session.
+
+    Returns
+    -------
+    bool
+        ``True`` if this request ran the check or the instance is already
+        finished. ``False`` only when another request currently owns the
+        advisory claim, so waiters may still be locked.
+    """
+    if instance is None:
+        return True
+    if not instance.active:
+        if not isinstance(
+            instance, BarrierInstance
+        ) or not _barrier_instance_has_waiters(instance):
+            return True
+        other = BarrierInstance._active_instance(instance.barrier_id, instance.group_id)
+        if other is None:
+            instance.active = True
+    if not already_claimed and not _claim_barrier_instance(instance.id, wait=wait):
+        return False
+    barrier = instance.get_barrier()
+    if not isinstance(barrier, Barrier):
+        raise RuntimeError(f"Barrier instance '{instance.id}' is missing or invalid.")
+    barrier._check_instance(instance.id)
+    return True
+
+
+def _evaluate_held_instance(instance_id):
+    """Evaluate one already-claimed visit and commit.
+
+    Sets the ORM ``lock_timeout`` so check/commit cannot wait forever while
+    the extra connection holds the visit key. Nested waiter ``NOWAIT`` misses
+    return ``(False, [])`` so last-arrival can retry. Author ``on_release``
+    and spec errors also return ``(False, [])`` so the group stays waiting.
+    Other non-transient check errors propagate so ``GET /timeline`` does not
+    first-paint a hold. Released waiter ids are drained here so they cannot
+    leak in ``session.info``; last-arrival discards them, the poller skips.
+    """
+    db.session.expire_all()
+    _set_transaction_lock_timeout(get_config().get("timeline_lock_timeout_seconds"))
+    instance = BarrierInstance.query.get(instance_id)
+    try:
+        with db.session.begin_nested():
+            ok = _check_claimed_barrier_instance(instance, already_claimed=True)
+    except Exception as err:
+        if is_transient_transaction_error(err):
+            logger.debug(
+                "Barrier '%s' instance %s deferred because a waiter is locked.",
+                instance.barrier_id if instance is not None else None,
+                instance_id,
+            )
+            return False, []
+        logger.exception(
+            "Barrier '%s' instance %s failed during a last-arrival check.",
+            instance.barrier_id if instance is not None else None,
+            instance_id,
+        )
+        if isinstance(err, (BarrierSpecError, _BarrierAuthorHookError)):
+            return False, []
+        raise
+    released_ids = _take_released_hold_waiter_ids()
+    db.session.commit()
+    return ok, released_ids
+
+
+def _check_held_instance(instance_id):
+    """Evaluate one visit without advancing partner timeline cursors.
+
+    Last-arrival GET/POST uses this path. Released waiter ids are drained
+    so they cannot leak; partners leave on overlay wake.
+    """
+    ok, _released_ids = _evaluate_held_instance(instance_id)
+    return ok
+
+
+def _check_and_skip_held_instance(instance_id):
+    """Evaluate one visit and skip waiters this poller just released."""
+    ok, released_ids = _evaluate_held_instance(instance_id)
+    _advance_released_hold_waiters_after_commit(released_ids)
+    return ok
+
+
+def _check_held_instance_with_claim(instance_id, *, wait):
+    """Peek the visit claim, optionally wait, then evaluate without skipping.
+
+    A free claim is taken without waiting. Last-arrival may then wait for
+    a held claim; unfilled waiter GET recovery must pass ``wait=False``.
+    Each peek uses an extra pooled connection; last-arrival can open one
+    per queued instance when the first peek misses.
+    """
+    with _hold_barrier_instance_claim(instance_id, wait=False) as claimed:
+        if claimed:
+            return _check_held_instance(instance_id)
+    if not wait:
+        return False
+    with _hold_barrier_instance_claim(instance_id, wait=True):
+        return _check_held_instance(instance_id)
+
+
+def _run_pending_barrier_checks(instance_ids, *, wait=True):
+    """Run post-commit checks, optionally waiting for each instance claim.
+
+    Last-arrival waits for the extra-connection claim so it can release
+    without waiting for the 0.5 s poller. It does not skip partner cursors
+    after that commit. Waiter rows stay ``FOR UPDATE NOWAIT`` during the
+    check. A blocking claim wait that hits ``lock_timeout`` raises so
+    ``GET /timeline`` can return HTTP 503. A waiter-row ``NOWAIT`` miss
+    still returns ``False`` so the caller can retry once.
+
+    Unfilled waiter GET recovery must pass ``wait=False``. Those requests try
+    the claim so a dropped last-arrival check can still finish, but they must
+    not occupy a worker in ``lock_timeout`` while last-arrival already holds
+    the visit.
+    """
+    all_claimed = True
+    for instance_id in instance_ids:
+        try:
+            if not _check_held_instance_with_claim(instance_id, wait=wait):
+                all_claimed = False
+        except Exception as err:
+            if is_transient_transaction_error(err):
+                raise
+            logger.exception(
+                "Barrier instance %s failed while waiting for its visit claim.",
+                instance_id,
+            )
+            raise
+    return all_claimed
+
+
+def _process_barrier_instance(instance_id, *, retry=False):
+    """Try one barrier visit and report whether waiter contention deferred it."""
+    barrier_id = None
+    try:
+        with _hold_barrier_instance_claim(instance_id, wait=False) as claimed:
+            if not claimed:
+                return False
+            instance = BarrierInstance.query.get(instance_id)
+            barrier_id = None if instance is None else instance.barrier_id
+            if not _check_and_skip_held_instance(instance_id):
+                return True
+            return False
+    except Exception as err:
+        db.session.rollback()
+        if is_transient_transaction_error(err):
+            qualifier = " still locked on retry" if retry else " deferred"
+            logger.debug(
+                "Barrier '%s' instance %s%s because a waiter is locked.",
+                barrier_id,
+                instance_id,
+                qualifier,
+            )
+            return True
+        qualifier = " on retry" if retry else ""
+        logger.exception(
+            "Failed to process barrier '%s' instance %s%s.",
+            barrier_id,
+            instance_id,
+            qualifier,
+        )
+    return False
 
 
 def check_barriers():
-    """Process waiting barriers, isolating failures to individual barriers."""
-    excluded_ids = set()
+    """Process waiting barrier visits, including stacked holds created here.
 
-    while True:
-        barrier_id = None
+    Last-arrival GET waits for this poller's extra-connection instance claim.
+    The poller keeps that claim until its own skip-after-commit finishes.
+    It skips waiters **this poller** released; last-arrival does not skip
+    partner cursors. Walk newly created holds in this sweep and keep wake
+    publishes unpublished until that walk returns. Each visit still commits
+    before the next check so a locked waiter cannot poison sibling checks.
+    """
+    seen = set()
+    with _defer_timeline_hold_wakes():
+        # Settle on an empty snapshot *before* more work. The False yield is
+        # the observation after the last processed generation.
+        for can_work in _barrier_walk_budget():
+            waiting = [
+                instance_id
+                for instance_id in _waiting_barrier_instance_ids()
+                if instance_id not in seen
+            ]
+            if not waiting:
+                return
+            if not can_work:
+                raise RuntimeError(
+                    "Barrier poller sweep did not settle after "
+                    f"{_MAX_BARRIER_WALK_PASSES} passes."
+                )
+            deferred_ids = []
+            for instance_id in waiting:
+                seen.add(instance_id)
+                if _process_barrier_instance(instance_id):
+                    deferred_ids.append(instance_id)
+            for instance_id in deferred_ids:
+                _process_barrier_instance(instance_id, retry=True)
+
+
+def check_sync_groups():
+    """Recount active membership, skipping groups locked by another request.
+
+    Dedicated sessions keep these maintenance commits separate from any
+    transaction owned by the caller. Each group's recount runs in its own
+    transaction so a failure cannot roll back sibling groups already processed.
+    """
+    with Session(bind=db.engine) as session:
+        group_ids = [
+            group_id
+            for (group_id,) in (
+                session.query(SyncGroup.id)
+                .filter(SyncGroup.active.is_(True))
+                .order_by(SyncGroup.id)
+            )
+        ]
+
+    for group_id in group_ids:
         try:
-            with transaction():
-                barrier_record = _next_waiting_barrier(excluded_ids)
-                if barrier_record is None:
-                    return
-                barrier_id = barrier_record.id
-                barrier = barrier_record.barrier
-                if not isinstance(barrier, Barrier):
-                    raise RuntimeError(
-                        f"Barrier '{barrier_record.id}' is missing or invalid."
-                    )
-                barrier.check()
-        except Exception:
-            if barrier_id is None:
-                raise
-            logger.exception("Failed to process barrier '%s'.", barrier_id)
-        finally:
-            if barrier_id is not None:
-                excluded_ids.add(barrier_id)
+            with Session(bind=db.engine) as session:
+                _set_transaction_lock_timeout(
+                    get_config().get("timeline_lock_timeout_seconds"),
+                    session=session,
+                )
+                group = (
+                    session.query(SyncGroup)
+                    .filter_by(id=group_id)
+                    .with_for_update(of=SyncGroup, skip_locked=True)
+                    .populate_existing()
+                    .first()
+                )
+                if group is None:
+                    continue
+                group.check_numbers()
+                session.commit()
+        except Exception as err:
+            if is_transient_transaction_error(err):
+                logger.debug(
+                    "Sync group %s skipped this tick because it is locked.",
+                    group_id,
+                )
+            else:
+                logger.exception("Failed to process sync group %s.", group_id)
 
 
 Participant.sync_group_links = relationship(

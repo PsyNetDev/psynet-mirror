@@ -8,4 +8,4 @@ Experiment
 .. automodule:: psynet.experiment
     :members:
     :show-inheritance:
-    :exclude-members: jsonify, send_file
+    :exclude-members: jsonify, send_file, make_response
