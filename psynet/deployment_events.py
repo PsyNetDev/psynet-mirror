@@ -67,6 +67,10 @@ def file_lock(path: Path, *, blocking: bool = True):
     """Lock ``path`` for the duration of the context."""
     path.parent.mkdir(parents=True, exist_ok=True)
     file = path.open("a+")
+    try:
+        path.chmod(0o666)
+    except OSError:
+        logger.warning("Could not make lock file world-writable: %s", path)
     using_fallback = False
     try:
         try:
@@ -232,11 +236,24 @@ def load_deployment_events(
         return []
 
     events: list[dict] = []
-    raw = path.read_text(encoding="utf-8")
-    ends_with_newline = raw.endswith("\n")
+    raw = path.read_bytes()
+    ends_with_newline = raw.endswith(b"\n")
     lines = raw.splitlines()
     for line_number, line in enumerate(lines, start=1):
-        text = line.strip()
+        try:
+            text = line.decode("utf-8").strip()
+        except UnicodeDecodeError:
+            logger.warning(
+                "Skipping malformed deployment event at %s:%s", path, line_number
+            )
+            events.append(
+                {
+                    "schema_version": 1,
+                    "event": "log.truncated",
+                    "error": f"Truncated event at {path}:{line_number}",
+                }
+            )
+            continue
         if not text:
             continue
         try:

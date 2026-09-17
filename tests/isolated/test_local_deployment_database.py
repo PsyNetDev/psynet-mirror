@@ -42,7 +42,9 @@ def test_database_snapshot_round_trip(db_session, tmp_path, monkeypatch):
     db.session.commit()
 
     archive_path = tmp_path / "snapshot.zip"
-    assert export_database_snapshot(archive_path) == 0
+    exported = export_database_snapshot(archive_path)
+    assert exported.participant_count == 0
+    assert exported.max_response_id == 0
     with zipfile.ZipFile(archive_path) as archive:
         assert "data/experiment.csv" in archive.namelist()
         assert archive.testzip() is None

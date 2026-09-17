@@ -108,6 +108,28 @@ def test_append_starts_a_new_line_after_a_truncated_tail(tmp_path):
     assert payload["text"] == "after crash"
 
 
+def test_append_and_load_survive_truncated_utf8_tail(tmp_path):
+    from psynet.deployment_events import (
+        append_deployment_event,
+        deployment_event_log,
+        load_deployment_events,
+    )
+
+    append_deployment_event(tmp_path, "deploy.succeeded", argv=["psynet", "deploy"])
+    path = deployment_event_log(tmp_path)
+    path.write_bytes(path.read_bytes() + b'{"text":"caf\xc3')
+
+    events = load_deployment_events(tmp_path)
+    assert events[0]["event"] == "deploy.succeeded"
+    assert events[-1]["event"] == "log.truncated"
+
+    append_deployment_event(tmp_path, "comment", text="after crash")
+    names = [event["event"] for event in load_deployment_events(tmp_path)]
+    assert names[0] == "deploy.succeeded"
+    assert "log.truncated" in names
+    assert names[-1] == "comment"
+
+
 def test_comment_is_free_floating(tmp_path):
     from psynet.command_line import psynet
     from psynet.utils import working_directory
@@ -290,6 +312,55 @@ def test_post_deploy_records_generated_app_name(monkeypatch, tmp_path):
 
     event = json.loads((tmp_path / "data/deployment-events.jsonl").read_text().strip())
     assert event["event"] == "deploy.succeeded"
+    assert event["app"] == "dlgr-a1b2c3d4"
+    assert written["app"] == "dlgr-a1b2c3d4"
+
+
+def test_post_deploy_prefers_dashboard_link_over_stale_deploy_log(
+    monkeypatch, tmp_path
+):
+    from psynet.command_line import _post_deploy
+    from psynet.utils import working_directory
+
+    (tmp_path / "experiment.py").write_text("")
+    logs = tmp_path / "deploy_logs"
+    logs.mkdir()
+    (logs / "old-app-name.txt").write_text("stale")
+    written = {}
+    monkeypatch.setattr(
+        "psynet.command_line.export_launch_data",
+        lambda **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "psynet.command_line.deployment_info.read",
+        lambda key: "deployment-1",
+    )
+    monkeypatch.setattr(
+        "psynet.command_line.deployment_info.read_all",
+        lambda: {
+            "mode": "live",
+            "is_ssh_deployment": True,
+            "app": None,
+            "server": "lab",
+            "deployment_id": "deployment-1",
+        },
+    )
+    monkeypatch.setattr(
+        "psynet.command_line.deployment_info.write",
+        lambda **kwargs: written.update(kwargs),
+    )
+
+    with working_directory(tmp_path):
+        _post_deploy(
+            {
+                "dashboard_user": "u",
+                "dashboard_password": "p",
+                "dashboard_link": "https://u:p@dlgr-a1b2c3d4.lab.example.com/dashboard",
+            },
+            argv=["psynet", "deploy", "ssh"],
+        )
+
+    event = json.loads((tmp_path / "data/deployment-events.jsonl").read_text().strip())
     assert event["app"] == "dlgr-a1b2c3d4"
     assert written["app"] == "dlgr-a1b2c3d4"
 

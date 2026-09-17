@@ -1863,11 +1863,6 @@ def _resolved_remote_app_name(result, requested_app=None):
     info_app = deployment_info.read_all().get("app")
     if info_app:
         return info_app
-    logs_dir = Path("deploy_logs")
-    if logs_dir.is_dir():
-        logs = sorted(logs_dir.glob("*.txt"), key=lambda path: path.stat().st_mtime)
-        if logs:
-            return logs[-1].stem
     link = (result or {}).get("dashboard_link") or ""
     # https://user:pass@app.example.com/dashboard
     try:
@@ -1878,7 +1873,14 @@ def _resolved_remote_app_name(result, requested_app=None):
         hostname = None
     if hostname and "." in hostname:
         return hostname.split(".", 1)[0]
-    return hostname
+    if hostname:
+        return hostname
+    logs_dir = Path("deploy_logs")
+    if logs_dir.is_dir():
+        logs = sorted(logs_dir.glob("*.txt"), key=lambda path: path.stat().st_mtime)
+        if logs:
+            return logs[-1].stem
+    return None
 
 
 def _post_deploy(result, **event_extras):

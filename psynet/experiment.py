@@ -1414,7 +1414,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         During an HTTP request the snapshot is deferred until after the
         request transaction commits, so the archive includes the finishing
-        participant's committed response and completion state.
+        participant's committed response and completion state. Outside a
+        request, the current transaction is committed first.
         """
         if get_config().get("snapshot_on_participant_finish", True) is False:
             return None
@@ -1424,7 +1425,14 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             g.psynet_finish_snapshot_needed = True
             g.psynet_finish_snapshot_participant_id = getattr(participant, "id", None)
             return None
-        return self._create_participant_finish_snapshot(participant)
+        try:
+            db.session.commit()
+        except Exception:
+            logger.exception(
+                "Failed to commit before participant-finish local deployment snapshot."
+            )
+            return None
+        return self._create_participant_finish_snapshot(participant, commit_flag=True)
 
     def _create_participant_finish_snapshot(
         self, participant=None, *, commit_flag=False

@@ -30,7 +30,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable, NamedTuple, Optional, Union
 from uuid import uuid4
 
 from rich.console import Console
@@ -74,6 +74,13 @@ class Snapshot:
     participant_count: Optional[int]
     sha256: Optional[str]
     max_response_id: Optional[int] = None
+
+
+class DatabaseExport(NamedTuple):
+    """Counts captured in the same database transaction as a snapshot archive."""
+
+    participant_count: int
+    max_response_id: int
 
 
 @dataclass(frozen=True)
@@ -272,7 +279,7 @@ def create_snapshot(
     deployment_id: Optional[str],
     resumed_from: Optional[int] = None,
     *,
-    exporter: Optional[Callable[[Path], Optional[int]]] = None,
+    exporter: Optional[Callable[[Path], Union[DatabaseExport, Optional[int]]]] = None,
 ) -> Snapshot:
     """Create and record one atomic database recovery snapshot."""
     validate_local_id(local_id)
@@ -297,15 +304,13 @@ def create_snapshot(
         parent_sequence = _snapshot_parent(snapshots, deployment_id, resumed_from)
         started_at = datetime.now(timezone.utc)
         try:
-            participant_count = exporter(temporary)
+            exported = exporter(temporary)
+            participant_count, max_response_id = _export_counts(exported)
             if not _archive_is_valid(temporary):
                 raise RuntimeError("Snapshot exporter produced an invalid archive.")
             checksum = _sha256(temporary)
             os.replace(temporary, path)
             path.chmod(0o600)
-            max_response_id = None
-            if exporter is export_database_snapshot:
-                max_response_id = read_response_watermark()
             metadata = {
                 "schema_version": 1,
                 "id": local_id,
@@ -420,7 +425,16 @@ def choose_snapshot(
     return selected
 
 
-def export_database_snapshot(destination: Path, db_url: Optional[str] = None) -> int:
+def _export_counts(exported) -> tuple[Optional[int], Optional[int]]:
+    """Return participant and response counts from an exporter result."""
+    if isinstance(exported, DatabaseExport):
+        return exported.participant_count, exported.max_response_id
+    return exported, None
+
+
+def export_database_snapshot(
+    destination: Path, db_url: Optional[str] = None
+) -> DatabaseExport:
     """Write a consistent Dallinger-compatible CSV database archive."""
     import psycopg2
     from psycopg2 import sql
@@ -464,6 +478,11 @@ def export_database_snapshot(destination: Path, db_url: Optional[str] = None) ->
                 )
                 with path.open("w", encoding="utf-8", newline="") as file:
                     cursor.copy_expert(statement.as_string(connection), file)
+            max_response_id = 0
+            if "response" in tables:
+                cursor.execute("SELECT COALESCE(MAX(id), 0) FROM response")
+                row = cursor.fetchone()
+                max_response_id = int(row[0]) if row and row[0] is not None else 0
             (root / "experiment_id.md").write_text("local", encoding="utf-8")
             with zipfile.ZipFile(
                 destination, "w", compression=zipfile.ZIP_DEFLATED, allowZip64=True
@@ -472,7 +491,7 @@ def export_database_snapshot(destination: Path, db_url: Optional[str] = None) ->
                     if path.is_file():
                         archive.write(path, path.relative_to(root))
         connection.rollback()
-        return participant_count
+        return DatabaseExport(participant_count, max_response_id)
     finally:
         connection.close()
 
@@ -721,6 +740,8 @@ def local_database_lock(
                 lock_context.__exit__(None, None, None)
     except BlockingIOError as error:
         raise concurrent_deployment_error(path) from error
+    except PermissionError as error:
+        raise concurrent_deployment_error(path) from error
     finally:
         _database_lock_guard.release()
 
@@ -747,10 +768,11 @@ def latest_snapshot_covers_owner(
         or latest.deployment_id != owner.deployment_id
     ):
         return False
-    if latest.max_response_id is not None:
-        current = read_response_watermark()
-        if current is not None and current > latest.max_response_id:
-            return False
+    if latest.max_response_id is None:
+        return False
+    current = read_response_watermark()
+    if current is None or current > latest.max_response_id:
+        return False
     if latest.reason in {"shutdown", "recovery-before-reset", "adopt-existing"}:
         return True
     # A finish snapshot is terminal only when nobody has started since.
@@ -788,8 +810,8 @@ def protect_existing_database(
         if not adopt_existing:
             raise RuntimeError(
                 "The local database contains an unmanaged PsyNet experiment"
-                f"{_describe_owner(owner)}. Re-run with --adopt-existing to save "
-                "it under the requested ID."
+                f"{_describe_owner(owner)}. Save it with "
+                "psynet deploy local --id <id> --adopt-existing."
             )
         append_deployment_event(
             requested_path,

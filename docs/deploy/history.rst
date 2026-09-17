@@ -17,9 +17,9 @@ Each event is one JSON object with at least ``schema_version``, ``at``
 (UTC), and ``event``. Action events also include the command ``argv``
 with known credential flags such as ``--password`` redacted, and, when
 provided, a ``comment`` field. Failures record an ``error`` message when
-available. If a crash leaves a partial last line, the next append starts a
-new line so later events stay readable; history shows that tail as
-``log.truncated``.
+available. If a crash leaves a partial last line, including a split UTF-8
+sequence, the next append starts a new line so later events stay readable;
+history shows that tail as ``log.truncated``.
 
 Attach a comment to a command:
 
