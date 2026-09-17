@@ -4,6 +4,10 @@ publish_experiment = true
 
 [Lucid]
 recruiter = lucid-recruiter
+# DevLucidRecruiter would exercise the Lucid code paths in local debug runs,
+# but it currently breaks `psynet test local`: bots skip the Lucid ad entry
+# flow, so the LucidRID row that get_lucid_rid() expects is never created.
+# Local runs therefore fall back to HotAir (the default debug recruiter).
 # debug_recruiter = DevLucidRecruiter
 lucid_recruitment_config = file:./lucid_recruitment_config.json
 # show_reward = false
