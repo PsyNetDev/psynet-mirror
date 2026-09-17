@@ -1,10 +1,18 @@
+"""Recording assets and trial mixins for recording analysis and imitation chains.
+
+Analysis consumes deposited assets. Asynchronous upload receipt is tracked
+separately on Recording: receiving bytes does not make a recording usable.
+Null upload fields retain the existing synchronous browser-upload path.
+"""
+
 import os
 import tempfile
 
 import dominate.tags as tags
+from sqlalchemy import Column, DateTime, Integer, String
 
 from ..asset import ExperimentAsset
-from ..field import claim_var
+from ..field import PythonDict, claim_var
 from ..utils import get_logger
 from .imitation_chain import (
     ImitationChainNetwork,
@@ -17,7 +25,16 @@ logger = get_logger()
 
 
 class Recording(ExperimentAsset):
-    pass
+    """Recorded media, optionally reserved before its bytes reach the server."""
+
+    # Null upload state identifies recordings using the existing deposit path.
+    upload_status = Column(String)
+    upload_token_hash = Column(String)
+    upload_deadline = Column(DateTime)
+    upload_received_at = Column(DateTime)
+    upload_processing_deadline = Column(DateTime)
+    upload_max_bytes = Column(Integer)
+    upload_context = Column(PythonDict)
 
 
 class RecordingAnalysisPlot(ExperimentAsset):

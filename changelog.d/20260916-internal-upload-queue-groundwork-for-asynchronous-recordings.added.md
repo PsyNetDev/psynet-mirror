@@ -1,0 +1,1 @@
+Added internal groundwork for asynchronous recording uploads: a bounded browser queue and authenticated, size-limited recording receipt independent of participant navigation. Recording controls continue to use the existing upload path until validation, deposit, and missing-recording handling are connected.

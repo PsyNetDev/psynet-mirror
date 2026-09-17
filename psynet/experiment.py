@@ -4591,6 +4591,23 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         )
         return json.dumps(json_data, default=serialise)
 
+    @experiment_route("/media-upload/<int:recording_id>", methods=["POST"])
+    @staticmethod
+    def receive_media_upload(recording_id):
+        """Receive reserved media independently of the participant transaction."""
+        from .media_upload import _receive_recording
+
+        authorization = flask.request.headers.get("Authorization", "")
+        if not authorization.startswith("Bearer "):
+            flask.abort(403)
+        _receive_recording(
+            recording_id,
+            authorization.removeprefix("Bearer "),
+            flask.request.stream,
+            content_length=flask.request.content_length,
+        )
+        return "", 204
+
     @experiment_route("/asset/<access_token>", methods=["GET"])
     @experiment_route("/asset/<access_token>/<path:subpath>", methods=["GET"])
     @staticmethod
