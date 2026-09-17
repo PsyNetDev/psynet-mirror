@@ -4600,11 +4600,17 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         authorization = flask.request.headers.get("Authorization", "")
         if not authorization.startswith("Bearer "):
             flask.abort(403)
+        connection = flask.request.environ.get(
+            "gunicorn.socket"
+        ) or flask.request.environ.get("werkzeug.socket")
+        if connection is None:
+            flask.abort(503, "This server does not support bounded recording uploads.")
         _receive_recording(
             recording_id,
             authorization.removeprefix("Bearer "),
             flask.request.stream,
             content_length=flask.request.content_length,
+            connection=connection,
         )
         return "", 204
 

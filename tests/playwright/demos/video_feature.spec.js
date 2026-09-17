@@ -33,6 +33,9 @@ Step summary:
 6. Final playback and finish:
    participant reaches playback/closing pages and finishes the experiment.
 
+The recording-sizes attachment measures fake-device files for upload budgeting;
+it does not set a fixed size expectation for real cameras or shared screens.
+
 Intentionally not covered:
 - Exact audiovisual synchronization at sub-frame precision.
 - Binary equality of captured camera/screen recordings.
@@ -255,6 +258,10 @@ test("video feature demo", { tag: "@both" }, async ({ page, context }) => {
         baselineIndex: dualVideoEventBaseline
       });
       const dualRecording = await getStagedVideoRecordingInfo(experimentPage);
+      await test.info().attach("recording-sizes", {
+        body: JSON.stringify({ camera: singleVideoRecording, cameraAndScreen: dualRecording }),
+        contentType: "application/json"
+      });
       expect(dualRecording.cameraExists).toBe(true);
       expect(dualRecording.cameraSize).toBeGreaterThan(0);
       expect(dualRecording.screenExists).toBe(true);

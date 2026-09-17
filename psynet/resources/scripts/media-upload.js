@@ -17,15 +17,14 @@ export class MediaUploadQueue {
     maxBytes = 128 * 1024 * 1024,
     maxPending = 32,
     maxAttempts = 3,
-    attemptTimeout = 10000,
     retryDelay = 500
   } = {}) {
-    for (const value of [concurrency, maxBytes, maxPending, maxAttempts, attemptTimeout, retryDelay]) {
+    for (const value of [concurrency, maxBytes, maxPending, maxAttempts, retryDelay]) {
       if (!Number.isSafeInteger(value) || value <= 0) {
         throw new TypeError("Upload queue limits must be positive integers.");
       }
     }
-    this._limits = { concurrency, maxBytes, maxPending, maxAttempts, attemptTimeout, retryDelay };
+    this._limits = { concurrency, maxBytes, maxPending, maxAttempts, retryDelay };
     this._jobs = new Map();
     this._active = 0;
     this._pendingBytes = 0;
@@ -89,7 +88,6 @@ export class MediaUploadQueue {
   async _send(job) {
     job.attempts += 1;
     job.controller = new AbortController();
-    const attemptTimer = setTimeout(() => job.controller.abort(), this._limits.attemptTimeout);
     try {
       const response = await fetch(job.url, {
         method: "POST",
@@ -111,7 +109,8 @@ export class MediaUploadQueue {
       }
     } catch (error) {
       if (!job.done) {
-        // Fetch reports network errors as TypeError and our timeout as AbortError.
+        // The reservation deadline, rather than a short per-attempt timer,
+        // bounds slow transfers. Retry only when delivery actually fails.
         if (error instanceof TypeError || error.name === "AbortError") {
           this._retry(job);
         } else {
@@ -120,7 +119,6 @@ export class MediaUploadQueue {
         }
       }
     } finally {
-      clearTimeout(attemptTimer);
       job.controller.abort();
       job.controller = null;
       job.active = false;

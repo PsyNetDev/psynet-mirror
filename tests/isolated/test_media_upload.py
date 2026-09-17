@@ -1,21 +1,23 @@
 """Exercise reservation and receipt against real PostgreSQL and streamed bodies."""
 
 import io
+import socket
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from threading import Barrier
+from threading import Barrier, Thread
 
 import pytest
 from dallinger import db
 from flask import Flask
 from sqlalchemy.orm import Session
 from werkzeug.exceptions import Forbidden, Gone, RequestEntityTooLarge
+from werkzeug.serving import make_server
 
 from psynet.asset import LocalStorage
 from psynet.experiment import Experiment, get_experiment
-from psynet.media_upload import _receive_recording, _reserve_recording
+from psynet.media_upload import _receive_recording, _reserve_recording, _upload_timeout
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.timeline import Response
@@ -27,6 +29,19 @@ pytestmark = [
     ),
     pytest.mark.usefixtures("in_experiment_directory"),
 ]
+
+
+@pytest.mark.parametrize(
+    "size, seconds", [(1, 60), (1024**2, 60), (10 * 1024**2, 198), (128 * 1024**2, 600)]
+)
+def test_upload_allowance_scales_with_file_size(size, seconds):
+    assert _upload_timeout(size) == seconds
+
+
+@pytest.mark.parametrize("size", [0, -1, True, 1.5, None])
+def test_upload_allowance_rejects_invalid_size(size):
+    with pytest.raises(ValueError):
+        _upload_timeout(size)
 
 
 @pytest.fixture
@@ -68,6 +83,31 @@ def test_reservation_retains_original_identity_without_deposit(reservation):
     assert not asset.deposited
     assert receipt["token"] != asset.access_token
     assert receipt["token"] != asset.upload_token_hash
+
+
+@pytest.mark.parametrize(
+    "size, override, seconds",
+    [(10 * 1024**2, None, 198), (None, None, 600), (10 * 1024**2, 75, 75)],
+)
+def test_reservation_fixes_size_based_or_explicit_deadline(
+    reservation, monkeypatch, size, override, seconds
+):
+    asset, _ = reservation
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    monkeypatch.setattr("psynet.media_upload._utcnow", lambda: now)
+    response = db.session.get(Response, asset.upload_context["response_id"])
+    pending, _ = _reserve_recording(
+        response=response,
+        parent=asset.parent,
+        page_uuid="sized",
+        source="camera",
+        local_key="sized",
+        storage=asset.storage,
+        upload_size_bytes=size,
+        upload_timeout=override,
+    )
+    assert pending.upload_deadline == now + timedelta(seconds=seconds)
+    assert pending.upload_context["upload_size_bytes"] == size
 
 
 def test_complete_receipt_is_unavailable_until_deposit(reservation, tmp_path):
@@ -231,7 +271,10 @@ def test_rejected_answer_cannot_reserve_a_recording(reservation):
     assert "rejected" not in asset.parent.assets
 
 
-def test_route_accepts_raw_body_with_bearer_capability(reservation):
+@pytest.mark.parametrize("supports_deadline", [True, False])
+def test_route_accepts_raw_body_only_with_a_bounded_connection(
+    reservation, supports_deadline
+):
     asset, receipt = reservation
     app = Flask(__name__)
     app.add_url_rule(
@@ -239,12 +282,53 @@ def test_route_accepts_raw_body_with_bearer_capability(reservation):
         view_func=Experiment.receive_media_upload,
         methods=["POST"],
     )
-    with app.test_client() as client:
+    with socket.socket() as connection, app.test_client() as client:
         response = client.post(
             f"/media-upload/{asset.id}",
             data=b"recording",
             headers={"Authorization": f"Bearer {receipt['token']}"},
+            environ_overrides={"werkzeug.socket": connection}
+            if supports_deadline
+            else {},
         )
-    assert response.status_code == 204
+    assert response.status_code == (204 if supports_deadline else 503)
     db.session.refresh(asset)
-    Path(asset.input_path).unlink()
+    if supports_deadline:
+        Path(asset.input_path).unlink()
+    else:
+        assert asset.input_path is None
+
+
+def test_stalled_http_upload_is_interrupted_at_deadline(reservation):
+    """A real partial HTTP body must release the request worker by its deadline."""
+    asset, receipt = reservation
+    app = Flask(__name__)
+    app.add_url_rule(
+        "/media-upload/<int:recording_id>",
+        view_func=Experiment.receive_media_upload,
+        methods=["POST"],
+    )
+    server = make_server("127.0.0.1", 0, app)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    asset.upload_deadline = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(
+        seconds=2
+    )
+    db.session.commit()
+    thread.start()
+    try:
+        with socket.create_connection(server.server_address, timeout=5) as client:
+            client.sendall(
+                (
+                    f"POST /media-upload/{asset.id} HTTP/1.1\r\nHost: localhost\r\n"
+                    f"Authorization: Bearer {receipt['token']}\r\nContent-Length: 9\r\n\r\nx"
+                ).encode()
+            )
+            response = client.recv(4096)
+            assert b"410 GONE" in response
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+    db.session.refresh(asset)
+    assert asset.input_path is None
+    assert not asset.deposited

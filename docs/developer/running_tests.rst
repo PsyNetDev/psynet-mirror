@@ -237,6 +237,48 @@ Note that this does not quite match the Docker environment that the CI tests are
 but it should be close enough. We might document alternative approaches later.
 
 
+Recording upload development checks
+-----------------------------------
+
+The asynchronous recording transport is under development and is not connected
+to recording controls yet. Run its server and browser checks separately from
+the experiment demos; database fixtures reset their database and must not run
+alongside a demo using that same database.
+
+.. code-block:: shell
+
+    pytest tests/isolated/test_media_upload.py
+    npx playwright test media_upload_queue.spec.js
+    npx playwright test demos/imitation_chain_video.spec.js demos/video_feature.spec.js
+
+The video imitation-chain demo exercises recording-dependent playback and chain
+progression. The ordinary video demo also covers camera-plus-screen recording.
+Both attach ``recording-sizes`` JSON to their Playwright results. These measure
+fake-device output for a sanity check, not an upper bound on real recording sizes.
+The demo checks still exercise the existing upload path; they do not establish
+that asynchronous trial-failure handling works.
+
+The provisional upload allowance uses a conservative 1 Mbit/s rate, 30 seconds
+of overhead, and twice the estimated transfer time, bounded to 60–600 seconds.
+For example, 1 MiB gets 60 seconds and 10 MiB gets 198 seconds. This is a planning
+assumption, not an estimate of the average participant's connection. Ofcom's
+`fixed broadband coverage report <https://www.ofcom.org.uk/phones-and-broadband/coverage-and-speeds/connected-nations-update-spring-2025>`_
+uses 1 Mbit/s as its upload threshold for a decent connection; it does not establish
+worldwide participant speeds. The cap can cut off large files on slow connections.
+
+Reservations accept a size hint bounded by the server's upload-size limit and
+an explicit timeout override. Without a size hint, the allowance uses that limit.
+The clock starts when the response is accepted and includes queueing and retries;
+it never restarts for another attempt. Successful server receipt starts a separate
+processing deadline. When connecting multi-source recording controls, budget the
+combined queued bytes rather than assuming each source gets the full bandwidth.
+
+The streaming endpoint requires the request socket exposed by Gunicorn or
+Werkzeug to interrupt blocked reads at the deadline. Other WSGI servers receive
+HTTP 503 until they have a supported deadline mechanism. A database expiry job
+alone cannot release a worker blocked on a request body.
+
+
 Occasional test failures, and running tests repeatedly
 ------------------------------------------------------
 

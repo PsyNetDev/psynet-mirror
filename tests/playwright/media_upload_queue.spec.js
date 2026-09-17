@@ -60,6 +60,19 @@ test.describe("Document-owned media upload queue @both", () => {
     expect(bodies).toEqual(["recorded bytes", "recorded bytes"]);
   });
 
+  test("allows a slow delivery to finish without restarting at ten seconds", async ({ page }) => {
+    await page.clock.install();
+    const uploads = [];
+    await page.route("**/media-upload/slow", (route) => { uploads.push(route); });
+    await page.evaluate(() => { enqueue("slow", 60000); });
+    await expect.poll(() => uploads.length).toBe(1);
+    await page.clock.runFor(12000);
+    expect(uploads).toHaveLength(1);
+    expect(await page.evaluate(() => results.slow)).toBeUndefined();
+    await uploads[0].fulfill({ status: 204 });
+    await expect.poll(() => page.evaluate(() => results.slow)).toEqual({ status: "received" });
+  });
+
   test("does not retry a permanent rejection", async ({ page }) => {
     let requests = 0;
     await page.route("**/media-upload/rejected", (route) => {

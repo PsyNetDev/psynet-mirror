@@ -12,19 +12,44 @@ Do not wrap the streaming route in a participant transaction or expose received
 files through the asset endpoint before successful deposit.
 """
 
+import errno
 import hashlib
+import math
 import os
 import secrets
+import socket
 import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from threading import Timer
 
 from dallinger import db
 from sqlalchemy.orm import Session
-from werkzeug.exceptions import BadRequest, Forbidden, Gone, RequestEntityTooLarge
+from werkzeug.exceptions import (
+    BadRequest,
+    ClientDisconnected,
+    Forbidden,
+    Gone,
+    RequestEntityTooLarge,
+)
 
 from .asset import LocalStorage
 from .trial.record import Recording
+from .utils import get_logger
+
+logger = get_logger()
+
+
+def _upload_timeout(size_bytes):
+    """Allow a conservative 1 Mbit/s transfer, retry headroom, and queue overhead.
+
+    This is an engineering allowance, not a measured participant average:
+    30 seconds + twice the transfer time, bounded to 60–600 seconds. Compute
+    once on acceptance; neither queueing nor retransmission resets the clock.
+    """
+    if type(size_bytes) is not int or size_bytes <= 0:
+        raise ValueError("Recording size must be a positive integer.")
+    return min(600, max(60, 30 + math.ceil(2 * size_bytes * 8 / 1_000_000)))
 
 
 def _utcnow():
@@ -40,7 +65,8 @@ def _reserve_recording(
     source,
     local_key,
     storage,
-    upload_timeout=20,
+    upload_timeout=None,
+    upload_size_bytes=None,
     processing_timeout=20,
     max_bytes=128 * 1024 * 1024,
 ):
@@ -53,8 +79,18 @@ def _reserve_recording(
         raise ValueError("A recording reservation must identify one capture source.")
     if any(
         type(value) is not int or value <= 0
-        for value in (upload_timeout, processing_timeout, max_bytes)
+        for value in (processing_timeout, max_bytes)
     ):
+        raise ValueError("Recording limits must be positive integers.")
+    if upload_size_bytes is not None and (
+        type(upload_size_bytes) is not int or not 0 < upload_size_bytes <= max_bytes
+    ):
+        raise ValueError("Recording size must be positive and within the upload limit.")
+    if upload_timeout is None:
+        upload_timeout = _upload_timeout(
+            max_bytes if upload_size_bytes is None else upload_size_bytes
+        )
+    if type(upload_timeout) is not int or upload_timeout <= 0:
         raise ValueError("Recording limits must be positive integers.")
     if local_key in parent.assets:
         raise ValueError(f"This parent already has an asset named {local_key!r}.")
@@ -86,6 +122,7 @@ def _reserve_recording(
         "page_uuid": page_uuid,
         "source": source,
         "processing_timeout": processing_timeout,
+        "upload_size_bytes": upload_size_bytes,
     }
     db.session.add(asset)
     db.session.flush()
@@ -118,7 +155,7 @@ def _check_receivable(recording):
 
 
 def _receive_recording(
-    recording_id, token, stream, *, content_length=None, directory=None
+    recording_id, token, stream, *, content_length=None, directory=None, connection=None
 ):
     """Publish a complete bounded file without locking its participant.
 
@@ -138,6 +175,27 @@ def _receive_recording(
 
     path = None
     retained = False
+    timer = None
+    if connection is not None:
+        # A socket timeout alone is insufficient: a WSGI read can combine many
+        # successful short receives while a client trickles bytes indefinitely.
+        # Closing only the read half interrupts that read while allowing a 410
+        # response. Gunicorn and Werkzeug expose the owning request socket.
+        def _interrupt_read():
+            """Wake a blocked body reader without closing its response channel."""
+            try:
+                connection.shutdown(socket.SHUT_RD)
+            except OSError as error:
+                if error.errno not in {errno.EBADF, errno.ENOTCONN}:
+                    logger.warning(
+                        "Could not interrupt recording %s upload: %s",
+                        recording_id,
+                        error,
+                    )
+
+        timer = Timer(max(0, (deadline - _utcnow()).total_seconds()), _interrupt_read)
+        timer.daemon = True
+        timer.start()
     try:
         with tempfile.NamedTemporaryFile(
             prefix="psynet-upload-", dir=directory, delete=False
@@ -147,7 +205,16 @@ def _receive_recording(
             while True:
                 if _utcnow() >= deadline:
                     raise Gone("The recording upload deadline has passed.")
-                chunk = stream.read(min(65536, max_bytes - total + 1))
+                try:
+                    chunk = stream.read(min(65536, max_bytes - total + 1))
+                except (OSError, ClientDisconnected):
+                    if _utcnow() >= deadline:
+                        raise Gone(
+                            "The recording upload deadline has passed."
+                        ) from None
+                    raise
+                if _utcnow() >= deadline:
+                    raise Gone("The recording upload deadline has passed.")
                 if not chunk:
                     break
                 total += len(chunk)
@@ -178,5 +245,8 @@ def _receive_recording(
             recording.upload_status = "received"
         retained = True
     finally:
+        if timer is not None:
+            timer.cancel()
+            timer.join()
         if path is not None and not retained:
             path.unlink(missing_ok=True)
