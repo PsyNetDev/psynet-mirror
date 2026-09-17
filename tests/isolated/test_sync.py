@@ -1255,6 +1255,7 @@ def test_visit_check_would_release_rolls_back_peek_mutations(
             instance = BarrierInstance.query.get(instance_id)
             instance.active = False
             waiting[0].progress = original_progress + 1
+            self.peek_mutated = True
             db.session.flush()
             return True
 
@@ -1262,8 +1263,11 @@ def test_visit_check_would_release_rolls_back_peek_mutations(
         assert _visit_check_would_release(instance_id) is True
         instance = BarrierInstance.query.get(instance_id)
         first = Participant.query.get(first.id)
+        later = instance.get_barrier()
         assert instance.active is True
         assert first.progress == original_progress
+        assert later is not reconstructed
+        assert not getattr(later, "peek_mutated", False)
         _set_transaction_lock_timeout(0.3)
         assert db.session.execute(text("SELECT 1")).scalar() == 1
     finally:
@@ -1550,6 +1554,7 @@ def test_last_arrival_spec_error_leaves_the_group_waiting(
         raise BarrierSpecError("malformed spec")
 
     monkeypatch.setattr("psynet.sync.barrier_from_spec_json", boom)
+    db.session.info.pop(_BARRIER_FROM_SPEC_CACHE_KEY, None)
     _commit_barrier_arrivals()
     db_session.refresh(first)
     db_session.refresh(last)

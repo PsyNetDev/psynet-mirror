@@ -27,6 +27,7 @@ from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.sqlalchemy_profiling import sqlalchemy_profile
 from psynet.sync import (
+    _BARRIER_FROM_SPEC_CACHE_KEY,
     GroupBarrier,
     ParticipantLinkBarrier,
     SimpleGrouper,
@@ -171,6 +172,11 @@ def _assert_budget(profiler, expected, *, label):
             f"{profiler.format_summary(top_n=80, sort_by='count')}\n"
             f"{profiler.format_commit_summary()}"
         )
+
+
+def _drop_barrier_spec_cache():
+    """Forget reconstructed barriers so a profiled window includes spec SELECT."""
+    db.session.info.pop(_BARRIER_FROM_SPEC_CACHE_KEY, None)
 
 
 def _new_participant(experiment):
@@ -436,6 +442,7 @@ def test_check_instance_sql_matches_waiter_formula(db_session):
         )
         checks = _queued_last_arrival_checks(exp, barrier, waiters, last)
         db.session.expire_all()
+        _drop_barrier_spec_cache()
         with sqlalchemy_profile(db.engine) as profiler:
             assert _run_pending_barrier_checks(checks) is True
         released = (
@@ -481,6 +488,7 @@ def test_finalize_commits_check_then_relock_independent_of_group_size(db_session
         checks = _queued_last_arrival_checks(exp, barrier, waiters, last)
         result = SimpleNamespace(page=None, payload={})
         db.session.expire_all()
+        _drop_barrier_spec_cache()
         with _restored_experiment(exp):
             page = _stub_finalize_timeline(exp)
             with sqlalchemy_profile(db.engine) as profiler:
@@ -515,6 +523,7 @@ def test_pending_arrival_notice_reconstructs_each_instance_once(db_session):
         _commit_barrier_arrivals()
     db.session.commit()
     db.session.expire_all()
+    _drop_barrier_spec_cache()
     last = Participant.query.get(last.id)
     with sqlalchemy_profile(db.engine) as profiler:
         notice = pending_arrival_notice_for(last)

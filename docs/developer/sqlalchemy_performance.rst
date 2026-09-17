@@ -284,7 +284,9 @@ Check window (one GroupBarrier, group already formed)
 * ORM ``lock_timeout`` for the check/commit on ``db.session``;
 * instance PK, SAVEPOINT, deferred ``spec``
   load, one waiter ``FOR UPDATE NOWAIT`` join (this already inner-joins
-  ``participant``);
+  ``participant``). The visit-claim peek drops its reconstructed barrier
+  after rolling back, so this check still loads ``spec`` once instead of
+  reusing in-memory peek state;
 * ``module_state`` select-in, ``active_barriers`` select-in, ``timeline_hold``
   select-in;
 * one explicit ``sync_group_links`` ``IN`` query (populated with

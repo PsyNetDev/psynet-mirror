@@ -149,6 +149,22 @@ _PENDING_BARRIER_CHECKS_KEY = "psynet_pending_barrier_checks"
 _RELEASED_HOLD_WAITER_IDS_KEY = "psynet_released_hold_waiter_ids"
 _NESTED_BARRIER_QUEUE_SNAPSHOTS_KEY = "psynet_nested_barrier_queue_snapshots"
 _BARRIER_FROM_SPEC_CACHE_KEY = "psynet_barrier_from_spec"
+
+
+def _forget_barrier_from_spec(instance_id):
+    """Drop a reconstructed barrier so a later check cannot reuse peek mutations.
+
+    The visit-claim peek rolls back its savepoint, which undoes ORM writes.
+    Python attributes on the cached registry object would otherwise survive.
+    """
+    session = db.session
+    if session is None or instance_id is None:
+        return
+    cache = session.info.get(_BARRIER_FROM_SPEC_CACHE_KEY)
+    if cache:
+        cache.pop(instance_id, None)
+
+
 # Shared cap for last-arrival finalize, ready-hold skip, and the poller sweep.
 # Each pass can mint a fresh visit; without a bound those walks occupy a worker.
 # Walkers observe once more after the last work unit so a walk that settles on
@@ -258,6 +274,7 @@ def _visit_check_would_release(instance_id):
                     result = bool(barrier.would_release(waiting))
         finally:
             nested.rollback()
+            _forget_barrier_from_spec(instance_id)
         return result
     except BarrierSpecError:
         logger.exception(
@@ -2103,6 +2120,7 @@ class BarrierInstance(SQLBase, SQLMixin):
         This is not the live timeline barrier. See :class:`Barrier` for which
         methods are safe here. Reconstructions are memoized on the current
         SQLAlchemy session so grouped-page render does not re-parse the spec.
+        The visit-claim peek drops that memo after it rolls back.
         """
         session = object_session(self)
         cache = None
