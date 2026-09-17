@@ -15,10 +15,7 @@ a review, and it does **not** rewrite history.
 
 The target is the branch the MR will merge into, not always `master`.
 The open MR is the source of truth. The tree after this command is what
-will land. `/branch-review` runs this skill first, then reviews that
-tree. `/reorganize-onto-target` is a separate rewrite used just before
-the MR is merged into the target. It does not merge, so running it
-without this step drops the target's new work.
+will land.
 
 ## Resolve the target
 
@@ -71,5 +68,6 @@ Push the merge with a regular `git push`. Never force-push the target
 branch.
 
 If this skill was invoked on its own, typical next step is
-`/branch-review` (which will no-op the merge if the target is already
-an ancestor).
+`/branch-review`. To rewrite history onto the target, follow
+`.cursor/skills/reorganize-onto-target/SKILL.md` (When to run) instead
+of soft-resetting here.

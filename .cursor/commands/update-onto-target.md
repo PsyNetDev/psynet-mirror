@@ -2,12 +2,6 @@
 
 Use the project skill at `.cursor/skills/update-onto-target/SKILL.md`.
 
-Read the open merge request's target branch from GitLab. Fetch
-`origin/<target>` and fast-forward the local target, then merge that
-into the feature branch and resolve every conflict. Push with a
-regular `git push`. If there is no open MR, stop and ask; do not
-assume `master`.
-
-Do not soft-reset and do not review here. `/branch-review` runs this
-skill first, then reviews. `/reorganize-onto-target` is a separate
-command used just before the MR is merged into its target.
+Do not soft-reset and do not review here. To rewrite history onto the
+target, follow `.cursor/skills/reorganize-onto-target/SKILL.md`
+(When to run).

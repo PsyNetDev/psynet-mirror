@@ -4,42 +4,38 @@ description: >-
   Rebuild a PsyNet feature branch as logical commits on the open GitLab
   merge-request target with git reset --soft, then force-with-lease
   push. Use just before merging the MR into its target, or when the
-  user runs /reorganize-onto-target. Not part of /branch-review.
+  user runs /reorganize-onto-target.
 ---
 
 # Reorganize Onto Target
 
 Rebuild the current feature branch as a few logical commits on the
-open merge request's **target**. Run this **just before** the MR is
-merged into that target, so the history that lands is a few logical
-commits. Do not run it as part of `/branch-review`.
+open merge request's **target**. The point is the commit grouping, not
+merely a straight-line history. `git reset --soft origin/<target>`
+keeps the reviewed tree and moves `HEAD` to that target so you can
+recommit in sensible units.
 
-The target must already be an ancestor of `HEAD`; if it is not, run
-`/update-onto-target` first.
+## When to run
 
-The point is the commit grouping, not merely a straight-line history.
-`git reset --soft origin/<target>` keeps the reviewed tree and moves
-`HEAD` to that target so you can recommit in sensible units.
+Run this **just before** the MR is merged into that target. Do not run
+it as part of `/branch-review`.
 
-This skill does **not** merge. It also must **not** fetch a newer
-target and then soft-reset onto it: that would drop work that was never
-reviewed. If `origin/<target>` is not already an ancestor of `HEAD`,
-stop and tell the user to run `/update-onto-target` first.
+This skill does **not** merge. It must **not** fetch a newer target and
+then soft-reset onto it: that would drop work that was never reviewed.
+If `origin/<target>` is not already an ancestor of `HEAD`, stop and tell
+the user to run `/update-onto-target` first.
 
 ## Resolve the target
 
-Same source of truth as update-onto-target: the open MR's
-`target_branch`. See `.cursor/skills/update-onto-target/SKILL.md`
-(Resolve the target). Do not assume `master`.
+Follow `.cursor/skills/update-onto-target/SKILL.md` (Resolve the target).
 
 ## Prerequisites
 
 1. Confirm you are on a feature branch, not the target:
    `git rev-parse --abbrev-ref HEAD`
 2. Stop if there are uncommitted changes to tracked files.
-3. Confirm `git merge-base --is-ancestor origin/<target> HEAD`.
-   If that fails, run `/update-onto-target` first. Do not
-   `git fetch` the target here.
+3. Confirm `git merge-base --is-ancestor origin/<target> HEAD`. If that
+   fails, follow When to run.
 
 ## 1) Soft-reset onto the target
 
