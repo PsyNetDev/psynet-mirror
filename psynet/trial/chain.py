@@ -2024,6 +2024,21 @@ class ChainTrialMaker(NetworkTrialMaker):
         participant_group = participant.module_state.participant_group
         chain_query = chain_query.filter_by(participant_group=participant_group)
 
+        # A failed recording must not silently turn into another capture of the
+        # same answer. Exclude only this participant's failed head, leaving it
+        # available to other participants and preserving other retry policies.
+        failed_recording_answer = (
+            db.session.query(Trial.id)
+            .filter(
+                Trial.node_id == self.network_class.head_id,
+                Trial.participant_id == participant.id,
+                Trial.failed,
+                Trial.failed_reason.startswith("recording_", autoescape=True),
+            )
+            .exists()
+        )
+        chain_query = chain_query.filter(~failed_recording_answer)
+
         discovered_chains = chain_query.all()
         # Candidate records let the shared pipeline work with either chains or
         # static nodes while retaining the network objects loaded by the query.

@@ -653,6 +653,55 @@ def test_missing_recording_fails_only_its_trial_and_cannot_seed_growth(
     assert db.session.get(GrowthQueryTrial, affected_id).time_of_death == died_at
 
 
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+@pytest.mark.parametrize("chain_type", ["within", "across"])
+@pytest.mark.parametrize("reason", ["recording_upload_timeout", "analysis"])
+def test_recording_failure_prevents_same_participant_reassignment(
+    db_session, participant, chain_type, reason
+):
+    exp = get_experiment()
+    maker = chain_trial_maker(
+        chain_type=chain_type,
+        chains_per_participant=1 if chain_type == "within" else None,
+        chains_per_experiment=None if chain_type == "within" else 1,
+        recruit_mode="n_participants",
+        target_n_participants=1,
+        max_trials_per_participant=10,
+        allow_revisiting_networks_in_across_chains=True,
+    )
+    network = create_chain_network(
+        maker, exp, participant=participant if chain_type == "within" else None
+    )
+    initialize_trial_maker_state(maker, participant)
+    trial = add_trial(GrowthQueryTrial, network.head, participant, finalized=False)
+    trial.complete = True
+    trial.fail(reason=reason)
+    db.session.flush()
+
+    eligible = maker.find_chains(participant, exp)
+    if reason == "recording_upload_timeout":
+        assert eligible == "exit"
+    else:
+        assert [chain.id for chain in eligible] == [network.id]
+
+    if chain_type == "across":
+        other = Participant(
+            experiment=exp,
+            recruiter_id="hotair",
+            worker_id=str(uuid.uuid4()),
+            hit_id=str(uuid.uuid4()),
+            assignment_id=str(uuid.uuid4()),
+            mode="debug",
+        )
+        db.session.add(other)
+        db.session.flush()
+        initialize_trial_maker_state(maker, other)
+        assert [chain.id for chain in maker.find_chains(other, exp)] == [network.id]
+
+
 def graph_trial_maker():
     return make_graph_trial_maker(
         {
