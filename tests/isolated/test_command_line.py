@@ -4337,7 +4337,7 @@ def test_write_json_results_emits_expected_schema_with_coerced_values(tmp_path):
     assert first["process_stats"][0]["max"] is None
 
 
-def _invoke_destroy_ssh(monkeypatch, apps, destroy_app):
+def _invoke_destroy_ssh(monkeypatch, destroy_app, apps=(), app=None):
     import importlib
 
     from psynet.command_line import destroy__docker_ssh
@@ -4351,12 +4351,25 @@ def _invoke_destroy_ssh(monkeypatch, apps, destroy_app):
     def parent(ctx):
         # pass_context already injects the current Click context.
         destroy__docker_ssh.callback(
-            app=None,
+            app=app,
             apps=apps,
             server="test-server",
         )
 
     return CliRunner().invoke(parent)
+
+
+def test_destroy_ssh_requires_an_app_name(monkeypatch):
+    @click.command()
+    @click.option("--app")
+    @click.option("--server")
+    def fake_destroy(app, server):
+        raise AssertionError("should not destroy")
+
+    result = _invoke_destroy_ssh(monkeypatch, fake_destroy)
+    assert result.exit_code != 0, result.output
+    assert "Provide an app name" in result.output
+    assert "psynet destroy ssh" in result.output
 
 
 def test_destroy_ssh_continues_when_an_app_is_already_gone(monkeypatch):
@@ -4371,7 +4384,7 @@ def test_destroy_ssh_continues_when_an_app_is_already_gone(monkeypatch):
             raise click.Abort()
 
     result = _invoke_destroy_ssh(
-        monkeypatch, ("gone", "kept-1", "kept-2"), fake_destroy
+        monkeypatch, fake_destroy, apps=("gone", "kept-1", "kept-2")
     )
     assert destroyed == ["gone", "kept-1", "kept-2"], result.output
     assert result.exception is None, result.output
@@ -4379,6 +4392,22 @@ def test_destroy_ssh_continues_when_an_app_is_already_gone(monkeypatch):
     assert "Failed to destroy gone" in result.output
     assert "Maybe it was already destroyed" in result.output
     assert "Traceback" not in result.output
+
+
+def test_destroy_ssh_app_option_aborts_when_missing(monkeypatch):
+    destroyed = []
+
+    @click.command()
+    @click.option("--app", required=True)
+    @click.option("--server")
+    def fake_destroy(app, server):
+        destroyed.append(app)
+        raise click.Abort()
+
+    result = _invoke_destroy_ssh(monkeypatch, fake_destroy, app="gone")
+    assert destroyed == ["gone"], result.output
+    assert result.exit_code == 1, result.output
+    assert isinstance(result.exception, SystemExit)
 
 
 def test_destroy_ssh_continues_when_one_app_raises(monkeypatch):
@@ -4392,7 +4421,7 @@ def test_destroy_ssh_continues_when_one_app_raises(monkeypatch):
         if app == "broken":
             raise RuntimeError("ssh failed")
 
-    result = _invoke_destroy_ssh(monkeypatch, ("broken", "kept"), fake_destroy)
+    result = _invoke_destroy_ssh(monkeypatch, fake_destroy, apps=("broken", "kept"))
     assert destroyed == ["broken", "kept"], result.output
     assert result.exception is None, result.output
     assert result.exit_code == 0, result.output

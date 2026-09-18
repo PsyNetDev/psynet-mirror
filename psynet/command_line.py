@@ -3103,7 +3103,7 @@ def _destroy(
     server=None,
     ask_for_confirmation=True,
 ):
-    """Destroy a single app, reporting missing apps instead of aborting."""
+    """Destroy a single app."""
     confirmed = (
         user_confirms(
             "Would you like to delete the app from the web server?", default=True
@@ -3131,12 +3131,15 @@ def _destroy(
                         **kwargs,
                     )
                 spinner.ok("✔")
-            except (subprocess.CalledProcessError, click.Abort):
+            except subprocess.CalledProcessError:
                 spinner.fail("✗")
                 click.echo(
                     f"Failed to destroy {app}. "
                     "Maybe it was already destroyed, or the app name was wrong?"
                 )
+            except click.Abort:
+                spinner.fail("✗")
+                raise
 
 
 @destroy.command("ssh")
@@ -3151,6 +3154,8 @@ def destroy__docker_ssh(ctx, app, apps, server):
     from dallinger.command_line.docker_ssh import destroy
 
     example_usage = "`psynet destroy ssh <app> <app> [--server <server>]`"
+    if not app and not apps:
+        raise click.UsageError(f"Provide an app name. Example: {example_usage}")
     if app:
         assert len(apps) == 0, "You cannot provide both --app and a list of apps."
         click.echo(f"Consider using the batch syntax: {example_usage}")
@@ -3174,6 +3179,11 @@ def destroy__docker_ssh(ctx, app, apps, server):
                         app=app,
                         server=server,
                         ask_for_confirmation=False,
+                    )
+                except click.Abort:
+                    click.echo(
+                        f"Failed to destroy {app}. "
+                        "Maybe it was already destroyed, or the app name was wrong?"
                     )
                 except Exception:
                     logger.exception(
