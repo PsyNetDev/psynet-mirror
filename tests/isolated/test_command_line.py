@@ -4387,8 +4387,8 @@ def test_destroy_ssh_continues_when_an_app_is_already_gone(monkeypatch):
         monkeypatch, fake_destroy, apps=("gone", "kept-1", "kept-2")
     )
     assert destroyed == ["gone", "kept-1", "kept-2"], result.output
-    assert result.exception is None, result.output
-    assert result.exit_code == 0, result.output
+    assert result.exit_code == 1, result.output
+    assert isinstance(result.exception, SystemExit)
     assert "Failed to destroy gone" in result.output
     assert "Maybe it was already destroyed" in result.output
     assert "Traceback" not in result.output
@@ -4423,6 +4423,21 @@ def test_destroy_ssh_continues_when_one_app_raises(monkeypatch):
 
     result = _invoke_destroy_ssh(monkeypatch, fake_destroy, apps=("broken", "kept"))
     assert destroyed == ["broken", "kept"], result.output
+    assert result.exit_code == 1, result.output
+    assert isinstance(result.exception, SystemExit)
+    assert "Failed to destroy broken; continuing with remaining apps." in result.output
+
+
+def test_destroy_ssh_batch_succeeds(monkeypatch):
+    destroyed = []
+
+    @click.command()
+    @click.option("--app", required=True)
+    @click.option("--server")
+    def fake_destroy(app, server):
+        destroyed.append(app)
+
+    result = _invoke_destroy_ssh(monkeypatch, fake_destroy, apps=("kept-1", "kept-2"))
+    assert destroyed == ["kept-1", "kept-2"], result.output
     assert result.exception is None, result.output
     assert result.exit_code == 0, result.output
-    assert "Failed to destroy broken; continuing with remaining apps." in result.output

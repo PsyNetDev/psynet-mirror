@@ -3137,9 +3137,12 @@ def _destroy(
                     f"Failed to destroy {app}. "
                     "Maybe it was already destroyed, or the app name was wrong?"
                 )
+                return False
             except click.Abort:
                 spinner.fail("✗")
                 raise
+        return True
+    return False
 
 
 @destroy.command("ssh")
@@ -3171,20 +3174,23 @@ def destroy__docker_ssh(ctx, app, apps, server):
             Are you sure you want to remove {len(apps)} apps on {server} ({apps})?
             """
         if click.confirm(confirmation, abort=True):
+            failed = []
             for app in apps:
                 try:
-                    _destroy(
+                    if not _destroy(
                         ctx,
                         destroy,
                         app=app,
                         server=server,
                         ask_for_confirmation=False,
-                    )
+                    ):
+                        failed.append(app)
                 except click.Abort:
                     click.echo(
                         f"Failed to destroy {app}. "
                         "Maybe it was already destroyed, or the app name was wrong?"
                     )
+                    failed.append(app)
                 except Exception:
                     logger.exception(
                         "Failed to destroy app %s; continuing with remaining apps.",
@@ -3193,6 +3199,9 @@ def destroy__docker_ssh(ctx, app, apps, server):
                     click.echo(
                         f"Failed to destroy {app}; continuing with remaining apps."
                     )
+                    failed.append(app)
+            if failed:
+                raise click.Abort()
 
 
 @psynet.group("apps")
