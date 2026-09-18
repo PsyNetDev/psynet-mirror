@@ -3103,6 +3103,7 @@ def _destroy(
     server=None,
     ask_for_confirmation=True,
 ):
+    """Destroy a single app, reporting missing apps instead of aborting."""
     confirmed = (
         user_confirms(
             "Would you like to delete the app from the web server?", default=True
@@ -3112,7 +3113,7 @@ def _destroy(
     )
 
     if confirmed:
-        with yaspin("Destroying app...") as spinner:
+        with yaspin(f"Destroying {app}...") as spinner:
             try:
                 kwargs = {"app": app}
                 kwargs = {**kwargs, "server": server} if server else kwargs
@@ -3130,10 +3131,11 @@ def _destroy(
                         **kwargs,
                     )
                 spinner.ok("✔")
-            except subprocess.CalledProcessError:
+            except (subprocess.CalledProcessError, click.Abort):
                 spinner.fail("✗")
                 click.echo(
-                    "Failed to destroy the app. Maybe it was already destroyed, or the app name was wrong?"
+                    f"Failed to destroy {app}. "
+                    "Maybe it was already destroyed, or the app name was wrong?"
                 )
 
 
@@ -3165,13 +3167,22 @@ def destroy__docker_ssh(ctx, app, apps, server):
             """
         if click.confirm(confirmation, abort=True):
             for app in apps:
-                _destroy(
-                    ctx,
-                    destroy,
-                    app=app,
-                    server=server,
-                    ask_for_confirmation=False,
-                )
+                try:
+                    _destroy(
+                        ctx,
+                        destroy,
+                        app=app,
+                        server=server,
+                        ask_for_confirmation=False,
+                    )
+                except Exception:
+                    logger.exception(
+                        "Failed to destroy app %s; continuing with remaining apps.",
+                        app,
+                    )
+                    click.echo(
+                        f"Failed to destroy {app}; continuing with remaining apps."
+                    )
 
 
 @psynet.group("apps")

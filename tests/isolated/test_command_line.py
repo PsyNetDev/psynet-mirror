@@ -4335,3 +4335,65 @@ def test_write_json_results_emits_expected_schema_with_coerced_values(tmp_path):
     assert first["inf_value"] is None
     assert first["process_stats"][0]["avg"] == 0.001
     assert first["process_stats"][0]["max"] is None
+
+
+def _invoke_destroy_ssh(monkeypatch, apps, destroy_app):
+    import importlib
+
+    from psynet.command_line import destroy__docker_ssh
+
+    docker_ssh = importlib.import_module("dallinger.command_line.docker_ssh")
+    monkeypatch.setattr(docker_ssh, "destroy", destroy_app)
+    monkeypatch.setattr(click, "confirm", lambda *args, **kwargs: True)
+
+    @click.command()
+    @click.pass_context
+    def parent(ctx):
+        # pass_context already injects the current Click context.
+        destroy__docker_ssh.callback(
+            app=None,
+            apps=apps,
+            server="test-server",
+        )
+
+    return CliRunner().invoke(parent)
+
+
+def test_destroy_ssh_continues_when_an_app_is_already_gone(monkeypatch):
+    destroyed = []
+
+    @click.command()
+    @click.option("--app", required=True)
+    @click.option("--server")
+    def fake_destroy(app, server):
+        destroyed.append(app)
+        if app == "gone":
+            raise click.Abort()
+
+    result = _invoke_destroy_ssh(
+        monkeypatch, ("gone", "kept-1", "kept-2"), fake_destroy
+    )
+    assert destroyed == ["gone", "kept-1", "kept-2"], result.output
+    assert result.exception is None, result.output
+    assert result.exit_code == 0, result.output
+    assert "Failed to destroy gone" in result.output
+    assert "Maybe it was already destroyed" in result.output
+    assert "Traceback" not in result.output
+
+
+def test_destroy_ssh_continues_when_one_app_raises(monkeypatch):
+    destroyed = []
+
+    @click.command()
+    @click.option("--app", required=True)
+    @click.option("--server")
+    def fake_destroy(app, server):
+        destroyed.append(app)
+        if app == "broken":
+            raise RuntimeError("ssh failed")
+
+    result = _invoke_destroy_ssh(monkeypatch, ("broken", "kept"), fake_destroy)
+    assert destroyed == ["broken", "kept"], result.output
+    assert result.exception is None, result.output
+    assert result.exit_code == 0, result.output
+    assert "Failed to destroy broken; continuing with remaining apps." in result.output
