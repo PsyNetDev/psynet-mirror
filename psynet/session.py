@@ -66,7 +66,6 @@ _LIVE_SESSION_STATE_LOG_METADATA_COLUMNS = {
 }
 _LIVE_SESSION_STATE_LOG_MODELS: dict[type, type[SQLBase]] = {}
 _LIVE_SESSION_STATE_LOG_MODELS_BY_IDENTITY: dict[tuple[str, str], type[SQLBase]] = {}
-_LIVE_SESSION_STATE_LOG_HANDLERS: list[tuple[object, str, type | None]] = []
 LIVE_SESSION_STATE_LOG_TABLE = "live_session_state_log"
 _LIVE_SESSION_STATE_LOG_DRAINER_STARTED = False
 _LIVE_SESSION_STATE_LOG_DRAINER_LOCK = threading.Lock()
@@ -193,18 +192,6 @@ def get_live_session_state_log_model(session_class):
 
     log_model = type(f"{session_class.__name__}StateLog", (LiveSessionStateLog,), attrs)
     return _remember_live_session_state_log_model(session_class, log_model)
-
-
-def register_live_session_state_log_models():
-    """Register SQL models for all decorated live-session state log handlers."""
-
-    for method, argument, explicit_session_class in _LIVE_SESSION_STATE_LOG_HANDLERS:
-        session_class = _resolve_session_argument_class(
-            method,
-            argument,
-            explicit_session_class,
-        )
-        get_live_session_state_log_model(session_class)
 
 
 def _live_session_state_log_model_from_identity(identity):
@@ -439,12 +426,6 @@ def _get_message_session(message, participant, session_class, *, lock: bool):
     )
 
 
-def _register_live_session_state_log_handler(method, argument, explicit_session_class):
-    """Remember a logged handler so its table can be registered at import time."""
-
-    _LIVE_SESSION_STATE_LOG_HANDLERS.append((method, argument, explicit_session_class))
-
-
 def session(
     session_class=None,
     *,
@@ -471,9 +452,6 @@ def session(
 
     def decorate(method):
         resolved_session_class = None
-
-        if logging:
-            _register_live_session_state_log_handler(method, argument, session_class)
 
         @wraps(method)
         def wrapper(self, experiment, participant, receive_time=None):

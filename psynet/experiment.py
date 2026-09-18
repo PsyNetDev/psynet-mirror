@@ -93,7 +93,6 @@ from .recruiters import (  # noqa: F401
 )
 from .redis import redis_vars
 from .serialize import serialize, unserialize
-from .session import register_live_session_state_log_models
 from .static_resources import get_static_package_extra_files
 from .timeline import (
     WEBSOCKET_CHANNEL,
@@ -4664,8 +4663,6 @@ def import_local_experiment():
             f"Possible ModuleNotFoundError in your experiment's experiment.py file. "
             f'Please check your imports!\nOriginal error was "AttributeError: {e}"'
         )
-
-    register_live_session_state_log_models()
 
     return {
         "package": dallinger_experiment,
