@@ -1,4 +1,8 @@
-"""Live sessions for real-time PsyNet interactions."""
+"""Live sessions for real-time PsyNet interactions.
+
+Authoritative session rows live on ``live_session``. Opt-in state-log snapshots
+share one polymorphic ``live_session_state_log`` table, like trials on ``info``.
+"""
 
 from __future__ import annotations
 
@@ -61,8 +65,9 @@ _LIVE_SESSION_STATE_LOG_METADATA_COLUMNS = {
     "log_time",
 }
 _LIVE_SESSION_STATE_LOG_MODELS: dict[type, type[SQLBase]] = {}
-_LIVE_SESSION_STATE_LOG_MODELS_BY_TABLE: dict[str, type[SQLBase]] = {}
+_LIVE_SESSION_STATE_LOG_MODELS_BY_IDENTITY: dict[tuple[str, str], type[SQLBase]] = {}
 _LIVE_SESSION_STATE_LOG_HANDLERS: list[tuple[object, str, type | None]] = []
+LIVE_SESSION_STATE_LOG_TABLE = "live_session_state_log"
 _LIVE_SESSION_STATE_LOG_DRAINER_STARTED = False
 _LIVE_SESSION_STATE_LOG_DRAINER_LOCK = threading.Lock()
 
@@ -92,14 +97,25 @@ def _live_session_state_column_names(session_class):
     return tuple(getattr(session_class, "_live_session_state_column_names", ()))
 
 
-def _live_session_state_log_table_name(session_class):
-    return f"{model_name_to_snake_case(session_class.__name__)}_state_log"
+def _is_generic_live_session(session_class):
+    return (
+        session_class.__name__ == "LiveSession" and session_class.__module__ == __name__
+    )
+
+
+def _live_session_state_column_type(session_class, name):
+    column_types = getattr(session_class, "_live_session_state_column_types", {})
+    if name in column_types:
+        return column_types[name]
+    table = getattr(session_class, "__table__", None)
+    if table is not None and name in table.c:
+        return table.c[name].type
+    raise AttributeError(
+        f"{session_class.__name__} has no live-session state column {name!r}."
+    )
 
 
 def _live_session_state_log_model_columns(session_class):
-    if session_class is LiveSession:
-        return {"state": Column(PythonDict, nullable=True)}
-
     state_column_names = _live_session_state_column_names(session_class)
     conflicting_fields = set(state_column_names).intersection(
         _LIVE_SESSION_STATE_LOG_METADATA_COLUMNS
@@ -111,11 +127,39 @@ def _live_session_state_log_model_columns(session_class):
             f"{fields}."
         )
 
-    columns = {}
-    for name in state_column_names:
-        source_column = session_class.__table__.c[name]
-        columns[name] = Column(source_column.type, nullable=True)
-    return columns
+    return {
+        name: Column(
+            _live_session_state_column_type(session_class, name), nullable=True
+        )
+        for name in state_column_names
+    }
+
+
+def _remember_live_session_state_log_model(session_class, log_model):
+    identity = _live_session_class_identity(session_class)
+    _LIVE_SESSION_STATE_LOG_MODELS[session_class] = log_model
+    _LIVE_SESSION_STATE_LOG_MODELS_BY_IDENTITY[identity] = log_model
+    return log_model
+
+
+@register_table
+class LiveSessionStateLog(SQLBase, SQLMixin):
+    """Polymorphic persisted snapshot of authoritative live-session state."""
+
+    __tablename__ = LIVE_SESSION_STATE_LOG_TABLE
+    __live_session_class__ = None
+
+    session_id = Column(
+        Integer,
+        ForeignKey("live_session.id"),
+        index=True,
+        nullable=False,
+    )
+    participant_id = Column(Integer, index=True, nullable=True)
+    trigger_event_type = Column(String(128), index=True, nullable=True)
+    message_time = Column(DateTime, nullable=False)
+    log_time = Column(DateTime, nullable=False)
+    state = Column(PythonDict, nullable=True)
 
 
 def get_live_session_state_log_model(session_class):
@@ -124,47 +168,31 @@ def get_live_session_state_log_model(session_class):
     if session_class in _LIVE_SESSION_STATE_LOG_MODELS:
         return _LIVE_SESSION_STATE_LOG_MODELS[session_class]
 
-    table_name = _live_session_state_log_table_name(session_class)
-    if table_name in _LIVE_SESSION_STATE_LOG_MODELS_BY_TABLE:
-        existing_model = _LIVE_SESSION_STATE_LOG_MODELS_BY_TABLE[table_name]
-        existing_session_class = getattr(existing_model, "__live_session_class__", None)
-        if existing_session_class is session_class or _same_live_session_class_identity(
-            existing_session_class,
-            session_class,
-        ):
-            _LIVE_SESSION_STATE_LOG_MODELS[session_class] = existing_model
-            return existing_model
-        raise ValueError(
-            "Saved live-session state log table names must be unique; "
-            f"{session_class.__name__!r} maps to existing table {table_name!r}."
+    identity = _live_session_class_identity(session_class)
+    if identity in _LIVE_SESSION_STATE_LOG_MODELS_BY_IDENTITY:
+        existing_model = _LIVE_SESSION_STATE_LOG_MODELS_BY_IDENTITY[identity]
+        _LIVE_SESSION_STATE_LOG_MODELS[session_class] = existing_model
+        return existing_model
+
+    if _is_generic_live_session(session_class):
+        LiveSessionStateLog.__live_session_class__ = session_class
+        return _remember_live_session_state_log_model(
+            session_class, LiveSessionStateLog
         )
 
     attrs = {
-        "__tablename__": table_name,
         "__module__": __name__,
         "__doc__": (
             "Persisted authoritative state log for "
             f"{session_class.__name__} live sessions."
         ),
         "__live_session_class__": session_class,
-        "session_id": Column(
-            Integer,
-            ForeignKey("live_session.id"),
-            index=True,
-            nullable=False,
-        ),
-        "participant_id": Column(Integer, index=True, nullable=True),
-        "trigger_event_type": Column(String(128), index=True, nullable=True),
-        "message_time": Column(DateTime, nullable=False),
-        "log_time": Column(DateTime, nullable=False),
-        **_live_session_state_log_model_columns(session_class),
     }
-    log_model = register_table(
-        type(f"{session_class.__name__}StateLog", (SQLBase, SQLMixin), attrs)
-    )
-    _LIVE_SESSION_STATE_LOG_MODELS[session_class] = log_model
-    _LIVE_SESSION_STATE_LOG_MODELS_BY_TABLE[table_name] = log_model
-    return log_model
+    for name, column in _live_session_state_log_model_columns(session_class).items():
+        attrs[name] = _reusable_live_session_column(name, column)
+
+    log_model = type(f"{session_class.__name__}StateLog", (LiveSessionStateLog,), attrs)
+    return _remember_live_session_state_log_model(session_class, log_model)
 
 
 def register_live_session_state_log_models():
@@ -179,16 +207,16 @@ def register_live_session_state_log_models():
         get_live_session_state_log_model(session_class)
 
 
-def _live_session_state_log_model_from_table_name(table_name):
+def _live_session_state_log_model_from_identity(identity):
     try:
-        return _LIVE_SESSION_STATE_LOG_MODELS_BY_TABLE[table_name]
+        return _LIVE_SESSION_STATE_LOG_MODELS_BY_IDENTITY[tuple(identity)]
     except KeyError as exc:
-        raise ValueError(f"Unknown live-session state log table: {table_name}") from exc
+        raise ValueError(f"Unknown live-session state log class: {identity}") from exc
 
 
 def _live_session_state_log_values(live_session):
     session_class = type(live_session)
-    if session_class is LiveSession:
+    if _is_generic_live_session(session_class):
         return {"state": deepcopy(live_session.vars or {})}
 
     return {
@@ -211,6 +239,7 @@ def _make_live_session_state_log_record(
     log_model = get_live_session_state_log_model(type(live_session))
     return {
         "table_name": log_model.__tablename__,
+        "session_class": list(_live_session_class_identity(type(live_session))),
         "session_id": int(live_session.id),
         "participant_id": int(participant.id) if participant is not None else None,
         "trigger_event_type": trigger_event_type,
@@ -304,7 +333,10 @@ def _requeue_live_session_state_log_payloads(payloads):
 
 
 def _live_session_state_log_from_record(record):
-    log_model = _live_session_state_log_model_from_table_name(record["table_name"])
+    identity = record.get("session_class")
+    if identity is None:
+        raise ValueError("Live-session state log record is missing session_class.")
+    log_model = _live_session_state_log_model_from_identity(identity)
     return log_model(
         session_id=record["session_id"],
         participant_id=record.get("participant_id"),
@@ -557,13 +589,17 @@ class _LiveSessionMixin:
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
         state_column_names = set(getattr(cls, "_live_session_state_column_names", ()))
+        column_types = dict(getattr(cls, "_live_session_state_column_types", {}))
         for name, value in list(cls.__dict__.items()):
             if name in _LIVE_SESSION_METADATA_COLUMNS:
                 continue
             if isinstance(value, Column):
                 state_column_names.add(name)
+                column_types[name] = value.type
                 setattr(cls, name, _reusable_live_session_column(name, value))
         cls._live_session_state_column_names = tuple(sorted(state_column_names))
+        cls._live_session_state_column_types = column_types
+        get_live_session_state_log_model(cls)
 
     session_type = Column(String, index=True)
     group_type = Column(String, index=True)

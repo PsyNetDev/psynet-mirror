@@ -6,12 +6,15 @@ import pytest
 from dallinger import db
 from sqlalchemy import Column, Integer, String
 
+from psynet.data import sql_base_classes
 from psynet.field import PythonDict, PythonList
 from psynet.session import (
     LIVE_SESSION_STATE_LOG_QUEUE,
+    LIVE_SESSION_STATE_LOG_TABLE,
     LiveSession,
     LiveSessionControl,
     LiveSessionInitializer,
+    LiveSessionStateLog,
     ReadyMessage,
     SessionEndMessage,
     SessionStartMessage,
@@ -21,7 +24,6 @@ from psynet.session import (
     drain_live_session_state_log_queue_once,
     enqueue_live_session_state_log_record,
     get_live_session_state_log_model,
-    register_live_session_state_log_models,
 )
 from psynet.session import (
     session as session_context,
@@ -92,6 +94,44 @@ class LoggedDemoLiveSession(LiveSession):
         """Expose only the public column to browser snapshots."""
 
         return {"public_value": self.public_value}
+
+
+class EagerRegisteredLiveSession(LiveSession):
+    """Live session whose state-log table is registered when the class is defined."""
+
+    eager_registration_value = Column(String)
+
+
+class EagerRegisteredMessage(ClientWebSocketMessage):
+    event_type = "eagerRegistered"
+
+    @session_context(
+        EagerRegisteredLiveSession,
+        mutate=True,
+        logging=True,
+    )
+    def handle(self, experiment, participant, session, receive_time):
+        return None
+
+
+class ForwardRefLoggedMessage(ClientWebSocketMessage):
+    event_type = "forwardRefLogged"
+
+    @session_context(mutate=True, logging=True)
+    def handle(
+        self,
+        experiment,
+        participant,
+        session: "ForwardRefLoggedLiveSession",
+        receive_time,
+    ):
+        return None
+
+
+class ForwardRefLoggedLiveSession(LiveSession):
+    """Live session referenced by a forward annotation on a logged handler."""
+
+    forward_ref_value = Column(String)
 
 
 class ReusedColumnDemoLiveSessionA(LiveSession):
@@ -510,38 +550,35 @@ def test_live_session_send_snapshot_renders_per_participant(monkeypatch):
 
 
 def test_session_logging_registers_state_log_table_eagerly():
-    """Logged handlers register state-log tables before messages are handled."""
-
-    class EagerRegisteredLiveSession(LiveSession):
-        eager_registration_value = Column(String)
-
-    class EagerRegisteredMessage(ClientWebSocketMessage):
-        event_type = "eagerRegistered"
-
-        @session_context(
-            EagerRegisteredLiveSession,
-            mutate=True,
-            logging=True,
-        )
-        def handle(self, experiment, participant, session, receive_time):
-            return None
+    """Live-session subclasses share the registered live_session_state_log table."""
 
     assert EagerRegisteredMessage
-    table_name = "eager_registered_live_session_state_log"
-    assert table_name not in db.Base.metadata.tables
+    assert LIVE_SESSION_STATE_LOG_TABLE in db.Base.metadata.tables
+    assert LIVE_SESSION_STATE_LOG_TABLE in sql_base_classes()
+    assert sql_base_classes()[LIVE_SESSION_STATE_LOG_TABLE] is LiveSessionStateLog
+    assert get_live_session_state_log_model(EagerRegisteredLiveSession).inherits_table
 
-    register_live_session_state_log_models()
 
-    assert table_name in db.Base.metadata.tables
+def test_session_logging_registers_state_log_table_when_session_class_is_defined():
+    """Forward-ref handlers still share the live_session_state_log table."""
+
+    assert ForwardRefLoggedMessage
+    assert LIVE_SESSION_STATE_LOG_TABLE in db.Base.metadata.tables
+    assert (
+        get_live_session_state_log_model(ForwardRefLoggedLiveSession).__tablename__
+        == LIVE_SESSION_STATE_LOG_TABLE
+    )
 
 
 def test_live_session_state_log_model_generates_structured_table():
-    """State logs use one structured table per concrete live-session class."""
+    """State logs use one polymorphic table with per-class state columns."""
 
     log_model = get_live_session_state_log_model(LoggedDemoLiveSession)
     columns = set(log_model.__table__.columns.keys())
 
-    assert log_model.__tablename__ == "logged_demo_live_session_state_log"
+    assert log_model.__tablename__ == LIVE_SESSION_STATE_LOG_TABLE
+    assert log_model.inherits_table
+    assert issubclass(log_model, LiveSessionStateLog)
     assert {
         "session_id",
         "participant_id",
@@ -580,6 +617,11 @@ def test_live_session_state_log_records_authoritative_columns():
         message_time=message_time,
     )
 
+    assert record["table_name"] == LIVE_SESSION_STATE_LOG_TABLE
+    assert record["session_class"] == [
+        LoggedDemoLiveSession.__module__,
+        LoggedDemoLiveSession.__qualname__,
+    ]
     assert record["session_id"] == 123
     assert record["participant_id"] == 7
     assert record["trigger_event_type"] == "loggedState"
@@ -631,7 +673,11 @@ def test_session_decorator_logging_queues_after_commit(
     assert order == ["commit", "queue"]
     assert _saved_state_log_records(fake_state_log_redis) == [
         {
-            "table_name": "logged_demo_live_session_state_log",
+            "table_name": LIVE_SESSION_STATE_LOG_TABLE,
+            "session_class": [
+                LoggedDemoLiveSession.__module__,
+                LoggedDemoLiveSession.__qualname__,
+            ],
             "session_id": 123,
             "participant_id": 7,
             "trigger_event_type": "loggedState",
