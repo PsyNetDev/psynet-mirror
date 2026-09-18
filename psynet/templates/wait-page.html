@@ -2,7 +2,7 @@
 
 {% block stylesheets %}
     {{ super() }}
-    <style>
+    <style data-psynet-fragment-style="true">
         .vcenter {
             display: inline-block;
             vertical-align: middle;
@@ -30,20 +30,4 @@
             <p>{{ content }}</p>
         </div>
     </div>
-{% endblock %}
-
-{% block scripts %}
-    {{ super() }}
-
-    <script>
-        psynet.trial.setTimer(function () {
-            if (psynet.pageReady) {
-                psynet.nextPage();
-            } else {
-                window.addEventListener("timelinePageReady", function () {
-                    psynet.nextPage();
-                }, {once: true});
-            }
-        }, 1000 * {{ wait_time }});
-    </script>
 {% endblock %}

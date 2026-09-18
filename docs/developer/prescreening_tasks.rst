@@ -140,14 +140,17 @@ The :meth:`trial_maker` method returns a :class:`~psynet.trial.main.TrialMaker` 
             phase="some_prescreening_phase",
             stimulus_set=self.get_stimulus_set(),
             check_performance_at_end=True,
-            fail_trials_on_premature_exit=False
+            # Most shipped prescreens keep the static default (True).
+            fail_trials_on_participant_performance_check=False,
         )
 
-Normally static experiments will fail participant trials if they leave the experiment early,
-so that the final dataset only comprises participants who completed the whole experiment.
-However, this logic doesn't apply to pre-screening tasks, where we are not trying to collect
-a specific quota of data. We therefore disable this behavior, setting
-``fail_trials_on_premature_exit=False`` in the above code.
+Premature exit never fails completed trials, so prescreens do not need a
+special premature-exit setting. If the performance check only decides
+whether the participant may continue, set
+``fail_trials_on_participant_performance_check=False`` so the collected
+trials remain valid measurements of ineligibility. Built-in prescreens keep
+the static default (``True``) except ``FreeTappingRecordTest``, which sets
+this to ``False``.
 
 The :meth:`trial` method returns a :class:`~psynet.trial.static.StaticTrial` which implements :meth:`~psynet.trial.main.show_trial` that in turn returns a :class:`~psynet.modular_page.ModularPage` e.g.:
 

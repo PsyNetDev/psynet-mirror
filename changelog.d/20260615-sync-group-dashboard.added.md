@@ -1,0 +1,1 @@
+Added an authenticated synchronous group dashboard showing active and recent groups, grouper wait progress, participant statuses, barrier waits, and manual controls for kicking or failing active group participants.

@@ -11,8 +11,11 @@ const PSYNET_ERROR_SELECTORS = ["#error-text", "#error-text-main"];
 let latestBackendLogPath = null;
 const DEBUG_PORT = Number(process.env.PSYNET_DEBUG_PORT || 5000);
 
-function parseBoolEnv(name) {
-  const value = String(process.env[name] || "").trim().toLowerCase();
+function parseBoolEnv(name, defaultValue = false) {
+  if (process.env[name] === undefined) {
+    return defaultValue;
+  }
+  const value = String(process.env[name]).trim().toLowerCase();
   return value === "1" || value === "true" || value === "yes";
 }
 
@@ -511,7 +514,7 @@ async function assertLegacyTimelinePathActive(page, timeoutMs = 10000) {
 }
 
 function isInplaceTimelineModeEnabled() {
-  return parseBoolEnv("inplace_timeline_transitions");
+  return parseBoolEnv("inplace_timeline_transitions", true);
 }
 
 async function assertExpectedTimelinePathActive(page, timeoutMs = 10000) {

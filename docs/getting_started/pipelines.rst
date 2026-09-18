@@ -14,8 +14,12 @@ namely a folder of source code files that define the architecture and logic of a
 The most important of these files is the ``experiment.py`` file,
 which contains the primary logic of the experiment;
 we also have files like ``config.txt``, which contains configuration parameters,
-``requirements.txt``/``constraints.txt`` which define our Python dependencies,
-``Dockerfile`` which defines our system environment, and so on.
+and ``requirements.txt``, which lists top-level Python dependencies.
+Standalone experiments also maintain a generated ``constraints.txt`` (created by
+``psynet setup`` / ``psynet generate-constraints``) and a ``Dockerfile`` for the
+system environment. Bundled demos intentionally omit those generated files until
+you copy a demo out and run the standalone setup workflow
+(see :doc:`customizing_an_experiment` and :doc:`running_a_demo_locally`).
 
 For this tutorial we have prepared a collection of pipelines designed expressly for audio stimuli.
 However, it is perfectly possible to design analogous pipelines for images, videos, or other

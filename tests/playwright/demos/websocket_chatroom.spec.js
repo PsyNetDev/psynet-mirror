@@ -163,7 +163,7 @@ async function leaveRoomAndWait(page) {
   await expect(page.locator("#chat-input")).toHaveCount(0);
 }
 
-test("websocket_chatroom demo relays and persists messages between two participants", async ({
+test("websocket_chatroom demo relays and persists messages between two participants", { tag: "@both" }, async ({
   browser,
   page,
   context

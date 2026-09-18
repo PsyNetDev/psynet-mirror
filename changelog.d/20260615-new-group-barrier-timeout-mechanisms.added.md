@@ -1,0 +1,1 @@
+Added synchronous group timeout controls to `GroupBarrier` and synchronized trial makers, allowing experiments to kick or fail group members who wait too long at a barrier or fall behind after their group passed a previous barrier.

@@ -20,7 +20,6 @@ from psynet.participant import Participant
 from psynet.process import AsyncProcess
 from psynet.timeline import CodeBlock, Timeline
 from psynet.trial.gibbs import GibbsNetwork, GibbsNode, GibbsTrial, GibbsTrialMaker
-from psynet.trial.main import TrialNode
 from psynet.utils import get_logger
 
 logger = get_logger()
@@ -69,9 +68,11 @@ class ColorSliderPage(ModularPage):
                     "hidden_inputs": hidden_inputs,
                 },
                 continuous_updates=False,
-                bot_response=lambda: random.randint(0, 255),
+                bot_response=lambda trial: trial.id % 256,
             ),
             time_estimate=time_estimate,
+            css_links=["/static/color-slider.css"],
+            js_page_modules=["/static/color-slider.js"],
         )
 
     def metadata(self, **kwargs):
@@ -154,18 +155,6 @@ class CustomTrialMaker(GibbsTrialMaker):
     # If we set this to True, then the performance check will wait until all async_post_trial processes have finished
     end_performance_check_waits = False
 
-    def prioritize_networks(self, networks, participant, experiment):
-        for network in networks:
-            network.alive_trials_at_degree = len(
-                TrialNode.query.filter_by(network_id=network.id)
-                .order_by(TrialNode.id)
-                .all()[-1]
-                .alive_trials
-            )
-
-        # Prioritize nodes with the most alive trials
-        return list(reversed(sorted(networks, key=lambda n: n.alive_trials_at_degree)))
-
     def get_end_feedback_passed_page(self, score):
         score_to_display = "NA" if score is None else f"{(100 * score):.0f}"
 
@@ -181,11 +170,6 @@ class CustomTrialMaker(GibbsTrialMaker):
             return 0.0
         else:
             return max(0.0, score)
-
-    def custom_network_filter(self, candidates, participant):
-        # As an example, let's make the participant join networks
-        # in order of increasing network ID.
-        return sorted(candidates, key=lambda x: x.id)
 
 
 start_nodes = [

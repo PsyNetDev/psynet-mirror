@@ -156,8 +156,9 @@ A few things to keep in mind for SSH tests:
   bots you want to run.
 * If the app is being used by anyone else during the test, the results will not
   be reliable.
-* ``--json-output`` (see below) is not currently supported over SSH; use
-  ``performance-test local --json-output`` for machine-readable results.
+* ``--json-output`` / ``--audit`` (see below) are not currently supported
+  over SSH; use ``performance-test local`` with those options for
+  machine-readable results.
 
 Reusing an already-running local server
 ---------------------------------------
@@ -183,6 +184,19 @@ used), to a JSON file:
 .. code-block:: bash
 
     psynet performance-test local --n-bots "10,25,50" --json-output results.json
+
+When the experiment is being packaged as a PsyNet audit, prefer ``--audit``
+instead. It writes the canonical audit path
+``<audit>/artifacts/performance.json`` (creating ``artifacts/`` if needed) and
+marks ``performance_result`` present. Use ``--no-mark-present`` to write the
+file without updating ``audit.json``:
+
+.. code-block:: bash
+
+    # From the experiment root
+    psynet performance-test local --n-bots 40 --duration-minutes 5 --audit
+
+Do not combine ``--json-output`` and ``--audit``.
 
 This is useful for tracking performance over time or feeding results into other
 tools. PsyNet's own :ref:`ASV benchmark suite <asv_performance_tests>` uses

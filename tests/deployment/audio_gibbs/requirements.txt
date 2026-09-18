@@ -1,4 +1,3 @@
-psynet@git+https://gitlab.com/PsyNetDev/PsyNet@master#egg=psynet
-
+psynet
 praat-parselmouth
 scipy

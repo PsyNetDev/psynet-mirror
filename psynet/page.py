@@ -1,8 +1,10 @@
 import warnings
 from importlib import resources
 from math import ceil
+from pathlib import Path
 from pprint import pformat
 from typing import List, Optional, Union
+from urllib.parse import urlparse
 
 from dominate import tags
 from dominate.dom_tag import dom_tag
@@ -17,6 +19,7 @@ from .timeline import (
     Module,
     Page,
     PageMaker,
+    _normalize_js_page_code,
     get_template,
     join,
     while_loop,
@@ -124,6 +127,7 @@ class UnityPage(Page):
 
     dynamically_update_progress_bar_and_reward = True
     is_unity_page = True
+    requires_full_page_reload = True
 
     def __init__(
         self,
@@ -198,12 +202,24 @@ class WaitPage(Page):
         self.wait_time = wait_time
         if content is not None:
             self.content = content
+        wait_ms = wait_time * 1000
+        wait_ms_literal = f"{wait_ms:g}"
+        wait_timer_code = (
+            'trial.onEvent("pageReady", () => {\n'
+            f"    trial.setTimer(() => psynet.nextPage(), {wait_ms_literal});\n"
+            "});"
+        )
+        js_page_code = [
+            wait_timer_code,
+            *_normalize_js_page_code(kwargs.pop("js_page_code", None)),
+        ]
         super().__init__(
             label="wait",
             time_estimate=wait_time,
             template_str=get_template("wait-page.html"),
             framework_owned_template=True,
-            template_arg={"content": self.content, "wait_time": self.wait_time},
+            template_arg={"content": self.content},
+            js_page_code=js_page_code,
             **kwargs,
         )
 
@@ -431,6 +447,33 @@ class VolumeCalibration(Module):
         )
 
 
+def _validate_jspsych_timeline_module(timeline):
+    """Reject timeline values using the removed HTML/Jinja API."""
+    if not isinstance(timeline, str):
+        raise TypeError("JsPsychPage timeline must be a JavaScript module URL.")
+
+    timeline_path = urlparse(timeline).path.lower()
+    migration_message = (
+        "Migrate following "
+        "https://psynetdev.gitlab.io/PsyNet/whats_new/upgrading_to_psynet_14.html"
+        " — or, in Cursor, run /upgrade-to-psynet-14"
+    )
+    if timeline_path.endswith((".html", ".htm")):
+        raise ValueError(
+            "JsPsychPage no longer accepts HTML timeline templates "
+            "(error codes: jspsych_html_timeline).\n\n" + migration_message
+        )
+
+    local_path = Path(timeline)
+    if local_path.is_file():
+        source = local_path.read_text(encoding="utf-8")
+        if "jspsych-page.html" in source or "{% block timeline" in source:
+            raise ValueError(
+                "JsPsychPage detected an old Jinja timeline template "
+                "(error codes: jspsych_html_timeline).\n\n" + migration_message
+            )
+
+
 class JsPsychPage(Page):
     """
     A page that embeds a jsPsych experiment. See ``demos/jspsych`` for example usage.
@@ -439,13 +482,14 @@ class JsPsychPage(Page):
         Label for the page.
 
     timeline :
-        A path to an HTML file that defines the jsPsych experiment's timeline.
-        The timeline should be saved as an object called ``timeline``.
+        URL of a JavaScript module exporting ``buildTimeline(context)``.
+        This function receives ``jsPsych``, ``vars``, ``page``, ``psynet``, and
+        ``root``, and returns the jsPsych timeline array.
         See ``demos/jspsych`` for an example.
 
-    js_links :
-        A list of links to JavaScript files to include in the page. Typically this would include
-        a link to the required jsPsych version as well as links to the required plug-ins.
+    js_dependencies :
+        A list of JavaScript libraries to load once per browser document. Typically this would
+        include a link to the required jsPsych version as well as links to the required plug-ins.
         It is recommended to include these files in the ``static`` directory and refer to them
         using relative paths; alternatively it is possible to link to these files via a CDN.
 
@@ -458,27 +502,37 @@ class JsPsychPage(Page):
         in the timeline template, writing for example ``psynet.var["my_variable"]``.
     """
 
+    requires_full_page_reload = True
+
     def __init__(
         self,
         label: str,
         timeline: str,
         time_estimate: float,
-        js_links: Union[str, List[str]],
+        js_dependencies: Union[str, List[str]],
         css_links: Union[str, List[str]],
         js_vars: Optional[dict] = None,
         **kwargs,
     ):
-        if isinstance(js_links, str):
-            js_links = [js_links]
+        _validate_jspsych_timeline_module(timeline)
+        if isinstance(js_dependencies, str):
+            js_dependencies = [js_dependencies]
         if isinstance(css_links, str):
             css_links = [css_links]
+        js_vars = {} if js_vars is None else dict(js_vars)
+        if "jspsych_timeline_module" in js_vars:
+            raise ValueError(
+                "jspsych_timeline_module is reserved for JsPsychPage internals."
+            )
+        js_vars["jspsych_timeline_module"] = timeline
 
         super().__init__(
             time_estimate=time_estimate,
-            template_path=timeline,
+            template_str=get_template("jspsych-page.html"),
             label=label,
             js_vars=js_vars,
-            js_links=js_links,
+            js_dependencies=js_dependencies,
+            js_page_modules=["/static/scripts/jspsych-page.js"],
             css_links=css_links,
             framework_owned_template=True,
             **kwargs,
@@ -486,6 +540,8 @@ class JsPsychPage(Page):
 
 
 class ExecuteFrontEndJS(InfoPage):
+    """Execute JavaScript in a lifecycle-managed page module."""
+
     # Skip beforeunload detection since this page is expected to navigate away
     skip_beforeunload = True
 
@@ -493,6 +549,7 @@ class ExecuteFrontEndJS(InfoPage):
         super().__init__(
             content=message,
             time_estimate=0.0,
-            scripts=[js],
+            js_vars={"execute_front_end_js": js},
+            js_page_modules=["/static/scripts/execute-front-end-js.js"],
             show_next_button=False,
         )

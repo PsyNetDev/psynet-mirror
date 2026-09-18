@@ -5,11 +5,11 @@ How to learn
 
 .. note::
 
-    See also the work-in-progress `Tracks <tracks/index.html>`_ section, which will provide learning programmes
+    See also the work-in-progress :doc:`Tracks <tracks/index>` section, which will provide learning programmes
     for various uses of PsyNet.
 
 Before you start learning PsyNet there are a few general-purpose programming tools you should
-familiarize yourself with, such as Python and Git; see `Prerequisites <prerequisites.html>`_
+familiarize yourself with, such as Python and Git; see :doc:`Prerequisites <prerequisites>`
 for details.
 
 Once you're happy with the prerequisites, the next thing you should do is skim a few

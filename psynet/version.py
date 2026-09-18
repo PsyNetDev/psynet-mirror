@@ -3,15 +3,21 @@ import re
 import subprocess
 
 import click
-from dallinger.version import __version__ as dallinger_version
-from yaspin import yaspin
 
 psynet_version = "13.4.0a0"
 
 # Specify Dallinger MAJOR.MINOR version to allow any patch in that series
-recommended_dallinger_major_minor = "12.2"
+recommended_dallinger_major_minor = "12.3"
 
 recommended_python_major_minor = "3.13"
+supported_python_major_minor_versions = ("3.11", "3.12", "3.13", "3.14")
+
+
+def _get_dallinger_version() -> str:
+    """Return the installed Dallinger version (lazy-imported)."""
+    from dallinger.version import __version__ as dallinger_version
+
+    return dallinger_version
 
 
 def check_core_dependency_versions_match_requirements():
@@ -28,6 +34,10 @@ def check_core_dependency_versions_match_requirements():
             "SKIP_VERSION_CHECK is set so we will skip checking PsyNet versions specified vs. installed."
         )
         return
+
+    # yaspin lives in psynet[experiment]; keep this import lazy so thin
+    # bootstrap can import ``psynet_version`` without the spinner package.
+    from yaspin import yaspin
 
     skip_messages = []
     with yaspin(
@@ -179,10 +189,11 @@ def is_development_version(version):
 
 
 def get_installed_version_for_package(package_name):
+    """Return the installed version string for PsyNet or Dallinger."""
     import psynet
 
     if package_name == "Dallinger":
-        return dallinger_version
+        return _get_dallinger_version()
     if package_name == "PsyNet":
         return psynet.__version__
     raise ValueError(f"Unsupported package '{package_name}'")
@@ -223,6 +234,7 @@ def get_requirement_line_from_pip_freeze(name):
 
 
 def get_installed_commit_or_version_from_pip_freeze(package_name):
+    """Return the installed commit hash or version from pip freeze output."""
     line = get_requirement_line_from_pip_freeze(package_name)
     match = re.search(f".*{package_name}(?:\\.git)?@([^#]*)", line, re.IGNORECASE)
     if match is not None:
@@ -231,6 +243,7 @@ def get_installed_commit_or_version_from_pip_freeze(package_name):
 
 
 def parse_version_triplet(x):
+    """Parse a version string into a (major, minor, patch) integer tuple."""
     parts = x.split(".")
     assert len(parts) == 3, f"Invalid version specifier: {x}"
 
@@ -261,6 +274,7 @@ def is_version_greater(x, y, strict: bool = True):
 
 
 def check_installed_dallinger_version_is_recommended():
+    """Warn or abort if the installed Dallinger version is not the recommended one."""
     import dallinger
 
     current_dallinger_version = dallinger.version.__version__

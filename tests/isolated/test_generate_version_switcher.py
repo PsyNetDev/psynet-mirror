@@ -24,6 +24,25 @@ def test_alpha_switcher_name_rejects_non_alpha_version():
         generate_version_switcher.format_alpha_name("13.3.0")
 
 
+def test_is_alpha_version():
+    assert generate_version_switcher.is_alpha_version("13.4.0a0")
+    assert not generate_version_switcher.is_alpha_version("13.3.0")
+    assert not generate_version_switcher.is_alpha_version("13.3.0rc1")
+
+
+def test_entries_omit_alpha_during_post_release_window():
+    """After the release merge-back, master briefly carries a stable version;
+    the switcher must then omit the alpha entry instead of crashing."""
+    entries = generate_version_switcher.build_entries(
+        "https://psynetdev.gitlab.io/PsyNet",
+        tags=["v13.3.0", "v13.2.0"],
+        alpha_version=None,
+    )
+
+    assert [entry["version"] for entry in entries] == ["v13.3.0", "v13.2.0"]
+    assert entries[0]["preferred"] is True
+
+
 def test_prerelease_switcher_name_matches_alpha_style():
     assert (
         generate_version_switcher.format_prerelease_name("v13.3.0rc0") == "13.3.0 rc0"

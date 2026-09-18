@@ -63,6 +63,10 @@ of the existing node. We recommend accessing these trials using
 have received answers and have finished processing (so that e.g. ``analyze_recording`` will have
 completed), excluding failed trials (e.g. trials where an error occurred, or that have been
 invalidated for some other reason).
+If a participant leaves, unfinished trials are failed and completed trials are
+kept by default, so chain growth can continue from the submitted work.
+For more about trial invalidation and failure propagation, see
+:doc:`Participant and trial failure <../tutorials/participant_and_trial_failure>`.
 
 In the following example, ``make_next_definition`` carries over the question attribute of the
 previous node, and also takes the mean answer from the node's trials:

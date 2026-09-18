@@ -1,3 +1,6 @@
 # We don't want to copy virtual environments into the Docker image
 .venv
 .env
+
+# Agent Skills are for local editors, not the running experiment image
+.cursor/skills/psynet/

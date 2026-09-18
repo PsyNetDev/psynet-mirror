@@ -7,6 +7,7 @@ Tutorials
    creating_a_new_experiment
    classes
    timeline
+   participant_and_trial_failure
    assets
    specifying_dependencies
    tests
@@ -33,4 +34,3 @@ Tutorials
    sqlalchemy_profiling
    version_control_with_git
    setting_up_slack
-   upgrading_to_psynet_10

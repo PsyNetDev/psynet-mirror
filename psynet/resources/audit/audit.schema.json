@@ -1,0 +1,350 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://www.psynet.dev/schemas/audit.schema.json",
+  "title": "PsyNet experiment audit manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "created_at",
+    "updated_at",
+    "experiment",
+    "implementation",
+    "environment",
+    "sections",
+    "artifacts",
+    "checks",
+    "blockers"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^1\\.0$"
+    },
+    "created_at": {
+      "$ref": "#/$defs/isoTimestamp"
+    },
+    "updated_at": {
+      "$ref": "#/$defs/isoTimestamp"
+    },
+    "profile": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Audit profile. Default is psynet.core, which recommends a displayed plan markdown section."
+    },
+    "extensions": {
+      "type": "array",
+      "description": "Opaque extension ids the packet opts into (for example psynetskills.challenge). Core validate ignores unknown ids with a warning.",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "extensions_meta": {
+      "type": "object",
+      "description": "Optional opaque metadata keyed by extension id.",
+      "additionalProperties": true
+    },
+    "experiment": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "slug": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:[-_][a-z0-9]+)*$"
+        },
+        "entry_point": {
+          "$ref": "#/$defs/relativePath"
+        },
+        "git_commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{7,40}$"
+        },
+        "psynet_version": {
+          "type": "string"
+        }
+      }
+    },
+    "implementation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["summary"],
+      "properties": {
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "os": {
+          "type": "string"
+        },
+        "python_version": {
+          "type": "string"
+        },
+        "psynet_checkout": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "branch": {
+              "type": "string"
+            },
+            "commit": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{7,40}$"
+            },
+            "dirty": {
+              "type": "boolean"
+            }
+          }
+        },
+        "services": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "sections": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/section"
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/artifact"
+      }
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/check"
+      }
+    },
+    "blockers": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/blocker"
+      }
+    },
+    "render": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "site_path": {
+          "$ref": "#/$defs/relativePath"
+        },
+        "generated_at": {
+          "$ref": "#/$defs/isoTimestamp"
+        },
+        "generator": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "isoTimestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "not": {
+        "pattern": "^/"
+      }
+    },
+    "section": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "kind"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:_[a-z0-9]+)*$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "enum": [
+            "markdown",
+            "evidence",
+            "screenshots",
+            "participant_video",
+            "monitor",
+            "performance",
+            "data",
+            "analysis",
+            "source",
+            "files",
+            "timeline",
+            "json",
+            "checks",
+            "blockers"
+          ]
+        },
+        "path": {
+          "$ref": "#/$defs/relativePath"
+        },
+        "display": {
+          "type": "boolean"
+        },
+        "content": {
+          "type": "string"
+        },
+        "html": {
+          "type": "string"
+        },
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "path",
+        "title",
+        "description",
+        "required",
+        "status",
+        "created_by"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:_[a-z0-9]+)*$"
+        },
+        "kind": {
+          "enum": [
+            "video",
+            "screenshot",
+            "notebook",
+            "data_export",
+            "performance",
+            "monitor_snapshot",
+            "log",
+            "report",
+            "source",
+            "other"
+          ]
+        },
+        "path": {
+          "$ref": "#/$defs/relativePath"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "status": {
+          "enum": ["present", "missing", "blocked", "not_applicable"]
+        },
+        "created_by": {
+          "enum": ["agent", "cli", "manual", "unknown"]
+        },
+        "command": {
+          "type": "string"
+        },
+        "notes": {
+          "type": "string"
+        },
+        "metadata": {
+          "type": "object"
+        }
+      }
+    },
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "status"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:_[a-z0-9]+)*$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "enum": ["pass", "fail", "warning", "not_run"]
+        },
+        "command": {
+          "type": "string"
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
+    },
+    "blocker": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact_id", "severity", "reason", "next_step"],
+      "properties": {
+        "artifact_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:_[a-z0-9]+)*$"
+        },
+        "severity": {
+          "enum": ["warning", "error"]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "attempted_command": {
+          "type": "string"
+        },
+        "observed_failure": {
+          "type": "string"
+        },
+        "next_step": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

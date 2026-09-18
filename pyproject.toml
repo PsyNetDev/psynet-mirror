@@ -22,22 +22,41 @@ license = {file = "LICENSE"}
 description = "PsyNet – complex psychological experiments made easy"  # A framework for running advanced psychological experiments
 keywords = ["psychology", "experiments", "online", "networks"]
 readme = "README.md"
-requires-python = ">=3.10"  # recommended Python version: 3.13
+requires-python = ">=3.11"  # recommended Python version: 3.13
 classifiers = [
     "Development Status :: 4 - Beta",
+    "Programming Language :: Python :: 3.14",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.10",
     "Framework :: Flask",
     "Operating System :: OS Independent",
     "License :: OSI Approved :: MIT License",
     "Intended Audience :: Science/Research",
 ]
 
+# Minimal core: only what is needed to run bootstrap commands
+# (psynet setup, psynet scripts …, psynet services …, psynet generate-constraints).
+# Service probes and version checks avoid psycopg2 / redis / yaspin so core stays
+# free of experiment runtime packages; those arrive via psynet[experiment].
+# Experiment authors need psynet[experiment] (installed automatically by `psynet setup`).
 dependencies = [
+    "click",
+    # ``psynet.dallinger_dependency`` reads pyproject.toml on source checkouts;
+    # tomllib is stdlib only from 3.11.
+    "tomli; python_version < \"3.11\"",
+]
+
+[project.optional-dependencies]
+# Full experiment runtime.  Contains everything that was previously in the
+# unconditional `dependencies` list.  Install with:
+#   pip install psynet[experiment]
+# or (recommended) let `psynet setup` install it via constraints.txt.
+# PsyNet source/docs installs should prefer the ``dev`` extra, which includes
+# this runtime.
+experiment = [
     "babel",
-    "dallinger[docker]>=12.2.0,<13",
+    "dallinger[docker]>=12.3.0,<13",
     "flask-sock",
     # Unpin dominate once a new version is released which includes the following
     # fix for the Python 3.12 event loop warning:
@@ -65,11 +84,16 @@ dependencies = [
     "tqdm",
     "yaspin",
     "arabic-reshaper",  # Used by VocabTest
-    "pillow"  # Used by VocabTest
+    "pillow",  # Used by VocabTest
+    # Experiment audit render/validate (shipped with experiment runtime)
+    "markdown-it-py>=3,<5",  # Dallinger 12.3 pins 4.x; keep an explicit compatible bound
+    "nh3>=0.3.6",
+    "pygments>=2.20.0",
 ]
-
-[project.optional-dependencies]
+# PsyNet source development and docs: runtime plus tooling.
+# Demo-only packages stay in ``demos`` so docs/CI installs stay lean.
 dev = [
+    "psynet[experiment]",
     "asv",
     "beautifulsoup4",
     "google-cloud-translate",
@@ -100,11 +124,14 @@ demos = [
     "statsmodels",
 ]
 
+[project.entry-points."psynet.static"]
+psynet = "psynet.static_resources:psynet_static_root"
+
 [project.entry-points.pytest11]
 pytest_psynet = "psynet.pytest_psynet"
 
 [project.scripts]
-psynet = "psynet.command_line:psynet"
+psynet = "psynet.bootstrap_cli:main"
 
 [project.urls]
 Changelog = "https://gitlab.com/PsyNetDev/PsyNet/-/blob/master/CHANGELOG.md"
@@ -115,6 +142,9 @@ Repository = "https://gitlab.com/PsyNetDev/PsyNet/"
 
 [tool.hatch.build.targets.wheel]
 include = ["/psynet"]
+
+[tool.hatch.build.targets.wheel.force-include]
+".cursor/skills/experiment" = "psynet/resources/experiment_scripts/.cursor/skills/psynet"
 
 [tool.hatch.build.targets.sdist]
 exclude = [

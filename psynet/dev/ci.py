@@ -27,11 +27,8 @@ import tempfile
 import urllib.request
 from pathlib import Path
 
-try:
-    import tomllib
-except ModuleNotFoundError:  # pragma: no cover
-    import tomli as tomllib
-
+from psynet.dallinger_dependency import dallinger_lower_bound_from_pyproject
+from psynet.version import supported_python_major_minor_versions
 
 PYPROJECT_PATH = Path("pyproject.toml")
 DOCKERFILE_PATH = Path("Dockerfile")
@@ -61,17 +58,7 @@ def update_dallinger_constraints_command(check_compile: bool = True) -> int:
 
 def _get_dallinger_dependency_version(pyproject_path: Path) -> str:
     """Return the Dallinger lower-bound version declared by PsyNet."""
-    pyproject = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
-    dependencies = pyproject["project"]["dependencies"]
-    dependency = next(
-        dependency for dependency in dependencies if dependency.startswith("dallinger[")
-    )
-    match = re.search(r">=(\d+\.\d+\.\d+)", dependency)
-    if match is None:
-        raise ValueError(
-            "Could not find a Dallinger lower-bound version in pyproject.toml."
-        )
-    return match.group(1)
+    return dallinger_lower_bound_from_pyproject(pyproject_path)
 
 
 def _download_text(url: str) -> str:
@@ -116,35 +103,46 @@ def _strip_psynet_snapshot_header(content: str) -> str:
 
 
 def _check_docker_constraints_compile(
-    pyproject_path: Path, dallinger_constraints_path: Path, dockerfile_path: Path
+    pyproject_path: Path,
+    dallinger_constraints_path: Path,
+    dockerfile_path: Path,
+    python_versions=supported_python_major_minor_versions,
 ) -> None:
-    """Validate the vendored constraints with Docker's compile command shape."""
-    python_version = _get_docker_python_version(dockerfile_path)
-    with tempfile.TemporaryDirectory() as tmp:
-        tmp_path = Path(tmp)
-        (tmp_path / "pyproject.toml").write_text(
-            pyproject_path.read_text(encoding="utf-8"),
-            encoding="utf-8",
+    """Validate the vendored constraints for every supported Python version."""
+    default_python_version = _get_docker_python_version(dockerfile_path)
+    if default_python_version not in python_versions:
+        raise ValueError(
+            f"Docker's default Python {default_python_version} is not supported."
         )
-        (tmp_path / "dallinger-dev-requirements.txt").write_text(
-            dallinger_constraints_path.read_text(encoding="utf-8"),
-            encoding="utf-8",
-        )
-        subprocess.run(
-            [
-                "uv",
-                "pip",
-                "compile",
-                "--python-version",
-                python_version,
-                "pyproject.toml",
-                "--extra",
-                "demos",
-                "--constraint",
-                "dallinger-dev-requirements.txt",
-                "--output-file",
-                "constraints.txt",
-            ],
-            cwd=tmp_path,
-            check=True,
-        )
+
+    for python_version in python_versions:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "pyproject.toml").write_text(
+                pyproject_path.read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+            (tmp_path / "dallinger-dev-requirements.txt").write_text(
+                dallinger_constraints_path.read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+            subprocess.run(
+                [
+                    "uv",
+                    "pip",
+                    "compile",
+                    "--python-version",
+                    python_version,
+                    "pyproject.toml",
+                    "--extra",
+                    "experiment",
+                    "--extra",
+                    "demos",
+                    "--constraint",
+                    "dallinger-dev-requirements.txt",
+                    "--output-file",
+                    "constraints.txt",
+                ],
+                cwd=tmp_path,
+                check=True,
+            )

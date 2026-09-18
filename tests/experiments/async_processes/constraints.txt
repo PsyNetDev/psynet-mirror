@@ -1,1 +1,0 @@
-# This test experiment has no extra Python dependencies beyond the active PsyNet checkout.

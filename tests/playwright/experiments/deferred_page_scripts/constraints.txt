@@ -1,2 +1,0 @@
-# Minimal constraints file required by PsyNet's local experiment pre-checks.
-# This Playwright fixture has no additional Python dependencies.

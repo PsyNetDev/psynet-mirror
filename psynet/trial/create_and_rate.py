@@ -1,9 +1,23 @@
+"""Create-and-rate trials for collecting and evaluating participant creations.
+
+The trial-maker mixin specializes chain selection: each chain head first
+receives creator trials, waits for those trials to finalize, and then receives
+rater trials. Selection therefore operates on chains, while trial-class
+resolution remains node-based after the selected chain is resolved to its head.
+Experiments may optionally assign fixed participant roles; the mixin then uses
+the same role for candidate eligibility and final trial-class validation.
+Creators only receive heads that still need creators. Raters receive heads that
+are ready for raters, and they wait (or exit) on heads whose creator slots are
+filled but not yet finalized. Heads that still need creators are not
+rater-eligible.
+"""
+
 import inspect
 from random import sample
 
 from dallinger import db
 from dallinger.transformations import Transformation
-from sqlalchemy import Column
+from sqlalchemy import Column, func
 from sqlalchemy.orm import declared_attr, deferred
 
 from psynet.field import PythonObject
@@ -13,6 +27,22 @@ from psynet.trial.main import TrialMaker
 from psynet.utils import get_logger
 
 logger = get_logger()
+
+
+class CreateAndRateAssignmentPending(Exception):
+    """Raised when a selected head cannot receive a trial yet.
+
+    Parameters
+    ----------
+    outcome
+        ``"wait"`` or ``"exit"``, matching ``wait_for_networks``.
+    """
+
+    def __init__(self, outcome):
+        if outcome not in ("wait", "exit"):
+            raise ValueError("outcome must be 'wait' or 'exit'")
+        super().__init__(outcome)
+        self.outcome = outcome
 
 
 def get_super_classes(cls):
@@ -293,6 +323,12 @@ class CreateAndRateNode(CreateAndRateNodeMixin, ChainNode):
 
 
 class CreateAndRateTrialMakerMixin(object):
+    NEEDS_CREATORS = "needs_creators"
+    WAITING_FOR_CREATORS = "waiting_for_creators"
+    READY_FOR_RATERS = "ready_for_raters"
+    CREATOR_ROLE = "creator"
+    RATER_ROLE = "rater"
+
     def __init__(self, **kwargs):
         assert_correct_inheritance(self.__class__, CreateAndRateTrialMakerMixin)
         extended_class = get_extended_class(self)
@@ -398,24 +434,174 @@ class CreateAndRateTrialMakerMixin(object):
         trial_maker_kwargs["trials_per_node"] = trials_per_node
         return trial_maker_kwargs, mixin_kwargs
 
+    def prepare_trial(self, experiment, participant):
+        try:
+            return super().prepare_trial(experiment, participant)
+        except CreateAndRateAssignmentPending as exc:
+            logger.info(
+                "Create-and-rate assignment deferred for participant %s: %s",
+                getattr(participant, "id", participant),
+                exc.outcome,
+            )
+            return None, exc.outcome
+
     def get_trial_class(self, node, participant, experiment):
-        create_trials = self.get_non_failed_creations(node)
-        finished_creations = self.get_finished_creations(node)
-        need_creators = len(create_trials) < self.n_creators
-        waiting_for_creators = len(finished_creations) < len(create_trials)
+        phase = self.get_creation_phases([node])[node.id]
+        if phase == self.WAITING_FOR_CREATORS:
+            self._defer_assignment()
 
-        if need_creators:
-            return self.creator_class
-        else:
-            if waiting_for_creators:
-                return None
-            else:
-                return self.rater_class
+        phase_role = self._role_for_phase(phase)
+        participant_role = self._participant_role(participant, experiment)
+        if participant_role is not None and participant_role != phase_role:
+            self._defer_assignment()
 
-    def get_non_failed_creations(self, node):
-        return self.creator_class.query.filter_by(node_id=node.id, failed=False).all()
+        role = participant_role or phase_role
+        return self.creator_class if role == self.CREATOR_ROLE else self.rater_class
+
+    def get_participant_role(self, participant, experiment):
+        """Return a fixed create-and-rate role, or ``None`` for phase-driven roles.
+
+        Override this when participants must remain creators or raters. The
+        returned role controls both chain eligibility and final trial-class
+        validation. Creators are eligible only for ``NEEDS_CREATORS`` heads.
+        Raters are eligible for ``READY_FOR_RATERS`` heads and for
+        ``WAITING_FOR_CREATORS`` heads (so assignment can wait or exit until
+        those heads become ratable). ``NEEDS_CREATORS`` heads are not
+        rater-eligible.
+
+        Returns
+        -------
+        str or None
+            ``CREATOR_ROLE``, ``RATER_ROLE``, or ``None``.
+        """
+        return None
+
+    def _participant_role(self, participant, experiment):
+        role = self.get_participant_role(participant, experiment)
+        if role not in (None, self.CREATOR_ROLE, self.RATER_ROLE):
+            raise ValueError(
+                "get_participant_role must return CREATOR_ROLE, RATER_ROLE, or None"
+            )
+        return role
+
+    def _role_for_phase(self, phase):
+        if phase == self.NEEDS_CREATORS:
+            return self.CREATOR_ROLE
+        if phase == self.READY_FOR_RATERS:
+            return self.RATER_ROLE
+        raise ValueError(f"Cannot assign a trial for create-and-rate phase {phase!r}")
+
+    def _phase_matches_role(self, phase, role):
+        if phase == self.WAITING_FOR_CREATORS:
+            return role == self.RATER_ROLE
+        return self._role_for_phase(phase) == role
+
+    def _defer_assignment(self):
+        raise CreateAndRateAssignmentPending(
+            "wait" if self.wait_for_networks else "exit"
+        )
+
+    def _require_chain_heads(self, chains):
+        """Raise if any chain is missing a head.
+
+        A headless chain is a programming or data error, not an empty
+        candidate list. Skipping it would hide the problem behind wait/exit.
+        """
+        headless_ids = [chain.id for chain in chains if chain.head is None]
+        if headless_ids:
+            raise RuntimeError(f"Create-and-rate chains have no head: {headless_ids}")
+
+    def _filter_eligible_candidates(self, chains, participant, experiment):
+        """Apply custom and role eligibility before availability checks.
+
+        Headless chains raise before wait/exit, including phase-driven
+        assignment where ``get_participant_role`` returns ``None``.
+        """
+        chains = super()._filter_eligible_candidates(
+            chains,
+            participant,
+            experiment,
+        )
+        self._require_chain_heads(chains)
+        participant_role = self._participant_role(participant, experiment)
+        if participant_role is None:
+            return chains
+
+        phases = self.get_creation_phases([chain.head for chain in chains])
+        return [
+            chain
+            for chain in chains
+            if self._phase_matches_role(phases[chain.head.id], participant_role)
+        ]
+
+    def _creation_phase_from_counts(self, n_creations, n_finished_creations):
+        if n_creations < self.n_creators:
+            return self.NEEDS_CREATORS
+        if n_finished_creations < n_creations:
+            return self.WAITING_FOR_CREATORS
+        return self.READY_FOR_RATERS
+
+    def get_creation_phases(self, nodes):
+        """Classify nodes using a constant number of database queries.
+
+        Parameters
+        ----------
+        nodes
+            Create-and-rate nodes to classify.
+
+        Returns
+        -------
+        dict
+            A mapping from node ID to ``NEEDS_CREATORS``,
+            ``WAITING_FOR_CREATORS``, or ``READY_FOR_RATERS``.
+        """
+        node_ids = [node.id for node in nodes]
+        if not node_ids:
+            return {}
+
+        def counts(finalized=None):
+            query = db.session.query(
+                self.creator_class.node_id,
+                func.count(self.creator_class.id),
+            ).filter(
+                self.creator_class.node_id.in_(node_ids),
+                self.creator_class.failed.is_(False),
+            )
+            if finalized is not None:
+                query = query.filter(self.creator_class.finalized.is_(finalized))
+            return dict(query.group_by(self.creator_class.node_id).all())
+
+        creation_counts = counts()
+        finished_creation_counts = counts(finalized=True)
+        return {
+            node.id: self._creation_phase_from_counts(
+                creation_counts.get(node.id, 0),
+                finished_creation_counts.get(node.id, 0),
+            )
+            for node in nodes
+        }
+
+    def find_chains(self, participant, experiment):
+        chains = super().find_chains(participant, experiment)
+        if isinstance(chains, str):
+            return chains
+
+        self._require_chain_heads(chains)
+        phases = self.get_creation_phases([chain.head for chain in chains])
+        classified = [(chain, phases[chain.head.id]) for chain in chains]
+        assignable = [
+            chain for chain, phase in classified if phase != self.WAITING_FOR_CREATORS
+        ]
+        if assignable:
+            return assignable
+
+        has_pending = any(phase == self.WAITING_FOR_CREATORS for _, phase in classified)
+        if has_pending and self.wait_for_networks:
+            return "wait"
+        return "exit"
 
     def get_finished_creations(self, node):
+        """Return the finalized, non-failed creator trials for a node."""
         return self.creator_class.query.filter_by(
             node_id=node.id, failed=False, finalized=True
         ).all()

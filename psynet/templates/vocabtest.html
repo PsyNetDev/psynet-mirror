@@ -260,22 +260,22 @@
 
 
     var test = new VocabTest({
-        items: items,
+        items: psynet.var.items,
         containerID: 'test',
-        displayTime: testConfig.displayTime,
-        trueKey: testConfig.trueKey,
-        trueKeyLabel: testConfig.trueKeyLabel,
-        falseKey: testConfig.falseKey,
-        falseKeyLabel: testConfig.falseKeyLabel,
-        trueLabelTemplate: testConfig.trueLabelTemplate,
-        falseLabelTemplate: testConfig.falseLabelTemplate,
-        pressKeyLabelTemplate: testConfig.pressKeyLabelTemplate,
-        lagBetweenTrials: testConfig.lagBetweenTrials,
-        showButtons: testConfig.showButtons,
-        useKeyboard: testConfig.useKeyboard,
-        maxWidth: testConfig.imageWidth,
-        maxHeigth: testConfig.imageHeight,
-        presentAsImage: testConfig.presentAsImage,
+        displayTime: psynet.var.testConfig.displayTime,
+        trueKey: psynet.var.testConfig.trueKey,
+        trueKeyLabel: psynet.var.testConfig.trueKeyLabel,
+        falseKey: psynet.var.testConfig.falseKey,
+        falseKeyLabel: psynet.var.testConfig.falseKeyLabel,
+        trueLabelTemplate: psynet.var.testConfig.trueLabelTemplate,
+        falseLabelTemplate: psynet.var.testConfig.falseLabelTemplate,
+        pressKeyLabelTemplate: psynet.var.testConfig.pressKeyLabelTemplate,
+        lagBetweenTrials: psynet.var.testConfig.lagBetweenTrials,
+        showButtons: psynet.var.testConfig.showButtons,
+        useKeyboard: psynet.var.testConfig.useKeyboard,
+        maxWidth: psynet.var.testConfig.imageWidth,
+        maxHeigth: psynet.var.testConfig.imageHeight,
+        presentAsImage: psynet.var.testConfig.presentAsImage,
 
         onEnd: function (test) {
             psynet.nextPage(test.history);

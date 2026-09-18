@@ -14,7 +14,7 @@ def test_vendored_dallinger_constraints_match_pyproject_dependency():
     pyproject = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))
     dallinger_dependency = next(
         dependency
-        for dependency in pyproject["project"]["dependencies"]
+        for dependency in pyproject["project"]["optional-dependencies"]["experiment"]
         if dependency.startswith("dallinger[")
     )
     dependency_version = re.search(r">=(\d+\.\d+\.\d+)", dallinger_dependency).group(1)
@@ -89,3 +89,27 @@ def test_get_docker_python_version(tmp_path):
     )
 
     assert ci_module._get_docker_python_version(dockerfile) == "3.13"
+
+
+def test_docker_constraints_compile_checks_all_supported_versions(
+    tmp_path, monkeypatch
+):
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text("[project]\ndependencies = []\n", encoding="utf-8")
+    constraints = tmp_path / "dallinger-dev-requirements.txt"
+    constraints.write_text("requests==2.33.1\n", encoding="utf-8")
+    dockerfile = tmp_path / "Dockerfile"
+    dockerfile.write_text("ARG PYTHON_VERSION=3.13\n", encoding="utf-8")
+
+    compiled_versions = []
+
+    def fake_run(command, cwd, check):
+        compiled_versions.append(command[command.index("--python-version") + 1])
+
+    monkeypatch.setattr(ci_module.subprocess, "run", fake_run)
+
+    ci_module._check_docker_constraints_compile(
+        pyproject, constraints, dockerfile, python_versions=("3.11", "3.12", "3.13")
+    )
+
+    assert compiled_versions == ["3.11", "3.12", "3.13"]

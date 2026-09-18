@@ -107,6 +107,34 @@ using Playwright's UI mode during development:
 These tests launch demo experiments locally, so you still need PostgreSQL and
 Redis running (same as for the pytest-driven e2e tests).
 
+Mode tags
+^^^^^^^^^
+
+Every Playwright test must declare one CI mode tag via Playwright's ``tag``
+option:
+
+* ``@both`` — safe under both in-place and legacy full-reload modes
+* ``@inplace-only`` — requires default ``inplace_timeline_transitions``
+* ``@legacy-only`` — requires ``inplace_timeline_transitions=false``
+
+GitLab CI selects suites with ``--grep`` instead of hardcoding file paths:
+
+* ``playwright_e2e_default`` runs ``@both|@inplace-only``
+* ``playwright_e2e_legacy`` runs ``@both|@legacy-only``
+
+Both jobs also run ``node tests/playwright/check-mode-tags.js``, which fails if
+any test is missing one of those tags. When adding a new lifecycle fixture,
+prefer ``@inplace-only`` unless the assertions adapt to both modes (as demos
+and ``managed_page_javascript`` do with ``@both``).
+
+Example:
+
+.. code-block:: javascript
+
+    test("my lifecycle case", { tag: "@inplace-only" }, async ({ page, context }) => {
+      // ...
+    });
+
 Faster local iteration for Playwright tests
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -164,12 +192,13 @@ Example using uv-backed startup for a single Playwright test:
 Finding Playwright CI artifacts in GitLab
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Playwright artifacts are uploaded by the ``playwright_e2e`` job.
+Playwright artifacts are uploaded by the ``playwright_e2e_default`` and
+``playwright_e2e_legacy`` jobs.
 
 To view them in GitLab:
 
 1. Open the pipeline.
-2. Open the ``playwright_e2e`` job.
+2. Open the relevant Playwright job.
 3. In the **Job artifacts** section on the right sidebar you can download or browse uploaded artifacts.
 
 Uploaded artifacts include:

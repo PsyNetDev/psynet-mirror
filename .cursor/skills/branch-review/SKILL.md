@@ -69,7 +69,22 @@ Flag:
 - Run focused tests for changed areas when practical.
 - If tests cannot run, say why and state the residual risk.
 
-## 6) Report format
+## 6) Check the merge request description
+
+If the branch has an open merge request, verify that its description is
+up to date with the actual branch diff:
+
+- Fetch it with `glab api projects/PsyNetDev%2FPsyNet/merge_requests/<iid>`
+  (find the IID with `glab mr list --source-branch <branch>` if needed).
+- Compare each section (Motivation, Summary of changes, Behavior changes,
+  Testing, Automatic code review) against the reviewed diff. Look for
+  stale claims: changes that were later reverted or reworked, CI/test
+  statements that no longer hold, and new commits not yet reflected.
+- If the description is stale, update it (with the user's approval) via
+  `glab mr update <iid> --description ...`, or list the needed corrections
+  in the review report.
+
+## 7) Report format
 
 Present findings first, ordered by severity.
 

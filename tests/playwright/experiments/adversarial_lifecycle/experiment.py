@@ -24,25 +24,6 @@ class RejectUntilAcceptedPage(Page):
         return "accepted"
 
 
-def listener_script(page_name):
-    return f"""
-    window.__adversarialLifecycle = window.__adversarialLifecycle || {{
-        listenerClicks: 0,
-        cleanupCalls: 0,
-        activations: [],
-    }};
-    window.__adversarialLifecycle.activations.push("{page_name}");
-
-    psynet.addPageEventListener(window, "click", function () {{
-        window.__adversarialLifecycle.listenerClicks += 1;
-    }});
-
-    psynet.addPageCleanupCallback(function () {{
-        window.__adversarialLifecycle.cleanupCalls += 1;
-    }});
-    """
-
-
 class ListenerPage(Page):
     def __init__(self, page_name):
         self.page_name = page_name
@@ -54,7 +35,8 @@ class ListenerPage(Page):
                     Listener page {page_name}
                 </p>
             """,
-            scripts=[listener_script(page_name)],
+            js_vars={"adversarial_listener": {"page_name": page_name}},
+            js_page_modules=["/static/listener-page.js"],
             save_answer=False,
         )
 
@@ -72,27 +54,7 @@ class TrackedTimerPage(Page):
                     Tracked timer page
                 </p>
             """,
-            scripts=[
-                """
-                window.__trackedTimerLifecycle = {
-                    started: false,
-                    timeoutFired: false,
-                    intervalTicks: 0,
-                };
-
-                window.__scheduleTrackedLifecycleTimers = function () {
-                    window.__trackedTimerLifecycle.started = true;
-                    psynet.trial.setTimer(function () {
-                        window.__trackedTimerLifecycle.timeoutFired = true;
-                        psynet.nextPage("stale-timeout");
-                    }, 1000);
-
-                    psynet.trial.setRepeatingTimer(function () {
-                        window.__trackedTimerLifecycle.intervalTicks += 1;
-                    }, 25);
-                };
-                """
-            ],
+            js_page_modules=["/static/tracked-timer-page.js"],
         )
 
     def get_bot_response(self, experiment, bot):
@@ -109,51 +71,24 @@ class AudioFadeOutPage(Page):
                     Audio fade-out page
                 </p>
             """,
-            scripts=[
-                """
-                window.__audioFadeOutLifecycle = { ready: false };
+            js_page_modules=["/static/audio-fade-out-page.js"],
+        )
 
-                function writeAscii(view, offset, text) {
-                    for (let i = 0; i < text.length; i++) {
-                        view.setUint8(offset + i, text.charCodeAt(i));
-                    }
-                }
+    def get_bot_response(self, experiment, bot):
+        return None
 
-                function makeSilentWavBuffer(durationSeconds) {
-                    const sampleRate = 8000;
-                    const samples = Math.floor(sampleRate * durationSeconds);
-                    const dataSize = samples * 2;
-                    const buffer = new ArrayBuffer(44 + dataSize);
-                    const view = new DataView(buffer);
-                    writeAscii(view, 0, "RIFF");
-                    view.setUint32(4, 36 + dataSize, true);
-                    writeAscii(view, 8, "WAVE");
-                    writeAscii(view, 12, "fmt ");
-                    view.setUint32(16, 16, true);
-                    view.setUint16(20, 1, true);
-                    view.setUint16(22, 1, true);
-                    view.setUint32(24, sampleRate, true);
-                    view.setUint32(28, sampleRate * 2, true);
-                    view.setUint16(32, 2, true);
-                    view.setUint16(34, 16, true);
-                    writeAscii(view, 36, "data");
-                    view.setUint32(40, dataSize, true);
-                    return buffer;
-                }
 
-                psynet.trial.onEvent("trialConstruct", async function () {
-                    await psynet.media.addExtraAudioStimulus(
-                        makeSilentWavBuffer(0.8),
-                        "fadeout_stale_audio"
-                    );
-                    psynet.audio.fadeout_stale_audio.play({
-                        fadeOut: 0.3,
-                        gain: 0.001,
-                    });
-                    window.__audioFadeOutLifecycle.ready = true;
-                });
-                """
-            ],
+class OverlappingAudioStopPage(Page):
+    def __init__(self):
+        super().__init__(
+            label="overlapping_audio_stop",
+            time_estimate=1,
+            template_fragment_str="""
+                <p id="overlapping-audio-stop-page">
+                    Overlapping audio stop page
+                </p>
+            """,
+            js_page_modules=["/static/overlapping-audio-stop-page.js"],
         )
 
     def get_bot_response(self, experiment, bot):
@@ -169,6 +104,7 @@ class Exp(psynet.experiment.Experiment):
         InfoPage("Timer cleanup checkpoint", time_estimate=1),
         AudioFadeOutPage(),
         InfoPage("Audio fade-out checkpoint", time_estimate=1),
+        OverlappingAudioStopPage(),
         ListenerPage("first"),
         InfoPage("Listener cleanup checkpoint", time_estimate=1),
         ListenerPage("second"),

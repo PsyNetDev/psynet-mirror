@@ -3,6 +3,7 @@
 import io
 import json
 import os
+import re
 import shutil
 import tempfile
 import time
@@ -45,6 +46,48 @@ from .utils import (
 )
 
 logger = get_logger()
+
+
+def _extract_server_error_details(response_text):
+    """Pull a useful exception message out of an HTTP error response body."""
+    if not response_text:
+        return None
+
+    from .timeline import _SPA_INCOMPATIBILITY_MARKER
+
+    spa_match = re.search(
+        r"Page '[^']+' uses HTML/JS that needs a full browser reload.*?"
+        + re.escape(_SPA_INCOMPATIBILITY_MARKER),
+        response_text,
+        flags=re.DOTALL,
+    )
+    if spa_match:
+        return re.sub(r"[ \t]+\n", "\n", spa_match.group(0)).strip()
+
+    value_error_match = re.search(
+        r"ValueError:\s*(.+?)(?:\n\s*File \"|\n\s*</|\Z)",
+        response_text,
+        flags=re.DOTALL,
+    )
+    if value_error_match:
+        return "ValueError: " + value_error_match.group(1).strip()
+
+    return None
+
+
+def _raise_for_status_with_server_details(response):
+    """Like ``Response.raise_for_status``, but include useful server details."""
+    try:
+        response.raise_for_status()
+    except requests.HTTPError as exc:
+        details = _extract_server_error_details(response.text)
+        if details:
+            raise requests.HTTPError(
+                f"{exc}\n\nServer error details:\n{details}",
+                response=response,
+            ) from None
+        raise
+
 
 if TYPE_CHECKING:
     from .sync import SyncGroup
@@ -568,7 +611,8 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
 
     @property
     def failure_cascade(self):
-        return [lambda: self.alive_trials]
+        """Return no owned objects. ``failed`` is not an ownership marker."""
+        return []
 
     @property
     def gettext(self):
@@ -731,12 +775,28 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         }
 
     def fail(self, reason=None):
+        """
+        Mark this participant as failed.
+
+        Incomplete trials are failed here. Completed trials stay unless a
+        TrialMaker performance-check policy treats them as unusable. A
+        completed participant can still be failed; they are not redirected
+        off the successful-end page. Already-failed calls are a no-op.
+
+        If they are still on the main timeline, they are redirected to
+        ``unsuccessful_end``. They are also removed from active sync groups.
+        If that drops a ``SimpleSyncGroup`` below its minimum size, remaining
+        members are failed immediately when
+        ``fail_participants_below_min_size`` is True. See
+        :doc:`/tutorials/participant_and_trial_failure`.
+
+        Parameters
+        ----------
+        reason : str, optional
+            Failure tag to append, for example ``"premature_exit"``.
+        """
         if self.failed:
             logger.info("Participant %i already failed, not failing again.", self.id)
-            return
-
-        if self.complete:
-            logger.info("Participant %i already completed, not failing.", self.id)
             return
 
         if reason is not None:
@@ -753,6 +813,8 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
 
         exp = get_experiment()
 
+        self._fail_incomplete_trials(reason)
+
         for i, routine in enumerate(exp.participant_fail_routines):
             logger.info(
                 "Executing fail routine %i/%i ('%s')...",
@@ -767,16 +829,36 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
             )
 
         super().fail(reason=reason)
-        for group in self.active_sync_groups.values():
-            from .sync import SimpleSyncGroup
 
-            if isinstance(group, SimpleSyncGroup):
-                group.check_numbers()
+        for group in list(self.active_sync_groups.values()):
+            group.remove_participant(self)
 
         self._redirect_to_unsuccessful_end(exp)
 
+    def _fail_incomplete_trials(self, reason):
+        """Fail this participant's unfinished trials.
+
+        Includes the trial currently on screen and trials not owned by a
+        timeline TrialMaker. Completed trials are left to TrialMaker
+        performance-check policy.
+        """
+        from psynet.trial.main import Trial
+
+        trials = (
+            Trial.query.filter_by(participant_id=self.id, failed=False)
+            .filter(Trial.complete.is_not(True))
+            .order_by(Trial.id)
+            .with_for_update(of=Trial)
+            .populate_existing()
+            .all()
+        )
+        for trial in trials:
+            trial.fail(reason=reason)
+
     def _redirect_to_unsuccessful_end(self, experiment):
-        if experiment.timeline.participant_is_in_end_logic(self):
+        # Queued redirect is navigation only. Incomplete trials, including the
+        # one on screen, have already been failed.
+        if self.complete or experiment.timeline.participant_is_in_end_logic(self):
             return
 
         if self._in_advance_page:
@@ -1012,7 +1094,7 @@ class ParticipantDriver:
             f"{self.experiment.base_url}/timeline",
             params={"unique_id": self.participant_unique_id},
         )
-        response.raise_for_status()
+        _raise_for_status_with_server_details(response)
 
     def _simulate_page_time(self, time_factor):
         """
@@ -1071,6 +1153,8 @@ class ParticipantDriver:
             "participant_id": self.id,
             "page_uuid": status["page_uuid"],
             **bot_response,
+            # Drivers fetch status separately and do not consume SPA fragments.
+            "include_timeline_fragment": False,
         }
 
         if "time_taken" not in submission_data["metadata"]:
@@ -1086,7 +1170,7 @@ class ParticipantDriver:
                 data={"json": json.dumps(submission_data)},
                 files=files,
             )
-        response.raise_for_status()
+        _raise_for_status_with_server_details(response)
         resp_json = response.json()
         if resp_json.get("submission") != "approved":
             raise RuntimeError(

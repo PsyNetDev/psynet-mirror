@@ -50,7 +50,7 @@ function makeSilentWav(durationSeconds) {
   return buffer;
 }
 
-test("in-place timeline transitions replay page scripts and hydrate page styles", async ({
+test("in-place timeline transitions replay embedded scripts and manage page assets", { tag: "@inplace-only" }, async ({
   page,
   context
 }) => {
@@ -65,9 +65,73 @@ test("in-place timeline transitions replay page scripts and hydrate page styles"
     await expect(experimentPage.locator("#main-body")).toContainText("First page", {
       timeout: STEP_TIMEOUT_MS
     });
-
+    await expect(
+      experimentPage.locator("#managed-javascript-marker")
+    ).toHaveAttribute("data-first-active", "true");
+    await expect(
+      experimentPage.locator("#managed-javascript-marker")
+    ).toHaveAttribute("data-second-active", "true");
+    await expect
+      .poll(
+        () =>
+          experimentPage.evaluate(() => window.__psynetManagedJavascript || null),
+        { timeout: STEP_TIMEOUT_MS }
+      )
+      .toMatchObject({
+        dependencyLoads: 1,
+        events: ["activate:first", "activate:second"]
+      });
+    expect(
+      await experimentPage.evaluate(
+        () =>
+          window.__psynetManagedJavascript.pageUuids.at(-1) === window.pageUuid
+      )
+    ).toBe(true);
+    expect(
+      await experimentPage.evaluate(
+        () => window.__psynetManagedDependencyAvailableInBody
+      )
+    ).toBe(true);
+    expect(
+      await experimentPage.evaluate(() => window.__pageCodeLifecycle)
+    ).toEqual(["activate:first"]);
     await clickNextAndWait(experimentPage, STEP_TIMEOUT_MS);
 
+    await expect(
+      experimentPage.locator("#managed-javascript-marker")
+    ).toContainText("Managed JavaScript activated");
+    await expect
+      .poll(
+        () =>
+          experimentPage.evaluate(() => window.__psynetManagedJavascript || null),
+        { timeout: STEP_TIMEOUT_MS }
+      )
+      .toMatchObject({
+        dependencyLoads: 1,
+        events: [
+          "activate:first",
+          "activate:second",
+          "cleanup:second",
+          "cleanup:first",
+          "activate:first",
+          "activate:second"
+        ]
+      });
+    expect(
+      await experimentPage.evaluate(
+        () =>
+          window.__psynetManagedJavascript.pageUuids.length === 2 &&
+          window.__psynetManagedJavascript.pageUuids.at(-1) === window.pageUuid
+      )
+    ).toBe(true);
+    expect(
+      await experimentPage.evaluate(
+        () => window.__psynetManagedDependencyAvailableInBody
+      )
+    ).toBe(true);
+    expect(
+      await experimentPage.evaluate(() => window.__pageCodeLifecycle)
+    ).toEqual(["activate:first", "cleanup:first", "activate:second"]);
     await expect(
       experimentPage.locator("#body-library-load-count-marker")
     ).toHaveAttribute("data-load-count", "1", { timeout: STEP_TIMEOUT_MS });
@@ -123,7 +187,7 @@ test("in-place timeline transitions replay page scripts and hydrate page styles"
 
     await waitForMainBodyContains(
       experimentPage,
-      "Repeated linked page script lifecycle page",
+      "Repeated linked page module lifecycle page",
       STEP_TIMEOUT_MS
     );
     await expect(deferredMarker).toHaveAttribute(
@@ -163,8 +227,7 @@ test("in-place timeline transitions replay page scripts and hydrate page styles"
     await expect(stylesheetMarker).not.toHaveCSS("border-left-width", "7px");
   });
 });
-
-test("in-place timeline transitions preload linked CSS before swapping DOM", async ({
+test("in-place timeline transitions preload linked CSS before swapping DOM", { tag: "@inplace-only" }, async ({
   page,
   context
 }) => {
@@ -181,7 +244,7 @@ test("in-place timeline transitions preload linked CSS before swapping DOM", asy
 
     await clickNextAndWait(experimentPage, STEP_TIMEOUT_MS);
     await expect(experimentPage.locator("#main-body")).toContainText(
-      "Deferred page script lifecycle page",
+      "Embedded script lifecycle page",
       { timeout: STEP_TIMEOUT_MS }
     );
 
@@ -199,7 +262,7 @@ test("in-place timeline transitions preload linked CSS before swapping DOM", asy
       .poll(() => stylesheetRequested, { timeout: STEP_TIMEOUT_MS })
       .toBe(true);
     await expect(experimentPage.locator("#main-body")).toContainText(
-      "Deferred page script lifecycle page",
+      "Embedded script lifecycle page",
       { timeout: STEP_TIMEOUT_MS }
     );
     await expect(experimentPage.locator("#main-body")).not.toContainText(
@@ -217,7 +280,7 @@ test("in-place timeline transitions preload linked CSS before swapping DOM", asy
   });
 });
 
-test("in-place timeline transitions manage stylesheets that target shell elements", async ({
+test("in-place timeline transitions manage stylesheets that target shell elements", { tag: "@inplace-only" }, async ({
   page,
   context
 }) => {
@@ -233,7 +296,7 @@ test("in-place timeline transitions manage stylesheets that target shell element
     await clickNextAndWait(experimentPage, STEP_TIMEOUT_MS);
     await waitForMainBodyContains(
       experimentPage,
-      "Deferred page script lifecycle page",
+      "Embedded script lifecycle page",
       STEP_TIMEOUT_MS
     );
     await clickNextAndWait(experimentPage, STEP_TIMEOUT_MS);
@@ -245,7 +308,7 @@ test("in-place timeline transitions manage stylesheets that target shell element
     await clickNextAndWait(experimentPage, STEP_TIMEOUT_MS);
     await waitForMainBodyContains(
       experimentPage,
-      "Repeated linked page script lifecycle page",
+      "Repeated linked page module lifecycle page",
       STEP_TIMEOUT_MS
     );
     await clickNextAndWait(experimentPage, STEP_TIMEOUT_MS);
@@ -295,7 +358,7 @@ test("in-place timeline transitions manage stylesheets that target shell element
   });
 });
 
-test("in-place media cleanup ignores late audio loads from previous pages", async ({
+test("in-place media cleanup ignores late audio loads from previous pages", { tag: "@inplace-only" }, async ({
   page,
   context
 }) => {
@@ -372,7 +435,7 @@ test("in-place media cleanup ignores late audio loads from previous pages", asyn
   });
 });
 
-test("legacy response handler errors do not use SPA fragment failure UI", async ({
+test("legacy response handler errors do not use SPA fragment failure UI", { tag: "@inplace-only" }, async ({
   page,
   context
 }) => {
@@ -411,7 +474,7 @@ test("legacy response handler errors do not use SPA fragment failure UI", async 
   });
 });
 
-test("in-place timeline transitions ignore duplicate nextPage while response is pending", async ({
+test("in-place timeline transitions ignore duplicate nextPage while response is pending", { tag: "@inplace-only" }, async ({
   page,
   context
 }) => {
@@ -473,7 +536,7 @@ test("in-place timeline transitions ignore duplicate nextPage while response is 
   });
 });
 
-test("in-place timeline transition failures show refresh prompt and unlock controls", async ({
+test("in-place timeline transition failures show refresh prompt and keep controls disabled", { tag: "@inplace-only" }, async ({
   page,
   context
 }) => {
@@ -521,11 +584,106 @@ test("in-place timeline transition failures show refresh prompt and unlock contr
       .toEqual({
         nextPagePending: false,
         transitionBusy: false,
-        nextDisabled: false
+        nextDisabled: true
       });
 
     await experimentPage.locator("#alert-button").click();
     await expect(resultPromise).resolves.toBe(false);
     await assertNoBackendError(experimentPage);
+  });
+});
+
+test("post-deactivation transition failures are handled once", { tag: "@inplace-only" }, async ({
+  page,
+  context
+}) => {
+  const absDir = path.resolve(
+    "tests/playwright/experiments/deferred_page_scripts"
+  );
+
+  await withExperiment(page, context, absDir, async (experimentPage) => {
+    await completeInitialGateway(experimentPage);
+    await assertInplaceTimelinePathActive(experimentPage, 20000);
+    await expect(experimentPage.locator("#main-body")).toContainText("First page", {
+      timeout: STEP_TIMEOUT_MS
+    });
+
+    await experimentPage.evaluate(() => {
+      window.__transitionFailureCalls = 0;
+      window.psynet.handleTimelineTransitionFailure = async function () {
+        window.__transitionFailureCalls += 1;
+      };
+    });
+    await experimentPage.route("**/response", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          submission: "approved",
+          page: { attributes: {} },
+          timeline_fragment: {
+            html: "<div>Malformed post-deactivation fragment</div>",
+            page_uuid: "malformed"
+          }
+        })
+      });
+    });
+
+    await expect(
+      experimentPage.evaluate(() =>
+        window.psynet.nextPage("post-deactivation-failure")
+      )
+    ).resolves.toBe(false);
+    expect(
+      await experimentPage.evaluate(() => window.__transitionFailureCalls)
+    ).toBe(1);
+  });
+});
+
+test("post-commit activation failures clean up managed page modules", { tag: "@inplace-only" }, async ({
+  page,
+  context
+}) => {
+  const absDir = path.resolve(
+    "tests/playwright/experiments/deferred_page_scripts"
+  );
+
+  await withExperiment(page, context, absDir, async (experimentPage) => {
+    await completeInitialGateway(experimentPage);
+    await assertInplaceTimelinePathActive(experimentPage, 20000);
+    await expect(experimentPage.locator("#main-body")).toContainText("First page", {
+      timeout: STEP_TIMEOUT_MS
+    });
+
+    await experimentPage.evaluate(() => {
+      window.psynet.handleTimelineTransitionFailure = async function () {};
+      window.psynet.initPage = async function () {
+        throw new Error("Intentional post-commit activation failure");
+      };
+    });
+
+    await expect(
+      experimentPage.evaluate(() =>
+        window.psynet.nextPage("post-commit-activation-failure")
+      )
+    ).resolves.toBe(false);
+    await expect
+      .poll(
+        () =>
+          experimentPage.evaluate(
+            () => window.__psynetManagedJavascript?.events || []
+          ),
+        { timeout: STEP_TIMEOUT_MS }
+      )
+      .toEqual([
+        "activate:first",
+        "activate:second",
+        "cleanup:second",
+        "cleanup:first",
+        "activate:first",
+        "activate:second",
+        "cleanup:second",
+        "cleanup:first"
+      ]);
   });
 });

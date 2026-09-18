@@ -42,6 +42,9 @@ from .command_line import (
     working_directory,
 )
 from .experiment import get_experiment, import_local_experiment
+from .experiment_scaffold import (
+    scaffold_missing_files,
+)
 from .modular_page import ModularPage, PushButtonControl
 from .redis import redis_vars
 from .test_helpers.mock_s3 import (
@@ -51,7 +54,7 @@ from .test_helpers.mock_s3 import (
 from .testing.chrome_driver import create_psynet_chrome_driver
 from .trial.main import TrialNetwork
 from .trial.static import StaticNode, StaticTrial, StaticTrialMaker
-from .utils import clear_all_caches, wait_until
+from .utils import clear_all_caches, is_in_repo_experiment, wait_until
 
 logger = logging.getLogger(__file__)
 warnings.filterwarnings("ignore", category=sqlalchemy.exc.SAWarning)
@@ -362,10 +365,32 @@ def in_experiment_directory(experiment_directory):
         )
     loaded_experiment_directory = experiment_directory
     redis_vars.clear()
+    cleanup_error = None
     with working_directory(experiment_directory):
-        yield experiment_directory
+        try:
+            with scaffold_missing_files():
+                # In-repo demos/tests use PsyNet's shared development .venv, so
+                # skip Dallinger's constraints regeneration. Standalone temp
+                # experiment dirs still need the env override when constraints
+                # are absent.
+                original_skip_dependency_check = os.getenv("SKIP_DEPENDENCY_CHECK")
+                if is_in_repo_experiment() or not Path("constraints.txt").exists():
+                    os.environ["SKIP_DEPENDENCY_CHECK"] = "1"
+                try:
+                    yield experiment_directory
+                finally:
+                    if original_skip_dependency_check is None:
+                        os.environ.pop("SKIP_DEPENDENCY_CHECK", None)
+                    else:
+                        os.environ["SKIP_DEPENDENCY_CHECK"] = (
+                            original_skip_dependency_check
+                        )
+        except Exception as exc:
+            cleanup_error = exc
     clean_sys_modules()
     clear_all_caches()
+    if cleanup_error is not None:
+        raise cleanup_error
 
 
 @pytest.fixture(scope="class")

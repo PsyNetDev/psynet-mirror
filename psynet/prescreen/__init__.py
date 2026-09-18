@@ -482,7 +482,6 @@ class FreeTappingRecordTest(StaticTrialMaker):
             nodes=nodes,
             expected_trials_per_participant=len(nodes),
             n_repeat_trials=n_repeat_trials,
-            fail_trials_on_premature_exit=False,
             fail_trials_on_participant_performance_check=False,
             check_performance_at_end=True,
         )
@@ -1304,7 +1303,6 @@ class ColorBlindnessTest(StaticTrialMaker):
             nodes=nodes,
             expected_trials_per_participant=len(nodes),
             check_performance_at_end=True,
-            fail_trials_on_premature_exit=False,
         )
 
     performance_check_type = "score"
@@ -1439,7 +1437,6 @@ class ColorVocabularyTest(StaticTrialMaker):
             nodes=nodes,
             expected_trials_per_participant=len(nodes),
             check_performance_at_end=True,
-            fail_trials_on_premature_exit=False,
         )
 
     performance_check_type = "score"
@@ -1610,7 +1607,6 @@ class GeneralHeadphoneTest(StaticTrialMaker):
             trial_class=self.get_trial_class(),
             nodes=self.get_nodes(media_url),
             check_performance_at_end=True,
-            fail_trials_on_premature_exit=False,
             expected_trials_per_participant=n_trials,
             max_trials_per_participant=n_trials,
         )
@@ -1911,7 +1907,6 @@ class AudioForcedChoiceTest(StaticTrialMaker):
             trial_class=trial_class,
             nodes=nodes,
             check_performance_at_end=True,
-            fail_trials_on_premature_exit=False,
             expected_trials_per_participant=num_trials,
             max_trials_per_participant=num_trials,
         )

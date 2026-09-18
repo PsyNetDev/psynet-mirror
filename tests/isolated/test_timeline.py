@@ -1,3 +1,5 @@
+import warnings
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -5,7 +7,8 @@ import pytest
 from markupsafe import Markup
 
 from psynet.end import UnsuccessfulEndLogic
-from psynet.page import InfoPage, SuccessfulEndPage
+from psynet.experiment import Experiment
+from psynet.page import InfoPage, SuccessfulEndPage, UnsuccessfulEndPage
 from psynet.timeline import (
     AsyncCodeBlock,
     CodeBlock,
@@ -62,23 +65,72 @@ def test_merge_media_spec():
     )
 
 
-def test_partial_script_deferral_replaces_existing_type_attribute():
+def test_partial_render_makes_embedded_scripts_inert():
     html = """
     <div id="psynet-timeline-fragment">
-      <script type="module" data-example="1">window.example = true;</script>
+      <script src="/static/example.js" data-example="1"></script>
       <script type="application/json">{"example": true}</script>
       <script type="text/html"><div>template</div></script>
       <script type="text/psynet-script">window.deferred = true;</script>
     </div>
     """
-    deferred = Page._defer_executable_scripts(html)
+    inert_html = Page._make_embedded_scripts_inert(html)
 
-    assert deferred.count('type="text/psynet-script"') == 2
-    assert 'type="module"' not in deferred
-    assert 'data-example="1"' in deferred
-    assert 'type="application/json"' in deferred
-    assert 'type="text/html"' in deferred
-    assert deferred.count("type=") == 4
+    assert inert_html.count('type="text/psynet-script"') == 2
+    assert 'data-example="1"' in inert_html
+    assert 'type="application/json"' in inert_html
+    assert 'type="text/html"' in inert_html
+
+
+def test_timeline_template_emits_js_dependencies_as_blocking_head_scripts():
+    from psynet import __file__ as psynet_file
+
+    template = (
+        Path(psynet_file).parent / "templates" / "timeline-page.html"
+    ).read_text()
+    assert "{% for src in js_dependencies %}" in template
+    assert "data-psynet-load-failed" in template
+
+
+def test_automatic_trial_waits_for_page_ready():
+    page = InfoPage("Automatic trial")
+
+    triggers = {
+        event_id: [trigger["triggering_event"] for trigger in event["is_triggered_by"]]
+        for event_id, event in page.events.items()
+    }
+
+    assert "pageReady" in page.events
+    assert triggers["pageReady"] == []
+    assert triggers["trialPrepare"] == ["pageReady"]
+    assert triggers["trialStart"] == ["trialPrepare"]
+
+
+def test_manual_trial_waits_for_request_and_page_ready():
+    page = InfoPage("Manual trial", start_trial_automatically=False)
+
+    triggers = [
+        trigger["triggering_event"]
+        for trigger in page.events["trialPrepare"]["is_triggered_by"]
+    ]
+
+    assert triggers == ["trialManualRequest", "pageReady"]
+    assert page.events["trialPrepare"]["trigger_condition"] == "all"
+
+
+@pytest.mark.parametrize(
+    "html",
+    [
+        '<script type="module">export const value = 1;</script>',
+        '<script type="module" src="/static/widget.js"></script>',
+    ],
+)
+def test_embedded_module_is_rejected(html):
+    with pytest.raises(
+        ValueError,
+        match=r"(?s)error codes: embedded_module.*upgrade-to-psynet-14",
+    ):
+        Page._check_embedded_script_contract(html)
 
 
 def test_partial_body_extraction_uses_named_fragment_wrapper():
@@ -133,6 +185,25 @@ def test_partial_body_extraction_requires_named_fragment_wrapper():
         Page._extract_partial_body("<div id='main-body'></div>")
 
 
+def test_partial_fragment_rendering_calls_pre_render_before_render():
+    # The inplace /response path must run pre_render() before rendering, mirroring
+    # the full /timeline path (get_current_page). Otherwise prompt/control
+    # pre_render() hooks are skipped when a page is reached via an inplace
+    # transition, which is now the default behavior.
+    calls = []
+    page = MagicMock()
+    page.pre_render.side_effect = lambda: calls.append("pre_render")
+    page.render.side_effect = lambda *args, **kwargs: calls.append("render") or "<html>"
+    participant = SimpleNamespace(page_uuid="uuid-123")
+
+    payload = Experiment.render_partial_timeline_payload(
+        page, experiment=MagicMock(), participant=participant
+    )
+
+    assert calls == ["pre_render", "render"]
+    assert payload == {"html": "<html>", "page_uuid": "uuid-123"}
+
+
 def test_template_fragment_input_wraps_main_body_content():
     page = Page(template_fragment_str="<p id='fragment-only'>Fragment content</p>")
 
@@ -145,14 +216,152 @@ def test_template_fragment_input_wraps_main_body_content():
 def test_inplace_transitions_reject_complete_custom_templates():
     page = Page(template_str='{% extends "timeline-page.html" %}')
 
-    with pytest.raises(ValueError, match="template_fragment_path"):
+    with pytest.raises(
+        ValueError,
+        match=r"(?s)uses HTML/JS that needs a full browser reload between pages \(error codes: complete_template\).*Update this page to support in-place loading:.*upgrading_to_psynet_14\.html.*upgrade-to-psynet-14.*requires_full_page_reload=True",
+    ):
         page._check_spa_template_contract(inplace_timeline_transitions=True)
+
+
+def test_requires_full_page_reload_skips_spa_contract_error():
+    page = Page(
+        template_str='{% extends "timeline-page.html" %}',
+        requires_full_page_reload=True,
+    )
+
+    assert page.requires_full_page_reload
+    assert page._spa_contract_opt_out
+    page._check_spa_template_contract(inplace_timeline_transitions=True)
+
+
+def test_js_vars_window_collisions_warn_at_construction():
+    with pytest.warns(UserWarning, match=r"js_vars keys collide.*'status'"):
+        page = Page(
+            template_fragment_str="<p>ok</p>",
+            js_vars={"status": "in-progress", "color": "blue"},
+        )
+
+    assert page.js_vars["status"] == "in-progress"
+
+
+def test_js_vars_without_window_collisions_do_not_warn():
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", UserWarning)
+        Page(
+            template_fragment_str="<p>ok</p>",
+            js_vars={"color": "blue", "trial_index": 1},
+        )
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", FutureWarning)
+        page = Page(
+            template_fragment_str="<p>ok</p>",
+            js_links=["/static/helper.js"],
+            scripts=["document.addEventListener('DOMContentLoaded', function () {});"],
+        )
+
+    assert page.requires_full_page_reload
+    assert not page._spa_contract_opt_out
+    with pytest.raises(
+        ValueError,
+        match=r"error codes: legacy_js_links, legacy_scripts, dom_content_loaded",
+    ):
+        page._check_spa_template_contract(inplace_timeline_transitions=True)
+
+
+def test_legacy_js_args_with_explicit_opt_out_skip_spa_error():
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", FutureWarning)
+        page = Page(
+            template_fragment_str="<p>ok</p>",
+            js_links=["/static/helper.js"],
+            requires_full_page_reload=True,
+        )
+
+    assert page._spa_contract_opt_out
+    page._check_spa_template_contract(inplace_timeline_transitions=True)
+
+
+def test_js_page_code_allows_arrow_cleanup_and_ignores_html_like_strings():
+    page = Page(
+        template_fragment_str="<p>ok</p>",
+        js_page_code=[
+            """
+            window.addEventListener('resize', onResize);
+            const label = '<script src="/static/x.js"></script>';
+            return () => window.removeEventListener('resize', onResize);
+            """
+        ],
+    )
+
+    page._check_spa_template_contract(inplace_timeline_transitions=True)
+
+
+def test_js_page_code_allows_named_cleanup_function():
+    page = Page(
+        template_fragment_str="<p>ok</p>",
+        js_page_code=[
+            """
+            window.addEventListener('resize', onResize);
+            return function cleanup() {
+                window.removeEventListener('resize', onResize);
+            };
+            """
+        ],
+    )
+
+    page._check_spa_template_contract(inplace_timeline_transitions=True)
+
+
+def test_js_page_code_rejects_non_cleanup_arrow_return_as_cleanup_evidence():
+    page = Page(
+        template_fragment_str="<p>ok</p>",
+        js_page_code=[
+            """
+            window.addEventListener('resize', onResize);
+            return (event) => onResize(event);
+            """
+        ],
+    )
+
+    with pytest.raises(ValueError, match=r"error codes: window_listener_no_cleanup"):
+        page._check_spa_template_contract(inplace_timeline_transitions=True)
+
+
+def test_js_page_code_rejects_window_listener_without_cleanup():
+    page = Page(
+        template_fragment_str="<p>ok</p>",
+        js_page_code=["window.addEventListener('resize', onResize);"],
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"(?s)error codes: window_listener_no_cleanup.*"
+        r"return \(\) => \{ \.\.\. \}.*"
+        r"psynet\.addPageCleanupCallback",
+    ):
+        page._check_spa_template_contract(inplace_timeline_transitions=True)
+
+
+def test_js_page_code_allows_add_page_cleanup_callback():
+    page = Page(
+        template_fragment_str="<p>ok</p>",
+        js_page_code=[
+            """
+            window.addEventListener('resize', onResize);
+            psynet.addPageCleanupCallback(function () {
+                window.removeEventListener('resize', onResize);
+            });
+            """
+        ],
+    )
+
+    page._check_spa_template_contract(inplace_timeline_transitions=True)
 
 
 def test_legacy_transitions_warn_on_complete_custom_templates():
     page = Page(template_str='{% extends "timeline-page.html" %}')
 
-    with pytest.warns(UserWarning, match="template_fragment_path"):
+    with pytest.warns(UserWarning, match=r"error codes: complete_template"):
         page._check_spa_template_contract(inplace_timeline_transitions=False)
 
 
@@ -176,7 +385,10 @@ def test_inplace_transitions_reject_dom_content_loaded_in_custom_templates():
         """
     )
 
-    with pytest.raises(ValueError, match="DOMContentLoaded"):
+    with pytest.raises(
+        ValueError,
+        match=r"error codes: dom_content_loaded",
+    ):
         page._check_spa_template_contract(inplace_timeline_transitions=True)
 
 
@@ -187,34 +399,34 @@ def test_inplace_transitions_allow_dom_content_loaded_text_in_custom_templates()
 
 
 @pytest.mark.parametrize(
-    "template_fragment, match",
+    "template_fragment, code",
     [
         (
             "<script>psynet.trial.onEvent('trialConstruct', function () {});</script>",
-            "raw <script>",
+            "embedded_script",
         ),
-        ('<script src="/static/example.js"></script>', "js_links"),
-        ("<style>.example { color: red; }</style>", "Page css argument"),
-        ('<link rel="stylesheet" href="/static/example.css">', "css_links"),
+        ('<script src="/static/example.js"></script>', "embedded_script"),
+        ("<style>.example { color: red; }</style>", "style_tag"),
+        ('<link rel="stylesheet" href="/static/example.css">', "stylesheet_link"),
         (
             "<script>window.addEventListener('resize', function () {});</script>",
-            "window event listener",
+            "window_listener_no_cleanup",
         ),
     ],
 )
 def test_inplace_transitions_reject_forbidden_custom_template_content(
-    template_fragment, match
+    template_fragment, code
 ):
     page = Page(template_fragment_str=template_fragment)
 
-    with pytest.raises(ValueError, match=match):
+    with pytest.raises(ValueError, match=rf"error codes: .*{code}"):
         page._check_spa_template_contract(inplace_timeline_transitions=True)
 
 
 def test_legacy_transitions_warn_on_forbidden_custom_template_content():
     page = Page(template_fragment_str="<style>.example { color: red; }</style>")
 
-    with pytest.warns(UserWarning, match="Page css argument"):
+    with pytest.warns(UserWarning, match=r"error codes: style_tag"):
         page._check_spa_template_contract(inplace_timeline_transitions=False)
 
 
@@ -233,35 +445,35 @@ def test_window_event_listener_with_cleanup_evidence_is_allowed():
     page._check_spa_template_contract(inplace_timeline_transitions=True)
 
 
-def test_page_asset_arguments_are_not_forbidden_template_content():
+def test_managed_page_asset_arguments_are_not_forbidden_template_content():
     page = Page(
         template_fragment_str="<p>Page content</p>",
         css=[".example { color: red; }"],
         css_links=["/static/example.css"],
-        scripts=["psynet.trial.onEvent('trialConstruct', function () {});"],
-        js_links=["/static/example.js"],
+        js_dependencies=["/static/example-library.js"],
+        js_page_modules=["/static/example-page.js"],
     )
 
     page._check_spa_template_contract(inplace_timeline_transitions=True)
 
 
 @pytest.mark.parametrize(
-    "content, match",
+    "content, code",
     [
         (
             "<p>Page content</p><style>.example { color: red; }</style>",
-            "Page css argument",
+            "style_tag",
         ),
         (
             '<p>Page content</p><link rel="stylesheet" href="/static/example.css">',
-            "Page css_links argument",
+            "stylesheet_link",
         ),
     ],
 )
-def test_inplace_transitions_reject_prompt_markup_stylesheets(content, match):
+def test_inplace_transitions_reject_prompt_markup_stylesheets(content, code):
     page = InfoPage(Markup(content))
 
-    with pytest.raises(ValueError, match=match):
+    with pytest.raises(ValueError, match=rf"error codes: {code}"):
         page._check_spa_template_contract(inplace_timeline_transitions=True)
 
 
@@ -270,7 +482,7 @@ def test_legacy_transitions_warn_on_prompt_markup_stylesheets():
         Markup("<p>Page content</p><style>.example { color: red; }</style>")
     )
 
-    with pytest.warns(UserWarning, match="Page css argument"):
+    with pytest.warns(UserWarning, match=r"error codes: style_tag"):
         page._check_spa_template_contract(inplace_timeline_transitions=False)
 
 
@@ -404,6 +616,26 @@ def test_estimate_credit__while_loop__switch__bound_reward_false():
         expected_repetitions=5,
     )
     assert CreditEstimate(e).get_max("time") == 50
+
+
+def test_while_loop_on_timeout_runs_before_failure():
+    def on_timeout(participant):
+        participant.var.timeout_callback_ran = True
+
+    e = while_loop(
+        "loop_with_timeout_callback",
+        lambda: True,
+        InfoPage("", time_estimate=1),
+        expected_repetitions=1,
+        max_loop_time=1,
+        fail_on_timeout=True,
+        on_timeout=on_timeout,
+    )
+
+    assert any(
+        isinstance(elt, CodeBlock) and isinstance(next_elt, UnsuccessfulEndPage)
+        for elt, next_elt in zip(e, e[1:])
+    )
 
 
 def test_switch_with_trial_maker():

@@ -6,6 +6,12 @@
     <script id="psynet-template-data" type="application/json">
         {{ {
             "jsVars": js_vars,
+            "legacyJsLinks": legacy_js_links,
+            "legacyScripts": legacy_scripts,
+            "jsDependencies": js_dependencies,
+            "jsPageCode": js_page_code,
+            "jsPageModules": js_page_modules,
+            "page": page.__json__(participant),
             "events": events,
             "mediaRequests": page.media.data,
             "trialProgressDisplayConfig": trial_progress_display_config,
@@ -20,7 +26,8 @@
                 "dynamicallyUpdateProgressBarAndReward": js_vars["dynamicallyUpdateProgressBarAndReward"],
                 "checkParticipantOpenedDevtools": config.check_participant_opened_devtools,
                 "lucidRecruitment": experiment.with_lucid_recruitment(),
-                "inplaceTimelineTransitions": inplace_timeline_transitions
+                "inplaceTimelineTransitions": inplace_timeline_transitions,
+                "legacyJsVarGlobals": config.legacy_js_var_globals
             },
             "strings": {
                 "commentStored": pgettext("timeline_problem", "Comment stored."),
@@ -87,15 +94,10 @@
             <span id="psynet-event-listener"></span>
 
             {% if partial_mode %}
-                {# In partial_mode we keep page-local assets and deferred scripts in a
-                   hidden container so psynet.js can replay the old "fresh page load"
-                   lifecycle after swapping the fragment into the persistent document. #}
+                {# Architecture: docs/developer/page_lifecycle.rst #}
+                {# In partial_mode we keep page-local assets and framework template
+                   scripts in a hidden container for activation after the fragment swap. #}
                 <div id="psynet-fragment-assets" style="display: none;">
-                    <div id="psynet-page-js-links">
-                        {% for x in js_links %}
-                            <script type="text/psynet-script" data-psynet-script-scope="js-link" src="{{ x }}"></script>
-                        {% endfor %}
-                    </div>
                     <div id="psynet-page-css-links">
                         {% for x in css_links %}
                             <link rel="stylesheet" href="{{ x }}">
@@ -108,14 +110,9 @@
                             </style>
                         {% endfor %}
                     </div>
-                    <div id="psynet-page-scripts">
-                        {% for x in scripts %}
-                            <script type="text/psynet-script" data-psynet-script-scope="deferred">
-                                {{ x }}
-                            </script>
-                        {% endfor %}
-                        {# Child templates may inject scripts through block scripts rather
-                           than via page.scripts. Keep both sources in the deferred bundle. #}
+                    <div id="psynet-embedded-scripts">
+                        {# Framework child templates may provide internal scripts through
+                           their scripts block. #}
                         {{ self.scripts() }}
                     </div>
                 </div>
@@ -249,6 +246,12 @@
     <script src="/static/scripts/jquery-3.7.1.min.js"></script>
     <script src="/static/scripts/JSZip/jszip.min.js"></script>
 
+    {% for src in js_dependencies %}
+        {# Blocking tags preserve first-page script order. Failed loads are marked
+           so the guarded loader can still reject missing js_dependencies. #}
+        <script src="{{ src }}" onerror="this.setAttribute('data-psynet-load-failed','')"></script>
+    {% endfor %}
+
     {% if not partial_mode %}
         {{ template_data_script() }}
     {% endif %}
@@ -267,25 +270,20 @@
     {% if not partial_mode %}
         {{ super() }}
 
-        {% for x in js_links %}
-            <script src="{{ x }}"></script>
-        {% endfor %}
-
-        {% for x in scripts %}
-            <script>
-                {{ x }}
-            </script>
-        {% endfor %}
-
-        <script>
-            psynet.initLucidTermination();
-            psynet.initPagePromise = psynet.initPage();
-        </script>
-
         <script>
             (async function () {
-                await psynet.initPagePromise;
-                await psynet.finalizePageReady();
+                try {
+                    psynet.registerErrorHandler();
+                    await psynet.activateManagedPageJavascript();
+                    psynet.initLucidTermination();
+                    await psynet.initPage();
+                    await psynet.finalizePageReady();
+                } catch (error) {
+                    await psynet.handleTimelineTransitionFailure(
+                        error,
+                        "This page could not be loaded. Please refresh the page and try again.",
+                    );
+                }
             })();
         </script>
     {% endif %}

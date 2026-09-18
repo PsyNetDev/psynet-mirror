@@ -163,7 +163,7 @@ def test_check_core_dependency_versions_psynet_commented():
 
 # Dallinger tests
 @patch("psynet.__version__", "10.0.0")
-@patch("psynet.version.dallinger_version", "9.0.0")
+@patch("psynet.version._get_dallinger_version", new=lambda: "9.0.0")
 def test_check_core_dependency_versions_dallinger_editable_requirement():
     with tempfile.TemporaryDirectory() as dir:
         with working_directory(dir):
@@ -185,7 +185,7 @@ def test_check_core_dependency_versions_dallinger_editable_requirement():
 
 
 @patch("psynet.__version__", "10.0.0")
-@patch("psynet.version.dallinger_version", "9.0.0")
+@patch("psynet.version._get_dallinger_version", new=lambda: "9.0.0")
 def test_check_core_dependency_versions_dallinger_unspecified_requirement():
     with tempfile.TemporaryDirectory() as dir:
         with working_directory(dir):
@@ -264,7 +264,7 @@ def test_check_core_dependency_versions_dallinger_editable_commit_hash_without_e
 
 
 @patch("psynet.__version__", "10.0.0")
-@patch("psynet.version.dallinger_version", "9.0.0")
+@patch("psynet.version._get_dallinger_version", new=lambda: "9.0.0")
 def test_check_dallinger_versions_pip_install():
     with tempfile.TemporaryDirectory() as dir:
         with working_directory(dir):

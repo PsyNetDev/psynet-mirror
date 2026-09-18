@@ -1,5 +1,10 @@
 # README
 
-This experiment is implemented using *PsyNet*, a framework for running behavioral experiments
-in-person and over the internet. For comprehensive guidance on running PsyNet experiments,
-please visit [PsyNet's documentation website](https://psynetdev.gitlab.io/PsyNet/).
+Pipeline for pairwise audio similarity (1–5). Same judgment idea as
+`experiments/audio_similarity`, packaged under the pipelines layout with a
+capped number of trials per participant.
+
+## Usage
+
+For instructions on how to run PsyNet experiments like this one, visit the
+[PsyNet documentation](https://psynetdev.gitlab.io/PsyNet/).

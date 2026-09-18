@@ -1,0 +1,1 @@
+Added PsyNet 14 What's new docs with a human upgrade checklist as the migration source of truth, patterns living in the custom-frontends tutorial, and a thin ``/upgrade-to-psynet-14`` Cursor skill that wraps that checklist.

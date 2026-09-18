@@ -272,6 +272,12 @@ There are many other optional parameters available too. See in particular:
 - ``check_performance_every_trial``
     If ``True``, the participant's performance is evaluated after each trial.
     Defaults to ``False``.
+- ``fail_trials_on_participant_performance_check``
+    If ``True`` (the static default), failing a performance check also fails
+    that participant's completed trials for this trial maker, because those
+    responses are treated as unusable. Incomplete trials are always failed
+    when the participant leaves or is failed. Premature exit does not fail
+    completed trials.
 - ``recruit_mode``
     Selects a recruitment criterion for determining whether to recruit
     another participant. The built-in criteria are ``"n_participants"``
@@ -624,6 +630,15 @@ A performance check assesses the trials that the participant has completed,
 gives the participant a score, and decides whether or not that participant should be failed.
 Typically a failed participant would be ejected from the experiment at that point.
 This is helpful for implementing performance-based screening tasks.
+
+Failing the participant is not the same as failing their trials. If someone
+leaves early, PsyNet fails unfinished trials and keeps the ones they already
+submitted. Completed trials are failed only when
+``fail_trials_on_participant_performance_check`` is ``True`` (the static
+default) and the participant fails a performance check. Use
+``recruit_mode="n_participants"`` or ``"n_trials"`` to control how many
+people or ratings you collect; do not fail submitted trials for that purpose.
+See :doc:`Participant and trial failure <../tutorials/participant_and_trial_failure>`.
 
 To implement a performance check, one needs to create a custom subclass for the trial maker,
 and define a custom ``performance_check`` method. Arbitrary logic is possible here,

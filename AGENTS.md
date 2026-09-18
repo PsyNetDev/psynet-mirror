@@ -1,5 +1,7 @@
 # Agent instructions
 
+On Windows, develop in WSL (Ubuntu) using Linux commands. Native Windows is not supported.
+
 Start by following `psynet/resources/experiment_scripts/AGENTS.md`.
 
 Then act on the following PsyNet developer instructions:
@@ -186,6 +188,9 @@ record that explicitly in the merge request description.
 ## Merge request descriptions
 
 Use `.gitlab/merge_request_templates/Default.md` as the template.
+Write for experiment authors, not only for maintainers: prefer plain language
+over internal jargon, and include short code examples when the change affects
+a public API or migration.
 
 ## CLI development
 
@@ -215,6 +220,7 @@ observable behavior rather than internal implementation details.
 
 - Prefer marking module-internal helper functions with a leading underscore. Keep public-looking names for functions that are intended to be imported or called from outside the module.
 - When adding a feature that operates heavily within a module and that module lacks an explanatory module docstring, add one. The docstring should explain why the module exists, the important design constraints, and how maintainers should interact with it. When you add such a docstring, explicitly suggest that the user reviews it.
+- When adding or changing documentation, use Sphinx-native cross references for internal documentation and API links. Prefer roles such as `:doc:`, `:ref:`, `:class:`, `:func:`, and `:meth:` over raw relative `.html` links so links remain valid across builders and directory moves. If a URL must be ignored by linkcheck, keep the ignore pattern as narrow as possible and document why.
 
 ## Error handling policy
 

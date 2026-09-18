@@ -1324,7 +1324,7 @@
         });
 
         let supportedPrompts = ["audio", "video"];
-        if (!supportedPrompts.includes(modular_page_components.prompt)) {
+        if (!supportedPrompts.includes(psynet.var.modular_page_components.prompt)) {
             $("#btn-record-play-prompt").hide();
             $("#btn-record-play-all").hide();
         }

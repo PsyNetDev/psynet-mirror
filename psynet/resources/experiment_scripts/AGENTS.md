@@ -1,5 +1,7 @@
 # Agent instructions
 
+On Windows, develop in WSL (Ubuntu) using Linux commands. Native Windows is not supported.
+
 PsyNet is a framework for designing and deploying online psychological experiments.
 The agent is there to help both with the development of the PsyNet source code,
 and with the development of individual PsyNet experiments.
@@ -7,7 +9,26 @@ and with the development of individual PsyNet experiments.
 If the root contains a file called `experiment.py`, assume that we are working on an experiment.
 Otherwise assume we are working on the PsyNet source code.
 
-## Initial setup
+PsyNet experiment skills are installed under `.cursor/skills/psynet/` by
+`psynet scripts update` (and created when missing by `psynet scripts scaffold`).
+Treat that directory as PsyNet-managed: update the canonical skills in the
+PsyNet source repository rather than editing generated copies in an experiment.
+It is gitignored in experiment repositories. Skills elsewhere under
+`.cursor/skills/` belong to the experiment and are preserved by
+`psynet scripts update`.
+
+## Agent Skills authoring
+
+The canonical skill format spec is `.cursor/skills/create-skill/SKILL.md` in the
+PsyNet source repository. Experiment skills live under
+`.cursor/skills/experiment/`; repo meta skills live under `.cursor/skills/`.
+After editing skills, run `python scripts/validate_agent_skills.py` and refresh
+experiment copies with `psynet scripts update`.
+
+The PsyNetSkills workshop repository adds a thin `create-skill` addendum for
+challenge/attempt workflows and `psynetsk-validate`.
+
+## Initial setup
 
 - Install Python 3.13 (use same version specified in `Dockerfile`)
 - Install uv (`pip3 install uv`)
@@ -43,8 +64,10 @@ Local agents should prompt the user before doing so.
 
 Install dependencies as follows:
 
-- (For PsyNet): `uv pip install -e '.[dev,slack]'`
-- (For experiments): `uv pip install -r constraints.txt`
+- (For PsyNet source checkout): `uv pip install -e '.[dev,demos,slack]'`
+- (For standalone experiments): `uv pip install psynet` (bootstrap only), followed by
+  `psynet setup` to scaffold and install `psynet[experiment]` via the generated
+  `constraints.txt`.
 
 If dependency installation fails with `pg_config executable not found`, install
 PostgreSQL development headers (e.g. `libpq-dev` on Debian/Ubuntu,
@@ -59,6 +82,28 @@ If a user asks for the X demo, list all child directories in `demos/experiments`
 
 ## Running experiments locally
 
+The PsyNet demo directories include just the authored experiment files.
+Their unpinned `requirements.txt` files and omitted constraints are intentional.
+Within the PsyNet source checkout, PsyNet automatically generates ignored
+boilerplate when a bundled demo is run or tested:
+
+```bash
+psynet debug local
+```
+
+Pytest scaffolds demos temporarily via the `in_experiment_directory` fixture.
+On teardown it removes only paths that were absent when the fixture started,
+so pre-existing scaffold leftovers and customized files remain untouched.
+
+For a copied standalone demo, create its complete environment:
+
+```bash
+uv venv --python 3.13
+source .venv/bin/activate
+uv pip install psynet      # bootstrap only (no experiment runtime yet)
+psynet setup               # scaffolds files, initializes Git, installs psynet[experiment]
+```
+
 To run an experiment in debug mode:
 
 ```bash
@@ -72,8 +117,6 @@ For example, to run the timeline demo:
 cd demos/experiments/timeline
 psynet debug local
 ```
-
-to see which they mean.
 
 Wait for 8 seconds for the server to start.
 
@@ -131,3 +174,10 @@ SELECT id, answer FROM response ORDER BY id DESC LIMIT 10;
 
 If in the PsyNet repository, find further documentation in `docs`.
 If in an experiment directory, find more information at https://psynetdev.gitlab.io/PsyNet/.
+
+For PsyNet 14 migrations (in-place timeline defaults, fragment templates,
+managed page JavaScript, `psynet.var`, JsPsych module timelines), follow
+https://psynetdev.gitlab.io/PsyNet/whats_new/upgrading_to_psynet_14.html
+(pip installs do not ship the `docs/` RST tree). In a PsyNet source checkout
+you may read `docs/whats_new/upgrading_to_psynet_14.rst` instead. In Cursor,
+run `/upgrade-to-psynet-14` to follow that checklist.

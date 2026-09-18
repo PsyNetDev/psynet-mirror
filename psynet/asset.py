@@ -542,8 +542,7 @@ class Asset(AssetSpecification, SQLBase, SQLMixin):
         self.parent = parent
 
         from psynet.participant import Participant
-        from psynet.trial import Trial
-        from psynet.trial.main import TrialNetwork, TrialNode
+        from psynet.trial.main import Trial, TrialNetwork, TrialNode
 
         if isinstance(parent, Participant):
             self.participant_id = parent.id

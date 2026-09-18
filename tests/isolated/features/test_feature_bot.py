@@ -15,10 +15,11 @@ class TestExp:
         for bot in bots:
             bot.take_experiment()
 
-        bots = Bot.query.all()
+        # Order by id: failing a participant UPDATEs the row, so an unordered
+        # SELECT can return the failed bot first.
+        bots = Bot.query.order_by(Bot.id).all()
 
-        assert bots[0].id == 1
-        assert bots[1].id == 2
+        assert [bot.id for bot in bots] == [1, 2]
 
         assert not bots[0].failed
         assert bots[1].failed

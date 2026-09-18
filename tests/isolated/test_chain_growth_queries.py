@@ -6,7 +6,12 @@ from dallinger import db
 from psynet.experiment import get_experiment
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
+from psynet.sqlalchemy_profiling import assert_query_count
 from psynet.trial.chain import ChainNetwork, ChainNode, ChainTrial, ChainTrialMaker
+from psynet.trial.create_and_rate import (
+    CreateAndRateAssignmentPending,
+    CreateAndRateTrialMakerMixin,
+)
 from psynet.trial.graph import (
     GraphChainEdge,
     GraphChainNetwork,
@@ -82,7 +87,9 @@ def chain_trial_maker(**kwargs):
     return ChainTrialMaker(**{**args, **kwargs})
 
 
-def create_chain_network(trial_maker, experiment, *, network_class=ChainNetwork):
+def create_chain_network(
+    trial_maker, experiment, *, network_class=ChainNetwork, participant=None
+):
     start_node = trial_maker.node_class(definition={"x": 0})
     network = network_class(
         trial_maker_id=trial_maker.id,
@@ -91,20 +98,39 @@ def create_chain_network(trial_maker, experiment, *, network_class=ChainNetwork)
         chain_type=trial_maker.chain_type,
         trials_per_node=trial_maker.trials_per_node,
         target_n_nodes=trial_maker.max_nodes_per_chain,
+        participant=participant,
     )
     db.session.add(network)
     db.session.flush()
     return network
 
 
+def initialize_trial_maker_state(trial_maker, participant):
+    state = trial_maker.state_class(trial_maker, participant)
+    state.participant_group = "default"
+    state.participated_networks = []
+    state.block_order = ["default"]
+    state.set_block_position(0)
+    participant.module_state = state
+    db.session.add(state)
+    db.session.flush()
+
+
 def add_trial(
-    trial_class, node, participant, *, answer=1, finalized=True, failed=False
+    trial_class,
+    node,
+    participant,
+    *,
+    answer=1,
+    finalized=True,
+    failed=False,
+    propagate_failure=False,
 ):
     trial = trial_class(
         experiment=get_experiment(),
         node=node,
         participant=participant,
-        propagate_failure=False,
+        propagate_failure=propagate_failure,
         is_repeat_trial=False,
     )
     trial.answer = answer
@@ -114,6 +140,65 @@ def add_trial(
     db.session.add(trial)
     db.session.flush()
     return trial
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_find_chains_keeps_query_count_bounded(db_session, participant):
+    exp = get_experiment()
+    trial_maker = chain_trial_maker(
+        chains_per_experiment=20,
+        max_trials_per_participant=None,
+    )
+    networks = [create_chain_network(trial_maker, exp) for _ in range(20)]
+    initialize_trial_maker_state(trial_maker, participant)
+
+    with assert_query_count(min_queries=2, max_queries=3):
+        eligible = trial_maker.find_chains(participant, exp)
+
+    assert {chain.id for chain in eligible} == {chain.id for chain in networks}
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_create_and_rate_phase_queries_are_bounded(db_session, participant):
+    exp = get_experiment()
+    trial_maker = chain_trial_maker()
+    networks = [create_chain_network(trial_maker, exp) for _ in range(20)]
+    add_trial(GrowthQueryTrial, networks[0].head, participant, finalized=True)
+    add_trial(GrowthQueryTrial, networks[0].head, participant, finalized=False)
+    add_trial(GrowthQueryTrial, networks[1].head, participant, finalized=True)
+    add_trial(GrowthQueryTrial, networks[1].head, participant, finalized=True)
+
+    create_and_rate = object.__new__(CreateAndRateTrialMakerMixin)
+    create_and_rate.creator_class = GrowthQueryTrial
+    create_and_rate.rater_class = object()
+    create_and_rate.n_creators = 2
+    create_and_rate.wait_for_networks = False
+
+    with assert_query_count(min_queries=2, max_queries=2):
+        phases = create_and_rate.get_creation_phases(
+            [network.head for network in networks]
+        )
+
+    assert phases[networks[0].head.id] == create_and_rate.WAITING_FOR_CREATORS
+    assert phases[networks[1].head.id] == create_and_rate.READY_FOR_RATERS
+    assert phases[networks[2].head.id] == create_and_rate.NEEDS_CREATORS
+
+    with pytest.raises(CreateAndRateAssignmentPending, match="exit"):
+        create_and_rate.get_trial_class(networks[0].head, participant, exp)
+    assert (
+        create_and_rate.get_trial_class(networks[1].head, participant, exp)
+        is create_and_rate.rater_class
+    )
+    assert (
+        create_and_rate.get_trial_class(networks[2].head, participant, exp)
+        is create_and_rate.creator_class
+    )
 
 
 @pytest.mark.parametrize(
@@ -180,6 +265,109 @@ def test_ready_to_spawn_access_has_migration_error(db_session):
 
     with pytest.raises(AttributeError, match="check_ready_to_spawn"):
         network.head.check_ready_to_spawn()
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_assignment_returned_does_not_fail_within_chain_start_node(
+    db_session, participant
+):
+    exp = get_experiment()
+    within_maker = chain_trial_maker(
+        id_="within_growth",
+        chain_type="within",
+        chains_per_participant=1,
+        chains_per_experiment=None,
+        recruit_mode="n_participants",
+        target_n_participants=1,
+    )
+    network = within_maker.create_network(
+        exp, participant=participant, id_within_participant=0
+    )
+    start_node = network.head
+    assert start_node.degree == 0
+    assert start_node.participant_id == participant.id
+
+    completed = add_trial(GrowthQueryTrial, start_node, participant, finalized=True)
+    incomplete = add_trial(GrowthQueryTrial, start_node, participant, finalized=False)
+    db.session.commit()
+
+    exp.assignment_returned(participant)
+    db.session.commit()
+
+    assert participant.failed
+    assert "assignment_returned" in participant.failure_tags
+    assert "premature_exit" in participant.failure_tags
+    assert not network.failed
+    assert not start_node.failed
+    assert not completed.failed
+    assert incomplete.failed
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_incomplete_trial_does_not_fail_child_node(db_session, participant):
+    exp = get_experiment()
+    trial_maker = chain_trial_maker()
+    network = create_chain_network(trial_maker, exp)
+    parent = network.head
+    add_trial(GrowthQueryTrial, parent, participant, finalized=True)
+    db.session.commit()
+
+    assert trial_maker.grow_network(network, exp) is True
+    child = network.head
+    assert child.id != parent.id
+
+    incomplete = add_trial(
+        GrowthQueryTrial,
+        parent,
+        participant,
+        finalized=False,
+        propagate_failure=True,
+    )
+    incomplete.fail(reason="premature_exit")
+    db.session.commit()
+
+    assert incomplete.failed
+    assert not incomplete.finalized
+    assert not parent.failed
+    assert not child.failed
+    assert not network.failed
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_finalized_trial_fails_child_node(db_session, participant):
+    exp = get_experiment()
+    trial_maker = chain_trial_maker()
+    network = create_chain_network(trial_maker, exp)
+    parent = network.head
+    finalized = add_trial(
+        GrowthQueryTrial,
+        parent,
+        participant,
+        finalized=True,
+        propagate_failure=True,
+    )
+    db.session.commit()
+
+    assert trial_maker.grow_network(network, exp) is True
+    child = network.head
+    assert child.id != parent.id
+
+    finalized.fail(reason="performance_check")
+    db.session.commit()
+
+    assert finalized.failed
+    assert child.failed
+    assert not parent.failed
+    assert not network.failed
 
 
 def graph_trial_maker():

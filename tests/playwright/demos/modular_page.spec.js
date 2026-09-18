@@ -120,7 +120,7 @@ async function nudgeSlider(page, selector) {
   }
 }
 
-test("modular_page feature demo", async ({ page, context }) => {
+test("modular_page feature demo", { tag: "@both" }, async ({ page, context }) => {
   const absDir = path.resolve("demos/features/modular_page");
   await withExperiment(page, context, absDir, async (experimentPage) => {
     const submitTracker = startResponseSubmitTracker(experimentPage);

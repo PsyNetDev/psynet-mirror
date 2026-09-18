@@ -4,6 +4,14 @@ import psynet.experiment
 from psynet.page import InfoPage
 from psynet.timeline import Page, Timeline
 
+MANAGED_JAVASCRIPT = {
+    "js_dependencies": ["/static/page-lifecycle-dependency.js"],
+    "js_page_modules": [
+        "/static/page-lifecycle-first.js",
+        "/static/page-lifecycle-second.js",
+    ],
+}
+
 
 class CustomStylesheetPage(Page):
     def __init__(self):
@@ -12,7 +20,7 @@ class CustomStylesheetPage(Page):
             template_fragment_path="templates/custom-stylesheet-page.html",
             save_answer=False,
             time_estimate=1,
-            js_links=["/static/custom-style-page.js"],
+            js_page_modules=["/static/custom-style-page.js"],
             css_links=["/static/custom-stylesheet-page.css"],
         )
 
@@ -28,15 +36,33 @@ class Exp(psynet.experiment.Experiment):
             Markup(
                 """
                 <p>First page</p>
+                <p id="managed-javascript-marker">Managed JavaScript has not activated</p>
+                <script>
+                    window.__psynetManagedDependencyAvailableInBody =
+                        window.__psynetManagedJavascript?.dependencyLoads === 1;
+                </script>
                 <script src="/static/redeclared-body-library.js"></script>
                 """
             ),
             time_estimate=1,
+            js_page_code="""
+                window.__pageCodeLifecycle = window.__pageCodeLifecycle || [];
+                window.__pageCodeLifecycle.push("activate:first");
+                return function cleanup() {
+                    window.__pageCodeLifecycle.push("cleanup:first");
+                };
+            """,
+            **MANAGED_JAVASCRIPT,
         ),
         InfoPage(
             Markup(
                 """
-                <p>Deferred page script lifecycle page</p>
+                <p>Embedded script lifecycle page</p>
+                <p id="managed-javascript-marker">Managed JavaScript has not activated</p>
+                <script>
+                    window.__psynetManagedDependencyAvailableInBody =
+                        window.__psynetManagedJavascript?.dependencyLoads === 1;
+                </script>
                 <script src="/static/redeclared-body-library.js"></script>
                 <p id="body-library-load-count-marker">
                     Body library load count marker
@@ -56,14 +82,25 @@ class Exp(psynet.experiment.Experiment):
                 """
             ),
             time_estimate=1,
-            js_links=["/static/deferred-script.js"],
+            js_dependencies=MANAGED_JAVASCRIPT["js_dependencies"],
+            js_page_code="""
+                window.__pageCodeLifecycle = window.__pageCodeLifecycle || [];
+                window.__pageCodeLifecycle.push("activate:second");
+                return function cleanup() {
+                    window.__pageCodeLifecycle.push("cleanup:second");
+                };
+            """,
+            js_page_modules=[
+                *MANAGED_JAVASCRIPT["js_page_modules"],
+                "/static/deferred-script.js",
+            ],
             css_links=["/static/deferred-page-scripts.css"],
         ),
         CustomStylesheetPage(),
         InfoPage(
             Markup(
                 """
-                <p>Repeated linked page script lifecycle page</p>
+                <p>Repeated linked page module lifecycle page</p>
                 <p
                     id="deferred-trial-construct-marker"
                     data-trial-construct-handler-ran="false"
@@ -73,7 +110,7 @@ class Exp(psynet.experiment.Experiment):
                 """
             ),
             time_estimate=1,
-            js_links=["/static/deferred-script.js"],
+            js_page_modules=["/static/deferred-script.js"],
         ),
         InfoPage(
             Markup(

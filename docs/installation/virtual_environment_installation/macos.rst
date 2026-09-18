@@ -15,16 +15,14 @@ We recommend that you update MacOS to the latest version before proceeding.
 Install Python
 ~~~~~~~~~~~~~~
 
-PsyNet requires a recent version of Python 3. To check the minimum and recommended versions of Python,
-look at PsyNet's
-`pyproject.toml <https://gitlab.com/PsyNetDev/PsyNet/-/blob/master/pyproject.toml?ref_type=heads>`_ file,
-specifically at the line beginning with ``requires-python``.
+PsyNet supports Python 3.11 through 3.14. Python 3.13 is the recommended version
+for developing and deploying experiments.
 To see the current version of Python 3 on your system, enter ``python3 --version`` in your terminal.
 If your current version is lower than the minimum version, you should update your Python
 to the recommended version.
 We recommend doing this by going to the `Python website <https://www.python.org/downloads/>`_,
 and downloading the installer corresponding to the latest patch of the recommended version.
-If the recommended version is 3.11, this means searching for Python version 3.11.x where
+For the recommended version, this means searching for Python version 3.13.x where
 'x' is as high as possible.
 At the time of writing this installer can be found by looking under the section
 'Looking for a specific release?', clicking the desired Python version, then clicking

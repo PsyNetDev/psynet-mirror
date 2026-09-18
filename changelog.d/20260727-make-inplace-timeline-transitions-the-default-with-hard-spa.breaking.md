@@ -1,0 +1,1 @@
+Made in-place timeline transitions the default. Custom pages that still use complete templates or other SPA-incompatible patterns now raise errors unless ``inplace_timeline_transitions = false`` is set or the page is migrated; see ``docs/whats_new/upgrading_to_psynet_14.rst``.

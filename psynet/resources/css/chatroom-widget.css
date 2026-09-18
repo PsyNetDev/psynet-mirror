@@ -1,0 +1,65 @@
+/* Built-in modular-page chatroom widget styles.
+   Contributed to the page by the ChatRoom component via its get_css() hook.
+   Sidebar rules are inert unless the sidebar is rendered (show_participants). */
+#chatroom-widget {
+    display: flex;
+    gap: 1rem;
+    height: 300px;
+    min-height: 200px;
+    margin-top: 1rem;
+}
+
+#chatroom-sidebar {
+    width: 160px;
+    flex-shrink: 0;
+    border-right: 1px solid #dee2e6;
+    padding-right: 0.75rem;
+}
+
+#chatroom-sidebar h6 {
+    font-size: 0.85rem;
+    color: #6c757d;
+    margin-bottom: 0.5rem;
+}
+
+#chatroom-participants {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    font-size: 0.9rem;
+}
+
+#chatroom-participants li {
+    padding: 0.2rem 0;
+}
+
+#chatroom-main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+#chatroom-messages {
+    flex: 1;
+    overflow-y: auto;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    padding: 0.75rem;
+    background: #fafafa;
+    margin-bottom: 0.5rem;
+}
+
+#chatroom-messages p {
+    margin-bottom: 0.4rem;
+    word-break: break-word;
+}
+
+#chatroom-input-row {
+    display: flex;
+    gap: 0.5rem;
+}
+
+#chatroom-chat-input {
+    flex: 1;
+}

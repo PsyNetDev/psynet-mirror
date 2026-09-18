@@ -1,5 +1,5 @@
 [Config]
-title = Deferred page script lifecycle test
+title = Embedded script lifecycle test
 description = Test experiment for in-place timeline script ordering.
 contact_email_on_error = test@example.com
 organization_name = PsyNet

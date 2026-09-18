@@ -69,7 +69,7 @@ class ChatroomPage(Page):
                 "chatroom_show_history": show_history,
             },
             css_links=["/static/chatroom.css"],
-            js_links=["/static/chatroom.js"],
+            js_page_modules=["/static/chatroom.js"],
             save_answer=False,
             **kwargs,
         )
@@ -90,7 +90,7 @@ class RoomSelectionPage(Page):
                 "max_occupancy": config.get("chatroom_max_occupancy", None),
                 "chatroom_global_channel": GLOBAL_CHANNEL,
             },
-            js_links=["/static/room-selection.js"],
+            js_page_modules=["/static/room-selection.js"],
             # save_answer="current_room" writes the chosen value to
             # participant.var.current_room, which the next PageMaker reads to
             # configure ChatroomPage.

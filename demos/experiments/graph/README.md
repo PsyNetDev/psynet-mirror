@@ -1,5 +1,10 @@
 # README
 
-This experiment is implemented using *PsyNet*, a framework for running behavioral experiments
-in-person and over the internet. For comprehensive guidance on running PsyNet experiments,
-please visit [PsyNet's documentation website](https://psynetdev.gitlab.io/PsyNet/).
+Graph-chain sampling over "necklaces" of colored beads: choose a preferred
+necklace, then recolor another to match. Illustrates `GraphChainTrialMaker` for
+navigating discrete graphical stimulus spaces.
+
+## Usage
+
+For instructions on how to run PsyNet experiments like this one, visit the
+[PsyNet documentation](https://psynetdev.gitlab.io/PsyNet/).

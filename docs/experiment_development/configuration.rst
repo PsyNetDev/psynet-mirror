@@ -37,7 +37,13 @@ Global variables should be set via the `.dallingerconfig` file in your home dire
 Experiment-specific variables
 +++++++++++++++++++++++++++++
 
-Experiment-specific variables can be set in two ways – firstly via a `config.txt` file in the experiment's root directory which follows the same syntactic rules as the one for global variables above. For example:
+Every experiment directory must include a ``config.txt`` file. The file may be
+empty. PsyNet still requires it to be present before local debug/test and
+deployment.
+
+Experiment-specific variables can be set in two ways – firstly via that
+``config.txt`` file, which follows the same syntactic rules as the one for
+global variables above. For example:
 
 .. code-block:: text
 
@@ -56,9 +62,64 @@ Secondly, they can also be set by creating a config dictionary in the ``Experime
             "show_abort_button": True,
         }
 
+Do not set the same key in both places. If a variable appears in both
+``config.txt`` and ``Experiment.config``, PsyNet raises an error and asks you
+to keep just one location.
+
 .. note::
 
     When setting variables via `config.txt` or `.dallingerconfig` boolean values can be assigned be either using ``true``, ``True``, ``false``, or ``False``.
+
+.. note::
+
+    **Upgrading an older experiment.** Older PsyNet versions sometimes ran
+    without a real ``config.txt`` (for example when all settings lived in
+    ``Experiment.config``). If you upgrade such an experiment and PsyNet
+    complains that ``config.txt`` is missing, create an empty file in the
+    experiment directory::
+
+        touch config.txt
+
+    Prefer that over ``psynet scripts scaffold`` / ``psynet setup`` if you
+    already manage settings in Python: scaffolding writes a demo template with
+    active keys (title, recruiter, and so on), which will conflict with any
+    overlapping keys in ``Experiment.config``. An existing ``config.txt`` —
+    including an empty one — is never overwritten by scaffold or update.
+
+
+Load order and precedence
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Config variables can be set via several sources. When the same variable is set
+in more than one source, the value from the higher-priority source wins.
+The sources are, from highest to lowest priority:
+
+1. **Runtime writes** — values set from code through ``config.set()``,
+   ``config.extend()``, or ``config.override()``.
+2. **Environment variables** — variables named after config keys
+   (e.g. ``dashboard_user``).
+3. **config.txt** — the experiment-specific config file in the experiment's
+   root directory.
+4. **The ``Experiment.config`` dictionary** in ``experiment.py``. Although
+   ``config.txt`` formally takes precedence, PsyNet raises an error at
+   deployment time if the same variable is set in both places.
+5. **~/.dallingerconfig** — the global, per-user config file in your home
+   directory.
+6. **PsyNet experiment defaults** — values from
+   ``Experiment.config_defaults()``.
+7. **Dallinger package defaults** — values from
+   ``local_config_defaults.txt`` and ``global_config_defaults.txt``.
+
+Note in particular that values set in the ``Experiment.config`` dictionary
+override values set in ``~/.dallingerconfig``: they are the experiment's
+explicit decisions, not defaults. Only environment variables (and runtime
+configuration writes) take precedence over them; PsyNet logs a warning at
+deployment time if that happens.
+
+After the experiment package has been initialized, web, worker, and clock
+processes continue loading its experiment-specific layers after changing into
+a non-experiment directory. Environment variables and runtime writes may still
+differ between processes.
 
 
 Available config variables
@@ -119,12 +180,32 @@ General
 
         This concerns a Dallinger feature not currently used by PsyNet.
 
+``inplace_timeline_transitions`` *bool* |psynet-icon|
+    When ``True`` (default), PsyNet keeps the browser document open and swaps
+    timeline page content in place. Custom pages must use fragment templates
+    and managed asset arguments; see :doc:`/whats_new/upgrading_to_psynet_14`
+    and :doc:`/tutorials/writing_custom_frontends`. Prefer opting out for a
+    single page with ``requires_full_page_reload=True`` on that page's
+    constructor. Set this config to ``False`` only as a temporary
+    experiment-wide opt-out while migrating. Default: ``True``.
+
 ``label`` *str* |psynet-icon|
     This variable is used internally for data export.
 
     .. note::
 
         This feature may be revised in the future.
+
+``legacy_js_var_globals`` *str* |psynet-icon|
+    Controls deprecated access to page ``js_vars`` through matching ``window``
+    properties. ``warn`` preserves access and reports each key once in the
+    browser console, ``error`` raises an informative ``ReferenceError``, and
+    ``off`` installs no compatibility properties. Accessors are never
+    installed for names that already exist on ``window`` (for example
+    ``name``, ``status``, ``event``, ``history``); those page values remain
+    available on ``psynet.var``, and page construction warns for common
+    collisions. New code should read ``psynet.var`` directly. Default:
+    ``warn``.
 
 ``lock_table_when_creating_participant`` *bool* |dlgr-icon|
     Prevents possible deadlocks on the `Participant` table.

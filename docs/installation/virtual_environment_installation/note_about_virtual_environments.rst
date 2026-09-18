@@ -9,9 +9,13 @@ about virtual environments and how they can be created with the ``venv`` command
 .. note::
 
    We used to recommend ``virtualenvwrapper`` to manage virtual environments.
-   With this approach, users would create a single shared virtual environment
-   for all their PsyNet projects. We now recommend instead that users just use the built-in ``venv`` command,
-   and create a new virtual environment for each project.
+   With that approach, users created one virtual environment shared across all
+   their PsyNet *projects*. We now recommend instead that users use ``venv`` /
+   ``uv venv`` and create **one virtual environment per standalone experiment**.
+
+   Exception: when you work on **bundled demos inside the PsyNet repository**,
+   use the PsyNet repository's single development ``.venv``. That is not the
+   same as sharing one venv across unrelated project folders.
 
    For reference, this is the code we used to install ``virtualenvwrapper``:
 

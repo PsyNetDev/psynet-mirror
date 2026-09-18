@@ -4,26 +4,3 @@
     {{ super() }}
     <div id="js-psych" style="margin: 0px; height: 70%; width: 100%;"></div>
 {% endblock main_body %}
-
-{% block scripts %}
-    {{ super() }}
-
-    <script>
-        let jsPsych = initJsPsych({
-            display_element: 'js-psych',
-            on_finish: function () {
-                psynet.nextPage(jsPsych.data.get().json())
-            }
-        });
-    </script>
-
-    {% block timeline %}
-    {% endblock timeline %}
-
-    <script>
-        if (!timeline) {
-            alert("The jsPsych timeline object could not be found. Please check your timeline script for errors.")
-        }
-        jsPsych.run(timeline);
-    </script>
-{% endblock scripts %}

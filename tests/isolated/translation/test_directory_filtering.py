@@ -42,7 +42,9 @@ def test_skip_common_venv_names():
     """Test that common virtual environment directory names are skipped."""
     venv_names = ["venv", ".venv", "env", ".env"]
 
-    with tempfile.TemporaryDirectory() as tmpdir:
+    # Include "env" in the temporary root name to ensure only relative directory
+    # components are checked below.
+    with tempfile.TemporaryDirectory(prefix="env") as tmpdir:
         # Create a normal Python file
         normal_file = Path(tmpdir) / "experiment.py"
         normal_file.write_text('_("normal translation")\n')
@@ -61,10 +63,9 @@ def test_skip_common_venv_names():
         # Verify no entries from venv directories
         for entry in entries:
             for occurrence_path, _ in entry.occurrences:
-                for venv_name in venv_names:
-                    assert venv_name not in occurrence_path, (
-                        f"Should not extract from {venv_name} directory"
-                    )
+                relative_path = Path(occurrence_path).relative_to(tmpdir)
+                occurrence_dirs = relative_path.parts[:-1]
+                assert not set(venv_names).intersection(occurrence_dirs)
 
 
 def test_skip_ide_and_build_directories():

@@ -15,4 +15,6 @@ high-powered variants of the same experiment in the time it would ordinarily tak
 PsyNet is primarily developed by Peter Harrison, Frank Höger, Pol van Rijn, and Nori Jacoby,
 but we are grateful for many further contributions by other users.
 
+On Windows, use WSL (Ubuntu) and follow the Linux workflow there. Native Windows is not supported.
+
 For more information about PsyNet, visit the [documentation website](https://psynetdev.gitlab.io/PsyNet/).

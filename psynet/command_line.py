@@ -12,8 +12,6 @@ import tempfile
 import threading
 import zipfile
 from contextlib import contextmanager
-from hashlib import md5
-from importlib import resources
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -40,14 +38,22 @@ from yaspin import yaspin
 
 from psynet import __version__
 from psynet.dev.command_line import dev as _dev_command_group
+from psynet.runtime_init import ensure_runtime
 from psynet.version import (
     check_core_dependency_versions_match_requirements,
     check_installed_dallinger_version_is_recommended,
-    recommended_python_major_minor,
 )
 
 from . import deployment_info
+from .bootstrap_commands import register_bootstrap_commands
 from .data import drop_all_db_tables, dump_db_to_disk, ingest_zip, init_db
+from .experiment_scaffold import (
+    dockertag_contents,
+    get_psynet_requirement,
+    is_unambiguous_psynet_requirement,
+    missing_scaffold_paths_required_for_local_run,
+    scaffold_experiment_directory,
+)
 from .log import bold
 from .lucid import get_lucid_service
 from .recruiters import BaseLucidRecruiter, HotAirRecruiter
@@ -60,16 +66,18 @@ from .utils import (
     get_package_name,
     git_repository_available,
     in_python_package,
+    is_in_repo_experiment,
     list_experiment_dirs,
     list_isolated_tests,
     make_parents,
-    md5_directory,
     pretty_format_seconds,
     require_exp_directory,
     require_requirements_txt,
     run_subprocess_with_live_output,
     working_directory,
 )
+
+ensure_runtime()
 
 logger = get_logger()
 
@@ -116,9 +124,7 @@ def clean_sys_modules():
 
 
 def update_docker_tag():
-    with open("Dockertag", "w") as file:
-        file.write(os.path.basename(os.getcwd()))
-        file.write("\n")
+    Path("Dockertag").write_text(dockertag_contents())
 
 
 @click.group()
@@ -1075,6 +1081,18 @@ def _pre_launch(
 ):
     from .experiment import get_experiment
 
+    # Scaffold/git checks before Redis so missing-boilerplate guidance is visible
+    # even when Redis is not running.
+    _check_experiment_directory(mode)
+
+    from .services import ensure_local_services
+
+    # All launch paths (local, SSH, Heroku, Docker) run ``prepare`` / Redis
+    # helpers on this machine before any remote packaging, so local Postgres
+    # and Redis are required here even when the experiment ultimately runs
+    # elsewhere.
+    ensure_local_services(assume_yes=False, strict=True)
+
     redis_vars.clear()
     deployment_info.init(
         redeploying_from_archive=archive is not None,
@@ -1103,10 +1121,14 @@ def _pre_launch(
     # Always use the Dallinger version in requirements.txt, not the local editable one
     os.environ["DALLINGER_NO_EGG_BUILD"] = "1"
 
-    if docker:
-        if Path("Dockerfile").exists():
-            # Tell Dallinger not to rebuild constraints.txt, because we'll manage this within the Docker image
-            os.environ["SKIP_DEPENDENCY_CHECK"] = "1"
+    if is_in_repo_experiment():
+        # In-repo demos/tests use PsyNet's shared development .venv; do not let
+        # Dallinger invent a per-demo constraints.txt from PyPI.
+        os.environ["SKIP_DEPENDENCY_CHECK"] = "1"
+    elif docker and Path("Dockerfile").exists():
+        # Tell Dallinger not to rebuild constraints.txt, because we'll manage
+        # this within the Docker image.
+        os.environ["SKIP_DEPENDENCY_CHECK"] = "1"
 
     experiment = get_experiment()
     experiment.update_deployment_id()
@@ -1327,11 +1349,90 @@ def check_prolific_payment(experiment, config):
     )
 
 
+def _missing_boilerplate_fix(*, mode=None, missing_paths=None):
+    """Return actionable guidance when experiment boilerplate is missing."""
+    if is_in_repo_experiment():
+        command = "psynet scripts scaffold"
+        context = (
+            "This looks like a PsyNet bundled demo or test experiment, so only "
+            "template files are needed."
+        )
+    else:
+        command = "psynet setup"
+        context = (
+            "For a standalone experiment this prepares files, pins PsyNet, "
+            "writes constraints.txt, and installs packages into your active "
+            "virtual environment. If you only need template files, run "
+            "'psynet scripts scaffold' instead."
+        )
+
+    mode_clause = ""
+    if mode is not None:
+        mode_clause = f" before running 'psynet {mode} ...'"
+
+    message = f"{context} Run '{command}' to generate the missing files{mode_clause}."
+    if missing_paths and "config.txt" in missing_paths:
+        message += (
+            " If you are upgrading an experiment that already sets options in "
+            "Experiment.config, create an empty config.txt with 'touch config.txt' "
+            "instead of scaffolding a full template."
+        )
+    return message
+
+
+def _prepare_in_repo_experiment():
+    """Generate ignored boilerplate when running an in-repo experiment."""
+    if not is_in_repo_experiment():
+        return False
+    scaffold_experiment_directory()
+    return True
+
+
+def _check_experiment_directory(mode):
+    """
+    Fail fast on missing scaffold or git before Redis or other heavy I/O.
+
+    In-repo experiments are auto-scaffolded first so their missing-boilerplate
+    check does not falsely fail. These checks must run before ``redis_vars.clear()``
+    so users without Redis still see actionable guidance.
+    """
+    _prepare_in_repo_experiment()
+
+    missing_boilerplate = missing_scaffold_paths_required_for_local_run()
+    if missing_boilerplate:
+        missing_paths = ", ".join(missing_boilerplate)
+        raise click.ClickException(
+            "Experiment directory is missing required PsyNet boilerplate files "
+            f"({missing_paths}). "
+            f"{_missing_boilerplate_fix(mode=mode, missing_paths=missing_boilerplate)}"
+        )
+
+    # We need an active git repository for Dallinger to recognize .gitignore properly
+    if not git_repository_available():
+        from .light_utils import git_command_available
+
+        if not git_command_available():
+            raise click.ClickException(
+                "Git does not appear to be installed. Install it from "
+                "https://git-scm.com/downloads, then create a repository by "
+                "running 'git init'. If you copied a demo into a new directory, "
+                "run 'git init' before 'psynet debug local' or 'psynet test local'."
+            )
+        raise click.ClickException(
+            "This directory is not a git repository. Create one by running "
+            "'git init'. If you copied a demo into a new directory, run "
+            "'git init' before 'psynet debug local' or 'psynet test local'."
+        )
+
+
 def run_pre_checks(mode, local_, heroku=False, docker=False, app=None):
     from dallinger.recruiters import MTurkRecruiter
 
     from .experiment import get_experiment
     from .utils import check_todos_before_deployment
+
+    # Directory readiness is checked earlier in ``_pre_launch`` (before Redis)
+    # and directly from ``psynet test local``. Avoid duplicating that work here.
 
     exp = get_experiment()
     exp.check_config()
@@ -1353,13 +1454,8 @@ def run_pre_checks(mode, local_, heroku=False, docker=False, app=None):
                 )
     except FileNotFoundError:
         raise click.ClickException(
-            f".gitignore is missing from your experiment directory ({os.getcwd()})."
-        )
-
-    # We need an active git repository for Dallinger to recognize .gitignore properly
-    if not git_repository_available():
-        raise click.ClickException(
-            "This directory is not a git repository, or git is not installed. Please ensure git is installed and create a repository by running 'git init' if needed."
+            f".gitignore is missing from your experiment directory ({os.getcwd()}). "
+            + _missing_boilerplate_fix()
         )
 
     try:
@@ -1621,25 +1717,11 @@ def install_autocomplete():
         )
 
 
-##########
-# update #
-##########
-@psynet.command()
-@click.option(
-    "--dallinger-version",
-    default="latest",
-    help="The git branch, commit or tag of the Dallinger version to install.",
-)
-@click.option(
-    "--psynet-version",
-    default="latest",
-    help="The git branch, commit or tag of the psynet version to install.",
-)
-@click.option("--verbose", is_flag=True, help="Verbose mode")
-def update(dallinger_version, psynet_version, verbose):
-    """
-    Update the locally installed `Dallinger` and `PsyNet` versions.
-    """
+#######################
+# installation update #
+#######################
+def _run_installation_update(dallinger_version, psynet_version, verbose):
+    """Update the locally installed Dallinger and PsyNet packages."""
 
     def _git_checkout(version, cwd, capture_output):
         with yaspin(text=f"Checking out {version}...", color="green") as spinner:
@@ -1766,6 +1848,62 @@ def update(dallinger_version, psynet_version, verbose):
     log(f"Updated PsyNet to version {get_version('psynet')}")
 
 
+_installation_update_options = [
+    click.option(
+        "--dallinger-version",
+        default="latest",
+        help="The git branch, commit or tag of the Dallinger version to install.",
+    ),
+    click.option(
+        "--psynet-version",
+        default="latest",
+        help="The git branch, commit or tag of the psynet version to install.",
+    ),
+    click.option("--verbose", is_flag=True, help="Verbose mode"),
+]
+
+
+def _add_installation_update_options(command):
+    """Attach shared options to installation-update entry points."""
+    for option in reversed(_installation_update_options):
+        command = option(command)
+    return command
+
+
+@psynet.group("installation")
+def installation():
+    """
+    Manage the local PsyNet and Dallinger installation.
+    """
+    pass
+
+
+@installation.command("update")
+@_add_installation_update_options
+def installation_update(dallinger_version, psynet_version, verbose):
+    """
+    Update the locally installed Dallinger and PsyNet packages.
+
+    This upgrades (or pin-selects) the PsyNet/Dallinger *installation* in your
+    environment. It does not refresh experiment boilerplate files; for that,
+    use ``psynet scripts update``.
+    """
+    _run_installation_update(dallinger_version, psynet_version, verbose)
+
+
+@psynet.command("update")
+@_add_installation_update_options
+def update(dallinger_version, psynet_version, verbose):
+    """
+    Deprecated alias for ``psynet installation update``.
+    """
+    click.echo(
+        "psynet update is deprecated; use 'psynet installation update' instead.",
+        err=True,
+    )
+    _run_installation_update(dallinger_version, psynet_version, verbose)
+
+
 def dallinger_dir():
     import dallinger as _
 
@@ -1849,29 +1987,6 @@ def setup_experiment_variables(experiment_class):
     return experiment
 
 
-########################
-# generate-constraints #
-########################
-@psynet.command()
-@click.pass_context
-@require_requirements_txt
-def generate_constraints(ctx):
-    """
-    Generate the constraints.txt file from requirements.txt.
-    """
-    from dallinger.command_line import (
-        generate_constraints as dallinger_generate_constraints,
-    )
-
-    try:
-        # We have removed check_psynet_requirement_is_unambiguous here because it caused problems for Docker users.
-        # Instead, we just run this in the sandbox/deploy prechecks.
-        # check_psynet_requirement_is_unambiguous()
-        ctx.invoke(dallinger_generate_constraints)
-    finally:
-        reset_console()
-
-
 @psynet.command()
 @require_requirements_txt
 def check_constraints():
@@ -1909,11 +2024,14 @@ def check_dockerfile():
 
     update_scripts_recommendation = (
         "To fix this issue, run:\n"
-        "  psynet update-scripts\n\n"
+        "  psynet scripts scaffold\n\n"
+        "This creates any missing standard boilerplate files without overwriting existing ones.\n\n"
+        "If you instead want to overwrite existing boilerplate with the latest templates, run:\n"
+        "  psynet scripts update\n\n"
         "Note: This command will also update other experiment files including .gitignore, "
         "README.md, test.py, and configuration files in .vscode/ and .github/workflows/.\n\n"
         "IMPORTANT: Before running this command, commit any pending changes to git so you can "
-        "review the automatic changes that psynet update-scripts makes."
+        "review the automatic changes that psynet scripts update makes."
     )
 
     dockerfile_path = Path("Dockerfile")
@@ -1949,8 +2067,7 @@ def check_dockerfile():
 def _check_constraints(spinner=None):
     directory = os.getcwd()
 
-    # This code comes from dallinger.utils.ensure_constraints_file_presence.
-    # Ideally this Dallinger function would be refactored into exportable components.
+    # Freshness uses the same MD5-in-lockfile rule as ``psynet setup``.
     requirements_path = Path(directory) / "requirements.txt"
     constraints_path = Path(directory) / "constraints.txt"
 
@@ -1964,9 +2081,9 @@ def _check_constraints(spinner=None):
         # raise click.Abort()
 
     generate_constraints_cmd = (
-        "    psynet generate-constraints\n"
-        "or, if you are using Docker:\n"
-        "    bash docker/generate-constraints"
+        "    psynet setup\n"
+        "or only refresh the lockfile with:\n"
+        "    psynet generate-constraints"
     )
 
     if not constraints_path.exists():
@@ -1974,19 +2091,23 @@ def _check_constraints(spinner=None):
             spinner.fail("✘")
         raise click.ClickException(
             "Error: Experiment directory is missing a constraints.txt file. "
-            "This file pins all of your experiment's Python package dependencies, both explicit and implicit. "
-            "Please check that your requirements.txt file is up-to-date, then generate the constraints.txt file "
-            "by running the following command:\n" + generate_constraints_cmd
+            "Standalone experiments need this lockfile so installs are "
+            "reproducible. Please check that your requirements.txt file is "
+            "up-to-date, then create constraints.txt by running:\n"
+            + generate_constraints_cmd
         )
 
-    requirements_path_hash = md5(requirements_path.read_bytes()).hexdigest()
-    if requirements_path_hash not in constraints_path.read_text():
+    from .constraints_compile import constraints_are_up_to_date
+
+    if not constraints_are_up_to_date(
+        requirements_path=requirements_path,
+        constraints_path=constraints_path,
+    ):
         if spinner:
             spinner.fail("✘")
         raise click.ClickException(
             "The constraints.txt file is not up-to-date with the requirements.txt file. "
-            "Please generate a new constraints.txt file by running the following command:\n"
-            + generate_constraints_cmd
+            "Please regenerate constraints.txt by running:\n" + generate_constraints_cmd
         )
 
 
@@ -1995,10 +2116,8 @@ def check_psynet_requirement_is_unambiguous():
     Validate that ``requirements.txt`` pins PsyNet unambiguously.
 
     The check requires a deterministic PsyNet specification so deployments are
-    reproducible. Accepted formats are:
-    - ``psynet==<version>``
-    - ``psynet@git+https://gitlab.com/PsyNetDev/PsyNet@v<version>#egg=psynet``
-    - ``psynet@git+https://gitlab.com/PsyNetDev/PsyNet@<commit-hash>#egg=psynet``
+    reproducible. Accepted formats are documented on
+    :func:`psynet.experiment_scaffold.is_unambiguous_psynet_requirement`.
 
     Raises
     ------
@@ -2016,33 +2135,10 @@ def check_psynet_requirement_is_unambiguous():
         text="Verifying PsyNet version in requirements.txt...",
         color="green",
     ) as spinner:
-        valid = False
-        with open("requirements.txt", "r") as file:
-            regexes = [
-                "[a-fA-F0-9]{8,40}",
-                "v(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(rc\\d+)?",
-            ]
-            file_content = file.read()
-            for regex in regexes:
-                match = re.search(
-                    r"^psynet(\s?)@(\s?)git\+https:\/\/gitlab.com\/PsyNetDev\/PsyNet(\.git)?@"
-                    + regex
-                    + "(#egg=psynet)?$",
-                    file_content,
-                    re.MULTILINE,
-                )
-                if match is not None:
-                    valid = True
-                    break
-
-                match = re.search(
-                    r"^psynet(\s?)==(\s?)\d+\.\d+\.\d+(rc\d+)?$",
-                    file_content,
-                    re.MULTILINE,
-                )
-                if match is not None:
-                    valid = True
-                    break
+        requirement = get_psynet_requirement()
+        valid = requirement is not None and is_unambiguous_psynet_requirement(
+            requirement
+        )
 
         if valid:
             spinner.ok("✔")
@@ -2050,27 +2146,52 @@ def check_psynet_requirement_is_unambiguous():
             spinner.color = "red"
             spinner.fail("✗")
 
-        branch_note = (
-            "This means you can't just give a branch name, e.g. master; you have to specify a particular version "
-            "or a commit hash."
-        )
-
-        examples = [
-            "* psynet==10.1.1",
-            "* psynet@git+https://gitlab.com/PsyNetDev/PsyNet@v10.1.1#egg=psynet",
-            "* psynet@git+https://gitlab.com/PsyNetDev/PsyNet@45f317688af59350f9a6f3052fd73076318f2775#egg=psynet",
-            "* psynet@git+https://gitlab.com/PsyNetDev/PsyNet@45f31768#egg=psynet",
-        ]
-
         if not valid:
-            raise ValueError(
-                "When deploying an experiment, you need to specify PsyNet in an unambiguous way. "
-                + branch_note
-                + "\n\nExamples:\n"
-                + "\n".join(examples)
-                + "\nYou can skip this check by writing `export SKIP_CHECK_PSYNET_VERSION_REQUIREMENT=1` (without quotes) "
-                "in your terminal."
+            raise ValueError(_ambiguous_psynet_requirement_message(requirement))
+
+
+def _is_local_psynet_requirement(requirement: str) -> bool:
+    """Return whether a PsyNet requirement points at a local filesystem path."""
+    compact = requirement.lower().replace(" ", "")
+    return compact.startswith("-e") or "file://" in compact
+
+
+def _ambiguous_psynet_requirement_message(requirement: str | None) -> str:
+    """Build the deploy-time error for a missing or ambiguous PsyNet pin."""
+    branch_note = (
+        "This means you can't just give a branch name, e.g. master; you have to "
+        "specify a particular version or a commit hash."
+    )
+    examples = [
+        "* psynet==10.1.1",
+        "* psynet@git+https://gitlab.com/PsyNetDev/PsyNet@v10.1.1#egg=psynet",
+        "* psynet@git+https://gitlab.com/PsyNetDev/PsyNet@45f317688af59350f9a6f3052fd73076318f2775#egg=psynet",
+        "* psynet@git+https://gitlab.com/alice/PsyNet@45f317688af59350f9a6f3052fd73076318f2775#egg=psynet",
+        "* psynet@git+https://gitlab.com/PsyNetDev/PsyNet@45f31768#egg=psynet",
+    ]
+
+    parts = [
+        "When deploying an experiment, you need to specify PsyNet in an "
+        "unambiguous way. " + branch_note,
+    ]
+    if requirement:
+        parts.append(f"\n\nYour current requirements.txt entry is:\n  {requirement}")
+        if _is_local_psynet_requirement(requirement):
+            parts.append(
+                "\n\nLocal path and editable installs cannot be resolved on a "
+                "remote deploy server. If you developed against a local PsyNet "
+                "checkout, re-run:\n"
+                "  psynet setup --psynet-source commit\n"
+                "to pin a pushed Git commit before deploying."
             )
+    parts.append(
+        "\n\nExamples:\n"
+        + "\n".join(examples)
+        + "\nYou can skip this check by writing "
+        "`export SKIP_CHECK_PSYNET_VERSION_REQUIREMENT=1` (without quotes) "
+        "in your terminal."
+    )
+    return "".join(parts)
 
 
 ##########
@@ -2826,84 +2947,20 @@ def generate_config(ctx):
             file.write(f"{key} = {value}\n")
 
 
-@psynet.command()
+register_bootstrap_commands(psynet)
+
+
+@psynet.command("update-scripts")
 @require_exp_directory
 def update_scripts():
     """
-    To be run in an experiment directory; updates a collection of template scripts and help files to their
-    latest PsyNet versions.
+    Deprecated alias for ``psynet scripts update``.
     """
-    update_scripts_()
-
-
-def update_scripts_():
-    """
-    To be run in an experiment directory; updates a collection of template scripts and help files to their
-    latest PsyNet versions.
-    """
-    # TODO - refactor to avoid hardcoding the list of files/directories to copy
-    click.echo(f"Updating PsyNet scripts in ({os.getcwd()})...")
-
-    Path(".vscode").mkdir(exist_ok=True)
-    Path(".github/workflows").mkdir(parents=True, exist_ok=True)
-
-    files_to_copy = [
-        ".gitignore",
-        ".dockerignore",
-        "Dockerfile",
-        "README.md",
-        "__init__.py",
-        "pytest.ini",
-        "test.py",
-        ".github/workflows/test.yml",
-        ".vscode/launch.json",
-        "AGENTS.md",
-    ]
-    for file in files_to_copy:
-        click.echo(f"...updating {file}.")
-        with resources.as_file(
-            resources.files("psynet") / f"resources/experiment_scripts/{file}"
-        ) as path:
-            shutil.copyfile(
-                path,
-                file,
-            )
-
-    # We keep Dockertag for now, but once we remove the docker directory,
-    # we should remove this too.
-    click.echo("...updating Dockertag.")
-    with open("Dockertag", "w") as file:
-        file.write(os.path.basename(os.getcwd()))
-        file.write("\n")
-
-    click.echo("...updating .python-version")
-    with open(".python-version", "w") as file:
-        file.write(recommended_python_major_minor)
-        file.write("\n")
-
-    directories_to_copy = ["docker"]
-    for dir in directories_to_copy:
-        click.echo(f"...updating {dir} directory.")
-        if Path(dir).exists():
-            shutil.rmtree(dir, ignore_errors=True)
-        with resources.as_file(
-            resources.files("psynet") / f"resources/experiment_scripts/{dir}"
-        ) as path:
-            shutil.copytree(
-                path,
-                dir,
-                dirs_exist_ok=True,
-            )
-    os.system("chmod +x docker/*")
-
-    # We remove no-longer-wanted directories only if we can be confident that the
-    # user hasn't edited them
-    directories_to_remove = [("docs", "abfc54bbbc3ef9d5948957841727a18b")]
-    for directory, hash in directories_to_remove:
-        if Path(directory).exists():
-            if md5_directory(directory) == hash:
-                # The directory is unchanged, we can remove it
-                shutil.rmtree(directory)
+    click.echo(
+        "psynet update-scripts is deprecated; use 'psynet scripts update' instead.",
+        err=True,
+    )
+    scaffold_experiment_directory(overwrite=True)
 
 
 @psynet.group("destroy")
@@ -3169,6 +3226,17 @@ def test__local(
     """
     assert not (parallel and serial)
 
+    # --existing talks to a live server; skip local scaffold/git readiness.
+    # Non-existing runs share debug's directory checks (incl. bundled-demo prepare).
+    if not existing:
+        _check_experiment_directory("test")
+
+    # Same local Postgres/Redis requirement as ``psynet debug local`` /
+    # ``psynet deploy local`` (virtualenv mode).
+    from .services import ensure_local_services
+
+    ensure_local_services(assume_yes=False, strict=True)
+
     from psynet.experiment import get_experiment
 
     exp = get_experiment()
@@ -3305,8 +3373,250 @@ _test_options["performance_json_output"] = click.option(
     started_at / finished_at (ISO timestamps), options (n_bots_sweep,
     duration_minutes, stagger_interval_s, time_factor), and results
     (one entry per bot count tested, with all metrics).
-    Useful for downstream consumption (e.g. benchmarking tools like asv).""",
+    Useful for downstream consumption (e.g. benchmarking tools like asv).
+    Do not combine with --audit.""",
 )
+
+
+def _audit_flag_option(help_text: str):
+    """Return a boolean ``--audit`` flag."""
+    return click.option(
+        "--audit",
+        is_flag=True,
+        default=False,
+        help=help_text,
+    )
+
+
+_test_options["performance_audit"] = _audit_flag_option(
+    """
+    Write performance results to ./audit/artifacts/performance.json
+    and mark performance_result present. Run from the experiment directory.
+    Do not combine with --json-output. Use --no-mark-present to write the
+    file without updating audit.json."""
+)
+
+_test_options["simulate_audit"] = _audit_flag_option(
+    """
+    After exporting data/simulated_data/, zip it to
+    ./audit/artifacts/simulated_data.zip and mark simulation_export present.
+    Run from the experiment directory. Use --no-mark-present to write the zip
+    without updating audit.json."""
+)
+
+_test_options["audit_no_mark_present"] = click.option(
+    "--no-mark-present",
+    is_flag=True,
+    default=False,
+    help="With --audit, write the artifact file but do not update audit.json.",
+)
+
+AUDIT_PERFORMANCE_JSON = Path("artifacts") / "performance.json"
+AUDIT_SIMULATED_DATA_ZIP = Path("artifacts") / "simulated_data.zip"
+SIMULATED_DATA_EXPORT_PATH = Path("data") / "simulated_data"
+AUDIT_ARTIFACT_IDS = {
+    AUDIT_PERFORMANCE_JSON: "performance_result",
+    AUDIT_SIMULATED_DATA_ZIP: "simulation_export",
+}
+
+
+def resolve_audit_root() -> Path:
+    """Resolve ``./audit`` for ``--audit`` / audit CLI commands."""
+    from psynet.audit.cli import resolve_audit_dir
+
+    try:
+        return resolve_audit_dir(require_manifest=True)
+    except ValueError as exc:
+        raise click.UsageError(str(exc)) from exc
+
+
+def resolve_audit_artifact_path(relative_path: Path) -> Path:
+    """Resolve ``./audit/<relative_path>``, creating parents.
+
+    Parameters
+    ----------
+    relative_path :
+        Path relative to the resolved audit folder.
+    """
+    output_path = resolve_audit_root() / relative_path
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    return output_path
+
+
+def require_audit_when_skipping_mark_present(
+    audit: bool, no_mark_present: bool
+) -> None:
+    """Reject ``--no-mark-present`` unless ``--audit`` is set."""
+    if no_mark_present and not audit:
+        raise click.UsageError("--no-mark-present requires --audit.")
+
+
+def mark_audit_artifact_present(relative_path: Path) -> Path:
+    """Mark the canonical artifact for ``relative_path`` present in the packet.
+
+    Updates the artifact's declared path to ``relative_path`` so a custom
+    manifest cannot be marked present against a different file.
+    """
+    from psynet.audit.cli import mark_artifact_present
+
+    artifact_id = AUDIT_ARTIFACT_IDS.get(Path(relative_path))
+    if artifact_id is None:
+        raise RuntimeError(f"No audit artifact id is registered for {relative_path}.")
+    audit_root = resolve_audit_root()
+    try:
+        mark_artifact_present(
+            audit_root, artifact_id, path=Path(relative_path).as_posix()
+        )
+    except (OSError, ValueError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo(f"Marked {artifact_id} present in {audit_root / 'audit.json'}")
+    return audit_root
+
+
+def maybe_mark_audit_artifact_present(
+    audit: bool,
+    relative_path: Path,
+    *,
+    mark_present: bool,
+) -> None:
+    """Mark the written ``--audit`` artifact present unless the caller opted out."""
+    if not audit or not mark_present:
+        return
+    mark_audit_artifact_present(relative_path)
+
+
+def performance_results_have_successful_bots(all_results) -> bool:
+    """Return True when any performance result completed at least one bot."""
+    for result in all_results or []:
+        if not isinstance(result, dict):
+            continue
+        try:
+            succeeded = int(result.get("bots_succeeded") or 0)
+        except (TypeError, ValueError):
+            continue
+        if succeeded > 0:
+            return True
+    return False
+
+
+def maybe_mark_performance_result_present(
+    audit: bool,
+    all_results,
+    *,
+    mark_present: bool,
+) -> None:
+    """Mark ``performance_result`` present after a successful ``--audit`` run."""
+    if not audit or not mark_present:
+        return
+    if not performance_results_have_successful_bots(all_results):
+        click.echo(
+            "Skipping performance_result mark-present: no bots succeeded. "
+            "The JSON was still written; re-run a successful test or mark present later.",
+            err=True,
+        )
+        return
+    mark_audit_artifact_present(AUDIT_PERFORMANCE_JSON)
+
+
+def resolve_performance_json_output(json_output=None, audit=False):
+    """Resolve the JSON output path for a performance test.
+
+    Parameters
+    ----------
+    json_output :
+        Explicit JSON output path from ``--json-output``.
+    audit :
+        Whether ``--audit`` was set.
+
+    Returns
+    -------
+    str or None
+        Absolute or relative path to write, or ``None`` when no JSON output is
+        requested.
+    """
+    if json_output and audit:
+        raise click.UsageError("Use either --json-output or --audit, not both.")
+    if json_output:
+        return str(json_output)
+    if not audit:
+        return None
+    return str(resolve_audit_artifact_path(AUDIT_PERFORMANCE_JSON))
+
+
+def write_directory_zip(source_dir: Path, zip_path: Path) -> None:
+    """Zip files under ``source_dir``.
+
+    When ``source_dir`` is under the current working directory, archive members
+    keep that relative prefix (for example ``data/simulated_data/...``).
+    Directory entries are omitted; empty trees are rejected.
+    """
+    source_dir = Path(source_dir)
+    if not source_dir.is_dir():
+        raise click.UsageError(
+            f"Cannot write audit zip: {source_dir} is not a directory."
+        )
+
+    zip_path = Path(zip_path)
+    zip_path.parent.mkdir(parents=True, exist_ok=True)
+    cwd = Path.cwd().resolve()
+    resolved_source = source_dir.resolve()
+    try:
+        resolved_source.relative_to(cwd)
+        archive_root = cwd
+    except ValueError:
+        archive_root = resolved_source.parent
+
+    partial = zip_path.with_name(zip_path.name + ".partial")
+    if partial.exists():
+        partial.unlink()
+    partial_resolved = partial.resolve()
+    try:
+        with zipfile.ZipFile(partial, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            for path in sorted(resolved_source.rglob("*")):
+                if not path.is_file():
+                    continue
+                if path.resolve() == partial_resolved:
+                    continue
+                archive.write(path, path.relative_to(archive_root).as_posix())
+            if not archive.namelist():
+                raise click.UsageError(
+                    f"Cannot write audit zip: {source_dir} contains no files."
+                )
+        partial.replace(zip_path)
+    except Exception:
+        if partial.exists():
+            partial.unlink()
+        raise
+
+
+def package_simulated_data_for_audit(
+    export_path: Path = SIMULATED_DATA_EXPORT_PATH,
+) -> Path:
+    """Zip a simulate export into the audit packet's simulated-data artifact."""
+    zip_path = resolve_audit_artifact_path(AUDIT_SIMULATED_DATA_ZIP)
+    write_directory_zip(export_path, zip_path)
+    return zip_path
+
+
+def _run_simulate(ctx, audit=False, mark_present=True):
+    """Run the experiment test, export simulated data, and optionally zip it."""
+    if audit:
+        resolve_audit_root()
+    ctx.invoke(test__local)
+    ctx.invoke(
+        export__local,
+        # TODO - maybe legacy is not the best name for this parameter...
+        legacy=True,  # required because the server is not running any more, so we need to go direct to the DB
+        no_source=True,
+        path=SIMULATED_DATA_EXPORT_PATH.as_posix(),
+    )
+    if not audit:
+        return
+    zip_path = package_simulated_data_for_audit()
+    click.echo(f"Simulated data (audit zip): {zip_path}")
+    maybe_mark_audit_artifact_present(
+        audit, AUDIT_SIMULATED_DATA_ZIP, mark_present=mark_present
+    )
 
 
 @psynet.group("performance-test")
@@ -3326,6 +3636,8 @@ def performance_test(ctx):
 @_test_options["performance_time_factor"]
 @_test_options["duration_minutes"]
 @_test_options["performance_json_output"]
+@_test_options["performance_audit"]
+@_test_options["audit_no_mark_present"]
 @click.option("--debug", is_flag=True, help="Enable debug logging for verbose output")
 def performance_test__local(
     existing=False,
@@ -3334,6 +3646,8 @@ def performance_test__local(
     time_factor=None,
     duration_minutes=None,
     json_output=None,
+    audit=False,
+    no_mark_present=False,
     debug=False,
 ):
     """
@@ -3346,14 +3660,19 @@ def performance_test__local(
     By default, this command starts a new experiment server automatically.
     Use --existing to connect to an already-running server instead.
     """
+    require_audit_when_skipping_mark_present(audit, no_mark_present)
+    json_output = resolve_performance_json_output(json_output, audit=audit)
     if existing:
-        _run_performance_test_with_existing_server(
+        all_results = _run_performance_test_with_existing_server(
             n_bots, stagger, time_factor, duration_minutes, debug, json_output
         )
     else:
-        _run_performance_test_with_new_server(
+        all_results = _run_performance_test_with_new_server(
             n_bots, stagger, time_factor, duration_minutes, debug, json_output
         )
+    maybe_mark_performance_result_present(
+        audit, all_results, mark_present=not no_mark_present
+    )
 
 
 def _collect_run_metadata(experiment_label):
@@ -3476,6 +3795,7 @@ def _run_performance_test_with_existing_server(
             all_results=all_results,
         )
         print(f"Performance results (JSON): {json_output}")
+    return all_results
 
 
 class _OutputTee:
@@ -3686,10 +4006,11 @@ def _run_performance_test_with_new_server(
 
     try:
         _load_runtime_server_config()
-        _run_performance_test_with_existing_server(
+        all_results = _run_performance_test_with_existing_server(
             n_bots, stagger, time_factor, duration_minutes, debug, json_output
         )
         print("✓ Performance test completed")
+        return all_results
 
     finally:
         _stop_server(server_info)
@@ -3703,6 +4024,8 @@ def _run_performance_test_with_new_server(
 @_test_options["performance_time_factor"]
 @_test_options["duration_minutes"]
 @_test_options["performance_json_output"]
+@_test_options["performance_audit"]
+@_test_options["audit_no_mark_present"]
 @click.pass_context
 def performance_test__docker_ssh(
     ctx,
@@ -3713,6 +4036,8 @@ def performance_test__docker_ssh(
     time_factor=None,
     duration_minutes=None,
     json_output=None,
+    audit=False,
+    no_mark_present=False,
 ):
     """
     Runs performance tests on the remote server. Assumes that the app has
@@ -3725,14 +4050,16 @@ def performance_test__docker_ssh(
     If the app is in use during the performance test, results may not be
     reliable.
 
-    Note: The --json-output option is not yet supported for remote SSH execution.
-    For JSON output, run ``psynet performance-test local --json-output`` instead.
+    Note: The --json-output, --audit, and --no-mark-present options are not yet
+    supported for remote SSH execution. For JSON output, run
+    ``psynet performance-test local --json-output`` or ``--audit`` instead.
     """
-    if json_output:
-        print(
-            "Warning: --json-output is not yet implemented for SSH mode. "
-            "Use 'psynet performance-test local --json-output' instead.",
-            file=sys.stderr,
+    require_audit_when_skipping_mark_present(audit, no_mark_present)
+    if json_output or audit:
+        raise click.UsageError(
+            "--json-output, --audit, and --no-mark-present are not yet "
+            "implemented for SSH mode. "
+            "Use 'psynet performance-test local' with those options instead.",
         )
 
     from dallinger.command_line.docker_ssh import Executor
@@ -3771,24 +4098,23 @@ def _build_ssh_performance_test_cmd(n_bots, stagger, time_factor, duration_minut
 
 
 @psynet.command()
+@_test_options["simulate_audit"]
+@_test_options["audit_no_mark_present"]
 @click.pass_context
 @require_exp_directory
-def simulate(ctx):
+def simulate(ctx, audit=False, no_mark_present=False):
     """
     Generates simulated data for an experiment by running the experiment's regression test
     and exporting the resulting data.
+
+    Writes ``data/simulated_data/``. Pass ``--audit`` to also zip that directory
+    to ``./audit/artifacts/simulated_data.zip`` and mark
+    ``simulation_export`` present.
     """
     # No need to catch the exit code here, because test__local now uses sys.exit()
     # if an error occurs.
-    ctx.invoke(test__local)
-
-    ctx.invoke(
-        export__local,
-        # TODO - maybe legacy is not the best name for this parameter...
-        legacy=True,  # required because the server is not running any more, so we need to go direct to the DB
-        no_source=True,
-        path="data/simulated_data",
-    )
+    require_audit_when_skipping_mark_present(audit, no_mark_present)
+    _run_simulate(ctx, audit=audit, mark_present=not no_mark_present)
 
 
 @psynet.command(name="list-experiment-dirs")
@@ -3822,7 +4148,190 @@ def _list_isolated_tests(ci_node_total=None, ci_node_index=None):
         print(test_)
 
 
+def _cli_resolve_audit_dir(*, require_manifest=False):
+    """Resolve ``./audit`` for audit subcommands."""
+    from psynet.audit.cli import resolve_audit_dir
+
+    try:
+        return resolve_audit_dir(require_manifest=require_manifest)
+    except ValueError as exc:
+        raise click.UsageError(str(exc)) from exc
+
+
 # Recruiter specific
+@psynet.group("audit")
+@click.pass_context
+def audit(ctx):
+    """
+    Package experiment readiness evidence (does not run tests).
+
+    An audit records artifacts, checks, and blockers for human inspection.
+    It does not run tests or collect evidence for you. Audits always live in
+    ./audit/ inside the experiment directory. Run these commands from the
+    experiment directory.
+    """
+    pass
+
+
+@audit.command("init")
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Replace audit.json and starter section files.",
+)
+def audit_init(force):
+    """Create a starter experiment audit at ``./audit``."""
+    from psynet.audit.cli import init_audit, init_success_messages
+
+    resolved = _cli_resolve_audit_dir()
+    try:
+        init_audit(resolved, force)
+    except (FileExistsError, ValueError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    for line in init_success_messages(resolved):
+        click.echo(line)
+
+
+@audit.command("validate")
+def audit_validate():
+    """Validate an experiment audit.
+
+    Exit 0 means the packet is coherent, not that the experiment is ready
+    (blockers may remain).
+    """
+    from psynet.audit.cli import (
+        collect_audit_warnings,
+        validate_audit,
+        validate_success_message,
+    )
+
+    resolved = _cli_resolve_audit_dir(require_manifest=True)
+    problems = validate_audit(resolved)
+    if problems:
+        for problem in problems:
+            click.echo(problem, err=True)
+        raise SystemExit(1)
+    for warning in collect_audit_warnings(resolved):
+        click.echo(f"Warning: {warning}", err=True)
+    click.echo(validate_success_message(resolved))
+
+
+@audit.command("render")
+@click.option(
+    "--output",
+    type=click.Path(),
+    default=None,
+    help="Output directory for the rendered site.",
+)
+@click.option(
+    "--allow-invalid",
+    is_flag=True,
+    help="Render even when validate would fail.",
+)
+def audit_render(output, allow_invalid):
+    """Render a static experiment audit site."""
+    from pathlib import Path
+
+    from psynet.audit.cli import AuditValidationError, render_audit_site
+
+    resolved = _cli_resolve_audit_dir(require_manifest=True)
+    try:
+        site_dir = render_audit_site(
+            resolved,
+            Path(output) if output is not None else None,
+            allow_invalid=allow_invalid,
+        )
+    except AuditValidationError as exc:
+        for problem in exc.problems:
+            click.echo(problem, err=True)
+        raise click.ClickException(
+            "Render blocked by validation errors; fix them or pass --allow-invalid."
+        ) from exc
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo(f"Rendered experiment audit site: {site_dir / 'index.html'}")
+
+
+@audit.command("serve")
+@click.option(
+    "--host",
+    default="127.0.0.1",
+    show_default=True,
+    help="Host interface to bind.",
+)
+@click.option(
+    "--port",
+    default=8765,
+    show_default=True,
+    type=int,
+    help="TCP port to listen on.",
+)
+@click.option(
+    "--render/--no-render",
+    default=False,
+    help="Render the static site before serving.",
+)
+@click.option(
+    "--allow-invalid",
+    is_flag=True,
+    help="With --render, allow rendering even when validate would fail.",
+)
+def audit_serve(host, port, render, allow_invalid):
+    """Serve the rendered experiment audit site over HTTP.
+
+    Does not create a public tunnel; use a separate tunnel helper when remote
+    review is needed.
+    """
+    from psynet.audit.cli import (
+        AuditValidationError,
+        render_audit_site,
+        resolve_audit_site_dir,
+        serve_audit_site,
+    )
+
+    if allow_invalid and not render:
+        raise click.UsageError("--allow-invalid is only valid together with --render.")
+
+    resolved = _cli_resolve_audit_dir(require_manifest=True)
+    try:
+        if render:
+            site_dir = render_audit_site(
+                resolved,
+                allow_invalid=allow_invalid,
+            )
+            click.echo(f"Rendered experiment audit site: {site_dir / 'index.html'}")
+        else:
+            site_dir = resolve_audit_site_dir(resolved)
+        serve_audit_site(site_dir, host=host, port=port)
+    except AuditValidationError as exc:
+        for problem in exc.problems:
+            click.echo(problem, err=True)
+        raise click.ClickException(
+            "Render blocked by validation errors; fix them or pass --allow-invalid."
+        ) from exc
+    except (OSError, ValueError) as exc:
+        raise click.ClickException(str(exc)) from exc
+
+
+@audit.command("mark-present")
+@click.argument("artifact_id")
+@click.option(
+    "--path",
+    default=None,
+    help="Optional new artifact path relative to the audit directory.",
+)
+def audit_mark_present(artifact_id, path):
+    """Mark an artifact present and remove its blockers."""
+    from psynet.audit.cli import mark_artifact_present
+
+    resolved = _cli_resolve_audit_dir(require_manifest=True)
+    try:
+        mark_artifact_present(resolved, artifact_id, path)
+    except (OSError, ValueError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo(f"Marked {artifact_id!r} present in {resolved / 'audit.json'}")
+
+
 @psynet.group("lucid")
 @click.pass_context
 def lucid(ctx):

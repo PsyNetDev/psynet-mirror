@@ -40,9 +40,9 @@
             containerID: 'keyboard',
             addLatinKeys,
             keyboardType,
-            cssStyle,
-            showKeys,
-            highlightedKeys: highlightKeys
+            cssStyle: psynet.var.cssStyle,
+            showKeys: psynet.var.showKeys,
+            highlightedKeys: psynet.var.highlightKeys
         });
     }
 
@@ -109,7 +109,7 @@
         });
 
         psynet.addPageEventListener(nextButton, "click", function () {
-            if (isSubset(keyboardState.pressedKeys, pressKeys)) {
+            if (isSubset(keyboardState.pressedKeys, psynet.var.pressKeys)) {
                 onNextButton();
             } else {
                 psynet.alert(`{{gettext("You did not press all required keys.")}}`);

@@ -12,7 +12,7 @@ const {
 
 const STEP_TIMEOUT_MS = 120000;
 
-test("same-session timeline update preserves page fragment and emits pageUpdated", async ({
+test("same-session timeline update preserves page fragment and emits pageUpdated", { tag: "@inplace-only" }, async ({
   page,
   context
 }) => {
@@ -71,7 +71,7 @@ test("same-session timeline update preserves page fragment and emits pageUpdated
   });
 });
 
-test("non-same-session Unity transitions fall back to timeline reload", async ({
+test("non-same-session Unity transitions fall back to timeline reload", { tag: "@inplace-only" }, async ({
   page,
   context
 }) => {
@@ -97,7 +97,8 @@ test("non-same-session Unity transitions fall back to timeline reload", async ({
           page: {
             attributes: {
               session_id: "new-unity-session",
-              is_unity_page: true
+              is_unity_page: true,
+              requires_full_page_reload: true
             },
             contents: {
               step: 99

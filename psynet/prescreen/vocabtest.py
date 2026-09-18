@@ -306,6 +306,22 @@ class VocabTrial(StaticTrial):
             "presentAsImage": self.trial_maker.present_as_image,
         }
 
+    def finalize_definition(self, definition, experiment, participant):
+        previous_trials = [
+            previous
+            for previous in VocabTrial.query.filter_by(
+                trial_maker_id=self.trial_maker_id,
+                participant_id=participant.id,
+            ).all()
+            if previous is not self
+        ]
+        selected_hashes = self.trial_maker.choose_hashes(
+            self.node.seed, previous_trials
+        )
+        assets = self.trial_maker.get_assets(self.node.seed, selected_hashes)
+        self.assets = {**self.assets, **assets}
+        return {**definition, "hashes": selected_hashes}
+
     @property
     def items(self) -> list[dict]:
         return [{"hash": _hash} for _hash in self.definition["hashes"]]
@@ -375,6 +391,10 @@ class VocabTest(StaticTrialMaker):
     corresponding key on the keyboard or by clicking the corresponding button on the screen. The test is made to work
     with the vocabulary tests created with the VocabTest package by Pol van Rijn
     (https://github.com/polvanrijn/VocabTest).
+
+    VocabTest does not support synchronized groups. Each participant must
+    receive independently chosen items; a follower copy would run
+    ``finalize_definition`` again and pick a different set.
 
     Attributes
     ----------
@@ -467,6 +487,12 @@ class VocabTest(StaticTrialMaker):
         ] = "https://psynet.s3.amazonaws.com/resources/fonts/GoNotoKurrent-Bold.ttf",
         **kwargs,
     ):
+        if kwargs.get("sync_group_type") is not None:
+            raise ValueError(
+                "VocabTest does not support synchronized groups. "
+                "Each participant must receive independently chosen items; "
+                "a follower copy would pick a different item set."
+            )
         self.locale = locale
         self.label = label
 
@@ -547,6 +573,7 @@ class VocabTest(StaticTrialMaker):
             recruit_mode=None,
             target_trials_per_node=None,
             target_n_participants=None,
+            sync_group_type=None,
         )
 
     def get_font_path(self, font_url):
@@ -688,20 +715,6 @@ class VocabTest(StaticTrialMaker):
                 asset.deposit()
                 assets[hash_] = asset
         return assets
-
-    def prepare_trial(self, experiment, participant):
-        previous_trials = VocabTrial.query.filter_by(
-            trial_maker_id=self.id, participant_id=participant.id
-        ).all()
-        trial, trial_status = super().prepare_trial(experiment, participant)
-
-        if trial:
-            stimuli = trial.node.seed
-            selected_hashes = self.choose_hashes(stimuli, previous_trials)
-            trial.definition["hashes"] = selected_hashes
-            assets = self.get_assets(stimuli, selected_hashes)
-            trial.assets = assets
-        return trial, trial_status
 
     @staticmethod
     def score_consistency(items, repeat_items):

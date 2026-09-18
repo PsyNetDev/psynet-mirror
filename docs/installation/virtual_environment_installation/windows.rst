@@ -18,7 +18,7 @@ permission and performance issues when cloning repositories or creating virtual 
 .. note::
 
    If you create a virtual environment manually (i.e., using ``python -m venv``),
-   use the specific Python version you installed (for example ``python3.11 -m venv .venv``)
+   use the specific Python version you installed (for example ``python3.12 -m venv .venv``)
    to avoid accidental version mismatches.
 
 Step 1: Perform Linux  installation

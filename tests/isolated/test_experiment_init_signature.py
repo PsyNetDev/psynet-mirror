@@ -50,3 +50,29 @@ def test_init_with_additional_params():
             self.custom_param = custom_param
 
     assert ExtraParamsExperiment is not None
+
+
+def test_overriding_fail_participant_raises():
+    with pytest.raises(RuntimeError, match="fail_participant"):
+
+        class OverrideFailParticipant(Experiment):
+            def fail_participant(self, participant):
+                participant.fail()
+
+
+def test_inheriting_fail_participant_is_allowed():
+    class InheritFailParticipant(Experiment):
+        pass
+
+    assert InheritFailParticipant.fail_participant is Experiment.fail_participant
+
+
+def test_mixin_fail_participant_override_raises():
+    class FailParticipantMixin:
+        def fail_participant(self, participant):
+            participant.fail()
+
+    with pytest.raises(RuntimeError, match="fail_participant"):
+
+        class MixinOverride(FailParticipantMixin, Experiment):
+            pass

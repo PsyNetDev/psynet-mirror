@@ -59,6 +59,8 @@ class ColorSliderPage(ModularPage):
                 bot_response=lambda: random.randint(0, 255),
             ),
             time_estimate=time_estimate,
+            css_links=["/static/color-slider.css"],
+            js_page_modules=["/static/color-slider.js"],
         )
 
     def metadata(self, **kwargs):
@@ -142,11 +144,6 @@ class CustomTrialMaker(GibbsTrialMaker):
             return 0.0
         else:
             return max(0.0, score)
-
-    def custom_network_filter(self, candidates, participant):
-        # As an example, let's make the participant join networks
-        # in order of increasing network ID.
-        return sorted(candidates, key=lambda x: x.id)
 
 
 trial_maker = CustomTrialMaker(

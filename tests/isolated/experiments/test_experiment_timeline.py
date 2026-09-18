@@ -90,6 +90,7 @@ class TestExp(object):
 
             assert event_ids == [
                 "trialConstruct",
+                "pageReady",
                 "trialPrepare",
                 "trialStart",
                 "responseEnable",
@@ -118,6 +119,7 @@ class TestExp(object):
             event_ids = [e["eventType"] for e in event_log]
             assert event_ids == [
                 "trialConstruct",
+                "pageReady",
                 "trialPrepare",
                 "trialStart",
                 "responseEnable",

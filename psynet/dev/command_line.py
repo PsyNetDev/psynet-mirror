@@ -62,30 +62,14 @@ def update_dallinger_constraints(skip_compile_check):
 
 @dev.group("experiments")
 def experiments():
-    """Manage bundled demo and test experiments from a PsyNet source checkout."""
+    """Manage canonical experiment templates from a PsyNet source checkout."""
 
 
 @experiments.command("update")
-@click.option(
-    "--jobs",
-    "n_jobs",
-    default=8,
-    show_default=True,
-    type=int,
-    help="Number of parallel jobs to use when updating experiments.",
-)
-@click.option(
-    "--skip-constraints",
-    is_flag=True,
-    help="Update experiment files without regenerating constraints.txt files.",
-)
-def update_experiments(n_jobs, skip_constraints):
-    """Update bundled demo and test experiment files."""
+def update_experiments():
+    """Update canonical experiment templates."""
     try:
-        experiments_module.update_command(
-            n_jobs=n_jobs,
-            skip_constraints_=True if skip_constraints else None,
-        )
+        experiments_module.update_command()
     except ValueError as exc:
         raise click.ClickException(str(exc)) from exc
 
@@ -180,6 +164,46 @@ def make_docs(
         raise click.ClickException(
             f"Docs command failed with exit code {exc.returncode}."
         ) from exc
+
+
+@docs.command("linkcheck")
+@click.option(
+    "--clean/--no-clean",
+    default=True,
+    show_default=True,
+    help="Delete docs/_build before checking links.",
+)
+@click.option(
+    "--jobs",
+    "-j",
+    default="1",
+    show_default=True,
+    help="Parallel Sphinx jobs to pass through SPHINXOPTS, e.g. 1, 4, or auto.",
+)
+@click.option(
+    "--sphinx-option",
+    "sphinx_options",
+    multiple=True,
+    help="Extra option passed to Sphinx via SPHINXOPTS; repeat as needed.",
+)
+def linkcheck_docs(clean, jobs, sphinx_options):
+    """Wrap Sphinx's linkcheck builder and summarize broken links.
+
+    Runs `make linkcheck` in docs/ (the same Sphinx target as
+    `psynet dev docs make linkcheck`), then prints broken links grouped
+    by failure category.
+
+    Cleans docs/_build by default. For faster local reruns, pass
+    --no-clean. Pass extra Sphinx flags with --sphinx-option.
+    """
+    try:
+        docs_module.linkcheck_command(
+            clean=clean,
+            jobs=jobs,
+            sphinx_options=sphinx_options,
+        )
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
 
 
 @dev.group("release")

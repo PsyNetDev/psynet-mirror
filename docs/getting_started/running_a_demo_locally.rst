@@ -26,12 +26,12 @@ We suggest using `uv <https://docs.astral.sh/uv/>`_, but ``python -m venv`` also
 
 .. code-block:: bash
 
-    uv venv
+    uv venv --python 3.13
     source .venv/bin/activate
+    uv pip install -e '.[dev,demos]'
 
-You will install the dependencies on a per-demo basis, because each demo has
-its own ``constraints.txt`` file pinning compatible versions of PsyNet and its
-dependencies.
+Bundled demos use this shared source-checkout environment. They intentionally
+omit generated scaffold files and per-demo constraints.
 
 Choosing a demo
 ---------------
@@ -56,14 +56,17 @@ These are organized into three main subdirectories:
 Launching a demo
 ----------------
 
-To run a demo, navigate to its directory, install its dependencies, and launch it
-in debug mode. For example, to run the ``timeline`` feature demo:
+To run a demo, navigate to its directory and launch it in debug mode:
 
 .. code-block:: bash
 
     cd demos/features/timeline
-    uv pip install -r constraints.txt
     psynet debug local
+
+PsyNet recognizes bundled demos and generates their ignored boilerplate
+automatically without changing ``requirements.txt`` or generating constraints.
+A copied standalone experiment should instead run ``psynet setup`` and commit
+its generated ``constraints.txt``.
 
 .. note::
 

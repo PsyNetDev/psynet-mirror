@@ -19,6 +19,9 @@ Let's talk through what these different files and directories do.
 While reading this document, have a look at the experiment directory from a real
 PsyNet experiment, the `Carillon Experiment <https://github.com/pmcharrison/2022-consonance-carillon>`_.
 
+-   ``.python-version`` records the Python major and minor version used when the
+    experiment was scaffolded. PsyNet generates it from the active interpreter.
+
 -   ``docker`` contains various scripts for a deprecated Docker API. We are considering this in a future version of PsyNet.
 
 -   ``static`` can be used as a storage place for files that the front-end browser can access directly via HTTP.
@@ -54,25 +57,46 @@ PsyNet experiment, the `Carillon Experiment <https://github.com/pmcharrison/2022
 
 -   ``Dockerfile`` is used by Docker to define the experiment's Docker image. Normally you should not edit this file
     directly, but instead use the boilerplate file provided by PsyNet. You can update this file to
-    their latest PsyNet versions by running ``psynet update-scripts`` within an experiment directory.
+    their latest PsyNet versions by running ``psynet scripts update`` within an experiment directory.
+    If the file is missing entirely, you can recreate it with ``psynet scripts scaffold``.
+
+-   ``.cursor/skills/psynet/`` contains PsyNet-managed Agent Skills for experiment
+    implementation, validation, deployment, data, and participant evidence.
+    ``psynet scripts update`` replaces this managed subdirectory with the version
+    shipped by the installed PsyNet release. The directory is gitignored (and
+    dockerignored) so it is not committed or uploaded with the experiment;
+    other directories under ``.cursor/skills/`` are experiment-owned, preserved
+    on update, and remain eligible to track.
 
 -   ``Dockertag`` determines the name of the Docker image that is built for the present experiment.
     It defaults to the name of the current directory.
 
 -   ``README.md`` is a README file. You should put information about your experiment here for future readers.
+    ``psynet scripts scaffold`` and ``psynet scripts update`` create a default README when missing, but never
+    overwrite an existing one.
 
 -   ``__init__.py`` is created automatically when you deploy the experiment; it tells Python to treat the directory as a
     package. You don’t need to worry about this file in practice.
 
 -   ``carillon_samples.csv`` is specific to the Carillon Experiment implementation, we don't need to worry about it now.
 
--   ``config.txt`` is a configuration file. It defines various important configuration parameters for when you deploy an
-    experiment online.
+-   ``config.txt`` is required in every experiment directory (it may be empty).
+    It defines configuration parameters for local runs and online deployment.
+    New experiments can get a demo template via ``psynet scripts scaffold`` /
+    ``psynet setup``. An existing file (including an empty one) is preserved on
+    scaffold and update. If you are upgrading an older experiment that never had
+    a ``config.txt`` and you keep settings in ``Experiment.config``, create a
+    blank file with ``touch config.txt`` rather than scaffolding a full
+    template; see :ref:`configuration`.
 
--   ``constraints.txt`` stores the versions of the different Python packages that will be used when you deploy your
-    experiment. It is automatically generated, don’t edit it yourself. **Note**: the role of this file is currently
-    unclear for Docker experiments. At the time of writing (April 2023) this file is ignored in Docker deployments,
-    but this may change.
+-   ``constraints.txt`` stores the locked versions of Python packages used when
+    you install or deploy a **standalone** experiment. It is generated
+    automatically (do not edit it by hand). Create or refresh it with
+    ``psynet setup`` or ``psynet generate-constraints`` (Dallinger's lock
+    policy via ``uv run``). Bundled demos omit it because they use the PsyNet
+    repository's development environment. For Docker mode, ``psynet setup
+    --docker`` still writes a local ``constraints.txt`` so the experiment
+    directory is complete.
 
 -   ``experiment.py`` is a Python file that defines the primary experiment logic.
 
@@ -82,6 +106,7 @@ PsyNet experiment, the `Carillon Experiment <https://github.com/pmcharrison/2022
     the experiment's Docker image. Here we use it to install a particular dependency for stimulus generation.
 
 -   ``pytest.ini`` is a boilerplate PsyNet file, you should not have to edit it yourself.
+    If it goes missing, you can recreate it with ``psynet scripts scaffold``.
 
 -   ``questionnaire.py`` is specific to the Carillon Experiment implementation, we don't need to worry about it now.
 
@@ -106,5 +131,6 @@ PsyNet experiment, the `Carillon Experiment <https://github.com/pmcharrison/2022
     You can run these tests in Docker by running ``docker/run pytest test.py``.
     If you want to customize these tests you should normally override specific methods in the Experiment class,
     for example ``Experiment.test_experiment`` and ``Experiment.test_check_bots``.
+    If this file is missing, you can regenerate it with ``psynet scripts scaffold``.
 
     ``volume_calibration.py`` is specific to the Carillon Experiment implementation, we don't need to worry about it now.

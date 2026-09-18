@@ -1,3 +1,0 @@
-# We don't want to copy virtual environments into the Docker image
-.venv
-.env

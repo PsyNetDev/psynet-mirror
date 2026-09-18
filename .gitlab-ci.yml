@@ -33,6 +33,7 @@ variables:
   REDIS_URL: redis://redis:6379
   HEADLESS: "TRUE"
   DOCKER_LOCAL_TAG: psynet-build
+  PYTHON_VERSION: "3.13"
   DOCKER_HOST: tcp://docker:2375
   DOCKER_DRIVER: overlay2
   DOCKER_TLS_CERTDIR: ""
@@ -42,7 +43,7 @@ before_script:
   - export REDIS_IP=$(getent ahostsv4 redis | awk '{ print $1 }' | tail -n 1)
   - echo $POSTGRES_IP
   - echo $REDIS_IP
-  - docker build --tag $DOCKER_LOCAL_TAG .
+  - docker build --build-arg PYTHON_VERSION=$PYTHON_VERSION --tag $DOCKER_LOCAL_TAG .
 
 .default_rules: &default_rules
   rules:
@@ -61,11 +62,19 @@ pre_commit:
   script:
     - pre-commit run --all-files
 
+validate_agent_skills:
+  image: python:3.13
+  <<: *default_rules
+  before_script:
+    - pip install pyyaml skills-ref
+  script:
+    - python scripts/validate_agent_skills.py
+
 changelog_check:
   image: python:3.13
   stage: test
   before_script:
-    - python -m pip install -e .
+    - python -m pip install -e '.[dev]'
   script:
     - |
       git fetch --unshallow origin || git fetch --depth=100 origin
@@ -83,10 +92,28 @@ changelog_check:
       when: always
     - when: never
 
-tests:
+.release_branch_only: &release_branch_only
+  rules:
+    - if: $CI_COMMIT_BRANCH =~ /^release-/ || $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^release-/
+      when: always
+    - when: never
+
+# Shared definition of a PsyNet test-suite job, parameterized by PYTHON_VERSION
+# and TEST_SCOPE.
+#
+# run-ci-tests.sh splits tests by CI_NODE_INDEX/CI_NODE_TOTAL, but GitLab owns
+# those variables: for `parallel:matrix` jobs it numbers them across all
+# permutations rather than within one, so a matrix job cannot set them directly.
+# Shard coordinates therefore travel as SHARD_INDEX/SHARD_TOTAL and are mapped
+# on to CI_NODE_* below, falling back to GitLab's own numbering when unset. That
+# keeps plain `parallel: N` jobs working unchanged while letting matrix jobs
+# declare a shard dimension of their own.
+.test_suite:
   parallel: 10
   stage: test
   <<: *default_rules
+  variables:
+    TEST_SCOPE: full
   script:
     - export PSYNET_WORKSPACE=/root/workspaces/PsyNet
     - docker run
@@ -94,8 +121,12 @@ tests:
       --add-host=redis:$REDIS_IP
       -e HEADLESS=TRUE -e REDIS_URL -e DATABASE_URL -e POSTGRES_DB -e POSTGRES_USER -e POSTGRES_PASSWORD
       -e AWS_ACCESS_KEY_ID -e AWS_DEFAULT_REGION -e AWS_SECRET_ACCESS_KEY
-      -e CI -e CI_NODE_TOTAL -e CI_NODE_INDEX
+      -e CI
+      -e CI_NODE_TOTAL="${SHARD_TOTAL:-$CI_NODE_TOTAL}"
+      -e CI_NODE_INDEX="${SHARD_INDEX:-$CI_NODE_INDEX}"
       -e CI_COMMIT_REF_NAME
+      -e SKIP_PYTHON_VERSION_CHECK
+      -e PYTHON_VERSION -e TEST_SCOPE
       -e PSYNET_WORKSPACE
       -v "$PWD:$PSYNET_WORKSPACE"
       -v "$PWD/public:/public"
@@ -104,6 +135,41 @@ tests:
   artifacts:
     paths:
       - public/
+
+tests_python_3_13:
+  extends: .test_suite
+  # Stated explicitly rather than inherited from the global default, so this
+  # job keeps testing 3.13 even if the default Python version changes.
+  variables:
+    PYTHON_VERSION: "3.13"
+
+# To reduce CI cost, non-recommended Python versions (3.11, 3.12, 3.14) are
+# only verified on release branches: day-to-day MRs rarely affect version
+# compatibility. Note that regular pipelines validate dependency resolution
+# only for the default Python version (via the Docker build's `uv pip
+# compile`); all supported versions are resolution-checked when maintainers
+# run `psynet dev ci update-dallinger-constraints`, and fully tested on
+# release-branch pipelines.
+tests_python_3_14:
+  extends: .test_suite
+  <<: *release_branch_only
+  variables:
+    PYTHON_VERSION: "3.14"
+    SKIP_PYTHON_VERSION_CHECK: "1"
+
+# GitLab does not allow combining `parallel: N` with a matrix, so the shard is
+# added as its own matrix dimension; see the SHARD_* note on `.test_suite`.
+compatibility_tests:
+  extends: .test_suite
+  <<: *release_branch_only
+  parallel:
+    matrix:
+      - PYTHON_VERSION: ["3.11", "3.12"]
+        SHARD_INDEX: ["1", "2", "3", "4", "5"]
+        SHARD_TOTAL: "5"
+  variables:
+    SKIP_PYTHON_VERSION_CHECK: "1"
+    TEST_SCOPE: isolated
 
 playwright_e2e_legacy:
   stage: test
@@ -122,7 +188,7 @@ playwright_e2e_legacy:
       -e inplace_timeline_transitions=false
       -v "$PWD:$PSYNET_WORKSPACE"
       -w $PSYNET_WORKSPACE
-      $DOCKER_LOCAL_TAG-playwright bash -c "uv pip install --no-cache --system --no-deps -e \"$PSYNET_WORKSPACE\" && npm ci && npx playwright test tests/playwright/demos --reporter=line,junit,html"
+      $DOCKER_LOCAL_TAG-playwright bash -c "uv pip install --no-cache --system --no-deps -e \"$PSYNET_WORKSPACE\" && npm ci && node tests/playwright/check-mode-tags.js && npx playwright test --grep '@both|@legacy-only' --reporter=line,junit,html"
   artifacts:
     when: always
     paths:
@@ -132,7 +198,7 @@ playwright_e2e_legacy:
     reports:
       junit: public/playwright-junit-legacy.xml
 
-playwright_e2e_inplace:
+playwright_e2e_default:
   stage: test
   <<: *default_rules
   script:
@@ -144,12 +210,11 @@ playwright_e2e_inplace:
       --add-host=redis:$REDIS_IP
       -e HEADLESS=TRUE -e REDIS_URL -e DATABASE_URL -e POSTGRES_DB -e POSTGRES_USER -e POSTGRES_PASSWORD
       -e AWS_ACCESS_KEY_ID -e AWS_DEFAULT_REGION -e AWS_SECRET_ACCESS_KEY
-      -e PLAYWRIGHT_JUNIT_OUTPUT_NAME=public/playwright-junit-inplace.xml
+      -e PLAYWRIGHT_JUNIT_OUTPUT_NAME=public/playwright-junit-default.xml
       -e PSYNET_WORKSPACE
-      -e inplace_timeline_transitions=true
       -v "$PWD:$PSYNET_WORKSPACE"
       -w $PSYNET_WORKSPACE
-      $DOCKER_LOCAL_TAG-playwright bash -c "uv pip install --no-cache --system --no-deps -e \"$PSYNET_WORKSPACE\" && npm ci && npx playwright test tests/playwright/demos tests/playwright/inplace_timeline_transitions.spec.js tests/playwright/same_session_page_update.spec.js tests/playwright/adversarial_lifecycle.spec.js --reporter=line,junit,html"
+      $DOCKER_LOCAL_TAG-playwright bash -c "uv pip install --no-cache --system --no-deps -e \"$PSYNET_WORKSPACE\" && npm ci && node tests/playwright/check-mode-tags.js && npx playwright test --grep '@both|@inplace-only' --reporter=line,junit,html"
   artifacts:
     when: always
     paths:
@@ -157,14 +222,22 @@ playwright_e2e_inplace:
       - test-results/
       - playwright-report/
     reports:
-      junit: public/playwright-junit-inplace.xml
+      junit: public/playwright-junit-default.xml
 
 merge_test_results:
   image: python:3.13-alpine
   stage: test
   <<: *default_rules
-  needs: ["tests", "playwright_e2e_legacy", "playwright_e2e_inplace"]
-  dependencies: ["tests", "playwright_e2e_legacy", "playwright_e2e_inplace"]
+  needs:
+    - "tests_python_3_13"
+    # tests_python_3_14 and compatibility_tests only exist on
+    # release-branch pipelines.
+    - job: "tests_python_3_14"
+      optional: true
+    - job: "compatibility_tests"
+      optional: true
+    - "playwright_e2e_legacy"
+    - "playwright_e2e_default"
   when: always
   before_script:
     - pip install -q junitparser
@@ -319,6 +392,23 @@ benchmark_load_sweep:
   rules:
     - when: manual
       allow_failure: true
+
+# Build this commit's Sphinx docs without publishing. Catches install/import
+# and autodoc failures on MRs and branches; the ``pages`` job remains the
+# multi-version publish path for the default branch and release tags.
+docs:build:
+  image: python:3.13
+  stage: test
+  <<: *default_rules
+  before_script: []
+  script:
+    - python -m pip install -e '.[dev]'
+    - sphinx-build -b html docs public/docs-ci
+  artifacts:
+    when: on_failure
+    paths:
+      - public/docs-ci/
+    expire_in: 1 week
 
 # To do:
 # - Skip tests if the changes are only in the docs directory

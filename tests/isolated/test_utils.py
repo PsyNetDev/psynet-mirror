@@ -22,11 +22,13 @@ from psynet.utils import (
     generate_text_file,
     get_authenticated_session,
     get_folder_size_mb,
+    get_installed_package_source_directory,
     get_locales_dir_from_path,
     get_package_name,
     get_package_source_directory,
     get_psynet_root,
     git_repository_available,
+    is_in_repo_experiment,
     linspace,
     list_experiment_dirs,
     list_isolated_tests,
@@ -36,9 +38,58 @@ from psynet.utils import (
     merge_dicts,
     organize_by_key,
     pretty_format_seconds,
+    psynet_source_prefixes,
     safe,
     working_directory,
 )
+
+
+def test_psynet_source_prefixes_is_package_directory():
+    (prefix,) = psynet_source_prefixes()
+    package_dir = Path(prefix)
+
+    assert prefix.endswith(os.sep)
+    assert package_dir.name == "psynet"
+    assert (package_dir / "utils.py").is_file()
+    assert not (package_dir / "demos").exists()
+
+
+def test_is_in_repo_experiment(tmp_path):
+    from psynet.pytest_psynet import path_to_test_experiment
+
+    assert is_in_repo_experiment(path_to_demo_experiment("hello_world"))
+    assert is_in_repo_experiment(
+        path_to_demo_experiment("hello_world"), roots=("demos",)
+    )
+    assert is_in_repo_experiment(path_to_test_experiment("static"))
+    assert not is_in_repo_experiment(
+        path_to_test_experiment("static"), roots=("demos",)
+    )
+    assert is_in_repo_experiment(
+        get_psynet_root() / "tests/playwright/experiments/adversarial_lifecycle"
+    )
+    (tmp_path / "experiment.py").touch()
+    assert not is_in_repo_experiment(tmp_path)
+
+
+def test_is_in_repo_experiment_finds_checkout_when_package_root_differs(
+    tmp_path, monkeypatch
+):
+    """Wheel/ASV installs should still recognize demos under a source checkout."""
+    checkout = tmp_path / "PsyNet"
+    demo = checkout / "demos" / "experiments" / "demo"
+    demo.mkdir(parents=True)
+    (checkout / "pyproject.toml").write_text(
+        '[project]\nname = "psynet"\nversion = "0.0.0"\n',
+        encoding="utf-8",
+    )
+    (demo / "experiment.py").write_text("class Exp: pass\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "psynet.light_utils.get_psynet_root",
+        lambda: tmp_path / "site-packages",
+    )
+    assert is_in_repo_experiment(demo)
+    assert not is_in_repo_experiment(demo, roots=("tests/experiments",))
 
 
 def test_make_dirs():
@@ -204,6 +255,12 @@ def test_demo_dirs():
         psynet_root.joinpath("tests/deployment/payment_flows_prolific").__str__()
         in dirs
     )
+    assert (
+        psynet_root.joinpath(
+            "tests/playwright/experiments/adversarial_lifecycle"
+        ).__str__()
+        in dirs
+    )
 
     dirs = list_experiment_dirs(for_ci_tests=True)
     assert psynet_root.joinpath("demos/experiments/mcmcp").__str__() in dirs
@@ -215,6 +272,39 @@ def test_demo_dirs():
         psynet_root.joinpath("tests/deployment/payment_flows_prolific").__str__()
         not in dirs
     )
+    assert (
+        psynet_root.joinpath(
+            "tests/playwright/experiments/adversarial_lifecycle"
+        ).__str__()
+        not in dirs
+    )
+
+
+def test_list_experiment_dirs_skips_hidden_venv_trees(tmp_path, monkeypatch):
+    """Leftover .venv trees must not be treated as experiment directories."""
+    demos = tmp_path / "demos" / "experiments"
+    real_demo = demos / "timeline"
+    real_demo.mkdir(parents=True)
+    (real_demo / "experiment.py").write_text("class Exp: pass\n")
+
+    venv_experiment = (
+        real_demo
+        / ".venv-psynet-3.13"
+        / "lib"
+        / "python3.13"
+        / "site-packages"
+        / "dallinger"
+    )
+    venv_experiment.mkdir(parents=True)
+    (venv_experiment / "experiment.py").write_text("# packaged dallinger\n")
+
+    monkeypatch.setattr("psynet.utils.get_psynet_root", lambda: tmp_path)
+    monkeypatch.setattr("psynet.utils._IN_REPO_EXPERIMENT_ROOTS", ("demos",))
+
+    dirs = list_experiment_dirs()
+    assert str(real_demo) in dirs
+    assert str(venv_experiment) not in dirs
+    assert all("/.venv" not in path for path in dirs)
 
 
 def test_isolated_tests():
@@ -395,6 +485,14 @@ def test_experiment_directory_name_rejects_non_package_module(tmp_path):
         ensure_experiment_directory_name_does_not_conflict(experiment_directory)
 
 
+def test_experiment_directory_name_rejects_conflict_without_experiment_py(tmp_path):
+    experiment_directory = tmp_path / "code"
+    experiment_directory.mkdir()
+
+    with pytest.raises(ExperimentDirectoryNameError, match="Python's module 'code'"):
+        ensure_experiment_directory_name_does_not_conflict(experiment_directory)
+
+
 def test_experiment_directory_name_allows_package_resolution(tmp_path, monkeypatch):
     experiment_directory = tmp_path / "static"
     experiment_directory.mkdir()
@@ -425,6 +523,26 @@ where = ["src"]
         locales_dir = get_locales_dir_from_path(tmp_path)
 
     assert locales_dir == expected
+
+
+def test_get_installed_package_source_directory_supports_namespace_packages(
+    tmp_path, monkeypatch
+):
+    """Deployment copies may omit gitignored ``__init__.py`` files."""
+    import sys
+    import types
+
+    package_root = tmp_path / "deployed_experiment"
+    package_root.mkdir()
+    (package_root / "locales").mkdir()
+
+    package = types.ModuleType("dallinger_experiment")
+    package.__path__ = [str(package_root)]
+    monkeypatch.setitem(sys.modules, "dallinger_experiment", package)
+
+    assert get_installed_package_source_directory("dallinger_experiment") == (
+        package_root.resolve()
+    )
 
 
 def test_get_package_source_directory_setuptools_where_list(tmp_path):
@@ -495,6 +613,15 @@ def test_git_repository_available_false(tmp_path):
     # Use a fresh temporary directory with no git repo
     with working_directory(tmp_path):
         assert git_repository_available() is False
+
+
+def test_git_command_available_matches_which(monkeypatch):
+    from psynet.light_utils import git_command_available
+
+    monkeypatch.setattr("psynet.light_utils.shutil.which", lambda name: "/usr/bin/git")
+    assert git_command_available() is True
+    monkeypatch.setattr("psynet.light_utils.shutil.which", lambda name: None)
+    assert git_command_available() is False
 
 
 def test_safe_decorator(caplog):

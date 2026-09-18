@@ -134,7 +134,7 @@ async function getRenderedTextHeight(locator) {
   });
 }
 
-test("graphics demo", async ({ page, context }) => {
+test("graphics demo", { tag: "@both" }, async ({ page, context }) => {
   const absDir = path.resolve("demos/experiments/graphics");
   await withExperiment(page, context, absDir, async (experimentPage) => {
     const submitTracker = startResponseSubmitTracker(experimentPage);

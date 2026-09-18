@@ -111,7 +111,7 @@ async function completeRemainingChain(page, timeout = STEP_TIMEOUT_MS) {
   throw new Error("Imitation chain did not reach Finish within expected steps.");
 }
 
-test("imitation_chain_video demo", async ({ page, context }) => {
+test("imitation_chain_video demo", { tag: "@both" }, async ({ page, context }) => {
   const absDir = path.resolve("demos/experiments/imitation_chain_video");
   await withExperiment(page, context, absDir, async (experimentPage) => {
     const submitTracker = startResponseSubmitTracker(experimentPage);

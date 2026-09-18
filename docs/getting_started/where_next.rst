@@ -13,11 +13,14 @@ Deploying experiments
 Deploying an experiment to a remote web server requires some additional setup.
 See :doc:`running_remotely` for details, as well as the :doc:`/deploy/index` documentation.
 
-Customizing your own experiment
--------------------------------
+Implementing your own experiment
+--------------------------------
 
-The :doc:`customizing_an_experiment` page describes how to start your own experiment by
-copying one of the demos and modifying it.
+Coding agents make it very easy to develop your own experiments from scratch.
+See :doc:`/experiment_development/agentic_programming`.
+
+Alternatively, a good way to develop an experiment is to start by copying a demo
+and modifying it by hand. This workflow is described in :doc:`customizing_an_experiment`.
 
 Topical tutorials
 -----------------

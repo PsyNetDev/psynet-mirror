@@ -1,5 +1,10 @@
 # README
 
-This experiment is implemented using *PsyNet*, a framework for running behavioral experiments
-in-person and over the internet. For comprehensive guidance on running PsyNet experiments,
-please visit [PsyNet's documentation website](https://psynetdev.gitlab.io/PsyNet/).
+Pipeline-style single-stimulus rating: listen to sounds and rate them on a 1–5
+scale. A small end-to-end rating pipeline parallel to
+`experiments/simple_audio_rating`.
+
+## Usage
+
+For instructions on how to run PsyNet experiments like this one, visit the
+[PsyNet documentation](https://psynetdev.gitlab.io/PsyNet/).

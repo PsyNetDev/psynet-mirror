@@ -50,6 +50,22 @@ Before submitting larger documentation changes, it is useful to treat Sphinx war
 
   psynet dev docs make --strict
 
+To check documentation links, run:
+
+.. code-block:: console
+
+  psynet dev docs linkcheck
+
+This is a wrapper around Sphinx's ``linkcheck`` builder — the same target as
+``make linkcheck`` in ``docs/``, or ``psynet dev docs make linkcheck``.
+Sphinx fetches the URLs in the documentation and reports the ones that fail.
+The PsyNet command shows progress during that run, then reprints the failures
+grouped by category (for example 404s, missing anchors, SSL errors, and
+connection errors).
+
+It deletes ``docs/_build`` first by default. For faster local reruns, pass
+``--no-clean``. Extra Sphinx flags can be passed with ``--sphinx-option``.
+
 The generated HTML is written to ``docs/_build/html/index.html``.
 
 On completion of updating the documentation commit the corresponding `rst` files only. The compiled `html` files in the ``_build`` directory should be left ignored by Git.

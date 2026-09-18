@@ -153,6 +153,16 @@ def _strip_v_prefix(value):
     return value[1:] if value.startswith("v") else value
 
 
+def is_alpha_version(version):
+    """Return whether ``version`` looks like an alpha version (e.g. ``13.4.0a0``).
+
+    The default branch briefly carries a stable version between a release
+    branch being merged back and the post-release alpha bump landing; during
+    that window there is no alpha version to advertise in the switcher.
+    """
+    return re.match(r"^\d+\.\d+\.\d+a\d+$", version) is not None
+
+
 def format_alpha_name(alpha_version):
     """Return the user-facing switcher label for the alpha docs."""
     match = re.match(r"^(\d+\.\d+\.\d+)a\d+$", alpha_version)
@@ -187,13 +197,15 @@ def build_entries(base_url, tags, alpha_version, latest_rc_tag=None):
     """
     base_url = base_url.rstrip("/")
 
-    entries = [
-        {
-            "name": format_alpha_name(alpha_version),
-            "version": alpha_version,
-            "url": f"{base_url}/alpha/",
-        }
-    ]
+    entries = []
+    if alpha_version is not None:
+        entries.append(
+            {
+                "name": format_alpha_name(alpha_version),
+                "version": alpha_version,
+                "url": f"{base_url}/alpha/",
+            }
+        )
     if latest_rc_tag:
         entries.append(
             {
@@ -280,6 +292,14 @@ def main():
 
     tags = select_recent_patch_tags(stable_tags)
     alpha_version = get_master_psynet_version(args.default_branch)
+    if not is_alpha_version(alpha_version):
+        # Post-release window: the release branch has been merged back but
+        # the alpha bump has not landed yet, so skip the alpha entry.
+        print(
+            f"Default branch version {alpha_version!r} is not an alpha; "
+            "omitting the alpha entry from the switcher."
+        )
+        alpha_version = None
     latest_rc_tag = get_latest_active_prerelease_tag()
     entries = build_entries(args.base_url, tags, alpha_version, latest_rc_tag)
 

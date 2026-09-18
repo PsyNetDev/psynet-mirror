@@ -1,5 +1,10 @@
 # README
 
-This experiment is implemented using *PsyNet*, a framework for running behavioral experiments
-in-person and over the internet. For comprehensive guidance on running PsyNet experiments,
-please visit [PsyNet's documentation website](https://psynetdev.gitlab.io/PsyNet/).
+Pairwise similarity judgments: participants hear two instrument sounds and rate
+how similar they are on a 1–5 scale. A compact static-trial template for any
+"compare A vs B" rating study.
+
+## Usage
+
+For instructions on how to run PsyNet experiments like this one, visit the
+[PsyNet documentation](https://psynetdev.gitlab.io/PsyNet/).

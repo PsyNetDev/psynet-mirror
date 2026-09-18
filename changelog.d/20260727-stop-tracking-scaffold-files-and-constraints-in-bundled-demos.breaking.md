@@ -1,0 +1,1 @@
+Bundled demos now track authored experiment files only. Generated scaffold files and per-demo `constraints.txt` are omitted; use the shared PsyNet development environment in-repo, or run `psynet setup` after copying a demo into a standalone experiment.

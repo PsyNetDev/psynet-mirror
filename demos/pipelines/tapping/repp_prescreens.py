@@ -453,7 +453,6 @@ class FreeTappingRecordTest(StaticTrialMaker):
             nodes=nodes,
             expected_trials_per_participant=len(nodes),
             n_repeat_trials=n_repeat_trials,
-            fail_trials_on_premature_exit=False,
             fail_trials_on_participant_performance_check=False,
             check_performance_at_end=True,
         )

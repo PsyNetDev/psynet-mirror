@@ -222,7 +222,7 @@ async function completeRecordedPlaybackCheckpoint(
   await clickNextAndWait(page, STEP_TIMEOUT_MS);
 }
 
-test("audio demo", async ({ page, context }) => {
+test("audio demo", { tag: "@both" }, async ({ page, context }) => {
   const absDir = path.resolve("demos/experiments/audio");
   await withExperiment(page, context, absDir, async (experimentPage) => {
     const submitTracker = startResponseSubmitTracker(experimentPage);

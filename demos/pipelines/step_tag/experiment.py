@@ -57,6 +57,10 @@ def list_stimuli():
 class Exp(psynet.experiment.Experiment):
     timeline = get_timeline()
     test_n_bots = 20
+    # The StepTag control (external ``psynet-step`` package) still ships a
+    # complete inline template, which is not compatible with default in-place
+    # timeline transitions. Opt this demo out until STEP is migrated.
+    config = {"inplace_timeline_transitions": False}
 
     def test_experiment(self):
         super().test_experiment()

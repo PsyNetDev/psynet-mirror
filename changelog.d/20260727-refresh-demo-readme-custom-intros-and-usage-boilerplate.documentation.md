@@ -1,0 +1,1 @@
+Demo and scaffold README files now open with experiment-specific guidance (patterns, when to use them, and how the example fits), followed by a shared Usage section that links to the PsyNet documentation.

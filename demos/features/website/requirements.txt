@@ -1,4 +1,4 @@
-psynet@git+https://gitlab.com/PsyNetDev/PsyNet@master#egg=psynet
+psynet
 dominate
 
 # Alternatively, you can use one of the following syntaxes to specify a custom PsyNet version

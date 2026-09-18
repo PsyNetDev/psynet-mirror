@@ -352,91 +352,16 @@ early. For example:
 Custom classes
 ^^^^^^^^^^^^^^
 
-It is also possible to define your own modular page classes.
-This way you can have full flexibility about your experiment interface.
-The first step is to create an HTML file in ``templates/``, perhaps called
-``templates/custom-control.html``.
-Here's an example...
+It is also possible to define your own modular page classes for full control
+over the experiment interface. Create a markup-only Jinja macro in
+``templates/``, then a matching Python ``Control`` or ``Prompt`` subclass that
+supplies CSS and JavaScript through hooks such as ``get_css()`` /
+``get_css_links()`` and ``get_js_page_modules()`` rather than embedding
+``<style>`` or ``<script>`` in the template.
 
-.. code-block:: jinja
-
-    // templates/custom-control.html
-
-    {% macro color_text_area(params) %}
-
-    <textarea id="text-input" type="text" class="form-control"></textarea>
-
-    <style>
-        #text-input {
-            background-color: {{ params.color }};
-            margin-bottom: {{ params.margin_bottom }};
-        }
-    </style>
-
-    <script>
-        function retrieveResponse() {
-            return {
-                rawAnswer: document.getElementById('text-input').value,
-                metadata: {},
-                blobs: {}
-            }
-        }
-    </script>
-
-    {% endmacro %}
-
-There are a few key things to note here.
-
-- The control is rendered using Jinja.
-  Jinja is a templating language that allows you to inject Python variables into HTML.
-- The control takes the form of a Jinja macro called ``color_text_area``
-  that takes a single input, ``params``.
-- The control is specified like an ordinary HTML file, but the customizable aspects are acquired
-  from the ``params`` object using curly bracket notation.
-- The user must define a JS function called ``retrieveResponse`` that, when called, should return
-  an object containing the following:
-
-    - ``rawAnswer`` - The participant's answer in JSON-serializable form (numbers, strings, or an
-      object comprising these).
-    - ``metadata`` - Optional additional information about the response.
-    - ``blobs`` - An optional dictionary of 'blobs', used for uploading media files (e.g. audio
-      recordings).
-
-The user must then define a corresponding class in Python, writing code like this:
-
-.. code-block:: python
-
-    # experiment.py
-
-    from psynet.modular_page import Control
-
-    class ColorTextAreaControl(Control):
-        macro = "color_text_area"
-        external_template = "custom-control.html"
-
-        def __init__(self, color, **kwargs):
-            super().__init__(**kwargs)
-            self.color = color
-
-        def format_answer(self, raw_answer, **kwargs):
-            return super().format_answer(raw_answer, **kwargs)
-
-        def get_bot_response(self, experiment, bot, page, prompt):
-            return "Hello, I am a bot!"
-
-There are a few more key things to note here:
-
-- The ``macro`` and ``external_template`` attributes link to our Jinja template and the macro
-  defined within it.
-- The ``__init__`` method stores attributes that can later be accessed in the ``params`` template
-  object.
-- The ``format_answer`` method can optionally be used to clean up the submitted answer before
-  saving it in the database.
-- The ``get_bot_response`` method is used to simulate a bot's response to that control when running
-  automated tests.
-
-Defining custom prompts works in a similar way, except you don't need ``retrieveResponse``,
-``format_answer``, or ``get_bot_response``.
+A complete walkthrough (including the ``ColorTextAreaControl`` example and
+``activate(context)`` response handling) is in
+:doc:`/tutorials/writing_custom_frontends`.
 
 **Exercise**: think of an interesting prompt or control that is not listed above.
 Implement it yourself using a custom template, and add it to ``demos/features/pages/``.
