@@ -13,7 +13,9 @@ The implementation is based on
 ## Repository layout
 
 - `experiment.py` defines the PsyNet experiment and websocket service.
-- `templates/shared_canvas.html` renders the live browser canvas.
+- `templates/shared_canvas.html` renders the live browser canvas markup.
+- `static/shared-canvas.css` and `static/shared-canvas.js` supply the
+  in-place page styles and canvas behavior.
 - `config.txt` contains Dallinger/PsyNet configuration.
 - `requirements.txt` pins PsyNet from GitLab.
 - `constraints.txt` is present for Dallinger dependency locking workflows.

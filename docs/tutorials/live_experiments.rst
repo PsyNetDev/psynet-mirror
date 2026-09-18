@@ -57,8 +57,8 @@ PsyNet attaches the participant and current page identity automatically. Most
 experiments do not need to work with these values directly. Their main effect is
 that, after a refresh or page transition, an old browser tab can no longer send
 valid messages for the participant's new page. The practical rule is simple:
-register browser WebSocket handlers from the page or template script, so PsyNet
-can recreate them whenever it renders a new live page.
+register browser WebSocket handlers from a page module's ``activate()``
+function, so PsyNet can recreate them whenever it renders a new live page.
 
 Live sessions
 -------------
@@ -162,24 +162,32 @@ session row that was just initialized. It resolves the session ID, initializes
                 show_next_button=False,
             )
 
-In the browser, put live-session setup inside the page template. The
-``liveSessionInit`` event means the control has initialized ``psynet.session``.
+        def get_js_page_modules(self):
+            return ["/static/score.js"]
 
-.. code-block:: html
+Keep the Jinja macro focused on markup. Put live-session setup in a page
+module's ``activate()`` function. The ``liveSessionInit`` event means the
+control has initialized ``psynet.session``. Page modules run before that event,
+so wait for it before calling ``psynet.session``.
 
-    <script>
-    psynet.trial.onEvent("liveSessionInit", function () {
-        psynet.session.onFreshState(function(snapshot) {
-            scoreEl.textContent = snapshot.state.score;
+.. code-block:: javascript
+
+    export async function activate({root, psynet}) {
+        const scoreEl = root.querySelector("#score");
+        const scoreButton = root.querySelector("#score-button");
+
+        psynet.trial.onEvent("liveSessionInit", function () {
+            psynet.session.onFreshState(function(snapshot) {
+                scoreEl.textContent = snapshot.state.score;
+            });
+
+            psynet.session.onStarted(function() {
+                scoreButton.disabled = false;
+            });
+
+            psynet.session.ready();
         });
-
-        psynet.session.onStarted(function() {
-            scoreButton.disabled = false;
-        });
-
-        psynet.session.ready();
-    });
-    </script>
+    }
 
 ``psynet.session.onFreshState(...)`` handles the initial snapshot and later
 refresh/reconnect snapshots. ``psynet.session.ready()`` tells the server that
@@ -386,6 +394,9 @@ events for gameplay progress.
                 session_initializer_id="rps_session",
             )
 
+        def get_js_page_modules(self):
+            return ["/static/rps.js"]
+
 
     class RockPaperScissorsTrial(StaticTrial):
         time_estimate = 20
@@ -424,12 +435,13 @@ events for gameplay progress.
             InfoPage("Finished.", time_estimate=5),
         )
 
-Client-side template
-~~~~~~~~~~~~~~~~~~~~
+Client-side markup and page module
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The template waits for ``liveSessionInit``, recovers from fresh state snapshots
-after load/reconnect, sends participant choices, and handles the server's custom
-``gameFinished`` event.
+Keep ``templates/rps.html`` focused on markup. The page module waits for
+``liveSessionInit``, recovers from fresh state snapshots after load/reconnect,
+sends participant choices, and handles the server's custom ``gameFinished``
+event.
 
 In ``templates/rps.html``:
 
@@ -443,74 +455,74 @@ In ``templates/rps.html``:
             {{ choice }}
         </button>
     {% endfor %}
+    {% endmacro %}
 
-    <script>
-    psynet.trial.onEvent("liveSessionInit", function () {
-        var participantId = String(psynet.session.participant_id);
-        var submitted = false;
+In ``static/rps.js``:
 
-        function setButtonsEnabled(enabled) {
-            Array.prototype.forEach.call(
-                document.getElementsByClassName("choice"),
-                function(button) { button.disabled = !enabled; }
-            );
-        }
+.. code-block:: javascript
 
-        function promptForChoice() {
-            document.getElementById("status").textContent = "Choose your action.";
-            setButtonsEnabled(true);
-        }
+    export async function activate({root, psynet}) {
+        psynet.trial.onEvent("liveSessionInit", function () {
+            const participantId = String(psynet.session.participant_id);
+            const statusEl = root.querySelector("#status");
+            const buttons = Array.from(root.querySelectorAll(".choice"));
+            let submitted = false;
 
-        psynet.session.onFreshState(function(freshState) {
-            // Fresh state is for initial load/reconnect recovery. Normal
-            // gameplay progress uses custom events below.
-            var state = freshState.state || {};
-            var choices = state.choices || {};
-            var hasChosen = Object.prototype.hasOwnProperty.call(
-                choices,
-                participantId
-            );
-            if (state.finished && hasChosen) {
-                psynet.nextPage(choices[participantId]);
-                return;
+            function setButtonsEnabled(enabled) {
+                buttons.forEach(function(button) { button.disabled = !enabled; });
             }
 
-            submitted = hasChosen;
-            if (hasChosen) {
-                document.getElementById("status").textContent = "Waiting for your partner...";
-                setButtonsEnabled(false);
-            } else if (freshState.started) {
-                promptForChoice();
+            function promptForChoice() {
+                statusEl.textContent = "Choose your action.";
+                setButtonsEnabled(true);
             }
-        });
 
-        psynet.session.onStarted(function() {
-            if (!submitted) promptForChoice();
-        });
+            psynet.session.onFreshState(function(freshState) {
+                // Fresh state is for initial load/reconnect recovery. Normal
+                // gameplay progress uses custom events below.
+                const state = freshState.state || {};
+                const choices = state.choices || {};
+                const hasChosen = Object.prototype.hasOwnProperty.call(
+                    choices,
+                    participantId
+                );
+                if (state.finished && hasChosen) {
+                    psynet.nextPage(choices[participantId]);
+                    return;
+                }
 
-        psynet.websocket.handle("gameFinished", function(message) {
-            psynet.nextPage(message.choice);
-        });
+                submitted = hasChosen;
+                if (hasChosen) {
+                    statusEl.textContent = "Waiting for your partner...";
+                    setButtonsEnabled(false);
+                } else if (freshState.started) {
+                    promptForChoice();
+                }
+            });
 
-        psynet.session.ready();
+            psynet.session.onStarted(function() {
+                if (!submitted) promptForChoice();
+            });
 
-        Array.prototype.forEach.call(
-            document.getElementsByClassName("choice"),
-            function(button) {
-                button.onclick = function () {
+            psynet.websocket.handle("gameFinished", function(message) {
+                psynet.nextPage(message.choice);
+            });
+
+            psynet.session.ready();
+
+            buttons.forEach(function(button) {
+                button.addEventListener("click", function () {
                     if (submitted) return;
                     submitted = true;
-                    document.getElementById("status").textContent = "Waiting for your partner...";
+                    statusEl.textContent = "Waiting for your partner...";
                     setButtonsEnabled(false);
                     psynet.websocket.send("choose", {
                         action: button.getAttribute("data-choice")
                     });
-                };
-            }
-        );
-    });
-    </script>
-    {% endmacro %}
+                });
+            });
+        });
+    }
 
 The complete rock-paper-scissors WebSocket demo in
 ``demos/experiments/rock_paper_scissors_websocket`` expands this pattern with

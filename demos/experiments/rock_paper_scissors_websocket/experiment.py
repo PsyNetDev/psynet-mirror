@@ -17,8 +17,8 @@ and live-session machinery:
   submitted a move for the current round it scores the round and updates the
   persisted :class:`~psynet.session.LiveSession` state.
 * :class:`RockPaperScissorsControl` is a :class:`~psynet.session.LiveSessionControl`
-  backed by a small custom template that renders the buttons and uses
-  ``psynet.websocket`` and ``psynet.session`` for real-time communication
+  backed by a markup-only custom template, page CSS, and a page module that
+  uses ``psynet.websocket`` and ``psynet.session`` for real-time communication
   and refresh/reconnect recovery.
 
 The server is the sole authority for the game state; the browser only sends the
@@ -301,7 +301,7 @@ class RockPaperScissorsControl(LiveSessionControl):
 
     def __init__(self, participant, color, n_rounds=N_ROUNDS, choices=CHOICES):
         # The board advances itself once all rounds are revealed, so we hide the
-        # default 'Next' button and submit programmatically from the template.
+        # default 'Next' button and submit programmatically from the page module.
         self.color = color
         self.n_rounds = n_rounds
         self.choices = choices
@@ -312,6 +312,15 @@ class RockPaperScissorsControl(LiveSessionControl):
             session_initializer_id="rps_session",
             show_next_button=False,
         )
+
+    def get_css_links(self):
+        return ["/static/rps-control.css"]
+
+    def get_js_page_modules(self):
+        return ["/static/rps-control.js"]
+
+    def get_js_vars(self):
+        return {"rps_config": {"n_rounds": self.n_rounds}}
 
     def get_bot_response(self, experiment, bot, page, prompt):
         # Bots cannot use WebSockets, so they simply submit a full set of moves;

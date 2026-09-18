@@ -313,6 +313,15 @@ class SharedCanvasControl(LiveSessionControl):
             show_next_button=False,
         )
 
+    def get_css_links(self):
+        return ["/static/shared-canvas.css"]
+
+    def get_js_page_modules(self):
+        return ["/static/shared-canvas.js"]
+
+    def get_js_vars(self):
+        return {"shared_canvas_config": self.canvas_config}
+
     @property
     def canvas_config(self):
         """Return canvas settings for the browser template."""
