@@ -20,16 +20,21 @@ will land.
 ## Resolve the target
 
 Stay on the feature branch. Read `target_branch` from the open MR for
-this source branch, for example:
+this source branch and assign it to `target`. Later steps use that
+variable (`git fetch origin "$target:$target"`, `git merge "origin/$target"`).
 
 ```bash
 branch="$(git rev-parse --abbrev-ref HEAD)"
-glab api "projects/PsyNetDev%2FPsyNet/merge_requests?source_branch=${branch}&state=opened"
+target="$(glab api "projects/PsyNetDev%2FPsyNet/merge_requests?source_branch=${branch}&state=opened" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+print(data[0]['target_branch'] if isinstance(data, list) and data else '')
+")"
 ```
 
-`glab mr view --output json` is fine if it returns JSON; in some setups
-it does not. If there is no open MR, stop and ask which target to use.
-Do not assume `master`.
+If `target` is empty, there is no open MR: stop and ask which target to
+use. Do not assume `master`. `glab mr view --output json` is fine if it
+returns JSON and you still assign `target` from `target_branch`.
 
 ## Prerequisites
 
