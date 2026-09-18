@@ -1822,6 +1822,17 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
             logger.info("Finished growing networks.")
 
+    @scheduled_task("interval", seconds=2, max_instances=1)
+    @staticmethod
+    def _check_recording_uploads():
+        """Resolve received and missing recordings without relying on the browser."""
+        if not is_experiment_launched():
+            return
+        from .media_upload import _expire_recordings, _queue_received_recordings
+
+        _expire_recordings()
+        _queue_received_recordings()
+
     @scheduled_task("interval", seconds=5, max_instances=1)
     @log_time_taken
     @staticmethod

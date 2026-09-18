@@ -247,7 +247,7 @@ alongside a demo using that same database.
 
 .. code-block:: shell
 
-    pytest tests/isolated/test_media_upload.py
+    pytest tests/isolated/test_media_upload.py tests/isolated/test_chain_growth_queries.py
     npx playwright test media_upload_queue.spec.js
     npx playwright test demos/imitation_chain_video.spec.js demos/video_feature.spec.js
 
@@ -277,6 +277,16 @@ The streaming endpoint requires the request socket exposed by Gunicorn or
 Werkzeug to interrupt blocked reads at the deadline. Other WSGI servers receive
 HTTP 503 until they have a supported deadline mechanism. A database expiry job
 alone cannot release a worker blocked on a request body.
+
+The clock schedules validation and deposit on a worker, then independently expires
+overdue recordings. Received files use private shared storage:
+``/var/lib/dallinger/media-uploads`` for SSH deployments and
+``.deploy/media-uploads`` in the experiment directory for local deployments.
+Dallinger mounts these directories in the web, worker, and clock containers.
+Keep custom deployment layouts consistent with this requirement; a container's
+temporary directory is not shared. Files become available as assets only after
+validation and deposit succeed. The server tests cover expiry during deposit and
+failure of the affected trial in both within- and across-participant chains.
 
 
 Occasional test failures, and running tests repeatedly

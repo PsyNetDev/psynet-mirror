@@ -6,22 +6,27 @@ only a hash of the write capability is stored. The receiver authenticates before
 reading bytes, streams to a private bounded file without holding database locks,
 then locks only the recording row to publish complete receipt exactly once.
 
-Receipt is not deposit: validation, storage, and trial failure policy remain
-separate steps. This infrastructure is not yet enabled in recording controls.
+Receipt is not deposit: a worker validates and stores bytes before a short
+transaction publishes success. A poller expires overdue recordings even when
+the browser has closed. This infrastructure is not yet enabled in controls.
 Do not wrap the streaming route in a participant transaction or expose received
 files through the asset endpoint before successful deposit.
 """
 
 import errno
 import hashlib
+import json
 import math
 import os
 import secrets
 import socket
+import subprocess
 import tempfile
+import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from threading import Timer
+from types import SimpleNamespace
 
 from dallinger import db
 from sqlalchemy.orm import Session
@@ -33,9 +38,17 @@ from werkzeug.exceptions import (
     RequestEntityTooLarge,
 )
 
+from . import deployment_info
 from .asset import LocalStorage
+from .db import with_transaction
 from .trial.record import Recording
-from .utils import get_logger
+from .utils import (
+    content_object_path,
+    get_file_size_mb,
+    get_logger,
+    md5_file,
+    sha256_file,
+)
 
 logger = get_logger()
 
@@ -55,6 +68,22 @@ def _upload_timeout(size_bytes):
 def _utcnow():
     """Return UTC without timezone information, matching existing DB dates."""
     return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def _upload_directory():
+    """Use private storage shared by web, worker, and clock processes.
+
+    SSH deployments mount Dallinger's experiment data directory in every
+    container. Local Docker mounts the experiment directory in every container;
+    local virtualenv deployments also share that directory. Neither location is
+    under the publicly served static asset tree.
+    """
+    root = (
+        Path("/var/lib/dallinger")
+        if deployment_info.read("is_ssh_deployment")
+        else Path.cwd() / ".deploy"
+    )
+    return root / "media-uploads"
 
 
 def _reserve_recording(
@@ -147,7 +176,7 @@ def _authorize(recording, token):
 
 def _check_receivable(recording):
     """Return false for an acknowledged retry, reject expired/terminal slots."""
-    if recording.upload_status in {"received", "deposited"}:
+    if recording.upload_status in {"received", "queued", "processing", "deposited"}:
         return False
     if recording.upload_status != "pending" or _utcnow() >= recording.upload_deadline:
         raise Gone("The recording upload is no longer pending.")
@@ -197,8 +226,13 @@ def _receive_recording(
         timer.daemon = True
         timer.start()
     try:
+        if directory is None:
+            directory = _upload_directory()
+            directory.mkdir(mode=0o700, parents=True, exist_ok=True)
         with tempfile.NamedTemporaryFile(
-            prefix="psynet-upload-", dir=directory, delete=False
+            prefix="psynet-upload-",
+            dir=directory,
+            delete=False,
         ) as target:
             path = Path(target.name)
             total = 0
@@ -250,3 +284,220 @@ def _receive_recording(
             timer.join()
         if path is not None and not retained:
             path.unlink(missing_ok=True)
+
+
+@with_transaction
+def _claim_recording(recording_id):
+    """Claim work once, returning plain data so file I/O holds no row locks."""
+    asset = (
+        Recording.query.filter_by(id=recording_id)
+        .with_for_update()
+        .populate_existing()
+        .one_or_none()
+    )
+    if asset is None or asset.upload_status not in {"received", "queued"}:
+        return None
+    if asset.upload_processing_deadline <= _utcnow():
+        return None
+    asset.upload_status = "processing"
+    return asset.input_path, asset.storage, asset.upload_processing_deadline
+
+
+def _validate_recording(path, deadline):
+    """Require a WebM/Matroska video stream within the processing allowance."""
+    result = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-protocol_whitelist",
+            "file,pipe",
+            "-f",
+            "matroska",
+            "-show_entries",
+            "stream=codec_type",
+            "-of",
+            "json",
+            str(path),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=max(0.001, (deadline - _utcnow()).total_seconds()),
+    )
+    if not any(
+        stream.get("codec_type") == "video"
+        for stream in json.loads(result.stdout).get("streams", [])
+    ):
+        raise ValueError("The recording does not contain a video stream.")
+
+
+def _store_recording_bytes(path, storage):
+    """Reuse LocalStorage and content hashes without publishing trial callbacks.
+
+    Copy to a unique sibling before renaming, so another asset sharing this
+    content hash can never serve a partially overwritten file.
+    """
+    digest = sha256_file(path)
+    host_path = content_object_path(digest)
+    staging_host_path = f"{host_path}.upload-{uuid.uuid4().hex}"
+    staging_path = Path(storage.get_file_system_path(staging_host_path)).expanduser()
+    target_path = Path(storage.get_file_system_path(host_path)).expanduser()
+    output = {
+        "sha256_contents": digest,
+        "content_id": digest,
+        "md5_contents": md5_file(path),
+        "host_path": host_path,
+        "object_path": host_path,
+        "size_mb": get_file_size_mb(path),
+    }
+    try:
+        # The backend sets deposited on this plain snapshot, never on the live
+        # asset. Only _complete_recording may publish that database transition.
+        storage._receive_deposit(
+            SimpleNamespace(input_path=path, is_folder=False), staging_host_path
+        )
+        staging_path.replace(target_path)
+    finally:
+        staging_path.unlink(missing_ok=True)
+    return output
+
+
+@with_transaction
+def _complete_recording(recording_id, *, output=None, error=None):
+    """Resolve one recording atomically and return its input path for cleanup."""
+    from .participant import Participant
+    from .trial.main import Trial
+
+    identity = (
+        db.session.query(Recording.participant_id, Recording.trial_id)
+        .filter(Recording.id == recording_id)
+        .first()
+    )
+    if identity is None:
+        return None
+    # Match response handling's lock order. Disk I/O happens before these locks.
+    if identity.participant_id is not None:
+        Participant.query.filter_by(id=identity.participant_id).with_for_update(
+            of=Participant
+        ).populate_existing().one()
+    trial = None
+    if identity.trial_id is not None:
+        trial = (
+            Trial.query.filter_by(id=identity.trial_id)
+            .with_for_update(of=Trial)
+            .populate_existing()
+            .one()
+        )
+    asset = (
+        Recording.query.filter_by(id=recording_id)
+        .with_for_update()
+        .populate_existing()
+        .one()
+    )
+    if asset.upload_status not in {"pending", "received", "queued", "processing"}:
+        return None
+    deadline = (
+        asset.upload_deadline
+        if asset.upload_status == "pending"
+        else asset.upload_processing_deadline
+    )
+    expired = _utcnow() >= deadline
+    if expired:
+        error = (
+            "upload_timeout"
+            if asset.upload_status == "pending"
+            else "processing_timeout"
+        )
+    elif (output is None and error is None) or asset.upload_status != "processing":
+        return None
+    input_path = asset.input_path
+    if error:
+        asset.upload_status = "expired" if expired else "failed"
+        asset.upload_failed_reason = error
+        asset.deposited = False
+        if trial is not None and not trial.failed:
+            trial.fail(reason=f"recording_{error}")
+    else:
+        for key, value in output.items():
+            setattr(asset, key, value)
+        asset.deployment_id = asset.registry.deployment_id
+        asset.storage.update_asset_metadata(asset)
+        asset.upload_status = "deposited"
+        asset.deposited = True
+        if trial is None or not trial.failed:
+            asset.after_deposit()
+    asset.input_path = None
+    return input_path
+
+
+def _process_recording(recording_id):
+    """Validate and store received bytes; late completion cannot revive expiry."""
+    claimed = _claim_recording(recording_id)
+    if claimed is None:
+        return
+    path, storage, deadline = claimed
+    try:
+        try:
+            _validate_recording(path, deadline)
+        except (subprocess.CalledProcessError, ValueError) as error:
+            logger.warning("Invalid recording %s: %s", recording_id, error)
+            _complete_recording(recording_id, error="invalid_recording")
+            return
+        except subprocess.TimeoutExpired:
+            _complete_recording(recording_id, error="processing_timeout")
+            return
+        output = _store_recording_bytes(path, storage)
+        _complete_recording(recording_id, output=output)
+    except Exception:
+        logger.warning("Processing recording %s failed.", recording_id, exc_info=True)
+        _complete_recording(recording_id, error="processing_error")
+    finally:
+        Path(path).unlink(missing_ok=True)
+
+
+@with_transaction
+def _expire_recordings():
+    """Expire missing or stalled recordings independently of browser activity."""
+    now = _utcnow()
+    ids = (
+        db.session.query(Recording.id)
+        .filter(
+            (
+                (Recording.upload_status == "pending")
+                & (Recording.upload_deadline <= now)
+            )
+            | (
+                Recording.upload_status.in_(["received", "queued", "processing"])
+                & (Recording.upload_processing_deadline <= now)
+            )
+        )
+        .all()
+    )
+    for (recording_id,) in ids:
+        path = _complete_recording(recording_id)
+        if path is not None:
+            Path(path).unlink(missing_ok=True)
+
+
+@with_transaction
+def _queue_received_recordings():
+    """Schedule processing on workers, which mount the LocalStorage volume."""
+    from .process import WorkerAsyncProcess
+
+    recordings = (
+        Recording.query.filter_by(upload_status="received")
+        .filter(Recording.upload_processing_deadline > _utcnow())
+        .with_for_update(skip_locked=True)
+        .populate_existing()
+        .all()
+    )
+    for asset in recordings:
+        asset.upload_status = "queued"
+        WorkerAsyncProcess(
+            _process_recording,
+            arguments={"recording_id": asset.id},
+            asset=asset,
+            label="media_upload",
+            unique=True,
+        )

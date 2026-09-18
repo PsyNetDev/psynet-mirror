@@ -17,7 +17,14 @@ from werkzeug.serving import make_server
 
 from psynet.asset import LocalStorage
 from psynet.experiment import Experiment, get_experiment
-from psynet.media_upload import _receive_recording, _reserve_recording, _upload_timeout
+from psynet.media_upload import (
+    _expire_recordings,
+    _process_recording,
+    _receive_recording,
+    _reserve_recording,
+    _upload_directory,
+    _upload_timeout,
+)
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.timeline import Response
@@ -42,6 +49,15 @@ def test_upload_allowance_scales_with_file_size(size, seconds):
 def test_upload_allowance_rejects_invalid_size(size):
     with pytest.raises(ValueError):
         _upload_timeout(size)
+
+
+@pytest.mark.parametrize("ssh", [False, True])
+def test_upload_spool_uses_private_shared_deployment_directory(monkeypatch, ssh):
+    from psynet import deployment_info
+
+    monkeypatch.setattr(deployment_info, "read", lambda key: ssh)
+    expected = Path("/var/lib/dallinger") if ssh else Path.cwd() / ".deploy"
+    assert _upload_directory() == expected / "media-uploads"
 
 
 @pytest.fixture
@@ -332,3 +348,120 @@ def test_stalled_http_upload_is_interrupted_at_deadline(reservation):
     db.session.refresh(asset)
     assert asset.input_path is None
     assert not asset.deposited
+
+
+@pytest.fixture
+def received_video(reservation, tmp_path, monkeypatch):
+    """Receive a real WebM into the same pipeline used by the HTTP route."""
+    path = (
+        Path(__file__).resolve().parents[2]
+        / "demos/experiments/imitation_chain_video/assets/example_recording.webm"
+    )
+    payload = path.read_bytes()
+    asset, receipt = reservation
+    asset.upload_max_bytes = len(payload)
+    recording_id = asset.id
+    db.session.commit()
+    _receive_recording(
+        recording_id, receipt["token"], io.BytesIO(payload), directory=tmp_path
+    )
+    monkeypatch.setattr(LocalStorage, "on_deployed_server", lambda self: True)
+    return recording_id, payload
+
+
+def test_received_video_is_validated_and_deposited(received_video):
+    import hashlib
+
+    recording_id, payload = received_video
+    _process_recording(recording_id)
+    asset = db.session.get(Recording, recording_id)
+    assert asset.upload_status == "deposited"
+    assert asset.deposited
+    assert asset.sha256_contents == hashlib.sha256(payload).hexdigest()
+    assert (
+        Path(asset.storage.get_file_system_path(asset.host_path)).read_bytes()
+        == payload
+    )
+    assert asset.input_path is None
+
+
+def test_invalid_recording_fails_without_failing_its_participant(reservation, tmp_path):
+    asset, receipt = reservation
+    recording_id, participant_id = asset.id, asset.participant_id
+    _receive_recording(
+        recording_id, receipt["token"], io.BytesIO(b"not webm"), directory=tmp_path
+    )
+    _process_recording(recording_id)
+    asset = db.session.get(Recording, recording_id)
+    assert asset.upload_status == "failed"
+    assert asset.upload_failed_reason == "invalid_recording"
+    assert not asset.deposited
+    assert not db.session.get(Participant, participant_id).failed
+
+
+def test_missing_upload_expires_without_a_browser_request(reservation):
+    asset, _ = reservation
+    recording_id = asset.id
+    asset.upload_deadline = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(
+        seconds=1
+    )
+    db.session.commit()
+    _expire_recordings()
+    asset = db.session.get(Recording, recording_id)
+    assert asset.upload_status == "expired"
+    assert asset.upload_failed_reason == "upload_timeout"
+
+
+def test_late_deposit_cannot_revive_an_expired_recording(received_video, monkeypatch):
+    import psynet.media_upload as uploads
+
+    recording_id, _ = received_video
+    store = uploads._store_recording_bytes
+
+    def expire_before_publication(*args):
+        output = store(*args)
+        asset = db.session.get(Recording, recording_id)
+        asset.upload_processing_deadline = uploads._utcnow() - timedelta(seconds=1)
+        db.session.commit()
+        uploads._expire_recordings()
+        return output
+
+    monkeypatch.setattr(uploads, "_store_recording_bytes", expire_before_publication)
+    _process_recording(recording_id)
+    asset = db.session.get(Recording, recording_id)
+    assert asset.upload_status == "expired"
+    assert asset.upload_failed_reason == "processing_timeout"
+    assert not asset.deposited
+
+
+def test_storage_failure_leaves_recording_unavailable(received_video, monkeypatch):
+    recording_id, _ = received_video
+
+    def fail_copy(*args):
+        raise OSError("Disk full")
+
+    monkeypatch.setattr(LocalStorage, "_receive_deposit", fail_copy)
+    _process_recording(recording_id)
+    asset = db.session.get(Recording, recording_id)
+    assert asset.upload_status == "failed"
+    assert asset.upload_failed_reason == "processing_error"
+    assert not asset.deposited
+
+
+def test_received_recording_is_queued_only_once(received_video, monkeypatch):
+    from psynet.media_upload import _queue_received_recordings
+    from psynet.process import WorkerAsyncProcess
+
+    recording_id, _ = received_video
+    launched = []
+    monkeypatch.setattr(
+        WorkerAsyncProcess, "launch", lambda spec: launched.append(spec["id"])
+    )
+    _queue_received_recordings()
+    _queue_received_recordings()
+    assert len(launched) == 1
+    assert db.session.get(Recording, recording_id).upload_status == "queued"
+    WorkerAsyncProcess.call_function(launched[0])
+    assert db.session.get(Recording, recording_id).deposited
+    process = db.session.get(WorkerAsyncProcess, launched[0])
+    assert process.finished and not process.pending and not process.failed

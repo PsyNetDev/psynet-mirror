@@ -28,7 +28,8 @@ class Recording(ExperimentAsset):
     """Recorded media, optionally reserved before its bytes reach the server."""
 
     # Null upload state identifies recordings using the existing deposit path.
-    upload_status = Column(String)
+    upload_status = Column(String, index=True)
+    upload_failed_reason = Column(String)
     upload_token_hash = Column(String)
     upload_deadline = Column(DateTime)
     upload_received_at = Column(DateTime)
