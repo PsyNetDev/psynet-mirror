@@ -1449,10 +1449,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     @nocache
     @staticmethod
     def health():
-        """Report whether the experiment's required services are reachable.
+        """Report availability and a small public-safe snapshot of the experiment.
 
-        This endpoint is intentionally unauthenticated and returns no deployment,
-        participant, or error details, so external availability monitors can call it.
+        This endpoint is unauthenticated. It never includes participant counts,
+        errors, dashboard URLs, or other internal details.
         """
         try:
             with db.engine.connect() as connection:
@@ -1462,7 +1462,28 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         except Exception:
             logger.exception("Experiment health check failed")
             return jsonify({"status": "unavailable"}), 503
-        return jsonify({"status": "ok"}), 200
+
+        payload = {"status": "ok"}
+        try:
+            config = get_config()
+            lookback = datetime.now() - timedelta(hours=1)
+            payload.update(
+                {
+                    "title": config.get("title", default=None) or None,
+                    "label": config.get("label", default=None) or None,
+                    "experimenter_name": config.get("experimenter_name", default=None)
+                    or None,
+                    "recruitment_status": redis_vars.get(
+                        "recruitment_study_status", default=None
+                    ),
+                    "requests_last_hour": Request.query.filter(
+                        Request.creation_time > lookback
+                    ).count(),
+                }
+            )
+        except Exception:
+            logger.exception("Failed to collect public health metadata")
+        return jsonify(payload), 200
 
     @experiment_route("/basic_data", methods=["GET"])
     @nocache

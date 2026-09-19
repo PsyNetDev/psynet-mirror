@@ -40,14 +40,28 @@ External availability checks
 ============================
 
 Every PsyNet experiment exposes an unauthenticated ``GET /health`` endpoint for
-external availability monitors. It returns ``200`` with ``{"status": "ok"}``
-when the web process can reach PostgreSQL and Redis. It returns ``503`` with
-``{"status": "unavailable"}`` if either dependency is unavailable.
+external availability monitors. It returns ``200`` when the web process can
+reach PostgreSQL and Redis:
 
-The response deliberately excludes experiment, participant, deployment, and
-error details, so it can be monitored without dashboard credentials. Use this
-endpoint for technical availability only; recruitment state and study lifecycle
-should be tracked separately.
+.. code-block:: json
+
+    {
+      "status": "ok",
+      "title": "Melody Origin Classification",
+      "label": "melody-origin",
+      "experimenter_name": "David Whyatt",
+      "recruitment_status": "recruiting",
+      "requests_last_hour": 17
+    }
+
+``requests_last_hour`` counts participant-facing page requests already stored
+by PsyNet, not status-page probes of ``/health``. If PostgreSQL or Redis is
+unavailable, the endpoint returns ``503`` with ``{"status": "unavailable"}``
+and no extra fields.
+
+The response never includes participant counts, costs, errors, dashboard URLs,
+or exception details. Metadata collection is best-effort: a failure there still
+leaves ``{"status": "ok"}`` if the required services are reachable.
 
 The table includes the following columns:
 

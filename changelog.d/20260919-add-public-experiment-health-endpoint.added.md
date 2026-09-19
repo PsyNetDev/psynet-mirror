@@ -1,1 +1,1 @@
-Added an unauthenticated ``GET /health`` endpoint for privacy-safe external availability checks of the web process, PostgreSQL, and Redis.
+Added an unauthenticated ``GET /health`` endpoint that checks the web process, PostgreSQL, and Redis, and returns a public-safe snapshot of title, label, experimenter name, recruitment status, and request volume.
