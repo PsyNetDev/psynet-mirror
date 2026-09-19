@@ -67,7 +67,7 @@ from flask import (
 from flask import g as flask_app_globals
 from flask_login import login_required
 from markupsafe import escape
-from sqlalchemy import Column, Float, ForeignKey, Integer, String, func
+from sqlalchemy import Column, Float, ForeignKey, Integer, String, func, text
 from sqlalchemy.orm import lazyload
 
 from psynet import __version__
@@ -1444,6 +1444,25 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             config.get("dashboard_user") == username
             and config.get("dashboard_password") == password
         )
+
+    @experiment_route("/health", methods=["GET"])
+    @nocache
+    @staticmethod
+    def health():
+        """Report whether the experiment's required services are reachable.
+
+        This endpoint is intentionally unauthenticated and returns no deployment,
+        participant, or error details, so external availability monitors can call it.
+        """
+        try:
+            with db.engine.connect() as connection:
+                connection.execute(text("SELECT 1"))
+            if not db.redis_conn.ping():
+                raise RuntimeError("Redis ping failed")
+        except Exception:
+            logger.exception("Experiment health check failed")
+            return jsonify({"status": "unavailable"}), 503
+        return jsonify({"status": "ok"}), 200
 
     @experiment_route("/basic_data", methods=["GET"])
     @nocache

@@ -36,6 +36,19 @@ Below each recruiter group, a cost summary is shown for all associated experimen
 You can filter the table by experiment name, experimenter name, recruiter name, or experiment status. This helps quickly identify issues
 like budget overruns by recruiter or experimenter.
 
+External availability checks
+============================
+
+Every PsyNet experiment exposes an unauthenticated ``GET /health`` endpoint for
+external availability monitors. It returns ``200`` with ``{"status": "ok"}``
+when the web process can reach PostgreSQL and Redis. It returns ``503`` with
+``{"status": "unavailable"}`` if either dependency is unavailable.
+
+The response deliberately excludes experiment, participant, deployment, and
+error details, so it can be monitored without dashboard credentials. Use this
+endpoint for technical availability only; recruitment state and study lifecycle
+should be tracked separately.
+
 The table includes the following columns:
 
 - **Study**: Shows the experiment’s label and current status (indicated by a traffic light icon). Click the experiment name to view more details such as repository URL, deployed Git commit, clean or dirty working-tree state, title, and description.
