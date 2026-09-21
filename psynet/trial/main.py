@@ -1263,6 +1263,8 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
 
     @classmethod
     def _construct_feedback_logic(cls, trial_maker):
+        from ..media_upload import _recording_wait_timeout
+
         if trial_maker:
             label = trial_maker.with_namespace("feedback")
         else:
@@ -1281,6 +1283,9 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
                         and not participant.current_trial.ready_for_feedback
                     ),
                     expected_wait=0,
+                    max_wait_time=lambda participant: _recording_wait_timeout(
+                        participant.id, trial_id=participant.current_trial.id
+                    ),
                     log_message="Waiting for feedback to be ready.",
                     check_interval=1.0,
                 ),
@@ -2177,6 +2182,7 @@ class TrialMaker(Module):
         )
 
         if type == "end" and self.end_performance_check_waits:
+            from ..media_upload import _recording_wait_timeout
 
             def any_trials_awaiting_processing(participant):
                 return (
@@ -2193,6 +2199,9 @@ class TrialMaker(Module):
                 wait_while(
                     lambda participant: any_trials_awaiting_processing(participant),
                     expected_wait=5,
+                    max_wait_time=lambda participant: _recording_wait_timeout(
+                        participant.id
+                    ),
                     log_message="Waiting for remaining trials that are awaiting further processing.",
                 ),
                 logic,
@@ -2340,6 +2349,8 @@ class TrialMaker(Module):
         )
 
     def _wait_for_trial(self):
+        from ..media_upload import _recording_wait_timeout
+
         def try_to_prepare_trial():
             if not self.sync_group_type:
                 return CodeBlock(self._try_to_prepare_trial_solo)
@@ -2369,11 +2380,15 @@ class TrialMaker(Module):
                 "Waiting for trial",
                 lambda participant: participant.trial_status == "wait",
                 logic=join(
-                    try_to_prepare_trial(),
                     WaitPage(wait_time=2.0),
+                    # Refresh availability before the loop checks its timeout
+                    # when the participant returns from this wait page.
+                    try_to_prepare_trial(),
                 ),
                 expected_repetitions=0,
-                max_loop_time=self.max_time_waiting_for_trial,
+                max_loop_time=lambda participant: _recording_wait_timeout(
+                    participant.id, self.max_time_waiting_for_trial
+                ),
                 fix_time_credit=False,
             ),
         )

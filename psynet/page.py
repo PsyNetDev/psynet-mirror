@@ -3,7 +3,7 @@ from importlib import resources
 from math import ceil
 from pathlib import Path
 from pprint import pformat
-from typing import List, Optional, Union
+from typing import Callable, List, Optional, Union
 from urllib.parse import urlparse
 
 from dominate import tags
@@ -238,7 +238,7 @@ def wait_while(
     condition,
     expected_wait: float,
     check_interval: float = 2.0,
-    max_wait_time: float = 20.0,
+    max_wait_time: Optional[Union[float, Callable]] = 20.0,
     wait_page=WaitPage,
     log_message: Optional[str] = None,
     fail_on_timeout=True,
@@ -267,6 +267,9 @@ def wait_while(
 
     max_wait_time
         The participant's maximum waiting time in seconds. Default: 20.0.
+        May be None for an unlimited wait, or a callable accepting ``participant``
+        and/or ``experiment``. A callable is evaluated once when waiting starts,
+        as in :func:`~psynet.timeline.while_loop`; polling does not reset the limit.
 
     wait_page
         The wait page that should be displayed to the participant;

@@ -70,6 +70,49 @@ def _utcnow():
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
+def _recording_wait_timeout(participant_id, default_timeout=20.0, *, trial_id=None):
+    """Keep dependent waits alive through existing recording deadlines.
+
+    Compute once on entering a wait. Pending uploads may receive their bytes at
+    the upload deadline and then use their processing allowance. Retain the
+    ordinary wait budget afterwards for analysis and clock polling. This never
+    extends a recording's own deadline or changes its success requirements.
+    """
+    from .trial.main import Trial
+
+    if default_timeout is None:
+        return None
+    query = (
+        db.session.query(
+            Recording.upload_status,
+            Recording.upload_deadline,
+            Recording.upload_processing_deadline,
+            Recording.upload_context,
+        )
+        .join(Trial, Recording.trial_id == Trial.id)
+        .filter(
+            Recording.participant_id == participant_id,
+            ~Trial.failed,
+            Recording.upload_status.in_(
+                ["pending", "received", "queued", "processing"]
+            ),
+        )
+    )
+    if trial_id is not None:
+        query = query.filter(Recording.trial_id == trial_id)
+    now = _utcnow()
+    remaining = 0.0
+    for recording in query:
+        deadline = (
+            recording.upload_deadline
+            + timedelta(seconds=recording.upload_context["processing_timeout"])
+            if recording.upload_status == "pending"
+            else recording.upload_processing_deadline
+        )
+        remaining = max(remaining, (deadline - now).total_seconds())
+    return default_timeout + remaining
+
+
 def _upload_directory():
     """Use private storage shared by web, worker, and clock processes.
 

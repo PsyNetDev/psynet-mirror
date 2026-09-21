@@ -2807,7 +2807,7 @@ def while_loop(
     condition: Callable,
     logic,
     expected_repetitions: int,
-    max_loop_time: float = None,
+    max_loop_time: Optional[Union[float, Callable]] = None,
     fix_time_credit=True,
     fail_on_timeout=True,
     on_timeout: Optional[Callable] = None,
@@ -2836,8 +2836,12 @@ def while_loop(
         of the total experiment.
 
     max_loop_time:
-        The maximum time in seconds for staying in the loop. Once exceeded, the participant is
-        is presented the ``UnsuccessfulEndPage``. Default: None.
+        The maximum time in seconds for staying in an active loop. Once exceeded,
+        the participant is presented the ``UnsuccessfulEndPage`` unless
+        ``fail_on_timeout`` is False. Default: None (unlimited).
+        May also be a callable accepting ``participant`` and/or ``experiment``
+        and returning seconds or None. It is evaluated once on entering the loop;
+        polling does not restart or recalculate the budget.
 
     fix_time_credit:
         Whether participants should receive the same time credit irrespective of whether
@@ -2872,28 +2876,42 @@ def while_loop(
         logger.info(f"Evaluating while_loop ({label}) condition: result = {result}")
         return result
 
-    conditional_logic = join(logic, GoTo(start_while))
-
     def with_namespace(x=None):
         prefix = f"__{label}__{x}"
         if x is None:
             return prefix
         return f"{prefix}__{x}"
 
-    if max_loop_time is not None:
+    def start_loop(participant, experiment):
+        """Snapshot the loop's start and runtime budget once per entry."""
+        participant.var.set(
+            with_namespace("loop_start_time"), serialise(datetime.now())
+        )
+        if callable(max_loop_time):
+            participant.var.set(
+                with_namespace("loop_max_time"),
+                call_function_with_context(
+                    max_loop_time, participant=participant, experiment=experiment
+                ),
+            )
 
-        def max_loop_time_condition(participant, experiment):
-            return (
+    def max_loop_time_condition(participant, experiment):
+        """Check elapsed time against the budget saved on entry."""
+        limit = (
+            participant.var.get(with_namespace("loop_max_time"))
+            if callable(max_loop_time)
+            else max_loop_time
+        )
+        return (
+            limit is not None
+            and (
                 datetime.now()
                 - unserialise_datetime(
                     participant.var.get(with_namespace("loop_start_time"))
                 )
-            ).seconds > max_loop_time
-
-    else:
-
-        def max_loop_time_condition(participant, experiment):
-            return False
+            ).total_seconds()
+            > limit
+        )
 
     from .page import UnsuccessfulEndPage
 
@@ -2919,13 +2937,9 @@ def while_loop(
 
     time_estimate = CreditEstimate(logic).get_max("time")
 
-    elts = join(
-        CodeBlock(
-            lambda participant: participant.var.set(
-                with_namespace("loop_start_time"), serialise(datetime.now())
-            )
-        ),
-        start_while,
+    # A resolved condition exits before checking timeouts. For example, returning
+    # to an inactive browser tab must not time out work that has already finished.
+    conditional_logic = join(
         conditional(
             "max_loop_time_condition",
             lambda participant, experiment: call_function_with_context(
@@ -2940,6 +2954,13 @@ def while_loop(
             log_chosen_branch=False,
             time_estimate=0.0,
         ),
+        logic,
+        GoTo(start_while),
+    )
+
+    elts = join(
+        CodeBlock(start_loop),
+        start_while,
         conditional(
             label,
             condition_wrapped,

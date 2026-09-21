@@ -247,7 +247,7 @@ alongside a demo using that same database.
 
 .. code-block:: shell
 
-    pytest tests/isolated/test_media_upload.py tests/isolated/test_chain_growth_queries.py
+    pytest tests/isolated/test_media_upload.py tests/isolated/test_chain_growth_queries.py tests/isolated/test_finalize_pending_trials.py
     npx playwright test media_upload_queue.spec.js
     npx playwright test demos/imitation_chain_video.spec.js demos/video_feature.spec.js
 
@@ -272,6 +272,24 @@ The clock starts when the response is accepted and includes queueing and retries
 it never restarts for another attempt. Successful server receipt starts a separate
 processing deadline. When connecting multi-source recording controls, budget the
 combined queued bytes rather than assuming each source gets the full bandwidth.
+
+Dependent feedback, performance-check, and trial-selection waits include the
+remaining upload and processing allowance, followed by their ordinary wait
+budget. They snapshot this budget on entry; polling never extends it. A resolved
+wait exits before checking for timeout, including when a participant returns to
+an inactive tab after the recording has failed.
+
+:func:`~psynet.page.wait_while` and :func:`~psynet.timeline.while_loop` accept
+timeout callables evaluated once on entry. For example, an experiment can use
+a participant-specific allowance without resetting it on each poll:
+
+.. code-block:: python
+
+    wait_while(
+        lambda participant: participant.var.processing_pending,
+        expected_wait=5,
+        max_wait_time=lambda participant: participant.var.processing_allowance_seconds,
+    )
 
 The streaming endpoint requires the request socket exposed by Gunicorn or
 Werkzeug to interrupt blocked reads at the deadline. Other WSGI servers receive
