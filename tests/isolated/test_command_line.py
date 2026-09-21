@@ -98,9 +98,9 @@ class TestCommandLine(object):
             / "Dockerfile"
         )
         text = dockerfile.read_text()
-        from dallinger.utils import dockerfile_reinstalls_local_dallinger_wheel
+        from psynet.command_line import _dockerfile_reinstalls_local_dallinger_wheel
 
-        assert dockerfile_reinstalls_local_dallinger_wheel(text)
+        assert _dockerfile_reinstalls_local_dallinger_wheel(text)
 
     def test_awaken_ssh_app_skips_missing_front_door(self):
         from dallinger.command_line import docker_ssh as dssh

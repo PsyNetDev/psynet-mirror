@@ -1486,11 +1486,32 @@ def _invoke_docker_ssh_deploy(ctx, command, *, server, dns_host, app, ingress=No
     return ctx.invoke(command, **kwargs)
 
 
+def _dockerfile_reinstalls_local_dallinger_wheel(text: str) -> bool:
+    """Return whether Dockerfile force-reinstalls a staged Dallinger wheel after COPY."""
+    copy_dot = None
+    for index, line in enumerate(text.splitlines()):
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            continue
+        if stripped.upper().startswith("COPY ") and stripped[5:].lstrip().startswith(
+            "."
+        ):
+            copy_dot = index
+    if copy_dot is None:
+        return False
+    after = "\n".join(text.splitlines()[copy_dot + 1 :])
+    return (
+        "dallinger-*.whl" in after
+        and "--force-reinstall" in after
+        and "--no-deps" in after
+    )
+
+
 def _dockerfile_reinstalls_local_dallinger(path: Path) -> bool:
     """Return whether Dockerfile force-reinstalls a staged Dallinger wheel."""
-    from dallinger.utils import dockerfile_reinstalls_local_dallinger_wheel
-
-    return dockerfile_reinstalls_local_dallinger_wheel(path.read_text(encoding="utf-8"))
+    return _dockerfile_reinstalls_local_dallinger_wheel(
+        path.read_text(encoding="utf-8")
+    )
 
 
 def _require_local_dallinger_dockerfile():
