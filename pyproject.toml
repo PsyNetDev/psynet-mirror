@@ -57,6 +57,10 @@ experiment = [
     # Dallinger 12.4.0 is available on PyPI.
     # Pin Dallinger master after #9680 (deploy.toml) until a 12.4 release.
     # Latest PyPI/tag is still 12.3.0, which does not include deploy.toml.
+    # After the stacked docker-ssh Cloudflare/hibernation work is pushed,
+    # retarget this SHA to that Dallinger commit (or 12.4.0). Local canary
+    # deploys should use ``psynet deploy ssh --use-local-dallinger`` (and an
+    # editable Dallinger checkout or DALLINGER_SOURCE) rather than this pin.
     "dallinger[docker] @ git+https://github.com/Dallinger/Dallinger.git@9e51dae43e05401bdfb6bf3bb8f659dfb8c4743b",
     # Unpin dominate once a new version is released which includes the following
     # fix for the Python 3.12 event loop warning:

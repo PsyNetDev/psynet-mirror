@@ -1,6 +1,7 @@
 import hashlib
 import io
 import json
+import os
 import subprocess
 import tempfile
 from datetime import date, datetime
@@ -68,6 +69,164 @@ class TestCommandLine(object):
         output = subprocess.check_output(["psynet", "--help"])
         assert b"Options:" in output
         assert b"Commands:" in output
+
+    def test_hibernate_and_awaken_ssh_help(self):
+        runner = CliRunner()
+        hibernate = runner.invoke(psynet, ["hibernate", "ssh", "--help"])
+        awaken = runner.invoke(psynet, ["awaken", "ssh", "--help"])
+        assert hibernate.exit_code == 0
+        assert awaken.exit_code == 0
+        assert "--app" in hibernate.output
+        assert "--server" in awaken.output
+
+    def test_deploy_ssh_exposes_ingress_when_dallinger_supports_it(self):
+        from dallinger.command_line import docker_ssh as dssh
+
+        from psynet.command_line import deploy__docker_ssh
+
+        names = [param.name for param in deploy__docker_ssh.params]
+        if hasattr(dssh, "option_ingress"):
+            assert "ingress" in names
+        assert "use_local_dallinger" in names
+
+    def test_experiment_dockerfile_reinstalls_local_dallinger_wheel(self):
+        dockerfile = (
+            Path(__file__).resolve().parents[2]
+            / "psynet"
+            / "resources"
+            / "experiment_scripts"
+            / "Dockerfile"
+        )
+        text = dockerfile.read_text()
+        from dallinger.utils import dockerfile_reinstalls_local_dallinger_wheel
+
+        assert dockerfile_reinstalls_local_dallinger_wheel(text)
+
+    def test_awaken_ssh_app_skips_missing_front_door(self):
+        from dallinger.command_line import docker_ssh as dssh
+
+        from psynet.command_line import _awaken_ssh_app
+
+        ctx = Mock()
+        with patch.object(
+            dssh, "awaken_app", return_value=False, create=True
+        ) as awaken_app:
+            _awaken_ssh_app(ctx, "musix", "consonance")
+        awaken_app.assert_called_once_with("musix", "consonance", required=False)
+
+    def test_awaken_ssh_app_reraises_real_failures(self):
+        from dallinger.command_line import docker_ssh as dssh
+
+        from psynet.command_line import _awaken_ssh_app
+
+        ctx = Mock()
+        with patch.object(
+            dssh,
+            "awaken_app",
+            side_effect=RuntimeError("controller failed"),
+            create=True,
+        ):
+            with pytest.raises(RuntimeError, match="controller failed"):
+                _awaken_ssh_app(ctx, "musix", "consonance")
+
+    def test_configure_dallinger_image_source_sets_source(self, monkeypatch, tmp_path):
+        from psynet.command_line import _configure_dallinger_image_source
+
+        src = tmp_path / "Dallinger"
+        src.mkdir()
+        (src / "pyproject.toml").write_text("[project]\nname='dallinger'\n")
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("DALLINGER_SOURCE", str(src))
+        monkeypatch.setenv("DALLINGER_NO_EGG_BUILD", "1")
+        _configure_dallinger_image_source(use_local_dallinger=True)
+        assert os.environ["DALLINGER_SOURCE"] == str(src)
+        assert "DALLINGER_NO_EGG_BUILD" not in os.environ
+
+    def test_configure_dallinger_image_source_requires_wheel_reinstall(
+        self, monkeypatch, tmp_path
+    ):
+        from psynet.command_line import _configure_dallinger_image_source
+
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "Dockerfile").write_text("FROM python:3.12\nCOPY . /experiment\n")
+        src = tmp_path / "Dallinger"
+        src.mkdir()
+        (src / "pyproject.toml").write_text("[project]\nname='dallinger'\n")
+        monkeypatch.setenv("DALLINGER_SOURCE", str(src))
+        with pytest.raises(click.UsageError, match="dallinger-\\*\\.whl"):
+            _configure_dallinger_image_source(use_local_dallinger=True)
+
+    def test_configure_dallinger_image_source_rejects_wheel_before_copy(
+        self, monkeypatch, tmp_path
+    ):
+        from psynet.command_line import _configure_dallinger_image_source
+
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "Dockerfile").write_text(
+            "FROM python:3.12\n"
+            "RUN pip install --force-reinstall --no-deps dallinger-*.whl\n"
+            "COPY . /experiment\n"
+        )
+        src = tmp_path / "Dallinger"
+        src.mkdir()
+        (src / "pyproject.toml").write_text("[project]\nname='dallinger'\n")
+        monkeypatch.setenv("DALLINGER_SOURCE", str(src))
+        with pytest.raises(click.UsageError, match="after COPY"):
+            _configure_dallinger_image_source(use_local_dallinger=True)
+
+    def test_configure_dallinger_image_source_accepts_wheel_dockerfile(
+        self, monkeypatch, tmp_path
+    ):
+        from psynet.command_line import _configure_dallinger_image_source
+
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "Dockerfile").write_text(
+            "FROM python:3.12\n"
+            "COPY . /experiment\n"
+            "RUN pip install --force-reinstall --no-deps dallinger-*.whl\n"
+        )
+        src = tmp_path / "Dallinger"
+        src.mkdir()
+        (src / "pyproject.toml").write_text("[project]\nname='dallinger'\n")
+        monkeypatch.setenv("DALLINGER_SOURCE", str(src))
+        monkeypatch.setenv("DALLINGER_NO_EGG_BUILD", "1")
+        _configure_dallinger_image_source(use_local_dallinger=True)
+        assert os.environ["DALLINGER_SOURCE"] == str(src)
+
+    def test_invoke_docker_ssh_deploy_forwards_ingress(self):
+        from psynet.command_line import _invoke_docker_ssh_deploy
+
+        command = Mock()
+        ingress_param = Mock()
+        ingress_param.name = "ingress"
+        command.params = [ingress_param]
+        ctx = Mock()
+        ctx.invoke.return_value = {"dashboard_user": "admin"}
+        _invoke_docker_ssh_deploy(
+            ctx,
+            command,
+            server="musix",
+            dns_host=None,
+            app="consonance",
+            ingress="cloudflare",
+        )
+        kwargs = ctx.invoke.call_args.kwargs
+        assert kwargs["ingress"] == "cloudflare"
+        assert kwargs["app_name"] == "consonance"
+
+    def test_export_launch_info_records_public_origin(self, tmp_path):
+        from psynet.command_line import _export_launch_info
+
+        _export_launch_info(
+            tmp_path,
+            dashboard_user="admin",
+            dashboard_password="secret",
+            public_origin="https://consonance.science-of-music.org",
+            ingress="cloudflare",
+        )
+        payload = json.loads((tmp_path / "launch-info.json").read_text())
+        assert payload["public_origin"] == "https://consonance.science-of-music.org"
+        assert payload["ingress"] == "cloudflare"
 
     def test_psynet_docs_command_is_not_registered(self):
         from psynet.command_line import psynet

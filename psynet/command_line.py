@@ -91,6 +91,26 @@ ensure_runtime()
 
 logger = get_logger()
 
+try:
+    from dallinger.command_line.docker_ssh import option_ingress
+except ImportError:  # pragma: no cover - older Dallinger without Cloudflare ingress
+
+    def option_ingress(func):
+        return func
+
+
+def _use_local_dallinger_option(func):
+    return click.option(
+        "--use-local-dallinger",
+        is_flag=True,
+        default=False,
+        help=(
+            "Bake the locally imported Dallinger source into the experiment "
+            "image instead of the Git pin. Required for canary deploys of "
+            "unreleased docker-ssh features."
+        ),
+    )(func)
+
 
 def verify_id(ctx, param, app):
     # Dallinger's docker-ssh deploy allows --app to be omitted, in which case
@@ -1262,8 +1282,10 @@ def _pre_launch(
 
     run_pre_checks(mode, local_, heroku, docker, app)
 
-    # Always use the Dallinger version in requirements.txt, not the local editable one
-    os.environ["DALLINGER_NO_EGG_BUILD"] = "1"
+    if os.environ.get("DALLINGER_SOURCE"):
+        os.environ.pop("DALLINGER_NO_EGG_BUILD", None)
+    else:
+        os.environ["DALLINGER_NO_EGG_BUILD"] = "1"
 
     if is_in_repo_experiment():
         # In-repo demos/tests use PsyNet's shared development .venv; do not let
@@ -1404,15 +1426,17 @@ def _deploy__docker_heroku(ctx, app, archive):
     "--dns-host",
     help="DNS name to use. Must resolve all its subdomains to the IP address specified as ssh host",
 )
+@option_ingress
+@_use_local_dallinger_option
 @click.pass_context
-def deploy__docker_ssh(ctx, app, archive, dns_host, server):
+def deploy__docker_ssh(
+    ctx, app, archive, dns_host, server, ingress=None, use_local_dallinger=False
+):
     """
     Deploy the experiment to a remote server via Docker and SSH.
     """
     try:
-        # Ensures that the experiment is deployed with the Dallinger version specified in requirements.txt,
-        # irrespective of whether a different version is installed locally.
-        os.environ["DALLINGER_NO_EGG_BUILD"] = "1"
+        _configure_dallinger_image_source(use_local_dallinger=use_local_dallinger)
 
         _pre_launch(
             ctx,
@@ -1431,20 +1455,93 @@ def deploy__docker_ssh(ctx, app, archive, dns_host, server):
 
         # Note: PsyNet bypasses Dallinger's deploy-from-archive system and uses its own, so we set archive_path=None.
         # Explicitly pass update=False to avoid Click converting the default to the string 'False'
-        result = ctx.invoke(
+        result = _invoke_docker_ssh_deploy(
+            ctx,
             dallinger_docker_ssh_deploy,
             server=server,
             dns_host=dns_host,
-            app_name=app,
-            config_options={},
-            archive_path=None,
-            update=False,
+            app=app,
+            ingress=ingress,
         )
 
         _post_deploy(result)
     finally:
         _cleanup_exp_directory()
         reset_console()
+
+
+def _invoke_docker_ssh_deploy(ctx, command, *, server, dns_host, app, ingress=None):
+    """Invoke Dallinger docker-ssh deploy/sandbox, forwarding ingress when supported."""
+    kwargs = {
+        "server": server,
+        "dns_host": dns_host,
+        "app_name": app,
+        "config_options": {},
+        "archive_path": None,
+        "update": False,
+    }
+    params = getattr(command, "params", ())
+    if any(getattr(param, "name", None) == "ingress" for param in params):
+        kwargs["ingress"] = ingress
+    return ctx.invoke(command, **kwargs)
+
+
+def _dockerfile_reinstalls_local_dallinger(path: Path) -> bool:
+    """Return whether Dockerfile force-reinstalls a staged Dallinger wheel."""
+    from dallinger.utils import dockerfile_reinstalls_local_dallinger_wheel
+
+    return dockerfile_reinstalls_local_dallinger_wheel(path.read_text(encoding="utf-8"))
+
+
+def _require_local_dallinger_dockerfile():
+    """Abort --use-local-dallinger if a local Dockerfile would ignore the wheel."""
+    dockerfile = Path("Dockerfile")
+    if not dockerfile.is_file():
+        return
+    if not _dockerfile_reinstalls_local_dallinger(dockerfile):
+        raise click.UsageError(
+            "--use-local-dallinger needs a Dockerfile that force-reinstalls "
+            "dallinger-*.whl after COPY with --no-deps (see "
+            "psynet/resources/experiment_scripts/Dockerfile)."
+        )
+
+
+def _configure_dallinger_image_source(use_local_dallinger=False):
+    """Choose the Dallinger tree that docker-ssh bakes into the experiment image."""
+    if not use_local_dallinger:
+        os.environ["DALLINGER_NO_EGG_BUILD"] = "1"
+        return
+    _require_local_dallinger_dockerfile()
+    os.environ.pop("DALLINGER_NO_EGG_BUILD", None)
+    source = os.environ.get("DALLINGER_SOURCE", "").strip()
+    if not source:
+        from dallinger.utils import get_editable_dallinger_path
+
+        source = get_editable_dallinger_path() or ""
+    if not source:
+        import dallinger as dallinger_pkg
+
+        root = Path(dallinger_pkg.__file__).resolve().parent.parent
+        if (root / "pyproject.toml").is_file():
+            source = str(root)
+    if not source:
+        raise click.UsageError(
+            "--use-local-dallinger needs an editable Dallinger checkout or DALLINGER_SOURCE."
+        )
+    os.environ["DALLINGER_SOURCE"] = source
+    click.echo(f"Baking local Dallinger from {source} into the experiment image.")
+
+
+def _awaken_ssh_app(ctx, server, app):
+    """Wake a sleeping docker-ssh app before export or other database access."""
+    try:
+        from dallinger.command_line import docker_ssh as dssh
+    except ImportError:
+        return
+    awaken = getattr(dssh, "awaken_app", None)
+    if awaken is None:
+        return
+    awaken(server, app, required=False)
 
 
 def _post_deploy(result):
@@ -1802,15 +1899,19 @@ def debug__docker_heroku(ctx, app, archive):
     "--dns-host",
     help="DNS name to use. Must resolve all its subdomains to the IP address specified as ssh host",
 )
+@option_ingress
+@_use_local_dallinger_option
 @click.pass_context
-def debug__docker_ssh(ctx, app, archive, server, dns_host):
+def debug__docker_ssh(
+    ctx, app, archive, server, dns_host, ingress=None, use_local_dallinger=False
+):
     """
     Debug the experiment on a remote server via SSH.
     """
     try:
         from dallinger.command_line.docker_ssh import sandbox
 
-        os.environ["DALLINGER_NO_EGG_BUILD"] = "1"
+        _configure_dallinger_image_source(use_local_dallinger=use_local_dallinger)
 
         _pre_launch(
             ctx,
@@ -1825,14 +1926,13 @@ def debug__docker_ssh(ctx, app, archive, server, dns_host):
 
         # Note: PsyNet bypasses Dallinger's deploy-from-archive system and uses its own, so we set archive_path=None.
         # Explicitly pass update=False to avoid Click converting the default to the string 'False'
-        result = ctx.invoke(
+        result = _invoke_docker_ssh_deploy(
+            ctx,
             sandbox,
             server=server,
             dns_host=dns_host,
-            app_name=app,
-            config_options={},
-            archive_path=None,
-            update=False,
+            app=app,
+            ingress=ingress,
         )
 
         _post_deploy(result)
@@ -2549,6 +2649,7 @@ def export__docker_ssh(ctx, app, server, **kwargs):
     Export the experiment from a remote server via Docker and SSH.
     """
     app = _resolve_ssh_app(ctx, app, server)
+    _awaken_ssh_app(ctx, server, app)
     export_(
         ctx,
         get_exp_variables=lambda: _read_experiment_variables(
@@ -3135,6 +3236,48 @@ def _destroy(
                 click.echo(
                     "Failed to destroy the app. Maybe it was already destroyed, or the app name was wrong?"
                 )
+
+
+@psynet.group("hibernate")
+def hibernate():
+    """
+    Hibernate a deployed experiment.
+    """
+    pass
+
+
+@hibernate.command("ssh")
+@click.option("--app", required=True, callback=verify_id, help="Experiment id")
+@option_server
+@click.pass_context
+def hibernate__ssh(ctx, app, server):
+    """
+    Hibernate the experiment on a remote server via SSH.
+    """
+    from dallinger.command_line.docker_ssh import hibernate as dallinger_hibernate
+
+    ctx.invoke(dallinger_hibernate, server=server, app=app)
+
+
+@psynet.group("awaken")
+def awaken():
+    """
+    Awaken a hibernated experiment.
+    """
+    pass
+
+
+@awaken.command("ssh")
+@click.option("--app", required=True, callback=verify_id, help="Experiment id")
+@option_server
+@click.pass_context
+def awaken__ssh(ctx, app, server):
+    """
+    Awaken the experiment on a remote server via SSH.
+    """
+    from dallinger.command_line.docker_ssh import awaken as dallinger_awaken
+
+    ctx.invoke(dallinger_awaken, server=server, app=app)
 
 
 @destroy.command("ssh")

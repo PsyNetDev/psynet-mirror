@@ -217,6 +217,64 @@ what experiment names to support, and then setting up the DNS to support those n
     one of those subdomains. For example, when deploying through the web server of the Centre for Music and Science
     at Cambridge, only app names of the form ``psynet-01``, ``psynet-02``, ..., ``psynet-20`` are supported.
 
+Cloudflare tunnels (optional)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Classic docker-ssh deployments still go through the host Caddy reverse proxy on
+ports 80/443. You can instead deploy with a per-app Cloudflare tunnel so the
+experiment is reachable at a first-level hostname such as
+``https://consonance.science-of-music.org`` without opening those ports::
+
+    psynet deploy ssh --app consonance --ingress cloudflare
+
+Classic ``--dns-host`` is only for host Caddy. Cloudflare hostnames use the
+server's ``cloudflare_dns_zone`` (for example ``science-of-music.org``).
+
+Until this Dallinger stack is released, canary deploys must bake the local
+Dallinger tree into the image::
+
+    psynet deploy ssh --app consonance --ingress cloudflare --use-local-dallinger
+
+PYTHONPATH is not enough: the image still pip-installs the Git pin in
+``pyproject.toml``. ``--use-local-dallinger`` builds a wheel from that
+checkout and the experiment Dockerfile force-reinstalls it after ``COPY .``
+with ``--no-deps``. If the experiment directory already has a ``Dockerfile``
+that omits that ``dallinger-*.whl`` step, deploy aborts before the image is
+built.
+
+The server must already be registered with Cloudflare account and zone IDs
+(``dallinger docker-ssh servers add --cloudflare-account-id ...``). The API
+token is read from ``CLOUDFLARE_API_TOKEN``, then ``~/.dallingerconfig``, then
+the macOS Keychain item ``org.cms-cambridge.cloudflare-api-token``. It is never
+stored in host records. Until a server default is changed, omitting
+``--ingress`` keeps classic Caddy.
+
+Hibernation
+^^^^^^^^^^^
+
+Each docker-ssh app now has a front door that can sleep expensive containers
+while remaining reachable. Enable automatic idle sleep in ``config.txt``::
+
+    docker_ssh_idle_hibernate = true
+    docker_ssh_idle_hibernate_minutes = 60
+
+Leave idle sleep off for first canary deploys.
+
+``GET /health`` probes do not wake a sleeping app and do not reset the idle
+timer. To sleep or wake by hand::
+
+    psynet hibernate ssh --app your-app-name
+    psynet awaken ssh --app your-app-name
+
+``psynet export ssh`` awakens a sleeping app before reading its database.
+Deploy also chowns ``~/psynet-data/assets`` (and other ``docker_volumes``
+host bind mounts) so older root-owned files stay writable, retrying with
+passwordless sudo and then a root Alpine container if needed.
+
+Do not enable idle sleep while recruitment is running, or for experiments that
+keep WebSocket or other in-memory participant state. A crash while the app is
+awake returns HTTP 503 and is not auto-restarted.
+
 Under the hood, the deployment command works as follows:
 
 - Run any preliminary steps, e.g. uploading assets to the remote server
@@ -293,11 +351,15 @@ same app. Each PsyNet experiment contains four distinct containers:
 - ``clock`` - schedules tasks
 - ``redis`` - stores variable values
 
-The SSH server additionally provides two further containers which are shared across all experiments:
+The SSH server additionally provides two further containers which are shared across all **classic** experiments:
 
 - ``postgresql`` - hosts the experiment databases
 - ``caddy`` - redirects HTTP requests to the appropriate experiment app. See
   `Caddy server <https://caddyserver.com/>`_ for more details.
+
+Cloudflare-ingress apps instead run their own Postgres in the Compose project
+and reach the internet through ``cloudflared``, plus an unprivileged front-door
+Caddy and a private hibernation controller. They do not publish ports 80/443.
 
 When you deploy an experiment to the SSH server, a folder is created in the location
 ``~/dallinger/your-app-name`` which contains a Docker compose configuration called

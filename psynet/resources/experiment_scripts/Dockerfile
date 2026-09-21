@@ -31,6 +31,13 @@ RUN if test -f prepare_docker_image.sh ; then bash prepare_docker_image.sh ; fi
 
 COPY . /experiment
 
+# A local Dallinger wheel staged by ``DALLINGER_SOURCE`` / editable install
+# must win over the Git pin installed from requirements/constraints above.
+RUN set -- /experiment/dallinger-*.whl; \
+    if [ -f "$1" ]; then \
+        uv pip install --system --force-reinstall --no-deps "$1"; \
+    fi
+
 ENV PORT=5000
 
 CMD dallinger_heroku_web

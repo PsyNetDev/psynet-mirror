@@ -2088,6 +2088,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             "default_translator": "chat_gpt",
             "disable_browser_autotranslate": True,
             "disable_when_duration_exceeded": False,
+            "docker_ssh_monitoring_kind": "psynet",
+            "docker_ssh_monitoring_path": "/health",
             "docker_volumes": "${HOME}/psynet-data/assets:/psynet-data/assets",
             "duration": 100000000.0,
             "experimenter_name": cls.get_username(),
@@ -4017,6 +4019,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         config.register("lab_recruiter_auth_token", str, sensitive=True)
         config.register("lab_recruiter_external_submission_url", str)
         config.register("check_dallinger_version", bool)
+        if "docker_ssh_monitoring_kind" not in config.types:
+            config.register("docker_ssh_monitoring_kind", str)
+        if "docker_ssh_monitoring_path" not in config.types:
+            config.register("docker_ssh_monitoring_path", str)
         config.register("check_participant_opened_devtools", bool)
         config.register("currency", str)
         config.register("default_translator", str)
