@@ -474,13 +474,22 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             super().fail(reason=reason)
 
     @property
+    def _recording_failed(self):
+        """Identify unavailable media separately from author-defined trial failures."""
+        return self.failed and (self.failed_reason or "").startswith("recording_")
+
+    @property
     def ready_for_feedback(self):
         """
         Determines whether a trial is ready to give feedback to the participant.
         """
         msg = f"Participant {self.participant.id}: Checking if the trial is ready for feedback... "
 
-        if not self.complete:
+        if self._recording_failed:
+            msg += "no, because a required recording failed."
+            outcome = False
+
+        elif not self.complete:
             msg += "no, because the trial is not complete."
             outcome = False
 
@@ -798,6 +807,9 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         return raw_answer
 
     def call_async_post_trial(self):
+        if self._recording_failed:
+            logger.info("Skipping analysis for failed trial %s.", self.id)
+            return
         try:
             self.async_post_trial()
         except Exception:
@@ -985,6 +997,9 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
 
     def check_if_can_run_async_post_trial(self):
         msg = f"Checking if we should run async_post_trial for trial {self.id}... "
+        if self._recording_failed:
+            logger.debug("%sno, because the trial failed.", msg)
+            return
         if self.async_post_trial_requested:
             logger.debug("%sno need, async_post_trial has already been requested.", msg)
             return
@@ -1256,24 +1271,34 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         return conditional(
             label=label,
             condition=lambda experiment, participant: (
-                participant.current_trial.gives_feedback(experiment, participant)
+                not participant.current_trial._recording_failed
+                and participant.current_trial.gives_feedback(experiment, participant)
             ),
             logic_if_true=join(
                 wait_while(
                     lambda participant: (
-                        not participant.current_trial.ready_for_feedback
+                        not participant.current_trial._recording_failed
+                        and not participant.current_trial.ready_for_feedback
                     ),
                     expected_wait=0,
                     log_message="Waiting for feedback to be ready.",
                     check_interval=1.0,
                 ),
-                PageMaker(
-                    lambda experiment, participant: (
-                        participant.current_trial.show_feedback(
-                            experiment=experiment, participant=participant
-                        )
+                conditional(
+                    label=f"{label}__still_valid",
+                    condition=lambda participant: (
+                        not participant.current_trial._recording_failed
                     ),
-                    time_estimate=0,
+                    logic_if_true=PageMaker(
+                        lambda experiment, participant: (
+                            participant.current_trial.show_feedback(
+                                experiment=experiment, participant=participant
+                            )
+                        ),
+                        time_estimate=0,
+                    ),
+                    fix_time_credit=False,
+                    log_chosen_branch=False,
                 ),
             ),
             fix_time_credit=False,
@@ -2158,6 +2183,7 @@ class TrialMaker(Module):
                     db.session.query(func.count(Trial.id))
                     .filter(
                         Trial.participant_id == participant.id,
+                        ~Trial.failed,
                         Trial.async_post_trial_pending | Trial.asset_deposit_pending,
                     )
                     .scalar()

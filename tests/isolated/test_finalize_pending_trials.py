@@ -32,6 +32,133 @@ class FinalizeBackstopNode(ChainNode):
         return seed
 
 
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_failed_trial_does_not_run_late_analysis(db_session, participant, monkeypatch):
+    exp = get_experiment()
+    network = _create_network(_chain_trial_maker(), exp)
+    trial = _add_complete_unfinalized_trial(network.head, participant)
+    calls = []
+    monkeypatch.setattr(
+        FinalizeBackstopTrial, "async_post_trial", lambda self: calls.append(self.id)
+    )
+    trial.fail(reason="recording_upload_timeout")
+    trial.check_if_can_run_async_post_trial()
+    assert not trial.async_post_trial_requested
+    trial.call_async_post_trial()
+    assert calls == []
+    assert not trial.async_post_trial_complete
+    assert not trial.finalized
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+@pytest.mark.parametrize("reason", ["recording_upload_timeout", "analysis"])
+def test_recording_failure_exits_feedback_wait(
+    db_session, participant, monkeypatch, reason
+):
+    from psynet.asset import ExperimentAsset
+    from psynet.page import InfoPage, WaitPage
+    from psynet.timeline import Timeline
+
+    exp = get_experiment()
+    network = _create_network(_chain_trial_maker(), exp)
+    trial = _add_complete_unfinalized_trial(network.head, participant)
+    asset = ExperimentAsset(
+        local_key="pending",
+        input_path=None,
+        is_folder=False,
+        extension=".webm",
+        parent=trial,
+    )
+    db.session.add(asset)
+    trial.assets["pending"] = asset
+    participant.current_trial = trial
+    feedback = []
+
+    def show_feedback(self, experiment, participant):
+        feedback.append(self.id)
+        return InfoPage("Feedback", time_estimate=0)
+
+    monkeypatch.setattr(FinalizeBackstopTrial, "show_feedback", show_feedback)
+    timeline = Timeline(
+        FinalizeBackstopTrial._construct_feedback_logic(None),
+        InfoPage("Continue", time_estimate=0),
+    )
+    monkeypatch.setattr(exp, "timeline", timeline)
+    participant.elt_id = ["main", -1]
+    timeline.advance_page(exp, participant)
+    assert isinstance(timeline.get_current_elt(exp, participant), WaitPage)
+    trial.fail(reason=reason)
+    if reason == "analysis":
+        asset.deposited = True
+    timeline.advance_page(exp, participant)
+    if reason == "analysis":
+        assert timeline.get_current_elt(exp, participant).content == "Feedback"
+        assert feedback
+        assert trial.ready_for_feedback
+    else:
+        assert timeline.get_current_elt(exp, participant).content == "Continue"
+        assert feedback == []
+        assert not trial.ready_for_feedback
+        assert not asset.deposited
+    assert not participant.failed
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+@pytest.mark.parametrize("threshold, passed", [(0, True), (1, False)])
+def test_failed_recording_releases_end_wait_without_bypassing_performance_check(
+    db_session, participant, monkeypatch, threshold, passed
+):
+    from psynet.asset import ExperimentAsset
+    from psynet.page import InfoPage, WaitPage
+    from psynet.timeline import Timeline
+
+    exp = get_experiment()
+    maker = _chain_trial_maker()
+    maker.performance_check_type = "performance"
+    maker.performance_threshold = threshold
+    maker.give_end_feedback_passed = False
+    maker.end_performance_check_waits = True
+    participant.module_state = maker.state_class(maker, participant)
+    network = _create_network(maker, exp)
+    trial = _add_complete_unfinalized_trial(network.head, participant)
+    asset = ExperimentAsset(
+        local_key="pending",
+        input_path=None,
+        is_folder=False,
+        extension=".webm",
+        parent=trial,
+    )
+    db.session.add(asset)
+    trial.assets["pending"] = asset
+    # Use an author-supplied failure page to observe the normal configured branch.
+    monkeypatch.setattr(
+        maker, "check_fail_logic", lambda: InfoPage("Failed check", time_estimate=0)
+    )
+    timeline = Timeline(
+        maker._check_performance_logic("end"), InfoPage("Continue", time_estimate=0)
+    )
+    monkeypatch.setattr(exp, "timeline", timeline)
+    participant.elt_id = ["main", -1]
+    timeline.advance_page(exp, participant)
+    assert isinstance(timeline.get_current_elt(exp, participant), WaitPage)
+    trial.fail(reason="recording_upload_timeout")
+    timeline.advance_page(exp, participant)
+    assert participant.module_state.performance_check["passed"] is passed
+    assert timeline.get_current_elt(exp, participant).content == (
+        "Continue" if passed else "Failed check"
+    )
+    assert not asset.deposited
+
+
 @pytest.fixture
 def participant(db_session):
     exp = get_experiment()
