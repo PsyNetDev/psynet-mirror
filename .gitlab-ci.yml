@@ -57,6 +57,7 @@ before_script:
 pre_commit:
   image: python:3.13
   <<: *default_rules
+  services: []
   before_script:
     - pip install pre-commit
   script:
@@ -65,6 +66,7 @@ pre_commit:
 validate_agent_skills:
   image: python:3.13
   <<: *default_rules
+  services: []
   before_script:
     - pip install pyyaml skills-ref
   script:
@@ -73,6 +75,7 @@ validate_agent_skills:
 changelog_check:
   image: python:3.13
   stage: test
+  services: []
   before_script:
     - python -m pip install -e '.[dev]'
   script:
@@ -230,6 +233,7 @@ merge_test_results:
   image: python:3.13-alpine
   stage: test
   <<: *default_rules
+  services: []
   needs:
     - "tests_python_3_13"
     # tests_python_3_14 and compatibility_tests only exist on
