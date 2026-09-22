@@ -178,8 +178,10 @@ extend-exclude = [
     "src",
     # Vendored copies of the shared IRB consent modules from
     # https://gitlab.com/computational-audition-lab/cococo-shared;
-    # kept byte-identical to upstream, so not linted/formatted here.
+    # kept byte-identical to each other (not linted/formatted here).
+    # They may diverge from upstream when PsyNet needs a local template fix.
     "tests/deployment/audio_gibbs/consents_cococo",
+    "tests/deployment/auto_recruit_prolific/consents_cococo",
     "tests/deployment/payment_flows_prolific/consents_cococo",
 ]
 

@@ -203,6 +203,18 @@ class Exp(psynet.experiment.Experiment):
         "prolific_enable_return_for_bonus": True,
     }
 
+    def on_launch(self):
+        """Refuse deployment through an unrelated recruiter."""
+        from dallinger.config import get_config
+
+        recruiter = get_config().get("recruiter")
+        if recruiter not in ("prolific", "devprolific"):
+            raise RuntimeError(
+                "This deployment test requires recruiter=prolific or devprolific, "
+                f"not {recruiter!r}."
+            )
+        super().on_launch()
+
     timeline = Timeline(
         # DURATION/PAYMENT are passed explicitly because this experiment sets
         # prolific_estimated_completion_minutes and base_payment in Exp.config
