@@ -267,6 +267,8 @@ timer. To sleep or wake by hand::
     psynet awaken ssh --app your-app-name
 
 ``psynet export ssh`` awakens a sleeping app before reading its database.
+It uses that deployment's public origin, so a Cloudflare app is reached at
+its public name rather than ``https://<app>.<ssh-host>``.
 Deploy also chowns ``~/psynet-data/assets`` (and other ``docker_volumes``
 host bind mounts) so older root-owned files stay writable, retrying with
 passwordless sudo and then a root Alpine container if needed.

@@ -4,6 +4,7 @@ import importlib
 import json
 import os
 import re
+import shlex
 import shutil
 import signal
 import subprocess
@@ -13,6 +14,7 @@ import threading
 import zipfile
 from contextlib import contextmanager, nullcontext
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import click
 import click.shell_completion
@@ -2818,6 +2820,101 @@ def _build_local_export(export_path, assets):
     build_export_tree(export_path, assets=assets, local=True)
 
 
+def _normalize_public_origin(value):
+    """Return an origin with no path, query, or fragment.
+
+    Parameters
+    ----------
+    value : str or None
+        Candidate public origin.
+
+    Returns
+    -------
+    str or None
+        The origin, or ``None`` when ``value`` is not an HTTP(S) origin.
+    """
+    if not isinstance(value, str):
+        return None
+    parsed = urlsplit(value.strip())
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return None
+    if parsed.path not in {"", "/"} or parsed.query or parsed.fragment:
+        return None
+    return f"{parsed.scheme}://{parsed.netloc}"
+
+
+def _latest_launch_record(app, server):
+    """Return the newest local launch note for this app on this server."""
+    root = Path("~/psynet-data/launch-data").expanduser()
+    if not root.is_dir():
+        return None
+    chosen = None
+    chosen_mtime = -1
+    for path in root.glob("*/launch-info.json"):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            mtime = path.stat().st_mtime
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            continue
+        if payload.get("app") != app or payload.get("server") != server:
+            continue
+        if mtime >= chosen_mtime:
+            chosen = payload
+            chosen_mtime = mtime
+    return chosen
+
+
+def _remote_public_origin(app, server):
+    """Read ``public_origin`` from the server's deployment manifest."""
+    if not isinstance(app, str) or not re.fullmatch(
+        r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", app
+    ):
+        return None
+    from dallinger.command_line.docker_ssh import ExecuteException
+
+    from .export.client import SshSession
+
+    command = f'cat "$HOME/dallinger/{shlex.quote(app)}/deployment.json"'
+    try:
+        with SshSession(server) as session:
+            raw = session.executor.run(command, raise_=False)
+    except (ExecuteException, OSError, KeyError) as exc:
+        log(f"Could not read the remote deployment manifest: {exc}")
+        return None
+    try:
+        payload = json.loads(raw or "")
+    except json.JSONDecodeError:
+        return None
+    return _normalize_public_origin(payload.get("public_origin"))
+
+
+def _ssh_dashboard_endpoint(app, server, config):
+    """Dashboard address and credentials for an SSH deployment.
+
+    Cloudflare apps are not served at ``https://<app>.<ssh-host>``. The
+    deploy records the public origin locally; the server manifest is the
+    fallback when that note is missing.
+    """
+    from .export.client import DashboardEndpoint
+
+    record = _latest_launch_record(app, server)
+    origin = None
+    user = config.get("dashboard_user")
+    password = config.get("dashboard_password")
+    if record:
+        origin = _normalize_public_origin(record.get("public_origin"))
+        record_user = record.get("dashboard_user")
+        record_password = record.get("dashboard_password")
+        if record_user and record_password:
+            user = record_user
+            password = record_password
+    if origin is None:
+        origin = _remote_public_origin(app, server)
+    if origin is None:
+        origin = get_experiment_url(app, server)
+    return DashboardEndpoint(base_url=origin, auth=(user, password))
+
+
 def _fetch_remote_export(
     experiment_class,
     export_path,
@@ -2855,10 +2952,13 @@ def _fetch_remote_export(
         local_project_identity,
     )
 
-    endpoint = DashboardEndpoint(
-        base_url=get_experiment_url(app, server),
-        auth=(config.get("dashboard_user"), config.get("dashboard_password")),
-    )
+    if docker_ssh and server:
+        endpoint = _ssh_dashboard_endpoint(app, server, config)
+    else:
+        endpoint = DashboardEndpoint(
+            base_url=get_experiment_url(app, server),
+            auth=(config.get("dashboard_user"), config.get("dashboard_password")),
+        )
     local_identity = local_project_identity(experiment_class)
 
     def check_identity(remote):
