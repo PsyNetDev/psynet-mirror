@@ -376,7 +376,18 @@ asv_regression:
   rules:
     - if: $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "issues/9123-performance-benchmark-site"
       when: never
+    # Fast ASV only measures PsyNet hot paths and debug launch of
+    # tests/experiments/static_big. Skip the ~6 min job when the MR cannot
+    # change those results.
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes:
+        - psynet/**/*
+        - benchmarks/**/*
+        - tests/experiments/static_big/**/*
+        - asv.conf.json
+        - pyproject.toml
+        - Dockerfile
+        - .gitlab-ci.yml
       when: always
     - when: never
 

@@ -35,10 +35,13 @@ Benchmarks are split by directory:
 Merge-request checks
 ====================
 
-Merge requests run the ``asv_regression`` CI job. This job uses
+Merge requests run the ``asv_regression`` CI job when the diff includes PsyNet
+package code, the fast debug-launch experiment (``tests/experiments/static_big``),
+benchmark files, or the ASV/CI configuration those jobs use. The job uses
 ``asv continuous`` with ``--bench "^fast\\."`` to benchmark the merge-request
 base and head commits back-to-back on the same GitLab runner. The job exits
-non-zero when ASV detects a regression larger than ``--factor 1.25``.
+non-zero when ASV detects a regression larger than ``--factor 1.25``. Docs,
+changelog, and skill-only merge requests skip this job.
 
 Export performance is not included in the ASV suite. End-to-end exports depend
 on mutable database fixtures, filesystem caches, and subprocess startup, which

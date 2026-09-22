@@ -1,0 +1,1 @@
+GitLab CI no longer starts Docker, Postgres, or Redis for lightweight Python jobs, runs the changelog fragment check without installing the development extra, and skips the merge-request ASV regression job unless the diff can affect those benchmarks.
