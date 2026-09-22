@@ -54,6 +54,43 @@ before_script:
     - if: $CI_COMMIT_TAG
       when: always
 
+# Docker pytest / Playwright jobs. MR pipelines skip these when the diff
+# cannot affect experiment runtime, tests, demos, or the CI image. Default
+# branch, tags, and branch pipelines without an MR still always run them.
+.docker_test_rules: &docker_test_rules
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes:
+        - .gitlab-ci.yml
+        - .cursor/skills/experiment/**/*
+        - Dockerfile
+        - Dockerfile.playwright
+        - MANIFEST.in
+        - ci/**/*
+        - demos/**/*
+        - deployment-tests/**/*
+        - dev-requirements.in
+        - install-ci-dependencies.sh
+        - package-lock.json
+        - package.json
+        - playwright.config.js
+        - postgres_setup.sql
+        - psynet/**/*
+        - pyproject.toml
+        - pytest.ini
+        - run-ci-tests.sh
+        - scripts/**/*
+        - tests/**/*
+      when: always
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      when: never
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: always
+    - if: $CI_COMMIT_TAG
+      when: always
+    - if: $CI_COMMIT_BRANCH
+      when: always
+
 pre_commit:
   image: python:3.13
   <<: *default_rules
@@ -122,7 +159,7 @@ changelog_check:
 .test_suite:
   parallel: 10
   stage: test
-  <<: *default_rules
+  <<: *docker_test_rules
   variables:
     TEST_SCOPE: full
   script:
@@ -184,7 +221,7 @@ compatibility_tests:
 
 playwright_e2e_legacy:
   stage: test
-  <<: *default_rules
+  <<: *docker_test_rules
   script:
     - export PSYNET_WORKSPACE=/root/workspaces/PsyNet
     - mkdir -p public test-results
@@ -212,7 +249,7 @@ playwright_e2e_legacy:
 
 playwright_e2e_default:
   stage: test
-  <<: *default_rules
+  <<: *docker_test_rules
   script:
     - export PSYNET_WORKSPACE=/root/workspaces/PsyNet
     - mkdir -p public test-results
@@ -448,8 +485,6 @@ docs:
       - docs/_build/linkcheck/
     expire_in: 1 week
 
-# To do:
-# - Skip tests if the changes are only in the docs directory
 # Build and publish the multi-version docs site to GitLab Pages.
 # Build logic lives in docs/scripts/build_pages.sh; this job is a thin
 # wrapper that supplies the image, cache, artifacts, and rules.
