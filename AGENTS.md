@@ -189,6 +189,7 @@ When adding or updating Playwright E2E tests, follow these rules to reduce CI fl
     - Do not apply the GET `/timeline` 3000ms handler budget to `POST /participant`. Dallinger `@db.serialized` serializes concurrent signups and retries with expovariate sleep; that wall time is not last-arrival GET work. Overlapping `consent→timeline` uses the 15000ms serialized-signup budget; sequential starts still have 6000ms.
     - Playwright CI uses ``psynet debug --legacy`` (gunicorn). Hold tests set workers to the session count plus two spares so concurrent last-arrival GET can overlap every waiter hold-resume POST without starving a waiter Redis subscribe. Both jobs use gunicorn; the default vs legacy job is in-place vs full reload. CI does not exercise ordinary ``psynet debug local`` (one Flask process; there is no worker-count flag on that path).
     - A short HTTP 503 on hold-resume is the ``NOWAIT`` busy retry when those requests hit the same participant row; fail only if that busy retry lasts 500ms or more. After the in-request retry, a delayed ``queued hold wake`` must run rather than waiting for the silenced safety poll or the hold timeout.
+    - Concurrent last arrivals may post a fourth hold-resume (poller publish, last-arriver ``GET /timeline``, stacked-hold reload on websocket onOpen, then a still-on-hold server notification before ``ModularPage``). Fail only on a safety poll, hold timeout, or hung overlay, not on that extra still-on-hold POST.
 
 ## Automatic code review
 
