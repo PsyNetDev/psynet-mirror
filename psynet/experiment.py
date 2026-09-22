@@ -2064,9 +2064,17 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @classmethod
     def get_username(cls):
+        """Return the account that launched this process.
+
+        ``os.getlogin`` reports the login that started the Docker daemon.
+        Inside a container that name is root even when the process uid is
+        the SSH user, so the account database and ``USER`` are used instead.
+        """
+        import getpass
+
         try:
-            return os.getlogin()
-        except OSError:
+            return getpass.getuser()
+        except (KeyError, OSError):
             return "unknown"
 
     @classmethod

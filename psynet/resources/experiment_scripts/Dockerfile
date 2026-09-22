@@ -38,6 +38,12 @@ RUN set -- /experiment/dallinger-*.whl; \
         uv pip install --system --force-reinstall --no-deps "$1"; \
     fi
 
+# The SSH account is chosen when the container starts. These directories must
+# be writable so that account can create server.log and the static/assets link.
+# Shipped source files stay owned by root.
+RUN mkdir -p /experiment/static \
+ && chmod a+rwx /experiment /experiment/static
+
 ENV PORT=5000
 
 CMD dallinger_heroku_web
