@@ -37,6 +37,19 @@ async function installBeforeUnloadTracking(page) {
   });
 }
 
+function installTimelineHoldWakeCounter() {
+  if (!["http:", "https:"].includes(location.protocol)) return;
+  if (window.__timelineHoldWakeCounterInstalled) return;
+  window.__timelineHoldWakeCounterInstalled = true;
+  if (sessionStorage.getItem("timelineHoldWakeCount") === null) {
+    sessionStorage.setItem("timelineHoldWakeCount", "0");
+  }
+  window.addEventListener("timelineHoldWakeReceived", () => {
+    const count = Number(sessionStorage.getItem("timelineHoldWakeCount"));
+    sessionStorage.setItem("timelineHoldWakeCount", String(count + 1));
+  });
+}
+
 async function startBackgroundHold(page, { trackLucidUnload = false } = {}) {
   await completeInitialGateway(page);
   await expect(page.locator("#main-body")).toContainText(
@@ -407,21 +420,19 @@ test("wait_while preserves the submitted page and wakes after async work", { tag
     "tests/playwright/experiments/timeline_hold"
   );
 
+  // Install before withExperiment navigates. page.addInitScript after the
+  // consent document is already loaded does not run until the next full load.
+  await context.addInitScript(installTimelineHoldWakeCounter);
   await withExperiment(page, context, experimentDir, async (experimentPage) => {
-    await experimentPage.addInitScript(() => {
-      if (!["http:", "https:"].includes(location.protocol)) return;
-      if (sessionStorage.getItem("timelineHoldWakeCount") === null) {
-        sessionStorage.setItem("timelineHoldWakeCount", "0");
-      }
-      window.addEventListener("timelineHoldWakeReceived", () => {
-        const count = Number(sessionStorage.getItem("timelineHoldWakeCount"));
-        sessionStorage.setItem("timelineHoldWakeCount", String(count + 1));
-      });
-    });
     const { visiblePageUuid, mainBodyTop } = await startBackgroundHold(
       experimentPage,
       { trackLucidUnload: true }
     );
+    await experimentPage.evaluate(installTimelineHoldWakeCounter);
+    // check_interval is 1s. An in-place safety-poll POST can return the next
+    // page and stop the hold controller before websocket onMessage dispatches
+    // timelineHoldWakeReceived, so the wake counter stays 0.
+    expect(await silenceTimelineHoldSafetyPoll(experimentPage)).toBe(true);
 
     await expect(experimentPage.locator("#main-body")).toContainText(
       "Submit this page to start background feedback processing."

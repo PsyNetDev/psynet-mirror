@@ -176,7 +176,12 @@ A short HTTP 503 on hold-resume is the
 ``NOWAIT`` busy retry when those requests hit the same participant row;
 the in-request retry waits 250ms; if that is still busy, one delayed
 ``queued hold wake`` runs. The suite still fails a busy retry that lasts
-500ms or more. Concurrent last arrivals may post a third hold-resume when the
+500ms or more. A ``wait_while`` test that asserts ``timelineHoldWakeReceived``
+must silence that 1s safety poll after the hold chip appears. Otherwise an
+in-place hold-resume POST can stop the controller before the websocket
+message dispatches the event, and a counter installed only with
+``page.addInitScript`` after consent is already loaded never attaches.
+Concurrent last arrivals may post a third hold-resume when the
 poller and ``GET /timeline`` both publish, then a stacked-hold reload posts
 again on websocket onOpen; sequential last arrivals stay at two. Both Playwright
 CI jobs use gunicorn; the default vs legacy job is in-place vs full reload.
