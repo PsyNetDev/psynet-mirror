@@ -1,0 +1,1 @@
+Added Cursor commands that merge the GitLab merge-request target before `/branch-review`, and documented that workflow for developers. `/reorganize-onto-target` is a separate command used just before the MR is merged into that target; it compares the backup tree to `HEAD` before pushing.
