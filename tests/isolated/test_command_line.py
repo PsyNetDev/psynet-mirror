@@ -213,6 +213,23 @@ class TestCommandLine(object):
         kwargs = ctx.invoke.call_args.kwargs
         assert kwargs["ingress"] == "cloudflare"
         assert kwargs["app_name"] == "consonance"
+        assert kwargs["update"] is False
+
+    def test_invoke_docker_ssh_deploy_forwards_update(self):
+        from psynet.command_line import _invoke_docker_ssh_deploy
+
+        command = Mock()
+        command.params = []
+        ctx = Mock()
+        _invoke_docker_ssh_deploy(
+            ctx,
+            command,
+            server="musix",
+            dns_host=None,
+            app="consonance",
+            update=True,
+        )
+        assert ctx.invoke.call_args.kwargs["update"] is True
 
     def test_export_launch_info_records_public_origin(self, tmp_path):
         from psynet.command_line import _export_launch_info
@@ -3568,6 +3585,26 @@ def test_abort_if_app_exists():
         with pytest.raises(click.Abort):
             _abort_if_app_exists(server="test-server", app="test-app")
     assert mock_echo.call_count == 1
+
+
+def test_update_keeps_an_existing_ssh_app():
+    from psynet.command_line import _abort_if_app_exists
+
+    with patch("dallinger.command_line.docker_ssh.get_apps") as get_apps:
+        _abort_if_app_exists(server="test-server", app="test-app", update=True)
+
+    get_apps.assert_not_called()
+
+
+def test_validate_ssh_deploy_update():
+    from psynet.command_line import _validate_ssh_deploy_update
+
+    _validate_ssh_deploy_update("test-app", None, False)
+    _validate_ssh_deploy_update("test-app", None, True)
+    with pytest.raises(click.UsageError, match="requires --app"):
+        _validate_ssh_deploy_update(None, None, True)
+    with pytest.raises(click.UsageError, match="cannot be used together"):
+        _validate_ssh_deploy_update("test-app", "archive.zip", True)
 
 
 def test_abort_if_app_exists_skips_missing_app():

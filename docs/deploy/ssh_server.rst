@@ -188,6 +188,9 @@ You deploy experiments using the ``psynet deploy command``:
 
     psynet deploy ssh --app your-app-name
 
+To replace the code of an app that is already running, keep its database,
+and skip a fresh launch, add ``--update``.
+
 By default, this will deploy your app to a hostname that looks like this:
 
 https://your-app-name.121.101.152.23.nip.io
