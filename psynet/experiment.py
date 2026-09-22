@@ -3321,11 +3321,27 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             if not response.successful_validation:
                 return self.response_rejected(message=validation.message)
 
+            recording_uploads = []
+            if getattr(response, "_deferred_video_answer", False) is True:
+                recording_uploads = event.control._accept_recordings(
+                    response, participant, page_uuid
+                )
+                event._store_response_answer(response, participant)
+                event.on_complete(experiment=self, participant=participant)
+
             participant.inc_time_credit(event.time_estimate)
             participant.inc_progress(event.time_estimate)
 
             self.timeline.advance_page(self, participant)
-            return self.response_approved(participant, include_timeline_fragment)
+            result = self.response_approved(participant, include_timeline_fragment)
+            if recording_uploads:
+                from .media_upload import _utcnow
+
+                payload = result.get_json()
+                payload["recording_uploads"] = recording_uploads
+                payload["recording_upload_server_time"] = _utcnow().isoformat() + "Z"
+                result.set_data(json.dumps(payload))
+            return result
         except Exception as err:
             if os.getenv("PASSTHROUGH_ERRORS"):
                 raise
@@ -3520,6 +3536,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 (
                     resources.files("psynet") / "resources/scripts/psynet.js",
                     "/static/scripts/psynet.js",
+                ),
+                (
+                    resources.files("psynet") / "resources/scripts/media-upload.js",
+                    "/static/scripts/media-upload.js",
                 ),
                 (
                     resources.files("psynet")

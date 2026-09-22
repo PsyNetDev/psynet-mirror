@@ -1,3 +1,14 @@
+"""Compose experiment pages from prompts, response controls, and layouts.
+
+Components declare their media, events, JavaScript variables, and rendering;
+ModularPage combines these declarations and delegates answer formatting and
+validation to its control unless the author supplies page-level validation.
+
+The private asynchronous video path stages metadata during formatting and reserves
+recordings only after validation succeeds. Final references must be saved before
+completion hooks or navigation run; rejected answers must not create upload slots.
+"""
+
 import json
 import random
 import shutil
@@ -3725,6 +3736,9 @@ class VideoRecordControl(RecordControl):
 
     macro = "video_record"
     file_extension = ".webm"
+    # Private development switch; enable only after recovery and E2E coverage.
+    _async_upload = False
+    _async_upload_max_bytes = 128 * 1024 * 1024
 
     def __init__(
         self,
@@ -3766,6 +3780,34 @@ class VideoRecordControl(RecordControl):
         ]
 
     def format_answer(self, raw_answer, **kwargs):
+        from .bot import Bot
+
+        if self._async_upload and not isinstance(kwargs["participant"], Bot):
+            sizes = kwargs["metadata"].get("recording_uploads")
+            if not isinstance(sizes, dict) or set(sizes) != set(self.recording_sources):
+                raise ValueError(
+                    "Upload sizes must identify every expected recording source."
+                )
+            if any(
+                type(size) is not int or not 0 < size <= self._async_upload_max_bytes
+                for size in sizes.values()
+            ):
+                raise ValueError(
+                    "Recording sizes must be positive and within the upload limit."
+                )
+            if kwargs["blobs"]:
+                raise ValueError(
+                    "Asynchronous video answers must not include recording bytes."
+                )
+            response = kwargs["response"]
+            response._deferred_video_answer = True
+            response._recording_sizes = dict(sizes)
+            summary = self._answer_metadata()
+            for source in self.recording_sources:
+                summary[f"{source}_id"] = None
+                summary[f"{source}_url"] = None
+            return summary
+
         blobs = kwargs["blobs"]
         trial = kwargs["trial"]
         participant = kwargs["participant"]
@@ -3808,18 +3850,58 @@ class VideoRecordControl(RecordControl):
                 summary[source + "_id"] = asset.id
                 summary[source + "_url"] = asset.url
 
-        summary.update(
-            {
-                "duration_sec": self.duration,
-                "origin": "VideoRecordControl",
-                "supports_record_trial": True,
-                "recording_source": self.recording_source,
-                "record_audio": self.record_audio,
-                "mirrored": self.mirrored,
-            }
-        )
-
+        summary.update(self._answer_metadata())
         return summary
+
+    def _answer_metadata(self):
+        """Keep the answer shape common to synchronous and deferred uploads."""
+        return {
+            "duration_sec": self.duration,
+            "origin": "VideoRecordControl",
+            "supports_record_trial": True,
+            "recording_source": self.recording_source,
+            "record_audio": self.record_audio,
+            "mirrored": self.mirrored,
+        }
+
+    def get_js_vars(self):
+        """Advertise the private transport only for explicitly enabled controls."""
+        return {
+            "asynchronousVideoUploadSources": self.recording_sources
+            if self._async_upload
+            else None
+        }
+
+    def _accept_recordings(self, response, participant, page_uuid):
+        """Install final read references and capabilities only after acceptance."""
+        from .media_upload import _reserve_recording, _upload_timeout
+        from .trial.record import Recording
+
+        sizes = response._recording_sizes
+        timeout = _upload_timeout(sum(sizes.values()))
+        parent = participant.current_trial or participant
+        summary = dict(response.answer)
+        uploads = []
+        for source in self.recording_sources:
+            label = self.page.label
+            if len(self.recording_sources) > 1:
+                label += "_" + source
+            asset, receipt = _reserve_recording(
+                response=response,
+                parent=parent,
+                page_uuid=page_uuid,
+                source=source,
+                local_key=label,
+                storage=Recording.default_storage,
+                upload_timeout=timeout,
+                upload_size_bytes=sizes[source],
+                max_bytes=self._async_upload_max_bytes,
+            )
+            summary[f"{source}_id"] = asset.id
+            summary[f"{source}_url"] = asset.url
+            uploads.append({**receipt, "source": source})
+        response.answer = summary
+        return uploads
 
     def visualize_response(self, answer, response, trial):
         if answer is None:

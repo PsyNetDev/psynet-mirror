@@ -2968,7 +2968,9 @@
       });
     };
 
-    let submitGenericResponse = function (
+    // Document ownership preserves uploads across in-place page cleanup.
+    let recordingUploadQueue;
+    let submitGenericResponse = async function (
       rawAnswer,
       metadata,
       blobs,
@@ -2983,6 +2985,25 @@
       // Returns true if the answer passed validation checks, false otherwise.
       $(" .response, .submit ").prop("disabled", true);
 
+      const capturedRecordings = {};
+      const sources = psynet.var.asynchronousVideoUploadSources;
+      if (Array.isArray(sources)) {
+        const sizes = {};
+        for (const source of sources) {
+          const blob = blobs?.[`${source}Recording`];
+          if (!(blob instanceof Blob) || blob.size === 0) {
+            throw new Error(`Missing captured ${source} recording.`);
+          }
+          capturedRecordings[source] = blob;
+          sizes[source] = blob.size;
+        }
+        metadata = { ...metadata, recording_uploads: sizes };
+        blobs = {};
+        if (!recordingUploadQueue) {
+          const { MediaUploadQueue } = await import("/static/scripts/media-upload.js");
+          recordingUploadQueue = new MediaUploadQueue();
+        }
+      }
       const json = prepareJsonSubmission(rawAnswer, metadata);
 
       var formData = new FormData();
@@ -2993,6 +3014,7 @@
       }
 
       return new Promise((resolve) => {
+        const submissionStarted = performance.now();
         let request = new XMLHttpRequest();
         request.onreadystatechange = async function () {
           if (request.readyState === 4) {
@@ -3000,6 +3022,26 @@
             try {
               if (request.status === 200) {
                 psynet.log.debug("Response was successfully received.");
+                const accepted = JSON.parse(request.response);
+                if (accepted.submission === "approved" && Array.isArray(sources)) {
+                  const serverTime = Date.parse(accepted.recording_upload_server_time);
+                  for (const upload of accepted.recording_uploads || []) {
+                    // Subtract the whole round-trip conservatively, without using
+                    // the participant's wall clock. The server enforces expiry.
+                    const deadline = submissionStarted + Date.parse(upload.expires_at) - serverTime;
+                    try {
+                      recordingUploadQueue.enqueue({
+                        ...upload, deadline, blob: capturedRecordings[upload.source],
+                      }).then((outcome) => {
+                        if (outcome.status === "failed") {
+                          psynet.log.warn(`Recording ${upload.id} upload failed: ${outcome.reason}`);
+                        }
+                      });
+                    } catch (error) {
+                      psynet.log.warn(`Could not queue recording ${upload.id}: ${error.message}`);
+                    }
+                  }
+                }
                 passedValidation = await onSuccessResponse(request, onRejection);
               } else {
                 psynet.log.debug("Something went wrong.");

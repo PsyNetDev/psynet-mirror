@@ -240,15 +240,18 @@ but it should be close enough. We might document alternative approaches later.
 Recording upload development checks
 -----------------------------------
 
-The asynchronous recording transport is under development and is not connected
-to recording controls yet. Run its server and browser checks separately from
-the experiment demos; database fixtures reset their database and must not run
+The asynchronous recording transport is under development and disabled by default.
+The private test control connects accepted answers to the upload queue. Run its
+server and browser checks separately from the experiment demos; database fixtures
+reset their database and must not run
 alongside a demo using that same database.
 
 .. code-block:: shell
 
     pytest tests/isolated/test_media_upload.py tests/isolated/test_chain_growth_queries.py tests/isolated/test_finalize_pending_trials.py
+    pytest tests/isolated/test_recording_submission.py
     npx playwright test media_upload_queue.spec.js
+    npx playwright test asynchronous_recording.spec.js
     npx playwright test demos/imitation_chain_video.spec.js demos/video_feature.spec.js
 
 The video imitation-chain demo exercises recording-dependent playback and chain
@@ -257,6 +260,17 @@ Both attach ``recording-sizes`` JSON to their Playwright results. These measure
 fake-device output for a sanity check, not an upper bound on real recording sizes.
 The demo checks still exercise the existing upload path; they do not establish
 that asynchronous trial-failure handling works.
+
+The private ``asynchronous_recording`` fixture enables
+``VideoRecordControl._async_upload``. Its browser test holds a media request while
+the accepted answer advances to an independent page, then releases the request
+and checks playback after worker deposit. Submission tests cover rejected answers,
+source validation, accumulated answers, named answer variables, and rollback.
+Validation sees recording metadata with empty ID/URL placeholders; acceptance
+installs the final references before saving the answer and calling
+:meth:`~psynet.timeline.Page.on_complete`.
+Keep the switch private until lost-response recovery and complete missing-media
+navigation tests are in place.
 
 The provisional upload allowance uses a conservative 1 Mbit/s rate, 30 seconds
 of overhead, and twice the estimated transfer time, bounded to 60–600 seconds.

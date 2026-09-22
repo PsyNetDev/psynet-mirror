@@ -1692,28 +1692,30 @@ class Page(Elt):
             else:
                 trial.time_taken += resp.metadata["time_taken"]
 
+        participant.browser_platform = metadata.get(
+            "platform", "Browser platform info could not be retrieved."
+        )
+        if getattr(resp, "_deferred_video_answer", False) is not True:
+            self._store_response_answer(resp, participant)
+            self.on_complete(experiment=experiment, participant=participant)
+        return resp
+
+    def _store_response_answer(self, response, participant):
+        """Save one formatted answer after its recording references are available."""
         if self.save_answer:
             if len(participant.answer_accumulators) > 0:
                 page_label = self.label
                 accumulator = participant.answer_accumulators[-1]
                 answer_label = self._find_answer_label(page_label, accumulator)
-                accumulator[answer_label] = resp.answer
+                accumulator[answer_label] = response.answer
                 flag_modified(participant, "answer_accumulators")
             else:
-                participant.answer = resp.answer
+                participant.answer = response.answer
             participant.answer_is_fresh = True
             if isinstance(self.save_answer, str):
-                participant.var.set(self.save_answer, resp.answer)
+                participant.var.set(self.save_answer, response.answer)
         else:
             participant.answer_is_fresh = False
-
-        participant.browser_platform = metadata.get(
-            "platform", "Browser platform info could not be retrieved."
-        )
-
-        self.on_complete(experiment=experiment, participant=participant)
-
-        return resp
 
     def _find_answer_label(self, page_label, accumulator):
         if page_label not in accumulator:
