@@ -277,12 +277,12 @@ file, e.g. `/tmp/release-highlights-X.Y.Z.md`:
   - Link concrete class/API names to their API reference anchor whenever
     one exists, including names mentioned inside Documentation or Fixed
     bullets (e.g. `AsyncCodeBlock`, `AudioForcedChoiceTest`,
-    `SyncGroup`). Check the defining module against `docs/api/` and
+    `SyncGroup`). Check the defining module against `docs/reference/api/` and
     confirm the anchor is present on the rendered page before linking.
   - Link new or moved demos to their directory in the repo at the tag
     (`https://gitlab.com/PsyNetDev/PsyNet/-/tree/vX.Y.Z/demos/...`),
     and also to the demo's docs page when one exists (check
-    `docs/demos/` for a matching `.rst`).
+    `docs/examples/demos/` for a matching `.rst`).
   - Link to external sources when a change is driven by a third-party
     platform — e.g. a Prolific or Lucid announcement or documentation
     page explaining an API change that motivated a removal or new

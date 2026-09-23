@@ -54,10 +54,28 @@ extensions = [
 # Old page paths are published and linked externally, so every moved or
 # deleted page needs an entry in redirects.json (old docname -> new docname).
 with open("redirects.json") as f:
-    redirects = {
-        old: posixpath.relpath(new, posixpath.dirname(old) or ".") + ".html"
-        for old, new in json.load(f).items()
-    }
+    _redirect_docnames = json.load(f)
+redirects = {
+    old: posixpath.relpath(new, posixpath.dirname(old) or ".") + ".html"
+    for old, new in _redirect_docnames.items()
+}
+
+
+def _check_redirects(app, env):
+    """Warn about redirects to missing pages or from pages that still exist."""
+    from sphinx.util import logging
+
+    logger = logging.getLogger(__name__)
+    for old, new in _redirect_docnames.items():
+        if new not in env.found_docs:
+            logger.warning(f"redirects.json: target {new!r} (from {old!r}) not found")
+        if old in env.found_docs:
+            logger.warning(f"redirects.json: {old!r} is still a page; remove it")
+
+
+def setup(app):
+    app.connect("env-check-consistency", _check_redirects)
+
 
 copybutton_prompt_text = r">>> |\.\.\. |\$ |# "
 copybutton_prompt_is_regexp = True

@@ -16,6 +16,11 @@ The ``docs`` directory and its subdirectories contain files in `rst` format whic
 .. _this primer: https://docutils.sourceforge.io/docs/user/rst/quickstart.html
 .. _complete technical specification: https://docutils.sourceforge.io/docs/ref/rst/restructuredtext.html
 
+Published page URLs are linked from elsewhere, so when you move, rename, or
+delete a page, add an entry to ``docs/redirects.json`` mapping the old page
+path to its replacement (both without the ``.rst`` suffix). The docs build
+warns if a redirect target is missing or an old path still exists.
+
 Once you have made changes to one or more `rst` files compile them into `html` files by executing:
 
 .. code-block:: console

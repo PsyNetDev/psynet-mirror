@@ -36,7 +36,7 @@ user explicitly asks for them.
 ## Prerequisites
 
 - Read PsyNet's internationalization documentation, currently
-  `~/PsyNet/docs/tutorials/internationalization.rst`.
+  `~/PsyNet/docs/guides/participants/internationalization.rst`.
 - Inspect the translation demo
   (`demos/experiments/translation/experiment.py`).
 - Review the target experiment's `experiment.py`, templates, config files, and
