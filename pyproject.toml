@@ -2,6 +2,8 @@
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+# Hatchling rejects git/URL dependencies unless this is set. Keep it so
+# temporary Dallinger (or other) git pins can be published as local wheels.
 [tool.hatch.metadata]
 allow-direct-references = true
 
@@ -53,11 +55,7 @@ dependencies = [
 # this runtime.
 experiment = [
     "babel",
-    # TODO: Replace this Git pin with dallinger[docker]>=12.4.0,<13 once
-    # Dallinger 12.4.0 is available on PyPI.
-    # Pin Dallinger master after #9680 (deploy.toml) until a 12.4 release.
-    # Latest PyPI/tag is still 12.3.0, which does not include deploy.toml.
-    "dallinger[docker] @ git+https://github.com/Dallinger/Dallinger.git@9e51dae43e05401bdfb6bf3bb8f659dfb8c4743b",
+    "dallinger[docker]>=12.4.0,<13",
     # Unpin dominate once a new version is released which includes the following
     # fix for the Python 3.12 event loop warning:
     # https://github.com/Knio/dominate/commit/bdbdb8e5ddcf3213518dba0c7d054f14933460bf
