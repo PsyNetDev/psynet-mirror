@@ -9,7 +9,7 @@ allow-direct-references = true
 
 [project]
 name = "psynet"
-version = "13.4.0a0"
+version = "14.0.0rc1"
 authors = [
   {name="Peter Harrison", email="pmch2@cam.ac.uk"},
   {name="Frank Höger", email="frank.hoeger@ae.mpg.de"},

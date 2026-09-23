@@ -4,7 +4,7 @@ import subprocess
 
 import click
 
-psynet_version = "13.4.0a0"
+psynet_version = "14.0.0rc1"
 
 # Specify Dallinger MAJOR.MINOR version to allow any patch in that series
 recommended_dallinger_major_minor = "12.4"
