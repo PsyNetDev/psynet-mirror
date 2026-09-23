@@ -1,1 +1,0 @@
-Fixed `psynet translate` making three provider calls per file instead of one, because the retry loop never stopped after a successful translation. Source files are now also quoted into the translation prompt only when they are small enough to be useful context, so a large module no longer dominates every request for its strings.
