@@ -181,9 +181,10 @@ must silence that 1s safety poll after the hold chip appears. Otherwise an
 in-place hold-resume POST can stop the controller before the websocket
 message dispatches the event, and a counter installed only with
 ``page.addInitScript`` after consent is already loaded never attaches.
-Concurrent last arrivals may post a third hold-resume when the
-poller and ``GET /timeline`` both publish, then a stacked-hold reload posts
-again on websocket onOpen; sequential last arrivals stay at two. Both Playwright
+Concurrent last arrivals may post a fourth hold-resume when the
+poller and ``GET /timeline`` both publish, a stacked-hold reload posts
+again on websocket onOpen, and a still-on-hold server notification posts
+once more before ``ModularPage``; sequential last arrivals stay at two. Both Playwright
 CI jobs use gunicorn; the default vs legacy job is in-place vs full reload.
 Worker-pool ``queue~`` is therefore not reload-specific.
 
