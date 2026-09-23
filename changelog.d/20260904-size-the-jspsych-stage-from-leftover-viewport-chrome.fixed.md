@@ -1,1 +1,0 @@
-The jsPsych stage sizes itself from leftover viewport chrome (`--psynet-graphic-vertical-chrome`) rather than a 70vh minimum, so an empty jsPsych page still fits a 1280×720 laptop window with the footer visible.

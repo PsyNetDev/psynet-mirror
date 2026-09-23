@@ -1,1 +1,0 @@
-Fixed intermittent test timeouts in Selenium bot tests. PsyNet's pytest bot now finalizes the session with a direct HTTP request to `/worker_complete` instead of navigating the browser there, because the participant page has already called that route by the time the bot fixture runs.

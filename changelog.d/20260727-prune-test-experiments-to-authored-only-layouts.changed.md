@@ -1,1 +1,0 @@
-Pruned test experiment directories under ``tests/experiments``, ``tests/playwright/experiments``, and ``tests/deployment`` to authored-only layouts (like bundled demos), normalized their ``requirements.txt`` files to bare ``psynet``, and ignored generated scaffold/constraint files while keeping tracked custom ``config.txt`` files where needed.

@@ -1,1 +1,0 @@
-The timeline progress percentage sits on a grey pill, the same `--psynet-border` as the track, centred on the rail rather than inside the fill. Early in an experiment the fill is too narrow to hold a label; the pill stays opaque so one text colour remains readable wherever the fill has reached.

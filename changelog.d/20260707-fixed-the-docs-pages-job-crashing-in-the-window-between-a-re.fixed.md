@@ -1,1 +1,0 @@
-Fixed the docs pages job crashing in the window between a release branch being merged back into master and the post-release alpha bump landing; the version switcher now omits the alpha entry when the default branch carries a stable version.

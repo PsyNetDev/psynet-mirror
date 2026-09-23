@@ -1,1 +1,0 @@
-Fixed ``psynet dev docs linkcheck`` reporting "no broken links" when Sphinx had in fact found some; the summary now reads Sphinx's ``linkcheck/output.json`` instead of parsing coloured console output.

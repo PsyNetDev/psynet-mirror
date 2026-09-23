@@ -1,5 +1,764 @@
 # CHANGELOG
 
+## [14.0.0rc1](https://gitlab.com/PsyNetDev/PsyNet/-/tags/v14.0.0rc1) Release candidate - 2026-09-22
+
+### Breaking Changes
+
+- ``JsPsychPage`` no longer accepts HTML/Jinja timeline templates; pass a JavaScript module exporting ``buildTimeline()`` instead. See ``docs/whats_new/upgrading_to_psynet_14.rst``.
+- Replaced Git and `.dockerignore` deployment file selection with explicit
+  `deploy.toml` policies as a breaking PsyNet cutover. PsyNet scaffolds
+  `deploy.toml` (and creates it automatically when missing without overwriting
+  an existing file). The first debug, test, or deploy after an auto-created
+  policy stops once so authors can review the plan; Git-ignored files may still
+  be deployed after that review. Leftover generated `.dockerignore` files are removed on
+  debug, deploy, scaffold, and prune; custom copies are preserved by scaffold
+  commands but must be migrated to `deploy.toml` and removed before debug or
+  deployment.
+  The generated experiment `docker/` helper scripts are no longer scaffolded
+  and recognized generated copies are deleted by `psynet scripts update` and on
+  debug/deploy; customized helpers and `docker/` symlinks are preserved.
+  `psynet setup --docker` is removed; use `psynet setup` then
+  `psynet debug local --docker`. Membership no longer depends on Git visibility,
+  while Git remains required to identify the source commit and dirty state.
+  Experiments ignored by a containing repository must run `psynet setup` to
+  create a dedicated repository. The 256 MB package-size check now measures the
+  deployment plan. Deprecated source-export compatibility options emit warnings
+  when used.
+  Stock excludes include virtualenv directories (`env`, `.venv`). Heroku
+  deploys no longer ask authors to remove `.deploy` from `.gitignore`.
+  This requires Dallinger with `deploy.toml` (12.4.0 or later), Python 3.11 or later, and a POSIX filesystem.
+- Made in-place timeline transitions the default. Custom pages that still use complete templates or other SPA-incompatible patterns now raise errors unless ``inplace_timeline_transitions = false`` is set or the page is migrated; see ``docs/whats_new/upgrading_to_psynet_14.rst``.
+- Bundled demos now track authored experiment files only. Generated scaffold files and per-demo `constraints.txt` are omitted; use the shared PsyNet development environment in-repo, or run `psynet setup` after copying a demo into a standalone experiment.
+- Breaking: ``pip install psynet`` now installs only a small bootstrap CLI. Run ``psynet setup`` in your experiment (or ``pip install -e '.[dev]'`` from a PsyNet source checkout) to get the full runtime.
+- Prolific studies now pay unsuccessful (failed or errored) participants via a fixed screen-out completion code by default (`prolific_pay_unsuccessful = true`). PsyNet registers an `UNSUCCESSFUL` completion code with Prolific's `FIXED_SCREEN_OUT_PAYMENT` action; those participants submit normally, receive a fixed payment from Prolific (`prolific_unsuccessful_base_payment`, defaulting to 0.25), and are topped up to their accumulated reward with a bonus (controlled by `prolific_unsuccessful_topup`). The Prolific error page offers a submit button for this flow instead of asking participants to message the experimenter. Deployments must set `prolific_screen_out_slots` explicitly (it caps worst-case automatic screen-out spend); otherwise deployment fails with an explanatory error. Set `prolific_pay_unsuccessful = false` to restore the previous return-for-bonus behavior — also the remedy when a Prolific workspace rejects the screen-out completion code at study creation (PsyNet logs a hint alongside the error).
+
+  Prolific-specific experiment logic now lives on the Prolific recruiter. `Experiment.error_page_content__prolific`, `Experiment.error_page_content`, and recruiter `error_page_content` have been removed; override `error_page_presentation` on a custom recruiter instead (stale experiment overrides fail a pre-deployment check, while stale recruiter overrides fail when used, both with migration instructions). Recruiter timeline hooks were renamed: `approve_assignment` to `submit_assignment` and (Prolific) `reject_assignment` to `request_return_for_bonus`. Custom recruiters overriding the old names must be updated. Screen-out participants have their recorded base payment corrected to the fixed screen-out reward and are labeled `screened_out` rather than `approved`. `Experiment.error_page` has also dropped its unused `error_type` and `request_data` arguments; callers that passed them should simply omit them.
+- Overriding `Experiment.fail_participant` now raises `RuntimeError` at class definition. Call `Participant.fail()` or register a `ParticipantFailRoutine`. Dallinger's `data_check_failed` and `attention_check_failed` log a warning and no longer fail the participant or their nodes. `TrialMaker` and `NetworkTrialMaker` constructors now take keyword-only arguments, matching chain, static, dense, and graph trial makers.
+- Required `SyncGroup.add_participant()` and `SyncGroup.remove_participant()` for membership changes; `SyncGroup.participants` is now read-only and reports only active members.
+- Replaced trial assignment hooks ``find_networks``, ``find_node``, and
+  ``prioritize_networks`` with paradigm-specific APIs. Chain trial makers use
+  ``find_chains``, ``select_chain``, and ``custom_chain_filter``; static trial
+  makers use ``find_nodes``, ``select_node``, and ``custom_node_filter``.
+  Selection hooks receive a nonempty eligible list and may return the selected
+  value or ``Selection(value, context)``. Returning ``None`` from
+  ``select_chain`` or ``select_node`` raises ``TypeError``. ``find_chains`` and
+  ``find_nodes`` must return a list, ``"wait"``, or ``"exit"``; ``None`` raises
+  ``TypeError``. The selected object must be one of the supplied eligible values
+  (object identity); a re-queried copy with the same id raises ``ValueError``. ``get_trial_class``
+  must return a trial class for every eligible selection; synchronized followers
+  reuse their leader's concrete trial class without calling this hook again.
+  PsyNet raises an actionable ``TypeError`` at construction when a removed or
+  wrong-paradigm hook is overridden. ``CreateAndRateTrialMakerMixin`` no longer
+  provides ``get_non_failed_creations``; classify nodes with
+  ``get_creation_phases`` and load finalized creations with
+  ``get_finished_creations``. Heads that still have unfinalized creator
+  trials wait or exit instead of raising. ``Trial.position`` is now a stored,
+  zero-based creation sequence shared across all trial classes in a participant's
+  trial maker, rather than a live index within each concrete trial class.
+- Moved audit evidence collection to ``psynet audit simulate`` and
+  ``psynet audit performance-test``. Top-level ``psynet simulate`` is removed;
+  use ``psynet audit simulate``. These commands require an initialized
+  audit packet, write canonical evidence paths, and update ``audit.json``.
+  The audit performance-test command runs locally; remote SSH collection is
+  not part of this command. Top-level ``psynet performance-test`` remains
+  available for measurement-only runs and no longer accepts ``--audit``.
+  Simulated exports now exist only at
+  ``audit/simulate/analysis/simulated_export/``. A failed rerun leaves the
+  previous export in place. Directory artifacts are limited to
+  ``simulate_export``; other present artifacts must be files. Extra files beside
+  ``analysis.ipynb`` appear in the Analysis panel.
+- Data exports no longer include empty table CSVs. An experiment that never used
+  chat, Lucid, or barriers therefore no longer has header-only files such as
+  `chat_message.csv` in `database/`. `manifest.json` still lists every table under
+  `table_row_counts`, with a count of `0` for the omitted files, and `psynet load`
+  and `--archive` skip tables whose CSV is absent. Analysis code that loops over
+  table names and reads `database/<table>.csv` unconditionally should consult
+  `table_row_counts` first, or tolerate a missing file.
+- Experiments now allow phones and tablets by default (`allow_mobile_devices = True`). Set it to `false` to keep a study desktop-only.
+- Radio buttons and checkboxes now render each option as a full-width row (`label.psynet-option` wrapping the input and a `span.psynet-option-label`) so that the whole row is clickable and meets the recommended 46px minimum touch target. Experiments that styled these controls by targeting bare `label` or `input` elements, or that relied on `PushButtonControl`'s previous default `style` of `"min-width: 100px; margin: 10px"`, should target the new classes instead. The bundled Inter font is also now actually applied; previously it was downloaded but never loaded as a stylesheet, so participants saw a system font.
+- Reward display now follows the recruiter unless the experiment says otherwise. Leaving `show_reward` unset means the recruiter decides: Prolific and the lab recruiters show the participant's reward, while generic and local recruitment does not, because PsyNet cannot pay anyone in those cases and quoting a figure promises something the experimenter has to honour by hand. Set `show_reward = true` in `config.txt` to show it anyway. Lucid recruitment now defaults to hiding rewards instead of refusing to launch until you set `show_reward = false`, and `Experiment.show_reward` is the single place the decision is made, read by the footer, the progress endpoint, and the end-of-experiment page.
+- Replaced the text on the page shown while a participant's assignment is submitted with a spinner. It used to say "Communicating with the recruiter...", which exposed PsyNet's internal term for the recruitment platform, and the page is normally over within a quarter of a second, too brief to read. `ExecuteFrontEndJS` now renders an accent-coloured spinner with a screen-reader label instead of prose, and no longer takes a `message` argument.
+- Standardised early-leave vocabulary on ``early_exit`` across the public API, configuration, DOM, routes, and database columns. Experiments must migrate to ``show_early_exit_button``, ``min_reward_for_paid_early_exit``, ``#early-exit-button``, ``Participant.early_exited``, and ``/execute_early_exit_plan/``; the deprecated ``Page.show_abort_button`` and ``Page.show_termination_button`` aliases remain temporarily available. Participant-facing labels use **Leave**, and the removed ad-page abort popup is replaced by the timeline and error-recovery flow. The unused ``Experiment.ad_requirements`` and ``Experiment.ad_payment_information`` properties are removed; customize ``templates/ad.html`` instead.
+- Removed MTurk recruitment support ahead of the platform's permanent closure on September 30, 2026. Experiments configured with the MTurk recruiter now stop with a migration error instead of falling back to Dallinger's transitive integration.
+- Experiments configured with Dallinger's ``bots`` or ``multi`` recruiters, including subclasses of those classes, now stop with a clear error; PsyNet's internal bot-based test commands remain supported.
+- Custom ``Barrier`` subclasses must use ``check_waiting_participants()`` and ``choose_who_to_release()`` instead of overriding ``check()`` or querying waiting participants directly. Barrier instances persist versioned declarative specifications instead of complete Python objects; custom release state must use JSON-compatible values, supported callables, importable classes, or persisted ORM references, and nested or otherwise non-importable classes are rejected when the Timeline is constructed. Waiting pages and hold-page construction stay on the live timeline object; scalar fields such as ``content`` and ``max_wait_time`` are restored on reconstructed ``barrier`` objects so release callbacks may still read them. ``Markup`` ``content`` round-trips instead of being saved as a plain string. ``Barrier.get_waiting_participants()`` now takes a participant as the first argument instead of ``for_update`` (pass ``for_update`` as a keyword). Grouped barriers require a participant or the visit link; ungrouped groupers can still list the active pool without a participant. ``Barrier.get_waiting_participants_from_barrier_id`` was removed. ``SimpleGrouper`` auto-ids now include the initial group size (``{group_type}_grouper_{size}``); pass ``id_`` when two groupers should share a pool. Sequential groupers that share an ID must have the same release behavior. Trial-maker ``GroupBarrier`` ids for participant init and trial prepare are namespaced with the trial-maker id (``{id}__init_participant``, ``{id}__prepare_trial``), so two trial makers in one timeline no longer share a waiting pool.
+- Timeline requests now commit state changes before rendering in a read-only transaction; experiments that write from ``render()`` or templates must move those changes to ``pre_render()``. Custom overrides of ``Experiment.process_response`` must return ``ResponseResult`` (imported with ``from psynet.experiment import ResponseResult``) and should accept ``**kwargs`` or the keyword-only ``timeline_hold_resume`` flag. ``Experiment.response_approved`` has been removed; customize approved responses via ``process_response`` / ``ResponseResult`` or the page-rendering hooks. Overrides of ``render_partial_timeline_payload`` must move to the structured result or page-rendering hooks. Same-session response metadata is serialized after page preparation.
+
+### Added
+
+- Added `fail_participants_below_min_size` parameters to groupers, allowing experiments to release participants to continue the experiment when a group drops below `min_group_size` instead of failing them by default.
+- Added synchronous group timeout controls to `GroupBarrier` and synchronized trial makers, allowing experiments to kick or fail group members who wait too long at a barrier or fall behind after their group passed a previous barrier.
+- Added an authenticated synchronous group dashboard showing active and recent groups, grouper wait progress, participant statuses, barrier waits, and manual controls for kicking or failing active group participants.
+- Added a second deployment-test experiment at `tests/deployment/audio_gibbs` (an audio Gibbs sampler exercising audio synthesis, assets, async workers, and the approved cultural-foundation consent). It defaults to HotAir, while a full deployment test runs its Prolific and Lucid variants alongside the payment-flow test.
+- Added support for Python 3.11 through 3.14, with Python 3.13 remaining the recommended version.
+- Added ``get_js_vars()`` so modular page components can contribute page-scoped JavaScript variables, merged into ``psynet.var`` for the active page.
+- Added ``psynet setup``, ``psynet scripts`` (``scaffold``/``update``/``prune``), and ``psynet generate-constraints`` for standalone experiments.
+- Added an ASV benchmark for the static_big experiment's launch time.
+- Added ``js_dependencies`` for document-level libraries, ``js_page_code`` for short inline activation bodies, and ``js_page_modules`` for reusable lifecycle-managed page behavior.
+- Added namespaced package-owned static resources for built-in and third-party components through the ``psynet.static`` entry-point group, including the chatroom widget.
+- Added blocking ASV regression coverage for debug launch performance with representative static-file payloads.
+- Added ASV coverage for canonical local database and asset export performance.
+- Added ``get_css_links()`` so modular page components can contribute stylesheet URLs, matching ``css_links`` on pages.
+- Added a soft size warning for the local asset export cache (50 GiB by default, overridable via ``PSYNET_ASSET_CACHE_SOFT_LIMIT_BYTES``); exports never fail or prune because of the limit.
+- Added a persistent local asset cache (``~/psynet-data/cache/assets``) that
+  stores read-only content-addressed objects between export runs; subsequent
+  exports hardlink cached objects into the export directory instead of
+  re-fetching from storage, writable cache entries are reverified before reuse,
+  and new ``psynet assets cache info/list/prune`` commands allow inspection and
+  manual pruning of the cache.
+- Added a deployment-time warning when a value set in `Experiment.config` is overridden by a higher-priority configuration source such as an environment variable.
+- Added a ``requires_full_page_reload`` constructor argument on ``Page`` so authors can opt a single page into full browser reloads without disabling in-place transitions experiment-wide.
+- Added ``psynet services check``/``ensure`` for local PostgreSQL/Redis. Setup checks softly; ``debug``/``deploy``/``test`` require services before launch or packaging.
+- Added a scheduled finalize backstop that recovers trials whose event-driven finalize check was missed, with a partial index and SQL prefilters so the poller stays cheap in steady state. Finalization requires successful async post-trial when async was requested; a failed async post-trial fails the trial and does not finalize. Fixed Asset parent typing so custom Trial subclasses correctly set ``trial_id`` for deposit-pending SQL checks.
+- Added ``psynet audit`` (package ``psynet.audit``, Click group on the core
+  ``psynet`` CLI) to package and render portable experiment readiness audit
+  bundles without depending on the PsyNetSkills workshop repo.
+- Added audit profile/extensions hooks. The starter packet includes an optional plan section for agent-led audits.
+- Added PsyNet-owned Agent Skills for experiment development. They are available
+  to PsyNet contributors under ``.cursor/skills/experiment/`` and
+  ``psynet scripts update`` installs the managed bundle into experiment
+  repositories under ``.cursor/skills/psynet/`` while preserving user skills.
+  ``psynet scripts scaffold`` installs the bundle when it is missing.
+- Added a ``docs:build`` CI job that builds Sphinx docs on MRs without Pages deploy.
+- Added a `psynet dev docs linkcheck` command that wraps Sphinx's ``linkcheck`` builder and reports broken documentation links grouped by failure category.
+- Added ``psynet audit serve`` to preview a rendered experiment audit site over
+  HTTP (optional ``--render``), without creating a public tunnel.
+- Rendered ``experiment.py`` (or the configured ``experiment.entry_point``)
+  from the experiment directory (the parent of ``audit/``) in a dedicated
+  Experiment code audit section.
+- Added ``Selection`` and ``NetworkTrialMaker.on_trial_created`` so adaptive
+  experiments can record why a node or chain was assigned. Static ``select_node``
+  and chain ``select_chain`` hooks may return their selected value directly or
+  wrap it in ``Selection`` when request-local decision context must reach
+  ``on_trial_created``. The hook runs once per primary policy choice, after the
+  trial is fully prepared and excluding repeat trials and synchronized follower
+  copies.
+- Added ``CreateAndRateTrialMakerMixin.get_participant_role`` so experiments can
+  keep participants in creator or rater roles while the mixin consistently
+  filters eligible chains and validates the final trial class.
+- Added interactive Plotly figures to rendered audit notebooks. Plotly MIME
+  outputs render with a vendored Plotly.js runtime, so audit sites remain
+  self-contained and work offline. The runtime is copied into a rendered site
+  only when that audit actually contains a figure.
+- Added an optional Design simulation section to experiment audits. Its
+  ``simulate/design/simulation.ipynb`` contains a Power analysis section and may
+  also contain an Adaptive procedure section. The run record and results live
+  beside it. ``psynet audit init`` declares ``simulation_notebook``,
+  ``simulation_run``, and ``simulation_results`` as optional artifacts.
+- Added offline MathJax rendering for inline and display equations in experiment
+  audit Markdown and notebooks. The runtime is copied into a rendered site only
+  when that audit could contain an equation.
+- Added transactional `on_trial_created` callbacks to `Trial.cue`.
+- Added ``demos/features/trial_cue_adaptive``, a participant-level 1-up/1-down
+  staircase that uses ``Trial.cue``, ``while_loop``, and a decision table.
+- Before transferring anything, `psynet export` now asks the deployment to
+  identify itself and compares it with your experiment directory. Running the
+  command from the wrong folder stops the export instead of overwriting your
+  export directory with another experiment's data. A differing Git commit, or
+  uncommitted changes on either side, produces a warning and a confirmation
+  prompt; pass `--allow-project-mismatch` to proceed in a non-interactive shell.
+  Exports also declare an `export_format_version` in `manifest.json`, and PsyNet
+  refuses an archive it cannot read rather than downloading it first.
+- Downloaded exports are checked against the identity recorded during preflight
+  before publication, so replacing a deployment during transfer cannot publish
+  the wrong archive. Missing manifest identity fields count as a mismatch when
+  preflight supplied them.
+- Added an `expect_scrolling` page attribute. It declares whether a page is expected to be taller than the browser window. A page that does not set it should fit without scrolling at a typical laptop viewport (1280×720). Experiment Playwright tests check this with `psynetLayout.check()`. Long pages such as consent forms set it to `True`; the bundled consent pages already do. Passing `expect_scrolling=False` to the constructor overrides a class-level `True`. It does not change how the page behaves for participants.
+- Added `psynetLayout.check()` on every participant page so experiment Playwright tests can assert layout without copying PsyNet's test helpers. Pages that do not set `expect_scrolling=True` must fit the viewport; long pages that declare it may scroll as long as nothing is trapped behind the footer.
+- Added a CI job that fails on Sphinx documentation warnings and broken links, using ``psynet dev docs make --strict`` then ``psynet dev docs linkcheck``.
+- Added a short Prolific deployment test for sequential automatic recruitment.
+- Added ``timeline_lock_timeout_seconds`` (default 5) to bound participant-facing database lock waits. Contended ``POST /response`` and JSON ``/timeline`` requests return a translated HTTP 503 busy response instead of stalling; automated participants retry a structured busy 503 once. A hold-resume that is still busy after that retry schedules one delayed queued wake instead of waiting for the hold timeout.
+- Group barriers now show a pill on the progress bar when a partner is already waiting (``Your partner is ready.``, or ``{ARRIVED}/{TOTAL} of your group are ready.``). Waiting participants in groups of three or more see remaining-not-ready copy on the hold overlay (``{REMAINING} of {TOTAL} not ready yet``); pairs keep the hold title only. Longer notice copy ellipsizes instead of wrapping over the prompt. Set ``notify_arrivals=False`` to disable notices, or pass ``on_arrival_message`` to customize the copy. Pages omit the arrival-update websocket unless the participant is in an active sync group. Notices catch up when that websocket opens after a partner is already waiting, and unreconstructable barrier specs skip notice rendering instead of returning HTTP 500.
+- ``ParticipantDriver.refresh_status()`` reloads a bot driver's cached page from the server. ``advance_past_wait_pages()`` uses it after each wait so drivers see the live timeline page. Automated drivers retry a rejected submit once when last-arrival has already rotated the cached page uuid, POST hold-resume, pause on still-waiting overlays, and retry busy 503s plus JSON 409 stale timeline GETs.
+- ``POST /response`` and ``GET /timeline`` report Server-Timing so hold-resume queueing can be distinguished from handler time. ``GET /timeline`` splits lock, page, barriers, and render. Phases that never ran are omitted rather than reported as zero.
+
+### Changed
+
+- Simplified slow ASV benchmark metrics to focus on median request time and median async queue delay.
+- Renamed `tests/manual_recruiter_testing` to `tests/deployment`; the basic Prolific test (previously `prolific`) is now `tests/deployment/payment_flows_prolific` and defaults to HotAir, with the paid setup (including the approved cultural-foundation consent) in an `experiment.py.prolific` variant.
+- Changed barrier processing so `Barrier.check()` replaces `Barrier.process_potential_releases()` and `GroupBarrier.check_waiting_participants()` handles group-specific waiting-participant checks before release decisions.
+- Simplified local-server startup to take an explicit command with no automatic legacy fallback.
+- ``JsPsychPage`` and ``UnityPage`` now take a full document reload when entering or leaving their runtimes, and reload transitions skip unused timeline fragments.
+- In-repo demos/tests auto-prepare missing scaffold for local debug/test; pytest removes only files it added.
+- Batched completed-trial counting in ``ChainTrialMaker.n_trials_still_required``
+  via ``count_completed_trials_for_networks``, avoiding one query per network when
+  evaluating the ``n_trials`` recruit criterion.
+- Changed database export to one PostgreSQL repeatable-read snapshot with
+  identifier separation. All table CSVs and identifier sidecars are read through
+  the same database transaction.
+
+  ``export.zip`` contains physical table CSVs under ``database/`` with
+  pseudonymous participant identifiers. Original recruiter identifiers are written
+  to ``participant_identifiers.csv`` (and ``lucid_entrant_identifiers.csv`` for
+  Lucid). The ``--anonymize`` flag and class-based ORM CSV export have been
+  removed. Analysis helpers ``load_export_table``, ``unpack_json_column``, and
+  ``merge_participant_identifiers`` are provided under ``psynet.export``. The
+  ``extra_var`` registry and implicit VarStore flattening have been removed;
+  ``claim_var`` no longer accepts ``extra_vars``. Runtime properties created with
+  ``claim_var`` are preserved. VarStore values remain in the physical ``vars``
+  column and can be unpacked with ``unpack_json_column``. Selected assets are
+  always exported when requested.
+- Changed managed assets to SHA-256 content-addressed ``objects/sha256/<digest>``
+  storage with permanent ``/asset/<access_token>`` URLs, and removed the
+  ``obfuscate`` flag. Exported archives materialize those bytes under semantic
+  ``export_path`` trees with ``assets/manifest.csv``. Generated assets are hashed
+  after their content has been prepared.
+- Replaced auto-loaded trial and network count ``column_property`` attributes with
+  explicit query helpers.
+
+  ``TrialNetwork`` no longer defines PsyNet aggregates such as ``n_all_trials`` or
+  ``n_completed_trials`` that ran correlated subqueries on every ORM load. Chain
+  allocation now uses ``count_viable_trials_for_nodes`` and related helpers.
+  ``ModuleState.n_completed_trials`` remains a stored counter. Also fixed
+  ``TrialNetwork.alive_nodes`` / ``failed_nodes`` to filter by node failure state.
+- Replaced dual ``psynet.zip`` / ``database.zip`` downloads with a single
+  ``export.zip`` product.
+
+  Table CSVs now live in a flat ``database/`` directory (no nested zip and no
+  ``data/`` prefix). Asset exports use semantic ``export_path`` trees again;
+  ``--assets none`` omits the assets folder. Lucid identifier sidecars are written
+  only when Lucid rows exist. ``--archive`` and ``load_export_table`` accept
+  ``export.zip``, a ``database/`` directory, or an extracted export directory.
+- Dashboard export archives now use ZIP_STORED for already-compressed file types
+  (media, images, nested ZIPs) and ZIP_DEFLATED for text formats, removing
+  redundant DEFLATE overhead on the dashboard download path. The dashboard and
+  automatic backup write ``export.zip`` beside a temporary export tree rather than
+  into the process working directory. Dashboard downloads keep that tree until the
+  file response has been sent.
+- Removed duplicated participant identifiers from ``ErrorRecord`` and ``Response``.
+  ``Response`` no longer stores an IP address; Flask still updates
+  ``Participant.client_ip_address`` on ``/timeline`` and ``/response``, and
+  custom page ``process_response`` methods continue to receive the client IP.
+  ``LucidRID`` is linked to participants via nullable ``participant_id`` instead of
+  a foreign key on ``worker_id`` without committing the enclosing request
+  transaction. Export remaps recruiter identifier columns on copied tables (for
+  example ``notification.assignment_id``) to participant pseudonyms, and blanks
+  unmatched values plus ``request.params``.
+  ``SQLMixin.scrub_pii`` is removed; shareable archives use identifier
+  separation rather than in-place JSON scrubbing.
+- Changed :class:`~psynet.trial.main.Trial` from a Dallinger ``Info`` subclass to an
+  independent PsyNet table (``trial``), and retargeted trial foreign keys accordingly.
+- Pruned test experiment directories under ``tests/experiments``, ``tests/playwright/experiments``, and ``tests/deployment`` to authored-only layouts (like bundled demos), normalized their ``requirements.txt`` files to bare ``psynet``, and ignored generated scaffold/constraint files while keeping tracked custom ``config.txt`` files where needed.
+- Renamed the default export asset mode from ``experiment`` to ``collected``.
+
+  ``--assets collected`` exports managed assets deposited during the deployment
+  (for example recordings), excluding cached stimuli, external URLs, and
+  on-demand generation. The dashboard export UI uses the same wording.
+- Simplified export asset caching helpers and identifier sidecar builders.
+- Values set in the `Experiment.config` dictionary now take priority over `~/.dallingerconfig`: they are only overridden by `config.txt` (which PsyNet forbids sharing keys with), environment variables, and runtime configuration writes.
+- Simplified in-place timeline incompatibility errors to one short message: HTML/JS needs a full reload, parenthesized error codes, then migrate-first vs per-page ``requires_full_page_reload=True`` on Page/ModularPage (or temporary experiment-wide config opt-out), with the published checklist / ``/upgrade-to-psynet-14``. Plain ``js_page_code`` is checked with JavaScript heuristics rather than HTML parsing.
+- The `audio_gibbs` deployment test now selects its Prolific recruiter via the config file: `config.txt` defaults to the simulated `devprolific` recruiter for safe local runs, and `config.txt.prolific` opts into real recruitment for paid deployments. The separate `experiment.py.prolific` file is removed. Each remaining experiment file aborts launch unless the configured recruiter matches that file (`prolific` or `devprolific` for the shared experiment; `lucid-recruiter` for `experiment.py.lucid`).
+- ``psynet audit`` commands use ``./audit/`` from the experiment directory,
+  so ``validate`` works from the experiment root. Validate success copy now says
+  the packet is coherent and readiness may still be incomplete.
+- Experiment-audit monitor snapshots now use static assets from installed
+  Dallinger, and audit rendering confines static references and configured output
+  paths to safe locations.
+- Experiment audit support is available from the core ``psynet audit`` Click
+  command group without an optional ``[audit]`` extra.
+- Polished `psynet audit` UX: readiness score card, validate-before-render (with `--allow-invalid`), `mark-present`, clearer starter/validate messaging, and source_path defaults for audits inside the experiment directory.
+- Changed the thin-bootstrap Dallinger ``constraints.py`` GitHub fallback to
+  derive its release tag from PsyNet's declared Dallinger lower bound in
+  ``pyproject.toml`` (via package metadata), instead of a hand-maintained
+  ``_DALLINGER_CONSTRAINTS_REF`` constant.
+- Removed ``psycopg2-binary``, ``redis``, and ``yaspin`` from PsyNet's core
+  bootstrap dependencies (now ``click``, plus ``tomli`` only on Python < 3.11 for
+  parsing ``pyproject.toml``). ``psynet services`` probes Redis with a stdlib RESP
+  ``PING`` and PostgreSQL via ``psycopg2`` when available, otherwise ``pg_isready``
+  or a PostgreSQL protocol fingerprint that does not authenticate. Version-check
+  spinners still use ``yaspin`` via a lazy import under ``psynet[experiment]``.
+- Changed ``psynet setup`` so that choosing a dedicated ``.venv`` completes in a
+  single invocation: setup creates the environment, installs the same PsyNet into
+  it, and finishes there so every experiment file and lockfile is produced by the
+  PsyNet the experiment will use. Setup now also ensures the experiment has a Git
+  repository for deployment: an experiment already inside a repository uses it,
+  while one that is not in a repository (or that its surrounding repository
+  ignores) gets a dedicated repository via ``git init``. After finishing, setup
+  tells you to activate the new environment when it created one on your behalf,
+  then how to launch the experiment.
+- Lab Recruiter reports every terminal outcome (complete, fail, zero bonus, and consent rejection) through its completion endpoint, authenticated with ``Authorization: Token <value>`` from the ``lab_recruiter_auth_token`` config key. Deploying with the lab recruiter now requires this key. Posts verify TLS certificates, time out after 30 seconds, and log failures without aborting participant submission. Calling ``reward_bonus`` on Lab Recruiter raises so that path is not confused with a bonus transfer. Local debug without a token skips the outcome POST instead of leaving the participant in payment review.
+- Removed legacy per-demo ``synth_files/.gitignore`` files (``output_batch`` /
+  ``output_single`` are not written by current synthesis paths), dropped empty
+  nested ``__init__.py`` markers under asset directories, and removed the outdated
+  ``develop`` ignore special-casing for in-repo demos and recruiter tests.
+- Participant payment is now decided and recorded on the recruiter (`decide_payment` / `record_payment`), then transferred separately. Customize those recruiter methods instead of `Experiment.bonus`, which is unused (overriding it, `check_bonus`, or Dallinger's `data_check` / `attention_check`, fails at deploy). PsyNet posts a bonus automatically at most once: the participant row is locked, then the unconfirmed claim is committed before the platform POST. A failed transfer stays unconfirmed for dashboard Pay or Dismiss; Pay re-applies spend caps and posts only the remaining room, not the full decided amount, and records at most the payable amount if the platform already reports more. Recruitment continues after a failed first transfer but is not repeated on replay. Exceeding `hard_max_experiment_payment` clips the bonus to remaining room (or pays nothing if that is below $0.01), records bonus status `capped` after the transfer claim, and keeps `planned_bonus` as the decided amount. The issued completion code is persisted on recruiter exit. Local recruiters such as HotAir and Generic are omitted from payment review.
+- When a participant leaves or is failed, PsyNet now fails that person's unfinished trials and keeps the trials they already submitted. Completed trials are failed only if a TrialMaker performance check treats those responses as unusable (`fail_trials_on_participant_performance_check`, default True for static and dense experiments, False for chain and graph experiments). Recruiter events such as a Prolific return, abandonment, or reassignment fail still-working participants, redirect them to `unsuccessful_end` if they are still in the experiment, fail unfinished trials, keep submitted trials, and no longer fail owned chain nodes. Failing a participant also removes them from their sync groups; if a group then falls below its minimum size and does not accept top-ups, remaining members are failed immediately when `fail_participants_below_min_size` is True. `Participant.fail()` can also fail someone who has already completed; they are not redirected off the successful-end page. Recruiter events after a successful completion remain a no-op. Use `n_participants` or `n_trials` to control recruitment quotas; do not fail submitted trials for that purpose.
+- Made the plan section optional for the default psynet.core profile; validate now warns when it is missing instead of failing.
+- Hardened audit validation with unified credential redaction, mark-present
+  parity, rejection of unfetched Git LFS videos, blocker integrity, explicit and
+  confined source bases, protected render output paths, practical notebook and
+  section size limits, and clearer missing-packet errors.
+- Restructured rendered experiment audits: screenshots, participant video,
+  monitor snapshot, performance test, data exports, and analysis are now
+  top-level sections instead of one combined evidence panel, ``Timeline`` and ``Report`` are titled
+  ``Implementation timeline`` and ``Implementation notes``, and blockers are
+  explained rather than emphasized.
+- ``psynet dev ci update-dallinger-constraints`` now fetches the vendored
+  Dallinger snapshot from a git SHA pin as well as from a version lower bound.
+- Renamed experiment Agent Skills to drop a redundant ``psynet-`` prefix and to
+  use verb-object names for workflows (``implement-experiment``,
+  ``deploy-experiment``, ``monitor-experiment``, ``simulate-participants``,
+  ``filter-participants``). Domain skills stay as nouns (``psychophysics``,
+  ``tapping-experiments``). ``explore-psynet-repository`` keeps ``psynet`` because
+  it is part of the object, not a prefix.
+- Ignored PsyNet-managed Agent Skills (``.cursor/skills/psynet/``) in the
+  experiment ``.gitignore`` and ``.dockerignore`` templates. These copies are
+  regenerated by ``psynet setup`` / ``psynet scripts update`` and are not part of
+  the running experiment. Experiment-owned skills under ``.cursor/skills/`` stay
+  eligible to commit. Already-tracked copies need ``git rm -r --cached
+  .cursor/skills/psynet``.
+- Skip JavaScript, CSS, variables, and SPA checks from ModularPage prompt
+  and control components that are omitted from ``layout``.
+- Warn at page construction when ``js_vars`` keys collide with existing
+  ``window`` properties such as ``name``, ``status``, ``event``, and ``history``,
+  so legacy global reads cannot silently return the browser's value.
+- Stock experiment ``deploy.toml`` uses a nested ``[exclude]`` table:
+  ``paths`` for root-relative prefixes such as ``static/assets``,
+  ``names`` for nested junk such as ``__pycache__``, and ``suffixes`` for
+  literal endings such as ``.db``.
+- Ignore ``custom_network_filter`` deprecation warnings in experiment CI until
+  ``psynet-step`` can migrate to ``custom_chain_filter`` on a released PsyNet 14.
+- Experiment audits always live in ``./audit/`` under the experiment
+  directory. Run ``psynet audit`` from that experiment directory; commands take
+  no packet path and no ``--experiment`` option. Running from a directory named
+  ``audit`` is an error. Use ``psynet audit simulate`` and
+  ``psynet audit performance-test`` to collect canonical evidence; the ordinary
+  performance-test command never updates an audit. Experiment source is the
+  parent of ``audit/``; leftover ``experiment.source_path`` and
+  ``experiment.source_base`` fields are ignored with a warning.
+- Rendered audit sites treat experiment notebooks, Markdown reports, and the
+  PsyNet audit templates as trusted author content. Notebook HTML and SVG
+  outputs are included as produced, including any scripts they contain.
+- Expanded the stock deployment exclusions for credentials, exports, and local IDE metadata; required a Git commit for remote deployments; and aligned PsyNet's recommended Dallinger series with the temporary 12.4 pre-release dependency.
+- ``import_local_experiment()`` no longer appends the experiment directory to
+  ``sys.path``. Sibling imports in ``experiment.py`` still use
+  ``from . import adaptive_logic``. A later bare ``import adaptive_logic`` after
+  the experiment class is loaded no longer works.
+- Increased the bounded rendered-notebook preview allowance from 100 KB to 10 MB,
+  without changing the 100 KB limit for plain-text artifacts, so rich Plotly
+  figures are not prematurely truncated.
+- Command-line exports now write to ``exports/latest/`` in the experiment
+  directory and keep the previous export under ``exports/history/<timestamp>/``.
+  A new export is assembled in a staging directory and only moved into place once
+  it is complete and validated, so a failed or interrupted export always leaves
+  your previous export intact.
+- Exclude the experiment-root ``audit/`` review packet from the stock
+  ``deploy.toml`` template. Existing experiments keep their current
+  ``deploy.toml``; add ``audit`` to ``[exclude].paths`` if it is missing.
+- Remote data exports are now built entirely by the deployed experiment and
+  streamed to your computer, rather than being reconstructed locally. Your local
+  database is no longer wiped and repopulated, your local experiment code is no
+  longer executed against remote data, and archives are streamed to disk instead
+  of being held in memory, so exporting a large deployment no longer depends on
+  how much RAM your computer has.
+
+  For SSH deployments whose assets live in local storage, PsyNet streams a small
+  core snapshot and then fetches only the asset objects your computer is missing,
+  so re-exporting an experiment whose recordings have not changed transfers almost
+  nothing. Deployments that PsyNet cannot transfer that way (Heroku, S3-backed
+  assets, or a missing `rsync`) automatically fall back to a complete
+  server-built archive, and the command says which transport it used.
+  `psynet export local` builds the export directly from your local deployment's
+  database instead of downloading it from its own dashboard.
+- Exports record the deployment git commit in ``manifest.json`` instead of bundling ``source_code.zip``.
+- SSH exports now establish one SSH connection and reuse it for every step, rather
+  than opening a separate connection to probe for rsync, to look up the remote home
+  directory, and to fetch `logs.jsonl`. Each connection cost a full handshake, which
+  was a noticeable share of the runtime for a small or fully cached export.
+- SSH command-line exports copy missing local-storage asset objects with one rsync
+  into a persistent content-addressed cache, so repeat exports transfer only new
+  objects. If rsync is unavailable, fails, or cannot supply every requested object,
+  the export falls back to a complete server-built archive rather than failing or
+  publishing an incomplete result.
+- Remote ``psynet export`` now stops immediately if the deployment has no
+  ``/dashboard/export/preflight`` endpoint, instead of attempting a download this
+  client cannot publish. Install the earlier PsyNet (see ``constraints.txt``) and
+  retry, or export from the dashboard.
+- Data exports now write boolean columns as ``True`` / ``False`` instead of PostgreSQL's raw ``t`` / ``f``, so analysis tools can treat them as logical values. Archives remain loadable with ``psynet load``.
+- Long response lists grow with the page instead of scrolling inside a 420px panel. This applies to `PushButtonControl`, `RadioButtonControl`, and `CheckboxControl`: mark the page with `expect_scrolling=True` when the list is meant to be taller than the window. Radio and checkbox rows keep the panel behind them, since each row is its own card, while push buttons now sit directly on the content surface. Vertical push-button lists still stay in one column. The bundled `HouseholdIncomePerYear` and `AttentionTest` pages declare `expect_scrolling=True` accordingly.
+- Named colours on trial progress stages, event captions, and the audio meter now follow the participant theme instead of the browser's primary red, green, and blue. `color="red"` resolves to `--psynet-danger`, `green` to `--psynet-success`, `blue` to `--psynet-accent`, `orange` to `--psynet-warning`, and `grey` to `--psynet-text-muted`. Hex values and `var(...)` expressions are unchanged.
+- The experiment completion page no longer reports a performance reward of $0.00, and the remaining reward sentence now ends with a period.
+- Raised the default `min_browser_version` from Chrome 80 to Chrome 105, the first release supporting CSS `:has()`, which the default participant theme uses to style selected response options. Experiments that need to admit older browsers can still lower the value in `config.txt`.
+- Refreshed the default participant theme. Page content now sits on a bounded content surface over a tinted background; prose is limited to a readable measure; the accent colour meets WCAG AA contrast; keyboard focus follows the accent token; and animations respect `prefers-reduced-motion`, with wait-page text switching to the accent contrast colour when the gradient is replaced by a solid fill. The theme lives in a cacheable stylesheet (`/static/css/participant.css`) built from `--psynet-*` custom properties. Recolouring an experiment means setting both `--psynet-accent` and `--psynet-accent-rgb` (Bootstrap links read the RGB form); see the new Theming tutorial. The content surface no longer overflows narrow viewports, and the waiting page uses the space between the progress rail and footer without creating a stray scrollbar. In the footer, the media-download progress bar overlays the top edge so that download progress cannot shift the footer layout. The footer is omitted altogether when it would be empty, that is when there is no reward to show, no `Comment` button, and no termination button, so that a blank bar does not take up space.
+- The audio meter is a themed CSS track rather than a 50px canvas brick. Level and status colour follow the participant palette (including the named red/green/blue mapping), the track matches the trial progress bar, and the microphone name is shown when the browser provides it.
+- `ProgressStage`'s default colour is now `var(--psynet-accent)` rather than a hard-coded blue, so an unstyled trial progress bar matches the participant theme and adapts to dark mode. Stages that pass an explicit `color` are unaffected.
+- Missing package translations (such as PsyNet's own) no longer abort test runs outside release branches; the English source text is shown instead, and catalogs are refreshed on the release branch. Missing experiment translations still raise, as do all missing translations under `psynet debug`.
+- The media-download progress bar is now the bottom counterpart of the timeline progress bar at the top of the page: a thinner 6px rail (`--psynet-media-progress-height`) in the same accent colour, held steady while loading instead of animating through the four-colour gradient used by the wait page. It rides the footer's top edge when there is a footer, and pins to the bottom edge of the window when there is not. The footer itself is omitted when it would be empty, which happens whenever rewards are hidden and there is no comment or termination button, so pages no longer reserve space for a blank bar. In-place timeline transitions treat the footer as optional, inserting or removing it as pages differ, rather than requiring it to be present.
+- Removed unstable export benchmarks from the ASV regression gate.
+- The final page shown after an experiment now uses the participant theme for generic and local recruitment, and for the lab recruiters. It previously fell through to Dallinger's `exit_recruiter.html`, the one participant-facing page that never picked up the theme, which showed the recruiter's Python class name above a table of raw payment fields, including a bare `None` bonus on recruiters that never pay one. PsyNet now renders `psynet_exit_recruiter.html` instead: a thank-you, a note that the window can be closed, and the assignment ID as a reference. It says nothing about payment, since the participant has already been told what they earned on the debrief page. Prolific and Lucid keep their own exit pages, which return participants to the platform, and `Experiment.render_exit_message` still overrides the page for generic recruitment.
+- Raised the default-branch ASV regression factor from 1.25 to 2 so noisy slow load-test medians do not fail the job. The merge-request fast-benchmark gate stays at 1.25.
+- The timeline progress percentage sits on a grey pill, the same `--psynet-border` as the track, centred on the rail rather than inside the fill. Early in an experiment the fill is too narrow to hold a label; the pill stays opaque so one text colour remains readable wherever the fill has reached.
+- Restyled the participant footer as page chrome rather than content. The footer and the timeline progress rail now share one blue tint (``--psynet-chrome-bg``, defined for light and dark mode, with ``--psynet-footer-bg`` available to retint the footer alone) instead of the footer sharing the white content surface and the rail using the border grey, so the two read as a pair framing the page. The tint is set deeper than the page background so that an empty progress rail stays legible, the footer keeps its own identity, and the footer's surface-filled controls read against the bar. Footer contents line up with the page's content column rather than being spread across the whole window by Bootstrap's navbar spacing, with the reward on the left and the controls grouped on the right. The reward is a borderless readout set exactly like the controls beside it, with a small information glyph in its own colour marking that it explains itself on hover or keyboard focus. **Comment** and **Leave** are outlined in the accent and danger colours so that their boundaries clear the 3:1 contrast WCAG asks of a control's edge. The filled portion of the progress rails follows a new ``--psynet-rail-fill`` token, which tracks the accent in light mode and is dimmed in dark mode, where a fully saturated accent dominated the page. ``--psynet-danger-soft`` is available for quiet danger surfaces.
+- Participants can use **Leave** for a recruiter-specific early exit with clear payment or panel-return consequences. Successful, unsuccessful, voluntary, consent-rejection, and error-recovery outcomes share a server-owned ``ExitPlan`` and ``PaymentDecision``, so recruiter handoff and later payment settlement use the same recorded decision. Voluntary Leave requires confirmation and is unavailable once the participant is already finishing.
+- PsyNet now adds content versions to generated local static URLs and caches matching static files and deposited assets immutably, while unversioned custom URLs and on-demand assets continue to revalidate.
+- Fatal experiment errors now fail the participant as ``error_recovery`` when a recovery plan is stored, while the exception type remains on ``failure_tags``. Error pages reuse an already executed voluntary leave plan instead of treating a known participant as an unidentified session.
+- Prolific submission reads now go through Dallinger's ``get_participant_submission(..., translate=False)`` instead of a raw HTTP GET, so the dashboard and unpaid-base retry use the same mocked path in ``devprolific``.
+- Fatal errors on generic, HotAir, and lab recruitment skip the interactive recovery page: PsyNet commits the plan during the failing request and shows that an error occurred, with no Finish or Submit. Recruiter-exit is reserved for finished and Leave sessions. Prolific and Lucid still present recovery UI and commit when the participant continues. Custom recruiters that show recovery UI must override ``shows_error_recovery_page``. Error-page Submit, Continue, and auto-redirect are armed only while a tracked recovery plan is still prepared. Error pages return HTTP 200; recovery copy is visible from first paint.
+- Participant-facing error, leave, and recruiter-exit copy is shorter and more consistent. Error pages share one heading; Prolific Submit leads to a confirmation shared with recruiter-exit; terminal close-outs tell people they may close the page. Generic Leave no longer says responses have been saved; finished sessions and the Leave confirmation modal still do. Lucid talks about returning to the panel.
+- Retried transient timeouts in ``psynet dev docs linkcheck`` instead of failing on the first one, so a momentarily slow but healthy site no longer breaks the documentation build.
+- ``wait_while``, ``AsyncCodeBlock(wait=True)``, trial feedback processing, and default barriers now preserve the current page, show a compact status indicator that floats above the page instead of shifting its content, and use shared wake notifications when available. Default holds credit actual visible waiting time up to ``max_wait_time``; setting ``fix_time_credit=True`` credits ``expected_wait`` instead, while progress and advertised duration always use ``expected_wait``. ``wait_while`` and barriers accept custom hold ``content``, and barriers accept ``expected_wait``. Explicit ``WaitPage`` or custom waiting logic retains a dedicated waiting screen. ``AsyncCodeBlock`` uses a 2-second fallback check interval. Hold timeouts use ``timeline_hold:<id>`` failure tags and trigger when the configured limit is reached.
+
+  Group barriers and groupers now release or form groups as soon as the last member arrives, so that participant self-skips the wait indicator on the default hold path. Waiting partners stay on their overlay until they resume; last-arrival does not advance their timeline cursors. A hold consumed immediately after skipping a released wait stays a silent spinner for that visit, and the overlay chip and websocket are reused across stacked holds. Leftover hold uuids catch up onto a later stacked hold instead of treating a partner skip as a second browser tab. If a partner's wait row is locked, the 0.5-second barrier check still finishes the release. Last-arrival ``on_release`` and spec errors leave the group waiting instead of failing the arriving participant.
+
+  Synchronized trial makers accept ``sync_group_wait_content`` so their own grouping waits can share overlay copy with the experiment's grouper and ``GroupBarrier`` waits; author-defined groupers and group barriers still use their own ``content``. The rock-paper-scissors demo no longer waits at an extra group barrier before each choice. Holds restore the previous control state when they end, sit under the Leave confirmation overlay, and fall back to a full reload if the committed next page cannot be activated in place. Rejected hold-resume checks reload the current timeline page, and the hold WebSocket closes when the hold ends. Lucid inactivity and no-focus clocks pause while the overlay is showing; overall HIT time still counts.
+- In-place ``/response`` pages render ``timeline-fragment.html`` instead of compiling Dallinger's full document shell and discarding it, and Jinja translation environments are reused per locale. Fragment extraction ignores HTML comments and no longer rewrites ``<script>`` tags that appear inside JSON bootstrap data or other script, style, or template bodies. Full-page timeline render and in-place fragments skip BeautifulSoup unless the HTML contains a ``type="module"`` script or cannot be extracted as a fragment root. Browsers no longer cache live timeline JSON snapshots such as partner-ready arrival notices and progress/reward.
+- Started ``psynet debug --legacy`` with four gunicorn workers by default so last-arrival ``GET /timeline`` can overlap waiter hold-resume POSTs in a group of four. Playwright stacked-hold tests set ``PSYNET_LEGACY_DEBUG_GUNICORN_THREADS`` to the session count. GitLab Playwright jobs use that gunicorn path; the default vs legacy job split remains in-place vs full reload.
+- The `auto_recruit_prolific` deployment test now ends with a short custom debrief that describes the technical test, instead of the generic cultural-foundation IRB letter.
+
+### Deprecated
+
+- Deprecated reading page JavaScript variables from ``window`` in favor of ``psynet.var``. Compatibility can warn, raise an informative error, or be disabled with ``legacy_js_var_globals``, while leaving existing or externally locked ``window`` properties untouched.
+- Deprecated the ``js_links`` and ``scripts`` Page arguments in favor of ``js_dependencies``, ``js_page_code``, and ``js_page_modules``. Pages that still use the deprecated arguments keep classic script semantics and force a full page reload.
+- Deprecated `fail_trials_on_premature_exit`. The argument is still accepted, defaults to `False`, and is ignored. It is not stored on the trial maker, so reading `trial_maker.fail_trials_on_premature_exit` now raises `AttributeError`. Premature exit always fails incomplete trials and preserves completed trials.
+- Deprecated ``custom_network_filter`` in favor of ``custom_chain_filter`` on
+  chain trial makers and ``custom_node_filter`` on static trial makers. Existing
+  overrides still filter candidates, but construction emits a
+  ``DeprecationWarning``.
+- Deprecated the `--n_parallel` export option: asset export has been sequential
+  for some time, so the option had no effect. It is still accepted so older
+  scripts keep running.
+
+### Removed
+
+- Removed deployment-time source code archives and source export, replacing them with lightweight Git commit and working-tree provenance.
+- Removed raw `.config.backup` files from deployment packages so source configuration cannot bypass deployment-plan filtering.
+- Removed the Asset ``personal`` flag.
+
+  Passing ``personal=...`` to asset constructors, the ``asset()`` helper, or
+  recording controls now raises an informative error. Selected assets are always
+  exported when requested; treat exported media as potentially identifying.
+- Dropped support for Python 3.10.
+- Removed the `prolific_enable_screen_out` config parameter, which had been a deprecation stub since Prolific retired the corresponding screen-out API route; experiments still setting it now fail config loading with Dallinger's standard invalid-key error. Unsuccessful participants are paid via Prolific's completion-code-based screen-out mechanism instead (see `prolific_pay_unsuccessful`).
+- Removed the unused ``tomli`` bootstrap dependency now that PsyNet requires
+  Python 3.11 or later.
+- Removed `psynet export --legacy`. The old engine downloaded the raw database,
+  replaced the contents of the local database with it, and rebuilt the export
+  locally. Use the default server-built export, or `psynet load` if you
+  intentionally want to replace the local database. Existing positional calls to
+  ``ArtifactStorage.download_export`` remain supported with a deprecation warning.
+- Removed the ``--assets all`` export option.
+
+  Exports now include either no assets (``--assets none``) or files deposited
+  during the run (``--assets collected``, the default), such as recordings.
+  Cached stimuli, external URLs, and on-demand assets are no longer copied into
+  the archive. Copy stimuli from the experiment directory or storage if you need
+  them for supplementary materials. Passing ``all`` (CLI ``--assets all``, or
+  dashboard ``?assets=all``) raises an error with this guidance. The dashboard
+  export page no longer offers an All choice.
+- Removed the unused ``Experiment.export_classes_to_skip`` attribute.
+
+  Canonical exports copy physical database tables, so that list no longer
+  controlled what appeared in the archive.
+
+### Fixed
+
+- Added adversarial lifecycle Playwright coverage.
+- Avoided duplicate page control bindings after trial restarts.
+- Cleaned up media capture streams on page transitions.
+- Covered same-session page updates in Playwright.
+- Disposed SurveyJS controls on page cleanup.
+- Fixed stale in-place timeline events during audio demo transitions.
+- Hardened in-place timeline transition end-to-end tests.
+- Used reloads for non-same-session Unity transitions.
+- Used trial timers for auto-advance page actions.
+- Scoped page-local stylesheets during in-place timeline transitions, preventing CSS from leaking between pages and warning authors to use managed page CSS APIs instead of raw prompt markup styles.
+- Hardened Selenium timeline readiness checks for in-place page transitions.
+- Cleaned up page-scoped timers so SPA timeline transitions do not leave stale callbacks behind.
+- Isolated in-place timeline media loads so late responses from previous pages cannot overwrite current page media.
+- Fixed audio cleanup during in-place timeline transitions.
+- Fixed the docs pages job crashing in the window between a release branch being merged back into master and the post-release alpha bump landing; the version switcher now omits the alpha entry when the default branch carries a stable version.
+- Removed the `(author: [Your Name])` placeholder from fragments generated by `psynet dev changelog new`.
+- Fixed intermittent Postgres deadlocks in CI when resetting the database between experiment tests, by waiting for the previous experiment server to fully stop before the next reset and, on deadlock, terminating leftover connections before retrying.
+- Fixed in-place timeline transitions to preserve full-page script execution order and to show each loading error only once.
+- Fixed `/start` to resume existing assignments across recruiter URL formats using structured lookup errors, recover after browser back/forward navigation, and support configured repeat worker IDs. Worker-id lookups now return the most recent participant when repeats exist. Advancing from `/ad`, gateway `/consent`, and `/start` now replaces those history entries so Back from the timeline leaves the experiment instead of replaying the recruiter handshake or participant creation.
+- Fixed failed in-place transitions so they no longer re-enable unusable timeline controls, and stopped omitted chatrooms from loading their resources.
+- Fixed in-place timeline transitions hanging when audio ended during cleanup.
+- Fixed performance tests to preserve explicit zero-valued options in local and SSH modes, and to bound randomized bot staggering relative to the configured interval.
+- Trials and WaitPage auto-advance now wait for ``pageReady``, so pages cannot start or auto-advance while navigation setup is still in progress.
+- Fixed ``count_participant_trials_in_block`` to query ``ChainTrial.block_position`` instead of the base ``Trial`` class.
+- Fixed config loading so values set in `Experiment.config` remain available after an initialized experiment process changes into a non-experiment directory. Previously such processes could skip the experiment's config defaults and resolve different values (e.g. `dashboard_user`), causing bots to fail authentication with HTTP 401 errors.
+- Hardened chatroom widget cleanup: WebSocket and DOM listeners are removed if page-module activation fails mid-setup, and the null-room path waits for ``pageReady`` before continuing.
+- Ignored stock ``config.txt`` files under test-experiment trees like demos, while leaving already-tracked custom configs tracked (use ``git add -f`` for new customs).
+- Fixed the dashboard network monitor so PsyNet trials appear after Trial left the Info table.
+- Fixed Trial JSON serialization for the dashboard network monitor when Dallinger details fields are absent.
+- Fixed locale loading for deployed experiments imported as namespace packages.
+- Made SPA contract failures visible during ``psynet test local`` by checking static timeline pages before bots run (including non-template ModularPage codes when external templates need an app context) and by extracting SPA messages from bot HTTP 500 bodies via a stable footer marker. Documented the full experiment scaffold files needed for local validation.
+- Fixed deployment config snapshots to follow config source priority and exclude sensitive-looking keys.
+- Fixed ``psynet setup`` and ``psynet scripts scaffold`` failing in editable alpha
+  checkouts whose current commit cannot be served by ``origin`` (for example
+  unpushed work, or CI merge-result commits). These now record an editable PsyNet
+  requirement and warn that it only resolves locally; use ``psynet setup
+  --psynet-source commit`` to require a deployable commit pin.
+- Fixed a Prolific payment gap where a participant who finished the experiment but never entered the completion code was approved locally while their submission timed out unpaid on Prolific. Local submit is now the Prolific success path: PsyNet completes the still-active (or already timed-out) submission server-side with a researcher-actor completion code, Prolific pays the study reward or fixed screen-out payment, and PsyNet posts the top-up bonus as before. Participants stay on a PsyNet confirmation page and do not enter a completion code.
+- Fixed thin-bootstrap ``psynet services`` probes to read Redis/PostgreSQL
+  responses robustly and release TLS sockets, and declared ``tomli`` for
+  Python 3.10 bootstrap installs.
+- Fixed experiment-audit notebook previews so executed notebooks between 100 KB and 10 MB still appear in the Analysis panel, and stopped ``init`` from writing ``source_path`` values that ``validate`` would reject.
+- Polished experiment audit sites: audit completeness now appears at the top,
+  section headings are not duplicated, timelines retain structured styling,
+  performance precedes analysis, empty checks are hidden, and screenshot
+  manifests publish their referenced images.
+- Thin-bootstrap constraint generation now reads a Dallinger git SHA pin from
+  installed package metadata when `pyproject.toml` is absent.
+- Fixed ``psynet scripts scaffold`` / prune so copied Agent Skills under
+  ``.cursor/skills/psynet/`` are treated as scaffold-managed paths. Demo round-trip
+  tests no longer treat those generated files as authored experiment sources.
+- Fixed ``psynet setup`` pinning a GitLab/git install of an unpublished alpha
+  as ``psynet[experiment]==13.4.0a0``, which cannot be resolved from PyPI.
+  Standalone experiments now reuse the installed VCS commit
+  (``psynet[experiment] @ git+<url>@<commit>``) when compiling constraints.
+- Show a refresh prompt when full-page managed JavaScript activation fails,
+  including missing ``js_page_modules`` and ``js_dependencies``, instead of
+  leaving the participant on a permanently disabled page.
+- ``psynet audit validate`` now warns when ``TIMELINE.md`` lines look like
+  entries but were ignored (for example an actor tag other than
+  ``agent-start`` / ``agent`` / ``agent-stop`` / ``manual`` / ``system``), and
+  when ``implementation.summary`` is still the starter TODO. The rendered page
+  omits that TODO so it is not the subtitle under the experiment title.
+- Keep ``js_dependencies`` available to first-page body scripts by emitting them
+  as blocking head tags, while still routing failed loads through the guarded
+  loader so missing files show the refresh prompt.
+- Fixed vocabulary tests so chosen item hashes stay on the trial after
+  creation. Item selection now happens in ``VocabTrial.finalize_definition``.
+  ``VocabTest`` rejects synchronized groups, which would otherwise assign
+  followers a different item set.
+- Local CI Docker network setup now aborts if Redis or Postgres cannot be started.
+- Fixed ``Column ... conflicts with existing column`` errors when an experiment
+  class adds a column to a table it shares with other classes, such as a ``Trial``
+  subclass on Dallinger's ``info`` table. PsyNet now reuses the existing column,
+  so plain ``Column`` declarations survive reimporting ``experiment.py`` from its
+  staging copy. When a different class redeclares the same column name, the two
+  declarations must agree on type, length, nullability, uniqueness, indexing,
+  primary key, foreign keys, defaults, update values, constraints, autoincrement
+  behavior, system-column status, and comments, or PsyNet raises a clear error
+  asking you to rename one of them. Callable defaults such as
+  ``default=lambda: 0`` cannot be compared between two classes, so declare such a
+  shared column on a single class.
+- Stopped debug, test, and deployment once after PsyNet auto-creates `deploy.toml`, including when setup or scaffold wrote the file, so authors can review the deployment plan before rerunning. Git-ignored files may still be deployed after that one-time review. Temporary pytest scaffolds and in-repo auto-prepare skip that pause. Git dirty-state provenance is scoped to deployment-selected files, including experiments nested in a parent repository, and uses the same ``deploy.toml`` exclude rules as the deployment plan.
+- Fixed Markdown display outputs being omitted from rendered audit notebooks.
+  The audit now renders ``text/markdown`` with the same Markdown renderer used
+  for reports, before falling back to ``text/plain``.
+- Fixed matplotlib plots rendering as solid black blocks in audit sites.
+  Notebook SVG outputs are included as produced, including ``defs``/``use``
+  glyph references, ``transform``, ``clip-path``, and inline ``style``.
+- Fixed interactive Plotly figures in rendered audits collapsing to the minimum
+  container height when the browser window was resized, which squashed tall
+  faceted figures and made their labels overlap.
+- Sped up trial candidate discovery by batching viable-trial counts, skipping
+  those counts for unlimited unbalanced static nodes, and pairing static nodes
+  with their already-loaded networks so assignment no longer issues a network
+  query per candidate. ``TrialNode.n_viable_trials`` is still readable on a node
+  and usable in SQLAlchemy filters and ordering, but it is no longer a mapped
+  column, so it is queried on access instead of loaded with every node. As a
+  result it no longer appears as a column in node data exports or in the
+  Dallinger dashboard; count the trials at a node directly if you need it in an
+  analysis.
+- Protected ``audit/simulate/`` from being used as the rendered site output
+  directory, so rendering cannot overwrite simulated exports or design results.
+- Participant navigation no longer loads module-state and barrier relationships
+  until the current request actually uses them.
+- Dashboard Pay no longer posts a bonus twice when two Pay clicks overlap.
+- Looking up a participant's trials for one trial maker, as used by performance
+  checks and repeat-trial selection, no longer loads trials belonging to the
+  participant's other trial makers before discarding them. The results are now
+  ordered by trial ID.
+- `psynet.export.merge_participant_identifiers` now accepts a
+  `pathlib.Path` for its `identifiers` argument, not only a string.
+- `psynet test ssh` and `psynet performance-test ssh` no longer stop early when
+  run without an interactive terminal, for example from a script or an editor's
+  integrated shell. They previously watched local standard input so that you could
+  quit by pressing `q`, which made them exit immediately on end-of-file and report
+  that no participants had run. They now also fail with a non-zero exit code when
+  the remote command fails, echo the remote output in full rather than dropping
+  whatever was still in flight when the remote process exited, and report how many
+  bots ran instead of succeeding silently.
+- ``StaticTrialMaker`` now rejects ``target_trials_per_node`` values of ``0``
+  or less. Use a positive number, or ``None`` for unlimited.
+- When the deployed experiment cannot build an export, `psynet export` now reports
+  why instead of only "Internal Server Error (500)".
+- Stopped ``SAWarning: This declarative base already contains a class`` and
+  ``SAWarning: Reassigning polymorphic association`` appearing when PsyNet loads
+  ``experiment.py`` more than once in a process, which happens during
+  ``psynet debug`` and ``psynet deploy`` and when Dallinger's config loader reads
+  the experiment's extra parameters. Any experiment that defines a ``Trial``
+  subclass or a custom table saw these warnings, which described PsyNet's own
+  reloading rather than anything an experimenter could act on. Experiment test
+  suites that run pytest with ``-W error`` no longer fail because of them.
+- Folder assets deposited into local storage are now stored with predictable
+  permissions (`0755` directories, `0644` files) instead of inheriting the source
+  directory's. A folder deposited from a `tempfile.TemporaryDirectory` was
+  previously stored as `0700`, which stopped anything running as another user
+  from reading it, including rsync during an SSH export.
+- `psynet deploy`/`debug --archive` now re-packs the archive you supply and sends
+  only the table CSVs under `database/` to the server. Passing an `export.zip`
+  previously uploaded the whole archive, including the recruiter identifier
+  sidecars and any exported asset files, even though only the table CSVs are read.
+- The ``bot_2`` demo timing check no longer treats the first recorded HTTP
+  request as a failure. That cold-start load can exceed one second on busy CI
+  runners while later pages remain fast.
+- If replacing ``exports/latest`` fails and the previous export cannot be
+  moved back, that tree is left at its recovery path and the error names both
+  locations instead of deleting it. Interrupting the final replacement restores
+  the previous export before propagating the interruption.
+- Identifier separation no longer produces exports that fail to load. Removing a
+  recruiter identifier from a `NOT NULL` column used to leave a blank field, which
+  `COPY` reads back as NULL, so `psynet load` and `psynet deploy --archive` failed
+  on the resulting archive. Nullability is now read from the live schema:
+  `participant.entry_information` is written as `{}`, and an identifier belonging
+  to no exported participant (such as Dallinger's literal `unknown` assignment on
+  an error notification) is replaced by a `redacted-<table>-<row id>` placeholder
+  rather than blanked.
+- Identifier separation now inspects column types before copying tables and
+  fails if a recruiter-identifier column cannot store a text or JSON
+  placeholder. Integer, UUID, enum, short ``VARCHAR``, and ``NOT NULL``
+  identifier columns on tables without ``id`` are rejected instead of
+  producing an archive that cannot be reloaded.
+- Export archives now accept only exact ``database/<table>.csv`` or legacy
+  ``data/<table>.csv`` members. Nested lookalikes, path traversal, duplicate
+  members (including normalized or case aliases), and mixed zip or extracted
+  layouts are rejected. Downloaded zips are classified before unpack and streamed
+  into the destination directory without allowing path traversal. Asset manifest
+  export paths are validated before any bytes are transferred, so an unsafe path
+  is rejected even when the transfer itself cannot run. ``psynet export``
+  publishes only ``database/`` layouts; legacy ``data/`` zips remain valid for
+  ``psynet load`` and ``--archive``.
+- Graphics, vertical push-button lists, named colours, and footers no longer break participant pages in the cases the default-theme review found. A `GraphicPrompt` keeps a minimum size on short viewports instead of collapsing to zero, vertical `PushButtonControl` lists stay in one column, `color="white"` remains CSS white so captions stay visible in dark mode, and the footer follows the content instead of covering controls.
+- The audio-meter status message now wraps inside the viewport on phones instead of sitting in a 500px table that overflowed the screen.
+- Participant pages no longer render in quirks mode. Templates that included partials outside a block emitted markup before `<!doctype html>`, which forced every ad, consent, timeline and error page into quirks mode and included the theme twice. Layouts that depended on that behaviour (the waiting page, `GraphicPrompt`, and the jsPsych stage) now size themselves against the viewport or their aspect ratio instead of an undefined percentage height. `GraphicPrompt`'s `viewport_width` is measured against the browser window, as its documentation always stated, and `max_viewport_height` (default `0.6`, now also a constructor argument) caps the graphic's height. Both caps, the content surface, and room for page chrome (`--psynet-graphic-vertical-chrome`) are applied as width constraints so a landscape graphic keeps its aspect ratio and a square graphic still fits a typical laptop window without scrolling.
+- Fixed a crash when running a Prolific experiment with the `devprolific` recruiter. Reading a Prolific submission uses a direct HTTP request that bypasses the dev recruiter's mocked API, and the dev recruiter holds no API credentials, so local submits and the Participants dashboard failed with an `AttributeError`. PsyNet now reports no platform payment data instead of raising when the recruiter has no Prolific credentials, and the dev recruiter reports the submission status a local submit really sees, so debugging a Prolific experiment locally exercises the completion-code choice and logs the completion request instead of sending it.
+- Custom tables that link to trials now foreign-key ``trial.id`` rather than
+  ``info.id``.
+- Passing ``anonymize=`` to ``psynet export`` now warns that the option has been
+  removed and has no effect, instead of ignoring it silently.
+- Fixed a Prolific participant looking fully paid when the recruitment platform refused to pay their study base. PsyNet records the decided base before asking the platform to pay it, so a failed completion previously left the recorded base in place with no sign that the money never arrived. The Participants dashboard now shows the base as unpaid, with the reason. PsyNet retries the same completion quietly on its existing once-a-minute recruiter check, and clears the flag if Prolific has already paid. If the row is returned or rejected, or if a handful of retries still fail, PsyNet stops and asks you to settle the submission on the platform. The top-up bonus is still paid; the study base is not reconstructed as a bonus. A completion request that cannot be sent at all (for example a network failure) is now reported as a failure rather than interrupting payment and recruitment.
+- Fixed media loading on experiments that hide the footer. `psynet.media.init()` runs on every trial and unconditionally styled the media-download progress bar, which lives in the footer, so `show_footer = false` left the page stuck: the trial never finished constructing and its controls stayed disabled.
+- Participant layout checks now detect ordinary response controls hidden behind
+  a custom fixed footer and preserve the exact inline height declaration, including
+  `!important`, while probing percentage-height behavior. Graphic dimensions,
+  `viewport_width`, and `max_viewport_height` now reject strings and invalid real
+  numbers before generating CSS. The experiment scaffold no longer promises a
+  visible reward when its generic recruiter hides rewards by default.
+- In-place timeline transitions keep a single media-download progress bar when consecutive pages disagree about whether they have a footer. Mixed pages (for example a Lucid screening question with no terminate button, then a later page with one) previously left either two rails or none, because the bar lives inside the footer on some pages and as a sibling on others.
+- The jsPsych stage sizes itself from leftover viewport chrome (`--psynet-graphic-vertical-chrome`) rather than a 70vh minimum, so an empty jsPsych page still fits a 1280×720 laptop window with the footer visible.
+- `prefers-reduced-motion` no longer freezes every CSS animation on the page. The wait-page splash still swaps to a solid accent fill, but CSS-animated stimuli keep running instead of being stopped by a document-wide `!important` rule.
+- Every participant page now declares a viewport, so pages other than the timeline, ad, and consent pages are laid out for the device rather than for a notional 980px-wide screen and scaled down. Exit and error-recovery pages previously arrived on a phone with tiny text and none of the theme's mobile rules in effect, because Dallinger's base layout provides no viewport meta and only pages running browser detection supplied one. The viewport now comes from ``macros/head.html``, used by ``psynet_layout.html`` and by pages that extend Dallinger templates directly.
+- The participant footer is now compact and can no longer cover the last control on a page. It shows the total reward and a **Leave** button, with the time and performance breakdown and an explanation of **Leave** available as tooltips on hover, keyboard focus, and to screen readers. The footer stays in document flow, so one that wraps onto several rows on a narrow window, in another language, or at a larger font size naturally moves below the response control instead of hiding it.
+- Consent pages keep their agree/decline actions in the document flow instead of a fixed overlay that covered the last paragraphs and fought the themed footer. A finished participant who hits Back from the exit page stays on the thank-you screen rather than a stale timeline or start page: exit navigation uses `location.replace`, the exit page keeps Back on itself, `/timeline` responses are not stored in the back/forward cache, and the server redirects finished timeline visits.
+- Prolific's completion page now uses PsyNet's participant theme and viewport settings while preserving its platform submission control.
+- The consent decline button now uses the theme's outlined danger style, matching the footer's **Leave** control, instead of Bootstrap's solid red, which outweighed the **I agree** button beside it. Solid and outlined ``btn-danger`` controls generally follow the ``--psynet-danger`` tokens, so a custom theme can restyle them. Solid danger hover and active fills use dedicated hex tokens rather than ``color-mix()``, so they work at the theme's Chrome 105 floor.
+- The participant footer now follows the content at every window width and comes to rest at the bottom edge of the window or at the end of the page, whichever is lower. A page that fits therefore looks as it did before, while a longer one gives its whole window to the content instead of keeping chrome over it. The wait page fills the space between the progress bar and the footer instead of claiming a second full viewport. In dark mode, solid buttons use a new `--psynet-accent-solid` fill with a white label rather than the accent itself, which made a button the brightest thing on the page; the accent stays light for link text, where it needs to read against a dark surface.
+- Kept the media-download progress bar attached to the footer on long participant pages.
+- Footerless participant pages now show media-download progress only while they have media to load, avoiding a completed stripe floating over pages such as consent forms.
+- Participant pages no longer resize their text when the Inter webfont finishes loading. The theme now falls back to a metric-matched face while the font is in flight, and preloads the bold weight that headings use.
+- The error page no longer paints Dallinger's placeholder logo before swapping in the experiment's own logos.
+- Tracked fatal recovery is prepared in the original failing request and opened with a reloadable ``GET /timeline?unique_id=...``. ``/error-page`` stays untracked and does not treat enumerable ``participant_id`` as session authority. A complete participant who revisits ``/timeline`` still gets the ``/worker_complete`` backstop.
+- Fixed ``psynet dev docs linkcheck`` reporting "no broken links" when Sphinx had in fact found some; the summary now reads Sphinx's ``linkcheck/output.json`` instead of parsing coloured console output.
+- Rejected unknown, negative, non-finite, boolean, and string payment amounts; preserved Lucid termination outcomes (including terminate callbacks at 100% progress) without reclassifying them as completes; and recomputed managed-asset digests when bytes change at an existing input path.
+- Isolated Gibbs export tests now stop the debug experiment before reloading the archive, so ``drop_all`` cannot deadlock against a live clock process.
+- Fixed the consent pages in the deployment tests' vendored `consents_cococo` package, which
+  overrode the template's `stylesheets` block without calling `{{ super() }}` and so rendered
+  without the PsyNet participant theme, leaving the agree/decline buttons flush against the
+  bottom of the page. The pages now use the standard surface panel and spacing.
+- Loading an export refuses to reset the database while another client using the same database role is still connected, and retries leftover table-drop lock errors. Export ingest retries foreign-key drops after a deadlock with the live barrier poller. Every launch path, including SSH, Heroku, and Docker, stops leftover local debug workers first because prepare resets this machine's Postgres.
+- Modular-page chatrooms wait for the join-time history snapshot before enabling Send (an empty snapshot still counts), append leftover live messages after that snapshot using counts so two identical lines in the wait window are not collapsed to one snapshot match, and republish the persisted log after each message so a partner who missed the live relay can still fill an empty feed.
+- Planned timeline reloads no longer trigger Lucid leave-page termination.
+- Prevented chat messages from being sent before the WebSocket connection opens or while it reconnects.
+- `psynet destroy ssh` continues with the remaining apps if destroying one app fails, then exits with an error. It also errors if no app name is given.
+- Playwright stacked-hold tests allow a fourth hold-resume POST after concurrent last arrivals.
+- Fixed intermittent test timeouts in Selenium bot tests. PsyNet's pytest bot now finalizes the session with a direct HTTP request to `/worker_complete` instead of navigating the browser there, because the participant page has already called that route by the time the bot fixture runs.
+
+### Updated
+
+- Updated the Dallinger requirement to version 12.3.0 or above.
+- Updated the Dallinger requirement to version 12.4.0 or above.
+
+### Documentation
+
+- Documented Sphinx cross-reference guidance for documentation updates.
+- Reworked the deployment-test skill (renamed from `debug-deployment-test-experiments`) and coordinated it with the release skill: each deployment gets a fresh branch, RC promotion requires per-app promotion verdicts, and audit trails are archived in the private `psynet-deployment-tests` repository.
+- Added an ASV benchmarks link to the documentation navigation.
+- Added a GitLab merge request description template and linked AGENTS.md to it.
+- Added a tutorial explaining how to load-test an experiment with ``psynet performance-test``.
+- Added PsyNet 14 What's new docs with a human upgrade checklist as the migration source of truth, patterns living in the custom-frontends tutorial, and a thin ``/upgrade-to-psynet-14`` Cursor skill that wraps that checklist.
+- Documented content-addressed asset storage, access-token URLs, the assets manifest/object export layout, and the local asset cache CLI.
+- Documented the precedence of runtime writes, environment variables, experiment settings (`config.txt` and `Experiment.config`), `~/.dallingerconfig`, PsyNet experiment defaults, and Dallinger package defaults.
+- Demo and scaffold README files now open with experiment-specific guidance (patterns, when to use them, and how the example fits), followed by a shared Usage section that links to the PsyNet documentation.
+- Documented standalone setup (Git, uv, ``psynet setup``/``scripts``/``services``) and that every experiment needs a ``config.txt``.
+- Clarified accepted cleanup shapes for ``window_listener_no_cleanup`` SPA errors
+  (``return () =>``, ``return function cleanup``, or ``psynet.addPageCleanupCallback`` /
+  ``psynet.addPageEventListener``) in the incompatibility message and PsyNet 14
+  upgrade checklist.
+- Pointed the ``/upgrade-to-psynet-14`` skill and experiment agent instructions at
+  the published PsyNet 14 upgrade checklist URL, with local ``docs/*.rst`` paths
+  as a source-checkout shortcut (pip wheels do not ship the docs tree).
+- Added a tutorial on participant and trial failure, including that ``Participant.fail()`` can fail a completed participant, redirects still-working participants to the ``unsuccessful_end`` timeline branch, fails incomplete trials before fail routines run, that recruiter exit no longer fails within-chain start nodes or networks, and that Dallinger's post-submission data and attention checks are unused in PsyNet.
+- Added a developer Future work page for unconfirmed ideas.
+- Documented agentic programming with PsyNet, including Agent Skills, the audit
+  handover, and a from-scratch implementation workflow. On Windows, use WSL
+  (Ubuntu) and the Linux commands; native Windows is not supported.
+- Added Cursor commands that merge the GitLab merge-request target before `/branch-review`, and documented that workflow for developers. `/reorganize-onto-target` is a separate command used just before the MR is merged into that target; it compares the backup tree to `HEAD` before pushing.
+- Added experiment skills for shared participant-response models, standardized power-analysis artifacts, and simulation-based precision estimation.
+- Prefer SVG plot outputs in analysis notebooks
+- Instruct participant-flow screenshot capture to use Playwright ``fullPage:
+  false`` so audit images show the participant viewport rather than a
+  stitched full-page layout.
+- Require audit ``monitor.html`` snapshots from ``/dashboard/monitoring`` (the
+  Monitor tab). Remove the temporary PsyNet-revision note from the audit
+  population reference.
+- Documented how to implement adaptive PsyNet experiments, including a
+  benchmarking workflow that compares adaptive policies with non-adaptive
+  baselines and tests robustness to misspecification.
+- Documented how to import Python files that sit beside ``experiment.py``.
+  From the experiment package use ``from . import my_module``. Standalone
+  scripts such as ``python -m audit.simulate.design.core`` keep top-level
+  imports and must be run from the experiment root.
+- Documented packaging constraints for adaptive experiments: keep calibrated
+  item banks in ``item_bank/``, not under the excluded experiment-root
+  ``data/``, ``audit/``, or ``exports/`` directories, and choose between
+  extra trial columns and a dedicated observation table on the basis of how
+  the model reads the data.
+- Documented how to lay out Plotly figures for the rendered audit column, which
+  is narrower than a notebook authoring window. The audit skill now covers facet
+  overlap, label length, legend placement, and figure height, with reference
+  layout code.
+- Documented that adaptive power analyses should disable early stopping for
+  matched-budget cells or report realized ``mean_n_observations`` next to
+  precision metrics.
+- Documented fixed-budget-first adaptive-test power analyses, configurable
+  accuracy and calibration metrics, compact Plotly metric controls, and explicit
+  cost--precision comparisons for optional adaptive stopping rules.
+- Documented how to report precision at single-budget resolution in power
+  analyses, including why such curves must be computed with early stopping
+  disabled, and added row-faceting guidance for audit figures that genuinely
+  need separate panels.
+- Documented `plotly_white` as the audit default, confidence ribbons for dense
+  budget curves, and short introductory sections explaining statistical concepts
+  and simulation assumptions in power-analysis notebooks.
+- Asked agents to reread skills and documentation after editing them, preferring
+  a short correct example, one place for each rule, and headings that match how
+  a reader will look up the next step.
+- Documented that performance tests should be judged by ``/timeline`` and
+  ``/response`` latency, and that high percentiles warrant SQL profiling before
+  changing the scientific policy.
+- Documented SQLAlchemy profiling methodology, retained optimization patterns,
+  rejected approaches, and criteria for revisiting future performance work.
+- Note that a short performance test is a good first pass, and that a longer window is needed when finalizing if bots should finish.
+- Documented ``Trial.cue`` as the usual way to wire an adaptive policy into a
+  PsyNet timeline, including transactional decision records, ``while_loop``
+  stopping, and item-level audio assets on the module.
+- Removed the developer export performance roadmap now that the export layout it described has shipped.
+- Document that Dallinger loads ``experiment.py`` as a package, so sibling imports are relative and ``python experiment.py`` is not a valid check.
+- Document that table CSVs and identifier sidecars are one repeatable-read snapshot, while basic data and assets are built afterwards from live state. Document that read-only asset-cache hits are trusted without re-hashing.
+- Documented how to share an export: delete the identifier sidecar CSVs, review
+  the rest of the archive for private content, and drop asset ``access_token``
+  and ``url`` columns only if the deployment is still running.
+- Added a `playwright-testing` experiment skill that owns participant-flow Playwright walks and `psynetLayout.check()` layout checks. Experiment authors find it under `.cursor/skills/psynet/playwright-testing` after `psynet scripts update`.
+- Fixed documentation links that ``psynet dev docs linkcheck`` reported as broken: internal pages now use Sphinx ``:doc:`` roles, and 404ing, missing-anchor, bot-blocked, or TLS-failing URLs now point at current official pages or are ignored only when the official page still works in a browser.
+- Updated the deployment-test skill (version-first naming, staggered prepares, running-container inspect) and abort ``audio_gibbs`` Lucid and Prolific launch if the configured recruiter does not match that variant.
+- The PsyNet 14 upgrade checklist now includes recruiter configuration, leave and error-recovery APIs, and changed participant-theme defaults.
+- Documented how timeline holds resume on ``GET /timeline`` versus ``POST /response``, including last-arrival traces and the invariants tests must witness. Playwright hold-release tests log overlay linger and fail only if it exceeds a 30-second hung-overlay cap.
+- Stopped the Sphinx docs build from failing on Flask ``make_response`` autodoc and SQLAlchemy's inherited ``cache_ok`` reference.
+
 ## [13.3.0](https://gitlab.com/PsyNetDev/PsyNet/-/releases/v13.3.0) Release - 2026-07-07
 
 ### Added
