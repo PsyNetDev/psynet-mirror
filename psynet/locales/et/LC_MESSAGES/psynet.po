@@ -438,34 +438,42 @@ msgstr "Lõpeta"
 msgctxt "final-page-rewards"
 msgid ""
 "You will receive a reward of <strong>{CURRENCY}{TIME_REWARD}</strong> for "
-"the time you spent on the experiment. You have also been awarded a "
-"performance reward of <strong>{CURRENCY}{PERFORMANCE_REWARD}</strong>! "
+"the time you spent. "
 msgstr ""
-"Saate tasu <strong>{CURRENCY}{TIME_REWARD}</strong> eksperimendile kulutatud"
-" aja eest. Teile on antud ka soorituse preemia "
-"<strong>{CURRENCY}{PERFORMANCE_REWARD}</strong>! "
+"Te saate tasu <strong>{CURRENCY}{TIME_REWARD}</strong> juba kulutatud aja "
+"eest."
+
+#: psynet/end.py
+#, fuzzy, python-brace-format
+msgctxt "final-page-performance-reward"
+msgid ""
+"You have also been awarded a performance reward of "
+"<strong>{CURRENCY}{PERFORMANCE_REWARD}</strong>. "
+msgstr ""
+"Teile on samuti määratud tulemustasu "
+"<strong>{CURRENCY}{PERFORMANCE_REWARD}</strong>."
+
+#: psynet/end.py
+#, fuzzy
+msgid "Click Finish to return to your panel."
+msgstr "Klõpsake Lõpeta, et naasta oma paneelile."
+
+#: psynet/end.py
+#, fuzzy
+msgid "Click Finish to finalize the session."
+msgstr "Klõpsake Lõpeta, et sessioon lõpetada."
 
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_successful"
-msgid "That's the end of the experiment!"
-msgstr "See on eksperimendi lõpp!"
-
-#: psynet/end.py
-#, fuzzy
-msgid "Thank you for taking part."
-msgstr "Aitäh osalemast."
-
-#: psynet/end.py
-#, fuzzy
-msgid "Please click \"Finish\" to finalize the session."
-msgstr "Palun klõpsake \"Lõpeta\", et HIT lõpule viia."
+msgid "That's the end!"
+msgstr "See on lõpp!"
 
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_unsuccessful"
-msgid "Unfortunately the experiment must end early."
-msgstr "Kahjuks peab eksperiment varem lõppema."
+msgid "Unfortunately we have to stop early."
+msgstr "Kahjuks peame varakult lõpetama."
 
 #: psynet/end.py
 #, fuzzy
@@ -475,20 +483,20 @@ msgstr "Kuid teid tasustatakse siiski juba kulutatud aja eest."
 
 #: psynet/end.py
 #, fuzzy
-msgid "You will be redirected."
-msgstr "Teid suunatakse edasi."
+msgctxt "final_page_rejected_consent"
+msgid "You chose not to continue."
+msgstr "Te otsustasite mitte jätkata."
 
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_rejected_consent"
-msgid "Consent was rejected."
-msgstr "Nõusolek lükati tagasi."
+msgid "You may close this page."
+msgstr "Võite selle lehe sulgeda."
 
 #: psynet/end.py
 #, fuzzy
-msgctxt "final_page_rejected_consent"
-msgid "End of experiment."
-msgstr "Eksperimendi lõpp."
+msgid "We will return you to your panel in a few seconds."
+msgstr "Tagasiviimine teie paneelile toimub mõne sekundi pärast."
 
 #: psynet/equipment.py
 #, fuzzy
@@ -501,41 +509,9 @@ msgstr ""
 
 #: psynet/experiment.py
 #, fuzzy
-msgctxt "error-msg"
-msgid "There has been an error and so you are unable to continue, sorry!"
-msgstr "Tekkis viga ja seetõttu ei saa te jätkata, vabandame!"
-
-#: psynet/experiment.py
-#, fuzzy, python-brace-format
-msgctxt "mturk_error"
-msgid ""
-"To enquire about compensation, please contact the researcher at {EMAIL} and "
-"describe what led to this error."
-msgstr ""
-"Kompensatsiooni kohta pärimiseks võtke ühendust uurijaga aadressil {EMAIL} "
-"ja kirjeldage, mis selle vea põhjustas."
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "mturk_error"
-msgid "Please also quote the following information:"
-msgstr "Palun tsiteerige ka järgmist teavet:"
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "prolific_error"
-msgid "Don't worry, your progress has been recorded."
-msgstr "Ärge muretsege, teie edusammud on salvestatud."
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "prolific_error"
-msgid ""
-"To enquire about compensation, please send the researcher a message via the "
-"Prolific website and describe what led to your error."
-msgstr ""
-"Kompensatsiooni kohta pärimiseks saatke uurijale sõnum Prolific veebisaidi "
-"kaudu ja kirjeldage, mis teie vea põhjustas."
+msgctxt "timeline_problem"
+msgid "This session has already ended. Please reload the page."
+msgstr "See sessioon on juba lõppenud. Palun värskendage lehte."
 
 #: psynet/experiment.py
 #, fuzzy
@@ -547,6 +523,11 @@ msgstr ""
 "Sünkroonimisprobleem tuvastatud. Kas teil on sama eksperiment avatud mitmes "
 "brauseri vahekaardis? Palun sulgege kõik teised vahekaardid ja värskendage "
 "lehte."
+
+#: psynet/experiment.py
+#, fuzzy
+msgid "The experiment is temporarily busy. Please try again."
+msgstr "Eksperiment on ajutiselt hõivatud. Palun proovige uuesti."
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -570,6 +551,12 @@ msgstr "Peate valima vastuse!"
 msgctxt "validation"
 msgid "You need to provide a number!"
 msgstr "Peate esitama numbri!"
+
+#: psynet/page.py
+#, fuzzy
+msgctxt "status"
+msgid "Working..."
+msgstr "Töötan..."
 
 #: psynet/prescreen/__init__.py
 #, fuzzy
@@ -736,212 +723,378 @@ msgid "The test will start on the next page."
 msgstr "Test algab järgmisel lehel."
 
 #: psynet/recruiters.py
-#, fuzzy
-msgctxt "recruiter_communication"
-msgid "Communicating with the recruiter..."
-msgstr "Suhtlemine värbajaga..."
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error"
+msgid ""
+"If you need to contact the researcher about this error, write to {EMAIL} and"
+" quote reference code {REFERENCE_CODE}."
+msgstr ""
+"Kui teil on vaja selle vea kohta uurijaga ühendust võtta, kirjutage "
+"aadressile {EMAIL} ja märkige viitenumber {REFERENCE_CODE}."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error"
+msgid ""
+"If you need to contact the researcher about this error, write to {EMAIL}."
+msgstr ""
+"Kui teil on vaja selle vea kohta uurijaga ühendust võtta, kirjutage "
+"aadressile {EMAIL}."
 
 #: psynet/recruiters.py
 #, fuzzy
-msgctxt "screen_out_successful"
+msgctxt "early_exit_error"
+msgid "You may close this page."
+msgstr "Võite selle lehe sulgeda."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error"
+msgid "Unfortunately an error occurred and we cannot continue."
+msgstr "Kahjuks ilmnes viga ja me ei saa jätkata."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error"
+msgid "However, your responses so far have been saved."
+msgstr "Kuid teie vastused on seni salvestatud."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
 msgid ""
-"You have been credited for the time spent on the experiment. Because you "
-"could not progress to the main experiment your submission will appear as "
-"'screened out' in Prolific. You can now close this browser window."
+"If you leave now, you will not be able to continue later. Your responses so "
+"far will still be saved."
 msgstr ""
-"Teid on krediteeritud eksperimendil veedetud aja eest. Kuna te ei saanud "
-"edasi liikuda põhi eksperimenti, ilmub teie esitus Prolificus kui 'välja "
-"sõelutud'. Nüüd võite selle brauseriakna sulgeda."
+"Kui lahkute nüüd, ei saa te hiljem jätkata. Teie vastused on seni "
+"salvestatud."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit"
+msgid ""
+"You have earned {EARNED} so far. You need at least {THRESHOLD} to leave with"
+" payment. If you leave without payment, you will not be able to continue "
+"later. Your responses so far will still be saved."
+msgstr ""
+"Olete seni teeninud {EARNED}. Vajate vähemalt {THRESHOLD}, et lahkuda "
+"maksega. Kui lahkute ilma makseta, ei saa te hiljem jätkata. Teie vastused "
+"on seni salvestatud."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
+msgid "Leave without payment"
+msgstr "Lahku ilma makseta"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
+msgid "Leave"
+msgstr "Lahku"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
+msgid "Leave without finishing?"
+msgstr "Lahkuda ilma lõpetamata?"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
+msgid "Cancel"
+msgstr "Tühista"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_unpaid"
+msgid "You may close this page."
+msgstr "Võite selle lehe sulgeda."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED}. Because you have earned {EARNED} so "
+"far, a further {REMAINDER} will be paid as a bonus. Your responses so far "
+"will still be saved."
+msgstr ""
+"Kui lahkute nüüd, ei saa te hiljem jätkata. Teile makstakse fikseeritud "
+"'screen-out' tasu {FIXED}. Kuna olete seni teeninud {EARNED}, makstakse "
+"lisaks {REMAINDER} boonusena. Teie vastused on seni salvestatud."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED}. Your responses so far will still be "
+"saved."
+msgstr ""
+"Kui lahkute nüüd, ei saa te hiljem jätkata. Teile makstakse fikseeritud "
+"'screen-out' tasu {FIXED}. Teie vastused on seni salvestatud."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED} plus a performance bonus of "
+"{PERFORMANCE}. You will not be paid for additional time. Your responses so "
+"far will still be saved."
+msgstr ""
+"Kui lahkute nüüd, ei saa te hiljem jätkata. Teile makstakse fikseeritud "
+"'screen-out' tasu {FIXED} pluss soorituse boonus {PERFORMANCE}. Teile ei "
+"maksta lisandunud aja eest. Teie vastused on seni salvestatud."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED}. You will not be paid for additional "
+"time. Your responses so far will still be saved."
+msgstr ""
+"Kui lahkute nüüd, ei saa te hiljem jätkata. Teile makstakse fikseeritud "
+"'screen-out' tasu {FIXED}. Teile ei maksta lisandunud aja eest. Teie "
+"vastused on seni salvestatud."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will need to "
+"return your Prolific submission. You will then be paid {EARNED} as a bonus "
+"for the work you have completed so far. Your responses so far will still be "
+"saved."
+msgstr ""
+"Kui lahkute nüüd, ei saa te hiljem jätkata. Peate oma Prolificu esituse "
+"tagastama. Teile makstakse seejärel {EARNED} boonusena seni tehtud töö eest."
+" Teie vastused on seni salvestatud."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "prolific_error"
+msgid "If you had already started, message the researcher through Prolific."
+msgstr "Kui olete juba alustanud, saatke uurijale sõnum Prolificu kaudu."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "prolific_error"
+msgid ""
+"Please message the researcher through Prolific and describe what led to this"
+" error."
+msgstr ""
+"Palun saatke uurijale sõnum Prolificu kaudu ja kirjeldage, mis viis selle "
+"veani."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We will pay you for your progress so far: you will receive {FIXED} through "
+"Prolific."
+msgstr ""
+"Maksame teile seni tehtud edusammude eest: saate {FIXED} Prolificu kaudu."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We will also pay {BONUS} as a bonus, bringing your total payment to {TOTAL}."
+msgstr "Maksame ka {BONUS} boonusena, viies teie kogumakse {TOTAL}-ni."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid "We will also pay your {BONUS} performance bonus."
+msgstr "Maksame ka teie {BONUS} soorituse boonuse."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Any additional amount you earned will be paid as a bonus."
+msgstr "Iga lisasumma, mille olete teeninud, makstakse boonusena."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Select Submit to Prolific to complete your submission."
+msgstr "Valige 'Esita Prolificule', et oma esitust lõpetada."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Submit to Prolific"
+msgstr "Esita Prolificule"
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid ""
+"To receive {EARNED} for the work you completed, you will need to return your"
+" submission on Prolific."
+msgstr ""
+"Et saada {EARNED} tehtud töö eest, peate oma esituse Prolificus tagastama."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid ""
+"To receive payment for the work you completed, you will need to return your "
+"submission on Prolific."
+msgstr ""
+"Et saada makse tehtud töö eest, peate oma esituse Prolificus tagastama."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Select Continue to payment instructions to complete these steps."
+msgstr "Valige 'Jätka maksejuhiste juurde', et need sammud lõpule viia."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We could not open the payment instructions. Please try again. If this keeps "
+"happening, message the researcher through Prolific."
+msgstr ""
+"Me ei saanud maksejuhiseid avada. Palun proovige uuesti. Kui see jätkub, "
+"saatke uurijale sõnum Prolificu kaudu."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Continue to payment instructions"
+msgstr "Jätka maksejuhiste juurde"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_unpaid_prolific"
+msgid ""
+"Your responses so far have been saved. Please return your submission on "
+"Prolific. You will not receive payment. You may close this page."
+msgstr ""
+"Teie vastused on seni salvestatud. Palun tagastage oma esitamine Prolificus."
+" Te ei saa tasu. Võite selle lehe sulgeda."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Your submission has been sent to Prolific."
+msgstr "Teie esitamine on saadetud Prolificusse."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "You may close this page."
+msgstr "Võite selle lehe sulgeda."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We could not send your submission to Prolific. Please try again. If this "
+"keeps happening, message the researcher through Prolific."
+msgstr ""
+"Me ei saanud teie esitust Prolificusse saata. Palun proovige uuesti. Kui see"
+" jätkub, saatke Prolificu kaudu teadlane."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "return_assignment_instructions"
 msgid ""
 "Please return your submission via the Prolific interface and click Next. We "
-"will then automatically pay you a bonus for your time."
+"will then automatically pay you a bonus."
 msgstr ""
-"Palun tagastage oma esitus Prolificu liidese kaudu ja klõpsake nuppu Edasi. "
-"Seejärel maksame teile automaatselt teie aja eest boonuse."
+"Palun tagastage oma esitamine Prolificu liidese kaudu ja klõpsake Järgmine. "
+"Seejärel maksame teile automaatselt boonuse."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "return_for_bonus_completed"
 msgid ""
-"That worked! You have been credited for the time spent on the experiment. "
-"Thank you for participating. You can now close this browser window."
+"That worked. You have been credited for the time you spent. Thank you for "
+"taking part. You may close this page."
 msgstr ""
-"See töötas! Teid on krediteeritud eksperimendil veedetud aja eest. Täname "
-"osalemise eest. Nüüd võite selle brauseriakna sulgeda."
+"See töötas. Teile on arvestatud teie kulutatud aeg. Täname osalemise eest. "
+"Võite selle lehe sulgeda."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "return_for_bonus_payment_failed"
+msgid ""
+"Your return was recorded, but we could not complete the bonus payment "
+"automatically. The researcher has been notified and will arrange payment. "
+"You may close this page."
+msgstr ""
+"Teie tagastus registreeriti, kuid me ei saanud boonuse makset automaatselt "
+"lõpule viia. Teadlane on teavitatud ja korraldab makse. Võite selle lehe "
+"sulgeda."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "assignment_return_retry"
 msgid ""
-"That didn't work. Are you sure you returned the submission for this study? "
-"Please go to the Prolific interface, make sure you have returned the "
-"submission, then click the 'Next' button."
+"That didn't work. Are you sure you returned the submission? Return it on "
+"Prolific, then click Next."
 msgstr ""
-"See ei töötanud. Kas olete kindel, et tagastasite selle uuringu esituse? "
-"Palun minge Prolificu liidesesse, veenduge, et olete esituse tagastanud, ja "
-"seejärel klõpsake nuppu 'Edasi'."
-
-#: psynet/recruiters.py
-#, fuzzy
-msgctxt "return_for_bonus_enabled"
-msgid ""
-"We are sorry that you could not proceed to the main experiment, but we will "
-"still pay you for your time spent so far. To receive this payment, we need "
-"you to return this assignment via the Prolific interface, then click the "
-"'Next' button below."
-msgstr ""
-"Meil on kahju, et te ei saanud edasi liikuda põhi eksperimenti, kuid me "
-"maksame teile siiski teie seni veedetud aja eest. Selle makse saamiseks "
-"peame teid paluma tagastada see ülesanne Prolificu liidese kaudu ja seejärel"
-" klõpsake allolevat nuppu 'Edasi'."
+"See ei töötanud. Kas olete kindel, et tagastasite esitamise? Tagastage see "
+"Prolificus, seejärel klõpsake Järgmine."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "screen_out_return_and_message_experimenter"
 msgid ""
-"We are sorry that you could not proceed to the main experiment. To receive "
-"this payment for your time, please return your assignment in Prolific and "
-"send a message to the experimenter via the Prolific messaging system. The "
-"experimenter will review your case and arrange payment if appropriate. Thank"
-" you for your understanding. You can now close this browser window."
+"To receive payment for the time you spent, return your submission on "
+"Prolific and message the researcher there. They will review your case and "
+"arrange payment if it is due. You may close this page."
 msgstr ""
-"Meil on kahju, et te ei saanud edasi liikuda põhi eksperimenti. Selle makse "
-"saamiseks teie aja eest palun tagastage oma ülesanne Prolificus ja saatke "
-"sõnum eksperimendi korraldajale Prolificu sõnumisüsteemi kaudu. Eksperimendi"
-" korraldaja vaatab teie juhtumi üle ja korraldab makse, kui see on "
-"asjakohane. Täname teid mõistmise eest. Nüüd võite selle brauseriakna "
-"sulgeda."
+"Et saada tasu teie kulutatud aja eest, tagastage oma esitamine Prolificus ja"
+" saatke seal teadlasele sõnum. Nad vaatavad teie juhtumi üle ja korraldavad "
+"makse, kui see on vajalik. Võite selle lehe sulgeda."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_lucid"
+msgid ""
+"If you leave now, you will not be able to continue later, and you will "
+"return to your panel provider. This session will not issue a payment; any "
+"payment depends on your panel provider's rules. Your responses so far will "
+"still be saved."
+msgstr ""
+"Kui lahkute nüüd, ei saa te hiljem jätkata ja teid suunatakse tagasi oma "
+"paneeli pakkuja juurde. See sessioon ei maksa tasu; igasugune tasu sõltub "
+"teie paneeli pakkuja reeglitest. Teie vastused on seni salvestatud."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "lucid_error"
-msgid "Redirecting to Lucid Marketplace..."
-msgstr "Ümbersuunamine Lucid Marketplace'i..."
+msgid "We will return you to your panel in a few seconds."
+msgstr "Me suuname teid mõne sekundi pärast tagasi teie paneeli."
 
-#: psynet/templates/abort_not_possible.html
+#: psynet/recruiters.py
 #, fuzzy
-msgctxt "abort_possible"
-msgid "Aborting not possible."
-msgstr "Katkestamine ei ole võimalik."
+msgctxt "early_exit_error_lucid"
+msgid "We will return you to your panel in a few seconds."
+msgstr "Me suuname teid mõne sekundi pärast tagasi teie paneeli."
 
-#: psynet/templates/abort_not_possible.html
+#: psynet/recruiters.py
 #, fuzzy
-msgctxt "abort_possible"
+msgctxt "early_exit_error_lucid"
 msgid ""
-"Aborting the experiment is not possible as the experimenter does not allow "
-"it at this time!"
+"We could not return you to your panel. Please try again. If this keeps "
+"happening, contact your panel provider."
 msgstr ""
-"Katse katkestamine ei ole võimalik, kuna katse läbiviija ei luba seda "
-"praegu!"
+"Me ei saanud teid teie paneeli tagasi suunata. Palun proovige uuesti. Kui "
+"see jätkub, võtke ühendust oma paneeli pakkujaga."
 
-#: psynet/templates/abort_not_possible.html
-#, fuzzy, python-format
-msgid ""
-"You have to accumulate <strong>at least "
-"%(CURRENCY)s%(MIN_ACCUMULATED_REWARD_FOR_ABORT)s</strong> of reward to be "
-"able to be compensated."
-msgstr ""
-"Sa pead koguma <strong>vähemalt "
-"%(CURRENCY)s%(MIN_ACCUMULATED_REWARD_FOR_ABORT)s</strong> tasu, et saada "
-"kompensatsiooni."
-
-#: psynet/templates/abort_not_possible.html
+#: psynet/recruiters.py
 #, fuzzy
-msgctxt "abort_possible"
-msgid "See below information on your currently accumulated reward."
-msgstr "Vaata allpool teavet oma praegu kogutud tasu kohta."
-
-#: psynet/templates/abort_not_possible.html
-#: psynet/templates/abort_possible.html psynet/templates/psynet_error.html
-#, fuzzy
-msgid "Assignment ID"
-msgstr "Ülesande ID"
-
-#: psynet/templates/abort_not_possible.html
-#: psynet/templates/abort_possible.html psynet/templates/psynet_error.html
-#, fuzzy
-msgid "HIT ID"
-msgstr "HIT ID"
-
-#: psynet/templates/abort_not_possible.html
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgid "Accumulated reward"
-msgstr "Kogunenud tasu"
-
-#: psynet/templates/abort_not_possible.html
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgid "Close window"
-msgstr "Sulge aken"
-
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgctxt "abort_possible"
-msgid "Are you sure you want to abort the experiment?"
-msgstr "Kas olete kindel, et soovite katse katkestada?"
-
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgctxt "abort_possible"
-msgid ""
-"If you click the Abort button, the experiment will end early, and you will "
-"be automatically paid the compensation you have earned so far."
-msgstr ""
-"Kui klõpsate nupul Katkesta, lõpeb katse ennetähtaegselt ja teile makstakse "
-"automaatselt seni teenitud kompensatsioon."
-
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgctxt "abort_possible"
-msgid "Please only contact us if you have trouble receiving your payment."
-msgstr ""
-"Palun võtke meiega ühendust ainult siis, kui teil on probleeme makse "
-"kättesaamisega."
-
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgctxt "abort_possible"
-msgid "See the information below for details of your compensation."
-msgstr "Vaadake allolevat teavet oma kompensatsiooni üksikasjade kohta."
-
-#: psynet/templates/abort_possible.html psynet/templates/ad.html
-#: psynet/templates/psynet_error.html
-#, fuzzy
-msgid "Abort experiment"
-msgstr "Katkesta eksperiment"
-
-#: psynet/templates/ad.html
-#, fuzzy
-msgctxt "ad"
-msgid "Call for participants"
-msgstr "Osalejate otsimine"
-
-#: psynet/templates/ad.html
-#, fuzzy
-msgctxt "ad"
-msgid "The requirements to participate are as follows"
-msgstr "Osalemise nõuded on järgmised"
-
-#: psynet/templates/ad.html
-#, fuzzy
-msgctxt "ad"
-msgid ""
-"Please click the \"Accept HIT\" button on the Amazon site above to begin the"
-" task."
-msgstr ""
-"Palun klõpsake ülesande alustamiseks ülaloleval Amazoni saidil nupul "
-"\"Accept HIT\"."
-
-#: psynet/templates/ad.html
-#, fuzzy
-msgctxt "ad"
-msgid "Thanks for accepting this HIT."
-msgstr "Täname, et võtsite selle ülesande vastu."
+msgctxt "early_exit_error_lucid"
+msgid "Return to your panel"
+msgstr "Naaske oma paneeli"
 
 #: psynet/templates/ad.html
 #, fuzzy
@@ -976,11 +1129,6 @@ msgstr "Palun keelake enne jätkamist hüpikakende blokeerijad."
 msgctxt "ad"
 msgid "Begin Experiment"
 msgstr "Alusta eksperimenti"
-
-#: psynet/templates/ad.html psynet/templates/psynet_error.html
-#, fuzzy
-msgid "Click the above button to be compensated in case of an error."
-msgstr "Klõpsake ülaltoodud nupul, et vea korral kompensatsiooni saada."
 
 #: psynet/templates/consent.html
 #, fuzzy
@@ -2389,8 +2537,42 @@ msgstr "Tehes ülesande, aitate teadust, aitäh!"
 #: psynet/templates/exit_recruiter_lucid.html
 #, fuzzy
 msgctxt "exit_recruiter_lucid"
-msgid "Lucid Survey Submission"
-msgstr "Lucid uuringu esitamine"
+msgid "Returning you to your panel"
+msgstr "Tagastame teid teie paneelile"
+
+#: psynet/templates/exit_recruiter_lucid.html
+#, fuzzy
+msgctxt "exit_recruiter_lucid"
+msgid "Please wait."
+msgstr "Palun oodake."
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html
+#, fuzzy
+msgctxt "exit_recruiter_prolific"
+msgid "Submit to Prolific"
+msgstr "Esita Prolificusse"
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html
+#, fuzzy
+msgctxt "exit_recruiter_prolific"
+msgid ""
+"Click below to send your submission to Prolific. You will not need to enter "
+"a completion code."
+msgstr ""
+"Klõpsa allpool, et saata oma esitus Prolificusse. Sa ei pea sisestama "
+"lõpetamise koodi."
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html
+#, fuzzy
+msgctxt "exit_recruiter_prolific"
+msgid "Please wait."
+msgstr "Palun oota."
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html
+#, fuzzy
+msgctxt "exit_recruiter_prolific"
+msgid "Try again"
+msgstr "Proovi uuesti"
 
 #: psynet/templates/keyboard.html
 #, fuzzy
@@ -2619,11 +2801,6 @@ msgstr "Nõustun"
 msgctxt "consent"
 msgid "No, thank you (return task)"
 msgstr "Ei, aitäh (tagasi ülesande juurde)"
-
-#: psynet/templates/macros/consent.html
-#, fuzzy
-msgid "Scroll up/down to see all text"
-msgstr "Kerige üles/alla, et näha kogu teksti"
 
 #: psynet/templates/macros/consent.html
 #, fuzzy
@@ -2914,6 +3091,12 @@ msgstr "Lähtesta"
 
 #: psynet/templates/macros/control.html
 #, fuzzy
+msgctxt "audio_meter"
+msgid "Microphone level"
+msgstr "Mikrofoni tase"
+
+#: psynet/templates/macros/control.html
+#, fuzzy
 msgctxt "audio_meter_calibrate"
 msgid "Sliders"
 msgstr "Liugurid"
@@ -3034,51 +3217,117 @@ msgstr "Videot ei leitud"
 msgid "Image not found"
 msgstr "Pilti ei leitud"
 
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Comment stored."
+msgstr "Kommentaar salvestatud."
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Please wait for the page to load."
+msgstr "Palun oota, kuni leht laadib."
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Try again in a couple of seconds."
+msgstr "Proovi mõne sekundi pärast uuesti."
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline"
+msgid "Reward"
+msgstr "Tasu"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_reward"
+msgid "Reward earned so far"
+msgstr "Tasu teenitud seni"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_reward"
+msgid "for time"
+msgstr "aja eest"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_reward"
+msgid "for performance"
+msgstr "soorituse eest"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline"
+msgid "Comment"
+msgstr "Kommentaar"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Leave"
+msgstr "Lahku"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Leave without finishing."
+msgstr "Lahku ilma lõpetamata."
+
 #: psynet/templates/psynet_error.html
 #, fuzzy
 msgctxt "error"
-msgid "Error!"
-msgstr "Viga!"
+msgid "An error occurred"
+msgstr "Tekkis viga"
 
 #: psynet/templates/psynet_error.html
 #, fuzzy
-msgctxt "mturk_error"
-msgid ""
-"You may be able to abort the experiment using the <strong>Abort "
-"experiment</strong> button <strong>on the MTurk ad page</strong>."
-msgstr ""
-"Võite eksperimendi katkestada, kasutades <strong>Katkesta "
-"eksperiment</strong> nuppu <strong>MTurk reklaamilehel</strong>."
+msgctxt "early_exit_error"
+msgid "Please wait."
+msgstr "Palun oodake."
 
 #: psynet/templates/psynet_error.html
 #, fuzzy
-msgctxt "mturk_error"
-msgid ""
-"Once aborted, there is no need to contact us to receive the compensation; "
-"this should be awarded to you automatically via MTurk a few minutes after."
-msgstr ""
-"Pärast katkestamist ei ole vaja meiega ühendust võtta, et saada "
-"kompensatsiooni; see peaks teile automaatselt MTurki kaudu mõne minuti "
-"pärast määratud saama."
+msgctxt "early_exit_error"
+msgid "Try again"
+msgstr "Proovi uuesti"
 
-#: psynet/templates/psynet_error.html
-#, fuzzy, python-format
-msgid ""
-"If this is not the case, please contact us at %(EMAIL)s quoting the "
-"following information:"
-msgstr ""
-"Kui see nii ei ole, võtke meiega ühendust aadressil %(EMAIL)s, viidates "
-"järgmisele teabele:"
-
-#: psynet/templates/psynet_error.html
+#: psynet/templates/psynet_exit_recruiter.html
 #, fuzzy
-msgid "Error type"
-msgstr "Veatüüp"
+msgid "Thank you for taking part."
+msgstr "Aitäh osalemast."
 
-#: psynet/templates/psynet_error.html
+#: psynet/templates/psynet_exit_recruiter.html
 #, fuzzy
-msgid "Worker ID"
-msgstr "Töötaja ID"
+msgctxt "exit"
+msgid "You chose to leave."
+msgstr "Otsustasite lahkuda."
+
+#: psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgid "Thank you for taking part."
+msgstr "Aitäh osalemast."
+
+#: psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgctxt "exit"
+msgid "You may close this page."
+msgstr "Võite selle lehe sulgeda."
+
+#: psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgctxt "exit"
+msgid "Your responses have been saved. You may close this page."
+msgstr "Teie vastused on salvestatud. Võite selle lehe sulgeda."
+
+#: psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgctxt "exit"
+msgid "Reference code"
+msgstr "Viitenumber"
 
 #: psynet/templates/start.html
 #, fuzzy
@@ -3142,41 +3391,35 @@ msgctxt "timeline_resume"
 msgid "Resume"
 msgstr "Jätka"
 
-#: psynet/templates/timeline-page.html
-#, fuzzy
-msgctxt "timeline"
-msgid "Reward"
-msgstr "Tasu"
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{REMAINING} of {TOTAL} not ready yet"
+msgstr "{REMAINING} {TOTAL}-st ei ole veel valmis"
 
-#: psynet/templates/timeline-page.html
+#: psynet/timeline_hold.py
 #, fuzzy
-msgctxt "timeline"
-msgid "Comment"
-msgstr "Kommentaar"
+msgctxt "timeline_hold"
+msgid "Your partner is ready."
+msgstr "Teie partner on valmis."
 
-#: psynet/templates/timeline-page.html
-#, fuzzy
-msgctxt "timeline_problem"
-msgid "Terminate the experiment early"
-msgstr "Lõpeta eksperiment varakult"
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{ARRIVED}/{TOTAL} of your group are ready."
+msgstr "{ARRIVED}/{TOTAL} teie grupist on valmis."
 
-#: psynet/templates/timeline-page.html
+#: psynet/timeline_hold.py
 #, fuzzy
-msgctxt "timeline_problem"
-msgid "Comment stored."
-msgstr "Kommentaar salvestatud."
+msgctxt "timeline_hold"
+msgid "Waiting for other participants…"
+msgstr "Ootan teisi osalejaid…"
 
-#: psynet/templates/timeline-page.html
+#: psynet/timeline_hold.py
 #, fuzzy
-msgctxt "timeline_problem"
-msgid "Please wait for the page to load."
-msgstr "Palun oota, kuni leht laadib."
-
-#: psynet/templates/timeline-page.html
-#, fuzzy
-msgctxt "timeline_problem"
-msgid "Try again in a couple of seconds."
-msgstr "Proovi mõne sekundi pärast uuesti."
+msgctxt "timeline_hold"
+msgid "Please wait, the experiment should continue shortly..."
+msgstr "Palun oodake, katse peaks peagi jätkuma..."
 
 #: psynet/translation/countries.py
 #, fuzzy

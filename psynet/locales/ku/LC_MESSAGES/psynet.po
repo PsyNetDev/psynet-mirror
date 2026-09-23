@@ -436,34 +436,42 @@ msgstr "کۆتایی"
 msgctxt "final-page-rewards"
 msgid ""
 "You will receive a reward of <strong>{CURRENCY}{TIME_REWARD}</strong> for "
-"the time you spent on the experiment. You have also been awarded a "
-"performance reward of <strong>{CURRENCY}{PERFORMANCE_REWARD}</strong>! "
+"the time you spent. "
 msgstr ""
-"بۆ کاتی تۆماربوونت لە تاقیکردنەوەدا، تۆ پاداشتێکی "
-"<strong>{CURRENCY}{TIME_REWARD}</strong> وەرگریت. هەروەها پاداشتێکی "
-"کاریگەرەشی بەردەستە <strong>{CURRENCY}{PERFORMANCE_REWARD}</strong>! "
+"تۆ پارەیەکی خەڵاتی وەرگریت بە <strong>{CURRENCY}{TIME_REWARD}</strong> بۆ "
+"کاتی خەریکت."
+
+#: psynet/end.py
+#, fuzzy, python-brace-format
+msgctxt "final-page-performance-reward"
+msgid ""
+"You have also been awarded a performance reward of "
+"<strong>{CURRENCY}{PERFORMANCE_REWARD}</strong>. "
+msgstr ""
+"هەروەها خەڵاتی کارکردنیش بە <strong>{CURRENCY}{PERFORMANCE_REWARD}</strong> "
+"پێ دەدرێت."
+
+#: psynet/end.py
+#, fuzzy
+msgid "Click Finish to return to your panel."
+msgstr "کرتە بکە لەسەر کۆتایی بۆ گەڕانەوە بۆ پانێڵەکەت."
+
+#: psynet/end.py
+#, fuzzy
+msgid "Click Finish to finalize the session."
+msgstr "کرتە بکە لەسەر کۆتایی بۆ تەواوبوونی ئەم دانانە."
 
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_successful"
-msgid "That's the end of the experiment!"
-msgstr " ئەمە کۆتایی تاقیکردنەوەکەیە!"
-
-#: psynet/end.py
-#, fuzzy
-msgid "Thank you for taking part."
-msgstr "سوپاس بۆ بەشداریکە."
-
-#: psynet/end.py
-#, fuzzy
-msgid "Please click \"Finish\" to finalize the session."
-msgstr "تکایە کرتە بکە لەسەر \"کۆتایی\" بۆ تەواوبوونی ئیشەکە."
+msgid "That's the end!"
+msgstr "ئەمە کۆتاییە!"
 
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_unsuccessful"
-msgid "Unfortunately the experiment must end early."
-msgstr "بەداخەوە تاقیکردنەوەکە پێویستە لە زوو کۆتایی ببات."
+msgid "Unfortunately we have to stop early."
+msgstr "بەداخەوە پێویستە زوو وەستان."
 
 #: psynet/end.py
 #, fuzzy
@@ -473,20 +481,20 @@ msgstr "بەرەوپێش دەردەبڕیت، بەڵام تۆ هێشتا پار�
 
 #: psynet/end.py
 #, fuzzy
-msgid "You will be redirected."
-msgstr "بەردەوام دەبیتەوە."
+msgctxt "final_page_rejected_consent"
+msgid "You chose not to continue."
+msgstr "تۆ هەڵبژارد کە بەردەوام نەبیت."
 
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_rejected_consent"
-msgid "Consent was rejected."
-msgstr "ڕەزامەندی پەسەند نەکرا."
+msgid "You may close this page."
+msgstr "دەتوانیت ئەم پەڕەیە دابخەیت."
 
 #: psynet/end.py
 #, fuzzy
-msgctxt "final_page_rejected_consent"
-msgid "End of experiment."
-msgstr "کۆتایی تاقیکردنەوە."
+msgid "We will return you to your panel in a few seconds."
+msgstr "لە چەند چرکەیەکدا بەرز دەگرینەوە بۆ پانێڵەکەت."
 
 #: psynet/equipment.py
 #, fuzzy
@@ -499,41 +507,9 @@ msgstr ""
 
 #: psynet/experiment.py
 #, fuzzy
-msgctxt "error-msg"
-msgid "There has been an error and so you are unable to continue, sorry!"
-msgstr "هەڵەیەک ڕووی دا و ناتوانیت بەردەوام بیت، ببورە!"
-
-#: psynet/experiment.py
-#, fuzzy, python-brace-format
-msgctxt "mturk_error"
-msgid ""
-"To enquire about compensation, please contact the researcher at {EMAIL} and "
-"describe what led to this error."
-msgstr ""
-"بۆ داوای پاداشت، تکایە پەیوەندی بە توێژەرەکە بکە لە {EMAIL} و ڕوون بکەوە چی "
-"بەرەوپێش برد بۆ ئەم هەڵەیە."
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "mturk_error"
-msgid "Please also quote the following information:"
-msgstr "تکایە زانیارییە کەیەکانی خوارەوەش دیاری بکە:"
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "prolific_error"
-msgid "Don't worry, your progress has been recorded."
-msgstr "نەترسە، پێشکەوتنەکەت تۆمار کراوە."
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "prolific_error"
-msgid ""
-"To enquire about compensation, please send the researcher a message via the "
-"Prolific website and describe what led to your error."
-msgstr ""
-"بۆ داوای پاداشت، تکایە نامەیەک بۆ توێژەرەکە بنێرە لە ڕێگای ماڵپەڕی Prolific "
-"و ڕوون بکەوە چی بەرەوپێش برد بۆ هەڵەکەت."
+msgctxt "timeline_problem"
+msgid "This session has already ended. Please reload the page."
+msgstr "ئەم دانیشتنە پەیوەندیدا کۆتایی هات. تکایە پەڕەکە نوێ بکەرەوە."
 
 #: psynet/experiment.py
 #, fuzzy
@@ -544,6 +520,11 @@ msgid ""
 msgstr ""
 "کێشەی هاوکێشە ڕووی دا. ئایا تۆ ئەم تاقیکردنەوەیە لە چەند تابێکی وێبگەڕی "
 "جیاوازدا دەڕۆی؟ تکایە هەموو تابەکانی تر داخە و پەڕەکە نوێ بکەرەوە."
+
+#: psynet/experiment.py
+#, fuzzy
+msgid "The experiment is temporarily busy. Please try again."
+msgstr "تاقیکردنەوەکە کاتی کەمەکی پڕە. تکایە دووبارە هەوڵ بدە."
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -567,6 +548,12 @@ msgstr "پێویستە وەڵامێک دیاری بکەیت!"
 msgctxt "validation"
 msgid "You need to provide a number!"
 msgstr "پێویستە ژمارەیەک دیاری بکەیت!"
+
+#: psynet/page.py
+#, fuzzy
+msgctxt "status"
+msgid "Working..."
+msgstr "کارەکان بەردەوامن..."
 
 #: psynet/prescreen/__init__.py
 #, fuzzy
@@ -738,208 +725,383 @@ msgid "The test will start on the next page."
 msgstr "ئەم تاقیکردنەوەیە لە لاپەڕەی داهاتوو دەستپێدەکات."
 
 #: psynet/recruiters.py
-#, fuzzy
-msgctxt "recruiter_communication"
-msgid "Communicating with the recruiter..."
-msgstr "پەیوەندیدان بە ڕیکرووتەرەکە..."
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error"
+msgid ""
+"If you need to contact the researcher about this error, write to {EMAIL} and"
+" quote reference code {REFERENCE_CODE}."
+msgstr ""
+"ئەگەر پێویستت بە پەیوەندیکردن بە توێژەرەکە هەیە بۆ ئەم هەڵەیە، بنووسە بۆ "
+"{EMAIL} و کۆدی پەیوەندیدانی {REFERENCE_CODE} باس بکە."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error"
+msgid ""
+"If you need to contact the researcher about this error, write to {EMAIL}."
+msgstr ""
+"ئەگەر پێویستت بە پەیوەندیکردن بە توێژەرەکە هەیە بۆ ئەم هەڵەیە، بنووسە بۆ "
+"{EMAIL}."
 
 #: psynet/recruiters.py
 #, fuzzy
-msgctxt "screen_out_successful"
+msgctxt "early_exit_error"
+msgid "You may close this page."
+msgstr "دەتوانیت ئەم لاپەڕەیە دابخەیت."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error"
+msgid "Unfortunately an error occurred and we cannot continue."
+msgstr "بەداخەوە هەڵەیەک ڕوویدا و ناتوانین بەردەوامبەین."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error"
+msgid "However, your responses so far have been saved."
+msgstr "بەڵام، وەڵامەکانت تاکو ئێستا هەڵگیراون."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
 msgid ""
-"You have been credited for the time spent on the experiment. Because you "
-"could not progress to the main experiment your submission will appear as "
-"'screened out' in Prolific. You can now close this browser window."
+"If you leave now, you will not be able to continue later. Your responses so "
+"far will still be saved."
 msgstr ""
-"تۆ بڕی تێچووی کاتت بۆ تاقیکردنەوە پارەی پێدرا. چونکە نەتوانیت بڕۆیت بەرەو "
-"تاقیکردنەوەی سەرەکی، ناردنت بە شێوەی 'سکرین کراوە' لە Prolific دەردەکەوێت. "
-"ئێستا دەتوانیت ئەم پەنجەرەی وێبە دابخەیت."
+"ئەگەر ئێستا بڕواتەوە، ناتوانیت دواتر بەردەوامبەیت. وەڵامەکانت تاکو ئێستا "
+"هەڵگیراون."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit"
+msgid ""
+"You have earned {EARNED} so far. You need at least {THRESHOLD} to leave with"
+" payment. If you leave without payment, you will not be able to continue "
+"later. Your responses so far will still be saved."
+msgstr ""
+"تا ئێستا {EARNED} بەدەست هێناویت. پێویستە بەلایەنی کەم {THRESHOLD} هەبێت بۆ "
+"ئەوەی بە پارە بڕواتەوە. ئەگەر بێ پارە بڕواتەوە، ناتوانیت دواتر بەردەوامبەیت."
+" وەڵامەکانت تاکو ئێستا هەڵگیراون."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
+msgid "Leave without payment"
+msgstr "بڕواتەوە بێ پارە"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
+msgid "Leave"
+msgstr "بڕواتەوە"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
+msgid "Leave without finishing?"
+msgstr "بڕواتەوە بێ تەواوبوون؟"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
+msgid "Cancel"
+msgstr "هەڵوەشاندنەوە"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_unpaid"
+msgid "You may close this page."
+msgstr "دەتوانیت ئەم لاپەڕەیە دابخەیت."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED}. Because you have earned {EARNED} so "
+"far, a further {REMAINDER} will be paid as a bonus. Your responses so far "
+"will still be saved."
+msgstr ""
+"ئەگەر ئێستا بڕواتەوە، ناتوانیت دواتر بەردەوامبەیت. پارەیەکی دیاریکراوی "
+"'سکرین-ئاووت' بە {FIXED} وەردەگریت. چونکە تا ئێستا {EARNED} بەدەست هێناویت، "
+"{REMAINDER} زیاتر وەک بۆنوس وەردەگریت. وەڵامەکانت تاکو ئێستا هەڵگیراون."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED}. Your responses so far will still be "
+"saved."
+msgstr ""
+"ئەگەر ئێستا بڕواتەوە، ناتوانیت دواتر بەردەوامبەیت. پارەیەکی دیاریکراوی "
+"'سکرین-ئاووت' بە {FIXED} وەردەگریت. وەڵامەکانت تاکو ئێستا هەڵگیراون."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED} plus a performance bonus of "
+"{PERFORMANCE}. You will not be paid for additional time. Your responses so "
+"far will still be saved."
+msgstr ""
+"ئەگەر ئێستا بڕواتەوە، ناتوانیت دواتر بەردەوامبەیت. پارەیەکی دیاریکراوی "
+"'سکرین-ئاووت' بە {FIXED} وە بۆنوسی کارکردن بە {PERFORMANCE} وەردەگریت. بۆ "
+"کاتی زیاتر پارە ناداترێت. وەڵامەکانت تاکو ئێستا هەڵگیراون."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED}. You will not be paid for additional "
+"time. Your responses so far will still be saved."
+msgstr ""
+"ئەگەر ئێستا بڕواتەوە، ناتوانیت دواتر بەردەوامبەیت. پارەیەکی دیاریکراوی "
+"'سکرین-ئاووت' بە {FIXED} وەردەگریت. بۆ کاتی زیاتر پارە ناداترێت. وەڵامەکانت "
+"تاکو ئێستا هەڵگیراون."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will need to "
+"return your Prolific submission. You will then be paid {EARNED} as a bonus "
+"for the work you have completed so far. Your responses so far will still be "
+"saved."
+msgstr ""
+"ئەگەر ئێستا بڕواتەوە، ناتوانیت دواتر بەردەوامبەیت. پێویستە ناردنی Prolific "
+"خۆت بگەڕێنیتەوە. پاشان {EARNED} وەک بۆنوس بۆ کارەکەی کە تاکو ئێستا تەواو "
+"کردووە وەردەگریت. وەڵامەکانت تاکو ئێستا هەڵگیراون."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "prolific_error"
+msgid "If you had already started, message the researcher through Prolific."
+msgstr ""
+"ئەگەر پێشتر دەستپێکردبوویت، پەیامێک بۆ توێژەرەکە بنێرە لە ڕێگەی Prolific."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "prolific_error"
+msgid ""
+"Please message the researcher through Prolific and describe what led to this"
+" error."
+msgstr ""
+"تکایە پەیامێک بۆ توێژەرەکە بنێرە لە ڕێگەی Prolific و ڕوون بکەوە چی هەڵەیەکە "
+"هێنا."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We will pay you for your progress so far: you will receive {FIXED} through "
+"Prolific."
+msgstr ""
+"ئێمە پارەی کارەکەت تاکو ئێستا دەدەنەوە: بە {FIXED} لە ڕێگەی Prolific "
+"وەردەگریت."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We will also pay {BONUS} as a bonus, bringing your total payment to {TOTAL}."
+msgstr "ئێمەش {BONUS} وەک بۆنوس دەدەنەوە، کە پارەی گشتیەکەت دەگاتە {TOTAL}."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid "We will also pay your {BONUS} performance bonus."
+msgstr "ئێمەش بۆنوسی کارکردنی {BONUS} دەدەنەوە."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Any additional amount you earned will be paid as a bonus."
+msgstr "هەر بڕی زیاتر کە بەدەست هێناویت وەک بۆنوس پارەی پێ دەدرێت."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Select Submit to Prolific to complete your submission."
+msgstr "هەڵبژاردنی ناردن بۆ Prolific بکە بۆ تەواوبوونی ناردنەکەت."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Submit to Prolific"
+msgstr "ناردن بۆ Prolific"
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid ""
+"To receive {EARNED} for the work you completed, you will need to return your"
+" submission on Prolific."
+msgstr ""
+"بۆ وەرگرتنی {EARNED} بۆ کارەکەی کە تەواو کردووە، پێویستە ناردنی خۆت لە "
+"Prolific بگەڕێنیتەوە."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid ""
+"To receive payment for the work you completed, you will need to return your "
+"submission on Prolific."
+msgstr ""
+"بۆ وەرگرتنی پارە بۆ کارەکەی کە تەواو کردووە، پێویستە ناردنی خۆت لە Prolific "
+"بگەڕێنیتەوە."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Select Continue to payment instructions to complete these steps."
+msgstr ""
+"هەڵبژاردنی بەردەوامبوون بۆ ڕێنماییەکانی پارە بکە بۆ تەواوبوونی ئەم هەنگاوە."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We could not open the payment instructions. Please try again. If this keeps "
+"happening, message the researcher through Prolific."
+msgstr ""
+"نەتوانین ڕێنماییەکانی پارە بکەینەوە. تکایە دووبارە هەوڵ بدەوە. ئەگەر ئەمە "
+"بەردەوام بوو، پەیامێک بۆ توێژەرەکە بنێرە لە ڕێگەی Prolific."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Continue to payment instructions"
+msgstr "بەردەوامبوون بۆ ڕێنماییەکانی پارە"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_unpaid_prolific"
+msgid ""
+"Your responses so far have been saved. Please return your submission on "
+"Prolific. You will not receive payment. You may close this page."
+msgstr ""
+"وەڵامەکانت تاکو ئێستا هەڵگیراون. تکایە ناردنی خۆت لە Prolific وەرگێڕەوە. تۆ "
+"پارە ناتەوێت. دەتوانیت ئەم لاپەڕەیە دابخەیت."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Your submission has been sent to Prolific."
+msgstr "ناردنی تۆ بۆ Prolific نێردرا."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "You may close this page."
+msgstr "دەتوانیت ئەم لاپەڕەیە دابخەیت."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We could not send your submission to Prolific. Please try again. If this "
+"keeps happening, message the researcher through Prolific."
+msgstr ""
+"نەتوانین ناردنی تۆ بۆ Prolific بنێرین. تکایە دووبارە هەوڵ بدەوە. ئەگەر ئەمە "
+"بەردەوام بوو، پەیامێک بۆ توێژەرەکە لە ڕێگەی Prolific بۆ بنێرە."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "return_assignment_instructions"
 msgid ""
 "Please return your submission via the Prolific interface and click Next. We "
-"will then automatically pay you a bonus for your time."
+"will then automatically pay you a bonus."
 msgstr ""
-"تکایە ناردنتەکەت لە ڕووی Prolific وەرگێڕەوە و کرتە بکە لە سەر دواتر. ئێمە بە"
-" شێوەی خۆکار پارەیەکی بۆنوس بۆ کاتی تاقیکردنەوەی تۆ دەدەن."
+"تکایە ناردنی خۆت لە ڕێگەی وەشانی Prolific وەرگێڕەوە و کرتە بکە لەسەر دواتر. "
+"ئینجامەکە بە شێوەیەکی خۆکار پارەیەکی زیاتر بۆ تۆ دەدات."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "return_for_bonus_completed"
 msgid ""
-"That worked! You have been credited for the time spent on the experiment. "
-"Thank you for participating. You can now close this browser window."
+"That worked. You have been credited for the time you spent. Thank you for "
+"taking part. You may close this page."
 msgstr ""
-"ئەمە کارکرد! تۆ بڕی تێچووی کاتت بۆ تاقیکردنەوە پارەی پێدرا. سوپاس بۆ "
-"بەشداریکردنت. ئێستا دەتوانیت ئەم پەنجەرەی وێبە دابخەیت."
+"ئەوە کارکرد. تۆ پارەیەکی زیاتر بۆ کاتی بەکارھێنانەکەت وەرگرت. سوپاس بۆ "
+"بەشداریکردنت. دەتوانیت ئەم لاپەڕەیە دابخەیت."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "return_for_bonus_payment_failed"
+msgid ""
+"Your return was recorded, but we could not complete the bonus payment "
+"automatically. The researcher has been notified and will arrange payment. "
+"You may close this page."
+msgstr ""
+"گەڕاندنەوەکەت تۆمار کرا، بەڵام نەتوانین پارەیەکی زیاتر بە شێوەیەکی خۆکار بۆ "
+"تۆ بپارەزین. توێژەرەکە ئاگادار کرا و پارەیەک بۆ تۆ دابین دەکات. دەتوانیت ئەم"
+" لاپەڕەیە دابخەیت."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "assignment_return_retry"
 msgid ""
-"That didn't work. Are you sure you returned the submission for this study? "
-"Please go to the Prolific interface, make sure you have returned the "
-"submission, then click the 'Next' button."
+"That didn't work. Are you sure you returned the submission? Return it on "
+"Prolific, then click Next."
 msgstr ""
-"ئەمە کارنەکرد. دڵنیایت کە ناردنتەکەت بۆ ئەم خوێندکارانە گەڕاندووە؟ تکایە بڕۆ"
-" بۆ ڕووی Prolific، دڵنیابە کە ناردنتەکەت گەڕاندووە، پاشان کرتە بکە لە سەر "
-"'دواتر' بەتەقە."
-
-#: psynet/recruiters.py
-#, fuzzy
-msgctxt "return_for_bonus_enabled"
-msgid ""
-"We are sorry that you could not proceed to the main experiment, but we will "
-"still pay you for your time spent so far. To receive this payment, we need "
-"you to return this assignment via the Prolific interface, then click the "
-"'Next' button below."
-msgstr ""
-"ببورە کە نەتوانیت بڕۆیت بەرەو تاقیکردنەوەی سەرەکی، بەڵام ئێمە هێشتا پارەیەکی"
-" بۆنوس بۆ کاتی تاقیکردنەوەی تۆ دەدەن. بۆ وەرگرتنی ئەم پارەیە، پێویستە "
-"ناردنتەکەت لە ڕووی Prolific وەرگێڕەوە، پاشان کرتە بکە لە سەر 'دواتر' بەتەقە."
+"ئەوە کارنەکرد. دڵنیایت کە ناردنی خۆت وەرگێڕاندووە؟ لە Prolific وەرگێڕەوە، "
+"پاشان کرتە بکە لەسەر دواتر."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "screen_out_return_and_message_experimenter"
 msgid ""
-"We are sorry that you could not proceed to the main experiment. To receive "
-"this payment for your time, please return your assignment in Prolific and "
-"send a message to the experimenter via the Prolific messaging system. The "
-"experimenter will review your case and arrange payment if appropriate. Thank"
-" you for your understanding. You can now close this browser window."
+"To receive payment for the time you spent, return your submission on "
+"Prolific and message the researcher there. They will review your case and "
+"arrange payment if it is due. You may close this page."
 msgstr ""
-"ببورە کە نەتوانیت بڕۆیت بەرەو تاقیکردنەوەی سەرەکی. بۆ وەرگرتنی ئەم پارەیە بۆ"
-" کاتی تاقیکردنەوەی تۆ، تکایە ناردنتەکەت لە Prolific وەرگێڕەوە و پەیامێک بۆ "
-"تاقیکەرەوە لە ڕووی پەیامەکانی Prolific بنێرە. تاقیکەرەوە کەیسەکەت دەبینێت و "
-"پارەیەک بۆ تۆ دابین دەکات ئەگەر گونجاو بێت. سوپاس بۆ تێگەیشتنەکەت. ئێستا "
-"دەتوانیت ئەم پەنجەرەی وێبە دابخەیت."
+"بۆ وەرگرتنی پارە بۆ کاتی بەکارھێنانەکەت، ناردنی خۆت لە Prolific وەرگێڕەوە و "
+"پەیامێک بۆ توێژەرەکە لەوێ بنێرە. ئەوان کەیسەکەت دەبینن و پارەیەک دابین دەکەن"
+" ئەگەر پێویست بێت. دەتوانیت ئەم لاپەڕەیە دابخەیت."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_lucid"
+msgid ""
+"If you leave now, you will not be able to continue later, and you will "
+"return to your panel provider. This session will not issue a payment; any "
+"payment depends on your panel provider's rules. Your responses so far will "
+"still be saved."
+msgstr ""
+"ئەگەر ئێستا بڕۆیت، ناتوانیت دواتر بەردەوام بیت، وە دەتەوێت بگەڕێیتەوە بۆ "
+"دابینکەری پانێڵەکەت. ئەم کاتە پارەیەک نادات؛ هەر پارەیەک پەیوەندیدارە بە "
+"یاساکانی دابینکەری پانێڵەکەت. وەڵامەکانت تاکو ئێستا هەڵگیراون."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "lucid_error"
-msgid "Redirecting to Lucid Marketplace..."
-msgstr "گواستنەوە بۆ بازاڕی Lucid..."
+msgid "We will return you to your panel in a few seconds."
+msgstr "لە چەند چرکەیەکدا دەتەوێت بگەڕێیتەوە بۆ پانێڵەکەت."
 
-#: psynet/templates/abort_not_possible.html
+#: psynet/recruiters.py
 #, fuzzy
-msgctxt "abort_possible"
-msgid "Aborting not possible."
-msgstr "هەڵوەشاندن نەکراوە."
+msgctxt "early_exit_error_lucid"
+msgid "We will return you to your panel in a few seconds."
+msgstr "لە چەند چرکەیەکدا دەتەوێت بگەڕێیتەوە بۆ پانێڵەکەت."
 
-#: psynet/templates/abort_not_possible.html
+#: psynet/recruiters.py
 #, fuzzy
-msgctxt "abort_possible"
+msgctxt "early_exit_error_lucid"
 msgid ""
-"Aborting the experiment is not possible as the experimenter does not allow "
-"it at this time!"
+"We could not return you to your panel. Please try again. If this keeps "
+"happening, contact your panel provider."
 msgstr ""
-"هەڵوەشاندنی ئەزموون نەکراوە چونکە ئەزموونکەر ڕێگای پێناخات لە ئێستادا!"
+"نەتوانین بگەڕێینەوە بۆ پانێڵەکەت. تکایە دووبارە هەوڵ بدەوە. ئەگەر ئەمە "
+"بەردەوام بوو، پەیوەندیدانی دابینکەری پانێڵەکەت بکە."
 
-#: psynet/templates/abort_not_possible.html
-#, fuzzy, python-format
-msgid ""
-"You have to accumulate <strong>at least "
-"%(CURRENCY)s%(MIN_ACCUMULATED_REWARD_FOR_ABORT)s</strong> of reward to be "
-"able to be compensated."
-msgstr ""
-"پێویستە کەمەوە %(CURRENCY)s%(MIN_ACCUMULATED_REWARD_FOR_ABORT)s ی تێچووی "
-"کۆبکەیت بۆ توانای وەرگرتنی پاداشت."
-
-#: psynet/templates/abort_not_possible.html
+#: psynet/recruiters.py
 #, fuzzy
-msgctxt "abort_possible"
-msgid "See below information on your currently accumulated reward."
-msgstr "زانیاری خوارەوە سەبارەت بە تێچووی کۆکراوت تاکو ئێستا ببینە."
-
-#: psynet/templates/abort_not_possible.html
-#: psynet/templates/abort_possible.html psynet/templates/psynet_error.html
-#, fuzzy
-msgid "Assignment ID"
-msgstr "IDی ئەرک"
-
-#: psynet/templates/abort_not_possible.html
-#: psynet/templates/abort_possible.html psynet/templates/psynet_error.html
-#, fuzzy
-msgid "HIT ID"
-msgstr "IDی HIT"
-
-#: psynet/templates/abort_not_possible.html
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgid "Accumulated reward"
-msgstr "پاداشتی کۆکراو"
-
-#: psynet/templates/abort_not_possible.html
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgid "Close window"
-msgstr "پەنجەره داخە"
-
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgctxt "abort_possible"
-msgid "Are you sure you want to abort the experiment?"
-msgstr "ئایا دڵنیایت کە دەتەوێت تاقیکردنەوەکە وەستانیت؟"
-
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgctxt "abort_possible"
-msgid ""
-"If you click the Abort button, the experiment will end early, and you will "
-"be automatically paid the compensation you have earned so far."
-msgstr ""
-"ئەگەر کرتە بکەیتە سەر دوگمەی وەستاندن، تاقیکردنەوەکە زوو دەکەوێتە کۆتا، و "
-"خۆکارانە پاداشتەکە دەگرێت تاکو ئێستا بەدەستهێناویت."
-
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgctxt "abort_possible"
-msgid "Please only contact us if you have trouble receiving your payment."
-msgstr ""
-"تکایە تەنها پەیوەندیمان پێوە بکە ئەگەر کێشەیەکت هەبێت لە وەرگرتنی "
-"پارەدانەکەت."
-
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgctxt "abort_possible"
-msgid "See the information below for details of your compensation."
-msgstr "زانیارییەکان لە خوارەوە ببین بۆ وردەکاریەکانی پاداشتەکەت."
-
-#: psynet/templates/abort_possible.html psynet/templates/ad.html
-#: psynet/templates/psynet_error.html
-#, fuzzy
-msgid "Abort experiment"
-msgstr "Ceribandina rawestandin"
-
-#: psynet/templates/ad.html
-#, fuzzy
-msgctxt "ad"
-msgid "Call for participants"
-msgstr "Bang kirin bo beşdarî"
-
-#: psynet/templates/ad.html
-#, fuzzy
-msgctxt "ad"
-msgid "The requirements to participate are as follows"
-msgstr "Pêdivîstiyên beşdarî di vê dema de yên jêrîn in"
-
-#: psynet/templates/ad.html
-#, fuzzy
-msgctxt "ad"
-msgid ""
-"Please click the \"Accept HIT\" button on the Amazon site above to begin the"
-" task."
-msgstr ""
-"Ji kerema xwe li ser malpera Amazonê bişkoja \"Accept HIT\" bitikîne da ku "
-"karê dest pê bike."
-
-#: psynet/templates/ad.html
-#, fuzzy
-msgctxt "ad"
-msgid "Thanks for accepting this HIT."
-msgstr "Spas ji bo pejirandina vê HIT."
+msgctxt "early_exit_error_lucid"
+msgid "Return to your panel"
+msgstr "بگەڕێەوە بۆ پانێڵەکەت."
 
 #: psynet/templates/ad.html
 #, fuzzy
@@ -974,13 +1136,6 @@ msgstr "Ji kerema xwe berî berdewamkirinê blockerên pop-up-ê neçal bike."
 msgctxt "ad"
 msgid "Begin Experiment"
 msgstr "Dest pê kirina ceribandinê"
-
-#: psynet/templates/ad.html psynet/templates/psynet_error.html
-#, fuzzy
-msgid "Click the above button to be compensated in case of an error."
-msgstr ""
-"Ji bo ku di rewşa çewtî de xelata we were dayîn, li ser bişkoja jor de "
-"bitikîne."
 
 #: psynet/templates/consent.html
 #, fuzzy
@@ -2394,8 +2549,42 @@ msgstr "بە ئەنجامدانی ئیشەکە بە زانست یارمەتی د
 #: psynet/templates/exit_recruiter_lucid.html
 #, fuzzy
 msgctxt "exit_recruiter_lucid"
-msgid "Lucid Survey Submission"
-msgstr "پیشکەشکردنی لێکۆڵینەوەی Lucid"
+msgid "Returning you to your panel"
+msgstr "گەڕاندنەوە بۆ پانێڵەکەت"
+
+#: psynet/templates/exit_recruiter_lucid.html
+#, fuzzy
+msgctxt "exit_recruiter_lucid"
+msgid "Please wait."
+msgstr "تکایە چاوەڕێ بکە."
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html
+#, fuzzy
+msgctxt "exit_recruiter_prolific"
+msgid "Submit to Prolific"
+msgstr "پێشکەشکردن بۆ Prolific"
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html
+#, fuzzy
+msgctxt "exit_recruiter_prolific"
+msgid ""
+"Click below to send your submission to Prolific. You will not need to enter "
+"a completion code."
+msgstr ""
+"کلیک لە خوارەوە بکە بۆ ناردنی پێشکەشکردنت بۆ Prolific. پێویست نیە کۆدی "
+"تەواوبوون بنووسیت."
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html
+#, fuzzy
+msgctxt "exit_recruiter_prolific"
+msgid "Please wait."
+msgstr "تکایە چاوەڕێ بکە."
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html
+#, fuzzy
+msgctxt "exit_recruiter_prolific"
+msgid "Try again"
+msgstr "دووبارە هەوڵ بدە"
 
 #: psynet/templates/keyboard.html
 #, fuzzy
@@ -2641,11 +2830,6 @@ msgstr "من ڕازیم"
 msgctxt "consent"
 msgid "No, thank you (return task)"
 msgstr "نەخێر، سوپاس (پەیوەندیدانەوە بۆ کارەکان)"
-
-#: psynet/templates/macros/consent.html
-#, fuzzy
-msgid "Scroll up/down to see all text"
-msgstr "بەرز/نازمی بکە بۆ بینینی هەموو دەقەکان"
 
 #: psynet/templates/macros/consent.html
 #, fuzzy
@@ -2933,6 +3117,12 @@ msgstr "ڕێکخستنەوە"
 
 #: psynet/templates/macros/control.html
 #, fuzzy
+msgctxt "audio_meter"
+msgid "Microphone level"
+msgstr "ئاستی مایکروفۆن"
+
+#: psynet/templates/macros/control.html
+#, fuzzy
 msgctxt "audio_meter_calibrate"
 msgid "Sliders"
 msgstr "سڵایدەکان"
@@ -3054,50 +3244,117 @@ msgstr "وێنەی ڤیدیۆ نەدۆزرایەوە"
 msgid "Image not found"
 msgstr "وێنە نەدۆزرایەوە"
 
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Comment stored."
+msgstr "لێدوانەکە پاشەکەوت کرا."
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Please wait for the page to load."
+msgstr "تکایە چاوەڕوانی بارکردنی لاپەڕەکە بکە."
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Try again in a couple of seconds."
+msgstr "دووبارە هەوڵ بدە لە چەند چرکەیەکدا."
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline"
+msgid "Reward"
+msgstr "خەڵات"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_reward"
+msgid "Reward earned so far"
+msgstr "خەڵاتی تاکو ئێستا وەرگرتوو"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_reward"
+msgid "for time"
+msgstr "بۆ کات"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_reward"
+msgid "for performance"
+msgstr "بۆ ئەنجام"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline"
+msgid "Comment"
+msgstr "لێدوان"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Leave"
+msgstr "دەرچوون"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Leave without finishing."
+msgstr "بەبێ کۆتایی هێنان دەرچوون."
+
 #: psynet/templates/psynet_error.html
 #, fuzzy
 msgctxt "error"
-msgid "Error!"
-msgstr "هەڵە!"
+msgid "An error occurred"
+msgstr "هەڵەیەک ڕوویدا"
 
 #: psynet/templates/psynet_error.html
 #, fuzzy
-msgctxt "mturk_error"
-msgid ""
-"You may be able to abort the experiment using the <strong>Abort "
-"experiment</strong> button <strong>on the MTurk ad page</strong>."
-msgstr ""
-"دەتوانیت تاقیکردنەوەکە وەستانی بەکارهێنانی دوگمەی <strong>وەستاندنی "
-"تاقیکردنەوە</strong> <strong>لە لاپەڕەی ڕیکلامی MTurk</strong>."
+msgctxt "early_exit_error"
+msgid "Please wait."
+msgstr "تکایە چاوەڕێ بکە."
 
 #: psynet/templates/psynet_error.html
 #, fuzzy
-msgctxt "mturk_error"
-msgid ""
-"Once aborted, there is no need to contact us to receive the compensation; "
-"this should be awarded to you automatically via MTurk a few minutes after."
-msgstr ""
-"کاتێک وەستاندرابێت، پێویست نییە پەیوەندیمان پێوە بکەیت بۆ وەرگرتنی پارەدان؛ "
-"ئەمە دەبێت خۆکارانە بەرز بکرێت بۆ تۆ لە ڕێگەی MTurk چەند خولەکێک دوای ئەوە."
+msgctxt "early_exit_error"
+msgid "Try again"
+msgstr "دووبارە هەوڵ بدە"
 
-#: psynet/templates/psynet_error.html
-#, fuzzy, python-format
-msgid ""
-"If this is not the case, please contact us at %(EMAIL)s quoting the "
-"following information:"
-msgstr ""
-"ئەگەر ئەمە ڕاست نەبوو، تکایە پەیوەندیمان پێوە بکە لە %(EMAIL)s بە بەربژاردنی"
-" زانیارییە کەیەکان:"
-
-#: psynet/templates/psynet_error.html
+#: psynet/templates/psynet_exit_recruiter.html
 #, fuzzy
-msgid "Error type"
-msgstr "جۆری هەڵە"
+msgid "Thank you for taking part."
+msgstr "سوپاس بۆ بەشداریکە."
 
-#: psynet/templates/psynet_error.html
+#: psynet/templates/psynet_exit_recruiter.html
 #, fuzzy
-msgid "Worker ID"
-msgstr "IDی کارگێڕ"
+msgctxt "exit"
+msgid "You chose to leave."
+msgstr "تۆ هەڵبژاردوی کە بڕۆیت."
+
+#: psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgid "Thank you for taking part."
+msgstr "سوپاس بۆ بەشداریکە."
+
+#: psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgctxt "exit"
+msgid "You may close this page."
+msgstr "دەتوانیت ئەم پەڕەیە دابخەیت."
+
+#: psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgctxt "exit"
+msgid "Your responses have been saved. You may close this page."
+msgstr "وەڵامەکانت هەڵگیرا. دەتوانیت ئەم پەڕەیە دابخەیت."
+
+#: psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgctxt "exit"
+msgid "Reference code"
+msgstr "کۆدی پەیوەندیدان"
 
 #: psynet/templates/start.html
 #, fuzzy
@@ -3161,41 +3418,35 @@ msgctxt "timeline_resume"
 msgid "Resume"
 msgstr "بەردەوامبوون"
 
-#: psynet/templates/timeline-page.html
-#, fuzzy
-msgctxt "timeline"
-msgid "Reward"
-msgstr "خەڵات"
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{REMAINING} of {TOTAL} not ready yet"
+msgstr "{REMAINING} لە {TOTAL} هێشتا ئامادە نین"
 
-#: psynet/templates/timeline-page.html
+#: psynet/timeline_hold.py
 #, fuzzy
-msgctxt "timeline"
-msgid "Comment"
-msgstr "لێدوان"
+msgctxt "timeline_hold"
+msgid "Your partner is ready."
+msgstr "هاوڕێکەت ئامادەیە."
 
-#: psynet/templates/timeline-page.html
-#, fuzzy
-msgctxt "timeline_problem"
-msgid "Terminate the experiment early"
-msgstr "تاقیکردنەوەکە زوو کۆتایی پێبەهێنە"
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{ARRIVED}/{TOTAL} of your group are ready."
+msgstr "{ARRIVED}/{TOTAL} لە گروپەکەتان ئامادەن."
 
-#: psynet/templates/timeline-page.html
+#: psynet/timeline_hold.py
 #, fuzzy
-msgctxt "timeline_problem"
-msgid "Comment stored."
-msgstr "لێدوانەکە پاشەکەوت کرا."
+msgctxt "timeline_hold"
+msgid "Waiting for other participants…"
+msgstr "چاوەڕێی بەشداربووانی تر بکە…"
 
-#: psynet/templates/timeline-page.html
+#: psynet/timeline_hold.py
 #, fuzzy
-msgctxt "timeline_problem"
-msgid "Please wait for the page to load."
-msgstr "تکایە چاوەڕوانی بارکردنی لاپەڕەکە بکە."
-
-#: psynet/templates/timeline-page.html
-#, fuzzy
-msgctxt "timeline_problem"
-msgid "Try again in a couple of seconds."
-msgstr "دووبارە هەوڵ بدە لە چەند چرکەیەکدا."
+msgctxt "timeline_hold"
+msgid "Please wait, the experiment should continue shortly..."
+msgstr "تکایە چاوەڕێ بکە، تاقیکردنەوەکە بە زووی دەستی پێدەکات..."
 
 #: psynet/translation/countries.py
 #, fuzzy

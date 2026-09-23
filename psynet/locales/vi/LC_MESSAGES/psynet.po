@@ -438,34 +438,42 @@ msgstr "Hoàn thành"
 msgctxt "final-page-rewards"
 msgid ""
 "You will receive a reward of <strong>{CURRENCY}{TIME_REWARD}</strong> for "
-"the time you spent on the experiment. You have also been awarded a "
-"performance reward of <strong>{CURRENCY}{PERFORMANCE_REWARD}</strong>! "
+"the time you spent. "
 msgstr ""
 "Bạn sẽ nhận được phần thưởng <strong>{CURRENCY}{TIME_REWARD}</strong> cho "
-"thời gian bạn đã dành cho thí nghiệm. Bạn cũng đã được thưởng thêm phần "
-"thưởng hiệu suất <strong>{CURRENCY}{PERFORMANCE_REWARD}</strong>! "
+"thời gian bạn đã dành."
+
+#: psynet/end.py
+#, fuzzy, python-brace-format
+msgctxt "final-page-performance-reward"
+msgid ""
+"You have also been awarded a performance reward of "
+"<strong>{CURRENCY}{PERFORMANCE_REWARD}</strong>. "
+msgstr ""
+"Bạn cũng đã được thưởng thêm phần thưởng hiệu suất "
+"<strong>{CURRENCY}{PERFORMANCE_REWARD}</strong>."
+
+#: psynet/end.py
+#, fuzzy
+msgid "Click Finish to return to your panel."
+msgstr "Nhấn Hoàn thành để quay lại bảng điều khiển của bạn."
+
+#: psynet/end.py
+#, fuzzy
+msgid "Click Finish to finalize the session."
+msgstr "Nhấn Hoàn thành để kết thúc phiên."
 
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_successful"
-msgid "That's the end of the experiment!"
-msgstr "Đây là kết thúc của thí nghiệm!"
-
-#: psynet/end.py
-#, fuzzy
-msgid "Thank you for taking part."
-msgstr "Cảm ơn bạn đã tham gia."
-
-#: psynet/end.py
-#, fuzzy
-msgid "Please click \"Finish\" to finalize the session."
-msgstr "Vui lòng nhấp vào \"Hoàn thành\" để hoàn tất HIT."
+msgid "That's the end!"
+msgstr "Đó là kết thúc!"
 
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_unsuccessful"
-msgid "Unfortunately the experiment must end early."
-msgstr "Thật không may, thí nghiệm phải kết thúc sớm."
+msgid "Unfortunately we have to stop early."
+msgstr "Rất tiếc, chúng tôi phải dừng lại sớm."
 
 #: psynet/end.py
 #, fuzzy
@@ -475,20 +483,20 @@ msgstr "Tuy nhiên, bạn vẫn sẽ được trả tiền cho thời gian bạn
 
 #: psynet/end.py
 #, fuzzy
-msgid "You will be redirected."
-msgstr "Bạn sẽ được chuyển hướng."
+msgctxt "final_page_rejected_consent"
+msgid "You chose not to continue."
+msgstr "Bạn đã chọn không tiếp tục."
 
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_rejected_consent"
-msgid "Consent was rejected."
-msgstr "Sự đồng ý đã bị từ chối."
+msgid "You may close this page."
+msgstr "Bạn có thể đóng trang này."
 
 #: psynet/end.py
 #, fuzzy
-msgctxt "final_page_rejected_consent"
-msgid "End of experiment."
-msgstr "Kết thúc thí nghiệm."
+msgid "We will return you to your panel in a few seconds."
+msgstr "Chúng tôi sẽ đưa bạn trở lại bảng điều khiển của bạn trong vài giây."
 
 #: psynet/equipment.py
 #, fuzzy
@@ -501,41 +509,9 @@ msgstr ""
 
 #: psynet/experiment.py
 #, fuzzy
-msgctxt "error-msg"
-msgid "There has been an error and so you are unable to continue, sorry!"
-msgstr "Đã xảy ra lỗi và bạn không thể tiếp tục, xin lỗi!"
-
-#: psynet/experiment.py
-#, fuzzy, python-brace-format
-msgctxt "mturk_error"
-msgid ""
-"To enquire about compensation, please contact the researcher at {EMAIL} and "
-"describe what led to this error."
-msgstr ""
-"Để hỏi về bồi thường, vui lòng liên hệ với nhà nghiên cứu tại {EMAIL} và mô "
-"tả điều gì đã dẫn đến lỗi này."
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "mturk_error"
-msgid "Please also quote the following information:"
-msgstr "Vui lòng cũng trích dẫn thông tin sau:"
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "prolific_error"
-msgid "Don't worry, your progress has been recorded."
-msgstr "Đừng lo lắng, tiến trình của bạn đã được ghi lại."
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "prolific_error"
-msgid ""
-"To enquire about compensation, please send the researcher a message via the "
-"Prolific website and describe what led to your error."
-msgstr ""
-"Để hỏi về bồi thường, vui lòng gửi tin nhắn cho nhà nghiên cứu qua trang web"
-" Prolific và mô tả điều gì đã dẫn đến lỗi của bạn."
+msgctxt "timeline_problem"
+msgid "This session has already ended. Please reload the page."
+msgstr "Phiên này đã kết thúc. Vui lòng tải lại trang."
 
 #: psynet/experiment.py
 #, fuzzy
@@ -547,6 +523,11 @@ msgstr ""
 "Phát hiện vấn đề đồng bộ hóa. Bạn có đang chạy cùng một thí nghiệm trong "
 "nhiều tab trình duyệt không? Vui lòng đóng tất cả các tab khác và làm mới "
 "trang."
+
+#: psynet/experiment.py
+#, fuzzy
+msgid "The experiment is temporarily busy. Please try again."
+msgstr "Thí nghiệm đang tạm thời bận. Vui lòng thử lại."
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -570,6 +551,12 @@ msgstr "Bạn cần chọn một câu trả lời!"
 msgctxt "validation"
 msgid "You need to provide a number!"
 msgstr "Bạn cần cung cấp một số!"
+
+#: psynet/page.py
+#, fuzzy
+msgctxt "status"
+msgid "Working..."
+msgstr "Đang làm việc..."
 
 #: psynet/prescreen/__init__.py
 #, fuzzy
@@ -745,213 +732,390 @@ msgid "The test will start on the next page."
 msgstr "Bài kiểm tra sẽ bắt đầu ở trang tiếp theo."
 
 #: psynet/recruiters.py
-#, fuzzy
-msgctxt "recruiter_communication"
-msgid "Communicating with the recruiter..."
-msgstr "Đang giao tiếp với nhà tuyển dụng..."
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error"
+msgid ""
+"If you need to contact the researcher about this error, write to {EMAIL} and"
+" quote reference code {REFERENCE_CODE}."
+msgstr ""
+"Nếu bạn cần liên hệ với nhà nghiên cứu về lỗi này, hãy viết thư đến {EMAIL} "
+"và trích dẫn mã tham chiếu {REFERENCE_CODE}."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error"
+msgid ""
+"If you need to contact the researcher about this error, write to {EMAIL}."
+msgstr ""
+"Nếu bạn cần liên hệ với nhà nghiên cứu về lỗi này, hãy viết thư đến {EMAIL}."
 
 #: psynet/recruiters.py
 #, fuzzy
-msgctxt "screen_out_successful"
+msgctxt "early_exit_error"
+msgid "You may close this page."
+msgstr "Bạn có thể đóng trang này."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error"
+msgid "Unfortunately an error occurred and we cannot continue."
+msgstr "Rất tiếc, đã xảy ra lỗi và chúng tôi không thể tiếp tục."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error"
+msgid "However, your responses so far have been saved."
+msgstr "Tuy nhiên, các câu trả lời của bạn cho đến nay đã được lưu lại."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
 msgid ""
-"You have been credited for the time spent on the experiment. Because you "
-"could not progress to the main experiment your submission will appear as "
-"'screened out' in Prolific. You can now close this browser window."
+"If you leave now, you will not be able to continue later. Your responses so "
+"far will still be saved."
 msgstr ""
-"Bạn đã được ghi nhận thời gian tham gia thí nghiệm. Vì bạn không thể tiến "
-"tới thí nghiệm chính, bài nộp của bạn sẽ xuất hiện là 'bị loại' trên "
-"Prolific. Bạn có thể đóng cửa sổ trình duyệt này."
+"Nếu bạn rời đi bây giờ, bạn sẽ không thể tiếp tục sau này. Các câu trả lời "
+"của bạn cho đến nay vẫn sẽ được lưu lại."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit"
+msgid ""
+"You have earned {EARNED} so far. You need at least {THRESHOLD} to leave with"
+" payment. If you leave without payment, you will not be able to continue "
+"later. Your responses so far will still be saved."
+msgstr ""
+"Bạn đã kiếm được {EARNED} cho đến nay. Bạn cần ít nhất {THRESHOLD} để rời đi"
+" với thanh toán. Nếu bạn rời đi mà không có thanh toán, bạn sẽ không thể "
+"tiếp tục sau này. Các câu trả lời của bạn cho đến nay vẫn sẽ được lưu lại."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
+msgid "Leave without payment"
+msgstr "Rời đi mà không có thanh toán"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
+msgid "Leave"
+msgstr "Rời đi"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
+msgid "Leave without finishing?"
+msgstr "Rời đi mà không hoàn thành?"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
+msgid "Cancel"
+msgstr "Hủy bỏ"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_unpaid"
+msgid "You may close this page."
+msgstr "Bạn có thể đóng trang này."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED}. Because you have earned {EARNED} so "
+"far, a further {REMAINDER} will be paid as a bonus. Your responses so far "
+"will still be saved."
+msgstr ""
+"Nếu bạn rời đi bây giờ, bạn sẽ không thể tiếp tục sau này. Bạn sẽ nhận được "
+"một khoản thanh toán cố định 'screen-out' là {FIXED}. Vì bạn đã kiếm được "
+"{EARNED} cho đến nay, một khoản {REMAINDER} sẽ được trả như một khoản "
+"thưởng. Các câu trả lời của bạn cho đến nay vẫn sẽ được lưu lại."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED}. Your responses so far will still be "
+"saved."
+msgstr ""
+"Nếu bạn rời đi bây giờ, bạn sẽ không thể tiếp tục sau này. Bạn sẽ nhận được "
+"một khoản thanh toán cố định 'screen-out' là {FIXED}. Các câu trả lời của "
+"bạn cho đến nay vẫn sẽ được lưu lại."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED} plus a performance bonus of "
+"{PERFORMANCE}. You will not be paid for additional time. Your responses so "
+"far will still be saved."
+msgstr ""
+"Nếu bạn rời đi bây giờ, bạn sẽ không thể tiếp tục sau này. Bạn sẽ nhận được "
+"một khoản thanh toán cố định 'screen-out' là {FIXED} cộng với một khoản "
+"thưởng hiệu suất là {PERFORMANCE}. Bạn sẽ không được trả tiền cho thời gian "
+"bổ sung. Các câu trả lời của bạn cho đến nay vẫn sẽ được lưu lại."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED}. You will not be paid for additional "
+"time. Your responses so far will still be saved."
+msgstr ""
+"Nếu bạn rời đi bây giờ, bạn sẽ không thể tiếp tục sau này. Bạn sẽ nhận được "
+"một khoản thanh toán cố định 'screen-out' là {FIXED}. Bạn sẽ không được trả "
+"tiền cho thời gian bổ sung. Các câu trả lời của bạn cho đến nay vẫn sẽ được "
+"lưu lại."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will need to "
+"return your Prolific submission. You will then be paid {EARNED} as a bonus "
+"for the work you have completed so far. Your responses so far will still be "
+"saved."
+msgstr ""
+"Nếu bạn rời đi bây giờ, bạn sẽ không thể tiếp tục sau này. Bạn sẽ cần trả "
+"lại bài nộp Prolific của mình. Sau đó, bạn sẽ được trả {EARNED} như một "
+"khoản thưởng cho công việc bạn đã hoàn thành cho đến nay. Các câu trả lời "
+"của bạn cho đến nay vẫn sẽ được lưu lại."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "prolific_error"
+msgid "If you had already started, message the researcher through Prolific."
+msgstr "Nếu bạn đã bắt đầu, hãy nhắn tin cho nhà nghiên cứu qua Prolific."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "prolific_error"
+msgid ""
+"Please message the researcher through Prolific and describe what led to this"
+" error."
+msgstr ""
+"Vui lòng nhắn tin cho nhà nghiên cứu qua Prolific và mô tả điều gì đã dẫn "
+"đến lỗi này."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We will pay you for your progress so far: you will receive {FIXED} through "
+"Prolific."
+msgstr ""
+"Chúng tôi sẽ trả tiền cho bạn cho tiến độ của bạn cho đến nay: bạn sẽ nhận "
+"được {FIXED} qua Prolific."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We will also pay {BONUS} as a bonus, bringing your total payment to {TOTAL}."
+msgstr ""
+"Chúng tôi cũng sẽ trả {BONUS} như một khoản thưởng, nâng tổng số tiền thanh "
+"toán của bạn lên {TOTAL}."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid "We will also pay your {BONUS} performance bonus."
+msgstr "Chúng tôi cũng sẽ trả khoản thưởng hiệu suất {BONUS} của bạn."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Any additional amount you earned will be paid as a bonus."
+msgstr ""
+"Bất kỳ số tiền bổ sung nào bạn kiếm được sẽ được trả như một khoản thưởng."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Select Submit to Prolific to complete your submission."
+msgstr "Chọn Gửi đến Prolific để hoàn thành bài nộp của bạn."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Submit to Prolific"
+msgstr "Gửi đến Prolific"
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid ""
+"To receive {EARNED} for the work you completed, you will need to return your"
+" submission on Prolific."
+msgstr ""
+"Để nhận được {EARNED} cho công việc bạn đã hoàn thành, bạn sẽ cần trả lại "
+"bài nộp của mình trên Prolific."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid ""
+"To receive payment for the work you completed, you will need to return your "
+"submission on Prolific."
+msgstr ""
+"Để nhận được thanh toán cho công việc bạn đã hoàn thành, bạn sẽ cần trả lại "
+"bài nộp của mình trên Prolific."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Select Continue to payment instructions to complete these steps."
+msgstr "Chọn Tiếp tục đến hướng dẫn thanh toán để hoàn thành các bước này."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We could not open the payment instructions. Please try again. If this keeps "
+"happening, message the researcher through Prolific."
+msgstr ""
+"Chúng tôi không thể mở hướng dẫn thanh toán. Vui lòng thử lại. Nếu điều này "
+"tiếp tục xảy ra, hãy nhắn tin cho nhà nghiên cứu qua Prolific."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Continue to payment instructions"
+msgstr "Tiếp tục đến hướng dẫn thanh toán"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_unpaid_prolific"
+msgid ""
+"Your responses so far have been saved. Please return your submission on "
+"Prolific. You will not receive payment. You may close this page."
+msgstr ""
+"Phản hồi của bạn cho đến nay đã được lưu. Vui lòng trả lại bài nộp của bạn "
+"trên Prolific. Bạn sẽ không nhận được thanh toán. Bạn có thể đóng trang này."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Your submission has been sent to Prolific."
+msgstr "Bài nộp của bạn đã được gửi đến Prolific."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "You may close this page."
+msgstr "Bạn có thể đóng trang này."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We could not send your submission to Prolific. Please try again. If this "
+"keeps happening, message the researcher through Prolific."
+msgstr ""
+"Chúng tôi không thể gửi bài nộp của bạn đến Prolific. Vui lòng thử lại. Nếu "
+"điều này tiếp tục xảy ra, hãy nhắn tin cho nhà nghiên cứu qua Prolific."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "return_assignment_instructions"
 msgid ""
 "Please return your submission via the Prolific interface and click Next. We "
-"will then automatically pay you a bonus for your time."
+"will then automatically pay you a bonus."
 msgstr ""
 "Vui lòng trả lại bài nộp của bạn qua giao diện Prolific và nhấp vào Tiếp "
-"theo. Chúng tôi sẽ tự động trả cho bạn một khoản tiền thưởng cho thời gian "
-"của bạn."
+"theo. Sau đó, chúng tôi sẽ tự động trả cho bạn một khoản thưởng."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "return_for_bonus_completed"
 msgid ""
-"That worked! You have been credited for the time spent on the experiment. "
-"Thank you for participating. You can now close this browser window."
+"That worked. You have been credited for the time you spent. Thank you for "
+"taking part. You may close this page."
 msgstr ""
-"Thành công! Bạn đã được ghi nhận thời gian tham gia thí nghiệm. Cảm ơn bạn "
-"đã tham gia. Bạn có thể đóng cửa sổ trình duyệt này."
+"Điều đó đã thành công. Bạn đã được ghi nhận cho thời gian bạn đã dành. Cảm "
+"ơn bạn đã tham gia. Bạn có thể đóng trang này."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "return_for_bonus_payment_failed"
+msgid ""
+"Your return was recorded, but we could not complete the bonus payment "
+"automatically. The researcher has been notified and will arrange payment. "
+"You may close this page."
+msgstr ""
+"Việc trả lại của bạn đã được ghi nhận, nhưng chúng tôi không thể hoàn thành "
+"thanh toán thưởng tự động. Nhà nghiên cứu đã được thông báo và sẽ sắp xếp "
+"thanh toán. Bạn có thể đóng trang này."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "assignment_return_retry"
 msgid ""
-"That didn't work. Are you sure you returned the submission for this study? "
-"Please go to the Prolific interface, make sure you have returned the "
-"submission, then click the 'Next' button."
+"That didn't work. Are you sure you returned the submission? Return it on "
+"Prolific, then click Next."
 msgstr ""
-"Không thành công. Bạn có chắc chắn rằng bạn đã trả lại bài nộp cho nghiên "
-"cứu này không? Vui lòng truy cập giao diện Prolific, đảm bảo rằng bạn đã trả"
-" lại bài nộp, sau đó nhấp vào nút 'Tiếp theo'."
-
-#: psynet/recruiters.py
-#, fuzzy
-msgctxt "return_for_bonus_enabled"
-msgid ""
-"We are sorry that you could not proceed to the main experiment, but we will "
-"still pay you for your time spent so far. To receive this payment, we need "
-"you to return this assignment via the Prolific interface, then click the "
-"'Next' button below."
-msgstr ""
-"Chúng tôi rất tiếc rằng bạn không thể tiến tới thí nghiệm chính, nhưng chúng"
-" tôi vẫn sẽ trả cho bạn thời gian đã tham gia. Để nhận khoản thanh toán này,"
-" chúng tôi cần bạn trả lại bài nộp này qua giao diện Prolific, sau đó nhấp "
-"vào nút 'Tiếp theo' bên dưới."
+"Điều đó không thành công. Bạn có chắc chắn rằng bạn đã trả lại bài nộp "
+"không? Trả lại nó trên Prolific, sau đó nhấp vào Tiếp theo."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "screen_out_return_and_message_experimenter"
 msgid ""
-"We are sorry that you could not proceed to the main experiment. To receive "
-"this payment for your time, please return your assignment in Prolific and "
-"send a message to the experimenter via the Prolific messaging system. The "
-"experimenter will review your case and arrange payment if appropriate. Thank"
-" you for your understanding. You can now close this browser window."
+"To receive payment for the time you spent, return your submission on "
+"Prolific and message the researcher there. They will review your case and "
+"arrange payment if it is due. You may close this page."
 msgstr ""
-"Chúng tôi rất tiếc rằng bạn không thể tiến tới thí nghiệm chính. Để nhận "
-"khoản thanh toán này cho thời gian của bạn, vui lòng trả lại bài nộp của bạn"
-" trong Prolific và gửi tin nhắn cho người thực hiện thí nghiệm qua hệ thống "
-"nhắn tin của Prolific. Người thực hiện thí nghiệm sẽ xem xét trường hợp của "
-"bạn và sắp xếp thanh toán nếu phù hợp. Cảm ơn bạn đã thông cảm. Bạn có thể "
-"đóng cửa sổ trình duyệt này."
+"Để nhận thanh toán cho thời gian bạn đã dành, hãy trả lại bài nộp của bạn "
+"trên Prolific và nhắn tin cho nhà nghiên cứu ở đó. Họ sẽ xem xét trường hợp "
+"của bạn và sắp xếp thanh toán nếu cần. Bạn có thể đóng trang này."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_lucid"
+msgid ""
+"If you leave now, you will not be able to continue later, and you will "
+"return to your panel provider. This session will not issue a payment; any "
+"payment depends on your panel provider's rules. Your responses so far will "
+"still be saved."
+msgstr ""
+"Nếu bạn rời đi bây giờ, bạn sẽ không thể tiếp tục sau này và bạn sẽ trở về "
+"nhà cung cấp bảng điều khiển của mình. Phiên này sẽ không phát hành thanh "
+"toán; bất kỳ khoản thanh toán nào phụ thuộc vào quy tắc của nhà cung cấp "
+"bảng điều khiển của bạn. Phản hồi của bạn cho đến nay vẫn sẽ được lưu."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "lucid_error"
-msgid "Redirecting to Lucid Marketplace..."
-msgstr "Đang chuyển hướng đến Lucid Marketplace..."
+msgid "We will return you to your panel in a few seconds."
+msgstr "Chúng tôi sẽ đưa bạn trở lại bảng điều khiển của bạn trong vài giây."
 
-#: psynet/templates/abort_not_possible.html
+#: psynet/recruiters.py
 #, fuzzy
-msgctxt "abort_possible"
-msgid "Aborting not possible."
-msgstr "Không thể hủy bỏ."
+msgctxt "early_exit_error_lucid"
+msgid "We will return you to your panel in a few seconds."
+msgstr "Chúng tôi sẽ đưa bạn trở lại bảng điều khiển của bạn trong vài giây."
 
-#: psynet/templates/abort_not_possible.html
+#: psynet/recruiters.py
 #, fuzzy
-msgctxt "abort_possible"
+msgctxt "early_exit_error_lucid"
 msgid ""
-"Aborting the experiment is not possible as the experimenter does not allow "
-"it at this time!"
+"We could not return you to your panel. Please try again. If this keeps "
+"happening, contact your panel provider."
 msgstr ""
-"Không thể hủy bỏ thí nghiệm vì người thực hiện thí nghiệm không cho phép vào"
-" lúc này!"
+"Chúng tôi không thể đưa bạn trở lại bảng điều khiển của bạn. Vui lòng thử "
+"lại. Nếu điều này tiếp tục xảy ra, hãy liên hệ với nhà cung cấp bảng điều "
+"khiển của bạn."
 
-#: psynet/templates/abort_not_possible.html
-#, fuzzy, python-format
-msgid ""
-"You have to accumulate <strong>at least "
-"%(CURRENCY)s%(MIN_ACCUMULATED_REWARD_FOR_ABORT)s</strong> of reward to be "
-"able to be compensated."
-msgstr ""
-"Bạn phải tích lũy <strong>ít nhất "
-"%(CURRENCY)s%(MIN_ACCUMULATED_REWARD_FOR_ABORT)s</strong> phần thưởng để có "
-"thể được bồi thường."
-
-#: psynet/templates/abort_not_possible.html
+#: psynet/recruiters.py
 #, fuzzy
-msgctxt "abort_possible"
-msgid "See below information on your currently accumulated reward."
-msgstr "Xem thông tin bên dưới về phần thưởng bạn đã tích lũy được."
-
-#: psynet/templates/abort_not_possible.html
-#: psynet/templates/abort_possible.html psynet/templates/psynet_error.html
-#, fuzzy
-msgid "Assignment ID"
-msgstr "Assignment ID"
-
-#: psynet/templates/abort_not_possible.html
-#: psynet/templates/abort_possible.html psynet/templates/psynet_error.html
-#, fuzzy
-msgid "HIT ID"
-msgstr "HIT ID"
-
-#: psynet/templates/abort_not_possible.html
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgid "Accumulated reward"
-msgstr "Phần thưởng tích lũy"
-
-#: psynet/templates/abort_not_possible.html
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgid "Close window"
-msgstr "Đóng cửa sổ"
-
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgctxt "abort_possible"
-msgid "Are you sure you want to abort the experiment?"
-msgstr "Bạn có chắc chắn muốn hủy bỏ thí nghiệm không?"
-
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgctxt "abort_possible"
-msgid ""
-"If you click the Abort button, the experiment will end early, and you will "
-"be automatically paid the compensation you have earned so far."
-msgstr ""
-"Nếu bạn nhấp vào nút Hủy bỏ, thí nghiệm sẽ kết thúc sớm và bạn sẽ tự động "
-"được trả tiền bồi thường mà bạn đã kiếm được cho đến nay."
-
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgctxt "abort_possible"
-msgid "Please only contact us if you have trouble receiving your payment."
-msgstr ""
-"Vui lòng chỉ liên hệ với chúng tôi nếu bạn gặp khó khăn trong việc nhận "
-"thanh toán của mình."
-
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgctxt "abort_possible"
-msgid "See the information below for details of your compensation."
-msgstr "Xem thông tin dưới đây để biết chi tiết về tiền bồi thường của bạn."
-
-#: psynet/templates/abort_possible.html psynet/templates/ad.html
-#: psynet/templates/psynet_error.html
-#, fuzzy
-msgid "Abort experiment"
-msgstr "Hủy thí nghiệm"
-
-#: psynet/templates/ad.html
-#, fuzzy
-msgctxt "ad"
-msgid "Call for participants"
-msgstr "Lời kêu gọi tham gia"
-
-#: psynet/templates/ad.html
-#, fuzzy
-msgctxt "ad"
-msgid "The requirements to participate are as follows"
-msgstr "Các yêu cầu để tham gia như sau"
-
-#: psynet/templates/ad.html
-#, fuzzy
-msgctxt "ad"
-msgid ""
-"Please click the \"Accept HIT\" button on the Amazon site above to begin the"
-" task."
-msgstr ""
-"Vui lòng nhấp vào nút \"Chấp nhận HIT\" trên trang Amazon ở trên để bắt đầu "
-"nhiệm vụ."
-
-#: psynet/templates/ad.html
-#, fuzzy
-msgctxt "ad"
-msgid "Thanks for accepting this HIT."
-msgstr "Cảm ơn bạn đã chấp nhận HIT này."
+msgctxt "early_exit_error_lucid"
+msgid "Return to your panel"
+msgstr "Trở về bảng điều khiển của bạn"
 
 #: psynet/templates/ad.html
 #, fuzzy
@@ -986,11 +1150,6 @@ msgstr "Vui lòng tắt trình chặn cửa sổ bật lên trước khi tiếp 
 msgctxt "ad"
 msgid "Begin Experiment"
 msgstr "Bắt đầu Thí nghiệm"
-
-#: psynet/templates/ad.html psynet/templates/psynet_error.html
-#, fuzzy
-msgid "Click the above button to be compensated in case of an error."
-msgstr "Nhấp vào nút trên để được bồi thường trong trường hợp có lỗi."
 
 #: psynet/templates/consent.html
 #, fuzzy
@@ -2431,8 +2590,42 @@ msgstr "Bằng cách thực hiện nhiệm vụ, bạn đang giúp đỡ khoa h�
 #: psynet/templates/exit_recruiter_lucid.html
 #, fuzzy
 msgctxt "exit_recruiter_lucid"
-msgid "Lucid Survey Submission"
-msgstr "Nộp Khảo Sát Lucid"
+msgid "Returning you to your panel"
+msgstr "Đang đưa bạn trở lại bảng điều khiển của bạn"
+
+#: psynet/templates/exit_recruiter_lucid.html
+#, fuzzy
+msgctxt "exit_recruiter_lucid"
+msgid "Please wait."
+msgstr "Vui lòng đợi."
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html
+#, fuzzy
+msgctxt "exit_recruiter_prolific"
+msgid "Submit to Prolific"
+msgstr "Gửi đến Prolific"
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html
+#, fuzzy
+msgctxt "exit_recruiter_prolific"
+msgid ""
+"Click below to send your submission to Prolific. You will not need to enter "
+"a completion code."
+msgstr ""
+"Nhấn vào bên dưới để gửi bài của bạn đến Prolific. Bạn không cần nhập mã "
+"hoàn thành."
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html
+#, fuzzy
+msgctxt "exit_recruiter_prolific"
+msgid "Please wait."
+msgstr "Vui lòng đợi."
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html
+#, fuzzy
+msgctxt "exit_recruiter_prolific"
+msgid "Try again"
+msgstr "Thử lại"
 
 #: psynet/templates/keyboard.html
 #, fuzzy
@@ -2662,11 +2855,6 @@ msgstr "Tôi đồng ý"
 msgctxt "consent"
 msgid "No, thank you (return task)"
 msgstr "Không, cảm ơn (trở về nhiệm vụ)"
-
-#: psynet/templates/macros/consent.html
-#, fuzzy
-msgid "Scroll up/down to see all text"
-msgstr "Cuộn lên/xuống để xem tất cả văn bản"
 
 #: psynet/templates/macros/consent.html
 #, fuzzy
@@ -2965,6 +3153,12 @@ msgstr "Đặt lại"
 
 #: psynet/templates/macros/control.html
 #, fuzzy
+msgctxt "audio_meter"
+msgid "Microphone level"
+msgstr "Mức micro"
+
+#: psynet/templates/macros/control.html
+#, fuzzy
 msgctxt "audio_meter_calibrate"
 msgid "Sliders"
 msgstr "Thanh trượt"
@@ -3085,50 +3279,117 @@ msgstr "Không tìm thấy video"
 msgid "Image not found"
 msgstr "Không tìm thấy hình ảnh"
 
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Comment stored."
+msgstr "Bình luận đã được lưu."
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Please wait for the page to load."
+msgstr "Vui lòng đợi trang tải."
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Try again in a couple of seconds."
+msgstr "Thử lại sau vài giây."
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline"
+msgid "Reward"
+msgstr "Phần thưởng"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_reward"
+msgid "Reward earned so far"
+msgstr "Phần thưởng kiếm được cho đến nay"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_reward"
+msgid "for time"
+msgstr "cho thời gian"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_reward"
+msgid "for performance"
+msgstr "cho hiệu suất"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline"
+msgid "Comment"
+msgstr "Bình luận"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Leave"
+msgstr "Rời đi"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Leave without finishing."
+msgstr "Rời đi mà không hoàn thành."
+
 #: psynet/templates/psynet_error.html
 #, fuzzy
 msgctxt "error"
-msgid "Error!"
-msgstr "Lỗi!"
+msgid "An error occurred"
+msgstr "Đã xảy ra lỗi"
 
 #: psynet/templates/psynet_error.html
 #, fuzzy
-msgctxt "mturk_error"
-msgid ""
-"You may be able to abort the experiment using the <strong>Abort "
-"experiment</strong> button <strong>on the MTurk ad page</strong>."
-msgstr ""
-"Bạn có thể hủy bỏ thí nghiệm bằng cách sử dụng nút <strong>Hủy bỏ thí "
-"nghiệm</strong> <strong>trên trang quảng cáo MTurk</strong>."
+msgctxt "early_exit_error"
+msgid "Please wait."
+msgstr "Vui lòng đợi."
 
 #: psynet/templates/psynet_error.html
 #, fuzzy
-msgctxt "mturk_error"
-msgid ""
-"Once aborted, there is no need to contact us to receive the compensation; "
-"this should be awarded to you automatically via MTurk a few minutes after."
-msgstr ""
-"Sau khi hủy bỏ, không cần liên hệ với chúng tôi để nhận bồi thường; điều này"
-" sẽ được trao tự động qua MTurk sau vài phút."
+msgctxt "early_exit_error"
+msgid "Try again"
+msgstr "Thử lại"
 
-#: psynet/templates/psynet_error.html
-#, fuzzy, python-format
-msgid ""
-"If this is not the case, please contact us at %(EMAIL)s quoting the "
-"following information:"
-msgstr ""
-"Nếu không phải như vậy, vui lòng liên hệ với chúng tôi tại %(EMAIL)s và "
-"trích dẫn thông tin sau:"
-
-#: psynet/templates/psynet_error.html
+#: psynet/templates/psynet_exit_recruiter.html
 #, fuzzy
-msgid "Error type"
-msgstr "Loại lỗi"
+msgid "Thank you for taking part."
+msgstr "Cảm ơn bạn đã tham gia."
 
-#: psynet/templates/psynet_error.html
+#: psynet/templates/psynet_exit_recruiter.html
 #, fuzzy
-msgid "Worker ID"
-msgstr "Worker ID"
+msgctxt "exit"
+msgid "You chose to leave."
+msgstr "Bạn đã chọn rời đi."
+
+#: psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgid "Thank you for taking part."
+msgstr "Cảm ơn bạn đã tham gia."
+
+#: psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgctxt "exit"
+msgid "You may close this page."
+msgstr "Bạn có thể đóng trang này."
+
+#: psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgctxt "exit"
+msgid "Your responses have been saved. You may close this page."
+msgstr "Phản hồi của bạn đã được lưu. Bạn có thể đóng trang này."
+
+#: psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgctxt "exit"
+msgid "Reference code"
+msgstr "Mã tham chiếu"
 
 #: psynet/templates/start.html
 #, fuzzy
@@ -3192,41 +3453,35 @@ msgctxt "timeline_resume"
 msgid "Resume"
 msgstr "Tiếp tục"
 
-#: psynet/templates/timeline-page.html
-#, fuzzy
-msgctxt "timeline"
-msgid "Reward"
-msgstr "Phần thưởng"
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{REMAINING} of {TOTAL} not ready yet"
+msgstr "{REMAINING} trong số {TOTAL} chưa sẵn sàng"
 
-#: psynet/templates/timeline-page.html
+#: psynet/timeline_hold.py
 #, fuzzy
-msgctxt "timeline"
-msgid "Comment"
-msgstr "Bình luận"
+msgctxt "timeline_hold"
+msgid "Your partner is ready."
+msgstr "Đối tác của bạn đã sẵn sàng."
 
-#: psynet/templates/timeline-page.html
-#, fuzzy
-msgctxt "timeline_problem"
-msgid "Terminate the experiment early"
-msgstr "Kết thúc thí nghiệm sớm"
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{ARRIVED}/{TOTAL} of your group are ready."
+msgstr "{ARRIVED}/{TOTAL} trong nhóm của bạn đã sẵn sàng."
 
-#: psynet/templates/timeline-page.html
+#: psynet/timeline_hold.py
 #, fuzzy
-msgctxt "timeline_problem"
-msgid "Comment stored."
-msgstr "Bình luận đã được lưu."
+msgctxt "timeline_hold"
+msgid "Waiting for other participants…"
+msgstr "Đang chờ những người tham gia khác…"
 
-#: psynet/templates/timeline-page.html
+#: psynet/timeline_hold.py
 #, fuzzy
-msgctxt "timeline_problem"
-msgid "Please wait for the page to load."
-msgstr "Vui lòng đợi trang tải."
-
-#: psynet/templates/timeline-page.html
-#, fuzzy
-msgctxt "timeline_problem"
-msgid "Try again in a couple of seconds."
-msgstr "Thử lại sau vài giây."
+msgctxt "timeline_hold"
+msgid "Please wait, the experiment should continue shortly..."
+msgstr "Vui lòng đợi, thí nghiệm sẽ tiếp tục trong giây lát..."
 
 #: psynet/translation/countries.py
 #, fuzzy

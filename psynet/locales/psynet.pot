@@ -346,74 +346,85 @@ msgctxt "income"
 msgid "150,000 {CURRENCY} or more"
 msgstr ""
 
-#: psynet/demography/general.py:780
+#: psynet/demography/general.py:782
 msgctxt "experiment-feedback"
 msgid "Did you like the experiment?"
 msgstr ""
 
-#: psynet/demography/general.py:801
+#: psynet/demography/general.py:803
 msgctxt "experiment-feedback"
 msgid "Did you find the experiment difficult?"
 msgstr ""
 
-#: psynet/demography/general.py:824
+#: psynet/demography/general.py:826
 msgctxt "experiment-feedback"
 msgid "Did you encounter any technical problems during the experiment?"
 msgstr ""
 
-#: psynet/demography/general.py:829
+#: psynet/demography/general.py:831
 msgctxt "experiment-feedback"
 msgid "If so, please provide a few words describing the problem."
 msgstr ""
 
-#: psynet/end.py:60
+#: psynet/end.py:91
 msgid "Finish"
 msgstr ""
 
-#: psynet/end.py:93
+#: psynet/end.py:127
 #, python-brace-format
 msgctxt "final-page-rewards"
 msgid ""
 "You will receive a reward of <strong>{CURRENCY}{TIME_REWARD}</strong> for "
-"the time you spent on the experiment. You have also been awarded a "
-"performance reward of <strong>{CURRENCY}{PERFORMANCE_REWARD}</strong>! "
+"the time you spent. "
 msgstr ""
 
-#: psynet/end.py:119
+#: psynet/end.py:136
+#, python-brace-format
+msgctxt "final-page-performance-reward"
+msgid ""
+"You have also been awarded a performance reward of "
+"<strong>{CURRENCY}{PERFORMANCE_REWARD}</strong>. "
+msgstr ""
+
+#: psynet/end.py:149
+msgid "Click Finish to return to your panel."
+msgstr ""
+
+#: psynet/end.py:150
+msgid "Click Finish to finalize the session."
+msgstr ""
+
+#: psynet/end.py:168
 msgctxt "final_page_successful"
-msgid "That's the end of the experiment!"
+msgid "That's the end!"
 msgstr ""
 
-#: psynet/end.py:124 psynet/end.py:182
+#: psynet/end.py:173 psynet/end.py:312
 msgid "Thank you for taking part."
 msgstr ""
 
-#: psynet/end.py:130 psynet/end.py:188
-msgid "Please click \"Finish\" to finalize the session."
-msgstr ""
-
-#: psynet/end.py:165
+#: psynet/end.py:299
 msgctxt "final_page_unsuccessful"
-msgid "Unfortunately the experiment must end early."
+msgid "Unfortunately we have to stop early."
 msgstr ""
 
-#: psynet/end.py:173
+#: psynet/end.py:307
 msgctxt "final_page_unsuccessful"
 msgid "However, you will still be paid for the time you spent already."
 msgstr ""
 
-#: psynet/end.py:180 psynet/end.py:217
-msgid "You will be redirected."
+#: psynet/end.py:341
+msgctxt "final_page_rejected_consent"
+msgid "You chose not to continue."
 msgstr ""
 
-#: psynet/end.py:212
+#: psynet/end.py:342
 msgctxt "final_page_rejected_consent"
-msgid "Consent was rejected."
+msgid "You may close this page."
 msgstr ""
 
-#: psynet/end.py:213
-msgctxt "final_page_rejected_consent"
-msgid "End of experiment."
+#: psynet/end.py:346
+msgid "We will return you to your panel in a few seconds."
 msgstr ""
 
 #: psynet/equipment.py:28
@@ -422,443 +433,567 @@ msgid ""
 "grant it."
 msgstr ""
 
-#: psynet/experiment.py:1464
-msgctxt "error-msg"
-msgid "There has been an error and so you are unable to continue, sorry!"
+#: psynet/experiment.py:3339
+msgctxt "timeline_problem"
+msgid "This session has already ended. Please reload the page."
 msgstr ""
 
-#: psynet/experiment.py:1530
-#, python-brace-format
-msgctxt "mturk_error"
-msgid ""
-"To enquire about compensation, please contact the researcher at {EMAIL} and "
-"describe what led to this error."
-msgstr ""
-
-#: psynet/experiment.py:1534
-msgctxt "mturk_error"
-msgid "Please also quote the following information:"
-msgstr ""
-
-#: psynet/experiment.py:1557
-msgctxt "prolific_error"
-msgid "Don't worry, your progress has been recorded."
-msgstr ""
-
-#: psynet/experiment.py:1561
-msgctxt "prolific_error"
-msgid ""
-"To enquire about compensation, please send the researcher a message via the "
-"Prolific website and describe what led to your error."
-msgstr ""
-
-#: psynet/experiment.py:2408
+#: psynet/experiment.py:3372 psynet/experiment.py:6636
 msgctxt "timeline_problem"
 msgid ""
 "Synchronization problem detected. Are you running the same experiment in "
 "multiple browser tabs? Please close all other tabs and refresh the page."
 msgstr ""
 
-#: psynet/modular_page.py:170
+#: psynet/experiment.py:3596
+msgid "The experiment is temporarily busy. Please try again."
+msgstr ""
+
+#: psynet/modular_page.py:217
 msgid "Play"
 msgstr ""
 
-#: psynet/modular_page.py:171
+#: psynet/modular_page.py:218
 msgid "Stop"
 msgstr ""
 
-#: psynet/modular_page.py:172
+#: psynet/modular_page.py:219
 msgid "Loop"
 msgstr ""
 
-#: psynet/modular_page.py:1012
+#: psynet/modular_page.py:1061
 msgctxt "validation"
 msgid "You need to check at least one answer!"
 msgstr ""
 
-#: psynet/modular_page.py:1092 psynet/modular_page.py:1472
+#: psynet/modular_page.py:1141 psynet/modular_page.py:1521
 msgctxt "validation"
 msgid "You need to select an answer!"
 msgstr ""
 
-#: psynet/modular_page.py:1522
+#: psynet/modular_page.py:1571
 msgctxt "validation"
 msgid "You need to provide a number!"
 msgstr ""
 
-#: psynet/prescreen/__init__.py:1237
+#: psynet/page.py:633
+msgctxt "status"
+msgid "Working..."
+msgstr ""
+
+#: psynet/prescreen/__init__.py:1239
 msgctxt "color_blindness_test"
 msgid "Write down the number in the image."
 msgstr ""
 
-#: psynet/prescreen/__init__.py:1318
+#: psynet/prescreen/__init__.py:1321
 msgctxt "color_blindness_test_intro_1"
 msgid ""
 "We will now perform a quick test to check your ability to perceive colors."
 msgstr ""
 
-#: psynet/prescreen/__init__.py:1322
+#: psynet/prescreen/__init__.py:1325
 msgctxt "color_blindness_test_intro_1"
 msgid ""
 "In each trial, you will be presented with an image that contains a number."
 msgstr ""
 
-#: psynet/prescreen/__init__.py:1330
+#: psynet/prescreen/__init__.py:1333
 #, python-brace-format
 msgctxt "color_blindness_test_intro_1"
 msgid "This image will disappear after {HIDE_AFTER} seconds."
 msgstr ""
 
-#: psynet/prescreen/__init__.py:1336
+#: psynet/prescreen/__init__.py:1339
 msgctxt "color_blindness_test_intro_1"
 msgid "You must enter the number that you see into the text box."
 msgstr ""
 
-#: psynet/prescreen/__init__.py:1765
+#: psynet/prescreen/__init__.py:1766
 msgctxt "Beep-headphone-test"
 msgid "Which sound is different from the other two: 1, 2, or 3?"
 msgstr ""
 
-#: psynet/prescreen/__init__.py:1801
+#: psynet/prescreen/__init__.py:1802
 msgid ""
 "Your task will be to judge <strong>which sound is the odd one out</strong>."
 msgstr ""
 
-#: psynet/prescreen/vocabtest.py:344
+#: psynet/prescreen/vocabtest.py:361
 msgid "Your score was"
 msgstr ""
 
-#: psynet/prescreen/vocabtest.py:345
+#: psynet/prescreen/vocabtest.py:362
 msgid "Press the button to continue."
 msgstr ""
 
-#: psynet/prescreen/vocabtest.py:774
+#: psynet/prescreen/vocabtest.py:788
 msgid "We will perform a test to check your language abilities."
 msgstr ""
 
-#: psynet/prescreen/vocabtest.py:775
+#: psynet/prescreen/vocabtest.py:789
 msgid "In each trial, you will see a string of characters."
 msgstr ""
 
-#: psynet/prescreen/vocabtest.py:776
+#: psynet/prescreen/vocabtest.py:790
 msgid "The string will automatically disappear."
 msgstr ""
 
-#: psynet/prescreen/vocabtest.py:778
+#: psynet/prescreen/vocabtest.py:792
 #, python-brace-format
 msgid ""
 "Your task is to decide whether this is an existing word in {LANGUAGE_NAME} "
 "or not."
 msgstr ""
 
-#: psynet/prescreen/vocabtest.py:795
+#: psynet/prescreen/vocabtest.py:809
 #, python-brace-format
 msgid ""
 "If you don’t know the exact meaning of the word, but you are certain that it"
 " exists in {LANGUAGE_NAME}, you should mark the it as a real word."
 msgstr ""
 
-#: psynet/prescreen/vocabtest.py:798
+#: psynet/prescreen/vocabtest.py:812
 #, python-brace-format
 msgid ""
 "If you are not sure whether the word exists in {LANGUAGE_NAME}, you should "
 "mark it as a fake word."
 msgstr ""
 
-#: psynet/prescreen/vocabtest.py:802
+#: psynet/prescreen/vocabtest.py:816
 msgid "In this experiment, you might find a mix between spelling variants."
 msgstr ""
 
-#: psynet/prescreen/vocabtest.py:805
+#: psynet/prescreen/vocabtest.py:819
 msgid "You should not pay attention to subtle spelling differences."
 msgstr ""
 
-#: psynet/prescreen/vocabtest.py:808
+#: psynet/prescreen/vocabtest.py:822
 msgid "The words are presented in either only uppercase or lowercase letters."
 msgstr ""
 
-#: psynet/prescreen/vocabtest.py:810
+#: psynet/prescreen/vocabtest.py:824
 msgid "You can ignore the case of the word."
 msgstr ""
 
-#: psynet/prescreen/vocabtest.py:821
+#: psynet/prescreen/vocabtest.py:835
 msgid "To do the task quickly, you should use the keys on your keyboard."
 msgstr ""
 
-#: psynet/prescreen/vocabtest.py:823
+#: psynet/prescreen/vocabtest.py:837
 msgid "You can use the following keys:"
 msgstr ""
 
-#: psynet/prescreen/vocabtest.py:826
+#: psynet/prescreen/vocabtest.py:840
 msgid "Press <kbd>A</kbd> if the presented word is <strong>real</strong>"
 msgstr ""
 
-#: psynet/prescreen/vocabtest.py:829
+#: psynet/prescreen/vocabtest.py:843
 msgid "Press <kbd>L</kbd> if the presented word is <strong>fake</strong>"
 msgstr ""
 
-#: psynet/prescreen/vocabtest.py:833
+#: psynet/prescreen/vocabtest.py:847
 msgid "Familiarize yourself with the two keys on your keyboard."
 msgstr ""
 
-#: psynet/prescreen/vocabtest.py:835
+#: psynet/prescreen/vocabtest.py:849
 msgid "If you press them, they will light up in the keyboard on the right."
 msgstr ""
 
-#: psynet/prescreen/vocabtest.py:840
+#: psynet/prescreen/vocabtest.py:854
 msgid ""
 "You need to press both keys at least once to progress to the next page."
 msgstr ""
 
-#: psynet/prescreen/vocabtest.py:845
+#: psynet/prescreen/vocabtest.py:859
 msgid "In case you forget the keys, they will be printed on every page."
 msgstr ""
 
-#: psynet/prescreen/vocabtest.py:856
+#: psynet/prescreen/vocabtest.py:870
 msgid "The test will start on the next page."
 msgstr ""
 
-#: psynet/recruiters.py:76
-msgctxt "recruiter_communication"
-msgid "Communicating with the recruiter..."
+#: psynet/recruiters.py:350
+#, python-brace-format
+msgctxt "early_exit_error"
+msgid ""
+"If you need to contact the researcher about this error, write to {EMAIL} and"
+" quote reference code {REFERENCE_CODE}."
 msgstr ""
 
-#: psynet/recruiters.py:133
+#: psynet/recruiters.py:359
+#, python-brace-format
+msgctxt "early_exit_error"
+msgid ""
+"If you need to contact the researcher about this error, write to {EMAIL}."
+msgstr ""
+
+#: psynet/recruiters.py:369
+msgctxt "early_exit_error"
+msgid "You may close this page."
+msgstr ""
+
+#: psynet/recruiters.py:381
+msgctxt "early_exit_error"
+msgid "Unfortunately an error occurred and we cannot continue."
+msgstr ""
+
+#: psynet/recruiters.py:388
+msgctxt "early_exit_error"
+msgid "However, your responses so far have been saved."
+msgstr ""
+
+#: psynet/recruiters.py:509
+msgctxt "early_exit"
+msgid ""
+"If you leave now, you will not be able to continue later. Your responses so "
+"far will still be saved."
+msgstr ""
+
+#: psynet/recruiters.py:533
+#, python-brace-format
+msgctxt "early_exit"
+msgid ""
+"You have earned {EARNED} so far. You need at least {THRESHOLD} to leave with"
+" payment. If you leave without payment, you will not be able to continue "
+"later. Your responses so far will still be saved."
+msgstr ""
+
+#: psynet/recruiters.py:560
+msgctxt "early_exit"
+msgid "Leave without payment"
+msgstr ""
+
+#: psynet/recruiters.py:562
+msgctxt "early_exit"
+msgid "Leave"
+msgstr ""
+
+#: psynet/recruiters.py:564
+msgctxt "early_exit"
+msgid "Leave without finishing?"
+msgstr ""
+
+#: psynet/recruiters.py:567
+msgctxt "early_exit"
+msgid "Cancel"
+msgstr ""
+
+#: psynet/recruiters.py:588
+msgctxt "early_exit_unpaid"
+msgid "You may close this page."
+msgstr ""
+
+#: psynet/recruiters.py:885
+#, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED}. Because you have earned {EARNED} so "
+"far, a further {REMAINDER} will be paid as a bonus. Your responses so far "
+"will still be saved."
+msgstr ""
+
+#: psynet/recruiters.py:898
+#, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED}. Your responses so far will still be "
+"saved."
+msgstr ""
+
+#: psynet/recruiters.py:906
+#, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED} plus a performance bonus of "
+"{PERFORMANCE}. You will not be paid for additional time. Your responses so "
+"far will still be saved."
+msgstr ""
+
+#: psynet/recruiters.py:915
+#, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED}. You will not be paid for additional "
+"time. Your responses so far will still be saved."
+msgstr ""
+
+#: psynet/recruiters.py:923
+#, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will need to "
+"return your Prolific submission. You will then be paid {EARNED} as a bonus "
+"for the work you have completed so far. Your responses so far will still be "
+"saved."
+msgstr ""
+
+#: psynet/recruiters.py:983
+msgctxt "prolific_error"
+msgid "If you had already started, message the researcher through Prolific."
+msgstr ""
+
+#: psynet/recruiters.py:994
+msgctxt "prolific_error"
+msgid ""
+"Please message the researcher through Prolific and describe what led to this"
+" error."
+msgstr ""
+
+#: psynet/recruiters.py:1004
+#, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We will pay you for your progress so far: you will receive {FIXED} through "
+"Prolific."
+msgstr ""
+
+#: psynet/recruiters.py:1019
+#, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We will also pay {BONUS} as a bonus, bringing your total payment to {TOTAL}."
+msgstr ""
+
+#: psynet/recruiters.py:1029
+#, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid "We will also pay your {BONUS} performance bonus."
+msgstr ""
+
+#: psynet/recruiters.py:1037
+msgctxt "early_exit_error_prolific"
+msgid "Any additional amount you earned will be paid as a bonus."
+msgstr ""
+
+#: psynet/recruiters.py:1048
+msgctxt "early_exit_error_prolific"
+msgid "Select Submit to Prolific to complete your submission."
+msgstr ""
+
+#: psynet/recruiters.py:1051
+msgctxt "early_exit_error_prolific"
+msgid "Submit to Prolific"
+msgstr ""
+
+#: psynet/recruiters.py:1063
+#, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid ""
+"To receive {EARNED} for the work you completed, you will need to return your"
+" submission on Prolific."
+msgstr ""
+
+#: psynet/recruiters.py:1071
+msgctxt "early_exit_error_prolific"
+msgid ""
+"To receive payment for the work you completed, you will need to return your "
+"submission on Prolific."
+msgstr ""
+
+#: psynet/recruiters.py:1076
+msgctxt "early_exit_error_prolific"
+msgid "Select Continue to payment instructions to complete these steps."
+msgstr ""
+
+#: psynet/recruiters.py:1086
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We could not open the payment instructions. Please try again. If this keeps "
+"happening, message the researcher through Prolific."
+msgstr ""
+
+#: psynet/recruiters.py:1092
+msgctxt "early_exit_error_prolific"
+msgid "Continue to payment instructions"
+msgstr ""
+
+#: psynet/recruiters.py:1107
+msgctxt "early_exit_unpaid_prolific"
+msgid ""
+"Your responses so far have been saved. Please return your submission on "
+"Prolific. You will not receive payment. You may close this page."
+msgstr ""
+
+#: psynet/recruiters.py:1390
+msgctxt "early_exit_error_prolific"
+msgid "Your submission has been sent to Prolific."
+msgstr ""
+
+#: psynet/recruiters.py:1394
+msgctxt "early_exit_error_prolific"
+msgid "You may close this page."
+msgstr ""
+
+#: psynet/recruiters.py:1403
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We could not send your submission to Prolific. Please try again. If this "
+"keeps happening, message the researcher through Prolific."
+msgstr ""
+
+#: psynet/recruiters.py:1760
 msgctxt "return_assignment_instructions"
 msgid ""
 "Please return your submission via the Prolific interface and click Next. We "
-"will then automatically pay you a bonus for your time."
+"will then automatically pay you a bonus."
 msgstr ""
 
-#: psynet/recruiters.py:158
+#: psynet/recruiters.py:1788
 msgctxt "return_for_bonus_completed"
 msgid ""
-"That worked! You have been credited for the time spent on the experiment. "
-"Thank you for participating. You can now close this browser window."
+"That worked. You have been credited for the time you spent. Thank you for "
+"taking part. You may close this page."
 msgstr ""
 
-#: psynet/recruiters.py:168
+#: psynet/recruiters.py:1797
+msgctxt "return_for_bonus_payment_failed"
+msgid ""
+"Your return was recorded, but we could not complete the bonus payment "
+"automatically. The researcher has been notified and will arrange payment. "
+"You may close this page."
+msgstr ""
+
+#: psynet/recruiters.py:1809
 msgctxt "assignment_return_retry"
 msgid ""
-"That didn't work. Are you sure you returned the submission for this study? "
-"Please go to the Prolific interface, make sure you have returned the "
-"submission, then click the 'Next' button."
+"That didn't work. Are you sure you returned the submission? Return it on "
+"Prolific, then click Next."
 msgstr ""
 
-#: psynet/recruiters.py:194
-msgctxt "return_for_bonus_enabled"
-msgid ""
-"We are sorry that you could not proceed to the main experiment, but we will "
-"still pay you for your time spent so far. To receive this payment, we need "
-"you to return this assignment via the Prolific interface, then click the "
-"'Next' button below."
-msgstr ""
-
-#: psynet/recruiters.py:213
+#: psynet/recruiters.py:1833
 msgctxt "screen_out_return_and_message_experimenter"
 msgid ""
-"We are sorry that you could not proceed to the main experiment. To receive "
-"this payment for your time, please return your assignment in Prolific and "
-"send a message to the experimenter via the Prolific messaging system. The "
-"experimenter will review your case and arrange payment if appropriate. Thank"
-" you for your understanding. You can now close this browser window."
+"To receive payment for the time you spent, return your submission on "
+"Prolific and message the researcher there. They will review your case and "
+"arrange payment if it is due. You may close this page."
 msgstr ""
 
-#: psynet/recruiters.py:1207
+#: psynet/recruiters.py:3182
+msgctxt "early_exit_lucid"
+msgid ""
+"If you leave now, you will not be able to continue later, and you will "
+"return to your panel provider. This session will not issue a payment; any "
+"payment depends on your panel provider's rules. Your responses so far will "
+"still be saved."
+msgstr ""
+
+#: psynet/recruiters.py:3239
 msgctxt "lucid_error"
-msgid "Redirecting to Lucid Marketplace..."
+msgid "We will return you to your panel in a few seconds."
 msgstr ""
 
-#: psynet/templates/abort_not_possible.html:9
-msgctxt "abort_possible"
-msgid "Aborting not possible."
+#: psynet/recruiters.py:3247
+msgctxt "early_exit_error_lucid"
+msgid "We will return you to your panel in a few seconds."
 msgstr ""
 
-#: psynet/templates/abort_not_possible.html:12
-msgctxt "abort_possible"
+#: psynet/recruiters.py:3255
+msgctxt "early_exit_error_lucid"
 msgid ""
-"Aborting the experiment is not possible as the experimenter does not allow "
-"it at this time!"
+"We could not return you to your panel. Please try again. If this keeps "
+"happening, contact your panel provider."
 msgstr ""
 
-#: psynet/templates/abort_not_possible.html:15
-#, python-format
-msgid ""
-"You have to accumulate <strong>at least "
-"%(CURRENCY)s%(MIN_ACCUMULATED_REWARD_FOR_ABORT)s</strong> of reward to be "
-"able to be compensated."
+#: psynet/recruiters.py:3260
+msgctxt "early_exit_error_lucid"
+msgid "Return to your panel"
 msgstr ""
 
-#: psynet/templates/abort_not_possible.html:16
-msgctxt "abort_possible"
-msgid "See below information on your currently accumulated reward."
-msgstr ""
-
-#: psynet/templates/abort_not_possible.html:20
-#: psynet/templates/abort_possible.html:18
-#: psynet/templates/psynet_error.html:23
-msgid "Assignment ID"
-msgstr ""
-
-#: psynet/templates/abort_not_possible.html:21
-#: psynet/templates/abort_possible.html:19
-#: psynet/templates/psynet_error.html:22
-msgid "HIT ID"
-msgstr ""
-
-#: psynet/templates/abort_not_possible.html:22
-#: psynet/templates/abort_possible.html:20
-msgid "Accumulated reward"
-msgstr ""
-
-#: psynet/templates/abort_not_possible.html:26
-#: psynet/templates/abort_possible.html:24
-msgid "Close window"
-msgstr ""
-
-#: psynet/templates/abort_possible.html:9
-msgctxt "abort_possible"
-msgid "Are you sure you want to abort the experiment?"
-msgstr ""
-
-#: psynet/templates/abort_possible.html:12
-msgctxt "abort_possible"
-msgid ""
-"If you click the Abort button, the experiment will end early, and you will "
-"be automatically paid the compensation you have earned so far."
-msgstr ""
-
-#: psynet/templates/abort_possible.html:13
-msgctxt "abort_possible"
-msgid "Please only contact us if you have trouble receiving your payment."
-msgstr ""
-
-#: psynet/templates/abort_possible.html:14
-msgctxt "abort_possible"
-msgid "See the information below for details of your compensation."
-msgstr ""
-
-#: psynet/templates/abort_possible.html:27 psynet/templates/ad.html:76
-#: psynet/templates/psynet_error.html:29
-msgid "Abort experiment"
-msgstr ""
-
-#: psynet/templates/ad.html:32
-msgctxt "ad"
-msgid "Call for participants"
-msgstr ""
-
-#: psynet/templates/ad.html:37
-msgctxt "ad"
-msgid "The requirements to participate are as follows"
-msgstr ""
-
-#: psynet/templates/ad.html:48
-msgctxt "ad"
-msgid ""
-"Please click the \"Accept HIT\" button on the Amazon site above to begin the"
-" task."
-msgstr ""
-
-#: psynet/templates/ad.html:55
-msgctxt "ad"
-msgid "Thanks for accepting this HIT."
-msgstr ""
-
-#: psynet/templates/ad.html:57
+#: psynet/templates/ad.html:39
 msgctxt "ad"
 msgid "Thanks for your interest in this experiment."
 msgstr ""
 
-#: psynet/templates/ad.html:60
+#: psynet/templates/ad.html:41
 msgctxt "ad"
 msgid ""
 "By clicking the following URL link, you will be taken to the experiment, "
 "including complete instructions and an informed consent agreement."
 msgstr ""
 
-#: psynet/templates/ad.html:65
+#: psynet/templates/ad.html:46
 msgctxt "ad"
 msgid "Warning"
 msgstr ""
 
-#: psynet/templates/ad.html:65
+#: psynet/templates/ad.html:46
 msgctxt "ad"
 msgid "Please disable pop-up blockers before continuing."
 msgstr ""
 
-#: psynet/templates/ad.html:70
+#: psynet/templates/ad.html:51
 msgctxt "ad"
 msgid "Begin Experiment"
 msgstr ""
 
-#: psynet/templates/ad.html:79 psynet/templates/psynet_error.html:32
-msgid "Click the above button to be compensated in case of an error."
-msgstr ""
-
-#: psynet/templates/consent.html:24
+#: psynet/templates/consent.html:34
 msgctxt "consent"
 msgid "To proceed, click the button below."
 msgstr ""
 
-#: psynet/templates/consent.html:31 psynet/templates/keyboard.html:113
-#: psynet/templates/macros/control.html:47
+#: psynet/templates/consent.html:41 psynet/templates/keyboard.html:124
+#: psynet/templates/macros/control.html:71
 msgid "Next"
 msgstr ""
 
-#: psynet/templates/consents/audiovisual_consent.html:12
+#: psynet/templates/consents/audiovisual_consent.html:13
 msgctxt "consent-title"
 msgid ""
 "In this experiment, you may be asked to make a voice or video recording."
 msgstr ""
 
-#: psynet/templates/consents/audiovisual_consent.html:13
+#: psynet/templates/consents/audiovisual_consent.html:14
 msgctxt "consent-title"
 msgid ""
 "For example, you may be asked to record your finger-tapping in response to a"
 " sound or video, or to record yourself speaking or singing."
 msgstr ""
 
-#: psynet/templates/consents/cap-recruiter_audiovisual_consent.html:9
+#: psynet/templates/consents/cap-recruiter_audiovisual_consent.html:10
 msgctxt "consent-title"
 msgid "Research Participant Consent Form for Image/Sound Recordings"
 msgstr ""
 
-#: psynet/templates/consents/cap-recruiter_audiovisual_consent.html:13
-#: psynet/templates/consents/cap-recruiter_standard_consent.html:15
+#: psynet/templates/consents/cap-recruiter_audiovisual_consent.html:14
+#: psynet/templates/consents/cap-recruiter_standard_consent.html:16
 msgctxt "consent"
 msgid "Title of study:"
 msgstr ""
 
-#: psynet/templates/consents/cap-recruiter_audiovisual_consent.html:15
+#: psynet/templates/consents/cap-recruiter_audiovisual_consent.html:16
 msgctxt "consent-audiovisual"
 msgid ""
 "I have received oral and written information about the fact that "
 "<i>audiovisual</i> recordings will be made in this study."
 msgstr ""
 
-#: psynet/templates/consents/cap-recruiter_audiovisual_consent.html:18
+#: psynet/templates/consents/cap-recruiter_audiovisual_consent.html:19
 msgctxt "consent-audiovisual"
 msgid ""
 "The recording serves the purpose of understanding how humans perceive and "
 "process information from sound and visual."
 msgstr ""
 
-#: psynet/templates/consents/cap-recruiter_audiovisual_consent.html:19
+#: psynet/templates/consents/cap-recruiter_audiovisual_consent.html:20
 msgctxt "consent-audiovisual"
 msgid ""
 "For example, we would like to understand how predictive mechanisms in "
 "perception rely on experience, learning, and memory."
 msgstr ""
 
-#: psynet/templates/consents/cap-recruiter_audiovisual_consent.html:20
+#: psynet/templates/consents/cap-recruiter_audiovisual_consent.html:21
 msgctxt "consent-audiovisual"
 msgid ""
 "By making recording people while moving, singing, tapping to rhythms, or "
 "speaking, we can infer the mechanisms of the auditory and visual systems."
 msgstr ""
 
-#: psynet/templates/consents/cap-recruiter_audiovisual_consent.html:23
+#: psynet/templates/consents/cap-recruiter_audiovisual_consent.html:24
 msgctxt "consent-audiovisual"
 msgid ""
 "I have been informed that the storage and processing of the "
@@ -867,14 +1002,14 @@ msgid ""
 "coding list that links my name to the number."
 msgstr ""
 
-#: psynet/templates/consents/cap-recruiter_audiovisual_consent.html:24
+#: psynet/templates/consents/cap-recruiter_audiovisual_consent.html:25
 msgctxt "consent-audiovisual"
 msgid ""
 "The investigators are the only persons who have access to this coding list, "
 "which will be destroyed after completion of the research project."
 msgstr ""
 
-#: psynet/templates/consents/cap-recruiter_audiovisual_consent.html:25
+#: psynet/templates/consents/cap-recruiter_audiovisual_consent.html:26
 msgctxt "consent-audiovisual"
 msgid ""
 "Researchers associated with this project will have access to my "
@@ -882,25 +1017,25 @@ msgid ""
 "material."
 msgstr ""
 
-#: psynet/templates/consents/cap-recruiter_audiovisual_consent.html:28
-#: psynet/templates/consents/cap-recruiter_standard_consent.html:30
+#: psynet/templates/consents/cap-recruiter_audiovisual_consent.html:29
+#: psynet/templates/consents/cap-recruiter_standard_consent.html:31
 msgctxt "consent"
 msgid ""
 "I understand that I am free to withdraw my consent to the collection and "
 "storage of my personal data without negative consequences."
 msgstr ""
 
-#: psynet/templates/consents/cap-recruiter_audiovisual_consent.html:31
+#: psynet/templates/consents/cap-recruiter_audiovisual_consent.html:32
 msgctxt "consent-audiovisual"
 msgid "I agree to the handling of the recordings as described above."
 msgstr ""
 
-#: psynet/templates/consents/cap-recruiter_audiovisual_consent.html:35
+#: psynet/templates/consents/cap-recruiter_audiovisual_consent.html:36
 msgctxt "consent"
 msgid "Addendum for demonstrations"
 msgstr ""
 
-#: psynet/templates/consents/cap-recruiter_audiovisual_consent.html:35
+#: psynet/templates/consents/cap-recruiter_audiovisual_consent.html:36
 msgctxt "consent"
 msgid ""
 "I agree that my <i>audiovisual</i> recordings can be used for demonstration "
@@ -908,33 +1043,33 @@ msgid ""
 "teaching courses or scientific presentations)."
 msgstr ""
 
-#: psynet/templates/consents/cap-recruiter_audiovisual_consent.html:38
+#: psynet/templates/consents/cap-recruiter_audiovisual_consent.html:39
 msgctxt "consent"
 msgid "(Please tick where applicable)"
 msgstr ""
 
-#: psynet/templates/consents/cap-recruiter_audiovisual_consent.html:45
+#: psynet/templates/consents/cap-recruiter_audiovisual_consent.html:46
 msgctxt "consent"
 msgid "YES"
 msgstr ""
 
-#: psynet/templates/consents/cap-recruiter_audiovisual_consent.html:52
+#: psynet/templates/consents/cap-recruiter_audiovisual_consent.html:53
 msgctxt "consent"
 msgid "NO"
 msgstr ""
 
-#: psynet/templates/consents/cap-recruiter_audiovisual_consent.html:57
+#: psynet/templates/consents/cap-recruiter_audiovisual_consent.html:58
 msgctxt "consent-audiovisual"
 msgid ""
 "The declaration of consent for <i>audiovisual</i> recordings is voluntary."
 msgstr ""
 
-#: psynet/templates/consents/cap-recruiter_audiovisual_consent.html:58
+#: psynet/templates/consents/cap-recruiter_audiovisual_consent.html:59
 msgctxt "consent-audiovisual"
 msgid "I may withdraw my consent at any time."
 msgstr ""
 
-#: psynet/templates/consents/cap-recruiter_audiovisual_consent.html:59
+#: psynet/templates/consents/cap-recruiter_audiovisual_consent.html:60
 msgctxt "consent-audiovisual"
 msgid ""
 "In case of refusal or withdrawal, no costs will be incurred nor will there "
@@ -942,129 +1077,129 @@ msgid ""
 "study will not be possible."
 msgstr ""
 
-#: psynet/templates/consents/cap-recruiter_audiovisual_consent.html:63
+#: psynet/templates/consents/cap-recruiter_audiovisual_consent.html:64
 msgctxt "consent-audiovisual"
 msgid "I had sufficient time for this decision."
 msgstr ""
 
-#: psynet/templates/consents/cap-recruiter_audiovisual_consent.html:64
+#: psynet/templates/consents/cap-recruiter_audiovisual_consent.html:65
 msgctxt "consent-audiovisual"
 msgid ""
 "I have read and understood everything and hereby agree that "
 "<i>audiovisual</i> recordings of me may be taken."
 msgstr ""
 
-#: psynet/templates/consents/cap-recruiter_audiovisual_consent.html:65
+#: psynet/templates/consents/cap-recruiter_audiovisual_consent.html:66
 msgctxt "consent-audiovisual"
 msgid "I have received a copy of this consent form."
 msgstr ""
 
-#: psynet/templates/consents/cap-recruiter_audiovisual_consent.html:68
-#: psynet/templates/consents/cap-recruiter_standard_consent.html:38
+#: psynet/templates/consents/cap-recruiter_audiovisual_consent.html:69
+#: psynet/templates/consents/cap-recruiter_standard_consent.html:39
 msgctxt "consent"
 msgid "Investigator"
 msgstr ""
 
-#: psynet/templates/consents/cap-recruiter_standard_consent.html:11
+#: psynet/templates/consents/cap-recruiter_standard_consent.html:12
 msgctxt "consent-title"
 msgid "Research Participant Consent Form"
 msgstr ""
 
-#: psynet/templates/consents/cap-recruiter_standard_consent.html:17
+#: psynet/templates/consents/cap-recruiter_standard_consent.html:18
 msgctxt "consent-cap"
 msgid ""
 "I have received written information about the study and the procedure of the"
 " study."
 msgstr ""
 
-#: psynet/templates/consents/cap-recruiter_standard_consent.html:18
+#: psynet/templates/consents/cap-recruiter_standard_consent.html:19
 msgctxt "consent-cap"
 msgid "I have read and understood all of the information completely."
 msgstr ""
 
-#: psynet/templates/consents/cap-recruiter_standard_consent.html:19
+#: psynet/templates/consents/cap-recruiter_standard_consent.html:20
 msgctxt "consent-cap"
 msgid ""
 "If I had questions concerning the upcoming study, they were answered "
 "completely and to my satisfaction."
 msgstr ""
 
-#: psynet/templates/consents/cap-recruiter_standard_consent.html:22
+#: psynet/templates/consents/cap-recruiter_standard_consent.html:23
 msgctxt "consent-cap"
 msgid ""
 "I agree to the described collecting and processing of my age, gender, and "
 "country of birth."
 msgstr ""
 
-#: psynet/templates/consents/cap-recruiter_standard_consent.html:23
+#: psynet/templates/consents/cap-recruiter_standard_consent.html:24
 msgctxt "consent-cap"
 msgid ""
 "The recording and processing of these data are carried out in pseudonymized "
 "form by means of a code and do not contain my name."
 msgstr ""
 
-#: psynet/templates/consents/cap-recruiter_standard_consent.html:24
+#: psynet/templates/consents/cap-recruiter_standard_consent.html:25
 msgctxt "consent-cap"
 msgid "There is a coding list on paper that links my name to this number."
 msgstr ""
 
-#: psynet/templates/consents/cap-recruiter_standard_consent.html:25
+#: psynet/templates/consents/cap-recruiter_standard_consent.html:26
 msgctxt "consent-cap"
 msgid ""
 "The investigators are the only persons who have access to this coding list "
 "and who are thus able to link the collected data to my name."
 msgstr ""
 
-#: psynet/templates/consents/cap-recruiter_standard_consent.html:26
+#: psynet/templates/consents/cap-recruiter_standard_consent.html:27
 msgctxt "consent-cap"
 msgid ""
 "After completion of the research project, the coding list will be destroyed."
 msgstr ""
 
-#: psynet/templates/consents/cap-recruiter_standard_consent.html:27
+#: psynet/templates/consents/cap-recruiter_standard_consent.html:28
 msgctxt "consent-cap"
 msgid ""
 "From this point on, my data are anonymous, which means that they cannot be "
 "linked to my person any longer."
 msgstr ""
 
-#: psynet/templates/consents/cap-recruiter_standard_consent.html:31
+#: psynet/templates/consents/cap-recruiter_standard_consent.html:32
 msgctxt "consent-cap"
 msgid ""
 "I have been informed that I may request deletion of all my data at any time."
 msgstr ""
 
-#: psynet/templates/consents/cap-recruiter_standard_consent.html:32
+#: psynet/templates/consents/cap-recruiter_standard_consent.html:33
 msgctxt "consent-cap"
 msgid ""
 "However, if the coding list has already been destroyed, it will no longer be"
 " possible to identify and thus to delete my data set."
 msgstr ""
 
-#: psynet/templates/consents/cap-recruiter_standard_consent.html:35
+#: psynet/templates/consents/cap-recruiter_standard_consent.html:36
 msgctxt "consent-cap"
 msgid ""
 "The participant information sheet about the examination is part of this "
 "consent form."
 msgstr ""
 
-#: psynet/templates/consents/cap-recruiter_standard_consent.html:36
+#: psynet/templates/consents/cap-recruiter_standard_consent.html:37
 msgctxt "consent-cap"
 msgid ""
 "I have received a copy of the participant information sheet and of the "
 "consent form."
 msgstr ""
 
-#: psynet/templates/consents/database_consent.html:9
-#: psynet/templates/consents/lucid_consent.html:9
-#: psynet/templates/consents/main_consent.html:9
-#: psynet/templates/consents/open_science_consent.html:9
-#: psynet/templates/consents/voluntary_with_no_compensation_consent.html:9
+#: psynet/templates/consents/database_consent.html:10
+#: psynet/templates/consents/lucid_consent.html:10
+#: psynet/templates/consents/main_consent.html:10
+#: psynet/templates/consents/open_science_consent.html:10
+#: psynet/templates/consents/voluntary_with_no_compensation_consent.html:10
 msgctxt "consent-title"
 msgid "We need your consent to proceed"
 msgstr ""
 
-#: psynet/templates/consents/database_consent.html:12
+#: psynet/templates/consents/database_consent.html:13
 msgctxt "consent-database"
 msgid ""
 "With this privacy policy, we would like to inform you about the personal "
@@ -1072,19 +1207,19 @@ msgid ""
 "purposes we process this data."
 msgstr ""
 
-#: psynet/templates/consents/database_consent.html:13
+#: psynet/templates/consents/database_consent.html:14
 msgctxt "consent-database"
 msgid ""
 "In addition, we would like to inform you about your rights with regard to "
 "the processing of personal data."
 msgstr ""
 
-#: psynet/templates/consents/database_consent.html:17
+#: psynet/templates/consents/database_consent.html:18
 msgctxt "consent-purpose"
 msgid "Purposes of Processing"
 msgstr ""
 
-#: psynet/templates/consents/database_consent.html:19
+#: psynet/templates/consents/database_consent.html:20
 msgctxt "consent-purpose"
 msgid ""
 "We store and process your data only for the purpose of initiating "
@@ -1092,17 +1227,17 @@ msgid ""
 "for Empirical Aesthetics (MPIEA)."
 msgstr ""
 
-#: psynet/templates/consents/database_consent.html:20
+#: psynet/templates/consents/database_consent.html:21
 msgctxt "consent-purpose"
 msgid "This data will never be shared with third parties."
 msgstr ""
 
-#: psynet/templates/consents/database_consent.html:23
+#: psynet/templates/consents/database_consent.html:24
 msgctxt "consent-data"
 msgid "Which Data are stored"
 msgstr ""
 
-#: psynet/templates/consents/database_consent.html:25
+#: psynet/templates/consents/database_consent.html:26
 msgctxt "consent-data"
 msgid ""
 "In addition to your contact details (i.e., name and email) and the "
@@ -1110,20 +1245,20 @@ msgid ""
 "nationality), we also store the date and time when you made the entry."
 msgstr ""
 
-#: psynet/templates/consents/database_consent.html:26
+#: psynet/templates/consents/database_consent.html:27
 msgctxt "consent-data"
 msgid ""
 "In addition, we save the date and time when you verified your email address."
 msgstr ""
 
-#: psynet/templates/consents/database_consent.html:27
+#: psynet/templates/consents/database_consent.html:28
 msgctxt "consent-data"
 msgid ""
 "If we invite you to participate in a study, we will store the date and time "
 "of this communication."
 msgstr ""
 
-#: psynet/templates/consents/database_consent.html:28
+#: psynet/templates/consents/database_consent.html:29
 msgctxt "consent-data"
 msgid ""
 "If you agree to participate, we also will store the date and time of your "
@@ -1131,7 +1266,7 @@ msgid ""
 "successfully or not."
 msgstr ""
 
-#: psynet/templates/consents/database_consent.html:31
+#: psynet/templates/consents/database_consent.html:32
 msgctxt "consent-data"
 msgid ""
 "Of course, before you participate in a study, you will be informed in detail"
@@ -1139,19 +1274,19 @@ msgid ""
 "study."
 msgstr ""
 
-#: psynet/templates/consents/database_consent.html:32
+#: psynet/templates/consents/database_consent.html:33
 msgctxt "consent-data"
 msgid ""
 "Your consent to participate in a study will be obtained separately for each "
 "study you participate in."
 msgstr ""
 
-#: psynet/templates/consents/database_consent.html:35
+#: psynet/templates/consents/database_consent.html:36
 msgctxt "consent-duration"
 msgid "Duration of Data Storage"
 msgstr ""
 
-#: psynet/templates/consents/database_consent.html:37
+#: psynet/templates/consents/database_consent.html:38
 msgctxt "consent-duration"
 msgid ""
 "Your data will be stored in the contact database for as long as the purpose "
@@ -1159,83 +1294,83 @@ msgid ""
 "remains in effect."
 msgstr ""
 
-#: psynet/templates/consents/database_consent.html:38
+#: psynet/templates/consents/database_consent.html:39
 msgctxt "consent-duration"
 msgid "You may request the deletion of your data at any time."
 msgstr ""
 
-#: psynet/templates/consents/database_consent.html:39
+#: psynet/templates/consents/database_consent.html:40
 msgctxt "consent-duration"
 msgid "To do so, send an e-mail with the subject “Delete” to:"
 msgstr ""
 
-#: psynet/templates/consents/database_consent.html:40
+#: psynet/templates/consents/database_consent.html:41
 msgctxt "consent-duration"
 msgid "Your personal data will then be deleted immediately."
 msgstr ""
 
-#: psynet/templates/consents/database_consent.html:43
+#: psynet/templates/consents/database_consent.html:44
 msgctxt "consent-duration"
 msgid ""
 "You can also delete your data from the database by deleting your account "
 "(i.e., press 'Delete account'  in the cap-recruiter log-in page)."
 msgstr ""
 
-#: psynet/templates/consents/database_consent.html:44
+#: psynet/templates/consents/database_consent.html:45
 msgctxt "consent-duration"
 msgid ""
 "Note that all information, including the experiment and payment history will"
 " be removed from our database."
 msgstr ""
 
-#: psynet/templates/consents/database_consent.html:46
-#: psynet/templates/consents/main_consent.html:64
-#: psynet/templates/consents/open_science_consent.html:24
-#: psynet/templates/macros/consent.html:155
+#: psynet/templates/consents/database_consent.html:47
+#: psynet/templates/consents/main_consent.html:65
+#: psynet/templates/consents/open_science_consent.html:25
+#: psynet/templates/macros/consent.html:137
 msgctxt "consent-security"
 msgid "Security"
 msgstr ""
 
-#: psynet/templates/consents/database_consent.html:48
+#: psynet/templates/consents/database_consent.html:49
 msgctxt "consent-security"
 msgid ""
 "The data entered in the form you fill out are transferred in encrypted form "
 "to an internal server."
 msgstr ""
 
-#: psynet/templates/consents/database_consent.html:49
+#: psynet/templates/consents/database_consent.html:50
 msgctxt "consent-security"
 msgid ""
 "We will then send you an e-mail with a confirmation link to verify your "
 "e-mail address."
 msgstr ""
 
-#: psynet/templates/consents/database_consent.html:52
+#: psynet/templates/consents/database_consent.html:53
 msgctxt "consent-security"
 msgid ""
 "We take all necessary technical and organizational security measures to "
 "protect your personal data from loss and abuse."
 msgstr ""
 
-#: psynet/templates/consents/database_consent.html:53
+#: psynet/templates/consents/database_consent.html:54
 msgctxt "consent-security"
 msgid ""
 "Your data are stored in a secure operating environment that is not "
 "accessible to the public."
 msgstr ""
 
-#: psynet/templates/consents/database_consent.html:54
+#: psynet/templates/consents/database_consent.html:55
 msgctxt "consent-security"
 msgid ""
 "All connections between your computer and the web server are encrypted."
 msgstr ""
 
-#: psynet/templates/consents/database_consent.html:57
+#: psynet/templates/consents/database_consent.html:58
 msgctxt "consent-protection"
 msgid "Data Protection: Rights of Data Subjects"
 msgstr ""
 
-#: psynet/templates/consents/database_consent.html:59
+#: psynet/templates/consents/database_consent.html:60
 msgctxt "consent-protection"
 msgid ""
 "In order to ensure transparency with regard to the processing of personal "
@@ -1243,7 +1378,7 @@ msgid ""
 "provides information about the rights of data subjects."
 msgstr ""
 
-#: psynet/templates/consents/database_consent.html:60
+#: psynet/templates/consents/database_consent.html:61
 msgctxt "consent-protection"
 msgid ""
 "As a data subject whose personal data are processed with regard to your "
@@ -1251,50 +1386,50 @@ msgid ""
 " insofar as no legal exceptions apply in individual cases:"
 msgstr ""
 
-#: psynet/templates/consents/database_consent.html:64
+#: psynet/templates/consents/database_consent.html:65
 msgctxt "consent-protection"
 msgid "Access (GDPR art. 15)"
 msgstr ""
 
-#: psynet/templates/consents/database_consent.html:65
+#: psynet/templates/consents/database_consent.html:66
 msgctxt "consent-protection"
 msgid "Rectification (GDPR art. 16)"
 msgstr ""
 
-#: psynet/templates/consents/database_consent.html:66
+#: psynet/templates/consents/database_consent.html:67
 msgctxt "consent-protection"
 msgid "Erasure (GDPR art. 17, para. 1)"
 msgstr ""
 
-#: psynet/templates/consents/database_consent.html:67
+#: psynet/templates/consents/database_consent.html:68
 msgctxt "consent-protection"
 msgid "Restriction of processing (GDPR art. 18)"
 msgstr ""
 
-#: psynet/templates/consents/database_consent.html:68
+#: psynet/templates/consents/database_consent.html:69
 msgctxt "consent-protection"
 msgid "Data portability (GDPR art. 20)"
 msgstr ""
 
-#: psynet/templates/consents/database_consent.html:69
+#: psynet/templates/consents/database_consent.html:70
 msgctxt "consent-protection"
 msgid "Withdrawal of consent (GDPR art. 7, para. 3)"
 msgstr ""
 
-#: psynet/templates/consents/database_consent.html:70
+#: psynet/templates/consents/database_consent.html:71
 msgctxt "consent-protection"
 msgid ""
 "Right to lodge a complaint with a supervisory authority (GDPR art. 77)."
 msgstr ""
 
-#: psynet/templates/consents/database_consent.html:71
+#: psynet/templates/consents/database_consent.html:72
 msgctxt "consent-protection"
 msgid ""
 "For the Max Planck Society, this is the Data Protection Authority of "
 "Bavaria, Postfach 1349, 91504 Ansbach, Germany."
 msgstr ""
 
-#: psynet/templates/consents/database_consent.html:76
+#: psynet/templates/consents/database_consent.html:77
 msgctxt "consent-protection"
 msgid ""
 "If you have any questions about this research, your rights, or treatment as "
@@ -1302,47 +1437,47 @@ msgid ""
 "Perception Group at the Max Planck Institute for Empirical Aesthetics:"
 msgstr ""
 
-#: psynet/templates/consents/database_consent.html:79
+#: psynet/templates/consents/database_consent.html:80
 msgctxt "consent-payment"
 msgid "Payment and Compensation"
 msgstr ""
 
-#: psynet/templates/consents/database_consent.html:81
+#: psynet/templates/consents/database_consent.html:82
 msgctxt "consent-payment"
 msgid ""
 "We will not store any banking information or payment information in our "
 "system."
 msgstr ""
 
-#: psynet/templates/consents/database_consent.html:82
+#: psynet/templates/consents/database_consent.html:83
 msgctxt "consent-payment"
 msgid ""
 "However we do store completion records and payment details of every task you"
 " completed."
 msgstr ""
 
-#: psynet/templates/consents/database_consent.html:83
+#: psynet/templates/consents/database_consent.html:84
 msgctxt "consent-payment"
 msgid ""
 "This information will be available for you to review it when you login to "
 "the database."
 msgstr ""
 
-#: psynet/templates/consents/database_consent.html:84
+#: psynet/templates/consents/database_consent.html:85
 msgctxt "consent-payment"
 msgid ""
 "Based on this information we allow you to receive payment via an external "
 "system such as PayPAL/WISE."
 msgstr ""
 
-#: psynet/templates/consents/database_consent.html:85
+#: psynet/templates/consents/database_consent.html:86
 msgctxt "consent-payment"
 msgid ""
 "It is your responsibility to make sure you can receive payment through this "
 "system and that you would want to consent to use it."
 msgstr ""
 
-#: psynet/templates/consents/database_consent.html:86
+#: psynet/templates/consents/database_consent.html:87
 msgctxt "consent-payment"
 msgid ""
 "This system supports transferring money to most banks around the world, "
@@ -1350,14 +1485,14 @@ msgid ""
 "receive payment prior to taking part in our experiments."
 msgstr ""
 
-#: psynet/templates/consents/database_consent.html:87
+#: psynet/templates/consents/database_consent.html:88
 msgctxt "consent-payment"
 msgid ""
 "We also recommend checking the term of service and it’s privacy statement "
 "and see if you consent to use their system for payment."
 msgstr ""
 
-#: psynet/templates/consents/database_consent.html:90
+#: psynet/templates/consents/database_consent.html:91
 msgctxt "consent-payment"
 msgid ""
 "If you cannot or would not like to receive payment via this system, we would"
@@ -1365,12 +1500,12 @@ msgid ""
 "experiments voluntarily, without payment."
 msgstr ""
 
-#: psynet/templates/consents/database_consent.html:91
+#: psynet/templates/consents/database_consent.html:92
 msgctxt "consent-payment"
 msgid "In this case you will not receive any compensation for your time."
 msgstr ""
 
-#: psynet/templates/consents/database_consent.html:94
+#: psynet/templates/consents/database_consent.html:95
 msgctxt "consent"
 msgid ""
 "If you have further questions regarding the General Data Protection "
@@ -1378,20 +1513,20 @@ msgid ""
 "please contact the Data Protection Officer of the Max Planck Society:"
 msgstr ""
 
-#: psynet/templates/consents/database_consent.html:105
+#: psynet/templates/consents/database_consent.html:106
 msgctxt "consent-protection"
 msgid ""
 "You may also address your inquiries directly to the Max Planck Institute for"
 " Empirical Aesthetics:"
 msgstr ""
 
-#: psynet/templates/consents/main_consent.html:15
-#: psynet/templates/macros/consent.html:47
+#: psynet/templates/consents/main_consent.html:16
+#: psynet/templates/macros/consent.html:44
 msgctxt "consent-purpose"
 msgid "Purpose"
 msgstr ""
 
-#: psynet/templates/consents/main_consent.html:17
+#: psynet/templates/consents/main_consent.html:18
 msgctxt "consent-purpose"
 msgid ""
 "The purpose of this project is to study how people from different places in "
@@ -1399,16 +1534,14 @@ msgid ""
 "color)."
 msgstr ""
 
-#: psynet/templates/consents/main_consent.html:20
-#: psynet/templates/macros/consent.html:56
-#: psynet/templates/macros/consent.html:70
+#: psynet/templates/consents/main_consent.html:21
+#: psynet/templates/macros/consent.html:53
 msgctxt "consent-procedure"
 msgid "Procedure"
 msgstr ""
 
-#: psynet/templates/consents/main_consent.html:22
-#: psynet/templates/macros/consent.html:58
-#: psynet/templates/macros/consent.html:72
+#: psynet/templates/consents/main_consent.html:23
+#: psynet/templates/macros/consent.html:55
 msgctxt "consent-procedure"
 msgid ""
 "If you volunteer to participate in this study, you will be asked to perform "
@@ -1416,9 +1549,8 @@ msgid ""
 "while observing images or videos."
 msgstr ""
 
-#: psynet/templates/consents/main_consent.html:23
-#: psynet/templates/macros/consent.html:59
-#: psynet/templates/macros/consent.html:73
+#: psynet/templates/consents/main_consent.html:24
+#: psynet/templates/macros/consent.html:56
 msgctxt "consent-procedure"
 msgid ""
 "For example, you may be asked to judge how pleasant a particular sound or an"
@@ -1428,9 +1560,8 @@ msgid ""
 "how aesthetically pleasing you consider a particular sound or image?)."
 msgstr ""
 
-#: psynet/templates/consents/main_consent.html:24
-#: psynet/templates/macros/consent.html:60
-#: psynet/templates/macros/consent.html:74
+#: psynet/templates/consents/main_consent.html:25
+#: psynet/templates/macros/consent.html:57
 msgctxt "consent-procedure"
 msgid ""
 "The specific sounds, images, and videos used will vary, but may include: "
@@ -1439,9 +1570,8 @@ msgid ""
 "shapes, fractal images, or videos of natural environments."
 msgstr ""
 
-#: psynet/templates/consents/main_consent.html:25
-#: psynet/templates/macros/consent.html:61
-#: psynet/templates/macros/consent.html:75
+#: psynet/templates/consents/main_consent.html:26
+#: psynet/templates/macros/consent.html:58
 msgctxt "consent-procedure"
 msgid ""
 "In some experiments, we may use mild deception, i.e., we may not explain the"
@@ -1450,18 +1580,16 @@ msgid ""
 "human)."
 msgstr ""
 
-#: psynet/templates/consents/main_consent.html:26
-#: psynet/templates/macros/consent.html:62
-#: psynet/templates/macros/consent.html:76
+#: psynet/templates/consents/main_consent.html:27
+#: psynet/templates/macros/consent.html:59
 msgctxt "consent-procedure"
 msgid ""
 "Mild deception will only be used in some experiments where we need to "
 "prevent biasing the participants before taking the experiment."
 msgstr ""
 
-#: psynet/templates/consents/main_consent.html:27
-#: psynet/templates/macros/consent.html:63
-#: psynet/templates/macros/consent.html:77
+#: psynet/templates/consents/main_consent.html:28
+#: psynet/templates/macros/consent.html:60
 msgctxt "consent-procedure"
 msgid ""
 "Finally, in some experiments you may be asked to make a voice or video "
@@ -1469,78 +1597,77 @@ msgid ""
 "response to a sound or video, or to record yourself speaking or singing."
 msgstr ""
 
-#: psynet/templates/consents/main_consent.html:28
-#: psynet/templates/macros/consent.html:64
-#: psynet/templates/macros/consent.html:78
+#: psynet/templates/consents/main_consent.html:29
+#: psynet/templates/macros/consent.html:61
 msgctxt "consent-procedure"
 msgid ""
 "If the experiment will contain these elements we will ask for an additional "
 "consent."
 msgstr ""
 
-#: psynet/templates/consents/main_consent.html:31
-#: psynet/templates/macros/consent.html:84
+#: psynet/templates/consents/main_consent.html:32
+#: psynet/templates/macros/consent.html:66
 msgctxt "consent-voluntary"
 msgid "Voluntary participation"
 msgstr ""
 
-#: psynet/templates/consents/main_consent.html:33
-#: psynet/templates/macros/consent.html:86
+#: psynet/templates/consents/main_consent.html:34
+#: psynet/templates/macros/consent.html:68
 msgctxt "consent-voluntary"
 msgid "Your participation in this research is voluntary."
 msgstr ""
 
-#: psynet/templates/consents/main_consent.html:34
-#: psynet/templates/macros/consent.html:87
+#: psynet/templates/consents/main_consent.html:35
+#: psynet/templates/macros/consent.html:69
 msgctxt "consent-voluntary"
 msgid ""
 "You are free to refuse to take part, and you may stop taking part at any "
 "time."
 msgstr ""
 
-#: psynet/templates/consents/main_consent.html:35
-#: psynet/templates/macros/consent.html:88
+#: psynet/templates/consents/main_consent.html:36
+#: psynet/templates/macros/consent.html:70
 msgctxt "consent-voluntary"
 msgid ""
 "You are free to discontinue participation in this study at any time without "
 "penalty."
 msgstr ""
 
-#: psynet/templates/consents/main_consent.html:36
-#: psynet/templates/macros/consent.html:89
+#: psynet/templates/consents/main_consent.html:37
+#: psynet/templates/macros/consent.html:71
 msgctxt "consent-voluntary"
 msgid ""
 "The investigator may withdraw you from this research if circumstances arise "
 "which warrant doing so."
 msgstr ""
 
-#: psynet/templates/consents/main_consent.html:39
-#: psynet/templates/consents/open_science_consent.html:18
-#: psynet/templates/macros/consent.html:95
-#: psynet/templates/macros/consent.html:119
+#: psynet/templates/consents/main_consent.html:40
+#: psynet/templates/consents/open_science_consent.html:19
+#: psynet/templates/macros/consent.html:77
+#: psynet/templates/macros/consent.html:101
 msgctxt "consent-confidentiality"
 msgid "Confidentiality"
 msgstr ""
 
-#: psynet/templates/consents/main_consent.html:41
-#: psynet/templates/macros/consent.html:109
-#: psynet/templates/macros/consent.html:121
+#: psynet/templates/consents/main_consent.html:42
+#: psynet/templates/macros/consent.html:91
+#: psynet/templates/macros/consent.html:103
 msgctxt "consent-confidentiality"
 msgid ""
 "No personal identifiers (e.g. your name or contact data) will be collected "
 "or used at any stage of the experiment."
 msgstr ""
 
-#: psynet/templates/consents/main_consent.html:42
-#: psynet/templates/macros/consent.html:110
-#: psynet/templates/macros/consent.html:122
+#: psynet/templates/consents/main_consent.html:43
+#: psynet/templates/macros/consent.html:92
+#: psynet/templates/macros/consent.html:104
 msgctxt "consent-confidentiality"
 msgid "Thus, the experimental data is anonymous."
 msgstr ""
 
-#: psynet/templates/consents/main_consent.html:43
-#: psynet/templates/macros/consent.html:111
-#: psynet/templates/macros/consent.html:123
+#: psynet/templates/consents/main_consent.html:44
+#: psynet/templates/macros/consent.html:93
+#: psynet/templates/macros/consent.html:105
 msgctxt "consent-confidentiality"
 msgid ""
 "We may collect some demographic data (e.g. age, gender, country of "
@@ -1549,24 +1676,24 @@ msgid ""
 "languages spoken)."
 msgstr ""
 
-#: psynet/templates/consents/main_consent.html:46
-#: psynet/templates/macros/consent.html:112
-#: psynet/templates/macros/consent.html:126
+#: psynet/templates/consents/main_consent.html:47
+#: psynet/templates/macros/consent.html:94
+#: psynet/templates/macros/consent.html:108
 msgctxt "consent-confidentiality"
 msgid ""
 "If an experiment is collecting data that cannot be fully anonymized, we will"
 " inform you and also ask for additional consent."
 msgstr ""
 
-#: psynet/templates/consents/main_consent.html:47
-#: psynet/templates/macros/consent.html:127
+#: psynet/templates/consents/main_consent.html:48
+#: psynet/templates/macros/consent.html:109
 msgctxt "consent-confidentiality"
 msgid "Consenting to these additional requirements is also fully voluntary."
 msgstr ""
 
-#: psynet/templates/consents/main_consent.html:48
-#: psynet/templates/macros/consent.html:113
-#: psynet/templates/macros/consent.html:128
+#: psynet/templates/consents/main_consent.html:49
+#: psynet/templates/macros/consent.html:95
+#: psynet/templates/macros/consent.html:110
 msgctxt "consent-confidentiality"
 msgid ""
 "These include experiments where we make audio-visual recordings or where we "
@@ -1574,16 +1701,16 @@ msgid ""
 "experiment."
 msgstr ""
 
-#: psynet/templates/consents/main_consent.html:51
-#: psynet/templates/macros/consent.html:131
+#: psynet/templates/consents/main_consent.html:52
+#: psynet/templates/macros/consent.html:113
 msgctxt "consent-confidentiality"
 msgid ""
 "All of the information we obtain during the research will be kept "
 "confidential."
 msgstr ""
 
-#: psynet/templates/consents/main_consent.html:52
-#: psynet/templates/macros/consent.html:132
+#: psynet/templates/consents/main_consent.html:53
+#: psynet/templates/macros/consent.html:114
 msgctxt "consent-confidentiality"
 msgid ""
 "We will only save your anonymized alpha numeric code in our system, in order"
@@ -1591,16 +1718,16 @@ msgid ""
 "experiments."
 msgstr ""
 
-#: psynet/templates/consents/main_consent.html:53
-#: psynet/templates/macros/consent.html:133
+#: psynet/templates/consents/main_consent.html:54
+#: psynet/templates/macros/consent.html:115
 msgctxt "consent-confidentiality"
 msgid ""
 "This code will not be used to derive your real identity, will not be shared "
 "with anyone outside of the research team and will be deleted after use."
 msgstr ""
 
-#: psynet/templates/consents/main_consent.html:54
-#: psynet/templates/macros/consent.html:134
+#: psynet/templates/consents/main_consent.html:55
+#: psynet/templates/macros/consent.html:116
 msgctxt "consent-confidentiality"
 msgid ""
 "Although researchers will not use your alpha numeric code to derive your "
@@ -1608,80 +1735,80 @@ msgid ""
 "profile page if a data breach takes place."
 msgstr ""
 
-#: psynet/templates/consents/main_consent.html:55
-#: psynet/templates/macros/consent.html:135
+#: psynet/templates/consents/main_consent.html:56
+#: psynet/templates/macros/consent.html:117
 msgctxt "consent-confidentiality"
 msgid ""
 "Thus, you may wish to restrict what information you choose to share "
 "publicly."
 msgstr ""
 
-#: psynet/templates/consents/main_consent.html:58
-#: psynet/templates/macros/consent.html:140
+#: psynet/templates/consents/main_consent.html:59
+#: psynet/templates/macros/consent.html:122
 msgctxt "consent-collaborations"
 msgid "Research collaborations"
 msgstr ""
 
-#: psynet/templates/consents/main_consent.html:60
-#: psynet/templates/macros/consent.html:142
+#: psynet/templates/consents/main_consent.html:61
+#: psynet/templates/macros/consent.html:124
 msgctxt "consent-collaborations"
 msgid ""
 "For the purpose of helping scientific progress and replication, sometimes we"
 " may share the data with research collaborators."
 msgstr ""
 
-#: psynet/templates/consents/main_consent.html:61
-#: psynet/templates/macros/consent.html:147
+#: psynet/templates/consents/main_consent.html:62
+#: psynet/templates/macros/consent.html:129
 msgctxt "consent-collaborations"
 msgid ""
 "In these cases, we will only share fully anonymized data, such as "
 "demographic, aggregated, or extracted data without any personal identifiers."
 msgstr ""
 
-#: psynet/templates/consents/main_consent.html:66
-#: psynet/templates/macros/consent.html:162
+#: psynet/templates/consents/main_consent.html:67
+#: psynet/templates/macros/consent.html:144
 msgctxt "consent-security"
 msgid ""
 "Data will be stored temporarily on external servers and desktops/laptops "
 "that are password protected."
 msgstr ""
 
-#: psynet/templates/consents/main_consent.html:67
-#: psynet/templates/macros/consent.html:163
+#: psynet/templates/consents/main_consent.html:68
+#: psynet/templates/macros/consent.html:145
 msgctxt "consent-security"
 msgid ""
 "The data will be then stored permanently in the institute servers with hard "
 "disks encrypted using industry-standard encryption software."
 msgstr ""
 
-#: psynet/templates/consents/main_consent.html:68
-#: psynet/templates/macros/consent.html:164
+#: psynet/templates/consents/main_consent.html:69
+#: psynet/templates/macros/consent.html:146
 msgctxt "consent-security"
 msgid "No data will be stored permanently on external servers."
 msgstr ""
 
-#: psynet/templates/consents/main_consent.html:70
-#: psynet/templates/macros/consent.html:171
+#: psynet/templates/consents/main_consent.html:71
+#: psynet/templates/macros/consent.html:153
 msgctxt "consent-risks"
 msgid "Risks/Discomforts"
 msgstr ""
 
-#: psynet/templates/consents/main_consent.html:72
-#: psynet/templates/macros/consent.html:173
+#: psynet/templates/consents/main_consent.html:73
+#: psynet/templates/macros/consent.html:155
 msgctxt "consent-risks"
 msgid ""
 "There are no risks for participating in this study beyond those associated "
 "with normal computer use."
 msgstr ""
 
-#: psynet/templates/consents/main_consent.html:75
-#: psynet/templates/macros/consent.html:179
+#: psynet/templates/consents/main_consent.html:76
+#: psynet/templates/macros/consent.html:161
 msgctxt "consent-benefits"
 msgid "Benefits"
 msgstr ""
 
-#: psynet/templates/consents/main_consent.html:77
-#: psynet/templates/macros/consent.html:181
+#: psynet/templates/consents/main_consent.html:78
+#: psynet/templates/macros/consent.html:163
 msgctxt "consent-benefits"
 msgid ""
 "Although it may not directly benefit you, this study may benefit society by "
@@ -1691,44 +1818,44 @@ msgid ""
 "improve perceptual abilities in people whose hearing or sight is impaired."
 msgstr ""
 
-#: psynet/templates/consents/main_consent.html:80
-#: psynet/templates/consents/voluntary_with_no_compensation_consent.html:23
-#: psynet/templates/macros/consent.html:187
+#: psynet/templates/consents/main_consent.html:81
+#: psynet/templates/consents/voluntary_with_no_compensation_consent.html:24
+#: psynet/templates/macros/consent.html:169
 msgctxt "consent-compensation"
 msgid "Compensation"
 msgstr ""
 
-#: psynet/templates/consents/main_consent.html:82
+#: psynet/templates/consents/main_consent.html:83
 msgctxt "consent-compensation"
 msgid ""
 "If you satisfactorily complete the study, we compensate you for your "
 "participation:"
 msgstr ""
 
-#: psynet/templates/consents/main_consent.html:83
+#: psynet/templates/consents/main_consent.html:84
 msgid "per hour"
 msgstr ""
 
-#: psynet/templates/consents/main_consent.html:84
+#: psynet/templates/consents/main_consent.html:85
 msgctxt "consent-compensation"
 msgid ""
 "You may also receive an additional payment based on your performance in the "
 "task."
 msgstr ""
 
-#: psynet/templates/consents/main_consent.html:85
+#: psynet/templates/consents/main_consent.html:86
 msgctxt "consent-compensation"
 msgid "We appreciate your contribution to science!"
 msgstr ""
 
-#: psynet/templates/consents/main_consent.html:88
-#: psynet/templates/macros/consent.html:195
+#: psynet/templates/consents/main_consent.html:89
+#: psynet/templates/macros/consent.html:177
 msgctxt "consent-rights"
 msgid "Your rights"
 msgstr ""
 
-#: psynet/templates/consents/main_consent.html:90
-#: psynet/templates/macros/consent.html:197
+#: psynet/templates/consents/main_consent.html:91
+#: psynet/templates/macros/consent.html:179
 msgctxt "consent-rights"
 msgid ""
 "You have the right to information regarding the data relating to you that is"
@@ -1737,8 +1864,8 @@ msgid ""
 "storage and the right to data portability."
 msgstr ""
 
-#: psynet/templates/consents/main_consent.html:91
-#: psynet/templates/macros/consent.html:198
+#: psynet/templates/consents/main_consent.html:92
+#: psynet/templates/macros/consent.html:180
 msgctxt "consent-rights"
 msgid ""
 "Note that in some studies data deletion will not be possible, in this case "
@@ -1746,20 +1873,20 @@ msgid ""
 "consent form."
 msgstr ""
 
-#: psynet/templates/consents/main_consent.html:92
-#: psynet/templates/macros/consent.html:199
+#: psynet/templates/consents/main_consent.html:93
+#: psynet/templates/macros/consent.html:181
 msgctxt "consent-rights"
 msgid ""
 "You also have the right to submit an objection to the supervisory authority."
 msgstr ""
 
-#: psynet/templates/consents/main_consent.html:93
-#: psynet/templates/macros/consent.html:200
+#: psynet/templates/consents/main_consent.html:94
+#: psynet/templates/macros/consent.html:182
 msgctxt "consent-rights"
 msgid "For the Max-Planck-Society, this is:"
 msgstr ""
 
-#: psynet/templates/consents/open_science_consent.html:12
+#: psynet/templates/consents/open_science_consent.html:13
 msgctxt "consent"
 msgid ""
 "Following open science practices to improve science reusability and "
@@ -1767,7 +1894,7 @@ msgid ""
 "experiment as soon as the study is finished."
 msgstr ""
 
-#: psynet/templates/consents/open_science_consent.html:13
+#: psynet/templates/consents/open_science_consent.html:14
 msgctxt "consent"
 msgid ""
 "This includes audio-visual recordings, such as a recording of your finger-"
@@ -1775,14 +1902,14 @@ msgid ""
 "singing."
 msgstr ""
 
-#: psynet/templates/consents/open_science_consent.html:14
+#: psynet/templates/consents/open_science_consent.html:15
 msgctxt "consent"
 msgid ""
 "We may also want to publish certain materials as part of the scientific "
 "publication, such as a demo video of the task or part of an interview."
 msgstr ""
 
-#: psynet/templates/consents/open_science_consent.html:20
+#: psynet/templates/consents/open_science_consent.html:21
 msgctxt "consent-confidentiality"
 msgid ""
 "Since the audio-visual recordings collected in this experiment may be made "
@@ -1790,7 +1917,7 @@ msgid ""
 "this experiment."
 msgstr ""
 
-#: psynet/templates/consents/open_science_consent.html:21
+#: psynet/templates/consents/open_science_consent.html:22
 msgctxt "consent-confidentiality"
 msgid ""
 "However, your data will not be directly associated with your name or other "
@@ -1798,19 +1925,19 @@ msgid ""
 "audio/video materials of yours)."
 msgstr ""
 
-#: psynet/templates/consents/open_science_consent.html:26
+#: psynet/templates/consents/open_science_consent.html:27
 msgctxt "consent-security"
 msgid ""
 "Data will be published on open science frameworks/websites such as OSF "
 "(https://osf.io/) and will be available to everybody with internet access."
 msgstr ""
 
-#: psynet/templates/consents/open_science_consent.html:28
+#: psynet/templates/consents/open_science_consent.html:29
 msgctxt "consent-disclaimer"
 msgid "Disclaimer"
 msgstr ""
 
-#: psynet/templates/consents/open_science_consent.html:30
+#: psynet/templates/consents/open_science_consent.html:31
 msgctxt "consent-disclaimer"
 msgid ""
 "Since some materials will be published as part of the scientific "
@@ -1818,223 +1945,253 @@ msgid ""
 "become public (either immediately or soon after data collection)."
 msgstr ""
 
-#: psynet/templates/consents/open_science_consent.html:31
+#: psynet/templates/consents/open_science_consent.html:32
 msgctxt "consent-disclaimer"
 msgid ""
 "Thus, you may wish to make sure you do not record any materials you do not "
 "want to make public."
 msgstr ""
 
-#: psynet/templates/consents/open_science_consent.html:32
+#: psynet/templates/consents/open_science_consent.html:33
 msgctxt "consent-disclaimer"
 msgid ""
 "By consenting to this experiment you are committing not to use profanity "
 "while recording audio or nudity while recording video."
 msgstr ""
 
-#: psynet/templates/consents/open_science_consent.html:33
+#: psynet/templates/consents/open_science_consent.html:34
 msgctxt "consent-disclaimer"
 msgid ""
 "Although your data will not be associated with personal identifiers, it is "
 "possible to link your personal information based on audio-visual recordings"
 msgstr ""
 
-#: psynet/templates/consents/voluntary_with_no_compensation_consent.html:25
-#: psynet/templates/macros/consent.html:189
+#: psynet/templates/consents/voluntary_with_no_compensation_consent.html:26
+#: psynet/templates/macros/consent.html:171
 msgctxt "consent-compensation"
 msgid ""
 "This study is completely voluntary; you will not receive any monetary "
 "compensation for participation."
 msgstr ""
 
-#: psynet/templates/consents/voluntary_with_no_compensation_consent.html:26
-#: psynet/templates/macros/consent.html:190
+#: psynet/templates/consents/voluntary_with_no_compensation_consent.html:27
+#: psynet/templates/macros/consent.html:172
 msgctxt "consent-compensation"
 msgid "By doing the task you are helping science, thank you!"
 msgstr ""
 
-#: psynet/templates/exit_recruiter_lucid.html:6
+#: psynet/templates/exit_recruiter_lucid.html:3
+#: psynet/templates/exit_recruiter_lucid.html:7
 msgctxt "exit_recruiter_lucid"
-msgid "Lucid Survey Submission"
+msgid "Returning you to your panel"
+msgstr ""
+
+#: psynet/templates/exit_recruiter_lucid.html:9
+msgctxt "exit_recruiter_lucid"
+msgid "Please wait."
+msgstr ""
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html:11
+#: psynet/templates/exit_recruiter_prolific_submitted.html:25
+#: psynet/templates/exit_recruiter_prolific_submitted.html:48
+msgctxt "exit_recruiter_prolific"
+msgid "Submit to Prolific"
+msgstr ""
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html:28
+msgctxt "exit_recruiter_prolific"
+msgid ""
+"Click below to send your submission to Prolific. You will not need to enter "
+"a completion code."
+msgstr ""
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html:34
+msgctxt "exit_recruiter_prolific"
+msgid "Please wait."
+msgstr ""
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html:43
+msgctxt "exit_recruiter_prolific"
+msgid "Try again"
 msgstr ""
 
 #: psynet/templates/keyboard.html:9
 msgid "Select a keyboard layout:"
 msgstr ""
 
-#: psynet/templates/keyboard.html:105
+#: psynet/templates/keyboard.html:116
 msgid "You did not press all required keys."
 msgstr ""
 
-#: psynet/templates/macros/browser-detect.html:171
+#: psynet/templates/macros/browser-detect.html:174
 msgctxt "browser_compatibility"
 msgid "You need to use Google Chrome to take part in the experiment."
 msgstr ""
 
-#: psynet/templates/macros/browser-detect.html:171
+#: psynet/templates/macros/browser-detect.html:174
 msgctxt "browser_compatibility"
 msgid "You are using"
 msgstr ""
 
-#: psynet/templates/macros/browser-detect.html:171
 #: psynet/templates/macros/browser-detect.html:174
-#: psynet/templates/macros/browser-detect.html:184
+#: psynet/templates/macros/browser-detect.html:177
+#: psynet/templates/macros/browser-detect.html:187
 msgctxt "browser_compatibility"
 msgid "Please follow the instructions below to continue."
 msgstr ""
 
-#: psynet/templates/macros/browser-detect.html:174
+#: psynet/templates/macros/browser-detect.html:177
 msgctxt "browser_compatibility"
 msgid ""
 "You need to use the latest version of Google Chrome to take part in the "
 "experiment."
 msgstr ""
 
-#: psynet/templates/macros/browser-detect.html:174
+#: psynet/templates/macros/browser-detect.html:177
 msgctxt "browser_compatibility"
 msgid "You are using:"
 msgstr ""
 
-#: psynet/templates/macros/browser-detect.html:183
+#: psynet/templates/macros/browser-detect.html:186
 msgctxt "browser_compatibility"
 msgid "You need to use the incognito mode to take part in the experiment."
 msgstr ""
 
-#: psynet/templates/macros/browser-detect.html:194
+#: psynet/templates/macros/browser-detect.html:197
 msgctxt "browser_compatibility"
 msgid "Warning!"
 msgstr ""
 
-#: psynet/templates/macros/browser-detect.html:202
-#: psynet/templates/macros/browser-detect.html:577
+#: psynet/templates/macros/browser-detect.html:205
+#: psynet/templates/macros/browser-detect.html:582
 msgctxt "browser_compatibility"
 msgid "Click here"
 msgstr ""
 
-#: psynet/templates/macros/browser-detect.html:204
+#: psynet/templates/macros/browser-detect.html:207
 msgctxt "browser_compatibility"
 msgid "Install the latest version of Google Chrome"
 msgstr ""
 
-#: psynet/templates/macros/browser-detect.html:206
+#: psynet/templates/macros/browser-detect.html:209
 msgctxt "browser_compatibility"
 msgid "Install Google Chrome if you haven't"
 msgstr ""
 
-#: psynet/templates/macros/browser-detect.html:209
+#: psynet/templates/macros/browser-detect.html:212
 msgctxt "browser_compatibility"
 msgid "Copy the link below"
 msgstr ""
 
-#: psynet/templates/macros/browser-detect.html:211
-#: psynet/templates/macros/browser-detect.html:596
+#: psynet/templates/macros/browser-detect.html:214
+#: psynet/templates/macros/browser-detect.html:601
 msgctxt "browser_compatibility"
 msgid "Open Google Chrome"
 msgstr ""
 
-#: psynet/templates/macros/browser-detect.html:220
+#: psynet/templates/macros/browser-detect.html:223
 msgctxt "browser_compatibility"
 msgid "On your computer, open Chrome."
 msgstr ""
 
-#: psynet/templates/macros/browser-detect.html:221
+#: psynet/templates/macros/browser-detect.html:224
 msgctxt "browser_compatibility"
 msgid "At the top right, click More"
 msgstr ""
 
-#: psynet/templates/macros/browser-detect.html:222
+#: psynet/templates/macros/browser-detect.html:225
 msgctxt "browser_compatibility"
 msgid "New Incognito Window"
 msgstr ""
 
-#: psynet/templates/macros/browser-detect.html:223
+#: psynet/templates/macros/browser-detect.html:226
 msgctxt "browser_compatibility"
 msgid "A new window appears. In the top corner, check for the Incognito icon"
 msgstr ""
 
-#: psynet/templates/macros/browser-detect.html:225
+#: psynet/templates/macros/browser-detect.html:228
 msgctxt "browser_compatibility"
 msgid "You can also use a keyboard shortcut to open an Incognito window"
 msgstr ""
 
-#: psynet/templates/macros/browser-detect.html:225
+#: psynet/templates/macros/browser-detect.html:228
 msgctxt "browser_compatibility"
 msgid "Press"
 msgstr ""
 
-#: psynet/templates/macros/browser-detect.html:229
-#: psynet/templates/macros/browser-detect.html:603
+#: psynet/templates/macros/browser-detect.html:232
+#: psynet/templates/macros/browser-detect.html:608
 msgctxt "browser_compatibility"
 msgid "Open a new incognito window"
 msgstr ""
 
-#: psynet/templates/macros/browser-detect.html:235
+#: psynet/templates/macros/browser-detect.html:238
 msgctxt "browser_compatibility"
 msgid "Paste the link into the incognito window to continue the experiment"
 msgstr ""
 
-#: psynet/templates/macros/browser-detect.html:237
-#: psynet/templates/macros/browser-detect.html:615
+#: psynet/templates/macros/browser-detect.html:240
+#: psynet/templates/macros/browser-detect.html:620
 msgctxt "browser_compatibility"
 msgid "Paste the link into the incognito window to start the experiment"
 msgstr ""
 
-#: psynet/templates/macros/browser-detect.html:241
+#: psynet/templates/macros/browser-detect.html:244
 msgctxt "browser_compatibility"
 msgid "Paste the link into the Chrome browser to continue the experiment"
 msgstr ""
 
-#: psynet/templates/macros/browser-detect.html:243
+#: psynet/templates/macros/browser-detect.html:246
 msgctxt "browser_compatibility"
 msgid "Paste the link into the Chrome browser to start the experiment"
 msgstr ""
 
-#: psynet/templates/macros/browser-detect.html:271
+#: psynet/templates/macros/browser-detect.html:274
 msgctxt "browser_compatibility"
 msgid "You cannot take part in the experiment from a mobile device."
 msgstr ""
 
-#: psynet/templates/macros/browser-detect.html:272
+#: psynet/templates/macros/browser-detect.html:275
 msgctxt "browser_compatibility"
 msgid "Please open the survey on your computer."
 msgstr ""
 
-#: psynet/templates/macros/browser-detect.html:565
+#: psynet/templates/macros/browser-detect.html:570
 msgctxt "browser_compatibility"
 msgid "This site requires JavaScript to function properly."
 msgstr ""
 
-#: psynet/templates/macros/browser-detect.html:566
+#: psynet/templates/macros/browser-detect.html:571
 msgctxt "browser_compatibility"
 msgid "Please enable JavaScript in your browser."
 msgstr ""
 
-#: psynet/templates/macros/browser-detect.html:567
+#: psynet/templates/macros/browser-detect.html:572
 msgctxt "browser_compatibility"
 msgid "Follow the steps below to make sure the experiment works."
 msgstr ""
 
-#: psynet/templates/macros/browser-detect.html:575
+#: psynet/templates/macros/browser-detect.html:580
 msgctxt "browser_compatibility"
 msgid "Install the latest version of Google Chrome on your computer"
 msgstr ""
 
-#: psynet/templates/macros/browser-detect.html:587
+#: psynet/templates/macros/browser-detect.html:592
 msgctxt "browser_compatibility"
 msgid "Copy the current URL to the clipboard:"
 msgstr ""
 
-#: psynet/templates/macros/browser-detect.html:605
+#: psynet/templates/macros/browser-detect.html:610
 msgctxt "browser_compatibility"
 msgid "Open a new incognito window with  the following keyboard shortcuts:"
 msgstr ""
 
-#: psynet/templates/macros/browser-detect.html:606
+#: psynet/templates/macros/browser-detect.html:611
 msgctxt "browser_compatibility"
 msgid "On Windows, Linux, or Chrome OS: Press"
 msgstr ""
 
-#: psynet/templates/macros/browser-detect.html:608
+#: psynet/templates/macros/browser-detect.html:613
 msgctxt "browser_compatibility"
 msgid "On Mac: Press"
 msgstr ""
@@ -2043,7 +2200,7 @@ msgstr ""
 msgid "Do you understand and consent to these terms?"
 msgstr ""
 
-#: psynet/templates/macros/consent.html:7
+#: psynet/templates/macros/consent.html:6
 msgctxt "consent"
 msgid "I agree"
 msgstr ""
@@ -2053,50 +2210,46 @@ msgctxt "consent"
 msgid "No, thank you (return task)"
 msgstr ""
 
-#: psynet/templates/macros/consent.html:19
-msgid "Scroll up/down to see all text"
-msgstr ""
-
-#: psynet/templates/macros/consent.html:26
+#: psynet/templates/macros/consent.html:23
 msgctxt "consent"
 msgid "Principal Investigator"
 msgstr ""
 
-#: psynet/templates/macros/consent.html:37
+#: psynet/templates/macros/consent.html:34
 msgctxt "consent-overview"
 msgid "Overview"
 msgstr ""
 
-#: psynet/templates/macros/consent.html:39
+#: psynet/templates/macros/consent.html:36
 msgctxt "consent-overview"
 msgid ""
 "This research is being conducted by researchers at the Max-Planck-Institute "
 "for Empirical Aesthetics."
 msgstr ""
 
-#: psynet/templates/macros/consent.html:40
-#: psynet/templates/macros/consent.html:209
+#: psynet/templates/macros/consent.html:37
+#: psynet/templates/macros/consent.html:191
 msgctxt "consent"
 msgid ""
 "If you have any questions about this research, do not hesitate to contact "
 "the main researcher in this project, Nori Jacoby at:"
 msgstr ""
 
-#: psynet/templates/macros/consent.html:42
+#: psynet/templates/macros/consent.html:39
 msgctxt "consent-overview"
 msgid ""
 "The purpose of this online form is to give you information to help you "
 "decide whether you want to take part in a research study."
 msgstr ""
 
-#: psynet/templates/macros/consent.html:49
+#: psynet/templates/macros/consent.html:46
 msgctxt "consent-purpose"
 msgid ""
 "The purpose of this project is to study the role of experience and exposure "
 "in creating and affecting our perception, decisions and actions."
 msgstr ""
 
-#: psynet/templates/macros/consent.html:50
+#: psynet/templates/macros/consent.html:47
 msgctxt "consent-purpose"
 msgid ""
 "Specifically, we aim to combine a wide range of behavioural methodologies to"
@@ -2105,14 +2258,14 @@ msgid ""
 "and visual (e.g., faces, color) domains."
 msgstr ""
 
-#: psynet/templates/macros/consent.html:51
+#: psynet/templates/macros/consent.html:48
 msgctxt "consent-purpose"
 msgid ""
 "We are also interested in the way that these internal representations affect"
 " human decision making and behaviour."
 msgstr ""
 
-#: psynet/templates/macros/consent.html:98
+#: psynet/templates/macros/consent.html:80
 msgctxt "consent-confidentiality"
 msgid ""
 "All the recordings we obtain during this research will be kept confidential,"
@@ -2120,7 +2273,7 @@ msgid ""
 "them."
 msgstr ""
 
-#: psynet/templates/macros/consent.html:99
+#: psynet/templates/macros/consent.html:81
 msgctxt "consent-confidentiality"
 msgid ""
 "However, in some experiments, your recordings may be seen or heard by other "
@@ -2129,28 +2282,28 @@ msgid ""
 "melody that you sang)."
 msgstr ""
 
-#: psynet/templates/macros/consent.html:100
+#: psynet/templates/macros/consent.html:82
 msgctxt "consent-confidentiality"
 msgid ""
 "Your recordings will not be associated with your name or other identifiers "
 "in any way."
 msgstr ""
 
-#: psynet/templates/macros/consent.html:101
+#: psynet/templates/macros/consent.html:83
 msgctxt "consent-confidentiality"
 msgid ""
 "Your recordings will not be used to derive your real identity, and they will"
 " not be made public."
 msgstr ""
 
-#: psynet/templates/macros/consent.html:102
+#: psynet/templates/macros/consent.html:84
 msgctxt "consent-confidentiality"
 msgid ""
 "Raw audio/video will not be shared with collaborators (we will only share "
 "extracted data from recordings without personal identifiers)."
 msgstr ""
 
-#: psynet/templates/macros/consent.html:103
+#: psynet/templates/macros/consent.html:85
 msgctxt "consent-confidentiality"
 msgid ""
 "Although researchers will not use your recordings to derive your real "
@@ -2158,7 +2311,7 @@ msgid ""
 " environment."
 msgstr ""
 
-#: psynet/templates/macros/consent.html:104
+#: psynet/templates/macros/consent.html:86
 msgctxt "consent-confidentiality"
 msgid ""
 "You may wish to make sure that no sounds/visual material in your environment"
@@ -2168,7 +2321,7 @@ msgid ""
 "microphone can capture something you say to another person."
 msgstr ""
 
-#: psynet/templates/macros/consent.html:105
+#: psynet/templates/macros/consent.html:87
 msgctxt "consent-confidentiality"
 msgid ""
 "If you choose to participate in the experiment, it is important and your "
@@ -2176,28 +2329,28 @@ msgid ""
 "that you don’t intend to be recorded is recorded."
 msgstr ""
 
-#: psynet/templates/macros/consent.html:106
+#: psynet/templates/macros/consent.html:88
 msgctxt "consent-confidentiality"
 msgid ""
 "For example, you may want to sit in a room that is isolated from the rest of"
 " the house."
 msgstr ""
 
-#: psynet/templates/macros/consent.html:107
+#: psynet/templates/macros/consent.html:89
 msgctxt "consent-confidentiality"
 msgid ""
 "By consenting to this experiment, you are committing not to use profanity "
 "while recording audio or nudity while recording video."
 msgstr ""
 
-#: psynet/templates/macros/consent.html:144
+#: psynet/templates/macros/consent.html:126
 msgctxt "consent-collaborations"
 msgid ""
 "In these cases, we may share your audio-visual material along with fully "
 "anonymized data, such as demographic, aggregated, or extracted data."
 msgstr ""
 
-#: psynet/templates/macros/consent.html:145
+#: psynet/templates/macros/consent.html:127
 msgctxt "consent-collaborations"
 msgid ""
 "We will never connect your real name or any of your personal information "
@@ -2205,28 +2358,28 @@ msgid ""
 "possible to recognize individuals based on audio-visual material."
 msgstr ""
 
-#: psynet/templates/macros/consent.html:148
+#: psynet/templates/macros/consent.html:130
 msgctxt "consent-collaborations"
 msgid ""
 "Audio-visual material will be shared only if your consent to an additional "
 "consent form as explained above."
 msgstr ""
 
-#: psynet/templates/macros/consent.html:158
+#: psynet/templates/macros/consent.html:140
 msgctxt "consent-security"
 msgid ""
 "During data collection, audio-visual material will be recorded on a separate"
 " server."
 msgstr ""
 
-#: psynet/templates/macros/consent.html:159
+#: psynet/templates/macros/consent.html:141
 msgctxt "consent-security"
 msgid ""
 "Audio-visual material will not be indexed by personal information but will "
 "be linked to personal information by a key (such as “afasd12314asdasd”)."
 msgstr ""
 
-#: psynet/templates/macros/consent.html:160
+#: psynet/templates/macros/consent.html:142
 msgctxt "consent-security"
 msgid ""
 "Personal information will be stored separately from audio-visual materials "
@@ -2234,17 +2387,17 @@ msgid ""
 "Encryption Standard)."
 msgstr ""
 
-#: psynet/templates/macros/consent.html:207
+#: psynet/templates/macros/consent.html:189
 msgctxt "consent-contact"
 msgid "Contact information"
 msgstr ""
 
-#: psynet/templates/macros/consent.html:216
+#: psynet/templates/macros/consent.html:198
 msgctxt "consent-consent"
 msgid "Consent"
 msgstr ""
 
-#: psynet/templates/macros/consent.html:218
+#: psynet/templates/macros/consent.html:200
 msgctxt "consent-consent"
 msgid ""
 "By consenting to participate, you acknowledge that you are 18 years or "
@@ -2252,169 +2405,231 @@ msgid ""
 " part in this research."
 msgstr ""
 
-#: psynet/templates/macros/consent.html:219
+#: psynet/templates/macros/consent.html:201
 msgctxt "consent-consent"
 msgid "If you do not wish to consent, please close this page."
 msgstr ""
 
-#: psynet/templates/macros/control.html:78
+#: psynet/templates/macros/control.html:120
 msgid "Reset"
 msgstr ""
 
-#: psynet/templates/macros/control.html:1030
+#: psynet/templates/macros/control.html:1053
+msgctxt "audio_meter"
+msgid "Microphone level"
+msgstr ""
+
+#: psynet/templates/macros/control.html:1082
 msgctxt "audio_meter_calibrate"
 msgid "Sliders"
 msgstr ""
 
-#: psynet/templates/macros/control.html:1033
+#: psynet/templates/macros/control.html:1085
 msgctxt "audio_meter_calibrate"
 msgid "Documentation"
 msgstr ""
 
-#: psynet/templates/macros/control.html:1044
+#: psynet/templates/macros/control.html:1096
 msgctxt "audio_meter_calibrate"
 msgid ""
 "The <strong>decay</strong> parameters determine the amount of smoothing that"
 " happens to the signal, and have units of seconds."
 msgstr ""
 
-#: psynet/templates/macros/control.html:1045
+#: psynet/templates/macros/control.html:1097
 msgctxt "audio_meter_calibrate"
 msgid ""
 "A high decay parameter means that the signal takes a long time to decay "
 "(i.e. high smoothing)."
 msgstr ""
 
-#: psynet/templates/macros/control.html:1046
+#: psynet/templates/macros/control.html:1098
 msgctxt "audio_meter_calibrate"
 msgid ""
 "There are three decay parameters: one for the displayed audio meter, one for"
 " the 'too-high' detector, and one for the 'too-low' detector."
 msgstr ""
 
-#: psynet/templates/macros/control.html:1050
+#: psynet/templates/macros/control.html:1102
 msgctxt "audio_meter_calibrate"
 msgid ""
 "The <strong>threshold</strong> parameters determine the point at which the "
 "volume is determined to be 'too high' or 'too low'."
 msgstr ""
 
-#: psynet/templates/macros/control.html:1054
+#: psynet/templates/macros/control.html:1106
 msgctxt "audio_meter_calibrate"
 msgid ""
 "The <strong>grace</strong> parameters determine how long the volume must be "
 "outside the respective threshold for a warning message to be triggered."
 msgstr ""
 
-#: psynet/templates/macros/control.html:1058
+#: psynet/templates/macros/control.html:1110
 msgctxt "audio_meter_calibrate"
 msgid ""
 "The <strong>message duration</strong> parameters determine how long warning "
 "messages are displayed for."
 msgstr ""
 
-#: psynet/templates/macros/control.html:1095
+#: psynet/templates/macros/control.html:1152
 msgid "Record from start"
 msgstr ""
 
-#: psynet/templates/macros/control.html:1098
+#: psynet/templates/macros/control.html:1155
 msgid "Play all"
 msgstr ""
 
-#: psynet/templates/macros/control.html:1101
+#: psynet/templates/macros/control.html:1158
 msgid "Play prompt"
 msgstr ""
 
-#: psynet/templates/macros/control.html:1104
+#: psynet/templates/macros/control.html:1161
 msgid "Play recording"
 msgstr ""
 
-#: psynet/templates/macros/control.html:1107
+#: psynet/templates/macros/control.html:1164
 msgid "Stop"
 msgstr ""
 
-#: psynet/templates/macros/control.html:1116
+#: psynet/templates/macros/control.html:1173
 msgid "Loop"
 msgstr ""
 
-#: psynet/templates/macros/prompt.html:136
+#: psynet/templates/macros/prompt.html:139
 msgid "Video not found"
 msgstr ""
 
-#: psynet/templates/macros/prompt.html:219
+#: psynet/templates/macros/prompt.html:226
 msgid "Image not found"
 msgstr ""
 
-#: psynet/templates/psynet_error.html:9
+#: psynet/templates/macros/timeline-shell.html:33
+msgctxt "timeline_problem"
+msgid "Comment stored."
+msgstr ""
+
+#: psynet/templates/macros/timeline-shell.html:34
+msgctxt "timeline_problem"
+msgid "Please wait for the page to load."
+msgstr ""
+
+#: psynet/templates/macros/timeline-shell.html:34
+msgctxt "timeline_problem"
+msgid "Try again in a couple of seconds."
+msgstr ""
+
+#: psynet/templates/macros/timeline-shell.html:103
+msgctxt "timeline"
+msgid "Reward"
+msgstr ""
+
+#: psynet/templates/macros/timeline-shell.html:114
+msgctxt "timeline_reward"
+msgid "Reward earned so far"
+msgstr ""
+
+#: psynet/templates/macros/timeline-shell.html:116
+msgctxt "timeline_reward"
+msgid "for time"
+msgstr ""
+
+#: psynet/templates/macros/timeline-shell.html:118
+msgctxt "timeline_reward"
+msgid "for performance"
+msgstr ""
+
+#: psynet/templates/macros/timeline-shell.html:125
+msgctxt "timeline"
+msgid "Comment"
+msgstr ""
+
+#: psynet/templates/macros/timeline-shell.html:133
+msgctxt "timeline_problem"
+msgid "Leave"
+msgstr ""
+
+#: psynet/templates/macros/timeline-shell.html:138
+msgctxt "timeline_problem"
+msgid "Leave without finishing."
+msgstr ""
+
+#: psynet/templates/psynet_error.html:3 psynet/templates/psynet_error.html:13
 msgctxt "error"
-msgid "Error!"
+msgid "An error occurred"
 msgstr ""
 
-#: psynet/templates/psynet_error.html:16
-msgctxt "mturk_error"
-msgid ""
-"You may be able to abort the experiment using the <strong>Abort "
-"experiment</strong> button <strong>on the MTurk ad page</strong>."
+#: psynet/templates/psynet_error.html:44
+msgctxt "early_exit_error"
+msgid "Please wait."
 msgstr ""
 
-#: psynet/templates/psynet_error.html:17
-msgctxt "mturk_error"
-msgid ""
-"Once aborted, there is no need to contact us to receive the compensation; "
-"this should be awarded to you automatically via MTurk a few minutes after."
+#: psynet/templates/psynet_error.html:53
+msgctxt "early_exit_error"
+msgid "Try again"
 msgstr ""
 
-#: psynet/templates/psynet_error.html:19
-#, python-format
-msgid ""
-"If this is not the case, please contact us at %(EMAIL)s quoting the "
-"following information:"
+#: psynet/templates/psynet_exit_recruiter.html:18
+#: psynet/templates/psynet_exit_recruiter.html:22
+msgctxt "exit"
+msgid "You chose to leave."
 msgstr ""
 
-#: psynet/templates/psynet_error.html:21
-msgid "Error type"
+#: psynet/templates/psynet_exit_recruiter.html:18
+#: psynet/templates/psynet_exit_recruiter.html:22
+msgid "Thank you for taking part."
 msgstr ""
 
-#: psynet/templates/psynet_error.html:24
-msgid "Worker ID"
+#: psynet/templates/psynet_exit_recruiter.html:26
+msgctxt "exit"
+msgid "You may close this page."
 msgstr ""
 
-#: psynet/templates/start.html:27
+#: psynet/templates/psynet_exit_recruiter.html:28
+msgctxt "exit"
+msgid "Your responses have been saved. You may close this page."
+msgstr ""
+
+#: psynet/templates/psynet_exit_recruiter.html:33
+msgctxt "exit"
+msgid "Reference code"
+msgstr ""
+
+#: psynet/templates/start.html:41
 msgctxt "start"
 msgid "Starting experiment..."
 msgstr ""
 
-#: psynet/templates/timeline-page.html:49
+#: psynet/templates/timeline-page.html:219
 msgctxt "timeline_comment"
 msgid "Leave a comment"
 msgstr ""
 
-#: psynet/templates/timeline-page.html:50
+#: psynet/templates/timeline-page.html:220
 msgctxt "timeline_comment"
 msgid "Write a comment here"
 msgstr ""
 
-#: psynet/templates/timeline-page.html:52
+#: psynet/templates/timeline-page.html:222
 msgctxt "timeline_comment"
 msgid "Send comment"
 msgstr ""
 
-#: psynet/templates/timeline-page.html:63
+#: psynet/templates/timeline-page.html:233
 msgctxt "alert_ok"
 msgid "OK"
 msgstr ""
 
-#: psynet/templates/timeline-page.html:72
+#: psynet/templates/timeline-page.html:242
 msgctxt "timeline_resume"
 msgid "Are you ready?"
 msgstr ""
 
-#: psynet/templates/timeline-page.html:74
+#: psynet/templates/timeline-page.html:244
 msgctxt "timeline_resume"
 msgid "Click the button when you're ready to continue the experiment."
 msgstr ""
 
-#: psynet/templates/timeline-page.html:77
+#: psynet/templates/timeline-page.html:247
 msgctxt "timeline_resume"
 msgid ""
 "Note: if you see this message a lot, it might be because your browser has an"
@@ -2423,39 +2638,36 @@ msgid ""
 "from the current page), and/or try manually disabling your extensions."
 msgstr ""
 
-#: psynet/templates/timeline-page.html:80
+#: psynet/templates/timeline-page.html:250
 msgctxt "timeline_resume"
 msgid "Resume"
 msgstr ""
 
-#: psynet/templates/timeline-page.html:116
-msgctxt "timeline"
-msgid "Reward"
+#: psynet/timeline_hold.py:182
+#, python-brace-format
+msgctxt "timeline_hold"
+msgid "{REMAINING} of {TOTAL} not ready yet"
 msgstr ""
 
-#: psynet/templates/timeline-page.html:131
-msgctxt "timeline"
-msgid "Comment"
+#: psynet/timeline_hold.py:187
+msgctxt "timeline_hold"
+msgid "Your partner is ready."
 msgstr ""
 
-#: psynet/templates/timeline-page.html:136
-msgctxt "timeline_problem"
-msgid "Terminate the experiment early"
+#: psynet/timeline_hold.py:188
+#, python-brace-format
+msgctxt "timeline_hold"
+msgid "{ARRIVED}/{TOTAL} of your group are ready."
 msgstr ""
 
-#: psynet/templates/timeline-page.html:172
-msgctxt "timeline_problem"
-msgid "Comment stored."
+#: psynet/timeline_hold.py:600
+msgctxt "timeline_hold"
+msgid "Waiting for other participants…"
 msgstr ""
 
-#: psynet/templates/timeline-page.html:173
-msgctxt "timeline_problem"
-msgid "Please wait for the page to load."
-msgstr ""
-
-#: psynet/templates/timeline-page.html:173
-msgctxt "timeline_problem"
-msgid "Try again in a couple of seconds."
+#: psynet/timeline_hold.py:604
+msgctxt "timeline_hold"
+msgid "Please wait, the experiment should continue shortly..."
 msgstr ""
 
 #: psynet/translation/countries.py:14

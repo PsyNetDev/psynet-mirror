@@ -439,34 +439,42 @@ msgstr "Τέλος"
 msgctxt "final-page-rewards"
 msgid ""
 "You will receive a reward of <strong>{CURRENCY}{TIME_REWARD}</strong> for "
-"the time you spent on the experiment. You have also been awarded a "
-"performance reward of <strong>{CURRENCY}{PERFORMANCE_REWARD}</strong>! "
+"the time you spent. "
 msgstr ""
 "Θα λάβετε μια ανταμοιβή <strong>{CURRENCY}{TIME_REWARD}</strong> για τον "
-"χρόνο που αφιερώσατε στο πείραμα. Έχετε επίσης λάβει μια ανταμοιβή απόδοσης "
-"<strong>{CURRENCY}{PERFORMANCE_REWARD}</strong>! "
+"χρόνο που αφιερώσατε."
+
+#: psynet/end.py
+#, fuzzy, python-brace-format
+msgctxt "final-page-performance-reward"
+msgid ""
+"You have also been awarded a performance reward of "
+"<strong>{CURRENCY}{PERFORMANCE_REWARD}</strong>. "
+msgstr ""
+"Έχετε επίσης λάβει μια ανταμοιβή απόδοσης "
+"<strong>{CURRENCY}{PERFORMANCE_REWARD}</strong>."
+
+#: psynet/end.py
+#, fuzzy
+msgid "Click Finish to return to your panel."
+msgstr "Πατήστε Τέλος για να επιστρέψετε στον πίνακά σας."
+
+#: psynet/end.py
+#, fuzzy
+msgid "Click Finish to finalize the session."
+msgstr "Πατήστε Τέλος για να ολοκληρώσετε τη συνεδρία."
 
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_successful"
-msgid "That's the end of the experiment!"
-msgstr "Αυτό είναι το τέλος του πειράματος!"
-
-#: psynet/end.py
-#, fuzzy
-msgid "Thank you for taking part."
-msgstr "Σας ευχαριστούμε που συμμετείχατε."
-
-#: psynet/end.py
-#, fuzzy
-msgid "Please click \"Finish\" to finalize the session."
-msgstr "Παρακαλώ κάντε κλικ στο \"Τέλος\" για να ολοκληρώσετε το HIT."
+msgid "That's the end!"
+msgstr "Αυτό είναι το τέλος!"
 
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_unsuccessful"
-msgid "Unfortunately the experiment must end early."
-msgstr "Δυστυχώς το πείραμα πρέπει να τελειώσει νωρίς."
+msgid "Unfortunately we have to stop early."
+msgstr "Δυστυχώς πρέπει να σταματήσουμε νωρίτερα."
 
 #: psynet/end.py
 #, fuzzy
@@ -476,20 +484,20 @@ msgstr "Ωστόσο, θα πληρωθείτε για τον χρόνο που 
 
 #: psynet/end.py
 #, fuzzy
-msgid "You will be redirected."
-msgstr "Θα ανακατευθυνθείτε."
+msgctxt "final_page_rejected_consent"
+msgid "You chose not to continue."
+msgstr "Επιλέξατε να μην συνεχίσετε."
 
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_rejected_consent"
-msgid "Consent was rejected."
-msgstr "Η συγκατάθεση απορρίφθηκε."
+msgid "You may close this page."
+msgstr "Μπορείτε να κλείσετε αυτή τη σελίδα."
 
 #: psynet/end.py
 #, fuzzy
-msgctxt "final_page_rejected_consent"
-msgid "End of experiment."
-msgstr "Τέλος του πειράματος."
+msgid "We will return you to your panel in a few seconds."
+msgstr "Θα σας επιστρέψουμε στον πίνακά σας σε λίγα δευτερόλεπτα."
 
 #: psynet/equipment.py
 #, fuzzy
@@ -502,42 +510,9 @@ msgstr ""
 
 #: psynet/experiment.py
 #, fuzzy
-msgctxt "error-msg"
-msgid "There has been an error and so you are unable to continue, sorry!"
-msgstr "Υπήρξε ένα σφάλμα και δεν μπορείτε να συνεχίσετε, λυπούμαστε!"
-
-#: psynet/experiment.py
-#, fuzzy, python-brace-format
-msgctxt "mturk_error"
-msgid ""
-"To enquire about compensation, please contact the researcher at {EMAIL} and "
-"describe what led to this error."
-msgstr ""
-"Για να ρωτήσετε σχετικά με την αποζημίωση, παρακαλώ επικοινωνήστε με τον "
-"ερευνητή στο {EMAIL} και περιγράψτε τι οδήγησε σε αυτό το σφάλμα."
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "mturk_error"
-msgid "Please also quote the following information:"
-msgstr "Παρακαλώ αναφέρετε επίσης τις ακόλουθες πληροφορίες:"
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "prolific_error"
-msgid "Don't worry, your progress has been recorded."
-msgstr "Μην ανησυχείτε, η πρόοδός σας έχει καταγραφεί."
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "prolific_error"
-msgid ""
-"To enquire about compensation, please send the researcher a message via the "
-"Prolific website and describe what led to your error."
-msgstr ""
-"Για να ρωτήσετε σχετικά με την αποζημίωση, παρακαλώ στείλτε ένα μήνυμα στον "
-"ερευνητή μέσω της ιστοσελίδας Prolific και περιγράψτε τι οδήγησε στο σφάλμα "
-"σας."
+msgctxt "timeline_problem"
+msgid "This session has already ended. Please reload the page."
+msgstr "Αυτή η συνεδρία έχει ήδη λήξει. Παρακαλώ ανανεώστε τη σελίδα."
 
 #: psynet/experiment.py
 #, fuzzy
@@ -549,6 +524,11 @@ msgstr ""
 "Εντοπίστηκε πρόβλημα συγχρονισμού. Εκτελείτε το ίδιο πείραμα σε πολλαπλές "
 "καρτέλες του προγράμματος περιήγησης; Παρακαλώ κλείστε όλες τις άλλες "
 "καρτέλες και ανανεώστε τη σελίδα."
+
+#: psynet/experiment.py
+#, fuzzy
+msgid "The experiment is temporarily busy. Please try again."
+msgstr "Το πείραμα είναι προσωρινά απασχολημένο. Παρακαλώ δοκιμάστε ξανά."
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -572,6 +552,12 @@ msgstr "Πρέπει να επιλέξετε μια απάντηση!"
 msgctxt "validation"
 msgid "You need to provide a number!"
 msgstr "Πρέπει να δώσετε έναν αριθμό!"
+
+#: psynet/page.py
+#, fuzzy
+msgctxt "status"
+msgid "Working..."
+msgstr "Εργασία σε εξέλιξη..."
 
 #: psynet/prescreen/__init__.py
 #, fuzzy
@@ -752,217 +738,394 @@ msgid "The test will start on the next page."
 msgstr "Το τεστ θα ξεκινήσει στην επόμενη σελίδα."
 
 #: psynet/recruiters.py
-#, fuzzy
-msgctxt "recruiter_communication"
-msgid "Communicating with the recruiter..."
-msgstr "Επικοινωνία με τον υπεύθυνο προσλήψεων..."
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error"
+msgid ""
+"If you need to contact the researcher about this error, write to {EMAIL} and"
+" quote reference code {REFERENCE_CODE}."
+msgstr ""
+"Αν χρειάζεται να επικοινωνήσετε με τον ερευνητή για αυτό το σφάλμα, γράψτε "
+"στο {EMAIL} και αναφέρετε τον κωδικό αναφοράς {REFERENCE_CODE}."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error"
+msgid ""
+"If you need to contact the researcher about this error, write to {EMAIL}."
+msgstr ""
+"Αν χρειάζεται να επικοινωνήσετε με τον ερευνητή για αυτό το σφάλμα, γράψτε "
+"στο {EMAIL}."
 
 #: psynet/recruiters.py
 #, fuzzy
-msgctxt "screen_out_successful"
+msgctxt "early_exit_error"
+msgid "You may close this page."
+msgstr "Μπορείτε να κλείσετε αυτή τη σελίδα."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error"
+msgid "Unfortunately an error occurred and we cannot continue."
+msgstr "Δυστυχώς, προέκυψε ένα σφάλμα και δεν μπορούμε να συνεχίσουμε."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error"
+msgid "However, your responses so far have been saved."
+msgstr "Ωστόσο, οι απαντήσεις σας μέχρι τώρα έχουν αποθηκευτεί."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
 msgid ""
-"You have been credited for the time spent on the experiment. Because you "
-"could not progress to the main experiment your submission will appear as "
-"'screened out' in Prolific. You can now close this browser window."
+"If you leave now, you will not be able to continue later. Your responses so "
+"far will still be saved."
 msgstr ""
-"Έχετε πιστωθεί για τον χρόνο που περάσατε στο πείραμα. Επειδή δεν μπορούσατε"
-" να προχωρήσετε στο κύριο πείραμα, η υποβολή σας θα εμφανιστεί ως "
-"'αποκλεισμένη' στο Prolific. Μπορείτε τώρα να κλείσετε αυτό το παράθυρο του "
-"προγράμματος περιήγησης."
+"Αν φύγετε τώρα, δεν θα μπορείτε να συνεχίσετε αργότερα. Οι απαντήσεις σας "
+"μέχρι τώρα θα αποθηκευτούν."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit"
+msgid ""
+"You have earned {EARNED} so far. You need at least {THRESHOLD} to leave with"
+" payment. If you leave without payment, you will not be able to continue "
+"later. Your responses so far will still be saved."
+msgstr ""
+"Έχετε κερδίσει {EARNED} μέχρι τώρα. Χρειάζεστε τουλάχιστον {THRESHOLD} για "
+"να φύγετε με πληρωμή. Αν φύγετε χωρίς πληρωμή, δεν θα μπορείτε να συνεχίσετε"
+" αργότερα. Οι απαντήσεις σας μέχρι τώρα θα αποθηκευτούν."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
+msgid "Leave without payment"
+msgstr "Αποχώρηση χωρίς πληρωμή"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
+msgid "Leave"
+msgstr "Αποχώρηση"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
+msgid "Leave without finishing?"
+msgstr "Αποχώρηση χωρίς ολοκλήρωση;"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
+msgid "Cancel"
+msgstr "Ακύρωση"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_unpaid"
+msgid "You may close this page."
+msgstr "Μπορείτε να κλείσετε αυτή τη σελίδα."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED}. Because you have earned {EARNED} so "
+"far, a further {REMAINDER} will be paid as a bonus. Your responses so far "
+"will still be saved."
+msgstr ""
+"Αν φύγετε τώρα, δεν θα μπορείτε να συνεχίσετε αργότερα. Θα λάβετε μια "
+"σταθερή πληρωμή 'screen-out' ύψους {FIXED}. Επειδή έχετε κερδίσει {EARNED} "
+"μέχρι τώρα, ένα επιπλέον ποσό {REMAINDER} θα καταβληθεί ως μπόνους. Οι "
+"απαντήσεις σας μέχρι τώρα θα αποθηκευτούν."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED}. Your responses so far will still be "
+"saved."
+msgstr ""
+"Αν φύγετε τώρα, δεν θα μπορείτε να συνεχίσετε αργότερα. Θα λάβετε μια "
+"σταθερή πληρωμή 'screen-out' ύψους {FIXED}. Οι απαντήσεις σας μέχρι τώρα θα "
+"αποθηκευτούν."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED} plus a performance bonus of "
+"{PERFORMANCE}. You will not be paid for additional time. Your responses so "
+"far will still be saved."
+msgstr ""
+"Αν φύγετε τώρα, δεν θα μπορείτε να συνεχίσετε αργότερα. Θα λάβετε μια "
+"σταθερή πληρωμή 'screen-out' ύψους {FIXED} συν ένα μπόνους απόδοσης ύψους "
+"{PERFORMANCE}. Δεν θα πληρωθείτε για επιπλέον χρόνο. Οι απαντήσεις σας μέχρι"
+" τώρα θα αποθηκευτούν."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED}. You will not be paid for additional "
+"time. Your responses so far will still be saved."
+msgstr ""
+"Αν φύγετε τώρα, δεν θα μπορείτε να συνεχίσετε αργότερα. Θα λάβετε μια "
+"σταθερή πληρωμή 'screen-out' ύψους {FIXED}. Δεν θα πληρωθείτε για επιπλέον "
+"χρόνο. Οι απαντήσεις σας μέχρι τώρα θα αποθηκευτούν."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will need to "
+"return your Prolific submission. You will then be paid {EARNED} as a bonus "
+"for the work you have completed so far. Your responses so far will still be "
+"saved."
+msgstr ""
+"Αν φύγετε τώρα, δεν θα μπορείτε να συνεχίσετε αργότερα. Θα χρειαστεί να "
+"επιστρέψετε την υποβολή σας στο Prolific. Στη συνέχεια, θα πληρωθείτε "
+"{EARNED} ως μπόνους για τη δουλειά που έχετε ολοκληρώσει μέχρι τώρα. Οι "
+"απαντήσεις σας μέχρι τώρα θα αποθηκευτούν."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "prolific_error"
+msgid "If you had already started, message the researcher through Prolific."
+msgstr ""
+"Αν είχατε ήδη ξεκινήσει, στείλτε μήνυμα στον ερευνητή μέσω του Prolific."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "prolific_error"
+msgid ""
+"Please message the researcher through Prolific and describe what led to this"
+" error."
+msgstr ""
+"Παρακαλώ στείλτε μήνυμα στον ερευνητή μέσω του Prolific και περιγράψτε τι "
+"οδήγησε σε αυτό το σφάλμα."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We will pay you for your progress so far: you will receive {FIXED} through "
+"Prolific."
+msgstr ""
+"Θα σας πληρώσουμε για την πρόοδό σας μέχρι τώρα: θα λάβετε {FIXED} μέσω του "
+"Prolific."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We will also pay {BONUS} as a bonus, bringing your total payment to {TOTAL}."
+msgstr ""
+"Θα πληρώσουμε επίσης {BONUS} ως μπόνους, ανεβάζοντας τη συνολική σας πληρωμή"
+" σε {TOTAL}."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid "We will also pay your {BONUS} performance bonus."
+msgstr "Θα πληρώσουμε επίσης το μπόνους απόδοσης σας ύψους {BONUS}."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Any additional amount you earned will be paid as a bonus."
+msgstr "Οποιοδήποτε επιπλέον ποσό κερδίσατε θα καταβληθεί ως μπόνους."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Select Submit to Prolific to complete your submission."
+msgstr "Επιλέξτε Υποβολή στο Prolific για να ολοκληρώσετε την υποβολή σας."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Submit to Prolific"
+msgstr "Υποβολή στο Prolific"
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid ""
+"To receive {EARNED} for the work you completed, you will need to return your"
+" submission on Prolific."
+msgstr ""
+"Για να λάβετε {EARNED} για τη δουλειά που ολοκληρώσατε, θα χρειαστεί να "
+"επιστρέψετε την υποβολή σας στο Prolific."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid ""
+"To receive payment for the work you completed, you will need to return your "
+"submission on Prolific."
+msgstr ""
+"Για να λάβετε πληρωμή για τη δουλειά που ολοκληρώσατε, θα χρειαστεί να "
+"επιστρέψετε την υποβολή σας στο Prolific."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Select Continue to payment instructions to complete these steps."
+msgstr ""
+"Επιλέξτε Συνέχεια στις οδηγίες πληρωμής για να ολοκληρώσετε αυτά τα βήματα."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We could not open the payment instructions. Please try again. If this keeps "
+"happening, message the researcher through Prolific."
+msgstr ""
+"Δεν μπορέσαμε να ανοίξουμε τις οδηγίες πληρωμής. Παρακαλώ δοκιμάστε ξανά. Αν"
+" αυτό συνεχίσει να συμβαίνει, στείλτε μήνυμα στον ερευνητή μέσω του "
+"Prolific."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Continue to payment instructions"
+msgstr "Συνέχεια στις οδηγίες πληρωμής"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_unpaid_prolific"
+msgid ""
+"Your responses so far have been saved. Please return your submission on "
+"Prolific. You will not receive payment. You may close this page."
+msgstr ""
+"Οι απαντήσεις σας μέχρι τώρα έχουν αποθηκευτεί. Παρακαλώ επιστρέψτε την "
+"υποβολή σας στο Prolific. Δεν θα λάβετε πληρωμή. Μπορείτε να κλείσετε αυτή "
+"τη σελίδα."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Your submission has been sent to Prolific."
+msgstr "Η υποβολή σας έχει σταλεί στο Prolific."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "You may close this page."
+msgstr "Μπορείτε να κλείσετε αυτή τη σελίδα."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We could not send your submission to Prolific. Please try again. If this "
+"keeps happening, message the researcher through Prolific."
+msgstr ""
+"Δεν μπορέσαμε να στείλουμε την υποβολή σας στο Prolific. Παρακαλώ δοκιμάστε "
+"ξανά. Αν αυτό συνεχίσει να συμβαίνει, στείλτε μήνυμα στον ερευνητή μέσω του "
+"Prolific."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "return_assignment_instructions"
 msgid ""
 "Please return your submission via the Prolific interface and click Next. We "
-"will then automatically pay you a bonus for your time."
+"will then automatically pay you a bonus."
 msgstr ""
 "Παρακαλώ επιστρέψτε την υποβολή σας μέσω της διεπαφής του Prolific και κάντε"
-" κλικ στο Επόμενο. Στη συνέχεια, θα σας πληρώσουμε αυτόματα ένα μπόνους για "
-"τον χρόνο σας."
+" κλικ στο Επόμενο. Στη συνέχεια, θα σας πληρώσουμε αυτόματα ένα μπόνους."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "return_for_bonus_completed"
 msgid ""
-"That worked! You have been credited for the time spent on the experiment. "
-"Thank you for participating. You can now close this browser window."
+"That worked. You have been credited for the time you spent. Thank you for "
+"taking part. You may close this page."
 msgstr ""
-"Αυτό λειτούργησε! Έχετε πιστωθεί για τον χρόνο που περάσατε στο πείραμα. Σας"
-" ευχαριστούμε για τη συμμετοχή σας. Μπορείτε τώρα να κλείσετε αυτό το "
-"παράθυρο του προγράμματος περιήγησης."
+"Αυτό λειτούργησε. Έχετε πιστωθεί για τον χρόνο που αφιερώσατε. Σας "
+"ευχαριστούμε που συμμετείχατε. Μπορείτε να κλείσετε αυτή τη σελίδα."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "return_for_bonus_payment_failed"
+msgid ""
+"Your return was recorded, but we could not complete the bonus payment "
+"automatically. The researcher has been notified and will arrange payment. "
+"You may close this page."
+msgstr ""
+"Η επιστροφή σας καταγράφηκε, αλλά δεν μπορέσαμε να ολοκληρώσουμε την πληρωμή"
+" του μπόνους αυτόματα. Ο ερευνητής έχει ειδοποιηθεί και θα κανονίσει την "
+"πληρωμή. Μπορείτε να κλείσετε αυτή τη σελίδα."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "assignment_return_retry"
 msgid ""
-"That didn't work. Are you sure you returned the submission for this study? "
-"Please go to the Prolific interface, make sure you have returned the "
-"submission, then click the 'Next' button."
+"That didn't work. Are you sure you returned the submission? Return it on "
+"Prolific, then click Next."
 msgstr ""
-"Αυτό δεν λειτούργησε. Είστε σίγουροι ότι επιστρέψατε την υποβολή για αυτή τη"
-" μελέτη; Παρακαλώ πηγαίνετε στη διεπαφή του Prolific, βεβαιωθείτε ότι έχετε "
-"επιστρέψει την υποβολή και στη συνέχεια κάντε κλικ στο κουμπί 'Επόμενο'."
-
-#: psynet/recruiters.py
-#, fuzzy
-msgctxt "return_for_bonus_enabled"
-msgid ""
-"We are sorry that you could not proceed to the main experiment, but we will "
-"still pay you for your time spent so far. To receive this payment, we need "
-"you to return this assignment via the Prolific interface, then click the "
-"'Next' button below."
-msgstr ""
-"Λυπούμαστε που δεν μπορέσατε να προχωρήσετε στο κύριο πείραμα, αλλά θα σας "
-"πληρώσουμε για τον χρόνο που περάσατε μέχρι τώρα. Για να λάβετε αυτή την "
-"πληρωμή, χρειαζόμαστε να επιστρέψετε αυτή την ανάθεση μέσω της διεπαφής του "
-"Prolific και στη συνέχεια να κάνετε κλικ στο κουμπί 'Επόμενο' παρακάτω."
+"Αυτό δεν λειτούργησε. Είστε σίγουροι ότι επιστρέψατε την υποβολή; Επιστρέψτε"
+" την στο Prolific και μετά κάντε κλικ στο Επόμενο."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "screen_out_return_and_message_experimenter"
 msgid ""
-"We are sorry that you could not proceed to the main experiment. To receive "
-"this payment for your time, please return your assignment in Prolific and "
-"send a message to the experimenter via the Prolific messaging system. The "
-"experimenter will review your case and arrange payment if appropriate. Thank"
-" you for your understanding. You can now close this browser window."
+"To receive payment for the time you spent, return your submission on "
+"Prolific and message the researcher there. They will review your case and "
+"arrange payment if it is due. You may close this page."
 msgstr ""
-"Λυπούμαστε που δεν μπορέσατε να προχωρήσετε στο κύριο πείραμα. Για να λάβετε"
-" αυτή την πληρωμή για τον χρόνο σας, παρακαλώ επιστρέψτε την ανάθεσή σας στο"
-" Prolific και στείλτε ένα μήνυμα στον πειραματιστή μέσω του συστήματος "
-"μηνυμάτων του Prolific. Ο πειραματιστής θα εξετάσει την περίπτωσή σας και θα"
-" κανονίσει την πληρωμή αν είναι κατάλληλο. Σας ευχαριστούμε για την "
-"κατανόησή σας. Μπορείτε τώρα να κλείσετε αυτό το παράθυρο του προγράμματος "
-"περιήγησης."
+"Για να λάβετε πληρωμή για τον χρόνο που αφιερώσατε, επιστρέψτε την υποβολή "
+"σας στο Prolific και στείλτε μήνυμα στον ερευνητή εκεί. Θα εξετάσουν την "
+"περίπτωσή σας και θα κανονίσουν την πληρωμή αν είναι απαραίτητο. Μπορείτε να"
+" κλείσετε αυτή τη σελίδα."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_lucid"
+msgid ""
+"If you leave now, you will not be able to continue later, and you will "
+"return to your panel provider. This session will not issue a payment; any "
+"payment depends on your panel provider's rules. Your responses so far will "
+"still be saved."
+msgstr ""
+"Αν φύγετε τώρα, δεν θα μπορείτε να συνεχίσετε αργότερα και θα επιστρέψετε "
+"στον πάροχο του πάνελ σας. Αυτή η συνεδρία δεν θα εκδώσει πληρωμή· "
+"οποιαδήποτε πληρωμή εξαρτάται από τους κανόνες του παρόχου του πάνελ σας. Οι"
+" απαντήσεις σας μέχρι τώρα θα αποθηκευτούν."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "lucid_error"
-msgid "Redirecting to Lucid Marketplace..."
-msgstr "Ανακατεύθυνση στο Lucid Marketplace..."
+msgid "We will return you to your panel in a few seconds."
+msgstr "Θα σας επιστρέψουμε στο πάνελ σας σε λίγα δευτερόλεπτα."
 
-#: psynet/templates/abort_not_possible.html
+#: psynet/recruiters.py
 #, fuzzy
-msgctxt "abort_possible"
-msgid "Aborting not possible."
-msgstr "Η ακύρωση δεν είναι δυνατή."
+msgctxt "early_exit_error_lucid"
+msgid "We will return you to your panel in a few seconds."
+msgstr "Θα σας επιστρέψουμε στο πάνελ σας σε λίγα δευτερόλεπτα."
 
-#: psynet/templates/abort_not_possible.html
+#: psynet/recruiters.py
 #, fuzzy
-msgctxt "abort_possible"
+msgctxt "early_exit_error_lucid"
 msgid ""
-"Aborting the experiment is not possible as the experimenter does not allow "
-"it at this time!"
+"We could not return you to your panel. Please try again. If this keeps "
+"happening, contact your panel provider."
 msgstr ""
-"Η ακύρωση του πειράματος δεν είναι δυνατή καθώς ο πειραματιστής δεν το "
-"επιτρέπει αυτή τη στιγμή!"
+"Δεν μπορέσαμε να σας επιστρέψουμε στο πάνελ σας. Παρακαλώ δοκιμάστε ξανά. Αν"
+" αυτό συνεχίσει να συμβαίνει, επικοινωνήστε με τον πάροχο του πάνελ σας."
 
-#: psynet/templates/abort_not_possible.html
-#, fuzzy, python-format
-msgid ""
-"You have to accumulate <strong>at least "
-"%(CURRENCY)s%(MIN_ACCUMULATED_REWARD_FOR_ABORT)s</strong> of reward to be "
-"able to be compensated."
-msgstr ""
-"Πρέπει να συγκεντρώσετε <strong>τουλάχιστον "
-"%(CURRENCY)s%(MIN_ACCUMULATED_REWARD_FOR_ABORT)s</strong> ανταμοιβής για να "
-"μπορέσετε να αποζημιωθείτε."
-
-#: psynet/templates/abort_not_possible.html
+#: psynet/recruiters.py
 #, fuzzy
-msgctxt "abort_possible"
-msgid "See below information on your currently accumulated reward."
-msgstr ""
-"Δείτε παρακάτω πληροφορίες για την τρέχουσα συσσωρευμένη ανταμοιβή σας."
-
-#: psynet/templates/abort_not_possible.html
-#: psynet/templates/abort_possible.html psynet/templates/psynet_error.html
-#, fuzzy
-msgid "Assignment ID"
-msgstr "Αναγνωριστικό ανάθεσης"
-
-#: psynet/templates/abort_not_possible.html
-#: psynet/templates/abort_possible.html psynet/templates/psynet_error.html
-#, fuzzy
-msgid "HIT ID"
-msgstr "HIT ID"
-
-#: psynet/templates/abort_not_possible.html
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgid "Accumulated reward"
-msgstr "Συσσωρευμένη ανταμοιβή"
-
-#: psynet/templates/abort_not_possible.html
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgid "Close window"
-msgstr "Κλείσιμο παραθύρου"
-
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgctxt "abort_possible"
-msgid "Are you sure you want to abort the experiment?"
-msgstr "Είστε βέβαιοι ότι θέλετε να διακόψετε το πείραμα;"
-
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgctxt "abort_possible"
-msgid ""
-"If you click the Abort button, the experiment will end early, and you will "
-"be automatically paid the compensation you have earned so far."
-msgstr ""
-"Αν κάνετε κλικ στο κουμπί Διακοπή, το πείραμα θα τελειώσει νωρίτερα και θα "
-"πληρωθείτε αυτόματα την αποζημίωση που έχετε κερδίσει μέχρι στιγμής."
-
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgctxt "abort_possible"
-msgid "Please only contact us if you have trouble receiving your payment."
-msgstr ""
-"Παρακαλούμε επικοινωνήστε μαζί μας μόνο αν έχετε πρόβλημα με την παραλαβή "
-"της πληρωμής σας."
-
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgctxt "abort_possible"
-msgid "See the information below for details of your compensation."
-msgstr "Δείτε τις παρακάτω πληροφορίες για λεπτομέρειες της αποζημίωσής σας."
-
-#: psynet/templates/abort_possible.html psynet/templates/ad.html
-#: psynet/templates/psynet_error.html
-#, fuzzy
-msgid "Abort experiment"
-msgstr "Ακύρωση πειράματος"
-
-#: psynet/templates/ad.html
-#, fuzzy
-msgctxt "ad"
-msgid "Call for participants"
-msgstr "Πρόσκληση για συμμετοχή"
-
-#: psynet/templates/ad.html
-#, fuzzy
-msgctxt "ad"
-msgid "The requirements to participate are as follows"
-msgstr "Οι απαιτήσεις για συμμετοχή είναι οι εξής"
-
-#: psynet/templates/ad.html
-#, fuzzy
-msgctxt "ad"
-msgid ""
-"Please click the \"Accept HIT\" button on the Amazon site above to begin the"
-" task."
-msgstr ""
-"Παρακαλώ κάντε κλικ στο κουμπί \"Αποδοχή HIT\" στην ιστοσελίδα της Amazon "
-"παραπάνω για να ξεκινήσετε την εργασία."
-
-#: psynet/templates/ad.html
-#, fuzzy
-msgctxt "ad"
-msgid "Thanks for accepting this HIT."
-msgstr "Ευχαριστούμε που αποδεχτήκατε αυτό το HIT."
+msgctxt "early_exit_error_lucid"
+msgid "Return to your panel"
+msgstr "Επιστροφή στο πάνελ σας"
 
 #: psynet/templates/ad.html
 #, fuzzy
@@ -1000,12 +1163,6 @@ msgstr ""
 msgctxt "ad"
 msgid "Begin Experiment"
 msgstr "Ξεκινήστε το Πείραμα"
-
-#: psynet/templates/ad.html psynet/templates/psynet_error.html
-#, fuzzy
-msgid "Click the above button to be compensated in case of an error."
-msgstr ""
-"Κάντε κλικ στο παραπάνω κουμπί για να αποζημιωθείτε σε περίπτωση σφάλματος."
 
 #: psynet/templates/consent.html
 #, fuzzy
@@ -2471,8 +2628,42 @@ msgstr "Κάνοντας την εργασία βοηθάτε την επιστ�
 #: psynet/templates/exit_recruiter_lucid.html
 #, fuzzy
 msgctxt "exit_recruiter_lucid"
-msgid "Lucid Survey Submission"
-msgstr "Υποβολή Έρευνας Lucid"
+msgid "Returning you to your panel"
+msgstr "Σας επιστρέφουμε στον πίνακά σας"
+
+#: psynet/templates/exit_recruiter_lucid.html
+#, fuzzy
+msgctxt "exit_recruiter_lucid"
+msgid "Please wait."
+msgstr "Παρακαλώ περιμένετε."
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html
+#, fuzzy
+msgctxt "exit_recruiter_prolific"
+msgid "Submit to Prolific"
+msgstr "Υποβολή στο Prolific"
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html
+#, fuzzy
+msgctxt "exit_recruiter_prolific"
+msgid ""
+"Click below to send your submission to Prolific. You will not need to enter "
+"a completion code."
+msgstr ""
+"Κάντε κλικ παρακάτω για να στείλετε την υποβολή σας στο Prolific. Δεν θα "
+"χρειαστεί να εισαγάγετε κωδικό ολοκλήρωσης."
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html
+#, fuzzy
+msgctxt "exit_recruiter_prolific"
+msgid "Please wait."
+msgstr "Παρακαλώ περιμένετε."
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html
+#, fuzzy
+msgctxt "exit_recruiter_prolific"
+msgid "Try again"
+msgstr "Δοκιμάστε ξανά"
 
 #: psynet/templates/keyboard.html
 #, fuzzy
@@ -2721,11 +2912,6 @@ msgstr "Συμφωνώ"
 msgctxt "consent"
 msgid "No, thank you (return task)"
 msgstr "Όχι, ευχαριστώ (επιστροφή στην εργασία)"
-
-#: psynet/templates/macros/consent.html
-#, fuzzy
-msgid "Scroll up/down to see all text"
-msgstr "Κάντε κύλιση πάνω/κάτω για να δείτε όλο το κείμενο"
 
 #: psynet/templates/macros/consent.html
 #, fuzzy
@@ -3026,6 +3212,12 @@ msgstr "Επαναφορά"
 
 #: psynet/templates/macros/control.html
 #, fuzzy
+msgctxt "audio_meter"
+msgid "Microphone level"
+msgstr "Επίπεδο μικροφώνου"
+
+#: psynet/templates/macros/control.html
+#, fuzzy
 msgctxt "audio_meter_calibrate"
 msgid "Sliders"
 msgstr "Ρυθμιστικά"
@@ -3148,51 +3340,118 @@ msgstr "Το βίντεο δεν βρέθηκε"
 msgid "Image not found"
 msgstr "Η εικόνα δεν βρέθηκε"
 
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Comment stored."
+msgstr "Το σχόλιο αποθηκεύτηκε."
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Please wait for the page to load."
+msgstr "Παρακαλώ περιμένετε να φορτώσει η σελίδα."
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Try again in a couple of seconds."
+msgstr "Δοκιμάστε ξανά σε μερικά δευτερόλεπτα."
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline"
+msgid "Reward"
+msgstr "Ανταμοιβή"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_reward"
+msgid "Reward earned so far"
+msgstr "Ανταμοιβή που έχει κερδηθεί μέχρι στιγμής"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_reward"
+msgid "for time"
+msgstr "για τον χρόνο"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_reward"
+msgid "for performance"
+msgstr "για την απόδοση"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline"
+msgid "Comment"
+msgstr "Σχόλιο"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Leave"
+msgstr "Αποχώρηση"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Leave without finishing."
+msgstr "Αποχώρηση χωρίς ολοκλήρωση."
+
 #: psynet/templates/psynet_error.html
 #, fuzzy
 msgctxt "error"
-msgid "Error!"
-msgstr "Σφάλμα!"
+msgid "An error occurred"
+msgstr "Παρουσιάστηκε σφάλμα"
 
 #: psynet/templates/psynet_error.html
 #, fuzzy
-msgctxt "mturk_error"
-msgid ""
-"You may be able to abort the experiment using the <strong>Abort "
-"experiment</strong> button <strong>on the MTurk ad page</strong>."
+msgctxt "early_exit_error"
+msgid "Please wait."
+msgstr "Παρακαλώ περιμένετε."
+
+#: psynet/templates/psynet_error.html
+#, fuzzy
+msgctxt "early_exit_error"
+msgid "Try again"
+msgstr "Δοκιμάστε ξανά"
+
+#: psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgid "Thank you for taking part."
+msgstr "Σας ευχαριστούμε που συμμετείχατε."
+
+#: psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgctxt "exit"
+msgid "You chose to leave."
+msgstr "Επιλέξατε να αποχωρήσετε."
+
+#: psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgid "Thank you for taking part."
+msgstr "Σας ευχαριστούμε που συμμετείχατε."
+
+#: psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgctxt "exit"
+msgid "You may close this page."
+msgstr "Μπορείτε να κλείσετε αυτή τη σελίδα."
+
+#: psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgctxt "exit"
+msgid "Your responses have been saved. You may close this page."
 msgstr ""
-"Μπορείτε να ακυρώσετε το πείραμα χρησιμοποιώντας το κουμπί <strong>Ακύρωση "
-"πειράματος</strong> <strong>στη σελίδα διαφήμισης του MTurk</strong>."
+"Οι απαντήσεις σας έχουν αποθηκευτεί. Μπορείτε να κλείσετε αυτή τη σελίδα."
 
-#: psynet/templates/psynet_error.html
+#: psynet/templates/psynet_exit_recruiter.html
 #, fuzzy
-msgctxt "mturk_error"
-msgid ""
-"Once aborted, there is no need to contact us to receive the compensation; "
-"this should be awarded to you automatically via MTurk a few minutes after."
-msgstr ""
-"Μόλις ακυρωθεί, δεν χρειάζεται να επικοινωνήσετε μαζί μας για να λάβετε την "
-"αποζημίωση. Αυτή θα πρέπει να σας απονεμηθεί αυτόματα μέσω του MTurk λίγα "
-"λεπτά μετά."
-
-#: psynet/templates/psynet_error.html
-#, fuzzy, python-format
-msgid ""
-"If this is not the case, please contact us at %(EMAIL)s quoting the "
-"following information:"
-msgstr ""
-"Αν αυτό δεν ισχύει, παρακαλούμε επικοινωνήστε μαζί μας στο %(EMAIL)s "
-"αναφέροντας τις ακόλουθες πληροφορίες:"
-
-#: psynet/templates/psynet_error.html
-#, fuzzy
-msgid "Error type"
-msgstr "Τύπος σφάλματος"
-
-#: psynet/templates/psynet_error.html
-#, fuzzy
-msgid "Worker ID"
-msgstr "Αναγνωριστικό εργαζομένου"
+msgctxt "exit"
+msgid "Reference code"
+msgstr "Κωδικός αναφοράς"
 
 #: psynet/templates/start.html
 #, fuzzy
@@ -3258,41 +3517,35 @@ msgctxt "timeline_resume"
 msgid "Resume"
 msgstr "Συνέχιση"
 
-#: psynet/templates/timeline-page.html
-#, fuzzy
-msgctxt "timeline"
-msgid "Reward"
-msgstr "Ανταμοιβή"
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{REMAINING} of {TOTAL} not ready yet"
+msgstr "{REMAINING} από {TOTAL} δεν είναι έτοιμοι ακόμα"
 
-#: psynet/templates/timeline-page.html
+#: psynet/timeline_hold.py
 #, fuzzy
-msgctxt "timeline"
-msgid "Comment"
-msgstr "Σχόλιο"
+msgctxt "timeline_hold"
+msgid "Your partner is ready."
+msgstr "Ο συνεργάτης σας είναι έτοιμος."
 
-#: psynet/templates/timeline-page.html
-#, fuzzy
-msgctxt "timeline_problem"
-msgid "Terminate the experiment early"
-msgstr "Τερματισμός του πειράματος νωρίς"
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{ARRIVED}/{TOTAL} of your group are ready."
+msgstr "{ARRIVED}/{TOTAL} από την ομάδα σας είναι έτοιμοι."
 
-#: psynet/templates/timeline-page.html
+#: psynet/timeline_hold.py
 #, fuzzy
-msgctxt "timeline_problem"
-msgid "Comment stored."
-msgstr "Το σχόλιο αποθηκεύτηκε."
+msgctxt "timeline_hold"
+msgid "Waiting for other participants…"
+msgstr "Αναμονή για άλλους συμμετέχοντες…"
 
-#: psynet/templates/timeline-page.html
+#: psynet/timeline_hold.py
 #, fuzzy
-msgctxt "timeline_problem"
-msgid "Please wait for the page to load."
-msgstr "Παρακαλώ περιμένετε να φορτώσει η σελίδα."
-
-#: psynet/templates/timeline-page.html
-#, fuzzy
-msgctxt "timeline_problem"
-msgid "Try again in a couple of seconds."
-msgstr "Δοκιμάστε ξανά σε μερικά δευτερόλεπτα."
+msgctxt "timeline_hold"
+msgid "Please wait, the experiment should continue shortly..."
+msgstr "Παρακαλώ περιμένετε, το πείραμα θα συνεχιστεί σύντομα..."
 
 #: psynet/translation/countries.py
 #, fuzzy

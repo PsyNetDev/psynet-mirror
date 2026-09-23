@@ -438,34 +438,42 @@ msgstr "Avsluta"
 msgctxt "final-page-rewards"
 msgid ""
 "You will receive a reward of <strong>{CURRENCY}{TIME_REWARD}</strong> for "
-"the time you spent on the experiment. You have also been awarded a "
-"performance reward of <strong>{CURRENCY}{PERFORMANCE_REWARD}</strong>! "
+"the time you spent. "
 msgstr ""
 "Du kommer att få en belöning på <strong>{CURRENCY}{TIME_REWARD}</strong> för"
-" den tid du spenderade på experimentet. Du har också fått en "
-"prestationsbelöning på <strong>{CURRENCY}{PERFORMANCE_REWARD}</strong>! "
+" den tid du har spenderat."
+
+#: psynet/end.py
+#, fuzzy, python-brace-format
+msgctxt "final-page-performance-reward"
+msgid ""
+"You have also been awarded a performance reward of "
+"<strong>{CURRENCY}{PERFORMANCE_REWARD}</strong>. "
+msgstr ""
+"Du har också fått en prestationsbelöning på "
+"<strong>{CURRENCY}{PERFORMANCE_REWARD}</strong>."
+
+#: psynet/end.py
+#, fuzzy
+msgid "Click Finish to return to your panel."
+msgstr "Klicka på Avsluta för att återgå till din panel."
+
+#: psynet/end.py
+#, fuzzy
+msgid "Click Finish to finalize the session."
+msgstr "Klicka på Avsluta för att avsluta sessionen."
 
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_successful"
-msgid "That's the end of the experiment!"
-msgstr "Det är slutet på experimentet!"
-
-#: psynet/end.py
-#, fuzzy
-msgid "Thank you for taking part."
-msgstr "Tack för att du deltog."
-
-#: psynet/end.py
-#, fuzzy
-msgid "Please click \"Finish\" to finalize the session."
-msgstr "Vänligen klicka på \"Avsluta\" för att slutföra HIT."
+msgid "That's the end!"
+msgstr "Det är slutet!"
 
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_unsuccessful"
-msgid "Unfortunately the experiment must end early."
-msgstr "Tyvärr måste experimentet avslutas i förtid."
+msgid "Unfortunately we have to stop early."
+msgstr "Tyvärr måste vi avbryta i förtid."
 
 #: psynet/end.py
 #, fuzzy
@@ -476,20 +484,20 @@ msgstr ""
 
 #: psynet/end.py
 #, fuzzy
-msgid "You will be redirected."
-msgstr "Du kommer att omdirigeras."
+msgctxt "final_page_rejected_consent"
+msgid "You chose not to continue."
+msgstr "Du valde att inte fortsätta."
 
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_rejected_consent"
-msgid "Consent was rejected."
-msgstr "Samtycke avslogs."
+msgid "You may close this page."
+msgstr "Du kan stänga denna sida."
 
 #: psynet/end.py
 #, fuzzy
-msgctxt "final_page_rejected_consent"
-msgid "End of experiment."
-msgstr "Slut på experimentet."
+msgid "We will return you to your panel in a few seconds."
+msgstr "Vi kommer att återföra dig till din panel om några sekunder."
 
 #: psynet/equipment.py
 #, fuzzy
@@ -502,41 +510,9 @@ msgstr ""
 
 #: psynet/experiment.py
 #, fuzzy
-msgctxt "error-msg"
-msgid "There has been an error and so you are unable to continue, sorry!"
-msgstr "Ett fel har inträffat och du kan tyvärr inte fortsätta, ledsen!"
-
-#: psynet/experiment.py
-#, fuzzy, python-brace-format
-msgctxt "mturk_error"
-msgid ""
-"To enquire about compensation, please contact the researcher at {EMAIL} and "
-"describe what led to this error."
-msgstr ""
-"För att fråga om ersättning, vänligen kontakta forskaren på {EMAIL} och "
-"beskriv vad som ledde till detta fel."
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "mturk_error"
-msgid "Please also quote the following information:"
-msgstr "Vänligen ange även följande information:"
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "prolific_error"
-msgid "Don't worry, your progress has been recorded."
-msgstr "Oroa dig inte, dina framsteg har registrerats."
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "prolific_error"
-msgid ""
-"To enquire about compensation, please send the researcher a message via the "
-"Prolific website and describe what led to your error."
-msgstr ""
-"För att fråga om ersättning, vänligen skicka ett meddelande till forskaren "
-"via Prolific-webbplatsen och beskriv vad som ledde till ditt fel."
+msgctxt "timeline_problem"
+msgid "This session has already ended. Please reload the page."
+msgstr "Denna session har redan avslutats. Vänligen ladda om sidan."
 
 #: psynet/experiment.py
 #, fuzzy
@@ -547,6 +523,11 @@ msgid ""
 msgstr ""
 "Synkroniseringsproblem upptäckt. Kör du samma experiment i flera "
 "webbläsarflikar? Vänligen stäng alla andra flikar och uppdatera sidan."
+
+#: psynet/experiment.py
+#, fuzzy
+msgid "The experiment is temporarily busy. Please try again."
+msgstr "Experimentet är tillfälligt upptaget. Vänligen försök igen."
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -570,6 +551,12 @@ msgstr "Du måste välja ett svar!"
 msgctxt "validation"
 msgid "You need to provide a number!"
 msgstr "Du måste ange ett nummer!"
+
+#: psynet/page.py
+#, fuzzy
+msgctxt "status"
+msgid "Working..."
+msgstr "Arbetar..."
 
 #: psynet/prescreen/__init__.py
 #, fuzzy
@@ -747,212 +734,389 @@ msgid "The test will start on the next page."
 msgstr "Testet börjar på nästa sida."
 
 #: psynet/recruiters.py
-#, fuzzy
-msgctxt "recruiter_communication"
-msgid "Communicating with the recruiter..."
-msgstr "Kommunicerar med rekryteraren..."
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error"
+msgid ""
+"If you need to contact the researcher about this error, write to {EMAIL} and"
+" quote reference code {REFERENCE_CODE}."
+msgstr ""
+"Om du behöver kontakta forskaren angående detta fel, skriv till {EMAIL} och "
+"ange referenskoden {REFERENCE_CODE}."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error"
+msgid ""
+"If you need to contact the researcher about this error, write to {EMAIL}."
+msgstr ""
+"Om du behöver kontakta forskaren angående detta fel, skriv till {EMAIL}."
 
 #: psynet/recruiters.py
 #, fuzzy
-msgctxt "screen_out_successful"
+msgctxt "early_exit_error"
+msgid "You may close this page."
+msgstr "Du kan stänga denna sida."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error"
+msgid "Unfortunately an error occurred and we cannot continue."
+msgstr "Tyvärr inträffade ett fel och vi kan inte fortsätta."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error"
+msgid "However, your responses so far have been saved."
+msgstr "Dina svar hittills har dock sparats."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
 msgid ""
-"You have been credited for the time spent on the experiment. Because you "
-"could not progress to the main experiment your submission will appear as "
-"'screened out' in Prolific. You can now close this browser window."
+"If you leave now, you will not be able to continue later. Your responses so "
+"far will still be saved."
 msgstr ""
-"Du har blivit krediterad för den tid du spenderade på experimentet. Eftersom"
-" du inte kunde gå vidare till huvudsakliga experimentet kommer din inlämning"
-" att visas som 'screened out' i Prolific. Du kan nu stänga detta "
-"webbläsarfönster."
+"Om du lämnar nu kommer du inte kunna fortsätta senare. Dina svar hittills "
+"kommer fortfarande att sparas."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit"
+msgid ""
+"You have earned {EARNED} so far. You need at least {THRESHOLD} to leave with"
+" payment. If you leave without payment, you will not be able to continue "
+"later. Your responses so far will still be saved."
+msgstr ""
+"Du har tjänat {EARNED} hittills. Du behöver minst {THRESHOLD} för att lämna "
+"med betalning. Om du lämnar utan betalning kommer du inte kunna fortsätta "
+"senare. Dina svar hittills kommer fortfarande att sparas."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
+msgid "Leave without payment"
+msgstr "Lämna utan betalning"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
+msgid "Leave"
+msgstr "Lämna"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
+msgid "Leave without finishing?"
+msgstr "Lämna utan att avsluta?"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
+msgid "Cancel"
+msgstr "Avbryt"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_unpaid"
+msgid "You may close this page."
+msgstr "Du kan stänga denna sida."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED}. Because you have earned {EARNED} so "
+"far, a further {REMAINDER} will be paid as a bonus. Your responses so far "
+"will still be saved."
+msgstr ""
+"Om du lämnar nu kommer du inte kunna fortsätta senare. Du kommer att få en "
+"fast 'screen-out'-betalning på {FIXED}. Eftersom du har tjänat {EARNED} "
+"hittills, kommer ytterligare {REMAINDER} att betalas som en bonus. Dina svar"
+" hittills kommer fortfarande att sparas."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED}. Your responses so far will still be "
+"saved."
+msgstr ""
+"Om du lämnar nu kommer du inte kunna fortsätta senare. Du kommer att få en "
+"fast 'screen-out'-betalning på {FIXED}. Dina svar hittills kommer "
+"fortfarande att sparas."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED} plus a performance bonus of "
+"{PERFORMANCE}. You will not be paid for additional time. Your responses so "
+"far will still be saved."
+msgstr ""
+"Om du lämnar nu kommer du inte kunna fortsätta senare. Du kommer att få en "
+"fast 'screen-out'-betalning på {FIXED} plus en prestationsbonus på "
+"{PERFORMANCE}. Du kommer inte att få betalt för ytterligare tid. Dina svar "
+"hittills kommer fortfarande att sparas."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED}. You will not be paid for additional "
+"time. Your responses so far will still be saved."
+msgstr ""
+"Om du lämnar nu kommer du inte kunna fortsätta senare. Du kommer att få en "
+"fast 'screen-out'-betalning på {FIXED}. Du kommer inte att få betalt för "
+"ytterligare tid. Dina svar hittills kommer fortfarande att sparas."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will need to "
+"return your Prolific submission. You will then be paid {EARNED} as a bonus "
+"for the work you have completed so far. Your responses so far will still be "
+"saved."
+msgstr ""
+"Om du lämnar nu kommer du inte kunna fortsätta senare. Du kommer behöva "
+"återlämna din Prolific-inlämning. Du kommer sedan att få betalt {EARNED} som"
+" en bonus för det arbete du har slutfört hittills. Dina svar hittills kommer"
+" fortfarande att sparas."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "prolific_error"
+msgid "If you had already started, message the researcher through Prolific."
+msgstr "Om du redan hade börjat, meddela forskaren genom Prolific."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "prolific_error"
+msgid ""
+"Please message the researcher through Prolific and describe what led to this"
+" error."
+msgstr ""
+"Vänligen meddela forskaren genom Prolific och beskriv vad som ledde till "
+"detta fel."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We will pay you for your progress so far: you will receive {FIXED} through "
+"Prolific."
+msgstr ""
+"Vi kommer att betala dig för dina framsteg hittills: du kommer att få "
+"{FIXED} genom Prolific."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We will also pay {BONUS} as a bonus, bringing your total payment to {TOTAL}."
+msgstr ""
+"Vi kommer också att betala {BONUS} som en bonus, vilket ger din totala "
+"betalning till {TOTAL}."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid "We will also pay your {BONUS} performance bonus."
+msgstr "Vi kommer också att betala din {BONUS} prestationsbonus."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Any additional amount you earned will be paid as a bonus."
+msgstr ""
+"Eventuella ytterligare belopp du tjänat kommer att betalas som en bonus."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Select Submit to Prolific to complete your submission."
+msgstr "Välj Skicka till Prolific för att slutföra din inlämning."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Submit to Prolific"
+msgstr "Skicka till Prolific"
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid ""
+"To receive {EARNED} for the work you completed, you will need to return your"
+" submission on Prolific."
+msgstr ""
+"För att få {EARNED} för det arbete du slutfört, måste du återlämna din "
+"inlämning på Prolific."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid ""
+"To receive payment for the work you completed, you will need to return your "
+"submission on Prolific."
+msgstr ""
+"För att få betalt för det arbete du slutfört, måste du återlämna din "
+"inlämning på Prolific."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Select Continue to payment instructions to complete these steps."
+msgstr ""
+"Välj Fortsätt till betalningsinstruktioner för att slutföra dessa steg."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We could not open the payment instructions. Please try again. If this keeps "
+"happening, message the researcher through Prolific."
+msgstr ""
+"Vi kunde inte öppna betalningsinstruktionerna. Vänligen försök igen. Om "
+"detta fortsätter att hända, meddela forskaren genom Prolific."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Continue to payment instructions"
+msgstr "Fortsätt till betalningsinstruktioner"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_unpaid_prolific"
+msgid ""
+"Your responses so far have been saved. Please return your submission on "
+"Prolific. You will not receive payment. You may close this page."
+msgstr ""
+"Dina svar hittills har sparats. Vänligen återlämna din inlämning på "
+"Prolific. Du kommer inte att få någon betalning. Du kan stänga denna sida."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Your submission has been sent to Prolific."
+msgstr "Din inlämning har skickats till Prolific."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "You may close this page."
+msgstr "Du kan stänga denna sida."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We could not send your submission to Prolific. Please try again. If this "
+"keeps happening, message the researcher through Prolific."
+msgstr ""
+"Vi kunde inte skicka din inlämning till Prolific. Försök igen. Om detta "
+"fortsätter, kontakta forskaren via Prolific."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "return_assignment_instructions"
 msgid ""
 "Please return your submission via the Prolific interface and click Next. We "
-"will then automatically pay you a bonus for your time."
+"will then automatically pay you a bonus."
 msgstr ""
-"Vänligen returnera din inlämning via Prolific-gränssnittet och klicka på "
-"Nästa. Vi kommer då automatiskt att betala dig en bonus för din tid."
+"Vänligen återlämna din inlämning via Prolific-gränssnittet och klicka på "
+"Nästa. Vi kommer då automatiskt att betala dig en bonus."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "return_for_bonus_completed"
 msgid ""
-"That worked! You have been credited for the time spent on the experiment. "
-"Thank you for participating. You can now close this browser window."
+"That worked. You have been credited for the time you spent. Thank you for "
+"taking part. You may close this page."
 msgstr ""
-"Det fungerade! Du har blivit krediterad för den tid du spenderade på "
-"experimentet. Tack för att du deltog. Du kan nu stänga detta "
-"webbläsarfönster."
+"Det fungerade. Du har fått kredit för den tid du spenderade. Tack för att du"
+" deltog. Du kan stänga denna sida."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "return_for_bonus_payment_failed"
+msgid ""
+"Your return was recorded, but we could not complete the bonus payment "
+"automatically. The researcher has been notified and will arrange payment. "
+"You may close this page."
+msgstr ""
+"Din återlämning registrerades, men vi kunde inte slutföra bonusbetalningen "
+"automatiskt. Forskaren har blivit informerad och kommer att ordna betalning."
+" Du kan stänga denna sida."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "assignment_return_retry"
 msgid ""
-"That didn't work. Are you sure you returned the submission for this study? "
-"Please go to the Prolific interface, make sure you have returned the "
-"submission, then click the 'Next' button."
+"That didn't work. Are you sure you returned the submission? Return it on "
+"Prolific, then click Next."
 msgstr ""
-"Det fungerade inte. Är du säker på att du returnerade inlämningen för denna "
-"studie? Vänligen gå till Prolific-gränssnittet, se till att du har "
-"returnerat inlämningen, och klicka sedan på 'Nästa' knappen."
-
-#: psynet/recruiters.py
-#, fuzzy
-msgctxt "return_for_bonus_enabled"
-msgid ""
-"We are sorry that you could not proceed to the main experiment, but we will "
-"still pay you for your time spent so far. To receive this payment, we need "
-"you to return this assignment via the Prolific interface, then click the "
-"'Next' button below."
-msgstr ""
-"Vi är ledsna att du inte kunde gå vidare till huvudsakliga experimentet, men"
-" vi kommer fortfarande att betala dig för din tid som spenderats hittills. "
-"För att få denna betalning behöver vi att du returnerar denna uppgift via "
-"Prolific-gränssnittet och sedan klickar på 'Nästa' knappen nedan."
+"Det fungerade inte. Är du säker på att du återlämnade inlämningen? Återlämna"
+" den på Prolific och klicka sedan på Nästa."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "screen_out_return_and_message_experimenter"
 msgid ""
-"We are sorry that you could not proceed to the main experiment. To receive "
-"this payment for your time, please return your assignment in Prolific and "
-"send a message to the experimenter via the Prolific messaging system. The "
-"experimenter will review your case and arrange payment if appropriate. Thank"
-" you for your understanding. You can now close this browser window."
+"To receive payment for the time you spent, return your submission on "
+"Prolific and message the researcher there. They will review your case and "
+"arrange payment if it is due. You may close this page."
 msgstr ""
-"Vi är ledsna att du inte kunde gå vidare till huvudsakliga experimentet. För"
-" att få denna betalning för din tid, vänligen returnera din uppgift i "
-"Prolific och skicka ett meddelande till experimentledaren via Prolifics "
-"meddelandesystem. Experimentledaren kommer att granska ditt fall och ordna "
-"betalning om det är lämpligt. Tack för din förståelse. Du kan nu stänga "
-"detta webbläsarfönster."
+"För att få betalt för den tid du spenderade, återlämna din inlämning på "
+"Prolific och kontakta forskaren där. De kommer att granska ditt fall och "
+"ordna betalning om det är aktuellt. Du kan stänga denna sida."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_lucid"
+msgid ""
+"If you leave now, you will not be able to continue later, and you will "
+"return to your panel provider. This session will not issue a payment; any "
+"payment depends on your panel provider's rules. Your responses so far will "
+"still be saved."
+msgstr ""
+"Om du lämnar nu kommer du inte att kunna fortsätta senare, och du kommer att"
+" återvända till din panelleverantör. Denna session kommer inte att ge någon "
+"betalning; eventuell betalning beror på din panelleverantörs regler. Dina "
+"svar hittills kommer fortfarande att sparas."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "lucid_error"
-msgid "Redirecting to Lucid Marketplace..."
-msgstr "Omdirigerar till Lucid Marketplace..."
+msgid "We will return you to your panel in a few seconds."
+msgstr "Vi kommer att återföra dig till din panel om några sekunder."
 
-#: psynet/templates/abort_not_possible.html
+#: psynet/recruiters.py
 #, fuzzy
-msgctxt "abort_possible"
-msgid "Aborting not possible."
-msgstr "Avbrytning inte möjlig."
+msgctxt "early_exit_error_lucid"
+msgid "We will return you to your panel in a few seconds."
+msgstr "Vi kommer att återföra dig till din panel om några sekunder."
 
-#: psynet/templates/abort_not_possible.html
+#: psynet/recruiters.py
 #, fuzzy
-msgctxt "abort_possible"
+msgctxt "early_exit_error_lucid"
 msgid ""
-"Aborting the experiment is not possible as the experimenter does not allow "
-"it at this time!"
+"We could not return you to your panel. Please try again. If this keeps "
+"happening, contact your panel provider."
 msgstr ""
-"Det går inte att avbryta experimentet eftersom experimentledaren inte "
-"tillåter det just nu!"
+"Vi kunde inte återföra dig till din panel. Försök igen. Om detta fortsätter,"
+" kontakta din panelleverantör."
 
-#: psynet/templates/abort_not_possible.html
-#, fuzzy, python-format
-msgid ""
-"You have to accumulate <strong>at least "
-"%(CURRENCY)s%(MIN_ACCUMULATED_REWARD_FOR_ABORT)s</strong> of reward to be "
-"able to be compensated."
-msgstr ""
-"Du måste samla på dig <strong>minst "
-"%(CURRENCY)s%(MIN_ACCUMULATED_REWARD_FOR_ABORT)s</strong> i belöning för att"
-" kunna bli kompenserad."
-
-#: psynet/templates/abort_not_possible.html
+#: psynet/recruiters.py
 #, fuzzy
-msgctxt "abort_possible"
-msgid "See below information on your currently accumulated reward."
-msgstr "Se nedan information om din för närvarande ackumulerade belöning."
-
-#: psynet/templates/abort_not_possible.html
-#: psynet/templates/abort_possible.html psynet/templates/psynet_error.html
-#, fuzzy
-msgid "Assignment ID"
-msgstr "Uppdrags-ID"
-
-#: psynet/templates/abort_not_possible.html
-#: psynet/templates/abort_possible.html psynet/templates/psynet_error.html
-#, fuzzy
-msgid "HIT ID"
-msgstr "HIT-ID"
-
-#: psynet/templates/abort_not_possible.html
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgid "Accumulated reward"
-msgstr "Ackumulerad belöning"
-
-#: psynet/templates/abort_not_possible.html
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgid "Close window"
-msgstr "Stäng fönstret"
-
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgctxt "abort_possible"
-msgid "Are you sure you want to abort the experiment?"
-msgstr "Är du säker på att du vill avbryta experimentet?"
-
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgctxt "abort_possible"
-msgid ""
-"If you click the Abort button, the experiment will end early, and you will "
-"be automatically paid the compensation you have earned so far."
-msgstr ""
-"Om du klickar på Avbryt-knappen kommer experimentet att avslutas i förtid, "
-"och du kommer automatiskt att få den ersättning du har tjänat in hittills."
-
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgctxt "abort_possible"
-msgid "Please only contact us if you have trouble receiving your payment."
-msgstr "Kontakta oss endast om du har problem med att få din betalning."
-
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgctxt "abort_possible"
-msgid "See the information below for details of your compensation."
-msgstr "Se informationen nedan för detaljer om din ersättning."
-
-#: psynet/templates/abort_possible.html psynet/templates/ad.html
-#: psynet/templates/psynet_error.html
-#, fuzzy
-msgid "Abort experiment"
-msgstr "Avbryt experimentet"
-
-#: psynet/templates/ad.html
-#, fuzzy
-msgctxt "ad"
-msgid "Call for participants"
-msgstr "Kallelse för deltagare"
-
-#: psynet/templates/ad.html
-#, fuzzy
-msgctxt "ad"
-msgid "The requirements to participate are as follows"
-msgstr "Krav för att delta är följande"
-
-#: psynet/templates/ad.html
-#, fuzzy
-msgctxt "ad"
-msgid ""
-"Please click the \"Accept HIT\" button on the Amazon site above to begin the"
-" task."
-msgstr ""
-"Vänligen klicka på \"Acceptera HIT\"-knappen på Amazon-sidan ovan för att "
-"börja uppgiften."
-
-#: psynet/templates/ad.html
-#, fuzzy
-msgctxt "ad"
-msgid "Thanks for accepting this HIT."
-msgstr "Tack för att du accepterade denna HIT."
+msgctxt "early_exit_error_lucid"
+msgid "Return to your panel"
+msgstr "Återvänd till din panel"
 
 #: psynet/templates/ad.html
 #, fuzzy
@@ -987,11 +1151,6 @@ msgstr "Vänligen inaktivera popup-blockerare innan du fortsätter."
 msgctxt "ad"
 msgid "Begin Experiment"
 msgstr "Börja experimentet"
-
-#: psynet/templates/ad.html psynet/templates/psynet_error.html
-#, fuzzy
-msgid "Click the above button to be compensated in case of an error."
-msgstr "Klicka på knappen ovan för att bli kompenserad vid ett fel."
 
 #: psynet/templates/consent.html
 #, fuzzy
@@ -2426,8 +2585,42 @@ msgstr "Genom att utföra uppgiften hjälper du vetenskapen, tack!"
 #: psynet/templates/exit_recruiter_lucid.html
 #, fuzzy
 msgctxt "exit_recruiter_lucid"
-msgid "Lucid Survey Submission"
-msgstr "Lucid undersökningsinlämning"
+msgid "Returning you to your panel"
+msgstr "Vi återför dig till din panel"
+
+#: psynet/templates/exit_recruiter_lucid.html
+#, fuzzy
+msgctxt "exit_recruiter_lucid"
+msgid "Please wait."
+msgstr "Vänligen vänta."
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html
+#, fuzzy
+msgctxt "exit_recruiter_prolific"
+msgid "Submit to Prolific"
+msgstr "Skicka till Prolific"
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html
+#, fuzzy
+msgctxt "exit_recruiter_prolific"
+msgid ""
+"Click below to send your submission to Prolific. You will not need to enter "
+"a completion code."
+msgstr ""
+"Klicka nedan för att skicka din inlämning till Prolific. Du behöver inte "
+"ange någon slutförandekod."
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html
+#, fuzzy
+msgctxt "exit_recruiter_prolific"
+msgid "Please wait."
+msgstr "Vänligen vänta."
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html
+#, fuzzy
+msgctxt "exit_recruiter_prolific"
+msgid "Try again"
+msgstr "Försök igen"
 
 #: psynet/templates/keyboard.html
 #, fuzzy
@@ -2660,11 +2853,6 @@ msgstr "Jag samtycker"
 msgctxt "consent"
 msgid "No, thank you (return task)"
 msgstr "Nej tack (återgå till uppgiften)"
-
-#: psynet/templates/macros/consent.html
-#, fuzzy
-msgid "Scroll up/down to see all text"
-msgstr "Bläddra upp/ner för att se all text"
 
 #: psynet/templates/macros/consent.html
 #, fuzzy
@@ -2961,6 +3149,12 @@ msgstr "Återställ"
 
 #: psynet/templates/macros/control.html
 #, fuzzy
+msgctxt "audio_meter"
+msgid "Microphone level"
+msgstr "Mikrofonnivå"
+
+#: psynet/templates/macros/control.html
+#, fuzzy
 msgctxt "audio_meter_calibrate"
 msgid "Sliders"
 msgstr "Reglage"
@@ -3082,50 +3276,117 @@ msgstr "Video hittades inte"
 msgid "Image not found"
 msgstr "Bild hittades inte"
 
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Comment stored."
+msgstr "Kommentar sparad."
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Please wait for the page to load."
+msgstr "Vänligen vänta på att sidan laddas."
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Try again in a couple of seconds."
+msgstr "Försök igen om några sekunder."
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline"
+msgid "Reward"
+msgstr "Belöning"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_reward"
+msgid "Reward earned so far"
+msgstr "Belöning intjänad hittills"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_reward"
+msgid "for time"
+msgstr "för tid"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_reward"
+msgid "for performance"
+msgstr "för prestation"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline"
+msgid "Comment"
+msgstr "Kommentar"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Leave"
+msgstr "Lämna"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Leave without finishing."
+msgstr "Lämna utan att slutföra."
+
 #: psynet/templates/psynet_error.html
 #, fuzzy
 msgctxt "error"
-msgid "Error!"
-msgstr "Fel!"
+msgid "An error occurred"
+msgstr "Ett fel inträffade"
 
 #: psynet/templates/psynet_error.html
 #, fuzzy
-msgctxt "mturk_error"
-msgid ""
-"You may be able to abort the experiment using the <strong>Abort "
-"experiment</strong> button <strong>on the MTurk ad page</strong>."
-msgstr ""
-"Du kan kanske avbryta experimentet med hjälp av knappen <strong>Avbryt "
-"experiment</strong> <strong>på MTurk-annonsens sida</strong>."
+msgctxt "early_exit_error"
+msgid "Please wait."
+msgstr "Vänligen vänta."
 
 #: psynet/templates/psynet_error.html
 #, fuzzy
-msgctxt "mturk_error"
-msgid ""
-"Once aborted, there is no need to contact us to receive the compensation; "
-"this should be awarded to you automatically via MTurk a few minutes after."
-msgstr ""
-"När det är avbrutet behöver du inte kontakta oss för att få ersättningen; "
-"den bör automatiskt tilldelas dig via MTurk några minuter senare."
+msgctxt "early_exit_error"
+msgid "Try again"
+msgstr "Försök igen"
 
-#: psynet/templates/psynet_error.html
-#, fuzzy, python-format
-msgid ""
-"If this is not the case, please contact us at %(EMAIL)s quoting the "
-"following information:"
-msgstr ""
-"Om så inte är fallet, vänligen kontakta oss på %(EMAIL)s och ange följande "
-"information:"
-
-#: psynet/templates/psynet_error.html
+#: psynet/templates/psynet_exit_recruiter.html
 #, fuzzy
-msgid "Error type"
-msgstr "Feltyp"
+msgid "Thank you for taking part."
+msgstr "Tack för att du deltog."
 
-#: psynet/templates/psynet_error.html
+#: psynet/templates/psynet_exit_recruiter.html
 #, fuzzy
-msgid "Worker ID"
-msgstr "Arbetar-ID"
+msgctxt "exit"
+msgid "You chose to leave."
+msgstr "Du valde att lämna."
+
+#: psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgid "Thank you for taking part."
+msgstr "Tack för att du deltog."
+
+#: psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgctxt "exit"
+msgid "You may close this page."
+msgstr "Du kan stänga denna sida."
+
+#: psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgctxt "exit"
+msgid "Your responses have been saved. You may close this page."
+msgstr "Dina svar har sparats. Du kan stänga denna sida."
+
+#: psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgctxt "exit"
+msgid "Reference code"
+msgstr "Referenskod"
 
 #: psynet/templates/start.html
 #, fuzzy
@@ -3190,41 +3451,35 @@ msgctxt "timeline_resume"
 msgid "Resume"
 msgstr "Återuppta"
 
-#: psynet/templates/timeline-page.html
-#, fuzzy
-msgctxt "timeline"
-msgid "Reward"
-msgstr "Belöning"
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{REMAINING} of {TOTAL} not ready yet"
+msgstr "{REMAINING} av {TOTAL} är inte redo än"
 
-#: psynet/templates/timeline-page.html
+#: psynet/timeline_hold.py
 #, fuzzy
-msgctxt "timeline"
-msgid "Comment"
-msgstr "Kommentar"
+msgctxt "timeline_hold"
+msgid "Your partner is ready."
+msgstr "Din partner är redo."
 
-#: psynet/templates/timeline-page.html
-#, fuzzy
-msgctxt "timeline_problem"
-msgid "Terminate the experiment early"
-msgstr "Avsluta experimentet i förtid"
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{ARRIVED}/{TOTAL} of your group are ready."
+msgstr "{ARRIVED}/{TOTAL} i din grupp är redo."
 
-#: psynet/templates/timeline-page.html
+#: psynet/timeline_hold.py
 #, fuzzy
-msgctxt "timeline_problem"
-msgid "Comment stored."
-msgstr "Kommentar sparad."
+msgctxt "timeline_hold"
+msgid "Waiting for other participants…"
+msgstr "Väntar på andra deltagare…"
 
-#: psynet/templates/timeline-page.html
+#: psynet/timeline_hold.py
 #, fuzzy
-msgctxt "timeline_problem"
-msgid "Please wait for the page to load."
-msgstr "Vänligen vänta på att sidan laddas."
-
-#: psynet/templates/timeline-page.html
-#, fuzzy
-msgctxt "timeline_problem"
-msgid "Try again in a couple of seconds."
-msgstr "Försök igen om några sekunder."
+msgctxt "timeline_hold"
+msgid "Please wait, the experiment should continue shortly..."
+msgstr "Vänligen vänta, experimentet fortsätter snart..."
 
 #: psynet/translation/countries.py
 #, fuzzy

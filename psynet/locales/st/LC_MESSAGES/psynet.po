@@ -442,34 +442,42 @@ msgstr "Qeta"
 msgctxt "final-page-rewards"
 msgid ""
 "You will receive a reward of <strong>{CURRENCY}{TIME_REWARD}</strong> for "
-"the time you spent on the experiment. You have also been awarded a "
-"performance reward of <strong>{CURRENCY}{PERFORMANCE_REWARD}</strong>! "
+"the time you spent. "
 msgstr ""
 "U tla fumana moputso oa <strong>{CURRENCY}{TIME_REWARD}</strong> bakeng sa "
-"nako eo u e qetileng tekong. U bile u fuoe moputso oa ts'ebetso oa "
-"<strong>{CURRENCY}{PERFORMANCE_REWARD}</strong>! "
+"nako eo u e qetileng."
+
+#: psynet/end.py
+#, fuzzy, python-brace-format
+msgctxt "final-page-performance-reward"
+msgid ""
+"You have also been awarded a performance reward of "
+"<strong>{CURRENCY}{PERFORMANCE_REWARD}</strong>. "
+msgstr ""
+"U boetse u fuoe moputso oa ts'ebetso oa "
+"<strong>{CURRENCY}{PERFORMANCE_REWARD}</strong>."
+
+#: psynet/end.py
+#, fuzzy
+msgid "Click Finish to return to your panel."
+msgstr "Tobetsa Qeta ho khutlela ho paneli ea hau."
+
+#: psynet/end.py
+#, fuzzy
+msgid "Click Finish to finalize the session."
+msgstr "Tobetsa Qeta ho phethela seboka."
 
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_successful"
-msgid "That's the end of the experiment!"
-msgstr "Sena ke pheletso ea teko!"
-
-#: psynet/end.py
-#, fuzzy
-msgid "Thank you for taking part."
-msgstr "Rea leboha ka ho nka karolo."
-
-#: psynet/end.py
-#, fuzzy
-msgid "Please click \"Finish\" to finalize the session."
-msgstr "Ka kopo tobetsa \"Qeta\" ho phethela HIT."
+msgid "That's the end!"
+msgstr "Ke phetho!"
 
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_unsuccessful"
-msgid "Unfortunately the experiment must end early."
-msgstr "Ka bomalimabe teko e tlameha ho fela kapele."
+msgid "Unfortunately we have to stop early."
+msgstr "Ka bomalimabe re tlameha ho emisa kapele."
 
 #: psynet/end.py
 #, fuzzy
@@ -480,20 +488,20 @@ msgstr ""
 
 #: psynet/end.py
 #, fuzzy
-msgid "You will be redirected."
-msgstr "U tla fetisetsoa."
+msgctxt "final_page_rejected_consent"
+msgid "You chose not to continue."
+msgstr "U khethile ho se tsoele pele."
 
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_rejected_consent"
-msgid "Consent was rejected."
-msgstr "Tumello e ile ea haneloa."
+msgid "You may close this page."
+msgstr "U ka koala leqephe lena."
 
 #: psynet/end.py
 #, fuzzy
-msgctxt "final_page_rejected_consent"
-msgid "End of experiment."
-msgstr "Pheletso ea teko."
+msgid "We will return you to your panel in a few seconds."
+msgstr "Re tla u khutlisetsa ho paneli ea hau ka metsotsoana e seng mekae."
 
 #: psynet/equipment.py
 #, fuzzy
@@ -506,41 +514,9 @@ msgstr ""
 
 #: psynet/experiment.py
 #, fuzzy
-msgctxt "error-msg"
-msgid "There has been an error and so you are unable to continue, sorry!"
-msgstr "Ho bile le phoso 'me ha o khone ho tsoela pele, maswabi!"
-
-#: psynet/experiment.py
-#, fuzzy, python-brace-format
-msgctxt "mturk_error"
-msgid ""
-"To enquire about compensation, please contact the researcher at {EMAIL} and "
-"describe what led to this error."
-msgstr ""
-"Ho botsa ka tefo, ka kopo ikopanye le mofuputsi ho {EMAIL} 'me o hlalose se "
-"entseng hore phoso ena e etsahale."
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "mturk_error"
-msgid "Please also quote the following information:"
-msgstr "Ka kopo boela o qotse tlhahisoleseding e latelang:"
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "prolific_error"
-msgid "Don't worry, your progress has been recorded."
-msgstr "Se ke oa tšoenyeha, tsoelo-pele ea hau e tlalehiloe."
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "prolific_error"
-msgid ""
-"To enquire about compensation, please send the researcher a message via the "
-"Prolific website and describe what led to your error."
-msgstr ""
-"Ho botsa ka tefo, ka kopo romela molaetsa ho mofuputsi ka webosaete ea "
-"Prolific 'me o hlalose se entseng hore phoso ea hau e etsahale."
+msgctxt "timeline_problem"
+msgid "This session has already ended. Please reload the page."
+msgstr "Seboka sena se se se felile. Ka kopo nchafatsa leqephe."
 
 #: psynet/experiment.py
 #, fuzzy
@@ -552,6 +528,11 @@ msgstr ""
 "Phoso ea ho hokahanya e fumanoe. Na u tsamaisa teko e tšoanang ka "
 "lifensetere tse ngata tsa sebatli? Ka kopo koala lifensetere tse ling tsohle"
 " 'me u nchafatse leqephe."
+
+#: psynet/experiment.py
+#, fuzzy
+msgid "The experiment is temporarily busy. Please try again."
+msgstr "Teko ena e ntse e le mathateng hajoale. Ka kopo leka hape."
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -575,6 +556,12 @@ msgstr "O hloka ho khetha karabo!"
 msgctxt "validation"
 msgid "You need to provide a number!"
 msgstr "O hloka ho fana ka nomoro!"
+
+#: psynet/page.py
+#, fuzzy
+msgctxt "status"
+msgid "Working..."
+msgstr "E sebetsa..."
 
 #: psynet/prescreen/__init__.py
 #, fuzzy
@@ -753,214 +740,389 @@ msgid "The test will start on the next page."
 msgstr "Teko e tla qala leqepheng le latelang."
 
 #: psynet/recruiters.py
-#, fuzzy
-msgctxt "recruiter_communication"
-msgid "Communicating with the recruiter..."
-msgstr "Ho buisana le mohoebi..."
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error"
+msgid ""
+"If you need to contact the researcher about this error, write to {EMAIL} and"
+" quote reference code {REFERENCE_CODE}."
+msgstr ""
+"Haeba o hloka ho ikopanya le mofuputsi ka phoso ena, ngolla {EMAIL} 'me u "
+"qotse khoutu ea referense {REFERENCE_CODE}."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error"
+msgid ""
+"If you need to contact the researcher about this error, write to {EMAIL}."
+msgstr "Haeba o hloka ho ikopanya le mofuputsi ka phoso ena, ngolla {EMAIL}."
 
 #: psynet/recruiters.py
 #, fuzzy
-msgctxt "screen_out_successful"
+msgctxt "early_exit_error"
+msgid "You may close this page."
+msgstr "O ka koala leqephe lena."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error"
+msgid "Unfortunately an error occurred and we cannot continue."
+msgstr "Ka bomalimabe ho bile le phoso 'me re ke ke ra tsoela pele."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error"
+msgid "However, your responses so far have been saved."
+msgstr "Leha ho le joalo, likarabo tsa hau ho fihlela joale li bolokiloe."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
 msgid ""
-"You have been credited for the time spent on the experiment. Because you "
-"could not progress to the main experiment your submission will appear as "
-"'screened out' in Prolific. You can now close this browser window."
+"If you leave now, you will not be able to continue later. Your responses so "
+"far will still be saved."
 msgstr ""
-"U fuoe moputso bakeng sa nako eo u e qetileng ho etsa teko. Hobane u ne u sa"
-" khone ho tsoela pele ho ea tekong e kholo, tlhahiso ea hau e tla hlaha e le"
-" 'e khethiloe' ho Prolific. Joale u ka koala fensetere ena ea sebatli."
+"Haeba u tloha hona joale, u ke ke ua khona ho tsoela pele hamorao. Likarabo "
+"tsa hau ho fihlela joale li tla bolokoa."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit"
+msgid ""
+"You have earned {EARNED} so far. You need at least {THRESHOLD} to leave with"
+" payment. If you leave without payment, you will not be able to continue "
+"later. Your responses so far will still be saved."
+msgstr ""
+"U se u fumane {EARNED} ho fihlela joale. U hloka bonyane {THRESHOLD} ho "
+"tloha ka tefo. Haeba u tloha ntle le tefo, u ke ke ua khona ho tsoela pele "
+"hamorao. Likarabo tsa hau ho fihlela joale li tla bolokoa."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
+msgid "Leave without payment"
+msgstr "Tloha ntle le tefo"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
+msgid "Leave"
+msgstr "Tloha"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
+msgid "Leave without finishing?"
+msgstr "Tloha ntle le ho qeta?"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
+msgid "Cancel"
+msgstr "Hlakola"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_unpaid"
+msgid "You may close this page."
+msgstr "O ka koala leqephe lena."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED}. Because you have earned {EARNED} so "
+"far, a further {REMAINDER} will be paid as a bonus. Your responses so far "
+"will still be saved."
+msgstr ""
+"Haeba u tloha hona joale, u ke ke ua khona ho tsoela pele hamorao. U tla "
+"fumana tefo e tsitsitseng ea 'screen-out' ea {FIXED}. Kaha u se u fumane "
+"{EARNED} ho fihlela joale, {REMAINDER} e tla lefshoa e le bonase. Likarabo "
+"tsa hau ho fihlela joale li tla bolokoa."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED}. Your responses so far will still be "
+"saved."
+msgstr ""
+"Haeba u tloha hona joale, u ke ke ua khona ho tsoela pele hamorao. U tla "
+"fumana tefo e tsitsitseng ea 'screen-out' ea {FIXED}. Likarabo tsa hau ho "
+"fihlela joale li tla bolokoa."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED} plus a performance bonus of "
+"{PERFORMANCE}. You will not be paid for additional time. Your responses so "
+"far will still be saved."
+msgstr ""
+"Haeba u tloha hona joale, u ke ke ua khona ho tsoela pele hamorao. U tla "
+"fumana tefo e tsitsitseng ea 'screen-out' ea {FIXED} hammoho le bonase ea "
+"ts'ebetso ea {PERFORMANCE}. U ke ke ua lefshoa bakeng sa nako e "
+"eketsehileng. Likarabo tsa hau ho fihlela joale li tla bolokoa."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED}. You will not be paid for additional "
+"time. Your responses so far will still be saved."
+msgstr ""
+"Haeba u tloha hona joale, u ke ke ua khona ho tsoela pele hamorao. U tla "
+"fumana tefo e tsitsitseng ea 'screen-out' ea {FIXED}. U ke ke ua lefshoa "
+"bakeng sa nako e eketsehileng. Likarabo tsa hau ho fihlela joale li tla "
+"bolokoa."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will need to "
+"return your Prolific submission. You will then be paid {EARNED} as a bonus "
+"for the work you have completed so far. Your responses so far will still be "
+"saved."
+msgstr ""
+"Haeba u tloha hona joale, u ke ke ua khona ho tsoela pele hamorao. U tla "
+"hloka ho khutlisa tlhahiso ea hau ea Prolific. U tla lefshoa {EARNED} e le "
+"bonase bakeng sa mosebetsi oo u o phethileng ho fihlela joale. Likarabo tsa "
+"hau ho fihlela joale li tla bolokoa."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "prolific_error"
+msgid "If you had already started, message the researcher through Prolific."
+msgstr "Haeba u ne u se u qalile, romela molaetsa ho mofuputsi ka Prolific."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "prolific_error"
+msgid ""
+"Please message the researcher through Prolific and describe what led to this"
+" error."
+msgstr ""
+"Ka kopo romela molaetsa ho mofuputsi ka Prolific 'me u hlalose se "
+"lebisitseng phosong ena."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We will pay you for your progress so far: you will receive {FIXED} through "
+"Prolific."
+msgstr ""
+"Re tla u lefa bakeng sa tsoelo-pele ea hau ho fihlela joale: u tla fumana "
+"{FIXED} ka Prolific."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We will also pay {BONUS} as a bonus, bringing your total payment to {TOTAL}."
+msgstr ""
+"Re tla boela re lefe {BONUS} e le bonase, e tlisang tefo ea hau eohle ho "
+"{TOTAL}."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid "We will also pay your {BONUS} performance bonus."
+msgstr "Re tla boela re lefe bonase ea hau ea ts'ebetso ea {BONUS}."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Any additional amount you earned will be paid as a bonus."
+msgstr ""
+"Chelete efe kapa efe e eketsehileng eo u e fumaneng e tla lefshoa e le "
+"bonase."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Select Submit to Prolific to complete your submission."
+msgstr "Khetha Romela ho Prolific ho phethela tlhahiso ea hau."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Submit to Prolific"
+msgstr "Romela ho Prolific"
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid ""
+"To receive {EARNED} for the work you completed, you will need to return your"
+" submission on Prolific."
+msgstr ""
+"Ho fumana {EARNED} bakeng sa mosebetsi oo u o phethileng, u tla hloka ho "
+"khutlisa tlhahiso ea hau ho Prolific."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid ""
+"To receive payment for the work you completed, you will need to return your "
+"submission on Prolific."
+msgstr ""
+"Ho fumana tefo bakeng sa mosebetsi oo u o phethileng, u tla hloka ho "
+"khutlisa tlhahiso ea hau ho Prolific."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Select Continue to payment instructions to complete these steps."
+msgstr "Khetha Tsoela pele ho litaelo tsa tefo ho phethela mehato ena."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We could not open the payment instructions. Please try again. If this keeps "
+"happening, message the researcher through Prolific."
+msgstr ""
+"Re sitwa ho bula litaelo tsa tefo. Ka kopo leka hape. Haeba sena se tsoela "
+"pele ho etsahala, romela molaetsa ho mofuputsi ka Prolific."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Continue to payment instructions"
+msgstr "Tsoela pele ho litaelo tsa tefo"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_unpaid_prolific"
+msgid ""
+"Your responses so far have been saved. Please return your submission on "
+"Prolific. You will not receive payment. You may close this page."
+msgstr ""
+"Likarabo tsa hau ho fihlela joale li bolokiloe. Ka kopo khutlisetsa tlhahiso"
+" ea hau ho Prolific. U ke ke ua fumana tefo. U ka koala leqephe lena."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Your submission has been sent to Prolific."
+msgstr "Tlhahiso ea hau e rometsoe ho Prolific."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "You may close this page."
+msgstr "U ka koala leqephe lena."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We could not send your submission to Prolific. Please try again. If this "
+"keeps happening, message the researcher through Prolific."
+msgstr ""
+"Re sitwa ho romela tlhahiso ea hau ho Prolific. Ka kopo leka hape. Haeba "
+"sena se tsoela pele ho etsahala, romela molaetsa ho mofuputsi ka Prolific."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "return_assignment_instructions"
 msgid ""
 "Please return your submission via the Prolific interface and click Next. We "
-"will then automatically pay you a bonus for your time."
+"will then automatically pay you a bonus."
 msgstr ""
 "Ka kopo khutlisetsa tlhahiso ea hau ka sebopeho sa Prolific ebe u tobetsa E "
-"'ngoe. Re tla u lefa ka boiketsetso bonase bakeng sa nako ea hau."
+"'ngoe. Re tla u lefa ka bonase ka bo eona."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "return_for_bonus_completed"
 msgid ""
-"That worked! You have been credited for the time spent on the experiment. "
-"Thank you for participating. You can now close this browser window."
+"That worked. You have been credited for the time you spent. Thank you for "
+"taking part. You may close this page."
 msgstr ""
-"Seo se atlehile! U fuoe moputso bakeng sa nako eo u e qetileng ho etsa teko."
-" Kea leboha ka ho nka karolo. Joale u ka koala fensetere ena ea sebatli."
+"Seo se atlehile. U lefshitswe bakeng sa nako eo u e qetileng. Rea leboha ka "
+"ho nka karolo. U ka koala leqephe lena."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "return_for_bonus_payment_failed"
+msgid ""
+"Your return was recorded, but we could not complete the bonus payment "
+"automatically. The researcher has been notified and will arrange payment. "
+"You may close this page."
+msgstr ""
+"Ho khutla ha hao ho tlalehiloe, empa re sitwa ho phethela tefo ea bonase ka "
+"bo eona. Mofuputsi o tsebisitsoe mme o tla hlophisa tefo. U ka koala leqephe"
+" lena."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "assignment_return_retry"
 msgid ""
-"That didn't work. Are you sure you returned the submission for this study? "
-"Please go to the Prolific interface, make sure you have returned the "
-"submission, then click the 'Next' button."
+"That didn't work. Are you sure you returned the submission? Return it on "
+"Prolific, then click Next."
 msgstr ""
-"Seo ha sea sebetsa. Na u netefalitse hore u khutlisitse tlhahiso bakeng sa "
-"thuto ee? Ka kopo ea ho sebopeho sa Prolific, etsa bonnete ba hore u "
-"khutlisitse tlhahiso, ebe u tobetsa konopo ea 'E 'ngoe'."
-
-#: psynet/recruiters.py
-#, fuzzy
-msgctxt "return_for_bonus_enabled"
-msgid ""
-"We are sorry that you could not proceed to the main experiment, but we will "
-"still pay you for your time spent so far. To receive this payment, we need "
-"you to return this assignment via the Prolific interface, then click the "
-"'Next' button below."
-msgstr ""
-"Re masoabi hore u ne u sa khone ho tsoela pele ho ea tekong e kholo, empa re"
-" tla u lefa bakeng sa nako eo u e qetileng ho fihlela joale. Ho fumana tefo "
-"ena, re hloka hore u khutlisetse kabelo ena ka sebopeho sa Prolific, ebe u "
-"tobetsa konopo ea 'E 'ngoe' ka tlase."
+"Seo ha sea sebetsa. Na u netefalitse hore u khutlisitse tlhahiso? E "
+"khutlisetse ho Prolific, ebe u tobetsa E 'ngoe."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "screen_out_return_and_message_experimenter"
 msgid ""
-"We are sorry that you could not proceed to the main experiment. To receive "
-"this payment for your time, please return your assignment in Prolific and "
-"send a message to the experimenter via the Prolific messaging system. The "
-"experimenter will review your case and arrange payment if appropriate. Thank"
-" you for your understanding. You can now close this browser window."
+"To receive payment for the time you spent, return your submission on "
+"Prolific and message the researcher there. They will review your case and "
+"arrange payment if it is due. You may close this page."
 msgstr ""
-"Re masoabi hore u ne u sa khone ho tsoela pele ho ea tekong e kholo. Ho "
-"fumana tefo ena bakeng sa nako ea hau, ka kopo khutlisetsa kabelo ea hau ho "
-"Prolific 'me u romele molaetsa ho moetsi oa teko ka mokhoa oa melaetsa oa "
-"Prolific. Moetsi oa teko o tla hlahloba nyeoe ea hau 'me a hlophise tefo "
-"haeba ho loketse. Kea leboha ka kutloisiso ea hau. Joale u ka koala "
-"fensetere ena ea sebatli."
+"Ho fumana tefo bakeng sa nako eo u e qetileng, khutlisetsa tlhahiso ea hau "
+"ho Prolific 'me u romele molaetsa ho mofuputsi moo. Ba tla hlahloba nyeoe ea"
+" hau 'me ba hlophise tefo haeba e lokela ho etsoa. U ka koala leqephe lena."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_lucid"
+msgid ""
+"If you leave now, you will not be able to continue later, and you will "
+"return to your panel provider. This session will not issue a payment; any "
+"payment depends on your panel provider's rules. Your responses so far will "
+"still be saved."
+msgstr ""
+"Haeba u tloha hona joale, u ke ke ua khona ho tsoela pele hamorao, 'me u tla"
+" khutlela ho mofani oa hau oa phanele. Seboka sena se ke ke sa fana ka tefo;"
+" tefo efe kapa efe e itšetlehile ka melao ea mofani oa hau oa phanele. "
+"Likarabo tsa hau ho fihlela joale li tla bolokoa."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "lucid_error"
-msgid "Redirecting to Lucid Marketplace..."
-msgstr "Ho fetela ho Lucid Marketplace..."
+msgid "We will return you to your panel in a few seconds."
+msgstr "Re tla u khutlisetsa ho phanele ea hau ka metsotsoana e seng mekae."
 
-#: psynet/templates/abort_not_possible.html
+#: psynet/recruiters.py
 #, fuzzy
-msgctxt "abort_possible"
-msgid "Aborting not possible."
-msgstr "Ho sitwa ho emisa."
+msgctxt "early_exit_error_lucid"
+msgid "We will return you to your panel in a few seconds."
+msgstr "Re tla u khutlisetsa ho phanele ea hau ka metsotsoana e seng mekae."
 
-#: psynet/templates/abort_not_possible.html
+#: psynet/recruiters.py
 #, fuzzy
-msgctxt "abort_possible"
+msgctxt "early_exit_error_lucid"
 msgid ""
-"Aborting the experiment is not possible as the experimenter does not allow "
-"it at this time!"
+"We could not return you to your panel. Please try again. If this keeps "
+"happening, contact your panel provider."
 msgstr ""
-"Ho sitwa ho emisa teko kaha moetsi oa teko ha a lumelle hona ka nako ena!"
+"Re sitwa ho u khutlisetsa ho phanele ea hau. Ka kopo leka hape. Haeba sena "
+"se tsoela pele ho etsahala, ikopanye le mofani oa hau oa phanele."
 
-#: psynet/templates/abort_not_possible.html
-#, fuzzy, python-format
-msgid ""
-"You have to accumulate <strong>at least "
-"%(CURRENCY)s%(MIN_ACCUMULATED_REWARD_FOR_ABORT)s</strong> of reward to be "
-"able to be compensated."
-msgstr ""
-"O tlameha ho bokella <strong>bonyane "
-"%(CURRENCY)s%(MIN_ACCUMULATED_REWARD_FOR_ABORT)s</strong> ea moputso ho "
-"khoneha ho lefshoa."
-
-#: psynet/templates/abort_not_possible.html
+#: psynet/recruiters.py
 #, fuzzy
-msgctxt "abort_possible"
-msgid "See below information on your currently accumulated reward."
-msgstr ""
-"Sheba tlhahisoleseling e ka tlase mabapi le moputso oa hau o bokelletsoeng "
-"hona joale."
-
-#: psynet/templates/abort_not_possible.html
-#: psynet/templates/abort_possible.html psynet/templates/psynet_error.html
-#, fuzzy
-msgid "Assignment ID"
-msgstr "Assignment ID"
-
-#: psynet/templates/abort_not_possible.html
-#: psynet/templates/abort_possible.html psynet/templates/psynet_error.html
-#, fuzzy
-msgid "HIT ID"
-msgstr "HIT ID"
-
-#: psynet/templates/abort_not_possible.html
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgid "Accumulated reward"
-msgstr "Moputso o bokelletsoeng"
-
-#: psynet/templates/abort_not_possible.html
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgid "Close window"
-msgstr "Koala fensetere"
-
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgctxt "abort_possible"
-msgid "Are you sure you want to abort the experiment?"
-msgstr "Na u tiile hore u batla ho emisa teko?"
-
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgctxt "abort_possible"
-msgid ""
-"If you click the Abort button, the experiment will end early, and you will "
-"be automatically paid the compensation you have earned so far."
-msgstr ""
-"Haeba u tobetsa konopo ea Ho emisa, teko e tla fela kapele, 'me u tla lefuoa"
-" ka bo eona puseletso eo u e fumaneng ho fihlela joale."
-
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgctxt "abort_possible"
-msgid "Please only contact us if you have trouble receiving your payment."
-msgstr ""
-"Ka kopo ikopanye le rona feela haeba u na le bothata ba ho fumana tefo ea "
-"hau."
-
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgctxt "abort_possible"
-msgid "See the information below for details of your compensation."
-msgstr ""
-"Sheba tlhahisoleseling e ka tlase bakeng sa lintlha tsa puseletso ea hau."
-
-#: psynet/templates/abort_possible.html psynet/templates/ad.html
-#: psynet/templates/psynet_error.html
-#, fuzzy
-msgid "Abort experiment"
-msgstr "Kansela phuputso"
-
-#: psynet/templates/ad.html
-#, fuzzy
-msgctxt "ad"
-msgid "Call for participants"
-msgstr "Pitsetso bakeng sa barupeluoa"
-
-#: psynet/templates/ad.html
-#, fuzzy
-msgctxt "ad"
-msgid "The requirements to participate are as follows"
-msgstr "Litlhoko tsa ho nka karolo ke tse latelang"
-
-#: psynet/templates/ad.html
-#, fuzzy
-msgctxt "ad"
-msgid ""
-"Please click the \"Accept HIT\" button on the Amazon site above to begin the"
-" task."
-msgstr ""
-"Ka kopo, tobetsa konopo ea \"Amohela HIT\" sebakeng sa Amazon se kaholimo ho"
-" qala mosebetsi."
-
-#: psynet/templates/ad.html
-#, fuzzy
-msgctxt "ad"
-msgid "Thanks for accepting this HIT."
-msgstr "Rea leboha ka ho amohela HIT ena."
+msgctxt "early_exit_error_lucid"
+msgid "Return to your panel"
+msgstr "Khutlela ho phanele ea hau."
 
 #: psynet/templates/ad.html
 #, fuzzy
@@ -995,11 +1157,6 @@ msgstr "Ka kopo, tima li-pop-up blockers pele u tsoela pele."
 msgctxt "ad"
 msgid "Begin Experiment"
 msgstr "Qala Phuputso"
-
-#: psynet/templates/ad.html psynet/templates/psynet_error.html
-#, fuzzy
-msgid "Click the above button to be compensated in case of an error."
-msgstr "Tobetsa konopo e kaholimo ho lefshoa haeba ho ka ba le phoso."
 
 #: psynet/templates/consent.html
 #, fuzzy
@@ -2449,8 +2606,42 @@ msgstr "Ka ho etsa mosebetsi u thusa mahlale, kea leboha!"
 #: psynet/templates/exit_recruiter_lucid.html
 #, fuzzy
 msgctxt "exit_recruiter_lucid"
-msgid "Lucid Survey Submission"
-msgstr "Tlhahiso ea Patlisiso ea Lucid"
+msgid "Returning you to your panel"
+msgstr "Re khutlisetsa phanele ea hau"
+
+#: psynet/templates/exit_recruiter_lucid.html
+#, fuzzy
+msgctxt "exit_recruiter_lucid"
+msgid "Please wait."
+msgstr "Ka kopo ema."
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html
+#, fuzzy
+msgctxt "exit_recruiter_prolific"
+msgid "Submit to Prolific"
+msgstr "Romela ho Prolific"
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html
+#, fuzzy
+msgctxt "exit_recruiter_prolific"
+msgid ""
+"Click below to send your submission to Prolific. You will not need to enter "
+"a completion code."
+msgstr ""
+"Tobetsa ka tlase ho romela tlhahiso ea hau ho Prolific. Ha ho hlokahale hore"
+" u kenye khoutu ea ho qeta."
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html
+#, fuzzy
+msgctxt "exit_recruiter_prolific"
+msgid "Please wait."
+msgstr "Ka kopo ema."
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html
+#, fuzzy
+msgctxt "exit_recruiter_prolific"
+msgid "Try again"
+msgstr "Leka hape"
 
 #: psynet/templates/keyboard.html
 #, fuzzy
@@ -2685,11 +2876,6 @@ msgstr "Ke lumellana"
 msgctxt "consent"
 msgid "No, thank you (return task)"
 msgstr "Che, kea leboha (kgutlisa mosebetsi)"
-
-#: psynet/templates/macros/consent.html
-#, fuzzy
-msgid "Scroll up/down to see all text"
-msgstr "Scrolla holimo/fatše ho bona mongolo oohle"
 
 #: psynet/templates/macros/consent.html
 #, fuzzy
@@ -2987,6 +3173,12 @@ msgstr "Hlakola"
 
 #: psynet/templates/macros/control.html
 #, fuzzy
+msgctxt "audio_meter"
+msgid "Microphone level"
+msgstr "Boemo ba maekerofounu"
+
+#: psynet/templates/macros/control.html
+#, fuzzy
 msgctxt "audio_meter_calibrate"
 msgid "Sliders"
 msgstr "Li-Sliders"
@@ -3109,51 +3301,117 @@ msgstr "Video ha e fumanehe"
 msgid "Image not found"
 msgstr "Setšoantšo ha se fumanehe"
 
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Comment stored."
+msgstr "Maikutlo a bolokiloe."
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Please wait for the page to load."
+msgstr "Ka kopo emela hore leqephe le jaroe."
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Try again in a couple of seconds."
+msgstr "Leka hape ka mor'a metsotsoana e seng mekae."
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline"
+msgid "Reward"
+msgstr "Moputso"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_reward"
+msgid "Reward earned so far"
+msgstr "Moputso o fumanoeng ho fihlela joale"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_reward"
+msgid "for time"
+msgstr "bakeng sa nako"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_reward"
+msgid "for performance"
+msgstr "bakeng sa ts'ebetso"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline"
+msgid "Comment"
+msgstr "Maikutlo"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Leave"
+msgstr "Tloha"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Leave without finishing."
+msgstr "Tloha ntle le ho qeta."
+
 #: psynet/templates/psynet_error.html
 #, fuzzy
 msgctxt "error"
-msgid "Error!"
-msgstr "Phoso!"
+msgid "An error occurred"
+msgstr "Ho etsahetse phoso"
 
 #: psynet/templates/psynet_error.html
 #, fuzzy
-msgctxt "mturk_error"
-msgid ""
-"You may be able to abort the experiment using the <strong>Abort "
-"experiment</strong> button <strong>on the MTurk ad page</strong>."
-msgstr ""
-"O ka khona ho khaotsa teko ka ho sebelisa konopo ea <strong>Khaotsa "
-"teko</strong> <strong>leqepheng la papatso la MTurk</strong>."
+msgctxt "early_exit_error"
+msgid "Please wait."
+msgstr "Ka kopo ema."
 
 #: psynet/templates/psynet_error.html
 #, fuzzy
-msgctxt "mturk_error"
-msgid ""
-"Once aborted, there is no need to contact us to receive the compensation; "
-"this should be awarded to you automatically via MTurk a few minutes after."
-msgstr ""
-"Hang ha e khaotsoe, ha ho hlokahale hore o ikopanye le rona ho fumana "
-"puseletso; sena se lokela ho fuoa ka bo eona ka MTurk metsotso e seng mekae "
-"ka mor'a moo."
+msgctxt "early_exit_error"
+msgid "Try again"
+msgstr "Leka hape"
 
-#: psynet/templates/psynet_error.html
-#, fuzzy, python-format
-msgid ""
-"If this is not the case, please contact us at %(EMAIL)s quoting the "
-"following information:"
-msgstr ""
-"Haeba sena ha se joalo, ka kopo ikopanye le rona ho %(EMAIL)s u qotsa "
-"tlhahisoleseding e latelang:"
-
-#: psynet/templates/psynet_error.html
+#: psynet/templates/psynet_exit_recruiter.html
 #, fuzzy
-msgid "Error type"
-msgstr "Mofuta oa phoso"
+msgid "Thank you for taking part."
+msgstr "Rea leboha ka ho nka karolo."
 
-#: psynet/templates/psynet_error.html
+#: psynet/templates/psynet_exit_recruiter.html
 #, fuzzy
-msgid "Worker ID"
-msgstr "Worker ID"
+msgctxt "exit"
+msgid "You chose to leave."
+msgstr "U khethile ho tloha."
+
+#: psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgid "Thank you for taking part."
+msgstr "Rea leboha ka ho nka karolo."
+
+#: psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgctxt "exit"
+msgid "You may close this page."
+msgstr "U ka koala leqephe lena."
+
+#: psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgctxt "exit"
+msgid "Your responses have been saved. You may close this page."
+msgstr "Likarabo tsa hau li bolokiloe. U ka koala leqephe lena."
+
+#: psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgctxt "exit"
+msgid "Reference code"
+msgstr "Khoutu ea referense"
 
 #: psynet/templates/start.html
 #, fuzzy
@@ -3218,41 +3476,35 @@ msgctxt "timeline_resume"
 msgid "Resume"
 msgstr "Tsoela pele"
 
-#: psynet/templates/timeline-page.html
-#, fuzzy
-msgctxt "timeline"
-msgid "Reward"
-msgstr "Moputso"
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{REMAINING} of {TOTAL} not ready yet"
+msgstr "{REMAINING} ho {TOTAL} ha ba itokisitse"
 
-#: psynet/templates/timeline-page.html
+#: psynet/timeline_hold.py
 #, fuzzy
-msgctxt "timeline"
-msgid "Comment"
-msgstr "Maikutlo"
+msgctxt "timeline_hold"
+msgid "Your partner is ready."
+msgstr "Molekane oa hau o se a itokisitse."
 
-#: psynet/templates/timeline-page.html
-#, fuzzy
-msgctxt "timeline_problem"
-msgid "Terminate the experiment early"
-msgstr "Fetola teko pele ho nako"
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{ARRIVED}/{TOTAL} of your group are ready."
+msgstr "{ARRIVED}/{TOTAL} ba sehlopha sa hau ba itokisitse."
 
-#: psynet/templates/timeline-page.html
+#: psynet/timeline_hold.py
 #, fuzzy
-msgctxt "timeline_problem"
-msgid "Comment stored."
-msgstr "Maikutlo a bolokiloe."
+msgctxt "timeline_hold"
+msgid "Waiting for other participants…"
+msgstr "Emetse bankakarolo ba bang…"
 
-#: psynet/templates/timeline-page.html
+#: psynet/timeline_hold.py
 #, fuzzy
-msgctxt "timeline_problem"
-msgid "Please wait for the page to load."
-msgstr "Ka kopo emela hore leqephe le jaroe."
-
-#: psynet/templates/timeline-page.html
-#, fuzzy
-msgctxt "timeline_problem"
-msgid "Try again in a couple of seconds."
-msgstr "Leka hape ka mor'a metsotsoana e seng mekae."
+msgctxt "timeline_hold"
+msgid "Please wait, the experiment should continue shortly..."
+msgstr "Ka kopo ema, teko e tla tsoela pele haufinyane..."
 
 #: psynet/translation/countries.py
 #, fuzzy

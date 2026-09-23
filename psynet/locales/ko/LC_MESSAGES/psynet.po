@@ -430,33 +430,38 @@ msgstr "완료"
 msgctxt "final-page-rewards"
 msgid ""
 "You will receive a reward of <strong>{CURRENCY}{TIME_REWARD}</strong> for "
-"the time you spent on the experiment. You have also been awarded a "
-"performance reward of <strong>{CURRENCY}{PERFORMANCE_REWARD}</strong>! "
-msgstr ""
-"실험에 참여한 시간에 대해 <strong>{CURRENCY}{TIME_REWARD}</strong>의 보상을 받게 됩니다. 또한 성과 "
-"보상으로 <strong>{CURRENCY}{PERFORMANCE_REWARD}</strong>를 받았습니다! "
+"the time you spent. "
+msgstr "소요된 시간에 대해 <strong>{CURRENCY}{TIME_REWARD}</strong>의 보상을 받게 됩니다. "
+
+#: psynet/end.py
+#, fuzzy, python-brace-format
+msgctxt "final-page-performance-reward"
+msgid ""
+"You have also been awarded a performance reward of "
+"<strong>{CURRENCY}{PERFORMANCE_REWARD}</strong>. "
+msgstr "또한 <strong>{CURRENCY}{PERFORMANCE_REWARD}</strong>의 성과 보상도 받았습니다. "
+
+#: psynet/end.py
+#, fuzzy
+msgid "Click Finish to return to your panel."
+msgstr "완료를 클릭하여 패널로 돌아가세요."
+
+#: psynet/end.py
+#, fuzzy
+msgid "Click Finish to finalize the session."
+msgstr "완료를 클릭하여 세션을 마무리하세요."
 
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_successful"
-msgid "That's the end of the experiment!"
-msgstr "실험이 끝났습니다!"
-
-#: psynet/end.py
-#, fuzzy
-msgid "Thank you for taking part."
-msgstr "참여해 주셔서 감사합니다."
-
-#: psynet/end.py
-#, fuzzy
-msgid "Please click \"Finish\" to finalize the session."
-msgstr "\"완료\"를 클릭하여 HIT를 완료해 주세요."
+msgid "That's the end!"
+msgstr "여기까지입니다!"
 
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_unsuccessful"
-msgid "Unfortunately the experiment must end early."
-msgstr "안타깝게도 실험이 조기에 종료되어야 합니다."
+msgid "Unfortunately we have to stop early."
+msgstr "안타깝게도 일찍 종료해야 합니다."
 
 #: psynet/end.py
 #, fuzzy
@@ -466,20 +471,20 @@ msgstr "그러나 이미 소요된 시간에 대해서는 여전히 보상을 �
 
 #: psynet/end.py
 #, fuzzy
-msgid "You will be redirected."
-msgstr "리디렉션됩니다."
+msgctxt "final_page_rejected_consent"
+msgid "You chose not to continue."
+msgstr "계속하지 않기로 선택하셨습니다."
 
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_rejected_consent"
-msgid "Consent was rejected."
-msgstr "동의가 거부되었습니다."
+msgid "You may close this page."
+msgstr "이 페이지를 닫으셔도 됩니다."
 
 #: psynet/end.py
 #, fuzzy
-msgctxt "final_page_rejected_consent"
-msgid "End of experiment."
-msgstr "실험 종료."
+msgid "We will return you to your panel in a few seconds."
+msgstr "몇 초 후에 패널로 돌아가게 됩니다."
 
 #: psynet/equipment.py
 #, fuzzy
@@ -490,37 +495,9 @@ msgstr "다음 페이지로 계속할 때 권한 요청이 표시될 수 있습�
 
 #: psynet/experiment.py
 #, fuzzy
-msgctxt "error-msg"
-msgid "There has been an error and so you are unable to continue, sorry!"
-msgstr "오류가 발생하여 계속할 수 없습니다. 죄송합니다!"
-
-#: psynet/experiment.py
-#, fuzzy, python-brace-format
-msgctxt "mturk_error"
-msgid ""
-"To enquire about compensation, please contact the researcher at {EMAIL} and "
-"describe what led to this error."
-msgstr "보상에 대해 문의하려면 {EMAIL}로 연구자에게 연락하여 이 오류가 발생한 경위를 설명하십시오."
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "mturk_error"
-msgid "Please also quote the following information:"
-msgstr "다음 정보를 함께 제공해 주십시오:"
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "prolific_error"
-msgid "Don't worry, your progress has been recorded."
-msgstr "걱정하지 마세요, 진행 상황이 기록되었습니다."
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "prolific_error"
-msgid ""
-"To enquire about compensation, please send the researcher a message via the "
-"Prolific website and describe what led to your error."
-msgstr "보상에 대해 문의하려면 Prolific 웹사이트를 통해 연구자에게 메시지를 보내고 오류가 발생한 경위를 설명하십시오."
+msgctxt "timeline_problem"
+msgid "This session has already ended. Please reload the page."
+msgstr "이 세션은 이미 종료되었습니다. 페이지를 새로 고침하십시오."
 
 #: psynet/experiment.py
 #, fuzzy
@@ -530,6 +507,11 @@ msgid ""
 "multiple browser tabs? Please close all other tabs and refresh the page."
 msgstr ""
 "동기화 문제가 감지되었습니다. 여러 브라우저 탭에서 동일한 실험을 실행 중이신가요? 다른 모든 탭을 닫고 페이지를 새로 고침하십시오."
+
+#: psynet/experiment.py
+#, fuzzy
+msgid "The experiment is temporarily busy. Please try again."
+msgstr "실험이 일시적으로 바쁩니다. 다시 시도해 주십시오."
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -553,6 +535,12 @@ msgstr "답변을 선택해야 합니다!"
 msgctxt "validation"
 msgid "You need to provide a number!"
 msgstr "숫자를 입력해야 합니다!"
+
+#: psynet/page.py
+#, fuzzy
+msgctxt "status"
+msgid "Working..."
+msgstr "작업 중..."
 
 #: psynet/prescreen/__init__.py
 #, fuzzy
@@ -711,193 +699,349 @@ msgid "The test will start on the next page."
 msgstr "테스트는 다음 페이지에서 시작됩니다."
 
 #: psynet/recruiters.py
-#, fuzzy
-msgctxt "recruiter_communication"
-msgid "Communicating with the recruiter..."
-msgstr "리크루터와 통신 중..."
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error"
+msgid ""
+"If you need to contact the researcher about this error, write to {EMAIL} and"
+" quote reference code {REFERENCE_CODE}."
+msgstr ""
+"이 오류에 대해 연구자에게 연락해야 하는 경우, {EMAIL}로 이메일을 보내고 참조 코드 {REFERENCE_CODE}를 인용하세요."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error"
+msgid ""
+"If you need to contact the researcher about this error, write to {EMAIL}."
+msgstr "이 오류에 대해 연구자에게 연락해야 하는 경우, {EMAIL}로 이메일을 보내세요."
 
 #: psynet/recruiters.py
 #, fuzzy
-msgctxt "screen_out_successful"
+msgctxt "early_exit_error"
+msgid "You may close this page."
+msgstr "이 페이지를 닫으셔도 됩니다."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error"
+msgid "Unfortunately an error occurred and we cannot continue."
+msgstr "안타깝게도 오류가 발생하여 계속 진행할 수 없습니다."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error"
+msgid "However, your responses so far have been saved."
+msgstr "그러나 지금까지의 응답은 저장되었습니다."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
 msgid ""
-"You have been credited for the time spent on the experiment. Because you "
-"could not progress to the main experiment your submission will appear as "
-"'screened out' in Prolific. You can now close this browser window."
+"If you leave now, you will not be able to continue later. Your responses so "
+"far will still be saved."
+msgstr "지금 나가시면 나중에 계속할 수 없습니다. 지금까지의 응답은 저장됩니다."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit"
+msgid ""
+"You have earned {EARNED} so far. You need at least {THRESHOLD} to leave with"
+" payment. If you leave without payment, you will not be able to continue "
+"later. Your responses so far will still be saved."
 msgstr ""
-"실험에 소요된 시간에 대해 크레딧이 부여되었습니다. 메인 실험으로 진행할 수 없었기 때문에 제출물이 Prolific에서 'screened"
-" out'으로 표시됩니다. 이제 이 브라우저 창을 닫을 수 있습니다."
+"지금까지 {EARNED}를 벌었습니다. 지급을 받으려면 최소 {THRESHOLD}가 필요합니다. 지급 없이 나가시면 나중에 계속할 수 "
+"없습니다. 지금까지의 응답은 저장됩니다."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
+msgid "Leave without payment"
+msgstr "지급 없이 나가기"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
+msgid "Leave"
+msgstr "나가기"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
+msgid "Leave without finishing?"
+msgstr "완료하지 않고 나가시겠습니까?"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
+msgid "Cancel"
+msgstr "취소"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_unpaid"
+msgid "You may close this page."
+msgstr "이 페이지를 닫으셔도 됩니다."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED}. Because you have earned {EARNED} so "
+"far, a further {REMAINDER} will be paid as a bonus. Your responses so far "
+"will still be saved."
+msgstr ""
+"지금 나가시면 나중에 계속할 수 없습니다. 고정 '스크린 아웃' 지급 {FIXED}를 받게 됩니다. 지금까지 {EARNED}를 벌었기 "
+"때문에 추가로 {REMAINDER}가 보너스로 지급됩니다. 지금까지의 응답은 저장됩니다."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED}. Your responses so far will still be "
+"saved."
+msgstr ""
+"지금 나가시면 나중에 계속할 수 없습니다. 고정 '스크린 아웃' 지급 {FIXED}를 받게 됩니다. 지금까지의 응답은 저장됩니다."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED} plus a performance bonus of "
+"{PERFORMANCE}. You will not be paid for additional time. Your responses so "
+"far will still be saved."
+msgstr ""
+"지금 나가시면 나중에 계속할 수 없습니다. 고정 '스크린 아웃' 지급 {FIXED}와 성과 보너스 {PERFORMANCE}를 받게 "
+"됩니다. 추가 시간에 대한 지급은 없습니다. 지금까지의 응답은 저장됩니다."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED}. You will not be paid for additional "
+"time. Your responses so far will still be saved."
+msgstr ""
+"지금 나가시면 나중에 계속할 수 없습니다. 고정 '스크린 아웃' 지급 {FIXED}를 받게 됩니다. 추가 시간에 대한 지급은 없습니다. "
+"지금까지의 응답은 저장됩니다."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will need to "
+"return your Prolific submission. You will then be paid {EARNED} as a bonus "
+"for the work you have completed so far. Your responses so far will still be "
+"saved."
+msgstr ""
+"지금 나가시면 나중에 계속할 수 없습니다. Prolific 제출을 반환해야 합니다. 그러면 지금까지 완료한 작업에 대해 {EARNED} "
+"보너스를 받게 됩니다. 지금까지의 응답은 저장됩니다."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "prolific_error"
+msgid "If you had already started, message the researcher through Prolific."
+msgstr "이미 시작하셨다면, Prolific을 통해 연구자에게 메시지를 보내세요."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "prolific_error"
+msgid ""
+"Please message the researcher through Prolific and describe what led to this"
+" error."
+msgstr "이 오류가 발생한 경위를 설명하여 Prolific을 통해 연구자에게 메시지를 보내세요."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We will pay you for your progress so far: you will receive {FIXED} through "
+"Prolific."
+msgstr "지금까지의 진행에 대해 지급해 드리겠습니다: Prolific을 통해 {FIXED}를 받게 됩니다."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We will also pay {BONUS} as a bonus, bringing your total payment to {TOTAL}."
+msgstr "또한 {BONUS}를 보너스로 지급하여 총 지급액이 {TOTAL}가 됩니다."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid "We will also pay your {BONUS} performance bonus."
+msgstr "또한 {BONUS} 성과 보너스를 지급해 드리겠습니다."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Any additional amount you earned will be paid as a bonus."
+msgstr "추가로 벌어들인 금액은 보너스로 지급됩니다."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Select Submit to Prolific to complete your submission."
+msgstr "제출을 완료하려면 Prolific에 제출을 선택하세요."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Submit to Prolific"
+msgstr "Prolific에 제출"
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid ""
+"To receive {EARNED} for the work you completed, you will need to return your"
+" submission on Prolific."
+msgstr "완료한 작업에 대해 {EARNED}를 받으려면 Prolific에서 제출을 반환해야 합니다."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid ""
+"To receive payment for the work you completed, you will need to return your "
+"submission on Prolific."
+msgstr "완료한 작업에 대한 지급을 받으려면 Prolific에서 제출을 반환해야 합니다."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Select Continue to payment instructions to complete these steps."
+msgstr "이 단계를 완료하려면 지급 지침으로 계속을 선택하세요."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We could not open the payment instructions. Please try again. If this keeps "
+"happening, message the researcher through Prolific."
+msgstr ""
+"지급 지침을 열 수 없습니다. 다시 시도해 주세요. 계속 문제가 발생하면 Prolific을 통해 연구자에게 메시지를 보내세요."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Continue to payment instructions"
+msgstr "지급 지침으로 계속"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_unpaid_prolific"
+msgid ""
+"Your responses so far have been saved. Please return your submission on "
+"Prolific. You will not receive payment. You may close this page."
+msgstr ""
+"지금까지의 응답이 저장되었습니다. Prolific에서 제출을 반환해 주세요. 지급은 이루어지지 않습니다. 이 페이지를 닫으셔도 됩니다."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Your submission has been sent to Prolific."
+msgstr "제출이 Prolific으로 전송되었습니다."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "You may close this page."
+msgstr "이 페이지를 닫으셔도 됩니다."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We could not send your submission to Prolific. Please try again. If this "
+"keeps happening, message the researcher through Prolific."
+msgstr ""
+"제출을 Prolific으로 전송할 수 없습니다. 다시 시도해 주세요. 계속 문제가 발생하면 Prolific을 통해 연구자에게 메시지를 "
+"보내세요."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "return_assignment_instructions"
 msgid ""
 "Please return your submission via the Prolific interface and click Next. We "
-"will then automatically pay you a bonus for your time."
-msgstr "Prolific 인터페이스를 통해 제출물을 반환하고 '다음'을 클릭하세요. 그러면 자동으로 시간에 대한 보너스를 지급합니다."
+"will then automatically pay you a bonus."
+msgstr "Prolific 인터페이스를 통해 제출을 반환하고 '다음'을 클릭하세요. 그러면 자동으로 보너스가 지급됩니다."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "return_for_bonus_completed"
 msgid ""
-"That worked! You have been credited for the time spent on the experiment. "
-"Thank you for participating. You can now close this browser window."
+"That worked. You have been credited for the time you spent. Thank you for "
+"taking part. You may close this page."
+msgstr "잘 처리되었습니다. 소요된 시간에 대한 보상이 지급되었습니다. 참여해 주셔서 감사합니다. 이 페이지를 닫으셔도 됩니다."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "return_for_bonus_payment_failed"
+msgid ""
+"Your return was recorded, but we could not complete the bonus payment "
+"automatically. The researcher has been notified and will arrange payment. "
+"You may close this page."
 msgstr ""
-"잘 됐습니다! 실험에 소요된 시간에 대해 크레딧이 부여되었습니다. 참여해 주셔서 감사합니다. 이제 이 브라우저 창을 닫을 수 있습니다."
+"반환이 기록되었지만 보너스 지급을 자동으로 완료할 수 없었습니다. 연구자가 통보받았으며 지급을 진행할 것입니다. 이 페이지를 닫으셔도 "
+"됩니다."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "assignment_return_retry"
 msgid ""
-"That didn't work. Are you sure you returned the submission for this study? "
-"Please go to the Prolific interface, make sure you have returned the "
-"submission, then click the 'Next' button."
-msgstr ""
-"작동하지 않았습니다. 이 연구에 대한 제출물을 반환했는지 확인하세요. Prolific 인터페이스로 이동하여 제출물을 반환했는지 확인한 후"
-" '다음' 버튼을 클릭하세요."
-
-#: psynet/recruiters.py
-#, fuzzy
-msgctxt "return_for_bonus_enabled"
-msgid ""
-"We are sorry that you could not proceed to the main experiment, but we will "
-"still pay you for your time spent so far. To receive this payment, we need "
-"you to return this assignment via the Prolific interface, then click the "
-"'Next' button below."
-msgstr ""
-"메인 실험으로 진행할 수 없어 죄송하지만, 지금까지 소요된 시간에 대해 여전히 지급할 것입니다. 이 지급을 받으려면 Prolific "
-"인터페이스를 통해 이 과제를 반환한 후 아래의 '다음' 버튼을 클릭해야 합니다."
+"That didn't work. Are you sure you returned the submission? Return it on "
+"Prolific, then click Next."
+msgstr "작동하지 않았습니다. 제출을 반환했는지 확인하셨나요? Prolific에서 반환한 후 '다음'을 클릭하세요."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "screen_out_return_and_message_experimenter"
 msgid ""
-"We are sorry that you could not proceed to the main experiment. To receive "
-"this payment for your time, please return your assignment in Prolific and "
-"send a message to the experimenter via the Prolific messaging system. The "
-"experimenter will review your case and arrange payment if appropriate. Thank"
-" you for your understanding. You can now close this browser window."
+"To receive payment for the time you spent, return your submission on "
+"Prolific and message the researcher there. They will review your case and "
+"arrange payment if it is due. You may close this page."
 msgstr ""
-"메인 실험으로 진행할 수 없어 죄송합니다. 시간에 대한 이 지급을 받으려면 Prolific에서 과제를 반환하고 Prolific 메시징 "
-"시스템을 통해 실험자에게 메시지를 보내주세요. 실험자가 귀하의 사례를 검토하고 적절한 경우 지급을 조정할 것입니다. 이해해 주셔서 "
-"감사합니다. 이제 이 브라우저 창을 닫을 수 있습니다."
+"소요된 시간에 대한 지급을 받으려면 Prolific에서 제출을 반환하고 연구자에게 메시지를 보내세요. 연구자가 귀하의 사례를 검토하고 "
+"지급이 필요할 경우 지급을 진행할 것입니다. 이 페이지를 닫으셔도 됩니다."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_lucid"
+msgid ""
+"If you leave now, you will not be able to continue later, and you will "
+"return to your panel provider. This session will not issue a payment; any "
+"payment depends on your panel provider's rules. Your responses so far will "
+"still be saved."
+msgstr ""
+"지금 떠나시면 나중에 계속할 수 없으며 패널 제공자로 돌아가게 됩니다. 이 세션에서는 지급이 이루어지지 않으며, 지급 여부는 패널 "
+"제공자의 규칙에 따릅니다. 지금까지의 응답은 저장됩니다."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "lucid_error"
-msgid "Redirecting to Lucid Marketplace..."
-msgstr "Lucid Marketplace로 리디렉션 중..."
+msgid "We will return you to your panel in a few seconds."
+msgstr "몇 초 후에 패널로 돌아가게 됩니다."
 
-#: psynet/templates/abort_not_possible.html
+#: psynet/recruiters.py
 #, fuzzy
-msgctxt "abort_possible"
-msgid "Aborting not possible."
-msgstr "중단할 수 없습니다."
+msgctxt "early_exit_error_lucid"
+msgid "We will return you to your panel in a few seconds."
+msgstr "몇 초 후에 패널로 돌아가게 됩니다."
 
-#: psynet/templates/abort_not_possible.html
+#: psynet/recruiters.py
 #, fuzzy
-msgctxt "abort_possible"
+msgctxt "early_exit_error_lucid"
 msgid ""
-"Aborting the experiment is not possible as the experimenter does not allow "
-"it at this time!"
-msgstr "실험자는 현재 실험 중단을 허용하지 않으므로 실험을 중단할 수 없습니다!"
+"We could not return you to your panel. Please try again. If this keeps "
+"happening, contact your panel provider."
+msgstr "패널로 돌아갈 수 없습니다. 다시 시도해 주세요. 계속 문제가 발생하면 패널 제공자에게 문의하세요."
 
-#: psynet/templates/abort_not_possible.html
-#, fuzzy, python-format
-msgid ""
-"You have to accumulate <strong>at least "
-"%(CURRENCY)s%(MIN_ACCUMULATED_REWARD_FOR_ABORT)s</strong> of reward to be "
-"able to be compensated."
-msgstr ""
-"보상을 받으려면 <strong>최소 "
-"%(CURRENCY)s%(MIN_ACCUMULATED_REWARD_FOR_ABORT)s</strong>의 보상을 쌓아야 합니다."
-
-#: psynet/templates/abort_not_possible.html
+#: psynet/recruiters.py
 #, fuzzy
-msgctxt "abort_possible"
-msgid "See below information on your currently accumulated reward."
-msgstr "현재 누적된 보상에 대한 정보를 아래에서 확인하세요."
-
-#: psynet/templates/abort_not_possible.html
-#: psynet/templates/abort_possible.html psynet/templates/psynet_error.html
-#, fuzzy
-msgid "Assignment ID"
-msgstr "할당 ID"
-
-#: psynet/templates/abort_not_possible.html
-#: psynet/templates/abort_possible.html psynet/templates/psynet_error.html
-#, fuzzy
-msgid "HIT ID"
-msgstr "HIT ID"
-
-#: psynet/templates/abort_not_possible.html
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgid "Accumulated reward"
-msgstr "누적 보상"
-
-#: psynet/templates/abort_not_possible.html
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgid "Close window"
-msgstr "창 닫기"
-
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgctxt "abort_possible"
-msgid "Are you sure you want to abort the experiment?"
-msgstr "실험을 중단하시겠습니까?"
-
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgctxt "abort_possible"
-msgid ""
-"If you click the Abort button, the experiment will end early, and you will "
-"be automatically paid the compensation you have earned so far."
-msgstr "중단 버튼을 클릭하면 실험이 조기에 종료되며, 지금까지 획득한 보상이 자동으로 지급됩니다."
-
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgctxt "abort_possible"
-msgid "Please only contact us if you have trouble receiving your payment."
-msgstr "지급에 문제가 있는 경우에만 저희에게 연락해 주세요."
-
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgctxt "abort_possible"
-msgid "See the information below for details of your compensation."
-msgstr "보상에 대한 자세한 내용은 아래 정보를 참조하세요."
-
-#: psynet/templates/abort_possible.html psynet/templates/ad.html
-#: psynet/templates/psynet_error.html
-#, fuzzy
-msgid "Abort experiment"
-msgstr "실험 중단"
-
-#: psynet/templates/ad.html
-#, fuzzy
-msgctxt "ad"
-msgid "Call for participants"
-msgstr "참가자 모집"
-
-#: psynet/templates/ad.html
-#, fuzzy
-msgctxt "ad"
-msgid "The requirements to participate are as follows"
-msgstr "참가 요건은 다음과 같습니다"
-
-#: psynet/templates/ad.html
-#, fuzzy
-msgctxt "ad"
-msgid ""
-"Please click the \"Accept HIT\" button on the Amazon site above to begin the"
-" task."
-msgstr "작업을 시작하려면 위의 Amazon 사이트에서 \"HIT 수락\" 버튼을 클릭하십시오."
-
-#: psynet/templates/ad.html
-#, fuzzy
-msgctxt "ad"
-msgid "Thanks for accepting this HIT."
-msgstr "이 HIT를 수락해 주셔서 감사합니다."
+msgctxt "early_exit_error_lucid"
+msgid "Return to your panel"
+msgstr "패널로 돌아가기"
 
 #: psynet/templates/ad.html
 #, fuzzy
@@ -930,11 +1074,6 @@ msgstr "계속하기 전에 팝업 차단기를 비활성화하십시오."
 msgctxt "ad"
 msgid "Begin Experiment"
 msgstr "실험 시작"
-
-#: psynet/templates/ad.html psynet/templates/psynet_error.html
-#, fuzzy
-msgid "Click the above button to be compensated in case of an error."
-msgstr "오류가 발생한 경우 보상을 받으려면 위 버튼을 클릭하십시오."
 
 #: psynet/templates/consent.html
 #, fuzzy
@@ -2192,8 +2331,40 @@ msgstr "작업을 수행함으로써 과학에 기여하고 있습니다. 감사
 #: psynet/templates/exit_recruiter_lucid.html
 #, fuzzy
 msgctxt "exit_recruiter_lucid"
-msgid "Lucid Survey Submission"
-msgstr "루시드 설문 제출"
+msgid "Returning you to your panel"
+msgstr "패널로 돌아갑니다"
+
+#: psynet/templates/exit_recruiter_lucid.html
+#, fuzzy
+msgctxt "exit_recruiter_lucid"
+msgid "Please wait."
+msgstr "기다려 주세요."
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html
+#, fuzzy
+msgctxt "exit_recruiter_prolific"
+msgid "Submit to Prolific"
+msgstr "Prolific에 제출"
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html
+#, fuzzy
+msgctxt "exit_recruiter_prolific"
+msgid ""
+"Click below to send your submission to Prolific. You will not need to enter "
+"a completion code."
+msgstr "아래를 클릭하여 Prolific에 제출하세요. 완료 코드를 입력할 필요가 없습니다."
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html
+#, fuzzy
+msgctxt "exit_recruiter_prolific"
+msgid "Please wait."
+msgstr "잠시만 기다려 주세요."
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html
+#, fuzzy
+msgctxt "exit_recruiter_prolific"
+msgid "Try again"
+msgstr "다시 시도"
 
 #: psynet/templates/keyboard.html
 #, fuzzy
@@ -2421,11 +2592,6 @@ msgstr "동의합니다"
 msgctxt "consent"
 msgid "No, thank you (return task)"
 msgstr "아니요, 감사합니다 (작업으로 돌아가기)"
-
-#: psynet/templates/macros/consent.html
-#, fuzzy
-msgid "Scroll up/down to see all text"
-msgstr "모든 텍스트를 보려면 위/아래로 스크롤하세요"
 
 #: psynet/templates/macros/consent.html
 #, fuzzy
@@ -2679,6 +2845,12 @@ msgstr "재설정"
 
 #: psynet/templates/macros/control.html
 #, fuzzy
+msgctxt "audio_meter"
+msgid "Microphone level"
+msgstr "마이크 레벨"
+
+#: psynet/templates/macros/control.html
+#, fuzzy
 msgctxt "audio_meter_calibrate"
 msgid "Sliders"
 msgstr "슬라이더"
@@ -2788,44 +2960,117 @@ msgstr "비디오를 찾을 수 없습니다"
 msgid "Image not found"
 msgstr "이미지를 찾을 수 없습니다"
 
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Comment stored."
+msgstr "댓글이 저장되었습니다."
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Please wait for the page to load."
+msgstr "페이지가 로드될 때까지 기다려 주세요."
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Try again in a couple of seconds."
+msgstr "몇 초 후에 다시 시도해 주세요."
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline"
+msgid "Reward"
+msgstr "보상"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_reward"
+msgid "Reward earned so far"
+msgstr "지금까지 획득한 보상"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_reward"
+msgid "for time"
+msgstr "시간에 대한 보상"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_reward"
+msgid "for performance"
+msgstr "성과에 대한 보상"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline"
+msgid "Comment"
+msgstr "댓글"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Leave"
+msgstr "나가기"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Leave without finishing."
+msgstr "완료하지 않고 나가기."
+
 #: psynet/templates/psynet_error.html
 #, fuzzy
 msgctxt "error"
-msgid "Error!"
-msgstr "오류!"
+msgid "An error occurred"
+msgstr "오류가 발생했습니다"
 
 #: psynet/templates/psynet_error.html
 #, fuzzy
-msgctxt "mturk_error"
-msgid ""
-"You may be able to abort the experiment using the <strong>Abort "
-"experiment</strong> button <strong>on the MTurk ad page</strong>."
-msgstr "MTurk 광고 페이지에서 <strong>실험 중단</strong> 버튼을 사용하여 실험을 중단할 수 있습니다."
+msgctxt "early_exit_error"
+msgid "Please wait."
+msgstr "잠시 기다려 주세요."
 
 #: psynet/templates/psynet_error.html
 #, fuzzy
-msgctxt "mturk_error"
-msgid ""
-"Once aborted, there is no need to contact us to receive the compensation; "
-"this should be awarded to you automatically via MTurk a few minutes after."
-msgstr "중단 후에는 보상을 받기 위해 저희에게 연락할 필요가 없습니다. 몇 분 후에 MTurk를 통해 자동으로 지급됩니다."
+msgctxt "early_exit_error"
+msgid "Try again"
+msgstr "다시 시도하세요"
 
-#: psynet/templates/psynet_error.html
-#, fuzzy, python-format
-msgid ""
-"If this is not the case, please contact us at %(EMAIL)s quoting the "
-"following information:"
-msgstr "그렇지 않은 경우, 다음 정보를 인용하여 %(EMAIL)s로 저희에게 연락해 주세요:"
-
-#: psynet/templates/psynet_error.html
+#: psynet/templates/psynet_exit_recruiter.html
 #, fuzzy
-msgid "Error type"
-msgstr "오류 유형"
+msgid "Thank you for taking part."
+msgstr "참여해 주셔서 감사합니다."
 
-#: psynet/templates/psynet_error.html
+#: psynet/templates/psynet_exit_recruiter.html
 #, fuzzy
-msgid "Worker ID"
-msgstr "작업자 ID"
+msgctxt "exit"
+msgid "You chose to leave."
+msgstr "떠나기로 선택하셨습니다."
+
+#: psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgid "Thank you for taking part."
+msgstr "참여해 주셔서 감사합니다."
+
+#: psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgctxt "exit"
+msgid "You may close this page."
+msgstr "이 페이지를 닫으셔도 됩니다."
+
+#: psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgctxt "exit"
+msgid "Your responses have been saved. You may close this page."
+msgstr "응답이 저장되었습니다. 이 페이지를 닫으셔도 됩니다."
+
+#: psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgctxt "exit"
+msgid "Reference code"
+msgstr "참조 코드"
 
 #: psynet/templates/start.html
 #, fuzzy
@@ -2887,41 +3132,35 @@ msgctxt "timeline_resume"
 msgid "Resume"
 msgstr "다시 시작"
 
-#: psynet/templates/timeline-page.html
-#, fuzzy
-msgctxt "timeline"
-msgid "Reward"
-msgstr "보상"
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{REMAINING} of {TOTAL} not ready yet"
+msgstr "{REMAINING}/{TOTAL} 아직 준비되지 않았습니다."
 
-#: psynet/templates/timeline-page.html
+#: psynet/timeline_hold.py
 #, fuzzy
-msgctxt "timeline"
-msgid "Comment"
-msgstr "댓글"
+msgctxt "timeline_hold"
+msgid "Your partner is ready."
+msgstr "파트너가 준비되었습니다."
 
-#: psynet/templates/timeline-page.html
-#, fuzzy
-msgctxt "timeline_problem"
-msgid "Terminate the experiment early"
-msgstr "실험을 조기에 종료"
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{ARRIVED}/{TOTAL} of your group are ready."
+msgstr "{ARRIVED}/{TOTAL} 그룹이 준비되었습니다."
 
-#: psynet/templates/timeline-page.html
+#: psynet/timeline_hold.py
 #, fuzzy
-msgctxt "timeline_problem"
-msgid "Comment stored."
-msgstr "댓글이 저장되었습니다."
+msgctxt "timeline_hold"
+msgid "Waiting for other participants…"
+msgstr "다른 참가자들을 기다리고 있습니다…"
 
-#: psynet/templates/timeline-page.html
+#: psynet/timeline_hold.py
 #, fuzzy
-msgctxt "timeline_problem"
-msgid "Please wait for the page to load."
-msgstr "페이지가 로드될 때까지 기다려 주세요."
-
-#: psynet/templates/timeline-page.html
-#, fuzzy
-msgctxt "timeline_problem"
-msgid "Try again in a couple of seconds."
-msgstr "몇 초 후에 다시 시도해 주세요."
+msgctxt "timeline_hold"
+msgid "Please wait, the experiment should continue shortly..."
+msgstr "잠시만 기다려 주세요, 실험이 곧 계속될 것입니다..."
 
 #: psynet/translation/countries.py
 #, fuzzy

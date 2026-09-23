@@ -439,34 +439,42 @@ msgstr "Temm"
 msgctxt "final-page-rewards"
 msgid ""
 "You will receive a reward of <strong>{CURRENCY}{TIME_REWARD}</strong> for "
-"the time you spent on the experiment. You have also been awarded a "
-"performance reward of <strong>{CURRENCY}{PERFORMANCE_REWARD}</strong>! "
+"the time you spent. "
 msgstr ""
-"Int ser tirċievi premju ta' <strong>{CURRENCY}{TIME_REWARD}</strong> għaż-"
-"żmien li qattajt fl-esperiment. Int ukoll ingħatajt premju ta' prestazzjoni "
-"ta' <strong>{CURRENCY}{PERFORMANCE_REWARD}</strong>! "
+"Se tirċievi premju ta' <strong>{CURRENCY}{TIME_REWARD}</strong> għaż-żmien "
+"li qattajt."
+
+#: psynet/end.py
+#, fuzzy, python-brace-format
+msgctxt "final-page-performance-reward"
+msgid ""
+"You have also been awarded a performance reward of "
+"<strong>{CURRENCY}{PERFORMANCE_REWARD}</strong>. "
+msgstr ""
+"Inti wkoll ingħatajt premju ta' prestazzjoni ta' "
+"<strong>{CURRENCY}{PERFORMANCE_REWARD}</strong>."
+
+#: psynet/end.py
+#, fuzzy
+msgid "Click Finish to return to your panel."
+msgstr "Ikklikkja Temm biex tirritorna għall-pannell tiegħek."
+
+#: psynet/end.py
+#, fuzzy
+msgid "Click Finish to finalize the session."
+msgstr "Ikklikkja Temm biex tlesti s-sessjoni."
 
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_successful"
-msgid "That's the end of the experiment!"
-msgstr "Dan huwa t-tmiem tal-esperiment!"
-
-#: psynet/end.py
-#, fuzzy
-msgid "Thank you for taking part."
-msgstr "Grazzi talli ħadt sehem."
-
-#: psynet/end.py
-#, fuzzy
-msgid "Please click \"Finish\" to finalize the session."
-msgstr "Jekk jogħġbok ikklikkja \"Finish\" biex tlesti l-HIT."
+msgid "That's the end!"
+msgstr "Dan huwa t-tmiem!"
 
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_unsuccessful"
-msgid "Unfortunately the experiment must end early."
-msgstr "Sfortunatament l-esperiment irid jintemm kmieni."
+msgid "Unfortunately we have to stop early."
+msgstr "Sfortunatament irridu nieqfu kmieni."
 
 #: psynet/end.py
 #, fuzzy
@@ -476,20 +484,20 @@ msgstr "Madankollu, xorta se tiġi mħallas għaż-żmien li qattajt diġà."
 
 #: psynet/end.py
 #, fuzzy
-msgid "You will be redirected."
-msgstr "Int se tiġi ridirezzjonat."
+msgctxt "final_page_rejected_consent"
+msgid "You chose not to continue."
+msgstr "Int għażilt li ma tkomplix."
 
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_rejected_consent"
-msgid "Consent was rejected."
-msgstr "Il-kunsens ġie miċħud."
+msgid "You may close this page."
+msgstr "Tista' tagħlaq din il-paġna."
 
 #: psynet/end.py
 #, fuzzy
-msgctxt "final_page_rejected_consent"
-msgid "End of experiment."
-msgstr "Tmiem tal-esperiment."
+msgid "We will return you to your panel in a few seconds."
+msgstr "Aħna se nirritornawk għall-pannell tiegħek fi ftit sekondi."
 
 #: psynet/equipment.py
 #, fuzzy
@@ -502,41 +510,9 @@ msgstr ""
 
 #: psynet/experiment.py
 #, fuzzy
-msgctxt "error-msg"
-msgid "There has been an error and so you are unable to continue, sorry!"
-msgstr "Kien hemm żball u għalhekk ma tistax tkompli, skużana!"
-
-#: psynet/experiment.py
-#, fuzzy, python-brace-format
-msgctxt "mturk_error"
-msgid ""
-"To enquire about compensation, please contact the researcher at {EMAIL} and "
-"describe what led to this error."
-msgstr ""
-"Biex tistaqsi dwar kumpens, jekk jogħġbok ikkuntattja lir-riċerkatur fuq "
-"{EMAIL} u iddeskrivi x'wassal għal dan l-iżball."
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "mturk_error"
-msgid "Please also quote the following information:"
-msgstr "Jekk jogħġbok ikkwota wkoll l-informazzjoni li ġejja:"
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "prolific_error"
-msgid "Don't worry, your progress has been recorded."
-msgstr "Tinkwetax, il-progress tiegħek ġie rreġistrat."
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "prolific_error"
-msgid ""
-"To enquire about compensation, please send the researcher a message via the "
-"Prolific website and describe what led to your error."
-msgstr ""
-"Biex tistaqsi dwar kumpens, jekk jogħġbok ibgħat messaġġ lir-riċerkatur "
-"permezz tal-websajt Prolific u iddeskrivi x'wassal għall-iżball tiegħek."
+msgctxt "timeline_problem"
+msgid "This session has already ended. Please reload the page."
+msgstr "Din is-sessjoni diġà ntemmet. Jekk jogħġbok aġġorna l-paġna."
 
 #: psynet/experiment.py
 #, fuzzy
@@ -548,6 +524,12 @@ msgstr ""
 "Problema ta' sinkronizzazzjoni skoperta. Qed tmexxi l-istess esperiment "
 "f'diversi tabs tal-browser? Jekk jogħġbok agħlaq it-tabs l-oħra kollha u "
 "aġġorna l-paġna."
+
+#: psynet/experiment.py
+#, fuzzy
+msgid "The experiment is temporarily busy. Please try again."
+msgstr ""
+"L-esperiment huwa temporanjament impenjat. Jekk jogħġbok erġa' pprova."
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -571,6 +553,12 @@ msgstr "Għandek bżonn tagħżel tweġiba!"
 msgctxt "validation"
 msgid "You need to provide a number!"
 msgstr "Għandek bżonn tipprovdi numru!"
+
+#: psynet/page.py
+#, fuzzy
+msgctxt "status"
+msgid "Working..."
+msgstr "Qed naħdem..."
 
 #: psynet/prescreen/__init__.py
 #, fuzzy
@@ -747,215 +735,392 @@ msgid "The test will start on the next page."
 msgstr "It-test se jibda fuq il-paġna li jmiss."
 
 #: psynet/recruiters.py
-#, fuzzy
-msgctxt "recruiter_communication"
-msgid "Communicating with the recruiter..."
-msgstr "Qegħdin nikkomunikaw mar-reklutatur..."
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error"
+msgid ""
+"If you need to contact the researcher about this error, write to {EMAIL} and"
+" quote reference code {REFERENCE_CODE}."
+msgstr ""
+"Jekk għandek bżonn tikkuntattja lir-riċerkatur dwar dan l-iżball, ikteb lil "
+"{EMAIL} u semmi l-kodiċi ta' referenza {REFERENCE_CODE}."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error"
+msgid ""
+"If you need to contact the researcher about this error, write to {EMAIL}."
+msgstr ""
+"Jekk għandek bżonn tikkuntattja lir-riċerkatur dwar dan l-iżball, ikteb lil "
+"{EMAIL}."
 
 #: psynet/recruiters.py
 #, fuzzy
-msgctxt "screen_out_successful"
+msgctxt "early_exit_error"
+msgid "You may close this page."
+msgstr "Tista' tagħlaq din il-paġna."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error"
+msgid "Unfortunately an error occurred and we cannot continue."
+msgstr "Sfortunatament seħħ żball u ma nistgħux inkomplu."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error"
+msgid "However, your responses so far have been saved."
+msgstr "Madankollu, it-tweġibiet tiegħek s'issa ġew salvati."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
 msgid ""
-"You have been credited for the time spent on the experiment. Because you "
-"could not progress to the main experiment your submission will appear as "
-"'screened out' in Prolific. You can now close this browser window."
+"If you leave now, you will not be able to continue later. Your responses so "
+"far will still be saved."
 msgstr ""
-"Inti ġejt ikkreditat għall-ħin li qattajt fuq l-esperiment. Minħabba li ma "
-"stajtx tipproċedi għall-esperiment prinċipali, is-sottomissjoni tiegħek "
-"tidher bħala 'screened out' f'Prolific. Issa tista' tagħlaq din it-tieqa "
-"tal-browser."
+"Jekk titlaq issa, ma tkunx tista' tkompli aktar tard. It-tweġibiet tiegħek "
+"s'issa se jiġu salvati."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit"
+msgid ""
+"You have earned {EARNED} so far. You need at least {THRESHOLD} to leave with"
+" payment. If you leave without payment, you will not be able to continue "
+"later. Your responses so far will still be saved."
+msgstr ""
+"Int qlajt {EARNED} s'issa. Għandek bżonn mill-inqas {THRESHOLD} biex titlaq "
+"b'ħlas. Jekk titlaq mingħajr ħlas, ma tkunx tista' tkompli aktar tard. It-"
+"tweġibiet tiegħek s'issa se jiġu salvati."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
+msgid "Leave without payment"
+msgstr "Itlaq mingħajr ħlas"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
+msgid "Leave"
+msgstr "Itlaq"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
+msgid "Leave without finishing?"
+msgstr "Itlaq mingħajr ma tispiċċa?"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
+msgid "Cancel"
+msgstr "Ikkanċella"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_unpaid"
+msgid "You may close this page."
+msgstr "Tista' tagħlaq din il-paġna."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED}. Because you have earned {EARNED} so "
+"far, a further {REMAINDER} will be paid as a bonus. Your responses so far "
+"will still be saved."
+msgstr ""
+"Jekk titlaq issa, ma tkunx tista' tkompli aktar tard. Inti se tirċievi ħlas "
+"fiss ta' 'screen-out' ta' {FIXED}. Minħabba li qlajt {EARNED} s'issa, "
+"{REMAINDER} ieħor se jitħallas bħala bonus. It-tweġibiet tiegħek s'issa se "
+"jiġu salvati."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED}. Your responses so far will still be "
+"saved."
+msgstr ""
+"Jekk titlaq issa, ma tkunx tista' tkompli aktar tard. Inti se tirċievi ħlas "
+"fiss ta' 'screen-out' ta' {FIXED}. It-tweġibiet tiegħek s'issa se jiġu "
+"salvati."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED} plus a performance bonus of "
+"{PERFORMANCE}. You will not be paid for additional time. Your responses so "
+"far will still be saved."
+msgstr ""
+"Jekk titlaq issa, ma tkunx tista' tkompli aktar tard. Inti se tirċievi ħlas "
+"fiss ta' 'screen-out' ta' {FIXED} flimkien ma' bonus ta' prestazzjoni ta' "
+"{PERFORMANCE}. Ma titħallasx għal ħin addizzjonali. It-tweġibiet tiegħek "
+"s'issa se jiġu salvati."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED}. You will not be paid for additional "
+"time. Your responses so far will still be saved."
+msgstr ""
+"Jekk titlaq issa, ma tkunx tista' tkompli aktar tard. Inti se tirċievi ħlas "
+"fiss ta' 'screen-out' ta' {FIXED}. Ma titħallasx għal ħin addizzjonali. It-"
+"tweġibiet tiegħek s'issa se jiġu salvati."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will need to "
+"return your Prolific submission. You will then be paid {EARNED} as a bonus "
+"for the work you have completed so far. Your responses so far will still be "
+"saved."
+msgstr ""
+"Jekk titlaq issa, ma tkunx tista' tkompli aktar tard. Ikollok bżonn "
+"tirritorna s-sottomissjoni tiegħek fuq Prolific. Imbagħad titħallas {EARNED}"
+" bħala bonus għax-xogħol li tlestiet s'issa. It-tweġibiet tiegħek s'issa se "
+"jiġu salvati."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "prolific_error"
+msgid "If you had already started, message the researcher through Prolific."
+msgstr "Jekk diġà bdejt, ibgħat messaġġ lir-riċerkatur permezz ta' Prolific."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "prolific_error"
+msgid ""
+"Please message the researcher through Prolific and describe what led to this"
+" error."
+msgstr ""
+"Jekk jogħġbok ibgħat messaġġ lir-riċerkatur permezz ta' Prolific u "
+"iddeskrivi x'wassal għal dan l-iżball."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We will pay you for your progress so far: you will receive {FIXED} through "
+"Prolific."
+msgstr ""
+"Aħna se nħallsuk għall-progress tiegħek s'issa: inti se tirċievi {FIXED} "
+"permezz ta' Prolific."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We will also pay {BONUS} as a bonus, bringing your total payment to {TOTAL}."
+msgstr ""
+"Aħna se nħallsu wkoll {BONUS} bħala bonus, li jġib il-ħlas totali tiegħek "
+"għal {TOTAL}."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid "We will also pay your {BONUS} performance bonus."
+msgstr "Aħna se nħallsu wkoll il-bonus ta' prestazzjoni tiegħek ta' {BONUS}."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Any additional amount you earned will be paid as a bonus."
+msgstr "Kull ammont addizzjonali li qlajt se jitħallas bħala bonus."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Select Submit to Prolific to complete your submission."
+msgstr "Agħżel Ibgħat lil Prolific biex tlesti s-sottomissjoni tiegħek."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Submit to Prolific"
+msgstr "Ibgħat lil Prolific"
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid ""
+"To receive {EARNED} for the work you completed, you will need to return your"
+" submission on Prolific."
+msgstr ""
+"Biex tirċievi {EARNED} għax-xogħol li tlestiet, ikollok bżonn tirritorna "
+"s-sottomissjoni tiegħek fuq Prolific."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid ""
+"To receive payment for the work you completed, you will need to return your "
+"submission on Prolific."
+msgstr ""
+"Biex tirċievi ħlas għax-xogħol li tlestiet, ikollok bżonn tirritorna "
+"s-sottomissjoni tiegħek fuq Prolific."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Select Continue to payment instructions to complete these steps."
+msgstr ""
+"Agħżel Kompli għall-istruzzjonijiet tal-ħlas biex tlesti dawn il-passi."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We could not open the payment instructions. Please try again. If this keeps "
+"happening, message the researcher through Prolific."
+msgstr ""
+"Ma stajniex niftħu l-istruzzjonijiet tal-ħlas. Jekk jogħġbok erġa' pprova. "
+"Jekk dan ikompli jiġri, ibgħat messaġġ lir-riċerkatur permezz ta' Prolific."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Continue to payment instructions"
+msgstr "Kompli għall-istruzzjonijiet tal-ħlas"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_unpaid_prolific"
+msgid ""
+"Your responses so far have been saved. Please return your submission on "
+"Prolific. You will not receive payment. You may close this page."
+msgstr ""
+"Ir-risposti tiegħek s'issa ġew salvati. Jekk jogħġbok irritorna "
+"s-sottomissjoni tiegħek fuq Prolific. Ma tirċevix ħlas. Tista' tagħlaq din "
+"il-paġna."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Your submission has been sent to Prolific."
+msgstr "Is-sottomissjoni tiegħek intbagħtet lil Prolific."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "You may close this page."
+msgstr "Tista' tagħlaq din il-paġna."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We could not send your submission to Prolific. Please try again. If this "
+"keeps happening, message the researcher through Prolific."
+msgstr ""
+"Ma stajniex nibagħtu s-sottomissjoni tiegħek lil Prolific. Jekk jogħġbok "
+"erġa' pprova. Jekk dan jibqa' jiġri, ibgħat messaġġ lir-riċerkatur permezz "
+"ta' Prolific."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "return_assignment_instructions"
 msgid ""
 "Please return your submission via the Prolific interface and click Next. We "
-"will then automatically pay you a bonus for your time."
+"will then automatically pay you a bonus."
 msgstr ""
 "Jekk jogħġbok irritorna s-sottomissjoni tiegħek permezz tal-interface ta' "
-"Prolific u kklikkja 'Li jmiss'. Aħna mbagħad awtomatikament inħallsuk bonus "
-"għall-ħin tiegħek."
+"Prolific u kklikkja Li jmiss. Aħna mbagħad awtomatikament inħallsuk bonus."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "return_for_bonus_completed"
 msgid ""
-"That worked! You have been credited for the time spent on the experiment. "
-"Thank you for participating. You can now close this browser window."
+"That worked. You have been credited for the time you spent. Thank you for "
+"taking part. You may close this page."
 msgstr ""
-"Dak ħadem! Inti ġejt ikkreditat għall-ħin li qattajt fuq l-esperiment. "
-"Grazzi talli pparteċipajt. Issa tista' tagħlaq din it-tieqa tal-browser."
+"Dak ħadem. Inti ġejt ikkreditat għaż-żmien li qattajt. Grazzi talli ħadt "
+"sehem. Tista' tagħlaq din il-paġna."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "return_for_bonus_payment_failed"
+msgid ""
+"Your return was recorded, but we could not complete the bonus payment "
+"automatically. The researcher has been notified and will arrange payment. "
+"You may close this page."
+msgstr ""
+"Ir-ritorn tiegħek ġie rreġistrat, iżda ma stajniex nikkumplimentaw il-ħlas "
+"tal-bonus awtomatikament. Ir-riċerkatur ġie nnotifikat u se jirranġa l-ħlas."
+" Tista' tagħlaq din il-paġna."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "assignment_return_retry"
 msgid ""
-"That didn't work. Are you sure you returned the submission for this study? "
-"Please go to the Prolific interface, make sure you have returned the "
-"submission, then click the 'Next' button."
+"That didn't work. Are you sure you returned the submission? Return it on "
+"Prolific, then click Next."
 msgstr ""
-"Dak ma ħademx. Żgur li rritornajt is-sottomissjoni għal dan l-istudju? Jekk "
-"jogħġbok mur fl-interface ta' Prolific, kun żgur li rritornajt is-"
-"sottomissjoni, imbagħad kklikkja l-buttuna 'Li jmiss'."
-
-#: psynet/recruiters.py
-#, fuzzy
-msgctxt "return_for_bonus_enabled"
-msgid ""
-"We are sorry that you could not proceed to the main experiment, but we will "
-"still pay you for your time spent so far. To receive this payment, we need "
-"you to return this assignment via the Prolific interface, then click the "
-"'Next' button below."
-msgstr ""
-"Aħna sorry li ma stajtx tipproċedi għall-esperiment prinċipali, imma xorta "
-"se nħallsuk għall-ħin li qattajt s'issa. Biex tirċievi dan il-ħlas, għandna "
-"bżonn li tirritorna din l-assenjazzjoni permezz tal-interface ta' Prolific, "
-"imbagħad kklikkja l-buttuna 'Li jmiss' hawn taħt."
+"Dak ma ħadimx. Żgur li rritornajt is-sottomissjoni? Irritorna fuq Prolific, "
+"imbagħad kklikkja Li jmiss."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "screen_out_return_and_message_experimenter"
 msgid ""
-"We are sorry that you could not proceed to the main experiment. To receive "
-"this payment for your time, please return your assignment in Prolific and "
-"send a message to the experimenter via the Prolific messaging system. The "
-"experimenter will review your case and arrange payment if appropriate. Thank"
-" you for your understanding. You can now close this browser window."
+"To receive payment for the time you spent, return your submission on "
+"Prolific and message the researcher there. They will review your case and "
+"arrange payment if it is due. You may close this page."
 msgstr ""
-"Aħna sorry li ma stajtx tipproċedi għall-esperiment prinċipali. Biex "
-"tirċievi dan il-ħlas għall-ħin tiegħek, jekk jogħġbok irritorna "
-"l-assenjazzjoni tiegħek f'Prolific u ibgħat messaġġ lill-esperimentatur "
-"permezz tas-sistema ta' messaġġi ta' Prolific. L-esperimentatur se jirrevedi"
-" l-każ tiegħek u jirranġa l-ħlas jekk ikun xieraq. Grazzi għall-fehim "
-"tiegħek. Issa tista' tagħlaq din it-tieqa tal-browser."
+"Biex tirċievi ħlas għaż-żmien li qattajt, irritorna s-sottomissjoni tiegħek "
+"fuq Prolific u ibgħat messaġġ lir-riċerkatur hemmhekk. Huma se jirrevedu "
+"l-każ tiegħek u jirranġaw il-ħlas jekk ikun dovut. Tista' tagħlaq din il-"
+"paġna."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_lucid"
+msgid ""
+"If you leave now, you will not be able to continue later, and you will "
+"return to your panel provider. This session will not issue a payment; any "
+"payment depends on your panel provider's rules. Your responses so far will "
+"still be saved."
+msgstr ""
+"Jekk titlaq issa, ma tkunx tista' tkompli aktar tard, u se tirritorna għand "
+"il-fornitur tal-panel tiegħek. Din is-sessjoni ma toħroġx ħlas; kwalunkwe "
+"ħlas jiddependi mir-regoli tal-fornitur tal-panel tiegħek. Ir-risposti "
+"tiegħek s'issa għadhom se jiġu salvati."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "lucid_error"
-msgid "Redirecting to Lucid Marketplace..."
-msgstr "Qed nirreindirizzaw lejn Lucid Marketplace..."
+msgid "We will return you to your panel in a few seconds."
+msgstr "Aħna se nirritornawk għand il-panel tiegħek fi ftit sekondi."
 
-#: psynet/templates/abort_not_possible.html
+#: psynet/recruiters.py
 #, fuzzy
-msgctxt "abort_possible"
-msgid "Aborting not possible."
-msgstr "It-twaqqif mhuwiex possibbli."
+msgctxt "early_exit_error_lucid"
+msgid "We will return you to your panel in a few seconds."
+msgstr "Aħna se nirritornawk għand il-panel tiegħek fi ftit sekondi."
 
-#: psynet/templates/abort_not_possible.html
+#: psynet/recruiters.py
 #, fuzzy
-msgctxt "abort_possible"
+msgctxt "early_exit_error_lucid"
 msgid ""
-"Aborting the experiment is not possible as the experimenter does not allow "
-"it at this time!"
+"We could not return you to your panel. Please try again. If this keeps "
+"happening, contact your panel provider."
 msgstr ""
-"It-twaqqif tal-esperiment mhuwiex possibbli peress li l-esperimentatur ma "
-"jippermettihx f'dan il-mument!"
+"Ma stajniex nirritornawk għand il-panel tiegħek. Jekk jogħġbok erġa' pprova."
+" Jekk dan jibqa' jiġri, ikkuntattja lill-fornitur tal-panel tiegħek."
 
-#: psynet/templates/abort_not_possible.html
-#, fuzzy, python-format
-msgid ""
-"You have to accumulate <strong>at least "
-"%(CURRENCY)s%(MIN_ACCUMULATED_REWARD_FOR_ABORT)s</strong> of reward to be "
-"able to be compensated."
-msgstr ""
-"Għandek takkumula <strong>mill-inqas "
-"%(CURRENCY)s%(MIN_ACCUMULATED_REWARD_FOR_ABORT)s</strong> ta' premju biex "
-"tkun tista' tiġi kkumpensat."
-
-#: psynet/templates/abort_not_possible.html
+#: psynet/recruiters.py
 #, fuzzy
-msgctxt "abort_possible"
-msgid "See below information on your currently accumulated reward."
-msgstr ""
-"Ara hawn taħt l-informazzjoni dwar il-premju akkumulat tiegħek bħalissa."
-
-#: psynet/templates/abort_not_possible.html
-#: psynet/templates/abort_possible.html psynet/templates/psynet_error.html
-#, fuzzy
-msgid "Assignment ID"
-msgstr "ID tal-inkarigu"
-
-#: psynet/templates/abort_not_possible.html
-#: psynet/templates/abort_possible.html psynet/templates/psynet_error.html
-#, fuzzy
-msgid "HIT ID"
-msgstr "HIT ID"
-
-#: psynet/templates/abort_not_possible.html
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgid "Accumulated reward"
-msgstr "Premju akkumulat"
-
-#: psynet/templates/abort_not_possible.html
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgid "Close window"
-msgstr "Agħlaq it-tieqa"
-
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgctxt "abort_possible"
-msgid "Are you sure you want to abort the experiment?"
-msgstr "Int żgur li trid tħassar l-esperiment?"
-
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgctxt "abort_possible"
-msgid ""
-"If you click the Abort button, the experiment will end early, and you will "
-"be automatically paid the compensation you have earned so far."
-msgstr ""
-"Jekk tikklikkja l-buttuna Ħassar, l-esperiment se jintemm kmieni, u int se "
-"titħallas awtomatikament il-kumpens li tkun qlajt s'issa."
-
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgctxt "abort_possible"
-msgid "Please only contact us if you have trouble receiving your payment."
-msgstr ""
-"Jekk jogħġbok ikkuntattjana biss jekk ikollok problemi biex tirċievi l-ħlas "
-"tiegħek."
-
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgctxt "abort_possible"
-msgid "See the information below for details of your compensation."
-msgstr "Ara l-informazzjoni hawn taħt għal dettalji tal-kumpens tiegħek."
-
-#: psynet/templates/abort_possible.html psynet/templates/ad.html
-#: psynet/templates/psynet_error.html
-#, fuzzy
-msgid "Abort experiment"
-msgstr "Iwaqqaf l-esperiment"
-
-#: psynet/templates/ad.html
-#, fuzzy
-msgctxt "ad"
-msgid "Call for participants"
-msgstr "Sejħa għall-parteċipanti"
-
-#: psynet/templates/ad.html
-#, fuzzy
-msgctxt "ad"
-msgid "The requirements to participate are as follows"
-msgstr "Ir-rekwiżiti biex tipparteċipa huma kif ġej"
-
-#: psynet/templates/ad.html
-#, fuzzy
-msgctxt "ad"
-msgid ""
-"Please click the \"Accept HIT\" button on the Amazon site above to begin the"
-" task."
-msgstr ""
-"Jekk jogħġbok ikklikkja l-buttuna \"Aċċetta HIT\" fuq is-sit ta' Amazon hawn"
-" fuq biex tibda l-kompitu."
-
-#: psynet/templates/ad.html
-#, fuzzy
-msgctxt "ad"
-msgid "Thanks for accepting this HIT."
-msgstr "Grazzi talli aċċettajt dan il-HIT."
+msgctxt "early_exit_error_lucid"
+msgid "Return to your panel"
+msgstr "Irritorna għand il-panel tiegħek"
 
 #: psynet/templates/ad.html
 #, fuzzy
@@ -990,12 +1155,6 @@ msgstr "Jekk jogħġbok itfi l-blokki tal-pop-up qabel ma tkompli."
 msgctxt "ad"
 msgid "Begin Experiment"
 msgstr "Ibda l-Eksperiment"
-
-#: psynet/templates/ad.html psynet/templates/psynet_error.html
-#, fuzzy
-msgid "Click the above button to be compensated in case of an error."
-msgstr ""
-"Ikklikkja l-buttuna ta' hawn fuq biex tiġi kkumpensat f'każ ta' żball."
 
 #: psynet/templates/consent.html
 #, fuzzy
@@ -2453,8 +2612,42 @@ msgstr "Billi tagħmel il-kompitu inti qed tgħin lix-xjenza, grazzi!"
 #: psynet/templates/exit_recruiter_lucid.html
 #, fuzzy
 msgctxt "exit_recruiter_lucid"
-msgid "Lucid Survey Submission"
-msgstr "Sottomissjoni tal-Istħarriġ Lucid"
+msgid "Returning you to your panel"
+msgstr "Qed nerġgħu nibagħtuk fil-pannell tiegħek"
+
+#: psynet/templates/exit_recruiter_lucid.html
+#, fuzzy
+msgctxt "exit_recruiter_lucid"
+msgid "Please wait."
+msgstr "Jekk jogħġbok stenna."
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html
+#, fuzzy
+msgctxt "exit_recruiter_prolific"
+msgid "Submit to Prolific"
+msgstr "Ibgħat lil Prolific"
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html
+#, fuzzy
+msgctxt "exit_recruiter_prolific"
+msgid ""
+"Click below to send your submission to Prolific. You will not need to enter "
+"a completion code."
+msgstr ""
+"Ikklikkja hawn taħt biex tibgħat is-sottomissjoni tiegħek lil Prolific. "
+"M'għandekx bżonn tidħol kodiċi ta' tlestija."
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html
+#, fuzzy
+msgctxt "exit_recruiter_prolific"
+msgid "Please wait."
+msgstr "Jekk jogħġbok stenna."
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html
+#, fuzzy
+msgctxt "exit_recruiter_prolific"
+msgid "Try again"
+msgstr "Erġa' pprova"
 
 #: psynet/templates/keyboard.html
 #, fuzzy
@@ -2686,11 +2879,6 @@ msgstr "Nafhem"
 msgctxt "consent"
 msgid "No, thank you (return task)"
 msgstr "Le, grazzi (erġa' lura għall-kompitu)"
-
-#: psynet/templates/macros/consent.html
-#, fuzzy
-msgid "Scroll up/down to see all text"
-msgstr "Skrollja 'l fuq/'l isfel biex tara t-test kollu"
 
 #: psynet/templates/macros/consent.html
 #, fuzzy
@@ -2992,6 +3180,12 @@ msgstr "Irrisettja"
 
 #: psynet/templates/macros/control.html
 #, fuzzy
+msgctxt "audio_meter"
+msgid "Microphone level"
+msgstr "Livell tal-mikrofonu"
+
+#: psynet/templates/macros/control.html
+#, fuzzy
 msgctxt "audio_meter_calibrate"
 msgid "Sliders"
 msgstr "Kontrolli"
@@ -3112,51 +3306,117 @@ msgstr "Vidjo mhux misjub"
 msgid "Image not found"
 msgstr "Immaġni mhux misjuba"
 
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Comment stored."
+msgstr "Kumment maħżun."
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Please wait for the page to load."
+msgstr "Jekk jogħġbok stenna sakemm il-paġna titgħabba."
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Try again in a couple of seconds."
+msgstr "Erġa' pprova fi ftit sekondi."
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline"
+msgid "Reward"
+msgstr "Premju"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_reward"
+msgid "Reward earned so far"
+msgstr "Premju miksub s'issa"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_reward"
+msgid "for time"
+msgstr "għall-ħin"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_reward"
+msgid "for performance"
+msgstr "għall-prestazzjoni"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline"
+msgid "Comment"
+msgstr "Kumment"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Leave"
+msgstr "Ħalli"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Leave without finishing."
+msgstr "Ħalli mingħajr ma tispiċċa."
+
 #: psynet/templates/psynet_error.html
 #, fuzzy
 msgctxt "error"
-msgid "Error!"
-msgstr "Żball!"
+msgid "An error occurred"
+msgstr "Seħħ żball"
 
 #: psynet/templates/psynet_error.html
 #, fuzzy
-msgctxt "mturk_error"
-msgid ""
-"You may be able to abort the experiment using the <strong>Abort "
-"experiment</strong> button <strong>on the MTurk ad page</strong>."
-msgstr ""
-"Jista' jkun li tista' twaqqaf l-esperiment billi tuża l-buttuna "
-"<strong>Waqqaf l-esperiment</strong> <strong>fuq il-paġna tar-reklam "
-"MTurk</strong>."
+msgctxt "early_exit_error"
+msgid "Please wait."
+msgstr "Jekk jogħġbok stenna."
 
 #: psynet/templates/psynet_error.html
 #, fuzzy
-msgctxt "mturk_error"
-msgid ""
-"Once aborted, there is no need to contact us to receive the compensation; "
-"this should be awarded to you automatically via MTurk a few minutes after."
-msgstr ""
-"Ladarba titwaqqaf, m'hemmx bżonn li tikkuntattjana biex tirċievi l-kumpens; "
-"dan għandu jingħata lilek awtomatikament permezz ta' MTurk ftit minuti wara."
+msgctxt "early_exit_error"
+msgid "Try again"
+msgstr "Erġa' pprova"
 
-#: psynet/templates/psynet_error.html
-#, fuzzy, python-format
-msgid ""
-"If this is not the case, please contact us at %(EMAIL)s quoting the "
-"following information:"
-msgstr ""
-"Jekk dan mhux il-każ, jekk jogħġbok ikkuntattjana fuq %(EMAIL)s u semmi "
-"l-informazzjoni li ġejja:"
-
-#: psynet/templates/psynet_error.html
+#: psynet/templates/psynet_exit_recruiter.html
 #, fuzzy
-msgid "Error type"
-msgstr "Tip ta' żball"
+msgid "Thank you for taking part."
+msgstr "Grazzi talli ħadt sehem."
 
-#: psynet/templates/psynet_error.html
+#: psynet/templates/psynet_exit_recruiter.html
 #, fuzzy
-msgid "Worker ID"
-msgstr "ID tal-ħaddiem"
+msgctxt "exit"
+msgid "You chose to leave."
+msgstr "Int għażilt li titlaq."
+
+#: psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgid "Thank you for taking part."
+msgstr "Grazzi talli ħadt sehem."
+
+#: psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgctxt "exit"
+msgid "You may close this page."
+msgstr "Tista' tagħlaq din il-paġna."
+
+#: psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgctxt "exit"
+msgid "Your responses have been saved. You may close this page."
+msgstr "Ir-risposti tiegħek ġew salvati. Tista' tagħlaq din il-paġna."
+
+#: psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgctxt "exit"
+msgid "Reference code"
+msgstr "Kodiċi ta' referenza"
 
 #: psynet/templates/start.html
 #, fuzzy
@@ -3221,41 +3481,35 @@ msgctxt "timeline_resume"
 msgid "Resume"
 msgstr "Kompli"
 
-#: psynet/templates/timeline-page.html
-#, fuzzy
-msgctxt "timeline"
-msgid "Reward"
-msgstr "Premju"
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{REMAINING} of {TOTAL} not ready yet"
+msgstr "{REMAINING} minn {TOTAL} għadhom mhux lesti"
 
-#: psynet/templates/timeline-page.html
+#: psynet/timeline_hold.py
 #, fuzzy
-msgctxt "timeline"
-msgid "Comment"
-msgstr "Kumment"
+msgctxt "timeline_hold"
+msgid "Your partner is ready."
+msgstr "Il-partner tiegħek huwa lest."
 
-#: psynet/templates/timeline-page.html
-#, fuzzy
-msgctxt "timeline_problem"
-msgid "Terminate the experiment early"
-msgstr "Ittermina l-esperiment kmieni"
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{ARRIVED}/{TOTAL} of your group are ready."
+msgstr "{ARRIVED}/{TOTAL} tal-grupp tiegħek huma lesti."
 
-#: psynet/templates/timeline-page.html
+#: psynet/timeline_hold.py
 #, fuzzy
-msgctxt "timeline_problem"
-msgid "Comment stored."
-msgstr "Kumment maħżun."
+msgctxt "timeline_hold"
+msgid "Waiting for other participants…"
+msgstr "Stennija għal parteċipanti oħra…"
 
-#: psynet/templates/timeline-page.html
+#: psynet/timeline_hold.py
 #, fuzzy
-msgctxt "timeline_problem"
-msgid "Please wait for the page to load."
-msgstr "Jekk jogħġbok stenna sakemm il-paġna titgħabba."
-
-#: psynet/templates/timeline-page.html
-#, fuzzy
-msgctxt "timeline_problem"
-msgid "Try again in a couple of seconds."
-msgstr "Erġa' pprova fi ftit sekondi."
+msgctxt "timeline_hold"
+msgid "Please wait, the experiment should continue shortly..."
+msgstr "Jekk jogħġbok stenna, l-esperiment għandu jkompli dalwaqt..."
 
 #: psynet/translation/countries.py
 #, fuzzy

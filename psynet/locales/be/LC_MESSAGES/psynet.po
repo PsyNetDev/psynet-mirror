@@ -438,34 +438,42 @@ msgstr "Завяршыць"
 msgctxt "final-page-rewards"
 msgid ""
 "You will receive a reward of <strong>{CURRENCY}{TIME_REWARD}</strong> for "
-"the time you spent on the experiment. You have also been awarded a "
-"performance reward of <strong>{CURRENCY}{PERFORMANCE_REWARD}</strong>! "
+"the time you spent. "
 msgstr ""
 "Вы атрымаеце ўзнагароду ў памеры <strong>{CURRENCY}{TIME_REWARD}</strong> за"
-" час, праведзены ў эксперыменце. Вы таксама атрымалі ўзнагароду за "
-"прадукцыйнасць у памеры <strong>{CURRENCY}{PERFORMANCE_REWARD}</strong>! "
+" праведзены час."
+
+#: psynet/end.py
+#, fuzzy, python-brace-format
+msgctxt "final-page-performance-reward"
+msgid ""
+"You have also been awarded a performance reward of "
+"<strong>{CURRENCY}{PERFORMANCE_REWARD}</strong>. "
+msgstr ""
+"Вы таксама атрымалі ўзнагароду за прадукцыйнасць у памеры "
+"<strong>{CURRENCY}{PERFORMANCE_REWARD}</strong>."
+
+#: psynet/end.py
+#, fuzzy
+msgid "Click Finish to return to your panel."
+msgstr "Націсніце Завяршыць, каб вярнуцца на вашу панэль."
+
+#: psynet/end.py
+#, fuzzy
+msgid "Click Finish to finalize the session."
+msgstr "Націсніце Завяршыць, каб завяршыць сесію."
 
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_successful"
-msgid "That's the end of the experiment!"
-msgstr "Гэта канец эксперыменту!"
-
-#: psynet/end.py
-#, fuzzy
-msgid "Thank you for taking part."
-msgstr "Дзякуй за ўдзел."
-
-#: psynet/end.py
-#, fuzzy
-msgid "Please click \"Finish\" to finalize the session."
-msgstr "Калі ласка, націсніце \"Завяршыць\", каб завяршыць HIT."
+msgid "That's the end!"
+msgstr "Гэта канец!"
 
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_unsuccessful"
-msgid "Unfortunately the experiment must end early."
-msgstr "На жаль, эксперымент павінен скончыцца раней."
+msgid "Unfortunately we have to stop early."
+msgstr "На жаль, мы павінны спыніцца раней."
 
 #: psynet/end.py
 #, fuzzy
@@ -475,20 +483,20 @@ msgstr "Аднак вы ўсё роўна атрымаеце аплату за �
 
 #: psynet/end.py
 #, fuzzy
-msgid "You will be redirected."
-msgstr "Вы будзеце перанакіраваны."
+msgctxt "final_page_rejected_consent"
+msgid "You chose not to continue."
+msgstr "Вы выбралі не працягваць."
 
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_rejected_consent"
-msgid "Consent was rejected."
-msgstr "Згода была адхілена."
+msgid "You may close this page."
+msgstr "Вы можаце закрыць гэтую старонку."
 
 #: psynet/end.py
 #, fuzzy
-msgctxt "final_page_rejected_consent"
-msgid "End of experiment."
-msgstr "Канец эксперыменту."
+msgid "We will return you to your panel in a few seconds."
+msgstr "Мы вернем вас на вашу панэль праз некалькі секунд."
 
 #: psynet/equipment.py
 #, fuzzy
@@ -501,41 +509,9 @@ msgstr ""
 
 #: psynet/experiment.py
 #, fuzzy
-msgctxt "error-msg"
-msgid "There has been an error and so you are unable to continue, sorry!"
-msgstr "Адбылася памылка, і вы не можаце працягваць, прабачце!"
-
-#: psynet/experiment.py
-#, fuzzy, python-brace-format
-msgctxt "mturk_error"
-msgid ""
-"To enquire about compensation, please contact the researcher at {EMAIL} and "
-"describe what led to this error."
-msgstr ""
-"Каб даведацца пра кампенсацыю, калі ласка, звяжыцеся з даследчыкам па адрасе"
-" {EMAIL} і апішыце, што прывяло да гэтай памылкі."
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "mturk_error"
-msgid "Please also quote the following information:"
-msgstr "Калі ласка, таксама ўкажыце наступную інфармацыю:"
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "prolific_error"
-msgid "Don't worry, your progress has been recorded."
-msgstr "Не хвалюйцеся, ваш прагрэс быў запісаны."
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "prolific_error"
-msgid ""
-"To enquire about compensation, please send the researcher a message via the "
-"Prolific website and describe what led to your error."
-msgstr ""
-"Каб даведацца пра кампенсацыю, калі ласка, адпраўце даследчыку паведамленне "
-"праз вэб-сайт Prolific і апішыце, што прывяло да вашай памылкі."
+msgctxt "timeline_problem"
+msgid "This session has already ended. Please reload the page."
+msgstr "Сесія ўжо завершана. Калі ласка, перазагрузіце старонку."
 
 #: psynet/experiment.py
 #, fuzzy
@@ -547,6 +523,11 @@ msgstr ""
 "Выяўлена праблема сінхранізацыі. Ці запускаеце вы той жа эксперымент у "
 "некалькіх укладках браўзера? Калі ласка, зачыніце ўсе іншыя ўкладкі і "
 "абнавіце старонку."
+
+#: psynet/experiment.py
+#, fuzzy
+msgid "The experiment is temporarily busy. Please try again."
+msgstr "Эксперымент часова заняты. Калі ласка, паспрабуйце зноў."
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -570,6 +551,12 @@ msgstr "Вам трэба выбраць адказ!"
 msgctxt "validation"
 msgid "You need to provide a number!"
 msgstr "Вам трэба ўвесці лік!"
+
+#: psynet/page.py
+#, fuzzy
+msgctxt "status"
+msgid "Working..."
+msgstr "Працую..."
 
 #: psynet/prescreen/__init__.py
 #, fuzzy
@@ -742,211 +729,389 @@ msgid "The test will start on the next page."
 msgstr "Тэст пачнецца на наступнай старонцы."
 
 #: psynet/recruiters.py
-#, fuzzy
-msgctxt "recruiter_communication"
-msgid "Communicating with the recruiter..."
-msgstr "Зносіны з рэкрутэрам..."
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error"
+msgid ""
+"If you need to contact the researcher about this error, write to {EMAIL} and"
+" quote reference code {REFERENCE_CODE}."
+msgstr ""
+"Калі вам трэба звязацца з даследчыкам наконт гэтай памылкі, напішыце на "
+"{EMAIL} і ўкажыце рэферэнтны код {REFERENCE_CODE}."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error"
+msgid ""
+"If you need to contact the researcher about this error, write to {EMAIL}."
+msgstr ""
+"Калі вам трэба звязацца з даследчыкам наконт гэтай памылкі, напішыце на "
+"{EMAIL}."
 
 #: psynet/recruiters.py
 #, fuzzy
-msgctxt "screen_out_successful"
+msgctxt "early_exit_error"
+msgid "You may close this page."
+msgstr "Вы можаце закрыць гэтую старонку."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error"
+msgid "Unfortunately an error occurred and we cannot continue."
+msgstr "На жаль, адбылася памылка, і мы не можам працягваць."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error"
+msgid "However, your responses so far have been saved."
+msgstr "Аднак вашы адказы да гэтага часу былі захаваны."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
 msgid ""
-"You have been credited for the time spent on the experiment. Because you "
-"could not progress to the main experiment your submission will appear as "
-"'screened out' in Prolific. You can now close this browser window."
+"If you leave now, you will not be able to continue later. Your responses so "
+"far will still be saved."
 msgstr ""
-"Вам залічаны час, праведзены ў эксперыменце. Паколькі вы не змаглі прайсці "
-"да асноўнага эксперыменту, ваша падача будзе адлюстроўвацца як 'адсеяная' ў "
-"Prolific. Цяпер вы можаце закрыць гэта акно браўзера."
+"Калі вы пакінеце зараз, вы не зможаце працягнуць пазней. Вашы адказы да "
+"гэтага часу будуць захаваны."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit"
+msgid ""
+"You have earned {EARNED} so far. You need at least {THRESHOLD} to leave with"
+" payment. If you leave without payment, you will not be able to continue "
+"later. Your responses so far will still be saved."
+msgstr ""
+"Вы зарабілі {EARNED} да гэтага часу. Вам трэба як мінімум {THRESHOLD}, каб "
+"пакінуць з аплатай. Калі вы пакінеце без аплаты, вы не зможаце працягнуць "
+"пазней. Вашы адказы да гэтага часу будуць захаваны."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
+msgid "Leave without payment"
+msgstr "Пакінуць без аплаты"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
+msgid "Leave"
+msgstr "Пакінуць"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
+msgid "Leave without finishing?"
+msgstr "Пакінуць без завяршэння?"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
+msgid "Cancel"
+msgstr "Адмяніць"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_unpaid"
+msgid "You may close this page."
+msgstr "Вы можаце закрыць гэтую старонку."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED}. Because you have earned {EARNED} so "
+"far, a further {REMAINDER} will be paid as a bonus. Your responses so far "
+"will still be saved."
+msgstr ""
+"Калі вы пакінеце зараз, вы не зможаце працягнуць пазней. Вы атрымаеце "
+"фіксаваную аплату за 'screen-out' у памеры {FIXED}. Паколькі вы зарабілі "
+"{EARNED} да гэтага часу, дадатковыя {REMAINDER} будуць выплачаны як бонус. "
+"Вашы адказы да гэтага часу будуць захаваны."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED}. Your responses so far will still be "
+"saved."
+msgstr ""
+"Калі вы пакінеце зараз, вы не зможаце працягнуць пазней. Вы атрымаеце "
+"фіксаваную аплату за 'screen-out' у памеры {FIXED}. Вашы адказы да гэтага "
+"часу будуць захаваны."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED} plus a performance bonus of "
+"{PERFORMANCE}. You will not be paid for additional time. Your responses so "
+"far will still be saved."
+msgstr ""
+"Калі вы пакінеце зараз, вы не зможаце працягнуць пазней. Вы атрымаеце "
+"фіксаваную аплату за 'screen-out' у памеры {FIXED} плюс бонус за "
+"прадукцыйнасць у памеры {PERFORMANCE}. Вам не будзе выплачана за дадатковы "
+"час. Вашы адказы да гэтага часу будуць захаваны."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED}. You will not be paid for additional "
+"time. Your responses so far will still be saved."
+msgstr ""
+"Калі вы пакінеце зараз, вы не зможаце працягнуць пазней. Вы атрымаеце "
+"фіксаваную аплату за 'screen-out' у памеры {FIXED}. Вам не будзе выплачана "
+"за дадатковы час. Вашы адказы да гэтага часу будуць захаваны."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will need to "
+"return your Prolific submission. You will then be paid {EARNED} as a bonus "
+"for the work you have completed so far. Your responses so far will still be "
+"saved."
+msgstr ""
+"Калі вы пакінеце зараз, вы не зможаце працягнуць пазней. Вам трэба будзе "
+"вярнуць вашу падачу на Prolific. Пасля гэтага вам будзе выплачаны бонус у "
+"памеры {EARNED} за працу, якую вы выканалі да гэтага часу. Вашы адказы да "
+"гэтага часу будуць захаваны."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "prolific_error"
+msgid "If you had already started, message the researcher through Prolific."
+msgstr "Калі вы ўжо пачалі, напішыце даследчыку праз Prolific."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "prolific_error"
+msgid ""
+"Please message the researcher through Prolific and describe what led to this"
+" error."
+msgstr ""
+"Калі ласка, напішыце даследчыку праз Prolific і апішыце, што прывяло да "
+"гэтай памылкі."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We will pay you for your progress so far: you will receive {FIXED} through "
+"Prolific."
+msgstr ""
+"Мы заплацім вам за ваш прагрэс да гэтага часу: вы атрымаеце {FIXED} праз "
+"Prolific."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We will also pay {BONUS} as a bonus, bringing your total payment to {TOTAL}."
+msgstr ""
+"Мы таксама выплацім {BONUS} як бонус, што павялічыць вашу агульную выплату "
+"да {TOTAL}."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid "We will also pay your {BONUS} performance bonus."
+msgstr "Мы таксама выплацім ваш бонус за прадукцыйнасць у памеры {BONUS}."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Any additional amount you earned will be paid as a bonus."
+msgstr "Любая дадатковая сума, якую вы зарабілі, будзе выплачана як бонус."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Select Submit to Prolific to complete your submission."
+msgstr "Выберыце 'Адправіць на Prolific', каб завяршыць вашу падачу."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Submit to Prolific"
+msgstr "Адправіць на Prolific"
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid ""
+"To receive {EARNED} for the work you completed, you will need to return your"
+" submission on Prolific."
+msgstr ""
+"Каб атрымаць {EARNED} за выкананую працу, вам трэба будзе вярнуць вашу "
+"падачу на Prolific."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid ""
+"To receive payment for the work you completed, you will need to return your "
+"submission on Prolific."
+msgstr ""
+"Каб атрымаць аплату за выкананую працу, вам трэба будзе вярнуць вашу падачу "
+"на Prolific."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Select Continue to payment instructions to complete these steps."
+msgstr ""
+"Выберыце 'Працягнуць да інструкцый па аплаце', каб завяршыць гэтыя крокі."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We could not open the payment instructions. Please try again. If this keeps "
+"happening, message the researcher through Prolific."
+msgstr ""
+"Мы не змаглі адкрыць інструкцыі па аплаце. Калі ласка, паспрабуйце яшчэ раз."
+" Калі гэта працягваецца, напішыце даследчыку праз Prolific."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Continue to payment instructions"
+msgstr "Працягнуць да інструкцый па аплаце"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_unpaid_prolific"
+msgid ""
+"Your responses so far have been saved. Please return your submission on "
+"Prolific. You will not receive payment. You may close this page."
+msgstr ""
+"Вашы адказы да гэтага часу былі захаваны. Калі ласка, вярніце вашу падачу на"
+" Prolific. Вы не атрымаеце аплату. Вы можаце закрыць гэтую старонку."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Your submission has been sent to Prolific."
+msgstr "Ваша падача была адпраўлена на Prolific."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "You may close this page."
+msgstr "Вы можаце закрыць гэтую старонку."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We could not send your submission to Prolific. Please try again. If this "
+"keeps happening, message the researcher through Prolific."
+msgstr ""
+"Мы не змаглі адправіць вашу падачу на Prolific. Калі ласка, паспрабуйце яшчэ"
+" раз. Калі гэта працягваецца, напішыце даследчыку праз Prolific."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "return_assignment_instructions"
 msgid ""
 "Please return your submission via the Prolific interface and click Next. We "
-"will then automatically pay you a bonus for your time."
+"will then automatically pay you a bonus."
 msgstr ""
-"Калі ласка, вярніце вашу падачу праз інтэрфейс Prolific і націсніце 'Далей'."
-" Мы аўтаматычна выплацім вам бонус за ваш час."
+"Калі ласка, вярніце вашу падачу праз інтэрфейс Prolific і націсніце Далей. "
+"Мы аўтаматычна выплацім вам бонус."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "return_for_bonus_completed"
 msgid ""
-"That worked! You have been credited for the time spent on the experiment. "
-"Thank you for participating. You can now close this browser window."
+"That worked. You have been credited for the time you spent. Thank you for "
+"taking part. You may close this page."
 msgstr ""
-"Гэта спрацавала! Вам залічаны час, праведзены ў эксперыменце. Дзякуй за "
-"ўдзел. Цяпер вы можаце закрыць гэта акно браўзера."
+"Гэта спрацавала. Вы атрымалі крэдыт за час, які вы патрацілі. Дзякуй за "
+"ўдзел. Вы можаце закрыць гэтую старонку."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "return_for_bonus_payment_failed"
+msgid ""
+"Your return was recorded, but we could not complete the bonus payment "
+"automatically. The researcher has been notified and will arrange payment. "
+"You may close this page."
+msgstr ""
+"Ваш вяртанне было зафіксавана, але мы не змаглі аўтаматычна завяршыць "
+"выплату бонуса. Даследчык быў апавешчаны і арганізуе выплату. Вы можаце "
+"закрыць гэтую старонку."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "assignment_return_retry"
 msgid ""
-"That didn't work. Are you sure you returned the submission for this study? "
-"Please go to the Prolific interface, make sure you have returned the "
-"submission, then click the 'Next' button."
+"That didn't work. Are you sure you returned the submission? Return it on "
+"Prolific, then click Next."
 msgstr ""
-"Гэта не спрацавала. Вы ўпэўнены, што вярнулі падачу для гэтага даследавання?"
-" Калі ласка, перайдзіце ў інтэрфейс Prolific, пераканайцеся, што вы вярнулі "
-"падачу, затым націсніце кнопку 'Далей'."
-
-#: psynet/recruiters.py
-#, fuzzy
-msgctxt "return_for_bonus_enabled"
-msgid ""
-"We are sorry that you could not proceed to the main experiment, but we will "
-"still pay you for your time spent so far. To receive this payment, we need "
-"you to return this assignment via the Prolific interface, then click the "
-"'Next' button below."
-msgstr ""
-"Нам шкада, што вы не змаглі прайсці да асноўнага эксперыменту, але мы ўсё "
-"роўна заплацім вам за ваш час, праведзены да гэтага часу. Каб атрымаць гэтую"
-" выплату, нам трэба, каб вы вярнулі гэтае заданне праз інтэрфейс Prolific, "
-"затым націсніце кнопку 'Далей' ніжэй."
+"Гэта не спрацавала. Вы ўпэўнены, што вярнулі падачу? Вярніце яе на Prolific,"
+" затым націсніце Далей."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "screen_out_return_and_message_experimenter"
 msgid ""
-"We are sorry that you could not proceed to the main experiment. To receive "
-"this payment for your time, please return your assignment in Prolific and "
-"send a message to the experimenter via the Prolific messaging system. The "
-"experimenter will review your case and arrange payment if appropriate. Thank"
-" you for your understanding. You can now close this browser window."
+"To receive payment for the time you spent, return your submission on "
+"Prolific and message the researcher there. They will review your case and "
+"arrange payment if it is due. You may close this page."
 msgstr ""
-"Нам шкада, што вы не змаглі прайсці да асноўнага эксперыменту. Каб атрымаць "
-"гэтую выплату за ваш час, калі ласка, вярніце ваша заданне ў Prolific і "
-"адпраўце паведамленне эксперыментатару праз сістэму паведамленняў Prolific. "
-"Эксперыментатар разгледзіць ваш выпадак і арганізуе выплату, калі гэта будзе"
-" дарэчы. Дзякуй за ваша разуменне. Цяпер вы можаце закрыць гэта акно "
-"браўзера."
+"Каб атрымаць аплату за час, які вы патрацілі, вярніце вашу падачу на "
+"Prolific і напішыце даследчыку там. Яны разгледзяць вашу справу і "
+"арганізуюць выплату, калі яна належыць. Вы можаце закрыць гэтую старонку."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_lucid"
+msgid ""
+"If you leave now, you will not be able to continue later, and you will "
+"return to your panel provider. This session will not issue a payment; any "
+"payment depends on your panel provider's rules. Your responses so far will "
+"still be saved."
+msgstr ""
+"Калі вы пакінеце зараз, вы не зможаце працягнуць пазней, і вы вернецеся да "
+"вашага пастаўшчыка панэлі. Гэтая сесія не выдасць аплату; любая аплата "
+"залежыць ад правілаў вашага пастаўшчыка панэлі. Вашы адказы да гэтага часу "
+"будуць захаваны."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "lucid_error"
-msgid "Redirecting to Lucid Marketplace..."
-msgstr "Перанакіраванне на Lucid Marketplace..."
+msgid "We will return you to your panel in a few seconds."
+msgstr "Мы вернем вас да вашай панэлі праз некалькі секунд."
 
-#: psynet/templates/abort_not_possible.html
+#: psynet/recruiters.py
 #, fuzzy
-msgctxt "abort_possible"
-msgid "Aborting not possible."
-msgstr "Спыненне немагчыма."
+msgctxt "early_exit_error_lucid"
+msgid "We will return you to your panel in a few seconds."
+msgstr "Мы вернем вас да вашай панэлі праз некалькі секунд."
 
-#: psynet/templates/abort_not_possible.html
+#: psynet/recruiters.py
 #, fuzzy
-msgctxt "abort_possible"
+msgctxt "early_exit_error_lucid"
 msgid ""
-"Aborting the experiment is not possible as the experimenter does not allow "
-"it at this time!"
+"We could not return you to your panel. Please try again. If this keeps "
+"happening, contact your panel provider."
 msgstr ""
-"Спыненне эксперыменту немагчыма, бо эксперыментатар не дазваляе гэтага ў "
-"гэты час!"
+"Мы не змаглі вярнуць вас да вашай панэлі. Калі ласка, паспрабуйце яшчэ раз. "
+"Калі гэта працягваецца, звяжыцеся з вашым пастаўшчыком панэлі."
 
-#: psynet/templates/abort_not_possible.html
-#, fuzzy, python-format
-msgid ""
-"You have to accumulate <strong>at least "
-"%(CURRENCY)s%(MIN_ACCUMULATED_REWARD_FOR_ABORT)s</strong> of reward to be "
-"able to be compensated."
-msgstr ""
-"Вы павінны назапасіць <strong>як мінімум "
-"%(CURRENCY)s%(MIN_ACCUMULATED_REWARD_FOR_ABORT)s</strong> узнагароды, каб "
-"мець магчымасць атрымаць кампенсацыю."
-
-#: psynet/templates/abort_not_possible.html
+#: psynet/recruiters.py
 #, fuzzy
-msgctxt "abort_possible"
-msgid "See below information on your currently accumulated reward."
-msgstr ""
-"Глядзіце ніжэй інфармацыю аб вашай цяперашняй назапашанай узнагародзе."
-
-#: psynet/templates/abort_not_possible.html
-#: psynet/templates/abort_possible.html psynet/templates/psynet_error.html
-#, fuzzy
-msgid "Assignment ID"
-msgstr "Ідэнтыфікатар прызначэння"
-
-#: psynet/templates/abort_not_possible.html
-#: psynet/templates/abort_possible.html psynet/templates/psynet_error.html
-#, fuzzy
-msgid "HIT ID"
-msgstr "HIT ID"
-
-#: psynet/templates/abort_not_possible.html
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgid "Accumulated reward"
-msgstr "Накопленая ўзнагарода"
-
-#: psynet/templates/abort_not_possible.html
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgid "Close window"
-msgstr "Закрыць акно"
-
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgctxt "abort_possible"
-msgid "Are you sure you want to abort the experiment?"
-msgstr "Вы ўпэўнены, што хочаце спыніць эксперымент?"
-
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgctxt "abort_possible"
-msgid ""
-"If you click the Abort button, the experiment will end early, and you will "
-"be automatically paid the compensation you have earned so far."
-msgstr ""
-"Калі вы націснеце кнопку Спыніць, эксперымент скончыцца раней, і вы "
-"аўтаматычна атрымаеце кампенсацыю, якую зарабілі да гэтага часу."
-
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgctxt "abort_possible"
-msgid "Please only contact us if you have trouble receiving your payment."
-msgstr "Калі ў вас узнікнуць праблемы з атрыманнем аплаты, звяжыцеся з намі."
-
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgctxt "abort_possible"
-msgid "See the information below for details of your compensation."
-msgstr "Глядзіце інфармацыю ніжэй для падрабязнасцяў вашай кампенсацыі."
-
-#: psynet/templates/abort_possible.html psynet/templates/ad.html
-#: psynet/templates/psynet_error.html
-#, fuzzy
-msgid "Abort experiment"
-msgstr "Спыніць эксперымент"
-
-#: psynet/templates/ad.html
-#, fuzzy
-msgctxt "ad"
-msgid "Call for participants"
-msgstr "Заклік да ўдзелу"
-
-#: psynet/templates/ad.html
-#, fuzzy
-msgctxt "ad"
-msgid "The requirements to participate are as follows"
-msgstr "Патрабаванні для ўдзелу наступныя"
-
-#: psynet/templates/ad.html
-#, fuzzy
-msgctxt "ad"
-msgid ""
-"Please click the \"Accept HIT\" button on the Amazon site above to begin the"
-" task."
-msgstr ""
-"Калі ласка, націсніце кнопку \"Прыняць HIT\" на сайце Amazon вышэй, каб "
-"пачаць заданне."
-
-#: psynet/templates/ad.html
-#, fuzzy
-msgctxt "ad"
-msgid "Thanks for accepting this HIT."
-msgstr "Дзякуй за прыняцце гэтага HIT."
+msgctxt "early_exit_error_lucid"
+msgid "Return to your panel"
+msgstr "Вярнуцца да вашай панэлі"
 
 #: psynet/templates/ad.html
 #, fuzzy
@@ -983,12 +1148,6 @@ msgstr ""
 msgctxt "ad"
 msgid "Begin Experiment"
 msgstr "Пачаць эксперымент"
-
-#: psynet/templates/ad.html psynet/templates/psynet_error.html
-#, fuzzy
-msgid "Click the above button to be compensated in case of an error."
-msgstr ""
-"Націсніце на кнопку вышэй, каб атрымаць кампенсацыю ў выпадку памылкі."
 
 #: psynet/templates/consent.html
 #, fuzzy
@@ -2420,8 +2579,42 @@ msgstr "Выконваючы задачу, вы дапамагаеце наву�
 #: psynet/templates/exit_recruiter_lucid.html
 #, fuzzy
 msgctxt "exit_recruiter_lucid"
-msgid "Lucid Survey Submission"
-msgstr "Адпраўка апытання Lucid"
+msgid "Returning you to your panel"
+msgstr "Вяртаем вас на вашу панэль"
+
+#: psynet/templates/exit_recruiter_lucid.html
+#, fuzzy
+msgctxt "exit_recruiter_lucid"
+msgid "Please wait."
+msgstr "Калі ласка, пачакайце."
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html
+#, fuzzy
+msgctxt "exit_recruiter_prolific"
+msgid "Submit to Prolific"
+msgstr "Адправіць на Prolific"
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html
+#, fuzzy
+msgctxt "exit_recruiter_prolific"
+msgid ""
+"Click below to send your submission to Prolific. You will not need to enter "
+"a completion code."
+msgstr ""
+"Націсніце ніжэй, каб адправіць вашу заяўку на Prolific. Вам не трэба будзе "
+"ўводзіць код завяршэння."
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html
+#, fuzzy
+msgctxt "exit_recruiter_prolific"
+msgid "Please wait."
+msgstr "Калі ласка, пачакайце."
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html
+#, fuzzy
+msgctxt "exit_recruiter_prolific"
+msgid "Try again"
+msgstr "Паспрабаваць зноў"
 
 #: psynet/templates/keyboard.html
 #, fuzzy
@@ -2657,11 +2850,6 @@ msgstr "Я згодны"
 msgctxt "consent"
 msgid "No, thank you (return task)"
 msgstr "Не, дзякуй (вярнуцца да задання)"
-
-#: psynet/templates/macros/consent.html
-#, fuzzy
-msgid "Scroll up/down to see all text"
-msgstr "Пракруціце ўверх/уніз, каб убачыць увесь тэкст"
 
 #: psynet/templates/macros/consent.html
 #, fuzzy
@@ -2957,6 +3145,12 @@ msgstr "Скінуць"
 
 #: psynet/templates/macros/control.html
 #, fuzzy
+msgctxt "audio_meter"
+msgid "Microphone level"
+msgstr "Узровень мікрафона"
+
+#: psynet/templates/macros/control.html
+#, fuzzy
 msgctxt "audio_meter_calibrate"
 msgid "Sliders"
 msgstr "Слайдары"
@@ -3077,50 +3271,117 @@ msgstr "Відэа не знойдзена"
 msgid "Image not found"
 msgstr "Выява не знойдзена"
 
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Comment stored."
+msgstr "Каментар захаваны."
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Please wait for the page to load."
+msgstr "Калі ласка, пачакайце, пакуль старонка загрузіцца."
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Try again in a couple of seconds."
+msgstr "Паспрабуйце яшчэ раз праз некалькі секунд."
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline"
+msgid "Reward"
+msgstr "Узнагарода"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_reward"
+msgid "Reward earned so far"
+msgstr "Узнагарода, заробленая да гэтага часу"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_reward"
+msgid "for time"
+msgstr "за час"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_reward"
+msgid "for performance"
+msgstr "за прадукцыйнасць"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline"
+msgid "Comment"
+msgstr "Каментар"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Leave"
+msgstr "Пакінуць"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Leave without finishing."
+msgstr "Пакінуць, не скончыўшы."
+
 #: psynet/templates/psynet_error.html
 #, fuzzy
 msgctxt "error"
-msgid "Error!"
-msgstr "Памылка!"
+msgid "An error occurred"
+msgstr "Адбылася памылка"
 
 #: psynet/templates/psynet_error.html
 #, fuzzy
-msgctxt "mturk_error"
-msgid ""
-"You may be able to abort the experiment using the <strong>Abort "
-"experiment</strong> button <strong>on the MTurk ad page</strong>."
-msgstr ""
-"Вы можаце спыніць эксперымент, выкарыстоўваючы кнопку <strong>Спыніць "
-"эксперымент</strong> <strong>на старонцы аб'явы MTurk</strong>."
+msgctxt "early_exit_error"
+msgid "Please wait."
+msgstr "Калі ласка, пачакайце."
 
 #: psynet/templates/psynet_error.html
 #, fuzzy
-msgctxt "mturk_error"
-msgid ""
-"Once aborted, there is no need to contact us to receive the compensation; "
-"this should be awarded to you automatically via MTurk a few minutes after."
-msgstr ""
-"Пасля спынення няма неабходнасці звязвацца з намі для атрымання кампенсацыі;"
-" яна павінна быць аўтаматычна выплачана вам праз MTurk праз некалькі хвілін."
+msgctxt "early_exit_error"
+msgid "Try again"
+msgstr "Паспрабуйце зноў"
 
-#: psynet/templates/psynet_error.html
-#, fuzzy, python-format
-msgid ""
-"If this is not the case, please contact us at %(EMAIL)s quoting the "
-"following information:"
-msgstr ""
-"Калі гэта не так, калі ласка, звяжыцеся з намі па %(EMAIL)s, указаўшы "
-"наступную інфармацыю:"
-
-#: psynet/templates/psynet_error.html
+#: psynet/templates/psynet_exit_recruiter.html
 #, fuzzy
-msgid "Error type"
-msgstr "Тып памылкі"
+msgid "Thank you for taking part."
+msgstr "Дзякуй за ўдзел."
 
-#: psynet/templates/psynet_error.html
+#: psynet/templates/psynet_exit_recruiter.html
 #, fuzzy
-msgid "Worker ID"
-msgstr "Ідэнтыфікатар работніка"
+msgctxt "exit"
+msgid "You chose to leave."
+msgstr "Вы вырашылі сысці."
+
+#: psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgid "Thank you for taking part."
+msgstr "Дзякуй за ўдзел."
+
+#: psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgctxt "exit"
+msgid "You may close this page."
+msgstr "Вы можаце закрыць гэтую старонку."
+
+#: psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgctxt "exit"
+msgid "Your responses have been saved. You may close this page."
+msgstr "Вашы адказы захаваны. Вы можаце закрыць гэтую старонку."
+
+#: psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgctxt "exit"
+msgid "Reference code"
+msgstr "Код спасылкі"
 
 #: psynet/templates/start.html
 #, fuzzy
@@ -3185,41 +3446,35 @@ msgctxt "timeline_resume"
 msgid "Resume"
 msgstr "Працягнуць"
 
-#: psynet/templates/timeline-page.html
-#, fuzzy
-msgctxt "timeline"
-msgid "Reward"
-msgstr "Узнагарода"
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{REMAINING} of {TOTAL} not ready yet"
+msgstr "{REMAINING} з {TOTAL} яшчэ не гатовыя"
 
-#: psynet/templates/timeline-page.html
+#: psynet/timeline_hold.py
 #, fuzzy
-msgctxt "timeline"
-msgid "Comment"
-msgstr "Каментар"
+msgctxt "timeline_hold"
+msgid "Your partner is ready."
+msgstr "Ваш партнёр гатовы."
 
-#: psynet/templates/timeline-page.html
-#, fuzzy
-msgctxt "timeline_problem"
-msgid "Terminate the experiment early"
-msgstr "Завяршыць эксперымент раней"
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{ARRIVED}/{TOTAL} of your group are ready."
+msgstr "{ARRIVED} з {TOTAL} вашай групы гатовыя."
 
-#: psynet/templates/timeline-page.html
+#: psynet/timeline_hold.py
 #, fuzzy
-msgctxt "timeline_problem"
-msgid "Comment stored."
-msgstr "Каментар захаваны."
+msgctxt "timeline_hold"
+msgid "Waiting for other participants…"
+msgstr "Чаканне іншых удзельнікаў…"
 
-#: psynet/templates/timeline-page.html
+#: psynet/timeline_hold.py
 #, fuzzy
-msgctxt "timeline_problem"
-msgid "Please wait for the page to load."
-msgstr "Калі ласка, пачакайце, пакуль старонка загрузіцца."
-
-#: psynet/templates/timeline-page.html
-#, fuzzy
-msgctxt "timeline_problem"
-msgid "Try again in a couple of seconds."
-msgstr "Паспрабуйце яшчэ раз праз некалькі секунд."
+msgctxt "timeline_hold"
+msgid "Please wait, the experiment should continue shortly..."
+msgstr "Калі ласка, пачакайце, эксперымент павінен хутка працягнуцца..."
 
 #: psynet/translation/countries.py
 #, fuzzy
