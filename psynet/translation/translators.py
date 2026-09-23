@@ -1,15 +1,28 @@
 import json
 import os.path
-from typing import List, Optional
-
-import tenacity
+from dataclasses import dataclass
+from typing import List, Optional, Sequence
 
 from psynet.utils import get_config, get_descendent_class_by_name, get_language_dict
 
 # Source files are quoted into the translation prompt for context. Large modules
 # (``psynet/recruiters.py`` is ~150 kB) would otherwise dominate every request
-# for that file and make translation runs disproportionately slow.
+# for that file, so beyond this size only the lines around each text are quoted.
 MAX_SOURCE_CONTEXT_CHARS = 20_000
+SOURCE_SNIPPET_RADIUS_LINES = 8
+
+
+@dataclass
+class TranslationContext:
+    """Where a batch of texts comes from, for translators that can use it."""
+
+    file_path: Optional[str] = None
+    labels: Sequence[Optional[str]] = ()
+    """The gettext context (``msgctxt``) of each text, in the same order as the texts."""
+    line_numbers: Sequence[Optional[int]] = ()
+    """The source line of each text, in the same order as the texts."""
+    examples: Sequence[tuple[str, str]] = ()
+    """Already translated ``(source, translation)`` pairs from the same place."""
 
 
 class Translator:
@@ -21,7 +34,7 @@ class Translator:
         texts: List[str],
         source_lang: str,
         target_lang: str,
-        file_path: str = None,
+        context: Optional[TranslationContext] = None,
         n_retries: int = 3,
     ):
         """Translate a list of texts from source language to target language.
@@ -34,8 +47,8 @@ class Translator:
             The source language code
         target_lang : str
             The target language code
-        file_path : str, optional
-            The path to the file being translated, by default None
+        context : TranslationContext, optional
+            Where the texts come from, by default None
         n_retries : int, optional
             The number of times to retry the translation request, by default 3
 
@@ -50,7 +63,7 @@ class Translator:
                 self._encode(text, codebook) for text, codebook in zip(texts, codebooks)
             ]
             translated_encoded_texts = self._translate_texts(
-                encoded_texts, source_lang, target_lang, file_path
+                encoded_texts, source_lang, target_lang, context
             )
             translated_texts = [
                 self._decode(text, codebook)
@@ -60,7 +73,7 @@ class Translator:
             for i in range(n_retries):
                 try:
                     translated_texts = self._translate_texts(
-                        texts, source_lang, target_lang, file_path
+                        texts, source_lang, target_lang, context
                     )
                     if len(translated_texts) != len(texts):
                         raise InvalidTranslationError(
@@ -80,7 +93,7 @@ class Translator:
         texts: List[str],
         source_lang: str,
         target_lang: str,
-        file_path: str = None,
+        context: Optional[TranslationContext] = None,
     ) -> List[str]:
         """Internal method to perform the actual translation.
 
@@ -94,8 +107,8 @@ class Translator:
             The source language code
         target_lang : str
             The target language code
-        file_path : str, optional
-            The path to the file being translated, by default None
+        context : TranslationContext, optional
+            Where the texts come from, by default None
 
         Returns
         -------
@@ -240,7 +253,7 @@ class GoogleTranslator(Translator):
         texts: List[str],
         source_lang: str,
         target_lang: str,
-        file_path: str = None,
+        context: Optional[TranslationContext] = None,
     ):
         from google.cloud import translate_v3
 
@@ -278,47 +291,107 @@ class GoogleTranslator(Translator):
         return [translation.translated_text for translation in response.translations]
 
 
+def source_context_for_prompt(
+    file_path: str, line_numbers: Sequence[Optional[int]] = ()
+) -> str:
+    """
+    Return the source code to show a translator alongside texts from ``file_path``.
+
+    Small files are returned whole, because they usually are the page the
+    texts appear on. For larger files, only the lines around each text are
+    returned, within the same character budget.
+    """
+    with open(file_path, "r", encoding="utf-8") as f:
+        source = f.read()
+    if len(source) <= MAX_SOURCE_CONTEXT_CHARS:
+        return source
+
+    lines = source.splitlines()
+    windows = []
+    for line in sorted({n for n in line_numbers if n}):
+        start = max(1, line - SOURCE_SNIPPET_RADIUS_LINES)
+        end = min(len(lines), line + SOURCE_SNIPPET_RADIUS_LINES)
+        if windows and start <= windows[-1][1] + 1:
+            windows[-1] = (windows[-1][0], max(windows[-1][1], end))
+        else:
+            windows.append((start, end))
+
+    blocks = []
+    budget = MAX_SOURCE_CONTEXT_CHARS
+    for start, end in windows:
+        block = f"Lines {start}-{end}:\n" + "\n".join(lines[start - 1 : end])
+        if len(block) > budget:
+            break
+        blocks.append(block)
+        budget -= len(block)
+    return "\n\n".join(blocks)
+
+
+def _response_format(ids: List[str]) -> dict:
+    """JSON schema that makes the model return exactly one translation per id."""
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "translations",
+            "strict": True,
+            "schema": {
+                "type": "object",
+                "properties": {id_: {"type": "string"} for id_ in ids},
+                "required": ids,
+                "additionalProperties": False,
+            },
+        },
+    }
+
+
 class ChatGptTranslator(Translator):
     nickname = "chat_gpt"
     use_codebook = False
 
     def get_system_prompt(
         self,
-        texts: List[str],
         source_language: str,
         target_language: str,
-        file_path: str = None,
+        context: Optional[TranslationContext] = None,
     ):
-        prompt = f"You are a helpful assistant that translates {source_language} to {target_language}."
-        prompt += (
+        prompt = (
+            f"You translate user-interface text from {source_language} to {target_language}. "
             "If you see any HTML tags in the text, you should not translate them. "
             "If you see any variables in the text, you should not translate them. "
             """Variables are written in capital letters and are either surrounded by curly brackets (e.g., {VARIABLE}) or start with "%(" and end with ")s" (e.g., "%(VARIABLE)s"). """
             "You do not have to keep the original word order. "
-            "The translation is specified as a list using JSON format. "
-            """For example, ["Hello, {NAME}!", "My name is {NAME}"] would be converted to ["Bonjour, {NAME}!", "Je m'appelle {NAME}"] when translating to French. """
-            "Your output should be pure JSON with no comments, formatting directives, or other modifiers"
+            "The input is a JSON object that maps ids to items. "
+            "Each item has a text to translate and may have a label naming the part of the interface the text belongs to. "
+            "Return a JSON object that maps the same ids to the translations of the texts."
         )
+        if context is None:
+            return prompt
 
-        if file_path is not None and os.path.exists(file_path):
-            prompt += f"\n\nThe translations are taken from {file_path}."
-            with open(file_path, "r") as f:
-                source = f.read()
-            if len(source) <= MAX_SOURCE_CONTEXT_CHARS:
+        if context.examples:
+            examples = [
+                {"text": text, "translation": translation}
+                for text, translation in context.examples
+            ]
+            prompt += (
+                "\n\nThese texts from the same place are already translated. "
+                "Keep terminology and tone consistent with them:\n"
+                + json.dumps(examples, ensure_ascii=False)
+            )
+
+        if context.file_path is not None and os.path.exists(context.file_path):
+            prompt += f"\n\nThe texts are taken from {context.file_path}."
+            source = source_context_for_prompt(context.file_path, context.line_numbers)
+            if source:
                 prompt += f"\n\n{source}"
 
         return prompt
 
-    @tenacity.retry(
-        stop=tenacity.stop_after_attempt(5),
-        reraise=True,
-    )
     def _translate_texts(
         self,
         texts: List[str],
         source_lang: str,
         target_lang: str,
-        file_path: str = None,
+        context: Optional[TranslationContext] = None,
     ):
         from openai import OpenAI
 
@@ -341,41 +414,44 @@ class ChatGptTranslator(Translator):
         temperature = float(config.get("openai_default_temperature"))
         openai_default_model = config.get("openai_default_model")
 
+        ids = [str(i) for i in range(1, len(texts) + 1)]
+        labels = context.labels if context and context.labels else [None] * len(texts)
+        items = {
+            id_: {"text": text, "label": label} if label else {"text": text}
+            for id_, text, label in zip(ids, texts, labels)
+        }
         client = OpenAI(api_key=openai_api_key)
-        messages = [
-            {
-                "role": "system",
-                "content": self.get_system_prompt(
-                    texts, source_language, target_language, file_path
-                ),
-            },
-            {"role": "user", "content": json.dumps(texts)},
-        ]
         response = client.chat.completions.create(
             model=openai_default_model,
-            messages=messages,
+            messages=[
+                {
+                    "role": "system",
+                    "content": self.get_system_prompt(
+                        source_language, target_language, context
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps(items, ensure_ascii=False),
+                },
+            ],
             temperature=temperature,
+            response_format=_response_format(ids),
         )
-        content = response.choices[0].message.content
+        choice = response.choices[0]
+        if choice.message.refusal:
+            raise InvalidTranslationError(
+                f"ChatGPT refused to translate: {choice.message.refusal}"
+            )
+        if choice.finish_reason == "length":
+            raise InvalidTranslationError("ChatGPT's response was cut off.")
         try:
-            return json.loads(content)
-        except json.JSONDecodeError as e:
-            split_content = content.split("\n")
-            if split_content[0] == "```json" and split_content[-1] == "```":
-                content = "\n".join(split_content[1:-1])
-                try:
-                    return json.loads(content)
-                except json.JSONDecodeError:
-                    pass
-            msg = f"ChatGPT did not return a proper JSON string: {content}"
-            if temperature == 0:
-                msg += (
-                    " This may be due to the low temperature setting. "
-                    "Please try again with a higher temperature leading to less-deterministic results. "
-                    "You can set it by setting `openai_default_temperature` in your .dallingerconfig file. "
-                    "The default temperature of GPT4 is 0.7."
-                )
-            raise InvalidTranslationError(msg) from e
+            translations = json.loads(choice.message.content)
+            return [translations[id_] for id_ in ids]
+        except (json.JSONDecodeError, KeyError, TypeError) as e:
+            raise InvalidTranslationError(
+                f"ChatGPT did not return one translation per text: {choice.message.content}"
+            ) from e
 
 
 class DefaultTranslator(Translator):
@@ -384,12 +460,12 @@ class DefaultTranslator(Translator):
         texts: List[str],
         source_lang: str,
         target_lang: str,
-        file_path: str = None,
+        context: Optional[TranslationContext] = None,
     ):
         config = get_config()
         default_translator = config.get("default_translator")
         translator_class = get_descendent_class_by_name(Translator, default_translator)
-        return translator_class().translate(texts, source_lang, target_lang, file_path)
+        return translator_class().translate(texts, source_lang, target_lang, context)
 
 
 class NullTranslator(Translator):
@@ -401,7 +477,7 @@ class NullTranslator(Translator):
         texts: List[str],
         source_lang: str,
         target_lang: str,
-        file_path: str = None,
+        context: Optional[TranslationContext] = None,
     ):
         return texts
 

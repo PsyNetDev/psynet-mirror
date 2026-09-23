@@ -21,7 +21,11 @@ import pytest
 
 from psynet.experiment import import_local_experiment
 from psynet.pytest_psynet import local_only, path_to_test_experiment
-from psynet.translation.translators import ChatGptTranslator, GoogleTranslator
+from psynet.translation.translators import (
+    ChatGptTranslator,
+    GoogleTranslator,
+    TranslationContext,
+)
 
 TEST_TRANSLATIONS = [
     (["Hello", "Goodbye"], ["Bonjour", "Au revoir"]),
@@ -88,7 +92,7 @@ def test_translator_with_file_path():
         ],
         source_lang="en",
         target_lang="fr",
-        file_path="experiment.py",
+        context=TranslationContext(file_path="experiment.py"),
     )
 
     expected_translations = [

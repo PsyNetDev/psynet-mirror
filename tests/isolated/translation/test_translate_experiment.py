@@ -51,7 +51,7 @@ def test_translate_experiment(mocker):
     def expected_translation(source_lang, target_lang, i, text):
         return f"{source_lang} -> {target_lang} {i}: {text}"
 
-    def mock_translate_func(texts, source_lang, target_lang, file_path=None):
+    def mock_translate_func(texts, source_lang, target_lang, context=None):
         return [
             expected_translation(source_lang, target_lang, i, text)
             for i, text in enumerate(texts)
@@ -61,29 +61,24 @@ def test_translate_experiment(mocker):
 
     translate_experiment(["fr"])
 
-    # We expect all texts within experiment.py to be batched into a single call to the translator
-    # (because the rule is that all texts within a single file are translated together)
-    mock_translate.assert_called_once_with(
-        texts=[
-            "Hello, welcome to my experiment!",
-            # The text is repeated in the source code file, so we repeat it in the translator too,
-            # because in theory this repetition is relevant context for the translator.
-            "What is your name?",
-            "What is your name?",
-            "Hello, {NAME}!",
-            "What is your favorite pet?",
-            "dog",
-            "cat",
-            "fish",
-            "hamster",
-            "bird",
-            "snake",
-            "Great, I like {PET} too!",
-        ],
-        source_lang="en",
-        target_lang="fr",
-        file_path="experiment.py",
-    )
+    # All texts in experiment.py share a file and have no gettext context,
+    # so they go to the translator in one call, once per distinct message.
+    mock_translate.assert_called_once()
+    call = mock_translate.call_args.kwargs
+    assert call["texts"] == [
+        "Hello, welcome to my experiment!",
+        "What is your name?",
+        "Hello, {NAME}!",
+        "What is your favorite pet?",
+        "dog",
+        "cat",
+        "fish",
+        "hamster",
+        "bird",
+        "snake",
+        "Great, I like {PET} too!",
+    ]
+    assert call["context"].file_path == "experiment.py"
 
     # Expect the translation to be written to the PO file
     global po_path
@@ -96,19 +91,16 @@ def test_translate_experiment(mocker):
             "Hello, welcome to my experiment!",
             "en -> fr 0: Hello, welcome to my experiment!",
         ),
-        # Unlike the translator, the po file will only contain one entry for "What is your name?".
-        # This is because all entries with the same msgid are merged into a single entry in the PO file.
-        # Only the last translation is kept; en -> fr 1 is therefore omitted from the PO file.
-        ("What is your name?", "en -> fr 2: What is your name?"),
-        ("Hello, {NAME}!", "en -> fr 3: Hello, {NAME}!"),
-        ("What is your favorite pet?", "en -> fr 4: What is your favorite pet?"),
-        ("dog", "en -> fr 5: dog"),
-        ("cat", "en -> fr 6: cat"),
-        ("fish", "en -> fr 7: fish"),
-        ("hamster", "en -> fr 8: hamster"),
-        ("bird", "en -> fr 9: bird"),
-        ("snake", "en -> fr 10: snake"),
-        ("Great, I like {PET} too!", "en -> fr 11: Great, I like {PET} too!"),
+        ("What is your name?", "en -> fr 1: What is your name?"),
+        ("Hello, {NAME}!", "en -> fr 2: Hello, {NAME}!"),
+        ("What is your favorite pet?", "en -> fr 3: What is your favorite pet?"),
+        ("dog", "en -> fr 4: dog"),
+        ("cat", "en -> fr 5: cat"),
+        ("fish", "en -> fr 6: fish"),
+        ("hamster", "en -> fr 7: hamster"),
+        ("bird", "en -> fr 8: bird"),
+        ("snake", "en -> fr 9: snake"),
+        ("Great, I like {PET} too!", "en -> fr 10: Great, I like {PET} too!"),
     ]
 
     # Check each entry matches expected msgid and translation
@@ -146,25 +138,27 @@ def test_translate_experiment(mocker):
     assert po[0].msgstr == "manual translation"
     assert not po[0].fuzzy
 
-    # The new translatable string should be translated
+    # Only the new string is sent, with the existing translations as examples
+    call = mock_translate.call_args.kwargs
+    assert call["texts"] == ["Translate me please"]
+    assert ("Hello, welcome to my experiment!", "manual translation") in call[
+        "context"
+    ].examples
     assert po[-1].msgid == "Translate me please"
-    assert po[-1].msgstr == "en -> fr 12: Translate me please"
+    assert po[-1].msgstr == "en -> fr 0: Translate me please"
 
-    # Now let's reinstate the fuzzy flag for the original manual translation
+    # Unchanged messages keep their translation even when it still needs review
     po[0].fuzzy = True
     po.save()
-
-    # And add one more translatable string to experiment.py, to invalidate the existing translations
     with open("experiment.py", "a") as f:
         f.write("\n_('Translate me next')")
 
-    # Now let's run the translation again
     translate_experiment(["fr"])
 
-    # The manual translation should now be overwritten by the machine translation
     po = polib.pofile(po_path)
-    assert po[0].msgstr == "en -> fr 0: Hello, welcome to my experiment!"
+    assert po[0].msgstr == "manual translation"
     assert po[0].fuzzy
+    assert po[-1].msgstr == "en -> fr 0: Translate me next"
 
 
 @pytest.mark.usefixtures(

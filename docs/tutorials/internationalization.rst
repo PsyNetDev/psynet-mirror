@@ -178,9 +178,12 @@ Also you need to install the ``google-cloud-translate`` package by running:
 
 The translation process
 -----------------------
-Both ChatGPT and Google Translate batch their translations on a file basis. This means that they can intelligently
-infer the context of the strings in the file. ChatGPT also sees the source code of the file, which can provide
-additional information for disambiguation.
+``psynet translate`` only sends texts that do not have a translation yet. It batches them by source file,
+at most 30 texts per request. ChatGPT also receives, for disambiguation:
+
+- the context label of each text (see :ref:`Contexts <i18n_contexts>` below),
+- existing translations from the same file, so that new translations use consistent terminology,
+- the source code of the file, or for large files the lines around each text.
 
 
 Manual checking
@@ -189,16 +192,15 @@ You can manually inspect the machine translation by opening the ``locales/<iso_c
 `POedit editor <https://poedit.net>`__ and check if strings that you marked with ``_`` are translated properly.
 
 Machine translations are by default marked as 'fuzzy' in POedit. Once you have reviewed and confirmed a translation,
-you can remove this flag in POEdit. When you subsequently run ``psynet translate``, non-fuzzy translations will
-not be overwritten unless their input text changes. They will still however be used as context for the other
-translations in the same file.
+you can remove this flag in POEdit.
 
 
 Revising translations
 ---------------------
 
-When you run ``psynet translate``, all fuzzy (i.e. machine-translated) translations will be overwritten.
-Non-fuzzy translations will not be overwritten unless their input text changes.
+When you run ``psynet translate``, existing translations, fuzzy or not, are kept for as long as their
+input text and context are unchanged. To get a new machine translation for a text, delete its translation in POEdit
+and run ``psynet translate`` again; ``psynet translate --force`` retranslates everything.
 Texts that no longer occur in the source code will be removed from the translation files.
 PsyNet does not make any backup of your translations, so make sure you include your experiments `locales`
 directory in your experiment's git repository and commit your changes regularly.
@@ -206,6 +208,8 @@ directory in your experiment's git repository and commit your changes regularly.
 
 Advanced usage
 ==============
+
+.. _i18n_contexts:
 
 Contexts
 --------
