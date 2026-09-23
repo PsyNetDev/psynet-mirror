@@ -1527,53 +1527,11 @@ def _invoke_docker_ssh_deploy(
     return ctx.invoke(command, **kwargs)
 
 
-def _dockerfile_reinstalls_local_dallinger_wheel(text: str) -> bool:
-    """Return whether Dockerfile force-reinstalls a staged Dallinger wheel after COPY."""
-    copy_dot = None
-    for index, line in enumerate(text.splitlines()):
-        stripped = line.strip()
-        if stripped.startswith("#"):
-            continue
-        if stripped.upper().startswith("COPY ") and stripped[5:].lstrip().startswith(
-            "."
-        ):
-            copy_dot = index
-    if copy_dot is None:
-        return False
-    after = "\n".join(text.splitlines()[copy_dot + 1 :])
-    return (
-        "dallinger-*.whl" in after
-        and "--force-reinstall" in after
-        and "--no-deps" in after
-    )
-
-
-def _dockerfile_reinstalls_local_dallinger(path: Path) -> bool:
-    """Return whether Dockerfile force-reinstalls a staged Dallinger wheel."""
-    return _dockerfile_reinstalls_local_dallinger_wheel(
-        path.read_text(encoding="utf-8")
-    )
-
-
-def _require_local_dallinger_dockerfile():
-    """Abort --use-local-dallinger if a local Dockerfile would ignore the wheel."""
-    dockerfile = Path("Dockerfile")
-    if not dockerfile.is_file():
-        return
-    if not _dockerfile_reinstalls_local_dallinger(dockerfile):
-        raise click.UsageError(
-            "--use-local-dallinger needs a Dockerfile that force-reinstalls "
-            "dallinger-*.whl after COPY with --no-deps (see "
-            "psynet/resources/experiment_scripts/Dockerfile)."
-        )
-
-
 def _configure_dallinger_image_source(use_local_dallinger=False):
     """Choose the Dallinger tree that docker-ssh bakes into the experiment image."""
     if not use_local_dallinger:
         os.environ["DALLINGER_NO_EGG_BUILD"] = "1"
         return
-    _require_local_dallinger_dockerfile()
     os.environ.pop("DALLINGER_NO_EGG_BUILD", None)
     source = os.environ.get("DALLINGER_SOURCE", "").strip()
     if not source:

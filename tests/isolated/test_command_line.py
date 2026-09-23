@@ -89,19 +89,6 @@ class TestCommandLine(object):
             assert "ingress" in names
         assert "use_local_dallinger" in names
 
-    def test_experiment_dockerfile_reinstalls_local_dallinger_wheel(self):
-        dockerfile = (
-            Path(__file__).resolve().parents[2]
-            / "psynet"
-            / "resources"
-            / "experiment_scripts"
-            / "Dockerfile"
-        )
-        text = dockerfile.read_text()
-        from psynet.command_line import _dockerfile_reinstalls_local_dallinger_wheel
-
-        assert _dockerfile_reinstalls_local_dallinger_wheel(text)
-
     def test_awaken_ssh_app_skips_missing_front_door(self):
         from dallinger.command_line import docker_ssh as dssh
 
@@ -141,38 +128,6 @@ class TestCommandLine(object):
         _configure_dallinger_image_source(use_local_dallinger=True)
         assert os.environ["DALLINGER_SOURCE"] == str(src)
         assert "DALLINGER_NO_EGG_BUILD" not in os.environ
-
-    def test_configure_dallinger_image_source_requires_wheel_reinstall(
-        self, monkeypatch, tmp_path
-    ):
-        from psynet.command_line import _configure_dallinger_image_source
-
-        monkeypatch.chdir(tmp_path)
-        (tmp_path / "Dockerfile").write_text("FROM python:3.12\nCOPY . /experiment\n")
-        src = tmp_path / "Dallinger"
-        src.mkdir()
-        (src / "pyproject.toml").write_text("[project]\nname='dallinger'\n")
-        monkeypatch.setenv("DALLINGER_SOURCE", str(src))
-        with pytest.raises(click.UsageError, match="dallinger-\\*\\.whl"):
-            _configure_dallinger_image_source(use_local_dallinger=True)
-
-    def test_configure_dallinger_image_source_rejects_wheel_before_copy(
-        self, monkeypatch, tmp_path
-    ):
-        from psynet.command_line import _configure_dallinger_image_source
-
-        monkeypatch.chdir(tmp_path)
-        (tmp_path / "Dockerfile").write_text(
-            "FROM python:3.12\n"
-            "RUN pip install --force-reinstall --no-deps dallinger-*.whl\n"
-            "COPY . /experiment\n"
-        )
-        src = tmp_path / "Dallinger"
-        src.mkdir()
-        (src / "pyproject.toml").write_text("[project]\nname='dallinger'\n")
-        monkeypatch.setenv("DALLINGER_SOURCE", str(src))
-        with pytest.raises(click.UsageError, match="after COPY"):
-            _configure_dallinger_image_source(use_local_dallinger=True)
 
     def test_configure_dallinger_image_source_accepts_wheel_dockerfile(
         self, monkeypatch, tmp_path

@@ -230,8 +230,9 @@ experiment is reachable at a first-level hostname such as
 
     psynet deploy ssh --app consonance --ingress cloudflare
 
-Classic ``--dns-host`` is only for host Caddy. Cloudflare hostnames use the
-server's ``cloudflare_dns_zone`` (for example ``science-of-music.org``).
+Classic ``--dns-host`` is only for host Caddy. Cloudflare hostnames use
+``cloudflare_dns_zone`` from Dallinger config (for example
+``science-of-music.org``).
 
 Until this Dallinger stack is released, canary deploys must bake the local
 Dallinger tree into the image::
@@ -240,17 +241,14 @@ Dallinger tree into the image::
 
 PYTHONPATH is not enough: the image still pip-installs the Git pin in
 ``pyproject.toml``. ``--use-local-dallinger`` builds a wheel from that
-checkout and the experiment Dockerfile force-reinstalls it after ``COPY .``
-with ``--no-deps``. If the experiment directory already has a ``Dockerfile``
-that omits that ``dallinger-*.whl`` step, deploy aborts before the image is
-built.
+checkout, and the image build installs it after ``COPY .``.
 
-The server must already be registered with Cloudflare account and zone IDs
-(``dallinger docker-ssh servers add --cloudflare-account-id ...``). The API
-token is read from ``CLOUDFLARE_API_TOKEN``, then ``~/.dallingerconfig``, then
-the macOS Keychain item ``org.cms-cambridge.cloudflare-api-token``. It is never
-stored in host records. Until a server default is changed, omitting
-``--ingress`` keeps classic Caddy.
+Set the non-secret ``cloudflare_account_id``, ``cloudflare_zone_id``, and
+``cloudflare_dns_zone`` in ``~/.dallingerconfig``. The API token is read from
+``CLOUDFLARE_API_TOKEN``, then ``~/.dallingerconfig``, then the macOS
+Keychain item ``dallinger-cloudflare-api-token``. It is never stored in host
+records. Until a server default is changed, omitting ``--ingress`` keeps
+classic Caddy.
 
 Hibernation
 ^^^^^^^^^^^
@@ -272,9 +270,9 @@ timer. To sleep or wake by hand::
 ``psynet export ssh`` awakens a sleeping app before reading its database.
 It uses that deployment's public origin, so a Cloudflare app is reached at
 its public name rather than ``https://<app>.<ssh-host>``.
-Deploy also chowns ``~/psynet-data/assets`` (and other ``docker_volumes``
-host bind mounts) so older root-owned files stay writable, retrying with
-passwordless sudo and then a root Alpine container if needed.
+Deploy also chowns ``~/psynet-data/assets`` (and other writable
+``docker_volumes`` bind mounts under the home directory) so older root-owned
+files stay writable, retrying with a root Alpine container if needed.
 
 Do not enable idle sleep while recruitment is running, or for experiments that
 keep WebSocket or other in-memory participant state. A crash while the app is
