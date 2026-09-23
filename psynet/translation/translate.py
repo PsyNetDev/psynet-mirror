@@ -265,7 +265,11 @@ def batch_untranslated(po: polib.POFile) -> List[TranslationBatch]:
     for file, entries in files.items():
         entries.sort(key=lambda entry: _line_number(entry) or 0)
         untranslated = [entry for entry in entries if not entry.msgstr]
-        translated = [entry for entry in entries if entry.msgstr]
+        # A translation identical to its source is usually an English fallback;
+        # as an example it would invite the model to leave text untranslated.
+        translated = [
+            entry for entry in entries if entry.msgstr and entry.msgstr != entry.msgid
+        ]
         for i in range(0, len(untranslated), MAX_BATCH_SIZE):
             batch_entries = untranslated[i : i + MAX_BATCH_SIZE]
             labels = {entry.msgctxt for entry in batch_entries}
