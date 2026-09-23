@@ -23,14 +23,21 @@ class CountingTranslator(Translator):
 
     use_codebook = False
 
-    def __init__(self, failures=0):
+    def __init__(self, failures=0, drop_variables=0):
         self.failures = failures
+        self.drop_variables = drop_variables
         self.calls = 0
+        self.attempts = []
 
-    def _translate_texts(self, texts, source_lang, target_lang, context=None):
+    def _translate_texts(
+        self, texts, source_lang, target_lang, context=None, attempt=0
+    ):
         self.calls += 1
+        self.attempts.append(attempt)
         if self.calls <= self.failures:
             raise InvalidTranslationError("provider error")
+        if self.calls <= self.drop_variables:
+            return [text.replace("{NAME}", "") for text in texts]
         return [f"{text}-{target_lang}" for text in texts]
 
 
@@ -50,6 +57,17 @@ def test_failed_translation_is_retried_then_succeeds():
 
     assert result == ["Hello-fr"]
     assert translator.calls == 3
+
+
+def test_translation_that_drops_a_variable_is_retried():
+    translator = CountingTranslator(drop_variables=1)
+
+    result = translator.translate(
+        texts=["Hello {NAME}"], source_lang="en", target_lang="fr"
+    )
+
+    assert result == ["Hello {NAME}-fr"]
+    assert translator.attempts == [0, 1]
 
 
 def test_translation_gives_up_after_retries():
