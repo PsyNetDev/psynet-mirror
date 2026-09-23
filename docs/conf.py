@@ -17,7 +17,9 @@
 # relative to the documentation root, use os.path.abspath to make it
 # absolute, like shown here.
 #
+import json
 import os
+import posixpath
 import sys
 from glob import glob
 from io import StringIO
@@ -46,7 +48,16 @@ extensions = [
     "sphinx.ext.viewcode",
     "sphinx_copybutton",
     "sphinx_inline_tabs",  # TODO: remove once we migrate to PyData Sphinx theme
+    "sphinx_reredirects",
 ]
+
+# Old page paths are published and linked externally, so every moved or
+# deleted page needs an entry in redirects.json (old docname -> new docname).
+with open("redirects.json") as f:
+    redirects = {
+        old: posixpath.relpath(new, posixpath.dirname(old) or ".") + ".html"
+        for old, new in json.load(f).items()
+    }
 
 copybutton_prompt_text = r">>> |\.\.\. |\$ |# "
 copybutton_prompt_is_regexp = True
@@ -224,6 +235,7 @@ version_switcher_json_url = os.environ.get(
 html_theme_options = {
     "github_url": "https://gitlab.com/PsyNetDev/PsyNet/",
     "use_edit_page_button": True,
+    "header_links_before_dropdown": 8,
     # Keep page TOC available in the right sidebar as well.
     "secondary_sidebar_items": ["page-toc", "edit-this-page"],
     # Include top-level page sections in section navigation.

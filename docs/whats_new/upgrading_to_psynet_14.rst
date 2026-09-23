@@ -6,7 +6,7 @@ This checklist migrates an existing experiment onto PsyNet 14: in-place
 timeline transitions, recruiter and leave APIs, and new participant-theme
 defaults. It is the single source of truth for **migration order and search
 targets**. Frontend patterns and full examples live in
-:doc:`/tutorials/writing_custom_frontends`.
+:doc:`/guides/pages/writing_custom_frontends`.
 
 The Cursor skill ``/upgrade-to-psynet-14`` is a thin wrapper that points agents
 here. When PsyNet is not available as a source checkout (typical experiment
@@ -14,7 +14,7 @@ venv), agents should fetch the published HTML version of this page rather than
 looking for ``docs/*.rst`` on disk.
 
 Also see: :doc:`/whats_new/psynet_14`,
-:doc:`/experiment_development/configuration`.
+:doc:`/reference/configuration`.
 
 0. Orient
 ---------
@@ -42,7 +42,7 @@ Search for ``template_path=``, ``template_str=``, and
 
 Convert complete templates to fragments
 (``template_fragment_path`` / ``template_fragment_str``) and supply assets via
-page arguments. See :doc:`/tutorials/writing_custom_frontends`
+page arguments. See :doc:`/guides/pages/writing_custom_frontends`
 (Custom page templates).
 
 2. Migrate CSS
@@ -73,7 +73,7 @@ Converting the HTML template alone is not enough: leftover ``scripts=`` /
 
 Move load-once classic libraries to ``js_dependencies`` /
 ``get_js_dependencies()``. Do not put per-page initialization there. See
-:doc:`/tutorials/writing_custom_frontends` (Managing JavaScript lifecycles).
+:doc:`/guides/pages/writing_custom_frontends` (Managing JavaScript lifecycles).
 
 5. Migrate per-page behavior
 ----------------------------
@@ -82,7 +82,7 @@ Rewrite classic top-level scripts as ES modules that export ``activate``,
 wired with ``js_page_modules`` / ``get_js_page_modules()``. Short snippets may
 use ``js_page_code`` / ``get_js_page_code()`` instead.
 
-See :doc:`/tutorials/writing_custom_frontends` for ``activate(context)``
+See :doc:`/guides/pages/writing_custom_frontends` for ``activate(context)``
 examples and cleanup guidance.
 
 6. Migrate page variables to ``psynet.var``
@@ -97,8 +97,8 @@ key (for example ``name``, ``status``, ``event``, ``history``) silently
 keeps the browser's value; the page data is still available on
 ``psynet.var``. Page construction warns for these common collisions so they
 show up in ``psynet test local`` / ``psynet debug local``. See
-:doc:`/tutorials/writing_custom_frontends` and
-:doc:`/experiment_development/configuration`.
+:doc:`/guides/pages/writing_custom_frontends` and
+:doc:`/reference/configuration`.
 
 7. Migrate JsPsych timelines
 ----------------------------
@@ -113,7 +113,7 @@ show up in ``psynet test local`` / ``psynet debug local``. See
 * Page setup → ``activate()`` / ``js_page_code`` (not ``DOMContentLoaded``)
 * Timing gates → ``pageReady`` / ``trialConstruct``
 
-Details: :doc:`/tutorials/writing_custom_frontends`.
+Details: :doc:`/guides/pages/writing_custom_frontends`.
 
 9. Migrate trial-selection hooks
 --------------------------------
@@ -200,7 +200,7 @@ Search for ``show_abort_button``, ``show_termination_button``,
 * Participant field: ``Participant.early_exited``.
 * Remove ``Experiment.ad_requirements`` and
   ``Experiment.ad_payment_information``. Customize ``templates/ad.html``
-  instead; see :doc:`/tutorials/ad_page`.
+  instead; see :doc:`/guides/pages/ad_page`.
 * Replace ``error_page_content`` with recruiter
   ``error_page_presentation``. A custom recruiter that shows recovery UI
   must also override ``shows_error_recovery_page``; a button in the
@@ -212,7 +212,7 @@ Search for ``show_abort_button``, ``show_termination_button``,
       def shows_error_recovery_page(self, plan):
           return plan.context is ExitContext.ERROR_RECOVERY
 
-  See :doc:`/experiment_development/configuration`.
+  See :doc:`/reference/configuration`.
 * Rename ``approve_assignment`` to ``submit_assignment`` and Prolific
   ``reject_assignment`` to ``request_return_for_bonus``.
 * ``ExecuteFrontEndJS`` no longer takes ``message``. It shows a spinner::
@@ -234,7 +234,7 @@ migration instructions in the error.
   ``show_reward = true`` to show it anyway where the recruiter allows.
 * Radio and checkbox options are full-width ``label.psynet-option`` rows.
   Restyle ``.psynet-option`` / ``.psynet-option-label`` instead of bare
-  ``label`` / ``input`` elements; see :doc:`/tutorials/theming`.
+  ``label`` / ``input`` elements; see :doc:`/guides/pages/theming`.
 
 13. Validate
 ------------
@@ -246,7 +246,7 @@ From a complete experiment directory. At minimum you typically need:
 * ``.gitignore``, ``deploy.toml``, and ``.python-version``
 
 If you are scaffolding from scratch, see
-:doc:`/tutorials/creating_a_new_experiment` or run ``psynet update-scripts``
+:doc:`/guides/project/creating_a_new_experiment` or run ``psynet update-scripts``
 to generate the standard support files.
 
 .. code-block:: console

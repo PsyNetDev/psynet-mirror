@@ -83,7 +83,7 @@ This means that, when the experiment is running, you can see each node as a row 
     SQLAlchemy is a Python library for interacting with databases.
     It has extensive documentation available at `sqlalchemy.org <https://www.sqlalchemy.org/>`_.
     However, if you want to learn more, you might want to start by reading
-    :doc:`/tutorials/introduction_to_sql_alchemy`.
+    :doc:`/guides/testing/introduction_to_sql_alchemy`.
 
 There are several ways to access nodes when the experiment is running:
 
@@ -313,8 +313,8 @@ assets created from local files, and assets created from functions.
 Both kinds are subclasses of :class:`~psynet.asset.Asset`,
 but we normally create them with the ``asset`` helper function (see below).
 
-For more detail beyond what is covered here, see the dedicated :doc:`/tutorials/assets`
-and :doc:`/tutorials/large_stimulus_sets` tutorials.
+For more detail beyond what is covered here, see the dedicated :doc:`/guides/trials/assets`
+and :doc:`/guides/trials/large_stimulus_sets` tutorials.
 
 Local file assets
 ~~~~~~~~~~~~~~~~~
@@ -473,7 +473,7 @@ There are two main alternatives:
 1. Place the files in the ``static`` directory and access them like ``/static/filename.mp3``.
 2. Upload the files to an external storage system and code the URLs directly into the experiment.
 
-For more detail on the second approach, see :doc:`/tutorials/large_stimulus_sets`.
+For more detail on the second approach, see :doc:`/guides/trials/large_stimulus_sets`.
 
 Interim conclusion
 ------------------
@@ -638,7 +638,7 @@ submitted. Completed trials are failed only when
 default) and the participant fails a performance check. Use
 ``recruit_mode="n_participants"`` or ``"n_trials"`` to control how many
 people or ratings you collect; do not fail submitted trials for that purpose.
-See :doc:`Participant and trial failure <../tutorials/participant_and_trial_failure>`.
+See :doc:`Participant and trial failure </guides/trials/participant_and_trial_failure>`.
 
 To implement a performance check, one needs to create a custom subclass for the trial maker,
 and define a custom ``performance_check`` method. Arbitrary logic is possible here,

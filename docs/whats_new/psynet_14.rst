@@ -46,5 +46,5 @@ PsyNet 14 is a breaking release for some custom frontends, recruiter
 configs, and leave/error-page APIs.
 
 * Human checklist: :doc:`/whats_new/upgrading_to_psynet_14`.
-* Patterns and examples: :doc:`/tutorials/writing_custom_frontends`.
+* Patterns and examples: :doc:`/guides/pages/writing_custom_frontends`.
 * In Cursor, ``/upgrade-to-psynet-14`` can walk the same checklist.

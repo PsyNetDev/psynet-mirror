@@ -71,7 +71,7 @@ We covered them in detail in the previous chapter, :doc:`pages`.
    browser document instead of reloading the whole page. This does not affect
    how you write ordinary timelines, but it does constrain custom page
    templates and custom front-end components. See
-   :doc:`../tutorials/writing_custom_frontends` for the fragment-template
+   :doc:`/guides/pages/writing_custom_frontends` for the fragment-template
    contract they must follow.
 
 Page makers
@@ -536,7 +536,7 @@ The redirect works differently depending on context:
 The redirect is skipped if the participant is already in an end branch or has
 already completed the experiment. Unfinished trials are failed; completed
 trials stay unless a performance check treats them as unusable. See
-:doc:`Participant and trial failure <../tutorials/participant_and_trial_failure>`.
+:doc:`Participant and trial failure </guides/trials/participant_and_trial_failure>`.
 
 
 Time estimates

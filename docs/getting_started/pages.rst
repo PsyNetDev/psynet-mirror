@@ -172,7 +172,7 @@ There are a few key features to point out in this example:
 - By default, the audio record control would start recording at the same time that the audio prompt
   starts. However, we've used the page's ``events`` parameter to specify that we instead want the
   ``recordStart`` event to be triggered 0.5 seconds after the ``promptEnd`` event.
-  See :doc:`/tutorials/event_management` for more information on event management.
+  See :doc:`/guides/pages/event_management` for more information on event management.
 - We've used the page's ``progress_display`` parameter to design a progress display that includes
   both a progress bar and some progress text. This is helpful for showing the participant what to do
   when.
@@ -192,7 +192,7 @@ There are a few key features to point out in this example:
     ``grey`` are mapped to the participant theme so they follow the palette
     and dark mode instead of the browser's primary red, green, and blue.
     Pass a hex value or a ``var(...)`` expression to use a colour as-is;
-    see :doc:`/tutorials/theming`.
+    see :doc:`/guides/pages/theming`.
 
 
 .. warning::
@@ -206,7 +206,7 @@ Available prompts and controls
 ------------------------------
 
 PsyNet ships with a variety of prompts and controls. The following list highlights some of the most
-common ones; for the full API, see :doc:`/api/modular_page`.
+common ones; for the full API, see :doc:`/reference/api/modular_page`.
 
 Prompts
 ^^^^^^^
@@ -253,8 +253,8 @@ Other:
 - :class:`~psynet.graphics.GraphicControl` - Programmatically generated animations the participant
   can interact with by clicking.
 
-For the full API reference and screenshots, see :doc:`/tutorials/modular_page` and
-:doc:`/api/modular_page`.
+For the full API reference and screenshots, see :doc:`/guides/pages/modular_page` and
+:doc:`/reference/api/modular_page`.
 
 Exercises
 ---------
@@ -367,7 +367,7 @@ supplies CSS and JavaScript through hooks such as ``get_css()`` /
 
 A complete walkthrough (including the ``ColorTextAreaControl`` example and
 ``activate(context)`` response handling) is in
-:doc:`/tutorials/writing_custom_frontends`.
+:doc:`/guides/pages/writing_custom_frontends`.
 
 **Exercise**: think of an interesting prompt or control that is not listed above.
 Implement it yourself using a custom template, and add it to ``demos/features/pages/``.
@@ -378,4 +378,4 @@ Event management
 PsyNet has a special event management system that is used to manage modular components with a
 temporal aspect (e.g. audio or video recorders). Most users don't need to worry about it, but it
 might be useful if you get heavily into the customization side of PsyNet.
-To learn more, read :doc:`/tutorials/event_management`.
+To learn more, read :doc:`/guides/pages/event_management`.

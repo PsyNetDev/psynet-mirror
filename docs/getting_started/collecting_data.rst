@@ -9,7 +9,7 @@ For a general introduction to Prolific, visit the `Prolific website <https://pro
 This page gives a Prolific-oriented walkthrough. If you are running a
 study as part of a lab workflow and want a broader checklist covering
 setup, recruiter choice, piloting, monitoring, exports, and teardown,
-see the :doc:`Lab research workflow </lab_deployments/index>`.
+see the :doc:`Lab research workflow </running_studies/workflow/index>`.
 
 .. To do - document alternative deployment methods here
 
@@ -133,7 +133,7 @@ Note that this relies on a Prolific feature (custom screening with fixed rewards
 documents as only enabled for selected workspaces; if your workspace lacks it, study creation
 fails and PsyNet logs a hint to disable the feature via ``prolific_pay_unsuccessful = false``.
 Deployments using this feature must set ``prolific_screen_out_slots``, which caps the automatic
-screen-out spending. See :doc:`../experiment_development/configuration` for details.
+screen-out spending. See :doc:`/reference/configuration` for details.
 
 If ``prolific_pay_unsuccessful`` is set to ``False``, PsyNet falls back to the older flow: if
 ``prolific_enable_return_for_bonus`` is set to ``True``
@@ -178,7 +178,7 @@ You should select the Prolific recruiter by setting the config parameter ``recru
 Also, for most users we recommend setting the ``auto_recruit`` parameter to ``false``, meaning that you will manually
 control the recruitment of participants via the Prolific interface rather than letting PsyNet manage it for you.
 You must also set ``prolific_screen_out_slots`` (a common choice is 10 times ``initial_recruitment_size``);
-deployment fails without it. See :doc:`../experiment_development/configuration`.
+deployment fails without it. See :doc:`/reference/configuration`.
 
 In summary, your config.txt might look something like this:
 
@@ -338,7 +338,7 @@ the experiment directory that the deployment came from: PsyNet checks this and
 refuses to export if the labels do not match.
 
 If the export fails, your previous export is left untouched, so it is always
-safe to retry. See :doc:`/deploy/data` for asset options.
+safe to retry. See :doc:`/running_studies/reference/data` for asset options.
 
 Once you're done, you can take down the experiment:
 

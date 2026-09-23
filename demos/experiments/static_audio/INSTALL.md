@@ -2,7 +2,7 @@
 
 This demo is a PsyNet experiment. Install PsyNet in a virtual environment and
 run it with the standard commands; see the
-[PsyNet installation docs](https://psynetdev.gitlab.io/PsyNet/installation/index.html).
+[PsyNet installation docs](https://psynetdev.gitlab.io/PsyNet/getting_started/installation/index.html).
 
 ```bash
 git init

@@ -1,4 +1,4 @@
-Introduction
+About PsyNet
 ============
 
 .. toctree::
@@ -6,6 +6,7 @@ Introduction
 
    overview
    applications
+   dallinger
+   docker
    history
    team
-   command_line

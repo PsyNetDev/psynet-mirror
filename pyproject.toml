@@ -105,6 +105,7 @@ dev = [
     "sphinx-autodoc-typehints<3.0.0",
     "sphinx-copybutton",
     "sphinx-inline-tabs",
+    "sphinx-reredirects",
     "virtualenv",
 ]
 slack = [

@@ -18,7 +18,7 @@ Software
 --------
 
 To work through this tutorial you will need a local installation of PsyNet.
-Please follow the :doc:`installation instructions <../installation/index>`
+Please follow the :doc:`installation instructions </getting_started/installation/index>`
 for your operating system before continuing.
 
 Please also make sure you have **Google Chrome** installed,

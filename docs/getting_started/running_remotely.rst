@@ -9,7 +9,7 @@ We will describe both approaches below.
 This page focuses on getting an experiment running on a remote server.
 If you are preparing a full lab deployment with recruiter setup,
 piloting, monitoring, export checks, and teardown, use the
-:doc:`Lab research workflow </lab_deployments/index>` as a companion
+:doc:`Lab research workflow </running_studies/workflow/index>` as a companion
 checklist.
 
 Before you start, you will likely need to create a ``.dallingerconfig`` file in your local machine's home directory.
@@ -19,7 +19,7 @@ Before you start, you will likely need to create a ``.dallingerconfig`` file in 
     touch ~/.dallingerconfig
 
 This ``.dallingerconfig`` file provides global configuration options for PsyNet and Dallinger
-(see :doc:`../experiment_development/configuration` for more details).
+(see :doc:`/reference/configuration` for more details).
 
 Setting up the server
 ---------------------

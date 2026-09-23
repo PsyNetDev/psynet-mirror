@@ -12,7 +12,7 @@ Bundled demos ship only their authored experiment files (plus an unpinned ``psyn
 ``requirements.txt``). Generated boilerplate and ``constraints.txt`` are intentionally omitted.
 
 You need **Git** and **uv** on your machine first (see
-:doc:`/tutorials/creating_a_new_experiment` for install links). Then initialize
+:doc:`/guides/project/creating_a_new_experiment` for install links). Then initialize
 Git and create a standalone environment for the copied demo:
 
 .. code-block:: bash

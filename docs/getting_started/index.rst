@@ -4,7 +4,10 @@ Getting started
 .. toctree::
    :maxdepth: 1
 
+   how_to_learn
    prerequisites
+   background_skills
+   installation/index
    running_a_demo_locally
    pipelines
    pages

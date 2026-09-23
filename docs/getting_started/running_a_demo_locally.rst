@@ -11,7 +11,7 @@ Setting up your environment
 ---------------------------
 
 Before continuing, make sure you have followed the
-:doc:`installation instructions <../installation/index>` for your operating system.
+:doc:`installation instructions </getting_started/installation/index>` for your operating system.
 
 You will then need a local checkout of the PsyNet repository so that you have access to its
 demos.
@@ -88,7 +88,7 @@ you should say Yes to these.
 If everything works properly, you should see two web pages.
 One is a participant interface, looking something like this:
 
-.. image:: ../getting_started/images/participant-interface.png
+.. image:: images/participant-interface.png
     :alt: Screenshot showing a participant interface in a PsyNet demo.
     :class: bordered
     :align: center
@@ -96,7 +96,7 @@ One is a participant interface, looking something like this:
 
 The other is an admin (dashboard) interface, looking something like this:
 
-.. image:: ../getting_started/images/admin-interface.png
+.. image:: images/admin-interface.png
     :alt: Screenshot showing an admin interface in a PsyNet demo.
     :class: bordered
     :align: center

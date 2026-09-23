@@ -970,7 +970,7 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         If that drops a ``SimpleSyncGroup`` below its minimum size, remaining
         members are failed immediately when
         ``fail_participants_below_min_size`` is True. See
-        :doc:`/tutorials/participant_and_trial_failure`.
+        :doc:`/guides/trials/participant_and_trial_failure`.
 
         Parameters
         ----------

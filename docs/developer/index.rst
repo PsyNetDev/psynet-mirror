@@ -1,5 +1,5 @@
-Contributing to PsyNet
-======================
+Contributing
+============
 
 .. toctree::
    :maxdepth: 1
@@ -12,8 +12,9 @@ Contributing to PsyNet
    prescreening_tasks
    updating_documentation
    future_work
-   ../tutorials/internationalization
+   /dashboards/translation
    running_tests
    asv_performance_tests
    sqlalchemy_performance
    making_a_release
+   Benchmarks <https://psynetdev.gitlab.io/PsyNet/benchmarks/>

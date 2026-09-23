@@ -2679,7 +2679,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         """Fail a still-working participant after a recruiter exit event.
 
         Recruiter abandonment, return, and reassignment are premature exits.
-        See :doc:`/tutorials/participant_and_trial_failure`.
+        See :doc:`/guides/trials/participant_and_trial_failure`.
         """
         if participant.complete:
             logger.info(

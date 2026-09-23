@@ -19,13 +19,9 @@ while placing minimal constraints on the complexity of the experiment design.
 
    introduction/index
    getting_started/index
-   learning/index
-   dependencies/index
-   installation/index
-   experiment_development/index
-   lab_deployments/index
+   guides/index
+   running_studies/index
+   examples/index
+   reference/index
    whats_new/index
-   deploy/index
    developer/index
-   dashboards/translation
-   Benchmarks <https://psynetdev.gitlab.io/PsyNet/benchmarks/>
