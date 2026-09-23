@@ -1,7 +1,7 @@
 .. _prerequisites:
 
-Prerequisites
-=============
+Background skills
+=================
 
 Before you can implement your own PsyNet experiments, you will need to invest some time in learning the programming
 language Python. Python is a very popular language, and there are many tutorials available online. You could consider

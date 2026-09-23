@@ -15,8 +15,8 @@ If participants exchange live actions or messages within a trial, also read
 - Read `references/source-notes.md` for the source map, platform notes, and
   practical caveats behind this skill.
 - Inspect current PsyNet docs and demos before coding:
-  `~/PsyNet/docs/tutorials/synchronization.rst`,
-  `~/PsyNet/docs/api/sync.rst`,
+  `~/PsyNet/docs/guides/multiplayer/synchronization.rst`,
+  `~/PsyNet/docs/reference/api/sync.rst`,
   `~/PsyNet/demos/experiments/simple_sync_group/`,
   `~/PsyNet/demos/experiments/create_rate_sync/`,
   `~/PsyNet/demos/experiments/rock_paper_scissors/`,

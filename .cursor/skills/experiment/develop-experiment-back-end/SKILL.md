@@ -64,7 +64,7 @@ same helpers as top-level names (``from adaptive_logic import select_item``).
 Run the design command from the experiment root. Keep runtime helpers beside
 ``experiment.py``; stock ``deploy.toml`` excludes ``audit/``.
 
-See ``docs/experiment_development/experiment_directory.rst``
+See ``docs/guides/project/experiment_directory.rst``
 ("Importing other Python files").
 
 ## Internationalization
