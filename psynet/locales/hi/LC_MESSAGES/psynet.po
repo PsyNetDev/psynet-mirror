@@ -440,8 +440,8 @@ msgid ""
 "You will receive a reward of <strong>{CURRENCY}{TIME_REWARD}</strong> for "
 "the time you spent. "
 msgstr ""
-"आपको पहले से बिताए गए समय के लिए <strong>{CURRENCY}{TIME_REWARD}</strong> का"
-" इनाम मिलेगा।"
+"आपको आपके द्वारा बिताए गए समय के लिए "
+"<strong>{CURRENCY}{TIME_REWARD}</strong> का इनाम मिलेगा।"
 
 #: psynet/end.py
 #, fuzzy, python-brace-format

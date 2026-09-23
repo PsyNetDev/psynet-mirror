@@ -813,9 +813,9 @@ msgid ""
 "far, a further {REMAINDER} will be paid as a bonus. Your responses so far "
 "will still be saved."
 msgstr ""
-"إذا غادرت الآن، لن تتمكن من المتابعة لاحقًا. ستتلقى دفعة ثابتة 'للفصل' بقيمة"
+"إذا غادرت الآن، لن تتمكن من المتابعة لاحقًا. ستتلقى دفعة ثابتة 'للفحص' بقيمة"
 " {FIXED}. نظرًا لأنك كسبت {EARNED} حتى الآن، سيتم دفع {REMAINDER} إضافية "
-"كمكافأة. سيتم حفظ إجاباتك حتى الآن."
+"كمكافأة. سيتم حفظ ردودك حتى الآن."
 
 #: psynet/recruiters.py
 #, fuzzy, python-brace-format
@@ -825,8 +825,8 @@ msgid ""
 " fixed 'screen-out' payment of {FIXED}. Your responses so far will still be "
 "saved."
 msgstr ""
-"إذا غادرت الآن، لن تتمكن من المتابعة لاحقًا. ستتلقى دفعة ثابتة 'للفصل' بقيمة"
-" {FIXED}. سيتم حفظ إجاباتك حتى الآن."
+"إذا غادرت الآن، لن تتمكن من المتابعة لاحقًا. ستتلقى دفعة ثابتة 'للفحص' بقيمة"
+" {FIXED}. سيتم حفظ ردودك حتى الآن."
 
 #: psynet/recruiters.py
 #, fuzzy, python-brace-format
@@ -837,9 +837,9 @@ msgid ""
 "{PERFORMANCE}. You will not be paid for additional time. Your responses so "
 "far will still be saved."
 msgstr ""
-"إذا غادرت الآن، لن تتمكن من المتابعة لاحقًا. ستتلقى دفعة ثابتة 'للفصل' بقيمة"
-" {FIXED} بالإضافة إلى مكافأة أداء بقيمة {PERFORMANCE}. لن يتم دفعك عن الوقت "
-"الإضافي. سيتم حفظ إجاباتك حتى الآن."
+"إذا غادرت الآن، لن تتمكن من المتابعة لاحقًا. ستتلقى دفعة ثابتة 'للفحص' بقيمة"
+" {FIXED} بالإضافة إلى مكافأة أداء بقيمة {PERFORMANCE}. لن يتم دفعك مقابل "
+"الوقت الإضافي. سيتم حفظ ردودك حتى الآن."
 
 #: psynet/recruiters.py
 #, fuzzy, python-brace-format
@@ -849,8 +849,8 @@ msgid ""
 " fixed 'screen-out' payment of {FIXED}. You will not be paid for additional "
 "time. Your responses so far will still be saved."
 msgstr ""
-"إذا غادرت الآن، لن تتمكن من المتابعة لاحقًا. ستتلقى دفعة ثابتة 'للفصل' بقيمة"
-" {FIXED}. لن يتم دفعك عن الوقت الإضافي. سيتم حفظ إجاباتك حتى الآن."
+"إذا غادرت الآن، لن تتمكن من المتابعة لاحقًا. ستتلقى دفعة ثابتة 'للفحص' بقيمة"
+" {FIXED}. لن يتم دفعك مقابل الوقت الإضافي. سيتم حفظ ردودك حتى الآن."
 
 #: psynet/recruiters.py
 #, fuzzy, python-brace-format

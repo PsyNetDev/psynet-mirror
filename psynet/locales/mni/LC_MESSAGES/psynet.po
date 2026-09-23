@@ -506,11 +506,12 @@ msgstr ""
 "Nongmada macha page-da chatkhiduna permissions request amuk hangdokpa "
 "ngammi; kari khangdoktuna pibiyu."
 
+# Needs native review: machine translation was unusable, English kept.
 #: psynet/experiment.py
 #, fuzzy
 msgctxt "timeline_problem"
 msgid "This session has already ended. Please reload the page."
-msgstr "Session asi khangdoktuna leitre. Page asi reload tou."
+msgstr "This session has already ended. Please reload the page."
 
 #: psynet/experiment.py
 #, fuzzy
@@ -523,10 +524,11 @@ msgstr ""
 "tab singda thokpibra? Tab sing adu khudingbu khangdoktuna page asi refresh "
 "tou."
 
+# Needs native review: machine translation was unusable, English kept.
 #: psynet/experiment.py
 #, fuzzy
 msgid "The experiment is temporarily busy. Please try again."
-msgstr "Experiment asi thawaina busy leire. Chahi hourak-u."
+msgstr "The experiment is temporarily busy. Please try again."
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -551,11 +553,12 @@ msgctxt "validation"
 msgid "You need to provide a number!"
 msgstr "আপুনি এটা সংখ্যা প্ৰদান কৰিব লাগিব!"
 
+# Needs native review: machine translation was unusable, English kept.
 #: psynet/page.py
 #, fuzzy
 msgctxt "status"
 msgid "Working..."
-msgstr "ꯋꯥꯔ꯭ꯀꯤꯡ..."
+msgstr "Working..."
 
 #: psynet/prescreen/__init__.py
 #, fuzzy
@@ -3191,11 +3194,12 @@ msgstr "Consent phangbada ngammi oirabadi, page asi close touru."
 msgid "Reset"
 msgstr "ꯔꯦꯁꯦꯇꯁꯤ"
 
+# Needs native review: machine translation was unusable, English kept.
 #: psynet/templates/macros/control.html
 #, fuzzy
 msgctxt "audio_meter"
 msgid "Microphone level"
-msgstr "ꯃꯥꯏꯀꯔꯣꯐꯣꯟ ꯂꯦꯚꯦꯜ"
+msgstr "Microphone level"
 
 #: psynet/templates/macros/control.html
 #, fuzzy
@@ -3343,23 +3347,26 @@ msgctxt "timeline"
 msgid "Reward"
 msgstr "ꯑꯃꯥ ꯂꯣꯟꯕ"
 
+# Needs native review: machine translation was unusable, English kept.
 #: psynet/templates/macros/timeline-shell.html
 #, fuzzy
 msgctxt "timeline_reward"
 msgid "Reward earned so far"
-msgstr "ꯑꯃꯥ ꯂꯣꯟꯕ"
+msgstr "Reward earned so far"
 
+# Needs native review: machine translation was unusable, English kept.
 #: psynet/templates/macros/timeline-shell.html
 #, fuzzy
 msgctxt "timeline_reward"
 msgid "for time"
-msgstr "ꯑꯃꯥ ꯂꯣꯟꯕ"
+msgstr "for time"
 
+# Needs native review: machine translation was unusable, English kept.
 #: psynet/templates/macros/timeline-shell.html
 #, fuzzy
 msgctxt "timeline_reward"
 msgid "for performance"
-msgstr "ꯑꯃꯥ ꯂꯣꯟꯕ"
+msgstr "for performance"
 
 #: psynet/templates/macros/timeline-shell.html
 #, fuzzy
@@ -3367,17 +3374,19 @@ msgctxt "timeline"
 msgid "Comment"
 msgstr "ꯑꯃꯥ ꯂꯣꯟꯕ"
 
+# Needs native review: machine translation was unusable, English kept.
 #: psynet/templates/macros/timeline-shell.html
 #, fuzzy
 msgctxt "timeline_problem"
 msgid "Leave"
-msgstr "ꯑꯃꯥ ꯂꯣꯟꯕ"
+msgstr "Leave"
 
+# Needs native review: machine translation was unusable, English kept.
 #: psynet/templates/macros/timeline-shell.html
 #, fuzzy
 msgctxt "timeline_problem"
 msgid "Leave without finishing."
-msgstr "ꯑꯃꯥ ꯂꯣꯟꯕ"
+msgstr "Leave without finishing."
 
 #: psynet/templates/psynet_error.html
 #, fuzzy
@@ -3402,30 +3411,33 @@ msgstr "আনবােৰ চেষ্টা কৰক"
 msgid "Thank you for taking part."
 msgstr "Khangbire nakhoigi leppa aduda."
 
+# Needs native review: machine translation was unusable, English kept.
 #: psynet/templates/psynet_exit_recruiter.html
 #, fuzzy
 msgctxt "exit"
 msgid "You chose to leave."
-msgstr "Nakhoina chatkhre."
+msgstr "You chose to leave."
 
 #: psynet/templates/psynet_exit_recruiter.html
 #, fuzzy
 msgid "Thank you for taking part."
 msgstr "Khangbire nakhoigi leppa aduda."
 
+# Needs native review: machine translation was unusable, English kept.
 #: psynet/templates/psynet_exit_recruiter.html
 #, fuzzy
 msgctxt "exit"
 msgid "You may close this page."
-msgstr "Nakhoina page asi khudong chaba ngammi."
+msgstr "You may close this page."
 
+# Needs native review: machine translation was unusable, English kept.
 #: psynet/templates/psynet_exit_recruiter.html
 #, fuzzy
 msgctxt "exit"
 msgid "Your responses have been saved. You may close this page."
-msgstr ""
-"Nakhoigi khudol adu save toukhringe. Nakhoina page asi khudong chaba ngammi."
+msgstr "Your responses have been saved. You may close this page."
 
+# Needs native review: machine translation was unusable, English kept.
 #: psynet/templates/psynet_exit_recruiter.html
 #, fuzzy
 msgctxt "exit"

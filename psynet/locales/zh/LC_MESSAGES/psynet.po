@@ -2930,7 +2930,7 @@ msgstr "离开"
 #, fuzzy
 msgctxt "timeline_problem"
 msgid "Leave without finishing."
-msgstr "未完成离开。"
+msgstr "未完成就离开。"
 
 #: psynet/templates/psynet_error.html
 #, fuzzy

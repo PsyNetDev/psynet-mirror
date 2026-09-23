@@ -505,11 +505,12 @@ msgid ""
 msgstr ""
 "Hena agan page-ko cegiakena permissions request dekha menak'na; dobar do."
 
+# Needs native review: machine translation was unusable, English kept.
 #: psynet/experiment.py
 #, fuzzy
 msgctxt "timeline_problem"
 msgid "This session has already ended. Please reload the page."
-msgstr "Encha session sesh ho geche. Kripaya page ko reload korya."
+msgstr "This session has already ended. Please reload the page."
 
 #: psynet/experiment.py
 #, fuzzy
@@ -521,10 +522,11 @@ msgstr ""
 "Synchronization samasya pao geche. Apne ki ekai experiment ko anek browser "
 "tab re chala reya? Kripaya sab tab band korya encha page ko refresh korya."
 
+# Needs native review: machine translation was unusable, English kept.
 #: psynet/experiment.py
 #, fuzzy
 msgid "The experiment is temporarily busy. Please try again."
-msgstr "Experiment samayik busy ache. Kripaya abar chesta korya."
+msgstr "The experiment is temporarily busy. Please try again."
 
 #: psynet/modular_page.py
 #, fuzzy
