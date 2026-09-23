@@ -868,7 +868,9 @@ async function assertWaiterReleasedWithLastArriver(
     allowWebsocketResume = false,
     // Partners overlay-hop stacked waits after last-arrival. Each remaining
     // hold (grouper, init, prepare) can need its own hold-resume POST.
-    maxHoldResumePosts = 3
+    // Concurrent last arrivals can add a fourth still-on-hold POST before
+    // ModularPage.
+    maxHoldResumePosts = 4
   } = {}
 ) {
   const resume = await session.resumePromise;
