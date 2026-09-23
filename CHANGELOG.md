@@ -1,6 +1,6 @@
 # CHANGELOG
 
-## [14.0.0rc1](https://gitlab.com/PsyNetDev/PsyNet/-/tags/v14.0.0rc1) Release candidate - 2026-09-22
+## [14.0.0rc1](https://gitlab.com/PsyNetDev/PsyNet/-/tags/v14.0.0rc1) Release candidate - 2026-09-23
 
 ### Breaking Changes
 
