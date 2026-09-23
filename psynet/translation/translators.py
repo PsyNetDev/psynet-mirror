@@ -6,6 +6,11 @@ import tenacity
 
 from psynet.utils import get_config, get_descendent_class_by_name, get_language_dict
 
+# Source files are quoted into the translation prompt for context. Large modules
+# (``psynet/recruiters.py`` is ~150 kB) would otherwise dominate every request
+# for that file and make translation runs disproportionately slow.
+MAX_SOURCE_CONTEXT_CHARS = 20_000
+
 
 class Translator:
     nickname = None
@@ -61,6 +66,7 @@ class Translator:
                         raise InvalidTranslationError(
                             f"Number of translated texts for '{target_lang}' does not match number of input texts: {len(translated_texts)} != {len(texts)}."
                         )
+                    break
                 except Exception as e:
                     if i == n_retries - 1:
                         raise e
@@ -295,10 +301,11 @@ class ChatGptTranslator(Translator):
         )
 
         if file_path is not None and os.path.exists(file_path):
+            prompt += f"\n\nThe translations are taken from {file_path}."
             with open(file_path, "r") as f:
-                prompt += (
-                    f"\n\nThe translations are taken from {file_path}:\n\n{f.read()}"
-                )
+                source = f.read()
+            if len(source) <= MAX_SOURCE_CONTEXT_CHARS:
+                prompt += f"\n\n{source}"
 
         return prompt
 
