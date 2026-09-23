@@ -7,9 +7,8 @@ Experiment lifecycle
 Experiments follow a relatively fixed lifecycle.
 
 -  :ref:`Design <lab-deployment-design>`: Start with a research question and design an
-   experiment that can answer it. Discuss the design with collaborators,
-   lab members, or ``#online-experiments`` on Slack before
-   implementation.
+   experiment that can answer it. Discuss the design with collaborators
+   and lab members before implementation.
 
 -  :ref:`Test <lab-deployment-test>`: Test the experiment automatically, on yourself, and
    with a small set of colleagues or friends.
@@ -33,7 +32,7 @@ Experiments follow a relatively fixed lifecycle.
 -  :doc:`Teardown <teardown>`: If you used an EC2 server, turn it off
    when you are done.
 
-.. image:: /_static/images/lab_deployments/image7.png
+.. image:: /_static/images/running_studies/general_deployment_process/experiment-lifecycle.png
    :width: 8.5in
 
 .. _lab-deployment-design:
@@ -58,15 +57,9 @@ We recommend the following procedure:
    some of the relevant components. You may need building blocks from
    multiple demos, or in some cases custom PsyNet functionality.
 
--  A central philosophy of a healthy lab workflow is to help each other
-   get unstuck.
-   If you encounter a technical or design problem and have already spent
-   a reasonable amount of time on it, ask for help:
-
-   -  Post technical problems in ``#psynet-support`` or design questions
-      in ``#online-experiments`` on Slack.
-
-   -  Raise the issue during standing.
+-  If you encounter a technical or design problem and have already spent
+   a reasonable amount of time on it, ask for help; see
+   :doc:`getting_help`.
 
 .. _lab-deployment-test:
 .. _testing-within-the-group:
@@ -132,28 +125,5 @@ The command you normally run from the experiment directory is:
 Recruiters
 ----------
 
-We currently use three recruiters: **Prolific, CINT, and Lab Recruiter
-(LR).** Please decide which one to use.
-
--  `Prolific <https://www.prolific.com/>`__ offers a high-quality,
-   diverse participant pool, ideal for academic and market research.
-
--  `CINT <https://www.cint.com/>`__ provides access to a larger
-   participant pool, making it particularly useful for recruiting
-   participants across different countries and languages, allowing
-   for more culturally diverse studies. The provisioning steps for
-   both platforms are identical. For detailed instructions, please
-   refer to the recruiter-specific steps for Prolific and CINT. Note that
-   Lucid was recently acquired by CINT, a large global recruiter.
-
--  **Lab Recruiter** (LR) is an internally established recruitment
-   system that offers full control over participant selection without
-   third-party involvement. Labs that run their own Lab Recruiter
-   instance can use it to recruit from their own participant pool.
-
-For configuration keys such as ``recruiter``, ``wage_per_hour``,
-``base_payment``, ``initial_recruitment_size``, and
-``soft_max_experiment_payment``, see the
-:doc:`configuration reference </reference/configuration>`.
-For the order of recruiter-specific setup checks, continue to
-:doc:`recruiter_specific_deployment_steps`.
+Decide which recruiter you will use before finalizing the experiment
+configuration; see :doc:`recruiters/index`.

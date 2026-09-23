@@ -4,15 +4,6 @@ Prerequisites (one-time setup)
 This page describes the one-time setup required to run experiments using
 the lab deployment workflow. You only need to complete this setup once.
 
-PsyNet installation
--------------------
-
-Install PsyNet before following the lab deployment workflow. Most users
-should follow the :ref:`official installation guide <installation>`,
-which covers the supported virtual-environment setup. The Docker
-installation route is documented separately but is considered legacy for
-new users.
-
 Required software and accounts
 ------------------------------
 
@@ -22,9 +13,7 @@ complete:
 - Install PsyNet using the :ref:`official installation guide
   <installation>`.
 - Set up your editor using the :ref:`development workflow
-  <development_workflow>`. Cursor is the strongest recommendation;
-  VSCode is the closest alternative; PyCharm is supported but no longer
-  the default recommendation.
+  <development_workflow>`.
 - Learn the Git workflow using the :doc:`PsyNet Git tutorial
   </guides/project/version_control_with_git>`.
   Your experiment should be in a Git repository, committed, and pushed
@@ -77,7 +66,7 @@ archive containing both files.
 2. Inside the archive there will be an encrypted file containing your
    credentials:
 
-   .. image:: /_static/images/lab_deployments/image2.png
+   .. image:: /_static/images/running_studies/prerequisites/set-credentials-and-server-access-keys.png
       :width: 8.5in
 
 3. Enter the password provided by your lab administrator to decrypt the

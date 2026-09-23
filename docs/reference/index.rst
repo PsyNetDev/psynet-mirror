@@ -6,4 +6,5 @@ Reference
 
    configuration
    command_line
+   glossary
    api/index

@@ -4,7 +4,7 @@ Pre-launch setup overview
 This page is a summary of the checks to complete before launching your
 experiment. Each section links to the detailed documentation where you
 can find full instructions. Recruiter-specific instructions are covered
-in :doc:`Recruiter-specific steps <recruiter_specific_deployment_steps>`.
+in :doc:`Recruiter-specific steps <recruiters/index>`.
 
 Define the experiment configuration
 -----------------------------------
@@ -50,7 +50,7 @@ different setup requirements:
 - :ref:`Lab Recruiter <lab-deployment-lab-recruiter>`.
 
 After choosing the recruiter, read the matching section in
-:doc:`Recruiter-specific steps <recruiter_specific_deployment_steps>`
+:doc:`Recruiter-specific steps <recruiters/index>`
 and configure all recruiter-specific settings.
 
 Test the experiment

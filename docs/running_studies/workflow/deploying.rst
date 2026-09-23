@@ -59,11 +59,11 @@ Run the deployment command
 -  Set the ``recruiter`` config parameter to the intended live recruiter,
    for example ``prolific`` or ``lucid``. Note: PsyNet still uses the
    name ``lucid`` internally for CINT deployments; consult the
-   :doc:`recruiter-specific steps <recruiter_specific_deployment_steps>`
+   :doc:`recruiter-specific steps <recruiters/index>`
    for the correct value for your recruiter.
 
 -  Double-check all settings mentioned in
-   :doc:`recruiter-specific steps <recruiter_specific_deployment_steps>`.
+   :doc:`recruiter-specific steps <recruiters/index>`.
 
 -  Deploy from the experiment directory, choosing the server according
    to your setup; see :doc:`Provisioning <provisioning>`. For the full

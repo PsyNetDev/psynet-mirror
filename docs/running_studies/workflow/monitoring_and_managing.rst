@@ -7,7 +7,7 @@ recruitment.
 
 This section provides general guidelines. Recruiter-specific details
 (Prolific, CINT, Lab Recruiter) can be found in their
-:doc:`respective sections <recruiter_specific_deployment_steps>`.
+:doc:`respective sections <recruiters/index>`.
 For the full deployment monitor reference, see
 :doc:`Deployment monitor </running_studies/reference/deployment_monitor>`.
 
