@@ -20,7 +20,6 @@ setup, piloting, monitoring participants, and teardown, see the
    aws_server_setup
    physical_server_setup
    ssh_server
-   heroku_server
    deploy_from_archive
    deploy_tokens
    data

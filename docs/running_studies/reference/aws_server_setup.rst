@@ -4,8 +4,8 @@
 Setting up an AWS server
 ========================
 
-If you want to deploy your experiments online but don't want the cost of
-Heroku, another option is to set up a server on Amazon Web Services (AWS).
+One way to deploy your experiments online is to set up a server on
+Amazon Web Services (AWS).
 This can cost quite a lot less, perhaps $30 or so a month assuming you leave
 the server running all the time (but check the AWS documentation to confirm
 exact pricing.

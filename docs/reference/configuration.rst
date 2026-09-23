@@ -807,66 +807,29 @@ EC2
 ``ec2_default_security_group`` *str* |dlgr-icon|
     Default security group for EC2 instances. Default: ``dallinger``.
 
-Heroku
-~~~~~~
-
-``database_size`` *str* |dlgr-icon|
-    Size of the database on Heroku. See `Heroku Postgres plans <https://devcenter.heroku.com/articles/heroku-postgres-plans>`__.
+Web server
+~~~~~~~~~~
 
 ``database_url`` *str* |dlgr-icon| |sensitive-icon|
     URI of the Postgres database.
 
-``dyno_type`` *str* |dlgr-icon|
-    Heroku dyno type to use. See `Heroku dynos types <https://devcenter.heroku.com/articles/dyno-types>`__.
-
-``dyno_type_web`` *str* |dlgr-icon|
-    This determines how powerful the heroku web dynos are. It applies only to web dynos
-    and will override the default set in ``dyno_type``. See ``dyno_type`` above for details
-    on specific values.
-
-``dyno_type_worker`` *str* |dlgr-icon|
-    This determines how powerful the heroku worker dynos are. It applies only to worker
-    dynos and will override the default set in ``dyno_type``.. See ``dyno_type`` above for
-    details on specific values.
-
-``heroku_python_version`` *str* |dlgr-icon|
-    The python version to be used on Heroku deployments. The version specification will
-    be deployed to Heroku in a `runtime.txt` file in accordance with Heroku's deployment
-    API. Note that only the version number should be provided (eg: ``3.11.5``) and not the
-    ``python-`` prefix included in the final `runtime.txt` format.
-    See `Heroku supported runtimes <https://devcenter.heroku.com/articles/python-support#supported-python-versions>`__.
-
-``heroku_region`` *str* |dlgr-icon|
-    The Heroku region for deployment. Default: ``None``.
-
-``heroku_team`` *str* |dlgr-icon|
-    The name of the Heroku team to which all applications will be assigned.
-    This is useful for centralized billing. Note, however, that it will prevent
-    you from using free-tier dynos.
-
 ``num_dynos_web`` *int* |dlgr-icon|
-    Number of Heroku dynos to use for processing incoming HTTP requests. It is
-    recommended that you use at least two.
+    Number of web processes started when the experiment runs locally
+    (for example by ``psynet test local``). It is recommended that you use at least two.
 
 ``num_dynos_worker`` *int* |dlgr-icon|
-    Number of Heroku dynos to use for performing other computations.
-
-``redis_size`` *str* |dlgr-icon|
-    Size of the redis server on Heroku. See `Heroku Redis <https://elements.heroku.com/addons/heroku-redis>`__.
-
-``sentry`` *bool* |dlgr-icon|
-    When set to ``True`` enables the `Sentry` (https://sentry.io/) Heroku addon for performance monitoring of experiments. Default: ``False``.
+    Number of worker processes started when the experiment runs locally.
 
 ``threads`` *str* |dlgr-icon|
-    The number of gunicorn web worker processes started per Heroku CPU count.
+    The number of gunicorn web worker processes to start.
     When given the default value of ``auto`` the number of worker processes will be calculated
     using the formula ``round(multiprocessing.cpu_count() * worker_multiplier)) + 1`` by making use
     of the ``worker_multiplier`` config variable. Default: ``auto``.
 
 ``worker_multiplier`` *float* |dlgr-icon|
     Multiplier used to determine the number of gunicorn web worker processes
-    started per Heroku CPU count. Reduce this if you see Heroku warnings
-    about memory limits for your experiment. Default: ``1.5``.
+    started per CPU. Reduce this if your server runs out of memory.
+    Default: ``1.5``.
 
 For help on choosing appropriate configuration variables, also see this Dallinger documentation page at https://dallinger.readthedocs.io/latest/configuration.html#choosing-configuration-values
 
@@ -997,12 +960,6 @@ Misc (internal) variables
 
 ``EXPERIMENT_CLASS_NAME`` *str* |dlgr-icon|
     Config variable to manually set an experiment class name.
-
-``heroku_app_id_root`` *str* |dlgr-icon|
-    Internally used only.
-
-``heroku_auth_token`` *str* |dlgr-icon|
-    The Heroku authentication token. Internally used only and set automatically.
 
 ``id`` *str* |dlgr-icon|
     Internally used only.

@@ -36,19 +36,13 @@ The following code runs an experiment in debug mode on your local computer:
     psynet debug local
 
 The following code runs an experiment in debug mode on your own web server, via SSH;
-this will push the experiment code to Heroku, but won't recruit any participants,
+this will push the experiment code to the server, but won't recruit any participants,
 even if your recruiter is set to ``prolific``.
 Note the specification of an app name.
 
 .. code:: bash
 
     psynet debug ssh --app my-app-name
-
-This code does the same, but provisioning the web server automatically via the paid service Heroku:
-
-.. code:: bash
-
-    psynet debug heroku --app my-app-name
 
 
 .. _deploy:
@@ -60,8 +54,7 @@ This command deploys an experiment, and enable the recruiter so you can collect 
 
 .. code:: bash
 
-    psynet deploy ssh --app my-app-name  # for deploying via SSH
-    psynet deploy heroku --app my-app-name  # for deploying via Heroku
+    psynet deploy ssh --app my-app-name
 
 (Experimental): It is possible to deploy an experiment that resurrects the state of a previous
 experiment deployment. To do this you add ``--archive path/to/database.zip`` where
@@ -97,7 +90,6 @@ This command export data from an experiment. The data is saved by default to ``~
 
     psynet export local
     psynet export ssh --app my-app-name
-    psynet export heroku --app my-app-name
 
 To see further options for the export command (e.g. if you want to control the export of assets),
 append ``--help`` to these commands:
@@ -106,7 +98,6 @@ append ``--help`` to these commands:
 
     psynet export local --help
     psynet export ssh --help
-    psynet export heroku --help
 
 For more information on PsyNet data export see :doc:`/running_studies/reference/data`.
 
@@ -229,7 +220,7 @@ Virtualenv ``psynet debug local`` expects PostgreSQL and Redis on localhost
 is down. ``ensure`` does the same check, then offers to start Docker containers
 that publish those host ports (``--yes`` skips the prompt). ``psynet debug``,
 ``psynet deploy``, and ``psynet test local`` call ``ensure`` automatically
-before launch or packaging, including SSH/Heroku paths that still prepare the
+before launch or packaging, including SSH deployments that still prepare the
 experiment against local Postgres/Redis on this machine.
 
 

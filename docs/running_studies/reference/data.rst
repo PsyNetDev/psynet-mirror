@@ -45,7 +45,6 @@ using a virtual environment with the same dependencies as the deployed experimen
 
     psynet export local
     psynet export ssh --app my-app-name
-    psynet export heroku --app my-app-name
 
 The latest export is saved to ``exports/latest/`` in the experiment directory.
 A new export is assembled in a temporary staging directory and only moved into
@@ -123,7 +122,7 @@ data into a local database. PsyNet then picks the cheapest way to transfer the
 result, and tells you which one it used:
 
 * **Complete archive.** The server builds ``export.zip`` and streams it to your
-  computer. This is used for Heroku and for any
+  computer. This is used for any
   deployment whose asset bytes PsyNet cannot copy directly (for example
   S3-backed storage).
 * **Incremental transfer.** For SSH deployments whose assets live in

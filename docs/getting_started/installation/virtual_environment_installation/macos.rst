@@ -100,8 +100,14 @@ Then paste those two lines beginning with "export" at the bottom of the file (as
    If you skip this step you might see error messages like "symbol not found in flat namespace '_PQbackendPID'"
    once you try and run PsyNet.
 
-Install Heroku
-~~~~~~~~~~~~~~
+Install the Heroku CLI
+~~~~~~~~~~~~~~~~~~~~~~
+
+.. note::
+
+   PsyNet's local test runner (``psynet test local``) uses the Heroku CLI's
+   ``heroku local`` process manager, so install the CLI even though you will
+   not deploy to Heroku. You do not need a Heroku account.
 
 .. code-block:: bash
 

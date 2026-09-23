@@ -107,8 +107,15 @@ Password: *dallinger*
 
    sudo service postgresql reload
 
-Install heroku client
-~~~~~~~~~~~~~~~~~~~~~
+
+Install the Heroku CLI
+~~~~~~~~~~~~~~~~~~~~~~
+
+.. note::
+
+   PsyNet's local test runner (``psynet test local``) uses the Heroku CLI's
+   ``heroku local`` process manager, so install the CLI even though you will
+   not deploy to Heroku. You do not need a Heroku account.
 
 .. code-block:: bash
 

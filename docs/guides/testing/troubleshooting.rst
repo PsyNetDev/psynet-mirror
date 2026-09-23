@@ -176,8 +176,11 @@ Finally you can reinstall Postgres:
    brew install postgresql@14
    brew services start postgresql@14
 
-Heroku Startup Error / CLI not responding
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Heroku CLI not responding (local tests)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+``psynet test local`` starts the experiment with the Heroku CLI's ``heroku local``
+command, so a broken Heroku CLI installation can stop local tests from starting.
 
 
 If you're experiencing issues with Heroku CLI not responding or encountering errors, you can try uninstalling and reinstalling it first. After that, enable debugging environment variables to get more detailed logs and information about what might be going wrong. This can help you diagnose and resolve the problem more effectively.
@@ -194,7 +197,7 @@ If the CLI is not responding or you're experiencing issues, you can try uninstal
 
     brew install heroku/brew/heroku
 
-After uninstalling and reinstalling the CLI, try running the Heroku command again.
+After uninstalling and reinstalling the CLI, try running your tests again.
 
 If the issue persists, open your terminal and set the following environment variables to enable debugging:
 

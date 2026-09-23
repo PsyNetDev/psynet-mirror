@@ -69,7 +69,7 @@
   "deploy/deploy_from_archive": "running_studies/reference/deploy_from_archive",
   "deploy/deployment_monitor": "running_studies/reference/deployment_monitor",
   "deploy/errors": "running_studies/reference/errors",
-  "deploy/heroku_server": "running_studies/reference/heroku_server",
+  "deploy/heroku_server": "running_studies/reference/web_servers",
   "deploy/index": "running_studies/reference/index",
   "deploy/physical_server_setup": "running_studies/reference/physical_server_setup",
   "deploy/ssh_server": "running_studies/reference/ssh_server",

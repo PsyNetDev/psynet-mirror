@@ -56,8 +56,9 @@ Local agents should check for their availability and install if necessary.
   Verify with `psql -h localhost -U dallinger -d dallinger`.
 - **Redis**: Install the Redis server, ensure it is running, and verify with
   `redis-cli ping` (expect `PONG`).
-- **Heroku CLI**: Install the CLI so `heroku` commands are available and verify
-  with `heroku --version`.
+- **Heroku CLI**: Install the CLI and verify with `heroku --version`.
+  `psynet test local` uses its `heroku local` process manager; no Heroku
+  account is needed.
 - **Chromedriver**: Leave uninstalled by default; only install it if you need
   browser automation.
 

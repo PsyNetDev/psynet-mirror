@@ -1,10 +1,9 @@
 Web servers
 ===========
 
-PsyNet experiments currently support three main modes of deployment:
+PsyNet experiments currently support two main modes of deployment:
 
 - SSH to a custom server
-- Heroku
 - Local computer
 
 SSH to a custom server
@@ -19,18 +18,6 @@ or `Amazon Web Services <https://aws.amazon.com/>`_.
 It's recommended to find a server with at least 16 GB of RAM.
 There is then a built-in Dallinger command that connects to this server and
 makes it ready for hosting experiments: ``dallinger docker-ssh servers add``.
-
-Heroku
-------
-
-An alternative approach is to deploy experiments using
-`Heroku <https://heroku.com/>`_.
-Heroku is a cloud computing services provider that helps to orchestrate deployments
-of web apps. The advantage of using Heroku is that it performs the provisioning for you,
-i.e. spinning up web-servers when you launch the experiment and taking them down once you've
-finished. However, it comes with a big pricing disadvantage: running a Heroku experiment for
-a month could cost hundreds or even thousands of dollars, depending on the size of server provisioned.
-In contrast, the custom server approach should only cost tens of dollars.
 
 Local computer
 --------------
