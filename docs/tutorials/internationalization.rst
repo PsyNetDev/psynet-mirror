@@ -201,7 +201,8 @@ Revising translations
 
 When you run ``psynet translate``, existing translations, fuzzy or not, are kept for as long as their
 input text and context are unchanged. To get a new machine translation for a text, delete its translation in POEdit
-and run ``psynet translate`` again; ``psynet translate --force`` retranslates everything.
+and run ``psynet translate`` again. ``psynet translate --force`` retranslates everything, discarding
+translations you have already reviewed.
 Texts that no longer occur in the source code will be removed from the translation files.
 PsyNet does not make any backup of your translations, so make sure you include your experiments `locales`
 directory in your experiment's git repository and commit your changes regularly.

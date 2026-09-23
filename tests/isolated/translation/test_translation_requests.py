@@ -151,20 +151,23 @@ def test_only_new_messages_are_sent_in_batches_per_file():
     old_po = polib.POFile()
     old_po.append(_entry("Back", "consent.html", "", "navigation", "Retour"))
     old_po.append(_entry("I agree", "consent.html", "", "consent", "J'accepte"))
+    old_po.append(_entry("Leave", "consent.html", "", "consent", "Leave"))
 
     po = polib.POFile()
     po.append(_entry("Back", "consent.html", 1, "navigation"))
     po.append(_entry("I agree", "consent.html", 2, "consent"))
-    po.append(_entry("I disagree", "consent.html", 3, "consent"))
+    po.append(_entry("Leave", "consent.html", 3, "consent"))
+    po.append(_entry("I disagree", "consent.html", 4, "consent"))
     po.append(_entry("Save", "recruiters.py", 5, "lucid"))
     for i in range(MAX_BATCH_SIZE + 1):
         po.append(_entry(f"Country {i}", "countries.py", i + 1, "country_name"))
 
-    assert reuse_translations(po, old_po) == 2
+    assert reuse_translations(po, old_po) == 3
     consent, recruiters, *countries = batch_untranslated(po)
 
     assert [e.msgid for e in consent.entries] == ["I disagree"]
     assert consent.examples[0] == ("I agree", "J'accepte")
+    assert ("Leave", "Leave") not in consent.examples
     assert recruiters.file == "recruiters.py"
     assert [len(b.entries) for b in countries] == [MAX_BATCH_SIZE, 1]
 
