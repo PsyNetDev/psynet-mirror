@@ -183,7 +183,8 @@ at most 30 texts per request. ChatGPT also receives, for disambiguation:
 
 - the context label of each text (see :ref:`Contexts <i18n_contexts>` below),
 - existing translations from the same file, so that new translations use consistent terminology,
-- the source code of the file, or for large files the lines around each text.
+- the source code of the file, or for large files the lines around each text,
+- the script the language should be written in, from CLDR (e.g. Ol Chiki for Santali).
 
 
 Manual checking

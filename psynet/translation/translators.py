@@ -349,6 +349,22 @@ def source_context_for_prompt(
     return "\n\n".join(blocks)
 
 
+def _script_name(locale: str) -> Optional[str]:
+    """
+    The English name of the script CLDR expects for ``locale``, e.g. Ol Chiki for Santali.
+
+    Some languages are written in several scripts; without this, the model may
+    switch scripts between requests.
+    """
+    from babel import Locale
+    from babel.core import get_global
+
+    parts = get_global("likely_subtags").get(locale, "").split("_")
+    if len(parts) < 3:
+        return None
+    return Locale("en").scripts.get(parts[1])
+
+
 def _response_format(ids: List[str]) -> dict:
     """JSON schema that makes the model return exactly one translation per id."""
     return {
@@ -375,6 +391,7 @@ class ChatGptTranslator(Translator):
         source_language: str,
         target_language: str,
         context: Optional[TranslationContext] = None,
+        script: Optional[str] = None,
     ):
         prompt = (
             f"You translate user-interface text from {source_language} to {target_language}. "
@@ -386,6 +403,8 @@ class ChatGptTranslator(Translator):
             "Each item has a text to translate and may have a label naming the part of the interface the text belongs to. "
             "Return a JSON object that maps the same ids to the translations of the texts."
         )
+        if script:
+            prompt += f" Write the translations in the {script} script."
         if context is None:
             return prompt
 
@@ -452,7 +471,10 @@ class ChatGptTranslator(Translator):
                 {
                     "role": "system",
                     "content": self.get_system_prompt(
-                        source_language, target_language, context
+                        source_language,
+                        target_language,
+                        context,
+                        script=_script_name(target_lang),
                     ),
                 },
                 {

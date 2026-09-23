@@ -15,6 +15,7 @@ from psynet.translation.translators import (
     TranslationContext,
     Translator,
     _response_format,
+    _script_name,
 )
 
 
@@ -114,6 +115,17 @@ def test_system_prompt_includes_existing_translations():
     )
 
     assert "J'accepte" in prompt
+
+
+def test_system_prompt_names_the_locale_script():
+    assert _script_name("sat") == "Ol Chiki"
+    assert _script_name("od") is None
+
+    prompt = ChatGptTranslator().get_system_prompt(
+        "English", "Santali", script=_script_name("sat")
+    )
+
+    assert "Ol Chiki script" in prompt
 
 
 def test_response_format_requires_exactly_one_translation_per_text():
