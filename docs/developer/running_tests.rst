@@ -269,6 +269,17 @@ source validation, accumulated answers, named answer variables, and rollback.
 Validation sees recording metadata with empty ID/URL placeholders; acceptance
 installs the final references before saving the answer and calling
 :meth:`~psynet.timeline.Page.on_complete`.
+
+The document queue allows 256 MiB by default, enough for two recordings at the
+128 MiB per-source limit. Before submitting, the browser checks both sources
+against the remaining shared capacity, including uploads from earlier pages.
+For example, with 200 MiB already queued, a new 40 MiB camera clip fits but a
+second 40 MiB screen clip is recorded as unavailable. No queued clip is evicted.
+Missing captures, oversized clips, queue exhaustion, and upload-module load errors
+are recorded with the accepted answer. Independent navigation continues; the
+server fails the affected trial at its existing deadline with the recorded reason.
+The tests cover this deadline behavior and navigation after a module-load failure.
+
 Keep the switch private until lost-response recovery and complete missing-media
 navigation tests are in place.
 

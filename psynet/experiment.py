@@ -3334,7 +3334,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
             self.timeline.advance_page(self, participant)
             result = self.response_approved(participant, include_timeline_fragment)
-            if recording_uploads:
+            if getattr(response, "_deferred_video_answer", False) is True:
                 from .media_upload import _utcnow
 
                 payload = result.get_json()

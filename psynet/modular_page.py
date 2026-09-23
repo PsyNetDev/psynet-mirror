@@ -3789,17 +3789,39 @@ class VideoRecordControl(RecordControl):
                     "Upload sizes must identify every expected recording source."
                 )
             if any(
-                type(size) is not int or not 0 < size <= self._async_upload_max_bytes
+                type(size) is not int or not 0 <= size <= 2**53 - 1
                 for size in sizes.values()
             ):
-                raise ValueError(
-                    "Recording sizes must be positive and within the upload limit."
-                )
+                raise ValueError("Recording sizes must be nonnegative safe integers.")
             if kwargs["blobs"]:
                 raise ValueError(
                     "Asynchronous video answers must not include recording bytes."
                 )
+            unavailable = kwargs["metadata"].get("recording_upload_unavailable", {})
+            if (
+                not isinstance(unavailable, dict)
+                or not set(unavailable).issubset(sizes)
+                or any(
+                    not isinstance(reason, str)
+                    or reason
+                    not in {
+                        "missing_recording",
+                        "size_limit",
+                        "queue_full",
+                        "transport_unavailable",
+                    }
+                    for reason in unavailable.values()
+                )
+            ):
+                raise ValueError("Invalid recording unavailability manifest.")
+            unavailable = dict(unavailable)
+            for source, size in sizes.items():
+                if size == 0:
+                    unavailable[source] = "missing_recording"
+                elif size > self._async_upload_max_bytes:
+                    unavailable[source] = "size_limit"
             response = kwargs["response"]
+            response._recording_unavailable = unavailable
             response._deferred_video_answer = True
             response._recording_sizes = dict(sizes)
             summary = self._answer_metadata()
@@ -3869,7 +3891,8 @@ class VideoRecordControl(RecordControl):
         return {
             "asynchronousVideoUploadSources": self.recording_sources
             if self._async_upload
-            else None
+            else None,
+            "asynchronousVideoUploadMaxBytes": self._async_upload_max_bytes,
         }
 
     def _accept_recordings(self, response, participant, page_uuid):
@@ -3878,7 +3901,7 @@ class VideoRecordControl(RecordControl):
         from .trial.record import Recording
 
         sizes = response._recording_sizes
-        timeout = _upload_timeout(sum(sizes.values()))
+        timeout = _upload_timeout(max(1, sum(sizes.values())))
         parent = participant.current_trial or participant
         summary = dict(response.answer)
         uploads = []
@@ -3894,12 +3917,24 @@ class VideoRecordControl(RecordControl):
                 local_key=label,
                 storage=Recording.default_storage,
                 upload_timeout=timeout,
-                upload_size_bytes=sizes[source],
+                upload_size_bytes=min(sizes[source], self._async_upload_max_bytes)
+                or None,
                 max_bytes=self._async_upload_max_bytes,
             )
+            reason = response._recording_unavailable.get(source)
+            asset.upload_context = {
+                **asset.upload_context,
+                "captured_size_bytes": sizes[source],
+                "unavailable_reason": reason,
+            }
+            if reason:
+                # Keep the normal deadline and trial policy, without granting a
+                # write capability for bytes the browser cannot retain/upload.
+                asset.upload_token_hash = None
             summary[f"{source}_id"] = asset.id
             summary[f"{source}_url"] = asset.url
-            uploads.append({**receipt, "source": source})
+            if not reason:
+                uploads.append({**receipt, "source": source})
         response.answer = summary
         return uploads
 

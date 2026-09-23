@@ -184,4 +184,29 @@ test.describe("Document-owned media upload queue @both", () => {
     })).toContain("same origin");
     expect(await page.evaluate(() => queue.pendingBytes)).toBe(0);
   });
+
+  test("plans a pair against shared capacity before answer acceptance", async ({ page }) => {
+    await page.route("**/media-upload/held", () => {});
+    const selected = await page.evaluate(() => {
+      enqueue("held", 60000, "x".repeat(60));
+      const result = queue.prepare({camera:new Blob(["x".repeat(30)]),screen:new Blob(["x".repeat(30)])}, 50);
+      return {sources:Object.keys(result.recordings),unavailable:result.unavailable};
+    });
+    expect(selected).toEqual({sources:["camera"], unavailable:{screen:"queue_full"}});
+  });
+
+  test("default queue admits two recordings up to the server source limit", async ({ page }) => {
+    expect(await page.evaluate(async () => {
+      const {MediaUploadQueue} = await import("/media-upload.js");
+      const q = new MediaUploadQueue();
+      const blob = new Blob([new Uint8Array(80 * 1024**2)]);
+      return Object.keys(q.prepare({camera:blob,screen:blob},128 * 1024**2).recordings);
+    })).toEqual(["camera","screen"]);
+  });
+
+  test("preparation distinguishes missing and oversized captures", async ({ page }) => {
+    expect(await page.evaluate(() => queue.prepare({camera:new Blob([]),screen:new Blob(["x".repeat(60)])},50).unavailable))
+      .toEqual({camera:"missing_recording",screen:"size_limit"});
+  });
+
 });

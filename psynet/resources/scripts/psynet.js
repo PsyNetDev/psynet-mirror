@@ -2985,24 +2985,33 @@
       // Returns true if the answer passed validation checks, false otherwise.
       $(" .response, .submit ").prop("disabled", true);
 
-      const capturedRecordings = {};
+      let capturedRecordings = {};
       const sources = psynet.var.asynchronousVideoUploadSources;
       if (Array.isArray(sources)) {
         const sizes = {};
         for (const source of sources) {
           const blob = blobs?.[`${source}Recording`];
-          if (!(blob instanceof Blob) || blob.size === 0) {
-            throw new Error(`Missing captured ${source} recording.`);
-          }
           capturedRecordings[source] = blob;
-          sizes[source] = blob.size;
+          sizes[source] = blob instanceof Blob ? blob.size : 0;
         }
-        metadata = { ...metadata, recording_uploads: sizes };
+        let unavailable;
+        try {
+          const maxBytes = psynet.var.asynchronousVideoUploadMaxBytes;
+          if (!recordingUploadQueue) {
+            const { MediaUploadQueue } = await import("/static/scripts/media-upload.js");
+            // The bounded document queue can hold a full camera + screen answer.
+            recordingUploadQueue = new MediaUploadQueue({ maxBytes: 2 * maxBytes });
+          }
+          const prepared = recordingUploadQueue.prepare(capturedRecordings, maxBytes);
+          capturedRecordings = prepared.recordings;
+          unavailable = prepared.unavailable;
+        } catch (error) {
+          psynet.log.warn(`Recording transport unavailable: ${error.message}`);
+          capturedRecordings = {};
+          unavailable = Object.fromEntries(sources.map(source => [source, "transport_unavailable"]));
+        }
+        metadata = { ...metadata, recording_uploads: sizes, recording_upload_unavailable: unavailable };
         blobs = {};
-        if (!recordingUploadQueue) {
-          const { MediaUploadQueue } = await import("/static/scripts/media-upload.js");
-          recordingUploadQueue = new MediaUploadQueue();
-        }
       }
       const json = prepareJsonSubmission(rawAnswer, metadata);
 

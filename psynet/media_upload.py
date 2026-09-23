@@ -448,7 +448,7 @@ def _complete_recording(recording_id, *, output=None, error=None):
     expired = _utcnow() >= deadline
     if expired:
         error = (
-            "upload_timeout"
+            (asset.upload_context.get("unavailable_reason") or "upload_timeout")
             if asset.upload_status == "pending"
             else "processing_timeout"
         )

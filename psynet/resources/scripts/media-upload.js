@@ -14,7 +14,7 @@
 export class MediaUploadQueue {
   constructor({
     concurrency = 2,
-    maxBytes = 128 * 1024 * 1024,
+    maxBytes = 256 * 1024 * 1024,
     maxPending = 32,
     maxAttempts = 3,
     retryDelay = 500
@@ -32,6 +32,31 @@ export class MediaUploadQueue {
 
   get pendingBytes() {
     return this._pendingBytes;
+  }
+
+  /** Select files within the shared budget before the single in-flight answer.
+   * nextPagePending prevents another submission from adding work until acceptance;
+   * existing jobs may only free capacity meanwhile. This does not send any bytes.
+   */
+  prepare(recordings, maxRecordingBytes) {
+    let bytes = this._pendingBytes;
+    let count = this._jobs.size;
+    const selected = {};
+    const unavailable = {};
+    for (const [source, blob] of Object.entries(recordings)) {
+      if (!(blob instanceof Blob) || blob.size === 0) {
+        unavailable[source] = "missing_recording";
+      } else if (blob.size > maxRecordingBytes) {
+        unavailable[source] = "size_limit";
+      } else if (bytes + blob.size > this._limits.maxBytes || count >= this._limits.maxPending) {
+        unavailable[source] = "queue_full";
+      } else {
+        selected[source] = blob;
+        bytes += blob.size;
+        count += 1;
+      }
+    }
+    return { recordings: selected, unavailable };
   }
 
   /** Retain a captured file and return its eventual transport outcome. */
