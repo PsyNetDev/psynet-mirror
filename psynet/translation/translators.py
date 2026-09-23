@@ -5,11 +5,17 @@ from typing import List, Optional, Sequence
 
 from psynet.utils import get_config, get_descendent_class_by_name, get_language_dict
 
+from .check import extract_variable_names
+
 # Source files are quoted into the translation prompt for context. Large modules
 # (``psynet/recruiters.py`` is ~150 kB) would otherwise dominate every request
 # for that file, so beyond this size only the lines around each text are quoted.
 MAX_SOURCE_CONTEXT_CHARS = 20_000
 SOURCE_SNIPPET_RADIUS_LINES = 8
+
+# At temperature 0 a retry repeats the same reply, e.g. a model stuck repeating
+# one word in a low-resource script, so retries sample more freely.
+RETRY_TEMPERATURE = 0.7
 
 
 @dataclass
@@ -63,7 +69,7 @@ class Translator:
                 self._encode(text, codebook) for text, codebook in zip(texts, codebooks)
             ]
             translated_encoded_texts = self._translate_texts(
-                encoded_texts, source_lang, target_lang, context
+                encoded_texts, source_lang, target_lang, context, attempt=0
             )
             translated_texts = [
                 self._decode(text, codebook)
@@ -73,12 +79,9 @@ class Translator:
             for i in range(n_retries):
                 try:
                     translated_texts = self._translate_texts(
-                        texts, source_lang, target_lang, context
+                        texts, source_lang, target_lang, context, attempt=i
                     )
-                    if len(translated_texts) != len(texts):
-                        raise InvalidTranslationError(
-                            f"Number of translated texts for '{target_lang}' does not match number of input texts: {len(translated_texts)} != {len(texts)}."
-                        )
+                    _validate_translations(texts, translated_texts, target_lang)
                     break
                 except Exception as e:
                     if i == n_retries - 1:
@@ -94,6 +97,7 @@ class Translator:
         source_lang: str,
         target_lang: str,
         context: Optional[TranslationContext] = None,
+        attempt: int = 0,
     ) -> List[str]:
         """Internal method to perform the actual translation.
 
@@ -109,6 +113,8 @@ class Translator:
             The target language code
         context : TranslationContext, optional
             Where the texts come from, by default None
+        attempt : int, optional
+            0 for the first request; retries count up, so translators can vary them
 
         Returns
         -------
@@ -229,6 +235,21 @@ class Translator:
         return translation
 
 
+def _validate_translations(texts, translated_texts, target_lang):
+    """Reject replies that a retry might fix: wrong length or altered variables."""
+    if len(translated_texts) != len(texts):
+        raise InvalidTranslationError(
+            f"Number of translated texts for '{target_lang}' does not match number of input texts: {len(translated_texts)} != {len(texts)}."
+        )
+    for text, translation in zip(texts, translated_texts):
+        if sorted(extract_variable_names(text)) != sorted(
+            extract_variable_names(translation)
+        ):
+            raise InvalidTranslationError(
+                f"The '{target_lang}' translation of {text!r} does not keep its variables: {translation!r}"
+            )
+
+
 class TranslationError(Exception):
     pass
 
@@ -254,6 +275,7 @@ class GoogleTranslator(Translator):
         source_lang: str,
         target_lang: str,
         context: Optional[TranslationContext] = None,
+        attempt: int = 0,
     ):
         from google.cloud import translate_v3
 
@@ -392,6 +414,7 @@ class ChatGptTranslator(Translator):
         source_lang: str,
         target_lang: str,
         context: Optional[TranslationContext] = None,
+        attempt: int = 0,
     ):
         from openai import OpenAI
 
@@ -412,6 +435,8 @@ class ChatGptTranslator(Translator):
                 "Please provide an OpenAI API key in your .dallingerconfig file under `openai_api_key`"
             )
         temperature = float(config.get("openai_default_temperature"))
+        if attempt > 0:
+            temperature = max(temperature, RETRY_TEMPERATURE)
         openai_default_model = config.get("openai_default_model")
 
         ids = [str(i) for i in range(1, len(texts) + 1)]
@@ -437,6 +462,11 @@ class ChatGptTranslator(Translator):
             ],
             temperature=temperature,
             response_format=_response_format(ids),
+            # Generous even for scripts that need several tokens per character,
+            # but stops a repetition loop well before the model's own limit.
+            max_completion_tokens=min(
+                16_000, 1_000 + 5 * sum(len(text) for text in texts)
+            ),
         )
         choice = response.choices[0]
         if choice.message.refusal:
