@@ -439,8 +439,8 @@ msgid ""
 "You will receive a reward of <strong>{CURRENCY}{TIME_REWARD}</strong> for "
 "the time you spent. "
 msgstr ""
-"Nakhoina leiriba matamgi machatpa <strong>{CURRENCY}{TIME_REWARD}</strong> "
-"pibigani."
+"নাখোইনা লেইরিবা মাতাৎপা হৌজারগা <strong>{CURRENCY}{TIME_REWARD}</strong> "
+"পিবিগানি।"
 
 #: psynet/end.py
 #, fuzzy, python-brace-format
@@ -449,30 +449,30 @@ msgid ""
 "You have also been awarded a performance reward of "
 "<strong>{CURRENCY}{PERFORMANCE_REWARD}</strong>. "
 msgstr ""
-"Nakhoina performance machatpa "
-"<strong>{CURRENCY}{PERFORMANCE_REWARD}</strong> adu pibigani."
+"নাখোইনা ফোঙদোকপা হৌজারগা <strong>{CURRENCY}{PERFORMANCE_REWARD}</strong> "
+"পিবিগানি।"
 
 #: psynet/end.py
 #, fuzzy
 msgid "Click Finish to return to your panel."
-msgstr "Nakhoina nakhoigi panel-da thoklakpa toubirak-u."
+msgstr "নাখোইগী পেনেলদা থিরোকপা তৌদুনা লোইশিনবা তাবিরগনি।"
 
 #: psynet/end.py
 #, fuzzy
 msgid "Click Finish to finalize the session."
-msgstr "Session asi khallakpa toubirak-u."
+msgstr "সেশন লোইশিনবা তৌদুনা ফাইনালাইজ তৌবিরগনি।"
 
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_successful"
 msgid "That's the end!"
-msgstr "Masi loishinba!"
+msgstr "মখা লোইনি!"
 
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_unsuccessful"
 msgid "Unfortunately we have to stop early."
-msgstr "Eina khudong chaba phangba ngamdre."
+msgstr "দুঃখিত, নাখোইনা মখা থামজারগনি।"
 
 #: psynet/end.py
 #, fuzzy
@@ -484,18 +484,18 @@ msgstr "Adubu nakhoina leiriba matamgi machatpa pibigani."
 #, fuzzy
 msgctxt "final_page_rejected_consent"
 msgid "You chose not to continue."
-msgstr "Nakhoina chatkhidaba thourang toukhibani."
+msgstr "নাখোইনা থৌবা থামজারগনি।"
 
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_rejected_consent"
 msgid "You may close this page."
-msgstr "Page asi khangdoktuna chatkhidabirak-u."
+msgstr "নাখোইনা এই পেইজ থাবিরগনি।"
 
 #: psynet/end.py
 #, fuzzy
 msgid "We will return you to your panel in a few seconds."
-msgstr "Nakhoina nakhoigi panel-da khudong chaba phangba ngamgani."
+msgstr "নাখোইগী পেনেলদা খুৎশিনবা মখা থিরোকপা তৌগনি।"
 
 #: psynet/equipment.py
 #, fuzzy
@@ -510,7 +510,7 @@ msgstr ""
 #, fuzzy
 msgctxt "timeline_problem"
 msgid "This session has already ended. Please reload the page."
-msgstr "Session asi khanglakle. Page asi reload tou."
+msgstr "Session asi khangdoktuna leitre. Page asi reload tou."
 
 #: psynet/experiment.py
 #, fuzzy
@@ -526,7 +526,7 @@ msgstr ""
 #: psynet/experiment.py
 #, fuzzy
 msgid "The experiment is temporarily busy. Please try again."
-msgstr "Experiment asi matam pumbada busy oirabani. Chahi adum try tou."
+msgstr "Experiment asi thawaina busy leire. Chahi hourak-u."
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -555,7 +555,7 @@ msgstr "আপুনি এটা সংখ্যা প্ৰদান কৰ�
 #, fuzzy
 msgctxt "status"
 msgid "Working..."
-msgstr "ꯋꯥꯔ꯭ꯀꯤꯡꯗ꯭ꯗꯣꯛꯀꯤꯗꯤꯕꯥ"
+msgstr "ꯋꯥꯔ꯭ꯀꯤꯡ..."
 
 #: psynet/prescreen/__init__.py
 #, fuzzy
@@ -748,8 +748,8 @@ msgid ""
 "If you need to contact the researcher about this error, write to {EMAIL} and"
 " quote reference code {REFERENCE_CODE}."
 msgstr ""
-"Eina error asi maramda researcher-da contact touribano haibadi, {EMAIL}-da "
-"email touru amasung reference code {REFERENCE_CODE} asi quote tou."
+"যদি আপুনি এই ত্ৰুটি সম্পৰ্কে গৱেষকৰ সৈতে যোগাযোগ কৰিবলগীয়া হয়, তেন্তে "
+"{EMAIL} ত লিখক আৰু উল্লেখ কৰক {REFERENCE_CODE}।"
 
 #: psynet/recruiters.py
 #, fuzzy, python-brace-format
@@ -757,26 +757,26 @@ msgctxt "early_exit_error"
 msgid ""
 "If you need to contact the researcher about this error, write to {EMAIL}."
 msgstr ""
-"Eina error asi maramda researcher-da contact touribano haibadi, {EMAIL}-da "
-"email touru."
+"যদি আপুনি এই ত্ৰুটি সম্পৰ্কে গৱেষকৰ সৈতে যোগাযোগ কৰিবলগীয়া হয়, তেন্তে "
+"{EMAIL} ত লিখক।"
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "early_exit_error"
 msgid "You may close this page."
-msgstr "Eina page asi close touribano."
+msgstr "আপুনি এই পৃষ্ঠাটো বন্ধ কৰিব পাৰে।"
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "early_exit_error"
 msgid "Unfortunately an error occurred and we cannot continue."
-msgstr "Dukhada error amuk oirammi amasung eina chatnaba leiramde."
+msgstr "দুৰ্ভাগ্যবশতঃ এটা ত্ৰুটি ঘটিল আৰু আমি আগবাঢ়িব নোৱাৰো।"
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "early_exit_error"
 msgid "However, your responses so far have been saved."
-msgstr "Adum oirabasu, nakhoigi houjik phaoba responses asi save touribani."
+msgstr "যাহওক, এতিয়ালৈকে আপোনাৰ প্ৰতিক্ৰিয়াসমূহ সংৰক্ষণ কৰা হৈছে।"
 
 #: psynet/recruiters.py
 #, fuzzy
@@ -785,8 +785,8 @@ msgid ""
 "If you leave now, you will not be able to continue later. Your responses so "
 "far will still be saved."
 msgstr ""
-"Eina houjik chatnabadi, nakhoina matam ama chatnaba leiramde. Nakhoigi "
-"houjik phaoba responses asi save touribani."
+"যদি আপুনি এতিয়া এৰি যায়, আপুনি পাছলৈ আগবাঢ়িব নোৱাৰিব। এতিয়ালৈকে আপোনাৰ "
+"প্ৰতিক্ৰিয়াসমূহ সংৰক্ষণ কৰা হ'ব।"
 
 #: psynet/recruiters.py
 #, fuzzy, python-brace-format
@@ -796,40 +796,39 @@ msgid ""
 " payment. If you leave without payment, you will not be able to continue "
 "later. Your responses so far will still be saved."
 msgstr ""
-"Houjik phaoba nakhoina {EARNED} earn touribani. Nakhoina payment leiringeida"
-" chatnaba {THRESHOLD} at least leinabani. Nakhoina payment leiringeida "
-"chatnaba, nakhoina matam ama chatnaba leiramde. Nakhoigi houjik phaoba "
-"responses asi save touribani."
+"আপুনি এতিয়ালৈকে {EARNED} উপাৰ্জন কৰিছে। আপোনাৰ {THRESHOLD}ৰ প্ৰয়োজন হৈছে "
+"পেমেণ্টৰ সৈতে এৰিবলৈ। যদি আপুনি পেমেণ্টৰ অবিহনে এৰি যায়, আপুনি পাছলৈ "
+"আগবাঢ়িব নোৱাৰিব। এতিয়ালৈকে আপোনাৰ প্ৰতিক্ৰিয়াসমূহ সংৰক্ষণ কৰা হ'ব।"
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "early_exit"
 msgid "Leave without payment"
-msgstr "Payment leiringeida chatnaba"
+msgstr "পেমেণ্টৰ অবিহনে এৰি যাওক"
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "early_exit"
 msgid "Leave"
-msgstr "Chatnaba"
+msgstr "এৰি যাওক"
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "early_exit"
 msgid "Leave without finishing?"
-msgstr "Chatnaba leiringeida?"
+msgstr "শেষ নকৰাকৈ এৰি যাবনে?"
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "early_exit"
 msgid "Cancel"
-msgstr "Cancel"
+msgstr "বাতিল কৰক"
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "early_exit_unpaid"
 msgid "You may close this page."
-msgstr "Eina page asi close touribano."
+msgstr "আপুনি এই পৃষ্ঠাটো বন্ধ কৰিব পাৰে।"
 
 #: psynet/recruiters.py
 #, fuzzy, python-brace-format
@@ -840,10 +839,10 @@ msgid ""
 "far, a further {REMAINDER} will be paid as a bonus. Your responses so far "
 "will still be saved."
 msgstr ""
-"Eina houjik chatnabadi, nakhoina matam ama chatnaba leiramde. Nakhoina fixed"
-" 'screen-out' payment {FIXED} pibani. Houjik phaoba nakhoina {EARNED} earn "
-"touribani, aduga {REMAINDER} bonus-gi maramda pibani. Nakhoigi houjik phaoba"
-" responses asi save touribani."
+"যদি আপুনি এতিয়া এৰি যায়, আপুনি পাছলৈ আগবাঢ়িব নোৱাৰিব। আপুনি {FIXED}ৰ এটা "
+"স্থিৰ 'স্ক্ৰীণ-আউট' পেমেণ্ট পাব। আপুনি এতিয়ালৈকে {EARNED} উপাৰ্জন কৰিছে, "
+"সেয়ে {REMAINDER} বোনাছ হিচাপে পোৱা যাব। এতিয়ালৈকে আপোনাৰ প্ৰতিক্ৰিয়াসমূহ "
+"সংৰক্ষণ কৰা হ'ব।"
 
 #: psynet/recruiters.py
 #, fuzzy, python-brace-format
@@ -853,9 +852,9 @@ msgid ""
 " fixed 'screen-out' payment of {FIXED}. Your responses so far will still be "
 "saved."
 msgstr ""
-"Eina houjik chatnabadi, nakhoina matam ama chatnaba leiramde. Nakhoina fixed"
-" 'screen-out' payment {FIXED} pibani. Nakhoigi houjik phaoba responses asi "
-"save touribani."
+"যদি আপুনি এতিয়া এৰি যায়, আপুনি পাছলৈ আগবাঢ়িব নোৱাৰিব। আপুনি {FIXED}ৰ এটা "
+"স্থিৰ 'স্ক্ৰীণ-আউট' পেমেণ্ট পাব। এতিয়ালৈকে আপোনাৰ প্ৰতিক্ৰিয়াসমূহ সংৰক্ষণ "
+"কৰা হ'ব।"
 
 #: psynet/recruiters.py
 #, fuzzy, python-brace-format
@@ -866,10 +865,10 @@ msgid ""
 "{PERFORMANCE}. You will not be paid for additional time. Your responses so "
 "far will still be saved."
 msgstr ""
-"Eina houjik chatnabadi, nakhoina matam ama chatnaba leiramde. Nakhoina fixed"
-" 'screen-out' payment {FIXED} amasung performance bonus {PERFORMANCE} "
-"pibani. Nakhoina additional matamda paid oirabani. Nakhoigi houjik phaoba "
-"responses asi save touribani."
+"যদি আপুনি এতিয়া এৰি যায়, আপুনি পাছলৈ আগবাঢ়িব নোৱাৰিব। আপুনি {FIXED}ৰ এটা "
+"স্থিৰ 'স্ক্ৰীণ-আউট' পেমেণ্ট আৰু {PERFORMANCE}ৰ এটা প্ৰদৰ্শন বোনাছ পাব। আপুনি"
+" অতিৰিক্ত সময়ৰ বাবে পেমেণ্ট নাপাব। এতিয়ালৈকে আপোনাৰ প্ৰতিক্ৰিয়াসমূহ "
+"সংৰক্ষণ কৰা হ'ব।"
 
 #: psynet/recruiters.py
 #, fuzzy, python-brace-format
@@ -879,9 +878,9 @@ msgid ""
 " fixed 'screen-out' payment of {FIXED}. You will not be paid for additional "
 "time. Your responses so far will still be saved."
 msgstr ""
-"Eina houjik chatnabadi, nakhoina matam ama chatnaba leiramde. Nakhoina fixed"
-" 'screen-out' payment {FIXED} pibani. Nakhoina additional matamda paid "
-"oirabani. Nakhoigi houjik phaoba responses asi save touribani."
+"যদি আপুনি এতিয়া এৰি যায়, আপুনি পাছলৈ আগবাঢ়িব নোৱাৰিব। আপুনি {FIXED}ৰ এটা "
+"স্থিৰ 'স্ক্ৰীণ-আউট' পেমেণ্ট পাব। আপুনি অতিৰিক্ত সময়ৰ বাবে পেমেণ্ট নাপাব। "
+"এতিয়ালৈকে আপোনাৰ প্ৰতিক্ৰিয়াসমূহ সংৰক্ষণ কৰা হ'ব।"
 
 #: psynet/recruiters.py
 #, fuzzy, python-brace-format
@@ -892,18 +891,18 @@ msgid ""
 "for the work you have completed so far. Your responses so far will still be "
 "saved."
 msgstr ""
-"Eina houjik chatnabadi, nakhoina matam ama chatnaba leiramde. Nakhoina "
-"Prolific submission return touribani. Houjik phaoba nakhoina {EARNED} bonus-"
-"gi maramda pibani nakhoina houjik phaoba touriba work asi maramda. Nakhoigi "
-"houjik phaoba responses asi save touribani."
+"যদি আপুনি এতিয়া এৰি যায়, আপুনি পাছলৈ আগবাঢ়িব নোৱাৰিব। আপুনি আপোনাৰ "
+"Prolific জমা-পত্ৰ উভতাব লাগিব। তেতিয়া আপুনি এতিয়ালৈকে সম্পূৰ্ণ কৰা কামৰ "
+"বাবে {EARNED} বোনাছ হিচাপে পোৱা যাব। এতিয়ালৈকে আপোনাৰ প্ৰতিক্ৰিয়াসমূহ "
+"সংৰক্ষণ কৰা হ'ব।"
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "prolific_error"
 msgid "If you had already started, message the researcher through Prolific."
 msgstr ""
-"Houjik phaoba nakhoina hourakle haibadi, Prolific-dagi researcher-da message"
-" touru."
+"যদি আপুনি ইতিমধ্যে আৰম্ভ কৰিছে, তেন্তে Prolificৰ জৰিয়তে গৱেষকৰ সৈতে বাৰ্তা "
+"প্ৰেৰণ কৰক।"
 
 #: psynet/recruiters.py
 #, fuzzy
@@ -912,8 +911,8 @@ msgid ""
 "Please message the researcher through Prolific and describe what led to this"
 " error."
 msgstr ""
-"Prolific-dagi researcher-da message touru amasung error asi maramda kari "
-"oirakle haibadu puya tou."
+"অনুগ্ৰহ কৰি Prolificৰ জৰিয়তে গৱেষকৰ সৈতে বাৰ্তা প্ৰেৰণ কৰক আৰু এই ত্ৰুটিটো "
+"কেনেকৈ ঘটিল বৰ্ণনা কৰক।"
 
 #: psynet/recruiters.py
 #, fuzzy, python-brace-format
@@ -922,8 +921,8 @@ msgid ""
 "We will pay you for your progress so far: you will receive {FIXED} through "
 "Prolific."
 msgstr ""
-"Houjik phaoba nakhoigi progress maramda nakhoibu payment touribani: nakhoina"
-" {FIXED} Prolific-dagi pibani."
+"আমাৰ আগবাঢ়া কামৰ বাবে আপুনি পেমেণ্ট পাব: আপুনি {FIXED} Prolificৰ জৰিয়তে "
+"পাব।"
 
 #: psynet/recruiters.py
 #, fuzzy, python-brace-format
@@ -931,34 +930,33 @@ msgctxt "early_exit_error_prolific"
 msgid ""
 "We will also pay {BONUS} as a bonus, bringing your total payment to {TOTAL}."
 msgstr ""
-"Nakhoibu {BONUS} bonus-gi maramda aduga nakhoigi total payment {TOTAL} oina "
-"pibani."
+"আমাৰ আগবাঢ়া কামৰ বাবে {BONUS} বোনাছ হিচাপে পেমেণ্ট কৰা হ'ব, যাৰ ফলত আপোনাৰ "
+"মুঠ পেমেণ্ট {TOTAL} হ'ব।"
 
 #: psynet/recruiters.py
 #, fuzzy, python-brace-format
 msgctxt "early_exit_error_prolific"
 msgid "We will also pay your {BONUS} performance bonus."
-msgstr "Nakhoigi {BONUS} performance bonus-gi maramda nakhoibu pibani."
+msgstr "আমাৰ আগবাঢ়া কামৰ বাবে আপোনাৰ {BONUS} প্ৰদৰ্শন বোনাছ পেমেণ্ট কৰা হ'ব।"
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "early_exit_error_prolific"
 msgid "Any additional amount you earned will be paid as a bonus."
-msgstr "Nakhoina earn touriba additional amount asi bonus-gi maramda pibani."
+msgstr ""
+"আপুনি উপাৰ্জন কৰা যিকোনো অতিৰিক্ত পৰিমাণ বোনাছ হিচাপে পেমেণ্ট কৰা হ'ব।"
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "early_exit_error_prolific"
 msgid "Select Submit to Prolific to complete your submission."
-msgstr ""
-"Nakhoigi submission complete touribano haibadi Prolific-da Submit select "
-"touru."
+msgstr "আপোনাৰ জমা সম্পূৰ্ণ কৰিবলৈ Prolificত জমা দিব বাছনি কৰক।"
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "early_exit_error_prolific"
 msgid "Submit to Prolific"
-msgstr "Prolific-da Submit"
+msgstr "Prolificত জমা দিয়ক"
 
 #: psynet/recruiters.py
 #, fuzzy, python-brace-format
@@ -967,8 +965,8 @@ msgid ""
 "To receive {EARNED} for the work you completed, you will need to return your"
 " submission on Prolific."
 msgstr ""
-"Nakhoina houjik phaoba touriba work maramda {EARNED} payment louribano "
-"haibadi, nakhoina Prolific-da nakhoigi submission return touribani."
+"আপুনি সম্পূৰ্ণ কৰা কামৰ বাবে {EARNED} পেমেণ্ট পাবলৈ, আপুনি আপোনাৰ Prolific "
+"জমা-পত্ৰ উভতাব লাগিব।"
 
 #: psynet/recruiters.py
 #, fuzzy
@@ -977,16 +975,14 @@ msgid ""
 "To receive payment for the work you completed, you will need to return your "
 "submission on Prolific."
 msgstr ""
-"Nakhoina houjik phaoba touriba work maramda payment louribano haibadi, "
-"nakhoina Prolific-da nakhoigi submission return touribani."
+"আপুনি সম্পূৰ্ণ কৰা কামৰ বাবে পেমেণ্ট পাবলৈ, আপুনি আপোনাৰ Prolific জমা-পত্ৰ "
+"উভতাব লাগিব।"
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "early_exit_error_prolific"
 msgid "Select Continue to payment instructions to complete these steps."
-msgstr ""
-"Matam asi complete touribano haibadi Continue to payment instructions select"
-" touru."
+msgstr "এই পদক্ষেপসমূহ সম্পূৰ্ণ কৰিবলৈ পেমেণ্ট নিৰ্দেশনাত আগবাঢ়া বাছনি কৰক।"
 
 #: psynet/recruiters.py
 #, fuzzy
@@ -995,14 +991,14 @@ msgid ""
 "We could not open the payment instructions. Please try again. If this keeps "
 "happening, message the researcher through Prolific."
 msgstr ""
-"Payment instructions open touribani. Meigi maramda try touru. Aduga asi "
-"oirabadi, Prolific-dagi researcher-da message touru."
+"আমাৰ পেমেণ্ট নিৰ্দেশনা খোলিব পৰা নগ'ল। অনুগ্ৰহ কৰি পুনৰ চেষ্টা কৰক। যদি এইটো"
+" পুনৰ ঘটে, তেন্তে Prolificৰ জৰিয়তে গৱেষকৰ সৈতে বাৰ্তা প্ৰেৰণ কৰক।"
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "early_exit_error_prolific"
 msgid "Continue to payment instructions"
-msgstr "Payment instructions-da continue touru."
+msgstr "পেমেণ্ট নিৰ্দেশনাত আগবাঢ়া বাছনি কৰক।"
 
 #: psynet/recruiters.py
 #, fuzzy
@@ -1011,20 +1007,21 @@ msgid ""
 "Your responses so far have been saved. Please return your submission on "
 "Prolific. You will not receive payment. You may close this page."
 msgstr ""
-"ꯍꯧꯔꯤꯀꯔꯤ꯫ ꯄꯦꯝꯄꯦꯝ ꯂꯩꯅꯥ ꯍꯧꯔꯤꯀꯔꯤ꯫ ꯈꯢꯕ ꯑꯃꯤꯡꯇꯦꯛꯀꯤ. Prolific ꯑꯣꯏꯃꯁꯤ꯫ ꯑꯃꯤꯡꯇꯦꯛꯀꯤ "
-"ꯍꯧꯔꯤꯀꯔꯤ꯫ ꯈꯤꯝꯂꯩꯅꯥ. ꯃꯇꯝꯁꯤ꯫ ꯄꯦꯝꯄꯦꯝ ꯈꯤꯝꯂꯩꯡꯁꯤ꯫. ꯍꯧꯔꯤꯀꯔꯤ꯫ ꯈꯤꯝꯁꯤ꯫."
+"আপনার উত্তৰসমূহ এতিয়াবধি সংৰক্ষণ কৰা হৈছে। অনুগ্ৰহ কৰি Prolific ত আপোনাৰ "
+"জমা-পত্ৰ প্ৰত্যাহাৰ কৰক। আপুনি কোনো পেমেন্ট লাভ নকৰিব। আপুনি এই পৃষ্ঠাটো "
+"বন্ধ কৰিব পাৰে।"
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "early_exit_error_prolific"
 msgid "Your submission has been sent to Prolific."
-msgstr "ꯍꯧꯔꯤꯀꯔꯤ꯫ ꯄꯦꯝꯄꯦꯝ Prolific ꯑꯃꯤꯡꯇꯦꯛꯀꯤ."
+msgstr "আপোনাৰ জমা-পত্ৰ Prolific ত প্ৰেৰণ কৰা হৈছে।"
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "early_exit_error_prolific"
 msgid "You may close this page."
-msgstr "ꯍꯧꯔꯤꯀꯔꯤ꯫ ꯈꯤꯝꯁꯤ꯫."
+msgstr "আপুনি এই পৃষ্ঠাটো বন্ধ কৰিব পাৰে।"
 
 #: psynet/recruiters.py
 #, fuzzy
@@ -1033,8 +1030,9 @@ msgid ""
 "We could not send your submission to Prolific. Please try again. If this "
 "keeps happening, message the researcher through Prolific."
 msgstr ""
-"ꯍꯧꯔꯤꯀꯔꯤ꯫ ꯄꯦꯝꯄꯦꯝ Prolific ꯑꯃꯤꯡꯇꯦꯛꯀꯤ ꯇꯥꯡꯇꯍꯃꯈꯤꯡꯁꯤ꯫. ꯍꯧꯔꯤꯀꯔꯤ꯫ ꯈꯤꯝꯂꯩꯅꯥ ꯍꯧꯔꯤꯀꯔꯤ꯫ "
-"ꯄꯦꯝꯄꯦꯝ ꯇꯥꯡꯇꯍꯃꯈꯤꯡꯁꯤ꯫. ꯍꯧꯔꯤꯀꯔꯤ꯫ ꯑꯁꯤ꯫ ꯃꯇꯝꯁꯤ꯫ ꯈꯤꯝꯂꯩꯡꯁꯤ꯫."
+"আমাৰ পৰা আপোনাৰ জমা-পত্ৰ Prolific ত প্ৰেৰণ কৰিব পৰা নগ'ল। অনুগ্ৰহ কৰি পুনৰ "
+"চেষ্টা কৰক। যদি এইটো অব্যাহত থাকে, তেন্তে Prolific ৰ জৰিয়তে গৱেষকক বাৰ্তা "
+"প্ৰেৰণ কৰক।"
 
 #: psynet/recruiters.py
 #, fuzzy
@@ -1043,8 +1041,8 @@ msgid ""
 "Please return your submission via the Prolific interface and click Next. We "
 "will then automatically pay you a bonus."
 msgstr ""
-"ꯍꯧꯔꯤꯀꯔꯤ꯫ ꯑꯃꯤꯡꯇꯦꯛꯀꯤ Prolific ꯑꯣꯏꯃꯁꯤ꯫ ꯄꯥꯝꯂꯩꯡꯁꯤ꯫ ꯍꯧꯔꯤꯀꯔꯤ꯫ ꯈꯤꯝꯂꯩꯅꯥ Next "
-"ꯈꯤꯝꯂꯩꯡꯁꯤ꯫. ꯍꯧꯔꯤꯀꯔꯤ꯫ ꯄꯦꯝꯄꯦꯝ ꯍꯧꯔꯤꯀꯔꯤ꯫ ꯄꯦꯝꯄꯦꯝ ꯃꯇꯝꯁꯤ꯫ ꯈꯤꯝꯂꯩꯡꯁꯤ꯫."
+"অনুগ্ৰহ কৰি Prolific ইণ্টাৰফেচৰ জৰিয়তে আপোনাৰ জমা-পত্ৰ প্ৰত্যাহাৰ কৰক আৰু "
+"Next ক্লিক কৰক। তেতিয়া আমি আপোনাক স্বয়ংক্ৰিয়ভাৱে বোনাছ পেমেন্ট কৰিম।"
 
 #: psynet/recruiters.py
 #, fuzzy
@@ -1053,8 +1051,8 @@ msgid ""
 "That worked. You have been credited for the time you spent. Thank you for "
 "taking part. You may close this page."
 msgstr ""
-"ꯍꯧꯔꯤꯀꯔꯤ꯫ ꯄꯦꯝꯄꯦꯝ ꯍꯧꯔꯤꯀꯔꯤ꯫ ꯈꯤꯝꯂꯩꯅꯥ. ꯍꯧꯔꯤꯀꯔꯤ꯫ ꯄꯦꯝꯄꯦꯝ ꯃꯇꯝꯁꯤ꯫ ꯈꯤꯝꯂꯩꯡꯁꯤ꯫. ꯍꯧꯔꯤꯀꯔꯤ꯫"
-" ꯈꯤꯝꯁꯤ꯫."
+"সেইটো কাম কৰিলে। আপুনি ব্যয় কৰা সময়ৰ বাবে ক্ৰেডিট লাভ কৰিছে। অংশগ্ৰহণৰ "
+"বাবে ধন্যবাদ। আপুনি এই পৃষ্ঠাটো বন্ধ কৰিব পাৰে।"
 
 #: psynet/recruiters.py
 #, fuzzy
@@ -1064,8 +1062,9 @@ msgid ""
 "automatically. The researcher has been notified and will arrange payment. "
 "You may close this page."
 msgstr ""
-"ꯍꯧꯔꯤꯀꯔꯤ꯫ ꯑꯃꯤꯡꯇꯦꯛꯀꯤ ꯑꯃꯤꯡꯇꯦꯛꯀꯤ ꯄꯦꯝꯄꯦꯝ ꯍꯧꯔꯤꯀꯔꯤ꯫ ꯈꯤꯝꯂꯩꯅꯥ. ꯍꯧꯔꯤꯀꯔꯤ꯫ ꯄꯦꯝꯄꯦꯝ "
-"ꯑꯃꯤꯡꯇꯦꯛꯀꯤ ꯍꯧꯔꯤꯀꯔꯤ꯫ ꯈꯤꯝꯂꯩꯡꯁꯤ꯫. ꯍꯧꯔꯤꯀꯔꯤ꯫ ꯈꯤꯝꯁꯤ꯫."
+"আপোনাৰ প্ৰত্যাহাৰ ৰেকৰ্ড কৰা হৈছে, কিন্তু আমি স্বয়ংক্ৰিয়ভাৱে বোনাছ পেমেন্ট"
+" সম্পূৰ্ণ কৰিব পৰা নগ'ল। গৱেষকক অৱগত কৰা হৈছে আৰু তেওঁ পেমেন্টৰ ব্যৱস্থা "
+"কৰিব। আপুনি এই পৃষ্ঠাটো বন্ধ কৰিব পাৰে।"
 
 #: psynet/recruiters.py
 #, fuzzy
@@ -1074,8 +1073,8 @@ msgid ""
 "That didn't work. Are you sure you returned the submission? Return it on "
 "Prolific, then click Next."
 msgstr ""
-"ꯍꯧꯔꯤꯀꯔꯤ꯫ ꯄꯦꯝꯄꯦꯝ ꯑꯃꯤꯡꯇꯦꯛꯀꯤ ꯍꯧꯔꯤꯀꯔꯤ꯫ ꯋꯧꯕꯤ, ꯑꯃꯤꯡꯇꯦꯛꯀꯤ ꯈꯤꯝꯂꯩꯡꯁꯤ꯫. ꯍꯧꯔꯤꯀꯔꯤ꯫ "
-"ꯄꯦꯝꯄꯦꯝ ꯃꯇꯡꯀꯤ ꯈꯤꯝꯂꯩꯡꯁꯤ꯫."
+"সেইটো কাম নকৰিলে। আপুনি নিশ্চিতনে যে আপুনি জমা-পত্ৰ প্ৰত্যাহাৰ কৰিছে? "
+"Prolific ত সেইটো প্ৰত্যাহাৰ কৰক, তেতিয়া Next ক্লিক কৰক।"
 
 #: psynet/recruiters.py
 #, fuzzy
@@ -1085,8 +1084,10 @@ msgid ""
 "Prolific and message the researcher there. They will review your case and "
 "arrange payment if it is due. You may close this page."
 msgstr ""
-"ꯍꯧꯔꯤꯀꯔꯤ꯫ ꯄꯦꯝꯄꯦꯝ ꯍꯧꯔꯤꯀꯔꯤ꯫ ꯋꯥꯡꯀꯤ ꯍꯧꯔꯤꯀꯔꯤ꯫ ꯈꯤꯝꯂꯩꯅꯥ. ꯍꯧꯔꯤꯀꯔꯤ꯫ ꯄꯦꯝꯄꯦꯝ ꯑꯁꯤ꯫ "
-"ꯍꯧꯔꯤꯀꯔꯤ꯫ ꯑꯃꯤꯡꯇꯦꯛꯀꯤ ꯍꯧꯔꯤꯀꯔꯤ꯫ ꯈꯤꯝꯂꯩꯡꯁꯤ꯫."
+"আপুনি ব্যয় কৰা সময়ৰ বাবে পেমেন্ট লাভ কৰিবলৈ, Prolific ত আপোনাৰ জমা-পত্ৰ "
+"প্ৰত্যাহাৰ কৰক আৰু তাত গৱেষকক বাৰ্তা প্ৰেৰণ কৰক। তেওঁ আপোনাৰ কেছ পৰ্যালোচনা "
+"কৰিব আৰু পেমেন্টৰ ব্যৱস্থা কৰিব যদি সেইটো প্ৰযোজ্য হয়। আপুনি এই পৃষ্ঠাটো "
+"বন্ধ কৰিব পাৰে।"
 
 #: psynet/recruiters.py
 #, fuzzy
@@ -1097,20 +1098,22 @@ msgid ""
 "payment depends on your panel provider's rules. Your responses so far will "
 "still be saved."
 msgstr ""
-"ꯍꯧꯔꯤꯀꯔꯤ꯫ ꯄꯦꯝꯄꯦꯝ ꯋꯧꯕꯤ, ꯍꯧꯔꯤꯀꯔꯤ꯫ ꯄꯦꯝꯄꯦꯝ ꯍꯧꯔꯤꯀꯔꯤ꯫ ꯑꯃꯤꯡꯇꯦꯛꯀꯤ. ꯍꯧꯔꯤꯀꯔꯤ꯫ ꯄꯦꯝꯄꯦꯝ "
-"ꯑꯃꯤꯡꯇꯦꯛꯀꯤ ꯍꯧꯔꯤꯀꯔꯤ꯫ ꯈꯢꯄꯦꯡ ꯍꯧꯔꯤꯀꯔꯤ꯫ ꯄꯦꯝꯄꯦꯝ ꯈꯤꯝꯂꯩꯡꯁꯤ꯫."
+"আপুনি এতিয়া এৰি দিলে, আপুনি পাছলৈ আগবঢ়িব নোৱাৰিব, আৰু আপুনি আপোনাৰ পেনেল "
+"প্ৰদানকাৰীৰ ওচৰলৈ উভতি যাব। এই ছেছনে কোনো পেমেন্ট জাৰি নকৰে; যিকোনো পেমেন্ট "
+"আপোনাৰ পেনেল প্ৰদানকাৰীৰ নিয়মৰ ওপৰত নিৰ্ভৰ কৰে। আপোনাৰ উত্তৰসমূহ এতিয়াবধি "
+"সংৰক্ষণ কৰা হ'ব।"
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "lucid_error"
 msgid "We will return you to your panel in a few seconds."
-msgstr "ꯍꯧꯔꯤꯀꯔꯤ꯫ ꯄꯦꯝꯄꯦꯝ ꯑꯃꯤꯡꯇꯦꯛꯀꯤ ꯍꯧꯔꯤꯀꯔꯤ꯫ ꯋꯣꯝꯀꯤ꯫."
+msgstr "কিছু ছেকেণ্ডৰ ভিতৰত আমি আপোনাক আপোনাৰ পেনেললৈ উভতাই দিম।"
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "early_exit_error_lucid"
 msgid "We will return you to your panel in a few seconds."
-msgstr "ꯍꯧꯔꯤꯀꯔꯤ꯫ ꯄꯦꯝꯄꯦꯝ ꯑꯃꯤꯡꯇꯦꯛꯀꯤ ꯍꯧꯔꯤꯀꯔꯤ꯫ ꯋꯣꯝꯀꯤ꯫."
+msgstr "কিছু ছেকেণ্ডৰ ভিতৰত আমি আপোনাক আপোনাৰ পেনেললৈ উভতাই দিম।"
 
 #: psynet/recruiters.py
 #, fuzzy
@@ -1119,14 +1122,15 @@ msgid ""
 "We could not return you to your panel. Please try again. If this keeps "
 "happening, contact your panel provider."
 msgstr ""
-"ꯍꯧꯔꯤꯀꯔꯤ꯫ ꯄꯦꯝꯄꯦꯝ ꯋꯧꯕꯤ, ꯃꯇꯝꯁꯤ꯫ ꯍꯧꯔꯤꯀꯔꯤ꯫ ꯈꯤꯝꯂꯩꯡꯁꯤ꯫. ꯍꯧꯔꯤꯀꯔꯤ꯫ ꯑꯃꯤꯡꯇꯦꯛꯀꯤ "
-"ꯇꯥꯡꯇꯍꯃꯈꯤꯡꯁꯤ꯫."
+"আমাৰ পৰা আপোনাক আপোনাৰ পেনেললৈ উভতাই দিব পৰা নগ'ল। অনুগ্ৰহ কৰি পুনৰ চেষ্টা "
+"কৰক। যদি এইটো অব্যাহত থাকে, তেন্তে আপোনাৰ পেনেল প্ৰদানকাৰীৰ সৈতে যোগাযোগ "
+"কৰক।"
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "early_exit_error_lucid"
 msgid "Return to your panel"
-msgstr "ꯍꯧꯔꯤꯀꯔꯤ꯫ ꯄꯦꯝꯄꯦꯝ ꯋꯣꯝꯀꯤ꯫"
+msgstr "আপোনাৰ পেনেললৈ উভতি যাওক।"
 
 #: psynet/templates/ad.html
 #, fuzzy
@@ -2619,19 +2623,19 @@ msgstr ""
 #, fuzzy
 msgctxt "exit_recruiter_lucid"
 msgid "Returning you to your panel"
-msgstr "ꯑꯃꯥ ꯄꯦꯅꯦꯜꯁꯤꯡꯗꯤ ꯂꯣꯟꯅꯤꯡꯗꯨ ꯂꯥꯏꯅꯕꯥ ꯂꯣꯟꯅꯤꯡꯗꯨ"
+msgstr "আপোনাক আপনার পেনেলত ফিরাই দিয়া হৈছে"
 
 #: psynet/templates/exit_recruiter_lucid.html
 #, fuzzy
 msgctxt "exit_recruiter_lucid"
 msgid "Please wait."
-msgstr "ꯑꯃꯥ ꯑꯃꯥ ꯂꯣꯟꯅꯤꯡꯗꯨ"
+msgstr "অনুগ্ৰহ কৰি অপেক্ষা কৰক।"
 
 #: psynet/templates/exit_recruiter_prolific_submitted.html
 #, fuzzy
 msgctxt "exit_recruiter_prolific"
 msgid "Submit to Prolific"
-msgstr "Prolific-দা Submit তৌবিরগা"
+msgstr "প্ৰলিফিকত জমা দিয়ক"
 
 #: psynet/templates/exit_recruiter_prolific_submitted.html
 #, fuzzy
@@ -2640,20 +2644,20 @@ msgid ""
 "Click below to send your submission to Prolific. You will not need to enter "
 "a completion code."
 msgstr ""
-"নখা তাবা button-দা চাপি Prolific-দা নখনারা submit তৌবা। নখনায় completion "
-"code পিবগনি।"
+"প্ৰলিফিকত আপোনাৰ জমা পঠিয়াবলৈ তলত ক্লিক কৰক। আপোনাক সম্পূৰ্ণ কোড প্ৰৱেশ "
+"কৰাৰ প্ৰয়োজন নহ'ব।"
 
 #: psynet/templates/exit_recruiter_prolific_submitted.html
 #, fuzzy
 msgctxt "exit_recruiter_prolific"
 msgid "Please wait."
-msgstr "খুৎশিন্নু।"
+msgstr "অনুগ্ৰহ কৰি অপেক্ষা কৰক।"
 
 #: psynet/templates/exit_recruiter_prolific_submitted.html
 #, fuzzy
 msgctxt "exit_recruiter_prolific"
 msgid "Try again"
-msgstr "আদুম তৌবা"
+msgstr "আবার চেষ্টা কৰক"
 
 #: psynet/templates/keyboard.html
 #, fuzzy
@@ -3191,7 +3195,7 @@ msgstr "ꯔꯦꯁꯦꯇꯁꯤ"
 #, fuzzy
 msgctxt "audio_meter"
 msgid "Microphone level"
-msgstr "ꯃꯥꯢꯀꯔꯣꯐꯣꯟ ꯂꯦꯚꯦꯜ"
+msgstr "ꯃꯥꯏꯀꯔꯣꯐꯣꯟ ꯂꯦꯚꯦꯜ"
 
 #: psynet/templates/macros/control.html
 #, fuzzy
@@ -3379,7 +3383,7 @@ msgstr "ꯑꯃꯥ ꯂꯣꯟꯕ"
 #, fuzzy
 msgctxt "error"
 msgid "An error occurred"
-msgstr "একটা ভুল ঘটিল"
+msgstr "একটা ভুল ঘটেছে"
 
 #: psynet/templates/psynet_error.html
 #, fuzzy
@@ -3391,7 +3395,7 @@ msgstr "অনুগ্ৰহ কৰি অপেক্ষা কৰক।"
 #, fuzzy
 msgctxt "early_exit_error"
 msgid "Try again"
-msgstr "আবার চেষ্টা কৰক"
+msgstr "আনবােৰ চেষ্টা কৰক"
 
 #: psynet/templates/psynet_exit_recruiter.html
 #, fuzzy
@@ -3413,13 +3417,14 @@ msgstr "Khangbire nakhoigi leppa aduda."
 #, fuzzy
 msgctxt "exit"
 msgid "You may close this page."
-msgstr "Eigi page asi chatkhro."
+msgstr "Nakhoina page asi khudong chaba ngammi."
 
 #: psynet/templates/psynet_exit_recruiter.html
 #, fuzzy
 msgctxt "exit"
 msgid "Your responses have been saved. You may close this page."
-msgstr "Nakhoigi khudol adu save toubire. Eigi page asi chatkhro."
+msgstr ""
+"Nakhoigi khudol adu save toukhringe. Nakhoina page asi khudong chaba ngammi."
 
 #: psynet/templates/psynet_exit_recruiter.html
 #, fuzzy
@@ -3489,32 +3494,31 @@ msgstr "ꯑꯃꯥ ꯂꯣꯟꯕ"
 #, fuzzy, python-brace-format
 msgctxt "timeline_hold"
 msgid "{REMAINING} of {TOTAL} not ready yet"
-msgstr "{TOTAL} -da {REMAINING} amasung hougatkhigani"
+msgstr "{REMAINING} তে {TOTAL} হৌদৌমখ্রে তায়মখ্রে"
 
 #: psynet/timeline_hold.py
 #, fuzzy
 msgctxt "timeline_hold"
 msgid "Your partner is ready."
-msgstr "Nahakki partner-ki hougatkhigani."
+msgstr "নাক্কা পাঙথোকখ্রে।"
 
 #: psynet/timeline_hold.py
 #, fuzzy, python-brace-format
 msgctxt "timeline_hold"
 msgid "{ARRIVED}/{TOTAL} of your group are ready."
-msgstr "Nahakki group-gi {TOTAL} -da {ARRIVED} hougatkhigani."
+msgstr "নাক্কা গী {ARRIVED}/{TOTAL} পাঙথোকখ্রে।"
 
 #: psynet/timeline_hold.py
 #, fuzzy
 msgctxt "timeline_hold"
 msgid "Waiting for other participants…"
-msgstr "Atei participants-sing adu hougatkhigani…"
+msgstr "অন্য অংশগ্রহণকারীদের জন্য অপেক্ষা করছি…"
 
 #: psynet/timeline_hold.py
 #, fuzzy
 msgctxt "timeline_hold"
 msgid "Please wait, the experiment should continue shortly..."
-msgstr ""
-"Kanagumba khudong chingba, experiment asi khudong chingba hougatkhigani..."
+msgstr "অনুগ্ৰহ কৰি অপেক্ষা করিব, পৰীক্ষা অচিৰেই অব্যাহত থাকিব..."
 
 #: psynet/translation/countries.py
 #, fuzzy
