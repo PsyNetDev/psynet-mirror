@@ -174,6 +174,7 @@
 
 ### Changed
 
+- `psynet translate` now only sends texts that do not have a translation yet, so existing translations (including fuzzy ones) are no longer rewritten when another text in the same file changes. Requests hold at most 30 texts, and ChatGPT also receives each text's context label, existing translations from the same file, and the lines around each text in large source files. ChatGPT replies use structured output, so a reply can no longer return the wrong number of translations. To get a fresh machine translation for a text, delete its translation and rerun `psynet translate`.
 - Simplified slow ASV benchmark metrics to focus on median request time and median async queue delay.
 - Renamed `tests/manual_recruiter_testing` to `tests/deployment`; the basic Prolific test (previously `prolific`) is now `tests/deployment/payment_flows_prolific` and defaults to HotAir, with the paid setup (including the approved cultural-foundation consent) in an `experiment.py.prolific` variant.
 - Changed barrier processing so `Barrier.check()` replaces `Barrier.process_potential_releases()` and `GroupBarrier.check_waiting_participants()` handles group-specific waiting-participant checks before release decisions.
@@ -452,7 +453,7 @@
 
 ### Fixed
 
-- Fixed `psynet translate` making three provider calls per file instead of one, because the retry loop never stopped after a successful translation. Source files are now also quoted into the translation prompt only when they are small enough to be useful context, so a large module no longer dominates every request for its strings.
+- Fixed `psynet translate` making three provider calls per file instead of one, because the retry loop never stopped after a successful translation.
 - Added adversarial lifecycle Playwright coverage.
 - Avoided duplicate page control bindings after trial restarts.
 - Cleaned up media capture streams on page transitions.
