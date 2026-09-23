@@ -57,10 +57,10 @@ Run the deployment command
    hotair testing.
 
 -  Set the ``recruiter`` config parameter to the intended live recruiter,
-   for example ``prolific`` or ``lucid``. Note: PsyNet still uses the
-   name ``lucid`` internally for CINT deployments; consult the
-   :doc:`recruiter-specific steps <recruiters/index>`
-   for the correct value for your recruiter.
+   for example ``prolific`` or ``lab-recruiter``. For CINT, use
+   ``get_lucid_settings()``, which sets the recruiter for you (PsyNet
+   still uses the name Lucid internally). See :doc:`recruiters/index`
+   for the settings each recruiter needs.
 
 -  Double-check all settings mentioned in
    :doc:`recruiter-specific steps <recruiters/index>`.

@@ -43,7 +43,9 @@ In your lab's day-to-day workflow, the two things worth remembering are:
   convention is ``name-experiment-version``.
 - Choose an instance size for your purpose: something small like
   ``m7i.large`` for debugging, and something larger like ``m7i.xlarge``
-  for a live deployment with many simultaneous participants.
+  for a live deployment with many simultaneous participants. If your
+  experiment stores assets with ``LocalStorage``, also check that the
+  server's disk is large enough for everything participants will upload.
 
 .. code:: bash
 

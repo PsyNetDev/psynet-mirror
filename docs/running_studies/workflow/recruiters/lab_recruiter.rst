@@ -34,7 +34,7 @@ Set an initial test
    functionality and audio quality. Participants must complete this
    test before accessing any actual experiments, ensuring they meet
    the necessary technical standards. If your experiments have
-   additional requirements, please contact us for further assistance.
+   additional requirements, contact your Lab Recruiter administrator.
 
 .. image:: /_static/images/running_studies/recruiters/lab_recruiter/set-an-initial-test.png
    :width: 8.5in
@@ -45,8 +45,8 @@ Setting up the experiment
 Experiment costs
 ~~~~~~~~~~~~~~~~
 
-1. We typically pay 15 Euros per hour. So adjust the
-   “\ **wage_per_hour**\ ” parameter in the config accordingly.
+1. Set the “\ **wage_per_hour**\ ” parameter in the config according
+   to your lab's payment policy.
 
    .. code:: python
 
@@ -127,7 +127,7 @@ Deploy the experiment. Please see
 
 -  Click **‘New Experiment’** to add your experiment to the Lab Recruiter.
 
-.. image:: /_static/images/running_studies/recruiters/lab_recruiter/deployment.png
+.. image:: /_static/images/running_studies/recruiters/lab_recruiter/new-experiment.png
    :width: 8.5in
 
 -  Here please set the required parameters.
@@ -148,12 +148,12 @@ Deploy the experiment. Please see
    into the **‘Groups’** section to make the experiment accessible to
    all participants in that group.
 
-.. image:: /_static/images/running_studies/recruiters/lab_recruiter/deployment-2.png
+.. image:: /_static/images/running_studies/recruiters/lab_recruiter/assign-groups.png
    :width: 8.5in
 
 -  You can also later edit it by click **‘Edit’** on your experiment.
 
-.. image:: /_static/images/running_studies/recruiters/lab_recruiter/deployment-3.png
+.. image:: /_static/images/running_studies/recruiters/lab_recruiter/edit-experiment.png
    :width: 8.5in
 
 Inviting participants

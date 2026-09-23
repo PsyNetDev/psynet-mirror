@@ -10,9 +10,10 @@ Glossary
       :doc:`/running_studies/reference/deploy_from_archive`.
 
    Auto-recruit
-      A recruitment mode that keeps a constant number of active
-      participants. In this mode, :term:`initial_recruitment_size` is the
-      desired number of concurrent participants.
+      A recruitment mode that invites a new participant each time one
+      finishes, keeping the number of active participants roughly
+      constant at :term:`initial_recruitment_size`. You can toggle it from
+      the experiment dashboard; switch it off before ending a study.
 
    Docker
       Container software that runs an experiment in a fixed environment.
@@ -24,8 +25,9 @@ Glossary
       See :doc:`/running_studies/reference/web_servers`.
 
    Hotair
-      A recruiter that recruits nobody. Use it for pilot runs you share
-      with colleagues before recruiting real participants.
+      A recruiter that recruits nobody and prints a participant link
+      instead. Use it for pilot runs you share with colleagues before
+      recruiting real participants.
 
    initial_recruitment_size
       The experiment setting that controls how many participants are
@@ -33,8 +35,8 @@ Glossary
       than your server can handle.
 
    Launch
-      Deploying an experiment with ``psynet deploy ssh`` and activating
-      its recruiter.
+      Deploying an experiment with ``psynet deploy ssh`` using a live
+      recruiter, so that real participants are invited.
 
    Provisioning
       Setting up a server to host experiments, typically an EC2 server;

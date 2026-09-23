@@ -60,7 +60,7 @@ S3Storage or a LocalStorage.
            "organization_name": "<your-institution>",
        }
 
-CINT Recruiter Settings 
+CINT recruiter settings
 ~~~~~~~~~~~~~~~~~~~~~~~
 
 You will need to define recruiter_settings and add the function
@@ -116,7 +116,8 @@ Set the following parameters:
 CINT consent
 ~~~~~~~~~~~~
 
-Please ensure that you use the correct consent for the CINT platform. Please advise if you are unsure.
+Use the consent page required for CINT (for example ``LucidConsent``).
+Ask your lab administrator if you are unsure which consent to use.
 
 .. _lab-deployment-cint-qualifications:
 
@@ -124,7 +125,7 @@ CINT qualifications
 ~~~~~~~~~~~~~~~~~~~
 
 Setting qualifications automatically
-------------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 
 CINT provides a standard qualification library and also supports custom qualifications.
@@ -132,7 +133,7 @@ However, custom qualifications are specific to each CINT account and may not be 
 Check your lab's internal deployment documentation for any account-specific custom qualifications.
 
 Standard CINT qualifications
-----------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 These qualifications are available for all accounts. Example:
 
@@ -140,10 +141,8 @@ These qualifications are available for all accounts. Example:
   Checks whether participants are able to play audio during the experiment.
 
 
------------------------------------
-
 Working with languages and countries
-------------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 There are a variety of languages and countries available on CINT with
 specific tags. You can get a list of all the available language (3
@@ -154,10 +153,8 @@ following code in your terminal:
 
    psynet lucid locale
 
------------------------------------
-
 Creating qualification configs
-------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 After getting the desired locales, you can generate qualifications
 specific to each country by using a custom code.
@@ -200,10 +197,8 @@ Please find an example below that should be added to your
    COUNTRY = "NL"
    LUCID_CONFIG_PATH = f"qualifications/lucid/lucid-{LANGUAGE}-{COUNTRY}.json"
 
------------------------------------
-
-Front-end Confirmation of Qualifications
-----------------------------------------
+Front-end confirmation of qualifications
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 It is recommended to confirm key qualifications in the experiment frontend.
 
@@ -242,10 +237,8 @@ You can optionally restrict which qualifications are shown:
        question_names=["HAS_AUDIO"],
    )
 
------------------------------------
-
-Summary Steps for Setting CINT Qualifications:
-----------------------------------------------
+Summary of CINT qualification steps
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 1. Use ``psynet lucid locale`` to retrieve available language/country
    tags.
@@ -281,23 +274,23 @@ experiment. When you open the link, you will see the dashboard. Here,
 click on the ‘Lucid’ tab to access many features from the marketplace as
 well as the reports of the experiment.
 
-.. image:: /_static/images/running_studies/recruiters/cint/check-adjust-quota.png
+.. image:: /_static/images/running_studies/recruiters/cint/dashboard-lucid-tab.png
    :width: 8.5in
 
 1. **Checking qualifications:** Here, click the “Qualifications” tab to
    check if the qualifications are set correctly. This will direct you
    to the official marketplace site.
 
-   .. image:: /_static/images/running_studies/recruiters/cint/check-adjust-quota-2.png
+   .. image:: /_static/images/running_studies/recruiters/cint/dashboard-qualifications-button.png
       :width: 8.5in
 
-   .. image:: /_static/images/running_studies/recruiters/cint/check-adjust-quota-3.png
+   .. image:: /_static/images/running_studies/recruiters/cint/survey-qualifications.png
       :width: 8.5in
 
 2. **Adjusting quota:** To manage the quota settings, go to the ‘Quota’
    tab. This will direct you to the official marketplace site.
 
-   .. image:: /_static/images/running_studies/recruiters/cint/check-adjust-quota-4.png
+   .. image:: /_static/images/running_studies/recruiters/cint/dashboard-quota-button.png
       :width: 8.5in
 
    There are two types of calculations in CINT: completed and
@@ -314,12 +307,12 @@ well as the reports of the experiment.
    on experiment progression and participant traffic. You can change it
    back to ‘Completes’ if the experiment pace slows down.
 
-   .. image:: /_static/images/running_studies/recruiters/cint/check-adjust-quota-5.png
+   .. image:: /_static/images/running_studies/recruiters/cint/quota-calculation-type.png
       :width: 8.5in
 
 .. _lab-deployment-cint-monitoring:
 
-Monitoring 
+Monitoring
 ----------
 
 The new interface under the ‘Lucid’ tab in the dashboard offers a
@@ -329,7 +322,7 @@ variety of ways to monitor the experiment.
    It is important to inspect ‘Termination reasons’ as it might reveal
    if something is wrong with the experiment.
 
-   .. image:: /_static/images/running_studies/recruiters/cint/monitoring.png
+   .. image:: /_static/images/running_studies/recruiters/cint/dashboard-status.png
       :width: 8.5in
 
 2. Check the vital metrics of the experiment. Note that they are usually
@@ -362,21 +355,21 @@ variety of ways to monitor the experiment.
       will struggle to attract supplier traffic. Find more information
       `here <https://support.lucidhq.com/s/article/EPC-FAQ>`__.
 
-   .. image:: /_static/images/running_studies/recruiters/cint/monitoring-2.png
+   .. image:: /_static/images/running_studies/recruiters/cint/dashboard-metrics.png
       :width: 8.5in
 
 3. Check how many participants enter the survey overtime on the
    ‘Respondents’ graph. If it is dying out, you may need to adjust the
    quota.
 
-   .. image:: /_static/images/running_studies/recruiters/cint/monitoring-3.png
+   .. image:: /_static/images/running_studies/recruiters/cint/respondents-over-time.png
       :width: 8.5in
 
 4. Monitor participant status across survey pages by clicking on bars to
    access participant IDs and termination reasons. It is typical to have
    a high termination rate at the early stage of the experiment.
 
-   .. image:: /_static/images/running_studies/recruiters/cint/monitoring-4.png
+   .. image:: /_static/images/running_studies/recruiters/cint/responses-per-participant.png
       :width: 8.5in
 
 5. Check completion LOI and termination LOI. The completion LOI should
@@ -384,7 +377,7 @@ variety of ways to monitor the experiment.
    possible. If it is higher than expected you should inspect for
    possible errors in your experiment.
 
-   .. image:: /_static/images/running_studies/recruiters/cint/monitoring-5.png
+   .. image:: /_static/images/running_studies/recruiters/cint/length-of-interview.png
       :width: 8.5in
 
 Termination

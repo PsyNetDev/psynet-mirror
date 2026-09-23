@@ -33,7 +33,7 @@ Experiment costs
 
      .. code:: text
 
-        Estimated maximum reward for participant: EUR4.95.
+        Estimated maximum reward for participant: £4.95.
         Estimated time to complete experiment: 33 min.
 
    - In this case, the prolific parameters must be as follows:
@@ -143,10 +143,11 @@ provide the Prolific qualification JSON file:
 
 
 -  **Make sure your payment is in line with the estimated completion
-   time**; Prolific requires a *minimum of £6 per hour*, based on the
-   median completion time across participants in your study. You can
-   verify your experiment duration by :ref:`having multiple group
-   members test out your experiment <testing-within-the-group>` before
+   time**; Prolific enforces a minimum hourly rate (check Prolific's
+   current researcher guidance), based on the median completion time
+   across participants in your study. You can
+   verify your experiment duration by :ref:`having colleagues test your
+   experiment <testing-within-the-group>` before
    you deploy and checking their median completion time. Keep an eye on
    this while running the experiment with participants!
 
@@ -154,11 +155,11 @@ provide the Prolific qualification JSON file:
 Prolific qualifications
 ~~~~~~~~~~~~~~~~~~~~~~~
 
-Add the qualification_prolific_en.json file to your experiment folder
-Your lab administrator should provide this file. It currently specifies
-qualifications for collecting data from **English speaking participants
-in the UK**. This file will also specify important parameters for
-Prolific, such as country of recruitment, participant demographics, etc.
+Add a Prolific qualification JSON file (``qualification_prolific_en.json``
+in the example above) to your experiment folder. It specifies which
+participants Prolific should recruit, such as country of recruitment,
+language, and other demographics. Your lab administrator may provide a
+standard file to start from.
 
 -  You can manually modify the exact demographic requirements in
    Prolific (after you deploy, before you publish). Their GUI will also
@@ -168,24 +169,24 @@ Prolific, such as country of recruitment, participant demographics, etc.
 Deployment
 ----------
 
-**IMPORTANT NOTE:** In **PsyNet 11.9.0** or higher you should add
-following settings to .dallingerconfig:
+Add the Prolific workspace and project to your ``~/.dallingerconfig``:
 
-[Prolific]
+.. code:: ini
 
-prolific_workspace = <WORKSPACE_YOU_WANT_TO_USE>
+   [Prolific]
+   prolific_workspace = <WORKSPACE_YOU_WANT_TO_USE>
+   prolific_project = <YOUR_PROJECT_FOLDER>
 
-prolific_project = <YOUR_PROJECT_FOLDER>
+-  Choose the workspace that you want to deploy to (check its account
+   balance).
 
--  Choose workspace that you want to deploy (check account balance)
-
-.. image:: /_static/images/running_studies/recruiters/prolific/deployment.png
+.. image:: /_static/images/running_studies/recruiters/prolific/choose-workspace.png
    :width: 8.5in
 
--  You should create a project folder for your experiments. Please use
-   your own name. For example: ``Your Name Experiments``.
+-  Create a project folder for your experiments. In a shared workspace,
+   include your name, for example ``Your Name Experiments``.
 
-.. image:: /_static/images/running_studies/recruiters/prolific/deployment-2.png
+.. image:: /_static/images/running_studies/recruiters/prolific/new-project.png
    :width: 8.5in
 
 Deploy the experiment. Please see
@@ -235,13 +236,13 @@ the recruitment size to the total number of participants you are looking
 to recruit (plus a few more to be safe, if you have a prescreener) and
 scrolling down to the “Study Cost” section and finding the total. This
 includes the Prolific service fee. **Check whether there is enough
-unclaimed money in the Prolific account. If not, contact the responsible person about
-this.**
+unclaimed money in the Prolific account. If not, contact your lab
+administrator about this.**
 
-.. image:: /_static/images/running_studies/recruiters/prolific/estimate-claim-experiment-cost.png
+.. image:: /_static/images/running_studies/recruiters/prolific/recruit-participants.png
    :width: 8.5in
 
-.. image:: /_static/images/running_studies/recruiters/prolific/estimate-claim-experiment-cost-2.png
+.. image:: /_static/images/running_studies/recruiters/prolific/study-cost-and-balance.png
    :width: 8.5in
 
 Prolific: preview
@@ -287,7 +288,7 @@ and cause errors and slow-downs.
 
 At any time, you should check for errors (you get an error report on
 each export) and make sure that the median wage per hour (indicated on
-the prolific dashboard) does not go under the minimum of £6 per hour.
+the Prolific dashboard) does not fall below Prolific's minimum hourly rate.
 
 **Auto-recruit**
 
@@ -354,7 +355,7 @@ prolific to the “worker id” field. There you will find a “Link for
 resuming session”, which you can send to the participant.
 
 If that does not work or the participant cannot continue the experiment
-because of some issue on our side, you should approve them manually. You
+because of a problem with the experiment, you should approve them manually. You
 can do so by searching for their ID in the prolific dashboard and
 clicking on the checkmark. By doing do they will be payed the base
 payment you have set in the beginning.
