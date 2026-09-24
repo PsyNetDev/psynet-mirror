@@ -87,8 +87,11 @@ will be deployed:
       psynet test local --n-bots 3 --parallel
 
 3. If you deploy with Docker, run a Docker-based local test so missing
-   dependencies show up before you go to the server. See
-   :doc:`/guides/testing/tests`.
+   dependencies show up before you go to the server:
+
+   .. code:: bash
+
+      psynet debug local --docker
 
 4. Run a shortened pilot with colleagues or collaborators using
    ``hotair`` recruitment. Before launching, confirm that the experiment is
