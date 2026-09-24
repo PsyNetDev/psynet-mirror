@@ -13,6 +13,10 @@ from .check import extract_variable_names
 MAX_SOURCE_CONTEXT_CHARS = 20_000
 SOURCE_SNIPPET_RADIUS_LINES = 8
 
+# PsyNet's catalogs for these locales are written in a different script than
+# CLDR's default (Latin for Kurdish, Cyrillic for Serbian).
+SCRIPT_OVERRIDES = {"ku": "Arabic", "sr": "Latin"}
+
 # At temperature 0 a retry repeats the same reply, e.g. a model stuck repeating
 # one word in a low-resource script, so retries sample more freely.
 RETRY_TEMPERATURE = 0.7
@@ -351,14 +355,17 @@ def source_context_for_prompt(
 
 def _script_name(locale: str) -> Optional[str]:
     """
-    The English name of the script CLDR expects for ``locale``, e.g. Ol Chiki for Santali.
+    The English name of the script to translate ``locale`` into, e.g. Ol Chiki for Santali.
 
     Some languages are written in several scripts; without this, the model may
-    switch scripts between requests.
+    switch scripts between requests. The script is CLDR's default for the locale,
+    unless ``SCRIPT_OVERRIDES`` names another.
     """
     from babel import Locale
     from babel.core import get_global
 
+    if locale in SCRIPT_OVERRIDES:
+        return SCRIPT_OVERRIDES[locale]
     parts = get_global("likely_subtags").get(locale, "").split("_")
     if len(parts) < 3:
         return None
@@ -399,6 +406,8 @@ class ChatGptTranslator(Translator):
             "If you see any variables in the text, you should not translate them. "
             """Variables are written in capital letters and are either surrounded by curly brackets (e.g., {VARIABLE}) or start with "%(" and end with ")s" (e.g., "%(VARIABLE)s"). """
             "You do not have to keep the original word order. "
+            "Translate button and link labels too, and when a text refers to another label, "
+            "use the same translation as for that label. Only leave names such as Prolific untranslated. "
             "The input is a JSON object that maps ids to items. "
             "Each item has a text to translate and may have a label naming the part of the interface the text belongs to. "
             "Return a JSON object that maps the same ids to the translations of the texts."
