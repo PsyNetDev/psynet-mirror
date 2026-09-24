@@ -2,9 +2,8 @@
 Internationalization
 ====================
 
-Finally, you created an amazing experiment! How cool would it be to run it with participants from all over the world?
-
-Luckily, PsyNet makes it easy to run experiments in different languages. Here's what you need to do:
+Use this page to run your experiment in languages other than English.
+There are two steps:
 
 - mark which strings need to be translated
 - perform automatic translation and optionally manually check them

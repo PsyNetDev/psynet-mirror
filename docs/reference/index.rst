@@ -1,6 +1,8 @@
 Reference
 =========
 
+Look up configuration keys, command-line options, terms, and the Python API.
+
 .. toctree::
    :maxdepth: 1
 

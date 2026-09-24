@@ -4,19 +4,16 @@
 Testing experiment logic
 ========================
 
-Writing automated tests is an essential part of writing reliable software.
-Automated tests are scripts that check the functionality of your program
-and verify that it is working correctly.
-PsyNet provides easy-to-use tools for writing tests for your own
-experiment implementations; we recommend you use them whenever
-designing your own experiment.
+Use automated tests to check that your experiment runs from start to
+finish and records the data you expect. PsyNet runs simulated participants
+(bots) through your timeline; you can add custom checks on top.
 
 Built-in tests
 --------------
 
 All the demos in the PsyNet package are set up already with simple
-automated tests. For this tutorial, we recommend you open up the
-``static_audio`` demo to see how this is done.
+automated tests. Open the ``static_audio`` demo alongside this page to see
+how this is done.
 
 The convention is for PsyNet experiment directories to contain a
 single ``test.py`` file. This ``test.py`` file does not typically

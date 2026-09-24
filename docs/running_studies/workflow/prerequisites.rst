@@ -14,7 +14,7 @@ complete:
   <installation>`.
 - Set up your editor using the :ref:`development workflow
   <development_workflow>`.
-- Learn the Git workflow using the :doc:`PsyNet Git tutorial
+- Learn the Git workflow using the :doc:`PsyNet Git guide
   </guides/project/version_control_with_git>`.
   Your experiment should be in a Git repository, committed, and pushed
   before deployment.

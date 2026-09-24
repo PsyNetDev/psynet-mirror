@@ -1,13 +1,13 @@
 Timeline
 ========
 
-Source: ``demos/experiments/timeline``
+This demo shows the timeline control-logic constructs, such as
+Conditionals, Switches, and While Loops. These determine which pages the
+participant sees depending on what they have done in the experiment so far.
+Run it from ``demos/experiments/timeline``; :doc:`/getting_started/timelines`
+explains the same constructs step by step.
 
-This demo illustrates the PsyNet timeline in more detail.
-It covers a variety of core control logic constructs, such as
-Conditionals, Switches, and While Loops. These allow the experimenter
-to determine which pages the participant sees depending on what actions they've
-taken in the experiment so far.
+Source: ``demos/experiments/timeline``
 
 As part of the control logic we see the use of the argument ``fix_time_credit``.
 Ordinarily PsyNet participants receive credit for each page that they complete,

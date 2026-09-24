@@ -39,7 +39,7 @@ You use Git by writing various Git commands. Git commands always begin with the 
     git commit -m "Added a README file"
     git push
 
-In the rest of this tutorial we’ll try to develop an understanding of the essential Git commands and how they are used when working with a software project. We’ll begin with an overview of essential concepts in Git, and will then move onto Git’s command-line syntax.
+In the rest of this guide we’ll try to develop an understanding of the essential Git commands and how they are used when working with a software project. We’ll begin with an overview of essential concepts in Git, and will then move onto Git’s command-line syntax.
 
 .. toctree::
    :maxdepth: 2

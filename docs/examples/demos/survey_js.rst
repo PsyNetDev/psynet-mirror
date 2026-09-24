@@ -1,12 +1,12 @@
 SurveyJS
 ========
 
-Source: ``demos/experiments/survey_js``
+This demo builds a questionnaire with SurveyJS, a survey design tool that
+suits questionnaires and multi-response interfaces. You pass the
+``SurveyJSControl`` class a JSON-style dictionary containing the survey
+specification. Run it from ``demos/experiments/survey_js``.
 
-PsyNet integrates with SurveyJS, a flexible survey design tool that is particularly
-good for implementing questionnaires and multi-response interfaces.
-One uses the ``SurveyJSControl`` class, and passes it a JSON-style dictionary
-which contains all the survey specifications.
+Source: ``demos/experiments/survey_js``
 
 The recommended way to design a SurveyJS survey is to use their free
 `Survey Creator <https://surveyjs.io/create-free-survey>`_ tool.

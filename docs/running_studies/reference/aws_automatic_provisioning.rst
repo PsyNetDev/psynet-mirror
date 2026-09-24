@@ -137,7 +137,7 @@ You can find instance storage information in the AWS EC2 documentation:
 https://aws.amazon.com/ec2/instance-types/.
 
 Usually, PsyNet should be responsible for uploading assets to storage.
-For more information, see the :doc:`Assets tutorial
+For more information, see the :doc:`Assets guide
 </guides/trials/assets>`.
 
 During the provisioning, all steps are printed to the terminal. At the

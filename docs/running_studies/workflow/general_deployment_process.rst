@@ -67,7 +67,7 @@ We recommend the following procedure:
 Test
 ----
 
-Use the full :doc:`testing tutorial </guides/testing/tests>` for details on
+Use the full :doc:`testing guide </guides/testing/tests>` for details on
 PsyNet's test commands. In the lab deployment workflow, the important
 checkpoint is that the experiment has been tested in the same order it
 will be deployed:
@@ -122,7 +122,7 @@ before recruiting real participants.
 
 For full setup instructions, including OpenAI and Google translation
 backends, see the
-:doc:`internationalization tutorial </guides/participants/internationalization>`.
+:doc:`internationalization guide </guides/participants/internationalization>`.
 The command you normally run from the experiment directory is:
 
 .. code:: bash

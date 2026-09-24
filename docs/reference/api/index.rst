@@ -1,6 +1,9 @@
 API Documentation
 =================
 
+Classes and functions in the ``psynet`` package, grouped by module and
+generated from the source code.
+
 .. toctree::
    :maxdepth: 1
 

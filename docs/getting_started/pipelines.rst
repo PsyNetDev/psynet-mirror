@@ -94,4 +94,4 @@ Further information
   though it is also possible to select an 'S3 storage' option, where assets are instead stored
   in an Amazon Web Services S3 bucket.
   We will learn more about assets later in the tutorial; see also the dedicated
-  :doc:`assets tutorial </guides/trials/assets>`.
+  :doc:`assets guide </guides/trials/assets>`.

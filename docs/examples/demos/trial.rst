@@ -1,16 +1,15 @@
 Trials (1)
 ==========
 
+The first of three trial demos. A trial is a single unit of data collection,
+typically the participant's response to a single stimulus. In this demo
+participants rate different animals. Run it from ``demos/experiments/trial``
+with ``psynet debug local``; :doc:`/getting_started/static_experiments` covers
+trials in more depth.
+
 Source: ``demos/experiments/trial``
 
-Often psychological experiments are organized into 'trials'. A trial is a single unit of data collection,
-which might typically involve recording the participant's response to a single stimulus.
-PsyNet contains some sophisticated abstractions for working with trials in progressively more
-complex fashions. These are documented in detail elsewhere, but you can get a feel for
-an approach by looking at the demos.
-
-This simple demo implements an experiment where participants have to give ratings for different
-animals. The demo is build around a custom class called ``RateTrial``, which defines the logic
+The demo is built around a custom class called ``RateTrial``, which defines the logic
 for a given trial. The key element of this class is the ``show_trial`` method, which
 defines the page (or pages) shown to the participant. In the simplest case, this method
 just returns a single page, which will most commonly be a Modular Page.

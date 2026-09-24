@@ -2,11 +2,10 @@
 Synchronization
 ===============
 
-In some experiments we need to be able to synchronize certain groups of participants
-to do the same things at the same time. For example, we might want to implement
-a behavioral economics game where participants have to make certain kinds of decisions
-and receive payouts depending on what the other participants in their group did.
-PsyNet provides advanced synchronization utilities for supporting such experiments.
+Use these tools when groups of participants must do the same things at the
+same time. For example, in a behavioral economics game participants might
+make decisions and receive payouts depending on what the other participants
+in their group did.
 
 There are two main timeline constructs that are used to implement such synchronization.
 The ``Grouper`` is responsible for creating groups of participants,

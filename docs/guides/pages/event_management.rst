@@ -5,7 +5,7 @@
 Event management
 ================
 
-PsyNet provides a sophisticated event management system for scheduling events within a given page. This system is rather complex to understand in its entirety, but a little understanding is very useful for customizing one’s experiments.
+Use PsyNet's event management system to schedule what happens within a page, for example when a stimulus starts playing or when the participant may respond. You do not need to understand the whole system to customize the timing of your own pages.
 
 The event management system is modeled on the idea that a given page will present a *trial* to the participant, where a trial comprises a sequence of events in some kind of temporal order. Importantly, the precise timing of these events may depend on certain unpredictable variables, for example the time it takes for the participant to give a response, or the time it takes to download a certain media file, etcetera.
 
@@ -241,7 +241,7 @@ Sometimes you want to ensure that event handlers are triggered in a specific ord
         {priority: 1000}
     );
 
-Sometimes you want to ensure that the event handler finishes before moving onto the next handler, or indeed before triggering the next event in the series. This is achieved by defining the event handler as an *async function*. An async function is a relatively recent Javascript construct that corresponds to a time-consuming process that one might want to wait for. The details of async functions are outside the scope of this tutorial, but we will give an example of an event handler that uses async functions, drawn from the video recorder macro (and slightly paraphrased):
+Sometimes you want to ensure that the event handler finishes before moving onto the next handler, or indeed before triggering the next event in the series. This is achieved by defining the event handler as an *async function*. An async function is a relatively recent Javascript construct that corresponds to a time-consuming process that one might want to wait for. The details of async functions are outside the scope of this page, but we will give an example of an event handler that uses async functions, drawn from the video recorder macro (and slightly paraphrased):
 
 .. code-block:: python
 

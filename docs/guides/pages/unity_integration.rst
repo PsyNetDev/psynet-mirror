@@ -20,7 +20,7 @@ PsyNet includes several GUI features that can accelerate the development of appe
 #. Both 2D and 3D virtual worlds physics are well developed
 #. There are many 3rd party components in the Unity App store that can be easily integrated. These include both high and low level tools such as embedded graphs, a virtual playable 3D piano, animated coins, etc.
 
-Learning Unity is outside the scope of this tutorial, but there are many great resources for learning Unity including `Unity Learn <https://learn.unity.com/>`_. We will start with a quick tutorial of a simple Unity game, which is provided in the `demo project <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/unity_autoplay>`_.
+Learning Unity is outside the scope of this page, but there are many great resources for learning Unity including `Unity Learn <https://learn.unity.com/>`_. The walkthrough below uses a simple Unity game, which is provided in the `demo project <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/unity_autoplay>`_.
 
 The figure below shows the simple Unity 3D world that we created. It includes a player (yellow cylinder) and several collectable objects (red and blue cubes):
 

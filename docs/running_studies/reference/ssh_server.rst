@@ -13,7 +13,7 @@ Setting up the remote server
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 There are several ways to set up your own remote server.
-One way is to rent one via Amazon Web Services (see :ref:`tutorial <aws_server_setup>`).
+One way is to rent one via Amazon Web Services (see :ref:`AWS server setup <aws_server_setup>`).
 Other comparable recommended companies include Hetzner and Contabo.
 As a very approximate rule of thumb, we recommend 5 GB of RAM for each
 simultaneous experiment you think you will need to host.

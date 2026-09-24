@@ -4,14 +4,13 @@
 Large stimulus sets
 ===================
 
-PsyNet users often want to run experiments that involve a large number of pregenerated
-multimedia files (e.g. images, audio, or video). It is possible to implement such experiments
-using PsyNet's asset management system, but this system currently has some performance overhead
-that can make such experiments slow to deploy.
+Use this approach when your experiment needs a large number of pregenerated
+multimedia files (e.g. images, audio, or video). PsyNet's
+:doc:`asset management system <assets>` can handle such experiments, but it
+currently has some performance overhead that can make them slow to deploy.
 
-This tutorial explains an alternative approach that sidesteps these problems. Here the files
-are instead hosted on Amazon Web Service's S3 Storage service, and linked into the experiment
-using custom code.
+Here the files are instead hosted on Amazon Web Service's S3 Storage service
+and linked into the experiment using custom code.
 
 Getting started
 ---------------

@@ -314,7 +314,7 @@ Both kinds are subclasses of :class:`~psynet.asset.Asset`,
 but we normally create them with the ``asset`` helper function (see below).
 
 For more detail beyond what is covered here, see the dedicated :doc:`/guides/trials/assets`
-and :doc:`/guides/trials/large_stimulus_sets` tutorials.
+and :doc:`/guides/trials/large_stimulus_sets` guides.
 
 Local file assets
 ~~~~~~~~~~~~~~~~~

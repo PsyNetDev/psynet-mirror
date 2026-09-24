@@ -1,6 +1,10 @@
 Getting started
 ===============
 
+A step-by-step introduction to PsyNet, from installation to collecting
+your first data online. Read the chapters in order, starting with
+:doc:`how_to_learn`.
+
 .. toctree::
    :maxdepth: 1
 

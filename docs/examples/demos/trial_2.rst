@@ -1,11 +1,11 @@
 Trials (2)
 ==========
 
-Source: ``demos/experiments/trial_2``
+This demo follows on from :doc:`trial`. Its key feature is programmatically
+generating audio stimuli. Run it from ``demos/experiments/trial_2``.
 
-This demo follows on from the previous Trial demo. Its key feature is programmatically
-generating audio stimuli. Instead of manually creating a folder of audio stimuli
-in advance, the experimenter instead defines a custom function, in this case
+Instead of manually creating a folder of audio stimuli
+in advance, the experimenter defines a custom function, in this case
 ``synth_prosody``, which is called to generate stimuli.
 
 The stimulus set is specified in the form of a list of Nodes. The Node is a core concept in

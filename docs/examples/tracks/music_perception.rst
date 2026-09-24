@@ -24,7 +24,7 @@ You should approach each demo in the following way:
   reflected if you just save the code and refresh the page, but major changes (e.g. adding pages) may require
   you to restart the experiment (hit CTRL-C to stop the experiment, then rerun the original command to relaunch it).
 
-Now take the following tutorials:
+Now read the following pages:
 
 - :doc:`Classes in PsyNet </guides/project/classes>`
 - :doc:`Timeline </getting_started/timelines>`

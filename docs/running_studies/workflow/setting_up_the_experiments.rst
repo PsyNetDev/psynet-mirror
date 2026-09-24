@@ -72,7 +72,7 @@ Use a deployment-ready storage backend. For experiments with assets,
 choose either S3 storage or local storage according to the needs of the
 experiment. Do not deploy with ``DebugStorage`` — it is only intended
 for local development. For guidance on storage options, see the
-:doc:`Assets tutorial </guides/trials/assets>`.
+:doc:`Assets guide </guides/trials/assets>`.
 
 Choose a recruiter
 ------------------

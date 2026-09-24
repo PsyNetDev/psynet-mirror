@@ -8,8 +8,8 @@ Gibbs Sampling with People (GSP) is an adaptive technique for
 mapping semantic associations of a stimulus space. The procedure constructs a series
 of stimulus 'chains', where a stimulus is passed from one participant to the next,
 and each participant adjusts a particular stimulus dimension in order to maximise
-a particular subjective criterion (e.g. 'beauty'). The project takes advantage of
-PsyNet's support for experiments whose state evolves over time.
+a particular subjective criterion (e.g. 'beauty'). In this demo participants
+adjust a colour. Run it from ``demos/experiments/gibbs``.
 
 Implementing a GSP experiment depends on the following three classes:
 

@@ -3,11 +3,10 @@
 Development workflow
 ====================
 
-Let's imagine we are working on a particular experiment implementation.
-Perhaps we initialized our implementation by copying a demo from the PsyNet ``demos`` directory,
-and have been converting the code to our needs.
-This tutorial will cover various tips and tricks for making your development process
-efficient and effective.
+Use this page once you have your own experiment directory, for example a
+copied demo, and are adapting it. It covers version control, IDE setup,
+local debug mode, breakpoints, the dashboard, tests, and running against
+local PsyNet or Dallinger checkouts.
 
 
 Version control

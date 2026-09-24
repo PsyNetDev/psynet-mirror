@@ -343,7 +343,7 @@ performance under load. A short first pass is enough to inspect HTTP times;
 lengthen the window when finalizing if you want bots to finish. For a full
 guide, including how to sweep several concurrency levels and how to interpret
 the results, see the
-:ref:`testing experiment performance tutorial <performance_testing>`.
+:ref:`testing experiment performance guide <performance_testing>`.
 Use ``psynet audit performance-test`` when the result should become
 canonical audit evidence.
 

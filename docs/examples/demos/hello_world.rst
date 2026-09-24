@@ -1,31 +1,37 @@
 Hello world
 ===========
 
-Source: ``demos/experiments/hello_world``
+The smallest complete PsyNet experiment: one page that says "Hello world",
+then an end page. Use it to check that your installation runs an
+experiment, or as a minimal template for the structure every experiment
+shares. Run it with:
 
-Following programmer tradition, our first demo is as simple as possible,
-and simply prints "Hello world" to the user. We'll just show the ``experiment.py`` file
-below, though note that the experiment directory contains various other boilerplate
-files too.
+.. code-block:: bash
+
+   cd demos/experiments/hello_world
+   psynet debug local
+
+Source: ``demos/experiments/hello_world``. Only ``experiment.py`` is shown
+below; the directory also contains the usual supporting files.
 
 .. literalinclude:: ../../../demos/experiments/hello_world/experiment.py
    :language: python
 
-Note the use of the timeline, which determines the order of events within the
-experiment.
-The first component of the timeline will normally be a ``Consent`` object.
-This is where we give the participant information about our experiment and
-solicit their informed consent. This is an ethical requirement for most research studies.
-Ordinarily each research group will have their own custom-made consent form.
-Here we've told PsyNet to skip the consent form by including a ``NoConsent`` object.
-
-The second component is an ``InfoPage`` object. Info Pages display some text to the user.
-Note the ``time_estimate`` parameter: we use this to tell PsyNet that we expect the
+The ``Timeline`` determines the order of pages in the experiment.
+Here it contains a single ``InfoPage``, which displays some text to the
+participant. The ``time_estimate`` parameter tells PsyNet that we expect the
 participant to spend about 5 seconds on this page. This information is used for
 progress bar and payment estimation.
 
-The final component is a ``SuccessfulEndPage`` object. All PsyNet experiments must
-finish with some kind of End Page. Participants who reach a Successful End Page
-are marked as successful participants, rather than unsuccessful participants; this
-information is primarily used for deciding how many more participants need to be
-recruited.
+Real experiments normally start the timeline with a ``Consent`` object,
+which gives the participant information about the study and solicits their
+informed consent. This is an ethical requirement for most research studies,
+and each research group typically has its own consent form. The demo omits
+it because ``psynet debug local`` skips the consent check; before deploying,
+add a consent page from :mod:`psynet.consent`, or ``NoConsent`` to skip the
+check explicitly.
+
+PsyNet appends a ``SuccessfulEndPage`` to every timeline, so the demo does
+not list one. Participants who reach it are marked as successful rather
+than unsuccessful; this information is primarily used for deciding how many
+more participants need to be recruited.

@@ -29,8 +29,8 @@ See :doc:`/guides/project/agentic_programming`.
 Alternatively, a good way to develop an experiment is to start by copying a demo
 and modifying it by hand. This workflow is described in :doc:`customizing_an_experiment`.
 
-Topical tutorials
------------------
+Topical guides
+--------------
 
 The PsyNet :doc:`/guides/index` covers a wide range of topics in more detail. Some highlights:
 
