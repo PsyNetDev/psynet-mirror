@@ -27,11 +27,11 @@ Real experiments normally start the timeline with a ``Consent`` object,
 which gives the participant information about the study and solicits their
 informed consent. This is an ethical requirement for most research studies,
 and each research group typically has its own consent form. The demo omits
-it because ``psynet debug local`` skips the consent check; before deploying,
-add a consent page from :mod:`psynet.consent`, or ``NoConsent`` to skip the
-check explicitly.
+it because ``psynet debug local`` does not require a consent page; before
+deploying, add a page from :mod:`psynet.consent`, or ``NoConsent`` to skip
+the check explicitly.
 
 PsyNet appends a ``SuccessfulEndPage`` to every timeline, so the demo does
-not list one. Participants who reach it are marked as successful rather
-than unsuccessful; this information is primarily used for deciding how many
+not list one. Reaching the successful-end branch marks the participant as
+successful rather than unsuccessful; this is used mainly to decide how many
 more participants need to be recruited.

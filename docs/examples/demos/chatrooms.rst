@@ -4,8 +4,6 @@
 Multi-chatroom demo
 ===================
 
-Source: ``demos/features/websocket_chatroom``
-
 This demo shows how to build a real-time multi-room chat experiment using
 PsyNet's WebSocket infrastructure. Participants first choose from N configurable
 chatrooms on a room-selection page, then enter their chosen room and chat with
@@ -13,6 +11,8 @@ other participants in real time. Run it from
 ``demos/features/websocket_chatroom``, and open several participant tabs to
 see messages pass between them. For the built-in chatroom component, see
 :doc:`/guides/multiplayer/chatroom`.
+
+Source: ``demos/features/websocket_chatroom``
 
 The demo illustrates four complementary patterns:
 

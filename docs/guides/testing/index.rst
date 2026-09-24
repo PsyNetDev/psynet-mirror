@@ -3,8 +3,10 @@ Testing and debugging
 
 Check that your experiment works before real participants see it.
 :doc:`tests` covers the automated bot tests every experiment should pass;
-:doc:`performance_testing` checks how the server copes under load, and
-:doc:`troubleshooting` lists fixes for common development errors.
+:doc:`performance_testing` checks how the server copes under load;
+:doc:`sqlalchemy_profiling` and :doc:`introduction_to_sql_alchemy` help
+when database queries are slow; and :doc:`troubleshooting` lists fixes
+for common development errors.
 
 .. toctree::
    :maxdepth: 1
