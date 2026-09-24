@@ -186,14 +186,17 @@ You deploy experiments using the ``psynet deploy`` command:
 
 .. code:: bash
 
-    psynet deploy ssh --app your-app-name --dns-host your-server.ac.uk
+    psynet deploy ssh --app your-app-name --server your-server.ac.uk
 
-``--dns-host`` is the domain that the experiment is served under; the app gets
-the subdomain ``your-app-name.your-server.ac.uk``. ``--server`` chooses which
-server, registered with ``dallinger docker-ssh servers add``, to deploy to. You
-can leave it out if you have registered only one server. With several, PsyNet
-asks you to choose one, and non-interactive runs must pass
-``--server <host>`` explicitly.
+``--server`` chooses which server, registered with
+``dallinger docker-ssh servers add`` (or ``dallinger ec2 provision``), to deploy
+to. You can leave it out if you have registered only one server; with several,
+PsyNet asks you to choose. The experiment is served at a subdomain of the
+server's name, here ``your-app-name.your-server.ac.uk``.
+
+You only need ``--dns-host`` if you registered the server by IP address, or to
+serve the experiment under a different domain, for example
+``--dns-host my-web-server.com``.
 
 .. note::
 
