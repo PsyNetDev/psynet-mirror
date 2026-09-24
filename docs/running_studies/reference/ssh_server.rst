@@ -203,8 +203,25 @@ PsyNet asks you to choose. The experiment is served at a subdomain of the
 server's name, here ``your-app-name.your-server.example.org``.
 
 You only need ``--dns-host`` if you registered the server by IP address, or to
-serve the experiment under a different domain, for example
-``--dns-host my-web-server.com``.
+serve the experiment under a different domain.
+
+If the server was registered by IP, pass both flags. ``--server`` is the
+IP as stored by ``dallinger docker-ssh servers add``; ``--dns-host`` is
+the public name:
+
+.. code:: bash
+
+    psynet deploy ssh --app your-app-name --server 121.101.152.23 --dns-host your-server.example.org
+
+To use nip.io instead of a real domain, pass ``--dns-host nip.io``. The
+experiment URL then looks like
+``https://your-app-name.121.101.152.23.nip.io``. Omitting ``--dns-host``
+on an IP-registered server is an error; PsyNet does not invent a nip.io
+name for you.
+
+Set up DNS so that each app name is a subdomain. A wildcard record such as
+``*.your-server.example.org`` covers every app; a fixed list of names
+means ``--app`` must be one of those names.
 
 .. note::
 
@@ -228,14 +245,6 @@ and login credentials, similar to this:
 Save the dashboard link so that you can monitor the experiment while it collects data.
 See :doc:`Deployment monitor </running_studies/reference/deployment_monitor>` for details on what the
 dashboard shows and how to interpret it.
-
-If you registered the server by IP address and did not save a DNS host,
-PsyNet falls back to a ``nip.io`` URL such as
-``https://your-app-name.121.101.152.23.nip.io``.
-To use a real domain, register the server under that name (or pass
-``--dns-host``), and set up DNS so that each app name is a subdomain.
-A wildcard record such as ``*.your-server.example.org`` covers every app; a
-fixed list of names means ``--app`` must be one of those names.
 
 Under the hood, the deployment command works as follows:
 

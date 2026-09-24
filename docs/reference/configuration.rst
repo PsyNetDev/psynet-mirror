@@ -814,11 +814,16 @@ Web server
     URI of the Postgres database.
 
 ``num_dynos_web`` *int* |dlgr-icon|
-    Number of web processes started when the experiment runs locally
-    (for example by ``psynet test local``). It is recommended that you use at least two.
+    Number of web processes started by the legacy local process manager
+    (``psynet test local`` and ``psynet debug local --legacy``). SSH Docker
+    deployments run a single web service, so this does not scale the
+    remote web container.
 
 ``num_dynos_worker`` *int* |dlgr-icon|
-    Number of worker processes started when the experiment runs locally.
+    Number of worker processes. Used by the legacy local process manager
+    and by SSH Docker deployments, where it creates ``worker_1`` …
+    ``worker_N``. Increase this for live experiments that run many
+    background jobs.
 
 ``threads`` *str* |dlgr-icon|
     The number of gunicorn web worker processes to start.
