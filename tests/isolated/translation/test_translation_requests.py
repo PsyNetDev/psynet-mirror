@@ -109,6 +109,12 @@ def test_system_prompt_quotes_only_nearby_lines_of_a_large_file(tmp_path):
     assert len(prompt) < 2_000
 
 
+def test_system_prompt_asks_to_translate_ui_labels():
+    prompt = ChatGptTranslator().get_system_prompt("English", "Japanese")
+
+    assert "Translate button and link labels too" in prompt
+
+
 def test_system_prompt_includes_existing_translations():
     prompt = ChatGptTranslator().get_system_prompt(
         "English", "French", TranslationContext(examples=[("I agree", "J'accepte")])
@@ -120,6 +126,7 @@ def test_system_prompt_includes_existing_translations():
 def test_system_prompt_names_the_locale_script():
     assert _script_name("sat") == "Ol Chiki"
     assert _script_name("od") is None
+    assert _script_name("sr") == "Latin"
 
     prompt = ChatGptTranslator().get_system_prompt(
         "English", "Santali", script=_script_name("sat")
