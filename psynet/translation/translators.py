@@ -462,9 +462,15 @@ class ChatGptTranslator(Translator):
             raise CredentialsError(
                 "Please provide an OpenAI API key in your .dallingerconfig file under `openai_api_key`"
             )
-        temperature = float(config.get("openai_default_temperature"))
-        if attempt > 0:
-            temperature = max(temperature, RETRY_TEMPERATURE)
+        # Models such as gpt-6-luna reject any temperature but their own, so a
+        # temperature is only sent when one is configured.
+        temperature = config.get("openai_default_temperature", None)
+        temperature_kwargs = {}
+        if temperature is not None:
+            temperature = float(temperature)
+            if attempt > 0:
+                temperature = max(temperature, RETRY_TEMPERATURE)
+            temperature_kwargs["temperature"] = temperature
         openai_default_model = config.get("openai_default_model")
 
         ids = [str(i) for i in range(1, len(texts) + 1)]
@@ -491,7 +497,7 @@ class ChatGptTranslator(Translator):
                     "content": json.dumps(items, ensure_ascii=False),
                 },
             ],
-            temperature=temperature,
+            **temperature_kwargs,
             response_format=_response_format(ids),
             # Generous even for scripts that need several tokens per character,
             # plus room for reasoning models' hidden reasoning, which counts
