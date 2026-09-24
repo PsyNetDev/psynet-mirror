@@ -9,7 +9,6 @@ Project setup and workflow
    development_workflow
    agentic_programming
    dependencies
-   specifying_dependencies
    experiment_variables
    pre_deploy_routines
    classes

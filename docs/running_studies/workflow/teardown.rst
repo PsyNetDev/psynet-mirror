@@ -20,16 +20,7 @@ Before you tear anything down, make sure:
    can exclude participants from earlier deploys via the Prolific
    platform.
 
-Quick reference:
-
-.. code:: bash
-
-   # Terminate an EC2 server entirely
-   dallinger ec2 teardown --name <server_name> --region <region> --dns-host <your-subdomain>.<your-domain>
-
-   # Delete an app without tearing down the server (e.g. before redeploying from archive)
-   psynet destroy ssh --app <app_name> --server <your-subdomain>.<your-domain>
-
-For multi-day deployments, you can stop the EC2 instance overnight
-instead of tearing it down; see the stop/start commands in
-:doc:`Provisioning <provisioning>`.
+For the commands themselves, see
+:ref:`Terminating an instance <aws_automatic_teardown>`.
+For multi-day deployments you can stop the EC2 instance overnight
+instead of tearing it down; see :doc:`Provisioning <provisioning>`.

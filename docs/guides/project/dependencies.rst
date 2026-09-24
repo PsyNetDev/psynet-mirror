@@ -7,32 +7,52 @@ Dependencies
 Python packages
 ^^^^^^^^^^^^^^^
 
-PsyNet experiments can include arbitrary Python packages as dependencies.
-Such dependencies should be specified in ``requirements.txt``,
-with one line per dependency.
+List Python packages for an experiment in ``requirements.txt``, one per
+line. ``psynet setup`` writes a PsyNet pin for you; add any extra
+packages underneath.
 
-If you specify a package simply as its name,
-then the latest version of this package will be pulled from the PyPi repository
-when you deploy the experiment.
+A released experiment should pin PsyNet from PyPI, using the version you
+developed against:
+
+::
+
+    psynet==13.3.0
+
+The latest release is listed in the
+`CHANGELOG <https://gitlab.com/PsyNetDev/PsyNet/-/blob/master/CHANGELOG.md>`_.
+
+To use an unreleased commit or branch:
+
+::
+
+    psynet@git+https://gitlab.com/PsyNetDev/PsyNet.git@<tag-branch-or-sha>#egg=psynet
+
+If you specify another package by name only, the latest version is
+pulled from PyPI when you deploy:
 
 ::
 
     librosa
     praat-parselmouth
 
-You can pin a particular package version using ``==`` notation:
+Pin a version with ``==``:
 
 ::
 
     librosa==1.0.0
 
-You can specify dependencies on packages hosted on version control systems using the following notation:
+Packages hosted in a Git repository use this form:
 
 ::
 
-    dallinger@git+https://github.com/Dallinger/Dallinger.git@98d529e537221bf67bf587c1598578d3ffb7cc3f#egg=dallinger
+    mypackage@git+https://github.com/example/mypackage.git@v1.2.3#egg=mypackage
 
-Here the string after the ``@`` symbol is the commit hash. This could equivalently be a branch name or a tag name.
+For a private repository, include a deploy token as described in
+:ref:`Deploy tokens`:
+
+::
+
+    mypackage@git+https://<username>:<deploy_token>@gitlab.com/example/mypackage.git@v1.2.3#egg=mypackage
 
 Constraints generation
 ^^^^^^^^^^^^^^^^^^^^^^
@@ -96,6 +116,10 @@ You might include something like the following, to install the unzip utility:
 
     apt update
     apt install unzip
+
+The :ref:`Consonance and the carillon <consonance_carillon>` experiment
+includes a ``prepare_docker_image.sh`` script that installs
+``libsndfile1``.
 
 .. warning::
 

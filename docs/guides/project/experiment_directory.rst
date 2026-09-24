@@ -133,18 +133,8 @@ PsyNet experiment, the `Carillon Experiment <https://github.com/pmcharrison/2022
 
 -   ``questionnaire.py`` is specific to the Carillon Experiment implementation, we don't need to worry about it now.
 
--   ``requirements.txt`` is where you specify the packages that your experiment will depend on.
-    This file should always contain a link to the PsyNet library, for example:
-
-    ::
-
-        psynet@git+https://gitlab.com/psynetdev/psynet@d54c3f7a0afddebe1e53676c47c9a31f9cb9a827#egg=psynet
-
-    This particular example indicates that the experiment should use a particular version of PsyNet from
-    GitHub. The version is specified here by the long string that comes after the ``@`` symbol:
-    ``d54c3f7a0afddebe1e53676c47c9a31f9cb9a827``.
-    This string corresponds to a particular commit hash.
-    You can also specify a particular version number here, for example ``10.3.0``.
+-   ``requirements.txt`` lists the Python packages the experiment needs,
+    including a PsyNet pin. See :ref:`dependencies`.
 
 -   ``server.log`` is an automatically generated log file, don’t worry about it.
 

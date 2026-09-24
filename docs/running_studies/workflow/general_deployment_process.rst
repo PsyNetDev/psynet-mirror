@@ -86,7 +86,11 @@ will be deployed:
 
       psynet test local --n-bots 3 --parallel
 
-3. Run a shortened pilot with colleagues or collaborators using
+3. If you deploy with Docker, run a Docker-based local test so missing
+   dependencies show up before you go to the server. See
+   :doc:`/guides/testing/tests`.
+
+4. Run a shortened pilot with colleagues or collaborators using
    ``hotair`` recruitment. Before launching, confirm that the experiment is
    configured with ``recruiter = hotair`` in ``config.txt`` or the equivalent
    experiment configuration. Then provision a server and launch a remote debug
@@ -96,7 +100,7 @@ will be deployed:
 
       psynet debug ssh --app <app_name> --server <your-subdomain>.<your-domain>
 
-4. Use the pilot data to verify your analysis and export scripts before
+5. Use the pilot data to verify your analysis and export scripts before
    collecting real participant data.
 
 Pay particular attention to whether the experiment stops automatically,

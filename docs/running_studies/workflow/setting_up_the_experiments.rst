@@ -56,20 +56,7 @@ and configure all recruiter-specific settings.
 Test the experiment
 -------------------
 
-Before public deployment, test the experiment in each of these modes:
-
-- **Local test:** Run the experiment on your own machine with
-  ``psynet debug local``.
-- **Docker test:** Run the experiment through the Docker installation to
-  confirm that dependencies are captured in ``requirements.txt``.
-- **Remote debug:** Run the experiment on the deployment server with
-  ``psynet debug ssh``.
-- **Hotair:** Share a private testing link (set ``recruiter = hotair``)
-  before publishing the experiment to real participants.
-
-For full details on each testing mode, see the
-:ref:`testing section <lab-deployment-test>` of the general research
-process.
+Complete :ref:`lab-deployment-test` before a public launch.
 
 Final pre-launch check
 ----------------------
