@@ -509,7 +509,7 @@ msgstr ""
 #, fuzzy
 msgctxt "timeline_problem"
 msgid "This session has already ended. Please reload the page."
-msgstr "Ha session sampli asa. Krupaya page punha reload kor."
+msgstr "ही सत्र पयलींच संपलां. कृपया पान परत लोड करा."
 
 #: psynet/experiment.py
 #, fuzzy
@@ -524,7 +524,7 @@ msgstr ""
 #: psynet/experiment.py
 #, fuzzy
 msgid "The experiment is temporarily busy. Please try again."
-msgstr "Experiment thodki vellak busy asa. Krupaya punha prayatna kor."
+msgstr "प्रयोग तात्पुरत्यान व्यस्त आसा. कृपया परत प्रयत्न करा."
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -728,8 +728,8 @@ msgid ""
 "If you need to contact the researcher about this error, write to {EMAIL} and"
 " quote reference code {REFERENCE_CODE}."
 msgstr ""
-"Havem tumi ya chukichea viximant shodunk zai zalear, {EMAIL} khatir borai "
-"ani sandarbh kod {REFERENCE_CODE} ulovpa."
+"ह्या त्रुटी विशीं तुमकां संशोधकाक संपर्क करपाची गरज आसल्यार, {EMAIL} हांगा "
+"बरयात आनी संदर्भ कोड {REFERENCE_CODE} सांगात."
 
 #: psynet/recruiters.py
 #, fuzzy, python-brace-format
@@ -737,25 +737,26 @@ msgctxt "early_exit_error"
 msgid ""
 "If you need to contact the researcher about this error, write to {EMAIL}."
 msgstr ""
-"Havem tumi ya chukichea viximant shodunk zai zalear, {EMAIL} khatir borai."
+"ह्या त्रुटी विशीं तुमकां संशोधकाक संपर्क करपाची गरज आसल्यार, {EMAIL} हांगा "
+"बरयात."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "early_exit_error"
 msgid "You may close this page."
-msgstr "Tumkam hea pagea zavopachi muktai."
+msgstr "तुमी हें पान बंद करूंक शकतात."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "early_exit_error"
 msgid "Unfortunately an error occurred and we cannot continue."
-msgstr "Dukhad, ek chuki ghatli ani amkam vorchem korunk mellinam."
+msgstr "दुर्दैवान एक त्रुटी जाली आनी आमी फुडें चालू दवरूंक शकना."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "early_exit_error"
 msgid "However, your responses so far have been saved."
-msgstr "Tari, tumche itleanche uttar surakxit asa."
+msgstr "पूण, आतां मेरेन तुमचीं उत्तरां जतन करून दवरली आसा."
 
 #: psynet/recruiters.py
 #, fuzzy
@@ -764,8 +765,8 @@ msgid ""
 "If you leave now, you will not be able to continue later. Your responses so "
 "far will still be saved."
 msgstr ""
-"Tumkam atam sorun vavrunchea muktai, pun tumkam magir chalu korunk mellinam."
-" Tumche itleanche uttar surakxit asa."
+"तुमी आतां वचल्यार, तुमकां उपरांत फुडें चालू दवरूंक मेळचें ना. आतां मेरेन "
+"तुमचीं उत्तरां तरीय जतन करून दवरली वतली."
 
 #: psynet/recruiters.py
 #, fuzzy, python-brace-format
@@ -775,39 +776,39 @@ msgid ""
 " payment. If you leave without payment, you will not be able to continue "
 "later. Your responses so far will still be saved."
 msgstr ""
-"Tumkam itlean {EARNED} mellta. Tumkam bhurgem {THRESHOLD} zaitem zai pavtti "
-"ghevpak. Tumkam pavtti ghevpak naslem, tumkam magir chalu korunk mellinam. "
-"Tumche itleanche uttar surakxit asa."
+"आतां मेरेन तुमी {EARNED} कमायल्लां. पेमेंट घेवन वचपाक तुमकां उणेंत उणें "
+"{THRESHOLD} जाय. तुमी पेमेंट विना वचल्यार, तुमकां उपरांत फुडें चालू दवरूंक "
+"मेळचें ना. आतां मेरेन तुमचीं उत्तरां तरीय जतन करून दवरली वतली."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "early_exit"
 msgid "Leave without payment"
-msgstr "Pavtti ghevpak naslem sorun vavpa"
+msgstr "पेमेंट विना वचात"
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "early_exit"
 msgid "Leave"
-msgstr "Sorun vavpa"
+msgstr "वचात"
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "early_exit"
 msgid "Leave without finishing?"
-msgstr "Sodun vavpak naslem?"
+msgstr "पूरायच्या आदलेंच वचपाक जाय?"
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "early_exit"
 msgid "Cancel"
-msgstr "Rad kor"
+msgstr "रद्द करात"
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "early_exit_unpaid"
 msgid "You may close this page."
-msgstr "Tumkam hea pagea zavopachi muktai."
+msgstr "तुमी हें पान बंद करूंक शकतात."
 
 #: psynet/recruiters.py
 #, fuzzy, python-brace-format
@@ -818,9 +819,10 @@ msgid ""
 "far, a further {REMAINDER} will be paid as a bonus. Your responses so far "
 "will still be saved."
 msgstr ""
-"Tumkam atam sorun vavrunchea muktai, pun tumkam magir chalu korunk mellinam."
-" Tumkam ek fix 'screen-out' pavtti {FIXED} melltoli. Tumkam itlean {EARNED} "
-"mellta, ek {REMAINDER} bonus melltolo. Tumche itleanche uttar surakxit asa."
+"तुमी आतां वचल्यार, तुमकां उपरांत फुडें चालू दवरूंक मेळचें ना. तुमकां {FIXED}"
+" इतलें ठरयल्लें 'screen-out' पेमेंट मेळटलें. तुमी आतां मेरेन {EARNED} "
+"कमायल्ल्यान, अजून {REMAINDER} बोनस म्हूण दितले. आतां मेरेन तुमचीं उत्तरां "
+"तरीय जतन करून दवरली वतली."
 
 #: psynet/recruiters.py
 #, fuzzy, python-brace-format
@@ -830,9 +832,9 @@ msgid ""
 " fixed 'screen-out' payment of {FIXED}. Your responses so far will still be "
 "saved."
 msgstr ""
-"Tumkam atam sorun vavrunchea muktai, pun tumkam magir chalu korunk mellinam."
-" Tumkam ek fix 'screen-out' pavtti {FIXED} melltoli. Tumche itleanche uttar "
-"surakxit asa."
+"तुमी आतां वचल्यार, तुमकां उपरांत फुडें चालू दवरूंक मेळचें ना. तुमकां {FIXED}"
+" इतलें ठरयल्लें 'screen-out' पेमेंट मेळटलें. आतां मेरेन तुमचीं उत्तरां तरीय "
+"जतन करून दवरली वतली."
 
 #: psynet/recruiters.py
 #, fuzzy, python-brace-format
@@ -843,10 +845,10 @@ msgid ""
 "{PERFORMANCE}. You will not be paid for additional time. Your responses so "
 "far will still be saved."
 msgstr ""
-"Tumkam atam sorun vavrunchea muktai, pun tumkam magir chalu korunk mellinam."
-" Tumkam ek fix 'screen-out' pavtti {FIXED} plus ek performance bonus "
-"{PERFORMANCE} melltolo. Tumkam adik veleak pavtti mellinam. Tumche itleanche"
-" uttar surakxit asa."
+"तुमी आतां वचल्यार, तुमकां उपरांत फुडें चालू दवरूंक मेळचें ना. तुमकां {FIXED}"
+" इतलें ठरयल्लें 'screen-out' पेमेंट आनी {PERFORMANCE} इतलो performance bonus"
+" मेळटलो. वयरच्या वेळेखातीर तुमकां पेमेंट मेळचें ना. आतां मेरेन तुमचीं "
+"उत्तरां तरीय जतन करून दवरली वतली."
 
 #: psynet/recruiters.py
 #, fuzzy, python-brace-format
@@ -856,9 +858,9 @@ msgid ""
 " fixed 'screen-out' payment of {FIXED}. You will not be paid for additional "
 "time. Your responses so far will still be saved."
 msgstr ""
-"Tumkam atam sorun vavrunchea muktai, pun tumkam magir chalu korunk mellinam."
-" Tumkam ek fix 'screen-out' pavtti {FIXED} melltoli. Tumkam adik veleak "
-"pavtti mellinam. Tumche itleanche uttar surakxit asa."
+"तुमी आतां वचल्यार, तुमकां उपरांत फुडें चालू दवरूंक मेळचें ना. तुमकां {FIXED}"
+" इतलें ठरयल्लें 'screen-out' पेमेंट मेळटलें. वयरच्या वेळेखातीर तुमकां पेमेंट"
+" मेळचें ना. आतां मेरेन तुमचीं उत्तरां तरीय जतन करून दवरली वतली."
 
 #: psynet/recruiters.py
 #, fuzzy, python-brace-format
@@ -869,15 +871,17 @@ msgid ""
 "for the work you have completed so far. Your responses so far will still be "
 "saved."
 msgstr ""
-"Tumkam atam sorun vavrunchea muktai, pun tumkam magir chalu korunk mellinam."
-" Tumkam Prolific submission return korunk zai. Tumkam magir {EARNED} bonus "
-"melltolo itleanche kamak. Tumche itleanche uttar surakxit asa."
+"तुमी आतां वचल्यार, तुमकां उपरांत फुडें चालू दवरूंक मेळचें ना. तुमकां तुमचें "
+"Prolific submission परत करपाक जाय. ते उपरांत, आतां मेरेन तुमी केल्ल्या "
+"कामाखातीर तुमकां {EARNED} बोनस म्हूण दितले. आतां मेरेन तुमचीं उत्तरां तरीय "
+"जतन करून दवरली वतली."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "prolific_error"
 msgid "If you had already started, message the researcher through Prolific."
-msgstr "Tumkam suru kelolem zalear, Prolific vaddun shodunk."
+msgstr ""
+"तुमी पयलींच सुरू केल्लें आसल्यार, Prolific वरवीं संशोधकाक संदेश धाडात."
 
 #: psynet/recruiters.py
 #, fuzzy
@@ -885,7 +889,8 @@ msgctxt "prolific_error"
 msgid ""
 "Please message the researcher through Prolific and describe what led to this"
 " error."
-msgstr "Prolific vaddun shodunk ani chuki kitem ghatlem te varnunk."
+msgstr ""
+"कृपया Prolific वरवीं संशोधकाक संदेश धाडून ही त्रुटी कशें जाली तें सांगात."
 
 #: psynet/recruiters.py
 #, fuzzy, python-brace-format
@@ -894,8 +899,8 @@ msgid ""
 "We will pay you for your progress so far: you will receive {FIXED} through "
 "Prolific."
 msgstr ""
-"Amkam tumkam itleanche pragati khatir pavtti diunk zai: tumkam {FIXED} "
-"Prolific vaddun melltolo."
+"आतां मेरेन तुमच्या प्रगतीखातीर आमी तुमकां पेमेंट दितले: तुमकां Prolific "
+"वरवीं {FIXED} मेळटलें."
 
 #: psynet/recruiters.py
 #, fuzzy, python-brace-format
@@ -903,31 +908,31 @@ msgctxt "early_exit_error_prolific"
 msgid ""
 "We will also pay {BONUS} as a bonus, bringing your total payment to {TOTAL}."
 msgstr ""
-"Amkam {BONUS} bonus pavtti diunk zai, tumche mottem pavtti {TOTAL} melltolo."
+"आमी {BONUS} बोनस म्हूणय दितले, जाचे कडेन तुमचें एकूण पेमेंट {TOTAL} जातलें."
 
 #: psynet/recruiters.py
 #, fuzzy, python-brace-format
 msgctxt "early_exit_error_prolific"
 msgid "We will also pay your {BONUS} performance bonus."
-msgstr "Amkam tumche {BONUS} performance bonus pavtti diunk zai."
+msgstr "आमी तुमचो {BONUS} performance bonus लेगीत दितले."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "early_exit_error_prolific"
 msgid "Any additional amount you earned will be paid as a bonus."
-msgstr "Tumkam mellelem adik rakhmon pavtti bonus melltolo."
+msgstr "तुमी कमायिल्ली कोणूय अतिरिक्त रक्कम बोनस म्हूण दितली जातली."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "early_exit_error_prolific"
 msgid "Select Submit to Prolific to complete your submission."
-msgstr "Tumche submission purn korunk 'Submit to Prolific' vaddun nivdak."
+msgstr "तुमचें submission पुराय करपाक Prolific कडेन धाडात निवडात."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "early_exit_error_prolific"
 msgid "Submit to Prolific"
-msgstr "Submit to Prolific"
+msgstr "Prolific कडेन धाडात"
 
 #: psynet/recruiters.py
 #, fuzzy, python-brace-format
@@ -936,8 +941,8 @@ msgid ""
 "To receive {EARNED} for the work you completed, you will need to return your"
 " submission on Prolific."
 msgstr ""
-"Tumkam {EARNED} pavtti ghevpak, tumkam Prolific submission return korunk "
-"zai."
+"तुमी केल्ल्या कामाखातीर {EARNED} मेळोवपाक, तुमकां Prolific वर तुमचें "
+"submission परत करपाक जाय."
 
 #: psynet/recruiters.py
 #, fuzzy
@@ -946,15 +951,14 @@ msgid ""
 "To receive payment for the work you completed, you will need to return your "
 "submission on Prolific."
 msgstr ""
-"Tumkam itleanche kamak pavtti ghevpak, tumkam Prolific submission return "
-"korunk zai."
+"तुमी केल्ल्या कामाखातीर पेमेंट मेळोवपाक, तुमकां Prolific वर तुमचें "
+"submission परत करपाक जाय."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "early_exit_error_prolific"
 msgid "Select Continue to payment instructions to complete these steps."
-msgstr ""
-"Hea sopon purn korunk 'Continue to payment instructions' vaddun nivdak."
+msgstr "हीं पावलां पुराय करपाक payment instructions कडेन फुडें वचात निवडात."
 
 #: psynet/recruiters.py
 #, fuzzy
@@ -963,14 +967,14 @@ msgid ""
 "We could not open the payment instructions. Please try again. If this keeps "
 "happening, message the researcher through Prolific."
 msgstr ""
-"Amkam pavtti sopon ugddunk mellinam. Fattim try kor. Hea borepon ghalta "
-"zalear, Prolific vaddun shodunk."
+"आमी payment instructions उगडूंक शकले ना. कृपया परत यत्न करात. हेंच चालू "
+"रावल्यार, Prolific वरवीं संशोधकाक संदेश धाडात."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "early_exit_error_prolific"
 msgid "Continue to payment instructions"
-msgstr "Continue to payment instructions"
+msgstr "payment instructions कडेन फुडें वचात"
 
 #: psynet/recruiters.py
 #, fuzzy
@@ -979,20 +983,20 @@ msgid ""
 "Your responses so far have been saved. Please return your submission on "
 "Prolific. You will not receive payment. You may close this page."
 msgstr ""
-"Tumche uttar itleanv sodanch jivtalem. Krupaya Prolificar tumchem submission"
-" parat korat. Tumka bhitorpon mellonam. Tumhi hea pagea band korunk zai."
+"आतांपर्यंत तुमची उत्तरां जतन केल्ली आसा. कृपया तुमचें सबमिशन Prolific वयर "
+"परत करात. तुमकां पेमेंट मेळचें ना. तुमी हें पान बंद करूंक शकतात."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "early_exit_error_prolific"
 msgid "Your submission has been sent to Prolific."
-msgstr "Tumchem submission Prolificak pathoilolem."
+msgstr "तुमचें सबमिशन Prolific कडेन धाडलां आसा."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "early_exit_error_prolific"
 msgid "You may close this page."
-msgstr "Tumhi hea pagea band korunk zai."
+msgstr "तुमी हें पान बंद करूंक शकतात."
 
 #: psynet/recruiters.py
 #, fuzzy
@@ -1001,8 +1005,8 @@ msgid ""
 "We could not send your submission to Prolific. Please try again. If this "
 "keeps happening, message the researcher through Prolific."
 msgstr ""
-"Amkam tumchem submission Prolificak pathoiunk jaina. Krupaya punna ekda try "
-"korat. Hach ghalta zalear, Prolificar researcherak sandesh korat."
+"आमी तुमचें सबमिशन Prolific कडेन धाडूंक शकले ना. कृपया परत एकदां प्रयत्न "
+"करात. हें सारकेंच जात रावल्यार, Prolific वर संशोधकाक संदेश धाडात."
 
 #: psynet/recruiters.py
 #, fuzzy
@@ -1011,8 +1015,8 @@ msgid ""
 "Please return your submission via the Prolific interface and click Next. We "
 "will then automatically pay you a bonus."
 msgstr ""
-"Krupaya Prolific interface vaddun tumchem submission parat korat ani Next "
-"click korat. Amkam magir tumka ek bonus aplyem."
+"कृपया Prolific इंटरफेस वापरून तुमचें सबमिशन परत करात आनी फुडें क्लिक करात. "
+"त्या उपरांत आमी तुमकां आपोआप बोनस पेमेंट करूं."
 
 #: psynet/recruiters.py
 #, fuzzy
@@ -1021,8 +1025,8 @@ msgid ""
 "That worked. You have been credited for the time you spent. Thank you for "
 "taking part. You may close this page."
 msgstr ""
-"Te kam kellem. Tumka tumcho vello ghetlo mhunn credit kellem. Upkar tumcho "
-"bhag ghetlo mhunn. Tumhi hea pagea band korunk zai."
+"हें यशस्वी जालें. तुमी घालेल्या वेळेखातीर तुमकां क्रेडिट दिल्लें आसा. भाग "
+"घेतल्याबद्दल देव बरे करूं. तुमी हें पान बंद करूंक शकतात."
 
 #: psynet/recruiters.py
 #, fuzzy
@@ -1032,9 +1036,9 @@ msgid ""
 "automatically. The researcher has been notified and will arrange payment. "
 "You may close this page."
 msgstr ""
-"Tumchem return record kellem, pun amkam bonus payment aplyem korunk jaina. "
-"Researcherak sandesh kellem ani to payment aplyem korunk bandobast korchem. "
-"Tumhi hea pagea band korunk zai."
+"तुमचें परत करणें नोंद केल्लें आसा, पूण आमी बोनस पेमेंट आपोआप पुराय करूंक "
+"शकले ना. संशोधकाक कळयिल्लें आसा आनी तो पेमेंटाची व्यवस्था करतलो. तुमी हें "
+"पान बंद करूंक शकतात."
 
 #: psynet/recruiters.py
 #, fuzzy
@@ -1043,8 +1047,8 @@ msgid ""
 "That didn't work. Are you sure you returned the submission? Return it on "
 "Prolific, then click Next."
 msgstr ""
-"Te kam kellem nam. Tumchem submission parat kellem asa ka? Prolificar parat "
-"korat, magir Next click korat."
+"हें जालें ना. तुमी सबमिशन परत केलां हाची खात्री आसा काय? तें Prolific वर परत"
+" करात, आनी मागीर फुडें क्लिक करात."
 
 #: psynet/recruiters.py
 #, fuzzy
@@ -1054,9 +1058,9 @@ msgid ""
 "Prolific and message the researcher there. They will review your case and "
 "arrange payment if it is due. You may close this page."
 msgstr ""
-"Tumcho vello ghetlo mhunn payment mellpak, Prolificar tumchem submission "
-"parat korat ani researcherak sandesh korat. To tumcho case review korchem "
-"ani payment aplyem korchem jari te lagta. Tumhi hea pagea band korunk zai."
+"तुमी घालेल्या वेळेखातीर पेमेंट मेळोवपाक, तुमचें सबमिशन Prolific वर परत करात "
+"आनी थंय संशोधकाक संदेश धाडात. ते तुमचो प्रकार तपासून, पेमेंट जायज आसल्यार "
+"त्याची व्यवस्था करतले. तुमी हें पान बंद करूंक शकतात."
 
 #: psynet/recruiters.py
 #, fuzzy
@@ -1067,22 +1071,22 @@ msgid ""
 "payment depends on your panel provider's rules. Your responses so far will "
 "still be saved."
 msgstr ""
-"Jari tumhi atam sorun vetat, tumka magir chalu korunk mellonam, ani tumka "
-"tumcho panel providerak parat pathoit. Hea sessionan payment mellonam; konn "
-"payment tumcho panel providerache niyamant depend korta. Tumche uttar "
-"itleanv sodanch jivtalem."
+"तुमी आतां भायर पडल्यास, मागीर तुमकां पुढें चालू दवरता येवचें ना, आनी तुमी "
+"तुमच्या पॅनल पुरवठादाराकडेन परत वचतले. ह्या सत्रांतून पेमेंट दिलें वचना; "
+"कोणतेंय पेमेंट तुमच्या पॅनल पुरवठादाराच्या नियमांवर अवलंबून आसा. आतांपर्यंत "
+"तुमची उत्तरां तरीय जतन केल्ली आसतली."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "lucid_error"
 msgid "We will return you to your panel in a few seconds."
-msgstr "Amkam thoddeach vellar tumka tumcho panelak parat pathoit."
+msgstr "आमी तुमकां कांय सेकंदांत तुमच्या पॅनलकडेन परत धाडटलो."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "early_exit_error_lucid"
 msgid "We will return you to your panel in a few seconds."
-msgstr "Amkam thoddeach vellar tumka tumcho panelak parat pathoit."
+msgstr "आमी तुमकां कांय सेकंदांत तुमच्या पॅनलकडेन परत धाडटलो."
 
 #: psynet/recruiters.py
 #, fuzzy
@@ -1091,14 +1095,14 @@ msgid ""
 "We could not return you to your panel. Please try again. If this keeps "
 "happening, contact your panel provider."
 msgstr ""
-"Amkam tumka tumcho panelak parat pathoiunk jaina. Krupaya punna ekda try "
-"korat. Hach ghalta zalear, tumcho panel providerak contact korat."
+"आमी तुमकां तुमच्या पॅनलकडेन परत धाडूंक शकले ना. कृपया परत एकदां प्रयत्न "
+"करात. हें सारकेंच जात रावल्यार, तुमच्या पॅनल पुरवठादाराक संपर्क करात."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "early_exit_error_lucid"
 msgid "Return to your panel"
-msgstr "Tumcho panelak parat vetat"
+msgstr "तुमच्या पॅनलकडेन परत वचात"
 
 #: psynet/templates/ad.html
 #, fuzzy
@@ -2557,7 +2561,7 @@ msgstr "कृपया थांबा."
 #, fuzzy
 msgctxt "exit_recruiter_prolific"
 msgid "Submit to Prolific"
-msgstr "Prolificak sodanch dovor"
+msgstr "Prolific कडेन सादर करात"
 
 #: psynet/templates/exit_recruiter_prolific_submitted.html
 #, fuzzy
@@ -2566,20 +2570,20 @@ msgid ""
 "Click below to send your submission to Prolific. You will not need to enter "
 "a completion code."
 msgstr ""
-"Khatir dovor, tumchem submission Prolificak pathounk. Tumka ek completion "
-"code ghalchi garaz na."
+"तुमचें सादरीकरण Prolific कडेन धाडपाक सकयल्यान खालें क्लिक करात. तुमकां "
+"पूर्णताय कोड घालपाची गरज पडना."
 
 #: psynet/templates/exit_recruiter_prolific_submitted.html
 #, fuzzy
 msgctxt "exit_recruiter_prolific"
 msgid "Please wait."
-msgstr "Favo korta."
+msgstr "कृपया वाट पळयात."
 
 #: psynet/templates/exit_recruiter_prolific_submitted.html
 #, fuzzy
 msgctxt "exit_recruiter_prolific"
 msgid "Try again"
-msgstr "Punno jiyonk"
+msgstr "परतून प्रयत्न करात"
 
 #: psynet/templates/keyboard.html
 #, fuzzy
@@ -3404,31 +3408,31 @@ msgstr "पुन्हा सुरू करा"
 #, fuzzy, python-brace-format
 msgctxt "timeline_hold"
 msgid "{REMAINING} of {TOTAL} not ready yet"
-msgstr "{REMAINING} ani {TOTAL} vatt ani zaunk zai"
+msgstr "{TOTAL} पैकी {REMAINING} अजून तयार ना"
 
 #: psynet/timeline_hold.py
 #, fuzzy
 msgctxt "timeline_hold"
 msgid "Your partner is ready."
-msgstr "Tumcho sathi tayar asa."
+msgstr "तुमचो भागीदार तयार आसा."
 
 #: psynet/timeline_hold.py
 #, fuzzy, python-brace-format
 msgctxt "timeline_hold"
 msgid "{ARRIVED}/{TOTAL} of your group are ready."
-msgstr "{ARRIVED}/{TOTAL} tumche group tayar asa."
+msgstr "तुमच्या गटांतले {ARRIVED}/{TOTAL} तयार आसात."
 
 #: psynet/timeline_hold.py
 #, fuzzy
 msgctxt "timeline_hold"
 msgid "Waiting for other participants…"
-msgstr "Itar bhagidarank lagta asa…"
+msgstr "दुसऱ्या सहभागींची वाट पळयता…"
 
 #: psynet/timeline_hold.py
 #, fuzzy
 msgctxt "timeline_hold"
 msgid "Please wait, the experiment should continue shortly..."
-msgstr "Favo, thodki vatt korat, parikshan thodki vella mure chalu zatale..."
+msgstr "कृपया वाट पळयात, प्रयोग लवकरच फुडें चालू जातलो..."
 
 #: psynet/translation/countries.py
 #, fuzzy

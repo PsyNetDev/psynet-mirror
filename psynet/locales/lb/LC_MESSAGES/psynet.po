@@ -946,13 +946,13 @@ msgstr ""
 #, fuzzy
 msgctxt "early_exit_error_prolific"
 msgid "Select Submit to Prolific to complete your submission."
-msgstr "Wielt 'Submit to Prolific' fir Är Ofginn ofzeschléissen."
+msgstr "Wielt „Un Prolific ofginn“, fir Är Ofginn ofzeschléissen."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "early_exit_error_prolific"
 msgid "Submit to Prolific"
-msgstr "Submit to Prolific"
+msgstr "Un Prolific ofginn"
 
 #: psynet/recruiters.py
 #, fuzzy, python-brace-format
@@ -979,7 +979,8 @@ msgstr ""
 msgctxt "early_exit_error_prolific"
 msgid "Select Continue to payment instructions to complete these steps."
 msgstr ""
-"Wielt 'Continue to payment instructions' fir dës Schrëtt ofzeschléissen."
+"Wielt „Weider op d'Bezuelungsinstruktiounen“, fir dës Schrëtt "
+"ofzeschléissen."
 
 #: psynet/recruiters.py
 #, fuzzy
@@ -996,7 +997,7 @@ msgstr ""
 #, fuzzy
 msgctxt "early_exit_error_prolific"
 msgid "Continue to payment instructions"
-msgstr "Continue to payment instructions"
+msgstr "Weider op d'Bezuelungsinstruktiounen"
 
 #: psynet/recruiters.py
 #, fuzzy
