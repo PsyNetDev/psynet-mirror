@@ -222,28 +222,25 @@ When you're ready to deploy your experiment, give your config one last check, ma
 ``prolific`` recruiter is selected.
 If you need to be connected to a VPN in order to access your server, make sure you are connected to the VPN.
 
-Now you can deploy your app.
-If you do not have a domain name, then PsyNet will automatically use a ``nip.io`` subdomain.
+Now you can deploy your app. Use the DNS name you registered the server
+under:
 
 ::
 
-    psynet deploy ssh --app your-app-name
+    psynet deploy ssh --app your-app-name --server your-server.example.org
 
-If you do have a domain name, you should specify it via the ``--dns-host`` argument.
-For example, Cambridge users might use:
-
-::
-
-    psynet deploy ssh --app your-app-name --dns-host musix.mus.cam.ac.uk
+You can omit ``--server`` if you have registered only one server. If you
+registered the server by IP address, also pass ``--dns-host``. See
+:ref:`Deploying experiments via SSH <ssh_server>` for the full command,
+expected output, and DNS setup.
 
 .. note::
 
     Replace ``your-app-name`` with a name of your choice.
     This name will become part of the URL that participants will visit to take part in your experiment,
     so make sure it doesn't include any funny characters or spaces.
-    If your server is limited to a specific set of subdomains, your app name will be restricted to one of those subdomains.
-    For example, in Cambridge we use ``psynet-01``, ``psynet-02``, etc. as app names, which then resolve to URLs of the form
-    ``psynet-01.musix.cam.ac.uk``, ``psynet-02.musix.cam.ac.uk``, etc.
+    If your DNS record only publishes a fixed list of subdomains, the app
+    name must be one of those names.
 
 If the command runs successfully, it should print a link to your Prolific dashboard.
 PsyNet will have automatically created a 'draft study' for your, populating certain elements such as the

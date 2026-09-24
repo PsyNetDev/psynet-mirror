@@ -20,8 +20,15 @@ simultaneous experiment you think you will need to host.
 
 Once you've set up your remote server, you need to make sure that your local computer
 has passwordless SSH access to the remote server.
-If you have a key pair for the server, you probably need to add it to your SSH agent
-with code like the following:
+If you have a key pair for the server, you probably need to add it to your SSH agent.
+On macOS, run:
+
+.. code:: bash
+
+    chmod 600 path/to/your/key.pem
+    ssh-add --apple-use-keychain path/to/your/key.pem
+
+On Linux, run:
 
 .. code:: bash
 
@@ -41,20 +48,20 @@ replacing the credentials and server address as appropriate:
 
 .. code:: bash
 
-    ssh-copy-id yourusername@your-server.ac.uk
+    ssh-copy-id yourusername@your-server.example.org
 
 Verify that you can login passwordless by running the following:
 
 .. code:: bash
 
-    ssh your-username@your-server.ac.uk
+    ssh your-username@your-server.example.org
 
 If this works, you're ready to register the remote server within PsyNet/Dallinger.
 Run the following:
 
 .. code:: bash
 
-    dallinger docker-ssh servers add --user your-username --host your-server.ac.uk
+    dallinger docker-ssh servers add --user your-username --host your-server.example.org
 
 
 Setting up your Docker registry
@@ -118,24 +125,25 @@ putting the link to your own image registry:
 
 .. code:: bash
 
-    docker_image_base_name = registry.gitlab.developers.cam.ac.uk/mus/cms/psynet-experiment-images
+    docker_image_base_name = registry.gitlab.com/<group>/<project>/experiment-images
 
 
 
-You can also host the registry yourself, e.g. under ``registry.gitlab.developers.cam.ac.uk``. The steps are similar to above, but you will need to change the URL if you are using a self-hosted registry. For example:
+If your lab hosts GitLab itself, use that hostname in place of
+``registry.gitlab.com``. The steps are the same. For example:
 
 .. code:: bash
 
-    docker login registry.gitlab.developers.cam.ac.uk
+    docker login registry.gitlab.example.org
 
 In some situations (e.g. federated authentication) you will not be able to login
 to your account via the command-line in this way. Instead, you will have to create
-a `personal access token via GitLab <https://gitlab.developers.cam.ac.uk/-/profile/personal_access_tokens>`_
+a `personal access token via GitLab <https://gitlab.com/-/user_settings/personal_access_tokens>`_
 and then login with a command like the following:
 
 .. code:: bash
 
-    docker login registry.gitlab.developers.cam.ac.uk -u your-username
+    docker login registry.gitlab.com -u your-username
 
 You should then enter your access token when prompted.
 
@@ -145,7 +153,7 @@ You should then enter your access token when prompted.
 
     .. code:: bash
 
-        WARNING! Your password will be stored unencrypted in /home/pmch2/.docker/config.json.
+        WARNING! Your password will be stored unencrypted in /home/your-username/.docker/config.json.
 
         Configure a credential helper to remove this warning. See
 
@@ -166,7 +174,7 @@ To do this, you need to open an SSH terminal to your server, if you haven't alre
 
 .. code:: bash
 
-    ssh your-username@your-server.ac.uk
+    ssh your-username@your-server.example.org
 
 Then run the same `docker login` command that you ran previously.
 
@@ -175,7 +183,7 @@ putting the link to your own image registry:
 
 .. code:: bash
 
-    docker_image_base_name = registry.gitlab.developers.cam.ac.uk/mus/cms/psynet-experiment-images
+    docker_image_base_name = registry.gitlab.com/<group>/<project>/experiment-images
 
 That's it! You should be all set up now.
 
@@ -186,13 +194,13 @@ You deploy experiments using the ``psynet deploy`` command:
 
 .. code:: bash
 
-    psynet deploy ssh --app your-app-name --server your-server.ac.uk
+    psynet deploy ssh --app your-app-name --server your-server.example.org
 
 ``--server`` chooses which server, registered with
 ``dallinger docker-ssh servers add`` (or ``dallinger ec2 provision``), to deploy
 to. You can leave it out if you have registered only one server; with several,
 PsyNet asks you to choose. The experiment is served at a subdomain of the
-server's name, here ``your-app-name.your-server.ac.uk``.
+server's name, here ``your-app-name.your-server.example.org``.
 
 You only need ``--dns-host`` if you registered the server by IP address, or to
 serve the experiment under a different domain, for example
@@ -211,7 +219,7 @@ and login credentials, similar to this:
 .. code:: text
 
     You can now log in to the console at
-    https://admin:XXX@your-app-name.your-server.ac.uk/dashboard
+    https://admin:XXX@your-app-name.your-server.example.org/dashboard
     (user = admin, password = XXX)
 
     ✔ Saving a snapshot of the code to
@@ -221,34 +229,13 @@ Save the dashboard link so that you can monitor the experiment while it collects
 See :doc:`Deployment monitor </running_studies/reference/deployment_monitor>` for details on what the
 dashboard shows and how to interpret it.
 
-By default, this will deploy your app to a hostname that looks like this:
-
-https://your-app-name.121.101.152.23.nip.io
-
-where ``121.101.152.23`` is the IP address of your web server.
-If your server is set up with a DNS record, it is possible to use this instead as the URL.
-For example, running this:
-
-.. code:: bash
-
-    psynet deploy ssh --app your-app-name --dns-host my-web-server.com
-
-would make your app available at this link:
-
-https://your-app-name.my-web-server.com
-
-Note that your DNS record must already be set up to resolve the subdomain you want to use (e.g. ``your-app-name``)
-to the IP address of the server.
-This is a one-time job that should be performed when preparing the web server to deploy experiments.
-You can either do this by setting up a subdomain wildcard (e.g. ``*.my-web-server.com``, or by deciding in advance
-what experiment names to support, and then setting up the DNS to support those names
-(e.g. ``psynet-01.my-web-server.com``, ``psynet-02.my-web-server.com``, etc.).
-
-.. note::
-
-    If your DNS record only supports particular subdomains then you have to choose your app name to match
-    one of those subdomains. For example, when deploying through the web server of the Centre for Music and Science
-    at Cambridge, only app names of the form ``psynet-01``, ``psynet-02``, ..., ``psynet-20`` are supported.
+If you registered the server by IP address and did not save a DNS host,
+PsyNet falls back to a ``nip.io`` URL such as
+``https://your-app-name.121.101.152.23.nip.io``.
+To use a real domain, register the server under that name (or pass
+``--dns-host``), and set up DNS so that each app name is a subdomain.
+A wildcard record such as ``*.your-server.example.org`` covers every app; a
+fixed list of names means ``--app`` must be one of those names.
 
 Under the hood, the deployment command works as follows:
 
@@ -261,9 +248,10 @@ Under the hood, the deployment command works as follows:
 
 This command can go wrong at several points. The parts that happen on the local
 machine are usually easiest to debug. When things go wrong on the remote server,
-you probably want to check the logs. You can do this by navigating to 
-`logs.<dns-host>`, where you replace `dns-host` with the DNS host you specified in the deploy command.
-(e.g. logs.musix.mus.cam.ac.uk).
+you probably want to check the logs. Open
+``https://logs.<dns-host>``, where ``<dns-host>`` is the DNS name the
+experiment is served under (for example
+``https://logs.your-server.example.org``).
 Often you will see the real error message in the `web` instance.
 
 In some cases you may need to connect to the server via a separate SSH terminal to work out what's going on.
@@ -271,7 +259,7 @@ To connect to the server, run this in a separate terminal:
 
 .. code:: bash
 
-    ssh your-username@your-server.ac.uk
+    ssh your-username@your-server.example.org
 
 Navigate to the experiment's folder:
 
