@@ -42,44 +42,18 @@ Set an initial test
 Setting up the experiment
 -------------------------
 
-Experiment costs
-~~~~~~~~~~~~~~~~
+Complete the shared checks on
+:doc:`../setting_up_the_experiments` first. Set ``wage_per_hour``
+according to your lab's payment policy, for example:
 
-1. Set the “\ **wage_per_hour**\ ” parameter in the config according
-   to your lab's payment policy.
+.. code:: python
 
-   .. code:: python
-
-      "wage_per_hour": 15
-
-2. Make sure all time_estimates are set appropriately such that the
-   overall duration of your experiment (you get from psynet estimate)
-   matches your expectation.
-
-3. Run psynet estimate in the terminal and note your estimated
-   experiment duration and cost.
-
-4. Check that the experiment costs are right:
-
-   -  Use your own data (and, optionally, pilot data from colleagues) to
-      estimate how long it takes for each trial, pre-screeners, and the
-      entire experiment
-
-   -  Start running (if possible) a small number of participants
-      (e.g., 10) and try to see if your time estimate is wrong by more
-      than 30% - redeploy.
-
-   -  If you had run the experiment, update the run time based on real
-      data.
+   "wage_per_hour": 15
 
 Experiment script
 ~~~~~~~~~~~~~~~~~
 
-In case of assets, make sure you are not using DebugStorage, but
-S3Storage or a LocalStorage.
-
-Add config params under class Exp(psynet.experiment.Experiment) and set
-recruiter as 'lab-recruiter':
+Set the recruiter to ``lab-recruiter``:
 
 .. code:: python
 
@@ -96,17 +70,6 @@ recruiter as 'lab-recruiter':
        "organization_name": "<your-institution>",
        "show_reward": False,
    }
-
-An example for title:
-
-“Check recorded texts (Chrome browser, Headphone required, ~10-15 mins)”
-
-Example for description:
-
-“In this experiment you will hear spoken sentences and need to judge the
-quality of their transcript. The experiment requires Chrome browser and
-Headphones and is intended for Native English speakers. It lasts 10-12
-min.”
 
 Consent
 ~~~~~~~

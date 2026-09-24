@@ -89,8 +89,14 @@ Updating PsyNet
 ---------------
 
 If you are working from an old experiment, it might be implemented using an older version of PsyNet.
-You can see what version of PsyNet it uses by looking inside ``requirements.txt``
-for a number that looks like ``10.1.0``. For example, you might see something like this:
+You can see what version of PsyNet it uses by looking inside ``requirements.txt``.
+A current pin looks like this:
+
+::
+
+    psynet==13.3.0
+
+Older experiments sometimes used a Git URL instead:
 
 ::
 

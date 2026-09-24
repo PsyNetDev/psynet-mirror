@@ -13,10 +13,10 @@ Suppose you see an error message like this when trying to run an experiment usin
 
 .. code:: bash
 
-     => ERROR [internal] load metadata for registry.gitlab.com/psynetdev/psynet:v10.4.0
+     => ERROR [internal] load metadata for registry.gitlab.com/psynetdev/psynet:v13.3.0
      => [auth] psynetdev/psynet:pull token for registry.gitlab.com
     ------
-     > [internal] load metadata for registry.gitlab.com/psynetdev/psynet:v10.4.0:
+     > [internal] load metadata for registry.gitlab.com/psynetdev/psynet:v13.3.0:
     ------
     Dockerfile:1
     --------------------
@@ -33,11 +33,10 @@ This normally means you have out-of-date credentials in your Docker client. Try 
     docker login registry.gitlab.com
 
 
+.. _develop_troubleshooting_docker_space:
+
 Docker no space left on device
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Docker unauthorized
-^^^^^^^^^^^^^^^^^^^
 
 Suppose you see an error message like this when trying to run an experiment using Docker:
 
@@ -50,6 +49,9 @@ This means too many old Docker images have accumulated on your system. This can 
 .. code:: bash
 
     docker system prune
+
+If the error is on a remote SSH server rather than your laptop, also prune volumes and see
+:ref:`Troubleshooting deployments <deploy_troubleshooting>`.
 
 Database connection refused
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^

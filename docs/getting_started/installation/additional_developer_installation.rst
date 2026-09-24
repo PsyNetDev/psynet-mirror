@@ -139,10 +139,11 @@ You can then check your installation by running
 
     .. code-block:: bash
 
-       cd ~/Dallinger
-       git checkout v9.0.0
        cd ~/PsyNet
-       git checkout v10.1.0
+       git checkout v13.3.0
+
+    Check out the Dallinger tag or commit that that PsyNet release requires
+    (see that tag's ``pyproject.toml``).
 
 
 Install the Git pre-commit hook

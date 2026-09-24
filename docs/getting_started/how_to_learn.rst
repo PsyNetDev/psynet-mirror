@@ -5,11 +5,11 @@ How to learn
 
 .. note::
 
-    See also the work-in-progress :doc:`Tracks </examples/tracks/index>` section, which will provide learning programmes
-    for various uses of PsyNet.
+    See also the :doc:`Tracks </examples/tracks/index>` section for a
+    curated learning path (currently music perception).
 
 Before you start learning PsyNet there are a few general-purpose programming tools you should
-familiarize yourself with, such as Python and Git; see :doc:`Prerequisites </getting_started/background_skills>`
+familiarize yourself with, such as Python and Git; see :doc:`Prerequisites </getting_started/prerequisites>`
 for details.
 
 Once you're happy with the prerequisites, the next thing you should do is skim a few
@@ -19,8 +19,8 @@ A good starting point is the repository's ``experiment.py`` file, but it's worth
 repository too.
 
 You should now spend some time reading about essential PsyNet principles. This online documentation website contains
-lots of material here. Have a read through the :doc:`Tutorials </guides/index>` section and see what catches your
-eye. Some tutorials will not be relevant to you, depending on what kinds of experiments you're planning on running;
+lots of material here. Have a read through :doc:`Building experiments </guides/index>` and see what catches your
+eye. Some guides will not be relevant to you, depending on what kinds of experiments you're planning on running;
 feel free to skip them.
 
 Now you can start playing with PsyNet yourself. A good starting point is to start playing with some demos.
@@ -30,7 +30,7 @@ and typing the following:
 .. code-block:: bash
 
    cd # Navigates to your home directory
-   git clone git@gitlab.com:PsyNetDev/psynet
+   git clone git@gitlab.com:PsyNetDev/PsyNet.git
 
 Open the resulting folder (``~/PsyNet``) in your IDE (we recommend VSCode or Cursor).
 You can then navigate to the ``demos`` folder to see all the demos contained in PsyNet.
@@ -60,8 +60,7 @@ a Git repository in this location and link it to a remote repository on GitHub o
 can start changing code more wholesale.
 
 Often you will only need to understand a particular subset of PsyNet's features for implementing a particular
-experiment. Some of these features will be described in this website's :doc:`Tutorials </guides/index>`
-section. Many of them will be illustrated in one or more of the PsyNet demos. It's worth having a look
+experiment. Some of these features will be described in :doc:`Building experiments </guides/index>`. Many of them will be illustrated in one or more of the PsyNet demos. It's worth having a look
 through these demos to identify which of them provide relevant examples, and try to repurpose them for
 your own experiment.
 

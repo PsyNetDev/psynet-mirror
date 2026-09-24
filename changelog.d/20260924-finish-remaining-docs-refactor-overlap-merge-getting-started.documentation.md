@@ -1,0 +1,1 @@
+Merged the Getting started knowledge and software prerequisite pages, moved shared recruiter setup into the pre-launch overview, and updated stale PsyNet 10 examples, pre-screening instructions, and short demo pages.

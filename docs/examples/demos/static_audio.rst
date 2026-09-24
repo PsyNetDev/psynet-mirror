@@ -2,13 +2,11 @@
 Audio trial maker
 =================
 
-This demo illustrates the use of a trial maker in an audio experiment.
-Trial makers provide a standardized way to administer trials to the participant
-that can save you some effort compared to implementing the required logic manually.
-
-These trials involve recording audio from the participant. This is achieved using the
-``AudioRecordControl`` class.
-
+This demo uses a trial maker to administer audio-recording trials,
+instead of writing the trial loop by hand. Participants record with
+:class:`~psynet.modular_page.AudioRecordControl`. Contrast this with
+:doc:`audio`, which shows isolated audio widgets without a trial maker.
+Run it from ``demos/experiments/static_audio``.
 
 Source: ``demos/experiments/static_audio``
 

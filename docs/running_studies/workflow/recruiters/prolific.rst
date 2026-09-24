@@ -6,72 +6,30 @@ Prolific
 Setting up the experiment
 -------------------------
 
-Experiment costs
-~~~~~~~~~~~~~~~~
+Complete the shared checks on
+:doc:`../setting_up_the_experiments` first. For Prolific, set
+``wage_per_hour`` to Prolific's current recommended rate (commonly
+£9), and put both the duration and the wage in the study title.
 
-1. To calculate the base payment for your experiment, set the
-   “\ **wage_per_hour**\ ” parameter in the config to 9 Pounds
-   (Prolific recommendation).
+Copy the ``psynet estimate`` figures into ``get_prolific_settings()``.
+If estimate reports ``£4.95`` and ``33 min``, use:
 
-   .. code:: python
+.. code:: python
 
-      config = {
-          "wage_per_hour": 9,
-      }
+   config = {
+       "wage_per_hour": 9,
+       "base_payment": 4.95,
+       "prolific_estimated_completion_minutes": 33,
+   }
 
-2. Run psynet estimate in the terminal and note your estimated
-   experiment duration and cost. You should include the cost and the
-   duration in your experiment’s title. Also, say people need Chrome and
-   optionally headphones and microphones if needed.
-
-3. In the ``get_prolific_settings()`` function, specify the duration
-   using the ``prolific_estimated_completion_minutes`` parameter and
-   the cost using the ``base_payment`` parameter.
-
-   - For example, when you run ``psynet estimate``, you will get a
-     result like this:
-
-     .. code:: text
-
-        Estimated maximum reward for participant: £4.95.
-        Estimated time to complete experiment: 33 min.
-
-   - In this case, the prolific parameters must be as follows:
-
-     .. code:: python
-
-        config = {
-            "base_payment": 4.95,
-            "prolific_estimated_completion_minutes": 33,
-        }
-
-4. Make sure all ``time_estimate`` values are set appropriately so
-   that the overall duration from ``psynet estimate`` matches your
-   expectation.
-
-5. Check that the experiment costs are right:
-
-   -  Use your own data (and, optionally, pilot data from colleagues) to
-      estimate how long it takes for each trial, pre-screeners, and the
-      entire experiment
-
-   -  Start running (if possible) a small number of participants
-      (e.g., 10) and try to see if your time estimate is wrong by more
-      than 30% - redeploy.
-
-   -  If you had run the experiment, update the run time based on
-      real data.
-
-
-
+How PsyNet turns those values into Prolific approvals, bonuses, and
+screen-out payments is explained in
+:doc:`/getting_started/collecting_data`.
 
 Experiment script
 ~~~~~~~~~~~~~~~~~
 
-In case of assets, make sure you are not using DebugStorage, but
-S3Storage or a LocalStorage.
-
-Add config params under class Exp(psynet.experiment.Experiment):
+Add config params under ``class Exp(psynet.experiment.Experiment)``:
 
 .. code:: python
 
@@ -87,41 +45,17 @@ Add config params under class Exp(psynet.experiment.Experiment):
        "contact_email_on_error": "<your-lab-contact-email>",
        "organization_name": "<your-institution>",
        "show_reward": False,
+       "force_incognito_mode": True,
    }
 
-An example for title:
+``force_incognito_mode=True`` is recommended for most experiments: it
+reduces display differences from browser add-ons and helps against the
+red-screen error. Set it to ``False`` if you do not need that. For all
+options, see the :doc:`configuration reference </reference/configuration>`.
 
-“Check recorded texts (Chrome browser, Headphone required, Native
-english speakers only; ~10-15 mins)”
-
-Example for description:
-
-“In this experiment you will hear spoken sentences and need to judge the
-quality of their transcript. The experiment requires Chrome browser and
-Headphones and is intended for Native English speakers. It lasts 10-12
-min.”
-
-You may also want to add other config parameters that are optional,
-e.g.,
-
-.. code:: python
-
-   "force_incognito_mode": True
-
-Note that we actually recommend force_incognito_mode=True for most
-experiments as it makes sure participants actually use incognito. Not
-having incognito can generate differences in display if participants are
-using browser add-ons. If you don’t care about this display issue you
-can set this to False.
-
-This forces people to use an incognito browser, which helps against the
-red screen error. For an overview of all options, see the
-:doc:`configuration reference </reference/configuration>`.
-
-Then, you will need to add the function get_prolific_settings() to set
-up config parameters specifically pertaining to Prolific. Add this
-function at the top of your project. Your lab administrator should
-provide the Prolific qualification JSON file:
+Add ``get_prolific_settings()`` at the top of the experiment module.
+Your lab administrator should provide the Prolific qualification JSON
+file:
 
 .. code:: python
 

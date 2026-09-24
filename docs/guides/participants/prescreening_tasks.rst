@@ -2,7 +2,7 @@
 Pre-screening tasks
 ===================
 
-You can choose from the following three ready-to-use pre-screening tasks:
+You can choose from the following ready-to-use pre-screening tasks:
 
 * `Color blindness test`_
 * `Color vocabulary test`_

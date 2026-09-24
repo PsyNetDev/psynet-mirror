@@ -1,13 +1,10 @@
 Tracks
 ======
 
-.. warning::
-    This part of the PsyNet documentation is still work in progress.
-
 Different parts of PsyNet are relevant to different kinds of users.
 The following learning tracks give you different routes into learning PsyNet
-tailored towards different kinds of interests.
-
+tailored towards different kinds of interests. Currently there is one
+track, for music perception.
 
 .. toctree::
     :maxdepth: 1

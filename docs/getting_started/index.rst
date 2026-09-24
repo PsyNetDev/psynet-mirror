@@ -6,7 +6,6 @@ Getting started
 
    how_to_learn
    prerequisites
-   background_skills
    installation/index
    running_a_demo_locally
    pipelines

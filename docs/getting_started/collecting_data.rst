@@ -6,12 +6,10 @@ and then use Prolific to recruit participants.
 Prolific is a paid service for sourcing online participants for psychology experiments.
 For a general introduction to Prolific, visit the `Prolific website <https://prolific.co/>`_.
 
-This page gives a Prolific-oriented walkthrough. If you are running a
-study as part of a lab workflow and want a broader checklist covering
-setup, recruiter choice, piloting, monitoring, exports, and teardown,
-see the :doc:`Lab research workflow </running_studies/workflow/index>`.
-
-.. To do - document alternative deployment methods here
+This page gives a first Prolific-oriented walkthrough on your own
+account. For CINT, Lab Recruiter, or a shared lab Prolific workspace,
+use the :doc:`Lab research workflow </running_studies/workflow/index>`
+instead.
 
 Setting up your Prolific account
 --------------------------------
@@ -30,26 +28,29 @@ You will put this token in a general configuration file called ``.dallingerconfi
 information placed here is shared across all experiments that you run on your computer.
 This file is located in your home directory, at ``~/.dallingerconfig``.
 If the file doesn't exist already, create it; then open it with a text editor.
-Enter your API token as follows:
+Enter your API token, workspace, and project as follows:
 
 ::
 
     [Prolific]
     prolific_api_token = xxxxxxx
+    prolific_workspace = your-workspace
+    prolific_project = your-project
 
-To deploy Prolific experiments you will also need to specify the name of a Prolific workspace
-and the name of a Prolific project. You can find both on the Prolific website.
-Your workspace should exist already, but the project doesn't need to exist yet.
+The workspace should exist already; you can create the project in the
+Prolific UI if it does not. Save and close the file.
 
-
-Save and close the file.
+A lab that shares one Prolific account will usually name the project
+after the experimenter; see
+:ref:`lab-deployment-prolific`.
 
 Setting experiment configuration
 --------------------------------
 
 Several configuration parameters need setting before you deploy to Prolific.
-The standard way to do this is to edit ``config.txt`` in your experiment directory,
-for example:
+The standard way to do this is to edit ``config.txt`` in your experiment directory
+(you can set the same keys on the ``Experiment`` class instead; see
+:doc:`/reference/configuration`). For example:
 
 .. code-block:: text
 
@@ -255,9 +256,10 @@ set appropriately.
     but note that you won't get a chance to make changes to the study configuration via the Prolific interface
     before participants arrive.
 
-There is one item that is labeled something like 'Process submissions',
-where the options are 'Manually review' and 'Approve and pay'.
-Currently we think the best thing is to select 'Approve and pay' but this might change in the future.
+There is one item labeled something like 'Process submissions', with
+the options 'Manually review' and 'Approve and pay'. Select
+**Approve and pay**. The lab Prolific page shows this control in a
+screenshot; see :ref:`lab-deployment-prolific`.
 
 Another item asks you how many participants you wish to recruit. This corresponds to the
 ``initial_recruitment_size`` parameter in the ``config.txt`` file.

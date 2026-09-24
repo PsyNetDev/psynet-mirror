@@ -22,12 +22,6 @@ you can download the demo and run it yourself. If you want to use a demo as a ba
 own experiment, the best thing is to copy that demo into a separate directory (outside the PsyNet
 repository) and make your changes there.
 
-.. note::
-    This section is still work-in-progress and we will be adding more demo overviews over time.
-    In the meantime, feel free also to explore the
-    `demos directory <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos>`_
-    directly yourself.
-
 
 If you see a particular PsyNet function or class that you want to learn more about,
 there are a couple of ways to do this. One good way is to search the object's name in this website's

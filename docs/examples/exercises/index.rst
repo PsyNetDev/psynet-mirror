@@ -1,11 +1,9 @@
 Exercises
 =========
 
-Here we provide a miscellaneous collection of exercises that introduce you to various parts of PsyNet.
-For curated collections of exercises see :doc:`Tracks </examples/tracks/index>`.
-
-.. warning::
-    This part of the PsyNet documentation is still work in progress.
+A small collection of exercises that introduce you to various parts of
+PsyNet. For a curated path through some of them, see
+:doc:`Tracks </examples/tracks/index>`.
 
 .. toctree::
     :maxdepth: 1

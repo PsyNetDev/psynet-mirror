@@ -2,11 +2,10 @@
 Tapping imitation chain
 =======================
 
-This is a more complex example of an imitation chain experiment.
-Here participants have to tap along to a particular rhythm. Their tapping is recorded
-via the laptop microphone, and fed back to the PsyNet server which extracts the tap timings
-using a signal-processing pipeline.
-
+A more complex :doc:`imitation chain <imitation_chains>`: participants
+tap along to a rhythm. The laptop microphone records the taps, and the
+server extracts tap timings with a signal-processing pipeline. Run it
+from ``demos/experiments/tapping_iterated``.
 
 Source: ``demos/experiments/tapping_iterated``
 

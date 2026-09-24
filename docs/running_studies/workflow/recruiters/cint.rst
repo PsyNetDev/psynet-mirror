@@ -6,45 +6,21 @@ CINT (Lucid)
 Setting up the experiment
 -------------------------
 
-Experiment costs
-~~~~~~~~~~~~~~~~
+Complete the shared checks on
+:doc:`../setting_up_the_experiments` first. For CINT, set
+``wage_per_hour`` to the minimum wage in the target country. A list of
+minimum wages per country is available in
+`this spreadsheet <https://docs.google.com/spreadsheets/d/1Yl-eEsLTxFAVyZECZfRQnDlYM8ykY9xlJpnsTpi5oKQ/edit#gid=0>`__.
 
-1. Adjust the “\ **wage_per_hour**\ ” parameter in the config according
-   to the minimum wage in the targeted country. A list of minimum wages
-   per country can be found at this
-   `link <https://docs.google.com/spreadsheets/d/1Yl-eEsLTxFAVyZECZfRQnDlYM8ykY9xlJpnsTpi5oKQ/edit#gid=0>`__.
+.. code:: python
 
-   .. code:: python
+   "wage_per_hour": 6.5
 
-      "wage_per_hour": 6.5
-
-2. Make sure all time_estimates are set appropriately such that the
-   overall duration of your experiment (you get from psynet estimate)
-   matches your expectation.
-
-3. Run psynet estimate in the terminal and note your estimated
-   experiment duration and cost. **DO NOT indicate the cost in your
-   experiment’s title, only the duration. Also, say people need Chrome
-   and optionally headphones and microphones if needed**.
-
-4. Check that the experiment costs are right:
-
-   -  Use your own data (and, optionally, pilot data from colleagues) to
-      estimate how long it takes for each trial, pre-screeners, and the
-      entire experiment
-
-   -  Start running (if possible) a small number of participants
-      (e.g., 10) and try to see if your time estimate is wrong by more
-      than 30% - redeploy.
-
-   -  If you had run the experiment, update the run time based on real
-      data.
+**Do not put the cost in the experiment title**, only the duration
+(plus Chrome, headphones, or a microphone if needed).
 
 Experiment script
 ~~~~~~~~~~~~~~~~~
-
-In the case of assets, make sure you are not using DebugStorage, but
-S3Storage or a LocalStorage.
 
 .. code:: python
 

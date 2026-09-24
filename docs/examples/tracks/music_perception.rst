@@ -2,9 +2,6 @@
 Music perception track
 ======================
 
-.. warning::
-    This part of the PsyNet documentation is still work in progress.
-
 The music perception track is tailored towards people who want to run online behavioral studies
 about how people perceive music.
 

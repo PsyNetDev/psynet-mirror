@@ -8,8 +8,7 @@ associations of a stimulus space. In each trial, the participant is presented wi
 pair of stimuli: a 'current state' and a 'proposal state'. They are asked to decide
 which stimulus best matches a given criterion. The chosen stimulus is then accepted
 as the next state, and a new proposal is generated from that state by making a small
-random jump in the stimulus space.
-
+random jump in the stimulus space. Run it from ``demos/experiments/mcmcp``.
 
 Source: ``demos/experiments/mcmcp``
 

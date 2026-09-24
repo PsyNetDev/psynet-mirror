@@ -30,7 +30,8 @@ one that your experiment will use, you can check out a specific version of PsyNe
 .. code-block:: bash
 
    cd ~/PsyNet
-   git checkout v10.4.0
+   git checkout v13.3.0
 
-where 10.4.0 matches the PsyNet version number specified in the experiment's
-``requirements.txt`` file.
+where ``13.3.0`` matches the PsyNet version number specified in the experiment's
+``requirements.txt`` file. The latest release is listed in the
+`CHANGELOG <https://gitlab.com/PsyNetDev/PsyNet/-/blob/master/CHANGELOG.md>`_.
