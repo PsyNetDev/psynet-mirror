@@ -278,7 +278,8 @@ second 40 MiB screen clip is recorded as unavailable. No queued clip is evicted.
 Missing captures, oversized clips, queue exhaustion, and upload-module load errors
 are recorded with the accepted answer. Independent navigation continues; the
 server fails the affected trial at its existing deadline with the recorded reason.
-The tests cover this deadline behavior and navigation after a module-load failure.
+Transport initialization has a five-second budget; both failed and stalled module
+loads permit submission. The tests cover these paths and deadline behavior.
 
 Keep the switch private until lost-response recovery and complete missing-media
 navigation tests are in place.
@@ -327,8 +328,19 @@ overdue recordings. Received files use private shared storage:
 ``.deploy/media-uploads`` in the experiment directory for local deployments.
 Dallinger mounts these directories in the web, worker, and clock containers.
 Keep custom deployment layouts consistent with this requirement; a container's
-temporary directory is not shared. Files become available as assets only after
-validation and deposit succeed. The server tests cover expiry during deposit and
+temporary directory is not shared.
+
+The receiver takes a nonblocking file lock per reservation on this shared volume;
+concurrent attempts receive HTTP 429 without reading their bodies. A retry removes
+partials left by a crashed receiver, and the clock removes abandoned partials
+after expiry. Small lock files remain for the experiment's lifetime to keep their
+identity stable across processes. This requires a shared filesystem that supports
+POSIX file locks; an actual SSH deployment remains a validation requirement.
+
+Files become available as assets only after validation and deposit succeed.
+Validation uses ``ffmpeg`` to decode video within the processing deadline and
+requires nonempty decoded output; a stream header alone is insufficient.
+The server tests cover expiry during deposit and
 failure of the affected trial in both within- and across-participant chains.
 
 

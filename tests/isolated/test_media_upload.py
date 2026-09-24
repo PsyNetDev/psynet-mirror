@@ -6,7 +6,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from threading import Barrier, Thread
+from threading import Thread
 
 import pytest
 from dallinger import db
@@ -191,28 +191,42 @@ def test_retry_after_lost_receipt_cannot_overwrite(reservation, tmp_path):
     assert len(list(tmp_path.glob("psynet-upload-*"))) == 1
 
 
-def test_simultaneous_receipts_publish_only_one_file(reservation, tmp_path):
+def test_simultaneous_receipt_is_rejected_without_reading(reservation, tmp_path):
+    from threading import Event
+
+    from werkzeug.exceptions import TooManyRequests
+
     asset, receipt = reservation
     recording_id = asset.id
-    barrier = Barrier(2)
+    started, release = Event(), Event()
 
     class Body(io.BytesIO):
         def read(self, size=-1):
-            chunk = super().read(size)
-            if not chunk:
-                barrier.wait(timeout=5)
-            return chunk
+            started.set()
+            assert release.wait(timeout=5)
+            return super().read(size)
 
-    def receive(payload):
-        _receive_recording(
-            recording_id, receipt["token"], Body(payload), directory=tmp_path
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        first = pool.submit(
+            _receive_recording,
+            recording_id,
+            receipt["token"],
+            Body(b"first"),
+            directory=tmp_path,
         )
-
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        list(executor.map(receive, [b"first", b"second"]))
+        try:
+            assert started.wait(timeout=5)
+            second = io.BytesIO(b"second")
+            with pytest.raises(TooManyRequests):
+                _receive_recording(
+                    recording_id, receipt["token"], second, directory=tmp_path
+                )
+            assert second.tell() == 0
+        finally:
+            release.set()
+        first.result(timeout=5)
     db.session.refresh(asset)
-    assert Path(asset.input_path).read_bytes() in [b"first", b"second"]
-    assert len(list(tmp_path.glob("psynet-upload-*"))) == 1
+    assert Path(asset.input_path).read_bytes() == b"first"
 
 
 def test_rolled_back_response_leaves_no_recording_slot(reservation):
@@ -251,7 +265,12 @@ def test_streaming_holds_no_participant_or_asset_lock(reservation, tmp_path):
     )
 
 
-def test_expiry_during_stream_cannot_be_undone_by_receipt(reservation, tmp_path):
+def test_expiry_during_stream_cannot_be_undone_by_receipt(
+    reservation, tmp_path, monkeypatch
+):
+    from psynet import media_upload
+
+    monkeypatch.setattr(media_upload, "_upload_directory", lambda: tmp_path)
     asset, receipt = reservation
 
     class Body(io.BytesIO):
@@ -259,6 +278,8 @@ def test_expiry_during_stream_cannot_be_undone_by_receipt(reservation, tmp_path)
             with Session(db.engine) as session, session.begin():
                 recording = session.get(Recording, asset.id)
                 recording.upload_status = "expired"
+            media_upload._clean_abandoned_receipts()
+            assert len(list(tmp_path.glob("psynet-upload-*"))) == 1
             return super().read(size)
 
     with pytest.raises(Gone):
@@ -465,3 +486,106 @@ def test_received_recording_is_queued_only_once(received_video, monkeypatch):
     assert db.session.get(Recording, recording_id).deposited
     process = db.session.get(WorkerAsyncProcess, launched[0])
     assert process.finished and not process.pending and not process.failed
+
+
+def test_header_only_video_is_rejected(reservation, tmp_path, monkeypatch):
+    import json
+    import subprocess
+
+    asset, receipt = reservation
+    asset.upload_max_bytes = 1000
+    asset_id = asset.id
+    db.session.commit()
+    payload = (
+        Path(__file__).resolve().parents[2]
+        / "demos/experiments/imitation_chain_video/assets/example_recording.webm"
+    ).read_bytes()[:400]
+    probe = tmp_path / "header.webm"
+    probe.write_bytes(payload)
+    result = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-count_packets",
+            "-show_entries",
+            "stream=nb_read_packets",
+            "-of",
+            "json",
+            str(probe),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert all(
+        int(stream.get("nb_read_packets", 0)) == 0
+        for stream in json.loads(result.stdout)["streams"]
+    )
+    monkeypatch.setattr(LocalStorage, "on_deployed_server", lambda self: True)
+    _receive_recording(
+        asset_id, receipt["token"], io.BytesIO(payload), directory=tmp_path
+    )
+    _process_recording(asset_id)
+    assert not db.session.get(Recording, asset_id).deposited
+    assert (
+        db.session.get(Recording, asset_id).upload_failed_reason == "invalid_recording"
+    )
+
+
+@pytest.mark.parametrize("retry", [False, True])
+def test_receiver_crash_releases_ownership_and_cleans_partials(
+    reservation, tmp_path, monkeypatch, retry
+):
+    import multiprocessing
+    import os
+    from datetime import timedelta
+
+    from psynet import media_upload
+
+    asset, receipt = reservation
+    asset.upload_max_bytes = 65536
+    asset_id, deadline = asset.id, asset.upload_deadline
+    db.session.commit()
+
+    def crash_receiver():
+        db.engine.dispose(close=False)
+
+        class Body:
+            first = True
+
+            def read(self, size):
+                if self.first:
+                    self.first = False
+                    return b"x" * 65536
+                os._exit(23)
+
+        _receive_recording(asset_id, receipt["token"], Body(), directory=tmp_path)
+
+    process = multiprocessing.get_context("fork").Process(target=crash_receiver)
+    process.start()
+    process.join(timeout=10)
+    if process.is_alive():
+        process.terminate()
+        process.join(timeout=5)
+        pytest.fail("Receiver did not exit in time")
+    assert process.exitcode == 23
+    files = list(tmp_path.glob("psynet-upload-*"))
+    assert len(files) == 1 and files[0].stat().st_size == 65536
+    if retry:
+        _receive_recording(
+            asset_id, receipt["token"], io.BytesIO(b"retry"), directory=tmp_path
+        )
+        assert not files[0].exists()
+        assert len(list(tmp_path.glob("psynet-upload-*"))) == 1
+        db.session.refresh(asset)
+        assert Path(asset.input_path).read_bytes() == b"retry"
+        return
+    monkeypatch.setattr(
+        media_upload, "_utcnow", lambda: deadline + timedelta(seconds=1)
+    )
+    monkeypatch.setattr(media_upload, "_upload_directory", lambda: tmp_path)
+    media_upload._expire_recordings()
+    assert db.session.get(Recording, asset_id).upload_status == "expired"
+    assert db.session.get(Recording, asset_id).input_path is None
+    assert not files[0].exists()

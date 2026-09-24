@@ -2998,7 +2998,19 @@
         try {
           const maxBytes = psynet.var.asynchronousVideoUploadMaxBytes;
           if (!recordingUploadQueue) {
-            const { MediaUploadQueue } = await import("/static/scripts/media-upload.js");
+            let initializationTimer;
+            let transport;
+            try {
+              transport = await Promise.race([
+                import("/static/scripts/media-upload.js"),
+                new Promise((_, reject) => {
+                  initializationTimer = setTimeout(() => reject(new Error("Recording transport initialization timed out.")), 5000);
+                }),
+              ]);
+            } finally {
+              clearTimeout(initializationTimer);
+            }
+            const { MediaUploadQueue } = transport;
             // The bounded document queue can hold a full camera + screen answer.
             recordingUploadQueue = new MediaUploadQueue({ maxBytes: 2 * maxBytes });
           }

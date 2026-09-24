@@ -61,3 +61,20 @@ test("upload module failure preserves submission and independent navigation @inp
     await waitForNextEnabled(p, 30000);
   });
 });
+
+test("stalled upload module permits independent navigation @inplace-only", async ({page,context}) => {
+  test.setTimeout(120000);
+  let held;
+  await context.route("**/static/scripts/media-upload.js", route => {held=route;});
+  await withExperiment(page,context,path.resolve("tests/playwright/experiments/asynchronous_recording"),async p=>{
+    await completeInitialGateway(p);
+    await expect(p.locator("#main-body")).toContainText("Record a short clip.");
+    await waitForVideoRecordingReady(p,{timeoutMs:45000});
+    await waitForNextEnabled(p,30000);
+    await p.clock.install();
+    await p.locator("#next-button").click();
+    await expect.poll(()=>Boolean(held)).toBe(true);
+    await p.clock.fastForward(6000);
+    await expect(p.locator("#main-body")).toContainText("Independent page reached.");
+  });
+});

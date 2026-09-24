@@ -3,8 +3,9 @@
 Reservations belong to existing Recording assets and must be created in the
 accepted response transaction. Read links and upload capabilities are separate;
 only a hash of the write capability is stored. The receiver authenticates before
-reading bytes, streams to a private bounded file without holding database locks,
-then locks only the recording row to publish complete receipt exactly once.
+reading bytes, takes a cross-process file lock, and streams to a private bounded
+file without holding database locks. It then locks only the recording row to
+publish complete receipt exactly once.
 
 Receipt is not deposit: a worker validates and stores bytes before a short
 transaction publishes success. A poller expires overdue recordings even when
@@ -14,8 +15,8 @@ files through the asset endpoint before successful deposit.
 """
 
 import errno
+import fcntl
 import hashlib
-import json
 import math
 import os
 import secrets
@@ -23,6 +24,7 @@ import socket
 import subprocess
 import tempfile
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from threading import Timer
@@ -36,6 +38,7 @@ from werkzeug.exceptions import (
     Forbidden,
     Gone,
     RequestEntityTooLarge,
+    TooManyRequests,
 )
 
 from . import deployment_info
@@ -226,8 +229,53 @@ def _check_receivable(recording):
     return True
 
 
+@contextmanager
+def _receipt_lock(directory, recording_id):
+    """Serialize receipt and cleanup across processes on the shared volume.
+
+    Keep the small lock file in place: unlinking a live lock could allow another
+    process to lock a different inode. OS process exit releases the lock itself.
+    """
+    directory = Path(directory)
+    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    descriptor = os.open(
+        directory / f".psynet-upload-{recording_id}.lock", os.O_CREAT | os.O_RDWR, 0o600
+    )
+    try:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise TooManyRequests(
+                "This recording already has an active upload."
+            ) from None
+        yield
+    finally:
+        os.close(descriptor)
+
+
 def _receive_recording(
     recording_id, token, stream, *, content_length=None, directory=None, connection=None
+):
+    """Authenticate before taking exclusive receipt ownership or reading bytes."""
+    with Session(db.engine) as session:
+        recording = session.get(Recording, recording_id)
+        _authorize(recording, token)
+        if not _check_receivable(recording):
+            return
+    directory = _upload_directory() if directory is None else Path(directory)
+    with _receipt_lock(directory, recording_id):
+        return _receive_recording_body(
+            recording_id,
+            token,
+            stream,
+            content_length=content_length,
+            directory=directory,
+            connection=connection,
+        )
+
+
+def _receive_recording_body(
+    recording_id, token, stream, *, directory, content_length=None, connection=None
 ):
     """Publish a complete bounded file without locking its participant.
 
@@ -244,6 +292,11 @@ def _receive_recording(
         deadline = recording.upload_deadline
     if content_length is not None and content_length > max_bytes:
         raise RequestEntityTooLarge()
+
+    # A previous receiver may have died before publishing receipt. Ownership of
+    # this reservation is exclusive, so discard its abandoned partials on retry.
+    for abandoned in Path(directory).glob(f"psynet-upload-{recording_id}-*"):
+        abandoned.unlink(missing_ok=True)
 
     path = None
     retained = False
@@ -269,11 +322,8 @@ def _receive_recording(
         timer.daemon = True
         timer.start()
     try:
-        if directory is None:
-            directory = _upload_directory()
-            directory.mkdir(mode=0o700, parents=True, exist_ok=True)
         with tempfile.NamedTemporaryFile(
-            prefix="psynet-upload-",
+            prefix=f"psynet-upload-{recording_id}-",
             dir=directory,
             delete=False,
         ) as target:
@@ -347,32 +397,46 @@ def _claim_recording(recording_id):
 
 
 def _validate_recording(path, deadline):
-    """Require a WebM/Matroska video stream within the processing allowance."""
+    """Decode video within the processing budget and require nonempty output.
+
+    A declared stream can be just a truncated header. Decode all video frames,
+    failing on decoding errors, and scale output to one gray byte per frame so
+    validation does not retain full-resolution frames in memory.
+    """
     result = subprocess.run(
         [
-            "ffprobe",
+            "ffmpeg",
             "-v",
             "error",
+            "-nostdin",
+            "-xerror",
+            "-threads",
+            "1",
             "-protocol_whitelist",
             "file,pipe",
             "-f",
             "matroska",
-            "-show_entries",
-            "stream=codec_type",
-            "-of",
-            "json",
+            "-i",
             str(path),
+            "-map",
+            "0:v:0",
+            "-an",
+            "-vf",
+            "scale=1:1",
+            "-pix_fmt",
+            "gray",
+            "-threads",
+            "1",
+            "-f",
+            "rawvideo",
+            "pipe:1",
         ],
         capture_output=True,
-        text=True,
         check=True,
         timeout=max(0.001, (deadline - _utcnow()).total_seconds()),
     )
-    if not any(
-        stream.get("codec_type") == "video"
-        for stream in json.loads(result.stdout).get("streams", [])
-    ):
-        raise ValueError("The recording does not contain a video stream.")
+    if not result.stdout:
+        raise ValueError("The recording contains no decodable video frames.")
 
 
 def _store_recording_bytes(path, storage):
@@ -499,6 +563,34 @@ def _process_recording(recording_id):
         Path(path).unlink(missing_ok=True)
 
 
+def _clean_abandoned_receipts():
+    """Remove crashed receivers' files once no live reservation needs them."""
+    directory = _upload_directory()
+    if not directory.exists():
+        return
+    for path in directory.glob("psynet-upload-*"):
+        parts = path.name.split("-", 3)
+        if len(parts) != 4 or not parts[2].isdigit():
+            continue
+        recording_id = int(parts[2])
+        try:
+            with _receipt_lock(directory, recording_id):
+                with Session(db.engine) as session:
+                    asset = session.get(Recording, recording_id)
+                    abandoned = asset is None or asset.upload_status in {
+                        "expired",
+                        "failed",
+                        "deposited",
+                    }
+                    if asset is not None and asset.upload_status == "pending":
+                        abandoned = _utcnow() >= asset.upload_deadline
+                    if abandoned:
+                        path.unlink(missing_ok=True)
+        except TooManyRequests:
+            # An active receiver owns its file until its deadline interrupts it.
+            continue
+
+
 @with_transaction
 def _expire_recordings():
     """Expire missing or stalled recordings independently of browser activity."""
@@ -521,6 +613,7 @@ def _expire_recordings():
         path = _complete_recording(recording_id)
         if path is not None:
             Path(path).unlink(missing_ok=True)
+    _clean_abandoned_receipts()
 
 
 @with_transaction
