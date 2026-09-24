@@ -494,9 +494,11 @@ class ChatGptTranslator(Translator):
             temperature=temperature,
             response_format=_response_format(ids),
             # Generous even for scripts that need several tokens per character,
-            # but stops a repetition loop well before the model's own limit.
+            # plus room for reasoning models' hidden reasoning, which counts
+            # toward the limit; still stops a repetition loop well before the
+            # model's own limit.
             max_completion_tokens=min(
-                16_000, 1_000 + 5 * sum(len(text) for text in texts)
+                32_000, 8_000 + 5 * sum(len(text) for text in texts)
             ),
         )
         choice = response.choices[0]
