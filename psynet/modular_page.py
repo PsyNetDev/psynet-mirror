@@ -4030,6 +4030,12 @@ class SurveyJSControl(Control):
             return None
         return json.loads(raw_answer)
 
+    def get_js_dependencies(self):
+        """Load the SurveyJS library only on pages that contain a survey."""
+        return super().get_js_dependencies() + [
+            "/static/scripts/survey-jquery/survey-jquery.js"
+        ]
+
     def get_css(self):
         css = super().get_css()
         css.append(
