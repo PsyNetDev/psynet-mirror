@@ -94,7 +94,9 @@ will be deployed:
 
    .. code:: bash
 
-      psynet debug ssh --app <app_name> --dns-host <your-subdomain>.<your-domain> --server <your-subdomain>.<your-domain>
+      psynet debug ssh --app <app_name> --dns-host <your-subdomain>.<your-domain>
+
+   Add ``--server <host>`` if you have registered more than one server.
 
 4. Use the pilot data to verify your analysis and export scripts before
    collecting real participant data.

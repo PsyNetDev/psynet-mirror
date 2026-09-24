@@ -85,11 +85,17 @@ a more useful message.
 I cannot access my server anymore
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Try re-adding your PEM key to your SSH agent by running:
+Try re-adding your PEM key to your SSH agent. On macOS, run:
 
 .. code:: bash
 
-   ssh-add -K ~/.ssh/<your-key-name>.pem
+   ssh-add --apple-use-keychain ~/.ssh/<your-key-name>.pem
+
+On Linux, run:
+
+.. code:: bash
+
+   ssh-add ~/.ssh/<your-key-name>.pem
 
 Replace ``<your-key-name>`` with the name of your PEM file (e.g., the
 file configured in your ``~/.dallingerconfig``).

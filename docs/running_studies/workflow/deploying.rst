@@ -72,7 +72,10 @@ Run the deployment command
 
    .. code:: bash
 
-      psynet deploy ssh --app <app_name> --dns-host <your-subdomain>.<your-domain> --server <your-subdomain>.<your-domain>
+      psynet deploy ssh --app <app_name> --dns-host <your-subdomain>.<your-domain>
+
+   If you have registered more than one server, add ``--server <host>``
+   to choose which one to deploy to.
 
 Once deployed, save the dashboard link that is printed in the terminal
 so that you are able to :doc:`monitor <monitoring_and_managing>` the
