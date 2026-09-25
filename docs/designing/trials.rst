@@ -1,16 +1,15 @@
 .. _concept_trials:
 
-Trials and trial makers
-=======================
+Static trial makers
+===================
 
 Most experiments have a main task where participants respond to a series of
 stimuli: rating sounds, choosing between images, singing back melodies.
 PsyNet runs such tasks with **trial makers**, **nodes**, and **trials**.
 
 This page describes *static* experiments, where the nodes are fixed before
-the experiment starts. :doc:`Chain experiments
-</getting_started/chain_experiments>` follow the same pattern, except that
-new nodes are made from participants' responses.
+the experiment starts. :doc:`Chain experiments <chains>` follow the same
+pattern, except that new nodes are made from participants' responses.
 
 How it works
 ------------
@@ -108,8 +107,10 @@ experiment through the unsuccessful end (see :doc:`timeline`). This is how
 most screening and attention tasks are built.
 
 By default, when a participant fails a performance check, their trials in
-that trial maker are marked as failed too, so they drop out of the usable
-data. Participants who simply leave early keep the trials they completed. See
+that trial maker are marked as **failed** too. A failed trial is not deleted:
+it stays in the database and the export, marked as failed, but PsyNet leaves
+it out of balancing and recruitment targets, and analyses normally leave it
+out too. Participants who simply leave early keep the trials they completed. See
 :doc:`/guides/trials/participant_and_trial_failure` for the full rules.
 
 Where relevant, scores can also feed a performance bonus.

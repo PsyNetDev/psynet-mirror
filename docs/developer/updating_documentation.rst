@@ -101,8 +101,8 @@ On concept pages:
   experimenter placed an end page.
 - Do not assume participants are paid. Write "if the experiment pays
   participants" or "where relevant".
-- End with a "What to check when reviewing" list of questions a researcher
-  can answer by reading the implementation.
+- Where there are checks a reviewer might not think of, end with a "What to
+  check when reviewing" list. Leave it out if every item would be obvious.
 
 On code pages:
 

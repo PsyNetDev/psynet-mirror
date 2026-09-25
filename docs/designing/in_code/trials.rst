@@ -1,5 +1,5 @@
-Trials and trial makers in code
-===============================
+Static trial makers in code
+===========================
 
 This page shows how the ideas in :doc:`/designing/trials` appear in
 ``experiment.py``, using the ``demos/pipelines/simple_rating`` demo, where

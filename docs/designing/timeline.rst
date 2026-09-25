@@ -84,10 +84,11 @@ Ending the experiment early
 ---------------------------
 
 Participants can leave early through an *unsuccessful end*. You rarely write
-this yourself. Most early exits happen because PsyNet fails the participant,
-for example when they fail a pre-screening task or a trial maker's
-performance check. PsyNet then sends them to the unsuccessful end, wherever
-they are in the timeline. You can also place an unsuccessful end page
+this yourself. Most early exits happen because PsyNet **fails** the
+participant, for example when they fail a pre-screening task or a trial
+maker's performance check. A failed participant cannot continue and does not
+count as a successful completion, so PsyNet sends them to the unsuccessful
+end, wherever they are in the timeline. You can also place an unsuccessful end page
 explicitly, for example at the end of a branch for ineligible participants.
 
 If the experiment pays participants, those who leave early are paid what

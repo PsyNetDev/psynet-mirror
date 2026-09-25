@@ -1,0 +1,1 @@
+Added "Chains" concept and in-code pages to the "Designing experiments" section, covering how chains grow, within- and across-participant chains, chain selection and length, built-in chain paradigms, and failure handling.

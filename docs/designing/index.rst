@@ -11,6 +11,7 @@ how the idea appears in ``experiment.py``.
 
    timeline
    trials
+   chains
    stimuli
 
 .. toctree::
@@ -19,4 +20,5 @@ how the idea appears in ``experiment.py``.
 
    in_code/timeline
    in_code/trials
+   in_code/chains
    in_code/stimuli
