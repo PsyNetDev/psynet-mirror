@@ -11,21 +11,21 @@ from psynet.utils import get_logger
 
 logger = get_logger("experiment")
 
-# Stimuli
-Debug = False
-rules = ["2", "3", "4"]  # The score (gain) for collecting an object in each group
-Goal = 3  # Once score reaches this goal the game is finished
-game = [1]
+DEBUG = False
+GAINS = ["2", "3", "4"]  # Points for collecting an object; one condition per value
+GOAL = 3  # Once the score reaches this goal the game is finished
 
 SAME_SESSION_ID = "0"
 
-# Definition of network
+# One node per between-participant condition. Each participant is assigned to
+# one gain at random (see choose_participant_group below) and plays that
+# condition's node for several rounds.
 nodes = [
     StaticNode(
-        definition={"mGame": 1, "rule": mType},
-        participant_group=mType,
+        definition={"gain": gain},
+        participant_group=gain,
     )
-    for mType in rules
+    for gain in GAINS
 ]
 
 
@@ -42,7 +42,7 @@ class UnityGamePage(UnityPage):
             resources="/static",
             contents=contents,
             session_id=session_id,
-            debug=Debug,
+            debug=DEBUG,
             time_estimate=time_estimate,
             game_container_width="960px",
             game_container_height="600px",
@@ -60,11 +60,11 @@ class GameTrial(StaticTrial):
     time_estimate = 1
 
     def show_trial(self, experiment, participant):
-        the_rule = self.node.definition["rule"]
-        goal = Goal
+        gain = self.definition["gain"]
+        goal = GOAL
         data = {
             "goal": goal,
-            "gain": the_rule,
+            "gain": gain,
         }
 
         page = UnityGamePage(
@@ -127,7 +127,7 @@ trial_maker = GameTrialMaker(
     target_n_participants=3,
     recruit_mode="n_participants",
     n_repeat_trials=0,
-    choose_participant_group=lambda participant: random.choice(rules),
+    choose_participant_group=lambda participant: random.choice(GAINS),
 )
 
 

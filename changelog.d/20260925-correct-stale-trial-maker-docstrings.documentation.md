@@ -1,0 +1,1 @@
+Removed the nonexistent `max_unique_nodes_per_block` argument from the `StaticTrialMaker` docstring and the static experiments tutorial, and corrected the `DenseTrialMaker` docstring to describe its `conditions` argument instead of a nonexistent `ConditionList` class.

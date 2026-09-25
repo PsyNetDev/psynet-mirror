@@ -78,6 +78,41 @@ Link internal pages with Sphinx roles such as ``:doc:`` or ``:ref:``, not raw
 ``../tutorials/setting_up_slack.html``, but linkcheck looks for that ``.html``
 file next to the ``.rst`` source and reports it as broken.
 
+Concept pages and code pages
+----------------------------
+
+The :doc:`/designing/index` section pairs each *concept page* with an *in
+code* page under ``designing/in_code/``. The concept page explains an idea for
+someone specifying an experiment or reviewing an implementation. The code
+page shows how the same idea appears in ``experiment.py``. Give both pages the
+same section headings so readers can move between them, and end the concept
+page with a ``seealso`` link to its code page.
+
+On concept pages:
+
+- Write so the page reads completely without code. Use at most a tiny
+  illustrative snippet.
+- Use bold for key terms, not API links. Links to the API reference belong on
+  the code page.
+- Describe what experimenters decide and what PsyNet does for them. Leave out
+  automatic behavior the reader never acts on, and describe the usual path
+  first. For example, most participants who leave early do so because PsyNet
+  fails them after a screening task or performance check, not because the
+  experimenter placed an end page.
+- Do not assume participants are paid. Write "if the experiment pays
+  participants" or "where relevant".
+- End with a "What to check when reviewing" list of questions a researcher
+  can answer by reading the implementation.
+
+On code pages:
+
+- Link each class and function to the API reference with ``:class:``,
+  ``:func:``, or ``:meth:``.
+- Take worked examples from tested demos with ``literalinclude`` (preferably
+  ``:pyobject:``) rather than pasting them, so they cannot drift from the code.
+- Keep other snippets short, and check argument names and signatures against
+  the source.
+
 The generated HTML from ``psynet dev docs make`` is written to
 ``docs/_build/html/index.html``.
 

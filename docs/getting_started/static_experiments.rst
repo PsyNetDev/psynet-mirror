@@ -242,10 +242,6 @@ There are many other optional parameters available too. See in particular:
     after all blocks have been completed. Defaults to 0.
 - ``allow_repeated_nodes``
     Determines whether the participant can be administered the same node more than once.
-- ``max_unique_nodes_per_block``
-    Determines the maximum number of unique nodes that a participant will be allowed to experience
-    in each block. Once this quota is reached, the participant will be forced to repeat
-    previously experienced nodes.
 - ``balance_across_nodes``
     If ``True`` (default), active balancing across participants is enabled, meaning that
     node selection favours nodes that have been presented fewest times to any participant

@@ -28,14 +28,12 @@ class DenseTrialMaker(StaticTrialMaker):
     :class:`~psynet.trial.dense.SameDifferentTrial` for same-different paradigms and
     :class:`~psynet.trial.dense.AXBTrial` for AXB paradigms.
 
-    The user must also specify a
-    :class:`~psynet.trial.dense.ConditionList`, which contains a list of
-    :class:`~psynet.trial.dense.DenseNode` objects.
-    These different :class:`~psynet.trial.dense.DenseNode` objects are used for specifying the different
-    classes of stimuli seen by the participant.
-    A given participant will typically receive trials from a variety of Conditions over the course of the trial maker.
-    By default, the different Conditions will be randomly interspersed with one another;
-    however, it is also possible to assign different Conditions to different blocks,
+    The user must also pass a list of
+    :class:`~psynet.trial.dense.DenseNode` objects as ``conditions``.
+    Each of these nodes defines one condition, that is, one class of stimuli seen by the participant.
+    A given participant will typically receive trials from a variety of conditions over the course of the trial maker.
+    By default, the different conditions will be randomly interspersed with one another;
+    however, it is also possible to assign different conditions to different blocks,
     so as to constrain the order of their presentation to the participant.
 
     The user may also override the following methods, if desired:
@@ -254,7 +252,7 @@ class DenseNode(StaticNode):
         The associated block.
         Defaults to a single block for all trials.
         Use this in combination with :meth:`~psynet.trial.dense.DenseTrialMaker.choose_block_order`
-        to manipulate the order in which Conditions are presented to participants.
+        to manipulate the order in which conditions are presented to participants.
     """
 
     def __init__(

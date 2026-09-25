@@ -1,0 +1,1 @@
+Added a "Designing experiments" documentation section with concept pages on the timeline, trials and trial makers, and stimuli and media, each paired with an "in code" page drawn from tested demos. The docs-writing guide describes how to write both kinds of page.

@@ -19,6 +19,7 @@ while placing minimal constraints on the complexity of the experiment design.
 
    introduction/index
    getting_started/index
+   designing/index
    guides/index
    running_studies/index
    examples/index
