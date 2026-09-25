@@ -114,10 +114,17 @@ could destroy much of a chain. See
 Where the data goes
 -------------------
 
-Every node is exported with its definition and its position in the chain
-(its **degree**: 0 for the start node, 1 for the next, and so on), and every
-trial with the node it was made on. Following a chain from degree 0 upwards
-shows how the state changed over the course of the experiment.
+The export contains a table of nodes and a table of trials:
+
+- Each **node** row records which chain the node belongs to, its definition,
+  and its **degree**: its position in the chain, counting the start node as 0.
+- Each **trial** row records which node the participant saw and what they
+  answered.
+
+To see how a chain changed, take its nodes in order of degree. In the story
+example, degree 0 is the original story, degree 1 is the first retelling,
+degree 2 is the retelling of that, and so on. The trials on each node show the
+responses that the next node was made from.
 
 .. seealso::
 
