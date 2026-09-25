@@ -15,9 +15,6 @@ Start by following `.cursor/skills/update-onto-target/SKILL.md` so
 the reviewed tree is the real merge with the MR target. Then review.
 Always update the GitLab merge request title and description.
 
-Do not reorganize commits here. When that rewrite is allowed is in
-`.cursor/skills/reorganize-onto-target/SKILL.md` (When to run).
-
 ## Prerequisites
 
 1. Verify you are not on the MR target:
