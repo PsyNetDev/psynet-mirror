@@ -10,6 +10,7 @@ how the idea appears in ``experiment.py``.
    :maxdepth: 1
 
    timeline
+   pages
    trials
    chains
    stimuli
@@ -19,6 +20,7 @@ how the idea appears in ``experiment.py``.
    :caption: In code
 
    in_code/timeline
+   in_code/pages
    in_code/trials
    in_code/chains
    in_code/stimuli

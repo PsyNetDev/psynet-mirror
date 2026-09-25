@@ -1,0 +1,1 @@
+Added "Pages" concept and in-code pages to the "Designing experiments" section, covering kinds of page, how responses are stored and validated, timing within a page, and theming and translation. `Event`, `FailedValidation`, `ProgressDisplay`, and `ProgressStage` now appear in the API reference.

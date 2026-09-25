@@ -25,6 +25,18 @@ Elt
 
 .. autoclass:: psynet.timeline.Elt
 
+=====
+Event
+=====
+
+.. autoclass:: psynet.timeline.Event
+
+================
+FailedValidation
+================
+
+.. autoclass:: psynet.timeline.FailedValidation
+
 ========
 for_loop
 ========
@@ -57,6 +69,14 @@ PageMaker
 =========
 
 .. autoclass:: psynet.timeline.PageMaker
+
+================
+Progress display
+================
+
+.. autoclass:: psynet.timeline.ProgressDisplay
+
+.. autoclass:: psynet.timeline.ProgressStage
 
 ================
 PreDeployRoutine

@@ -13,8 +13,7 @@ What a timeline is made of
 A timeline is a sequence of elements. There are three kinds:
 
 - **Pages** are what the participant sees and responds to: an instruction
-  screen, a rating scale, a recording prompt. See
-  :doc:`/getting_started/pages`.
+  screen, a rating scale, a recording prompt. See :doc:`pages`.
 - **Page makers** are pages whose content depends on the participant, for
   example "You scored 7 out of 10" or a stimulus chosen from their earlier
   answers.
