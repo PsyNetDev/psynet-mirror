@@ -1,8 +1,13 @@
-import os
+from pathlib import Path
 from typing import Type
 
-from psynet.asset import FileAsset
 from psynet.trial.chain import ChainNode, ChainTrial
+
+__all__ = [
+    "Trial",
+    "Node",
+    "compile_nodes_from_directory",
+]
 
 
 class Trial(ChainTrial):
@@ -23,10 +28,10 @@ def compile_nodes_from_directory(
     input_dir: str,
     media_ext: str,
     node_class: Type[ChainNode],
-    asset_label: str = "prompt",
+    url_key: str = "url",
 ):
-    """
-    This function is used to compile nodes from a directory of media files.
+    """Compile trial nodes from a directory of media files under ``static/``.
+
     This directory is expected to be structured in the following kind of way:
 
     input_dir/
@@ -49,15 +54,16 @@ def compile_nodes_from_directory(
     |   |   |-- media_file_10.wav
     |   |-- block_3/
 
-    etc.
-
     You can name the participant groups, blocks and files whatever you want; the important
     thing is their position in the hierarchy.
 
-    If you want to have this input directory inside your experiment directory,
-    you should place it in the ``data`` directory.
-
-    Otherwise, you can place it anywhere you want outside the experiment directory.
+    Place ``input_dir`` under the experiment ``static/`` directory so the files
+    are copied with the deployment plan and served as ``/static/...`` URLs.
+    Paths outside ``static/`` (including directories outside the experiment)
+    are not supported. Each node definition stores that URL under ``url_key``
+    (default ``"url"``). Pass ``self.definition[url_key]`` to ``AudioPrompt``.
+    Participant groups, blocks, and files are visited in alphabetical order
+    by name.
 
     Parameters
     ----------
@@ -67,8 +73,8 @@ def compile_nodes_from_directory(
         The extension of the media files.
     node_class : type
         The class of the node to compile.
-    asset_label : str, optional
-        The label of the asset to use for the media files.
+    url_key : str, optional
+        Key in the node definition that stores the media URL.
 
     Returns
     -------
@@ -77,7 +83,7 @@ def compile_nodes_from_directory(
         Don't evaluate this function before you pass it, the lazy evaluation is an important feature.
     """
     return lambda: _compile_nodes_from_directory(
-        input_dir, media_ext, node_class, asset_label
+        input_dir, media_ext, node_class, url_key
     )
 
 
@@ -85,32 +91,46 @@ def _compile_nodes_from_directory(
     input_dir: str,
     media_ext: str,
     node_class: Type[ChainNode],
-    asset_label: str = "prompt",
+    url_key: str = "url",
 ):
+    from psynet.media import static_url_for
+
+    static_url_for(input_dir)
     nodes = []
-    participant_groups = [(f.name, f.path) for f in os.scandir(input_dir) if f.is_dir()]
-    for participant_group, group_path in participant_groups:
-        blocks = [(f.name, f.path) for f in os.scandir(group_path) if f.is_dir()]
-        for block, block_path in blocks:
-            media_files = [
-                (f.name, f.path)
-                for f in os.scandir(block_path)
-                if f.is_file() and f.path.endswith(media_ext)
-            ]
-            for media_name, media_path in media_files:
+    input_path = Path(input_dir)
+    if not input_path.is_dir():
+        raise FileNotFoundError(
+            f"compile_nodes_from_directory: {input_dir!r} is not a directory."
+        )
+    suffix = media_ext.lower()
+    if not suffix.startswith("."):
+        suffix = f".{suffix}"
+    for group_dir in _sorted_subdirectories(input_path):
+        for block_dir in _sorted_subdirectories(group_dir):
+            media_files = sorted(
+                (
+                    path
+                    for path in block_dir.iterdir()
+                    if path.is_file() and path.suffix.lower() == suffix
+                ),
+                key=lambda path: path.name,
+            )
+            for media_path in media_files:
                 nodes.append(
                     node_class(
                         definition={
-                            "name": media_name,
+                            "name": media_path.name,
+                            url_key: static_url_for(media_path),
                         },
-                        assets={
-                            asset_label: FileAsset(
-                                input_path=media_path,
-                                extension=media_ext,
-                            )
-                        },
-                        participant_group=participant_group,
-                        block=block,
+                        participant_group=group_dir.name,
+                        block=block_dir.name,
                     )
                 )
     return nodes
+
+
+def _sorted_subdirectories(path: Path):
+    return sorted(
+        (child for child in path.iterdir() if child.is_dir()),
+        key=lambda child: child.name,
+    )

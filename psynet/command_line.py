@@ -1575,7 +1575,7 @@ def run_pre_checks(mode, local_, heroku=False, docker=False, app=None):
 
     exp = get_experiment()
     exp.check_config()
-    exp.check_size()
+    exp.check_size(heroku=heroku)
     exp.check_consents()
     exp.check_python_dependencies()
 

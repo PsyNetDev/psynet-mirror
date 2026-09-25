@@ -80,3 +80,26 @@ from this PsyNet version already include that path.
 Git provenance records the commit and whether deployment-selected files contain
 uncommitted changes. Remote deployments require at least one Git commit; local
 debug and test runs may use a newly initialized repository.
+
+Pregenerated stimuli
+--------------------
+
+Put public audio, images, and video in ``static/`` and link them with
+:func:`~psynet.media.static_url_for` (or a literal ``/static/...`` URL).
+Gitignored files under ``static/`` are still deployed
+unless you exclude them. Generated ``static/assets`` stays excluded.
+
+The default package-size limit is 1024 MB so a typical stimulus set can ship
+in the image. That ceiling is meant for ``static/`` media. Before setting
+``EXP_MAX_SIZE_MB`` higher, run ``dallinger deployment-files list`` and
+exclude anything that should stay local. Heroku deploys are capped at 500 MB.
+
+PsyNet commands apply that 1024 MB default for Dallinger's size check.
+``dallinger verify`` on its own still uses Dallinger's 256 MB default unless
+you set ``EXP_MAX_SIZE_MB``.
+
+``compile_nodes_from_directory`` now requires the media
+directory to live under ``static/`` and stores ``/static/...`` URLs on each
+node definition (default key ``url``) instead of creating assets. Move files out of ``data/`` (or any directory outside ``static/``)
+and pass ``self.definition["url"]`` to prompts. Nodes are compiled in
+alphabetical order by participant group, block, and filename.

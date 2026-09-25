@@ -5,6 +5,26 @@ Assets
 Overview
 --------
 
+Which approach to use depends on where your files come from:
+
+- **Ready-made files**, such as a folder of sounds or images: put them in the
+  experiment's ``static/`` folder and refer to them by URL, for example
+  ``AudioPrompt("/static/instrument_sounds/clarinet.mp3", ...)``. This is the
+  standard case; see ``demos/pipelines/simple_rating``. You do not need
+  assets.
+- **Files generated from code**, such as synthesized sounds: pass a function
+  to :func:`~psynet.asset.asset`. PsyNet runs the function at each launch and
+  serves the output, skipping the upload when identical files are already in
+  storage. See ``demos/pipelines/tapping``, which prepares its stimuli with
+  the REPP library.
+- **Participant recordings** made with
+  :class:`~psynet.modular_page.AudioRecordControl` or
+  :class:`~psynet.modular_page.VideoRecordControl` become assets
+  automatically. You do not need to create them yourself.
+
+The rest of this guide covers the asset system in detail, including storage
+backends such as S3.
+
 In PsyNet terminology, an :class:`~psynet.asset.Asset` is some kind of file (or collection of files) that
 is referenced during an experiment. These might for example be video files that we play
 to the participant, or perhaps audio recordings that we collect from the participant.
@@ -73,10 +93,10 @@ but we could also have it located elsewhere:
     logo_asset = asset("/Users/sherlock/desktop/logo.svg")
 
 .. note::
-    If you do want to keep large (collections of) assets in your experiment directory,
-    we recommend adding them to your ``.gitignore`` file. If you don't add them to ``.gitignore``,
-    PsyNet will include them as part of the source code package that is sent to the server,
-    which can lead to long upload times.
+    If you keep asset source files in your experiment directory, put them in
+    ``data/``, which the stock ``deploy.toml`` leaves out of the deployment
+    package. Otherwise they are uploaded twice: once in the package and once
+    as assets.
 
 
 The idea is that, when we deploy the experiment, PsyNet will automatically upload the asset's file to

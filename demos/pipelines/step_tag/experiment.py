@@ -6,14 +6,15 @@ In this experiment participants collaborate to write and rate word tags for a gi
 from pathlib import Path
 
 import psynet.experiment
-from psynet.asset import asset  # noqa
+from psynet.asset import ExternalAsset
+from psynet.media import static_url_for
 from psynet.page import InfoPage
 from psynet.timeline import Timeline
 from psynet.trial.main import TrialNetwork
 
 from .audio_step_tag import AudioStepTag
 
-STIMULUS_DIR = Path("data/audio")
+STIMULUS_DIR = Path("static/audio")
 STIMULUS_PATTERN = "*.mp3"
 
 
@@ -48,7 +49,11 @@ def get_timeline():
 
 
 def list_stimuli():
-    return {path.stem: asset(path) for path in STIMULUS_DIR.glob(STIMULUS_PATTERN)}
+    # StepTag expects assets, so each static file's URL is wrapped in an ExternalAsset.
+    return {
+        path.stem: ExternalAsset(static_url_for(path))
+        for path in sorted(STIMULUS_DIR.glob(STIMULUS_PATTERN))
+    }
 
 
 class Exp(psynet.experiment.Experiment):

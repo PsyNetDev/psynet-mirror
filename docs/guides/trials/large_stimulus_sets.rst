@@ -4,13 +4,14 @@
 Large stimulus sets
 ===================
 
-Use this approach when your experiment needs a large number of pregenerated
-multimedia files (e.g. images, audio, or video). PsyNet's
-:doc:`asset management system <assets>` can handle such experiments, but it
-currently has some performance overhead that can make them slow to deploy.
+Ordinary stimulus sets belong in the experiment's ``static/`` folder, which
+is deployed with the experiment. The deployment package has a size limit,
+currently 1024 MB by default (see :doc:`/guides/project/experiment_directory`).
+Use the approach on this page when your pregenerated images, audio, or video
+are larger than that.
 
-Here the files are instead hosted on Amazon Web Service's S3 Storage service
-and linked into the experiment using custom code.
+Here the files are hosted on Amazon Web Service's S3 Storage service
+and linked into the experiment by URL.
 
 Getting started
 ---------------

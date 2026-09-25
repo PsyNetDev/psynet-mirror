@@ -1,38 +1,16 @@
 # The `data` directory
 
-The `data` directory should be used for storing media assets such as audio and video files.
-Files in this directory are not included in the source code package that is deployed to the 
-experiment server. To access these files in the experiment, register them as assets in your
-experiment code.
+The `data` directory holds source material that stays on your machine. The
+stock `deploy.toml` leaves it out of the deployment package.
 
-For example, if you are creating nodes for a trial maker, you might write something like this:
+In this demo, `data/music_stimuli` contains the source music and onset files.
+The experiment turns them into tapping stimuli with the REPP library, using
+function assets (`asset(generate_music_stimulus, is_folder=True)`).
+PsyNet runs the generation at each launch and deploys only the generated
+stimuli, skipping the upload when identical files are already stored.
 
-```py
-def get_nodes():
-    return [
-        StaticNode(
-            definition={
-                "stimulus_name": stimulus["name"]
-            },
-            assets={
-                "stimulus_audio": asset(
-                    stimulus["path"],
-                    extension=".mp3",
-                )
-            },
-        )
-        for stimulus in list_stimuli()
-    ]
+`data/iso_bot_responses` contains example tapping recordings used by the
+test bots.
 
-def list_stimuli():
-    stimulus_dir = Path("data/instrument_sounds")
-    return [
-        {
-            "name": path.stem,
-            "path": path,
-        }
-        for path in list(stimulus_dir.glob("*.mp3"))
-    ]
-```
-
-See the [PsyNet documentation](https://psynet.dev/) for more details.
+Ready-made stimuli that need no processing belong in `static/` instead,
+referred to by URL. See the `simple_rating` pipeline demo.

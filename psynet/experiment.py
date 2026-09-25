@@ -2301,20 +2301,24 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             )
 
     @classmethod
-    def check_size(cls):
+    def check_size(cls, *, heroku: bool = False):
         """Reject deployment plans that exceed the configured package limit."""
         from dallinger.utils import ExperimentFileSource
 
-        size_in_mb = ExperimentFileSource(os.getcwd()).size / (1024**2)
+        from .package_size import (
+            apply_default_exp_max_size_mb,
+            get_exp_max_size_mb,
+            package_size_limit_error,
+        )
+
+        apply_default_exp_max_size_mb()
+        # Megabytes of 10**6 bytes, matching Dallinger's own size check.
+        size_in_mb = ExperimentFileSource(os.getcwd()).size / (1000**2)
         logger.info("Experiment deployment size: %.3f MB.", size_in_mb)
-        max_size_in_mb = int(os.environ.get("EXP_MAX_SIZE_MB", "256"))
+        max_size_in_mb = get_exp_max_size_mb(heroku=heroku)
         if size_in_mb > max_size_in_mb:
             raise RuntimeError(
-                f"Your experiment deployment plan exceeds the {max_size_in_mb} MB "
-                "limit. Large packages make deployment slow. Exclude local files "
-                "in deploy.toml or use PsyNet's asset management system. Set "
-                "EXP_MAX_SIZE_MB to override this limit when the package size is "
-                "intentional."
+                package_size_limit_error(size_in_mb, max_size_in_mb, heroku=heroku)
             )
 
     @classmethod

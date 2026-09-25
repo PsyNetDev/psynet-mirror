@@ -222,15 +222,15 @@ A runnable participant-level example is
 ``demos/features/trial_cue_adaptive``: a 1-up/1-down staircase with
 ``while_loop``, ``Trial.cue``, and a decision table. Use that layout when
 you do not need study-level snapshots or media. The example below is the
-same wiring with module-level audio assets.
+same wiring with audio stimuli.
 
 ### Cue the selected candidate
 
-Selection is an ordinary function in the timeline. Keep one cached file per
-sound; the trial only receives the two it needs.
+Selection is an ordinary function in the timeline. Keep the sound files in
+``static/stimuli/`` and put the URLs of the two selected sounds in the trial
+definition.
 
 ```python
-from psynet.asset import asset
 from psynet.modular_page import AudioPrompt, ModularPage, PushButtonControl
 from psynet.timeline import Module, for_loop
 from psynet.trial.main import Trial
@@ -244,17 +244,14 @@ class AdaptiveTrial(Trial):
     def show_trial(self, experiment, participant):
         return ModularPage(
             "pair",
-            AudioPrompt(self.assets["stimulusA"], "Which sound do you prefer?"),
+            AudioPrompt(self.definition["url_a"], "Which sound do you prefer?"),
             PushButtonControl(["First", "Second"]),
             time_estimate=self.time_estimate,
         )
 
 
-def get_assets():
-    return {
-        stimulus["name"]: asset(stimulus["path"], extension=".mp3")
-        for stimulus in list_stimuli()
-    }
+def stimulus_url(name):
+    return f"/static/stimuli/{name}.mp3"
 
 
 def select_and_cue_pair(trial_index, participant, experiment):
@@ -264,10 +261,11 @@ def select_and_cue_pair(trial_index, participant, experiment):
         candidate_pairs=pairs_not_seen_by(participant),
     )
     return AdaptiveTrial.cue(
-        definition={"stimulus_a": a, "stimulus_b": b},
-        assets={
-            "stimulusA": pairwise.assets[a],
-            "stimulusB": pairwise.assets[b],
+        definition={
+            "stimulus_a": a,
+            "stimulus_b": b,
+            "url_a": stimulus_url(a),
+            "url_b": stimulus_url(b),
         },
         on_trial_created=record_decision,
         creation_context={
@@ -286,14 +284,11 @@ pairwise = Module(
         logic=select_and_cue_pair,
         time_estimate_per_iteration=AdaptiveTrial.time_estimate,
     ),
-    assets=get_assets,
 )
 ```
 
-`select_and_cue_pair` runs after the module exists, so it can look up cached
-files on `pairwise`. `for_loop` passes the iterated value as the first argument
-and supplies `participant` and `experiment` by name. Do not upload a new asset
-for the pair itself.
+`for_loop` passes the iterated value as the first argument and supplies
+`participant` and `experiment` by name.
 
 `on_trial_created` runs inside the trial-creation transaction, so the decision
 row and the assignment commit or roll back together. Follow

@@ -40,20 +40,19 @@ Typically the directory is specified with some code like this:
 
 .. code-block:: python
 
-    STIMULUS_DIR = "data/instrument_sounds"
+    STIMULUS_DIR = "static/instrument_sounds"
     STIMULUS_PATTERN = "*.mp3"
 
 .. note::
 
-    File paths are typically specified relative to the root of the
-    experiment directory, i.e. the directory containing the ``experiment.py`` file.
-    However, if you want to point to files outside your experiment directory,
-    you can use absolute paths (e.g. ``/Users/alex/corpora/megacorpus``).
+    File paths are relative to the root of the experiment directory, i.e. the
+    directory containing the ``experiment.py`` file. Keep stimuli inside the
+    experiment's ``static/`` directory so they are deployed with it.
 
 For this exercise, your task will be to choose one of these pipelines and apply it to your own stimuli.
 If you have some relevant files handy, then great;
 if not, you can use the placeholder audio files that ship with the demos
-(see each demo's ``data/`` directory).
+(see each demo's ``static/`` directory).
 You are welcome to choose whichever pipeline you like; if you want something simple,
 go with ``simple_rating``, but if you think one of the other pipelines connects particularly
 well to your own research, feel free to go with that.
@@ -63,7 +62,7 @@ Steps
 
 1. Choose a pipeline from the list above.
 2. Make sure you can run the corresponding demo (see :doc:`running_a_demo_locally`).
-3. Copy your stimuli into the ``data/`` directory.
+3. Copy your stimuli into the ``static/`` directory.
 4. Update the ``experiment.py`` file to point to your stimuli.
 5. Try the experiment again by running ``psynet debug local``.
 
@@ -81,17 +80,14 @@ Further information
 
   .. code-block:: text
 
-      data/instrument_sounds/
+      static/instrument_sounds/
 
   However, users would need to add those files manually after cloning the repository from GitHub.
   Other possibilities include using `Git-LFS <https://git-lfs.com/>`_,
   or storing the files in a separate directory on your machine.
   In practice, though, you can probably store up to 100 MB of media files in a Git repository
   without issues.
-- We call the audio files in these experiments 'assets'.
-  PsyNet has a built-in system for managing assets separately from source code.
-  By default it stores assets in a directory on the web server itself,
-  though it is also possible to select an 'S3 storage' option, where assets are instead stored
-  in an Amazon Web Services S3 bucket.
-  We will learn more about assets later in the tutorial; see also the dedicated
-  :doc:`assets guide </guides/trials/assets>`.
+- Files in ``static/`` are deployed with the experiment and served to
+  participants' browsers at URLs such as
+  ``/static/instrument_sounds/clarinet.mp3``. For stimulus sets larger than
+  the deployment size limit, see :doc:`/guides/trials/large_stimulus_sets`.

@@ -6,8 +6,8 @@ This is a simple experiment where participants rate sounds on a scale from 1 to 
 from pathlib import Path
 
 import psynet.experiment
-from psynet.asset import asset  # noqa
 from psynet.bot import Bot
+from psynet.media import static_url_for
 from psynet.modular_page import (
     AudioPrompt,
     ModularPage,
@@ -18,7 +18,7 @@ from psynet.page import InfoPage
 from psynet.timeline import Event, Timeline
 from psynet.trial.static import StaticNode, StaticTrial, StaticTrialMaker
 
-STIMULUS_DIR = Path("data/instrument_sounds")
+STIMULUS_DIR = Path("static/instrument_sounds")
 STIMULUS_PATTERN = "*.mp3"
 
 
@@ -51,7 +51,7 @@ class CustomTrial(StaticTrial):
         return ModularPage(
             "ratings",
             AudioPrompt(
-                self.assets["stimulus_audio"],
+                self.definition["audio_url"],
                 "Please rate the sound. You can replay it as many times as you like.",
                 controls="Play",
             ),
@@ -80,12 +80,12 @@ class CustomTrial(StaticTrial):
 def get_nodes():
     return [
         StaticNode(
-            definition={"stimulus_name": path.stem},
-            assets={
-                "stimulus_audio": asset(path),
+            definition={
+                "stimulus_name": path.stem,
+                "audio_url": static_url_for(path),
             },
         )
-        for path in STIMULUS_DIR.glob(STIMULUS_PATTERN)
+        for path in sorted(STIMULUS_DIR.glob(STIMULUS_PATTERN))
     ]
 
 

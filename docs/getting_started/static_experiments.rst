@@ -46,33 +46,17 @@ Each node contains two key attributes:
 
 - ``definition`` --
   A dictionary of information about the stimulus, e.g. ``{"instrument": "clarinet"}``.
+  For ready-made media files kept in ``static/``, the definition also records the file's URL.
 - ``assets`` --
-  An optional dictionary of assets (i.e. media files).
+  An optional dictionary of assets, used for media generated from code (see below).
 
 In a static experiment, the nodes are typically specified by defining a ``get_nodes`` function
 that returns a list of nodes.
 In the ``simple_rating`` experiment, ``get_nodes`` constructs a list comprehension over the
-``.mp3`` files in ``data/instrument_sounds``:
+``.mp3`` files in ``static/instrument_sounds``:
 
-.. code-block:: python
-
-    from pathlib import Path
-    from psynet.asset import asset
-    from psynet.trial.static import StaticNode
-
-    STIMULUS_DIR = Path("data/instrument_sounds")
-    STIMULUS_PATTERN = "*.mp3"
-
-    def get_nodes():
-        return [
-            StaticNode(
-                definition={"stimulus_name": path.stem},
-                assets={
-                    "stimulus_audio": asset(path),
-                },
-            )
-            for path in STIMULUS_DIR.glob(STIMULUS_PATTERN)
-        ]
+.. literalinclude:: ../../demos/pipelines/simple_rating/experiment.py
+   :pyobject: get_nodes
 
 Nodes are implemented as database-backed objects using SQLAlchemy.
 This means that, when the experiment is running, you can see each node as a row in the database
@@ -148,7 +132,7 @@ implemented. Here's how it's done:
             return ModularPage(
                 "ratings",
                 AudioPrompt(
-                    self.assets["stimulus_audio"],
+                    self.definition["audio_url"],
                     "Please rate the sound. You can replay it as many times as you like.",
                     controls="Play",
                 ),
@@ -308,6 +292,8 @@ Assets
 ------
 
 Assets are PsyNet's way of representing and managing media files.
+Ready-made stimulus files do not need assets: keep them in ``static/`` and refer to them by URL,
+as in ``simple_rating`` above.
 There are two main types of assets:
 assets created from local files, and assets created from functions.
 Both kinds are subclasses of :class:`~psynet.asset.Asset`,
@@ -325,7 +311,7 @@ Local file assets are created from existing files by passing the file path to ``
 
     from psynet.asset import asset
 
-    a = asset("data/audio_stimulus.mp3")
+    a = asset("recording.wav", parent=trial)
 
 When the asset is deposited, PsyNet will ensure that a copy of this file exists in the app's
 storage service.

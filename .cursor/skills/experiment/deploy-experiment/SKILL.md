@@ -38,7 +38,8 @@ Check that the experiment folder has:
 - qualification files and recruiter settings that match any in-experiment
   prescreeners; use `filter-participants/SKILL.md` when the
   mapping is unclear
-- local assets or manifests present and deployable
+- local `static/` stimulus files present and deployable when the experiment
+  plays pregenerated media
 - no broken symlinks to local user paths
 - no stale app/server/study names copied from another template
 - a `DEPLOYMENT_LOG.md` or clear deployment metadata

@@ -1,3 +1,10 @@
+"""Media helpers for experiments.
+
+This module covers two related jobs: serving pregenerated files from the
+experiment ``static/`` directory, and lower-level audio/S3 utilities
+(batch packing, WAV recoding, bucket setup).
+"""
+
 import json
 import os
 import shutil
@@ -5,6 +12,9 @@ import struct
 import tempfile
 import wave
 from functools import cache
+from pathlib import Path
+from typing import Union
+from urllib.parse import quote
 
 import boto3
 from dallinger.config import get_config
@@ -12,6 +22,37 @@ from dallinger.config import get_config
 from .utils import get_logger
 
 logger = get_logger()
+
+
+def static_url_for(
+    path: Union[str, Path],
+    *,
+    experiment_root: Union[str, Path, None] = None,
+) -> str:
+    """Return the public ``/static/...`` URL for a file under ``static/``.
+
+    Parameters
+    ----------
+    path
+        File path, absolute or relative to the experiment directory.
+    experiment_root
+        Experiment directory. Defaults to the current working directory.
+    """
+    root = Path(experiment_root or Path.cwd()).resolve()
+    static_root = (root / "static").resolve()
+    candidate = Path(path)
+    if not candidate.is_absolute():
+        candidate = root / candidate
+    resolved = candidate.resolve()
+    try:
+        relative = resolved.relative_to(static_root)
+    except ValueError as exc:
+        raise ValueError(
+            f"{resolved} is not inside {static_root}. Put pregenerated media in "
+            "static/ so it can be served as /static/..., or register the file "
+            "as a PsyNet asset if it is generated or lives outside the experiment."
+        ) from exc
+    return "/static/" + quote(relative.as_posix())
 
 
 def make_batch_file(in_files, output_path):

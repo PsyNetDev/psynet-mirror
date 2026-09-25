@@ -33,17 +33,22 @@ PsyNet experiment, the `Carillon Experiment <https://github.com/pmcharrison/2022
 -   ``.python-version`` records the Python major and minor version used when the
     experiment was scaffolded. PsyNet generates it from the active interpreter.
 
--   ``static`` can be used as a storage place for files that the front-end browser can access directly via HTTP.
-    Put public, immutable resources such as scripts, images, audio, and video here,
-    and then access them via ``https://your-experiment-url/static/your-file.png``.
-    These files are baked into the experiment's Docker image. Use PsyNet's asset
-    management system instead for generated files, participant recordings, private
-    data, or files that need storage-backed caching and export; see
+-   ``static`` holds files that the participant's browser loads directly,
+    including experiment stimuli, scripts, and images. A file at
+    ``static/your-file.png`` is available at the URL ``/static/your-file.png``.
+    These files are baked into the experiment's Docker image. This is the
+    recommended place for stimulus sets. Participant recordings are stored
+    separately by PsyNet's asset system, which you only need to use directly
+    for advanced cases such as generating files during the experiment; see
     :doc:`/guides/trials/assets`.
 
-    PsyNet applies a deployment-plan size limit, currently 256 MB by default.
-    Set the ``EXP_MAX_SIZE_MB`` environment variable when intentionally baking a
-    larger static corpus into an image.
+    Files in ``static/`` can stay git-ignored; ``deploy.toml`` still copies
+    them. PsyNet applies a deployment-plan size limit, currently 1024 MB by
+    default. Before raising it with the ``EXP_MAX_SIZE_MB`` environment
+    variable, run ``dallinger deployment-files list`` to check that you are not
+    shipping exports, virtual environments, or private data. Running
+    ``dallinger verify`` on its own still uses Dallinger's 256 MB default unless
+    ``EXP_MAX_SIZE_MB`` is set.
 
 -   ``templates`` is used for customising PsyNet’s front-end. It contains
     `Jinja2 templates <https://jinja.palletsprojects.com/en/2.11.x/>`_; Jinja2 is a popular templating library for Python.

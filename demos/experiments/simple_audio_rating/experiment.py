@@ -7,7 +7,7 @@ This is a simple experiment that allows participants to rate sounds on a scale o
 from pathlib import Path
 
 import psynet.experiment
-from psynet.asset import asset  # noqa
+from psynet.media import static_url_for
 from psynet.modular_page import (
     AudioPrompt,
     ModularPage,
@@ -21,18 +21,12 @@ from psynet.trial.static import StaticNode, StaticTrial, StaticTrialMaker
 N_TRIALS_PER_PARTICIPANT = 6
 
 
-# Note: for a more automatic approach, one could use the `audio_stimulus_set_from_dir` function
-# to generate the nodes from a structured directory of audio files.
-# See the `audio_stimulus_set_from_dir` demo for an example.
 def get_nodes():
     return [
         StaticNode(
-            definition={"stimulus_name": stimulus["name"]},
-            assets={
-                "stimulus_audio": asset(
-                    stimulus["path"],
-                    extension=".mp3",
-                )
+            definition={
+                "stimulus_name": stimulus["name"],
+                "audio_url": stimulus["url"],
             },
         )
         for stimulus in list_stimuli()
@@ -40,13 +34,13 @@ def get_nodes():
 
 
 def list_stimuli():
-    stimulus_dir = Path("data/instrument_sounds")
+    stimulus_dir = Path("static/instrument_sounds")
     return [
         {
             "name": path.stem,
-            "path": path,
+            "url": static_url_for(path),
         }
-        for path in list(stimulus_dir.glob("*.mp3"))
+        for path in sorted(stimulus_dir.glob("*.mp3"))
     ]
 
 
@@ -65,7 +59,7 @@ class CustomTrial(StaticTrial):
         return ModularPage(
             "ratings",
             AudioPrompt(
-                self.assets["stimulus_audio"],
+                self.definition["audio_url"],
                 "Please rate the sound. You can replay it as many times as you like.",
                 controls={"Play from start": "Replay"},
             ),
