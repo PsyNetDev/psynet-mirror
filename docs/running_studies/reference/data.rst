@@ -94,8 +94,8 @@ If you want to choose your own export location, use the ``--path`` argument:
 
     psynet export ssh --app my-app-name --path ~/Documents/my-experiment-data
 
-By default the export command downloads **collected** assets: managed files
-deposited during this deployment (for example participant recordings).
+By default the export command downloads **collected** assets: assets
+created during this deployment (for example participant recordings).
 This can slow down data export if you have many files. You can disable this
 behavior using the ``--assets`` argument:
 
@@ -103,10 +103,10 @@ behavior using the ``--assets`` argument:
 
     psynet export ssh --app my-app-name --assets none
 
-Treat exported media as potentially identifying. Cached stimuli, external
-URLs, and on-demand assets are not part of the archive; copy stimuli from
-the experiment directory or storage if you need them for supplementary
-materials.
+Treat exported media as potentially identifying. Assets prepared before
+launch, external URLs, and on-demand assets are not part of the archive; copy
+stimuli from the experiment directory or storage if you need them for
+supplementary materials.
 
 ``manifest.json`` records the git commit SHA that was deployed
 (``git_commit_sha``), whether the working tree was dirty (``git_dirty``), the
@@ -204,10 +204,9 @@ those columns so the tokens cannot be used against the running app.
 Assets
 ======
 
-By default (``--assets collected``), only managed assets deposited during the
-course of the experiment are exported — for example audio recordings.
-Pre-existing assets such as ``CachedAsset`` stimuli and ``ExternalAsset`` URLs
-are omitted, and on-demand assets are not generated. Use ``--assets none`` to
+By default (``--assets collected``), only assets created during the experiment
+are exported, for example audio recordings. Stimuli prepared before launch and
+``ExternalAsset`` URLs are omitted, and on-demand assets are not generated. Use ``--assets none`` to
 skip asset files entirely.
 
 If you need a stimulus pack for supplementary materials, copy those files from

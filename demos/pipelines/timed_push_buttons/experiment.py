@@ -43,7 +43,7 @@ def get_nodes():
         StaticNode(
             definition={"stimulus_name": path.stem},
             assets={
-                "stimulus_audio": asset(path, cache=False),
+                "stimulus_audio": asset(path),
             },
         )
         for path in Path(STIMULUS_DIR).glob(STIMULUS_PATTERN)

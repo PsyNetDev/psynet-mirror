@@ -1,0 +1,1 @@
+Removed `InheritedAssets`, which raised `NotImplementedError` when used, together with the unused `Asset.inherited` and `Asset.inherited_from` columns and the disabled `pre_deployed_assets.csv` loader.

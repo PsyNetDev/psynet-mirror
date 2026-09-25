@@ -32,7 +32,6 @@ def get_nodes():
                 "stimulus_audio": asset(
                     stimulus["path"],
                     extension=".mp3",
-                    cache=True,  # reuse the uploaded file between deployments
                 )
             },
         )

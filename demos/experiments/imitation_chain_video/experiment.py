@@ -165,7 +165,7 @@ class Exp(psynet.experiment.Experiment):
             target_n_participants=25,
             wait_for_networks=True,
             assets={
-                "5s_silence": asset("assets/5s_silence.wav", cache=True),
+                "5s_silence": asset("assets/5s_silence.wav"),
             },
         ),
     )

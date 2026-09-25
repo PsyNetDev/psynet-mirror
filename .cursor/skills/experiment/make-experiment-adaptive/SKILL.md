@@ -252,7 +252,7 @@ class AdaptiveTrial(Trial):
 
 def get_assets():
     return {
-        stimulus["name"]: asset(stimulus["path"], extension=".mp3", cache=True)
+        stimulus["name"]: asset(stimulus["path"], extension=".mp3")
         for stimulus in list_stimuli()
     }
 
@@ -421,7 +421,7 @@ necessary.
 Finalized responses remain the source of truth for study-level adaptation.
 Publish fitted study state as immutable snapshots in a dedicated table, and let
 selection use only snapshots marked ready. Small scoring state can live in a
-`PythonObject` column; larger state can be stored as an `ExperimentAsset`
+`PythonObject` column; larger state can be stored as a `FileAsset`
 referenced by the snapshot. Follow `references/study-state-storage.md` when
 implementing this persistence boundary.
 

@@ -143,7 +143,7 @@ def test_finalize_pending_trials_skips_blocked_trials(db_session, participant):
 def test_finalize_pending_trials_skips_asset_deposit_pending(
     db_session, participant, tmp_path
 ):
-    from psynet.asset import ExperimentAsset
+    from psynet.asset import FileAsset
 
     exp = get_experiment()
     trial_maker = _chain_trial_maker()
@@ -152,7 +152,7 @@ def test_finalize_pending_trials_skips_asset_deposit_pending(
 
     asset_path = tmp_path / "pending.txt"
     asset_path.write_text("pending")
-    asset = ExperimentAsset(
+    asset = FileAsset(
         local_key="pending",
         input_path=str(asset_path),
         parent=trial,

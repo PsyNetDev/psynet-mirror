@@ -102,10 +102,10 @@ def get_music_stimuli_loader(
                 "onset_filename": str(text),
             }
             assets = {
-                "stimulus": asset(generate_music_stimulus, cache=True, is_folder=True),
+                "stimulus": asset(generate_music_stimulus, is_folder=True),
             }
             if bot_audio is not None:
-                assets["bot_response"] = asset(bot_audio, cache=True)
+                assets["bot_response"] = asset(bot_audio)
 
             nodes.append(StaticNode(definition=definition, assets=assets))
 

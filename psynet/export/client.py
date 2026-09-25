@@ -62,9 +62,6 @@ logger = get_logger()
 
 _DOWNLOAD_CHUNK_BYTES = 1024 * 1024
 
-#: Manifest ``type`` values whose bytes cannot come from remote LocalStorage.
-_INELIGIBLE_ASSET_TYPES = ("on_demand_asset", "external_asset")
-
 
 class TransferError(Exception):
     """Raised when an export could not be transferred or published."""
@@ -410,13 +407,6 @@ def plan_asset_transfer(staging_dir: str) -> AssetTransferPlan:
     ineligible: list[dict] = []
     seen = set()
     for row in rows:
-        asset_type = (row.get("type") or "").lower()
-        if asset_type == "external_asset":
-            # URL-only; nothing to transfer.
-            continue
-        if asset_type in _INELIGIBLE_ASSET_TYPES:
-            ineligible.append(row)
-            continue
         if row.get("storage") != "LocalStorage":
             ineligible.append(row)
             continue

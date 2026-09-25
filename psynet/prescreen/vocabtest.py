@@ -13,7 +13,7 @@ import requests
 from markupsafe import Markup
 from yaspin import yaspin
 
-from psynet.asset import ExperimentAsset
+from psynet.asset import FileAsset
 from psynet.page import InfoPage
 from psynet.timeline import MediaSpec, Page, get_template, join
 from psynet.translation.keyboards import KeyboardPage
@@ -677,8 +677,8 @@ class VocabTest(StaticTrialMaker):
             return {}
         assets = {
             asset.local_key: asset
-            for asset in ExperimentAsset.query.filter(
-                ExperimentAsset.local_key.in_(selected_hashes)
+            for asset in FileAsset.query.filter(
+                FileAsset.local_key.in_(selected_hashes)
             ).all()
         }
 
@@ -706,7 +706,7 @@ class VocabTest(StaticTrialMaker):
                     font_size=self.font_size,
                     font_path=default_test_config["font_path"],
                 )
-                asset = ExperimentAsset(
+                asset = FileAsset(
                     local_key=hash_,
                     input_path=path,
                     extension=".png",

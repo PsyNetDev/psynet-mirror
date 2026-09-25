@@ -44,7 +44,6 @@ def get_assets():
         stimulus["name"]: asset(
             stimulus["path"],
             extension=".mp3",
-            cache=True,  # reuse the uploaded file between deployments
         )
         for stimulus in stimuli
     }

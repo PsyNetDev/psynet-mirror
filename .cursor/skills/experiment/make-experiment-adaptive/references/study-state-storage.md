@@ -204,7 +204,7 @@ column. Include only what selection needs, such as item estimates, uncertainty
 summaries, or population coefficients. Avoid serializing a full fitted-library
 object when numerical parameters are sufficient.
 
-For large state, create an `ExperimentAsset` and save its ID, format, and
+For large state, create a `FileAsset` and save its ID, format, and
 content ID on the snapshot. The database row remains the authoritative index;
 the asset contains the large payload.
 
@@ -225,7 +225,7 @@ format: only unpickle files produced by the experiment, and record the Python,
 package, and model-code versions needed to read them. Do not include raw
 participant data when fitted parameters are sufficient.
 
-## Store a large fit as an ExperimentAsset
+## Store a large fit as a FileAsset
 
 Serialize the fit to a temporary file, deposit it through PsyNet's configured
 asset storage, and reference the resulting asset from the snapshot.
@@ -235,14 +235,14 @@ import pickle
 import tempfile
 
 from dallinger import db
-from psynet.asset import ExperimentAsset
+from psynet.asset import FileAsset
 
 
 with tempfile.NamedTemporaryFile(suffix=".pkl") as file:
     pickle.dump(model_fit, file)
     file.flush()
 
-    asset = ExperimentAsset(
+    asset = FileAsset(
         input_path=file.name,
         local_key=f"study_model_snapshot_{snapshot.id}",
         extension=".pkl",
@@ -262,7 +262,7 @@ db.session.commit()
 Mark the snapshot ready only after a synchronous deposit succeeds. If deposit
 is asynchronous, its completion path must publish the snapshot. Do not put
 secrets or unnecessary participant data in the fitted object.
-Depositing an `ExperimentAsset` requires `Experiment.asset_storage` (for local
+Depositing a `FileAsset` requires `Experiment.asset_storage` (for local
 work, `LocalStorage`). `module_id="common"` scopes the asset to the shared
 experiment module rather than a participant.
 
@@ -277,12 +277,12 @@ import pickle
 import tempfile
 from functools import lru_cache
 
-from psynet.asset import ExperimentAsset
+from psynet.asset import FileAsset
 
 
 @lru_cache
 def load_study_fit(asset_id, content_id):
-    asset = ExperimentAsset.query.get(asset_id)
+    asset = FileAsset.query.get(asset_id)
     if asset.content_id != content_id:
         raise RuntimeError("Study-model asset content ID does not match.")
 

@@ -1020,18 +1020,20 @@ def export_assets(
     incremental SSH transport uses this so the server can describe the asset
     selection cheaply while the client fetches the bytes over rsync.
     """
-    from .asset import ExperimentAsset, OnDemandAsset
+    from .asset import ManagedAsset, OnDemandAsset
     from .export.path_safety import UnsafePathError, assert_semantic_asset_path
 
-    # ExperimentAsset covers deposits for this deployment. CachedAsset and
-    # ExternalAsset are omitted. OnDemandAsset subclasses ExperimentAsset
-    # but is generated live and is not written into the archive.
+    # Assets stored while the experiment was running are exported. Assets prepared
+    # before launch come from the experiment directory and code, and on-demand
+    # assets are never stored.
     assets_root = path
     os.makedirs(assets_root, exist_ok=True)
 
     assets = [
         asset
-        for asset in db.session.query(ExperimentAsset).order_by(ExperimentAsset.id)
+        for asset in db.session.query(ManagedAsset)
+        .filter(ManagedAsset.created_during_experiment.is_(True))
+        .order_by(ManagedAsset.id)
         if not isinstance(asset, OnDemandAsset)
     ]
 

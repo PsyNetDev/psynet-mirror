@@ -268,9 +268,12 @@ def _prepare(archive=None):
 
         _install_archive_template(archive, database_template_path)
 
+    from .asset import _preparing_for_deployment
+
     db.init_db(drop_all=True)
     experiment = get_experiment()
-    experiment.pre_deploy(redeploying_from_archive=archive is not None)
+    with _preparing_for_deployment():
+        experiment.pre_deploy(redeploying_from_archive=archive is not None)
     db.session.flush()
     clean_sys_modules()
     update_docker_tag()
@@ -2353,9 +2356,9 @@ def export_arguments(func):
             default="collected",
             help=(
                 "Which assets to export; valid values are none and collected. "
-                "'collected' (the default) exports files uploaded or recorded "
-                "during this deployment (e.g. recordings), excluding cached "
-                "stimuli, external URLs, and on-demand generation. "
+                "'collected' (the default) exports assets created during this "
+                "deployment (e.g. recordings), excluding assets prepared before "
+                "launch, external URLs, and on-demand generation. "
                 "'none' omits the assets folder."
             ),
         ),

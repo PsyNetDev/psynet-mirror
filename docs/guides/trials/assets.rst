@@ -13,8 +13,8 @@ Working within PsyNet's :class:`~psynet.asset.Asset` framework brings various ad
 the notion of file storage, meaning that you can switch between storage backends
 (e.g. Amazon S3 versus your private web server) with just a single line of code.
 It deals with the tedious book-keeping of keeping track of the different assets
-associated with a given experiment, and it implements clever caching routines that
-save time when redeploying different versions of the same experiment, as well as
+associated with a given experiment, and it stores files by content so that
+unchanged files are not uploaded again when you redeploy, as well as
 asynchronous functionality that minimizes the performance impact of incorporating
 large assets in your experiment. Moreover, it provides a handy export functionality
 that allows you to compile all your generated assets in an organized fashion
@@ -95,7 +95,7 @@ You can create an asset within a module by passing it to the module constructor'
 ::
 
     import psynet.experiment
-    from psynet.asset import CachedAsset
+    from psynet.asset import asset
 
     class Exp(psynet.experiment.Experiment):
         timeline = join(
@@ -310,16 +310,16 @@ deployment. However, there are some limitations of working with this format:
 
 - Server-side managed assets use content-addressed ``objects/sha256/<digest>``
   paths. Exported archives instead use each asset's semantic ``export_path``.
-- Cached files are omitted from the export. If you need a full set of stimuli
-  for supplementary materials, copy them from the experiment directory or from
-  storage.
+- Only assets created during the experiment are exported. If you need a full
+  set of stimuli for supplementary materials, copy them from the experiment
+  directory or from storage.
 
 PsyNet therefore provides an additional workflow for exporting assets.
 This workflow is accessed via the standard ``psynet export`` command
 that is responsible for exporting the database contents once an experiment is finished.
-By default (``--assets collected``), PsyNet exports managed assets deposited
-during the experiment — for example recordings. Cached stimuli, external URLs,
-and on-demand assets are omitted. Use ``--assets none`` to skip asset files.
+By default (``--assets collected``), PsyNet exports assets created during the
+experiment, for example recordings. Assets prepared before launch, external
+URLs, and on-demand assets are omitted. Use ``--assets none`` to skip asset files.
 See :doc:`/running_studies/reference/data` for the export layout.
 
 .. warning::
@@ -355,15 +355,12 @@ Types of assets
 
 Under the hood, PsyNet uses different classes to organize the functionality of different kinds of assets.
 
-1. An :class:`~psynet.asset.ExperimentAsset` is an asset that is specific to the current experiment
-deployment. This would typically mean assets that are generated *during the course*
-of the experiment, for example recordings from a singer, or stimuli generated on the basis of
-participant responses.
+1. A :class:`~psynet.asset.FileAsset` is made from an existing file or folder, for example a stimulus
+file declared in the timeline, a recording from a singer, or an analysis plot. ``asset(path)`` creates one.
 
-2. A :class:`~psynet.asset.CachedAsset` is an asset that is reused over multiple experiment
-deployments. The classic use of a ``CachedAsset`` would be to represent some kind of stimulus
-that is pre-defined in advance of experiment launch. In the standard case, the :class:`~psynet.asset.CachedAsset`
-refers to a file on the local computer that is uploaded to a remote server on deployment.
+2. A :class:`~psynet.asset.GeneratedAsset` is made by running a function that writes the file.
+This means that you can write your stimulus generation code transparently as part of your experiment
+code. ``asset(function)`` creates one.
 
 3. An :class:`~psynet.asset.ExternalAsset` is an asset that is not managed by PsyNet. This would typically mean
 some kind of file that is hosted on a remote web server and is accessible by a URL. We don't generally recommend
@@ -374,22 +371,21 @@ It's also worth knowing about a few special cases of these asset types.
 - An :class:`~psynet.asset.ExternalS3Asset` is a special type of :class:`~psynet.asset.ExternalAsset`
   that is stored in an Amazon Web Services S3 bucket.
 
-- A :class:`~psynet.asset.CachedFunctionAsset` is a special type of :class:`~psynet.asset.CachedAsset`
-  where the source is not a file on the computer, but rather a function responsible for generating
-  such a file. This means that you can write your stimulus generation code transparently as part
-  of your experiment code.
-
-- A :class:`~psynet.asset.OnDemandAsset` is like a :class:`~psynet.asset.CachedFunctionAsset`
-  but has no caching at all; instead, the file is (re)generated on demand whenever it is requested
+- An :class:`~psynet.asset.OnDemandAsset` is like a :class:`~psynet.asset.GeneratedAsset`
+  but is not stored at all; instead, the file is (re)generated whenever it is requested
   from the front-end. This is suitable for files that can be generated very quickly.
+  ``asset(function, on_demand=True)`` creates one.
 
-Inheriting assets
-^^^^^^^^^^^^^^^^^
+All managed assets are stored by content, so bytes that are already stored are not uploaded again.
 
-Sometimes we run an experiment that produces some assets (e.g. audio recordings from
-our participants), and we then want to follow up that experiment with another
-experiment that uses those assets (e.g. to produce some kind of validation ratings).
-PsyNet provides a helper class for these situations called
-:class:`~psynet.asset.InheritedAssets`.
-This class allows you to inherit assets from a previously exported experiment
-and use them in your new experiment. See the class documentation for details.
+Whether an asset is exported follows from when it was deposited, not from where it is declared.
+File and generated assets deposited while the experiment is running are included in
+``psynet export``; this includes assets of a module that is built inside a page maker. Assets prepared before launch are
+not: files come from your experiment directory, and generated assets are recreated by your code at
+every launch. On-demand assets are never stored, so they are never exported; use them for cheap files
+you do not need to keep.
+
+.. note::
+    Earlier PsyNet versions called file assets ``ExperimentAsset`` or ``CachedAsset``, called
+    generated assets ``CachedFunctionAsset``, and accepted ``asset(..., cache=True)``. The old
+    names still work but are deprecated, and ``cache`` has no effect.

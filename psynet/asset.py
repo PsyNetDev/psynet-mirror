@@ -9,6 +9,8 @@ import urllib.parse
 import urllib.request
 import uuid
 import warnings
+from contextlib import contextmanager
+from contextvars import ContextVar
 from functools import cache, cached_property
 from os import environ, makedirs, remove, symlink, unlink, walk
 from pathlib import Path
@@ -29,7 +31,7 @@ from psynet.timeline import NullElt
 
 from . import deployment_info
 from .cache import IMMUTABLE_CACHE_CONTROL, IMMUTABLE_CACHE_MAX_AGE
-from .data import SQLBase, SQLMixin, ingest_to_model, register_table
+from .data import SQLBase, SQLMixin, register_table
 from .export.path_safety import UnsafePathError, normalize_relative_path
 from .field import PythonDict, PythonObject
 from .media import (
@@ -50,12 +52,24 @@ from .utils import (
     get_logger,
     md5_directory,
     md5_file,
-    md5_object,
     sha256_directory,
     sha256_file,
 )
 
 logger = get_logger()
+
+
+_PREPARING_FOR_DEPLOYMENT = ContextVar("psynet_preparing_for_deployment", default=False)
+
+
+@contextmanager
+def _preparing_for_deployment():
+    """Mark assets deposited in this block as prepared before launch, not created during the experiment."""
+    token = _PREPARING_FOR_DEPLOYMENT.set(True)
+    try:
+        yield
+    finally:
+        _PREPARING_FOR_DEPLOYMENT.reset(token)
 
 
 _PERSONAL_ARG_REMOVED = object()
@@ -151,55 +165,6 @@ class AssetSpecification(NullElt):
         return path
 
 
-class AssetCollection(AssetSpecification):
-    """
-    A base class for specifying a collection of assets.
-    """
-
-    pass
-
-
-class InheritedAssets(AssetCollection):
-    """
-    Experimental: Provides a way to load assets from a previously deployed
-    experiment into a new experiment.
-
-    Parameters
-    ----------
-
-    path : str
-        Path to a CSV file specifying the previous assets. This CSV file should come
-        from the ``db/asset.csv`` file of an experiment export. The CSV file can
-        optionally be customized by deleting rows corresponding to unneeded assets,
-        or it can be merged with analogous CSV files from other experiments.
-
-    key : str
-        A string that is used to identify the source of the imported assets
-        in the ``Asset.inherited_from`` attribute.
-    """
-
-    def __init__(self, path: str, key: str):
-        raise NotImplementedError(
-            "This code needs revisiting, the implementation has not been updated yet"
-        )
-
-    def prepare_for_deployment(self, registry):
-        self.ingest_specification_to_db()
-
-    def ingest_specification_to_db(self):
-        clear_columns = ["parent"]
-        with open(self.path, "r") as file:
-            ingest_to_model(
-                file,
-                Asset,
-                clear_columns=clear_columns,
-                replace_columns=dict(
-                    inherited=True,
-                    inherited_from=self.key,
-                ),
-            )
-
-
 @register_table
 class Asset(AssetSpecification, SQLBase, SQLMixin):
     """
@@ -254,18 +219,16 @@ class Asset(AssetSpecification, SQLBase, SQLMixin):
     psynet_version : str
         The version of PsyNet used to create the asset.
 
+    created_during_experiment : bool
+        Whether the asset was deposited while the experiment was running, as opposed to
+        while preparing the deployment. Stored assets created during the experiment are
+        included in ``psynet export``.
+
     deployment_id : str
         A string used to identify the particular experiment deployment.
 
     deposited: bool
         Whether the asset has been deposited yet.
-
-    inherited : bool
-        Whether the asset was inherited from a previous experiment, typically via the
-        ``InheritedAssets`` functionality.
-
-    inherited_from : str
-        Identifies the source of an inherited asset.
 
     export_path : str
         A relative path that will be used by default when the asset is exported.
@@ -354,10 +317,9 @@ class Asset(AssetSpecification, SQLBase, SQLMixin):
     needs_storage_backend = True
 
     psynet_version = Column(String)
+    created_during_experiment = Column(Boolean, default=True)
     deployment_id = Column(String)
     deposited = Column(Boolean)
-    inherited = Column(Boolean, default=False)
-    inherited_from = Column(String)
     module_id = Column(String, index=True)
     local_key = Column(String)
     key_within_module = Column(String, index=True)
@@ -790,6 +752,7 @@ class Asset(AssetSpecification, SQLBase, SQLMixin):
             if storage is None:
                 storage = self.default_storage
             self.storage = storage
+            self.created_during_experiment = not _PREPARING_FOR_DEPLOYMENT.get()
 
             self.deployment_id = self.registry.deployment_id
             self.content_id = self.get_content_id()
@@ -1101,12 +1064,16 @@ class ManagedAsset(Asset):
 
     deposit_time_sec : float
         The time it took to deposit the asset.
+
+    used_cache : bool
+        Whether identical bytes were already stored, so that the upload was skipped.
     """
 
     input_path = Column(String)
     md5_contents = Column(String)
     size_mb = Column(Float)
     deposit_time_sec = Column(Float)
+    used_cache = Column(Boolean)
 
     def __init__(
         self,
@@ -1221,6 +1188,7 @@ class ManagedAsset(Asset):
         if not self.host_path:
             return True
         exists = self.storage.check_cache(self.host_path, is_folder=self.is_folder)
+        self.used_cache = exists
         return not exists
 
     def after_deposit(self):
@@ -1266,16 +1234,18 @@ class ManagedAsset(Asset):
         return str(uuid.uuid4())
 
 
-class ExperimentAsset(ManagedAsset):
+class FileAsset(ManagedAsset):
     """
-    The ``ExperimentAsset`` class is one of the most commonly used Asset classes. It refers to assets that are
-    specific to the current experiment deployment. This would typically mean assets that are generated *during the
-    course* of the experiment, for example recordings from a singer, or stimuli generated on the basis of
-    participant responses.
+    An asset made from an existing file or folder, such as a stimulus file declared in the timeline,
+    a participant recording, or an analysis plot.
+
+    File assets created while the experiment is running are included in ``psynet export``.
+    File assets prepared before launch (for example stimuli attached to nodes in the timeline)
+    are not exported, because they come from the experiment directory.
 
     Managed files are stored under a content-addressed ``objects/sha256/<digest>``
     path. Local storage serves them via ``/asset/<access_token>``; S3 storage
-    uses a direct public object URL.
+    uses a direct public object URL. Bytes that are already stored are not uploaded again.
 
     Examples
     --------
@@ -1286,7 +1256,7 @@ class ExperimentAsset(ManagedAsset):
 
         with tempfile.NamedTemporaryFile("w") as file:
             file.write(f"Your message here")
-            asset = ExperimentAsset(
+            asset = FileAsset(
                 local_key="my_message",
                 input_path=file.name,
                 extension=".txt",
@@ -1294,46 +1264,6 @@ class ExperimentAsset(ManagedAsset):
             )
             asset.deposit()
     """
-
-    # Content-addressed storage uses objects/sha256/<digest>; no semantic folder.
-
-
-class CachedAsset(ManagedAsset):
-    """
-    The classic use of a ``CachedAsset`` would be to store some kind of stimulus that is pre-defined in advance of
-    experiment launch. For example:
-
-    ::
-
-         asset = CachedAsset(
-            key_within_module="bier",
-            input_path="bier.wav",
-            description="A recording of someone saying 'bier'",
-         )
-
-    Cached assets are most commonly instantiated by passing them to the ``assets`` arguments of modules or nodes
-    when defining the Experiment timeline. PsyNet compiles these assets together before experiment deployment
-    and makes sure they are uploaded if necessary.
-
-    In contrast to Experiment Assets, Cached Assets are shared between different experiments, so as to avoid
-    duplicating time-consuming file generation or upload routines. Like other managed assets, they use
-    SHA-256 content-addressed ``objects/sha256/<digest>`` paths.
-    """
-
-    used_cache = Column(Boolean)
-
-    def _needs_depositing(self):
-        exists_in_cache = self.storage.check_cache(
-            self.host_path, is_folder=self.is_folder
-        )
-        self.used_cache = exists_in_cache
-        return not exists_in_cache
-
-    def retrieve_contents(self):
-        pass
-
-    def delete_input(self):
-        pass
 
 
 class FunctionAssetMixin:
@@ -1440,15 +1370,11 @@ class FunctionAssetMixin:
             suffix = self.extension if self.extension else ""
             return tempfile.NamedTemporaryFile(delete=False, suffix=suffix).name
 
-    @property
-    def instructions(self):
-        """
-        The 'instructions' that define how to create the asset.
-        """
-        return dict(function=self.function, arguments=self.arguments)
-
-    def get_md5_instructions(self):
-        return md5_object(self.instructions)
+    def delete_input(self):
+        # The input is a temporary file or folder created by ``generate_input_path``,
+        # never a user file, so it is always safe to remove it once deposited.
+        if self.input_path and os.path.exists(self.input_path):
+            ManagedAsset.delete_input(self)
 
     def get_md5_contents(self):
         # TODO - consider whether this should be deleted
@@ -1479,19 +1405,11 @@ class FunctionAssetMixin:
                 self.arguments[key] = value
 
 
-# class FunctionAsset(FunctionAssetMixin, ExperimentAsset):
-#     # FunctionAssetMixin comes first in the inheritance hierarchy
-#     # because we need to use its ``__init__`` method.
-#     """
-#
-#     """
-#     pass
-
-
-class OnDemandAsset(FunctionAssetMixin, ExperimentAsset):
+class OnDemandAsset(FunctionAssetMixin, ManagedAsset):
     """
     An on-demand asset is generated when requested via its permanent access token URL
-    (``/asset/<access_token>``). Bytes are not deposited into object storage by default.
+    (``/asset/<access_token>``). Bytes are not stored, so on-demand assets are never
+    included in ``psynet export``.
     """
 
     needs_storage_backend = False
@@ -1621,16 +1539,17 @@ class FastFunctionAsset(OnDemandAsset):
         )
 
 
-class CachedFunctionAsset(FunctionAssetMixin, CachedAsset):
+class GeneratedAsset(FunctionAssetMixin, ManagedAsset):
     """
-    A Cached Function Asset is a type of asset whose files are created by running a function, and whose outputs
-    are stored in a general repository that is shared between multiple experiment deployments, to avoid
-    redundant computation or file uploads.
-    """
+    An asset whose files are created by running a function. Generated assets declared in the
+    timeline are generated at every launch, on the machine that prepares the deployment; generated
+    assets created during the experiment are generated on the server. The upload is skipped when
+    the output is identical to bytes already stored.
 
-    @property
-    def cache_key(self):
-        return self.get_md5_instructions()
+    Generated assets created during the experiment are included in ``psynet export``. Generated
+    assets declared in the timeline are not, because the experiment code recreates them at every
+    launch. For cheap files that should never be stored or exported, use :class:`OnDemandAsset`.
+    """
 
 
 class ExternalAsset(Asset):
@@ -1687,13 +1606,6 @@ class ExternalAsset(Asset):
 
     deposited: bool
         Whether the asset has been deposited yet.
-
-    inherited : bool
-        Whether the asset was inherited from a previous experiment, typically via the
-        ``InheritedAssets`` functionality.
-
-    inherited_from : str
-        Identifies the source of an inherited asset.
 
     export_path : str
         A relative path that will be used by default when the asset is exported.
@@ -2968,22 +2880,11 @@ class S3Storage(AssetStorage):
 
 
 class AssetRegistry:
-    initial_asset_manifesto_path = "pre_deployed_assets.csv"
-
     def __init__(self, storage: AssetStorage, n_parallel=None):
         self.storage = storage
         self.n_parallel = n_parallel
         self._staged_asset_specifications = []
         self._staged_asset_lookup_table = {}
-
-        # inspector = sqlalchemy.inspect(db.engine)
-        # if inspector.has_table("asset") and Asset.query.count() == 0:
-        #     self.populate_db_with_initial_assets()
-
-    # def __getitem__(self, item):
-    #     from psynet.asset import Asset
-    #
-    #     return Asset.query.filter_by(key=item).one()
 
     @property
     def deployment_id(self):
@@ -3017,79 +2918,21 @@ class AssetRegistry:
         self.storage.prepare_for_deployment()
 
     def prepare_assets_for_deployment(self):
-        # if self.n_parallel:
-        #     n_jobs = self.n_parallel
-        # elif len(self._staged_asset_specifications) < 25:
-        #     n_jobs = 1
-        # else:
-        #     n_jobs = psutil.cpu_count()
-
-        # OLD NOTES, may not be relevant any more
-        #
-        # The parallel implementation is not reliable yet;
-        # the language_tests demo fails due to a deadlock between
-        # competing transactions. As a patch for now we disable
-        # parallel processing.
-        #
-        # If you wish to revist this, you may find the following Postgres
-        # code useful: it displays all blocking processes along with the
-        # responsible queries.
-        #
-        # SELECT
-        #     activity.pid,
-        #     activity.usename,
-        #     activity.query,
-        #     blocking.pid AS blocking_id,
-        #     blocking.query AS blocking_query
-        # FROM pg_stat_activity AS activity
-        # JOIN pg_stat_activity AS blocking ON blocking.pid = ANY(pg_blocking_pids(activity.pid));
-
-        # SSH currently fails if we try to open more than one connection at the same time,
-        # so for now we hard-code the number of jobs to zero. It would be good to revisit this.
-        # Uploading all the files over one SSH connection shouldn't be slower than uploading them
-        # over multiple connections. The main limitation with the current situation though
-        # is that we can no longer programmatically generate stimuli in parallel.
-
-        if len(self._staged_asset_specifications) > 0:
-            for a in tqdm(
-                self._staged_asset_specifications, desc="Generating/uploading assets..."
-            ):
-                a.prepare_for_deployment(registry=self)
-
-        # logger.info("Preparing assets for deployment...")
-        # n_jobs = 1
-        # Parallel(
-        #     n_jobs=n_jobs,
-        #     verbose=10,
-        #     backend="threading",
-        # )(
-        #     delayed(
-        #         lambda a: threadsafe__prepare_asset_for_deployment(
-        #             asset=a, registry=self
-        #         )
-        #     )(a)
-        #     for a in self._staged_asset_specifications
-        # )
-
+        # Assets are prepared one at a time: SSH uploads cannot share connections, and
+        # parallel preparation previously deadlocked on competing database transactions.
+        for a in tqdm(
+            self._staged_asset_specifications, desc="Generating/uploading assets..."
+        ):
+            a.prepare_for_deployment(registry=self)
         db.session.commit()
 
-    # def save_initial_asset_manifesto(self):
-    #     copy_db_table_to_csv("asset", self.initial_asset_manifesto_path)
 
-    # def populate_db_with_initial_assets(self):
-    #     with open(self.initial_asset_manifesto_path, "r") as file:
-    #         ingest_to_model(file, Asset)
-
-
-def threadsafe__prepare_asset_for_deployment(asset, registry):
-    asset_2 = db.session.merge(asset)
-    asset_2.prepare_for_deployment(registry=registry)
+_CACHE_ARG_REMOVED = object()
 
 
 def asset(  # noqa: F841
     source: Union[str, Path, Callable],
     *,
-    cache: bool = False,
     on_demand: bool = False,
     arguments: Optional[dict] = None,
     local_key=None,
@@ -3102,6 +2945,7 @@ def asset(  # noqa: F841
     parent=None,
     module_id=None,
     personal=_PERSONAL_ARG_REMOVED,
+    cache=_CACHE_ARG_REMOVED,
 ):
     """
     Create an asset.
@@ -3109,26 +2953,23 @@ def asset(  # noqa: F841
     Most users will find this the easiest way to create assets.
     Advanced users can also create assets via the constructor functions for each asset type:
     - :class:`ExternalAsset`
-    - :class:`ExperimentAsset`
-    - :class:`CachedFunctionAsset`
+    - :class:`FileAsset`
+    - :class:`GeneratedAsset`
     - :class:`OnDemandAsset`
 
+    Whether an asset is included in ``psynet export`` follows from when it was made:
+    file and generated assets created while the experiment is running are exported, and
+    assets prepared before launch are not. On-demand and external assets are never exported.
 
     Parameters
     ----------
     source : str, Path, or callable
         The source of the asset. If a string or Path, it will be treated as a local file or URL.
-        If a callable, it will be treated as a function asset.
-
-    cache : bool, default=False
-        Cached assets are uploaded to a data-storage directory that is shared between experiment launches.
-        This is primarily useful when working with a stimulus set that is time-consuming to
-        generate and/or upload to the web server, because the generation and/or uploading only happens once.
-        Cache invalidation is done based on file hashing (for file assets) or argument hashing (for function assets).
-        See :meth:`FunctionAssetMixin.get_md5_instructions` for more information.
+        If a callable, it will be treated as a function that generates the asset.
 
     on_demand : bool, default=False
-        Whether to generate the asset on demand.
+        Whether to generate a function asset on demand, each time it is requested,
+        instead of once when it is created.
 
     arguments : dict, optional
         Arguments to pass to the function if source is a callable.
@@ -3164,54 +3005,68 @@ def asset(  # noqa: F841
     module_id : str
         The module within which the asset is located.
 
+    cache : bool
+        Deprecated and ignored. All managed assets skip uploading bytes that are already stored.
+
 
     Returns
     -------
     Asset
         The created asset. Depending on the input arguments, this could be:
         - ExternalAsset: For assets hosted externally at a URL
-        - ExperimentAsset: For assets specific to the current experiment deployment
-        - CachedFunctionAsset: For assets generated by a function and cached between experiment launches
+        - FileAsset: For assets made from a local file or folder
+        - GeneratedAsset: For assets generated by a function
         - OnDemandAsset: For assets generated by a function on demand
     """
     _reject_personal_arg(personal)
+    if cache is not _CACHE_ARG_REMOVED:
+        warnings.warn(
+            "asset(cache=...) is deprecated and has no effect; remove the argument.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
     kwargs = locals()
-    kwargs.pop("personal")
+    for arg in ["personal", "cache"]:
+        kwargs.pop(arg)
 
     if callable(source):
         return _function_asset(**kwargs)
-    else:
-        # Remove arguments that are specific to function assets
-        for arg in ["arguments", "on_demand", "cache"]:
-            kwargs.pop(arg)
 
-        source = str(source)
+    # Remove arguments that are specific to function assets
+    for arg in ["arguments", "on_demand"]:
+        kwargs.pop(arg)
 
-        if source.startswith("http"):
-            # This is an external asset, i.e. one hosted externally at a URL
-            url = kwargs.pop("source")
-            return ExternalAsset(url, **kwargs)
-        else:
-            # This is a local file asset
-            input_path = kwargs.pop("source")
-            cls = CachedAsset if cache else ExperimentAsset
-            return cls(input_path, **kwargs)
+    source = str(source)
+
+    if source.startswith("http"):
+        url = kwargs.pop("source")
+        return ExternalAsset(url, **kwargs)
+
+    input_path = kwargs.pop("source")
+    return FileAsset(input_path, **kwargs)
 
 
-def _function_asset(source, cache, on_demand, **kwargs):
+def _function_asset(source, on_demand, **kwargs):
     function = source
+    if on_demand:
+        return OnDemandAsset(function=function, **kwargs)
+    return GeneratedAsset(function=function, **kwargs)
 
-    if cache:
-        if on_demand:
-            raise ValueError(
-                "Sorry, currently function assets can't be both cached and on-demand."
-            )
-        return CachedFunctionAsset(function=function, **kwargs)
-    else:
-        if on_demand:
-            return OnDemandAsset(function=function, **kwargs)
-        else:
-            raise ValueError(
-                "Sorry, currently function assets must be marked as either cached or on-demand. "
-                "Select the former if you want to pre-generate your assets, or the latter otherwise."
-            )
+
+_RENAMED_CLASSES = {
+    "ExperimentAsset": "FileAsset",
+    "CachedAsset": "FileAsset",
+    "CachedFunctionAsset": "GeneratedAsset",
+}
+
+
+def __getattr__(name):
+    if name in _RENAMED_CLASSES:
+        new_name = _RENAMED_CLASSES[name]
+        warnings.warn(
+            f"psynet.asset.{name} has been renamed to {new_name}.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return globals()[new_name]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

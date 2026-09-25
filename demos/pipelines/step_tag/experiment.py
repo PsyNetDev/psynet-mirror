@@ -48,10 +48,7 @@ def get_timeline():
 
 
 def list_stimuli():
-    return {
-        path.stem: asset(path, cache=True)
-        for path in STIMULUS_DIR.glob(STIMULUS_PATTERN)
-    }
+    return {path.stem: asset(path) for path in STIMULUS_DIR.glob(STIMULUS_PATTERN)}
 
 
 class Exp(psynet.experiment.Experiment):

@@ -2232,6 +2232,20 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             )
 
     def pre_deploy(self, redeploying_from_archive=False):
+        """
+        Prepare the experiment for deployment, on the machine that launches it.
+
+        Assets deposited during this method count as prepared before launch, so they are
+        left out of ``psynet export``. Deposit assets from a ``PreDeployRoutine`` rather
+        than from an override of this method.
+        """
+        from .asset import _preparing_for_deployment
+
+        with _preparing_for_deployment():
+            self._pre_deploy(redeploying_from_archive=redeploying_from_archive)
+
+    def _pre_deploy(self, redeploying_from_archive=False):
+        """Run the deployment preparation steps; see :meth:`pre_deploy`."""
         self.update_deployment_id()
         self.setup_experiment_config()
         self.setup_experiment_variables()

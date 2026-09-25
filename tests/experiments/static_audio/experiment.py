@@ -1,7 +1,7 @@
 import pytest
 
 import psynet.experiment
-from psynet.asset import CachedFunctionAsset, S3Storage
+from psynet.asset import GeneratedAsset, S3Storage
 from psynet.bot import Bot
 from psynet.modular_page import (
     AudioMeterControl,
@@ -32,7 +32,7 @@ nodes = [
             "frequencies": [start_frequency + i * frequency_gradient for i in range(5)],
         },
         assets={
-            "stimulus": CachedFunctionAsset(
+            "stimulus": GeneratedAsset(
                 function=synth_stimulus,
                 extension=".wav",
             )

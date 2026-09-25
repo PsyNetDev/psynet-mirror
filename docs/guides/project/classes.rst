@@ -457,7 +457,7 @@ You can create an asset within a Module by passing it to the Module constructor'
 .. code-block:: python
 
     import psynet.experiment
-    from psynet.asset import CachedAsset
+    from psynet.asset import FileAsset
 
     class Exp(psynet.experiment.Experiment):
         timeline = join(
@@ -465,7 +465,7 @@ You can create an asset within a Module by passing it to the Module constructor'
                 "my_module",
                 my_pages(),
                 assets={
-                    "logo": CachedAsset("logo.svg"),
+                    "logo": FileAsset("logo.svg"),
                 }
             )
         )
@@ -655,7 +655,7 @@ and use these for your Trials. Here's an example from a PsyNet demo:
                 "frequencies": [start_frequency + i * frequency_gradient for i in range(5)],
             },
             assets={
-                "stimulus": CachedFunctionAsset(
+                "stimulus": GeneratedAsset(
                     function=synth_stimulus,
                     extension=".wav",
                 )
@@ -695,9 +695,9 @@ and use these for your Trials. Here's an example from a PsyNet demo:
     )
 
 Here the Nodes are used to define a stimulus set that explores a factorial combination of two variables,
-``frequency_gradient`` and ``start_frequency``. Each Node has an Asset, specifically a Cached Function Asset,
+``frequency_gradient`` and ``start_frequency``. Each Node has an Asset, specifically a Generated Asset,
 defined as a function that gets its arguments from the Node's definition. When the experiment is deployed,
-PsyNet will automatically generate the full set of Assets if it doesn't find them in its cache.
+PsyNet automatically generates the full set of Assets.
 
 Note how the Nodes are passed to the ``Module`` call. This ensures that the Nodes are recognized by
 the Experiment, and it associates the Nodes with the ``"audio_ratings"`` module. Now code within that module

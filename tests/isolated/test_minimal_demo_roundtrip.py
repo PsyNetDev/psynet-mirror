@@ -124,7 +124,6 @@ AUTHORED_TEST_EXPERIMENT_FILENAMES = {
     "qualification_prolific_en.json",
     "DEPLOYMENT_ID",
     "custom_synth.py",
-    "pre_deployed_assets.csv",
 }
 
 

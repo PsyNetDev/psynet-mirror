@@ -1,7 +1,7 @@
 import os
 from typing import Type
 
-from psynet.asset import CachedAsset
+from psynet.asset import FileAsset
 from psynet.trial.chain import ChainNode, ChainTrial
 
 
@@ -104,7 +104,7 @@ def _compile_nodes_from_directory(
                             "name": media_name,
                         },
                         assets={
-                            asset_label: CachedAsset(
+                            asset_label: FileAsset(
                                 input_path=media_path,
                                 extension=media_ext,
                             )

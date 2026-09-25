@@ -68,7 +68,7 @@ In the ``simple_rating`` experiment, ``get_nodes`` constructs a list comprehensi
             StaticNode(
                 definition={"stimulus_name": path.stem},
                 assets={
-                    "stimulus_audio": asset(path, cache=True),
+                    "stimulus_audio": asset(path),
                 },
             )
             for path in STIMULUS_DIR.glob(STIMULUS_PATTERN)
@@ -348,10 +348,6 @@ Asset configuration
 
 There are a few configuration options you can specify when creating an asset:
 
-- ``cache`` --
-  If ``True``, the asset will be cached on the web server between deployments.
-  This is useful if you have a large stimulus set, or if you are using function assets that are
-  slow to run.
 - ``extension`` --
   The extension of the file to generate.
 - ``arguments`` --
