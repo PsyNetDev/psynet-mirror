@@ -57,6 +57,7 @@ class DemoCarousel(SphinxDirective):
 
     def _slide(self, demo, static_root):
         image = demo.replace("/", "__") + ".png"
+        self.env.note_dependency(str(GALLERY_DIR / image))
         if not (Path(self.env.srcdir) / GALLERY_DIR / image).exists():
             image = PLACEHOLDER
         src = posixpath.join(static_root, "images", "gallery", image)

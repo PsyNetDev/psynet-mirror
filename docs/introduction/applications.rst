@@ -164,7 +164,9 @@ explains the idea.
 
          .. demo-carousel::
 
-            experiments/create_and_rate
+            experiments/create_and_rate/basic
+            experiments/create_and_rate/robot_voice
+            experiments/create_and_rate/picnic
 
       .. grid-item::
          :columns: 12 12 8 8

@@ -97,6 +97,22 @@ example ``keywords = {chains, recording}``. The allowed tags are the keys of
 entries with missing or unknown tags. Techniques without papers are left off
 the page.
 
+Gallery screenshots
+-------------------
+
+The demo carousels on :doc:`/introduction/applications` show phone-sized
+screenshots from ``docs/_static/images/gallery/``. Each carousel lists demo
+paths, and a demo without a screenshot shows a placeholder. To add or refresh
+screenshots, add a step for the demo to
+``docs/scripts/gallery_screenshots/gallery.spec.js`` and run:
+
+.. code-block:: console
+
+  npx playwright test -c docs/scripts/gallery_screenshots --grep <demo>
+
+The script launches each demo with ``psynet debug local``, so a demo that no
+longer displays well on a phone shows up in its screenshot.
+
 Concept pages and code pages
 ----------------------------
 

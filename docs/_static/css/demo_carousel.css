@@ -16,6 +16,7 @@
 }
 
 .demo-carousel-slide {
+  position: relative;
   flex: 0 0 100%;
   scroll-snap-align: center;
   display: flex;
@@ -26,19 +27,44 @@
 
 .demo-phone {
   width: 12.5rem;
-  aspect-ratio: 390 / 844;
+  aspect-ratio: 390 / 760;
   object-fit: cover;
   object-position: top;
   border: 0.2rem solid #1f2328;
-  border-radius: 1.4rem;
+  border-radius: 0.6rem;
   background: #fff;
   box-shadow: 0 0.3rem 0.8rem rgb(0 0 0 / 15%);
 }
 
 .demo-carousel-caption {
-  margin-top: 0.5rem;
+  position: absolute;
+  bottom: 3.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 11rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 0.4rem;
+  background: rgb(31 35 40 / 85%);
+  color: #fff;
   font-family: var(--pst-font-family-monospace);
-  font-size: 0.8rem;
+  font-size: 0.75rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0;
+  transition: opacity 0.15s;
+  pointer-events: none;
+}
+
+.demo-carousel-slide:hover .demo-carousel-caption,
+.demo-carousel-slide:focus-visible .demo-carousel-caption {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .demo-carousel-caption {
+    opacity: 1;
+  }
 }
 
 .demo-carousel-controls {

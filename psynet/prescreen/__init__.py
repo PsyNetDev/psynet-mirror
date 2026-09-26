@@ -942,10 +942,12 @@ class LanguageVocabularyTest(StaticTrialMaker):
                     "audio": ExternalAsset(
                         f"{media_url}/recordings/{language_code}/{word}.wav"
                     ),
-                    "image_correct": ExternalAsset(f"{media_url}/images/correct.png"),
-                    "image_wrong1": ExternalAsset(f"{media_url}/images/wrong1.png"),
-                    "image_wrong2": ExternalAsset(f"{media_url}/images/wrong2.png"),
-                    "image_wrong3": ExternalAsset(f"{media_url}/images/wrong3.png"),
+                    **{
+                        f"image_{choice}": ExternalAsset(
+                            f"{media_url}/images/{word}/{choice}.png"
+                        )
+                        for choice in ["correct", "wrong1", "wrong2", "wrong3"]
+                    },
                 },
             )
             for word in words
