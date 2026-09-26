@@ -50,8 +50,8 @@ These are organized into three main subdirectories:
    ``demos/features/pages/`` and ``demos/features/timeline/``. Together they cover
    the core building blocks (info pages, modular pages, prompts, controls,
    page makers, code blocks, conditional logic, loops). They are also the
-   companion demos for the :doc:`Pages <pages>` and
-   :doc:`Timelines <timelines>` chapters of the tutorial.
+   companion demos for the :doc:`Pages </designing/pages>` and
+   :doc:`Timeline </designing/timeline>` pages of :doc:`/designing/index`.
 
 Launching a demo
 ----------------

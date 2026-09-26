@@ -27,7 +27,7 @@ You should approach each demo in the following way:
 Now read the following pages:
 
 - :doc:`Classes in PsyNet </guides/project/classes>`
-- :doc:`Timeline </getting_started/timelines>`
+- :doc:`Timeline </designing/timeline>`
 - :doc:`Modular pages </guides/pages/modular_page>`
 
 Take the :doc:`timeline exercise </examples/exercises/timeline>`.

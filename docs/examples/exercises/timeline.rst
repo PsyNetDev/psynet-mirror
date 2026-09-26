@@ -5,7 +5,7 @@ Timeline exercise
 Prerequisites
 ^^^^^^^^^^^^^
 
-- :doc:`Timeline tutorial </getting_started/timelines>`
+- :doc:`/designing/timeline`
 
 Exercise
 ^^^^^^^^

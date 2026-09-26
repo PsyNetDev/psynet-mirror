@@ -4,7 +4,7 @@ Timeline
 This demo shows the timeline control-logic constructs, such as
 Conditionals, Switches, and While Loops. These determine which pages the
 participant sees depending on what they have done in the experiment so far.
-Run it from ``demos/experiments/timeline``; :doc:`/getting_started/timelines`
+Run it from ``demos/experiments/timeline``; :doc:`/designing/timeline`
 explains the same constructs step by step.
 
 Source: ``demos/experiments/timeline``

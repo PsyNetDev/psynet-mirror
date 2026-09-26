@@ -154,11 +154,15 @@
   "tutorials/synchronization": "guides/multiplayer/synchronization",
   "tutorials/tests": "guides/testing/tests",
   "tutorials/theming": "guides/pages/theming",
-  "tutorials/timeline": "getting_started/timelines",
+  "tutorials/timeline": "designing/timeline",
   "tutorials/unity_integration": "guides/pages/unity_integration",
   "tutorials/upgrading_to_psynet_10": "whats_new/psynet_10",
   "tutorials/version_control_with_git": "guides/project/version_control_with_git",
   "tutorials/version_control_with_git/essential_concepts": "guides/project/version_control_with_git/essential_concepts",
   "tutorials/version_control_with_git/experiment_implementation_workflow": "guides/project/version_control_with_git/experiment_implementation_workflow",
-  "tutorials/writing_custom_frontends": "guides/pages/writing_custom_frontends"
+  "tutorials/writing_custom_frontends": "guides/pages/writing_custom_frontends",
+  "getting_started/pages": "designing/pages",
+  "getting_started/timelines": "designing/timeline",
+  "getting_started/static_experiments": "designing/trials",
+  "getting_started/chain_experiments": "designing/chains"
 }

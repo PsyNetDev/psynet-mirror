@@ -4,7 +4,7 @@ Trials (1)
 The first of three trial demos. A trial is a single unit of data collection,
 typically the participant's response to a single stimulus. In this demo
 participants rate different animals. Run it from ``demos/experiments/trial``
-with ``psynet debug local``; :doc:`/getting_started/static_experiments` covers
+with ``psynet debug local``; :doc:`/designing/trials` covers
 trials in more depth.
 
 Source: ``demos/experiments/trial``

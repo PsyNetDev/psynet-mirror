@@ -5,7 +5,7 @@ JSSynth exercises
 Prerequisites
 ^^^^^^^^^^^^^
 
-- :doc:`Timeline tutorial </getting_started/timelines>`
+- :doc:`/designing/timeline`
 - :doc:`Modular pages guide </guides/pages/modular_page>`
 - :doc:`Audio demo </examples/demos/audio>`
 

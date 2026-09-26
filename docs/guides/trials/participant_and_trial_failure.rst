@@ -100,7 +100,7 @@ redirects the participant to the ``unsuccessful_end`` branch, so they see an
 early-end page instead of continuing through later experiment pages. The
 redirect is skipped if they are already in an end branch or have already
 completed the experiment. You can customise that branch; see
-:doc:`Timelines </getting_started/timelines>`.
+:doc:`Timeline </designing/timeline>`.
 
 The redirect timing depends on where ``fail()`` is called:
 
