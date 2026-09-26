@@ -38,3 +38,15 @@ h1 img[alt="PsyNet logo"] {
   vertical-align: middle;
   margin: 0;
 }
+
+.research-list {
+  list-style: none;
+  padding-left: 0;
+}
+
+.research-list li {
+  margin-bottom: 0.8rem;
+  padding-left: 1.5em;
+  text-indent: -1.5em;
+  overflow-wrap: anywhere;
+}

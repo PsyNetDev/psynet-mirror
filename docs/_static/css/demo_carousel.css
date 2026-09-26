@@ -1,0 +1,76 @@
+.demo-carousel {
+  max-width: 14rem;
+  margin: 0 auto;
+}
+
+.demo-carousel-track {
+  display: flex;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scroll-behavior: smooth;
+  scrollbar-width: none;
+}
+
+.demo-carousel-track::-webkit-scrollbar {
+  display: none;
+}
+
+.demo-carousel-slide {
+  flex: 0 0 100%;
+  scroll-snap-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-decoration: none;
+}
+
+.demo-phone {
+  width: 12.5rem;
+  aspect-ratio: 390 / 844;
+  object-fit: cover;
+  object-position: top;
+  border: 0.2rem solid #1f2328;
+  border-radius: 1.4rem;
+  background: #fff;
+  box-shadow: 0 0.3rem 0.8rem rgb(0 0 0 / 15%);
+}
+
+.demo-carousel-caption {
+  margin-top: 0.5rem;
+  font-family: var(--pst-font-family-monospace);
+  font-size: 0.8rem;
+}
+
+.demo-carousel-controls {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.4rem;
+}
+
+.demo-carousel-controls button {
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--pst-color-text-muted);
+}
+
+.demo-carousel-prev,
+.demo-carousel-next {
+  font-size: 1.4rem;
+  line-height: 1;
+  padding: 0 0.3rem !important;
+}
+
+.demo-carousel-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--pst-color-border) !important;
+}
+
+.demo-carousel-dot.active {
+  background: var(--pst-color-primary) !important;
+}

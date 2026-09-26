@@ -1,8 +1,8 @@
 Running studies
 ===============
 
-Everything you need once your experiment runs locally and you are ready
-to collect real data.
+This section covers what you need once your experiment runs locally and you
+are ready to collect real data.
 
 - The :doc:`workflow/index` walks through a study in the order you will
   meet each step: setup, provisioning, recruiting, piloting, launch,

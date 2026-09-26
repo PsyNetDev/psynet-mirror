@@ -1,7 +1,7 @@
 Building experiments
 ====================
 
-Task-oriented guides for experiment authors. Work through
+These guides help experiment authors with specific tasks. Work through
 :doc:`/getting_started/index` first; come back here when you need to do
 something specific in your own experiment.
 

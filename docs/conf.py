@@ -32,6 +32,7 @@ import psynet
 from psynet.utils import get_language_dict
 
 sys.path.insert(0, os.path.abspath(".."))
+sys.path.insert(0, os.path.abspath("_ext"))
 
 # -- General configuration ---------------------------------------------
 
@@ -46,10 +47,18 @@ extensions = [
     "sphinx.ext.autodoc",
     "sphinx_autodoc_typehints",
     "sphinx.ext.viewcode",
+    "sphinx.ext.extlinks",
     "sphinx_copybutton",
+    "sphinx_design",
     "sphinx_inline_tabs",  # TODO: remove once we migrate to PyData Sphinx theme
     "sphinx_reredirects",
+    "demo_carousel",
+    "research_list",
 ]
+
+extlinks = {
+    "demo": ("https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/%s", "%s"),
+}
 
 # Old page paths are published and linked externally, so every moved or
 # deleted page needs an entry in redirects.json (old docname -> new docname).

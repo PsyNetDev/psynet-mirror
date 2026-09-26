@@ -78,6 +78,25 @@ Link internal pages with Sphinx roles such as ``:doc:`` or ``:ref:``, not raw
 ``../tutorials/setting_up_slack.html``, but linkcheck looks for that ``.html``
 file next to the ``.rst`` source and reports it as broken.
 
+Writing pages
+-------------
+
+- Open every page with a complete sentence. Write "This section covers the
+  timeline and trials", not "The timeline and trials".
+- Keep contributor instructions off public-facing pages. They belong on
+  developer pages such as this one.
+
+Research papers
+---------------
+
+:doc:`/introduction/research` is generated from
+``docs/introduction/research.bib``. To add a paper, paste its BibTeX entry into
+that file and list the matching techniques in its ``keywords`` field, for
+example ``keywords = {chains, recording}``. The allowed tags are the keys of
+``TECHNIQUES`` in ``docs/_ext/research_list.py``; the build warns about
+entries with missing or unknown tags. Techniques without papers are left off
+the page.
+
 Concept pages and code pages
 ----------------------------
 

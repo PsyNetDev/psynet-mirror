@@ -1,0 +1,1 @@
+Rewrote "What's PsyNet for?" as a gallery of experiment types, each with a carousel of demos and links to the relevant docs, and added a "Research using PsyNet" page generated from a BibTeX file of example papers.

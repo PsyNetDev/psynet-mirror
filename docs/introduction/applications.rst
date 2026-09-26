@@ -1,70 +1,243 @@
 .. _applications:
 
-When to use PsyNet?
-===================
+What's PsyNet for?
+==================
 
-PsyNet can be used for many kinds of psychology experiments.
-However there are certain applications to which PsyNet is particularly well suited.
+PsyNet runs behavioral experiments in the web browser, online or in the lab.
+It's built for studies that are hard to run in survey tools or static
+experiment builders: large or generated stimulus sets, procedures that adapt
+as data come in, chains where one participant's response becomes the next
+participant's stimulus, recordings analyzed as they arrive, and experiments
+where participants interact.
 
-**Online experiments.** PsyNet experiments run in the web browser and therefore can be
-used either for in-person or online data collection.
-
-**Experiments using large stimulus sets.** PsyNet provides extensive support for
-managing stimulus sets, including useful hooks for generating stimuli
-in Python and hosting media assets on web servers.
-
-**Experiments whose state evolves over time.** PsyNet makes it easy to
-implement certain kinds of experiments that are very difficult to implement in
-static platforms such as jsPsych and PsychoPy, for example cultural evolution
-or serial reproduction studies.
-
-**Experiments using recordings.** Recording media from e.g. the webcam or the microphone
-is straightforward in PsyNet. The results can be processed in near real-time using
-custom Python functions and used to determine experiment logic (e.g. feedback).
-
-**Experiments using financial rewards.** PsyNet integrates with crowdsourcing services
-(e.g. Prolific, Amazon Mechanical Turk) and can automate the dispensation of
-performance-related financial rewards, which is a great way to motivate good
-task performance.
+Each card below describes one kind of experiment. Click through the
+screenshots to see the demos, and follow the docs link to the page that
+explains the idea.
 
 
-Examples
---------
+.. card:: Rating large stimulus sets
+   :class-card: sd-mb-4 sd-shadow-sm
+   :class-title: sd-fs-5
 
-Here are a few examples of research projects that have successfully used
-PsyNet since its inception in 2020. These projects were carried out by a variety
-of researchers based at institutions including the Max Planck Institute for
-Empirical Aesthetics, the University of Cambridge, City University of New York,
-Princeton University, and the University of Oxford.
+   .. grid:: 1 1 2 2
+      :gutter: 4
 
-**Gibbs Sampling with People**. This project developed a new adaptive technique for
-mapping semantic associations of a stimulus space. The procedure constructs a series
-of stimulus 'chains', where a stimulus is passed from one participant to the next,
-and each participant adjusts a particular stimulus dimension in order to maximise
-a particular subjective criterion (e.g. 'beauty'). The project takes advantage of
-PsyNet's support for experiments whose state evolves over time.
+      .. grid-item::
+         :columns: 12 12 4 4
 
-**Consonance and timbre**. This project explored ways in which the timbre of chord tones affects the consonance
-subjective pleasantness) of musical chords. PsyNet enabled the exploration of
-very large stimulus spaces, with each stimulus corresponding to a different combination
-of timbre and pitch intervals.
+         .. demo-carousel::
 
-**Large-scale tapping experiments**. This project used PsyNet to conduct large-scale
-online studies where participants had to tap along to the beat of musical pieces.
-The paradigm used a newly constructed signal-processing pipeline that records
-participant tapping through the laptop microphone. Implementing this in PsyNet
-allowed participant performance to be monitored in real time, enabling live feedback
-and financial rewards for good performances.
+            pipelines/simple_rating
+            pipelines/similarity
 
-**Vocal pitch matching**. This project investigated participants' abilities to identify
-and sing back the notes in musical chords. This took advantage of PsyNet's support
-for audio recording and online signal-processing.
+      .. grid-item::
+         :columns: 12 12 8 8
 
-**Emotional connotations of musical scales**. This project studied how different musical
-scales evoke different kinds of emotions within listeners. This took advantage of PsyNet's
-support for large, programmatically generated stimulus sets.
+         Participants rate or compare sounds, images or videos, each seeing a different subset of a stimulus set that can run to thousands of items.
 
-**Governance simulations**. This project studied the success of different self-governance
-systems within a online social network. Participants experienced this network
-through a 3D video game programmed in the Unity game engine. This took advantage
-of PsyNet's ability to orchestrate complex interactions between many participants.
+         **PsyNet handles:** spreading ratings evenly across stimuli, serving media files, and screening out inattentive participants.
+
+         **Docs:** :doc:`/designing/trials`
+
+         **Research:** :ref:`papers <research-rating>`
+
+
+.. card:: Adaptive procedures
+   :class-card: sd-mb-4 sd-shadow-sm
+   :class-title: sd-fs-5
+
+   .. grid:: 1 1 2 2
+      :gutter: 4
+
+      .. grid-item::
+         :columns: 12 12 4 4
+
+         .. demo-carousel::
+
+            experiments/staircase_pitch_discrimination
+            features/trial_cue_adaptive
+
+      .. grid-item::
+         :columns: 12 12 8 8
+
+         Each trial is chosen based on the participant's earlier answers, for example making a discrimination task harder after correct responses.
+
+         **PsyNet handles:** running the adaptive logic on the server between trials, and recording each decision alongside the responses.
+
+         **Docs:** :doc:`/designing/chains`
+
+         **Research:** :ref:`papers <research-adaptive>`
+
+
+.. card:: Sampling with people
+   :class-card: sd-mb-4 sd-shadow-sm
+   :class-title: sd-fs-5
+
+   .. grid:: 1 1 2 2
+      :gutter: 4
+
+      .. grid-item::
+         :columns: 12 12 4 4
+
+         .. demo-carousel::
+
+            experiments/gibbs
+            experiments/gibbs_image
+            experiments/mcmcp
+
+      .. grid-item::
+         :columns: 12 12 8 8
+
+         Participants adjust a slider or choose between two stimuli, and each answer moves a shared chain towards the stimulus that best fits a description, such as "happy" or "beautiful".
+
+         **PsyNet handles:** Gibbs sampling and Markov chain Monte Carlo with people, including synthesizing each new stimulus.
+
+         **Docs:** :doc:`/designing/chains`
+
+         **Research:** :ref:`papers <research-sampling>`
+
+
+.. card:: Chains and cultural transmission
+   :class-card: sd-mb-4 sd-shadow-sm
+   :class-title: sd-fs-5
+
+   .. grid:: 1 1 2 2
+      :gutter: 4
+
+      .. grid-item::
+         :columns: 12 12 4 4
+
+         .. demo-carousel::
+
+            experiments/chain_trial_maker
+            experiments/imitation_chain
+            experiments/tapping_iterated
+
+      .. grid-item::
+         :columns: 12 12 8 8
+
+         Participants reproduce what the previous participant produced: a story, a melody or a rhythm. Over many generations, the chains reveal the biases people bring to memory and perception.
+
+         **PsyNet handles:** assigning participants to chains, creating each new stimulus from the previous response, and keeping every chain's history in the export.
+
+         **Docs:** :doc:`/designing/chains`
+
+         **Research:** :ref:`papers <research-chains>`
+
+
+.. card:: Recording and production
+   :class-card: sd-mb-4 sd-shadow-sm
+   :class-title: sd-fs-5
+
+   .. grid:: 1 1 2 2
+      :gutter: 4
+
+      .. grid-item::
+         :columns: 12 12 4 4
+
+         .. demo-carousel::
+
+            pipelines/tapping
+            experiments/vertical_processing
+
+      .. grid-item::
+         :columns: 12 12 8 8
+
+         Participants sing, speak or tap into their microphone or camera. The recording is analyzed as soon as it arrives, so the result can drive feedback, scoring or the next stimulus.
+
+         **PsyNet handles:** capturing and uploading recordings, running your analysis on the server, and exporting the files with the data.
+
+         **Docs:** :doc:`/designing/stimuli`
+
+         **Research:** :ref:`papers <research-recording>`
+
+
+.. card:: Create and rate
+   :class-card: sd-mb-4 sd-shadow-sm
+   :class-title: sd-fs-5
+
+   .. grid:: 1 1 2 2
+      :gutter: 4
+
+      .. grid-item::
+         :columns: 12 12 4 4
+
+         .. demo-carousel::
+
+            experiments/create_and_rate
+
+      .. grid-item::
+         :columns: 12 12 8 8
+
+         Some participants create stimuli, such as recordings or descriptions, and others rate them or pick the best. The winners can seed the next round of creation.
+
+         **PsyNet handles:** matching creators with raters, collecting enough ratings per creation, and passing the selected creations on.
+
+         **Docs:** :doc:`/guides/trials/create_and_rate`
+
+         **Research:** :ref:`papers <research-create-and-rate>`
+
+
+.. card:: Groups and interaction
+   :class-card: sd-mb-4 sd-shadow-sm
+   :class-title: sd-fs-5
+
+   .. grid:: 1 1 2 2
+      :gutter: 4
+
+      .. grid-item::
+         :columns: 12 12 4 4
+
+         .. demo-carousel::
+
+            experiments/chatroom_simple
+            experiments/rock_paper_scissors
+            experiments/unity_autoplay
+
+      .. grid-item::
+         :columns: 12 12 8 8
+
+         Participants join the same session and interact in real time, by chatting, playing a game, or waiting for each other before moving on together.
+
+         **PsyNet handles:** forming groups as participants arrive, keeping them in step, and passing messages between their browsers.
+
+         **Docs:** :doc:`/guides/multiplayer/index`
+
+
+.. card:: Across languages and countries
+   :class-card: sd-mb-4 sd-shadow-sm
+   :class-title: sd-fs-5
+
+   .. grid:: 1 1 2 2
+      :gutter: 4
+
+      .. grid-item::
+         :columns: 12 12 4 4
+
+         .. demo-carousel::
+
+            experiments/translation
+            experiments/language_tests
+
+      .. grid-item::
+         :columns: 12 12 8 8
+
+         Participants take the same experiment in their own language, recruited from many countries at once.
+
+         **PsyNet handles:** translating participant-facing text, checking language proficiency, and recruiting through international panels.
+
+         **Docs:** :doc:`/guides/participants/internationalization`
+
+         **Research:** :ref:`papers <research-languages>`
+
+
+When PsyNet isn't the right tool
+--------------------------------
+
+- A fixed questionnaire with no adaptive logic is quicker to build in a
+  survey platform.
+- Tasks that need millisecond-precise timing from dedicated hardware belong
+  in lab software.
+- PsyNet has no visual experiment builder: experiments are written as
+  Python code, although a coding agent can write much of that code from a
+  description.

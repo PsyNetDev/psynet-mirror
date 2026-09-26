@@ -1,8 +1,8 @@
 Hello world
 ===========
 
-The smallest complete PsyNet experiment: one page that says "Hello world",
-then an end page. Use it to check that your installation runs an
+This is the smallest complete PsyNet experiment: one page that says
+"Hello world", then an end page. Use it to check that your installation runs an
 experiment, or as a minimal template for the structure every experiment
 shares. Run it with:
 

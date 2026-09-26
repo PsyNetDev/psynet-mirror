@@ -2,8 +2,8 @@
 Tapping imitation chain
 =======================
 
-A more complex :doc:`imitation chain <imitation_chains>`: participants
-tap along to a rhythm. The laptop microphone records the taps, and the
+This demo is a more complex :doc:`imitation chain <imitation_chains>`, in
+which participants tap along to a rhythm. The laptop microphone records the taps, and the
 server extracts tap timings with a signal-processing pipeline. Run it
 from ``demos/experiments/tapping_iterated``.
 
