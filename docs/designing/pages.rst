@@ -52,9 +52,6 @@ sound has finished" or "recording has started", which can trigger other
 actions, optionally after a delay. A progress bar can show the participant
 what is happening when.
 
-Browser timing is only approximately precise, so leave small gaps between
-steps, for example between the end of a sound and the start of a recording.
-
 Look and language
 -----------------
 
@@ -70,7 +67,7 @@ What to check when reviewing pages
   the data, and PsyNet does not require labels to be unique.
 - Can participants respond before they have seen or heard the whole stimulus,
   when they should not be able to?
-- Do free-text and number responses reject answers the analysis cannot use?
+- Do pages reject answers the analysis cannot use?
 
 .. seealso::
 
