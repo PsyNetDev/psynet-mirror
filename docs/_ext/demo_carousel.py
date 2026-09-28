@@ -96,9 +96,7 @@ class DemoCarousel(SphinxDirective):
         label = html.escape(caption)
         return (
             f'<a class="demo-carousel-slide" href="{DEMO_URL.format(demo)}">'
-            f'<span class="demo-phone">'
-            f'<img src="{src}" alt="Screenshot of the {label}" loading="lazy">'
-            f"</span>"
+            f'<img class="demo-phone" src="{src}" alt="Screenshot of the {label}" loading="lazy">'
             f'<span class="demo-carousel-caption">{label}</span></a>'
         )
 

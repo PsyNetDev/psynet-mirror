@@ -1,7 +1,6 @@
 .demo-carousel {
   max-width: 14rem;
   margin: 0 auto;
-  padding: 0.15rem 0.35rem 0.45rem;
 }
 
 .demo-carousel-track {
@@ -27,32 +26,13 @@
 }
 
 .demo-phone {
-  box-sizing: border-box;
-  position: relative;
-  display: block;
-  width: 100%;
-  max-width: 12.5rem;
+  width: 12.5rem;
   aspect-ratio: 390 / 760;
-  overflow: hidden;
-  isolation: isolate;
-  border: 0.2rem solid #1f2328;
-  border-radius: 0.6rem;
-  background: #1f2328;
-  box-shadow: 0 0.3rem 0.8rem rgb(0 0 0 / 15%);
-}
-
-.demo-phone img {
-  position: absolute;
-  inset: 0;
-  display: block;
-  width: 100%;
-  height: 100%;
   object-fit: cover;
   object-position: top;
-  /* Clip the rectangular screenshot to the inner bezel. overflow:hidden on
-     a bordered box still lets replaced content bleed at the corners. */
-  border-radius: calc(0.6rem - 0.2rem);
-  clip-path: inset(0 round calc(0.6rem - 0.2rem));
+  border: 0.2rem solid #1f2328;
+  border-radius: 0.6rem;
+  background: #fff;
 }
 
 .demo-carousel-caption {
