@@ -39,7 +39,7 @@ This is quite exciting because it allows us to work with SQL tables in a very Py
 
 PsyNet relies heavily on SQLAlchemy. Many of the fundamental objects in PsyNet (participants, trials, nodes, chains) are stored in SQL databases and aliased to Python objects using SQLAlchemy. We can view the SQL representations of these objects through Postico, an SQL database viewer which we recommend as a default to PsyNet programmers (see installation instructions):
 
-.. figure:: ../../_static/images/developer/sql_alchemy/postico.png
+.. figure:: /_static/images/developer/sql_alchemy/postico.png
   :width: 800
   :align: center
 
@@ -119,7 +119,7 @@ Filter variables
 
 What variables might we filter on? The simplest way to find out is to inspect the SQL table for your class (e.g. in Postico), and see what columns are defined there. For example, in the ``Participant`` table we see variables like ``recruiter_id``, ``worker_id``, ``assignment_id``, ``base_pay``, ``bonus``, etcetera.
 
-.. figure:: ../../_static/images/developer/sql_alchemy/postico-2.png
+.. figure:: /_static/images/developer/sql_alchemy/postico-2.png
   :width: 800
   :align: center
 

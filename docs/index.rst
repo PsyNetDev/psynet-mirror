@@ -17,11 +17,13 @@ while placing minimal constraints on the complexity of the experiment design.
    :titlesonly:
    :includehidden:
 
-   introduction/index
+   About <introduction/index>
    getting_started/index
-   designing/index
-   guides/index
+   Designing <designing/index>
+   Building <guides/index>
+   Testing <testing/index>
    running_studies/index
+   data/index
    examples/index
    reference/index
    whats_new/index

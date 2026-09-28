@@ -19,7 +19,7 @@ Key features:
   failures. See all the modules in your experiment and their completion
   percentages.
 - **Database tab:** View or export data via the Export tab. See
-  :doc:`Data </running_studies/reference/data>` for the full export reference.
+  :doc:`Data </data/index>` for the full export reference.
 - **Logger:** A live stream of log output; see :doc:`Error logging
   </running_studies/reference/errors>`.
 
@@ -85,7 +85,7 @@ Actions
 If the experiment is **running**, you can:
 
 - **Access the dashboard**: Click the icon to open the experiment dashboard in a new browser tab.
-- **Access the data endpoint**: Click the icon to view the experiment’s :doc:`data endpoint </running_studies/reference/data>` in a new tab.
+- **Access the data endpoint**: Click the icon to view the experiment’s :doc:`data endpoint </data/index>` in a new tab.
 
 When the experiment is not running you can also:
 If the experiment is **not running**, you can:

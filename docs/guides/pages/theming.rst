@@ -256,7 +256,7 @@ long timeline content inside a separately scrolling panel.
 
 A page that does not declare ``expect_scrolling`` should fit a typical
 laptop window (1280×720) without scrolling. Verify that with the front-end
-layout check in :doc:`/guides/testing/tests`; bots do not render a layout.
+layout check in :doc:`/testing/tests`; bots do not render a layout.
 
 If a page is genuinely meant to be longer than the window, say so:
 

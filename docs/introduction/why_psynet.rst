@@ -74,7 +74,7 @@ Checking it before launch
 - **Experiment audits** gather this evidence for a colleague or supervisor
   to review.
 
-See :doc:`/guides/testing/tests` and :doc:`/guides/project/audit`.
+See :doc:`/testing/tests` and :doc:`/testing/audit`.
 
 Everything is extensible
 ------------------------

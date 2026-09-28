@@ -361,7 +361,7 @@ but run it on your local computer, not via your SSH terminal.
 
     psynet export ssh --app your-app-name
 
-For more information, see :doc:`Exporting </running_studies/reference/data>`.
+For more information, see :doc:`Exporting </data/index>`.
 
 You can then tear down your app via the following command, again run on your local computer:
 

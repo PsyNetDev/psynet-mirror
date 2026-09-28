@@ -8,7 +8,9 @@ are ready to collect real data.
   meet each step: setup, provisioning, recruiting, piloting, launch,
   monitoring, export, and teardown.
 - The :doc:`reference/index` documents server options, deployment
-  commands, data export, monitoring tools, and troubleshooting.
+  commands, monitoring tools, and troubleshooting.
+
+Exporting and analysing the data is covered in :doc:`/data/index`.
 
 If this is your first study, :doc:`running_remotely` and
 :doc:`first_prolific_study` walk through putting an experiment on a server

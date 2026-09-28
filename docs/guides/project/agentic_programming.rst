@@ -60,7 +60,7 @@ blockers.
 
 The agent prepares the audit as it works. The researcher then reviews the
 rendered audit, checks the evidence, and requests further changes where
-necessary. See :doc:`audit` for the packet format and CLI.
+necessary. See :doc:`/testing/audit` for the packet format and CLI.
 
 Implementing an experiment with an agent
 ----------------------------------------
@@ -158,5 +158,5 @@ See also
 
 * :doc:`/guides/project/creating_a_new_experiment`
 * :doc:`development_workflow`
-* :doc:`audit`
+* :doc:`/testing/audit`
 

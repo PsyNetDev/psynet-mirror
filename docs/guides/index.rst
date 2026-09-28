@@ -14,4 +14,3 @@ something specific in your own experiment.
    trials/index
    participants/index
    multiplayer/index
-   testing/index

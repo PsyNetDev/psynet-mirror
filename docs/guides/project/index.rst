@@ -18,4 +18,3 @@ control.
    pre_deploy_routines
    classes
    version_control_with_git
-   audit

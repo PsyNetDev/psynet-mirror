@@ -99,7 +99,7 @@ append ``--help`` to these commands:
     psynet export local --help
     psynet export ssh --help
 
-For more information on PsyNet data export see :doc:`/running_studies/reference/data`.
+For more information on PsyNet data export see :doc:`/data/index`.
 
 
 .. _experiment_setup_commands:

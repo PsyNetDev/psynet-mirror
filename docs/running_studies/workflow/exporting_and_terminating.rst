@@ -8,7 +8,7 @@ Export data
 
 You can export the data from the command line. For the complete export
 reference, including dashboard export, anonymization, assets, and basic
-data files, see :doc:`Data </running_studies/reference/data>`.
+data files, see :doc:`Data </data/index>`.
 
 In the lab workflow, run an export like this:
 

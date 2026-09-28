@@ -1,8 +1,9 @@
 Deployment reference
 ====================
 
-This section is the reference for deployment targets, server setup, data
-export, monitoring tools, and troubleshooting. If you are looking for a
+This section is the reference for deployment targets, server setup,
+monitoring tools, and troubleshooting. Data export is covered in
+:doc:`/data/index`. If you are looking for a
 step-by-step lab workflow around these pieces, including recruiter
 setup, piloting, monitoring participants, and teardown, see the
 :doc:`Lab research workflow </running_studies/workflow/index>`.
@@ -22,7 +23,6 @@ setup, piloting, monitoring participants, and teardown, see the
    ssh_server
    deploy_from_archive
    deploy_tokens
-   data
    deployment_monitor
    setting_up_slack
    errors

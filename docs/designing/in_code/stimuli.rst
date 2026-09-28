@@ -74,7 +74,7 @@ such as recordings and stimuli generated while the experiment runs. Assets
 prepared before launch are left out. To generate cheap files that are never
 stored or exported, use ``asset(function, on_demand=True)``. Pass
 ``--assets none`` to skip asset files entirely. See
-:doc:`/running_studies/reference/data`.
+:doc:`/data/index`.
 
 .. seealso::
 

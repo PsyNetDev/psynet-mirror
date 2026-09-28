@@ -81,7 +81,7 @@ exports.
   your experiment. This lets you inspect an analysis-friendly view of
   the data from the dashboard or via the ``/basic_data`` endpoint
   without running a full export each time. For details, see
-  :doc:`Data </running_studies/reference/data>`.
+  :doc:`Data </data/index>`.
 
 - Use the deployment monitor when you are running multiple active or
   recent deployments and need one place to check recruitment status,
