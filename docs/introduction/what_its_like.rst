@@ -52,7 +52,8 @@ can also write it yourself, starting from a demo; see
       The agent writes the experiment, runs it, reads the errors and
       fixes them. A few minutes later you have a short folder of
       ordinary files, and ``experiment.py`` reads from top to bottom
-      like the plan you agreed.
+      like the plan you agreed. Anything PsyNet doesn't provide, the agent
+      writes in Python or JavaScript alongside it.
 
 .. rst-class:: study-step
 
@@ -140,7 +141,8 @@ can also write it yourself, starting from a demo; see
 
       Participants start arriving within minutes. The dashboard shows who is
       part-way through, who has finished and what each has been paid, and
-      PsyNet keeps recruiting until every chord has its 20 ratings.
+      PsyNet keeps recruiting until every chord has its 20 ratings,
+      replacing trials from anyone who drops out.
 
 .. rst-class:: study-step
 

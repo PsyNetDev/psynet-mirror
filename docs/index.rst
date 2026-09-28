@@ -5,11 +5,20 @@
 |psynet_logo| PsyNet
 ====================
 
-PsyNet is a new platform for running advanced behavioral experiments
-ranging from adaptive psychophysics to simulated cultural evolution.
-It builds on the virtual lab framework `Dallinger <https://dallinger.readthedocs.io/latest/>`_.
-Its goal is to enable researchers to implement and deploy experiments as efficiently as possible,
-while placing minimal constraints on the complexity of the experiment design.
+PsyNet is a Python framework for online behavioral experiments, from
+adaptive psychophysics to simulated cultural evolution. It builds on the
+virtual lab framework `Dallinger <https://dallinger.readthedocs.io/latest/>`_.
+
+- **Everything is code.** Experiments are written in Python, so they can be
+  read, versioned and reused, and written by coding agents.
+- **Batteries included.** Recruitment, payment, screening, media, testing,
+  deployment and data export are built in.
+- **Everything is extensible.** Any part of an experiment, or of PsyNet
+  itself, can be customized or replaced.
+
+See :doc:`introduction/applications` for the kinds of experiment PsyNet is
+used for, and :doc:`introduction/what_its_like` for what running a study
+involves.
 
 .. toctree::
    :maxdepth: 3
