@@ -9,3 +9,4 @@ These exercises introduce various parts of PsyNet.
     timeline
     graphics
     js_synth
+    donation_game
