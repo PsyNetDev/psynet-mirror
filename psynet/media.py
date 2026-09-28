@@ -38,17 +38,16 @@ def static_url_for(
     experiment_root
         Experiment directory. Defaults to the current working directory.
     """
-    root = Path(experiment_root or Path.cwd()).resolve()
-    static_root = (root / "static").resolve()
-    candidate = Path(path)
-    if not candidate.is_absolute():
-        candidate = root / candidate
-    resolved = candidate.resolve()
+    # Containment is checked lexically: ``psynet debug local`` serves from a
+    # develop directory whose ``static/`` entries are symlinks to the experiment.
+    root = Path(os.path.abspath(experiment_root or Path.cwd()))
+    static_root = Path(os.path.normpath(root / "static"))
+    candidate = Path(os.path.normpath(root / path))
     try:
-        relative = resolved.relative_to(static_root)
+        relative = candidate.relative_to(static_root)
     except ValueError as exc:
         raise ValueError(
-            f"{resolved} is not inside {static_root}. Put pregenerated media in "
+            f"{candidate} is not inside {static_root}. Put pregenerated media in "
             "static/ so it can be served as /static/..., or register the file "
             "as a PsyNet asset if it is generated or lives outside the experiment."
         ) from exc

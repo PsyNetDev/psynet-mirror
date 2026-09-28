@@ -2340,13 +2340,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         """Reject deployment plans that exceed the configured package limit."""
         from dallinger.utils import ExperimentFileSource
 
-        from .package_size import (
-            apply_default_exp_max_size_mb,
-            get_exp_max_size_mb,
-            package_size_limit_error,
-        )
+        from .package_size import get_exp_max_size_mb, package_size_limit_error
 
-        apply_default_exp_max_size_mb()
         # Megabytes of 10**6 bytes, matching Dallinger's own size check.
         size_in_mb = ExperimentFileSource(os.getcwd()).size / (1000**2)
         logger.info("Experiment deployment size: %.3f MB.", size_in_mb)

@@ -5,7 +5,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const dots = carousel.querySelectorAll(".demo-carousel-dot");
     if (dots.length === 0) continue;
 
-    const current = () => Math.round(track.scrollLeft / track.clientWidth);
+    const current = () =>
+      track.clientWidth ? Math.round(track.scrollLeft / track.clientWidth) : 0;
     const show = (i) => {
       const n = (i + slides.length) % slides.length;
       track.scrollTo({ left: n * track.clientWidth });

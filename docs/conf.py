@@ -47,7 +47,6 @@ extensions = [
     "sphinx.ext.autodoc",
     "sphinx_autodoc_typehints",
     "sphinx.ext.viewcode",
-    "sphinx.ext.extlinks",
     "sphinx_copybutton",
     "sphinx_design",
     "sphinx_inline_tabs",  # TODO: remove once we migrate to PyData Sphinx theme
@@ -55,10 +54,6 @@ extensions = [
     "demo_carousel",
     "research_list",
 ]
-
-extlinks = {
-    "demo": ("https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/%s", "%s"),
-}
 
 # Old page paths are published and linked externally, so every moved or
 # deleted page needs an entry in redirects.json (old docname -> new docname).
@@ -135,6 +130,8 @@ linkcheck_ignore = [
     # ColorBlindnessTest media prefix. Listing the prefix is forbidden;
     # the plate files under it (e.g. ishihara-1.jpg) are public.
     r"https://s3\.amazonaws\.com/ishihara-eye-test/jpg/?$",
+    # PNAS answers automated requests with 403; the DOI resolves in a browser.
+    r"https://doi\.org/10\.1073/pnas\.2420179123$",
     # Citation in format_timedelta; Stack Overflow blocks automated checkers.
     r"https://stackoverflow\.com/questions/538666/format-timedelta-to-string/?$",
     # Official Docutils pages; SourceForge blocks automated checkers.

@@ -231,6 +231,7 @@ Selection is an ordinary function in the timeline. Keep the sound files in
 definition.
 
 ```python
+from psynet.media import static_url_for
 from psynet.modular_page import AudioPrompt, ModularPage, PushButtonControl
 from psynet.timeline import Module, for_loop
 from psynet.trial.main import Trial
@@ -242,6 +243,8 @@ class AdaptiveTrial(Trial):
     time_estimate = 5
 
     def show_trial(self, experiment, participant):
+        # Abridged: a real page plays both url_a and url_b, for example
+        # through MediaSpec as in the audio_similarity demo.
         return ModularPage(
             "pair",
             AudioPrompt(self.definition["url_a"], "Which sound do you prefer?"),
@@ -251,7 +254,7 @@ class AdaptiveTrial(Trial):
 
 
 def stimulus_url(name):
-    return f"/static/stimuli/{name}.mp3"
+    return static_url_for(f"static/stimuli/{name}.mp3")
 
 
 def select_and_cue_pair(trial_index, participant, experiment):

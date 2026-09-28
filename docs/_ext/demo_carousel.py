@@ -80,6 +80,8 @@ class DemoCarousel(SphinxDirective):
         return [nodes.raw("", markup, format="html")]
 
     def _slide(self, demo, static_root):
+        if not (Path(self.env.srcdir).parent / "demos" / demo).is_dir():
+            raise self.error(f"Demo {demo!r} is not a directory under demos/.")
         image = demo.replace("/", "__") + ".png"
         self.env.note_dependency(str(GALLERY_DIR / image))
         if not (Path(self.env.srcdir) / GALLERY_DIR / image).exists():

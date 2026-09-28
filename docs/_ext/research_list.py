@@ -132,11 +132,15 @@ def _format(source, keys):
 
 
 def _load_bib(directive, rel_path):
-    _, path = directive.env.relfn2path(rel_path)
-    directive.env.note_dependency(rel_path)
+    docs_relative_path, path = directive.env.relfn2path(rel_path)
+    directive.env.note_dependency(docs_relative_path)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        return _BibTeX(path, encoding="utf-8")
+        source = _BibTeX(path, encoding="utf-8")
+    for key, reference in source.items():
+        if "year" not in (reference.get("issued") or {}):
+            raise directive.error(f"{rel_path}: entry {key!r} needs a year.")
+    return source
 
 
 class ResearchList(SphinxDirective):

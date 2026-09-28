@@ -1,13 +1,13 @@
 """Deployment-plan size limit for experiment packages.
 
 The default ceiling is sized so authors can bake public audiovisual stimuli
-into ``static/`` without hitting the old 256 MB tripwire. It is not a
-Heroku-slug guarantee: Heroku remains capped at 500 MB. Raise
-``EXP_MAX_SIZE_MB`` only after reviewing ``dallinger deployment-files list``.
+into ``static/`` without hitting the old 256 MB tripwire. PsyNet's own
+pre-check caps Heroku deploys at 500 MB whatever ``EXP_MAX_SIZE_MB`` says.
+Raise ``EXP_MAX_SIZE_MB`` only after reviewing ``dallinger deployment-files list``.
 
-``dallinger verify`` still uses Dallinger's 256 MB default unless this
-process has already called :func:`apply_default_exp_max_size_mb` (PsyNet
-debug, test, and deploy commands do) or ``EXP_MAX_SIZE_MB`` is set.
+Importing PsyNet calls :func:`apply_default_exp_max_size_mb` (see
+``psynet.runtime_init``), so Dallinger's own size check and child processes
+see the same default.
 """
 
 from __future__ import annotations
@@ -27,9 +27,7 @@ def apply_default_exp_max_size_mb() -> None:
 def get_exp_max_size_mb(*, heroku: bool = False) -> int:
     """Return the configured deployment-plan size limit in megabytes (10**6 bytes).
 
-    Reading the limit does not write ``EXP_MAX_SIZE_MB``. Call
-    :func:`apply_default_exp_max_size_mb` during runtime init so Dallinger
-    sees the same default.
+    Reading the limit does not write ``EXP_MAX_SIZE_MB``.
     """
     raw = os.environ.get(EXP_MAX_SIZE_MB_ENV)
     if raw is None:
@@ -37,11 +35,13 @@ def get_exp_max_size_mb(*, heroku: bool = False) -> int:
     else:
         try:
             configured = int(raw)
-        except ValueError as exc:
+        except ValueError:
+            configured = 0
+        if configured <= 0:
             raise ValueError(
-                f"{EXP_MAX_SIZE_MB_ENV} must be an integer number of megabytes "
-                f"(got {raw!r})."
-            ) from exc
+                f"{EXP_MAX_SIZE_MB_ENV} must be a positive integer number of "
+                f"megabytes (got {raw!r})."
+            )
     if heroku:
         return min(configured, HEROKU_MAX_SLUG_MB)
     return configured

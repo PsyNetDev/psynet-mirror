@@ -27,23 +27,22 @@ def test_static_url_for_rejects_files_outside_static(tmp_path):
     media.parent.mkdir(parents=True)
     media.write_bytes(b"x")
 
-    with working_directory(tmp_path), pytest.raises(ValueError, match="static"):
-        static_url_for(media)
-
-
-def test_static_url_for_rejects_symlinks_that_escape_static(tmp_path):
-    outside = tmp_path / "outside" / "piano.mp3"
-    outside.parent.mkdir(parents=True)
-    outside.write_bytes(b"x")
-    link = tmp_path / "static" / "stimuli" / "piano.mp3"
-    link.parent.mkdir(parents=True)
-    link.symlink_to(outside)
-
     with working_directory(tmp_path):
-        with pytest.raises(ValueError, match="static"):
-            static_url_for(link)
-        with pytest.raises(ValueError, match="static"):
-            static_url_for("static/stimuli/piano.mp3")
+        for path in [media, "static/../data/piano.mp3"]:
+            with pytest.raises(ValueError, match="static"):
+                static_url_for(path)
+
+
+def test_static_url_for_follows_develop_directory_symlinks(tmp_path):
+    experiment = tmp_path / "experiment" / "static" / "stimuli"
+    experiment.mkdir(parents=True)
+    (experiment / "piano.mp3").write_bytes(b"x")
+    develop = tmp_path / "develop"
+    (develop / "static").mkdir(parents=True)
+    (develop / "static" / "stimuli").symlink_to(experiment)
+
+    with working_directory(develop):
+        assert static_url_for("static/stimuli/piano.mp3") == "/static/stimuli/piano.mp3"
 
 
 def test_compile_nodes_from_directory_uses_static_urls(tmp_path):
@@ -84,21 +83,25 @@ def test_compile_nodes_from_directory_honors_url_key(tmp_path):
     )
 
 
-def test_compile_nodes_from_directory_matches_extension_case_insensitively(tmp_path):
-    media = tmp_path / "static" / "practice" / "group-a" / "block-1" / "TONE.WAV"
+@pytest.mark.parametrize(
+    "file_name, media_ext",
+    [("TONE.WAV", ".wav"), ("scan.nii.gz", ".nii.gz"), ("tone.wav", "wav")],
+)
+def test_compile_nodes_from_directory_matches_extension(tmp_path, file_name, media_ext):
+    media = tmp_path / "static" / "practice" / "group-a" / "block-1" / file_name
     media.parent.mkdir(parents=True)
     media.write_bytes(b"RIFF")
 
     with working_directory(tmp_path):
         nodes = compile_nodes_from_directory(
             "static/practice",
-            ".wav",
+            media_ext,
             _FakeNode,
         )()
 
     assert len(nodes) == 1
-    assert nodes[0].definition["name"] == "TONE.WAV"
-    assert nodes[0].definition["url"] == "/static/practice/group-a/block-1/TONE.WAV"
+    assert nodes[0].definition["name"] == file_name
+    assert nodes[0].definition["url"] == f"/static/practice/group-a/block-1/{file_name}"
 
 
 def test_compile_nodes_from_directory_rejects_data_directory(tmp_path):

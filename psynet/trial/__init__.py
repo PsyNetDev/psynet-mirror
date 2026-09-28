@@ -111,7 +111,7 @@ def _compile_nodes_from_directory(
                 (
                     path
                     for path in block_dir.iterdir()
-                    if path.is_file() and path.suffix.lower() == suffix
+                    if path.is_file() and path.name.lower().endswith(suffix)
                 ),
                 key=lambda path: path.name,
             )
