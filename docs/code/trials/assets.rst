@@ -67,6 +67,7 @@ argument. From ``demos/features/assets``:
    :start-at: Module(
    :end-at: assets=headphone_assets,
    :dedent: 8
+   :append: ),
 
 Linking assets to nodes
 ^^^^^^^^^^^^^^^^^^^^^^^

@@ -30,6 +30,10 @@ The tools in :doc:`/install` must be installed first.
       uv pip install psynet
       psynet setup
 
+   PsyNet supports Python 3.11 through 3.14 and recommends Python 3.13.
+
+   .. Remove this note together with the matching note in quickstart.rst.
+
    Until the next PsyNet release, install PsyNet from ``master`` instead of
    PyPI, as described in the note in :doc:`/quickstart`.
 

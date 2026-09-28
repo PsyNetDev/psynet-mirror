@@ -39,8 +39,11 @@ deploying, push your PsyNet branch and pin its current commit:
 
 This writes a Git URL for the checkout's current commit, using its
 ``origin`` remote, so a branch on a fork works too. Uncommitted changes in
-the checkout are not included. :ref:`dependencies_updating_psynet` shows the
-format for pinning a branch or tag by hand.
+the checkout are not included. Setup also installs PsyNet from that commit,
+replacing the editable install, so rerun
+``psynet setup --psynet-source editable`` to resume local development.
+:ref:`dependencies_updating_psynet` shows the format for pinning a branch or
+tag by hand.
 
 Use a local Dallinger
 ---------------------

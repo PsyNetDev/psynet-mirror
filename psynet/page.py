@@ -454,6 +454,8 @@ class DebugResponsePage(PageMaker):
 
 
 class VolumeCalibration(Module):
+    """Module that loops a sound so the participant can set a comfortable volume."""
+
     def __init__(
         self,
         url=str(resources.files("psynet") / "resources/audio/brown_noise.wav"),

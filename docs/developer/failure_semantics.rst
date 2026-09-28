@@ -71,8 +71,9 @@ Sync groups
 
 Removing a failed participant can drop a
 :class:`~psynet.sync.SimpleSyncGroup` below ``min_group_size``. If the group
-does not accept top-ups, the barrier removes the remaining members, and fails
-them when ``fail_participants_below_min_size`` is ``True``.
+does not accept top-ups, it is dissolved at once: the remaining members are
+removed, and failed when ``fail_participants_below_min_size`` is ``True``. A
+barrier applies the same rule if it finds a group below minimum size.
 
 Recruiter exit events
 ---------------------

@@ -79,6 +79,13 @@ built from each asset's ``export_path``, for example grouped by module and
 participant. ``assets/manifest.csv`` maps each file to its asset ID, local
 key, associated participant, trial or node, extension and SHA-256 hash.
 
+If a full export is too large, export with ``--assets none`` and copy only
+the files you need from storage. ``database/asset.csv`` lists each asset's
+``object_path`` and ``extension``; stored objects have no file extension. On
+an SSH server with the default local storage, the file is at
+``~/psynet-data/assets/<object_path>`` and can be copied with ``scp``. With
+S3 storage, copy it from the bucket with ``aws s3 cp``.
+
 Identifier separation
 ---------------------
 

@@ -19,7 +19,8 @@ What a timeline is made of
 The demo's timeline starts with four elements:
 
 .. literalinclude:: ../../demos/features/timeline/experiment.py
-   :lines: 22-46
+   :start-after: return Timeline(
+   :end-before: ModularPage(
    :dedent: 8
 
 - A page, here a :class:`~psynet.modular_page.ModularPage`, is constructed
@@ -100,7 +101,8 @@ again when the page is refreshed. Draw in a code block and display in a page
 maker, as the demo does:
 
 .. literalinclude:: ../../demos/features/timeline/experiment.py
-   :lines: 35-46
+   :start-at: CodeBlock(
+   :end-before: ModularPage(
    :dedent: 8
 
 Branching and repetition
@@ -137,8 +139,10 @@ score is above 5, with feedback that depends on the score:
 ``participant``:
 
 .. literalinclude:: ../../demos/features/timeline/experiment.py
-   :lines: 98-106
+   :start-at: for_loop(
+   :end-at: expected_repetitions=
    :dedent: 8
+   :append: ),
 
 Organizing a long timeline
 --------------------------
@@ -148,7 +152,8 @@ trial maker IDs, must be unique within the timeline. From
 ``demos/experiments/timeline``:
 
 .. literalinclude:: ../../demos/experiments/timeline/experiment.py
-   :lines: 83-98
+   :start-at: Module(
+   :end-before: Module(
    :dedent: 8
 
 :func:`~psynet.timeline.join` combines elements and lists of elements into

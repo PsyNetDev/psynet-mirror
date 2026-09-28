@@ -35,7 +35,7 @@ Marking strings
 
 Mark each participant-facing string with ``_``, which
 :func:`~psynet.utils.get_translator` returns. The ``translation`` demo is shown
-in German and has Dutch and English translations:
+in German and has a Dutch translation:
 
 .. literalinclude:: ../../../demos/experiments/translation/experiment.py
    :start-at: _ = get_translator()
@@ -56,7 +56,7 @@ Variables
 ~~~~~~~~~
 
 Write variables in capital letters (underscores are allowed) inside curly
-brackets, and fill them in with ``.format``, as on the third page of the demo:
+brackets, and fill them in with ``.format``:
 
 .. code-block:: python
 

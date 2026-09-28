@@ -6,7 +6,8 @@ Participants
 A **participant** is one person taking the experiment, from the moment they
 arrive from a recruitment platform until they finish, leave, or are screened
 out. PsyNet records each participant's progress through the
-:doc:`timeline <timeline>`, their responses, and what they are owed.
+:doc:`timeline <timeline>`, their responses, and, if the experiment pays
+participants, what they are owed.
 
 Screening
 ---------
@@ -14,13 +15,15 @@ Screening
 **Pre-screening tasks** at the start of the timeline check that a participant
 can do the task, for example that they wear headphones, can tell colors apart,
 or understand the instructions. A participant who fails is sent to the end of
-the experiment early and paid for the time spent so far. PsyNet provides
+the experiment early and, where the recruiter pays for partial completion,
+paid for the time spent so far. PsyNet provides
 ready-made tasks for common checks, and a pre-screening task is an ordinary
 part of the timeline, so you can write your own.
 
 Checks can also run during the main task. A **performance check** at the end
-of a trial maker scores the participant's trials and can fail the participant
-and their trials if the score is too low; see :doc:`trials`.
+of a trial maker, or after each trial, scores the participant's trials and
+can fail the participant and their trials if the score is too low; see
+:doc:`trials`.
 
 **Questionnaires** collect information about participants, such as age,
 gender, or musical training. PsyNet provides standard questionnaires, and
@@ -29,7 +32,8 @@ their answers are stored with the participant.
 Payment
 -------
 
-A participant's **reward** has two parts:
+If the experiment pays participants, a participant's **reward** has two
+parts:
 
 - **time reward**: each part of the timeline has a time estimate, and a
   participant accumulates the estimates of the parts they complete, paid at
@@ -41,25 +45,31 @@ The reward is the total a participant should receive. It is paid in two
 parts: the recruitment platform's fixed **base payment**, which you set when
 you advertise the study, and a **bonus** that PsyNet pays at the end. PsyNet
 computes the bonus as the reward minus the base payment, so that the two add
-up to the reward. Set the base payment at or below the smallest reward you
-expect, because a participant whose reward is lower than the base payment
-still receives the full base payment and no bonus.
+up to the reward. Set the base payment at or below the smallest reward of a
+participant who completes the experiment, because a participant whose reward
+is lower than the base payment still receives the full base payment and no
+bonus.
 
 Paying for estimated rather than measured time means that fast and slow
 participants are paid the same for the same work, and that the expected
-payment can be advertised in advance. Participants who are screened out or
-leave early are paid for the parts they completed; how that payment is split
-between platform and bonus depends on the recruiter.
+payment can be advertised in advance. The exception is time spent waiting
+for other participants, which is measured up to a limit. Participants who
+are screened out or leave early are usually paid for the parts they
+completed; what they receive, and how it is split between platform and
+bonus, depends on the recruiter.
 
 **Payment limits** protect the budget against mistakes: a maximum payment per
 participant, a soft limit on total spending that stops recruitment, and a hard
-limit that no bonus may exceed.
+limit on total spending: a bonus that would exceed it is reduced to the amount
+left.
 
 Leaving early and failure
 -------------------------
 
-A participant can leave at any time, and some recruiters let them leave with
-payment once they have earned a minimum reward. A participant is **failed**
+Most participants who leave early are failed by a screening task or
+performance check. If you enable the **Leave** button, participants can also
+choose to leave; this fails them, and recruiters that pay through PsyNet pay
+them only once they have earned a minimum reward. A participant is **failed**
 when they should not continue or count as a successful completion, for
 example after failing a check. Failing a participant fails their incomplete
 trials; completed trials are kept unless a performance check says they are

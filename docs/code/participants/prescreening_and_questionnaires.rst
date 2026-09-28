@@ -18,8 +18,8 @@ Each trial is scored, and the participant passes if the total score reaches
 ``performance_threshold``. :class:`~psynet.prescreen.ColorBlindnessTest`,
 for example, has six trials and passes at 4 correct answers by default. A
 participant who fails is shown an :class:`~psynet.page.UnsuccessfulEndPage`,
-is marked as failed, and is paid for the time spent so far (see
-:doc:`payment`). By default their trials in the test are failed too; set
+is marked as failed, and is paid for the time spent so far if the recruiter
+pays for partial completion (see :doc:`payment`). By default their trials in the test are failed too; set
 ``fail_trials_on_participant_performance_check=False`` on your own tests to
 keep them.
 

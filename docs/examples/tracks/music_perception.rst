@@ -27,7 +27,7 @@ You should approach each demo in the following way:
 
 Now read the following pages:
 
-- :doc:`Classes in PsyNet </code/project/classes_and_sqlalchemy>`
+- :doc:`PsyNet's classes and SQLAlchemy </code/project/classes_and_sqlalchemy>`
 - :doc:`Timeline </design/timeline>`
 - :doc:`Modular pages </code/pages/control_gallery>`
 

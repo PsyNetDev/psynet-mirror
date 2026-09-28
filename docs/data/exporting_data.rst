@@ -50,9 +50,9 @@ During a study
 
 Export after the first batch of participants, regularly while data
 collection runs, and once more after the last participant has finished.
-Destroying the app or tearing down the server deletes any data you haven't
-exported. Repeat exports are fast, because only asset files missing from the
-local cache are transferred. If an export fails, rerun the command.
+Once the app is destroyed or the server torn down, you can no longer export
+with ``psynet export``, so treat any data you haven't exported as lost. If an
+export fails, rerun the command.
 
 .. lab-note::
 

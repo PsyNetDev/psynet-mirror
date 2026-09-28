@@ -44,7 +44,8 @@ cent per point:
 .. literalinclude:: ../../../demos/experiments/static/experiment.py
    :pyobject: AnimalTrial.compute_performance_reward
 
-:meth:`TrialMaker.compute_performance_reward <psynet.trial.main.TrialMaker.compute_performance_reward>`
+The trial maker's
+:meth:`compute_performance_reward <psynet.trial.main.NetworkTrialMaker.compute_performance_reward>`
 runs once at the end of the trial maker, after the final performance check.
 It receives the check's ``score`` and ``passed`` values, and runs only if the
 trial maker has ``check_performance_at_end=True``:
@@ -77,7 +78,8 @@ timeline without optional parts, that is the reward from
 
 To change how a recruiter computes the payment, subclass it and override
 :meth:`~psynet.recruiters.PsyNetRecruiterMixin.decide_payment`,
-``platform_base_for`` or ``total_owed``.
+:meth:`~psynet.recruiters.PsyNetRecruiterMixin.platform_base_for` or
+:meth:`~psynet.recruiters.PsyNetRecruiterMixin.total_owed`.
 
 Leaving early
 -------------
@@ -90,8 +92,12 @@ split depends on the recruiter:
 
 - **Prolific** pays a fixed screen-out amount
   (``prolific_unsuccessful_base_payment``, default ``0.25``), and PsyNet tops
-  the participant up to their reward with a bonus. See
-  :doc:`/deploy/recruiters/prolific`.
+  the participant up to their reward with a bonus. With
+  ``prolific_unsuccessful_topup = false``, the time reward is forfeited and
+  the participant receives only the screen-out amount plus any performance
+  reward. With ``prolific_pay_unsuccessful = false``, the participant is
+  asked to return the submission instead, and their whole reward is paid as
+  a bonus. See :doc:`/deploy/recruiters/prolific`.
 - **CINT** (Lucid) pays participants through the panel; PsyNet pays no base
   payment or bonus. See :doc:`/deploy/recruiters/cint`.
 - **Lab Recruiter** receives the outcome from PsyNet, and payment follows the
@@ -116,7 +122,9 @@ configuration keys:
 ``hard_max_experiment_payment`` (default ``1100.0``)
     No bonus is paid beyond this total. A bonus that would exceed it is
     reduced to the remaining amount, or not paid if less than 0.01 remains,
-    and the participant's bonus status is recorded as ``capped``.
+    and the participant's bonus status is recorded as ``capped``. The
+    participant's ``planned_bonus`` keeps the amount decided before the cap,
+    and ``bonus`` records what was paid.
 
 :meth:`~psynet.experiment.Experiment.amount_spent` adds up the base payments
 and bonuses of all participants, including the base payment reserved for
@@ -136,4 +144,4 @@ class:
         }
 
 While the experiment runs, the soft and hard experiment limits can be changed
-on the dashboard's Timeline tab.
+on the dashboard's **Monitor > Timeline** page.

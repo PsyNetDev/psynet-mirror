@@ -15,7 +15,7 @@ URL and raises an error for paths outside ``static/``. The
    :pyobject: list_stimuli
 
 If the files are organized into participant-group and block folders,
-:func:`psynet.trial.compile_nodes_from_directory` creates one node per file.
+``psynet.trial.compile_nodes_from_directory`` creates one node per file.
 
 Pass the URL to the page, for example:
 

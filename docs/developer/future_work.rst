@@ -397,9 +397,10 @@ that is being billed, which the researcher then has to find and tear down.
 Idea
 ++++
 
-In Dallinger, load the configuration and check every required setting
-(``dashboard_user``, ``dashboard_password``, ``server_pem``, AWS credentials)
-at the start of ``prepare_instance``, before ``boot_instance``, and raise a
+``server_pem`` is already checked before the instance boots. In Dallinger,
+load the configuration and also check the dashboard settings and AWS
+credentials at the start of ``prepare_instance``, before ``boot_instance``,
+and raise a
 ``click.UsageError`` that names the missing keys. It's a short PR with a unit
 test that mocks the EC2 client and asserts that no instance is booted when a
 key is missing. Once it ships, update step 5 of the provisioning steps in

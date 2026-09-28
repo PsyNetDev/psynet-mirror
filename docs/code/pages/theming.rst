@@ -132,7 +132,8 @@ a custom template are not rewritten; their unversioned ``/static/...`` URLs
 still work and are revalidated by the browser instead of cached indefinitely.
 
 ``participant.css`` avoids ``!important``, so an ordinary rule in your own
-stylesheet overrides a default without extra specificity.
+stylesheet overrides a default without extra specificity. The
+``demos/features/custom_theme`` demo is a complete example.
 
 .. note::
 

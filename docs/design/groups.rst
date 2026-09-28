@@ -5,8 +5,8 @@ Groups
 
 In a **group experiment**, several participants take part at the same time and
 interact: they play a game against each other, rate the same stimuli together,
-or talk in a chatroom. The rest of the :doc:`timeline <timeline>` stays the same; groups
-add points where participants wait for each other.
+or talk in a chatroom. The rest of the :doc:`timeline <timeline>` stays the
+same; groups add points where participants wait for each other.
 
 Forming groups
 --------------
@@ -14,12 +14,13 @@ Forming groups
 A **grouper** in the timeline collects participants as they arrive and forms
 a group once enough are waiting, for example two for a two-player game.
 Participants wait on the page they are on until their group is complete. A
-grouper can also wait for a larger batch and then split it into groups, which
-lets you assign roles or balance groups.
+grouper can also wait for a larger batch and then split it into groups; the
+built-in grouper splits it at random, and a custom grouper can choose the
+split, for example to balance groups.
 
 Groups are formed from whoever is online at the same moment, so recruitment
 has to bring participants in close together. A participant who waits too long
-without a group can be released or failed.
+without a group is failed and sent to the end of the experiment.
 
 Keeping a group in step
 -----------------------
@@ -39,12 +40,13 @@ Waiting and dropouts
 --------------------
 
 Every barrier and grouper has a **maximum waiting time**. A participant who
-waits longer, for example because a partner closed the browser, is released
-and, depending on the barrier, either failed or removed from the group so
-that they can continue alone. A barrier can also set a time limit between
-barriers, which catches members who fall behind: a member who hasn't reached
-the next barrier in time is failed or removed. Participants are credited for
-the time they spend waiting, up to the maximum.
+waits longer, for example because a partner closed the browser, is released.
+At a grouper they are failed; at a barrier, depending on its settings, they
+are either failed or removed from the group so that they can continue alone.
+A barrier can also set a time limit between barriers, which catches members
+who fall behind: a member who hasn't reached the next barrier in time is
+failed or removed. By default, participants are credited for the actual time
+they wait, up to the maximum.
 
 Plan for dropouts: decide whether a round can continue with fewer members,
 whether the remaining members should go on alone or finish early, and how

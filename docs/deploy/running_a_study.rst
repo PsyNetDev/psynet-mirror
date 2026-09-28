@@ -57,25 +57,21 @@ Check the code and dependencies
   remote.
 - The PsyNet and Dallinger versions you tested locally must match
   ``requirements.txt``. If you change ``requirements.txt``, regenerate and
-  commit ``constraints.txt`` with ``psynet generate-constraints``; PsyNet
-  refuses to deploy with an out-of-date ``constraints.txt``. See
+  commit ``constraints.txt`` with ``psynet generate-constraints``. SSH
+  deployments build the image from whatever ``constraints.txt`` they
+  receive, so run ``psynet check-constraints`` before deploying. See
   :doc:`/code/project/dependencies`.
 - Remote deployment refuses to start while the experiment contains
   ``# TODO`` or ``// TODO`` comments in ``.py``, ``.html`` or ``.js``
   files. Resolve them, or set ``SKIP_TODO_CHECK=1``.
 - ``docker_image_base_name`` must be set in ``config.txt`` or
-  ``~/.dallingerconfig``. Any name works, because the image is built on
-  your server:
-
-  .. code-block:: ini
-
-     [Docker]
-     docker_image_base_name = psynet-experiments
+  ``~/.dallingerconfig`` (see :doc:`/deploy/setting_up_a_server`).
 
 Consent
 ^^^^^^^
 
-The timeline must contain a consent page; deployment fails without one.
+The timeline must contain a consent page, or ``NoConsent`` if it needs
+none; deployment fails without one.
 Some recruiters require a particular consent (CINT requires
 ``LucidConsent``). See :doc:`/reference/api/consent`.
 
@@ -91,7 +87,7 @@ then run:
 
 .. code-block:: text
 
-   Estimated maximum reward for participant: £5.00.
+   Estimated maximum reward for participant: £5.0.
    Estimated time to complete experiment: 10 min 0 sec.
 
 The estimate follows the longest route through the timeline and ignores
@@ -225,12 +221,9 @@ digits and hyphens. If your DNS record only publishes a fixed list of
 subdomains, the app name must be one of them. Several experiments can run
 on one server with different app names.
 
-``--server`` is the name you registered the server under. If you omit it
-and several servers are registered, PsyNet asks you to choose.
-``dallinger ec2 provision --dns-host`` registers a server twice (under its
-AWS hostname and under the DNS name), so pass ``--server`` explicitly in
-that case. If you registered the server by IP address, also pass
-``--dns-host``.
+``--server`` is the name you registered the server under (see
+:doc:`/deploy/setting_up_a_server`). If you omit it and several servers are
+registered, PsyNet asks you to choose.
 
 The command builds the experiment image on the server, starts the
 experiment's services, and opens recruitment; see
@@ -306,6 +299,8 @@ check before recruiting more:
 - the dashboard and logs for errors (see `Monitor`_);
 - the real completion time against the estimate; update ``time_estimate``
   values and redeploy if it is more than about 30% off;
+- on Prolific, that no successful submissions are sitting in
+  **Awaiting review**, which would mean PsyNet did not complete them;
 - an export of the data (see `Export`_).
 
 Then increase the places in batches. On Prolific, open the study, choose
@@ -344,7 +339,7 @@ Recruitment stops when the amount spent reaches
 ``soft_max_experiment_payment``, and PsyNet emails the experimenter. This
 is an experiment variable, not a configuration key: set its initial value
 in the experiment class's ``variables`` dictionary, or change it on the
-dashboard's Timeline tab while the experiment runs. See
+dashboard's **Monitor > Timeline** page while the experiment runs. See
 :doc:`/code/participants/payment`.
 
 .. _lab-deployment-dashboard:
@@ -362,8 +357,8 @@ the Deployments tab (the deployment monitor) shows all of them at once.
 
 **Logs.** Dozzle shows the live logs of every container on the server.
 Its URL is printed at launch (``https://logs.your-server.example.org``
-for servers that use subdomains); log in as ``dallinger`` with the
-printed password. You can also read the logs over SSH:
+for servers that use subdomains); the login is described in
+:doc:`/deploy/setting_up_a_server`. You can also read the logs over SSH:
 
 .. code:: bash
 
@@ -375,16 +370,19 @@ The experiment's services are ``web``, ``worker_1`` to ``worker_N``,
 ``clock``, ``redis`` and ``pgbouncer``; ``docker compose logs`` without a
 service name shows all of them.
 
-**Errors.** The dashboard's Errors tab lists every recorded error with its
-stack trace, and the Logger shows the live log stream; see
+**Errors.** The dashboard's **Monitor > Errors** page lists every recorded
+error with its stack trace, and **Monitor > Logger** shows the live log
+stream; see
 :doc:`/deploy/reference/errors`. Fix critical errors immediately, which
 may mean pausing recruitment and redeploying.
 
 **Participant messages.** On Prolific, participants message you through
 Prolific's messaging system; reply promptly. Look the participant up by
-their Prolific ID in the Worker ID field of the dashboard's Participants
-tab. The participant page has a **Link for resuming session** you can
-send them if they can continue.
+their Prolific ID in the Worker ID field of the dashboard's
+**Monitor > Participants** page. The participant page has a **Link for
+resuming session** you can send them if they can continue. CINT
+participants can't contact you through the platform. Lab Recruiter
+participants email the address configured in your Lab Recruiter setup.
 
 Participants who hit an error, fail a pre-screening task or leave early
 are paid automatically: they click **Submit to Prolific**, PsyNet
@@ -421,24 +419,28 @@ and once more after the last participant has finished:
 
 Run the command in the experiment directory the deployment came from. The
 export lands in ``exports/latest/``. The dashboard's Export tab downloads
-the same data as ``export.zip``. Export options, the export layout and
-checking data during collection are covered in
-:ref:`data_export_deployed`.
+the same data as ``export.zip``. See :doc:`/data/exporting_data` for export
+options.
 
-Destroying the app or the server deletes any data you have not exported.
+Once you destroy the app or the server, ``psynet export`` no longer works,
+so treat data you have not exported as lost.
 
 Tear down
 ---------
 
 When the target number of participants is reached:
 
-1. Stop the study on the recruiter. PsyNet never closes a Prolific study
-   itself; stop it from the study page on Prolific, and switch off
-   auto-recruit on the dashboard.
+1. Stop the study on the recruiter, so that participants can't start a
+   study whose server will no longer exist. PsyNet never closes a Prolific
+   study itself; stop it from the study page on Prolific, and switch off
+   auto-recruit on the dashboard. Each deployment creates a new Prolific
+   study, so this applies to every redeploy; you can exclude participants
+   of earlier deployments with Prolific's filters.
 2. Wait until no participants are still taking part.
-3. Review payments. On the dashboard's Participants tab, handle anyone
-   listed under **Needs payment review**: PsyNet meant to pay them a bonus
-   but could not confirm it, and you can pay or dismiss it there. On
+3. Review payments. On the dashboard's **Monitor > Participants** page,
+   handle anyone listed under **Needs payment review**: PsyNet meant to pay
+   them a bonus but could not confirm it, and you can pay or dismiss it
+   there. On
    Prolific, check the **Awaiting review** list. Successful and
    screened-out submissions do not appear there; the rest are typically
    people who stopped without submitting, submissions PsyNet could not
@@ -456,16 +458,8 @@ When the target number of participants is reached:
 
       psynet destroy ssh --app my-study --server your-server.example.org
 
-   This stops the experiment's containers and deletes its files on the
+   This stops the experiment's containers and removes its folder from the
    server.
-
-.. warning::
-
-   Stop the Prolific study before you destroy the app. Otherwise
-   participants can still start a study whose server no longer exists.
-   Each deployment creates a new Prolific study, so this applies to every
-   redeploy; you can exclude participants of earlier deployments with
-   Prolific's filters.
 
 If the server was provisioned only for this study, tear it down as well;
 see :doc:`/deploy/setting_up_a_server`. For an EC2 server created with
@@ -479,9 +473,6 @@ records and the server registration are removed:
 
 Once an EC2 server is terminated, anything on it that was not exported is
 lost.
-
-For CINT and Lab Recruiter, the recruiter's ending steps are in
-:doc:`/deploy/recruiters/cint` and :doc:`/deploy/recruiters/lab_recruiter`.
 
 .. lab-note::
 

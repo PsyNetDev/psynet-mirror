@@ -9,6 +9,7 @@ Trial
 
    audio
    chain
+   create_and_rate
    dense
    generic
    gibbs

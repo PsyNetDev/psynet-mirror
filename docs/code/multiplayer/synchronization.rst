@@ -136,8 +136,9 @@ JSON-compatible values.
 
 The barrier ``id_`` identifies one waiting point. Barriers with the same ID
 share a waiting pool, so give barriers with different ``on_release``
-callbacks different IDs. Reusing an ID for a different barrier class is an
-error.
+callbacks different IDs. Using one ID for barriers with different behavior
+(class, ``on_release`` or release settings) raises an error when the
+experiment is built.
 
 Arrival notices
 ~~~~~~~~~~~~~~~
@@ -221,13 +222,14 @@ Groups below minimum size
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 
 When failed or departed members take a group below ``min_group_size``, what
-happens at the next barrier depends on whether the group accepts top-ups:
+happens depends on whether the group accepts top-ups:
 
-- With ``join_existing_groups=True``, the barrier waits for new members to
-  join.
-- Otherwise the group is dissolved and its remaining members are failed. Set
-  ``fail_participants_below_min_size=False`` on the grouper to release them
-  without failing them, so that they continue alone.
+- With ``join_existing_groups=True``, the group's next barrier waits for new
+  members to join.
+- Otherwise the group is dissolved as soon as the member leaves, and its
+  remaining members are failed. Set ``fail_participants_below_min_size=False``
+  on the grouper to remove them from the group without failing them, so that
+  they continue alone.
 
 The ``sync_quorum`` demo lets participants into part of the timeline only
 while at least three are present. Its grouper has no maximum size and accepts

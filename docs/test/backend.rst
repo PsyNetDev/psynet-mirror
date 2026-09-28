@@ -25,7 +25,8 @@ directory:
 
 This starts a local server and sends one bot through the whole experiment,
 one page at a time. The test passes if the bot reaches the end without
-errors and every check passes; otherwise it prints a traceback.
+errors and every check passes; otherwise it prints a traceback. To send
+more bots, set ``test_n_bots`` on the experiment class.
 
 How bots answer
 ---------------

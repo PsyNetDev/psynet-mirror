@@ -45,6 +45,8 @@ attributes, and methods:
         external_template = "custom-prompts.html"
         background_color = "red"
 
+        ...  # constructor as above
+
         def get_message(self):
             return f"Welcome back, {self.username}."
 
@@ -290,7 +292,7 @@ PsyNet wraps this fragment in the standard timeline page shell, including the
 timeline header, main body container, footer, page asset bundle, and
 ``psynet-template-data``. A fragment template must not include ``{% extends
 "timeline-page.html" %}``, ``{% block main_body %}``, ``<html>``, ``<head>``,
-``<body>``, ``<script>`` or ``<style>``.
+``<body>``, ``<script>``, ``<style>`` or ``<link rel="stylesheet">``.
 
 Supply page-local CSS and JavaScript through explicit page arguments:
 
@@ -310,6 +312,10 @@ Custom prompts and controls supply the same assets from Python through
 ``get_css()``, ``get_css_links()``, ``get_js_dependencies()``,
 ``get_js_page_code()``, ``get_js_page_modules()`` and ``get_js_vars()``.
 
-PsyNet raises an error when a page's template breaks these rules.
-:doc:`/whats_new/upgrading_to_psynet_14` explains each error and how to
-migrate older templates.
+These rules exist because PsyNet swaps pages in place by default, without
+reloading the browser document; :doc:`/developer/page_lifecycle` describes
+how. PsyNet raises an error when a page's template breaks them. With the
+``inplace_timeline_transitions`` configuration key set to ``false`` (see
+:doc:`/reference/configuration`), PsyNet reloads the document for every page
+and only warns. :doc:`/whats_new/upgrading_to_psynet_14` explains each error
+and how to migrate older templates.

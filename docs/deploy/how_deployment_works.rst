@@ -37,7 +37,7 @@ can review them before rerunning. Experiments that still have a
 ``.dockerignore`` or ``docker/`` helper scripts need migrating first; see
 :doc:`/whats_new/upgrading_deployment_file_selection`.
 
-The plan may be at most 1024 MB. Before raising the limit with the
+By default, the plan may be at most 1024 MB. Before raising the limit with the
 ``EXP_MAX_SIZE_MB`` environment variable, check the plan for exports, virtual
 environments and private data.
 
@@ -133,6 +133,7 @@ Participants' responses are stored in the app's database on the server, and
 any files they create are stored in the experiment's asset storage.
 ``psynet export ssh`` downloads the data to your computer (see
 :doc:`/data/exporting_data`); export regularly while the study runs. ``psynet destroy
-ssh`` stops the app and deletes its files from the server, and tearing down an
-EC2 server deletes the machine with every database on it. Export before either
-step.
+ssh`` stops the app and removes its folder from the server, after which
+``psynet export`` no longer works, and tearing down an EC2 server deletes the
+machine with every database on it. Export before either step, and treat data
+you haven't exported as lost.

@@ -191,7 +191,7 @@ through ``self.node.assets``. Pass the nodes to the enclosing
 ``nodes`` argument. From ``demos/experiments/trial_2``:
 
 .. literalinclude:: ../../demos/experiments/trial_2/experiment.py
-   :start-at: audio_ratings = Module(
+   :start-at: NODES = [
    :end-before: class Exp
 
 Without nodes, pass trial-specific assets to ``cue`` with ``assets``. This

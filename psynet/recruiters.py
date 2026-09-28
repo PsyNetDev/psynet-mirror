@@ -234,6 +234,8 @@ def _prolific_error_status(error: ProlificServiceException):
 
 
 class PsyNetRecruiterMixin:
+    """PsyNet behavior shared by all recruiters, including payment and early exit."""
+
     show_early_exit_button = False
     # Deprecated aliases of ``show_early_exit_button``. Prefer the early-exit name
     # in new code; Lucid still sets the aliases so older templates keep working.

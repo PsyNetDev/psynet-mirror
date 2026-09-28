@@ -85,7 +85,8 @@ Choosing the next chain
 - ``balance_across_chains`` (default ``False``) sends new trials to the chains
   with fewest responses.
 - ``wait_for_networks`` (default ``False``) makes participants wait when
-  chains exist but are busy, instead of moving on.
+  chains exist but are waiting on asynchronous processing, instead of moving
+  on.
 - Participant groups work as in :doc:`/code/writing_a_trial_maker`: set ``participant_group`` on
   the start nodes and pass ``choose_participant_group``.
 

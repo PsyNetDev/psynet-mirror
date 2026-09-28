@@ -458,7 +458,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     Default experiment variables accessible through `psynet.experiment.Experiment.var` are:
 
     max_participant_payment : `float`
-        The maximum payment in US dollars a participant is allowed to get. Default: `25.0`.
+        The maximum payment a participant is allowed to get, in the currency set by
+        the ``currency`` configuration key. Default: `25.0`.
 
     soft_max_experiment_payment : `float`
         The recruiting process stops if ``amount_spent()`` (recorded
@@ -576,7 +577,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     supported_locales : ``list``
         Locales (ISO language codes) that the experiment is translated into, e.g., ``'["de", "nl"]'``.
-        Each deployment still runs in the single locale set by ``locale``.
+        Each deployment runs in the single locale set by ``locale``.
         Default: ``'[]'``.
 
     force_google_chrome : ``bool``
@@ -7002,6 +7003,7 @@ def get_experiment() -> Experiment:
 
 @cache
 def get_trial_maker(trial_maker_id) -> TrialMaker:
+    """Return the trial maker with the given ID from the experiment's timeline."""
     exp = get_experiment()
     return exp.timeline.get_trial_maker(trial_maker_id)
 

@@ -20,10 +20,15 @@ Commit and tag before deploying
 -------------------------------
 
 Commit all changes before a live deployment, then tag the commit so that you
-can find the deployed version later:
+can find the deployed version later. Check with ``git status`` that only the
+files you want are included (see `Choose what to commit`_). Pushing needs a
+remote: if the repository doesn't have one yet, create an empty repository
+on GitHub or GitLab and follow its instructions for pushing an existing
+repository.
 
 .. code-block:: bash
 
+    git status
     git add .
     git commit -m "Prepare pilot deployment"
     git tag -a deploy-pilot -m "Pilot deployment"

@@ -886,7 +886,7 @@ Internationalization
     A ``gettext`` language code to be used for the experiment.
 
 ``locale`` *str* |psynet-icon|
-    The default locale for the experiment. Default: ``en``.
+    The locale participants see. Default: ``en``.
 
 ``openai_api_key`` *str* |psynet-icon| |sensitive-icon|
     The OpenAI API key for machine translation. Default: ``None``.

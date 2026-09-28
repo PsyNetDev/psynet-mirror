@@ -63,6 +63,22 @@ Language
     :members:
     :show-inheritance:
 
+=============
+MotherTongues
+=============
+
+.. autoclass:: psynet.demography.general.MotherTongues
+    :members:
+    :show-inheritance:
+
+=============================
+LanguagesInOrderOfProficiency
+=============================
+
+.. autoclass:: psynet.demography.general.LanguagesInOrderOfProficiency
+    :members:
+    :show-inheritance:
+
 ===============
 SpeechDisorders
 ===============

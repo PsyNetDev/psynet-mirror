@@ -4,7 +4,7 @@ Deployment monitor
 .. _experiment_dashboard:
 
 The experiment dashboard
-=========================
+------------------------
 
 Every deployed or debugged experiment has its own dashboard. This is
 your main tool for tracking and managing a single study while it is
@@ -16,35 +16,35 @@ Key features:
 - **Home page:** The experiment configuration, including the
   **auto_recruit** switch, which turns automatic recruitment on or off
   while the experiment runs.
-- **Monitor > Monitoring:** View networks, nodes, parameters, and participant
+- **Monitor > Networks:** View networks, nodes, parameters, and participant
   answers. Click shapes for details.
 - **Monitor > Timeline:** Track participant counts, completions, and
   failures. See all the modules in your experiment and their completion
   percentages, the amount spent, and the spending limits, which you can
   change here (see :doc:`/code/participants/payment`).
-- **Participants tab:** Look up a participant by their recruiter ID in
+- **Monitor > Participants:** Look up a participant by their recruiter ID in
   the Worker ID field. The participant page shows their status and
   payments and a **Link for resuming session**. Participants whose bonus
   PsyNet could not confirm are listed under **Needs payment review**, with
   options to pay or dismiss the bonus.
-- **Errors tab:** Every recorded error with its stack trace; see
+- **Monitor > Errors:** Every recorded error with its stack trace; see
   :doc:`Error logging </deploy/reference/errors>`.
 - **Monitor > Logger:** A live stream of log output.
-- **Resources tab:** The server's CPU, memory and disk usage.
-- **Database tab:** Browse the database tables.
-- **Basic data tab:** A preview of the experiment's basic data, if
+- **Monitor > Resources:** The server's CPU, memory and disk usage.
+- **Database:** Browse the database tables.
+- **Basic data:** A preview of the experiment's basic data, if
   ``get_basic_data`` is implemented.
-- **Export tab:** Export the data. See
+- **Export:** Export the data. See
   :doc:`/data/exporting_data` for the full export reference.
-- **Lucid tab:** CINT survey status and metrics, for CINT experiments; see
-  :doc:`/deploy/recruiters/cint`.
-- **Deployments tab:** The deployment monitor described below.
+- **Recruiter > Lucid:** CINT survey status and metrics, for CINT
+  experiments; see :doc:`/deploy/recruiters/cint`.
+- **Deployments:** The deployment monitor described below.
 
 This single-experiment dashboard is different from the deployment
 monitor described below, which shows *all* of your deployments at once.
 
 The deployment monitor
-=========================
+----------------------
 
 PsyNet allows you to monitor not only the progress of your own experiments, but also the status of other experiments.
 
@@ -72,7 +72,7 @@ Your experiment is registered with the deployment monitor when you deploy it wit
 
 
 User interface
-==============
+--------------
 
 The deployment monitor displays experiments in a table grouped by recruiter. For each recruiter, the table shows specific metrics
 such as the median time to complete a task and the real wage per hour (e.g., in Prolific).
@@ -96,7 +96,7 @@ The table includes the following columns:
 - **Actions**: Provides quick-access icons for managing the experiment (see below).
 
 Actions
-=======
+~~~~~~~
 
 - **Comment**  Add a comment to the experiment. This is useful for logging deployment issues or observations during deployment.
 

@@ -26,18 +26,21 @@ summarizes the ratings to choose the next node's definition. It sets
 ``trials_per_node`` to ``n_creators + n_raters`` itself.
 
 An experiment defines three classes, each combining a mixin from
-``psynet.trial.create_and_rate`` with a chain class. The mixin must come
+:mod:`psynet.trial.create_and_rate` with a chain class. The mixin must come
 first:
 
-- a creator trial: ``CreateTrialMixin`` and a
-  :class:`~psynet.trial.chain.ChainTrial` subclass;
-- a rater trial: ``RateTrialMixin`` (for ratings) or ``SelectTrialMixin``
-  (for choosing one creation), and a
-  :class:`~psynet.trial.chain.ChainTrial` subclass;
-- a trial maker: ``CreateAndRateTrialMakerMixin`` and a
+- a creator trial: :class:`~psynet.trial.create_and_rate.CreateTrialMixin`
+  and a :class:`~psynet.trial.chain.ChainTrial` subclass;
+- a rater trial: :class:`~psynet.trial.create_and_rate.RateTrialMixin` (for
+  ratings) or :class:`~psynet.trial.create_and_rate.SelectTrialMixin` (for
+  choosing one creation), and a :class:`~psynet.trial.chain.ChainTrial`
+  subclass;
+- a trial maker:
+  :class:`~psynet.trial.create_and_rate.CreateAndRateTrialMakerMixin` and a
   :class:`~psynet.trial.chain.ChainTrialMaker` subclass.
 
-``CreateAndRateNode`` is the node class for most experiments.
+:class:`~psynet.trial.create_and_rate.CreateAndRateNode` is the node class
+for most experiments.
 
 Creator trials
 --------------
@@ -108,8 +111,9 @@ Separate creators and raters
 
 By default, a participant creates or rates depending on which phase the
 chosen node is in. To give participants a fixed role, override
-``get_participant_role`` to return ``self.CREATOR_ROLE`` or
-``self.RATER_ROLE``. Creators then only receive nodes that still need
+:meth:`get_participant_role(self, participant, experiment)
+<psynet.trial.create_and_rate.CreateAndRateTrialMakerMixin.get_participant_role>`
+to return ``self.CREATOR_ROLE`` or ``self.RATER_ROLE``. Creators then only receive nodes that still need
 creations. Raters receive nodes that are ready for ratings, and wait or exit
 at nodes whose creations are not yet finalized, depending on
 ``wait_for_networks``.
