@@ -5,7 +5,7 @@ Groups
 
 In a **group experiment**, several participants take part at the same time and
 interact: they play a game against each other, rate the same stimuli together,
-or talk in a chatroom. The rest of the :doc:`timeline` stays the same; groups
+or talk in a chatroom. The rest of the :doc:`timeline <timeline>` stays the same; groups
 add points where participants wait for each other.
 
 Forming groups

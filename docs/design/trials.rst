@@ -31,7 +31,7 @@ Participants visit nodes one at a time. At each visit:
 
 The participant then moves on to another node, until the trial maker
 decides they have done enough, and they continue with the rest of the
-:doc:`timeline`.
+:doc:`timeline <timeline>`.
 
 What a node holds is up to you. Usually it is one stimulus, but it can
 equally be a question, a topic, or a condition. Trials on the same node

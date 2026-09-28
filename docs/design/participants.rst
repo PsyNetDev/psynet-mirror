@@ -6,7 +6,7 @@ Participants
 A **participant** is one person taking the experiment, from the moment they
 arrive from a recruitment platform until they finish, leave, or are screened
 out. PsyNet records each participant's progress through the
-:doc:`timeline`, their responses, and what they are owed.
+:doc:`timeline <timeline>`, their responses, and what they are owed.
 
 Screening
 ---------
@@ -37,12 +37,19 @@ A participant's **reward** has two parts:
 - **performance reward**: an optional extra that you compute from the
   participant's responses, for example a bonus for accurate answers.
 
-The recruitment platform pays its fixed **base payment** for completing the
-study, and PsyNet pays the reward as a bonus on top. Paying for estimated
-rather than measured time means that fast and slow participants are paid the
-same for the same work, and that the payment shown in the study advertisement
-can be computed in advance. Participants who are screened out or leave early
-are paid for the parts they completed.
+The reward is the total a participant should receive. It is paid in two
+parts: the recruitment platform's fixed **base payment**, which you set when
+you advertise the study, and a **bonus** that PsyNet pays at the end. PsyNet
+computes the bonus as the reward minus the base payment, so that the two add
+up to the reward. Set the base payment at or below the smallest reward you
+expect, because a participant whose reward is lower than the base payment
+still receives the full base payment and no bonus.
+
+Paying for estimated rather than measured time means that fast and slow
+participants are paid the same for the same work, and that the expected
+payment can be advertised in advance. Participants who are screened out or
+leave early are paid for the parts they completed; how that payment is split
+between platform and bonus depends on the recruiter.
 
 **Payment limits** protect the budget against mistakes: a maximum payment per
 participant, a soft limit on total spending that stops recruitment, and a hard
