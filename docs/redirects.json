@@ -187,5 +187,6 @@
   "getting_started/installation/virtual_environment_installation/macos": "getting_started/install",
   "getting_started/installation/virtual_environment_installation/note_about_virtual_environments": "getting_started/install",
   "getting_started/installation/virtual_environment_installation/opening_a_project_in_a_virtual_environment": "getting_started/install",
-  "getting_started/installation/virtual_environment_installation/windows": "getting_started/install"
+  "getting_started/installation/virtual_environment_installation/windows": "getting_started/install",
+  "introduction/overview": "introduction/applications"
 }
