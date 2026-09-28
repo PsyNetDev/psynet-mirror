@@ -3826,7 +3826,7 @@ def _resolve_perf_test_options(exp, n_bots, stagger, time_factor, duration_minut
         "stagger": float(stagger)
         if stagger is not None
         else exp.test_parallel_stagger_interval_s,
-        "time_factor": time_factor if time_factor is not None else exp.test_time_factor,
+        "time_factor": time_factor if time_factor is not None else 1.0,
         "duration_minutes": (
             duration_minutes
             if duration_minutes is not None

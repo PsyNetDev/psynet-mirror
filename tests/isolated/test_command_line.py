@@ -4162,8 +4162,8 @@ class TestResolvePerfTestOptions:
     def test_stagger_zero_not_replaced_by_exp_default(self, exp):
         assert self.resolve(exp, stagger="0").get("stagger") == pytest.approx(0.0)
 
-    def test_time_factor_none_uses_exp_default(self, exp):
-        assert self.resolve(exp).get("time_factor") == exp.test_time_factor
+    def test_time_factor_none_defaults_to_one(self, exp):
+        assert self.resolve(exp).get("time_factor") == 1.0
 
     def test_time_factor_zero_not_replaced_by_exp_default(self, exp):
         assert self.resolve(exp, time_factor=0.0).get("time_factor") == 0.0
