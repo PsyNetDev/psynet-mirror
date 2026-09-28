@@ -22,7 +22,7 @@ class LabNote(BaseAdmonition):
 
     def run(self):
         self.arguments = ["In a lab"]
-        self.options["class"] = ["lab-note"]
+        self.options["class"] = self.options.get("class", []) + ["lab-note"]
         return super().run()
 
 
