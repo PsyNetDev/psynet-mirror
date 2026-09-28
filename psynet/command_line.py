@@ -3679,8 +3679,9 @@ def performance_test__local(
     By default, this command starts a new experiment server automatically.
     Use --existing to connect to an already-running server instead.
 
-    This command never updates an experiment audit. Use
-    ``psynet audit performance-test`` to collect audit evidence.
+    Results are not saved to the experiment's audit record. Use
+    ``psynet audit performance-test`` if you need a permanent record
+    (e.g., before a study launch).
     """
     log_level = logging.DEBUG if debug else logging.INFO
     root_logger = logging.getLogger()
@@ -3818,7 +3819,11 @@ def _write_json_results(json_output, *, metadata, options, all_results):
 
 
 def _resolve_perf_test_options(exp, n_bots, stagger, time_factor, duration_minutes):
-    """Resolve CLI args against experiment defaults. Returns a dict of concrete values."""
+    """Fill in CLI arguments with experiment-level defaults when not provided.
+
+    Returns a dict with concrete values for bot_counts, stagger, time_factor,
+    and duration_minutes.
+    """
     return {
         "bot_counts": (
             [int(x.strip()) for x in n_bots.split(",")] if n_bots else [exp.test_n_bots]
@@ -3909,7 +3914,8 @@ def _start_local_server_and_wait_for_ready(
         ``["debug", "local", "--legacy", "--no-browsers"]`` or
         ``["debug", "local"]``.
     log_file : file, optional
-        If supplied, the caller owns the file handle.
+        If given, write server output here instead of creating a temp file.
+        The caller is responsible for closing it.
     """
     print("▶ Starting experiment server...")
 
@@ -4092,7 +4098,10 @@ def _stop_server(server_info):
 
 
 def _time_export(_run=subprocess.run):
-    """Run psynet export local as subprocess, return (duration_s, error_or_None)."""
+    """Run ``psynet export local`` in a subprocess.
+
+    Returns ``(duration_s, error_str)`` where ``error_str`` is None on success.
+    """
     cmd = [
         "psynet",
         "export",
@@ -4133,7 +4142,7 @@ def _extract_base_url_from_server_output(output):
     # Workaround for a Dallinger bug: in legacy mode with num_dynos_web > 1,
     # dallinger_get_base_url() picks a random port, so redis_vars["base_url"]
     # can have the wrong port. Dallinger prints "Server is running on <url>"
-    # only after confirming connectivity via wait_for_server(), so this source
+    # only after the server is confirmed reachable at that URL, so this source
     # is reliable. Remove once Dallinger's multi-web-race-condition branch is merged.
     for line in output.splitlines():
         if "Server is running on" in line:
@@ -4144,7 +4153,7 @@ def _extract_base_url_from_server_output(output):
 
 
 def _load_server_url(server_info):
-    """Load config from running server's working dir; return base_url for that server."""
+    """Load config from the experiment directory the server started in, then return the server's base URL."""
     config = get_config(load=True)
     working_dir = redis_vars.get("server_working_directory")
     if working_dir:

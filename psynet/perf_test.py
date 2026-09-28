@@ -324,7 +324,7 @@ class PerformanceTester:
                 f"{resp.text[:200]}"
             )
 
-        # Ensure fresh DB connection (previous may have been terminated by server restart)
+        # Fresh connection needed: the previous stage's server restart may have killed our DB session.
         try:
             db.session.remove()
         except SQLAlchemyError:
