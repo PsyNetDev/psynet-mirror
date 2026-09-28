@@ -9,3 +9,5 @@ Designing experiments
    trials
    chains
    stimuli
+   participants
+   groups
