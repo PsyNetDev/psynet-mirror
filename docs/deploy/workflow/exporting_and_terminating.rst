@@ -90,7 +90,7 @@ last time, and deposit the export in your lab's designated data
 repository.
 
 In a new version of PsyNet, your logs will be downloaded automatically
-upon exporting. You will also see an automatic analysis of the log file.
+upon exporting.
 
 Additional manual export (large assets)
 ---------------------------------------

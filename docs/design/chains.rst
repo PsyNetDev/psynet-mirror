@@ -105,10 +105,11 @@ When a trial fails
 ------------------
 
 A failed trial stays in the data but is marked as unusable (see
-:doc:`trials`). In a chain, it also does not contribute to the next node. Unlike static trial makers, chains keep a participant's completed trials
-when the participant fails a performance check. Failing a trial that already
-shaped later nodes can also invalidate everything downstream of it, which
-could destroy much of a chain. See
+:doc:`trials`). In a chain, it also does not contribute to the next node.
+Unlike static trial makers, chains keep a participant's completed trials when
+the participant fails a performance check. Failing a trial that already shaped
+later nodes can also invalidate everything downstream of it, which could
+destroy much of a chain. See
 :doc:`/code/trials/participant_and_trial_failure` for the full rules.
 
 Where the data goes
@@ -128,5 +129,6 @@ responses that the next node was made from.
 
 .. seealso::
 
-   :doc:`/code/writing_a_chain_experiment` shows how each of these ideas appears in
-   ``experiment.py``, using the ``demos/experiments/chain_trial_maker`` demo.
+   :doc:`/code/writing_a_chain_experiment` shows how each of these ideas
+   appears in ``experiment.py``, using the
+   ``demos/experiments/chain_trial_maker`` demo.

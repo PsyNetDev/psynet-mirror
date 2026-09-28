@@ -50,15 +50,17 @@ Note the specification of an app name.
 Deploy an experiment (``deploy``)
 ---------------------------------
 
-This command deploys an experiment, and enable the recruiter so you can collect real data.
+This command deploys an experiment, and enables the recruiter so you can collect real data.
 
 .. code:: bash
 
     psynet deploy ssh --app my-app-name
 
-(Experimental): It is possible to deploy an experiment that resurrects the state of a previous
-experiment deployment. To do this you add ``--archive path/to/database.zip`` where
-``path/to/database.zip`` is the path to the ``database.zip`` file created by a previous PsyNet export.
+(Experimental): To deploy an experiment that resurrects the state of a previous
+deployment, add ``--archive path/to/export``, where ``path/to/export`` is an
+export created by a previous ``psynet export`` (such as ``exports/latest``), an
+``export.zip`` downloaded from the dashboard, or a ``database/`` directory from
+either.
 
 
 .. _estimate:
@@ -84,7 +86,8 @@ and how much they need to be paid as a result.
 Export data from an experiment (``export``)
 -------------------------------------------
 
-This command export data from an experiment. The data is saved by default to ``~/PsyNet-data/export``.
+This command exports data from an experiment. The data is saved by default to
+``exports/latest/`` in the experiment directory; see :doc:`/data/index`.
 
 .. code:: bash
 
@@ -98,8 +101,6 @@ append ``--help`` to these commands:
 
     psynet export local --help
     psynet export ssh --help
-
-For more information on PsyNet data export see :doc:`/data/index`.
 
 
 .. _experiment_setup_commands:
@@ -317,11 +318,12 @@ Run the experiment's regression test
 ------------------------------------
 
 This command runs the experiment's regression test, as defined in ``test.py``. This normally involves
-running one or more simulated participants through the experiment.
+running one or more simulated participants through the experiment; see :doc:`/test/backend`.
 
 .. code:: bash
 
-  psynet test
+  psynet test local
+  psynet test ssh --app my-app-name
 
 
 .. _performance_test:
@@ -345,7 +347,7 @@ guide, including how to sweep several concurrency levels and how to interpret
 the results, see the
 :doc:`scalability testing guide </test/scalability>`.
 Use ``psynet audit performance-test`` when the result should become
-canonical audit evidence.
+canonical audit evidence; see :doc:`/reference/audit`.
 
 
 Simulate audit data for an experiment
@@ -360,7 +362,7 @@ regression test and exporting the result to
   psynet audit simulate
 
 The command requires an initialized audit packet and marks ``simulate_export``
-present in ``audit.json``.
+present in ``audit.json``. See :doc:`/reference/audit`.
 
 
 .. _install:

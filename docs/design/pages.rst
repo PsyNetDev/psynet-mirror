@@ -24,9 +24,9 @@ Kinds of page
     rating scales, free text, numbers, audio or video recording, and
     multi-item surveys.
 
-- **Consent pages** ask participants for informed consent. PsyNet refuses to
-  deploy an experiment without one, and some recruitment platforms require a
-  particular consent page.
+- **Consent pages** ask participants for informed consent. PsyNet won't
+  deploy an experiment without a consent page unless you explicitly opt out,
+  and some recruitment platforms require a particular one.
 - **End pages** finish a participant's experiment; see :doc:`timeline`.
 - **Custom pages** use your own HTML and JavaScript, or embed other software
   such as a Unity game, when no combination of prompt and control fits.

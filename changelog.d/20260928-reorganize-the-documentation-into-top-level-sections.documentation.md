@@ -1,0 +1,1 @@
+Reorganized the documentation website into top-level About, Install, Quickstart, Design, Test, Deploy, Data, Code, Examples and Reference sections, with What's new and Contributing under More. Design, Test, Deploy and Data explain concepts and commands; Code holds the experiment code, including the former tutorial and guide pages. Old page URLs redirect to their new locations.

@@ -44,7 +44,9 @@ Choose your operating system:
          echo 'export PATH="$(brew --prefix libpq)/bin:$PATH"' >> ~/.zshrc
 
       Open **Docker** from your Applications folder once, so that it starts
-      running, then open a new terminal window.
+      running, then open a new terminal window. On Apple Silicon, turn on
+      **Use Rosetta for x86/amd64 emulation** in Docker Desktop's settings;
+      otherwise tests that run in Docker can be very slow.
 
       Finally, turn off AirPlay Receiver, which uses the same port as
       PsyNet: open **System Settings**, go to **General** then
@@ -61,6 +63,8 @@ Choose your operating system:
          sudo apt install git curl build-essential libpq-dev
          curl -LsSf https://astral.sh/uv/install.sh | sh
          curl https://cli-assets.heroku.com/install-ubuntu.sh | sh
+
+      Open a new terminal so that ``uv`` is on your ``PATH``.
 
       Install Google Chrome:
 
@@ -92,8 +96,9 @@ Choose your operating system:
       3. Install `Docker Desktop for Windows <https://docs.docker.com/desktop/setup/install/windows-install/>`_.
          In its settings, under **Resources** then **WSL integration**, turn
          on integration for Ubuntu.
-      4. In the Ubuntu terminal, follow the **Linux** steps, but skip the
-         Docker Engine step, because Docker Desktop provides Docker.
+      4. In the Ubuntu terminal, follow the **Linux** steps, but skip
+         installing Docker Engine and the ``usermod`` step, because Docker
+         Desktop provides Docker.
 
       Work in your Linux home folder (``cd ~``) rather than under
       ``/mnt/c``; it is much faster. If WSL won't install, see

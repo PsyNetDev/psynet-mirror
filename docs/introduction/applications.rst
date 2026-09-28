@@ -75,9 +75,9 @@ What's PsyNet for?
       .. grid-item::
          :columns: 12 12 8 8
 
-         Participants adjust a slider or choose between two stimuli, and each answer moves a shared chain towards the stimulus that best fits a description, such as "happy" or "beautiful".
+         Participants adjust a slider or choose between two stimuli, and each answer moves a shared chain toward the stimulus that best fits a description, such as "happy" or "beautiful".
 
-         **PsyNet handles:** Gibbs sampling and Markov chain Monte Carlo with people, including synthesizing each new stimulus.
+         **PsyNet handles:** Gibbs sampling and Markov chain Monte Carlo with people, including creating each new stimulus from the chain's current state.
 
          **Docs:** :doc:`/design/chains`
 

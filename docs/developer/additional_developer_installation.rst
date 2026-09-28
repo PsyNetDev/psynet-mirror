@@ -140,9 +140,9 @@ You can then check your installation by running
     .. code-block:: bash
 
        cd ~/PsyNet
-       git checkout v13.3.0
+       git checkout vX.Y.Z
 
-    Check out the Dallinger tag or commit that that PsyNet release requires
+    Check out the Dallinger tag or commit that the PsyNet release requires
     (see that tag's ``pyproject.toml``).
 
 

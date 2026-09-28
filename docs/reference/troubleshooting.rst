@@ -13,10 +13,10 @@ Suppose you see an error message like this when trying to run an experiment usin
 
 .. code:: bash
 
-     => ERROR [internal] load metadata for registry.gitlab.com/psynetdev/psynet:v13.3.0
+     => ERROR [internal] load metadata for registry.gitlab.com/psynetdev/psynet:vX.Y.Z
      => [auth] psynetdev/psynet:pull token for registry.gitlab.com
     ------
-     > [internal] load metadata for registry.gitlab.com/psynetdev/psynet:v13.3.0:
+     > [internal] load metadata for registry.gitlab.com/psynetdev/psynet:vX.Y.Z:
     ------
     Dockerfile:1
     --------------------
@@ -181,8 +181,9 @@ Finally you can reinstall Postgres:
 Heroku CLI not responding (local tests)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-``psynet test local`` starts the experiment with the Heroku CLI's ``heroku local``
-command, so a broken Heroku CLI installation can stop local tests from starting.
+``psynet test local`` and ``psynet performance-test local`` start the
+experiment with the Heroku CLI's ``heroku local`` command, so a broken Heroku
+CLI installation can stop local tests from starting.
 
 
 If you're experiencing issues with Heroku CLI not responding or encountering errors, you can try uninstalling and reinstalling it first. After that, enable debugging environment variables to get more detailed logs and information about what might be going wrong. This can help you diagnose and resolve the problem more effectively.

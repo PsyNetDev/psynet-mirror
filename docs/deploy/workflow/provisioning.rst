@@ -30,7 +30,7 @@ EC2 servers
 
 If your lab uses AWS EC2, PsyNet can provision and tear down servers for
 you automatically. Before using it, make sure AWS credentials, SSH
-access, DNS, and the Docker registry are configured as described in the
+access, DNS, and ``docker_image_base_name`` are configured as described in the
 :ref:`AWS server setup <aws_server_setup>` and :ref:`SSH server
 <ssh_server>` guides. For the full command reference, including
 choosing a region, provisioning, stopping/starting, and troubleshooting,

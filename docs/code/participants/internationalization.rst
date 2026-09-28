@@ -2,11 +2,9 @@
 Internationalization
 ====================
 
-Use this page to run your experiment in languages other than English.
-There are two steps:
-
-- mark which strings need to be translated
-- perform automatic translation and optionally manually check them
+Running an experiment in another language takes two steps: mark the strings
+that need translating, then translate them automatically and optionally check
+the translations by hand.
 
 Selecting a language
 =====================
@@ -239,7 +237,7 @@ Contributing to PsyNet
 
 Merge requests that change PsyNet source should not update ``psynet/locales``.
 Package catalogs are refreshed on the release branch with ``psynet translate``,
-where :func:`~psynet.translation.check.check_translations` also runs. Until
+where ``psynet.translation.check.check_translations`` also runs. Until
 then, a missing PsyNet catalog entry raises under ``psynet debug`` and on
 release-branch tests. Non-release test runs show the English source text and
 log a warning instead. Live experiments report the error and show English.

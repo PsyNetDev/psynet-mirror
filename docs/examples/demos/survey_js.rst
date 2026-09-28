@@ -4,7 +4,7 @@ SurveyJS
 This demo builds a questionnaire with SurveyJS, a survey design tool that
 suits questionnaires and multi-response interfaces. You pass the
 ``SurveyJSControl`` class a JSON-style dictionary containing the survey
-specification. Run it from ``demos/experiments/survey_js``.
+specification.
 
 Source: ``demos/experiments/survey_js``
 

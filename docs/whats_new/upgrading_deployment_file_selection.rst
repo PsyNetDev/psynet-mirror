@@ -92,7 +92,7 @@ unless you exclude them. Generated ``static/assets`` stays excluded.
 The default package-size limit is 1024 MB so a typical stimulus set can ship
 in the image. That ceiling is meant for ``static/`` media. Before setting
 ``EXP_MAX_SIZE_MB`` higher, run ``dallinger deployment-files list`` and
-exclude anything that should stay local. Heroku deploys are capped at 500 MB.
+exclude anything that should stay local.
 
 PsyNet commands apply that 1024 MB default for Dallinger's size check.
 ``dallinger verify`` on its own still uses Dallinger's 256 MB default unless

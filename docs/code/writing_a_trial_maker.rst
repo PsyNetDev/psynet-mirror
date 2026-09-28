@@ -168,8 +168,8 @@ database view while the experiment runs, and query them in code:
     node.all_trials
     participant.all_trials
 
-:func:`~psynet.experiment.get_trial_maker` returns a trial maker by its
-``id_``.
+``psynet.experiment.get_trial_maker(trial_maker_id)`` returns a trial maker
+by its ``id_``.
 
 .. seealso::
 

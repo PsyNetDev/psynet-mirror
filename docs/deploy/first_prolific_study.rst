@@ -208,20 +208,17 @@ It's a good idea to test your experiment thoroughly before deploying it. There a
 3. Pilot it on your remote server by setting ``recruiter = generic`` in ``config.txt`` and then running
    ``psynet debug ssh --app your-app-name``.
 
-.. warning::
-
-    If you are running automated experiment tests via Docker as instructed above,
-    and you are using an Apple Silicon Mac, then make sure you have selected
-    'Use Rosetta for x86/amd64 emulation on Apple Silicon' under the Docker preferences,
-    otherwise the tests might run very slowly.
-
-
 Deploying your experiment
 -------------------------
 
 When you're ready to deploy your experiment, give your config one last check, making sure that the
 ``prolific`` recruiter is selected.
 If you need to be connected to a VPN in order to access your server, make sure you are connected to the VPN.
+
+PsyNet also refuses to deploy over SSH unless ``docker_image_base_name`` is set
+in ``config.txt`` or ``~/.dallingerconfig``. Any image name will do
+(for example ``docker_image_base_name = psynet-experiments``),
+because the image is built on your server.
 
 Now you can deploy your app. Use the DNS name you registered the server
 under:
@@ -230,7 +227,10 @@ under:
 
     psynet deploy ssh --app your-app-name --server your-server.example.org
 
-You can omit ``--server`` if you have registered only one server. If you
+If you omit ``--server`` and have registered several servers, PsyNet asks you
+to choose one. Note that ``dallinger ec2 provision --dns-host`` registers the
+server twice (under its AWS hostname and under the DNS name), so pass
+``--server`` explicitly in that case. If you
 registered the server by IP address, also pass ``--dns-host``. See
 :ref:`Deploying experiments via SSH <ssh_server>` for the full command,
 expected output, and DNS setup.
@@ -345,11 +345,13 @@ Once you're done, you can take down the experiment:
 
     psynet destroy ssh --app your-app-name
 
-If you provisioned your server using ``dallinger ec2 provision``, you should also consider tearing down the server:
+If you provisioned your server using ``dallinger ec2 provision``, you should also consider tearing down the server.
+Pass the server name and ``--dns-host`` you used when provisioning, so that the DNS records
+and server registration are removed as well:
 
 .. code:: bash
 
-    dallinger ec2 teardown --name your-experiment-name --region us-east-1
+    dallinger ec2 teardown --name your-server-name --region us-east-1 --dns-host your-server.example.org
 
 Copying qualifications
 ----------------------
@@ -374,15 +376,14 @@ which will return the full list of completed or running studies, e.g.:
     63cd3c0de6a9e2d84d694454  Testen Sie Ihre Sprachkenntnisse! (Chrom...  Testen Sie Ihre Sprachkenntnisse! (Chrome browser notwendig, ~8 Minutes) (2b597a65-2e1d-8255-32e4-c1036719deb8)  AWAITING REVIEW  2023/1/22 01:37:17 PM
     …
 
-To see unpublished studies, add the ``--sandbox`` flag.
-
 Now copy the field ``HIT ID`` and run:
 
 ::
 
     dallinger copy-qualifications --hit_id <HIT_ID> --recruiter prolific
 
-Optionally, you can specify a new path for the qualification, e.g.: ``--qualification_path
+This writes the qualifications to ``prolific_config.json``.
+Optionally, you can specify a different path for the qualification file, e.g.: ``--path
 qualification_prolific_de.json`` for qualifications for German participants.
 
 Finally, you need to add the qualification to your ``config.txt`` file:

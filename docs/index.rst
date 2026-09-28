@@ -25,7 +25,7 @@ the virtual lab framework
   reviewed like any other software, and reused in later studies. The same
   property makes PsyNet well suited to coding agents, which can write and
   test an experiment from a written description.
-- **Batteries included.** PsyNet provides the infrastructure that an online
+- **Infrastructure included.** PsyNet provides the infrastructure that an online
   study needs beyond the task itself: recruitment and payment through
   Prolific, Cint or a lab's own participant pool, pre-screening, media
   handling, translation, automated testing with simulated participants,

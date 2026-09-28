@@ -1,8 +1,7 @@
 Exercises
 =========
 
-These exercises introduce you to various parts of PsyNet. For a curated path through some of them, see
-:doc:`Tracks </examples/tracks/index>`.
+These exercises introduce various parts of PsyNet.
 
 .. toctree::
     :maxdepth: 1

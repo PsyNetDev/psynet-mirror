@@ -59,9 +59,13 @@ bot took one trial per node:
 .. code-block:: python
 
     def test_check_bot(self, bot: Bot, **kwargs):
+        super().test_check_bot(bot, **kwargs)
         assert len(bot.alive_trials) == len(nodes)
 
-For finer control, override ``test_serial_run_bots``, which steps the bots
+The base implementation asserts that the bot didn't fail.
+
+For finer control in serial mode (the default), override
+``test_serial_run_bots``, which steps the bots
 through the experiment. The ``rock_paper_scissors`` demo uses it to have two
 bots play against each other and check each result:
 
@@ -77,20 +81,20 @@ bots play against each other and check each result:
             bots[1].take_page(response="paper")
             advance_past_wait_pages(bots)
 
-            assert bots[0].current_page_text == "You chose rock, your partner chose paper. You lost."
-            assert bots[1].current_page_text == "You chose paper, your partner chose rock. You won!"
+            assert "You chose rock, your partner chose paper. You lost." in bots[0].current_page_text
+            assert "You chose paper, your partner chose rock. You won!" in bots[1].current_page_text
 
 Several bots at once
 --------------------
 
-To run several bots in parallel, set ``test_n_bots`` and ``test_modes`` on the
+To run several bots in parallel, set ``test_n_bots`` and ``test_mode`` on the
 experiment class, or pass options on the command line:
 
 .. code-block:: python
 
     class Experiment(...):
         test_n_bots = 5
-        test_modes = ["parallel"]
+        test_mode = "parallel"
 
 .. code-block:: shell
 
@@ -104,12 +108,15 @@ Testing on a remote server
 --------------------------
 
 To run the same test against a server, launch the experiment there in debug
-mode, then call ``psynet test ssh``:
+mode, then call ``psynet test ssh`` (experimental):
 
 .. code-block:: shell
 
     psynet debug ssh --app my-experiment
     psynet test ssh --app my-experiment --n-bots 5 --parallel
+
+Like ``psynet performance-test ssh``, it uses the server's existing database;
+see :ref:`performance_testing_server` for what that means for repeated runs.
 
 Limitations
 -----------

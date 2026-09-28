@@ -1,10 +1,9 @@
 Project setup and workflow
 ==========================
 
-Start here when you begin your own experiment. :doc:`creating_a_new_experiment`
-covers copying a demo into a new project; the remaining pages cover the
-experiment directory, day-to-day development, dependencies, and version
-control.
+This section covers setting up an experiment project: creating it from a
+demo, the experiment directory, day-to-day development, dependencies, and
+version control.
 
 .. toctree::
    :maxdepth: 1

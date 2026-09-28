@@ -68,7 +68,6 @@ def test_prototype_metadata_and_platform_warnings():
 
     documentation = [
         root / "docs" / "deploy" / "reference" / "index.rst",
-        root / "docs" / "introduction" / "docker.rst",
         root / "docs" / "code" / "project" / "experiment_directory.rst",
     ]
     for path in documentation:

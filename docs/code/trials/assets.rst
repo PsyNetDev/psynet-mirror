@@ -22,9 +22,6 @@ Which approach to use depends on where your files come from:
   :class:`~psynet.modular_page.VideoRecordControl` become assets
   automatically. You do not need to create them yourself.
 
-The rest of this guide covers the asset system in detail, including storage
-backends such as S3.
-
 In PsyNet terminology, an :class:`~psynet.asset.Asset` is some kind of file (or collection of files) that
 is referenced during an experiment. These might for example be video files that we play
 to the participant, or perhaps audio recordings that we collect from the participant.
@@ -107,8 +104,6 @@ Linking assets to Modules
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Linking to a Module makes sense for assets such as volume calibration files which are not linked to particular trials.
-For example:
-
 You can create an asset within a module by passing it to the module constructor's
 ``assets`` argument. This argument expects a dictionary. For example:
 
@@ -116,15 +111,16 @@ You can create an asset within a module by passing it to the module constructor'
 
     import psynet.experiment
     from psynet.asset import asset
+    from psynet.timeline import Module, Timeline
 
     class Exp(psynet.experiment.Experiment):
-        timeline = join(
+        timeline = Timeline(
             Module(
                 "my_module",
                 my_pages(),
                 assets={
                     "logo": asset("logo.svg"),
-                }
+                },
             )
         )
 
@@ -257,13 +253,13 @@ to register the asset with PsyNet:
         def async_on_deploy(self):
             with tempfile.NamedTemporaryFile() as temp_file:
                 self.make_stimulus(temp_file.name)
-                asset = asset(
+                stimulus = asset(
+                    temp_file.name,
                     local_key="stimulus",
-                    input_path=temp_file.name,
                     extension=".wav",
                     parent=self,
                 )
-                asset.deposit()
+                stimulus.deposit()
 
 For a more detailed example, see the source code for
 :class:`~psynet.trial.record.MediaImitationChainNode`.

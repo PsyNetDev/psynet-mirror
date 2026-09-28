@@ -1,1 +1,0 @@
-Reorganized the documentation website into eight sections (About PsyNet, Getting started, Building experiments, Running studies, Examples, Reference, What's new, and Contributing); old page URLs redirect to their new locations.

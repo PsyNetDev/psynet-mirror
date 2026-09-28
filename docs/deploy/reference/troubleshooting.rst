@@ -27,7 +27,8 @@ If you see an error like this:
 
 .. code:: bash
 
-    Error parsing response from https://your-app-name.your-server.org/launch, check web dyno logs for details: <!DOCTYPE html>
+    Error parsing response from https://your-app-name.your-server.org/launch, check server logs for details.
+    <!DOCTYPE html>
     ...
     requests.exceptions.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
 
@@ -155,22 +156,14 @@ I am unable to connect to my AWS EC2 instance via SSH
 A timeout often indicates a networking or internal system issue that can
 be resolved with a reboot. Steps:
 
-1. Install the AWS CLI.
-
-2. Configure it with your credentials:
+1. Find the instance name:
 
    .. code:: bash
 
-      aws configure
+      dallinger ec2 list instances --running
 
-3. Find the instance ID:
-
-   .. code:: bash
-
-      dallinger ec2 list instances
-
-4. Reboot the instance:
+2. Reboot the instance:
 
    .. code:: bash
 
-      aws ec2 reboot-instances --instance-ids <INSTANCE_ID>
+      dallinger ec2 restart --name <server_name> --region <region>

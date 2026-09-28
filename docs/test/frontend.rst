@@ -35,6 +35,9 @@ Layout checks
 Every participant page provides ``psynetLayout.check()``, which returns a
 list of layout problems on the page as displayed. It detects:
 
+- pages rendered in quirks mode instead of standards mode;
+- percentage heights declared against auto-height parents, which don't
+  take effect;
 - content wider than the window;
 - response controls that can only be reached by scrolling, or that overlap
   the footer;
@@ -58,5 +61,6 @@ Screenshots and video
 ---------------------
 
 The same browser tests can take screenshots and record a video of a
-participant's session. An audit includes these so that a reviewer can see
-the experiment without running it; see :doc:`audits`.
+participant's session (the ``record-participant-video`` skill). An
+:doc:`audit <audits>` includes them in its Screenshots and Participant video
+sections, so that a reviewer can see the experiment without running it.

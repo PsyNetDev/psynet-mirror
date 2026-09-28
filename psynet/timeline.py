@@ -4022,6 +4022,19 @@ class PreDeployRoutine(NullElt):
 
 
 class ParticipantFailRoutine(NullElt):
+    """
+    Runs a function whenever a participant is failed.
+
+    Place it in the timeline; it does not show anything to the participant.
+
+    Parameters
+    ----------
+    label
+        Label identifying the routine in the logs.
+    function
+        Function to run. It can take ``participant`` and ``experiment`` as arguments.
+    """
+
     def __init__(self, label, function):
         super().__init__()
         self.label = label

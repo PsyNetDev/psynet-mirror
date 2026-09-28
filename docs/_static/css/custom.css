@@ -24,7 +24,7 @@ h4 {
   overflow-y: auto;
 }
 
-/* Keep short nav section labels (e.g., "Getting started") on one line. */
+/* Keep short nav section labels (e.g., "Quickstart") on one line. */
 .navbar .dropdown-item,
 .bd-sidenav .nav-link,
 .toctree-wrapper p.caption {

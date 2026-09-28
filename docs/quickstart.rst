@@ -10,36 +10,36 @@ the tools in :doc:`install` are in place.
 Create an experiment
 --------------------
 
-Each experiment lives in its own folder. The folder name must be a valid
-Python name: letters, digits and underscores, not starting with a digit.
+Each experiment lives in its own folder. The folder name must contain only
+letters, digits and underscores, must not start with a digit, and must not be
+the name of an existing Python module such as ``code`` or ``test``.
+
+.. note::
+
+   The version of PsyNet currently on PyPI (13.3) doesn't have
+   ``psynet setup`` yet. Until the next release, replace
+   ``uv pip install psynet`` below with:
+
+   .. code-block:: bash
+
+      uv pip install "psynet @ git+https://gitlab.com/PsyNetDev/PsyNet@master"
+
+   ``psynet setup`` then pins the experiment to that exact commit of
+   PsyNet, so the experiment keeps working as ``master`` moves on.
 
 .. code-block:: bash
 
    mkdir chords
    cd chords
-   git init
    uv venv --python 3.13
    source .venv/bin/activate
    uv pip install psynet
    psynet setup
 
 ``psynet setup`` installs the full PsyNet runtime into the folder's
-``.venv``, and creates a starter ``experiment.py`` along with the other files
-an experiment needs, including instructions for coding agents.
-
-.. note::
-
-   These instructions are for the upcoming PsyNet release. The version
-   currently on PyPI (13.3) doesn't have ``psynet setup`` yet, so until the
-   next release, install PsyNet from the ``master`` branch instead:
-
-   .. code-block:: bash
-
-      uv pip install "psynet @ git+https://gitlab.com/PsyNetDev/PsyNet@master"
-      psynet setup
-
-   ``psynet setup`` then pins the experiment to that exact commit of
-   PsyNet, so the experiment keeps working as ``master`` moves on.
+``.venv``, sets up a Git repository, and creates a starter
+``experiment.py`` along with the other files an experiment needs, including
+instructions for coding agents.
 
 Run it
 ------

@@ -1,1 +1,0 @@
-Removed navigation-only passages and self-evident introductions across the new documentation pages, removed the Next steps page, and added writing rules on direct tone and navigation to the documentation guide.

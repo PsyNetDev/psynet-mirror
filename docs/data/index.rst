@@ -37,8 +37,8 @@ archive that cannot be reloaded.
 Exporting data from the command line
 ====================================
 
-It is also possible to export data from the command line using the 'psynet export' command.
-This should normally be run in the experiment directory for the experiment you are running,
+``psynet export`` exports data from the command line.
+Run it in the experiment directory for the experiment you are running,
 using a virtual environment with the same dependencies as the deployed experiment.
 
 .. code:: bash
@@ -324,8 +324,7 @@ older class-based CSV layout:
 More about basic data
 =====================
 
-The basic data route is really intended for confident experimenters.
-If you are not comfortable with SQLAlchemy, you may want to stick to the default export methods.
+Basic data requires writing SQLAlchemy queries in ``get_basic_data``.
 
 You define the basic data representation for your experiment by implementing the ``get_basic_data`` method
 in your experiment class. You have a lot of flexibility in how you implement this method.
@@ -414,7 +413,7 @@ You can construct the full URL using the ``basic_data_url`` property:
 
     from psynet.experiment import Experiment
 
-    url = Experiment.basic_data_url()
+    url = Experiment.basic_data_url
     # Returns: https://your-experiment-url.com/basic_data?dashboard_user=...&dashboard_password=...
 
 Alternatively, you can access the endpoint directly by including the credentials in the URL:
@@ -449,6 +448,5 @@ Note that the endpoint should not expose sensitive information, as the authentic
 Automatic backups
 =================
 
-PsyNet does have some functionality implemented for making regular data backups.
-However, at the time of writing, this is disabled by default and should be considered experimental.
-To enable it, you can set the ``automatic_backups`` class attribute to ``True`` in your experiment class.
+Automatic backups are experimental and disabled by default.
+To enable them, set the ``automatic_backups`` class attribute to ``True`` in your experiment class.

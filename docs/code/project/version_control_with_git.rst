@@ -1,4 +1,3 @@
-.. _developer:
 .. highlight:: shell
 
 .. |br| raw:: html

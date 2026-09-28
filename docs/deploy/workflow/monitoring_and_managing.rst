@@ -30,7 +30,8 @@ Monitoring Participants & Data Collection
 -  Use **Dozzle logs** for real-time debugging. Regularly check for
    error messages in logs and fix critical issues immediately. The
    Dozzle URL is available at ``logs.<your-subdomain>.<your-domain>``
-   (see :doc:`Provisioning <provisioning>`).
+   (see :doc:`AWS automatic provisioning
+   </deploy/reference/aws_automatic_provisioning>`).
 
 -  Monitor Prolific/CINT marketplaces for recruiter-specific insights.
 

@@ -13,6 +13,12 @@ logger = get_logger()
 
 
 class CameraRecordTrial(RecordTrial):
+    """
+    Mixin for camera-recording trials that analyze the recording on the server.
+
+    List it before the trial class and implement ``analyze_recording``.
+    """
+
     pass
 
 

@@ -1,10 +1,8 @@
 Pages and interfaces
 ====================
 
-Build what participants see and interact with. Most custom pages are
-:doc:`modular pages <modular_page>`, so read that first; the later pages
-cover styling, graphics, timed events, custom routes, and hand-written
-front-end components.
+This section covers what participants see and interact with. Most custom
+pages are :doc:`modular pages <modular_page>`.
 
 .. toctree::
    :maxdepth: 1

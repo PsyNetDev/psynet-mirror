@@ -1,0 +1,1 @@
+Reworked the deployment documentation into a Deploy section with a lab research workflow, separate Prolific, CINT and lab recruiter guides, and SSH examples that no longer assume a particular lab's server or registry. Duplicated dependency, testing and teardown instructions were merged, and a glossary was added under Reference.

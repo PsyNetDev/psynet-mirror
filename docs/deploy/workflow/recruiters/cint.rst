@@ -28,7 +28,7 @@ Experiment script
        config = {
            **recruiter_settings,
            "initial_recruitment_size": 10,  # set to required numbers
-           "language": LOCALE,  # set to the ISO-2 language code (e.g. 'tr' or 'en')
+           "locale": LOCALE,  # set to the ISO-2 language code (e.g. 'tr' or 'en')
            "auto_recruit": False,
            "wage_per_hour": 6.5,  # set to minimum wage of target country
            "title": "Put your experiment title here (Chrome browser, ~XX mins)",

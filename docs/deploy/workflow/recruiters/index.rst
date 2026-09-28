@@ -16,14 +16,17 @@ payment, consent, and qualification requirements.
   instance run by your institution.
 
 For configuration keys such as ``recruiter``, ``wage_per_hour``,
-``base_payment``, ``initial_recruitment_size``, and
-``soft_max_experiment_payment``, see the
+``base_payment``, and ``initial_recruitment_size``, see the
 :doc:`configuration reference </reference/configuration>`.
+The spending cap ``soft_max_experiment_payment`` is not a configuration
+key but an experiment variable: set its initial value in your
+experiment class's ``variables`` dictionary, or change it from the
+dashboard while the experiment is running.
 Shared pre-launch checks (duration, storage, title and description)
 are on :doc:`../setting_up_the_experiments`.
 
 If this is your first Prolific study on your own account, start with
-the :doc:`Getting started walkthrough </deploy/first_prolific_study>`.
+the :doc:`first Prolific study walkthrough </deploy/first_prolific_study>`.
 Use the Prolific page below when you are running a study in a lab
 workflow (shared workspace, qualification files, and dashboard
 procedures).

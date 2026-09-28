@@ -50,7 +50,15 @@ server and returns nothing:
 
 If the function is slow, use :class:`~psynet.timeline.AsyncCodeBlock`
 instead. It runs in a background process and shows the participant a waiting
-page until it finishes. Trial makers are covered in :doc:`/code/writing_a_trial_maker`.
+page until it finishes. It needs a named function (lambdas raise an error)
+and an ``expected_wait`` in seconds:
+
+.. code-block:: python
+
+    def prepare_stimuli(participant):
+        ...
+
+    AsyncCodeBlock(prepare_stimuli, expected_wait=10)
 
 Remembering things about a participant
 --------------------------------------
@@ -122,11 +130,10 @@ different labels.
   ``logic``, plus ``expected_repetitions`` for time estimation.
 - :func:`~psynet.timeline.for_loop` takes keyword arguments only: ``label``,
   ``iterate_over`` (a function returning the list for this participant), and
-  ``logic`` (a function from one item to timeline logic). It also needs
-  ``expected_repetitions``, and ``time_estimate_per_iteration`` when ``logic``
-  is a function.
-
-The worked example above uses all four.
+  ``logic`` (a function from one item to timeline logic). It needs
+  ``time_estimate_per_iteration`` when ``logic`` is a function, and
+  ``expected_repetitions`` when ``iterate_over`` takes arguments such as
+  ``participant``.
 
 Organizing a long timeline
 --------------------------
@@ -155,6 +162,8 @@ timeline:
 
     def get_timeline():
         return Timeline(consent, instructions, practice, main_task, questionnaire)
+
+.. _writing_a_timeline_ending_early:
 
 Ending the experiment early
 ---------------------------

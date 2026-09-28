@@ -49,6 +49,12 @@ join
 
 .. autofunction:: psynet.timeline.join
 
+=========
+MediaSpec
+=========
+
+.. autoclass:: psynet.timeline.MediaSpec
+
 ======
 Module
 ======
@@ -69,6 +75,12 @@ PageMaker
 =========
 
 .. autoclass:: psynet.timeline.PageMaker
+
+======================
+ParticipantFailRoutine
+======================
+
+.. autoclass:: psynet.timeline.ParticipantFailRoutine
 
 ================
 Progress display

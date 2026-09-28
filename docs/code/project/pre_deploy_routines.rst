@@ -11,19 +11,19 @@ Below we give an example of a PreDeployRoutines that performs a configuration ta
 
 ::
 
-  from psynet.media import prepare_s3_bucket_for_presigned_urls
+  from psynet.media import setup_bucket_for_presigned_urls
   from psynet.timeline import PreDeployRoutine
 
   PreDeployRoutine(
-      "prepare_s3_bucket_for_presigned_urls",
-      prepare_s3_bucket_for_presigned_urls,
-      {"bucket_name": "recordings_s3_bucket", "public_read": True, "create_new_bucket": True}
+      "setup_bucket_for_presigned_urls",
+      setup_bucket_for_presigned_urls,
+      {"bucket_name": "recordings_s3_bucket", "public_read": True},
   )
 
 The :class:`~psynet.timeline.PreDeployRoutine` expects three arguments:
 A ``label`` describing the pre-deployment task,
 the ``function`` to be executed,
-and lastly the ``arguments`` of the function to be executed.
+and lastly the ``args`` of the function to be executed, as a dictionary of keyword arguments.
 This function will then be run automatically as part of experiment launch.
 
 Note: If you alter the database state during a PreDeployRoutine then this change will be propagated to the

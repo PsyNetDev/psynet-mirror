@@ -25,15 +25,13 @@ complete:
   ``psynet debug local`` before trying a server deployment.
 - Install Docker Desktop if your deployment route or experiment template
   uses Docker-based commands.
-- If your lab uses Docker images for deployment, log into the relevant
-  Docker registry. For a GitLab registry this is usually:
-
-  .. code:: bash
-
-     docker login registry.gitlab.com
-
-  See the :ref:`SSH server guide <ssh_server>` for Docker registry
-  configuration details.
+- Make sure ``docker_image_base_name`` is set in your
+  ``~/.dallingerconfig`` (your lab's credential file may already set it);
+  PsyNet refuses to deploy over SSH without it. ``psynet deploy ssh``
+  builds the image on the server and does not push it, so any image name
+  works and you do not need to log into a Docker registry. You only need a
+  registry login if your lab pushes images to a registry; see the
+  :ref:`SSH server guide <ssh_server>` for details.
 
 Lab access checklist
 --------------------
@@ -42,7 +40,7 @@ Ask your lab administrator to confirm that:
 
 - You have access to the lab's GitLab group or repository namespace.
 - You have access to the Docker registry used for experiment images, if
-  your lab uses one.
+  your lab pushes images to one.
 - Your SSH key is registered wherever the lab requires it for GitLab,
   server access, or shared deployment resources.
 - You have received the credential files needed for the lab's deployment
@@ -97,10 +95,14 @@ archive containing both files.
 
       [EC2]
       ec2_default_security_group = <your-security-group>
-      ec2_default_pem = <your-key-name>  # no path, just the name without extension
+      # no path, just the name without extension
+      ec2_default_pem = <your-key-name>
 
       [Server PEM file]
       server_pem = ~/.ssh/<your-key-name>.pem
+
+   Keep comments on their own lines; a comment written after a value
+   becomes part of that value.
 
    You can verify the PEM file is in the right place by running:
 

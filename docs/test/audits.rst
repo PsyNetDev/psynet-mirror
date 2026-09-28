@@ -5,8 +5,9 @@ Audits
 
 An experiment audit collects the evidence that an experiment was built and
 tested as intended, for someone to review before launch. It lives in the
-experiment's ``audit/`` folder and is rendered as a static website. A coding
-agent creates and updates the audit as it works. To view it, run
+experiment's ``audit/`` folder and is rendered as a static website.
+``psynet audit init`` creates the audit; a coding agent usually keeps it up
+to date as it works. To view it, run
 ``psynet audit serve --render`` in the experiment folder and open the address
 it prints.
 
@@ -19,15 +20,23 @@ Sections
 **Plan**
    The implementation plan agreed before the code was written.
 
-**Implementation timeline and notes**
-   What was done, in order, and any decisions made along the way.
+**Implementation timeline**
+   What was done, in order.
+
+**Implementation notes**
+   Decisions made along the way, and anything a reviewer should know.
 
 **Experiment code**
    The experiment's ``experiment.py``.
 
-**Screenshots and participant video**
-   Screenshots of the participant pages, and a recording of a session; see
-   :doc:`frontend`.
+**Screenshots**
+   Screenshots of the participant pages; see :doc:`frontend`.
+
+**Participant video**
+   A recording of a participant's session; see :doc:`frontend`.
+
+**Monitor snapshot**
+   A static copy of the PsyNet monitor page.
 
 **Performance test**
    Response times with many bots at once; see :doc:`scalability`.
@@ -49,6 +58,9 @@ Sections
 **Analysis**
    The planned analysis, run on the simulated export.
 
+**Additional files**
+   Other recorded artifacts, such as logs.
+
 **Blockers**
    Anything that is unfinished or could not be checked, with the reason and
    the next step.
@@ -56,7 +68,8 @@ Sections
 **Checks**
    Automated checks and their results.
 
-Sections that don't apply to an experiment are omitted.
+Mark artifacts that don't apply as ``not_applicable``; the Checks panel is
+hidden when no checks are recorded.
 
 .. seealso::
 

@@ -55,10 +55,14 @@ Use the tabs below to switch between the different ways of setting up a remote s
     You then need to tell Dallinger about your private key by adding the following to ``~/.dallingerconfig``,
     setting the ``server_pem`` option to the path of your private key:
 
-    .. code-block:: bash
+    .. code-block:: ini
 
         [PEM files]
-        server_pem = ~/.ssh/id_rsa  # or ~/.ssh/id_ed25519, or ~/.ssh/my-server.pem, as appropriate
+        # or ~/.ssh/id_ed25519, or ~/.ssh/my-server.pem, as appropriate
+        server_pem = ~/.ssh/id_rsa
+
+    Keep comments on their own lines in ``~/.dallingerconfig``;
+    a comment written after a value becomes part of that value.
 
     You can then register your server from your terminal:
 
@@ -66,9 +70,8 @@ Use the tabs below to switch between the different ways of setting up a remote s
 
         dallinger docker-ssh servers add --host my-server.com --user ubuntu
 
-    This might take a few minutes as Dallinger will install any required dependencies.
-    Don't worry if you see an error message about Docker not being found;
-    Dallinger will install Docker for you.
+    This might take a few minutes as Dallinger will install any required dependencies,
+    including Docker if it is not already installed.
 
 .. tab:: Provisioning an AWS server
 
@@ -128,14 +131,25 @@ Use the tabs below to switch between the different ways of setting up a remote s
     A research group can share a single key pair if needed.
     The key pair can be created via the AWS console; AWS keeps the public key, and you download the private key
     as a PEM file (e.g. ``cool-psychology.pem``).
-    You need to copy your PEM file to the ``~/.ssh`` directory on your local machine
+    You need to copy your PEM file to the ``~/.ssh`` directory on your local machine.
     You then need to put the name of this PEM file in your ``~/.dallingerconfig`` file
-    (just the name, not the full path, not the extension).
+    as ``ec2_default_pem`` (just the name, not the full path, not the extension),
+    and the full path to the same file as ``server_pem``.
 
-    .. code-block:: bash
+    .. code-block:: ini
 
         [PEM files]
         ec2_default_pem = cool-psychology
+        server_pem = ~/.ssh/cool-psychology.pem
+
+    ``dallinger ec2 provision`` also requires dashboard login credentials
+    in ``~/.dallingerconfig``; these are used to log in to your experiments' dashboards:
+
+    .. code-block:: ini
+
+        [Dashboard]
+        dashboard_user = admin
+        dashboard_password = choose-a-strong-password
 
     You should now be able to provision a server from AWS within your terminal:
 
@@ -153,19 +167,33 @@ Use the tabs below to switch between the different ways of setting up a remote s
 
     Your server will then automatically be registered with Dallinger
     (no need to run ``dallinger docker-ssh servers add``).
+    It is registered twice: once under its AWS hostname and once under the ``--dns-host`` name.
+    Use the ``--dns-host`` name (here ``memory-experiments.cool-psychology.org``) as ``--server``
+    in the commands below.
 
 Running the experiment
 ----------------------
 
+PsyNet requires the ``docker_image_base_name`` configuration option to be set before it
+deploys over SSH. The image is built on your server, so this value just names the image;
+you do not need a Docker registry account. Add a line like the following to
+``~/.dallingerconfig`` (or to your experiment's ``config.txt``):
+
+.. code-block:: ini
+
+    [Docker]
+    docker_image_base_name = psynet-experiments
+
 Once your server is set up, you should be able to deploy the experiment to this server
-by running the following command:
+by running the following command, where ``--server`` is the name you registered the server under
+(``my-server.com`` or ``memory-experiments.cool-psychology.org`` in the examples above):
 
 .. code-block:: bash
 
-    psynet debug ssh --app your-experiment-name
+    psynet debug ssh --app your-experiment-name --server your-server-name
 
 Your experiment should be ready within a minute or two
-at the URL ``https://<your-experiment-name>.<your-dns-host>``.
+at the URL ``https://<your-experiment-name>.<your-server-name>``.
 Note that you can have multiple experiments running on the same server,
 as long as they have different app names.
 
@@ -173,11 +201,12 @@ as long as they have different app names.
 
     If you encounter an error on deployment, try the following:
 
-    1. Verify that your local environment is up to date by running the following in your terminal:
+    1. Verify that your local environment is up to date by running the following
+       in your experiment directory:
 
     .. code-block:: bash
 
-        uv pip install -r constraints.txt
+        psynet setup
 
     2. Run ``psynet debug local`` to verify that the experiment runs locally.
 
@@ -199,10 +228,13 @@ Once you are done with your experiment, you can remove it from the server by run
 
 .. code-block:: bash
 
-    psynet destroy ssh --app your-experiment-name
+    psynet destroy ssh --app your-experiment-name --server your-server-name
 
-If you created your server using AWS, you may wish to delete it too:
+If you created your server using AWS, you may wish to delete it too.
+Pass the same ``--dns-host`` you used when provisioning, so that Dallinger also removes
+the DNS records and the corresponding server registration:
 
 .. code-block:: bash
 
-    dallinger ec2 teardown --name memory-experiments --region us-east-1
+    dallinger ec2 teardown --name memory-experiments --region us-east-1 \
+        --dns-host memory-experiments.cool-psychology.org

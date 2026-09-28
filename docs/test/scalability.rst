@@ -4,11 +4,8 @@
 Testing scalability
 ===================
 
-An experiment that runs smoothly with one bot can slow down when many
-participants use it at once: responses take longer, asynchronous processes
-queue up, and wait pages drag. ``psynet performance-test`` measures this
-before launch. It keeps a target number of bots active on a running
-experiment and reports response times and throughput.
+``psynet performance-test`` keeps a target number of bots active on a running
+experiment and reports response times, throughput and queue delays.
 
 Run it once :doc:`back-end tests <backend>` pass.
 
@@ -21,8 +18,8 @@ From the experiment directory:
 
     psynet performance-test local
 
-This starts a local server, keeps ``Experiment.test_n_bots`` bots active for
-one minute, prints a report, and shuts the server down. For a heavier load,
+This starts a local server, keeps ``Experiment.test_n_bots`` bots (default 1)
+active for one minute, prints a report, and shuts the server down. For a heavier load,
 ask for more bots and a longer run:
 
 .. code-block:: bash
@@ -92,6 +89,8 @@ that the slowest participants experience. The report also shows:
 If response times are high, profile the database queries with ``psynet test
 local --sql-profile``; see :doc:`/code/sqlalchemy_profiling`.
 
+.. _performance_testing_server:
+
 Testing on a server
 -------------------
 
@@ -112,8 +111,10 @@ Saving results
 
 ``--json-output results.json`` writes the full results and details of the run
 to a file (local tests only). To record the results in the experiment's
-audit, use ``psynet audit performance-test`` instead, which accepts the same
-options and saves them as the audit's *Performance test* section.
+audit, use ``psynet audit performance-test`` instead. It runs locally, takes
+the same load options and ``--existing``, and writes
+``audit/artifacts/performance.json`` for the audit's *Performance test*
+section.
 
 A typical sequence is a local sweep to see how response times grow with
 load, then more worker processes or faster queries where needed, then a

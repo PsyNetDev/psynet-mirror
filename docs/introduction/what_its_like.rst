@@ -24,9 +24,10 @@ yourself, starting from a demo; see
    .. grid-item::
       :columns: 12 12 8 8
 
-      You open your coding agent in an empty folder and describe the
-      study the way you would brief a research assistant, for example: 40
-      chord recordings, each rated for pleasantness on a seven-point scale,
+      You set up an experiment folder with ``psynet setup``, open it in your
+      coding agent, and describe the study the way you would brief a
+      research assistant, for example: 40 synthesized chords, each rated
+      for pleasantness on a seven-point scale,
       about 20 ratings per chord, participants from Prolific. The agent
       asks a couple of questions, such as whether everyone should hear
       every chord, then proposes a plan before writing anything.
@@ -133,7 +134,7 @@ yourself, starting from a demo; see
       :columns: 12 12 4 4
 
       .. image:: /_static/images/what_its_like/watch.svg
-         :alt: A dashboard showing participants arriving and progress towards the target
+         :alt: A dashboard showing participants arriving and progress toward the target
 
    .. grid-item::
       :columns: 12 12 8 8
@@ -141,7 +142,7 @@ yourself, starting from a demo; see
       Participants start arriving within minutes. The dashboard shows who is
       part-way through, who has finished and what each has been paid, and
       PsyNet keeps recruiting until every chord has its 20 ratings,
-      replacing trials from anyone who drops out.
+      replacing ratings from participants who fail its attention checks.
 
 .. rst-class:: study-step
 
@@ -155,13 +156,13 @@ yourself, starting from a demo; see
       :columns: 12 12 4 4
 
       .. image:: /_static/images/what_its_like/download.svg
-         :alt: A data folder containing tables and audio recordings
+         :alt: A data folder containing tables and files
 
    .. grid-item::
       :columns: 12 12 8 8
 
-      When the last rating arrives, one command downloads everything: a
-      table for each kind of record, with any recordings alongside. You run
+      When the last rating arrives, one command downloads everything, with
+      a table for each kind of record. You run
       the analysis you wrote against the practice data, and take the server
       down.
 

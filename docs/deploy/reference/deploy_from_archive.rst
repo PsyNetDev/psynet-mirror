@@ -7,22 +7,16 @@ Deploying from archive
 
 Sometimes it's useful to redeploy a PsyNet experiment on the basis of previously exported data.
 Perhaps you had to shut down the experiment server due to some problem which you've now fixed.
-It's easy to do this with PsyNet. First, look for an ``export.zip`` from a previous
-export, or the extracted ``database/`` directory inside an export folder.
-Then run the same deploy command as you normally would, but pass that path using
-the ``--archive`` option:
+It's easy to do this with PsyNet. First, find a previous export: ``psynet export``
+writes it to ``exports/latest/`` in your experiment directory, and the dashboard
+export gives you an ``export.zip``. Then run the same deploy command as you normally would,
+but pass that path using the ``--archive`` option:
 
 .. code:: bash
 
-    psynet deploy ssh --app my-experiment --archive export.zip
+    psynet deploy ssh --app my-experiment --archive exports/latest
+    # or: --archive export.zip
     # or: --archive path/to/database
-    # or: --archive path/to/extracted/export
-
-.. note::
-
-    Prepend ``docker/`` to these commands if you are running PsyNet within Docker.
-    In this case you will need to put your archive inside your experiment directory
-    so that Docker can see it properly.
 
 Only the table CSVs under ``database/`` are sent to the server. PsyNet re-packs
 whatever you pass to ``--archive`` before deploying it, so the recruiter

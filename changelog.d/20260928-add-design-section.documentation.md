@@ -1,0 +1,1 @@
+Added a Design section with concept pages on timelines, trials, chains, pages, and stimuli and media. Each has a matching Code page drawn from tested demos, and together they replace the old tutorial chapters on these topics. `Event`, `FailedValidation`, `ProgressDisplay`, and `ProgressStage` now appear in the API reference.

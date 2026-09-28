@@ -6,7 +6,8 @@ The music perception track is tailored towards people who want to run online beh
 about how people perceive music.
 
 The first step is to :doc:`install PsyNet </install>`.
-You should make sure you do the optional step 5, namely installing editable PsyNet and Dallinger repositories.
+Also install PsyNet and Dallinger in editable mode, following
+:ref:`additional_developer_installation`, so that you have the demos locally.
 
 Next you should read the
 :doc:`introduction to the demos section </examples/demos/introduction>`,

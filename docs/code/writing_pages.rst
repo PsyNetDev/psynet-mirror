@@ -49,14 +49,12 @@ Commonly used controls:
 - surveys: :class:`~psynet.modular_page.SurveyJSControl`;
 - clickable graphics: :class:`~psynet.graphics.GraphicControl`.
 
-See :doc:`/code/pages/modular_page` and :doc:`/reference/api/modular_page`
-for the full list.
+:doc:`/reference/api/modular_page` lists all prompts and controls.
 
 For consent, use one of the classes in :mod:`psynet.consent`, such as
 :class:`~psynet.consent.MainConsent`, usually as the first element of the
-timeline. For custom pages, see :doc:`/code/pages/writing_custom_frontends`
-and :doc:`/code/pages/unity_integration`. End pages are covered in
-:doc:`/code/writing_a_timeline`.
+timeline. Pages that go beyond prompts and controls are written as
+:doc:`custom front-ends </code/pages/writing_custom_frontends>`.
 
 What happens to a response
 --------------------------
@@ -104,15 +102,18 @@ when. Another common pattern prevents responding before a sound has finished:
 
     events={"submitEnable": Event(is_triggered_by="promptEnd")}
 
-See :doc:`/code/pages/event_management` for the full list of events.
+:doc:`/code/pages/event_management` lists all events.
 
 Look and language
 -----------------
 
-See :doc:`/code/pages/theming` for themes, including how named colors in
-progress stages follow the theme, and
-:doc:`/code/participants/internationalization` for marking text for
-translation.
+Page colors come from the theme's CSS tokens. To change them, redefine the
+tokens in a stylesheet under ``static/`` and list it in the experiment
+class's ``css_links``; see :doc:`/code/pages/theming`.
+
+To translate page text, wrap each string in ``_``, obtained from
+:func:`~psynet.utils.get_translator`; see
+:doc:`/code/participants/internationalization`.
 
 .. seealso::
 

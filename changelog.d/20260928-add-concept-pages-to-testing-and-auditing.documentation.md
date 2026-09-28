@@ -1,1 +1,0 @@
-Added concept pages on experiment audits, simulated participants, and practice data and power analysis to Testing and auditing, and recorded a proposal for automatic layout checks during bot tests in Future work.

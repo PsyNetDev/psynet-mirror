@@ -3,12 +3,6 @@
 Development workflow
 ====================
 
-Use this page once you have your own experiment directory, for example a
-copied demo, and are adapting it. It covers version control, IDE setup,
-local debug mode, breakpoints, the dashboard, tests, and running against
-local PsyNet or Dallinger checkouts.
-
-
 Version control
 ^^^^^^^^^^^^^^^
 

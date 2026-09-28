@@ -2,9 +2,7 @@ Demos
 =====
 
 Each page describes one demo from the ``demos`` directory of the PsyNet
-repository and shows its ``experiment.py``. Read :doc:`introduction` first
-for how to use a demo as a starting point. To run one, see
-:doc:`/code/by_hand/running_a_demo_locally`.
+repository and shows its ``experiment.py``.
 
 .. toctree::
    :maxdepth: 1

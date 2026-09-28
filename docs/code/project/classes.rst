@@ -26,7 +26,7 @@ manipulates instances of these classes, called *objects*. In Python, one can cre
             print("Hi!")
 
 
-    class FrenchPerson(Person)
+    class FrenchPerson(Person):
         def greet(self):
             print("Salut!")
 
@@ -110,16 +110,16 @@ must include a definition of the experiment's timeline:
 .. code-block:: python
 
     import psynet.experiment
+    from psynet.timeline import Timeline
 
     class Exp(psynet.experiment.Experiment):
-        timeline = join(
-            InfoPage(...)
+        timeline = Timeline(
+            InfoPage(...),
             ...
         )
-    )
 
-The ``timeline`` attribute should receive a series of ``Elt`` objects (see below),
-with these Elts joined together using the :func:`~psynet.timeline.join` function.
+The ``timeline`` attribute should be a :class:`~psynet.timeline.Timeline`
+built from a series of ``Elt`` objects (see below).
 
 There are various other customizations that can be applied to the experiment via this experiment class,
 see the :class:`~psynet.experiment.Experiment` documentation for details.
@@ -168,28 +168,6 @@ Page
 :class:`psynet.timeline.Page` objects determine the web pages that are presented to the participant.
 The base :class:`psynet.timeline.Page` class allows you to define a Page using a custom Jinja template.
 Jinja is a templating engine that is popular for creating websites with a Python back-end.
-For example, here's what the template for :class:`psynet.timeline.SuccessfulEndPage` currently
-looks like:
-
-.. code-block:: html
-
-    {% extends "timeline-page.html" %}
-
-    {% block main_body %}
-        That's the end!
-        {% if experiment.show_reward %}
-            {% include "final-page-rewards.html" %}
-        {% endif %}
-        Thank you for taking part.
-
-        <p class="vspace"></p>
-        <p>
-            Click Finish to finalize the session.
-        </p>
-        <p class="vspace"></p>
-
-        <button type="button" id="next-button" class="btn btn-primary btn-lg" onClick="dallinger.submitAssignment();">Finish</button>
-    {% endblock %}
 
 Most PsyNet users don't work with these Jinja templates directly. Instead, they use PsyNet helper classes
 that create these templates programmatically.
@@ -229,12 +207,12 @@ with a :class:`~psynet.modular_page.PushButtonControl`:
         time_estimate=self.time_estimate,
     )
 
-The other important kind of page is the :class:`~psynet.page.EndPage`. An EndPage is used to mark
-the end of an experiment. There are two commonly used types of End Pages, triggering different
-end-of-experiment behavior:
-the :class:`~psynet.page.SuccessfulEndPage` and the :class:`~psynet.page.UnsuccessfulEndPage`.
-The latter is typically used when the participant fails some kind of performance check
-and is made to finish the experiment early.
+:class:`~psynet.page.SuccessfulEndPage` and :class:`~psynet.page.UnsuccessfulEndPage`
+send the participant to the corresponding end of the experiment.
+:class:`~psynet.timeline.Timeline` appends a ``SuccessfulEndPage`` automatically;
+``UnsuccessfulEndPage`` is typically used when the participant fails a performance check
+and finishes the experiment early.
+See :ref:`writing_a_timeline_ending_early`.
 
 Page Maker
 """"""""""
@@ -277,7 +255,7 @@ Unlike Page Makers, they only ever run once, so they're a safe place to put rand
 
     from psynet.timeline import CodeBlock
 
-    CodeBlock(lambda participant: participant.var.seed = random.randint(0, 5))
+    CodeBlock(lambda participant: participant.var.set("seed", random.randint(0, 5)))
 
 
 Control Flow
@@ -299,8 +277,7 @@ optional arguments, most commonly ``participant``.
     while_loop(
         "example_loop",
         lambda participant: participant.answer == "Yes",
-        Module(
-            "loop",
+        join(
             ModularPage(
                 "loop_nafc",
                 Prompt("Would you like to stay in this loop?"),
@@ -363,7 +340,7 @@ was specified). For example:
 
 .. code-block:: python
 
-    from psynet.timelime import conditional
+    from psynet.timeline import conditional
     from psynet.page import InfoPage
 
     conditional(
@@ -458,15 +435,16 @@ You can create an asset within a Module by passing it to the Module constructor'
 
     import psynet.experiment
     from psynet.asset import FileAsset
+    from psynet.timeline import Module, Timeline
 
     class Exp(psynet.experiment.Experiment):
-        timeline = join(
+        timeline = Timeline(
             Module(
                 "my_module",
                 my_pages(),
                 assets={
                     "logo": FileAsset("logo.svg"),
-                }
+                },
             )
         )
 
@@ -527,7 +505,7 @@ This is used to construct progress bars and to reward participants for their pro
 the experiment.
 
 The ``show_trial`` method then defines how the Trial is displayed to the Participant.
-The ``show_trial`` method method should refer to the Trial's ``definition`` attribute,
+The ``show_trial`` method should refer to the Trial's ``definition`` attribute,
 which will be a dictionary containing defining information about the Trial,
 typically providing all the information required to uniquely determine the stimulus
 that will be presented to the Participant.
@@ -621,7 +599,7 @@ Participant sessions (e.g. if you want to ensure that every stimulus receives ex
 of ratings), or if it requires pregenerating Assets (which normally is sensible if your Assets
 are slow to generate), then you will likely want to take advantage of Nodes.
 
-A :class:`~psynet.trial.main.Node` is a PsyNet database construct that is used for organizing Trials.
+A :class:`~psynet.trial.Node` is a PsyNet database construct that is used for organizing Trials.
 In particular, it can be conceptualized as a *parent* for Trials,
 storing important parameters that are used to define its child Trials,
 as well as storing Assets that the Trials can make use of.
@@ -706,8 +684,7 @@ These nodes can be used to create Trials by using the ``Trial.cue`` method, as i
 The Trial then inherits the Node's definition (in this case ``frequency_gradient``, ``start_frequency``,
 and ``frequencies``); the Node's assets then can be accessed through ``trial.node.assets``.
 
-It is also possible to create Nodes during the Experiment using similar techniques,
-but at the time of writing we haven't got a demo for this yet. Watch this space.
+It is also possible to create Nodes during the Experiment using similar techniques.
 
 Trial maker
 ^^^^^^^^^^^
@@ -788,8 +765,7 @@ In most PsyNet usage you do not need to worry much about the mechanics of this d
 As long as you work with pre-existing object attributes and variable stores
 (e.g. ``participant.var.my_variable``), then your changes should propagate and persist just
 as you expect. However in advanced usage you will eventually want to understand more about
-how this integration works. We will soon include a tutorial on SQLAlchemy usage into this
-documentation website.
+how this integration works; see :doc:`introduction_to_sql_alchemy`.
 
 Connection to Dallinger classes
 -------------------------------

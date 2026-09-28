@@ -110,8 +110,8 @@ By default, when a participant fails a performance check, their trials in
 that trial maker are marked as **failed** too. A failed trial is not deleted:
 it stays in the database and the export, marked as failed, but PsyNet leaves
 it out of balancing and recruitment targets, and analyses normally leave it
-out too. Participants who simply leave early keep the trials they completed. See
-:doc:`/code/trials/participant_and_trial_failure` for the full rules.
+out too. Participants who simply leave early keep the trials they completed.
+See :doc:`/code/trials/participant_and_trial_failure` for the full rules.
 
 Where relevant, scores can also feed a performance bonus.
 
@@ -120,8 +120,9 @@ Where the data goes
 
 Each trial becomes one row in the exported data, with its definition
 (including any random variation), the participant, the answer, the score,
-and whether the trial failed. Nodes are exported too. When planning the analysis, check that
-everything you need is either in the definition or in the answer.
+and whether the trial failed. Nodes are exported too. When planning the
+analysis, check that everything you need is either in the definition or in
+the answer.
 
 What to check when reviewing trials
 -----------------------------------

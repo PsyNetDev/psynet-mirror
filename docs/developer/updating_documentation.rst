@@ -128,11 +128,13 @@ longer displays well on a phone shows up in its screenshot.
 Concept pages and code pages
 ----------------------------
 
-The documentation separates concepts from code. :doc:`/design/index`,
-:doc:`/test/index`, :doc:`/deploy/index` and :doc:`/data/index` explain
-ideas and commands without Python code, for someone specifying an
-experiment or reviewing an implementation. :doc:`/code/index` shows how
-those ideas are written in ``experiment.py``. When a concept page has a code
+The documentation separates concepts from code. :doc:`/design/index`
+explains ideas without Python code, for someone specifying an experiment or
+reviewing an implementation. :doc:`/code/index` shows how those ideas are
+written in ``experiment.py``. :doc:`/test/index`, :doc:`/deploy/index` and
+:doc:`/data/index` are task-oriented: they lead with commands and use short
+Python snippets only where the task needs them, such as bot hooks, recruiter
+settings or ``get_basic_data``. When a concept page has a code
 counterpart, give both pages the same section headings so readers can move
 between them, and end the concept page with a ``seealso`` link to its code
 page.

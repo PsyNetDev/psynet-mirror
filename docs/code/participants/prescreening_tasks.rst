@@ -7,6 +7,10 @@ You can choose from the following ready-to-use pre-screening tasks:
 * `Color blindness test`_
 * `Color vocabulary test`_
 * `Headphone check`_
+* `Audio forced choice check`_
+
+:doc:`/reference/api/prescreen` lists further tests, such as
+:class:`~psynet.prescreen.AttentionTest`.
 
 If you need to build your own custom tasks, please have a look at the :ref:`Creating pre-screening tasks` for how to implement those.
 
@@ -31,7 +35,7 @@ The color vocabulary test checks the participant's ability to name colors. In ea
 Headphone check
 ---------------
 
-The headphone check makes sure that the participant is wearing headphones. In each trial, three sounds separated by silences are played and the participent's must judge which sound was the softest (quietest). See the documentation for :class:`~psynet.prescreen.HugginsHeadphoneTest` for further details.
+The headphone check makes sure that the participant is wearing headphones. In each trial, three sounds separated by silences are played and the participant must judge which sound was the softest (quietest). See the documentation for :class:`~psynet.prescreen.HugginsHeadphoneTest` for further details.
 
 .. image:: ../../_static/images/headphone_test.png
   :alt: Headphone check

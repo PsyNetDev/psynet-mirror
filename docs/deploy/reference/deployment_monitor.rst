@@ -13,14 +13,15 @@ command (see :ref:`Deploying experiments via SSH <ssh_server>`).
 
 Key features:
 
-- **Monitoring tab:** View networks, nodes, parameters, and participant
+- **Monitor > Monitoring:** View networks, nodes, parameters, and participant
   answers. Click shapes for details.
-- **Timeline tab:** Track participant counts, completions, and
+- **Monitor > Timeline:** Track participant counts, completions, and
   failures. See all the modules in your experiment and their completion
   percentages.
-- **Database tab:** View or export data via the Export tab. See
+- **Database tab:** Browse the database tables.
+- **Export tab:** Export the data. See
   :doc:`Data </data/index>` for the full export reference.
-- **Logger:** A live stream of log output; see :doc:`Error logging
+- **Monitor > Logger:** A live stream of log output; see :doc:`Error logging
   </deploy/reference/errors>`.
 
 This single-experiment dashboard is different from the deployment
@@ -40,12 +41,13 @@ You can choose between two storage backends:
 - ``S3ArtifactStorage``: Stores artifacts in an Amazon S3 bucket. This is ideal for sharing experiment status across different servers
   or for using cloud-based infrastructure.
 
-To register your experiment with the deployment monitor, run:
+Your experiment is registered with the deployment monitor when you deploy it with a
+``psynet deploy`` subcommand, for example:
 
 
 .. code:: bash
 
-    psynet deploy
+    psynet deploy ssh --app your-app-name --server your-server.example.org
 
 
 .. warning::

@@ -70,7 +70,7 @@ its generated ``constraints.txt``.
 
 .. note::
 
-    Whenever we write a ``cd`` command in this tutorial, we assume you are starting from
+    Whenever we write a ``cd`` command on this page, we assume you are starting from
     the root of the PsyNet repository. If you have moved away, you can return with
     ``cd path/to/PsyNet``.
 

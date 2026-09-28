@@ -41,20 +41,19 @@ and where it is used.
 When code runs
 --------------
 
-Code in a timeline runs at three different times, and mixing them up is a
-common source of mistakes:
+Code in a timeline runs at three different times:
 
 - The overall *shape* of the timeline is built when the server starts, in
   each server process separately. Anything computed at that point is not tied
   to a participant, and a random draw there may differ between server
   processes, so it is not a reliable way to randomize.
-- **Code blocks** run once per participant, each time the participant
-  reaches them. This is where per-participant randomness belongs.
+- **Code blocks** run each time a participant reaches them: once, unless
+  they are inside a loop. This is where per-participant randomness belongs.
 - **Page makers** run every time the page is displayed, including when the
   participant refreshes. They should only *read* information, never draw new
   random values, or a refresh will change what the participant sees.
 
-The rule of thumb: decide things in code blocks, display them in page makers.
+Decide things in code blocks and display them in page makers.
 
 Branching and repetition
 ------------------------
@@ -87,8 +86,9 @@ this yourself. Most early exits happen because PsyNet **fails** the
 participant, for example when they fail a pre-screening task or a trial
 maker's performance check. A failed participant cannot continue and does not
 count as a successful completion, so PsyNet sends them to the unsuccessful
-end, wherever they are in the timeline. You can also place an unsuccessful end page
-explicitly, for example at the end of a branch for ineligible participants.
+end, wherever they are in the timeline. You can also place an unsuccessful
+end page explicitly, for example at the end of a branch for ineligible
+participants.
 
 If the experiment pays participants, those who leave early are paid what
 they have earned so far. See :doc:`/code/trials/participant_and_trial_failure`
@@ -97,8 +97,8 @@ for what happens to their data.
 Time estimates
 --------------
 
-Every page and trial carries an estimate of how long it should take. PsyNet
-adds these up to drive the progress bar and, if the experiment pays
+Every page and trial carries an estimate of how long it should take; pages
+within a trial take the trial's estimate. PsyNet adds these up to drive the progress bar and, if the experiment pays
 participants by time, to decide how much they are paid. In that case,
 payment follows the estimate rather than the clock, so slow participants are
 not paid more. Loops need an *expected* number of repetitions so PsyNet can

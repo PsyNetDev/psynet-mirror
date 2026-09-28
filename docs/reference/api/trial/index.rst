@@ -10,6 +10,7 @@ Trial
    audio
    chain
    dense
+   generic
    gibbs
    audio_gibbs
    graph

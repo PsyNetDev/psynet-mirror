@@ -246,7 +246,7 @@ From a complete experiment directory. At minimum you typically need:
 * ``.gitignore``, ``deploy.toml``, and ``.python-version``
 
 If you are scaffolding from scratch, see
-:doc:`/code/project/creating_a_new_experiment` or run ``psynet update-scripts``
+:doc:`/code/project/creating_a_new_experiment` or run ``psynet scripts update``
 to generate the standard support files.
 
 .. code-block:: console

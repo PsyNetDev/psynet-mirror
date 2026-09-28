@@ -2,7 +2,7 @@ Trials (2)
 ==========
 
 This demo follows on from :doc:`trial`. Its key feature is programmatically
-generating audio stimuli. Run it from ``demos/experiments/trial_2``.
+generating audio stimuli.
 
 Instead of manually creating a folder of audio stimuli
 in advance, the experimenter defines a custom function, in this case

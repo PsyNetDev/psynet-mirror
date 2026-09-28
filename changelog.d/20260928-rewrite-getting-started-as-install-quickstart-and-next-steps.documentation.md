@@ -1,1 +1,0 @@
-Rewrote Getting started as three pages: a single Install page with a tab for each operating system, which uses Docker for the database and cache; a Quickstart that goes from an empty folder to a coding agent; and Next steps. The hand-coding tutorial moved to Building experiments, and the remote-server and first-Prolific-study chapters moved to Running studies.

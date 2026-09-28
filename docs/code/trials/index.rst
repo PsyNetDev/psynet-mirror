@@ -1,10 +1,10 @@
 Trials and stimuli
 ==================
 
-Manage the media files and trials your experiment uses. Read
-:doc:`assets` before adding audio, images, or video to an experiment,
-and :doc:`participant_and_trial_failure` to decide which trials count
-towards your dataset.
+This section covers the media files and trials an experiment uses.
+Ready-made media files go in the experiment's ``static/`` folder, as described
+in :doc:`/code/using_stimuli`; the asset system is for generated files and
+recordings.
 
 .. toctree::
    :maxdepth: 1

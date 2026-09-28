@@ -64,18 +64,36 @@ Run the following:
     dallinger docker-ssh servers add --user your-username --host your-server.example.org
 
 
-Setting up your Docker registry
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-The Docker registry will host your Docker images. There are multiple platforms you can use to host your Docker images. Here we will cover docker.io and GitLab.
-We will cover three ways to setup a Docker registry:
+Naming your Docker image
+^^^^^^^^^^^^^^^^^^^^^^^^
+
+PsyNet refuses to deploy over SSH unless ``docker_image_base_name`` is set,
+either in your experiment's ``config.txt`` or in ``~/.dallingerconfig``.
+``psynet deploy ssh`` builds the Docker image directly on the remote server
+and does not push it to a registry, so any image name will do, for example:
+
+.. code:: ini
+
+    docker_image_base_name = psynet-experiments
+
+You do not need a Docker registry account or ``docker login`` for this.
+
+Setting up a Docker registry (optional)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+A Docker registry is only needed if you push your images, for example with
+Dallinger's ``dallinger docker-ssh deploy --push-build`` or ``--local_build`` options
+(``psynet deploy ssh`` does not push). In that case ``docker_image_base_name``
+must point to a registry you can push to.
+Here we will cover two platforms:
+
 - personal Docker registry on docker.io
-- group Docker registry on GitLab
-- self-hosted Docker registry on GitLab
+- group Docker registry on GitLab (hosted on gitlab.com or self-hosted)
 
 Personal Docker registry on docker.io
 =====================================
 
-- Go to `docker.io <https://www.docker.com/>` and setup an account
+- Go to `docker.io <https://www.docker.com/>`_ and setup an account
 - Download the Docker Desktop app and sign in
 - Add the following line to your ``config.txt`` if you only want to use it for this experiment or in ``~/.dallingerconfig`` if you want to use it as your default registry:
 
@@ -91,6 +109,7 @@ Group Docker registry on GitLab
 Group Docker registries are a nice way to have all of your lab's Docker images under the same umbrella. 
 
 There's two ways to set up a Docker registry:
+
 - A hosted Docker registry
 - A self-hosted Docker registry
 
@@ -178,13 +197,6 @@ To do this, you need to open an SSH terminal to your server, if you haven't alre
 
 Then run the same `docker login` command that you ran previously.
 
-Finally, you need to place a line like the following in your ``~/.dallingerconfig``,
-putting the link to your own image registry:
-
-.. code:: bash
-
-    docker_image_base_name = registry.gitlab.com/<group>/<project>/experiment-images
-
 That's it! You should be all set up now.
 
 Deploying experiments via SSH
@@ -199,7 +211,9 @@ You deploy experiments using the ``psynet deploy`` command:
 ``--server`` chooses which server, registered with
 ``dallinger docker-ssh servers add`` (or ``dallinger ec2 provision``), to deploy
 to. You can leave it out if you have registered only one server; with several,
-PsyNet asks you to choose. The experiment is served at a subdomain of the
+PsyNet asks you to choose. Note that ``dallinger ec2 provision --dns-host``
+registers two servers (the AWS hostname and the DNS name), so pass ``--server``
+explicitly in that case. The experiment is served at a subdomain of the
 server's name, here ``your-app-name.your-server.example.org``.
 
 You only need ``--dns-host`` if you registered the server by IP address, or to
@@ -249,9 +263,8 @@ dashboard shows and how to interpret it.
 Under the hood, the deployment command works as follows:
 
 - Run any preliminary steps, e.g. uploading assets to the remote server
-- Build the Docker image, packaging up all local code and dependencies
-- Push the Docker image to the remote server
-- Instruct the remote server to pull the Docker image
+- Build the Docker image on the remote server (using the remote Docker daemon over SSH),
+  packaging up all local code and dependencies
 - Instruct the remote server to spin up the Docker app
 - Instruct the remote server to launch the experiment
 
@@ -316,18 +329,20 @@ You can run many containers on the same computer, but of course they all consume
 computational resources.
 
 The SSH server uses a tool called *docker compose* to orchestrate multiple containers for the
-same app. Each PsyNet experiment contains four distinct containers:
+same app. Each PsyNet experiment contains the following services:
 
 - ``web`` - serves HTTP requests
-- ``worker`` - process asynchronous tasks
+- ``worker_1``, ``worker_2``, ... - process asynchronous tasks (one per worker, set by ``num_dynos_worker``)
 - ``clock`` - schedules tasks
 - ``redis`` - stores variable values
+- ``pgbouncer`` - pools the experiment's database connections
 
-The SSH server additionally provides two further containers which are shared across all experiments:
+The SSH server additionally provides further services which are shared across all experiments:
 
 - ``postgresql`` - hosts the experiment databases
-- ``caddy`` - redirects HTTP requests to the appropriate experiment app. See
+- ``httpserver`` - a Caddy server that redirects HTTP requests to the appropriate experiment app. See
   `Caddy server <https://caddyserver.com/>`_ for more details.
+- ``dozzle`` - serves the log viewer at ``https://logs.<dns-host>``
 
 When you deploy an experiment to the SSH server, a folder is created in the location
 ``~/dallinger/your-app-name`` which contains a Docker compose configuration called
@@ -448,7 +463,7 @@ To restart processes for a given app, run the following:
 
     cd ~/dallinger/your-app-name
     docker compose restart web
-    docker compose restart worker
+    docker compose restart worker_1
     docker compose restart clock
 
 

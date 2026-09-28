@@ -9,7 +9,7 @@ mapping semantic associations of a stimulus space. The procedure constructs a se
 of stimulus 'chains', where a stimulus is passed from one participant to the next,
 and each participant adjusts a particular stimulus dimension in order to maximise
 a particular subjective criterion (e.g. 'beauty'). In this demo participants
-adjust a colour. Run it from ``demos/experiments/gibbs``.
+adjust a color.
 
 Implementing a GSP experiment depends on the following three classes:
 
@@ -39,8 +39,8 @@ You can define a custom Gibbs sampling experiment through the following steps:
 
 3. Implement a subclass of :class:`~psynet.trial.gibbs.GibbsTrial`
    with a custom
-   :meth:`~psynet.trial.gibbs.GibbsTrial.show_trial` method.
-   This :meth:`~psynet.trial.gibbs.GibbsTrial.show_trial` method
+   ``show_trial`` method.
+   This ``show_trial`` method
    should produce an object of
    class :class:`~psynet.timeline.Page` [1]_
    that presents the participant with some dynamic stimulus (e.g. a color
@@ -52,18 +52,16 @@ You can define a custom Gibbs sampling experiment through the following steps:
       the value of the ith free network parameter, where i is defined from ``trial.active_index``.
    d) Returns the chosen value of the free network parameter as an ``answer``.
 
-4. Create an instance of :class:`~psynet.trial.gibbs.GibbsMaker`,
+4. Create an instance of :class:`~psynet.trial.gibbs.GibbsTrialMaker`,
    filling in its constructor parameter list
    with reference to the classes you created above,
    and insert it into your experiment's timeline.
 
 
-.. [1] The :meth:`~psynet.trial.gibbs.GibbsTrial.show_trial` method
+.. [1] The ``show_trial`` method
    may alternatively return a list of :class:`~psynet.timeline.Page` objects.
    In this case, the user is responsible for ensuring that the final
    page returns the appropriate ``answer``.
-   The user should also specify an estimated number of pages in the
-   :attr:`~psynet.trial.gibbs.GibbsTrial.num_pages` attribute.
 
 .. note::
     The demo included here also incorporates demonstrations of various other

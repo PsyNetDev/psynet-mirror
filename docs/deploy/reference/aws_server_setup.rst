@@ -6,9 +6,9 @@ Setting up an AWS server
 
 One way to deploy your experiments online is to set up a server on
 Amazon Web Services (AWS).
-This can cost quite a lot less, perhaps $30 or so a month assuming you leave
-the server running all the time (but check the AWS documentation to confirm
-exact pricing.
+You pay for the server while it is running; the example instance types below
+cost roughly $2.5–5 per day (check the AWS documentation to confirm
+exact pricing).
 
 Here is a brief summary of the steps involved:
 
@@ -176,28 +176,12 @@ To test that this worked, try the following
 
 where the ``host`` argument corresponds to the domain name you just registered.
 Here ``ubuntu`` is the default user for AWS instances, you shouldn't need to change this.
+If Docker is not installed on the server, this command installs it
+(including the Docker Compose plugin) and adds your user to the ``docker`` group.
 
-Under the line 'Checking Docker presence', you may see the following:
-
-::
-
-    Error: exit code was not 0 (127)
-
-    bash: line 1: docker: command not found
-
-This is not a real error, don't worry. The script should proceed by installing Docker, including the Docker Compose plugin.
-
-18. Now go back to your SSH terminal, and run the following:
-
-::
-
-    sudo usermod -aG docker ${USER}
-
-This adds your user to the Docker group so that you can run Docker commands without ``sudo``.
-Log out of your SSH session with CTRL-D, then open a new SSH session using the same ``ssh`` command as before.
-
-19. Now you can try launching your own experiment by running the following within an experiment
-    directory, on your local machine (not on the SSH terminal):
+18. Now you can try launching your own experiment by running the following within an experiment
+    directory, on your local machine (not on the SSH terminal).
+    First make sure ``docker_image_base_name`` is set (see :ref:`SSH servers <ssh_server>`):
 
 ::
 
@@ -206,7 +190,7 @@ Log out of your SSH session with CTRL-D, then open a new SSH session using the s
 where you have placed ``bob.psych-experiments.org`` with the appropriate text corresponding to your own
 research/domain name combination.
 
-20. Remember, AWS resources cost money and are billed incrementally. Once you are done using a server
+19. Remember, AWS resources cost money and are billed incrementally. Once you are done using a server
     you should stop (if you want to use it again in the future) or terminate it (if you're completely done with it).
 
 

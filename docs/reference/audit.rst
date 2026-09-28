@@ -17,15 +17,16 @@ of ``audit/``). If ``experiment.py`` is in a subdirectory, set
 directly into this experiment's ``./audit/``. Running from a directory named
 ``audit`` is an error.
 
-Leftover flat packets with ``audit.json`` in the experiment root are rejected
-with a message to move them to ``./audit/audit.json``. Leftover
-``experiment.source_base`` and ``experiment.source_path`` fields are ignored
-with a warning.
+.. note::
+
+   Older packets with ``audit.json`` in the experiment root must be moved to
+   ``./audit/``. ``experiment.source_base`` and ``experiment.source_path`` are
+   no longer used.
 
 Audit support ships with PsyNet but requires the full experiment runtime
 (``psynet[experiment]``), including Dallinger and the audit HTML render
 dependencies. Participant video validation also requires ``ffprobe`` from
-`ffmpeg`. Use a PsyNet revision that includes ``psynet audit``, then:
+``ffmpeg``.
 
 .. code-block:: bash
 
@@ -51,8 +52,8 @@ dependencies. Participant video validation also requires ``ffprobe`` from
   ``manual``, or ``system``. The starter TODO summary is omitted from the
   rendered page title until rewritten.
 * ``mark-present`` sets an artifact to ``present``, verifies the file or
-  non-empty directory exists and
-  passes the same video/notebook checks as ``validate``, removes matching
+  non-empty directory exists and passes the same video/notebook checks as
+  ``validate``, removes matching
   blockers, and updates ``updated_at``. Use this after you add a real file
   instead of hand-editing status fields.
 * ``render`` validates first, then builds a self-contained static site under
@@ -116,15 +117,9 @@ rather than hidden by rendering.
 Rendered sections
 -----------------
 
-Starter packets render audit completeness first, then Prompt, Plan,
-Implementation timeline, Implementation notes, Experiment code, Screenshots,
-Participant video, Monitor snapshot, Performance test, Data exports, Design
-simulation, Analysis, Additional files, Blockers, and Checks. Data
-exports have their own download
-panel rather than being repeated under Additional files. The Experiment code panel reads ``experiment.py``
-(or ``experiment.entry_point`` when configured) from the experiment directory
-and displays it as Python source. Each evidence kind
-is its own top-level section, so a section kind maps to one panel:
+The rendered site starts with an audit completeness summary, followed by the
+sections listed in ``audit.json`` (see :doc:`/test/audits` for the starter
+sections). Each section's ``kind`` selects one panel:
 
 * ``screenshots``, ``participant_video``, ``monitor``, ``performance``,
   ``data``, ``simulation``, and ``analysis`` each render their corresponding
@@ -135,8 +130,10 @@ is its own top-level section, so a section kind maps to one panel:
   section;
 * ``analysis`` renders ``simulate/analysis/analysis.ipynb`` and lists files in
   the adjacent ``simulated_export/`` directory;
-* ``source`` renders the experiment entry point directly from the implementation
-  directory;
+* ``source`` renders ``experiment.py`` (or ``experiment.entry_point`` when
+  configured) from the experiment directory as Python source;
+* ``files`` lists the remaining artifacts; data exports are not repeated here
+  because they have their own download panel;
 * ``evidence`` renders every evidence subsection in a single panel and remains
   supported for older packets;
 * ``checks`` panels are omitted when no checks are recorded.
@@ -165,8 +162,8 @@ Manifests may declare:
   Documented external ids such as ``psynetskills.challenge`` are silent;
   other unknown ids may print a warning. Unknown section **kinds** remain a
   validation error.
-* PsyNet does not import workshop plugins. Consumers such as PsyNetSkills read
-  declared extension ids and apply their own overlay rendering.
+* PsyNet does not load extension code. External tools such as PsyNetSkills
+  read the declared extension ids and apply their own rendering on top.
 
 Worked example: record a log
 ----------------------------
@@ -185,9 +182,9 @@ Python API
 ----------
 
 Shared helpers live under :mod:`psynet.audit` (model classification, HTML
-rendering, and artifact publication). The audit package modules avoid importing
-the experiment runtime. Publishing monitor snapshots copies static assets from
-the installed Dallinger package (``dallinger/frontend/static``).
+rendering, and artifact publication). Publishing monitor snapshots copies
+static assets from the installed Dallinger package
+(``dallinger/frontend/static``).
 
 The rendered site treats the experiment's notebooks, Markdown reports, and the
 PsyNet audit templates as trusted author content. Notebook HTML and SVG outputs

@@ -9,11 +9,16 @@ Ready-made files
 
 Store each file's URL in the node definition. A file at
 ``static/instrument_sounds/clarinet.mp3`` has the URL
-``/static/instrument_sounds/clarinet.mp3``. The
+``/static/instrument_sounds/clarinet.mp3``.
+:func:`~psynet.media.static_url_for` converts a path under ``static/`` to its
+URL and raises an error for paths outside ``static/``. The
 ``demos/pipelines/similarity`` demo lists its sounds like this:
 
 .. literalinclude:: ../../demos/pipelines/similarity/experiment.py
    :pyobject: list_stimuli
+
+If the files are organized into participant-group and block folders,
+``psynet.trial.compile_nodes_from_directory`` creates one node per file.
 
 Pass the URL to the page, for example:
 

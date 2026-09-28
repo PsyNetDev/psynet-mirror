@@ -11,7 +11,7 @@ that stimulus.
 
 This demo is a minimal case: participants see a number, remember it, and
 type it back. :doc:`tapping_imitation_chain` applies the same idea to
-rhythm. Run it from ``demos/experiments/imitation_chain``.
+rhythm.
 
 Source: ``demos/experiments/imitation_chain``
 

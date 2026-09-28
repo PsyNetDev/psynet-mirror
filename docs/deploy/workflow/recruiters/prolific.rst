@@ -11,7 +11,8 @@ Complete the shared checks on
 ``wage_per_hour`` to Prolific's current recommended rate (commonly
 £9), and put both the duration and the wage in the study title.
 
-Copy the ``psynet estimate`` figures into ``get_prolific_settings()``.
+Copy the ``psynet estimate`` figures into your ``get_prolific_settings()``
+helper (defined below).
 If estimate reports ``£4.95`` and ``33 min``, use:
 
 .. code:: python
@@ -53,7 +54,8 @@ reduces display differences from browser add-ons and helps against the
 red-screen error. Set it to ``False`` if you do not need that. For all
 options, see the :doc:`configuration reference </reference/configuration>`.
 
-Add ``get_prolific_settings()`` at the top of the experiment module.
+``get_prolific_settings()`` is not part of PsyNet; it is a helper function
+that you define yourself at the top of the experiment module.
 Your lab administrator should provide the Prolific qualification JSON
 file:
 
@@ -71,6 +73,9 @@ file:
            "base_payment": 4.95,  # based on survey minutes
            "prolific_estimated_completion_minutes": 33,
            "prolific_recruitment_config": qualification,
+           # Required while prolific_pay_unsuccessful is true (the default);
+           # caps automatic screen-out spending.
+           "prolific_screen_out_slots": 50,
            "auto_recruit": False,
            "currency": "£",
        }

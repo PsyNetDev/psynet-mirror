@@ -15,6 +15,8 @@ class Trial(ChainTrial):
 
 
 class Node(ChainNode):
+    """General-purpose parent node for trials, holding their definition and assets."""
+
     pass
 
     def summarize_trials(self, trials: list, experiment, participant):
@@ -32,27 +34,27 @@ def compile_nodes_from_directory(
 ):
     """Compile trial nodes from a directory of media files under ``static/``.
 
-    This directory is expected to be structured in the following kind of way:
+    This directory is expected to be structured in the following kind of way::
 
-    input_dir/
-    |-- participant_group_1/
-    |   |-- block_1/
-    |   |   |-- media_file_1.wav
-    |   |   |-- media_file_2.wav
-    |   |-- block_2/
-    |   |   |-- media_file_3.wav
-    |   |   |-- media_file_4.wav
-    |   |-- block_3/
-    |   |   |-- media_file_5.wav
-    |   |   |-- media_file_6.wav
-    |-- participant_group_2/
-    |   |-- block_1/
-    |   |   |-- media_file_7.wav
-    |   |   |-- media_file_8.wav
-    |   |-- block_2/
-    |   |   |-- media_file_9.wav
-    |   |   |-- media_file_10.wav
-    |   |-- block_3/
+        input_dir/
+        |-- participant_group_1/
+        |   |-- block_1/
+        |   |   |-- media_file_1.wav
+        |   |   |-- media_file_2.wav
+        |   |-- block_2/
+        |   |   |-- media_file_3.wav
+        |   |   |-- media_file_4.wav
+        |   |-- block_3/
+        |   |   |-- media_file_5.wav
+        |   |   |-- media_file_6.wav
+        |-- participant_group_2/
+        |   |-- block_1/
+        |   |   |-- media_file_7.wav
+        |   |   |-- media_file_8.wav
+        |   |-- block_2/
+        |   |   |-- media_file_9.wav
+        |   |   |-- media_file_10.wav
+        |   |-- block_3/
 
     You can name the participant groups, blocks and files whatever you want; the important
     thing is their position in the hierarchy.

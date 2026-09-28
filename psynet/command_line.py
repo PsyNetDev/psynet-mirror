@@ -66,7 +66,7 @@ from .experiment_scaffold import (
 )
 from .log import bold
 from .lucid import get_lucid_service
-from .recruiters import BaseLucidRecruiter, HotAirRecruiter
+from .recruiters import BaseLucidRecruiter, GenericRecruiter, HotAirRecruiter
 from .redis import redis_vars
 from .serialize import serialize, unserialize
 from .utils import (
@@ -1178,7 +1178,7 @@ def run_pre_checks_deploy(local_, recruiter):
     check_psynet_requirement_is_unambiguous()
     check_core_dependency_versions_match_requirements()
 
-    if local_ and not isinstance(recruiter, HotAirRecruiter):
+    if local_ and not isinstance(recruiter, (GenericRecruiter, HotAirRecruiter)):
         raise click.UsageError(
             "``psynet deploy local`` currently only supports the 'generic' recruiter. "
             "Set recruiter = generic in your experiment config, or deploy to a remote server instead "
@@ -1696,8 +1696,9 @@ def run_pre_checks(mode, local_, heroku=False, docker=False, app=None):
             if config.get("docker_image_base_name", None) is None:
                 raise click.UsageError(
                     "docker_image_base_name must be specified in config.txt or ~/.dallingerconfig before you can "
-                    "launch an experiment using Docker. For example, you might write the following: \n"
-                    "docker_image_base_name = registry.gitlab.developers.cam.ac.uk/mus/cms/psynet-experiment-images"
+                    "launch an experiment using Docker. Any image name works unless you push to a "
+                    "registry, for example: \n"
+                    "docker_image_base_name = my-psynet-experiments"
                 )
             _expected_docker_volumes = "${HOME}/psynet-data/assets:/psynet-data/assets"
             if _expected_docker_volumes not in config.get(

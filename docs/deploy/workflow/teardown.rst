@@ -23,4 +23,5 @@ Before you tear anything down, make sure:
 For the commands themselves, see
 :ref:`Terminating an instance <aws_automatic_teardown>`.
 For multi-day deployments you can stop the EC2 instance overnight
-instead of tearing it down; see :doc:`Provisioning <provisioning>`.
+instead of tearing it down; see :doc:`AWS automatic provisioning
+</deploy/reference/aws_automatic_provisioning>`.

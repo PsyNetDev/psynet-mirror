@@ -104,7 +104,7 @@ The rest is taken care of by the API.
 Running the game
 ----------------
 
-Running the game is easy, just go to the terminal, browse to the demo folder, activate your virtual environment, and type ``psynet debug``. The project should then run in your browser window, just like any other PsyNet project, after informed consent, Unity should run embedded in your page,  and once the game is over PsyNet timeline will continue.
+Running the game is easy, just go to the terminal, browse to the demo folder, activate your virtual environment, and type ``psynet debug local``. The project should then run in your browser window, just like any other PsyNet project, after informed consent, Unity should run embedded in your page,  and once the game is over PsyNet timeline will continue.
 
 Developing and debugging the Unity game
 ---------------------------------------
@@ -141,7 +141,7 @@ The API allows you to debug the Unity project inside the Unity IDE. That is, bef
    # Stimuli ---------------------------------------------------------------------
    Debug = True
 
-Now, open your terminal, navigate to the demo folder, and run ``psynet debug --verbose``. If everything is working as intended, you should see and informed consent form, and then you will see this page:
+Now, open your terminal, navigate to the demo folder, and run ``psynet debug local``. If everything is working as intended, you should see and informed consent form, and then you will see this page:
 
 .. figure:: ../../_static/images/experimenter/unity_integration/unity_3d_debug_page.png
   :width: 800

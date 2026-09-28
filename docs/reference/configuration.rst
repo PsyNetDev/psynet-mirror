@@ -434,12 +434,6 @@ Payment
     without payment. Lucid termination is not gated by this value.
     Default: ``0.20``.
 
-``soft_max_experiment_payment`` *float* |psynet-icon|
-    The recruiting process stops if ``amount_spent()`` (recorded
-    ``base_payment`` + ``bonus`` for every participant, including those
-    still in progress) exceeds this value, in the currency set via the
-    ``currency`` config variable. Default: ``1000.0``.
-
 ``wage_per_hour`` *float* |psynet-icon|
     The payment in currency the participant gets per hour. Default: ``9.0``.
 

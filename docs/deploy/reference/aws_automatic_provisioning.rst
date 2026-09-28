@@ -94,6 +94,11 @@ Before you teardown the instance make sure:
 -  You have exported the data and run ``export.py`` (or your
    equivalent) to check that the exported data are usable.
 
+``dallinger ec2 provision`` needs ``ec2_default_pem`` (the AWS key-pair
+name), ``server_pem`` (the path to the matching PEM file),
+``dashboard_user``, and ``dashboard_password`` in ``~/.dallingerconfig``;
+see :doc:`/deploy/running_remotely` for an example.
+
 You can provision an EC2 instance on demand:
 
 .. code:: bash
@@ -116,8 +121,9 @@ For example, to collect data from participants in the US:
    dallinger ec2 provision --name alice-melody-batch2 --region us-west-2 --dns-host alice.<your-domain> --type <type>
 
 Specify a custom subdomain that reflects your identity so the server URL
-is recognizable. The full experiment URL will combine the subdomain and
-the app name, for example: ``alice-melody-batch2.alice.<your-domain>``.
+is recognizable. The full experiment URL will combine the app name you
+pass to ``psynet deploy ssh --app`` and the DNS host, in the form
+``<app>.<dns-host>``, for example: ``melody.alice.<your-domain>``.
 
 Choose the instance type according to your needs. ``m7i.large`` is
 recommended for debugging, and ``m7i.xlarge`` is recommended for live

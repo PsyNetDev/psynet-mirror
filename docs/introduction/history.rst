@@ -6,9 +6,8 @@ History
 The PsyNet project began in 2020 as a collaboration between Peter Harrison and Nori Jacoby,
 attempting to build a higher level of abstraction
 around the `Dallinger platform <https://dallinger.readthedocs.io/latest/>`_.
-Highlights of Dallinger included sophisticated code for deploying online experiments onto
-Heroku webservers, an advanced system for representing network-based experiments as graph-based
-structures, and excellent integration with Amazon Mechanical Turk. However, implementing
+Dallinger provided deployment tooling, recruiter integrations, and a system for
+representing network-based experiments as graph-based structures. However, implementing
 experiments with Dallinger proved rather time-consuming, with each experiment requiring
 a significant amount of front-end web programming and boiler-plate experiment logic.
 
@@ -43,9 +42,5 @@ In 2021 Peter moved to the University of Cambridge as director of the
 but the PsyNet collaboration has continued apace across the two research groups,
 in part with support from the Cambridge Humanities Research Grants Scheme.
 
-PsyNet has been used since 2020 for research projects by group members, but we are progressively
-opening up the project for wider use by the research community. We have already made the software
-open access, but (as of 2022) the codebase is still under heavy development as we prepare
-for a proper launch. Most of its features are ready, but some important details are still
-undocumented or unfinished. We recommend checking in with the PsyNet developers before using
-PsyNet for your own research projects.
+PsyNet has been used for research since 2020 and is now developed as open-source software
+for the wider research community.
