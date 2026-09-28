@@ -1,8 +1,8 @@
 .. _performance_testing:
 
-==============================
-Testing experiment performance
-==============================
+===================
+Performance testing
+===================
 
 Before you deploy an experiment to real participants, it's worth checking how
 well your server copes under load. A timeline that feels snappy with a single

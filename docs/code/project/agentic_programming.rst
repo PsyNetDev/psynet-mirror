@@ -60,7 +60,7 @@ blockers.
 
 The agent prepares the audit as it works. The researcher then reviews the
 rendered audit, checks the evidence, and requests further changes where
-necessary. See :doc:`/audit/audit` for the packet format and CLI.
+necessary. See :doc:`/test/audit_reference` for the packet format and CLI.
 
 Implementing an experiment with an agent
 ----------------------------------------
@@ -86,7 +86,7 @@ Paste the following:
 ``psynet setup`` prepares the experiment directory, initializes Git, installs
 the full experiment environment, and adds the PsyNet Agent Skills.
 
-This assumes the tools in :doc:`/getting_started/install` are already
+This assumes the tools in :doc:`/install` are already
 installed. On Windows, run these commands in the Ubuntu (WSL) terminal;
 native Windows is not supported.
 
@@ -158,5 +158,5 @@ See also
 
 * :doc:`/code/project/creating_a_new_experiment`
 * :doc:`development_workflow`
-* :doc:`/audit/audit`
+* :doc:`/test/audit_reference`
 

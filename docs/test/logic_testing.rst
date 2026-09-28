@@ -1,7 +1,7 @@
 .. _tests:
 
 =============
-Writing tests
+Logic testing
 =============
 
 Use automated tests to check that your experiment runs from start to

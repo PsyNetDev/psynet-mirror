@@ -129,7 +129,7 @@ Concept pages and code pages
 ----------------------------
 
 The documentation separates concepts from code. :doc:`/design/index`,
-:doc:`/audit/index`, :doc:`/deploy/index` and :doc:`/data/index` explain
+:doc:`/test/index`, :doc:`/deploy/index` and :doc:`/data/index` explain
 ideas and commands without Python code, for someone specifying an
 experiment or reviewing an implementation. :doc:`/code/index` shows how
 those ideas are written in ``experiment.py``. When a concept page has a code

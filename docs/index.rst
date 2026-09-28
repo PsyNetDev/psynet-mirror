@@ -44,7 +44,7 @@ the virtual lab framework
 
       What's PsyNet for?
 
-   .. button-ref:: getting_started/index
+   .. button-ref:: install
       :ref-type: doc
       :color: primary
       :outline:
@@ -58,9 +58,10 @@ the virtual lab framework
    :includehidden:
 
    About <introduction/index>
-   getting_started/index
+   install
+   quickstart
    Design <design/index>
-   Audit <audit/index>
+   Test <test/index>
    Deploy <deploy/index>
    data/index
    Code <code/index>

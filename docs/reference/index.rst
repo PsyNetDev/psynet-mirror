@@ -10,4 +10,5 @@ Look up configuration keys, command-line options, terms, and the Python API.
    command_line
    shell_completion
    glossary
+   troubleshooting
    api/index

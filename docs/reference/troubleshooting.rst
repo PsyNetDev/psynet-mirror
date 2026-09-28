@@ -1,9 +1,9 @@
 .. _develop_troubleshooting:
 .. highlight:: shell
 
-===============
-Troubleshooting
-===============
+=================================
+Troubleshooting local development
+=================================
 
 
 Docker unauthorized

@@ -11,7 +11,7 @@ Setting up your environment
 ---------------------------
 
 Before continuing, make sure you have followed the
-:doc:`installation instructions </getting_started/install>` for your operating system.
+:doc:`installation instructions </install>` for your operating system.
 
 You will then need a local checkout of the PsyNet repository so that you have access to its
 demos.

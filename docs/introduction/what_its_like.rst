@@ -165,7 +165,7 @@ yourself, starting from a demo; see
       the analysis you wrote against the practice data, and take the server
       down.
 
-.. button-ref:: /getting_started/index
+.. button-ref:: /install
    :ref-type: doc
    :color: primary
 

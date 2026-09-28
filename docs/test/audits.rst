@@ -1,7 +1,7 @@
 .. _audits:
 
-Experiment audits
-=================
+Audits
+======
 
 An experiment audit collects the evidence that an experiment was built and
 tested as intended, for someone to review before launch. It lives in the
@@ -35,10 +35,10 @@ Sections
 
 **Data exports**
    The export produced by :doc:`simulated participants
-   <simulated_participants>`, in the same format as a real export.
+   </test/bots>`, in the same format as a real export.
 
 **Design simulation**
-   The power analysis, if the study has one. See :doc:`practice_data`.
+   The power analysis, if the study has one. See :doc:`/test/bots`.
 
 **Analysis**
    The planned analysis, run on the simulated export.
@@ -61,4 +61,4 @@ on a phone.
 
 .. seealso::
 
-   :doc:`audit`, for the audit's files and commands.
+   :doc:`/test/audit_reference`, for the audit's files and commands.

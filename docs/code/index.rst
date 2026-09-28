@@ -26,7 +26,5 @@ PsyNet's other features.
 
 .. toctree::
    :maxdepth: 1
-   :caption: Testing
 
-   tests
    sqlalchemy_profiling
