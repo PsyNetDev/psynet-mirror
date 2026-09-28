@@ -139,7 +139,9 @@ Tracking participants
 
 Monitor the experiment itself on the PsyNet dashboard (see
 :doc:`/deploy/running_a_study`). In Lab Recruiter, the **Participants**
-tab shows each participant's experiments and payment status.
+tab shows each participant's experiments and payment status. Participants
+who have problems contact you by email, at the address set in your lab's
+Lab Recruiter setup.
 
 .. image:: /_static/images/running_studies/recruiters/lab_recruiter/participant-tracking.png
    :width: 8.5in

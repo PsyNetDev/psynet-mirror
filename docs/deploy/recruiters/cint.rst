@@ -230,7 +230,7 @@ After deploying
 ---------------
 
 After you deploy, log in to the CINT marketplace. Then open the dashboard
-link printed in the terminal and click the **Lucid** tab, which links to
+link printed in the terminal and open **Recruiter > Lucid**, which links to
 the marketplace pages for the survey and shows its reports.
 
 .. image:: /_static/images/running_studies/recruiters/cint/dashboard-lucid-tab.png
@@ -274,8 +274,9 @@ the marketplace pages for the survey and shows its reports.
 Monitoring
 ----------
 
-The new interface under the ‘Lucid’ tab in the dashboard offers a
-variety of ways to monitor the experiment.
+The dashboard's **Recruiter > Lucid** page offers a variety of ways to
+monitor the experiment. Participants cannot contact you through CINT, so
+check these reports and the dashboard's errors regularly.
 
 1. Check how many participants are working, terminated, and completed.
    It is important to inspect ‘Termination reasons’ as it might reveal

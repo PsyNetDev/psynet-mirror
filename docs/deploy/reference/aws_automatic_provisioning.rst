@@ -5,10 +5,9 @@ AWS automatic provisioning
 ==========================
 
 Dallinger's ``ec2`` commands create, pause and delete EC2 servers for PsyNet
-experiments. The required AWS credentials, domain, key pair and
-``~/.dallingerconfig`` settings, and the usual provision, stop, start and
-teardown commands, are covered in :doc:`/deploy/setting_up_a_server`. This
-page lists the options and describes what the commands do.
+experiments. They need the AWS credentials, domain, key pair and
+``~/.dallingerconfig`` settings described in
+:doc:`/deploy/setting_up_a_server`.
 
 Most commands select an instance with ``--name`` (the name given at
 provisioning) or ``--dns`` (the instance's AWS hostname), plus ``--region``.
@@ -91,8 +90,6 @@ Provisioning runs these steps and prints each one to the terminal:
 At the end, you should see something like this:
 
 .. code:: text
-
-   Host registered in dallinger
 
    Provisioning complete! Time taken: 192.402161359787. memory-lab is
    ready at ec2-52-91-24-127.compute-1.amazonaws.com
