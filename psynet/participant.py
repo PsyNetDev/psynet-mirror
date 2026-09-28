@@ -30,7 +30,6 @@ from sqlalchemy import (
 from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.orm import relationship
 from sqlalchemy.orm.collections import attribute_mapped_collection
-from sqlalchemy.orm.exc import DetachedInstanceError
 from tenacity import Retrying, stop_after_attempt, wait_exponential
 
 from psynet.db import transaction
@@ -509,23 +508,20 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         end up in a situation where the foreign key current_trial_id is not None,
         but the _current_trial attribute is (incorrectly) None. The following code
         detects this situation and retries loading the attribute a few times.
-        After a rollback the instance can also be detached; in that case we
-        return None instead of raising DetachedInstanceError.
         """
         # Ideally, the _current_trial relationship is being loaded properly.
         # If we do see a trial there, we can just return it.
-        try:
-            if self._current_trial is not None:
-                return self._current_trial
-            if self.current_trial_id is None:
-                return None
-        except DetachedInstanceError:
-            # After a rollback the instance can be detached; skip the
-            # relationship rather than crashing while rendering an error page.
+        if self._current_trial is not None:
+            return self._current_trial
+
+        # If both _current_trial and current_trial_id are None, that suggests
+        # there is truly no current trial. We can therefore return None.
+        if self.current_trial_id is None:
             return None
 
-        # If we got here, current_trial_id is set but the relationship did not
-        # load. Retry a few times before giving up.
+        # If we got here, that means that current_trial_id is not None,
+        # but _current_trial is None. This suggests that the trial is not
+        # loaded properly. We can therefore try to load it again.
         retrying = Retrying(
             stop=stop_after_attempt(4),
             wait=wait_exponential(multiplier=0.1, min=0.1, max=0.5),

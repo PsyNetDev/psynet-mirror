@@ -384,14 +384,6 @@ def test_footer_is_in_document_flow_at_every_width():
     assert "flex-direction: column" in root_rules
     assert "min-height: 100dvh" in root_rules
 
-    fragment_start = css.index(
-        "#timeline-root:has(#footer) #psynet-timeline-fragment {"
-    )
-    fragment_rules = css[fragment_start : css.index("}", fragment_start)]
-    assert "display: flex" in fragment_rules
-    assert "flex-direction: column" in fragment_rules
-    assert "flex: 1 1 auto" in fragment_rules
-
     footer_start = css.index("#footer {")
     footer_rules = css[footer_start : css.index("}", footer_start)]
     assert "position: relative" in footer_rules

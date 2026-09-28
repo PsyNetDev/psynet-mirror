@@ -1,1 +1,1 @@
-``psynet debug local --no-browsers`` now skips opening browsers in the default auto-reload server as well as in legacy and Docker debug.
+``psynet debug local --no-browsers`` now skips opening browsers in the default auto-reload server as well as in legacy and Docker debug, when the installed Dallinger supports ``develop debug --no-browsers`` (Dallinger#9937). With older Dallinger versions, PsyNet logs a warning instead of failing.

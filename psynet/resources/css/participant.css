@@ -299,16 +299,6 @@ body {
     min-height: 100dvh;
 }
 
-/* In-place timeline swaps replace the inner fragment, not #timeline-root.
-   Without this, a page with a footer can keep the previous page's height
-   after a swap to a shorter page, so the footer sits halfway down. */
-#timeline-root:has(#footer) #psynet-timeline-fragment {
-    display: flex;
-    flex-direction: column;
-    flex: 1 1 auto;
-    min-height: 0;
-}
-
 /* A visible standalone media-download bar pins itself to the bottom edge, so
    the last few pixels of a scrolled page would otherwise hide underneath it.
    Release that space once loading completes and the bar becomes hidden. */

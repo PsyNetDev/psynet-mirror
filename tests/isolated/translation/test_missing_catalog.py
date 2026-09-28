@@ -6,14 +6,15 @@ import pytest
 from psynet.utils import TranslationNotFoundError, check_translation_is_available
 
 
-def _check_missing_entry(monkeypatch, namespace, *, live=False, deployed=None):
-    if deployed is None:
-        deployed = live
-    monkeypatch.setattr("psynet.experiment.in_deployment_package", lambda: deployed)
-    if live:
-        monkeypatch.setattr("psynet.deployment_info.read", lambda key: "live")
-    elif deployed:
-        monkeypatch.setattr("psynet.deployment_info.read", lambda key: "sandbox")
+def _check_missing_entry(monkeypatch, namespace, *, mode=None):
+    """Look up a missing catalog entry, as if running in deployment ``mode``.
+
+    ``mode=None`` means running outside a deployment package.
+    """
+    monkeypatch.setattr(
+        "psynet.experiment.in_deployment_package", lambda: mode is not None
+    )
+    monkeypatch.setattr("psynet.deployment_info.read", lambda key: mode)
     monkeypatch.setattr(
         "psynet.utils.REGISTERED_TRANSLATIONS",
         {namespace: {"de": []}},
@@ -26,19 +27,10 @@ def _check_missing_entry(monkeypatch, namespace, *, live=False, deployed=None):
     )
 
 
-def test_missing_package_entry_is_tolerated_in_local_debug(monkeypatch):
+@pytest.mark.parametrize("mode", [None, "debug"])
+def test_missing_package_entry_is_tolerated_in_debug(monkeypatch, mode):
     monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
-    monkeypatch.setattr("psynet.experiment.in_deployment_package", lambda: False)
-    monkeypatch.setattr(
-        "psynet.utils.REGISTERED_TRANSLATIONS",
-        {"psynet": {"de": []}},
-    )
-    check_translation_is_available(
-        "a string that is not in the catalog",
-        "timeline_reward",
-        "de",
-        "psynet",
-    )
+    _check_missing_entry(monkeypatch, "psynet", mode=mode)
 
 
 def test_missing_package_entry_is_tolerated_in_feature_branch_tests(monkeypatch):
@@ -46,10 +38,10 @@ def test_missing_package_entry_is_tolerated_in_feature_branch_tests(monkeypatch)
     _check_missing_entry(monkeypatch, "psynet")
 
 
-def test_missing_package_entry_raises_in_non_live_deployment(monkeypatch):
+def test_missing_package_entry_raises_in_sandbox(monkeypatch):
     monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
     with pytest.raises(TranslationNotFoundError):
-        _check_missing_entry(monkeypatch, "psynet", live=False, deployed=True)
+        _check_missing_entry(monkeypatch, "psynet", mode="sandbox")
 
 
 def test_missing_package_entry_raises_on_release_branch(monkeypatch):
@@ -72,7 +64,7 @@ def test_missing_entry_is_reported_but_tolerated_in_live_experiment(monkeypatch)
 
     experiment = Mock(report_error=report_error)
     monkeypatch.setattr("psynet.experiment.get_experiment", lambda: experiment)
-    _check_missing_entry(monkeypatch, "experiment", live=True)
+    _check_missing_entry(monkeypatch, "experiment", mode="live")
     assert isinstance(captured["error"], TranslationNotFoundError)
     assert captured["exc_info"][0] is TranslationNotFoundError
     assert captured["exc_info"][1] is captured["error"]

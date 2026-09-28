@@ -1,1 +1,1 @@
-Error pages no longer crash when the participant's current trial has been detached after a rollback, and missing PsyNet catalog strings fall back to English during local debug instead of raising.
+Error pages no longer fail when the participant's current trial cannot be loaded after a rollback; the error is reported without trial context and a warning is logged.

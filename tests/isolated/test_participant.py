@@ -370,14 +370,20 @@ class TestParticipantFailure:
         assert partner not in group.active_participants
 
 
-def test_current_trial_returns_none_when_relationship_is_detached():
+def test_error_trial_context_tolerates_detached_participant(caplog):
     from sqlalchemy.orm.exc import DetachedInstanceError
 
+    from psynet.experiment import Experiment
+
     class DetachedParticipant:
-        current_trial_id = 1
+        id = 1
 
         @property
-        def _current_trial(self):
+        def current_trial(self):
             raise DetachedInstanceError()
 
-    assert Participant.current_trial.fget(DetachedParticipant()) is None
+    with caplog.at_level(logging.WARNING):
+        context = Experiment._error_trial_context(DetachedParticipant())
+
+    assert context == {"trial": None, "node": None, "network": None}
+    assert "detached" in caplog.text
