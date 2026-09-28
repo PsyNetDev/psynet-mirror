@@ -4121,7 +4121,8 @@ def _time_export(_run=subprocess.run):
             )
             duration = time.time() - start
         if result.returncode != 0:
-            err = f"Exit code {result.returncode}"
+            stderr = (result.stderr or "").strip()
+            err = f"Exit code {result.returncode}" + (f": {stderr}" if stderr else "")
             print(f"⚠ Export finished with error in {duration:.1f}s: {err}")
             return duration, err
         print(f"✓ Export completed in {duration:.1f}s")

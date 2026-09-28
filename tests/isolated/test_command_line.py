@@ -4391,15 +4391,26 @@ def test_time_export_success():
     assert error is None
 
 
-def test_time_export_failure():
+def test_time_export_failure_includes_stderr():
     from psynet.command_line import _time_export
 
     def fake_run(cmd, **kw):
-        return subprocess.CompletedProcess(cmd, 1, stderr="oops")
+        return subprocess.CompletedProcess(cmd, 1, stderr="config not found")
 
     duration, error = _time_export(_run=fake_run)
     assert isinstance(duration, float)
     assert "Exit code 1" in error
+    assert "config not found" in error
+
+
+def test_time_export_failure_no_stderr():
+    from psynet.command_line import _time_export
+
+    def fake_run(cmd, **kw):
+        return subprocess.CompletedProcess(cmd, 2, stderr="")
+
+    duration, error = _time_export(_run=fake_run)
+    assert error == "Exit code 2"
 
 
 def test_time_export_timeout():
