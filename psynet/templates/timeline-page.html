@@ -295,6 +295,7 @@
         <script>
             (async function () {
                 try {
+                    psynet.keepFooterInTimelineRoot();
                     psynet.registerErrorHandler();
                     await psynet.activateManagedPageJavascript();
                     psynet.initLucidTermination();

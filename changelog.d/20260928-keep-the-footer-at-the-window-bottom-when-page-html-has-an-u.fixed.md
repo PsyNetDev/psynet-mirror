@@ -1,0 +1,1 @@
+Fixed the footer sitting just below the content instead of at the bottom of the window when page HTML contains an unclosed tag such as `<b>` (seen in the REPP tapping pre-screens, whose unclosed tag is now closed); PsyNet now moves the footer back into place and logs a warning.

@@ -1317,6 +1317,25 @@
       }
     };
 
+    psynet.keepFooterInTimelineRoot = function () {
+      // An unclosed tag in page HTML (e.g. a stray <b>) is reopened by the
+      // HTML parser after #main-body closes, so the footer ends up nested in
+      // it instead of being a flex child of #timeline-root. It then sits just
+      // below the content, and inplace swaps keep it there on later pages.
+      const root = document.getElementById("timeline-root");
+      const footer = document.getElementById("footer");
+      if (root === null || footer === null || footer.parentElement === root) {
+        return;
+      }
+      psynet.log.warn(
+        "The footer was nested in <" +
+          footer.parentElement.tagName.toLowerCase() +
+          ">, probably because of an unclosed tag in the page HTML. " +
+          "Moved it back into #timeline-root.",
+      );
+      root.appendChild(footer);
+    };
+
     psynet.preloadTimelineFragmentAssets = async function (fragment) {
       await psynet.preloadStylesheetLinks(fragment.stylesheetLinks);
     };

@@ -1297,6 +1297,7 @@ function fragmentRuntime() {
     psynet.getPageCssLinks = function () { return []; };
     psynet.ensureStylesheetLinks = function () {};
     psynet.applyInlinePageStyles = function () {};
+    psynet.log = { warn: function () {} };
     ${PSYNET_JS.slice(start, end)}
   `;
 }
@@ -1379,6 +1380,49 @@ test(
 
     state = await swapTimeline(page, timelineMarkup({ footer: true }));
     expect(state).toEqual({ count: 1, nested: true, hasFooter: true });
+  }
+);
+
+test(
+  "an unclosed tag in page HTML does not lift the footer off the window bottom",
+  { tag: "@both" },
+  async ({ page }) => {
+    const shell = (body) => `
+      <div id="timeline-header"></div>
+      <div id="timeline-hold-region"></div>
+      <div id="main-body" class="psynet-surface">${body}</div>
+      <nav id="footer" class="navbar">Reward</nav>
+      <script id="psynet-template-data" type="application/json">{}</script>`;
+    const footerGeometry = () =>
+      page.evaluate(() => {
+        const footer = document.getElementById("footer");
+        return {
+          parentId: footer.parentElement.id,
+          bottom: footer.getBoundingClientRect().bottom,
+          viewport: window.innerHeight
+        };
+      });
+
+    await renderTheme(page, {
+      viewport: { width: 390, height: 750 },
+      includeBootstrap: true,
+      scripts: [fragmentRuntime()],
+      html: `<div id="timeline-root">${shell(
+        "<b>Use <b>ONLY</b> the laptop speakers."
+      )}</div>`
+    });
+    // The parser reopens the unclosed <b> around everything after #main-body.
+    expect((await footerGeometry()).parentId).not.toBe("timeline-root");
+
+    await page.evaluate(() => window.psynet.keepFooterInTimelineRoot());
+    let g = await footerGeometry();
+    expect(g.parentId).toBe("timeline-root");
+    expect(g.bottom).toBeCloseTo(g.viewport, 0);
+
+    await swapTimeline(page, shell("<p>Next page</p>"));
+    g = await footerGeometry();
+    expect(g.parentId).toBe("timeline-root");
+    expect(g.bottom).toBeCloseTo(g.viewport, 0);
   }
 );
 
