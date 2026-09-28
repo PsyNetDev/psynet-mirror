@@ -41,8 +41,8 @@ and where it is used.
 When code runs
 --------------
 
-This is the most common source of subtle mistakes, and it is worth checking
-even when an agent wrote the code.
+Code in a timeline runs at three different times, and mixing them up is a
+common source of mistakes:
 
 - The overall *shape* of the timeline is built when the server starts, in
   each server process separately. Anything computed at that point is not tied

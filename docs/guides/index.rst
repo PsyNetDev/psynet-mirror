@@ -1,9 +1,7 @@
 Building experiments
 ====================
 
-These guides help experiment authors with specific tasks. Work through
-:doc:`/getting_started/index` first; come back here when you need to do
-something specific in your own experiment.
+These guides cover specific tasks in building an experiment.
 
 .. toctree::
    :maxdepth: 2

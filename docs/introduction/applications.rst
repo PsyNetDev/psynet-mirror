@@ -3,18 +3,6 @@
 What's PsyNet for?
 ==================
 
-PsyNet runs behavioral experiments in the web browser, online or in the lab.
-It's built for studies that are hard to run in survey tools or static
-experiment builders: large or generated stimulus sets, procedures that adapt
-as data come in, chains where one participant's response becomes the next
-participant's stimulus, recordings analyzed as they arrive, and experiments
-where participants interact.
-
-Each card below describes one kind of experiment. Click through the
-screenshots to see the demos, and follow the docs link to the page that
-explains the idea.
-
-
 .. card:: Rating large stimulus sets
    :class-card: sd-mb-4 sd-shadow-sm
    :class-title: sd-fs-5

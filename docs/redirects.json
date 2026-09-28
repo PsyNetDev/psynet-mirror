@@ -167,7 +167,7 @@
   "getting_started/chain_experiments": "designing/chains",
   "getting_started/how_to_learn": "getting_started/quickstart",
   "getting_started/prerequisites": "getting_started/install",
-  "getting_started/where_next": "getting_started/next_steps",
+  "getting_started/where_next": "getting_started/index",
   "getting_started/running_a_demo_locally": "guides/by_hand/running_a_demo_locally",
   "getting_started/pipelines": "guides/by_hand/pipelines",
   "getting_started/customizing_an_experiment": "guides/by_hand/customizing_an_experiment",

@@ -2,8 +2,7 @@ Timelines in code
 =================
 
 This page shows how the ideas in :doc:`/designing/timeline` appear in
-``experiment.py``. It is written for reading and reviewing code as much as for
-writing it.
+``experiment.py``.
 
 The timeline is the ``timeline`` attribute of the experiment class. Most
 experiments build it in a ``get_timeline`` function:

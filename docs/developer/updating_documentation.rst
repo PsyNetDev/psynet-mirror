@@ -81,10 +81,19 @@ file next to the ``.rst`` source and reports it as broken.
 Writing pages
 -------------
 
-- Open every page with a complete sentence. Write "This section covers the
-  timeline and trials", not "The timeline and trials".
+- If a page has an introduction, make it a complete sentence. Write "This
+  section covers the timeline and trials", not "The timeline and trials".
+- Leave out introductions that only describe what the reader can already
+  see, such as "Each card below describes…". Start with the content.
 - Keep contributor instructions off public-facing pages. They belong on
   developer pages such as this one.
+- State facts directly. Describe what something is, what it contains and how
+  to use it, without framing sentences ("An experiment can run without
+  errors and still…"), rhetorical questions or slogans.
+- Don't write navigation as prose, such as "See X for this, Y for that, and
+  Z to try it yourself". Order pages so that the sidebar and the *Next* link
+  lead to the natural next page, and link inline only where a reader needs
+  that page at that point.
 
 Research papers
 ---------------

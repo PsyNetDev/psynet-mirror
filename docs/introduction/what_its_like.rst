@@ -3,9 +3,8 @@
 What's it like to use PsyNet?
 =============================
 
-This page follows one made-up study from idea to data: how pleasant do
-people find 40 recorded chords? A coding agent writes the code here. You
-can also write it yourself, starting from a demo; see
+In this walkthrough a coding agent writes the code. You can also write it
+yourself, starting from a demo; see
 :doc:`/guides/by_hand/customizing_an_experiment`.
 
 .. rst-class:: study-step
@@ -26,8 +25,8 @@ can also write it yourself, starting from a demo; see
       :columns: 12 12 8 8
 
       You open your coding agent in an empty folder and describe the
-      study the way you would brief a research assistant: 40 chord
-      recordings, each rated for pleasantness on a seven-point scale,
+      study the way you would brief a research assistant, for example: 40
+      chord recordings, each rated for pleasantness on a seven-point scale,
       about 20 ratings per chord, participants from Prolific. The agent
       asks a couple of questions, such as whether everyone should hear
       every chord, then proposes a plan before writing anything.
