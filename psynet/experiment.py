@@ -3335,6 +3335,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 recording_uploads = _accept_background_recordings(
                     event, response, participant, self, page_uuid
                 )
+                if getattr(response, "_deferred_background_answer", False) is True:
+                    event._store_response_answer(response, participant)
+                    event.on_complete(experiment=self, participant=participant)
 
             participant.inc_time_credit(event.time_estimate)
             participant.inc_progress(event.time_estimate)

@@ -679,3 +679,76 @@ def test_finalize_pending_trials_commits_each_failed_trial(
     assert second_bad.failed is True
     assert Trial.get_trials_ready_to_finalize() == []
     assert Trial.finalize_pending_trials() == 0
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_required_background_deposit_releases_finalization(
+    db_session, participant, tmp_path, monkeypatch
+):
+    import io
+    from pathlib import Path
+
+    from psynet import media_upload
+    from psynet.asset import LocalStorage
+    from psynet.timeline import Response
+    from psynet.trial.record import Recording, RecordTrial
+
+    exp = get_experiment()
+    network = _create_network(_chain_trial_maker(), exp)
+    trial = _add_complete_unfinalized_trial(network.head, participant)
+    response = Response(
+        participant=participant, label="choice", page_type="ModularPage"
+    )
+    response.successful_validation = True
+    asset, receipt = media_upload._reserve_recording(
+        response=response,
+        parent=trial,
+        page_uuid="choice",
+        source="camera",
+        local_key="background_choice_camera",
+        storage=LocalStorage(str(tmp_path)),
+        role="background",
+        required_for_trial=True,
+        upload_timeout=60,
+    )
+    trial_id, asset_id, answer = trial.id, asset.id, trial.answer
+    db.session.commit()
+    assert Trial.finalize_pending_trials() == 0
+    assert not trial.finalized
+    assert RecordTrial.recording.fget(trial) is None
+
+    # Background evidence does not gate analysis of the independent button answer.
+    queued = []
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            FinalizeBackstopTrial, "async_post_trial", lambda self, **kwargs: None
+        )
+        patch.setattr(
+            FinalizeBackstopTrial,
+            "queue_async_post_trial",
+            lambda self: queued.append(self.id),
+        )
+        trial.run_async_post_trial = True
+        trial.check_if_can_run_async_post_trial()
+    assert queued == [trial_id]
+
+    def unexpected_analysis(self):
+        raise AssertionError("Background deposit must not invoke answer analysis")
+
+    monkeypatch.setattr(Recording, "after_deposit", unexpected_analysis)
+    monkeypatch.setattr(LocalStorage, "on_deployed_server", lambda self: True)
+    path = (
+        Path(__file__).resolve().parents[2]
+        / "demos/experiments/imitation_chain_video/assets/example_recording.webm"
+    )
+    media_upload._receive_recording(
+        asset_id, receipt["token"], io.BytesIO(path.read_bytes()), directory=tmp_path
+    )
+    media_upload._process_recording(asset_id)
+    trial = db.session.get(Trial, trial_id)
+    assert db.session.get(Recording, asset_id).deposited
+    assert trial.finalized and not trial.failed
+    assert trial.answer == answer

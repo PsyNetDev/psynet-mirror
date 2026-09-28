@@ -1079,8 +1079,9 @@ class Page(Elt):
     background_recording:
         Optional background video alongside the ordinary answer: ``"camera"``,
         ``"screen"``, ``"both"``, or a
-        :class:`~psynet.background_recording.VideoRecordConfig`. Missing clips
-        do not block or fail trials. See :doc:`/tutorials/modular_page`.
+        :class:`~psynet.background_recording.VideoRecordConfig`. Clips are optional
+        by default; ``required=True`` holds finalization and fails the parent trial
+        if its recording is missing. See :doc:`/tutorials/modular_page`.
 
     template_path:
         Path to the jinja2 template to use for the page.
@@ -1667,6 +1668,11 @@ class Page(Elt):
         if metadata is None:
             metadata = {}
 
+        if self.background_recording is not None and self.background_recording.required:
+            from .background_recording import _browser_config
+
+            _browser_config(self, experiment, participant)
+
         resp = Response(
             participant=participant,
             label=self.label,
@@ -1711,7 +1717,13 @@ class Page(Elt):
         participant.browser_platform = metadata.get(
             "platform", "Browser platform info could not be retrieved."
         )
-        if getattr(resp, "_deferred_video_answer", False) is not True:
+        resp._deferred_background_answer = (
+            self.background_recording is not None and self.background_recording.required
+        )
+        if (
+            getattr(resp, "_deferred_video_answer", False) is not True
+            and not resp._deferred_background_answer
+        ):
             self._store_response_answer(resp, participant)
             self.on_complete(experiment=experiment, participant=participant)
         return resp

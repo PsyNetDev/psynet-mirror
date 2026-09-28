@@ -1012,8 +1012,13 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             logger.debug("%sno need, as no async_post_trial method is defined.", msg)
             return
 
-        if self.asset_deposit_pending:
-            logger.debug("%sawaiting an asset deposit, so we have to wait.", msg)
+        if any(
+            not asset.deposited
+            and asset.required_for_trial is not False
+            and getattr(asset, "recording_role", None) != "background"
+            for asset in self.assets.values()
+        ):
+            logger.debug("%sawaiting an answer asset deposit, so we have to wait.", msg)
             return
 
         logger.debug("%sconditions satisfied, queueing async_post_trial.", msg)

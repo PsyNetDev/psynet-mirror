@@ -24,7 +24,9 @@ def test_configuration_rejects_conflicts():
         VideoRecordConfig(source="video")
 
 
-def test_background_answer_and_optional_expiry(submission, monkeypatch):
+@pytest.mark.parametrize("required", [False, True])
+@pytest.mark.parametrize("unavailable", [{}, {"camera": "permission_denied"}])
+def test_background_answer_and_expiry(submission, monkeypatch, required, unavailable):
     from datetime import timedelta
 
     from psynet import media_upload
@@ -36,7 +38,7 @@ def test_background_answer_and_optional_expiry(submission, monkeypatch):
             "choice",
             "Choose",
             PushButtonControl(["Yes", "No"]),
-            background_recording="camera",
+            background_recording=VideoRecordConfig(required=required),
             time_estimate=1,
         ),
         InfoPage("Continue", time_estimate=1),
@@ -56,43 +58,70 @@ def test_background_answer_and_optional_expiry(submission, monkeypatch):
     db.session.flush()
     participant.current_trial = trial
     db.session.commit()
+    if required:
+
+        def on_complete(experiment, participant):
+            assert participant.current_trial.asset_deposit_pending
+            assert participant.answer == "Yes"
+
+        monkeypatch.setattr(
+            timeline.get_current_elt(exp, participant), "on_complete", on_complete
+        )
     trial_id, participant_id, page_uuid = (
         trial.id,
         participant.id,
         participant.page_uuid,
     )
-    result = exp.process_response(
-        participant.id,
-        "Yes",
-        {},
-        {
-            "time_taken": 1,
-            "background_recording": {"sizes": {"camera": 100}, "unavailable": {}},
-        },
-        page_uuid,
-        "127.0.0.1",
-        include_timeline_fragment=False,
-    ).get_json()
+
+    def submit():
+        return exp.process_response(
+            participant.id,
+            "Yes",
+            {},
+            {
+                "time_taken": 1,
+                "background_recording": {
+                    "sizes": {"camera": 100},
+                    "unavailable": unavailable,
+                },
+            },
+            page_uuid,
+            "127.0.0.1",
+            include_timeline_fragment=False,
+        ).get_json()
+
+    if required:
+        page = timeline.get_current_elt(exp, participant)
+        with monkeypatch.context() as patch:
+            patch.setattr(page, "validate", lambda **kwargs: "Try again")
+            assert submit()["submission"] == "rejected"
+            assert Recording.query.count() == 0
+        assert participant.page_uuid == page_uuid
+    result = submit()
     assert result["submission"] == "approved"
     assert participant.answer == "Yes"
     asset = Recording.query.one()
     assert asset.recording_role == "background"
     assert asset.upload_context["page_uuid"] == page_uuid
-    assert not trial.asset_deposit_pending
+    assert trial.asset_deposit_pending is required
     assert (
-        not db.session.query(Trial.asset_deposit_pending)
+        db.session.query(Trial.asset_deposit_pending)
         .filter(Trial.id == trial_id)
         .scalar()
-    )
+    ) is required
     assert RecordTrial.recording.fget(trial) is None
     deadline = asset.upload_deadline
     db.session.commit()
+    media_upload._expire_recordings()
+    assert not db.session.get(Trial, trial_id).failed
     monkeypatch.setattr(
         media_upload, "_utcnow", lambda: deadline + timedelta(seconds=1)
     )
     media_upload._expire_recordings()
-    assert not db.session.get(Trial, trial_id).failed
+    assert db.session.get(Trial, trial_id).failed is required
     assert not db.session.get(type(participant), participant_id).failed
+    media_upload._expire_recordings()
+    assert db.session.get(Trial, trial_id).failed is required
 
 
 @pytest.mark.parametrize(
@@ -211,3 +240,18 @@ def test_required_assets_still_block_trial(submission, tmp_path):
         .filter(Trial.id == trial.id)
         .scalar()
     )
+
+
+def test_required_background_needs_trial(submission):
+    from psynet.background_recording import _browser_config
+
+    exp, participant, _, _ = submission
+    page = InfoPage(
+        "Observe",
+        time_estimate=1,
+        background_recording=VideoRecordConfig(required=True),
+    )
+    with pytest.raises(ValueError, match="parent trial"):
+        _browser_config(page, exp, participant)
+    with pytest.raises(ValueError, match="boolean"):
+        VideoRecordConfig(required="yes")

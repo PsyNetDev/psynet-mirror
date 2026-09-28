@@ -202,11 +202,47 @@ upload deadline and invalid clips fail validation, without failing the trial,
 blocking analysis, or replacing its answer recording. A rejected answer keeps
 the existing clip for resubmission.
 
-This initial implementation supports optional recordings on ordinary timeline
-pages with local asset storage. It does not support required background clips,
+This implementation supports background recordings on ordinary timeline
+pages with local asset storage. It does not support
 answer-recording controls, delegated pages, full-reload pages, or same-session
 pages. Leaving or reloading the document can lose pending uploads; there is no
-upload wait page. Bots skip capture.
+upload wait page.
+
+Requiring a background recording
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Use ``VideoRecordConfig(required=True)`` when a background clip is necessary for
+a trial to count as valid. Set this on a page returned by the trial's
+:meth:`~psynet.trial.main.Trial.show_trial`, for example:
+
+.. code-block:: python
+
+    def show_trial(self, experiment, participant):
+        return ModularPage(
+            "judgment", "Did the two sounds match?",
+            PushButtonControl(["Yes", "No"]),
+            time_estimate=10,
+            background_recording=VideoRecordConfig(source="camera", required=True),
+        )
+
+The choice is saved immediately and independent pages can advance while the clip
+uploads. The trial cannot finalize until all required clips are deposited.
+Analysis of the ordinary answer can proceed; background clips never become the
+trial's answer recording. Feedback that waits for trial processing and dependent
+chain growth continue to respect required uploads.
+
+Missing clips fail only their parent trial at the upload deadline, with no
+recording retry. This includes denied or skipped capture. Invalid received media
+can fail earlier during validation. Existing performance and payment policies
+still apply. Required recording on a page without a parent trial raises an error.
+With ``source="both"``, both clips are required.
+
+Bots skip background capture and bypass the required-media condition for timeline
+testing. A passing bot run does not validate recording availability; use browser
+tests or manual capture to check the required policy.
+
+Manual testing
+~~~~~~~~~~~~~~
 
 For a runnable example, use ``demos/features/background_recording``:
 
@@ -217,5 +253,11 @@ For a runnable example, use ``demos/features/background_recording``:
 
 Accept audiovisual consent, enable the camera, and answer both button pages.
 Repeat after denying permission or choosing “Continue without recording”; both
-answers should still advance. Browser and server checks are described in
+answers should still advance. Continue to the optional and required comparison
+trials. Hold their media requests in the browser: independent navigation should
+continue, while the required trial remains unfinalized. Release its upload to
+allow finalization, or leave it missing until its deadline to observe trial
+failure. Inspect the recording asset's ``required_for_trial``, ``recording_role``,
+``upload_status``, ``upload_failed_reason``, and ``upload_context`` fields alongside
+the parent trial. Browser and server checks are described in
 :doc:`/developer/running_tests`.

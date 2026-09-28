@@ -289,6 +289,11 @@ generated page with a repeated label, held uploads, and denied camera permission
 Its checks wait for captured bytes and accepted response receipts instead of
 transient recording labels. See :doc:`/tutorials/modular_page` for manual steps.
 Optional background assets do not enter trial dependency waits or fail trials.
+The same demo compares optional and required background trials. Browser checks
+hold both uploads while independent navigation continues; server checks verify
+that required clips hold finalization, allow ordinary answer analysis, and fail
+only the parent trial when missing. Real WebM deposit releases the finalization
+gate without invoking answer analysis. Bots deliberately bypass required capture.
 
 Keep the answer-recording switch private until lost-response recovery and complete missing-media
 navigation tests are in place.

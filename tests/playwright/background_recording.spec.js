@@ -57,3 +57,41 @@ test("denied camera permission allows both answers without prompting again @inpl
     await expect(p.locator("#main-body")).toContainText("Independent page reached.");
   });
 });
+
+test("required background recording preserves independent navigation @inplace-only", async ({page,context}) => {
+  test.setTimeout(120000);
+  let uploads = 0;
+  const held = [];
+  await context.route("**/media-upload/*", route => {
+    uploads += 1;
+    if (uploads > 2) held.push(route);
+    else return route.continue();
+  });
+  await withExperiment(page,context,experiment,async p => {
+    await completeInitialGateway(p);
+    await clickConsentButton(p);
+    await p.getByRole("button",{name:"Enable camera",exact:true}).click();
+    for (const prompt of ["First judgment", "Second judgment", "Optional trial", "Required trial"]) {
+      if (prompt === "Optional trial") {
+        await expect(p.locator("#main-body")).toContainText("Independent page reached.");
+        await waitForNextEnabled(p,30000);
+        await p.locator("#next-button").click();
+      }
+      await expect(p.locator("#main-body")).toContainText(prompt);
+      await waitForTimelinePageReady(p);
+      await expect.poll(() => p.locator("#background-recording-status").getAttribute("data-bytes").then(Number)).toBeGreaterThan(0);
+      const response = p.waitForResponse(r => new URL(r.url()).pathname === "/response" && r.request().method() === "POST");
+      await p.getByRole("button",{name:"Yes",exact:true}).click();
+      const accepted = await (await response).json();
+      expect(accepted.submission).toBe("approved");
+      expect(accepted.recording_uploads).toHaveLength(1);
+    }
+    await expect(p.locator("#main-body")).toContainText("Trial comparison complete.");
+    await expect.poll(() => held.length).toBe(2);
+    for (const route of held) {
+      const response = p.waitForResponse(r => r.url() === route.request().url());
+      await route.continue();
+      expect((await response).status()).toBe(204);
+    }
+  });
+});

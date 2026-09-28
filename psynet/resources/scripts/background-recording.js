@@ -89,7 +89,9 @@ export class BackgroundRecorder {
       const dialog = document.createElement("dialog");
       dialog.id = "background-recording-permission";
       const text = document.createElement("p");
-      text.textContent = "This page can record optional camera or screen video. You may continue without recording.";
+      text.textContent = this.config.required
+        ? "This trial needs camera or screen video. If you continue without recording, your answer is saved but the trial cannot be completed successfully."
+        : "This page can record optional camera or screen video. You may continue without recording.";
       dialog.append(text);
       let finished = false;
       const finish = () => {

@@ -1,9 +1,10 @@
-"""Optional page recordings, separate from the participant's answer.
+"""Page recordings, separate from the participant's answer.
 
 Resolved pages enforce consent and control compatibility on the server. Assets
 are reserved only after answer validation, linked to the original page and
-parent, and never block trial processing or become an answer recording. Browser
-capture is best effort; missing media remains an explicit asset outcome.
+parent, and never become an answer recording. Required clips gate finalization,
+while unrelated answer analysis can proceed. Browser capture is best effort;
+missing media remains an explicit asset outcome.
 """
 
 from dataclasses import asdict, dataclass
@@ -11,8 +12,11 @@ from dataclasses import asdict, dataclass
 
 @dataclass(frozen=True)
 class VideoRecordConfig:
-    """Configure optional background capture with bounded duration and file size.
+    """Configure background capture with bounded duration and file size.
 
+    ``required=True`` fails the parent trial if media is missing at its upload
+    deadline, and holds finalization until deposit. The default is optional.
+    Bots skip capture, including this requirement, for timeline testing only.
     ``source`` is camera, screen, or both. Audio is disabled by default. Limits
     apply per source; capture stops when either limit is reached. This initial
     API supports ordinary timeline pages, not delegated or same-session pages.
@@ -20,12 +24,15 @@ class VideoRecordConfig:
 
     source: str = "camera"
     audio: bool = False
+    required: bool = False
     max_duration: int = 120
     max_bytes: int = 16 * 1024 * 1024
 
     def __post_init__(self):
         if self.source not in {"camera", "screen", "both"}:
             raise ValueError("Invalid background recording source.")
+        if type(self.required) is not bool:
+            raise ValueError("required must be a boolean.")
         if type(self.audio) is not bool:
             raise ValueError("audio must be a boolean.")
         if type(self.max_duration) is not int or not 1 <= self.max_duration <= 600:
@@ -69,6 +76,8 @@ def _browser_config(page, experiment, participant):
     from .consent import AudiovisualConsent, LabRecruiterAudiovisualConsent
 
     config = page.background_recording
+    if config is not None and config.required and participant.current_trial is None:
+        raise ValueError("Required background recording needs a parent trial.")
     if config is None or isinstance(participant, Bot):
         return None
     for module, key in (
@@ -84,7 +93,7 @@ def _browser_config(page, experiment, participant):
 
 
 def _accept_background_recordings(page, response, participant, experiment, page_uuid):
-    """Reserve optional clips without replacing or changing the ordinary answer."""
+    """Reserve background clips without replacing or changing the ordinary answer."""
     from .media_upload import _reserve_recording, _upload_timeout
     from .trial.record import Recording
 
@@ -138,7 +147,7 @@ def _accept_background_recordings(page, response, participant, experiment, page_
             upload_size_bytes=min(size, config["max_bytes"]) or None,
             max_bytes=config["max_bytes"],
             role="background",
-            required_for_trial=False,
+            required_for_trial=config["required"],
         )
         asset.upload_context = {
             **asset.upload_context,
