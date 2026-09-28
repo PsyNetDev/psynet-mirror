@@ -29,7 +29,7 @@ Now read the following pages:
 
 - :doc:`Classes in PsyNet </code/project/classes_and_sqlalchemy>`
 - :doc:`Timeline </design/timeline>`
-- :doc:`Modular pages </code/pages/modular_page>`
+- :doc:`Modular pages </code/pages/control_gallery>`
 
 Take the :doc:`timeline exercise </examples/exercises/timeline>`.
 

@@ -68,7 +68,7 @@ def test_prototype_metadata_and_platform_warnings():
 
     documentation = [
         root / "docs" / "deploy" / "reference" / "index.rst",
-        root / "docs" / "code" / "project" / "experiment_directory.rst",
+        root / "docs" / "deploy" / "how_deployment_works.rst",
     ]
     for path in documentation:
         text = " ".join(path.read_text().split())

@@ -73,9 +73,10 @@ After updating ``deploy.toml``:
 #. Commit the reviewed ``deploy.toml`` before a remote deployment.
 
 PsyNet never overwrites an existing ``deploy.toml``. If your experiment already
-has one, add ``audit`` to ``[exclude].paths`` so the local review packet is not
-copied into debug staging or the deployment package. Stock templates created
-from this PsyNet version already include that path.
+has one, add ``audit``, ``data`` and ``.cursor/skills/psynet`` to
+``[exclude].paths`` so the local review packet, local data and PsyNet's Agent
+Skills are not copied into debug staging or the deployment package. Stock
+templates created from this PsyNet version already include these paths.
 
 Git provenance records the commit and whether deployment-selected files contain
 uncommitted changes. Remote deployments require at least one Git commit; local

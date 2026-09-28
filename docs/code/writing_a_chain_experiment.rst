@@ -1,10 +1,14 @@
 Writing a chain experiment
 ==========================
 
-This page shows how the ideas in :doc:`/design/chains` appear in
-``experiment.py``, using the ``demos/experiments/chain_trial_maker`` demo, a
-serial-reproduction task where each participant retells the previous
-participant's story.
+The examples on this page come from ``demos/experiments/chain_trial_maker``,
+a serial-reproduction task in which each participant retells the previous
+participant's story. To run it from a PsyNet source checkout:
+
+.. code-block:: console
+
+    cd demos/experiments/chain_trial_maker
+    psynet debug local
 
 How a chain grows
 -----------------
@@ -18,7 +22,7 @@ The rule for making the next node is the node class's
 :meth:`~psynet.trial.chain.ChainNode.make_next_definition` method. PsyNet calls
 it on the current node once that node has ``trials_per_node`` usable trials,
 and uses the returned dictionary as the next node's definition. In the demo,
-the next story is simply the previous participant's retelling:
+the next story is the previous participant's retelling:
 
 .. literalinclude:: ../../demos/experiments/chain_trial_maker/experiment.py
    :pyobject: CustomChainNode
@@ -109,7 +113,8 @@ Built-in paradigms
   and video variants);
 - :class:`~psynet.trial.mcmcp.MCMCPTrialMaker`;
 - :class:`~psynet.trial.staircase.GeometricStaircaseTrialMaker`;
-- the create-and-rate mixins in ``psynet.trial.create_and_rate``;
+- the create-and-rate mixins in ``psynet.trial.create_and_rate`` (see
+  :doc:`/code/trials/create_and_rate`);
 - :class:`~psynet.trial.graph.GraphChainTrialMaker`.
 
 The ``demos/experiments`` folder has a demo for each, for example
@@ -119,10 +124,12 @@ The ``demos/experiments`` folder has a demo for each, for example
 When a trial fails
 ------------------
 
-``fail_trials_on_participant_performance_check`` defaults to ``False`` for
-chains, so completed trials are kept when a participant fails a check.
-``propagate_failure`` (default ``True``) fails the nodes that a failed,
-finalized trial helped to create.
+When a participant leaves early, PsyNet fails their incomplete trials and
+keeps their completed ones. ``fail_trials_on_participant_performance_check``
+defaults to ``False`` for chains, so completed trials are also kept when a
+participant fails a check. ``propagate_failure`` (default ``True``) fails the
+nodes that a failed, finalized trial helped to create. See
+:doc:`/code/trials/participant_and_trial_failure`.
 
 Where the data goes
 -------------------

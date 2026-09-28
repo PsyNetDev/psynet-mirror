@@ -575,7 +575,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         Default: ``768``.
 
     supported_locales : ``list``
-        List of locales (i.e., ISO language codes) a user can pick from, e.g., ``'["en"]'``.
+        Locales (ISO language codes) that the experiment is translated into, e.g., ``'["de", "nl"]'``.
+        Each deployment still runs in the single locale set by ``locale``.
         Default: ``'[]'``.
 
     force_google_chrome : ``bool``

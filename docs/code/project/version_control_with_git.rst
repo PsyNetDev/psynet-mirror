@@ -1,48 +1,85 @@
-.. highlight:: shell
-
-.. |br| raw:: html
-
-   <br />
-
 .. _Version control with Git:
 
-Version control with Git
-========================
+Using Git with an experiment
+============================
 
-The collaborative development of PsyNet is underpinned by the version control system ‘Git’. Git is also used by the majority of open-source software projects across the world. It is a rather complex tool and can be legendarily frustrating for first-time users. However its functionality is indispensable in enabling multiple programmers to work on the same code-base simultaneously, each making their own modifications and feature implementations in their own workspaces, and progressively feeding the results into the common codebase.
+Every PsyNet experiment is a Git repository. ``psynet setup`` runs
+``git init`` if the directory isn't one already, and Git itself is installed
+as part of :doc:`/install`.
 
-.. figure:: ../../_static/images/version_control_with_git/xkcd_git.png
-  :width: 300
-  :align: center
+What PsyNet uses Git for
+------------------------
 
-  Credit: XKCD, `Creative Commons Attribution-NonCommercial 2.5 License <https://creativecommons.org/licenses/by-nc/2.5/>`_.
+A remote deployment needs at least one commit. PsyNet records the deployed
+commit, and whether any deployed file had uncommitted changes, with the
+deployment. ``psynet export`` compares that record with your local checkout
+and warns if they differ. :doc:`/deploy/how_deployment_works` describes
+which files count.
 
-You will have probably installed Git already as part of the PsyNet installation process. If not, you can install it with the following command. Assuming you’re using a Mac, and assuming you’ve already installed `Homebrew <https://brew.sh/>`_:
+Commit and tag before deploying
+-------------------------------
 
-.. code-block:: console
+Commit all changes before a live deployment, then tag the commit so that you
+can find the deployed version later:
 
-    brew install git
+.. code-block:: bash
 
-Git is a command-line tool. This means you work with it by entering text into the command-line (on Mac, this is the Terminal) application.
-
-.. figure:: ../../_static/images/version_control_with_git/git_version.gif
-  :width: 500
-  :align: center
-
-|br|
-You use Git by writing various Git commands. Git commands always begin with the word ‘git’. For example:
-
-.. code-block:: console
-
-    git add README.txt
-    git commit -m "Added a README file"
+    git add .
+    git commit -m "Prepare pilot deployment"
+    git tag -a deploy-pilot -m "Pilot deployment"
     git push
+    git push --tags
 
-In the rest of this guide we’ll try to develop an understanding of the essential Git commands and how they are used when working with a software project. We’ll begin with an overview of essential concepts in Git, and will then move onto Git’s command-line syntax.
+``git push`` doesn't push tags, so push them separately. To look at the
+experiment as it was deployed, run ``git switch --detach deploy-pilot``, and
+``git switch -`` to return.
 
-.. toctree::
-   :maxdepth: 2
-   :glob:
+Keep the repository on a Git host such as `GitHub <https://github.com/>`_ or
+`GitLab <https://gitlab.com/>`_, so that it is backed up and collaborators
+can see it.
 
-   version_control_with_git/essential_concepts
-   version_control_with_git/experiment_implementation_workflow
+.. lab-note::
+
+   The Computational Auditory Perception group at the Max Planck Institute
+   for Empirical Aesthetics keeps experiment repositories in its private
+   GitLab group, ``https://gitlab.com/computational-audition-lab``.
+
+Choose what to commit
+---------------------
+
+Commit ``experiment.py`` and your other source files, ``requirements.txt``,
+``constraints.txt``, ``config.txt``, ``deploy.toml`` and the generated
+boilerplate listed in :doc:`/code/project/experiment_directory`. Small
+stimulus files can be committed too.
+
+The stock ``.gitignore`` already excludes virtual environments, ``.env``,
+logs, exports and PsyNet's generated files. Add these yourself:
+
+- credentials, such as API keys and deploy tokens;
+- participant data, including anything you copy out of an export;
+- large media files that you host elsewhere.
+
+``.gitignore`` only controls Git. Which files are deployed is set in
+``deploy.toml``, so a Git-ignored file can still be deployed.
+
+Adding a file to ``.gitignore`` doesn't stop Git tracking a file that was
+already committed. Stop tracking it with:
+
+.. code-block:: bash
+
+    git rm --cached secret-api-key.txt
+
+The file stays in the repository's history. If it contained credentials,
+revoke them and issue new ones. GitHub's guide to
+`removing sensitive data <https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository>`_
+describes how to rewrite history if you need to.
+
+Learn Git
+---------
+
+The Software Carpentry lesson
+`Version control with Git <https://swcarpentry.github.io/git-novice/>`_
+covers the everyday commands. The free book
+`Pro Git <https://git-scm.com/book/en/v2>`_ is a complete reference. Most
+IDEs, including VS Code and Cursor, have a Git panel for staging, committing
+and resolving merge conflicts.

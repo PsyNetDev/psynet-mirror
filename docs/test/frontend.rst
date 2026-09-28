@@ -53,9 +53,28 @@ empty list:
     expect(violations).toEqual([]);
 
 Run the checks at a laptop size (1280×720) and, if the experiment allows
-phones, at a phone size (375×780). Pages that are meant to be taller than the
-window should be created with ``expect_scrolling=True``; otherwise a
-scrollbar counts as a problem.
+phones, at a phone size (375×780). Bots don't render a layout, so only a
+browser test runs these checks.
+
+Pages that are meant to be taller than the window should declare
+``expect_scrolling``; otherwise a scrollbar counts as a problem. Pass it to
+the page constructor:
+
+.. code-block:: python
+
+    InfoPage(long_briefing_text, time_estimate=60, expect_scrolling=True)
+
+or set it on a custom page class:
+
+.. code-block:: python
+
+    class MyLongPage(Page):
+        expect_scrolling = True
+
+Passing ``expect_scrolling=False`` to the constructor overrides a class-level
+``True``, for example when a normally long page is created in a short
+variant. The bundled consent pages already declare it. The attribute only
+affects these checks; it doesn't change what participants see.
 
 Screenshots and video
 ---------------------

@@ -115,6 +115,16 @@ See :doc:`/code/trials/participant_and_trial_failure` for the full rules.
 
 Where relevant, scores can also feed a performance bonus.
 
+Trials without a trial maker
+----------------------------
+
+A trial can also be placed directly in the timeline, without a trial maker.
+The timeline then decides which trials each participant gets, for example
+three words drawn at random, or a loop that picks each stimulus from the
+participant's previous answers. Nothing is balanced across participants,
+and there are no performance checks or trial-based recruitment targets. Use a
+trial maker when you need any of these.
+
 Where the data goes
 -------------------
 

@@ -95,16 +95,17 @@ then run:
    Estimated time to complete experiment: 10 min 0 sec.
 
 The estimate follows the longest route through the timeline and ignores
-performance bonuses. Check it against real timings from your own run and
+performance rewards. Check it against real timings from your own run and
 the pilot. If the real duration differs by more than about 30%, adjust the
-``time_estimate`` values. Use the estimated reward as ``base_payment``
-and the estimated duration as the recruiter's completion time (for
-Prolific, ``prolific_estimated_completion_minutes``). How each recruiter
-turns these values into payments, and the usual ``wage_per_hour``, is in
-its guide; for Prolific see :doc:`/deploy/recruiters/prolific`.
-
-PsyNet also caps spending per participant and per experiment; see
-:doc:`/code/participants/payment_limits`.
+``time_estimate`` values. Use the estimated reward as ``base_payment``,
+or less if some successful routes through the timeline are shorter, and
+the estimated duration as the recruiter's completion time (for
+Prolific, ``prolific_estimated_completion_minutes``). How PsyNet computes
+the bonus on top of ``base_payment``, and the per-participant and
+per-experiment payment limits, are described in
+:doc:`/code/participants/payment`. The usual ``wage_per_hour`` for each
+recruiter is in its guide; for Prolific see
+:doc:`/deploy/recruiters/prolific`.
 
 .. lab-note::
 
@@ -344,7 +345,7 @@ Recruitment stops when the amount spent reaches
 is an experiment variable, not a configuration key: set its initial value
 in the experiment class's ``variables`` dictionary, or change it on the
 dashboard's Timeline tab while the experiment runs. See
-:doc:`/code/participants/payment_limits`.
+:doc:`/code/participants/payment`.
 
 .. _lab-deployment-dashboard:
 

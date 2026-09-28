@@ -68,6 +68,7 @@ What to check when reviewing group experiments
 
 .. seealso::
 
-   :doc:`/code/multiplayer/synchronization` and
-   :doc:`/code/multiplayer/chatroom` show these ideas in ``experiment.py``,
-   using the ``rock_paper_scissors`` and ``chatroom_simple`` demos.
+   :doc:`/code/multiplayer/synchronization` (forming groups, keeping a group
+   in step, waiting and dropouts) and :doc:`/code/multiplayer/chatroom`
+   (talking to each other) show these ideas in ``experiment.py``, using the
+   ``rock_paper_scissors`` and ``chatroom_simple`` demos.

@@ -4,116 +4,72 @@
 Chatrooms
 =========
 
-PsyNet provides a chatroom component that lets participants send real-time text
-messages to each other during an experiment. It is designed to be embedded
-inside a :class:`~psynet.modular_page.ModularPage` and communicates over a
-WebSocket channel.
-
-Overview
---------
-
-There are two pieces you need to wire together:
-
-* :class:`~psynet.chatroom.EnableChatrooms` — a timeline element that opens
-  the server-side WebSocket handler.  Place it **once** near the top of your
-  experiment timeline, before any page that uses a chatroom.
-
-* :class:`~psynet.chatroom.ChatRoom` — the per-page component that configures
-  the chatroom UI for a specific room.  Pass it as the ``chatroom`` keyword
-  argument to a :class:`~psynet.modular_page.ModularPage`.
+A chatroom lets participants on the same page exchange text messages in real
+time. It is part of a :class:`~psynet.modular_page.ModularPage` and
+communicates over a WebSocket channel.
 
 Basic setup
 -----------
 
-1. Add :class:`~psynet.chatroom.EnableChatrooms` to your timeline::
+A chatroom needs two pieces:
 
-    from psynet.chatroom import ChatRoom, EnableChatrooms
-    from psynet.timeline import Timeline
+1. :class:`~psynet.chatroom.EnableChatrooms` opens the server-side WebSocket
+   handler. Place it once in the timeline, before any page with a chatroom.
+2. :class:`~psynet.chatroom.ChatRoom` configures the chatroom on one page.
+   Pass it to :class:`~psynet.modular_page.ModularPage` as ``chatroom``.
 
-    class MyExperiment(Experiment):
-        timeline = Timeline(
-            EnableChatrooms(),
-            ...
-        )
+The ``chatroom_simple`` demo pairs participants with a
+:class:`~psynet.sync.SimpleGrouper` and gives each pair a room of its own:
 
-2. Pass a :class:`~psynet.chatroom.ChatRoom` instance to the ``chatroom``
-   parameter of :class:`~psynet.modular_page.ModularPage`::
+.. literalinclude:: ../../../demos/experiments/chatroom_simple/experiment.py
+   :start-at: timeline = Timeline(
+   :end-before: test_n_bots
+   :dedent: 4
 
-    from psynet.modular_page import ModularPage, NullControl
-
-    ModularPage(
-        "chat",
-        "Chat with your partner.",
-        NullControl(),
-        chatroom=ChatRoom(room_id="my_room"),
-        time_estimate=60,
-    )
-
-   The ``room_id`` string determines which participants share the same chat
-   history and occupancy list.  Participants whose ``room_id`` values match
-   will see each other's messages.
+.. literalinclude:: ../../../demos/experiments/chatroom_simple/experiment.py
+   :pyobject: ChatTrial
 
 Room IDs
 --------
 
-The ``room_id`` can be any string.  Experiments often want each synchronised
-group of participants to share a private room. Inside a trial, the most robust
-way to obtain a per-group identifier is
-:attr:`Trial.sync_group <psynet.trial.main.Trial.sync_group>`, which returns the
-:class:`~psynet.sync.SyncGroup` matching the trial maker's ``sync_group_type``::
-
-    chatroom=ChatRoom(
-        room_id=f"group_{self.sync_group.id}",
-        show_participants=True,
-        show_history=True,
-    )
+Participants whose ``room_id`` values match share the same messages and
+participant list. The ``room_id`` can be any string. To give each group a
+private room, build it from
+:attr:`Trial.sync_group <psynet.trial.main.Trial.sync_group>`, as the demo
+does. ``self.sync_group`` returns the group matching the trial maker's
+``sync_group_type``, so it works even when a participant is in several
+groups (see :doc:`synchronization`).
 
 Options
 -------
 
-:class:`~psynet.chatroom.ChatRoom` accepts two optional boolean flags:
+:class:`~psynet.chatroom.ChatRoom` has two optional flags:
 
-``show_participants``
-    Display a sidebar listing the participant IDs currently in the room.
-    Defaults to ``False``.
+``show_participants`` (default ``False``)
+    Show a sidebar with the IDs of the participants currently in the room.
 
-``show_history``
-    Wait for the persisted log before enabling the chatroom. An empty
-    snapshot still counts as loaded and enables Send. Live messages that
-    arrive during that wait are shown after the snapshot; identical lines
-    are consumed by count, not by existence, so two copies of the same
-    text are not collapsed to one. After that, new messages append as
-    usual. Later persist-history frames only fill an empty feed. The
-    server also republishes the log after each persist so a partner who
-    missed the live relay still sees the conversation. Defaults to
-    ``False``.
+``show_history`` (default ``False``)
+    Show the messages sent in the room before the participant opened the
+    page. The chatroom is enabled once the earlier messages have loaded.
 
-Message storage
----------------
+Stored data
+-----------
 
-Every message sent through a chatroom is persisted in the
-:class:`~psynet.chatroom.ChatMessage` database table, which records the
-sender's participant and node IDs, the room ID, the message content, and the
-server-side receive time.  This data is available in the exported dataset after
-the experiment completes.
-
-Room membership tracking
-------------------------
-
-Join and leave events are persisted in the
+Every message is stored in the :class:`~psynet.chatroom.ChatMessage` table,
+with the sender's participant and node IDs, the room ID, the text and the
+time the server received it. Joining and leaving a room is stored in the
 :class:`~psynet.chatroom.ChatRoomMember` table, with timestamps and an
-``active`` flag.  This data is available in the exported dataset and can be
-used to reconstruct each participant's room history.  Participants may be
-active in more than one room at the same time.
+``active`` flag; a participant can be active in several rooms at once. Both
+tables appear in exports as ``database/chat_message.csv`` and
+``database/chat_room_member.csv`` (see :doc:`/data/what_an_export_contains`).
 
-Customising the chatroom
+Customizing the chatroom
 ------------------------
 
-The built-in chatroom widget is implemented in
-``psynet/templates/macros/chatroom.html`` as a Jinja macro named
-``chatroom_widget``.  To replace it with your own HTML/CSS/JS, subclass
-:class:`~psynet.chatroom.ChatRoom` and point it at a custom template file
-stored in your experiment's ``templates/`` directory:
+The built-in chatroom widget is the Jinja macro ``chatroom_widget`` in
+``psynet/templates/macros/chatroom.html``. To replace it with your own
+HTML, CSS and JavaScript, subclass :class:`~psynet.chatroom.ChatRoom` and point
+it at a template in your experiment's ``templates/`` directory:
 
 .. code-block:: python
 
@@ -121,9 +77,9 @@ stored in your experiment's ``templates/`` directory:
         macro = "my_chatroom"
         external_template = "my-chatroom.html"
 
-Then create ``templates/my-chatroom.html`` in your experiment directory.
-The macro receives the ``ChatRoom`` instance as its sole ``config`` argument,
-so every attribute you set on the subclass is accessible inside the template:
+Then create ``templates/my-chatroom.html``. The macro receives the
+``ChatRoom`` instance as its only argument, ``config``, so every attribute of
+the subclass is available in the template:
 
 .. code-block:: html
 
@@ -135,13 +91,12 @@ so every attribute you set on the subclass is accessible inside the template:
     </div>
     {% endmacro %}
 
-Keep the macro focused on markup: inline ``<script>`` and ``<style>`` blocks in
-a custom template are rejected under in-place timeline transitions. Instead,
-supply page-local CSS and JavaScript through the component's ``get_css()`` and
-``get_js_page_modules()`` hooks, and supply configuration through
-``get_js_vars()``.
-``ModularPage`` collects these from the chatroom and applies them as managed,
-per-page resources that are refreshed across fragment swaps:
+Keep the macro to markup: inline ``<script>`` and ``<style>`` blocks in a
+custom template are rejected under in-place timeline transitions. Supply
+page-local CSS and JavaScript through the component's ``get_css()`` and
+``get_js_page_modules()`` methods, and configuration through
+``get_js_vars()``. :class:`~psynet.modular_page.ModularPage` collects these
+from the chatroom and refreshes them for each page:
 
 .. code-block:: python
 
@@ -163,11 +118,10 @@ per-page resources that are refreshed across fragment swaps:
         def get_js_page_modules(self):
             return ["/static/my-chatroom.js"]
 
-The standalone script should read its configuration from ``psynet.var`` (via
-``vars`` in ``activate()``), not ad-hoc globals. Deprecated ``window`` access
-to ``js_vars`` is controlled by ``legacy_js_var_globals``; see
-:doc:`/code/pages/custom_front_ends` and
-:doc:`/reference/configuration`.
+The script reads its configuration from ``psynet.var`` (``vars`` in
+``activate()``), not from global variables. Deprecated ``window`` access to
+``js_vars`` is controlled by ``legacy_js_var_globals``; see
+:doc:`/whats_new/upgrading_to_psynet_14` and :doc:`/reference/configuration`.
 
 .. code-block:: javascript
 
@@ -180,23 +134,13 @@ to ``js_vars`` is controlled by ``legacy_js_var_globals``; see
         };
     }
 
-The built-in ``ChatRoom`` uses the same separation between managed resources
-and configuration — see ``get_css``, ``get_js_vars``, and
-``get_js_page_modules`` in ``psynet/chatroom.py``. PsyNet activates its widget
-script for each page and calls the returned cleanup function before leaving. See
-``psynet/static/scripts/chatroom-widget.js`` for the WebSocket protocol,
-message rendering, occupancy updates, and cleanup pattern.
+The built-in ``ChatRoom`` works the same way; see ``get_css``,
+``get_js_vars`` and ``get_js_page_modules`` in ``psynet/chatroom.py``. PsyNet
+activates the widget script for each page and calls the returned cleanup
+function before leaving. ``psynet/static/scripts/chatroom-widget.js`` shows
+the WebSocket protocol, message rendering, occupancy updates and cleanup.
 
-If you only need minor CSS changes (e.g. a different height or colour scheme)
-you can override the built-in IDs (``#chatroom-widget``,
-``#chatroom-messages``, ``#chatroom-input-row``, etc.) in your experiment's
-custom stylesheet instead of replacing the template entirely.
-
-Demo
-----
-
-The rock-paper-scissors demo illustrates a chatroom that opens after each trial
-round, allowing the two players to discuss the outcome before continuing:
-
-.. literalinclude:: ../../../demos/experiments/rock_paper_scissors/experiment.py
-   :language: python
+For small style changes, such as a different height or color scheme,
+override the built-in IDs (``#chatroom-widget``, ``#chatroom-messages``,
+``#chatroom-input-row`` and so on) in your experiment's stylesheet instead of
+replacing the template.

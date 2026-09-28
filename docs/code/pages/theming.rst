@@ -2,24 +2,18 @@ Theming
 =======
 
 Every participant-facing page (ad, consent, timeline, waiting and error pages)
-shares a default theme. The theme aims to be quiet: participants should notice
-the task, not the interface. Colour is reserved for the primary action, the
-progress indicator and selected options, so that the surrounding interface does
-not compete with your stimuli.
-
-The default layout places page content on a white surface over a lightly tinted
-page background. This gives the content a visible boundary, which makes it
-obvious where a page ends and whether it needs scrolling. Below 720px wide the
-surface padding tightens so the same pages fit a phone without horizontal
-overflow.
+shares a default theme. Page content sits on a white surface over a lightly
+tinted page background. The accent color is used only for the primary action,
+the progress indicator and selected options. Below 720px wide the surface
+padding tightens so that pages fit a phone without horizontal overflow.
 
 Design tokens
 -------------
 
 The theme is defined in a single stylesheet, ``psynet/resources/css/participant.css``,
-which is served at ``/static/css/participant.css``. Everything it draws is
-expressed through CSS custom properties, so in most cases you can restyle an
-experiment by redefining a handful of tokens rather than overriding rules.
+which is served at ``/static/css/participant.css``. It expresses every color
+and size through CSS custom properties, so most restyling means redefining a
+few tokens rather than overriding rules.
 
 .. list-table::
    :header-rows: 1
@@ -39,31 +33,21 @@ experiment by redefining a handful of tokens rather than overriding rules.
      - Panels that group response options.
    * - ``--psynet-chrome-bg``
      - ``#d8e3f4``
-     - The page's chrome: the progress rail above the content and the footer
-       below it, which are tinted rather than sharing the content surface.
-       Deliberately deeper than ``--psynet-page-bg``, so that an empty
-       progress rail is legible and the footer does not dissolve into the page
-       it abuts, and because the footer's controls are filled with
-       ``--psynet-surface`` and need to read against the bar behind them. It
-       cannot go much deeper: the footer's control borders are
-       contrast-checked against this value.
+     - The progress rail above the content and the footer below it.
    * - ``--psynet-footer-bg``
      - ``var(--psynet-chrome-bg)``
-     - The footer specifically, so it can be retinted without the rail.
+     - The footer alone, so it can be retinted without the rail.
    * - ``--psynet-rail-fill``
      - ``var(--psynet-accent)``
      - Filled portion of the timeline progress rail and the media-download
-       rail. Follows the accent in light mode; dark mode dims it, because a
-       fully saturated accent on the dark rail dominated the page.
+       rail.
    * - ``--psynet-accent-solid``
      - ``var(--psynet-accent)``
      - Fill for solid buttons, with ``--psynet-accent-solid-contrast`` for
-       their labels. Split from the accent because dark mode needs the accent
-       light enough to read as link text, while a whole button painted that
-       colour glares.
+       their labels.
    * - ``--psynet-border``
      - ``#dfe5ee``
-     - Default border colour for surfaces and controls.
+     - Default border color for surfaces and controls.
    * - ``--psynet-text``
      - ``#1f2733``
      - Body text.
@@ -82,50 +66,48 @@ experiment by redefining a handful of tokens rather than overriding rules.
      - Hover state for primary actions and links.
    * - ``--psynet-accent-hover-rgb``
      - ``39, 91, 164``
-     - Comma-separated channels of the hover colour, for Bootstrap.
+     - Comma-separated channels of the hover color, for Bootstrap.
    * - ``--psynet-accent-contrast``
      - ``#ffffff``
      - Text drawn on the accent, for example primary-button labels.
    * - ``--psynet-danger``
      - ``#c0454c``
      - Recording, warnings, "too loud" audio-meter states, and the footer's
-       ``Exit`` control. Named colour ``red`` resolves here.
+       ``Exit`` control. The named color ``red`` resolves here.
    * - ``--psynet-danger-soft``
      - ``#fbeff0``
      - Quiet danger surface, for example hovering ``Exit``.
    * - ``--psynet-success``
      - ``#2f7d5b``
-     - Completed stages and "just right" audio-meter states. Named
-       colour ``green`` resolves here.
+     - Completed stages and "just right" audio-meter states. The named
+       color ``green`` resolves here.
    * - ``--psynet-warning``
      - ``#9a6700``
-     - Get-ready stages. Named colour ``orange`` resolves here.
+     - Get-ready stages. The named color ``orange`` resolves here.
    * - ``--psynet-content-width``
      - ``900px``
      - Maximum width of the content surface.
    * - ``--psynet-measure``
      - ``62ch``
-     - Maximum width of prose, so long text stays readable.
+     - Maximum width of prose.
    * - ``--psynet-graphic-vertical-chrome``
      - ``25rem``
-     - Height reserved around a ``GraphicPrompt`` so the page still
-       fits a typical laptop window. Shrinks the graphic when 60% of
-       the window would make the page scroll. Short windows (below
-       540px tall) use ``10rem`` instead.
+     - Height reserved around a
+       :class:`~psynet.graphics.GraphicPrompt` so the page fits the window.
+       Windows below 540px tall use ``10rem``.
    * - ``--psynet-graphic-min-size``
      - ``8rem``
-     - Floor for that chrome cap, so a landscape phone cannot collapse
-       the graphic to zero.
+     - Minimum size of a graphic when the reserved height applies.
    * - ``--psynet-audio-meter-height``
      - ``10px``
      - Height of the microphone-level track.
 
-To recolour an experiment, redefine the tokens in your own stylesheet.
+To recolor an experiment, redefine the tokens in your own stylesheet.
 Buttons, progress, and focus follow ``--psynet-accent``. Links and Bootstrap
 utilities such as ``text-primary`` also need the matching ``-rgb`` tokens,
-because Bootstrap composes those colours from RGB triples:
+because Bootstrap composes those colors from RGB triples:
 
-::
+.. code-block:: css
 
     /* static/theme.css */
     :root {
@@ -136,23 +118,21 @@ because Bootstrap composes those colours from RGB triples:
         --psynet-page-bg: #f5f2f8;
     }
 
-and register it on your experiment class:
+Register the stylesheet on the experiment class:
 
-::
+.. code-block:: python
 
     class Exp(psynet.experiment.Experiment):
         css_links = ["static/theme.css"]
 
-PsyNet adds a content version when it renders this local URL, so authors do not
-need to add cache-busting query parameters. When the file changes, its generated
-URL changes too. Raw ``<link>`` or ``<script>`` tags written directly in a
-custom template are not rewritten; their unversioned ``/static/...`` URLs
-remain supported and use conditional revalidation instead of immutable
-caching.
+PsyNet adds a content version to this local URL when it renders the page, so
+the URL changes whenever the file changes and no cache-busting query
+parameters are needed. Raw ``<link>`` or ``<script>`` tags written directly in
+a custom template are not rewritten; their unversioned ``/static/...`` URLs
+still work and are revalidated by the browser instead of cached indefinitely.
 
-Because ``participant.css`` avoids ``!important``, an ordinary rule in your own
-stylesheet is enough to override a default; you should not need to escalate
-specificity. See the ``custom_theme`` demo for a complete example.
+``participant.css`` avoids ``!important``, so an ordinary rule in your own
+stylesheet overrides a default without extra specificity.
 
 .. note::
 
@@ -166,38 +146,38 @@ Wider stimuli
 If a stimulus needs more room than the default content width, widen the surface
 for the whole experiment:
 
-::
+.. code-block:: python
 
     Exp.css.append(":root { --psynet-content-width: 1140px; }")
 
 Prose remains bounded by ``--psynet-measure``, so widening the surface does not
-produce over-long lines of text.
+lengthen lines of text.
 
-Colour and stimuli
-------------------
+Color and stimuli
+-----------------
 
-For experiments where colour is part of the measurement, consider neutralising
-the accent so that no saturated colour appears near your stimuli:
+When color is part of the measurement, set the accent to a neutral gray so
+that no saturated color appears near the stimuli:
 
-::
+.. code-block:: python
 
     Exp.css.append(":root { --psynet-accent: #44556b; --psynet-accent-rgb: 68, 85, 107; }")
 
-Named colours on trial progress stages (``red``, ``green``, ``blue``)
+Named colors on trial progress stages (``red``, ``green``, ``blue``)
 follow ``--psynet-danger``, ``--psynet-success``, and ``--psynet-accent``
-rather than the browser's primary colours; override those tokens the same
+rather than the browser's primary colors. Override those tokens the same
 way, or pass a hex value to :class:`~psynet.timeline.ProgressStage`.
-``white`` is left as CSS white so a caption stays visible in dark mode.
+``white`` is left as CSS white so that a caption stays visible in dark mode.
 
 Dark mode
 ---------
 
 Setting ``color_mode`` to ``dark`` or ``auto`` in ``config.txt`` switches the
-tokens to a dark palette; see :doc:`/reference/configuration`. If
-you override tokens yourself and support dark mode, define your overrides for
-both schemes:
+tokens to a dark palette (see :doc:`/reference/configuration`). If you
+override tokens and support dark mode, define your overrides for both
+schemes:
 
-::
+.. code-block:: css
 
     :root {
         --psynet-accent: #7a4fa3;
@@ -215,10 +195,10 @@ Response options
 :class:`~psynet.modular_page.CheckboxControl` render each option as a full-width
 row with a minimum height of 46px, so the whole row is clickable. The rows sit
 in a panel (``.psynet-options``) that grows with them, so a long list scrolls
-the page rather than a nested scrollbar inside the control. Mark that page with
-``expect_scrolling=True``. The markup is:
+the page rather than a nested scrollbar inside the control; create such a page
+with ``expect_scrolling=True``. The markup is:
 
-::
+.. code-block:: html
 
     <div class="control-container psynet-options">
         <label class="psynet-option">
@@ -227,51 +207,28 @@ the page rather than a nested scrollbar inside the control. Mark that page with
         </label>
     </div>
 
-If you previously styled these controls by targeting the bare ``label`` or
-``input`` elements, target ``.psynet-option`` and ``.psynet-option-label``
-instead.
+To restyle options, target ``.psynet-option`` and ``.psynet-option-label``.
 
 :class:`~psynet.modular_page.PushButtonControl` groups choices in
 ``.push-button-container``. Vertical lists (``arrange_vertically=True``)
-stay in a single column. Buttons are already distinct objects, so they sit
-directly on the content surface with no panel behind them; the list grows
-with them in the same way as ``.psynet-options``.
+stay in a single column. The buttons sit directly on the content surface with
+no panel behind them, and the list grows with them in the same way as
+``.psynet-options``.
 
-Next and Reset sit in ``.psynet-actions``. If you previously selected
-those buttons as a direct child of ``#trial-stage``, target
-``.psynet-actions`` instead.
+The Next and Reset buttons sit in ``.psynet-actions``.
 
 The selected state is styled with ``:has()``, which is why the default
-``min_browser_version`` is Chrome 105; see
-:doc:`/reference/configuration`.
+``min_browser_version`` is Chrome 105 (see :doc:`/reference/configuration`).
 
 Pages that scroll
 -----------------
 
 The footer is part of the document at every window width. On a short page it
-rests at the bottom edge of the window; on a long page it follows the content.
-It therefore never covers a response control and needs no measured clearance.
-This also leaves the document as the only scroll container, rather than putting
-long timeline content inside a separately scrolling panel.
+rests at the bottom edge of the window; on a long page it follows the content,
+so it never covers a response control. The document is the only scroll
+container.
 
-A page that does not declare ``expect_scrolling`` should fit a typical
-laptop window (1280×720) without scrolling. Verify that with the front-end
-layout check in :doc:`/test/frontend`; bots do not render a layout.
-
-If a page is genuinely meant to be longer than the window, say so:
-
-::
-
-    InfoPage(long_briefing_text, time_estimate=60, expect_scrolling=True)
-
-or, for a custom page class:
-
-::
-
-    class MyLongPage(Page):
-        expect_scrolling = True
-
-Passing ``expect_scrolling=False`` to the constructor overrides a class-level
-``True``, which is useful when a normally long page is instantiated in a short
-variant. The bundled consent pages already declare it. The attribute only
-affects testing; it does not change what participants see.
+A page should fit a typical laptop window (1280×720) unless it is created with
+``expect_scrolling=True``. That attribute only affects
+:doc:`front-end layout checks </test/frontend>`; participants see the same
+page either way.

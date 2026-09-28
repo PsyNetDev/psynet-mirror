@@ -2,218 +2,80 @@
 Internationalization
 ====================
 
-Running an experiment in another language takes two steps: mark the strings
-that need translating, then translate them automatically and optionally check
-the translations by hand.
+A **locale** is the language an experiment is shown in, written as an
+`ISO 639-1 code <https://www.gnu.org/software/gettext/manual/html_node/Usual-Language-Codes.html>`__,
+such as ``en`` for English, ``de`` for German or ``nl`` for Dutch.
 
-Selecting a language
-=====================
+Setting locales
+---------------
 
-We use the technical term 'locale' to refer to the language of your experiment.
-Locales are denoted by `ISO 639-1 codes <https://www.gnu.org/software/gettext/manual/html_node/Usual-Language-Codes.html>`__,
-e.g. ``en`` for English, ``de`` for German, ``nl`` for Dutch, etc.
+Two configuration keys control the locales, in ``config.txt`` or the
+experiment's ``config`` dictionary:
 
-You can specify the locale by adding the line ``locale = de`` to your ``config.txt`` file.
-If you do not specify a locale, the experiment will default to English.
+``locale`` (default ``en``)
+    The locale participants see. Every participant in a deployment sees the
+    same locale.
 
+``supported_locales`` (default ``[]``)
+    Further locales to translate the experiment into. ``psynet translate``
+    produces translations for these and for ``locale``, and PsyNet checks that
+    the translation files exist before the experiment starts.
 
-Mark which strings need to be translated
-========================================
-Let's say you have the following info page in your experiment:
+.. code-block:: text
 
+    locale = de
+    supported_locales = ["nl"]
 
-.. code-block:: python
+To run the same experiment in several languages, deploy it once per locale,
+changing ``locale`` each time. ``psynet locales`` lists the locales PsyNet
+supports; ``psynet locales --codes-only`` prints just the codes on one line.
 
-    from dominate.tags import div, h1, hr, p
-    from psynet.page import InfoPage
+Marking strings
+---------------
 
-    my_info_page = InfoPage(
-        div(
-            h1("Instructions"),
-            hr(),
-            p("In this experiment, you will listen to different music clips."),
-            p("You have to select the music you like most."),
-            p('Press "Next" to continue.')
-        ),
-        time_estimate=5
-    )
+Mark each participant-facing string with ``_``, which
+:func:`~psynet.utils.get_translator` returns. The ``translation`` demo is shown
+in German and has Dutch and English translations:
 
-You can easily translate it by marking the strings that need to be translated with the ``_`` function from ``gettext``.
+.. literalinclude:: ../../../demos/experiments/translation/experiment.py
+   :start-at: _ = get_translator()
 
-
-.. code-block:: python
-
-    from dominate.tags import div, h1, hr, p
-    from psynet.page import InfoPage
-    from psynet.utils import get_translator
-
-    _ = get_translator()
-
-    my_info_page = InfoPage(
-        div(
-            h1(_("Instructions")),
-            hr(),
-            p(_("In this experiment, you will listen to different music clips.")),
-            p(_("You have to select the music you like most.")),
-            p(_('Press "Next" to continue.'))
-        ),
-        time_estimate=5
-    )
-
+The unmarked strings on the second page stay in English.
 
 .. warning::
-    Under the hood PsyNet searches for strings that are marked with ``_``. If you use other functions to mark strings for translation
-    (e.g., ``my_wrapper = get_translator()``), they will not be recognized (e.g., ``my_wrapper("Instructions")``) and not translated. So, make sure to use ``_ = get_translator()``.
 
+    ``psynet translate`` finds strings by searching the source code for
+    calls to ``_`` and ``_p``. Keep these names (``my_wrapper =
+    get_translator()`` is not recognized), and pass the text as a literal
+    string, not as a variable.
+
+``psynet translate`` also extracts strings marked with ``_``, ``_p``,
+``gettext`` or ``pgettext`` from the experiment's ``.html`` templates.
 
 Variables
----------
-To replace variables in the translation, you have to write the variable in capital letters (underscores are also allowed) and use curly brackets around them.
-To resolve the variable, you have to use the ``.format`` method, like here:
+~~~~~~~~~
+
+Write variables in capital letters (underscores are allowed) inside curly
+brackets, and fill them in with ``.format``, as on the third page of the demo:
 
 .. code-block:: python
 
     next_button_name = _("Next")
-    next_button_text = _('press "{NEXT_BUTTON_NAME}" to continue.').format(NEXT_BUTTON_NAME=next_button_name)
+    next_button_text = _('Press "{NEXT_BUTTON_NAME}" to continue.').format(
+        NEXT_BUTTON_NAME=next_button_name
+    )
 
 .. warning::
-    You have to use the ``.format`` method to replace the variables in the translation. F-strings are not allowed, as it would first replace the variable in the English string and then tries to lookup the translation which would fail.
 
-Summary of best practices
--------------------------
-- Use ``_`` for most strings
-- Keep the strings short and simple
-- Avoid HTML tags in the strings as they might get translated or will lead to word order issues
-- Keep the use of inline variables to a minimum, e.g. instead of writing
-  ``_("Make the stimulus as {TARGET} as possible using the slider").format(TARGET=_("happy"))``,
-  write ``_("Adjust the slider to match the target:") + _("happy")``.
-
-To see the translation in action, have a look at the ``translation`` demo.
-
-
-Perform automatic translation
-=============================
-
-Open a terminal in your experiment folder and run the following command:
-
-.. code-block:: console
-
-    psynet translate
-
-By default this will translate your experiment to the locale specified in your ``config.txt`` file.
-
-.. note::
-    You can instruct PsyNet to create translations in multiple languages via the config variable ``supported_locales``,
-    for example ``supported_locales = ["de", "nl"]``.
-    Alternatively, you can specify the locales on the command line, e.g. ``psynet translate de nl``.
-
-To see all supported locales, run:
-
-.. code-block:: console
-
-    psynet locales
-
-This displays locales with their names. For a compact single-line output (useful for scripting), use:
-
-.. code-block:: console
-
-    psynet locales --codes-only
-
-Each locale's translation will be stored in a file of the form ``locales/<iso_code>/LC_MESSAGES/experiment.po``.
-
-PsyNet currently supports two translators:
-
-- OpenAI ChatGPT (``chat_gpt``, which is PsyNet's default) and
-- Google Translator (``google_translate``)
-
-You can set the default translator in your ``config.txt`` or ``.dallingerconfig`` with the following line:
-
-.. code-block:: text
-
-    [Translator]
-    default_translator = <translator_name>
-
-OpenAI ChatGPT
---------------
-To use OpenAI ChatGPT, you need to have an OpenAI API key. You can set it in your ``.dallingerconfig`` file with the following line:
-
-.. code-block:: text
-
-    [Translator]
-    openai_api_key = <your_openai_api_key>
-
-
-Also you need to install the ``openai`` package by running:
-
-.. code-block:: console
-
-    pip install openai
-
-
-Google Translator
------------------
-To use Google Translator, you need to do the following steps
-
-- Create a project in the Google Cloud Console
-- Enable the Cloud Translation API
-- Create a service account
-- In the service account and go to the keys tab. Now create a new key as JSON and store it to your computer (home folder is recommended). Now store the path to your ``.dallingerconfig`` file:
-
-.. code-block:: text
-
-    [Translator]
-    google_translate_json_path = <path_to_your_json_file>
-
-
-Also you need to install the ``google-cloud-translate`` package by running:
-
-.. code-block:: console
-
-    pip install google-cloud-translate==2.0.1
-
-The translation process
------------------------
-Both ChatGPT and Google Translate batch their translations on a file basis. This means that they can intelligently
-infer the context of the strings in the file. ChatGPT also sees the source code of the file, which can provide
-additional information for disambiguation.
-
-
-Manual checking
----------------
-You can manually inspect the machine translation by opening the ``locales/<iso_code>/LC_MESSAGES/experiment.po`` file using
-`POedit editor <https://poedit.net>`__ and check if strings that you marked with ``_`` are translated properly.
-
-Machine translations are by default marked as 'fuzzy' in POedit. Once you have reviewed and confirmed a translation,
-you can remove this flag in POEdit. When you subsequently run ``psynet translate``, non-fuzzy translations will
-not be overwritten unless their input text changes. They will still however be used as context for the other
-translations in the same file.
-
-
-Revising translations
----------------------
-
-When you run ``psynet translate``, all fuzzy (i.e. machine-translated) translations will be overwritten.
-Non-fuzzy translations will not be overwritten unless their input text changes.
-Texts that no longer occur in the source code will be removed from the translation files.
-PsyNet does not make any backup of your translations, so make sure you include your experiments `locales`
-directory in your experiment's git repository and commit your changes regularly.
-
-Missing translations
---------------------
-
-If a marked string has no translation in the experiment's catalog,
-``psynet debug`` and ``psynet test local`` raise an error. A live experiment
-reports the error and shows the English text instead.
-
-
-Advanced usage
-==============
+    Do not use f-strings. An f-string fills in the variable before the
+    translation is looked up, so no translation is found.
 
 Contexts
---------
-``_`` assumes the same string is always translated the same way, regardless of the context.
-However, sometimes you want to disambiguate the meaning of a string. For example, the word "bank" can mean a financial institution or the side of a river.
-To do this you can use ``_p``:
+~~~~~~~~
+
+``_`` translates a string the same way wherever it appears. When one English
+string needs different translations, such as "bank" for a riverbank and for a
+financial institution, use ``_p`` and give each use a context:
 
 .. code-block:: python
 
@@ -224,14 +86,127 @@ To do this you can use ``_p``:
     bank_of_river = _p("river", "bank")
     financial_institution = _p("financial", "bank")
 
+The demo uses ``_p`` to group the button labels under the context
+``"button"``. In most cases ``_`` is enough.
 
-.. note::
-    However, this use-case is quite rare. In most cases, you can use ``_`` and it will work just fine.
+Best practices
+~~~~~~~~~~~~~~
+
+- Use ``_`` for most strings.
+- Keep the strings short and simple.
+- Leave HTML tags out of the strings; translators may translate them, and
+  they make word order hard to change.
+- Keep inline variables to a minimum. Instead of
+  ``_("Make the stimulus as {TARGET} as possible using the slider").format(TARGET=_("happy"))``,
+  write ``_("Adjust the slider to match the target:") + _("happy")``.
+
+Translating
+-----------
+
+Run ``psynet translate`` in the experiment directory:
+
+.. code-block:: console
+
+    psynet translate
+
+This translates the experiment into ``locale`` and ``supported_locales``. To
+choose the locales on the command line instead, list them:
+
+.. code-block:: console
+
+    psynet translate de nl
+
+Each locale's translations are stored in
+``locales/<iso_code>/LC_MESSAGES/experiment.po``.
+
+Translators
+~~~~~~~~~~~
+
+PsyNet supports two machine translators:
+
+- OpenAI ChatGPT (``chat_gpt``, the default)
+- Google Translate (``google_translate``)
+
+Set the default in ``config.txt`` or ``~/.dallingerconfig``, or pass
+``--translator`` to ``psynet translate``:
+
+.. code-block:: text
+
+    [Translator]
+    default_translator = <translator_name>
+
+Both translators send one file at a time, so they can use the other strings in
+the file as context. ChatGPT also sees the file's source code.
+
+**OpenAI ChatGPT** needs an OpenAI API key in ``~/.dallingerconfig``:
+
+.. code-block:: text
+
+    [Translator]
+    openai_api_key = <your_openai_api_key>
+
+It also needs the ``openai`` package:
+
+.. code-block:: console
+
+    pip install openai
+
+**Google Translate** needs a Google Cloud service account:
+
+1. Create a project in the Google Cloud Console.
+2. Enable the Cloud Translation API.
+3. Create a service account.
+4. On the service account's **Keys** tab, create a JSON key and save it on
+   your computer, for example in your home directory.
+5. Add the key's path to ``~/.dallingerconfig``:
+
+   .. code-block:: text
+
+       [Translator]
+       google_translate_json_path = <path_to_your_json_file>
+
+It also needs the ``google-cloud-translate`` package:
+
+.. code-block:: console
+
+    pip install google-cloud-translate
+
+Reviewing and revising
+----------------------
+
+Manual checking
+~~~~~~~~~~~~~~~
+
+Open ``locales/<iso_code>/LC_MESSAGES/experiment.po`` in
+`Poedit <https://poedit.net>`__ to check the machine translations. Poedit
+shows them as "fuzzy". When you have checked a translation, remove the fuzzy
+flag in Poedit.
+
+Revising translations
+~~~~~~~~~~~~~~~~~~~~~
+
+When you run ``psynet translate`` again:
+
+- fuzzy (machine) translations are overwritten;
+- checked translations are kept unless their English text has changed, and
+  are used as context for the other translations in the file;
+- translations of strings that no longer occur in the source code are
+  removed.
+
+PsyNet keeps no backup of the translations, so commit the experiment's
+``locales`` directory to Git regularly.
+
+Missing translations
+~~~~~~~~~~~~~~~~~~~~
+
+If a marked string has no translation in the experiment's catalog,
+``psynet debug`` and ``psynet test local`` raise an error. A live experiment
+reports the error and shows the English text instead.
 
 Translating a package
 ---------------------
 
-You can translate an arbitrary Python package for use in PsyNet by navigating to the root of
-the package and running ``psynet translate``. This will create a ``locales`` directory in the package's
-source directory and populate it with the translations for the supported locales.
-If you do not specify which locales to translate it to, it will default to PsyNet's own list of supported locales.
+To translate a Python package for use with PsyNet, run ``psynet translate``
+in the root of the package. This creates a ``locales`` directory in the
+package's source directory with translations for the locales you list, or
+for all locales PsyNet supports if you list none.

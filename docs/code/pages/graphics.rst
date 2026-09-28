@@ -2,189 +2,112 @@
 Graphics
 ========
 
-PsyNet contains sophisticated functionality for constructing and displaying
-animated graphics to the participant. These graphics can be used to generate
-engaging instruction pages, but they can also be used to construct highly visual
-experiment trials.
+A :class:`~psynet.graphics.GraphicPrompt` shows an animated graphic in a
+:class:`~psynet.modular_page.ModularPage`, and a
+:class:`~psynet.graphics.GraphicControl` shows one that the participant
+answers by clicking. PsyNet draws graphics with the JavaScript library
+`Raphaël <https://dmitrybaranovskiy.github.io/raphael/>`_, whose
+`reference <https://dmitrybaranovskiy.github.io/raphael/reference.html>`_
+documents the attributes that objects accept.
 
-Under the hood, PsyNet uses the Javascript library
-`Raphaël <https://dmitrybaranovskiy.github.io/raphael/>`_
-for displaying graphics.
-You typically won't have to learn much about this library.
-However, PsyNet does expose certain aspects of this library to the user,
-for example when adding customized object attributes. In these cases,
-we refer you to the `Raphaël documentation <https://dmitrybaranovskiy.github.io/raphael/reference.html>`_
-for details about the available options.
+The examples on this page come from the ``demos/experiments/graphics`` demo.
 
-Quick introduction
-------------------
+Drawing frames
+--------------
 
-There are several ways of introducing a graphic into a PsyNet timeline.
-Here we will focus on the simplest of these, the :class:`~psynet.graphics.GraphicPage`.
-However, what you learn here will generalize naturally to the modular page
-versions of the :class:`~psynet.graphics.GraphicPage`, namely the
-:class:`~psynet.graphics.GraphicPrompt` and the
-:class:`~psynet.graphics.GraphicControl`.
+A graphic is a list of :class:`~psynet.graphics.Frame` objects, shown in
+sequence. Each frame contains :class:`~psynet.graphics.GraphicObject`
+instances that are drawn together: :class:`~psynet.graphics.Text`,
+:class:`~psynet.graphics.Image`, :class:`~psynet.graphics.Path`,
+:class:`~psynet.graphics.Circle`, :class:`~psynet.graphics.Ellipse` and
+:class:`~psynet.graphics.Rectangle`. Each object takes an ID, which must be a
+valid variable name.
 
-A :class:`~psynet.graphics.GraphicPage` presents a single graphic canvas to
-the participant, which the participant can either watch passively or respond
-to by clicking on the canvas.
-Each graphic is defined by a collection of :class:`~psynet.graphics.Frame` objects.
-These frames are shown in sequence to the participant.
-Each frame contains a number of :class:`~psynet.graphics.GraphicObject` instances
-which are drawn simultaneously and shown to the participant.
+``dimensions`` sets the coordinate system in which objects are placed. It also
+sets the aspect ratio, but not the size on screen: ``viewport_width`` sets the
+width as a fraction of the browser window (default ``0.6``). ``attributes``
+sets SVG attributes such as ``fill`` or ``font-size``; the
+`Raphaël attribute reference <https://dmitrybaranovskiy.github.io/raphael/reference.html#Element.attr>`_
+lists them.
 
-For example, we might write something like this:
+.. literalinclude:: ../../../demos/experiments/graphics/experiment.py
+   :start-at: prompt=GraphicPrompt(
+   :end-before: time_estimate=5,
+   :dedent: 12
 
-::
+A frame lasts ``duration`` seconds, or indefinitely if ``duration`` is
+``None`` (the default). Set ``loop=True`` on the prompt or control to return to
+the first frame after the last one. An object with ``persist=True`` stays on
+screen in later frames.
 
-    from psynet.graphics import (
-        GraphicPage,
-        Frame,
-        Text
-    )
+Clickable objects
+-----------------
 
-    page = GraphicPage(
-        "my_graphic_page",
-        time_estimate=3,
-        dimensions=[100, 100],
-        auto_advance_after=3,
-        frames=[
-            Frame([
-                Text("number", "3", x=50, y=50)
-            ], duration=1),
-            Frame([
-                Text("number", "2", x=50, y=50)
-            ], duration=1),
-            Frame([
-                Text("number", "1", x=50, y=50)
-            ], duration=1)
-        ]
-    )
+In a :class:`~psynet.graphics.GraphicControl`, objects created with
+``click_to_answer=True`` submit the page when clicked. The answer is a
+dictionary containing ``clicked_object``, the ID of the object, and
+``click_coordinates``, the position of the click. This page combines a
+graphic prompt with a graphic control:
 
-Here we have three frames. Each frame contains a text object, drawing a number.
-These numbers are drawn in the centre of the canvas (the ``x`` and ``y`` locations
-are expressed relative to the ``dimensions`` argument).
-Each frame lasts 1 second, then once the final frame finishes, the page
-automatically advances to the next page.
+.. literalinclude:: ../../../demos/experiments/graphics/experiment.py
+   :start-at: text="This page contains both a GraphicPrompt and a GraphicControl.",
+   :end-before: time_estimate=5,
+   :dedent: 12
+   :prepend: prompt=GraphicPrompt(
 
-Alternatively, we might design a page such that the participant responds by clicking.
-Here is an example:
+Animation
+---------
 
-::
+An :class:`~psynet.graphics.Animation` moves an object from its initial
+attributes to ``final_attributes`` over ``duration`` seconds, with an optional
+``easing``. An object's ``animations`` list runs in order, and
+``loop_animations=True`` repeats it. Circles and ellipses are positioned with
+``cx`` and ``cy`` rather than ``x`` and ``y``.
 
-    from psynet.graphics import (
-        GraphicPage,
-        Frame,
-        Text
-    )
+Images must be listed in the ``media`` argument, which loads them once before
+the graphic is drawn. Objects refer to them by ``media_id``:
 
-    page = GraphicPage(
-        "my_graphic_page",
-        time_estimate=3,
-        dimensions=[200, 200],
-        frames=[
-            Frame([
-                Text("question", "Choose a number", x=100, y=100)
-            ], duration=1),
-            Frame([
-                Text("n1", "1", x=50, y=100, click_to_answer=True),
-                Text("n2", "2", x=100, y=100, click_to_answer=True),
-                Text("n3", "3", x=150, y=100, click_to_answer=True)
-            ])
-        ]
-    )
+.. literalinclude:: ../../../demos/experiments/graphics/experiment.py
+   :start-at: control=GraphicControl(
+   :end-before: time_estimate=5,
+   :dedent: 12
 
-If ``click_to_answer=True``, this means that the participant can respond
-by clicking on the object. In this case the page returns a dict containing
-two variables: ``clicked_object``, corresponding to the object ID of the
-clicked object, and ``click_coordinates``, corresponding to the exact location
-of the mouse click.
+Audio
+-----
 
-Often we want to customize the objects that we display to the user.
-A large amount of customization can be achieved by passing attributes
-to the objects. For example, the following code adds colors to the text
-displayed to the participant:
+A frame's ``audio_id`` plays a sound from ``media`` when the frame starts:
 
-::
+.. literalinclude:: ../../../demos/experiments/graphics/experiment.py
+   :start-at: text="This GraphicPrompt has synchronized audio.",
+   :end-at: media=MediaSpec(audio={"bier": "/static/bier.wav"}),
+   :dedent: 12
+   :prepend: prompt=GraphicPrompt(
+   :append: ),
 
-    from psynet.graphics import (
-        GraphicPage,
-        Frame,
-        Text
-    )
+Timing a control from a graphic
+-------------------------------
 
-    page = GraphicPage(
-        "my_graphic_page",
-        time_estimate=3,
-        dimensions=[100, 100],
-        auto_advance_after=3,
-        frames=[
-            Frame([
-                Text("number", "3", x=50, y=50, attributes={"fill": "blue"})
-            ], duration=1),
-            Frame([
-                Text("number", "2", x=50, y=50, attributes={"fill": "green"})
-            ], duration=1),
-            Frame([
-                Text("number", "1", x=50, y=50, attributes={"fill": "red"})
-            ], duration=1)
-        ]
-    )
+With ``prevent_control_response=True``, the page's control stays inactive
+until a frame with ``activate_control_response=True`` is reached.
+``prevent_control_submit`` and ``activate_control_submit`` do the same for
+submitting. This page counts down, then starts recording:
 
-See https://dmitrybaranovskiy.github.io/raphael/reference.html#Element.attr
-and https://www.w3.org/TR/SVG/ for details about valid attributes.
+.. literalinclude:: ../../../demos/experiments/graphics/experiment.py
+   :start-at: text="This example shows how the GraphicPrompt can be used to trigger timing in the Control object.",
+   :end-before: time_estimate=6,
+   :dedent: 12
+   :prepend: prompt=GraphicPrompt(
 
-PsyNet also makes it easy to add animations to these objects.
-An animation works by setting the object's initial attributes,
-then setting the object's final attributes, then setting the duration
-of the transition between the two. Complex animations can be constructed
-by chaining multiple simple animations.
-See below for an example:
+Pages with only a graphic
+-------------------------
 
-::
+:class:`~psynet.graphics.GraphicPage` is a shortcut for a
+:class:`~psynet.modular_page.ModularPage` with an empty prompt and a
+:class:`~psynet.graphics.GraphicControl`. It takes a label, a
+``time_estimate``, and the arguments of
+:class:`~psynet.graphics.GraphicControl`, such as ``auto_advance_after`` for
+graphics that advance by themselves.
 
-    from psynet.graphics import (
-        GraphicPage,
-        Frame,
-        Text,
-        Image,
-        Animation
-    )
+.. seealso::
 
-    page = GraphicPage(
-        label="animation",
-        dimensions=[100, 100],
-        viewport_width=0.5,
-        time_estimate=5,
-        auto_advance_after=5,
-        frames=[
-            Frame(
-                [
-                    Image("logo", media_id="logo", x=45, y=25, width=75, loop_animations=True,
-                          animations=[
-                              Animation({"x": 55, "y": 75}, duration=1),
-                              Animation({"width": 100}, duration=1),
-                              Animation({"x": 45, "y": 25, "width": 75}, duration=1),
-                          ])
-                ], duration=1
-            ),
-        ],
-        media=MediaSpec(image=dict(logo="/static/images/logo.svg"))
-    )
-
-Note that here we also introduced the ``Image`` object. To use an image in a graphic,
-you must introduce it as part of the page's ``media`` argument. That way the image
-is loaded once before the graphic is drawn, and can be reused multiple times.
-A similar approach is used to play audio as part of the graphic.
-
-You should now have a good high-level perspective on PsyNet's graphics functionality.
-To gain more of an insight into how to use these features, we recommend
-that you explore the ``graphic`` demo and its source code,
-as well as looking through the resources below.
-
-Further reading
----------------
-
-- :doc:`Graphics exercises </examples/exercises/graphics>`
-- :doc:`/reference/api/graphics`
+   :doc:`/examples/exercises/graphics` and :doc:`/reference/api/graphics`.

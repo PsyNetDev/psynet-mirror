@@ -12,8 +12,47 @@ PsyNet packages the experiment directory, leaving out the files that
 ``deploy.toml`` excludes (see :ref:`deployment_build_context`). Docker on the
 server builds this package into an image that contains the experiment code and
 its Python dependencies. The image is built on the server itself, so no Docker
-registry is involved. Remote deployments need a Git repository with at least
-one commit, so that PsyNet can record which source version was deployed.
+registry is involved.
+
+The same list of files, the **deployment plan**, is used for local debug
+staging and for every deployment. Only ``deploy.toml`` decides what is in it;
+``.gitignore`` doesn't, so Git-ignored files under ``static/`` are still
+deployed. To see the plan, run:
+
+.. code-block:: bash
+
+   dallinger deployment-files list
+
+``deploy.toml`` has an ``[exclude]`` table with three lists: ``paths`` are
+prefixes relative to the experiment directory, ``names`` are file or
+directory names excluded wherever they appear, and ``suffixes`` are literal
+filename endings such as ``.db``. The stock file excludes, among others,
+``data``, ``audit``, ``exports``, ``.cursor/skills/psynet``, ``.venv`` and
+``.env``. Dallinger's
+`deploy.toml guide <https://github.com/Dallinger/Dallinger/blob/master/docs/source/deploy_toml.rst>`_
+describes the full format. PsyNet creates the file when it is missing and
+never overwrites it. When a debug or deploy command creates it, the command
+stops and lists the Git-ignored files the new file would include, so that you
+can review them before rerunning. Experiments that still have a
+``.dockerignore`` or ``docker/`` helper scripts need migrating first; see
+:doc:`/whats_new/upgrading_deployment_file_selection`.
+
+The plan may be at most 1024 MB. Before raising the limit with the
+``EXP_MAX_SIZE_MB`` environment variable, check the plan for exports, virtual
+environments and private data.
+
+.. warning::
+
+   ``deploy.toml`` planning requires a POSIX filesystem and is not supported
+   on Windows. On Windows, run PsyNet in WSL.
+
+Remote deployments need a Git repository with at least one commit. PsyNet
+records the deployed commit and whether any file in the deployment plan had
+uncommitted changes, including untracked or Git-ignored files. Changes to
+files outside the plan, or elsewhere in a parent repository, don't count.
+``psynet export`` compares this record with your local checkout and warns if
+they differ. Commit your changes before a live deployment so that the
+recorded commit matches what was deployed.
 
 The server
 ----------

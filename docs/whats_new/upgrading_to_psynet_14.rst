@@ -40,6 +40,20 @@ below to map each code to a checklist step.
 Search for ``template_path=``, ``template_str=``, and
 ``{% extends "timeline-page.html" %}``.
 
+A complete template extends ``timeline-page.html`` and overrides blocks such
+as ``main_body``:
+
+.. code-block:: html
+
+    {% extends "timeline-page.html" %}
+
+    {% block main_body %}
+        <p>Custom page content</p>
+    {% endblock %}
+
+This style works only with the legacy full-page reload path, where
+``inplace_timeline_transitions = false`` is set explicitly.
+
 Convert complete templates to fragments
 (``template_fragment_path`` / ``template_fragment_str``) and supply assets via
 page arguments. See :doc:`/code/pages/custom_front_ends`
@@ -67,6 +81,13 @@ before moving it (load-once library vs per-page behavior vs short inline).
 Converting the HTML template alone is not enough: leftover ``scripts=`` /
 ``js_links=`` still force a full-page reload and raise ``legacy_scripts`` /
 ``legacy_js_links`` unless you also pass ``requires_full_page_reload=True``.
+These deprecated arguments keep classic linked and inline script semantics,
+which is why they cannot use in-place transitions.
+
+Framework macros may still embed classic ``<script>`` tags, which PsyNet
+replays across in-place transitions (see :doc:`/developer/page_lifecycle`).
+Author-owned external templates should contain only markup. Embedded
+``<script type="module">`` tags are not supported.
 
 4. Migrate load-once libraries
 ------------------------------
@@ -90,6 +111,27 @@ examples and cleanup guidance.
 
 Replace legacy ``window`` reads of ``js_vars`` keys with ``psynet.var``.
 Optionally set ``legacy_js_var_globals = error`` while testing.
+
+Earlier versions copied each ``js_vars`` key onto ``window``. This global
+access is deprecated because in-place timeline transitions reuse the same
+browser window across pages. ``legacy_js_var_globals`` controls the
+compatibility behavior:
+
+* ``warn`` (default) keeps legacy access working and warns once for each key.
+* ``error`` throws a ``ReferenceError`` that identifies the key and recommends
+  the corresponding ``psynet.var`` expression.
+* ``off`` does not install legacy global properties.
+
+In ``error`` mode the compatibility property remains present so that reads and
+writes can produce the informative error. Consequently, ``typeof legacy_name``
+also throws and ``"legacy_name" in window`` remains true. Test availability
+with ``"name" in psynet.var`` instead. In ``warn`` mode, assigning the legacy
+global changes only the mirrored value; it does not update ``psynet.var``.
+
+The compatibility accessors are installed only for keys on the active page,
+and PsyNet removes them on the next page. If another script replaces and locks
+a compatibility accessor, PsyNet leaves that property alone and continues the
+page transition.
 
 PsyNet does **not** install a legacy ``window.<key>`` accessor when that
 name already exists on ``window``. In the default ``warn`` mode a colliding
@@ -235,6 +277,9 @@ migration instructions in the error.
 * Radio and checkbox options are full-width ``label.psynet-option`` rows.
   Restyle ``.psynet-option`` / ``.psynet-option-label`` instead of bare
   ``label`` / ``input`` elements; see :doc:`/code/pages/theming`.
+* The Next and Reset buttons sit in ``.psynet-actions``. Rules that selected
+  them as direct children of ``#trial-stage`` should target
+  ``.psynet-actions`` instead.
 
 13. Validate
 ------------
@@ -266,6 +311,15 @@ PsyNet-repository Playwright coverage is optional and harness-specific.
 
 Error codes
 -----------
+
+With the default ``inplace_timeline_transitions = true``, PsyNet raises an
+error if a custom page uses a complete template or if author-provided template
+content includes patterns that are incompatible with the in-place lifecycle.
+With ``inplace_timeline_transitions = false``, PsyNet keeps legacy templates
+working but may warn about patterns that should be migrated. The check covers
+only author-provided template content, not PsyNet's own timeline shell or
+assets supplied through supported page arguments. A page that fails it may
+still work in legacy reload mode.
 
 SPA incompatibility messages list codes such as
 ``(error codes: complete_template, style_tag)``. Use them to jump to the

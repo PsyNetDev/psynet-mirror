@@ -44,7 +44,7 @@ Configuration keys shared by all recruiters, such as ``wage_per_hour``,
 ``base_payment``, and ``initial_recruitment_size``, are listed in the
 :doc:`configuration reference </reference/configuration>`. The spending
 cap ``soft_max_experiment_payment`` is an experiment variable, not a
-configuration key; see :doc:`/code/participants/payment_limits`.
+configuration key; see :doc:`/code/participants/payment`.
 
 .. toctree::
    :maxdepth: 2

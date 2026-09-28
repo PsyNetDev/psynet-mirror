@@ -406,6 +406,11 @@ General
 Payment
 +++++++
 
+The payment limits ``max_participant_payment``,
+``soft_max_experiment_payment`` and ``hard_max_experiment_payment`` are
+experiment variables, not configuration keys; see
+:doc:`/code/participants/payment`.
+
 ``base_payment`` *float* |dlgr-icon|
     Base payment in the currency set via the ``currency`` config variable.
     Successful participants receive this much compensation from the recruiter.
@@ -416,16 +421,6 @@ Payment
 
 ``currency`` *str* |psynet-icon|
     The currency in which the participant gets paid. Default: ``$``.
-
-``hard_max_experiment_payment`` *float* |psynet-icon|
-    Guarantees that in an experiment no more is spent than the value assigned.
-    A bonus that would exceed this value is clipped to remaining room (or not
-    paid if that remainder is below $0.01). ``planned_bonus`` stays the
-    decided amount, delivered ``bonus`` is what was sent, and
-    ``bonus_status = capped``. Default: ``1100.0``.
-
-``max_participant_payment`` *float* |psynet-icon|
-    The maximum payment, in the currency set via the ``currency`` config variable, that a participant is allowed to get. Default: ``25.0``.
 
 ``min_reward_for_paid_early_exit`` *float* |psynet-icon|
     The minimum accumulated reward, in the currency set via the ``currency``
@@ -877,13 +872,6 @@ Docker
 Internationalization
 ++++++++++++++++++++
 
-``allow_switching_locale`` *bool* |psynet-icon|
-    Allow the user to change the language of the experiment during the experiment.
-    Default: ``False``.
-
-    .. note::
-
-        This feature is still experimental.
 
 ``default_translator`` *str* |psynet-icon|
     The default translator to use for translations. Default: ``chat_gpt``.
@@ -910,7 +898,8 @@ Internationalization
     The default temperature setting for OpenAI translations. Default: ``0``.
 
 ``supported_locales`` *list* |psynet-icon|
-    List of locales (i.e., ISO language codes) a user can pick from, e.g., ``["en"]``.
+    Locales (ISO language codes) that the experiment is translated into, e.g.,
+    ``["de", "nl"]``. Each deployment runs in the single locale set by ``locale``.
     Default: ``[]``.
 
 
@@ -1001,26 +990,13 @@ Config variables not to be set manually
 
     Below variables are set automatically and should never be set manually!
 
-``dallinger_version`` *str* |psynet-icon|
-    The version of the `Dallinger` package.
-
-``hard_max_experiment_payment_email_sent`` *bool* |psynet-icon|
-    Whether an email to the experimenter has already been sent indicating the ``hard_max_experiment_payment``
-    had been reached. Default: ``False``. Once this is ``True``, no more emails will be sent about
-    this payment limit being reached.
-
 ``mode`` *str* |dlgr-icon|
     The value for ``mode`` is determined by the invoking command-line command
     and is set to ``debug`` for local development, ``sandbox`` for a remote
     test deployment, or ``live`` for a production deployment.
 
-``psynet_version`` *str* |psynet-icon|
-    The version of the `psynet` package.
-
-``python_version`` *str* |psynet-icon|
-    The version of the `Python`.
-
-``soft_max_experiment_payment_email_sent`` *bool* |psynet-icon|
-    Whether an email to the experimenter has already been sent indicating the ``soft_max_experiment_payment``
-    had been reached. Default: ``False``. Once this is ``True``, no more emails will be sent about
-    this payment limit being reached.
+``psynet_version``, ``dallinger_version``, ``python_version``,
+``soft_max_experiment_payment_email_sent`` and
+``hard_max_experiment_payment_email_sent`` are experiment variables that PsyNet
+sets automatically, not configuration keys; see
+:class:`~psynet.experiment.Experiment`.

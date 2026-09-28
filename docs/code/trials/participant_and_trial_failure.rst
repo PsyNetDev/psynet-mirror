@@ -1,265 +1,129 @@
-Participant and trial failure
-=============================
+Handling failed participants and trials
+=======================================
 
-PsyNet distinguishes participant failure from trial failure. These concepts are
-related, but they describe different things:
+A failed **participant** leaves the experiment early through the unsuccessful
+end and does not count as a successful completion. A failed **trial** stays in
+the database and the export, marked as failed, but PsyNet leaves it out of
+balancing, recruitment targets and chain growth. The two are independent: a
+participant can be failed while their completed trials stay valid, and a
+trial can fail without failing its participant.
 
-* A failed **participant** has been explicitly marked as failed by PsyNet,
-  normally because they should not continue or count as a successful
-  completion.
-* A failed **trial** is a retained trial record that should be excluded from the
-  experiment's usable dataset. Fail a trial when something is wrong with that
-  record (timeout, analysis failure, an unfinished trial left after exit, or a
-  quality check that says the responses are unusable). Do not fail submitted
-  trials just because the person left.
-* **Failure propagation** determines whether failing one object should also
-  invalidate objects that depend on it.
+Failing a trial
+---------------
 
-In practice: if someone leaves or is failed, PsyNet fails their **incomplete**
-trials and keeps their **completed** trials, unless a performance check on that
-TrialMaker says the completed responses are bad. Recruitment quotas use
-``n_participants`` or ``n_trials``, not trial failure.
+Call :meth:`~psynet.trial.main.Trial.fail` with a reason. The reason is stored
+in the trial's ``failed_reason`` field. Failure cannot be undone. In
+``demos/experiments/create_and_rate/gap``, creators can reject their own
+recording:
 
-Participant failure is not the inverse of completion. A participant who has
-not reached the end but remains able to continue is incomplete, not failed.
+.. literalinclude:: ../../../demos/experiments/create_and_rate/gap/experiment.py
+   :pyobject: CreateTrial.format_answer
 
-Keeping these concepts separate is important. For example, a participant might
-be unable to continue because another member of their synchronous group
-disconnected, while the trials they already completed remain perfectly usable.
-Conversely, an individual trial might fail during recording analysis without
-requiring the participant to be failed.
+PsyNet also fails trials itself:
 
+- when recording analysis returns ``"failed": True``;
+- when the participant has not responded ``response_timeout_sec`` seconds
+  after the trial was created (a trial maker attribute, default five
+  minutes). If they submit later, the answer is still stored, but the trial
+  stays failed and the participant is not failed;
+- when the participant fails or leaves before completing the trial.
 
-Trial failure
--------------
+Failing a participant
+---------------------
 
-Calling :meth:`~psynet.trial.main.Trial.fail` marks a trial as failed and records
-its failure reason. Failure is monotonic: PsyNet does not provide a way to make a
-failed trial valid again.
+Call :meth:`~psynet.participant.Participant.fail` with a reason, which is
+appended to ``participant.failure_tags``. PsyNet then:
 
-Failed trials are not deleted. They remain available in the database and raw
-data exports, together with their ``failed`` and ``failed_reason`` fields. Trial
-failure instead means that the record should not contribute to normal analysis,
-balancing, recruitment targets, or downstream experimental logic. For example,
-``alive_trials`` means all trials that are not failed, and chain growth uses
-non-failed trials when determining whether a node is ready to grow. Analysis
-code should explicitly decide whether failed trials should be included and will
-normally filter them out.
+- fails the participant's incomplete trials, including the one on screen,
+  and keeps their completed trials;
+- removes them from any sync groups;
+- sends them to the unsuccessful end, unless they have already finished.
 
-Trial completion, finalization, and failure are distinct dimensions:
+When ``fail()`` runs in the timeline, for example in a
+:class:`~psynet.timeline.CodeBlock`, the redirect is immediate. When it runs
+in a background process, such as a timeout or an action on the dashboard,
+the participant is redirected the next time they submit a page.
 
-* ``complete`` means that a response was submitted.
-* ``finalized`` means that required post-trial processing completed and
-  finalization hooks ran.
-* ``failed`` means that the trial is no longer considered valid.
+A participant who has already finished can still be failed, for example after
+checking their data; they are not redirected. To run extra code whenever a
+participant is failed, place a :class:`~psynet.timeline.ParticipantFailRoutine`
+in the timeline. Do not override
+:meth:`~psynet.experiment.Experiment.fail_participant`; PsyNet raises an
+error if an experiment does.
 
-A completed or finalized trial can therefore later be failed, for example when
-a participant-level performance check invalidates that participant's data.
-Failing such a trial does not undo participant progress, scores, or payments
-that have already been awarded.
+Participants who leave early
+----------------------------
 
+When the recruiter reports that a participant has abandoned or returned the
+study, or been reassigned, PsyNet fails the participant with the tag
+``premature_exit``. As with any participant failure, their incomplete trials
+fail and their completed trials stay. Participants who have already
+completed the experiment are not affected.
 
-When trials should fail
------------------------
+To control how many participants or responses are collected, use
+``recruit_mode="n_participants"`` or ``recruit_mode="n_trials"`` on the trial
+maker, not trial failure.
 
-A trial should be failed when the trial itself is unusable, or when it
-depends on another failed object.
+Performance checks
+------------------
 
-Examples include:
+When a participant fails a trial maker's performance check,
+``fail_trials_on_participant_performance_check`` decides whether their
+completed trials in that trial maker fail too. Set it to ``True`` when failing
+the check means the responses should not be analyzed, as with bots, nonsense
+responses or failed attention checks. Set it to ``False`` when the check only
+decides whether the participant may continue, so the collected trials remain
+valid measurements. The setting applies to each trial maker separately.
 
-* a response timeout;
-* failed recording analysis or required post-processing;
-* a duplicate or structurally inconsistent trial;
-* an incomplete trial left behind when the participant exits or is failed;
-* a performance check that means this TrialMaker's responses are unusable;
-* custom experiment logic that determines that a response is unusable.
-
-These cases fail the affected trials. They do not, by themselves, fail every
-completed trial belonging to the participant. A premature exit in particular
-fails incomplete trials and leaves completed trials in place. Recruitment
-quotas are configured separately (``n_participants`` or ``n_trials``), not by
-failing submitted trials from people who left.
-
-
-Participant failure
--------------------
-
-Calling :meth:`~psynet.participant.Participant.fail` marks the participant as
-failed and runs the experiment's registered participant-failure routines. It
-does not inherently fail the participant's completed trials.
-
-A completed participant can still be failed. ``complete`` and ``failed`` are
-independent, just as they are for trials. Failing someone after they have
-finished does not redirect them off the successful-end page. Recruiter
-abandonment, return, and reassignment remain a no-op if they have already
-completed successfully; that guard lives on the recruiter handler, not on
-``fail()``.
-
-It also takes them off the main timeline if they are still on it. PsyNet
-redirects the participant to the ``unsuccessful_end`` branch, so they see an
-early-end page instead of continuing through later experiment pages. The
-redirect is skipped if they are already in an end branch or have already
-completed the experiment. You can customise that branch; see
-:doc:`Timeline </design/timeline>`.
-
-The redirect timing depends on where ``fail()`` is called:
-
-* From within the page-advance loop, for example from a
-  :class:`~psynet.timeline.CodeBlock`, the jump to ``unsuccessful_end`` is
-  immediate.
-* From a background process, for example a timeout, recruiter notification, or
-  admin action, the redirect is queued as ``participant.pending_redirect`` and
-  applied the next time the participant submits a response.
-
-That queued redirect is navigation only. It does not keep the current trial
-alive. :meth:`~psynet.participant.Participant.fail` has already failed every
-``complete=False`` trial, including the one on screen, before fail routines
-run. The next POST is stored as a ``Response``, then ``advance_page`` applies
-the redirect before the rest of that trial's logic, so ``_finalize_trial``
-does not run. Authors must not assume that an open page means the trial will
-complete.
-
-A response timeout fails only that trial. If the participant later submits,
-PsyNet still records the answer and marks the trial complete. The trial stays
-failed, and the participant is not failed.
-
-Incomplete trials (``complete=False``) are always failed on any participant
-failure, including premature exit. That includes trials created with
-:meth:`~psynet.trial.main.Trial.cue` and any other trial not owned by a
-timeline TrialMaker. They are not usable contributions. Chain growth waits on
-``finalized`` rather than ``complete``, so a submitted but not-yet-finalized
-trial is kept on exit and can still block growth until async work finishes or
-times out.
-
-Completed trials stay unless a TrialMaker's performance-check policy says
-those responses are unusable. ``fail_trials_on_participant_performance_check``
-controls that. Enable it when the check is evidence that this TrialMaker's
-data should be excluded (bots, nonsense responses, failed attention checks).
-Leave it off when the check only gates eligibility to continue, for example
-many prescreens, so that the collected trials remain valid measurements.
-
-:attr:`~psynet.participant.Participant.failure_cascade` stays empty so owned
-nodes are not failed. Override it only if you intend Dallinger-style ownership
-failure.
-
-.. note::
-
-   Recruiter return, abandonment, and reassignment used to call Dallinger's
-   ``fail_participant``, which failed every node owned by that participant.
-   In a within-participant chain the start node belongs to that person, and
-   failing a degree-0 start node fails the whole network. PsyNet now fails
-   the participant and their incomplete trials instead, and leaves the chain
-   nodes and network unfailed.
-
-Premature exit does not fail completed trials. Recruiter events that end a
-still-eligible participant (assignment abandonment, a marketplace return such
-as a Prolific return, or reassignment) mark the participant as failed with
-the ``premature_exit`` tag, fail incomplete trials, and leave completed
-trials in place. That participant is removed from their sync groups. If a
-:class:`~psynet.sync.SimpleSyncGroup` then falls below its minimum size and
-does not accept top-ups, remaining members are failed immediately when
-``fail_participants_below_min_size`` is True. If the participant has already failed, PsyNet records the
-recruiter cause tag (for example ``assignment_returned``) and does not invent
-a second ``premature_exit`` or re-run trial-invalidation logic. That covers
-settlement returns after an unsuccessful end, such as return-for-bonus. If
-the participant has already completed the experiment successfully, the
-recruiter event is a no-op: they did not fail, so nothing is written to
-``failure_tags``. Completion is recorded only when they submit the successful
-end page. Closing the browser on that debrief page without clicking Finish
-leaves them incomplete, so a later recruiter abandonment or return fails them
-and any unfinished trials, while submitted trials stay.
-
-Dallinger's ``data_check`` and ``attention_check`` run after submission.
-PsyNet does not use those hooks: they log a warning and do not fail the
-participant or their nodes. Use :meth:`~psynet.trial.main.TrialMaker.performance_check`
-during the timeline, or call :meth:`~psynet.participant.Participant.fail`
-if you need to fail someone after they have finished.
-
-Do not override :meth:`~psynet.experiment.Experiment.fail_participant`.
-That Dallinger hook is a thin wrapper around
-:meth:`~psynet.participant.Participant.fail`, and PsyNet rejects subclasses
-that replace it. Register a :class:`~psynet.timeline.ParticipantFailRoutine`
-if you need extra work when a participant is failed.
-
-The default performance-check policies are:
+The defaults are:
 
 .. list-table::
    :header-rows: 1
 
-   * - TrialMaker
-     - Premature exit
-     - Performance-check failure
-   * - Static
-     - Fail incomplete trials only
-     - Fail completed trials
-   * - Dense
-     - Fail incomplete trials only
-     - Fail completed trials
-   * - Chain
-     - Fail incomplete trials only
-     - Preserve completed trials
-   * - Graph chain
-     - Fail incomplete trials only
-     - Preserve completed trials
-   * - Most built-in prescreening tasks
-     - Fail incomplete trials only
-     - Fail completed trials
+   * - Trial maker
+     - Completed trials after a failed performance check
+   * - :class:`~psynet.trial.static.StaticTrialMaker`
+     - Failed
+   * - Dense trial makers (:mod:`psynet.trial.dense`)
+     - Failed
+   * - :class:`~psynet.trial.chain.ChainTrialMaker`
+     - Kept
+   * - :class:`~psynet.trial.graph.GraphChainTrialMaker`
+     - Kept
+   * - Built-in pre-screening tasks
+     - Failed, except ``FreeTappingRecordTest``, which keeps them
 
-Chain TrialMakers preserve completed trials on performance-check failure by
-default because failing an earlier trial can invalidate substantial amounts
-of downstream data. Built-in prescreening tasks generally keep completed
-trials on premature exit for the same reason everyone else does: those
-trials are not errors. Most retain the static default for performance-check
-failure; ``FreeTappingRecordTest`` explicitly preserves completed trials in
-both cases.
-
-
-Choosing a participant failure policy
--------------------------------------
-
-``fail_trials_on_participant_performance_check`` is a data-quality switch, not
-a recruitment switch. Set it to ``True`` when failing the check means this
-TrialMaker's completed responses should not be analyzed. Set it to ``False``
-when the check only decides whether the participant may continue.
-
-Do not fail completed trials in order to control how many people or ratings
-you recruit. Use ``recruit_mode="n_participants"`` or ``"n_trials"`` for that.
-
-These policies are independent for each TrialMaker. A prescreen can preserve
-completed trials as evidence of ineligibility while a later static task
-invalidates its own trials after a quality failure.
-
+Chain trial makers keep completed trials by default because failing a trial
+can also fail the nodes built from it, as described in the next section.
 
 Failure propagation
 -------------------
 
-``propagate_failure`` controls dependency invalidation. It answers:
+``propagate_failure`` (default ``True`` for chain trial makers) decides
+whether failing a trial also fails the objects built from it. When a
+finalized trial contributed to the next node in a chain, failing the trial
+fails that node (``node.child``) and its descendants. An incomplete trial
+never contributed to a node, so failing it does not propagate. Enable
+propagation only where the later objects' validity depends on the failed
+trial.
 
-    If this trial fails, should downstream objects whose validity depends on it
-    fail too?
+Within-participant chains stay unfailed when their participant fails. Their
+completed trials follow the performance-check setting above.
 
-It does not control whether participant failure should fail the trial in the
-first place.
+Failed trials in analysis
+-------------------------
 
-Propagation is particularly important for chain experiments. If a
-**finalized** trial contributed to the construction of a later chain node,
-failing that trial may also require failing the dependent node
-(``node.child``) and its descendants. An incomplete trial never contributed
-to that child, so failing it does not propagate. This is why chain
-TrialMakers preserve completed participant trials by default: bulk failure
-combined with propagation could otherwise destroy a large part of a chain.
+Exported trial tables include ``failed`` and ``failed_reason`` columns, and
+the participant table includes ``failure_tags``. Analyses normally leave out
+failed trials. In code, ``participant.alive_trials`` and
+``node.alive_trials`` list the trials that have not failed, and queries can
+filter on the column:
 
-Experiment authors should enable propagation only where the validity of
-downstream objects genuinely depends on the failed object. Ownership alone is
-not a dependency: the fact that a participant owns several trials is not a
-reason to propagate failure between those trials.
+.. code-block:: python
 
+    StaticTrial.query.filter_by(trial_maker_id="ratings", failed=False).all()
 
-Participant-scoped networks
----------------------------
+.. seealso::
 
-Within-participant chains remain alive after the owning participant fails.
-``failed`` means the object's content should not be used, not that a private
-chain has been retired. Those networks are unused once their owner is gone,
-but PsyNet does not fail their nodes solely to mark them inactive. Completed
-trials on those chains still follow the performance-check setting above.
+   :doc:`/reference/api/participant` and :doc:`/reference/api/trial/main` in
+   the API reference.

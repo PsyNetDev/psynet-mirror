@@ -21,7 +21,7 @@ Key features:
 - **Monitor > Timeline:** Track participant counts, completions, and
   failures. See all the modules in your experiment and their completion
   percentages, the amount spent, and the spending limits, which you can
-  change here (see :doc:`/code/participants/payment_limits`).
+  change here (see :doc:`/code/participants/payment`).
 - **Participants tab:** Look up a participant by their recruiter ID in
   the Worker ID field. The participant page shows their status and
   payments and a **Link for resuming session**. Participants whose bonus

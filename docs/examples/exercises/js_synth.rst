@@ -6,7 +6,7 @@ Prerequisites
 ^^^^^^^^^^^^^
 
 - :doc:`/design/timeline`
-- :doc:`Modular pages guide </code/pages/modular_page>`
+- :doc:`Modular pages guide </code/pages/control_gallery>`
 - :doc:`Audio demo </examples/demos/audio>`
 
 Exercise 1

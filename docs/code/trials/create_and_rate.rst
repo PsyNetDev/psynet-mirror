@@ -1,286 +1,128 @@
-Create and Rate
+Create and rate
 ===============
 
-Create and Rate is an experimental template supported by PsyNet. It
-allows matching any creation (microphone recording, GSP, text input)
-with ratings in the same experiment. For example, it can be used to
-validate stimuli during the experiment or it can be used in a chain, in
-which creations are passed to the next iteration if they are rated
-highest by the majority (selection) or obtain the highest average score
-(rating).
+A create-and-rate experiment is a chain experiment in which each node
+collects creations from some participants, such as text descriptions,
+recordings or slider settings, and then ratings of those creations from
+others. The best creation becomes the next node's definition: the one with
+the highest mean rating, or the one chosen by the most raters. The same
+structure can also validate stimuli during an experiment.
 
-To write your own Create and Rate experiment, you need to implement
-three classes:
+The examples on this page come from ``demos/experiments/create_and_rate/basic``,
+in which creators describe a picture of an animal and raters judge the
+descriptions. To run it from a PsyNet source checkout:
 
-- The creator class,
-- the rater class,
-- and the trial maker
+.. code-block:: console
 
-Let’s present an image of an animal to the creators and ask them to come
-up with a description of that animal:
+    cd demos/experiments/create_and_rate/basic
+    psynet debug local
 
-::
+How it works
+------------
 
-   from markupsafe import Markup
-   from psynet.modular_page import ImagePrompt, ModularPage, TextControl, PushButtonControl
-   from psynet.trial.create_and_rate import (
-       CreateAndRateNode,
-       CreateAndRateTrialMakerMixin,
-       CreateTrialMixin,
-       RateTrialMixin,
-   )
-   from psynet.trial.imitation_chain import ImitationChainTrial
+Each node first receives ``n_creators`` creator trials. Once those trials are
+finalized, it receives ``n_raters`` rater trials. The trial maker then
+summarizes the ratings to choose the next node's definition. It sets
+``trials_per_node`` to ``n_creators + n_raters`` itself.
 
+An experiment defines three classes, each combining a mixin from
+``psynet.trial.create_and_rate`` with a chain class. The mixin must come
+first:
 
-   def animal_prompt(text, img_url):
-       return ImagePrompt(
-           url=img_url,
-           text=Markup(text),
-           width="300px",
-           height="300px",
-       )
+- a creator trial: ``CreateTrialMixin`` and a
+  :class:`~psynet.trial.chain.ChainTrial` subclass;
+- a rater trial: ``RateTrialMixin`` (for ratings) or ``SelectTrialMixin``
+  (for choosing one creation), and a
+  :class:`~psynet.trial.chain.ChainTrial` subclass;
+- a trial maker: ``CreateAndRateTrialMakerMixin`` and a
+  :class:`~psynet.trial.chain.ChainTrialMaker` subclass.
 
-   class CreateTrial(CreateTrialMixin, ImitationChainTrial):
-       time_estimate = 5
+``CreateAndRateNode`` is the node class for most experiments.
 
-       def show_trial(self, experiment, participant):
-           return ModularPage(
-               "create_trial",
-               animal_prompt(text="Describe the animal", img_url=self.context["img_url"]),
-               TextControl(),
-               time_estimate=self.time_estimate,
-           )
+Creator trials
+--------------
 
-We can now specify a rater which will see the description and the image
-of the animal and has to rate how well the description matches the
-image:
+A creator trial works like any other chain trial. In the demo, creators
+describe the image stored in the node's ``context``:
 
-::
+.. literalinclude:: ../../../demos/experiments/create_and_rate/basic/experiment.py
+   :pyobject: CreateTrial
 
-   class SingleRateTrial(RateTrialMixin, ImitationChainTrial):
-       time_estimate = 5
+Rater trials
+------------
 
-       def show_trial(self, experiment, participant):
-           assert self.trial_maker.target_selection_method == "load_balanced"
-           assert len(self.targets) == 1
-           target = self.targets[0]
-           creation = self.get_target_answer(target)
-           return ModularPage(
-               "rate_trial",
-               animal_prompt(
-                   text=f"How well does this description match the animal?<br><strong>{creation}</strong>",
-                   img_url=self.context["img_url"],
-               ),
-               PushButtonControl(
-                   choices=[1, 2, 3, 4, 5],
-                   labels=["not at all", "a little", "somewhat", "very", "perfectly"],
-                   arrange_vertically=False,
-               ),
-           )
+A rater trial finds the creations to judge in ``self.targets``, and reads
+each one's answer with ``self.get_target_answer(target)``. A target is either
+a creator trial or, with ``include_previous_iteration=True``, the current
+node.
 
-The last thing we need to implement is the trial maker. You need to
-decide how the ratings are made, whether the raters select or rate (here
-they do the latter). If they rate, do they validate one stimulus or all
-at once? Should they rate the creations at the current iteration or also
-the creation which was passed on from the previous iteration?
+With ``RateTrialMixin`` the answer is a number, or a list of numbers when
+there are several targets:
 
-The trial maker needs the following parameters:
+.. literalinclude:: ../../../demos/experiments/create_and_rate/basic/experiment.py
+   :pyobject: SingleRateTrial
 
-- ``num_creators``, which sets the number of creators e.g. two creators,
-- ``num_raters``, number of raters; if people only rate 1 stimulus, the number of raters needs to be an integer multiple of the number of rated stimuli, i.e. ``num_creators`` (and optionally the previous iteration),
-- ``node_class``, the class of the Node; in most use-cases ``CreateAndRateNode`` is fine,
-- ``creator_class=CreateTrial``, set this to your creator class
-- ``rater_class=RateClass``, set this to your rater class
+With ``SelectTrialMixin`` the answer is the string form of the chosen target,
+so the targets themselves serve as the choices:
 
-Optionally, you can set
+.. literalinclude:: ../../../demos/experiments/create_and_rate/basic/experiment.py
+   :pyobject: SelectTrial
 
-- ``include_previous_iteration`` (default ``False``) which indicates if the previous iteration is rated. If this is the case you need to specify a seed in the ``start_nodes``, e.g.:
+The trial maker
+---------------
 
-::
+The trial maker class only combines the mixin with a chain trial maker:
 
-   start_nodes = [
-       CreateAndRateNode(context={"img_url": "static/dog.jpg"}, seed=seed_definition)
-   ]
+.. literalinclude:: ../../../demos/experiments/create_and_rate/basic/experiment.py
+   :pyobject: CreateAndRateTrialMaker
 
--  ``rate_mode`` which can be set to ``"rate"`` if people can give
-   integer ratings to the stimuli or ``"select"`` if raters are faced
-   with all creations at once and have to pick one
--  ``target_selection_method``, can be set to ``"all"`` (required if
-   ``rate_mode=="rate"``) indicating that raters rate all creations or
-   set to ``"one"`` which randomly selects one target (internally it
-   prioritizes creations that obtained least ratings)
-- ``randomize_target_order`` (default ``True``) which indicates if the presentation order of the targets is randomized. In most cases this should be set to ``True``.
--  ``verbose`` can be set to ``True`` to print the Create and Rate
-   decisions to the experiment log
+The demo builds one trial maker for each of three configurations:
 
-The TrialMaker class just needs to inherit from `CreateAndRateTrialMakerMixin` and some TrialMaker class, e.g. `ImitationChainTrialMaker`:
+.. literalinclude:: ../../../demos/experiments/create_and_rate/basic/experiment.py
+   :pyobject: get_trial_maker
 
-::
+The create-and-rate arguments are:
 
-   class CreateAndRateTrialMaker(CreateAndRateTrialMakerMixin, ImitationChainTrialMaker):
-       pass
+- ``n_creators`` and ``n_raters``: positive integers.
+- ``node_class``, ``creator_class`` and ``rater_class``.
+- ``rate_mode``: ``"rate"`` (default) or ``"select"``. With ``"select"``,
+  each node needs at least two targets and ``rater_class`` must use
+  ``SelectTrialMixin``.
+- ``target_selection_method``: ``"one"`` (default) gives each rater one
+  target, chosen at random among those with the fewest ratings so far;
+  ``"all"`` gives each rater every target. ``"select"`` requires ``"all"``.
+  With ``"rate"`` and ``"one"``, ``n_raters`` must be a multiple of the number
+  of targets.
+- ``include_previous_iteration`` (default ``False``): rate the current
+  node's definition, the previous winner, alongside the new creations. Every
+  start node then needs a ``seed``, as in the demo's ``get_trial_maker``.
+- ``randomize_target_order`` (default ``True``): shuffle the targets for each
+  rater.
+- ``verbose`` (default ``False``): log how targets and winners are chosen.
 
-It is also possible to customize the behaviour. For example, say we want to separate raters and creators into two
-different groups which is set in ``participant.var.is_rater``. Return that role
-once and let the mixin use it for both chain eligibility and final trial-class
-validation:
+The remaining arguments go to the chain trial maker; see
+:doc:`/code/writing_a_chain_experiment`.
 
-::
+Separate creators and raters
+----------------------------
 
-    class CreateAndRateTrialMaker(CreateAndRateTrialMakerMixin, ImitationChainTrialMaker):
-        def get_participant_role(self, participant, experiment):
-            if participant.var.is_rater:
-                return self.RATER_ROLE
-            return self.CREATOR_ROLE
+By default, a participant creates or rates depending on which phase the
+chosen node is in. To give participants a fixed role, override
+``get_participant_role`` to return ``self.CREATOR_ROLE`` or
+``self.RATER_ROLE``. Creators then only receive nodes that still need
+creations. Raters receive nodes that are ready for ratings, and wait or exit
+at nodes whose creations are not yet finalized, depending on
+``wait_for_networks``.
 
-Creators then only receive heads that still need creators. Raters receive
-heads that are ready for raters, and they wait or exit on heads whose creator
-slots are filled but not yet finalized. Heads that still need creators are
-not rater-eligible.
+``demos/experiments/create_and_rate/gap`` assigns roles in a
+:class:`~psynet.timeline.CodeBlock` before the trial maker, stores them in
+``participant.var.is_rater``, and also limits how many trials each role
+completes:
 
-Also, you can easily modify the number of trials for creators and raters, e.g.:
+.. literalinclude:: ../../../demos/experiments/create_and_rate/gap/experiment.py
+   :pyobject: CreateAndRateTrialMaker
 
-::
-
-    MAX_CREATIONS_PER_PARTICIPANT = 2
-    MAX_RATINGS_PER_PARTICIPANT = 1
-
-    class CreateAndRateTrialMaker(CreateAndRateTrialMakerMixin, ImitationChainTrialMaker):
-            @classmethod
-            def has_enough_trials(cls, participant):
-                if participant.var.is_rater:
-                    n_ratings = len(
-                        cls.rater_class.query.filter_by(participant=participant).all()
-                    )
-                    if n_ratings >= MAX_RATINGS_PER_PARTICIPANT:
-                        return True
-                else:
-                    n_creations = len(
-                        cls.creator_class.query.filter_by(participant=participant).all()
-                    )
-                    if n_creations >= MAX_CREATIONS_PER_PARTICIPANT:
-                        return True
-                return False
-
-            def custom_chain_filter(self, chains, participant, experiment):
-                if self.has_enough_trials(participant):
-                    return []
-                return chains
-
-            def get_participant_role(self, participant, experiment):
-                if participant.var.is_rater:
-                    return self.RATER_ROLE
-                return self.CREATOR_ROLE
-
-
-See the GAP demo for the full example.
-
-Let’s now put all pieces together:
-
-::
-
-   from markupsafe import Markup
-   import psynet.experiment
-   from psynet.consent import NoConsent
-   from psynet.modular_page import ImagePrompt, ModularPage, PushButtonControl, TextControl
-   from psynet.page import SuccessfulEndPage
-   from psynet.timeline import Timeline
-   from psynet.trial.create_and_rate import (
-       CreateAndRateNode,
-       CreateAndRateTrialMakerMixin,
-       CreateTrialMixin,
-       RateTrialMixin,
-   )
-   from psynet.trial.imitation_chain import ImitationChainTrial, ImitationChainTrialMaker
-
-    MAX_CREATIONS_PER_PARTICIPANT = 2
-    MAX_RATINGS_PER_PARTICIPANT = 1
-    EXPECTED_TRIALS_PER_PARTICIPANT = max(MAX_CREATIONS_PER_PARTICIPANT, MAX_RATINGS_PER_PARTICIPANT)
-
-
-   def animal_prompt(text, img_url):
-       return ImagePrompt(
-           url=img_url,
-           text=Markup(text),
-           width="300px",
-           height="300px",
-       )
-
-
-   class CreateTrial(CreateTrialMixin, ImitationChainTrial):
-       time_estimate = 5
-
-       def show_trial(self, experiment, participant):
-           return ModularPage(
-               "create_trial",
-               animal_prompt(text="Describe the animal", img_url=self.context["img_url"]),
-               TextControl(),
-               time_estimate=self.time_estimate,
-           )
-
-
-   class SingleRateTrial(RateTrialMixin, ImitationChainTrial):
-       time_estimate = 5
-
-       def show_trial(self, experiment, participant):
-           assert len(self.targets) == 1
-           target = self.targets[0]
-           creation = self.get_target_answer(target)
-           return ModularPage(
-               "rate_trial",
-               animal_prompt(
-                   text=f"How well does this description match the animal?<br><strong>{creation}</strong>",
-                   img_url=self.context["img_url"],
-               ),
-               PushButtonControl(
-                   choices=[1, 2, 3, 4, 5],
-                   labels=["not at all", "a little", "somewhat", "very", "perfectly"],
-                   arrange_vertically=False,
-               ),
-           )
-
-
-    class CreateAndRateTrialMaker(CreateAndRateTrialMakerMixin, ImitationChainTrialMaker):
-        pass
-
-
-   start_nodes = [
-       CreateAndRateNode(context={"img_url": "static/dog.jpg"})
-   ]
-
-
-   class Exp(psynet.experiment.Experiment):
-       label = "Basic Create and Rate Experiment"
-
-       timeline = Timeline(
-           NoConsent(),
-           CreateAndRateTrialMaker(
-               num_creators=2,
-               num_raters=2,
-               node_class=CreateAndRateNode,
-               creator_class=CreateTrial,
-               rater_class=SingleRateTrial,
-               include_previous_iteration=False,
-               rate_mode="rate",
-               target_selection_method="one",
-               verbose=True,
-               # trial_maker params
-               id_="create_and_rate_trial_maker",
-               chain_type="across",
-               expected_trials_per_participant=EXPECTED_TRIALS_PER_PARTICIPANT,
-               max_trials_per_participant=EXPECTED_TRIALS_PER_PARTICIPANT,
-               start_nodes=start_nodes,
-               chains_per_experiment=len(start_nodes),
-               balance_across_chains=False,
-               check_performance_at_end=True,
-               check_performance_every_trial=False,
-               propagate_failure=False,
-               recruit_mode="n_trials",
-               target_n_participants=None,
-               wait_for_networks=False,
-               max_nodes_per_chain=10,
-           ),
-           SuccessfulEndPage(),
-       )
-
-This gives you a simple Create and Rate experiment in just 104 lines 😉
+Two more demos in the same folder use other creator trials: in ``picnic``,
+creators propose a rule that raters check against examples; in
+``robot_voice``, creators adjust a synthesized voice with an
+:class:`~psynet.trial.media_gibbs.AudioGibbsTrial`.

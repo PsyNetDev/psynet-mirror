@@ -1,9 +1,6 @@
 Writing a timeline
 ==================
 
-This page shows how the ideas in :doc:`/design/timeline` appear in
-``experiment.py``.
-
 The timeline is the ``timeline`` attribute of the experiment class. Most
 experiments build it in a ``get_timeline`` function:
 
@@ -12,60 +9,45 @@ experiments build it in a ``get_timeline`` function:
     class Exp(psynet.experiment.Experiment):
         timeline = get_timeline()
 
-The ``demos/features/timeline`` demo uses most of the constructs on this page.
-Run it with ``psynet debug local`` from the demo directory and click through
-while reading the code:
-
-.. literalinclude:: ../../demos/features/timeline/experiment.py
-   :pyobject: get_timeline
+Most examples on this page come from the ``demos/features/timeline`` demo.
+Run it with ``psynet debug local`` from the demo directory to click through
+them.
 
 What a timeline is made of
 --------------------------
 
-A page is constructed directly, with a ``time_estimate`` in seconds:
+The demo's timeline starts with four elements:
 
-.. code-block:: python
+.. literalinclude:: ../../demos/features/timeline/experiment.py
+   :lines: 22-46
+   :dedent: 8
 
-    InfoPage("Welcome to the experiment!", time_estimate=5)
+- A page, here a :class:`~psynet.modular_page.ModularPage`, is constructed
+  directly, with a ``time_estimate`` in seconds.
+- A :class:`~psynet.timeline.PageMaker` wraps a function that returns a page,
+  so that the page can depend on the participant. The function can take
+  ``participant`` and ``experiment`` arguments.
+- A :class:`~psynet.timeline.CodeBlock` wraps a function that runs on the
+  server and returns nothing.
 
-A :class:`~psynet.timeline.PageMaker` wraps a function that returns a page.
-The function can ask for ``participant`` and ``experiment`` arguments:
+A slow function goes in an :class:`~psynet.timeline.AsyncCodeBlock`, which
+runs it in a background process. It needs a named function; lambdas raise an
+error. With ``wait=True``, the default, the participant sees a waiting page
+until the function finishes, and ``expected_wait`` in seconds is required.
+With ``wait=False``, the participant carries on while the function runs. The
+``demos/features/async_codeblock`` demo shows both:
 
-.. code-block:: python
-
-    PageMaker(
-        lambda participant: InfoPage(f"You answered {participant.answer}."),
-        time_estimate=5,
-    )
-
-A :class:`~psynet.timeline.CodeBlock` wraps a function that runs on the
-server and returns nothing:
-
-.. code-block:: python
-
-    def assign_condition(participant):
-        participant.var.set("condition", random.choice(["A", "B"]))
-
-    CodeBlock(assign_condition)
-
-If the function is slow, use :class:`~psynet.timeline.AsyncCodeBlock`
-instead. It runs in a background process and shows the participant a waiting
-page until it finishes. It needs a named function (lambdas raise an error)
-and an ``expected_wait`` in seconds:
-
-.. code-block:: python
-
-    def prepare_stimuli(participant):
-        ...
-
-    AsyncCodeBlock(prepare_stimuli, expected_wait=10)
+.. literalinclude:: ../../demos/features/async_codeblock/experiment.py
+   :start-at: def set_participant_var1
+   :end-before: def test_check_bot
+   :dedent: 4
 
 Remembering things about a participant
 --------------------------------------
 
-Participant variables live in ``participant.var`` and experiment-wide
-variables in ``experiment.var``. Outside a lambda you can assign directly;
-inside a lambda, use ``set``:
+Participant variables live in ``participant.var``. Outside a lambda, assign
+them directly; inside a lambda, use ``set``, because Python doesn't allow
+assignments in lambdas:
 
 .. code-block:: python
 
@@ -75,39 +57,26 @@ inside a lambda, use ``set``:
 Use ``participant.var.get("score", default=0)`` when a variable may not be
 set yet.
 
-To store a page's answer in a variable, pass ``save_answer``:
+A page's answer is stored in a variable when the page is given
+``save_answer``. In the demo above, the first page saves its answer as
+``favorite_color``, and the page maker after it reads
+``participant.var.favorite_color``. The most recent answer is also available
+as ``participant.answer``.
 
-.. code-block:: python
+Experiment variables are shared by all participants and live in
+``experiment.var``. Declare them, with their initial values, in the
+experiment class's ``variables`` dictionary, as in
+``demos/experiments/timeline``:
 
-    ModularPage(
-        "color",
-        "What is your favorite color?",
-        PushButtonControl(choices=["red", "green", "blue"]),
-        time_estimate=10,
-        save_answer="favorite_color",
-    )
+.. literalinclude:: ../../demos/experiments/timeline/experiment.py
+   :start-at: variables = {
+   :end-at: }
+   :dedent: 4
 
-The most recent answer is also available as ``participant.answer``.
-
-Experiment variables
---------------------
-
-Experiment variables are shared by all participants. Declare them, with their
-initial values, in the experiment class's ``variables`` dictionary:
-
-.. code-block:: python
-
-    class Exp(psynet.experiment.Experiment):
-        variables = {
-            "max_participant_payment": 10.0,  # overrides a default
-            "difficulty": 1,  # a new variable
-        }
-
-PsyNet's built-in variables, such as ``max_participant_payment``, have
-defaults that entries here override; see
-:class:`~psynet.experiment.Experiment` for the list. Read them with
-``experiment.var.difficulty`` and change them during the experiment with
-``set``:
+The same dictionary overrides the defaults of PsyNet's built-in variables,
+such as ``max_participant_payment``; see
+:class:`~psynet.experiment.Experiment` for the list. Change an experiment
+variable during the experiment with ``set``:
 
 .. code-block:: python
 
@@ -117,9 +86,9 @@ When code runs
 --------------
 
 Everything at the top level of ``get_timeline`` runs when a server process
-imports ``experiment.py``. Each web and worker process imports it separately,
-so a random draw here is not tied to a participant and may differ between
-processes:
+imports ``experiment.py``. Each web and worker process imports it
+separately, so a random draw here is not tied to a participant and may
+differ between processes:
 
 .. code-block:: python
 
@@ -128,81 +97,63 @@ processes:
 
 Moving the draw into a page maker is also wrong, because page makers run
 again when the page is refreshed. Draw in a code block and display in a page
-maker:
+maker, as the demo does:
 
-.. code-block:: python
-
-    CodeBlock(
-        lambda participant: participant.var.set("number", random.randint(0, 100))
-    ),
-    PageMaker(
-        lambda participant: InfoPage(f"Your number is {participant.var.number}"),
-        time_estimate=5,
-    ),
-
-.. _pre_deploy_routines:
-
-Pre-deploy routines
--------------------
-
-A :class:`~psynet.timeline.PreDeployRoutine` runs a function once, on the
-machine that launches the experiment, before the experiment starts. It takes
-a label, the function, and a dictionary of keyword arguments for the function.
-It can go anywhere in the timeline, any number of times, and shows nothing to
-participants. This one configures an Amazon S3 bucket:
-
-.. code-block:: python
-
-    from psynet.media import setup_bucket_for_presigned_urls
-    from psynet.timeline import PreDeployRoutine
-
-    PreDeployRoutine(
-        "setup_bucket_for_presigned_urls",
-        setup_bucket_for_presigned_urls,
-        {"bucket_name": "recordings_s3_bucket", "public_read": True},
-    )
-
-The function can also take an ``experiment`` argument. Database changes it
-makes are carried into the launched experiment, so it suits database setup
-tasks. Assets it deposits count as prepared before launch and are left out of
-``psynet export``.
+.. literalinclude:: ../../demos/features/timeline/experiment.py
+   :lines: 35-46
+   :dedent: 8
 
 Branching and repetition
 ------------------------
 
-Give each construct a distinct, descriptive label; nested for loops must use
-different labels.
+Each construct takes a label. Give each one a distinct, descriptive label;
+nested loops must use different labels.
 
-- :func:`~psynet.timeline.conditional` takes a label, a ``condition``
-  function, and ``logic_if_true`` / ``logic_if_false``.
-- :func:`~psynet.timeline.switch` takes a label, a function returning a key,
-  and a dictionary mapping keys to logic.
-- :func:`~psynet.timeline.while_loop` takes a label, a ``condition``, and
-  ``logic``, plus ``expected_repetitions`` for time estimation.
-- :func:`~psynet.timeline.for_loop` takes keyword arguments only: ``label``,
-  ``iterate_over`` (a function returning the list for this participant), and
-  ``logic`` (a function from one item to timeline logic). It needs
-  ``time_estimate_per_iteration`` when ``logic`` is a function, and
-  ``expected_repetitions`` when ``iterate_over`` takes arguments such as
-  ``participant``.
+:func:`~psynet.timeline.switch` takes a label, a function returning a key,
+and a dictionary mapping keys to logic. Here the key is the answer to the
+preceding page:
+
+.. literalinclude:: ../../demos/features/timeline/experiment.py
+   :start-at: switch(
+   :end-before: while_loop(
+   :dedent: 8
+
+:func:`~psynet.timeline.while_loop` takes a label, a ``condition`` and
+``logic``, plus ``expected_repetitions`` for time estimation.
+:func:`~psynet.timeline.conditional` takes a label, a ``condition``, and
+``logic_if_true`` and ``logic_if_false``. This loop repeats until the random
+score is above 5, with feedback that depends on the score:
+
+.. literalinclude:: ../../demos/features/timeline/experiment.py
+   :start-at: while_loop(
+   :end-before: ModularPage(
+   :dedent: 8
+
+:func:`~psynet.timeline.for_loop` takes keyword arguments only: ``label``,
+``iterate_over``, a function returning the list for this participant, and
+``logic``, a function from one item to timeline logic. It needs
+``time_estimate_per_iteration`` when ``logic`` is a function, and
+``expected_repetitions`` when ``iterate_over`` takes arguments such as
+``participant``:
+
+.. literalinclude:: ../../demos/features/timeline/experiment.py
+   :lines: 98-106
+   :dedent: 8
 
 Organizing a long timeline
 --------------------------
 
 A :class:`~psynet.timeline.Module` groups a named section. Module names, like
-trial maker IDs, must be unique within the timeline:
+trial maker IDs, must be unique within the timeline. From
+``demos/experiments/timeline``:
 
-.. code-block:: python
+.. literalinclude:: ../../demos/experiments/timeline/experiment.py
+   :lines: 83-98
+   :dedent: 8
 
-    practice = Module(
-        "practice",
-        InfoPage("First, some practice.", time_estimate=5),
-        practice_trial_maker,
-    )
-
-:func:`~psynet.timeline.join` combines elements and lists of elements into one
-sequence, so sections can be defined separately and assembled into the full
-timeline:
+:func:`~psynet.timeline.join` combines elements and lists of elements into
+one sequence, so sections can be defined separately and assembled into the
+full timeline:
 
 .. code-block:: python
 
@@ -243,13 +194,39 @@ Time estimates
 --------------
 
 - Pages and page makers take ``time_estimate`` in seconds.
-- Pages returned by a trial's ``show_trial`` use the trial class's
-  ``time_estimate``, multiplied by the trial maker's
-  ``expected_trials_per_participant``.
+- A trial maker's estimate is the trial class's ``time_estimate`` multiplied
+  by the trial maker's ``expected_trials_per_participant``.
 - :func:`~psynet.timeline.while_loop` multiplies the estimate of its logic by
   ``expected_repetitions``.
-- :func:`~psynet.timeline.for_loop` uses ``time_estimate_per_iteration`` and
-  ``expected_repetitions``.
+- :func:`~psynet.timeline.for_loop` multiplies
+  ``time_estimate_per_iteration`` by ``expected_repetitions``.
+
+.. _pre_deploy_routines:
+
+Running code before the experiment launches
+-------------------------------------------
+
+A :class:`~psynet.timeline.PreDeployRoutine` runs a function once, on the
+machine that launches the experiment, before the experiment starts. It takes
+a label, the function, and a dictionary of keyword arguments for the
+function. It can go anywhere in the timeline, any number of times, and shows
+nothing to participants. This one configures an Amazon S3 bucket:
+
+.. code-block:: python
+
+    from psynet.media import setup_bucket_for_presigned_urls
+    from psynet.timeline import PreDeployRoutine
+
+    PreDeployRoutine(
+        "setup_bucket_for_presigned_urls",
+        setup_bucket_for_presigned_urls,
+        {"bucket_name": "recordings-s3-bucket", "public_read": True},
+    )
+
+The function can also take an ``experiment`` argument. Database changes it
+makes are carried into the launched experiment, so it suits database setup
+tasks. Assets it deposits count as prepared before launch and are left out of
+``psynet export``.
 
 .. seealso::
 

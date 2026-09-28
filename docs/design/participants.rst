@@ -69,11 +69,11 @@ progress.
 Language
 --------
 
-An experiment has a default **locale**, such as English or German, and can
-offer participants a choice of further locales. Text marked for translation
-is shown in the participant's locale, so the same experiment can run in
-several languages, in one deployment or in separate deployments with their
-own recruitment.
+Each deployment runs in one **locale**, such as English or German, and every
+participant in that deployment sees text in that locale. Text marked for
+translation is translated in advance into each language you plan to use, so
+the same experiment can run in several languages by deploying it once per
+language, each with its own recruitment.
 
 What to check when reviewing participants
 -----------------------------------------
@@ -90,7 +90,8 @@ What to check when reviewing participants
 .. seealso::
 
    :doc:`/code/participants/prescreening_and_questionnaires`,
-   :doc:`/code/participants/payment_limits`,
+   :doc:`/code/participants/creating_prescreening_tasks`,
+   :doc:`/code/participants/payment`,
    :doc:`/code/trials/participant_and_trial_failure` and
    :doc:`/code/participants/internationalization` show these ideas in
    ``experiment.py``.

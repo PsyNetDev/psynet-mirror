@@ -1,10 +1,8 @@
 Writing pages
 =============
 
-This page shows how the ideas in :doc:`/design/pages` appear in
-``experiment.py``, using the ``demos/features/pages`` demo. Run it with
-``psynet debug local`` from the demo directory and step through the pages
-while reading the code:
+The examples on this page come from the ``demos/features/pages`` demo, which
+you can run with ``psynet debug local`` from the demo directory:
 
 .. literalinclude:: ../../demos/features/pages/experiment.py
    :pyobject: get_timeline
@@ -20,7 +18,9 @@ An :class:`~psynet.page.InfoPage` shows text. Wrap HTML in
     InfoPage(Markup("Welcome to the <strong>experiment</strong>!"), time_estimate=5)
 
 A :class:`~psynet.modular_page.ModularPage` takes a label, a prompt (plain text
-or a prompt object), and optionally a control. Commonly used prompts:
+or a prompt object), and optionally a control. The
+:doc:`API reference </reference/api/modular_page>` documents every prompt and
+control. Commonly used prompts:
 
 - :class:`~psynet.modular_page.AudioPrompt`,
   :class:`~psynet.modular_page.VideoPrompt`,
@@ -49,12 +49,17 @@ Commonly used controls:
 - surveys: :class:`~psynet.modular_page.SurveyJSControl`;
 - clickable graphics: :class:`~psynet.graphics.GraphicControl`.
 
-:doc:`/reference/api/modular_page` lists all prompts and controls.
+Consent pages come from :mod:`psynet.consent` and usually open the timeline:
 
-For consent, use one of the classes in :mod:`psynet.consent`, such as
-:class:`~psynet.consent.MainConsent`, usually as the first element of the
-timeline. Pages that go beyond prompts and controls are written as
-:doc:`custom front-ends </code/pages/custom_front_ends>`.
+.. code-block:: python
+
+    Timeline(
+        MainConsent(),
+        ...
+    )
+
+Pages that go beyond prompts and controls are
+:doc:`custom front ends </code/pages/custom_front_ends>`.
 
 What happens to a response
 --------------------------
@@ -76,22 +81,22 @@ response is a row of the ``response`` table: ``question`` holds the page's
 label, alongside ``answer``, ``metadata`` (including ``time_taken``), and
 ``successful_validation``.
 
-To validate a response, subclass the control and return a
-:class:`~psynet.timeline.FailedValidation` with a message for the participant:
+To validate a response, subclass the control and implement ``validate``. The
+method returns ``None`` to accept the response, or a message for the
+participant to reject it. This control from ``demos/features/validate``
+rejects the answer ``"green"``:
 
-.. code-block:: python
+.. literalinclude:: ../../demos/features/validate/experiment.py
+   :pyobject: NoGreenControl
 
-    class MelodyControl(TextControl):
-        def validate(self, response, **kwargs):
-            if not is_valid_melody(response.answer):
-                return FailedValidation("Please write the melody as note names, e.g. C D E.")
-            return None
+The message can also be wrapped in :class:`~psynet.timeline.FailedValidation`.
 
 Timing within a page
 --------------------
 
-The demo's last page plays a sound, then records. ``events`` maps event names
-to :class:`~psynet.timeline.Event` objects that change when things happen:
+The demo's last page plays a sound, then records. ``events`` maps
+:doc:`event names </code/pages/event_management>` to
+:class:`~psynet.timeline.Event` objects that change when things happen:
 here, ``recordStart`` is triggered half a second after the prompt ends
 (``promptEnd``), instead of immediately.
 :class:`~psynet.timeline.ProgressDisplay` and
@@ -102,18 +107,16 @@ when. Another common pattern prevents responding before a sound has finished:
 
     events={"submitEnable": Event(is_triggered_by="promptEnd")}
 
-:doc:`/code/pages/event_management` lists all events.
-
 Look and language
 -----------------
 
-Page colors come from the theme's CSS tokens. To change them, redefine the
-tokens in a stylesheet under ``static/`` and list it in the experiment
-class's ``css_links``; see :doc:`/code/pages/theming`.
+Page colors come from the theme's
+:doc:`CSS tokens </code/pages/theming>`. To change them, redefine the tokens
+in a stylesheet under ``static/`` and list it in the experiment class's
+``css_links``.
 
-To translate page text, wrap each string in ``_``, obtained from
-:func:`~psynet.utils.get_translator`; see
-:doc:`/code/participants/internationalization`.
+To :doc:`translate </code/participants/internationalization>` page text, wrap
+each string in ``_``, obtained from :func:`~psynet.utils.get_translator`.
 
 .. seealso::
 

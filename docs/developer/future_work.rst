@@ -404,3 +404,32 @@ at the start of ``prepare_instance``, before ``boot_instance``, and raise a
 test that mocks the EC2 client and asserts that no instance is booted when a
 key is missing. Once it ships, update step 5 of the provisioning steps in
 :doc:`/deploy/reference/aws_automatic_provisioning`.
+
+Respect hand-written constraints in psynet setup
+------------------------------------------------
+
+Date
+++++
+
+2026-09-28
+
+Problem
++++++++
+
+``psynet setup`` regenerates ``constraints.txt`` unless the file embeds the
+MD5 hash of the current ``requirements.txt`` (``_ensure_constraints_up_to_date``
+in ``psynet/experiment_setup.py``). A constraints file written or edited by
+hand has no such hash, so the next ``psynet setup`` silently replaces it.
+Dallinger, by contrast, leaves a ``constraints.txt`` alone once its generated
+header is removed. The Code documentation currently tells authors to sync a
+hand-written file with ``uv pip sync constraints.txt --strict`` instead of
+running ``psynet setup``.
+
+Idea
+++++
+
+Follow Dallinger's rule: treat a ``constraints.txt`` without PsyNet's
+generated header as hand-maintained, and leave it unchanged (with a message
+saying so) instead of regenerating it. ``psynet check-constraints`` would use
+the same rule. Once this ships, remove the workaround from
+:doc:`/code/project/dependencies`.

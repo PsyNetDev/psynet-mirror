@@ -1,47 +1,26 @@
 .. _dependencies:
 
+Managing dependencies
+=====================
 
-Dependencies
-============
+An experiment lists its Python packages in ``requirements.txt`` and locks
+their exact versions in ``constraints.txt``. Local installs and deployments
+both install from ``constraints.txt``.
 
-Python packages
-^^^^^^^^^^^^^^^
+Add a Python package
+--------------------
 
-List Python packages for an experiment in ``requirements.txt``, one per
-line. ``psynet setup`` writes a PsyNet pin for you; add any extra
-packages underneath.
-
-A released experiment should pin PsyNet from PyPI, using the version you
-developed against:
-
-::
-
-    psynet==13.3.0
-
-The latest release is listed in the
-`CHANGELOG <https://gitlab.com/PsyNetDev/PsyNet/-/blob/master/CHANGELOG.md>`_.
-
-To use an unreleased commit or branch:
+Add the package to ``requirements.txt``, one per line, below the PsyNet pin
+that ``psynet setup`` wrote:
 
 ::
 
-    psynet@git+https://gitlab.com/PsyNetDev/PsyNet.git@<tag-branch-or-sha>#egg=psynet
-
-If you specify another package by name only, the latest version is
-pulled from PyPI when you deploy:
-
-::
-
-    librosa
+    librosa==0.10.2
     praat-parselmouth
 
-Pin a version with ``==``:
-
-::
-
-    librosa==1.0.0
-
-Packages hosted in a Git repository use this form:
+A package without a version gets the version chosen when
+``constraints.txt`` is next generated. Packages hosted in a Git repository
+use this form:
 
 ::
 
@@ -54,36 +33,61 @@ For a private repository, include a deploy token as described in
 
     mypackage@git+https://<username>:<deploy_token>@gitlab.com/example/mypackage.git@v1.2.3#egg=mypackage
 
-Constraints generation
-^^^^^^^^^^^^^^^^^^^^^^
+Then update the lockfile and the virtual environment:
 
-In order to ensure reproducibility, PsyNet requires each experiment to provide a ``constraints.txt`` file
-that specifies the exact versions of all packages that would be installed as dependencies for your experiment.
-Normally we generate this file automatically with the following command:
+.. code-block:: bash
 
-.. code:: bash
+    psynet setup
 
-    psynet generate-constraints
+``psynet setup`` regenerates ``constraints.txt`` when it no longer matches
+``requirements.txt``, then synchronizes the virtual environment with it,
+removing any package that ``constraints.txt`` doesn't list. Commit both
+files.
 
-This command compares the ``requirements.txt`` file with a ``dev-requirements.txt`` file,
-hosted on the Dallinger GitHub repository, which lists exact versions of packages that have been tested with Dallinger.
-The ``generate-constraints`` thereby tries to obtain a list of package versions that are most likely to work with your experiment.
+To regenerate ``constraints.txt`` without installing anything, run
+``psynet generate-constraints``.
 
-You should generally run ``psynet generate-constraints`` whenever you make changes to your ``requirements.txt`` file.
-You can commit the resulting ``constraints.txt`` file to your experiment's Git repository.
+.. _dependencies_updating_psynet:
 
-Bundled demos in the PsyNet source repository are an exception: they use the
-shared development environment and do not track per-demo constraints. When a
-demo is copied into a standalone repository, run ``psynet setup`` and commit the
-generated ``constraints.txt`` there.
+Update PsyNet
+-------------
 
-In some cases constraints generation might fail with an error indicating that compatible versions cannot be found.
-This is often because Dallinger is overly conservative in its constraints.
-In this case, you can replace the automatically generated ``constraints.txt`` file with your own.
-For example, you might copy the original ``constraints.txt`` file and remove the version constraint from the
-problematic package.
-If you take this path, you should remove the automatically generated header,
-which looks like this:
+The PsyNet version is pinned in ``requirements.txt``. A released version is
+pinned like this:
+
+::
+
+    psynet==13.3.0
+
+An unreleased commit, tag or branch, including a branch on a fork, is pinned
+with a Git URL:
+
+::
+
+    psynet@git+https://gitlab.com/PsyNetDev/PsyNet@<tag-branch-or-sha>#egg=psynet
+
+Older experiments often use this form with a release tag such as
+``v10.1.0``.
+
+The latest release is shown in the top-left corner of this documentation,
+and the `changelog <https://gitlab.com/PsyNetDev/PsyNet/-/blob/master/CHANGELOG.md>`_
+lists the changes in each version. Only major versions, where the first
+number increases (for example from 10.3.1 to 11.0.0), should require changes
+to the experiment. For PsyNet 14, follow
+:doc:`/whats_new/upgrading_to_psynet_14`.
+
+After changing the pin, run ``psynet setup``, then ``psynet debug local``.
+After a major upgrade, the error messages usually point to what needs
+changing.
+
+How constraints are generated
+-----------------------------
+
+``constraints.txt`` is generated with Dallinger's lock policy: packages are
+resolved against the ``dev-requirements.txt`` that Dallinger tests with, for
+the Dallinger version that the PsyNet pin implies. The file starts with a
+header like this, which records the ``requirements.txt`` it was generated
+from:
 
 .. code:: text
 
@@ -92,38 +96,47 @@ which looks like this:
     #
     # Compiled from a requirements.txt file with md5sum c240530cbeca4ce1a8c350dd55f476ef and a .python-version file requesting Python 3.13
 
-Removing this header informs PsyNet that you are manually curating the ``constraints.txt`` file.
+Bundled demos in the PsyNet repository don't have a ``constraints.txt``,
+because they use the repository's development environment. A copied demo gets
+one from ``psynet setup``.
 
-Updating your local environment
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-When you update ``requirements.txt`` or ``constraints.txt``,
-you will generally want to update your local environment to use the updated packages.
-To do this, run the following in your terminal:
+Write constraints by hand
+^^^^^^^^^^^^^^^^^^^^^^^^^
 
-.. code:: bash
+Generation can fail when Dallinger's pins leave no compatible version of a
+package. In that case, edit ``constraints.txt`` by hand, for example by
+removing the pin on the conflicting package, and delete the header.
+Without the header, Dallinger's checks during debugging and deployment
+treat the file as hand-written and leave it alone. ``psynet setup``
+regenerates any file that lacks the header, so install a hand-written file
+directly:
 
-    uv pip install -r constraints.txt
+.. code-block:: bash
 
-System dependencies
-^^^^^^^^^^^^^^^^^^^
+    uv pip sync constraints.txt --strict
 
-It is also possible to specify arbitrary system dependencies if you are using PsyNet with Docker.
-To do this, add a file called ``prepare_docker_image.sh`` to your experiment directory.
-This should be a Linux shell script.
-You might include something like the following, to install the unzip utility:
+Add system packages
+-------------------
+
+To install system packages into the experiment's Docker image, add a Linux
+shell script called ``prepare_docker_image.sh`` to the experiment directory.
+For example, to install ``unzip``:
 
 ::
 
     apt update
     apt install unzip
 
-The :ref:`Consonance and the carillon <consonance_carillon>` experiment
-includes a ``prepare_docker_image.sh`` script that installs
-``libsndfile1``.
+The script replaces PsyNet's default script,
+``psynet/resources/scripts/prepare_docker_image.sh``, which installs build
+tools so that packages can be compiled from source. Start from a copy of the
+default to keep them. The
+:ref:`Consonance and the carillon <consonance_carillon>` experiment uses this
+script to install ``libsndfile1``.
 
 .. warning::
 
-    This shell script should not place any files into the experiment directory itself,
-    as these files won't be accessible during ``psynet debug local``, which overlays the local machine's
-    experiment directory onto the Docker container's experiment directory.
-    If you need to store files at this point you can put them elsewhere in the container.
+    Don't write files into the experiment directory from this script.
+    ``psynet debug local --docker`` mounts the staged experiment directory
+    over the container's, which hides those files. Put them elsewhere in the
+    container.
