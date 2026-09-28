@@ -90,4 +90,4 @@ Further information
 - Files in ``static/`` are deployed with the experiment and served to
   participants' browsers at URLs such as
   ``/static/instrument_sounds/clarinet.mp3``. For stimulus sets larger than
-  the deployment size limit, see :doc:`/code/using_stimuli`.
+  the deployment size limit, see :ref:`large_stimulus_sets`.
