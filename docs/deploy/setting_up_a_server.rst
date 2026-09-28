@@ -36,7 +36,15 @@ The usual choices are:
 .. lab-note::
 
    Your lab may already run a shared server or a shared AWS account. Ask your
-   lab administrator which server to use before you set up a new one.
+   lab administrator which server to use before you set up a new one, and to
+   confirm that:
+
+   - you have access to the lab's GitLab group;
+   - you can push to the lab's Docker registry, if the lab pushes images to
+     one;
+   - your SSH key is registered wherever the lab requires it, for example
+     on GitLab or on the lab's servers;
+   - you have received the lab's credential files (see below).
 
 Configuring your computer
 -------------------------
@@ -58,7 +66,9 @@ SSH key
 
 Dallinger connects to the server with a single private key file, set as
 ``server_pem``. It uses only this key, even if your SSH client has others,
-and adds it to your SSH agent while it builds images on the server. The key
+and adds it to your SSH agent while it builds images on the server, so an
+``ssh-agent`` must be running. If none is, ``ssh-add -l`` reports that it
+cannot connect to the agent; start one with ``eval "$(ssh-agent)"``. The key
 might be your personal key (``~/.ssh/id_ed25519`` or ``~/.ssh/id_rsa``) or a
 PEM file you received with the server; keep PEM files in ``~/.ssh`` and make
 them readable only by you:
@@ -185,7 +195,9 @@ Registering the server
       **Key pair.** In the EC2 console, create a key pair and download its PEM
       file to ``~/.ssh`` (for example ``~/.ssh/cool-psychology.pem``). Set
       ``ec2_default_pem`` to the key pair's name, without path or extension,
-      and ``server_pem`` to the file. Keep only one ``server_pem`` line in
+      and ``server_pem`` to the file. Dallinger finds the file by this name,
+      as ``~/.ssh/<ec2_default_pem>.pem``, so the file name must match the
+      key pair name. Keep only one ``server_pem`` line in
       ``~/.dallingerconfig``.
 
       .. code-block:: ini

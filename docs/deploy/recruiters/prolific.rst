@@ -151,6 +151,11 @@ completion code. PsyNet then compares the reward the participant earned
 Set ``base_payment`` close to the reward expected for a successful
 completion.
 
+Confirm the automatic approval on your first live study: after the first
+batch, open the study's submissions on Prolific and check that no
+successful submission is left in **Awaiting review**. Approve any that
+are, so that those participants are paid.
+
 **Unsuccessful participants.** Participants who reach an
 :class:`~psynet.page.UnsuccessfulEndPage` (for example after failing a
 pre-screening task), confirm **Leave** from the timeline footer or error
@@ -176,8 +181,8 @@ bonus. If it is false, PsyNet asks them to return the submission and
 contact you, and you pay them by hand.
 
 **Payment review.** If PsyNet cannot confirm a bonus payment, it lists the
-participant under **Needs payment review** on the dashboard's Participants
-tab, where you can pay or dismiss the bonus.
+participant under **Needs payment review** in the dashboard's
+**Monitor > Participants** page, where you can pay or dismiss the bonus.
 
 To customize these behaviors, subclass
 :class:`~psynet.end.SuccessfulEndLogic` or
@@ -233,8 +238,8 @@ The draft study
 ``psynet deploy ssh`` creates the study as a draft in your project,
 filling in the title, description, reward, completion time, completion
 codes, and qualifications. With ``publish_experiment = true`` it publishes
-the study straight away. What to check in the draft is in
-:doc:`/deploy/running_a_study`.
+the study straight away. Check the draft before you
+:doc:`publish it </deploy/running_a_study>`.
 
 Messages
 --------
@@ -248,8 +253,9 @@ and is the only view where you can archive them.
    :alt: Prolific messages inbox
 
 With Slack notifications set up, PsyNet forwards new messages about the
-study to Slack. How to handle participants who report problems is in
-:doc:`/deploy/running_a_study`.
+study to Slack. Reply promptly; a participant who reports a problem can
+often continue with a
+:doc:`link for resuming their session </deploy/running_a_study>`.
 
 .. lab-note::
 
