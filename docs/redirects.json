@@ -140,7 +140,7 @@
   "tutorials/graphics": "guides/pages/graphics",
   "tutorials/index": "guides/index",
   "tutorials/internationalization": "guides/participants/internationalization",
-  "tutorials/introduction_to_sql_alchemy": "testing/introduction_to_sql_alchemy",
+  "tutorials/introduction_to_sql_alchemy": "guides/project/introduction_to_sql_alchemy",
   "tutorials/large_stimulus_sets": "guides/trials/large_stimulus_sets",
   "tutorials/modular_page": "guides/pages/modular_page",
   "tutorials/participant_and_trial_failure": "guides/trials/participant_and_trial_failure",
@@ -192,8 +192,9 @@
   "guides/testing/tests": "testing/tests",
   "guides/testing/performance_testing": "testing/performance_testing",
   "guides/testing/sqlalchemy_profiling": "testing/sqlalchemy_profiling",
-  "guides/testing/introduction_to_sql_alchemy": "testing/introduction_to_sql_alchemy",
+  "guides/testing/introduction_to_sql_alchemy": "guides/project/introduction_to_sql_alchemy",
   "guides/testing/troubleshooting": "testing/troubleshooting",
   "guides/project/audit": "testing/audit",
-  "running_studies/reference/data": "data/index"
+  "running_studies/reference/data": "data/index",
+  "testing/introduction_to_sql_alchemy": "guides/project/introduction_to_sql_alchemy"
 }

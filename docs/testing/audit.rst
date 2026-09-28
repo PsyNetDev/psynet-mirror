@@ -1,5 +1,5 @@
-Experiment audits
-=================
+Audit reference
+===============
 
 An **experiment audit** is a portable ``audit/`` folder that packages evidence
 that an experiment was implemented and validated. It records artifacts, checks,

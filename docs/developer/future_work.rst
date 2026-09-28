@@ -256,3 +256,58 @@ Idea
 
 Let ``StepTag`` accept plain URL strings as well as assets, so the demo can
 pass ``/static/...`` URLs directly.
+
+Automatic layout checks during bot tests
+----------------------------------------
+
+Date
+++++
+
+2026-09-28
+
+Problem
++++++++
+
+Bots take pages without displaying them, so ``psynet test local`` passes
+experiments whose pages overflow a phone screen or push the response
+controls below the fold. ``psynetLayout.check()`` detects these problems, but
+it only runs from a hand-written Playwright walk, which few experiments have.
+Two such bugs in built-in components (SurveyJS overflow on phones and broken
+``LanguageVocabularyTest`` images) passed their bot tests and were only found
+while taking documentation screenshots.
+
+Idea
+++++
+
+Add ``psynet test local --check-layout``. After each page a bot takes, a
+headless Chrome loads the same page and runs ``psynetLayout.check()`` at a
+phone size (390×760) and a laptop size (1280×800); the test reports
+violations by page label and fails if there are any. ``psynet audit
+simulate`` could enable it so that audits record the result.
+
+A manual check on 2026-09-28 (``simple_rating`` demo) confirmed the approach:
+
+- ``GET /timeline?unique_id=...`` renders a participant's current page with
+  no session cookie, so a separate browser can load a bot's page. Bots already
+  make this request for every page (``render_pages=True``), so it is safe to
+  repeat.
+- ``check()`` returned no violations for the page as built, and reported
+  ``no_horizontal_overflow`` and ``no_vertical_overflow`` when a wide element
+  was added or the controls were pushed below the fold.
+
+Details for the implementation:
+
+- Use plain window sizes, not Chrome's mobile emulation. In mobile emulation
+  a wide element enlarges the layout viewport, so ``window.innerWidth`` grows
+  with the content and the horizontal check never fires.
+- Audio pages show an "Are you ready?" overlay in a headless browser because
+  no user gesture has happened; launch Chrome with
+  ``--autoplay-policy=no-user-gesture-required``.
+- Block the checking browser's requests to ``/response`` (and other endpoints
+  that change state) so that page JavaScript, such as timed auto-submit,
+  cannot advance the participant.
+- Wait for page readiness, including media, before checking; the Playwright
+  harness's readiness helper shows how.
+- Selenium is already a Dallinger dependency and Chrome is already required,
+  so no new dependency is needed. Keep the flag opt-in, because it adds a
+  second or two per page.

@@ -17,4 +17,5 @@ control.
    experiment_variables
    pre_deploy_routines
    classes
+   introduction_to_sql_alchemy
    version_control_with_git
