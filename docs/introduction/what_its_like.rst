@@ -166,4 +166,8 @@ can also write it yourself, starting from a demo; see
       the analysis you wrote against the practice data, and take the server
       down.
 
-To try this yourself, start with :doc:`/getting_started/index`.
+.. button-ref:: /getting_started/index
+   :ref-type: doc
+   :color: primary
+
+   Get started

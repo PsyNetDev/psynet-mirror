@@ -164,5 +164,6 @@
   "getting_started/pages": "designing/pages",
   "getting_started/timelines": "designing/timeline",
   "getting_started/static_experiments": "designing/trials",
-  "getting_started/chain_experiments": "designing/chains"
+  "getting_started/chain_experiments": "designing/chains",
+  "introduction/overview": "introduction/applications"
 }
