@@ -145,6 +145,25 @@ def test_scaffold_creates_stock_deployment_policy(tmp_path):
     assert not (tmp_path / ".dockerignore").exists()
 
 
+@pytest.mark.parametrize(
+    "author_file, needs_review", [(None, False), ("stimuli.csv", True)]
+)
+def test_setup_skips_review_only_in_fresh_directory(
+    tmp_path, author_file, needs_review
+):
+    from psynet.experiment_setup import _scaffold_experiment
+
+    experiment_dir = tmp_path / "chords"
+    (experiment_dir / ".git").mkdir(parents=True)
+    if author_file:
+        (experiment_dir / author_file).write_text("private\n")
+
+    with working_directory(experiment_dir):
+        _scaffold_experiment(MagicMock(), skip_constraints=True)
+        assert Path("deploy.toml").exists()
+        assert _deployment_policy_needs_review() is needs_review
+
+
 def test_scaffold_missing_files_does_not_leave_review_marker(tmp_path, monkeypatch):
     from psynet.command_line import _check_experiment_directory
 

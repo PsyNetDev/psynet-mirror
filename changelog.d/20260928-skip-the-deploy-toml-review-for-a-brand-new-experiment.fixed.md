@@ -1,0 +1,1 @@
+The first ``psynet debug local``, ``test`` or ``deploy`` after ``psynet setup`` in an empty folder no longer stops to ask for a ``deploy.toml`` review, because every file it would deploy was just written by PsyNet. Adding ``deploy.toml`` to an existing experiment still asks for the review.

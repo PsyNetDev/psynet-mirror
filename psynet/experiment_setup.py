@@ -12,12 +12,15 @@ import os
 import shutil
 import subprocess
 import sys
+from contextlib import nullcontext
 from enum import Enum
 from pathlib import Path
 
 import click
 
 from .experiment_scaffold import (
+    _is_fresh_experiment_directory,
+    _without_deployment_policy_review,
     commit_psynet_requirement,
     editable_psynet_requirement,
     get_editable_psynet_source,
@@ -226,8 +229,12 @@ def _scaffold_experiment(ctx, *, skip_constraints):
     pinned before template files are written so a failed pin does not leave a
     half-complete scaffold. Constraints are then ensured only when missing or
     stale relative to ``requirements.txt``.
+
+    A ``deploy.toml`` created in a fresh directory skips the one-shot launch
+    review, because every file it selects was just written by PsyNet.
     """
     _assert_directory_is_scaffoldable()
+    fresh = _is_fresh_experiment_directory()
     if is_in_repo_experiment():
         skip_constraints = True
 
@@ -237,7 +244,8 @@ def _scaffold_experiment(ctx, *, skip_constraints):
         except ValueError as exc:
             raise click.UsageError(str(exc)) from exc
 
-    scaffold_experiment_directory()
+    with _without_deployment_policy_review() if fresh else nullcontext():
+        scaffold_experiment_directory()
     if not skip_constraints:
         try:
             pin_unpinned_psynet_requirement()

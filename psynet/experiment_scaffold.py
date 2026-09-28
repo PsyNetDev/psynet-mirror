@@ -809,6 +809,19 @@ def _clear_deployment_policy_review_marker() -> None:
         parent.rmdir()
 
 
+_FRESH_DIRECTORY_ENTRIES = frozenset({".git", ".venv", ".python-version", ".DS_Store"})
+
+
+def _is_fresh_experiment_directory() -> bool:
+    """Return whether the directory has no author files yet.
+
+    Only a Git repository, a virtual environment and similar tool files may be
+    present. A ``deploy.toml`` created for such a directory can only select
+    files that PsyNet itself writes, so there is nothing to review.
+    """
+    return all(path.name in _FRESH_DIRECTORY_ENTRIES for path in Path(".").iterdir())
+
+
 @contextmanager
 def _without_deployment_policy_review():
     """Skip the one-shot deploy.toml review for temporary or in-repo scaffolds."""
