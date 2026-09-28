@@ -1289,7 +1289,8 @@ test(
 function fragmentRuntime() {
   const start = PSYNET_JS.indexOf("psynet.prepareTimelineFragment = function");
   const end = PSYNET_JS.indexOf("psynet.deactivateTimelineFragmentLifecycle");
-  if (start < 0 || end < 0) {
+  const source = PSYNET_JS.slice(start, end);
+  if (start < 0 || end < 0 || !source.includes("psynet.repairTimelineRoot =")) {
     throw new Error("Could not extract timeline fragment functions");
   }
   return `
@@ -1297,9 +1298,46 @@ function fragmentRuntime() {
     psynet.getPageCssLinks = function () { return []; };
     psynet.ensureStylesheetLinks = function () {};
     psynet.applyInlinePageStyles = function () {};
-    psynet.log = { warn: function () {} };
-    ${PSYNET_JS.slice(start, end)}
+    window.psynetWarnings = [];
+    psynet.log = { warn: (message) => window.psynetWarnings.push(message) };
+    ${source}
   `;
+}
+
+// The call that timeline-page.html emits straight after #timeline-root.
+const TIMELINE_ROOT_REPAIR_SCRIPT = (() => {
+  const template = fs.readFileSync(
+    path.resolve("psynet/templates/timeline-page.html"),
+    "utf8"
+  );
+  const match = template.match(
+    /\{\{ timeline_footer\(\) \}\}\s*<\/div>\s*(?:\{#[\s\S]*?#\}\s*)?(<script>[^<]*<\/script>)/
+  );
+  if (!match) {
+    throw new Error("Could not find the script after #timeline-root");
+  }
+  return match[1];
+})();
+
+const UNCLOSED_TAG_HTML = "<b>Use <b>ONLY</b> the laptop speakers.";
+
+function timelineChrome(main, tail) {
+  return `
+    <div id="timeline-header"></div>
+    <div id="timeline-hold-region"></div>
+    <div id="main-body" class="psynet-surface">${main}</div>
+    ${tail}`;
+}
+
+async function renderFullTimelinePage(page, main, tail) {
+  await renderTheme(page, {
+    viewport: { width: 390, height: 750 },
+    includeBootstrap: true,
+    html: `<script id="psynet-template-data" type="application/json">{}</script>
+      <script>${fragmentRuntime()}</script>
+      <div id="timeline-root">${timelineChrome(main, tail)}</div>
+      ${TIMELINE_ROOT_REPAIR_SCRIPT}`
+  });
 }
 
 function mediaProgressRuntime() {
@@ -1384,45 +1422,78 @@ test(
 );
 
 test(
-  "an unclosed tag in page HTML does not lift the footer off the window bottom",
+  "an unclosed tag in page HTML leaves the modals and footer in place",
   { tag: "@both" },
   async ({ page }) => {
-    const shell = (body) => `
-      <div id="timeline-header"></div>
-      <div id="timeline-hold-region"></div>
-      <div id="main-body" class="psynet-surface">${body}</div>
-      <nav id="footer" class="navbar">Reward</nav>
-      <script id="psynet-template-data" type="application/json">{}</script>`;
-    const footerGeometry = () =>
+    const footer = `<nav id="footer" class="navbar">Reward</nav>`;
+    const state = () =>
       page.evaluate(() => {
-        const footer = document.getElementById("footer");
+        const root = document.getElementById("timeline-root");
+        const modal = document.getElementById("alert-modal");
         return {
-          parentId: footer.parentElement.id,
-          bottom: footer.getBoundingClientRect().bottom,
-          viewport: window.innerHeight
+          modalInRoot: modal.parentElement === root,
+          modalWeight: getComputedStyle(modal).fontWeight,
+          lastChild: root.lastElementChild.id,
+          footerBottom: Math.round(
+            document.getElementById("footer").getBoundingClientRect().bottom
+          ),
+          warnings: window.psynetWarnings
         };
       });
 
-    await renderTheme(page, {
-      viewport: { width: 390, height: 750 },
-      includeBootstrap: true,
-      scripts: [fragmentRuntime()],
-      html: `<div id="timeline-root">${shell(
-        "<b>Use <b>ONLY</b> the laptop speakers."
-      )}</div>`
-    });
     // The parser reopens the unclosed <b> around everything after #main-body.
-    expect((await footerGeometry()).parentId).not.toBe("timeline-root");
+    await renderFullTimelinePage(
+      page,
+      UNCLOSED_TAG_HTML,
+      `<div id="alert-modal" class="modal">OK</div>${footer}`
+    );
+    let s = await state();
+    expect(s).toMatchObject({
+      modalInRoot: true,
+      modalWeight: "400",
+      lastChild: "footer",
+      footerBottom: 750
+    });
+    expect(s.warnings).toHaveLength(1);
+    expect(s.warnings[0]).toContain("<b>");
 
-    await page.evaluate(() => window.psynet.keepFooterInTimelineRoot());
-    let g = await footerGeometry();
-    expect(g.parentId).toBe("timeline-root");
-    expect(g.bottom).toBeCloseTo(g.viewport, 0);
+    await swapTimeline(
+      page,
+      timelineChrome(
+        "<p>Next page</p>",
+        `${footer}<script id="psynet-template-data" type="application/json">{}</script>`
+      )
+    );
+    s = await state();
+    expect(s.footerBottom).toBe(750);
+    expect(s.warnings).toHaveLength(1);
+  }
+);
 
-    await swapTimeline(page, shell("<p>Next page</p>"));
-    g = await footerGeometry();
-    expect(g.parentId).toBe("timeline-root");
-    expect(g.bottom).toBeCloseTo(g.viewport, 0);
+test(
+  "an unclosed tag in page HTML keeps a footerless media bar at the window bottom",
+  { tag: "@both" },
+  async ({ page }) => {
+    const bar = `<div id="media-download-progress-bar" style="width: 40%"></div>`;
+    const state = () =>
+      page.evaluate(() => ({
+        barBottom: Math.round(
+          document
+            .getElementById("media-download-progress-bar")
+            .getBoundingClientRect().bottom
+        ),
+        bodyPadding: getComputedStyle(document.body).paddingBottom,
+        warnings: window.psynetWarnings.length
+      }));
+
+    await renderFullTimelinePage(page, "<p>Well-formed</p>", bar);
+    const wellFormed = await state();
+    expect(wellFormed.barBottom).toBe(750);
+    expect(wellFormed.bodyPadding).not.toBe("0px");
+    expect(wellFormed.warnings).toBe(0);
+
+    await renderFullTimelinePage(page, UNCLOSED_TAG_HTML, bar);
+    expect(await state()).toEqual({ ...wellFormed, warnings: 1 });
   }
 );
 

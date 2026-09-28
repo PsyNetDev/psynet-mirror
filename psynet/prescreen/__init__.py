@@ -81,7 +81,7 @@ class REPPVolumeCalibration(Module):
                     f"""
                       <h3>Attention</h3>
                       <hr>
-                      <b>Throughout the experiment, it is very important to <b>ONLY</b> use the laptop speakers and be in a silent environment.</b>
+                      Throughout the experiment, it is very important to <b>ONLY</b> use the laptop speakers and be in a silent environment.
                       <br><br>
                       <i>Please do not use headphones, earphones, external speakers, or wireless devices (unplug or deactivate them now)</i>
                       <hr>
