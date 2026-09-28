@@ -23,6 +23,33 @@ def test_slow_asv_tracks_median_queue_delay_for_async_experiment():
     assert benchmark.track_median_queue_delay_ms(data, 5, 2.0) == 45.0
 
 
+def test_slow_asv_tracks_export_time():
+    benchmark = Static()
+    data = {
+        (5, 2.0): {
+            "export_duration_s": 3.5,
+            "export_error": None,
+        }
+    }
+
+    assert benchmark.track_export_time_s(data, 5, 2.0) == 3.5
+
+
+def test_slow_asv_raises_on_export_error():
+    import pytest
+
+    benchmark = Static()
+    data = {
+        (5, 2.0): {
+            "export_duration_s": 0.1,
+            "export_error": "timeout",
+        }
+    }
+
+    with pytest.raises(RuntimeError, match="export failed"):
+        benchmark.track_export_time_s(data, 5, 2.0)
+
+
 def test_slow_asv_no_longer_tracks_completion_window_metrics():
     benchmark = Static()
 

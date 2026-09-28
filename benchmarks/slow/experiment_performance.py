@@ -167,6 +167,8 @@ class _BaseExperiment:
 
     def track_export_time_s(self, data, *param_values):
         result = self._result_for(data, *param_values)
+        if result.get("export_error"):
+            raise RuntimeError(f"export failed: {result['export_error']}")
         duration = result.get("export_duration_s")
         if duration is None:
             raise RuntimeError(
