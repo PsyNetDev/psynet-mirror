@@ -23,29 +23,27 @@ DEMO_URL = "https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/{}"
 GALLERY_DIR = Path("_static") / "images" / "gallery"
 PLACEHOLDER = "phone_placeholder.svg"
 
-# Hover labels for gallery demos. Sentence case, name the paradigm, and add
-# "demo" only when the name would otherwise be generic. Keep them short enough
-# to read in the overlay.
+# Hover labels for gallery demos. Name the paradigm rather than the folder, and
+# keep them short enough to read in the overlay.
 CAPTIONS = {
-    "pipelines/simple_rating": "Simple rating demo",
-    "pipelines/similarity": "Similarity rating demo",
-    "experiments/staircase_pitch_discrimination": "Staircase pitch discrimination",
-    "features/trial_cue_adaptive": "Adaptive cueing",
-    "experiments/gibbs": "Gibbs sampling with people",
-    "experiments/gibbs_image": "Gibbs sampling with images",
-    "experiments/mcmcp": "MCMC with people",
-    "experiments/chain_trial_maker": "Story chains",
-    "experiments/imitation_chain": "Digit-span imitation",
-    "experiments/tapping_iterated": "Iterated tapping",
-    "pipelines/tapping": "Tapping demo",
+    "pipelines/simple_rating": "Rating sounds",
+    "pipelines/similarity": "Rating sound similarity",
+    "experiments/staircase_pitch_discrimination": "Adaptive pitch discrimination task",
+    "features/trial_cue_adaptive": "Custom adaptive paradigm",
+    "experiments/gibbs": "Gibbs Sampling with People",
+    "experiments/mcmcp": "Markov Chain Monte Carlo with People",
+    "experiments/chain_trial_maker": "Serial reproduction (stories)",
+    "experiments/imitation_chain": "Serial reproduction (numbers)",
+    "experiments/tapping_iterated": "Serial reproduction (rhythms)",
+    "pipelines/tapping": "Isochronous tapping and music entrainment",
     "experiments/vertical_processing": "Singing back chords",
-    "experiments/create_and_rate/basic": "Create and rate",
-    "experiments/create_and_rate/robot_voice": "Robot voice",
-    "experiments/create_and_rate/picnic": "Picnic game",
+    "experiments/create_and_rate/basic": "Create and rate (basic)",
+    "experiments/create_and_rate/robot_voice": "Create and rate (voices)",
+    "experiments/create_and_rate/picnic": "Create and rate (rules)",
     "experiments/chatroom_simple": "Chatroom",
     "experiments/rock_paper_scissors": "Rock paper scissors",
     "experiments/unity_autoplay": "Unity game",
-    "experiments/translation": "Translation demo",
+    "experiments/translation": "Translation",
     "experiments/language_tests": "Language tests",
 }
 
@@ -96,7 +94,7 @@ class DemoCarousel(SphinxDirective):
         label = html.escape(caption)
         return (
             f'<a class="demo-carousel-slide" href="{DEMO_URL.format(demo)}">'
-            f'<img class="demo-phone" src="{src}" alt="Screenshot of the {label}" loading="lazy">'
+            f'<img class="demo-phone" src="{src}" alt="Screenshot: {label}" loading="lazy">'
             f'<span class="demo-carousel-caption">{label}</span></a>'
         )
 

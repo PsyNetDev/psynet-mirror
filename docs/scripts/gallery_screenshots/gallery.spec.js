@@ -92,9 +92,6 @@ const DEMOS = {
     await page.locator(".push-button").first().click();
     await visible(page.locator("#color-box"));
   },
-  "experiments/gibbs_image": async (page) => {
-    await visible(page.getByText("Adjust the slider so that the image"));
-  },
   "experiments/mcmcp": async (page) => {
     await advanceUntil(page, page.getByText(/Which one is the/));
   },

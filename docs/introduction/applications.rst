@@ -82,7 +82,6 @@ explains the idea.
          .. demo-carousel::
 
             experiments/gibbs
-            experiments/gibbs_image
             experiments/mcmcp
 
       .. grid-item::
