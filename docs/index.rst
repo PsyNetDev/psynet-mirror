@@ -59,11 +59,11 @@ the virtual lab framework
 
    About <introduction/index>
    getting_started/index
-   Designing <designing/index>
-   Building <guides/index>
-   Testing <testing/index>
-   running_studies/index
+   Design <design/index>
+   Audit <audit/index>
+   Deploy <deploy/index>
    data/index
+   Code <code/index>
    examples/index
    reference/index
    whats_new/index

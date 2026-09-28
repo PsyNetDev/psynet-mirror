@@ -128,12 +128,14 @@ longer displays well on a phone shows up in its screenshot.
 Concept pages and code pages
 ----------------------------
 
-The :doc:`/designing/index` section pairs each *concept page* with an *in
-code* page under ``designing/in_code/``. The concept page explains an idea for
-someone specifying an experiment or reviewing an implementation. The code
-page shows how the same idea appears in ``experiment.py``. Give both pages the
-same section headings so readers can move between them, and end the concept
-page with a ``seealso`` link to its code page.
+The documentation separates concepts from code. :doc:`/design/index`,
+:doc:`/audit/index`, :doc:`/deploy/index` and :doc:`/data/index` explain
+ideas and commands without Python code, for someone specifying an
+experiment or reviewing an implementation. :doc:`/code/index` shows how
+those ideas are written in ``experiment.py``. When a concept page has a code
+counterpart, give both pages the same section headings so readers can move
+between them, and end the concept page with a ``seealso`` link to its code
+page.
 
 On concept pages:
 

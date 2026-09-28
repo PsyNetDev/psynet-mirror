@@ -9,3 +9,4 @@ your own computer.
 
    install
    quickstart
+   troubleshooting

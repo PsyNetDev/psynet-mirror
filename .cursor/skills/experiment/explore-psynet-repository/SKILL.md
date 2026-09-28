@@ -17,9 +17,9 @@ Useful starting points:
 - `~/PsyNet/demos/experiments/` for complete experiments (authored files only).
 - `~/PsyNet/demos/features/` for focused feature examples.
 - `~/PsyNet/docs/` for user-facing documentation.
-- `~/PsyNet/docs/guides/project/agentic_programming.rst` for
+- `~/PsyNet/docs/code/project/agentic_programming.rst` for
   implementing an experiment with a coding agent.
-- `~/PsyNet/docs/guides/project/creating_a_new_experiment.rst` for creating an
+- `~/PsyNet/docs/code/project/creating_a_new_experiment.rst` for creating an
   experiment directory by copying a demo (prefer `psynet setup`).
 - `~/PsyNet/psynet/resources/experiment_scripts/AGENTS.md` for setup and command
   guidance.

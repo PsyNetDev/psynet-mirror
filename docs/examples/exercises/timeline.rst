@@ -5,7 +5,7 @@ Timeline exercise
 Prerequisites
 ^^^^^^^^^^^^^
 
-- :doc:`/designing/timeline`
+- :doc:`/design/timeline`
 
 Exercise
 ^^^^^^^^
@@ -25,5 +25,5 @@ they’re done, tell them how much they need to pay.
 - Don’t worry so much about the appearance side, for now we are interested primarily in the control logic.
 - The notion of setting participant variables (e.g. ``participant.var.set()``) and getting participant variables
   (``participant.var.xxx``) will be very useful here. Have a look at the original timeline demo to get a feel for these.
-- Have a look at :doc:`/guides/project/development_workflow` for tips on how to debug your experiment
+- Have a look at :doc:`/code/project/development_workflow` for tips on how to debug your experiment
   as you are designing it.

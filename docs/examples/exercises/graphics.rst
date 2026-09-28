@@ -5,7 +5,7 @@ Graphics exercise
 Prerequisites
 ^^^^^^^^^^^^^
 
-- :doc:`Graphics guide </guides/pages/graphics>`
+- :doc:`Graphics guide </code/pages/graphics>`
 
 
 Exercise

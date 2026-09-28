@@ -7,7 +7,7 @@ Glossary
    Archive
       A saved copy of an experiment's database. Redeploying from an
       archive continues data collection with an existing experiment; see
-      :doc:`/running_studies/reference/deploy_from_archive`.
+      :doc:`/deploy/reference/deploy_from_archive`.
 
    Auto-recruit
       A recruitment mode that invites a new participant each time one
@@ -22,7 +22,7 @@ Glossary
    Experiment hosting
       The server that runs your experiment during data collection: either
       a server you manage yourself or an EC2 server provisioned on AWS.
-      See :doc:`/running_studies/reference/web_servers`.
+      See :doc:`/deploy/reference/web_servers`.
 
    Hotair
       A recruiter that recruits nobody and prints a participant link
@@ -40,7 +40,7 @@ Glossary
 
    Provisioning
       Setting up a server to host experiments, typically an EC2 server;
-      see :doc:`/running_studies/reference/aws_automatic_provisioning`.
+      see :doc:`/deploy/reference/aws_automatic_provisioning`.
 
    Recruiter
       The service that invites and pays participants, optionally

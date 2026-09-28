@@ -67,9 +67,9 @@ def test_prototype_metadata_and_platform_warnings():
     assert "Operating System :: OS Independent" not in classifiers
 
     documentation = [
-        root / "docs" / "deploy" / "index.rst",
-        root / "docs" / "dependencies" / "docker.rst",
-        root / "docs" / "experiment_development" / "experiment_directory.rst",
+        root / "docs" / "deploy" / "reference" / "index.rst",
+        root / "docs" / "introduction" / "docker.rst",
+        root / "docs" / "code" / "project" / "experiment_directory.rst",
     ]
     for path in documentation:
         text = " ".join(path.read_text().split())

@@ -25,7 +25,7 @@ What's PsyNet for?
 
          **PsyNet handles:** spreading ratings evenly across stimuli, serving media files, and screening out inattentive participants.
 
-         **Docs:** :doc:`/designing/trials`
+         **Docs:** :doc:`/design/trials`
 
          .. example-publications:: rating
 
@@ -52,7 +52,7 @@ What's PsyNet for?
 
          **PsyNet handles:** running the adaptive logic on the server between trials, and recording each decision alongside the responses.
 
-         **Docs:** :doc:`/designing/chains`
+         **Docs:** :doc:`/design/chains`
 
          .. example-publications:: adaptive
 
@@ -79,7 +79,7 @@ What's PsyNet for?
 
          **PsyNet handles:** Gibbs sampling and Markov chain Monte Carlo with people, including synthesizing each new stimulus.
 
-         **Docs:** :doc:`/designing/chains`
+         **Docs:** :doc:`/design/chains`
 
          .. example-publications:: sampling
 
@@ -107,7 +107,7 @@ What's PsyNet for?
 
          **PsyNet handles:** assigning participants to chains, creating each new stimulus from the previous response, and keeping every chain's history in the export.
 
-         **Docs:** :doc:`/designing/chains`
+         **Docs:** :doc:`/design/chains`
 
          .. example-publications:: chains
 
@@ -134,7 +134,7 @@ What's PsyNet for?
 
          **PsyNet handles:** capturing and uploading recordings, running your analysis on the server, and exporting the files with the data.
 
-         **Docs:** :doc:`/designing/stimuli`
+         **Docs:** :doc:`/design/stimuli`
 
          .. example-publications:: recording
 
@@ -162,7 +162,7 @@ What's PsyNet for?
 
          **PsyNet handles:** matching creators with raters, collecting enough ratings per creation, and passing the selected creations on.
 
-         **Docs:** :doc:`/guides/trials/create_and_rate`
+         **Docs:** :doc:`/code/trials/create_and_rate`
 
          .. example-publications:: create-and-rate
 
@@ -190,7 +190,7 @@ What's PsyNet for?
 
          **PsyNet handles:** forming groups as participants arrive, keeping them in step, and passing messages between their browsers.
 
-         **Docs:** :doc:`/guides/multiplayer/index`
+         **Docs:** :doc:`/code/multiplayer/index`
 
 
 .. card:: Across languages and countries
@@ -215,7 +215,7 @@ What's PsyNet for?
 
          **PsyNet handles:** translating participant-facing text, checking language proficiency, and recruiting through international panels.
 
-         **Docs:** :doc:`/guides/participants/internationalization`
+         **Docs:** :doc:`/code/participants/internationalization`
 
          .. example-publications:: languages
 

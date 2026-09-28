@@ -5,7 +5,7 @@ What's it like to use PsyNet?
 
 In this walkthrough a coding agent writes the code. You can also write it
 yourself, starting from a demo; see
-:doc:`/guides/by_hand/customizing_an_experiment`.
+:doc:`/code/by_hand/customizing_an_experiment`.
 
 .. rst-class:: study-step
 

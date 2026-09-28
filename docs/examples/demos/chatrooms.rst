@@ -10,7 +10,7 @@ chatrooms on a room-selection page, then enter their chosen room and chat with
 other participants in real time. Run it from
 ``demos/features/websocket_chatroom``, and open several participant tabs to
 see messages pass between them. For the built-in chatroom component, see
-:doc:`/guides/multiplayer/chatroom`.
+:doc:`/code/multiplayer/chatroom`.
 
 Source: ``demos/features/websocket_chatroom``
 

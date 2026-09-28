@@ -5,8 +5,8 @@ JSSynth exercises
 Prerequisites
 ^^^^^^^^^^^^^
 
-- :doc:`/designing/timeline`
-- :doc:`Modular pages guide </guides/pages/modular_page>`
+- :doc:`/design/timeline`
+- :doc:`Modular pages guide </code/pages/modular_page>`
 - :doc:`Audio demo </examples/demos/audio>`
 
 Exercise 1
