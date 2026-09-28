@@ -15,6 +15,8 @@ from psynet.timeline import Module
 from psynet.utils import (
     DuplicateKeyError,
     ExperimentDirectoryNameError,
+    _cached_template_from_string,
+    _translation_environment,
     check_todos_before_deployment,
     corr,
     ensure_experiment_directory_name_does_not_conflict,
@@ -52,6 +54,22 @@ def test_psynet_source_prefixes_is_package_directory():
     assert package_dir.name == "psynet"
     assert (package_dir / "utils.py").is_file()
     assert not (package_dir / "demos").exists()
+
+
+def test_translation_environment_is_cached_per_locale():
+    from flask import Flask
+
+    app = Flask("psynet-jinja-cache")
+    with app.app_context():
+        en_a = _translation_environment(app, "en")
+        en_b = _translation_environment(app, "en")
+        de = _translation_environment(app, "de")
+        assert en_a is en_b
+        assert en_a is not de
+        first = _cached_template_from_string(en_a, "Hello {{ name }}")
+        second = _cached_template_from_string(en_a, "Hello {{ name }}")
+        assert first is second
+        assert first.render(name="Ada") == "Hello Ada"
 
 
 def test_is_in_repo_experiment(tmp_path):

@@ -230,6 +230,7 @@
       utils: {},
       comments: [],
       var: psynetTemplateData.jsVars,
+      submissionPageUuid: psynetTemplateData.jsVars.pageUuid,
     };
     psynet.SUBMISSION_HANDLED = Symbol("psynet.SUBMISSION_HANDLED");
 
@@ -324,6 +325,11 @@
       window.removeEventListener("beforeunload", beforeunloadFunction);
     };
 
+    psynet.addBeforeUnloadEventListener = function () {
+      psynet.removeBeforeUnloadEventListener();
+      window.addEventListener("beforeunload", beforeunloadFunction);
+    };
+
     // ---- Template data bootstrap / refresh ---------------------------------
     // In inplace mode we keep one persistent document and replace only the
     // timeline fragment. After each swap we must refresh the bootstrap payload
@@ -344,6 +350,7 @@
       Object.assign(psynetTemplateData, refreshedTemplateData);
       window.psynetTemplateData = psynetTemplateData;
       psynet.var = psynetTemplateData.jsVars || {};
+      psynet.submissionPageUuid = psynet.var.pageUuid;
       psynet.page = {
         ...(psynetTemplateData.page || {}),
         prompt: {},
@@ -757,28 +764,39 @@
       return root.querySelector("#" + id);
     };
 
+    psynet.getFragmentAssetScope = function (root = document) {
+      return (
+        psynet.getElementById(root, "psynet-fragment-assets") ||
+        root
+      );
+    };
+
     psynet.getPageCssLinks = function (root = document) {
-      let cssTemplate = psynet.getElementById(root, "psynet-page-css-links");
-      if (!cssTemplate) {
+      let scope = psynet.getFragmentAssetScope(root);
+      let cssTemplate = psynet.getElementById(scope, "psynet-page-css-links");
+      let searchRoot = scope.id === "psynet-fragment-assets" ? scope : cssTemplate;
+      if (!searchRoot) {
         return [];
       }
-      if (cssTemplate.content) {
+      if (searchRoot.content) {
         return Array.from(
-          cssTemplate.content.querySelectorAll("link[rel='stylesheet']"),
+          searchRoot.content.querySelectorAll("link[rel='stylesheet']"),
         );
       }
-      return Array.from(cssTemplate.querySelectorAll("link[rel='stylesheet']"));
+      return Array.from(searchRoot.querySelectorAll("link[rel='stylesheet']"));
     };
 
     psynet.getPageStyles = function (root = document) {
-      let cssTemplate = psynet.getElementById(root, "psynet-page-css");
-      if (!cssTemplate) {
+      let scope = psynet.getFragmentAssetScope(root);
+      let cssTemplate = psynet.getElementById(scope, "psynet-page-css");
+      let searchRoot = scope.id === "psynet-fragment-assets" ? scope : cssTemplate;
+      if (!searchRoot) {
         return [];
       }
-      if (cssTemplate.content) {
-        return Array.from(cssTemplate.content.querySelectorAll("style"));
+      if (searchRoot.content) {
+        return Array.from(searchRoot.content.querySelectorAll("style"));
       }
-      return Array.from(cssTemplate.querySelectorAll("style"));
+      return Array.from(searchRoot.querySelectorAll("style"));
     };
 
     psynet.removePageStylesheetLinks = function () {
@@ -870,10 +888,356 @@
       }
     };
 
+    psynet.timelineHold = null;
+    psynet.arrivalUpdates = null;
+
+    psynet.updateTimelineHoldMessage = function (message) {
+      let messageElement = document.querySelector(
+        "#psynet-timeline-hold-indicator .psynet-timeline-hold-message",
+      );
+      if (messageElement) {
+        messageElement.innerHTML = message || "";
+      }
+    };
+
+    psynet.hideArrivalNotice = function () {
+      document.getElementById("psynet-arrival-notice")?.remove();
+    };
+
+    psynet.showArrivalNotice = function (message) {
+      if (!message || document.body.classList.contains("timeline-held")) {
+        return;
+      }
+      let notice = document.getElementById("psynet-arrival-notice");
+      if (!notice) {
+        notice = document.createElement("div");
+        notice.id = "psynet-arrival-notice";
+        notice.setAttribute("role", "status");
+        notice.setAttribute("aria-live", "polite");
+        document.getElementById("timeline-header")?.appendChild(notice);
+      }
+      notice.textContent = message;
+      notice.title = message;
+    };
+
+    psynet.applyArrivalNotice = function (notice) {
+      if (notice) {
+        psynet.showArrivalNotice(notice);
+      } else {
+        psynet.hideArrivalNotice();
+      }
+    };
+
+    psynet.handleArrivalUpdateMessage = function (message) {
+      if (message.type !== "timeline_hold_wake") {
+        return;
+      }
+      (message.targets || []).forEach((target) => {
+        if (
+          target.hold_message &&
+          psynet.timelineHold &&
+          !psynet.timelineHold.hold.silent
+        ) {
+          psynet.updateTimelineHoldMessage(target.hold_message);
+        }
+        if (Object.prototype.hasOwnProperty.call(target, "notice")) {
+          psynet.applyArrivalNotice(target.notice);
+        }
+      });
+    };
+
+    psynet.stopArrivalUpdates = function () {
+      if (!psynet.arrivalUpdates) return;
+      if (psynet.arrivalUpdates.connection) {
+        psynet.arrivalUpdates.connection.close();
+      }
+      psynet.arrivalUpdates = null;
+    };
+
+    psynet.fetchArrivalNotice = function () {
+      if (psynet.participantId === undefined || typeof $ === "undefined") {
+        return;
+      }
+      $.ajax({
+        url: "/timeline/arrival_notice",
+        cache: false,
+        data: { participantId: psynet.participantId },
+      }).done(function (data) {
+        if (!psynet.arrivalUpdates) {
+          return;
+        }
+        psynet.applyArrivalNotice(data && data.notice);
+      });
+    };
+
+    psynet.ensureArrivalUpdates = function (config) {
+      if (!config?.channel || psynet.timelineHold) {
+        psynet.stopArrivalUpdates();
+        psynet.hideArrivalNotice();
+        return;
+      }
+      if (psynet.arrivalUpdates?.channel === config.channel) {
+        psynet.applyArrivalNotice(config.notice);
+        if (!config.notice) {
+          psynet.fetchArrivalNotice();
+        }
+        return;
+      }
+      psynet.stopArrivalUpdates();
+      psynet.arrivalUpdates = {
+        channel: config.channel,
+        connection: PsyNetWebSocketChannel.connect({
+          channel: config.channel,
+          onMessage: psynet.handleArrivalUpdateMessage,
+          onOpen: psynet.fetchArrivalNotice,
+        }),
+      };
+      psynet.applyArrivalNotice(config.notice);
+    };
+
+    psynet.updatePageForTimelineHold = function (page) {
+      psynet.submissionPageUuid = page.attributes.page_uuid;
+    };
+
+    psynet.showTimelineHoldIndicator = function (message) {
+      let indicator = document.getElementById(
+        "psynet-timeline-hold-indicator",
+      );
+      // A server-rendered indicator (no dynamic flag) means this document is
+      // already the neutral fallback. A dynamic chip, including one reused
+      // across hold-to-hold hops, still covers a preserved participant page.
+      let preservesVisiblePage =
+        !indicator || indicator.dataset.timelineHoldDynamic === "true";
+      if (!indicator) {
+        indicator = document.createElement("div");
+        indicator.id = "psynet-timeline-hold-indicator";
+        indicator.setAttribute("role", "status");
+        indicator.setAttribute("aria-live", "polite");
+        indicator.dataset.timelineHoldDynamic = "true";
+
+        let spinner = document.createElement("span");
+        spinner.className = "spinner-border spinner-border-sm";
+        spinner.setAttribute("aria-hidden", "true");
+        indicator.appendChild(spinner);
+
+        let messageElement = document.createElement("span");
+        messageElement.className = "psynet-timeline-hold-message";
+        indicator.appendChild(messageElement);
+        document.getElementById("timeline-hold-region").appendChild(indicator);
+      }
+      indicator.querySelector(".psynet-timeline-hold-message").innerHTML =
+        message || "";
+      psynet.hideArrivalNotice();
+      document.body.classList.add("timeline-held");
+      let mainBody = document.getElementById("main-body");
+      if (mainBody) {
+        mainBody.inert = preservesVisiblePage;
+        mainBody.setAttribute("aria-busy", "true");
+      }
+      let commentButton = document.getElementById("comment-button");
+      if (commentButton) {
+        if (indicator.dataset.commentButtonWasDisabled === undefined) {
+          indicator.dataset.commentButtonWasDisabled = String(
+            commentButton.disabled,
+          );
+        }
+        commentButton.disabled = true;
+      }
+    };
+
+    psynet.scheduleTimelineHoldCheck = function (controller) {
+      if (controller.stopped) return;
+      clearTimeout(controller.safetyTimer);
+      let jitterMs = Math.random() * 1000;
+      controller.safetyTimer = setTimeout(
+        () => psynet.resumeTimelineHold("safety poll"),
+        controller.hold.safety_poll_ms + jitterMs,
+      );
+    };
+
+    psynet.scheduleTimelineHoldTimeout = function (controller) {
+      clearTimeout(controller.timeoutTimer);
+      if (controller.hold.timeout_ms === null) return;
+      controller.timeoutTimer = setTimeout(
+        () => psynet.resumeTimelineHold("hold timeout"),
+        controller.hold.timeout_ms,
+      );
+    };
+
+    psynet.timelineHoldResumeTimeoutMs = 30000;
+
+    psynet.resumeTimelineHold = async function (reason) {
+      let controller = psynet.timelineHold;
+      if (!controller || controller.stopped) {
+        return false;
+      }
+      if (controller.resumeInFlight) {
+        controller.resumeRequested = true;
+        return false;
+      }
+      if (!psynet.pageReady) {
+        controller.resumeRequested = true;
+        psynet.scheduleTimelineHoldCheck(controller);
+        return false;
+      }
+      if (psynet.nextPagePending) {
+        controller.resumeRequested = true;
+        psynet.scheduleTimelineHoldCheck(controller);
+        return false;
+      }
+
+      psynet.log.info("Checking timeline hold after " + reason + ".");
+      controller.resumeInFlight = true;
+      controller.resumeRequested = false;
+      clearTimeout(controller.safetyTimer);
+      try {
+        return await psynet.nextPage(null, {}, {}, undefined, {
+          timelineHoldResume: true,
+        });
+      } finally {
+        if (psynet.timelineHold === controller) {
+          controller.resumeInFlight = false;
+          if (controller.resumeRequested) {
+            controller.resumeRequested = false;
+            setTimeout(
+              () => psynet.resumeTimelineHold("queued hold wake"),
+              0,
+            );
+          } else {
+            psynet.scheduleTimelineHoldCheck(controller);
+          }
+        }
+      }
+    };
+
+    psynet.stopTimelineHold = function () {
+      let controller = psynet.timelineHold;
+      if (!controller) return;
+
+      controller.stopped = true;
+      clearTimeout(controller.safetyTimer);
+      clearTimeout(controller.timeoutTimer);
+      clearTimeout(controller.busyRetryTimer);
+      controller.busyRetryTimer = null;
+      if (controller.connection) {
+        controller.connection.close();
+      }
+
+      let indicator = document.getElementById(
+        "psynet-timeline-hold-indicator",
+      );
+      if (indicator?.dataset.timelineHoldDynamic === "true") {
+        indicator.remove();
+      }
+      document.body.classList.remove("timeline-held");
+      let mainBody = document.getElementById("main-body");
+      if (mainBody) {
+        mainBody.inert = false;
+        mainBody.setAttribute("aria-busy", "false");
+      }
+      let commentButton = document.getElementById("comment-button");
+      if (
+        commentButton &&
+        indicator?.dataset.commentButtonWasDisabled !== undefined
+      ) {
+        commentButton.disabled =
+          indicator.dataset.commentButtonWasDisabled === "true";
+      }
+      psynet.timelineHold = null;
+      window.dispatchEvent(
+        new CustomEvent("timelineHoldEnded", {
+          detail: {holdId: controller.hold.hold_id},
+        }),
+      );
+    };
+
+    psynet._connectTimelineHoldSocket = function (controller) {
+      controller.connection = PsyNetWebSocketChannel.connect({
+        channel: controller.hold.channel,
+        onOpen() {
+          if (!controller.stopped) {
+            psynet.resumeTimelineHold("websocket connection");
+          }
+        },
+        onMessage(message) {
+          if (controller.stopped) return;
+          psynet.handleArrivalUpdateMessage(message);
+          let matchingTarget = (message.targets || []).find(
+            (target) =>
+              message.type === "timeline_hold_wake" &&
+              target.wake_token === controller.hold.wake_token,
+          );
+          if (matchingTarget) {
+            window.dispatchEvent(
+              new CustomEvent("timelineHoldWakeReceived", {
+                detail: {
+                  holdId: controller.hold.hold_id,
+                  reason: matchingTarget.reason,
+                },
+              }),
+            );
+            psynet.resumeTimelineHold("server notification");
+          }
+        },
+      });
+    };
+
+    psynet.beginTimelineHold = function (hold) {
+      psynet.stopArrivalUpdates();
+      let active = psynet.timelineHold;
+      if (active && !active.stopped) {
+        let sameChannel = active.hold.channel === hold.channel;
+        active.hold = hold;
+        if (active.busyRetryTimer != null) {
+          clearTimeout(active.busyRetryTimer);
+          active.busyRetryTimer = null;
+        }
+        active.busyRetryUsed = false;
+        psynet.showTimelineHoldIndicator(hold.message);
+        psynet.scheduleTimelineHoldCheck(active);
+        psynet.scheduleTimelineHoldTimeout(active);
+        if (!sameChannel) {
+          if (active.connection) {
+            active.connection.close();
+          }
+          psynet._connectTimelineHoldSocket(active);
+        }
+        return;
+      }
+
+      psynet.stopTimelineHold();
+      psynet.showTimelineHoldIndicator(hold.message);
+      let controller = {
+        connection: null,
+        hold: hold,
+        resumeInFlight: false,
+        resumeRequested: false,
+        busyRetryUsed: false,
+        busyRetryTimer: null,
+        safetyTimer: null,
+        stopped: false,
+        timeoutTimer: null,
+      };
+      psynet.timelineHold = controller;
+      psynet.scheduleTimelineHoldCheck(controller);
+      psynet.scheduleTimelineHoldTimeout(controller);
+      psynet._connectTimelineHoldSocket(controller);
+      window.dispatchEvent(
+        new CustomEvent("timelineHoldStarted", {
+          detail: {holdId: hold.hold_id},
+        }),
+      );
+    };
+
     psynet.finalizePageReady = async function () {
       await new Promise((resolve) => setTimeout(resolve, 0));
       psynet.setPageReady(true);
       await psynet.trial.registerEvent("pageReady");
+      let hold = psynet.page.attributes?.timeline_hold;
+      if (hold) {
+        psynet.beginTimelineHold(hold);
+      }
+      psynet.ensureArrivalUpdates(psynet.page.attributes?.arrival_updates);
     };
 
     psynet.prepareTimelineFragment = function (payload) {
@@ -884,7 +1248,15 @@
       let template = document.createElement("template");
       template.innerHTML = payload.html.trim();
 
-      let requiredIds = ["timeline-header", "main-body", "psynet-template-data"];
+      // Footer and the Leave modal are optional (hidden/empty pages omit
+      // them). The hold overlay stays required so inplace swaps keep a
+      // stable host for wait/barrier UI.
+      let requiredIds = [
+        "timeline-header",
+        "timeline-hold-region",
+        "main-body",
+        "psynet-template-data",
+      ];
 
       let replacements = requiredIds.map((id) => {
         let nextElement = template.content.querySelector("#" + id);
@@ -1034,6 +1406,7 @@
     };
 
     psynet.handleTimelineTransitionFailure = async function (error, message) {
+      psynet.stopTimelineHold();
       psynet.setPageReady(false);
       psynet.nextPagePending = false;
       psynet.setTimelineTransitionBusy(false);
@@ -1535,6 +1908,69 @@
       },
       enable: () => $(".response").removeAttr("disabled"),
       disable: () => $(".response").attr("disabled", "disabled"),
+    };
+
+    psynet.submissionControlState = null;
+
+    psynet.captureSubmissionControlState = function () {
+      if (psynet.submissionControlState !== null) return;
+      let nextButton = document.getElementById("next-button");
+      let nextButtonSpinner = document.getElementById("next-button-spinner");
+      let nextButtonText = document.getElementById("next-button-text");
+      psynet.submissionControlState = {
+        controls: Array.from(
+          document.querySelectorAll(
+            ".response, .submit, .sd-navigation__complete-btn",
+          ),
+          (element) => ({ element, disabled: element.disabled }),
+        ),
+        nextButtonPresentation: nextButton
+          ? {
+              buttonStyle: nextButton.getAttribute("style"),
+              spinnerStyle: nextButtonSpinner?.getAttribute("style"),
+              textStyle: nextButtonText?.getAttribute("style"),
+            }
+          : null,
+      };
+    };
+
+    psynet.restoreSubmissionControlState = function () {
+      if (psynet.submissionControlState === null) {
+        psynet.response.enable();
+        psynet.submit.enable();
+        return;
+      }
+      psynet.submissionControlState.controls.forEach(({ element, disabled }) => {
+        if (element.isConnected) element.disabled = disabled;
+      });
+      let presentation = psynet.submissionControlState.nextButtonPresentation;
+      if (presentation) {
+        let restoreStyle = function (element, style) {
+          if (!element) return;
+          if (style === null) {
+            element.removeAttribute("style");
+          } else {
+            element.setAttribute("style", style);
+          }
+        };
+        restoreStyle(
+          document.getElementById("next-button"),
+          presentation.buttonStyle,
+        );
+        restoreStyle(
+          document.getElementById("next-button-spinner"),
+          presentation.spinnerStyle,
+        );
+        restoreStyle(
+          document.getElementById("next-button-text"),
+          presentation.textStyle,
+        );
+      }
+      psynet.submissionControlState = null;
+    };
+
+    psynet.clearSubmissionControlState = function () {
+      psynet.submissionControlState = null;
     };
 
     psynet.rebuildTrial = async function () {
@@ -2687,7 +3123,13 @@
       try {
         response = await psynet.compileResponse();
       } catch (error) {
-        onRejection();
+        onRejection?.();
+        if (psynet.submissionControlState !== null) {
+          psynet.restoreSubmissionControlState();
+        }
+        if (psynetTemplateData.flags.lucidRecruitment) {
+          psynet.addBeforeUnloadEventListener();
+        }
         throw error;
       }
       if (response === psynet.SUBMISSION_HANDLED) {
@@ -2723,10 +3165,22 @@
     };
 
     // ---- Response submission / handling ------------------------------------
-    psynet.nextPage = async function (rawAnswer, metadata, blobs, onRejection) {
+    psynet.nextPage = async function (
+      rawAnswer,
+      metadata,
+      blobs,
+      onRejection,
+      options = {},
+    ) {
       if (!psynet.pageReady) {
         psynet.log.info("Blocked nextPage because pageReady is false.");
         psynet.alert(psynetTemplateData.strings.pageLoadNotReady);
+        return false;
+      }
+      if (psynet.timelineHold && !options.timelineHoldResume) {
+        psynet.log.warn(
+          "Blocked a page submission while the timeline is held.",
+        );
         return false;
       }
       if (psynet.nextPagePending) {
@@ -2752,7 +3206,10 @@
       if (blobs === undefined) {
         blobs = psynet.response.staged.blobs;
       }
-      if (psynetTemplateData.flags.lucidRecruitment) {
+      if (
+        psynetTemplateData.flags.lucidRecruitment &&
+        !options.timelineHoldResume
+      ) {
         psynet.removeBeforeUnloadEventListener();
       }
       let passedValidation = await submitGenericResponse(
@@ -2762,9 +3219,16 @@
         onSuccessResponse,
         onErrorResponse,
         onRejection,
+        options,
       );
       if (!passedValidation) {
         psynet.nextPagePending = false;
+        if (
+          psynetTemplateData.flags.lucidRecruitment &&
+          !options.timelineHoldResume
+        ) {
+          psynet.addBeforeUnloadEventListener();
+        }
       }
       return passedValidation;
     };
@@ -2807,11 +3271,14 @@
     psynet.requiresFullPageReloadTransition = function (response) {
       return Boolean(
         psynet.page.attributes?.requires_full_page_reload ||
-          response.page.attributes?.requires_full_page_reload,
+          response.page?.attributes?.requires_full_page_reload,
       );
     };
 
     psynet.loadNextTimelinePageWithReload = function () {
+      if (psynetTemplateData.flags.lucidRecruitment) {
+        psynet.removeBeforeUnloadEventListener();
+      }
       window.location = "/timeline?unique_id=" + psynet.uniqueId;
     };
 
@@ -2862,22 +3329,58 @@
     psynet.handleApprovedResponse = async function (response) {
       psynet.log.debug("Response received successfully.");
 
-      if (psynet.isSameSessionPageUpdate(response)) {
-        psynet.page = response.page;
-        psynet.trial.registerEvent("pageUpdated");
-        psynet.nextPagePending = false;
+      if (response.page?.attributes?.requires_full_page_reload) {
+        psynet.stopTimelineHold();
+        psynet.loadNextTimelinePageWithReload();
         return true;
       }
 
+      let hold = response.page?.attributes?.timeline_hold;
+      if (hold) {
+        psynet.updatePageForTimelineHold(response.page);
+        psynet.nextPagePending = false;
+        psynet.beginTimelineHold(hold);
+        if (psynetTemplateData.flags.lucidRecruitment) {
+          psynet.addBeforeUnloadEventListener();
+        }
+        return true;
+      }
+
+      let resumingTimelineHold = psynet.timelineHold !== null;
+      psynet.stopTimelineHold();
+
+      if (psynet.isSameSessionPageUpdate(response)) {
+        psynet.page = response.page;
+        psynet.submissionPageUuid = response.page.attributes.page_uuid;
+        psynet.ensureArrivalUpdates(response.page.attributes?.arrival_updates);
+        psynet.trial.registerEvent("pageUpdated");
+        psynet.nextPagePending = false;
+        psynet.restoreSubmissionControlState();
+        if (psynetTemplateData.flags.lucidRecruitment) {
+          psynet.addBeforeUnloadEventListener();
+        }
+        return true;
+      }
+
+      psynet.clearSubmissionControlState();
       if (psynet.requiresFullPageReloadTransition(response)) {
         psynet.loadNextTimelinePageWithReload();
         return true;
       }
 
       if (psynetTemplateData.flags.inplaceTimelineTransitions) {
-        await psynet.loadNextTimelinePageFromResponse(
-          psynet.requireTimelineFragmentPayload(response),
-        );
+        try {
+          await psynet.loadNextTimelinePageFromResponse(
+            psynet.requireTimelineFragmentPayload(response),
+          );
+        } catch (error) {
+          if (!resumingTimelineHold) throw error;
+
+          // The response write has already committed, so the preserved page
+          // cannot safely resume. Reload the authoritative server page instead.
+          psynet.log.error(error.stack || String(error));
+          psynet.loadNextTimelinePageWithReload();
+        }
       } else {
         psynet.loadNextTimelinePageWithReload();
       }
@@ -2885,24 +3388,116 @@
       return true;
     };
 
-    psynet.handleRejectedResponse = async function (response, onRejection) {
+    psynet.handleRejectedResponse = async function (
+      response,
+      onRejection,
+      options = {},
+    ) {
       psynet.log.debug("Response rejected.");
-      psynet.alert(response.message);
-      psynet.response.enable();
-      psynet.submit.enable();
+      if (options.timelineHoldResume) {
+        psynet.log.warn(
+          "A timeline hold resume check was rejected: " + response.message,
+        );
+        // Genuine rejects (multi-tab mismatch, missing hold record) still
+        // reload the authoritative timeline instead of polling the overlay
+        // with a rejected page_uuid.
+        psynet.stopTimelineHold();
+        psynet.loadNextTimelinePageWithReload();
+      } else {
+        psynet.alert(response.message);
+        psynet.restoreSubmissionControlState();
+      }
       if (onRejection) {
         onRejection(response);
       }
       return false;
     };
 
-    let onSuccessResponse = async function (request, onRejection) {
+    psynet.isBusyResponse = function (request) {
+      if (request.status !== 503) return false;
+      try {
+        let body = JSON.parse(request.response);
+        return body.status === "busy" || body.submission === "busy";
+      } catch (error) {
+        return false;
+      }
+    };
+
+    psynet.timelineHoldBusyRetryMs = 250;
+
+    psynet.scheduleTimelineHoldBusyRetry = function (controller) {
+      if (!controller || controller.stopped) {
+        return;
+      }
+      if (controller.busyRetryTimer != null) {
+        return;
+      }
+      controller.busyRetryTimer = setTimeout(() => {
+        controller.busyRetryTimer = null;
+        if (controller.stopped || psynet.timelineHold !== controller) {
+          return;
+        }
+        psynet.resumeTimelineHold("queued hold wake");
+      }, psynet.timelineHoldBusyRetryMs);
+    };
+
+    psynet.handleHoldResumeTransportFailure = async function (request) {
+      let status = request && request.status;
+      psynet.log.warn(
+        "A timeline hold resume check failed (" +
+          (status || "network") +
+          "); keeping the preserved page.",
+      );
+      if (psynet.timelineHold) {
+        // Match busy 503: do not set resumeRequested, or the in-flight
+        // resume's finally would wake again immediately.
+        psynet.scheduleTimelineHoldCheck(psynet.timelineHold);
+      }
+      return false;
+    };
+
+    psynet.handleBusyResponse = async function (request, options = {}) {
+      let body = {};
+      try {
+        body = JSON.parse(request.response);
+      } catch (error) {
+        body = {};
+      }
+      let message =
+        body.message || "The experiment is temporarily busy. Please try again.";
+      if (options.timelineHoldResume) {
+        psynet.log.warn("A timeline hold resume check was busy: " + message);
+        if (psynet.timelineHold) {
+          // The same POST already retried one busy 503. Do not set
+          // resumeRequested (that livelocks in finally) and do not wait for
+          // the safety poll: stacked-hold tests silence it, and the hold
+          // timeout is much slower than a partner wake.
+          if (!psynet.timelineHold.busyRetryUsed) {
+            psynet.timelineHold.busyRetryUsed = true;
+            psynet.scheduleTimelineHoldBusyRetry(psynet.timelineHold);
+          }
+          // A later busy 503 lets resumeTimelineHold's finally schedule the
+          // safety poll once. Scheduling here as well double-counts it.
+        }
+        return false;
+      }
+      psynet.log.warn("The experiment was busy: " + message);
+      psynet.alert(message);
+      psynet.restoreSubmissionControlState();
+      return false;
+    };
+
+    let onSuccessResponse = async function (request, onRejection, options) {
       let response = JSON.parse(request.response);
       if (response.submission === "approved") {
         return await psynet.handleApprovedResponse(response);
       }
       if (response.submission === "rejected") {
-        return await psynet.handleRejectedResponse(response, onRejection);
+        return await psynet.handleRejectedResponse(
+          response,
+          onRejection,
+          options,
+        );
       }
       throw Error("Received a malformed response.");
     };
@@ -2940,7 +3535,7 @@
       }
     };
 
-    let prepareJsonSubmission = function (rawAnswer, metadata) {
+    let prepareJsonSubmission = function (rawAnswer, metadata, options = {}) {
       var currentTime = new Date();
 
       var allMetadata = {
@@ -2958,13 +3553,14 @@
 
       return JSON.stringify({
         participant_id: psynet.participantId,
-        page_uuid: psynet.var.pageUuid,
+        page_uuid: psynet.submissionPageUuid,
         assignment_id: psynet.assignmentId,
         unique_id: psynet.uniqueId,
         raw_answer: rawAnswer,
         metadata: allMetadata,
         include_timeline_fragment: !psynet.page.attributes
           ?.requires_full_page_reload,
+        timeline_hold_resume: Boolean(options.timelineHoldResume),
       });
     };
 
@@ -2975,15 +3571,19 @@
       onSuccessResponse,
       onErrorResponse,
       onRejection,
+      options,
     ) {
       // rawAnswer - an arbitrary Javascript object (not necessarily an Object) to be sent to JSON
       // blobs - optional Object, each attribute should be a blob to upload.
       //       - Note that 'json' is not a permitted name for an attribute
       //
       // Returns true if the answer passed validation checks, false otherwise.
+      if (!options.timelineHoldResume) {
+        psynet.captureSubmissionControlState();
+      }
       $(" .response, .submit ").prop("disabled", true);
 
-      const json = prepareJsonSubmission(rawAnswer, metadata);
+      const json = prepareJsonSubmission(rawAnswer, metadata, options);
 
       var formData = new FormData();
       formData.append("json", json);
@@ -2993,34 +3593,63 @@
       }
 
       return new Promise((resolve) => {
-        let request = new XMLHttpRequest();
-        request.onreadystatechange = async function () {
-          if (request.readyState === 4) {
-            let passedValidation;
+        let attempt = 0;
+        let send = function () {
+          let request = new XMLHttpRequest();
+          request.onreadystatechange = async function () {
+            if (request.readyState !== 4) return;
+            if (psynet.isBusyResponse(request) && attempt === 0) {
+              attempt += 1;
+              psynet.log.warn(
+                "The experiment was busy; retrying the submission.",
+              );
+              await new Promise((retry) => setTimeout(retry, 250));
+              send();
+              return;
+            }
+            let passedValidation = false;
             try {
               if (request.status === 200) {
                 psynet.log.debug("Response was successfully received.");
-                passedValidation = await onSuccessResponse(request, onRejection);
+                passedValidation = await onSuccessResponse(
+                  request,
+                  onRejection,
+                  options,
+                );
+              } else if (psynet.isBusyResponse(request)) {
+                passedValidation = await psynet.handleBusyResponse(
+                  request,
+                  options,
+                );
+              } else if (options.timelineHoldResume) {
+                passedValidation =
+                  await psynet.handleHoldResumeTransportFailure(request);
               } else {
                 psynet.log.debug("Something went wrong.");
                 onErrorResponse(request);
-                passedValidation = false;
               }
             } catch (error) {
-              if (psynetTemplateData.flags.inplaceTimelineTransitions) {
+              if (options.timelineHoldResume && request.status !== 200) {
+                psynet.log.warn(error.stack || String(error));
+                passedValidation =
+                  await psynet.handleHoldResumeTransportFailure(request);
+              } else if (psynetTemplateData.flags.inplaceTimelineTransitions) {
                 await psynet.handleTimelineTransitionFailure(error);
               } else {
                 psynet.log.error(error.stack || String(error));
                 onErrorResponse(request);
               }
-              passedValidation = false;
             } finally {
               resolve(passedValidation);
             }
+          };
+          request.open("POST", "/response");
+          if (options.timelineHoldResume) {
+            request.timeout = psynet.timelineHoldResumeTimeoutMs;
           }
+          request.send(formData);
         };
-        request.open("POST", "/response");
-        request.send(formData);
+        send();
       });
     };
 
@@ -3162,8 +3791,10 @@
 
   let updateProgressAndReward = function () {
     if (psynet.participantId !== undefined) {
-      $.get("/timeline/progress_and_reward", {
-        participantId: psynet.participantId,
+      $.ajax({
+        url: "/timeline/progress_and_reward",
+        cache: false,
+        data: { participantId: psynet.participantId },
       }).done(function (data) {
         let progressPercentage = data["progressPercentage"];
         let progressPercentageStr = progressPercentage + "%";
@@ -3183,6 +3814,7 @@
       });
     }
   };
+  psynet.updateProgressAndReward = updateProgressAndReward;
 
   if (psynetTemplateData.flags.dynamicallyUpdateProgressBarAndReward) {
     setInterval(updateProgressAndReward, 1000);
@@ -3300,7 +3932,12 @@
     function updateClocks() {
       let msg = "";
 
-      if (document.hasFocus()) {
+      if (psynet.timelineHold) {
+        // Overlay waits replace WaitPage reloads. Sitting on a hold is not
+        // inactivity or no-focus; overall HIT time still counts below.
+        noFocusSince = 0;
+        noActivitySince = 0;
+      } else if (document.hasFocus()) {
         noFocusSince = 0;
       } else {
         noFocusSince += POLLING_INTERVAL;
@@ -3318,7 +3955,9 @@
         }
       }
 
-      noActivitySince += POLLING_INTERVAL;
+      if (!psynet.timelineHold) {
+        noActivitySince += POLLING_INTERVAL;
+      }
       const noActivityTimeout = psynetTemplateData.lucid.inactivityTimeoutMs;
       if (noActivitySince > noActivityTimeout) {
         terminateParticipant(
@@ -3349,7 +3988,7 @@
       }
     };
 
-    window.addEventListener("beforeunload", beforeunloadFunction);
+    psynet.addBeforeUnloadEventListener();
     window.beforeunloadFunction = beforeunloadFunction;
 
     const checkTriedToLeaveIntervalID = setInterval(

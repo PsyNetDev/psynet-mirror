@@ -3,6 +3,8 @@
 // This script is activated for each hosting page through ChatRoom's
 // get_js_page_modules() hook. Per-page state stays inside activate(), and the
 // returned cleanup function owns all listeners and the WebSocket it creates.
+import { leftoverLiveAfterHistory } from "./chatroom-history-merge.mjs";
+
 export async function activate({root, vars}) {
     var CONFIG       = vars["chatroom_config"] || {};
     var ROOM_ID      = CONFIG.room_id;
@@ -11,28 +13,37 @@ export async function activate({root, vars}) {
     var SHOW_HISTORY = CONFIG.show_history;
     var MY_ID        = String(dallinger.identity.participantId);
 
-    var chatSocket = null;
-    var leftChat   = false;
-    var firstOpen  = true;
-    var sendButton = null;
-    var input = null;
+    var chatConnection = null;
+    var leftChat       = false;
+    var sendButton     = null;
+    var input          = null;
+    // When show_history is set, Send stays off until the first history
+    // snapshot arrives (empty still counts). Live frames that race that
+    // snapshot are held and appended afterwards by count, not existence.
+    var historyReady   = !SHOW_HISTORY;
+    var pendingLive    = [];
 
     function leaveChat() {
         if (leftChat) return;
         leftChat = true;
-        if (!chatSocket) return;
-        try {
-            chatSocket.send(GLOBAL_CH + ":" + JSON.stringify({
-                type: "leave_room",
-                room_id: ROOM_ID,
-                sender: MY_ID,
-            }));
-        } catch (e) {}
-        try {
-            if (typeof chatSocket.close === "function") {
-                chatSocket.close();
+        if (sendButton) sendButton.disabled = true;
+        if (!chatConnection) return;
+        if (chatConnection.isOpen()) {
+            try {
+                chatConnection.send({
+                    type: "leave_room",
+                    room_id: ROOM_ID,
+                    sender: MY_ID,
+                });
+            } catch (error) {
+                console.warn("Could not notify the chatroom before leaving.", error);
             }
-        } catch (e) {}
+        }
+        try {
+            chatConnection.close();
+        } catch (error) {
+            console.warn("Could not close the chatroom connection cleanly.", error);
+        }
     }
 
     function handleBeforeUnload() {
@@ -42,12 +53,18 @@ export async function activate({root, vars}) {
     function sendMessage() {
         var text  = input.value.trim();
         if (!text) return;
-        chatSocket.send(GLOBAL_CH + ":" + JSON.stringify({
-            type: "message",
-            room_id: ROOM_ID,
-            content: text,
-            sender: MY_ID,
-        }));
+        try {
+            chatConnection.send({
+                type: "message",
+                room_id: ROOM_ID,
+                content: text,
+                sender: MY_ID,
+            });
+        } catch (error) {
+            sendButton.disabled = true;
+            console.warn("Chat message was not sent; the draft was retained.", error);
+            return;
+        }
         input.value = "";
         input.focus();
     }
@@ -86,6 +103,41 @@ export async function activate({root, vars}) {
         feed.scrollTop = feed.scrollHeight;
     }
 
+    function historyIsForMe(msg) {
+        if (msg.target_participant_id == null || msg.target_participant_id === "") {
+            return true;
+        }
+        return String(msg.target_participant_id) === MY_ID;
+    }
+
+    function enableChat() {
+        if (leftChat || !sendButton) return;
+        sendButton.disabled = false;
+    }
+
+    function applyHistorySnapshot(messages) {
+        messages.forEach(renderMessage);
+    }
+
+    function finishHistoryLoad(messages) {
+        messages = messages || [];
+        if (historyReady) {
+            // After the first snapshot, history is only catch-up for an
+            // empty feed (a persist republish after the partner missed live).
+            var feed = root.querySelector("#chatroom-messages");
+            if (!messages.length || feed.childElementCount > 0) {
+                return;
+            }
+            applyHistorySnapshot(messages);
+            return;
+        }
+        applyHistorySnapshot(messages);
+        leftoverLiveAfterHistory(messages, pendingLive).forEach(renderMessage);
+        pendingLive = [];
+        historyReady = true;
+        enableChat();
+    }
+
     function rebuildParticipantList(ids) {
         var list = root.querySelector("#chatroom-participants");
         list.innerHTML = "";
@@ -97,55 +149,6 @@ export async function activate({root, vars}) {
     }
 
     try {
-        var wsScheme = location.protocol === "https:" ? "wss://" : "ws://";
-        chatSocket = new ReconnectingWebSocket(
-            wsScheme + location.host + "/chat?channel=" + GLOBAL_CH
-            + "&worker_id=" + dallinger.identity.workerId
-            + "&participant_id=" + MY_ID
-        );
-
-        chatSocket.onopen = function () {
-            if (leftChat) return;
-            chatSocket.send(GLOBAL_CH + ":" + JSON.stringify({
-                type: "join_room",
-                room_id: ROOM_ID,
-                sender: MY_ID,
-            }));
-            if (firstOpen) {
-                if (SHOW_HISTORY) {
-                    chatSocket.send(GLOBAL_CH + ":" + JSON.stringify({
-                        type: "request_state",
-                        room_id: ROOM_ID,
-                        sender: MY_ID,
-                    }));
-                }
-                firstOpen = false;
-            }
-        };
-
-        chatSocket.onmessage = function (event) {
-            if (leftChat) return;
-            if (event.data.indexOf(GLOBAL_CH + ":") !== 0) return;
-            var msg;
-            try {
-                msg = JSON.parse(event.data.slice(GLOBAL_CH.length + 1));
-            } catch (e) { return; }
-
-            if (String(msg.room_id) !== String(ROOM_ID)) return;
-
-            if (msg.type === "message") {
-                renderMessage(msg);
-            } else if (msg.type === "occupancy_update") {
-                if (SHOW_PARTS) rebuildParticipantList(msg.participants || []);
-            } else if (msg.type === "history") {
-                if (SHOW_HISTORY && String(msg.target_participant_id) === MY_ID) {
-                    // Clear before re-rendering to avoid duplicates on reconnect.
-                    root.querySelector("#chatroom-messages").innerHTML = "";
-                    (msg.messages || []).forEach(renderMessage);
-                }
-            }
-        };
-
         sendButton = root.querySelector("#chatroom-send-btn");
         input = root.querySelector("#chatroom-chat-input");
         if (!sendButton || !input) {
@@ -153,6 +156,54 @@ export async function activate({root, vars}) {
                 "Chatroom widget requires #chatroom-send-btn and #chatroom-chat-input."
             );
         }
+        sendButton.disabled = true;
+
+        chatConnection = PsyNetWebSocketChannel.connect({
+            channel: GLOBAL_CH,
+            onOpen: function () {
+                if (leftChat) return;
+                try {
+                    chatConnection.send({
+                        type: "join_room",
+                        room_id: ROOM_ID,
+                        sender: MY_ID,
+                    });
+                    if (SHOW_HISTORY && !historyReady) {
+                        chatConnection.send({
+                            type: "request_state",
+                            room_id: ROOM_ID,
+                            sender: MY_ID,
+                        });
+                        return;
+                    }
+                    enableChat();
+                } catch (error) {
+                    sendButton.disabled = true;
+                    console.warn("Chatroom connection closed while joining.", error);
+                }
+            },
+            onClose: function () {
+                if (!leftChat) sendButton.disabled = true;
+            },
+            onMessage: function (msg) {
+                if (leftChat) return;
+                if (String(msg.room_id) !== String(ROOM_ID)) return;
+
+                if (msg.type === "message") {
+                    if (!historyReady) {
+                        pendingLive.push(msg);
+                        return;
+                    }
+                    renderMessage(msg);
+                } else if (msg.type === "occupancy_update") {
+                    if (SHOW_PARTS) rebuildParticipantList(msg.participants || []);
+                } else if (msg.type === "history") {
+                    if (SHOW_HISTORY && historyIsForMe(msg)) {
+                        finishHistoryLoad(msg.messages || []);
+                    }
+                }
+            },
+        });
 
         window.addEventListener("beforeunload", handleBeforeUnload);
         sendButton.addEventListener("click", sendMessage);

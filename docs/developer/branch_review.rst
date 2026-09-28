@@ -1,29 +1,37 @@
 Branch review in Cursor
 =======================
 
-Cursor users can run ``/review`` for day-to-day branch reviews in the ``PsyNet``
-repository.
+Before a PsyNet merge request is finalized, run ``/branch-review`` from Cursor
+chat on the feature branch. The review compares that branch to the open merge
+request's **target** (not always ``master``).
 
-Using ``/review``
-+++++++++++++++++
+Using ``/branch-review``
+++++++++++++++++++++++++
 
-#. Open Cursor chat while working in the ``PsyNet`` repository.
-#. Type ``/review``.
-#. Make sure your current branch is the feature branch you want to review.
+#. Open Cursor chat in the PsyNet repository, on the feature branch.
+#. Type ``/branch-review``.
+#. Stay off the merge-request target. If you are already on that branch
+   (often ``master``), switch to the feature branch first.
 
-If you are already on ``master``, switch to the branch you want to review first.
+What ``/branch-review`` does
+++++++++++++++++++++++++++++
 
-What ``/review`` does
-+++++++++++++++++++++
+``/branch-review`` first runs ``/update-onto-target``, then reviews
+``origin/<target>...HEAD`` and updates the GitLab title and description.
+To merge without reviewing, run ``/update-onto-target`` on its own.
 
-* compares the current branch against ``master``
-* follows the shared project workflow in ``.cursor/skills/branch-review/SKILL.md``
-* returns findings first, followed by missing tests, refactoring opportunities,
-  and residual risks
+Just before the merge request is merged into its target, run
+``/reorganize-onto-target``. When that rewrite is allowed, and why it
+must not fetch a newer target, is in
+``.cursor/skills/reorganize-onto-target/SKILL.md`` (When to run).
 
 Reference workflow
 ++++++++++++++++++
 
-The detailed review workflow lives in
-``.cursor/skills/branch-review/SKILL.md``.
-The command itself is defined in ``.cursor/commands/review.md``.
+The detailed steps live in these skills:
+
+* ``.cursor/skills/update-onto-target/SKILL.md`` (``/update-onto-target``)
+* ``.cursor/skills/branch-review/SKILL.md`` (``/branch-review``)
+* ``.cursor/skills/reorganize-onto-target/SKILL.md`` (``/reorganize-onto-target``)
+
+The matching command files are under ``.cursor/commands/``.

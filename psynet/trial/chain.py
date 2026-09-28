@@ -1359,6 +1359,13 @@ class ChainTrialMaker(NetworkTrialMaker):
         When ``sync_group_timeout_between_barriers_time`` is set: ``"kick"`` removes the participant from the group so
         the rest can proceed, or ``"fail"`` fails the participant. Defaults to ``"fail"``.
 
+    sync_group_wait_content
+        Message shown by the trial maker's own sync-group waits (initialization and
+        trial preparation). If omitted, participants see "Waiting for other
+        participants…". Author-defined :class:`~psynet.sync.Grouper` and
+        :class:`~psynet.sync.GroupBarrier` waits still use their own ``content``;
+        pass the same string on those constructs if they should match.
+
     Attributes
     ----------
 
@@ -1438,6 +1445,7 @@ class ChainTrialMaker(NetworkTrialMaker):
         sync_group_max_wait_action: Literal["fail", "kick"] = "fail",
         sync_group_timeout_between_barriers_time: Optional[float] = None,
         sync_group_timeout_between_barriers_action: Literal["kick", "fail"] = "fail",
+        sync_group_wait_content=None,
     ):
         if network_class is None:
             network_class = self.default_network_class
@@ -1582,6 +1590,7 @@ class ChainTrialMaker(NetworkTrialMaker):
             sync_group_max_wait_action=sync_group_max_wait_action,
             sync_group_timeout_between_barriers_time=sync_group_timeout_between_barriers_time,
             sync_group_timeout_between_barriers_action=sync_group_timeout_between_barriers_action,
+            sync_group_wait_content=sync_group_wait_content,
         )
 
         self.check_initialization()

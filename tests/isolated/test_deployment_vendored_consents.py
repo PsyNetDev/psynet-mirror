@@ -14,6 +14,7 @@ from psynet.utils import get_psynet_root
 
 VENDORED_DIRS = [
     Path("tests/deployment/audio_gibbs/consents_cococo"),
+    Path("tests/deployment/auto_recruit_prolific/consents_cococo"),
     Path("tests/deployment/payment_flows_prolific/consents_cococo"),
 ]
 

@@ -1508,6 +1508,13 @@ class TrialMaker(Module):
     sync_group_timeout_between_barriers_action
         When ``sync_group_timeout_between_barriers_time`` is set: ``"kick"`` removes the participant from the group so
         the rest can proceed, or ``"fail"`` fails the participant. Defaults to ``"fail"``.
+
+    sync_group_wait_content
+        Message shown by the trial maker's own sync-group waits (initialization and
+        trial preparation). If omitted, participants see "Waiting for other
+        participants…". Author-defined :class:`~psynet.sync.Grouper` and
+        :class:`~psynet.sync.GroupBarrier` waits still use their own ``content``;
+        pass the same string on those constructs if they should match.
     """
 
     state_class = TrialMakerState
@@ -1532,6 +1539,7 @@ class TrialMaker(Module):
         sync_group_max_wait_action: Literal["fail", "kick"] = "fail",
         sync_group_timeout_between_barriers_time: Optional[float] = None,
         sync_group_timeout_between_barriers_action: Literal["kick", "fail"] = "fail",
+        sync_group_wait_content=None,
     ):
         if recruit_mode == "n_participants" and target_n_participants is None:
             raise ValueError(
@@ -1576,6 +1584,7 @@ class TrialMaker(Module):
         self.sync_group_timeout_between_barriers_action = (
             sync_group_timeout_between_barriers_action
         )
+        self.sync_group_wait_content = sync_group_wait_content
 
         elts = self.compile_elts()
 
@@ -1590,6 +1599,17 @@ class TrialMaker(Module):
     time_estimate_per_trial = None
 
     introduction = None
+
+    def _sync_group_barrier_kwargs(self):
+        """Return shared kwargs for trial-maker-owned sync-group barriers."""
+        return dict(
+            group_type=self.sync_group_type,
+            max_wait_time=self.sync_group_max_wait_time,
+            max_wait_action=self.sync_group_max_wait_action,
+            timeout_between_barriers_time=self.sync_group_timeout_between_barriers_time,
+            timeout_between_barriers_action=self.sync_group_timeout_between_barriers_action,
+            content=self.sync_group_wait_content,
+        )
 
     def compile_elts(self):
         return join(
@@ -1641,13 +1661,9 @@ class TrialMaker(Module):
             # Otherwise we go ahead and initialize the participant.
             self._requires_sync_group_initialization_barrier,
             logic_if_true=GroupBarrier(
-                "init_participant",
-                group_type=self.sync_group_type,
-                max_wait_time=self.sync_group_max_wait_time,
-                max_wait_action=self.sync_group_max_wait_action,
+                self.with_namespace("init_participant"),
                 on_release=self._init_participants_in_sync_group,
-                timeout_between_barriers_time=self.sync_group_timeout_between_barriers_time,
-                timeout_between_barriers_action=self.sync_group_timeout_between_barriers_action,
+                **self._sync_group_barrier_kwargs(),
             ),
             logic_if_false=CodeBlock(self.init_participant),
             time_estimate=0.0 if self.sync_group_type is None else 3.0,
@@ -2324,14 +2340,10 @@ class TrialMaker(Module):
                 ),
                 join(
                     GroupBarrier(
-                        id_="prepare_trial",
-                        group_type=self.sync_group_type,
+                        id_=self.with_namespace("prepare_trial"),
                         on_release=self._try_to_prepare_trial_group,
                         fix_time_credit=False,  # we're already within a while loop with fixed time credit
-                        max_wait_time=self.sync_group_max_wait_time,
-                        max_wait_action=self.sync_group_max_wait_action,
-                        timeout_between_barriers_time=self.sync_group_timeout_between_barriers_time,
-                        timeout_between_barriers_action=self.sync_group_timeout_between_barriers_action,
+                        **self._sync_group_barrier_kwargs(),
                     )
                 ),
                 CodeBlock(self._try_to_prepare_trial_solo),
@@ -2344,6 +2356,8 @@ class TrialMaker(Module):
                 lambda participant: participant.trial_status == "wait",
                 logic=join(
                     try_to_prepare_trial(),
+                    # This remains an explicit page-based wait because each
+                    # iteration must rerun the preparation timeline logic.
                     WaitPage(wait_time=2.0),
                 ),
                 expected_repetitions=0,
@@ -2524,6 +2538,13 @@ class NetworkTrialMaker(TrialMaker):
         When ``sync_group_timeout_between_barriers_time`` is set: ``"kick"`` removes the participant from the group so
         the rest can proceed, or ``"fail"`` fails the participant. Defaults to ``"fail"``.
 
+    sync_group_wait_content
+        Message shown by the trial maker's own sync-group waits (initialization and
+        trial preparation). If omitted, participants see "Waiting for other
+        participants…". Author-defined :class:`~psynet.sync.Grouper` and
+        :class:`~psynet.sync.GroupBarrier` waits still use their own ``content``;
+        pass the same string on those constructs if they should match.
+
     Attributes
     ----------
 
@@ -2592,6 +2613,7 @@ class NetworkTrialMaker(TrialMaker):
         sync_group_max_wait_action: Literal["fail", "kick"] = "fail",
         sync_group_timeout_between_barriers_time: Optional[float] = None,
         sync_group_timeout_between_barriers_action: Literal["kick", "fail"] = "fail",
+        sync_group_wait_content=None,
     ):
         performance_check_is_enabled = (
             check_performance_at_end or check_performance_every_trial
@@ -2633,6 +2655,7 @@ class NetworkTrialMaker(TrialMaker):
             sync_group_max_wait_action=sync_group_max_wait_action,
             sync_group_timeout_between_barriers_time=sync_group_timeout_between_barriers_time,
             sync_group_timeout_between_barriers_action=sync_group_timeout_between_barriers_action,
+            sync_group_wait_content=sync_group_wait_content,
         )
         self.network_class = network_class
         self.wait_for_networks = wait_for_networks

@@ -23,14 +23,15 @@ See `references/browser-and-dashboard.md` for default URLs and credential lookup
 ## Workflow
 
 1. **Deploy** (optional full test): follow `references/deploy-from-test-branch.md`.
-   Prepare paid variants per `references/recruiter-variants.md`. Copy
-   `experiment.py` and `config.txt` for that recruiter, then diff-check
-   before deploy and inspect the running container after launch — do not
-   trust the git branch alone. Stagger local prepare, then overlap remote
-   builds — do not start all `psynet deploy ssh` commands at once. Name
-   branches and apps with the PsyNet version from `pyproject.toml`
-   (including alpha, e.g. `v13.4.0a0`), then the commit hash when the
-   base is not that tag (see naming in `deploy-from-test-branch.md`).
+   Prepare paid variants per `references/recruiter-variants.md`. Prolific
+   swaps `config.txt` only; Lucid `audio_gibbs` also copies
+   `experiment.py.lucid`. Diff-check before deploy and inspect the running
+   container after launch — do not trust the git branch alone. Stagger
+   local prepare, then overlap remote builds — do not start all
+   `psynet deploy ssh` commands at once. Name branches and apps with the
+   PsyNet version from `pyproject.toml` (including alpha, e.g.
+   `v13.4.0a0`), then the commit hash when the base is not that tag (see
+   naming in `deploy-from-test-branch.md`).
 2. **Infer app name** from the experiment URL hostname (first segment).
 3. **Inspect** dashboard and Dozzle per `references/browser-and-dashboard.md`.
 4. **Observe** recruiter completion per `references/observe-prolific-completion.md`

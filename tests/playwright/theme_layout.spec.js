@@ -9,6 +9,10 @@ const fs = require("fs");
 const path = require("path");
 const { test, expect } = require("./fixtures");
 
+const JQUERY_JS = fs.readFileSync(
+  path.resolve("psynet/resources/libraries/jQuery/jquery-3.7.1.min.js"),
+  "utf8"
+);
 const THEME_CSS = fs.readFileSync(
   path.resolve("psynet/resources/css/participant.css"),
   "utf8"
@@ -69,6 +73,17 @@ ${html}
   for (const script of scripts) {
     await page.addScriptTag({ content: script });
   }
+}
+
+function progressAndRewardUpdaterSource(js) {
+  const start = js.indexOf("let updateProgressAndReward = function");
+  const end = js.indexOf(
+    "if (psynetTemplateData.flags.dynamicallyUpdateProgressBarAndReward)"
+  );
+  if (start < 0 || end < 0 || end <= start) {
+    throw new Error("Could not load updateProgressAndReward from psynet.js");
+  }
+  return js.slice(start, end);
 }
 
 test(
@@ -655,6 +670,75 @@ test(
     await expect(page.locator("#exit-tooltip")).toBeVisible();
     await expect(page.locator("#exit-tooltip")).toContainText(
       "Leave without finishing."
+    );
+  }
+);
+
+test(
+  "progress and reward updates keep the tooltip breakdown current",
+  { tag: "@both" },
+  async ({ page }) => {
+    await renderTheme(page, {
+      viewport: { width: 1280, height: 720 },
+      includeBootstrap: true,
+      scripts: [JQUERY_JS],
+      html: `
+        <div id="timeline-progress-bar" style="width: 10%" aria-valuenow="10"></div>
+        <span id="timeline-progress-label" data-progress="10%"></span>
+        <span id="reward-summary" class="psynet-tooltip__trigger" tabindex="0"
+              aria-describedby="reward-tooltip">
+          <strong>$<span id="total-reward">0.00</span></strong>
+        </span>
+        <span id="reward-tooltip" class="psynet-tooltip__content" role="tooltip">
+          Reward earned so far:
+          $<span id="time-reward">0.00</span> for time +
+          $<span id="performance-reward">0.00</span> for performance.
+        </span>`
+    });
+
+    await page.evaluate((updaterSource) => {
+      window.psynet = { participantId: 7 };
+      const update = new Function(
+        `${updaterSource}; return updateProgressAndReward;`
+      )();
+      const originalAjax = window.$.ajax;
+      window.$.ajax = function (settings) {
+        const url = settings && settings.url;
+        if (!String(url).includes("/timeline/progress_and_reward")) {
+          throw new Error(`Unexpected progress URL: ${url}`);
+        }
+        return {
+          done(callback) {
+            callback({
+              progressPercentage: 40,
+              reward: { time: 1.5, performance: 0.25, total: 1.75 }
+            });
+            return this;
+          }
+        };
+      };
+      try {
+        update();
+      } finally {
+        window.$.ajax = originalAjax;
+      }
+    }, progressAndRewardUpdaterSource(PSYNET_JS));
+
+    await expect(page.locator("#time-reward")).toHaveText("1.50");
+    await expect(page.locator("#performance-reward")).toHaveText("0.25");
+    await expect(page.locator("#total-reward")).toHaveText("1.75");
+    await expect(page.locator("#timeline-progress-bar")).toHaveAttribute(
+      "aria-valuenow",
+      "40"
+    );
+    await expect(page.locator("#timeline-progress-label")).toHaveAttribute(
+      "data-progress",
+      "40%"
+    );
+    await expect(page.locator("#reward-details")).toHaveCount(0);
+    await page.locator("#reward-summary").focus();
+    await expect(page.locator("#reward-tooltip")).toContainText(
+      "$1.50 for time + $0.25 for performance"
     );
   }
 );
@@ -1248,6 +1332,7 @@ function timelineMarkup({ footer, media = true }) {
       : "";
   return `
     <div id="timeline-header"></div>
+    <div id="timeline-hold-region"></div>
     <div id="main-body">body</div>
     ${chrome}
     <script id="psynet-template-data" type="application/json">{}</script>

@@ -28,8 +28,9 @@ In-place navigation
 
 With ``inplace_timeline_transitions = true``, an approved ``/response`` request
 also contains the rendered next-page fragment. The existing document remains
-open while PsyNet replaces the timeline header, main body, footer, and page
-bootstrap data.
+open while PsyNet replaces the timeline header, hold region, main body, and page
+bootstrap data. The footer and Leave modal are optional and are inserted,
+removed, or replaced when present.
 
 Keeping the document open avoids a full reload, but it also means that PsyNet
 must explicitly reproduce the resource cleanup and initialization that a reload
@@ -42,25 +43,146 @@ Server-side rendering
 
 * Full mode renders the complete timeline document.
 * Partial mode renders the internal ``#psynet-timeline-fragment`` payload used
-  by ``/response``.
+  by ``/response``. Child templates that extend ``timeline-page.html`` are
+  rewritten to ``timeline-fragment.html`` so Jinja does not compile Dallinger's
+  layout and then throw it away. Child ``stylesheets`` extras (wait-page CSS,
+  consent stylesheet links) are emitted into ``#psynet-fragment-assets``.
+  Complete templates that do not extend the timeline page still render the
+  full document, then extract the fragment.
+
+Jinja translation environments are cached per locale on the Flask app, and
+compiled template strings are reused, so hold-resume HTML is not dominated by
+rebuilding the document shell on every request.
+
+BeautifulSoup is not the inplace bottleneck. PsyNet skips it for fragment
+roots, for full pages without ``type="module"`` scripts, and for prompt markup
+that has no ``<script>``, ``<style>``, or ``<link>`` tags. Executable script
+rewrites skip bodies of ``script``, ``style``, and ``template`` so JSON
+bootstrap data is not mutated. Soup remains the fallback when the fragment
+root cannot be extracted, and when copying tagged head CSS from a full-document
+partial render.
 
 Before extracting a partial fragment, PsyNet:
 
 * validates the page/template contract;
 * makes executable embedded scripts inert;
-* copies managed page CSS from the rendered head into the fragment;
+* includes child stylesheet extras and page CSS in the fragment assets;
 * includes a fresh ``#psynet-template-data`` JSON payload.
 
 Full-page renders apply the same contract check. They also emit
 ``js_dependencies`` as blocking head scripts so first-page body markup can use
 those libraries before managed page JavaScript activates.
 
+Timeline requests separate state mutation from rendering:
+
+1. A short write transaction locks the participant, advances or records the
+   timeline state, and resolves the provisional page.
+2. If that phase records barrier arrivals, PsyNet commits them and evaluates
+   the affected barrier instances in short coordination transactions.
+   Last-arrival hold-wake publishes go out as soon as each of those inner
+   commits lands, so waiting partners can overlay-resume while this request
+   still renders. The barrier poller still defers wakes until its sweep
+   returns, so it does not notify partners while later poller skips still
+   lock their rows.
+3. PsyNet resolves the final page, runs ``pre_render()``, and commits any
+   preparation writes, releasing locks. Remaining queued hold wakes publish
+   after that commit. How ``GET /timeline`` re-reads the live cursor, skips a
+   ready hold, or recovers a dropped last-arrival check is described in
+   :ref:`timeline-hold-resume-protocol`.
+4. HTML, JSON, or an inplace fragment is rendered in a fresh PostgreSQL
+   read-only transaction with SQLAlchemy autoflush disabled.
+5. PsyNet verifies that rendering created no new, dirty, or deleted ORM
+   objects, then rolls back the read transaction.
+
+``pre_render()`` is therefore the supported hook for render preparation that
+needs database writes. Calling ``commit()``, flushing ORM mutations, or issuing
+SQL writes from ``render()`` or templates raises an error. If another request
+advances the participant between the write commit and render, HTML requests
+redirect to the current timeline page. ``GET /timeline?mode=json`` returns
+HTTP 409 with ``{"status": "stale", ...}``; an already committed
+``POST /response`` returns a synchronization rejection so the participant can
+refresh without submitting the answer twice.
+
+Custom response processing
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Overrides of :meth:`~psynet.experiment.Experiment.process_response` run in the
+write phase and must return :class:`~psynet.experiment.ResponseResult`.
+``ResponseResult.payload`` contains the response data, ``page`` retains the
+resolved page for post-commit rendering, and ``flask_response`` can bypass the
+normal payload path. The method takes a keyword-only
+``timeline_hold_resume`` flag (default ``False``). Overrides should accept
+``**kwargs`` (or that keyword) so ``POST /response`` can pass it. For
+example::
+
+    from psynet.experiment import ResponseResult
+
+    def process_response(self, *args, **kwargs) -> ResponseResult:
+        result = super().process_response(*args, **kwargs)
+        result.payload["custom_status"] = "ready"
+        return result
+
+The former ``response_approved`` and ``render_partial_timeline_payload`` hooks
+are no longer part of this pipeline. Put database preparation in
+``pre_render()``, customize response data through ``ResponseResult``, and keep
+``render()`` read-only.
+
+Participant-facing write phases use a bounded PostgreSQL ``lock_timeout`` so
+unexpected contention fails safely instead of occupying a web worker
+indefinitely. ``GET /timeline?mode=json`` and ``POST /response`` return
+HTTP 503 with a JSON ``busy`` payload so the browser and automated drivers can
+retry. Browser HTML ``GET /timeline`` returns an HTML 503 page that refreshes
+automatically. Hold-resume submissions retry a busy 503 once in the same
+POST. If that retry is also busy, the browser schedules one delayed queued
+hold wake. A further busy response reschedules the hold safety poll instead of
+retrying immediately, so the browser cannot livelock on contention. Whole timeline requests are not retried
+automatically on the server because author code blocks may contain
+non-idempotent external side effects. Barrier definitions and per-group visit
+instances are created in the arrival request's transaction. Each instance
+stores a versioned JSON specification of its release behavior rather than an
+opaque Python-object snapshot. The poller claims an instance with an advisory
+transaction lock, rather than locking mutable metadata that another request
+needs to update. When the last participant
+arrives at a barrier, PsyNet commits the normal write phase and evaluates the
+barrier in a short coordination transaction before rendering. This preserves
+the fast route without holding partner rows through author code or
+``pre_render()``. Last-arrival does not skip partner timeline cursors after
+that check commits; partners leave on overlay wake (websocket on-open, a 2 s
+safety poll, or a later GET). The last arriver self-skips the hold they just
+released. A hold consumed immediately after skipping a released wait
+(last-arrival self-skip, overlay resume, GET recovery, or a poller skip)
+is marked silent so the overlay stays a spinner until partners catch up.
+The overlay chip and websocket are reused when the next page is also a hold.
+The visit claim is held on a second connection until that check finishes.
+The ORM session does not take that key while the extra transaction is open.
+A blocking wait for that claim that hits ``lock_timeout`` returns HTTP 503
+rather than first-painting the live hold. Websocket wakes from those
+coordination commits publish as soon as the release commits, so waiting
+partners may overlay-resume while this request still renders. Last-arrival
+waits for the instance advisory claim the poller uses, then locks waiters
+with ``NOWAIT``. If a waiter row is still busy, the request retries that
+check once immediately (still ``NOWAIT``). It does not wait for the other
+request to commit; if the retry still misses, the last arriver first-paints
+the live cursor. SAVEPOINT releases inside a check are not treated as
+durable commits for those wakes; a later root rollback discards them. The
+barrier poller locks waiters with ``FOR UPDATE NOWAIT`` so a participant
+write cannot stall other groups; if any waiter is busy, that barrier is
+skipped until the next tick. When the **poller** releases waiters, it skips
+those waiters after that commit and keeps wake publishes unpublished until
+the sweep returns, so those partners do not hold-resume onto each remaining
+barrier one tick at a time. The sync-group recount job likewise skip-locks
+one group at a time.
+
 The fragment must contain the elements the persistent document replaces:
 
 * ``#timeline-header``
+* ``#timeline-hold-region``
 * ``#main-body``
-* ``#footer``
 * ``#psynet-template-data``
+
+``#footer`` and ``#early-exit-modal`` are optional. Pages that hide the footer
+or have nothing to put in it omit those nodes; the client inserts, removes, or
+replaces them instead of requiring them.
 
 Page bootstrap data
 -------------------
@@ -236,11 +358,194 @@ rendering a fragment for the next reload page. Same-session handling takes
 precedence, so Unity pages sharing a ``session_id`` can still update their
 persistent session without reloading.
 
+Timeline holds
+~~~~~~~~~~~~~~
+
+Timeline holds pause server-side advancement without replacing the visible
+page. They are used by default barriers and by :func:`psynet.page.wait_while`.
+Condition holds first evaluate their condition and are skipped entirely when
+there is nothing to wait for.
+The server advances to an internal hold checkpoint and returns hold
+configuration on the page (``page.attributes.timeline_hold``) instead of a
+timeline fragment. The browser updates only its
+submission UUID, makes the visible controls inert, and renders a compact status
+indicator in ``#timeline-hold-region``. That region is fixed-position, so the
+indicator floats above the participant's content instead of reflowing it when a
+hold starts or ends. It stacks below the Leave confirmation so an open Leave
+dialog covers the wait chip.
+
+The visible page retains its own ``window.pageUuid``, ``session_id``,
+``requires_full_page_reload``, media, timers, and managed JavaScript until the
+hold finishes. Consequently, release can still perform a same-session update
+or honor the visible page's full-reload requirement. Refreshing during a hold
+loads a neutral fallback page and reconnects to the same durable hold record.
+
+Workers and barriers queue participant-targeted wake messages in the current
+database transaction. PsyNet publishes the messages on that participant's hold
+channel (``psynet_timeline_hold:<id>``) only after commit. Delivery is an
+optimization rather than authority: the browser always submits an idempotent
+resume check, and the server re-evaluates the condition. ``check_interval``
+remains the bounded fallback for missed messages and arbitrary conditions
+without a framework event.
+
+When the last hold on a page ends, the browser closes the hold-channel
+WebSocket. The next hold reconnects. Partner-ready notices use the same
+channel; the extra arrival-update socket opens only while the participant
+is in an active sync group and not already on a hold. If membership is not
+already loaded, a cheap existence check decides whether to open that socket.
+Redis delivery is an optimization: when that socket opens, the browser also
+fetches ``GET /timeline/arrival_notice`` so a partner who arrived during
+connect is still shown. Hold-resume POSTs set
+``timeline_hold_resume`` so that if a partner already advanced this waiter
+(rotating ``page_uuid``), the server still returns the current page for an
+in-place update. A genuine reject, or a missing timeline fragment, still
+reloads ``/timeline`` instead of leaving the overlay in place.
+
+Holds emit ``timelineHoldStarted`` and ``timelineHoldEnded`` browser events.
+Their ``detail.holdId`` identifies the wait. Authors that deliberately want a
+separate waiting screen should use :class:`psynet.page.WaitPage` directly or
+pass it explicitly as ``wait_page``/``waiting_logic``.
+
+By default, holds credit actual participant-visible waiting time up to
+``max_wait_time``. This may differ from the ``expected_wait`` used for progress,
+advertised duration, and reward estimation. ``fix_time_credit=True`` restores
+fixed expected credit when predictable per-participant payment is preferred.
+This policy also applies to ``AsyncCodeBlock(wait=True)`` and framework
+feedback/asset-processing waits because they use
+:func:`psynet.page.wait_while`.
+Timeout failures use ``timeline_hold:<hold_id>`` and ``fail_on_timeout`` failure
+tags.
+
+Timeline-hold resume checks use the durable hold record directly. They do not
+create :class:`~psynet.timeline.Response` rows or call the internal hold page's
+``process_response()``, validation, or ``on_complete()`` hooks. Analyze waiting
+through ``TimelineHoldRecord`` and participant wait-time fields rather than by
+counting response rows. If this waiter's later request already advanced the
+cursor, the hold-resume POST still carries the hold page's uuid. The server
+recognizes that uuid when it still matches this participant's hold record.
+Ordinary submits and hold-resume overlays both catch up onto a later hold. An
+unknown uuid is still a sync mismatch.
+
+.. _timeline-hold-resume-protocol:
+
+Resume protocol
+^^^^^^^^^^^^^^^
+
+Named traces and the invariants tests must witness are in
+:doc:`timeline_hold_traces`. Use that page when checking whether a
+race can happen; the rest of this section is the lock protocol.
+
+Skipping a ready hold is one step, ``Experiment._advance_past_ready_holds``.
+The caller must already hold the participant row. Last-arrival uses it after
+the check commit so this request does not first-paint the hold it just
+released; partners resume on their own hold-resume POST or ``GET /timeline``.
+``POST /response`` uses it in the same write that processed the submit;
+``GET /timeline`` uses it only after a dedicated relock.
+
+Those routes do not share a lock protocol:
+
+* Ordinary ``POST /response`` waits up to ``timeline_lock_timeout_seconds``.
+  Hold-resume POSTs that still wait do not take the participant row, so
+  last-arrival can lock waiters with ``NOWAIT``. Those overlay checks also
+  skip ``account_wait``; wait credit is recorded when the hold actually
+  resumes. A hold-resume that will advance takes the participant with
+  ``NOWAIT`` so it cannot sit behind the last arriver's row lock.
+  ``POST /response`` still reports ``Server-Timing`` phases
+  (``process``, ``barriers``, ``render``, ``app``).
+  ``GET /timeline`` reports ``lock``, ``page``, ``barriers``, ``render``, and
+  ``app``. ``lock`` is the participant ``FOR UPDATE`` load; ``page`` is
+  ``get_current_page`` through the first commit; ``barriers`` is hold skip
+  plus last-arrival checks; ``render`` is the HTML (or JSON) body. A phase
+  that never ran is omitted from the header, so a lock timeout is ``lock``
+  plus ``app`` without a fake ``page;dur=0``. Browser wall time minus ``app``
+  is queueing plus network. ``psynet debug local`` (Flask) is one process, so
+  last-arrival and waiter POSTs cannot overlap. There is no worker-count flag
+  for that Flask reloader; use ``psynet debug --legacy`` for gunicorn workers.
+  ``psynet debug --legacy`` starts gunicorn; both Playwright CI jobs use that
+  path, so CI does not exercise the default single-process Flask reloader.
+  The default vs legacy *job* split is in-place vs full reload, not
+  Flask vs gunicorn. Worker-pool ``queue~`` happens in both job modes: the
+  last arriver's request (entry ``GET /timeline``, or a later last-arrival
+  ``POST /response``) occupies one worker while each waiter POSTs hold-resume.
+  Playwright hold tests set workers to the session count plus two spares.
+  Remaining ``queue~``
+  means the pool is still busy: two waiters leaving together can overlap
+  next-page ``render``. Do not subtract that wait from overlay linger.
+  Overlay linger is last-wake→last-end wallclock; Playwright logs it and
+  fails only if it exceeds 30000ms. ``GET /timeline`` and load-participant
+  handler checks use 3000ms.
+  A short HTTP 503 on hold-resume is ``NOWAIT``
+  overlap, not a missed wake.
+* After the arrival write commits, queued barrier checks run in short
+  transactions. Websocket wakes from those inner commits publish as soon
+  as the release commits, so waiting partners may overlay-resume while
+  this request still renders. Last-arrival waits for the instance
+  advisory claim (the lock the 0.5 s poller tries) so a GET does not
+  first-paint a hold while the poller still owns that visit. A waiter
+  arrival whose pending check would not release anyone tries that claim
+  without waiting, so it does not occupy a worker in ``lock_timeout``.
+  ``POST /response`` uses the same peek after the arrival write commits,
+  as do checks queued after a ready-hold skip. A spec error during that
+  peek leaves the group waiting instead of failing the arriver. That
+  claim is a transaction lock on a dedicated connection, held until the
+  check finishes. The poller keeps the claim until its own
+  skip-after-commit finishes. If the last arriver's wait for that claim
+  times out, ``GET /timeline`` returns HTTP 503 rather than rendering the
+  live hold. Waiter rows stay ``NOWAIT``. If a partner row is still busy,
+  that GET retries the check once immediately (still no lock wait). It
+  does not wait for the other request to commit. If that retry still
+  misses, the last arriver first-paints the live cursor; the poller
+  finishes the skip only when it won the release. A missed check still
+  relocks this arriver and self-skips a hold that is already released,
+  so first-paint is not that hold. If the poller already released the
+  visit, the last arriver's claim can see zero waiters. The last
+  arriver's GET expires its identity map, skips the hold it just
+  cleared, and follows the live cursor. Last-arrival does not skip
+  partner timeline cursors after the check commit; partners leave on
+  overlay wake. ``get_current_elt`` may return a new object for the same
+  barrier hold when a trial page maker reconstructs the wait. That is
+  still this wait, not a cursor move; comparing Python identity would
+  loop until the hold times out.
+* ``GET /timeline`` then re-reads the live cursor. If a partner already
+  advanced this waiter, GET prepares that live page. If the hold is ready,
+  GET takes blocking ``FOR UPDATE`` only after ``is_ready_to_resume`` (timeout
+  and fail must not run yet), skips, commits, and re-reads again. If the hold
+  is not ready, GET may recover a dropped last-arrival check without
+  ``FOR UPDATE``, so the last arriver can still lock waiters with ``NOWAIT``.
+  That recovery tries the visit claim and first-paints the hold on a miss; it
+  does not wait for last-arrival to drop the claim. Bots POST
+  ``timeline_hold_resume`` on hold overlays and pause briefly while still
+  waiting, so parallel drivers do not take blocking ``FOR UPDATE`` on an
+  unready hold.
+  When that skip advances ``page_uuid`` during read-only render, GET returns
+  302 to the same URL so the next document follows the live cursor. First-paint
+  checks must wait for the following 200 HTML, not the empty redirect body.
+* ``SET LOCAL lock_timeout`` expires at each of those commits, so GET
+  reapplies it before the next lock or ``pre_render()``.
+
+Leftover inactive visits are a separate path. Last-arrival keeps
+``instance.active``, so it does not look up another waiting pool.
+``Barrier._other_active_pool`` returns immediately in that case. An inactive
+leftover with waiters migrates them onto the live visit and then evaluates
+that visit's reconstructed barrier. Extra SQL belongs only on that inactive
+path; see :ref:`barrier-arrival-sql-budgets`.
+
 Bots
 ~~~~
 
 Bot submissions do not request timeline fragments. Bots advance server state
-and obtain the next page through the normal server-side page interface.
+and obtain the next page through the normal server-side page interface. Hold
+overlays POST ``timeline_hold_resume`` so a still-waiting driver does not take
+blocking ``FOR UPDATE`` on the participant row. If the overlay is still
+waiting after that submit, the driver pauses briefly before the next page
+instead of busy-looping ordinary Next. Timeline GETs use HTML so
+``render_pages=True`` still compiles page templates, and retry structured
+busy 503s a few times so a poller skip that briefly holds the row does not
+fail the bot. A stale HTML render redirects to the live page. Bot POSTs
+retry those busy 503s the same way. If this waiter already advanced, or last-arrival
+skipped its own later hold, an ordinary POST of the previous hold uuid is
+catch-up, not a multi-tab reject. Hold-resume overlays catch up the same way
+so the browser can swap in place.
 
 Adding new frontend components
 ------------------------------
@@ -283,6 +588,14 @@ Key implementation and test locations
 * ``psynet/timeline.py`` — Page rendering and fragment extraction.
 * ``psynet/templates/timeline-page.html`` — full and partial timeline shapes.
 * ``psynet/resources/scripts/psynet.js`` — browser lifecycle orchestration.
+* ``psynet/resources/scripts/websocket-channel.js`` — shared WebSocket channel
+  framing and reconnect lifecycle.
+* ``psynet/timeline_hold.py`` — durable hold state, accounting, and wake
+  publication.
+* ``psynet/experiment.py`` — GET hold resolution (``_resolve_get_timeline_hold``,
+  ``_skip_ready_hold_on_get``) and the shared skip
+  (``_advance_past_ready_holds``).
+* ``psynet/sync.py`` — visit-claim waits gated by ``Barrier.would_release``.
 * ``tests/isolated/test_timeline.py`` — render/fragment contracts.
 * ``tests/playwright/inplace_timeline_transitions.spec.js`` — browser lifecycle
   and failure boundaries.
@@ -290,3 +603,7 @@ Key implementation and test locations
   both transition modes.
 * ``tests/playwright/legacy_page_javascript.spec.js`` — deprecated ``scripts``
   and ``js_links`` force full reloads with classic globals.
+* ``tests/playwright/timeline_hold.spec.js`` — condition, timeout, refresh,
+  feedback, reload, and same-session hold behavior.
+* ``tests/playwright/stacked_group_holds.spec.js`` — concurrent last arrivals
+  and stacked group-hold release.

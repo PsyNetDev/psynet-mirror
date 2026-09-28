@@ -1,0 +1,11 @@
+[Config]
+title = Timeline hold client behavior
+description = Test experiment for hold overlay and busy-retry client behavior.
+contact_email_on_error = test@example.com
+organization_name = PsyNet
+
+recruiter = generic
+currency = $
+wage_per_hour = 12.0
+inplace_timeline_transitions = true
+leave_comments_on_every_page = true
