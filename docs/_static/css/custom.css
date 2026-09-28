@@ -51,6 +51,17 @@ h1 img[alt="PsyNet logo"] {
   overflow-wrap: anywhere;
 }
 
+.landing-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+
+.landing-buttons p {
+  margin: 0;
+}
+
 /* "What's it like" steps: a vertical line joins the numbered steps. */
 section.study-step {
   position: relative;
