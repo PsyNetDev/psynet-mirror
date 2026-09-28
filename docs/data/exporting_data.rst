@@ -33,9 +33,11 @@ Useful options:
 
 A new export is assembled in a temporary directory and moved into place only
 once it is complete and validated. The previous ``exports/latest/`` then
-moves to ``exports/history/<timestamp>/``. A failed or interrupted export
-leaves the previous export intact; if both publishing the new export and
-restoring the old one fail, the error names both locations. ``exports/`` is
+moves to ``exports/history/<timestamp>/``. With ``--path``, the previous
+export at that path is replaced, not moved to history. A failed or
+interrupted export leaves the previous export intact; if both publishing the
+new export and restoring the old one fail, the previous export stays at its
+recovery path and the error names both locations. ``exports/`` is
 excluded by ``deploy.toml`` and ignored by the experiment's ``.gitignore``.
 
 PsyNet doesn't prune ``exports/history/``. Asset files in each entry are hard
@@ -50,7 +52,7 @@ During a study
 
 Export after the first batch of participants, regularly while data
 collection runs, and once more after the last participant has finished.
-Once the app is destroyed or the server torn down, you can no longer export
+Once you destroy the app or tear down the server, you can no longer export
 with ``psynet export``, so treat any data you haven't exported as lost. If an
 export fails, rerun the command.
 
@@ -99,7 +101,8 @@ non-interactive shell, pass ``--allow-project-mismatch`` to continue:
 
 These checks also apply with ``--path``. PsyNet checks the downloaded
 ``manifest.json`` too, so a deployment replaced during the transfer can't
-publish the wrong archive. Deployments running a PsyNet version without the
+publish the wrong archive; identity fields missing from the downloaded
+manifest count as a mismatch. Deployments running a PsyNet version without the
 identity check can't be exported with a newer client: install the deployed
 version (see ``constraints.txt``) or export from the dashboard.
 
@@ -120,7 +123,8 @@ than relying on the next export to notice:
     psynet assets cache prune --all
 
 When the cache grows past a soft limit (50 GiB by default), PsyNet warns
-after the export but doesn't delete anything. Change the limit with the
+after the export but doesn't delete anything; a single large experiment may
+legitimately exceed the limit. Change the limit with the
 ``PSYNET_ASSET_CACHE_SOFT_LIMIT_BYTES`` environment variable.
 
 Automatic backups

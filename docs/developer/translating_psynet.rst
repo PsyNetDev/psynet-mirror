@@ -9,7 +9,8 @@ the :doc:`/dashboards/translation`.
 Catalogs in merge requests
 --------------------------
 
-Merge requests that change PsyNet source should not update ``psynet/locales``.
+Merge requests that change PsyNet source code should not also update
+``psynet/locales``; translation-only merge requests are the exception.
 Package catalogs are refreshed on the release branch with ``psynet translate``,
 which also runs ``psynet.translation.check.check_translations``. Until then, a
 missing PsyNet catalog entry behaves as follows:

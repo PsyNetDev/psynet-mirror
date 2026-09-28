@@ -5,10 +5,9 @@
 SSH servers
 ===========
 
-PsyNet deploys experiments to a Linux server over SSH with ``psynet debug
-ssh`` and ``psynet deploy ssh``. This page is the reference for such
-servers. Configuring your computer and registering a server are covered in
-:doc:`/deploy/setting_up_a_server`.
+PsyNet deploys experiments over SSH with ``psynet debug ssh`` and ``psynet
+deploy ssh`` to a Linux server that you have
+:doc:`set up and registered </deploy/setting_up_a_server>`.
 
 Server size
 ^^^^^^^^^^^
@@ -45,9 +44,7 @@ before registering the server.
 Setting up a Docker registry (optional)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-``psynet deploy ssh`` builds the image on the server and does not push it, so
-``docker_image_base_name`` can be any name. A Docker registry is needed only
-if you push your images, for example with Dallinger's ``dallinger docker-ssh
+A Docker registry is needed only if you push your images, for example with Dallinger's ``dallinger docker-ssh
 deploy --push-build`` or ``--local_build`` options. In that case
 ``docker_image_base_name`` must point to a registry you can push to.
 
@@ -133,9 +130,8 @@ You deploy experiments using the ``psynet deploy`` command:
 ``--server`` chooses which server, registered with
 ``dallinger docker-ssh servers add`` (or ``dallinger ec2 provision``), to deploy
 to. You can leave it out if you have registered only one server; with several,
-PsyNet asks you to choose. Note that ``dallinger ec2 provision --dns-host``
-registers two servers (the AWS hostname and the DNS name), so pass ``--server``
-explicitly in that case. The experiment is served at a subdomain of the
+PsyNet asks you to choose. For a server created with ``dallinger ec2
+provision``, pass the ``--dns-host`` name. The experiment is served at a subdomain of the
 server's name, here ``your-app-name.your-server.example.org``.
 
 You only need ``--dns-host`` if you registered the server by IP address, or to

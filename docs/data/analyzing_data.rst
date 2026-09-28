@@ -58,4 +58,5 @@ Loading an export into a local database
 ``psynet load export.zip`` replaces the local database with the archive, so
 you can query it directly. Stop
 ``psynet debug`` and any other client using the same database role first:
-PsyNet refuses to drop tables while another client is connected.
+PsyNet refuses to drop tables while another client using that role is
+connected.

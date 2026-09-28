@@ -18,8 +18,8 @@ tables let PsyNet restore the experiment to that state (see
 by implementing ``get_basic_data`` (see :doc:`/data/basic_data`). It is
 present only if you have implemented that method.
 
-**Assets** are files created during the experiment, such as audio
-recordings.
+**Assets** are media files such as audio recordings; by default an export
+includes only those created during the experiment (see :ref:`export_assets`).
 
 **Server logs** (``logs.jsonl``) are included in exports from an SSH server
 when they are available. They may contain confidential information, so

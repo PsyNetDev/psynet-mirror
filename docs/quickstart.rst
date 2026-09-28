@@ -76,4 +76,8 @@ The agent reads the PsyNet instructions that ``psynet setup`` installed,
 proposes a plan, writes the experiment and tests it. When it's done, run
 ``psynet debug local`` again and take part yourself.
 
-To write the code yourself instead, see :doc:`/code/index`.
+To write the code yourself instead, start with
+:doc:`/code/project/creating_an_experiment`. Writing PsyNet code by hand needs
+some familiarity with Python (functions, classes and imports), the command
+line and Git. If you're new to Python, start with
+`Python's Getting Started page <https://www.python.org/about/gettingstarted/>`_.

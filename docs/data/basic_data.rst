@@ -83,8 +83,9 @@ parameters, ``dashboard_user`` and ``dashboard_password``. The
 
     curl "https://your-experiment-url.com/basic_data?dashboard_user=USER&dashboard_password=PASSWORD"
 
-Other query parameters are passed to ``get_basic_data`` as keyword arguments,
-so one method can serve several views:
+All query parameters, including the credentials, are passed to
+``get_basic_data`` as keyword arguments, so one method can serve several
+views:
 
 .. code:: python
 

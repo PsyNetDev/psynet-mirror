@@ -15,8 +15,8 @@ and other media can identify participants. Don't share ``logs.jsonl``.
 Asset access tokens
 -------------------
 
-``database/asset.csv`` includes each asset's ``access_token`` and ``url``,
-which are the links the running experiment uses to serve the file
-(``/asset/<access_token>``). Once the deployment is gone they are harmless.
-If you share an export while the experiment is still running, delete those
-columns so the links can't be used to fetch files from it.
+``database/asset.csv`` includes each asset's ``access_token`` and ``url``.
+With ``LocalStorage``, ``url`` is ``/asset/<access_token>`` and stops working
+once the deployment is gone. With S3 storage, ``url`` is a public link that
+works as long as the bucket exists. Delete both columns before sharing unless
+neither link still works.
