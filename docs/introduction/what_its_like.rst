@@ -6,7 +6,7 @@ What's it like to use PsyNet?
 This page follows one made-up study from idea to data: how pleasant do
 people find 40 recorded chords? A coding agent writes the code here. You
 can also write it yourself, starting from a demo; see
-:doc:`/getting_started/customizing_an_experiment`.
+:doc:`/guides/by_hand/customizing_an_experiment`.
 
 .. rst-class:: study-step
 
