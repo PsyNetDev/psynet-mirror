@@ -67,7 +67,7 @@ We recommend the following procedure:
 Test
 ----
 
-Use the full :doc:`testing guide </test/logic_testing>` for details on
+Use the full :doc:`testing guide </test/backend>` for details on
 PsyNet's test commands. In the lab deployment workflow, the important
 checkpoint is that the experiment has been tested in the same order it
 will be deployed:

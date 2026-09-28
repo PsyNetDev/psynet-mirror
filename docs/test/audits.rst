@@ -5,11 +5,10 @@ Audits
 
 An experiment audit collects the evidence that an experiment was built and
 tested as intended, for someone to review before launch. It lives in the
-experiment's ``audit/`` folder and is rendered as a static website.
-
-A coding agent creates and updates the audit as it works. To view it, run
-``psynet audit serve --render`` in the experiment folder and open the
-address it prints.
+experiment's ``audit/`` folder and is rendered as a static website. A coding
+agent creates and updates the audit as it works. To view it, run
+``psynet audit serve --render`` in the experiment folder and open the address
+it prints.
 
 Sections
 --------
@@ -27,18 +26,25 @@ Sections
    The experiment's ``experiment.py``.
 
 **Screenshots and participant video**
-   Screenshots of the participant pages, and a recording of a session.
+   Screenshots of the participant pages, and a recording of a session; see
+   :doc:`frontend`.
 
 **Performance test**
-   Page response times with many simulated participants at once. See
-   :doc:`performance_testing`.
+   Response times with many bots at once; see :doc:`scalability`.
 
 **Data exports**
-   The export produced by :doc:`simulated participants
-   </test/bots>`, in the same format as a real export.
+   The export produced by bots, in the same format as a real export; see
+   :doc:`backend`.
 
 **Design simulation**
-   The power analysis, if the study has one. See :doc:`/test/bots`.
+   The power analysis, if the study has one. PsyNet's default approach is
+   precision estimation: the whole experiment is simulated many times, with
+   bots whose answers come from a response model; the planned analysis is run
+   on each simulated dataset; and the precision of its estimates is compared
+   across numbers of participants, stimuli or trials. If participants are
+   paid, each design's precision is compared with its cost. The section also
+   records where the response model's parameter values come from: pilot
+   data, the literature, or a guess.
 
 **Analysis**
    The planned analysis, run on the simulated export.
@@ -52,13 +58,6 @@ Sections
 
 Sections that don't apply to an experiment are omitted.
 
-Before launch
--------------
-
-The audit records what was checked, not whether those were the right
-checks. Before launching, also take the experiment yourself on a laptop and
-on a phone.
-
 .. seealso::
 
-   :doc:`/test/audit_reference`, for the audit's files and commands.
+   :doc:`/reference/audit`, for the audit's files and commands.

@@ -311,3 +311,31 @@ Details for the implementation:
 - Selenium is already a Dallinger dependency and Chrome is already required,
   so no new dependency is needed. Keep the flag opt-in, because it adds a
   second or two per page.
+
+Section dropdowns in the documentation header
+---------------------------------------------
+
+Date
+++++
+
+2026-09-28
+
+Problem
++++++++
+
+Each top-level documentation section (Design, Test, and so on) has an index
+page that exists only to hold the section's table of contents. Clicking a
+section in the header opens that index page, which lists the section's pages
+without adding anything, instead of taking the reader to the content.
+
+Idea
+++++
+
+Replace the header links for sections with dropdown menus listing the
+section's pages, so a reader goes straight to the page they want. The PyData
+theme has no built-in support for this, so it needs a small Sphinx extension
+(roughly 60 lines) that reads each section's toctree during the build and a
+custom ``navbar-nav`` template that renders Bootstrap dropdowns. The section
+index pages would then be reached only from breadcrumbs, and could redirect
+to the section's first page. The dropdowns also need to work in the
+collapsed header on phones.
