@@ -4082,20 +4082,20 @@ def _stop_server(server_info):
             except Exception:
                 pass
 
-    config = get_config(load=True)
-    base_port = config.get("base_port")
-    deadline = time.monotonic() + 10
-    while port_is_open(base_port) and time.monotonic() < deadline:
-        time.sleep(0.2)
-    if port_is_open(base_port):
-        print(
-            f"⚠ Port {base_port} still in use after server stop — next stage may fail to start"
-        )
+        config = get_config(load=True)
+        base_port = config.get("base_port")
+        deadline = time.monotonic() + 10
+        while port_is_open(base_port) and time.monotonic() < deadline:
+            time.sleep(0.2)
+        if port_is_open(base_port):
+            print(
+                f"⚠ Port {base_port} still in use after server stop — next stage may fail to start"
+            )
 
-    if externally_managed:
-        print("✓ Server stopped")
-    else:
-        print(f"✓ Server stopped (log: {tmp_log_path})")
+        if externally_managed:
+            print("✓ Server stopped")
+        else:
+            print(f"✓ Server stopped (log: {tmp_log_path})")
 
 
 def _time_export(_run=subprocess.run):
