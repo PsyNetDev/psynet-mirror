@@ -9,7 +9,6 @@ it builds on, and the people behind it.
 
    overview
    applications
-   why_psynet
    what_its_like
    research
    dallinger
