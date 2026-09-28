@@ -230,15 +230,3 @@ explains the idea.
          **Docs:** :doc:`/guides/participants/internationalization`
 
          .. example-publications:: languages
-
-
-When PsyNet isn't the right tool
---------------------------------
-
-- A fixed questionnaire with no adaptive logic is quicker to build in a
-  survey platform.
-- Tasks that need millisecond-precise timing from dedicated hardware belong
-  in lab software.
-- PsyNet has no visual experiment builder: experiments are written as
-  Python code, although a coding agent can write much of that code from a
-  description.

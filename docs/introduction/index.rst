@@ -9,6 +9,7 @@ it builds on, and the people behind it.
 
    overview
    applications
+   why_psynet
    research
    dallinger
    docker
