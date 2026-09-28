@@ -1668,7 +1668,7 @@ class Page(Elt):
         if metadata is None:
             metadata = {}
 
-        if self.background_recording is not None and self.background_recording.required:
+        if self.background_recording is not None:
             from .background_recording import _browser_config
 
             _browser_config(self, experiment, participant)
@@ -1717,9 +1717,7 @@ class Page(Elt):
         participant.browser_platform = metadata.get(
             "platform", "Browser platform info could not be retrieved."
         )
-        resp._deferred_background_answer = (
-            self.background_recording is not None and self.background_recording.required
-        )
+        resp._deferred_background_answer = self.background_recording is not None
         if (
             getattr(resp, "_deferred_video_answer", False) is not True
             and not resp._deferred_background_answer
@@ -2739,6 +2737,8 @@ class Response(_Response):
     answer = Column(PythonObject)
     page_type = Column(String)
     successful_validation = Column(Boolean)
+    recording_receipt_hash = Column(String, index=True)
+    recording_receipt = Column(PythonObject)
 
     # metadata is a protected attribute in SQLAlchemy, hence the underscore
     # and the functional setter/getter.

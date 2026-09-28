@@ -273,6 +273,18 @@ Validation sees recording metadata with empty ID/URL placeholders; acceptance
 installs the final references before saving the answer and calling
 :meth:`~psynet.timeline.Page.on_complete`.
 
+Recording submissions retry transient response failures up to three attempts,
+with a ten-second request timeout per attempt. A browser-generated recovery
+secret identifies the accepted page. Under the participant lock, a retry replays
+its saved acceptance without reserving more assets, running completion hooks,
+or advancing again. Replay preserves the original server time and upload
+deadlines. It is limited to the same participant and original page while the
+accepted successor remains current. Only a secret hash and token-free receipt
+are stored; upload capabilities are derived from the browser-held secret.
+The browser test deliberately loses a committed acceptance and verifies that
+the recovered upload still produces playable video. This does not recover blobs
+after reload or closing the document.
+
 The document queue allows 256 MiB by default, enough for two recordings at the
 128 MiB per-source limit. Before submitting, the browser checks both sources
 against the remaining shared capacity, including uploads from earlier pages.
@@ -295,7 +307,7 @@ that required clips hold finalization, allow ordinary answer analysis, and fail
 only the parent trial when missing. Real WebM deposit releases the finalization
 gate without invoking answer analysis. Bots deliberately bypass required capture.
 
-Keep the answer-recording switch private until lost-response recovery and complete missing-media
+Keep the answer-recording switch private until complete missing-media
 navigation tests are in place.
 
 The provisional upload allowance uses a conservative 1 Mbit/s rate, 30 seconds

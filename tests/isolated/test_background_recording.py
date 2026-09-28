@@ -163,6 +163,7 @@ def test_consent_pages_cannot_record():
 
 def test_rejected_background_answer_creates_no_assets(submission, monkeypatch):
     exp, participant, _, _ = submission
+    completions = []
     page = ModularPage(
         "choice",
         "Choose",
@@ -177,6 +178,7 @@ def test_rejected_background_answer_creates_no_assets(submission, monkeypatch):
     exp.timeline.advance_page(exp, participant)
     db.session.commit()
     original_page = participant.page_uuid
+    monkeypatch.setattr(page, "on_complete", lambda **kwargs: completions.append(True))
     validate = page.validate
     monkeypatch.setattr(page, "validate", lambda **kwargs: "Try again")
 
@@ -195,10 +197,12 @@ def test_rejected_background_answer_creates_no_assets(submission, monkeypatch):
         ).get_json()
 
     assert submit()["submission"] == "rejected"
+    assert completions == []
     assert Recording.query.count() == 0
     assert participant.page_uuid == original_page
     monkeypatch.setattr(page, "validate", validate)
     assert len(submit()["recording_uploads"]) == 2
+    assert completions == [True]
     assert participant.answer == "Yes"
 
 

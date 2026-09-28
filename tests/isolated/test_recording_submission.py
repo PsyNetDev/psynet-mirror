@@ -279,3 +279,74 @@ def test_invalid_unavailability_manifest_cannot_reserve_recordings(
     with pytest.raises(ValueError, match="unavailability manifest"):
         submit(unavailable=unavailable)
     assert Recording.query.count() == 0
+
+
+def test_lost_acceptance_replays_original_slots_without_advancing(
+    submission, monkeypatch
+):
+    import json
+    from datetime import timedelta
+
+    from psynet import media_upload
+
+    exp, participant, page, _ = submission
+    page_uuid = participant.page_uuid
+    secret = "ab" * 32
+    metadata = {
+        "time_taken": 5,
+        "recording_uploads": {"camera": 100, "screen": 100},
+        "recording_recovery_secret": secret,
+    }
+    completions = []
+    monkeypatch.setattr(page, "on_complete", lambda **kwargs: completions.append(True))
+
+    def submit(key=secret, original_page=page_uuid):
+        return exp.process_response(
+            participant.id,
+            None,
+            {},
+            {**metadata, "recording_recovery_secret": key},
+            original_page,
+            "127.0.0.1",
+            include_timeline_fragment=False,
+        ).get_json()
+
+    accepted = submit()
+    db.session.commit()
+    successor = participant.page_uuid
+    deadline = Recording.query.first().upload_deadline
+    response = Response.query.one()
+    assert secret not in json.dumps(response.metadata)
+    assert secret not in json.dumps(response.recording_receipt)
+    for receipt in accepted["recording_uploads"]:
+        assert receipt["token"] not in json.dumps(response.recording_receipt)
+        media_upload._authorize(
+            db.session.get(Recording, int(receipt["id"])), receipt["token"]
+        )
+    monkeypatch.setattr(
+        media_upload, "_utcnow", lambda: deadline + timedelta(seconds=1)
+    )
+    assert submit() == accepted
+    assert participant.page_uuid == successor
+    assert completions == [True]
+    assert Response.query.count() == 1
+    assert Recording.query.count() == 2
+    assert Recording.query.first().upload_deadline == deadline
+    assert submit("cd" * 32)["submission"] == "rejected"
+    assert submit(original_page=successor)["submission"] == "rejected"
+    assert participant.page_uuid == successor
+    from types import SimpleNamespace
+
+    from werkzeug.exceptions import Gone
+
+    assert (
+        media_upload._recover_recording_receipt(
+            SimpleNamespace(id=participant.id + 1), page_uuid, secret
+        )
+        is None
+    )
+    with pytest.raises(Gone):
+        media_upload._check_receivable(Recording.query.first())
+    participant.page_uuid = "later-page"
+    db.session.commit()
+    assert submit()["submission"] == "rejected"

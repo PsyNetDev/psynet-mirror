@@ -3055,6 +3055,10 @@
         metadata = { ...metadata, recording_uploads: sizes, recording_upload_unavailable: unavailable };
         blobs = {};
       }
+      if (Array.isArray(sources)) {
+        const secret = Array.from(crypto.getRandomValues(new Uint8Array(32)), value => value.toString(16).padStart(2, "0")).join("");
+        metadata = {...metadata, recording_recovery_secret:secret};
+      }
       const json = prepareJsonSubmission(rawAnswer, metadata);
 
       var formData = new FormData();
@@ -3066,54 +3070,70 @@
 
       return new Promise((resolve) => {
         const submissionStarted = performance.now();
-        let request = new XMLHttpRequest();
-        request.onreadystatechange = async function () {
-          if (request.readyState === 4) {
-            let passedValidation;
-            try {
+        let attempts = 0;
+        const send = () => {
+          attempts += 1;
+          let request = new XMLHttpRequest();
+          request.onreadystatechange = async function () {
+            if (request.readyState === 4) {
+              let invalidJson = false;
               if (request.status === 200) {
-                psynet.log.debug("Response was successfully received.");
-                const accepted = JSON.parse(request.response);
-                if (accepted.submission === "approved" && Array.isArray(sources)) {
-                  const serverTime = Date.parse(accepted.recording_upload_server_time);
-                  for (const upload of accepted.recording_uploads || []) {
-                    // Subtract the whole round-trip conservatively, without using
-                    // the participant's wall clock. The server enforces expiry.
-                    const deadline = submissionStarted + Date.parse(upload.expires_at) - serverTime;
-                    try {
-                      recordingUploadQueue.enqueue({
-                        ...upload, deadline, blob: capturedRecordings[upload.source],
-                      }).then((outcome) => {
-                        if (outcome.status === "failed") {
-                          psynet.log.warn(`Recording ${upload.id} upload failed: ${outcome.reason}`);
-                        }
-                      });
-                    } catch (error) {
-                      psynet.log.warn(`Could not queue recording ${upload.id}: ${error.message}`);
+                try { JSON.parse(request.response); } catch (_) { invalidJson = true; }
+              }
+              if (Array.isArray(sources) && attempts < 3 &&
+                  ([0, 502, 503, 504].includes(request.status) || invalidJson)) {
+                await new Promise(resolve => setTimeout(resolve, 500));
+                send();
+                return;
+              }
+              let passedValidation;
+              try {
+                if (request.status === 200) {
+                  psynet.log.debug("Response was successfully received.");
+                  const accepted = JSON.parse(request.response);
+                  if (accepted.submission === "approved" && Array.isArray(sources)) {
+                    const serverTime = Date.parse(accepted.recording_upload_server_time);
+                    for (const upload of accepted.recording_uploads || []) {
+                      // Subtract the whole round-trip conservatively, without using
+                      // the participant's wall clock. The server enforces expiry.
+                      const deadline = submissionStarted + Date.parse(upload.expires_at) - serverTime;
+                      try {
+                        recordingUploadQueue.enqueue({
+                          ...upload, deadline, blob: capturedRecordings[upload.source],
+                        }).then((outcome) => {
+                          if (outcome.status === "failed") {
+                            psynet.log.warn(`Recording ${upload.id} upload failed: ${outcome.reason}`);
+                          }
+                        });
+                      } catch (error) {
+                        psynet.log.warn(`Could not queue recording ${upload.id}: ${error.message}`);
+                      }
                     }
                   }
+                  passedValidation = await onSuccessResponse(request, onRejection);
+                } else {
+                  psynet.log.debug("Something went wrong.");
+                  onErrorResponse(request);
+                  passedValidation = false;
                 }
-                passedValidation = await onSuccessResponse(request, onRejection);
-              } else {
-                psynet.log.debug("Something went wrong.");
-                onErrorResponse(request);
+              } catch (error) {
+                if (psynetTemplateData.flags.inplaceTimelineTransitions) {
+                  await psynet.handleTimelineTransitionFailure(error);
+                } else {
+                  psynet.log.error(error.stack || String(error));
+                  onErrorResponse(request);
+                }
                 passedValidation = false;
+              } finally {
+                resolve(passedValidation);
               }
-            } catch (error) {
-              if (psynetTemplateData.flags.inplaceTimelineTransitions) {
-                await psynet.handleTimelineTransitionFailure(error);
-              } else {
-                psynet.log.error(error.stack || String(error));
-                onErrorResponse(request);
-              }
-              passedValidation = false;
-            } finally {
-              resolve(passedValidation);
             }
-          }
+          };
+          request.open("POST", "/response");
+          if (Array.isArray(sources)) request.timeout = 10000;
+          request.send(formData);
         };
-        request.open("POST", "/response");
-        request.send(formData);
+        send();
       });
     };
 

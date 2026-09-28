@@ -3271,6 +3271,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             )
 
         try:
+            metadata = dict(metadata or {})
+            recovery_secret = metadata.pop("recording_recovery_secret", None)
             if not isinstance(participant, Bot):
                 participant.client_ip_address = client_ip_address
             # Use Experiment. so mocked experiment instances still run this
@@ -3285,6 +3287,20 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                         "This session has already ended. Please reload the page.",
                     )
                 )
+            if recovery_secret is not None:
+                from .media_upload import _recover_recording_receipt
+
+                recovered = _recover_recording_receipt(
+                    participant, page_uuid, recovery_secret
+                )
+                if recovered is False:
+                    return self.response_rejected(
+                        message="This recording submission has already been accepted. Please reload the page."
+                    )
+                if recovered is not None:
+                    return flask.Response(
+                        json.dumps(recovered), mimetype="application/json"
+                    )
             event = self.timeline.get_current_elt(self, participant)
             if page_uuid != participant.page_uuid:
                 return self.response_rejected(
@@ -3353,6 +3369,12 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 payload = result.get_json()
                 payload["recording_uploads"] = recording_uploads
                 payload["recording_upload_server_time"] = _utcnow().isoformat() + "Z"
+                if recovery_secret is not None:
+                    from .media_upload import _save_recording_receipt
+
+                    _save_recording_receipt(
+                        response, participant, page_uuid, recovery_secret, payload
+                    )
                 result.set_data(json.dumps(payload))
             return result
         except Exception as err:

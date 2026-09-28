@@ -5,8 +5,20 @@ const {
   waitForNextEnabled,
 } = require("./psynetHarness");
 
-test("accepted video advances while upload is held, then plays deposited bytes @inplace-only", async ({ page, context }) => {
+for (const lostAcceptance of [false, true]) {
+test(`accepted video advances and plays deposited bytes (lost acceptance: ${lostAcceptance}) @inplace-only`, async ({ page, context }) => {
   test.setTimeout(120000);
+  let lost = false;
+  if (lostAcceptance) {
+    await context.route("**/response", async route => {
+      if (!lost && route.request().postData()?.includes("recording_recovery_secret")) {
+        lost = true;
+        const accepted = await route.fetch();
+        expect((await accepted.json()).submission).toBe("approved");
+        await route.abort("failed");
+      } else await route.continue();
+    });
+  }
   let held;
   await context.route("**/media-upload/*", route => { held = route; });
   await withExperiment(page, context, path.resolve("tests/playwright/experiments/asynchronous_recording"), async experimentPage => {
@@ -40,6 +52,8 @@ test("accepted video advances while upload is held, then plays deposited bytes @
     await expect.poll(() => video.evaluate(element => element.currentTime > 0)).toBe(true);
   });
 });
+
+}
 
 test("upload module failure preserves submission and independent navigation @inplace-only", async ({ page, context }) => {
   test.setTimeout(120000);

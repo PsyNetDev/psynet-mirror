@@ -200,7 +200,9 @@ the size limit discards that clip; reaching the duration limit retains the
 captured portion. Queue exhaustion skips capture. Missing clips expire at the
 upload deadline and invalid clips fail validation, without failing the trial,
 blocking analysis, or replacing its answer recording. A rejected answer keeps
-the existing clip for resubmission.
+the existing clip for resubmission. Completion hooks run only after successful
+answer validation. Transient loss of the acceptance response triggers bounded
+retries using the same recordings and original upload deadline.
 
 This implementation supports background recordings on ordinary timeline
 pages with local asset storage. It does not support

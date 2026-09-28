@@ -14,9 +14,11 @@ Do not wrap the streaming route in a participant transaction or expose received
 files through the asset endpoint before successful deposit.
 """
 
+import copy
 import errno
 import fcntl
 import hashlib
+import hmac
 import math
 import os
 import secrets
@@ -646,3 +648,70 @@ def _queue_received_recordings():
             label="media_upload",
             unique=True,
         )
+
+
+def _recovery_digest(secret):
+    """Validate a browser-only recovery secret without storing its plaintext."""
+    if not isinstance(secret, str) or len(secret) != 64:
+        raise ValueError("Invalid recording recovery secret.")
+    try:
+        value = bytes.fromhex(secret)
+    except ValueError:
+        raise ValueError("Invalid recording recovery secret.") from None
+    if len(value) != 32:
+        raise ValueError("Invalid recording recovery secret.")
+    return hashlib.sha256(value).hexdigest()
+
+
+def _recovery_upload_token(secret, recording_id):
+    """Derive a per-recording capability from an unpersisted browser secret."""
+    return hmac.new(
+        bytes.fromhex(secret),
+        f"recording-upload:{recording_id}".encode(),
+        hashlib.sha256,
+    ).hexdigest()
+
+
+def _save_recording_receipt(response, participant, page_uuid, secret, payload):
+    """Atomically retain accepted navigation and token-free upload descriptors."""
+    cached = copy.deepcopy(payload)
+    for receipt, saved in zip(
+        payload["recording_uploads"], cached["recording_uploads"]
+    ):
+        asset = db.session.get(Recording, int(receipt["id"]))
+        token = _recovery_upload_token(secret, asset.id)
+        asset.upload_token_hash = hashlib.sha256(token.encode()).hexdigest()
+        receipt["token"] = token
+        saved.pop("token")
+    response.recording_receipt_hash = _recovery_digest(secret)
+    response.recording_receipt = {
+        "page_uuid": page_uuid,
+        "next_page_uuid": participant.page_uuid,
+        "payload": cached,
+    }
+
+
+def _recover_recording_receipt(participant, page_uuid, secret):
+    """Replay only this participant's accepted page while its successor is current.
+
+    The caller holds the participant lock, so a retry waits for the original
+    transaction. Replaying never reruns validation, completion, or navigation.
+    Original timestamps preserve the upload deadline across network retries.
+    """
+    from .timeline import Response
+
+    response = Response.query.filter_by(
+        participant_id=participant.id, recording_receipt_hash=_recovery_digest(secret)
+    ).one_or_none()
+    if response is None:
+        return None
+    saved = response.recording_receipt
+    if (
+        saved["page_uuid"] != page_uuid
+        or saved["next_page_uuid"] != participant.page_uuid
+    ):
+        return False
+    payload = copy.deepcopy(saved["payload"])
+    for receipt in payload["recording_uploads"]:
+        receipt["token"] = _recovery_upload_token(secret, receipt["id"])
+    return payload
