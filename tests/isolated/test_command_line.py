@@ -4377,6 +4377,47 @@ class TestRunPerformanceTestWithNewServer:
         mock_start.assert_not_called()
 
 
+# --- _run_performance_test_local --existing path ---
+
+
+def test_run_performance_test_local_existing_stamps_export_on_all_results():
+    """Export timing from a single end-of-session export is stamped on every result row."""
+    from psynet.command_line import _run_performance_test_local
+
+    fake_results = [{"n_bots": 5}, {"n_bots": 10}]
+    mock_exp = Mock(
+        base_url="http://localhost:5000",
+        label="test",
+        test_n_bots=5,
+        test_parallel_stagger_interval_s=0.1,
+        test_time_factor=0.0,
+        test_duration_minutes=1.0,
+    )
+
+    with (
+        patch("psynet.experiment.get_experiment", return_value=mock_exp),
+        patch(
+            "psynet.command_line._run_performance_test_with_existing_server",
+            return_value=fake_results,
+        ),
+        patch("psynet.command_line._time_export", return_value=(2.5, None)),
+        patch("psynet.command_line.tempfile.NamedTemporaryFile", return_value=Mock()),
+    ):
+        results = _run_performance_test_local(
+            existing=True,
+            n_bots=None,
+            stagger=None,
+            time_factor=None,
+            duration_minutes=None,
+            json_output=None,
+            debug=False,
+            no_export=False,
+        )
+
+    assert all(r["export_duration_s"] == 2.5 for r in results)
+    assert all(r["export_error"] is None for r in results)
+
+
 # --- _time_export tests ---
 
 

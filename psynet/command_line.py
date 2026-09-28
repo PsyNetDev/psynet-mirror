@@ -3746,8 +3746,9 @@ def _run_performance_test_local(
             )
             if do_export and results:
                 export_duration, export_error = _time_export()
-                results[-1]["export_duration_s"] = export_duration
-                results[-1]["export_error"] = export_error
+                for result in results:
+                    result["export_duration_s"] = export_duration
+                    result["export_error"] = export_error
         finally:
             bot_log.close()
         print(f"Bot output log: {bot_log.name}")
