@@ -8,21 +8,37 @@ The experiment dashboard
 
 Every deployed or debugged experiment has its own dashboard. This is
 your main tool for tracking and managing a single study while it is
-running. The URL is printed in the terminal after the deploy or debug
-command (see :ref:`Deploying experiments via SSH <ssh_server>`).
+running. The URL, user name and password are printed in the terminal
+after the deploy or debug command (see :doc:`/deploy/running_a_study`).
 
 Key features:
 
+- **Home page:** The experiment configuration, including the
+  **auto_recruit** switch, which turns automatic recruitment on or off
+  while the experiment runs.
 - **Monitor > Monitoring:** View networks, nodes, parameters, and participant
   answers. Click shapes for details.
 - **Monitor > Timeline:** Track participant counts, completions, and
   failures. See all the modules in your experiment and their completion
-  percentages.
+  percentages, the amount spent, and the spending limits, which you can
+  change here (see :doc:`/code/participants/payment_limits`).
+- **Participants tab:** Look up a participant by their recruiter ID in
+  the Worker ID field. The participant page shows their status and
+  payments and a **Link for resuming session**. Participants whose bonus
+  PsyNet could not confirm are listed under **Needs payment review**, with
+  options to pay or dismiss the bonus.
+- **Errors tab:** Every recorded error with its stack trace; see
+  :doc:`Error logging </deploy/reference/errors>`.
+- **Monitor > Logger:** A live stream of log output.
+- **Resources tab:** The server's CPU, memory and disk usage.
 - **Database tab:** Browse the database tables.
+- **Basic data tab:** A preview of the experiment's basic data, if
+  ``get_basic_data`` is implemented.
 - **Export tab:** Export the data. See
   :doc:`Data </data/index>` for the full export reference.
-- **Monitor > Logger:** A live stream of log output; see :doc:`Error logging
-  </deploy/reference/errors>`.
+- **Lucid tab:** CINT survey status and metrics, for CINT experiments; see
+  :doc:`/deploy/recruiters/cint`.
+- **Deployments tab:** The deployment monitor described below.
 
 This single-experiment dashboard is different from the deployment
 monitor described below, which shows *all* of your deployments at once.
@@ -89,7 +105,6 @@ If the experiment is **running**, you can:
 - **Access the dashboard**: Click the icon to open the experiment dashboard in a new browser tab.
 - **Access the data endpoint**: Click the icon to view the experiment’s :doc:`data endpoint </data/index>` in a new tab.
 
-When the experiment is not running you can also:
 If the experiment is **not running**, you can:
 
 - **Archive the experiment**: Click to move the experiment to the archive. This is recommended for test runs or experiments that collected no data. Archived experiments can be accessed and restored via the "Show Archived Experiments" button in the top left corner.

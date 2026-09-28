@@ -1,0 +1,1 @@
+Restructured the Deploy section into "How deployment works", "Setting up a server", a single "Running a study" runbook, recruiter guides and reference pages. Lab-specific instructions now appear in "In a lab" boxes, export instructions moved to the Data page, and old Deploy page URLs redirect to their new locations.

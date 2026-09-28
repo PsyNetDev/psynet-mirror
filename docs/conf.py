@@ -53,6 +53,7 @@ extensions = [
     "sphinx_reredirects",
     "demo_carousel",
     "research_list",
+    "lab_note",
 ]
 
 # Old page paths are published and linked externally, so every moved or

@@ -94,6 +94,9 @@ Writing pages
   Z to try it yourself". Order pages so that the sidebar and the *Next* link
   lead to the natural next page, and link inline only where a reader needs
   that page at that point.
+- Put details that only apply inside a lab with shared accounts, servers or
+  conventions in a ``.. lab-note::`` box. It renders with the title "In a lab"
+  so other readers can skip it.
 
 Research papers
 ---------------

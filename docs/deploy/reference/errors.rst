@@ -18,11 +18,13 @@ This interface provides a live stream of log output, which you can:
 
 Clicking on a specific log line reveals the full stack trace, helping you diagnose the source and cause of the error.
 
-Error Database
-=================
+Error database
+==============
+
 In addition to the live logger, PsyNet stores all errors in a structured database.
 You can access this via **Monitor > Errors** (endpoint: ``/dashboard/errors``), where you’ll find a detailed list of all recorded errors.
 Each error entry includes:
+
 - The error message
 - Full stack trace
 - Timestamp of the error
@@ -30,10 +32,18 @@ Each error entry includes:
 
 This persistent error log is especially helpful for debugging issues after the experiment has concluded.
 
+Server logs
+===========
+
+The dashboard logger shows the experiment's own log output. For the logs
+of all containers on the server, use Dozzle or ``docker compose logs``;
+see :ref:`lab-deployment-dashboard`.
+
 Slack notifications
---------------------
-We strongly recommended setting up the :doc:`Slack integration </deploy/reference/setting_up_slack>` to receive error notifications in your Slack channel.
-This way, you will be notified immediately when an error occurs, and you can take action to fix it.
+===================
+
+Set up the :doc:`Slack integration </deploy/reference/setting_up_slack>`
+to be notified in Slack as soon as an error occurs.
 
 .. note::
 

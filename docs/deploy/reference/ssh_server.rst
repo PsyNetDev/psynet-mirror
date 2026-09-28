@@ -5,199 +5,121 @@
 SSH servers
 ===========
 
-The recommended approach for hosting your own PsyNet experiments is to
-set up your own remote server accessed via SSH. We will refer to such
-servers as 'SSH servers'.
+PsyNet deploys experiments to a Linux server over SSH with ``psynet debug
+ssh`` and ``psynet deploy ssh``. This page is the reference for such
+servers. Configuring your computer and registering a server are covered in
+:doc:`/deploy/setting_up_a_server`.
 
-Setting up the remote server
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Server size
+^^^^^^^^^^^
 
-There are several ways to set up your own remote server.
-One way is to rent one via Amazon Web Services (see :ref:`AWS server setup <aws_server_setup>`).
-Other comparable recommended companies include Hetzner and Contabo.
-As a very approximate rule of thumb, we recommend 5 GB of RAM for each
-simultaneous experiment you think you will need to host.
+As a very approximate rule of thumb, allow 5 GB of RAM for each experiment
+that the server hosts at the same time.
 
-Once you've set up your remote server, you need to make sure that your local computer
-has passwordless SSH access to the remote server.
-If you have a key pair for the server, you probably need to add it to your SSH agent.
-On macOS, run:
+Servers that only accept passwords
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-.. code:: bash
-
-    chmod 600 path/to/your/key.pem
-    ssh-add --apple-use-keychain path/to/your/key.pem
-
-On Linux, run:
-
-.. code:: bash
-
-    chmod 600 path/to/your/key.pem
-    ssh-add path/to/your/key.pem
-
-If you normally need a password to access the instance, you'll need to
-upload your local machine's SSH key to the remote instance. If you don't have
-an SSH key already, generate one on your local machine:
+Dallinger needs passwordless SSH access. If you normally log in to the server
+with a password, generate a key on your local machine if you don't have one:
 
 .. code:: bash
 
     ssh-keygen
 
-Then upload it to the remote instance by running a command in the following form,
-replacing the credentials and server address as appropriate:
+Then upload it to the server, replacing the username and address as
+appropriate:
 
 .. code:: bash
 
-    ssh-copy-id yourusername@your-server.example.org
+    ssh-copy-id your-username@your-server.example.org
 
-Verify that you can login passwordless by running the following:
+Check that you can now log in without a password:
 
 .. code:: bash
 
     ssh your-username@your-server.example.org
 
-If this works, you're ready to register the remote server within PsyNet/Dallinger.
-Run the following:
-
-.. code:: bash
-
-    dallinger docker-ssh servers add --user your-username --host your-server.example.org
-
-
-Naming your Docker image
-^^^^^^^^^^^^^^^^^^^^^^^^
-
-PsyNet refuses to deploy over SSH unless ``docker_image_base_name`` is set,
-either in your experiment's ``config.txt`` or in ``~/.dallingerconfig``.
-``psynet deploy ssh`` builds the Docker image directly on the remote server
-and does not push it to a registry, so any image name will do, for example:
-
-.. code:: ini
-
-    docker_image_base_name = psynet-experiments
-
-You do not need a Docker registry account or ``docker login`` for this.
+Set ``server_pem`` to the private key (for example ``~/.ssh/id_ed25519``)
+before registering the server.
 
 Setting up a Docker registry (optional)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-A Docker registry is only needed if you push your images, for example with
-Dallinger's ``dallinger docker-ssh deploy --push-build`` or ``--local_build`` options
-(``psynet deploy ssh`` does not push). In that case ``docker_image_base_name``
-must point to a registry you can push to.
-Here we will cover two platforms:
-
-- personal Docker registry on docker.io
-- group Docker registry on GitLab (hosted on gitlab.com or self-hosted)
+``psynet deploy ssh`` builds the image on the server and does not push it, so
+``docker_image_base_name`` can be any name. A Docker registry is needed only
+if you push your images, for example with Dallinger's ``dallinger docker-ssh
+deploy --push-build`` or ``--local_build`` options. In that case
+``docker_image_base_name`` must point to a registry you can push to.
 
 Personal Docker registry on docker.io
-=====================================
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-- Go to `docker.io <https://www.docker.com/>`_ and setup an account
-- Download the Docker Desktop app and sign in
-- Add the following line to your ``config.txt`` if you only want to use it for this experiment or in ``~/.dallingerconfig`` if you want to use it as your default registry:
+- Create an account on `docker.io <https://www.docker.com/>`_.
+- Install the Docker Desktop app and sign in.
+- Set ``docker_image_base_name`` in ``config.txt`` for one experiment, or in
+  ``~/.dallingerconfig`` for all of them:
 
-    .. code:: bash
+  .. code:: ini
 
-        docker_image_base_name = docker.io/<docker_io_username>/<name_of_your_image>
-
-
+      docker_image_base_name = docker.io/<docker_io_username>/<name_of_your_image>
 
 Group Docker registry on GitLab
-===============================
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Group Docker registries are a nice way to have all of your lab's Docker images under the same umbrella. 
+A group registry keeps a team's images in one place. GitLab provides a
+container registry for each project, on gitlab.com or on a self-hosted
+instance.
 
-There's two ways to set up a Docker registry:
+1. Create a GitLab project to hold the images, for example
+   ``experiment-images``, inside a GitLab group.
+2. Give everyone who deploys permission to push to the project's container
+   registry, for example by adding the group as a project member with the
+   Developer role or higher.
+3. Log in to the registry from your computer:
 
-- A hosted Docker registry
-- A self-hosted Docker registry
+   .. code:: bash
 
-We'll first go through the steps to setup a hosted Docker registry on Gitlab. First login to the GitLab docker registry:
+       docker login registry.gitlab.com
 
-.. code:: bash
+   On a self-hosted GitLab instance, use its registry hostname instead, for
+   example ``registry.gitlab.example.org``.
 
-    docker login registry.gitlab.com
+4. Point ``docker_image_base_name`` in ``~/.dallingerconfig`` at the project:
 
+   .. code:: ini
 
-The next step is to setup a public repository, e.g. a repository called "experiment-images" by the user "computational-audition". This means the particular user ("computational-audition") can now push to this registry. In the case of the lab, we suggest setting up a lab group where all users have "Maintainer" permissions. You can now add this group to your repository https://gitlab.com/<user>/<repo>/-/project_members (e.g., https://gitlab.com/computational-audition/experiment-images/-/project_members). Now each user in the lab group can push to the repository.
+       docker_image_base_name = registry.gitlab.com/<group>/<project>/experiment-images
 
-The last step is to add the registry to ``.dallingerconfig``. To do this, you need to edit your local
-``~/.dallingerconfig`` file.
+5. Open an SSH session on the server and run the same ``docker login``
+   command there, so that the server can pull the images:
 
-If you don't have such a file already, you can create it like this:
+   .. code:: bash
 
-.. code:: bash
+       ssh your-username@your-server.example.org
 
-    touch ~/.dallingerconfig
-
-You can then edit it on Mac like this:
-
-.. code:: bash
-
-    open ~/.dallingerconfig
-
-or simply with a text editor via your GUI.
-
-Place a line like the following in your ``~/.dallingerconfig``,
-putting the link to your own image registry:
-
-.. code:: bash
-
-    docker_image_base_name = registry.gitlab.com/<group>/<project>/experiment-images
-
-
-
-If your lab hosts GitLab itself, use that hostname in place of
-``registry.gitlab.com``. The steps are the same. For example:
-
-.. code:: bash
-
-    docker login registry.gitlab.example.org
-
-In some situations (e.g. federated authentication) you will not be able to login
-to your account via the command-line in this way. Instead, you will have to create
-a `personal access token via GitLab <https://gitlab.com/-/user_settings/personal_access_tokens>`_
-and then login with a command like the following:
+If you cannot log in with your password on the command line (for example
+with federated authentication), create a
+`personal access token <https://gitlab.com/-/user_settings/personal_access_tokens>`_
+and log in with your username, entering the token when prompted for a
+password:
 
 .. code:: bash
 
     docker login registry.gitlab.com -u your-username
 
-You should then enter your access token when prompted.
+.. note::
+
+    Docker may warn that your password will be stored unencrypted in
+    ``~/.docker/config.json`` and suggest a credential helper. You can usually
+    continue without one.
 
 .. note::
 
-    If you see this error:
-
-    .. code:: bash
-
-        WARNING! Your password will be stored unencrypted in /home/your-username/.docker/config.json.
-
-        Configure a credential helper to remove this warning. See
-
-        https://docs.docker.com/engine/reference/commandline/login/#credentials-store
-
-    you can probably continue without worrying about it. We are still working out
-    the best way to deal with Docker credential management in PsyNet/Dallinger.
-
-.. note::
-
-    You might not be able to login if you originally created your gitlab account via an external service (e.g. GitHub, Gmail).
-    In that case, make sure, that you can login to GitLab in the browser, using only your email adress. 
-    You might need to disconnect your external (e.g. GitHub) account from your GitLab account 
-    (User Settings -> Account) and reset your password to do so.
-
-You then need to do exactly the same `docker login` process but on your remote server.
-To do this, you need to open an SSH terminal to your server, if you haven't already:
-
-.. code:: bash
-
-    ssh your-username@your-server.example.org
-
-Then run the same `docker login` command that you ran previously.
-
-That's it! You should be all set up now.
+    If you created your GitLab account through an external service (for
+    example GitHub or Google), you may need to set a GitLab password first.
+    Make sure that you can log in to GitLab in the browser with only your
+    email address; you may need to disconnect the external account (User
+    Settings > Account) and reset your password.
 
 Deploying experiments via SSH
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -253,9 +175,9 @@ and login credentials, similar to this:
     https://admin:XXX@your-app-name.your-server.example.org/dashboard
     (user = admin, password = XXX)
 
-    ✔ Saving a snapshot of the code to
-    /Users/your-user/psynet-data/launch-data/your-app-name__mode=live__launch=<timestamp>/code…
-
+PsyNet also saves the credentials in ``launch-info.json`` under
+``~/psynet-data/launch-data/<deployment-id>/``, where the deployment ID
+has the form ``<label>__mode=live__launch=<timestamp>``.
 Save the dashboard link so that you can monitor the experiment while it collects data.
 See :doc:`Deployment monitor </deploy/reference/deployment_monitor>` for details on what the
 dashboard shows and how to interpret it.
@@ -270,10 +192,9 @@ Under the hood, the deployment command works as follows:
 
 This command can go wrong at several points. The parts that happen on the local
 machine are usually easiest to debug. When things go wrong on the remote server,
-you probably want to check the logs. Open
+check the logs in the server's log viewer (Dozzle) at
 ``https://logs.<dns-host>``, where ``<dns-host>`` is the DNS name the
-experiment is served under (for example
-``https://logs.your-server.example.org``).
+experiment is served under.
 Often you will see the real error message in the `web` instance.
 
 In some cases you may need to connect to the server via a separate SSH terminal to work out what's going on.
@@ -369,21 +290,8 @@ including containers from other apps:
 
     docker ps
 
-Once you are done with your experiment, you can export the data to your local computer using the following command,
-but run it on your local computer, not via your SSH terminal.
-
-.. code:: bash
-
-    psynet export ssh --app your-app-name
-
-For more information, see :doc:`Exporting </data/index>`.
-
-You can then tear down your app via the following command, again run on your local computer:
-
-.. code:: bash
-
-    psynet destroy ssh --app your-app-name
-
+Exporting the data and removing the app are covered in
+:doc:`/deploy/running_a_study`.
 
 Connecting to the database via SSH
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

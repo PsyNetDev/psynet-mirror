@@ -1,13 +1,11 @@
 Deploying experiments
 =====================
 
-This section covers deploying an experiment to a server, recruiting
-participants, and monitoring a study while it runs.
-
 .. toctree::
    :maxdepth: 2
 
-   running_remotely
-   first_prolific_study
-   workflow/index
+   how_deployment_works
+   setting_up_a_server
+   running_a_study
+   recruiters/index
    reference/index

@@ -153,6 +153,53 @@ from the dashboard.
 
     psynet export ssh --app my-app-name --allow-project-mismatch
 
+.. _data_export_deployed:
+
+Exporting from a deployed study
+===============================
+
+Export after the first batch of participants, regularly while data
+collection runs, and once more after the last participant has finished.
+Destroying the app or tearing down the server deletes any data you have
+not exported.
+
+Pass ``--server`` when more than one server is registered, and ``--path``
+to write somewhere other than ``exports/latest/``:
+
+.. code:: bash
+
+    psynet export ssh --app color-exp --server my-server.example.org --path ~/Experiments/color
+
+Repeat exports of a study with many recordings are fast, because only
+asset files missing from the local cache are transferred (see
+:ref:`export_assets`). If an export fails, the previous one is left
+intact, so rerun the command.
+
+Checking data during collection
+-------------------------------
+
+Keep an analysis script (for example ``export.py``) in the experiment
+directory and run it on every export. It should:
+
+- check that participants progress through the whole experiment and
+  complete the expected number of trials, using assertions so that
+  problems stop the script;
+- check the time estimates, for example with a histogram of trial
+  durations;
+- extract the demographic information you need, such as age and gender;
+- convert the raw tables into the format you analyze, for example a CSV
+  for R or MATLAB;
+- plot the main results, so that unexpected effects show up early.
+
+Running it after the first batch lets you stop a broken experiment before
+many participants have taken it. For quick checks without a full export,
+implement ``get_basic_data`` and read it from the dashboard or the
+``/basic_data`` endpoint (see `More about basic data`_).
+
+.. lab-note::
+
+   Deposit the final export in your lab's data repository.
+
 
 Identifier separation
 =====================

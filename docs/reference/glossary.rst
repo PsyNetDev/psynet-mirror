@@ -22,7 +22,7 @@ Glossary
    Experiment hosting
       The server that runs your experiment during data collection: either
       a server you manage yourself or an EC2 server provisioned on AWS.
-      See :doc:`/deploy/reference/web_servers`.
+      See :doc:`/deploy/how_deployment_works`.
 
    Hotair
       A recruiter that recruits nobody and prints a participant link

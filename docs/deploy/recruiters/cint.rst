@@ -3,76 +3,67 @@
 CINT (Lucid)
 ============
 
-Setting up the experiment
--------------------------
+`CINT <https://www.cint.com/>`__ (formerly Lucid) is a survey marketplace
+with participants in many countries and languages. PsyNet still calls it
+Lucid in code, commands and configuration keys. The CINT account
+credentials, ``lucid_api_key`` and ``lucid_sha1_hashing_key``, go in
+``~/.dallingerconfig``.
 
-Complete the shared checks on
-:doc:`../setting_up_the_experiments` first. For CINT, set
-``wage_per_hour`` to the minimum wage in the target country. A list of
-minimum wages per country is available in
-`this spreadsheet <https://docs.google.com/spreadsheets/d/1Yl-eEsLTxFAVyZECZfRQnDlYM8ykY9xlJpnsTpi5oKQ/edit#gid=0>`__.
+.. lab-note::
 
-.. code:: python
+   CINT accounts are usually held by the lab. Ask your lab administrator
+   for the API credentials and the marketplace login.
 
-   "wage_per_hour": 6.5
+Experiment configuration
+------------------------
 
-**Do not put the cost in the experiment title**, only the duration
-(plus Chrome, headphones, or a microphone if needed).
-
-Experiment script
-~~~~~~~~~~~~~~~~~
+Set ``wage_per_hour`` to the minimum wage in the target country (one
+source is
+`this spreadsheet <https://docs.google.com/spreadsheets/d/1Yl-eEsLTxFAVyZECZfRQnDlYM8ykY9xlJpnsTpi5oKQ/edit#gid=0>`__).
+Put the duration in the title, plus Chrome, headphones or a microphone if
+needed, but not the payment.
 
 .. code:: python
 
    class Exp(psynet.experiment.Experiment):
        config = {
            **recruiter_settings,
-           "initial_recruitment_size": 10,  # set to required numbers
-           "locale": LOCALE,  # set to the ISO-2 language code (e.g. 'tr' or 'en')
+           "initial_recruitment_size": 10,
+           "locale": LOCALE,  # ISO 639-1 code of the experiment language, e.g. "tr"
            "auto_recruit": False,
-           "wage_per_hour": 6.5,  # set to minimum wage of target country
+           "wage_per_hour": 6.5,  # minimum wage of the target country
            "title": "Put your experiment title here (Chrome browser, ~XX mins)",
-           "contact_email_on_error": "<your-lab-contact-email>",
-           "organization_name": "<your-institution>",
+           "contact_email_on_error": "you@example.org",
+           "organization_name": "Your institution",
        }
 
-CINT recruiter settings
-~~~~~~~~~~~~~~~~~~~~~~~
+``recruiter_settings`` comes from
+:func:`~psynet.recruiters.get_lucid_settings`, which sets the recruiter
+and loads the qualification file. It also sets ``currency`` to ``"EUR"``
+and ``show_reward`` to ``False``; CINT recruitment fails with
+``show_reward = True``. Its parameters:
 
-You will need to define recruiter_settings and add the function
-get_lucid_settings() to set up config parameters specifically on CINT.
-Add this function at the top of your project.
-
-Set the following parameters:
-
--  lucid_recruitment_config_path: path to qualifications JSON
-   file. (see :ref:`CINT Qualifications
-   <lab-deployment-cint-qualifications>` for details)
-
--  termination_time_in_s: adjust the maximal time a participant
-   can spend on the experiment
-
--  debug_recruiter: Only set it to ‘True’ during local testing
-
--  initial_response_within_s: Termination of the participant if
-   the first response is not reached within that time.
-
--  bid_incidence: You can adjust the incidence rate here
-   according to your experiment’s reports on lucid. Set it to a
-   realistic value, but as high as possible.
-
--  inactivity_timeout_in_s: The inactivity (i.e., no clicking,
-   no typing, no scrolling or moving the mouse) timeout in seconds.
-   Adjust it according to your experiment design.
-
--  no_focus_timeout_in_s: Termination of the participant in case
-   of moving the mouse outside the window or opening another tab. **This
-   is active on all pages! Set it to a realistic value.**
-
--  aggressive_no_focus_timeout_in_s: The same setting as
-   \`no_focus_timeout_in_s\`, but only used on the qualification
-   verification pages. **It is important to verify the qualifications on
-   the very first page to kick out sloppy participants.**
+-  ``lucid_recruitment_config_path``: path to the qualification JSON
+   file (see :ref:`lab-deployment-cint-qualifications`).
+-  ``termination_time_in_s``: the maximum time a participant can spend
+   on the experiment.
+-  ``initial_response_within_s``: participants who do not reach the
+   consent page within this time are terminated (default 180).
+-  ``bid_incidence``: the expected percentage of participants who pass
+   the qualifications (default 66). Set it to a realistic value, but as
+   high as possible, and adjust it from the CINT reports.
+-  ``inactivity_timeout_in_s``: participants who do not click, type, or
+   move the mouse for this long are terminated (default 120).
+-  ``no_focus_timeout_in_s``: participants who move the mouse outside the
+   window or open another tab for this long are terminated (default 60).
+   **This applies on all pages**, so choose a realistic value.
+-  ``aggressive_no_focus_timeout_in_s``: the same, but used on the
+   qualification verification pages (default 3). Verify the
+   qualifications on the first page to remove careless participants
+   early.
+-  ``collects_pii``: whether the survey collects personally identifiable
+   information (default ``False``).
+-  ``debug_recruiter``: set to ``True`` only for local testing.
 
 .. code:: python
 
@@ -89,24 +80,25 @@ Set the following parameters:
        aggressive_no_focus_timeout_in_s=3,
    )
 
-CINT consent
-~~~~~~~~~~~~
+Consent
+^^^^^^^
 
-Use the consent page required for CINT (for example ``LucidConsent``).
-Ask your lab administrator if you are unsure which consent to use.
+CINT recruitment requires ``LucidConsent`` as the first consent page,
+optionally followed by ``AudiovisualConsent`` or ``OpenScienceConsent``.
+Deployment fails with any other combination.
 
 .. _lab-deployment-cint-qualifications:
 
-CINT qualifications
-~~~~~~~~~~~~~~~~~~~
-
-Setting qualifications automatically
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
+Qualifications
+--------------
 
 CINT provides a standard qualification library and also supports custom qualifications.
-However, custom qualifications are specific to each CINT account and may not be available across deployments.
-Check your lab's internal deployment documentation for any account-specific custom qualifications.
+Custom qualifications are specific to each CINT account.
+
+.. lab-note::
+
+   Check your lab's internal deployment documentation for custom
+   qualifications available on the lab's CINT account.
 
 Standard CINT qualifications
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -234,21 +226,12 @@ Summary of CINT qualification steps
    necessary.
 
 
-Deployment
-----------
+After deploying
+---------------
 
-CINT: check & adjust quota
-~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-After you deploy, go to the CINT marketplace sign-in page provided by
-your lab administrator and log in to your lab's CINT account. Your lab
-administrator should provide you with login credentials.
-
-Also, save and open the link provided in the terminal after successful
-deployment to :ref:`monitor <lab-deployment-cint-monitoring>` the
-experiment. When you open the link, you will see the dashboard. Here,
-click on the ‘Lucid’ tab to access many features from the marketplace as
-well as the reports of the experiment.
+After you deploy, log in to the CINT marketplace. Then open the dashboard
+link printed in the terminal and click the **Lucid** tab, which links to
+the marketplace pages for the survey and shows its reports.
 
 .. image:: /_static/images/running_studies/recruiters/cint/dashboard-lucid-tab.png
    :width: 8.5in
@@ -356,19 +339,19 @@ variety of ways to monitor the experiment.
    .. image:: /_static/images/running_studies/recruiters/cint/length-of-interview.png
       :width: 8.5in
 
-Termination
------------
+Ending the study
+----------------
 
-Once you reach the desired number of participants, set it to ‘Complete’
-and :ref:`export <lab-deployment-export-data>` your data again. To
-destroy the app, wait until there are no more working participants left
-in the experiment.
+When you reach the target number of participants, set the survey to
+**Complete**, export the data again, and wait until no participants are
+still working before destroying the app (see
+:doc:`/deploy/running_a_study`).
 
 .. image:: /_static/images/running_studies/recruiters/cint/termination.png
    :width: 8.5in
 
 Reconciling participants
-~~~~~~~~~~~~~~~~~~~~~~~~
+^^^^^^^^^^^^^^^^^^^^^^^^
 
 If people are terminated for the wrong reasons or errors occurred in the
 experiment, you need to reconcile your survey. Your survey must have the

@@ -57,16 +57,16 @@ PsyNet's deployment system automates most installations. The following are the p
 
 Operating system
 """"""""""""""""
-* Ubuntu 22.04 LTS or Ubuntu 24.04 LTS (recommended) or Windows 11 Pro
+* Ubuntu 22.04 LTS or Ubuntu 24.04 LTS (recommended)
 
 Dependencies
 """"""""""""
-* PsyNet handles installing Docker and other required software automatically
-* No need to manually install Python, PostgreSQL, or Nginx
+* ``dallinger docker-ssh servers add`` installs Docker if it is missing
+* Everything else (Python, PostgreSQL, the web server) runs in Docker containers, so there is no need to install it manually
 
 User privileges
 """""""""""""""
-* The server account should have sudo privileges to allow PsyNet to manage installations
+* The server account needs passwordless ``sudo`` so that Dallinger can install Docker
 
 SSH configuration
 """""""""""""""""
@@ -83,10 +83,10 @@ SSH access (Port 22)
 * Restrict SSH access to internal networks or via a VPN
 * Ensure SSH is firewalled from external access for security
 
-HTTPS access (Port 443)
-"""""""""""""""""""""""
-* PsyNet uses port 443 for serving experiments over HTTPS
-* The firewall must allow incoming HTTPS traffic from anywhere
+HTTP and HTTPS access (ports 80 and 443)
+""""""""""""""""""""""""""""""""""""""""
+* PsyNet serves experiments over HTTPS on port 443; its web server also listens on port 80
+* The firewall must allow incoming traffic on both ports from anywhere
 
 Reverse proxy consideration
 """""""""""""""""""""""""""
@@ -95,10 +95,16 @@ Reverse proxy consideration
 
 DNS configuration
 ^^^^^^^^^^^^^^^^^
-* Assign a wilcard domain name (e.g., \*.psynet.experiment.gold.ac.uk) that points to the server's IP address
+* Assign a domain name and a wildcard domain name (e.g., ``psynet.example.edu`` and ``*.psynet.example.edu``) that point to the server's IP address
 * Ensure DNS entries are set up to route external traffic correctly
 
 SSL certificates
 ^^^^^^^^^^^^^^^^
 * PsyNet automatically provisions SSL/TLS certificates via Caddy and Let's Encrypt
 * No manual SSL setup is needed
+
+Registering the server
+----------------------
+
+Once the server is running, register it as described in
+:doc:`/deploy/setting_up_a_server`.

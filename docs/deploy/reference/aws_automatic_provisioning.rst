@@ -4,273 +4,166 @@
 AWS automatic provisioning
 ==========================
 
-Once your AWS account and Dallinger credentials are configured (see
-:doc:`Setting up an AWS server </deploy/reference/aws_server_setup>`), PsyNet can
-provision and tear down EC2 servers for you automatically via Dallinger's
-``ec2`` commands. This is convenient for cloud deployments and avoids
-manually creating instances through the AWS console every time.
+Dallinger's ``ec2`` commands create, pause and delete EC2 servers for PsyNet
+experiments. The required AWS credentials, domain, key pair and
+``~/.dallingerconfig`` settings, and the usual provision, stop, start and
+teardown commands, are covered in :doc:`/deploy/setting_up_a_server`. This
+page lists the options and describes what the commands do.
 
-EC2 servers operate on a pay-as-you-go model. You are charged while the
-server is running, so it is important to monitor usage and tear the
-server down when you are finished.
+Most commands select an instance with ``--name`` (the name given at
+provisioning) or ``--dns`` (the instance's AWS hostname), plus ``--region``.
+Without ``--region``, Dallinger uses ``aws_region`` from your configuration,
+or ``us-east-1``.
 
-The EC2 workflow includes:
-
-1. Choose the region closest to your participants.
-
-2. Set up a server in this region. This is provisioning.
-
-3. Deploy or debug to this server with PsyNet.
-
-4. Monitor your experiment and export your data regularly.
-
-5. Wait for the experiment to finish, or finish it manually.
-
-6. Export once more and save your results.
-
-7. Terminate the server. This is teardown.
-
-Selecting the region
-=====================
-
-First, decide which region to deploy to. To list the available regions,
-run:
+Listing regions, instance types and instances
+=============================================
 
 .. code:: bash
 
    dallinger ec2 list regions
+   dallinger ec2 list instance_types --region <region>
 
-For example, choose ``us-east-1`` for participants in the eastern United
-States. In general, the server should be close to where your
-participants are located.
-
-Listing instances
-==================
-
-Instances can have the following states: pending, running,
-shutting-down, terminated, stopping, stopped. You can list all instances
-with:
+Instances can have the following states: pending, running, shutting-down,
+terminated, stopping, stopped. To list your instances:
 
 .. code:: bash
 
    dallinger ec2 list instances
 
-To only list instances which are running, run:
-
-.. code:: bash
-
-   dallinger ec2 list instances --running
-
-You can also filter by region:
-
-.. code:: bash
-
-   dallinger ec2 list instances --region <region>
-
-Or filter to only running instances in a specific region:
+Filter them with ``--region <region>`` and with any of ``--running``,
+``--stopped`` and ``--terminated``, for example:
 
 .. code:: bash
 
    dallinger ec2 list instances --region <region> --running
 
 Provisioning an instance
-==========================
-
-Once you choose an EC2 instance type, provision the server. After
-provisioning, you will be charged until you stop or terminate the
-instance.
-
-.. important::
-
-   Export your data before you tear down the server. If you do not
-   export the data first, the data are lost and there is no way to
-   retrieve them.
-
-Before you teardown the instance make sure:
-
--  The experiment is stopped on the recruiter. For example, in Prolific
-   the experiment should be stopped and no longer active.
-
--  You have exported the data and run ``export.py`` (or your
-   equivalent) to check that the exported data are usable.
-
-``dallinger ec2 provision`` needs ``ec2_default_pem`` (the AWS key-pair
-name), ``server_pem`` (the path to the matching PEM file),
-``dashboard_user``, and ``dashboard_password`` in ``~/.dallingerconfig``;
-see :doc:`/deploy/running_remotely` for an example.
-
-You can provision an EC2 instance on demand:
+========================
 
 .. code:: bash
 
-   dallinger ec2 provision --name <server_name> --region <region> --dns-host <your-subdomain>.<your-domain> --type <type>
+   dallinger ec2 provision --name <server_name> --region <region> --dns-host <subdomain>.<your-domain> --type <type>
 
-Pick a server name that is easy to recognize. Start the name with your
-own name or a short identifier so others can tell who deployed it. A
-name like ``alice-melody-batch2`` is good; ``melody123`` is not. The
-recommended convention is:
+Options:
+
+``--name``
+   Name of the instance in AWS (required). Only lowercase letters, digits and
+   hyphens are allowed. Provisioning fails if a running instance already has
+   this name.
+``--region``
+   AWS region.
+``--type``
+   Instance type (default ``m5.xlarge``). See
+   `EC2 instance types <https://aws.amazon.com/ec2/instance-types/>`_ for the
+   options and their storage.
+``--storage``
+   Disk size in GB (default 32).
+``--image_name``
+   Machine image: an AMI name, AMI ID or SSM parameter. The default is
+   Canonical's current Ubuntu 24.04 image.
+``--security_group_name``
+   Security group to attach. The default is the ``ec2_default_security_group``
+   configuration value, or ``dallinger``.
+``--dns-host``
+   Name to create in Route 53, for example ``memory-lab.cool-psychology.org``.
+
+Provisioning runs these steps and prints each one to the terminal:
+
+1. If ``--dns-host`` is given, checks that Route 53 has a hosted zone for its
+   last two parts (for example ``cool-psychology.org``). If records for the
+   name already exist, Dallinger asks before overwriting them, because they
+   may belong to another running server.
+2. Creates the security group if it does not exist in the region, allowing
+   incoming traffic from anywhere on ports 22, 80, 443 and 5000.
+3. Imports the key pair named by ``ec2_default_pem`` from
+   ``~/.ssh/<ec2_default_pem>.pem`` if it does not exist in the region.
+4. Boots the instance, attaches the security group and grows the disk to
+   ``--storage``.
+5. Checks that ``dashboard_user`` and ``dashboard_password`` are set, then
+   installs Docker on the instance. If this check fails, the instance is
+   already running; set the credentials, tear the instance down and
+   provision again.
+6. Creates CNAME records for the ``--dns-host`` name and its wildcard
+   (``*.<dns-host>``), pointing at the instance's AWS hostname.
+7. Registers the server with Dallinger under both its AWS hostname and the
+   ``--dns-host`` name.
+
+At the end, you should see something like this:
 
 .. code:: text
-
-   name-experiment-version
-
-For example, to collect data from participants in the US:
-
-.. code:: bash
-
-   dallinger ec2 provision --name alice-melody-batch2 --region us-west-2 --dns-host alice.<your-domain> --type <type>
-
-Specify a custom subdomain that reflects your identity so the server URL
-is recognizable. The full experiment URL will combine the app name you
-pass to ``psynet deploy ssh --app`` and the DNS host, in the form
-``<app>.<dns-host>``, for example: ``melody.alice.<your-domain>``.
-
-Choose the instance type according to your needs. ``m7i.large`` is
-recommended for debugging, and ``m7i.xlarge`` is recommended for live
-deployment. For example:
-
-.. code:: bash
-
-   dallinger ec2 provision --name alice-melody-batch2 --region eu-west-3 --dns-host alice.<your-domain> --type m7i.xlarge
-
-If you use ``LocalStorage`` instead of S3 storage and the experiment
-creates large stimuli, such as iterative singing or GSP experiments,
-make sure the instance has enough storage. If the instance runs out of
-storage during the experiment, the experiment may crash. Alternatively,
-use ``S3Storage`` for experiments with many assets. If the experiment
-does not create new assets, the default storage is usually sufficient.
-You can find instance storage information in the AWS EC2 documentation:
-https://aws.amazon.com/ec2/instance-types/.
-
-Usually, PsyNet should be responsible for uploading assets to storage.
-For more information, see the :doc:`Assets guide
-</code/trials/assets>`.
-
-During the provisioning, all steps are printed to the terminal. At the
-end, you should see something like this printed in the terminal:
-
-.. code:: text
-
-   Connecting to alice.<your-domain>
-
-   Connected.
-
-   DNS record set up!
 
    Host registered in dallinger
 
-   Provisioning complete! Time taken: 192.402161359787. alice-step-en is
+   Provisioning complete! Time taken: 192.402161359787. memory-lab is
    ready at ec2-52-91-24-127.compute-1.amazonaws.com
 
-You can use Dozzle to view experiment logs and monitor server
-performance. To get the Dozzle URL, add ``logs.`` in front of the DNS
-hostname. For example:
+If the experiment stores large or many assets with ``LocalStorage``, for
+example iterative singing or GSP experiments, make sure that the disk is
+large enough; an experiment can crash when the disk fills up. Use
+``S3Storage`` for experiments with many assets, or increase the storage of
+an existing instance:
 
 .. code:: bash
 
-   logs.alice.<your-domain>
+   dallinger ec2 increase-storage --name <server_name> --region <region> --storage <size_in_gb>
 
-Stopping and starting an instance
-====================================
+The new size must be larger than the current one. For more on storage
+back-ends, see the :doc:`Assets guide </code/trials/assets>`.
 
-For multi-day deployments, you can stop the EC2 instance overnight to
-reduce costs. While you won't be charged for running the server during
-the stopped period, you will still incur minimal charges for storage.
-Do not forget to terminate the server when the experiment is done; see
-:ref:`Terminating an instance <aws_automatic_teardown>` below.
-
-To stop the instance:
+Stopping, starting and restarting an instance
+=============================================
 
 .. code:: bash
 
-   dallinger ec2 stop --name <server_name> --region <region> --dns-host <your-subdomain>.<your-domain>
+   dallinger ec2 stop --name <server_name> --region <region> --dns-host <subdomain>.<your-domain>
+   dallinger ec2 start --name <server_name> --region <region> --dns-host <subdomain>.<your-domain>
 
-The next day, start the instance again. This reboots all Docker
-containers and experiments, so double-check that the experiment still
-works after the restart. To start the instance:
+``stop`` removes the DNS records for ``--dns-host`` and stops the instance,
+keeping the server registrations. AWS continues to charge for the instance's
+storage while it is stopped. ``start`` waits until the instance has stopped,
+starts it and recreates the DNS records, pointing them at the instance's new
+AWS hostname. Pass ``--name`` to ``start``. Docker restarts the experiments
+with the instance.
+
+``restart`` reboots a running instance without changing its hostname or DNS
+records:
 
 .. code:: bash
 
-   dallinger ec2 start --name <server_name> --region <region> --dns-host <your-subdomain>.<your-domain>
+   dallinger ec2 restart --name <server_name> --region <region>
 
 .. _aws_automatic_ssh_into_instance:
 
 SSH into the instance
-=======================
+=====================
 
-To SSH into the EC2 server manually, use:
-
-.. code:: bash
-
-   ssh <SERVER_URL>
-
-For example:
+Log in with the key pair's PEM file as the ``ubuntu`` user, using either the
+``--dns-host`` name or the AWS hostname:
 
 .. code:: bash
 
-   ssh ec2-18-170-223-29.eu-west-2.compute.amazonaws.com
+   ssh -i ~/.ssh/<ec2_default_pem>.pem ubuntu@<subdomain>.<your-domain>
 
-SSH access is useful if you need to restart a Docker container or
-inspect assets on the server.
+SSH access is useful if you need to restart a Docker container or inspect
+assets on the server; see :doc:`/deploy/reference/ssh_server`.
 
 .. _aws_automatic_teardown:
 
 Terminating an instance
-=========================
-
-Once you have finished with your experiment, terminate the EC2 server
-to avoid ongoing charges. EC2 servers incur costs as long as they are
-running.
-
-.. important::
-
-   You must export all data before teardown. Once the server is
-   terminated, any data that was not exported is permanently lost.
+=======================
 
 .. code:: bash
 
-   dallinger ec2 teardown --name <server_name> --region <region> --dns-host <your-subdomain>.<your-domain>
+   dallinger ec2 teardown --name <server_name> --region <region> --dns-host <subdomain>.<your-domain>
 
-If you need to delete the app without tearing down the server (for
-example, when redeploying from archive on the same server, or reusing
-assets already stored there), use ``psynet destroy ssh`` instead:
+``teardown`` terminates the instance, which deletes its disk with every
+experiment database on it. It then removes the DNS records for ``--dns-host``
+and both server registrations. Without ``--dns-host``, the DNS records and the
+``--dns-host`` registration stay behind. Export all data first; see
+:doc:`/deploy/running_a_study`.
 
-.. code:: bash
+Custom machine images
+=====================
 
-   psynet destroy ssh --app <app_name> --server <your-subdomain>.<your-domain>
-
-.. note::
-
-   **Destroy the app** when you have exported the data and will need to
-   reuse the same server, for example when redeploying from archive
-   (e.g., when assets are stored on the server).
-
-.. note::
-
-   **Teardown the server directly** when you have exported all the data
-   and will not need the server anymore.
-
-.. warning::
-
-   Every time you destroy an app you also need to stop the related
-   Prolific experiment. Each redeploy creates a new Prolific experiment,
-   and you can exclude participants from earlier deploys via the
-   Prolific platform.
-
-If you used an internal or physical server rather than EC2, there is no
-server to tear down; simply delete the app once your experiment is done
-and you have exported all data:
-
-.. code:: bash
-
-   psynet destroy ssh --app <app_name> --server <your-server-hostname>
-
-Advanced: custom instances
-=============================
-
-For certain use cases, such as setting up your own synthesis server, you
-may want to programmatically configure a custom EC2 server. This is an
-advanced workflow that depends on your lab's infrastructure and should
-be documented in your lab's internal deployment documentation. Most
-experiments should use the standard provisioning command described
-above.
+To start from your own machine image, pass its AMI ID or name with
+``--image_name``. Most experiments should use the default Ubuntu image.

@@ -1,13 +1,6 @@
 Deployment reference
 ====================
 
-This section is the reference for deployment targets, server setup,
-monitoring tools, and troubleshooting. Data export is covered in
-:doc:`/data/index`. If you are looking for a
-step-by-step lab workflow around these pieces, including recruiter
-setup, piloting, monitoring participants, and teardown, see the
-:doc:`Lab research workflow </deploy/workflow/index>`.
-
 .. warning::
 
    ``deploy.toml`` planning currently requires a POSIX filesystem and is not
@@ -16,13 +9,12 @@ setup, piloting, monitoring participants, and teardown, see the
 .. toctree::
    :maxdepth: 1
 
-   web_servers
+   ssh_server
    aws_automatic_provisioning
    aws_server_setup
    physical_server_setup
-   ssh_server
-   deploy_from_archive
    deploy_tokens
+   deploy_from_archive
    deployment_monitor
    setting_up_slack
    errors

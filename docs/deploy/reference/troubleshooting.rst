@@ -82,8 +82,8 @@ If the launch appears stuck at "Launching experiment" for more than a
 few minutes, a common cause is that ``nip.io`` has hit a quota limit and
 is refusing to provide an HTTPS address. Other common causes include an
 invalid server name or incorrect recruiter parameters. If the terminal
-does not show a clear error, the Dozzle logs (see above) usually contain
-a more useful message.
+does not show a clear error, the Dozzle logs usually contain a more
+useful message (see :ref:`lab-deployment-dashboard`).
 
 I cannot access my server anymore
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

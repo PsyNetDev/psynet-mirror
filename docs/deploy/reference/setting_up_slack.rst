@@ -70,10 +70,12 @@ Usage
 -----
 
 By default PsyNet reports on the following events:
+
 - Experiment started (and credentials for dashboard)
 - Experiment finished
 - Error occurred
 - Recruitment updates
+- New Prolific messages about the study (Prolific experiments only)
 
 However, you can also add custom messages to the Slack channel by code like this:
 

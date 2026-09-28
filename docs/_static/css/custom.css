@@ -101,3 +101,17 @@ section.study-step img.study-step-phone {
   margin: 0 auto;
   border-radius: 0.6rem;
 }
+
+/* Lab-specific notes (the lab-note directive in _ext/lab_note.py). */
+.admonition.lab-note {
+  border-color: var(--pst-color-secondary);
+}
+
+.admonition.lab-note > .admonition-title {
+  background-color: var(--pst-color-secondary-bg);
+}
+
+.admonition.lab-note > .admonition-title::after {
+  color: var(--pst-color-secondary);
+  content: "\f19c"; /* Font Awesome "building-columns" */
+}
