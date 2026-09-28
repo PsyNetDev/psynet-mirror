@@ -6,6 +6,7 @@ import tempfile
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import click
@@ -16,6 +17,7 @@ from click.testing import CliRunner
 from psynet.command_line import (
     _check_constraints,
     _create_sql_profile_run_dir,
+    _dallinger_develop_debug_kwargs,
     _enable_sql_profile,
     check_dockerfile,
     psynet,
@@ -30,6 +32,24 @@ from psynet.experiment_scaffold import (
 )
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.utils import working_directory
+
+
+def test_dallinger_develop_debug_kwargs_include_no_browsers_when_supported():
+    command = SimpleNamespace(
+        params=[
+            SimpleNamespace(name="skip_flask"),
+            SimpleNamespace(name="no_browsers"),
+        ]
+    )
+    assert _dallinger_develop_debug_kwargs(command, True) == {
+        "skip_flask": False,
+        "no_browsers": True,
+    }
+
+
+def test_dallinger_develop_debug_kwargs_omit_no_browsers_when_unsupported():
+    command = SimpleNamespace(params=[SimpleNamespace(name="skip_flask")])
+    assert _dallinger_develop_debug_kwargs(command, True) == {"skip_flask": False}
 
 
 @pytest.fixture(autouse=True)

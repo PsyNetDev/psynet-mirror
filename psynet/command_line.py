@@ -942,12 +942,23 @@ def _debug_docker(ctx, archive, no_browsers):
         reset_console()
 
 
-def _debug_auto_reload(ctx, archive, no_browsers):
-    if no_browsers:
-        raise click.UsageError(
-            "--no-browsers option is not supported in this debug mode."
-        )
+def _dallinger_develop_debug_kwargs(dallinger_debug, no_browsers):
+    """Return invoke kwargs for Dallinger's develop debug command.
 
+    Older Dallinger versions have no ``--no-browsers`` flag on this command.
+    Passing the argument anyway makes Click abort, so only include it when
+    the installed command declares the option.
+    """
+    kwargs = {"skip_flask": False}
+    if any(
+        getattr(param, "name", None) == "no_browsers"
+        for param in dallinger_debug.params
+    ):
+        kwargs["no_browsers"] = no_browsers
+    return kwargs
+
+
+def _debug_auto_reload(ctx, archive, no_browsers):
     run_pre_auto_reload_checks()
 
     from dallinger.command_line.develop import debug as dallinger_debug
@@ -959,8 +970,15 @@ def _debug_auto_reload(ctx, archive, no_browsers):
     develop_module = importlib.import_module("dallinger.command_line.develop")
     develop_module.header = ""
 
+    invoke_kwargs = _dallinger_develop_debug_kwargs(dallinger_debug, no_browsers)
+    if no_browsers and "no_browsers" not in invoke_kwargs:
+        logger.warning(
+            "Installed Dallinger does not support 'develop debug --no-browsers'; "
+            "a browser window may still open."
+        )
+
     try:
-        ctx.invoke(dallinger_debug, skip_flask=False)
+        ctx.invoke(dallinger_debug, **invoke_kwargs)
     finally:
         db.session.commit()
         reset_console()

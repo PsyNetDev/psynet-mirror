@@ -58,7 +58,7 @@ function extractRecruitmentUrlFromLine(line) {
 }
 
 function getPsynetDebugArgs() {
-  const args = ["debug", "local"];
+  const args = ["debug", "local", "--no-browsers"];
 
   // Optional compatibility switch for local troubleshooting. We do not force legacy mode.
   if (parseBoolEnv("PSYNET_USE_LEGACY_DEBUG")) {
