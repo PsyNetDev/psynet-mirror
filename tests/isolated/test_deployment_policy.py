@@ -146,17 +146,25 @@ def test_scaffold_creates_stock_deployment_policy(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "author_file, needs_review", [(None, False), ("stimuli.csv", True)]
+    "existing_files, needs_review",
+    [
+        ([], False),
+        ([".venv/pyvenv.cfg", ".python-version"], False),
+        (["stimuli.csv"], True),
+        ([".env"], True),
+    ],
 )
 def test_setup_skips_review_only_in_fresh_directory(
-    tmp_path, author_file, needs_review
+    tmp_path, existing_files, needs_review
 ):
     from psynet.experiment_setup import _scaffold_experiment
 
     experiment_dir = tmp_path / "chords"
     (experiment_dir / ".git").mkdir(parents=True)
-    if author_file:
-        (experiment_dir / author_file).write_text("private\n")
+    for relative_path in existing_files:
+        path = experiment_dir / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("private\n")
 
     with working_directory(experiment_dir):
         _scaffold_experiment(MagicMock(), skip_constraints=True)

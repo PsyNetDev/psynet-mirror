@@ -809,6 +809,9 @@ def _clear_deployment_policy_review_marker() -> None:
         parent.rmdir()
 
 
+# Tool files that may exist before ``psynet setup`` in a new experiment. Each is
+# skipped by the stock deploy.toml (.git is always skipped by Dallinger), so a
+# directory holding only these has no author files to review.
 _FRESH_DIRECTORY_ENTRIES = frozenset({".git", ".venv", ".python-version", ".DS_Store"})
 
 
