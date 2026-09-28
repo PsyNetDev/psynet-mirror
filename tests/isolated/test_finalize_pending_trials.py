@@ -465,6 +465,54 @@ def test_finalize_pending_trials_skips_asset_deposit_pending(
     "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
 )
 @pytest.mark.usefixtures("in_experiment_directory")
+def test_optional_recording_can_expire_after_trial_finalization(
+    db_session, participant, tmp_path, monkeypatch
+):
+    from datetime import timedelta
+
+    from psynet import media_upload
+    from psynet.asset import LocalStorage
+    from psynet.timeline import Response
+    from psynet.trial.record import Recording
+
+    exp = get_experiment()
+    network = _create_network(_chain_trial_maker(), exp)
+    trial = _add_complete_unfinalized_trial(network.head, participant)
+    response = Response(
+        participant=participant, label="choice", page_type="ModularPage"
+    )
+    response.successful_validation = True
+    asset, _ = media_upload._reserve_recording(
+        response=response,
+        parent=trial,
+        page_uuid="choice",
+        source="camera",
+        local_key="background_choice_camera",
+        storage=LocalStorage(str(tmp_path)),
+        role="background",
+        required_for_trial=False,
+        upload_timeout=60,
+    )
+    trial_id, asset_id, answer = trial.id, asset.id, trial.answer
+    deadline = asset.upload_deadline
+    db.session.commit()
+    assert media_upload._recording_wait_timeout(participant.id, trial_id=trial_id) == 20
+    assert Trial.finalize_pending_trials() == 1
+    assert db.session.get(Trial, trial_id).finalized
+    monkeypatch.setattr(
+        media_upload, "_utcnow", lambda: deadline + timedelta(seconds=1)
+    )
+    media_upload._expire_recordings()
+    trial = db.session.get(Trial, trial_id)
+    assert trial.finalized and not trial.failed
+    assert trial.answer == answer
+    assert db.session.get(Recording, asset_id).upload_status == "expired"
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
 def test_failed_async_blocks_finalization_even_if_not_pending(db_session, participant):
     """Failed async is not 'pending' but must still block finalize."""
     exp = get_experiment()

@@ -390,10 +390,23 @@ def received_video(reservation, tmp_path, monkeypatch):
     return recording_id, payload
 
 
-def test_received_video_is_validated_and_deposited(received_video):
+@pytest.mark.parametrize("optional", [False, True])
+def test_received_video_is_validated_and_deposited(
+    received_video, monkeypatch, optional
+):
     import hashlib
 
     recording_id, payload = received_video
+    if optional:
+        asset = db.session.get(Recording, recording_id)
+        asset.required_for_trial = False
+        asset.recording_role = "background"
+        db.session.commit()
+
+        def unexpected_analysis(self):
+            raise AssertionError("Optional clips must not trigger answer analysis")
+
+        monkeypatch.setattr(Recording, "after_deposit", unexpected_analysis)
     _process_recording(recording_id)
     asset = db.session.get(Recording, recording_id)
     assert asset.upload_status == "deposited"

@@ -1,5 +1,5 @@
 /**
- * Internal transport for accepted recording reservations (not yet enabled).
+ * Internal transport for accepted recording reservations.
  *
  * The document owns this queue, not a trial or its DOM fragment. Enqueue only
  * after response acceptance and before page cleanup, using the original blob
@@ -32,6 +32,14 @@ export class MediaUploadQueue {
 
   get pendingBytes() {
     return this._pendingBytes;
+  }
+
+  get availableBytes() {
+    return Math.max(0, this._limits.maxBytes - this._pendingBytes);
+  }
+
+  get availableSlots() {
+    return Math.max(0, this._limits.maxPending - this._jobs.size);
   }
 
   /** Select files within the shared budget before the single in-flight answer.

@@ -356,6 +356,7 @@ class Asset(AssetSpecification, SQLBase, SQLMixin):
     psynet_version = Column(String)
     deployment_id = Column(String)
     deposited = Column(Boolean)
+    required_for_trial = Column(Boolean, nullable=False, default=True)
     inherited = Column(Boolean, default=False)
     inherited_from = Column(String)
     module_id = Column(String, index=True)

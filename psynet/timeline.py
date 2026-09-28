@@ -1076,6 +1076,12 @@ class Page(Elt):
     time_estimate:
         Time estimated for the page.
 
+    background_recording:
+        Optional background video alongside the ordinary answer: ``"camera"``,
+        ``"screen"``, ``"both"``, or a
+        :class:`~psynet.background_recording.VideoRecordConfig`. Missing clips
+        do not block or fail trials. See :doc:`/tutorials/modular_page`.
+
     template_path:
         Path to the jinja2 template to use for the page.
 
@@ -1315,9 +1321,18 @@ class Page(Elt):
         requires_full_page_reload: bool = False,
         expect_scrolling: Optional[bool] = None,
         delegated_render: bool = False,
+        background_recording=None,
     ):
         super().__init__()
 
+        from .background_recording import _normalize_config
+
+        self.background_recording = _normalize_config(
+            background_recording,
+            self,
+            delegated=delegated_render or requires_full_page_reload,
+            session_id=session_id,
+        )
         legacy_js_links = _normalize_javascript_urls(js_links, "js_links")
         legacy_scripts = _normalize_js_page_code(scripts, "scripts")
         if legacy_js_links:
@@ -1660,6 +1675,7 @@ class Page(Elt):
         db.session.add(resp)
 
         trial = participant.current_trial
+        resp._background_parent = trial or participant
 
         if answer == NoArgumentProvided:
             answer = self.format_answer(
@@ -1894,7 +1910,10 @@ class Page(Elt):
         # `partial_mode` is an internal render shape used for inplace
         # transitions. The public timeline route now serves full pages (plus
         # mode=json), while /response embeds this fragment payload directly.
+        from .background_recording import _browser_config
+
         internal_js_vars = {
+            "backgroundRecording": _browser_config(self, experiment, participant),
             "uniqueId": participant.unique_id,
             "pageUuid": participant.page_uuid,
             "dynamicallyUpdateProgressBarAndReward": self.dynamically_update_progress_bar_and_reward,

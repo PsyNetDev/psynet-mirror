@@ -154,3 +154,68 @@ Other controls
 * :class:`~psynet.modular_page.SurveyJSControl`
 
 For the full API reference, see :doc:`/api/modular_page`.
+
+
+Optional background video
+-------------------------
+
+Set ``background_recording`` on a :class:`~psynet.timeline.Page` to capture video
+alongside its ordinary answer. A button page can save the choice immediately
+while its camera clip uploads in the background:
+
+.. code-block:: python
+
+    from psynet.consent import AudiovisualConsent
+    from psynet.modular_page import ModularPage, PushButtonControl, VideoRecordConfig
+    from psynet.timeline import Timeline
+
+    timeline = Timeline(
+        AudiovisualConsent(time_estimate=5),
+        ModularPage(
+            "judgment",
+            "Did the two sounds match?",
+            PushButtonControl(["Yes", "No"]),
+            time_estimate=10,
+            background_recording=VideoRecordConfig(
+                source="camera", audio=False, max_duration=120,
+            ),
+        ),
+    )
+
+The shorthand ``background_recording="camera"`` uses the same defaults.
+``"screen"`` and ``"both"`` are also supported. Each source produces a separate
+WebM asset per page visit, including when labels repeat or a
+:class:`~psynet.timeline.PageMaker` generates the page.
+
+Participants explicitly enable camera/screen access or continue without recording
+before the page starts. A denied or skipped source is not requested again in the
+same document. Live tracks are reused between pages; a new recorder captures
+each page. Stock audiovisual consent modules must have recorded acceptance before
+capture is offered. Consent pages cannot record background video.
+Audio capture is off by default; screen audio availability depends on the browser
+and the shared source.
+
+By default, capture stops after 120 seconds or at 16 MiB per source. Exceeding
+the size limit discards that clip; reaching the duration limit retains the
+captured portion. Queue exhaustion skips capture. Missing clips expire at the
+upload deadline and invalid clips fail validation, without failing the trial,
+blocking analysis, or replacing its answer recording. A rejected answer keeps
+the existing clip for resubmission.
+
+This initial implementation supports optional recordings on ordinary timeline
+pages with local asset storage. It does not support required background clips,
+answer-recording controls, delegated pages, full-reload pages, or same-session
+pages. Leaving or reloading the document can lose pending uploads; there is no
+upload wait page. Bots skip capture.
+
+For a runnable example, use ``demos/features/background_recording``:
+
+.. code-block:: shell
+
+    cd demos/features/background_recording
+    psynet debug local
+
+Accept audiovisual consent, enable the camera, and answer both button pages.
+Repeat after denying permission or choosing “Continue without recording”; both
+answers should still advance. Browser and server checks are described in
+:doc:`/developer/running_tests`.

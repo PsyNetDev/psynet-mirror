@@ -252,6 +252,9 @@ alongside a demo using that same database.
     pytest tests/isolated/test_recording_submission.py
     npx playwright test media_upload_queue.spec.js
     npx playwright test asynchronous_recording.spec.js
+    pytest tests/isolated/test_background_recording.py
+    npx playwright test background_recording.spec.js
+    npx playwright test background_capture.spec.js
     npx playwright test demos/imitation_chain_video.spec.js demos/video_feature.spec.js
 
 The video imitation-chain demo exercises recording-dependent playback and chain
@@ -281,7 +284,13 @@ server fails the affected trial at its existing deadline with the recorded reaso
 Transport initialization has a five-second budget; both failed and stalled module
 loads permit submission. The tests cover these paths and deadline behavior.
 
-Keep the switch private until lost-response recovery and complete missing-media
+The optional background-recording demo exercises ordinary button answers, a
+generated page with a repeated label, held uploads, and denied camera permission.
+Its checks wait for captured bytes and accepted response receipts instead of
+transient recording labels. See :doc:`/tutorials/modular_page` for manual steps.
+Optional background assets do not enter trial dependency waits or fail trials.
+
+Keep the answer-recording switch private until lost-response recovery and complete missing-media
 navigation tests are in place.
 
 The provisional upload allowance uses a conservative 1 Mbit/s rate, 30 seconds

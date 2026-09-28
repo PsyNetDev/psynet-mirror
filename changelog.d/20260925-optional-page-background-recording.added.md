@@ -1,0 +1,1 @@
+Added optional camera and screen background recording to ordinary timeline pages, preserving their answers while clips upload across page changes. Capture requires an explicit browser permission step, respects stored audiovisual consent, and has duration and memory limits. Missing optional clips do not block or fail trials. Includes a demo and manual testing instructions.

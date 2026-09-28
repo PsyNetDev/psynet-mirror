@@ -2659,6 +2659,7 @@
 
       if (correctBrowser) {
         await new Promise((resolve) => setTimeout(resolve, 25));
+        await psynet.prepareBackgroundRecording();
         await psynet.trial.init();
       }
     };
@@ -2970,6 +2971,39 @@
 
     // Document ownership preserves uploads across in-place page cleanup.
     let recordingUploadQueue;
+    let backgroundRecorder;
+    let backgroundUnavailable = false;
+    async function recordingModule(path) {
+      let timer;
+      try {
+        return await Promise.race([import(path),new Promise((_,reject) => {
+          timer = setTimeout(() => reject(new Error("Recording transport initialization timed out.")),5000);
+        })]);
+      } finally { clearTimeout(timer); }
+    }
+    async function getRecordingQueue(maxBytes = 128 * 1024 * 1024) {
+      if (!recordingUploadQueue) {
+        const {MediaUploadQueue} = await recordingModule("/static/scripts/media-upload.js");
+        recordingUploadQueue = new MediaUploadQueue({maxBytes:2 * maxBytes});
+      }
+      return recordingUploadQueue;
+    }
+    psynet.prepareBackgroundRecording = async function () {
+      await backgroundRecorder?.discard();
+      backgroundUnavailable = false;
+      const config = psynet.var.backgroundRecording;
+      if (!config) return;
+      try {
+        const queue = await getRecordingQueue();
+        const {BackgroundRecorder} = await recordingModule("/static/scripts/background-recording.js");
+        backgroundRecorder ||= new BackgroundRecorder(queue);
+        await backgroundRecorder.begin(config);
+      } catch (error) {
+        psynet.log.warn(`Background recording unavailable: ${error.message}`);
+        backgroundUnavailable = true;
+      }
+    };
+
     let submitGenericResponse = async function (
       rawAnswer,
       metadata,
@@ -2986,8 +3020,20 @@
       $(" .response, .submit ").prop("disabled", true);
 
       let capturedRecordings = {};
-      const sources = psynet.var.asynchronousVideoUploadSources;
-      if (Array.isArray(sources)) {
+      const background = psynet.var.backgroundRecording;
+      const sources = background ? background.sources : psynet.var.asynchronousVideoUploadSources;
+      if (background) {
+        let capture;
+        try {
+          if (backgroundUnavailable) throw new Error("Background capture could not initialize.");
+          capture = await backgroundRecorder.finish();
+        } catch (error) {
+          psynet.log.warn(`Background recording unavailable: ${error.message}`);
+          capture = {recordings:{},sizes:{},unavailable:Object.fromEntries(sources.map(source => [source,"capture_error"]))};
+        }
+        capturedRecordings = capture.recordings;
+        metadata = {...metadata,background_recording:{sizes:capture.sizes,unavailable:capture.unavailable,outcomes:capture.outcomes}};
+      } else if (Array.isArray(sources)) {
         const sizes = {};
         for (const source of sources) {
           const blob = blobs?.[`${source}Recording`];
@@ -2997,23 +3043,7 @@
         let unavailable;
         try {
           const maxBytes = psynet.var.asynchronousVideoUploadMaxBytes;
-          if (!recordingUploadQueue) {
-            let initializationTimer;
-            let transport;
-            try {
-              transport = await Promise.race([
-                import("/static/scripts/media-upload.js"),
-                new Promise((_, reject) => {
-                  initializationTimer = setTimeout(() => reject(new Error("Recording transport initialization timed out.")), 5000);
-                }),
-              ]);
-            } finally {
-              clearTimeout(initializationTimer);
-            }
-            const { MediaUploadQueue } = transport;
-            // The bounded document queue can hold a full camera + screen answer.
-            recordingUploadQueue = new MediaUploadQueue({ maxBytes: 2 * maxBytes });
-          }
+          await getRecordingQueue(maxBytes);
           const prepared = recordingUploadQueue.prepare(capturedRecordings, maxBytes);
           capturedRecordings = prepared.recordings;
           unavailable = prepared.unavailable;

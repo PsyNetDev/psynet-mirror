@@ -1312,7 +1312,10 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
 
     @hybrid_property
     def asset_deposit_pending(self):
-        return any(not asset.deposited for asset in self.assets.values())
+        return any(
+            not asset.deposited and asset.required_for_trial is not False
+            for asset in self.assets.values()
+        )
 
     @asset_deposit_pending.expression
     def asset_deposit_pending(cls):
@@ -1321,6 +1324,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             .where(
                 Asset.trial_id == Trial.id,
                 ~Asset.deposited,
+                Asset.required_for_trial,
             )
             .exists()
         )

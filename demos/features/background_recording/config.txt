@@ -1,0 +1,9 @@
+[Config]
+title = Optional background recording
+description = Ordinary answers with optional camera clips.
+contact_email_on_error = test@example.com
+organization_name = PsyNet
+recruiter = generic
+currency = $
+wage_per_hour = 12.0
+inplace_timeline_transitions = true

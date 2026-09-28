@@ -95,6 +95,7 @@ def _recording_wait_timeout(participant_id, default_timeout=20.0, *, trial_id=No
         .join(Trial, Recording.trial_id == Trial.id)
         .filter(
             Recording.participant_id == participant_id,
+            Recording.required_for_trial,
             ~Trial.failed,
             Recording.upload_status.in_(
                 ["pending", "received", "queued", "processing"]
@@ -144,6 +145,8 @@ def _reserve_recording(
     upload_size_bytes=None,
     processing_timeout=20,
     max_bytes=128 * 1024 * 1024,
+    role="answer",
+    required_for_trial=True,
 ):
     """Reserve a server-selected recording in the accepted answer transaction."""
     if not response.successful_validation:
@@ -177,6 +180,8 @@ def _reserve_recording(
         parent=parent,
     )
     asset.input_path = None
+    asset.recording_role = role
+    asset.required_for_trial = required_for_trial
     ancestors = asset.get_ancestors()
     if ancestors["participant"] != response.participant_id:
         raise ValueError("Recording and response must belong to the same participant.")
@@ -523,7 +528,7 @@ def _complete_recording(recording_id, *, output=None, error=None):
         asset.upload_status = "expired" if expired else "failed"
         asset.upload_failed_reason = error
         asset.deposited = False
-        if trial is not None and not trial.failed:
+        if asset.required_for_trial and trial is not None and not trial.failed:
             trial.fail(reason=f"recording_{error}")
     else:
         for key, value in output.items():
@@ -532,7 +537,7 @@ def _complete_recording(recording_id, *, output=None, error=None):
         asset.storage.update_asset_metadata(asset)
         asset.upload_status = "deposited"
         asset.deposited = True
-        if trial is None or not trial.failed:
+        if asset.required_for_trial and (trial is None or not trial.failed):
             asset.after_deposit()
     asset.input_path = None
     return input_path

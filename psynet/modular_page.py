@@ -24,6 +24,7 @@ from flask import current_app
 from markupsafe import Markup
 
 from .asset import _PERSONAL_ARG_REMOVED, Asset, LocalStorage, _reject_personal_arg
+from .background_recording import VideoRecordConfig  # noqa: F401
 from .bot import BotResponse
 from .chatroom import ChatRoom  # noqa: F401
 from .javascript_hooks import JavaScriptContributor

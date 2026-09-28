@@ -28,6 +28,7 @@ class Recording(ExperimentAsset):
     """Recorded media, optionally reserved before its bytes reach the server."""
 
     # Null upload state identifies recordings using the existing deposit path.
+    recording_role = Column(String)
     upload_status = Column(String, index=True)
     upload_failed_reason = Column(String)
     upload_token_hash = Column(String)
@@ -50,7 +51,9 @@ class RecordTrial:
     @property
     def recording(self):
         recordings = [
-            asset for asset in self.assets.values() if isinstance(asset, Recording)
+            asset
+            for asset in self.assets.values()
+            if isinstance(asset, Recording) and asset.recording_role != "background"
         ]
         if len(recordings) == 0:
             return None

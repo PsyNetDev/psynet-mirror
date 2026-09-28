@@ -3329,12 +3329,22 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 event._store_response_answer(response, participant)
                 event.on_complete(experiment=self, participant=participant)
 
+            if event.background_recording is not None:
+                from .background_recording import _accept_background_recordings
+
+                recording_uploads = _accept_background_recordings(
+                    event, response, participant, self, page_uuid
+                )
+
             participant.inc_time_credit(event.time_estimate)
             participant.inc_progress(event.time_estimate)
 
             self.timeline.advance_page(self, participant)
             result = self.response_approved(participant, include_timeline_fragment)
-            if getattr(response, "_deferred_video_answer", False) is True:
+            if (
+                getattr(response, "_deferred_video_answer", False) is True
+                or event.background_recording is not None
+            ):
                 from .media_upload import _utcnow
 
                 payload = result.get_json()
@@ -3536,6 +3546,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 (
                     resources.files("psynet") / "resources/scripts/psynet.js",
                     "/static/scripts/psynet.js",
+                ),
+                (
+                    resources.files("psynet")
+                    / "resources/scripts/background-recording.js",
+                    "/static/scripts/background-recording.js",
                 ),
                 (
                     resources.files("psynet") / "resources/scripts/media-upload.js",
