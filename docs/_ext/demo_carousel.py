@@ -26,8 +26,8 @@ PLACEHOLDER = "phone_placeholder.svg"
 # Hover labels for gallery demos. Name the paradigm rather than the folder, and
 # keep them short enough to read in the overlay.
 CAPTIONS = {
-    "pipelines/simple_rating": "Rating sounds",
-    "pipelines/similarity": "Rating sound similarity",
+    "pipelines/simple_rating": "Rating sounds (adjectives)",
+    "pipelines/similarity": "Rating sounds (similarity)",
     "experiments/staircase_pitch_discrimination": "Adaptive pitch discrimination task",
     "features/trial_cue_adaptive": "Custom adaptive paradigm",
     "experiments/gibbs": "Gibbs Sampling with People",
