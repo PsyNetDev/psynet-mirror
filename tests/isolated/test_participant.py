@@ -368,3 +368,16 @@ class TestParticipantFailure:
         assert "sync group below minimum size" in partner.failure_tags
         assert group.n_active_participants == 0
         assert partner not in group.active_participants
+
+
+def test_current_trial_returns_none_when_relationship_is_detached():
+    from sqlalchemy.orm.exc import DetachedInstanceError
+
+    class DetachedParticipant:
+        current_trial_id = 1
+
+        @property
+        def _current_trial(self):
+            raise DetachedInstanceError()
+
+    assert Participant.current_trial.fget(DetachedParticipant()) is None

@@ -715,7 +715,16 @@ def _tolerate_missing_translation(namespace):
     """
     if namespace == "experiment":
         return False
-    return bool(os.environ.get("PYTEST_CURRENT_TEST")) and not is_release_branch()
+    if is_release_branch():
+        return False
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return True
+    from .experiment import in_deployment_package
+
+    # Local debug (and other non-deployed runs) should still show the page
+    # when a package catalog is behind the English source, instead of
+    # crashing the error page on top of the original error.
+    return not in_deployment_package()
 
 
 def check_translation_is_available(message, context, locale, namespace):
