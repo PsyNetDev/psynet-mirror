@@ -24,7 +24,7 @@ If estimate reports ``£4.95`` and ``33 min``, use:
 
 How PsyNet turns those values into Prolific approvals, bonuses, and
 screen-out payments is explained in
-:doc:`/getting_started/collecting_data`.
+:doc:`/running_studies/first_prolific_study`.
 
 Experiment script
 ~~~~~~~~~~~~~~~~~

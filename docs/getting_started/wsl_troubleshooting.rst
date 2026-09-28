@@ -1,3 +1,8 @@
+WSL troubleshooting
+===================
+
+These fixes cover problems people commonly hit when installing WSL for
+PsyNet on Windows.
 
 WSL 2 installation is incomplete
 --------------------------------

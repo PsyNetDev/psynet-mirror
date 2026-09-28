@@ -9,6 +9,7 @@ with :doc:`workflow`; complete the
 .. toctree::
    :maxdepth: 1
 
+   additional_developer_installation
    workflow
    branch_review
    contributing_a_feature_or_bugfix

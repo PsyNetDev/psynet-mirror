@@ -23,7 +23,7 @@ Shared pre-launch checks (duration, storage, title and description)
 are on :doc:`../setting_up_the_experiments`.
 
 If this is your first Prolific study on your own account, start with
-the :doc:`Getting started walkthrough </getting_started/collecting_data>`.
+the :doc:`Getting started walkthrough </running_studies/first_prolific_study>`.
 Use the Prolific page below when you are running a study in a lab
 workflow (shared workspace, qualification files, and dashboard
 procedures).

@@ -86,13 +86,9 @@ Paste the following:
 ``psynet setup`` prepares the experiment directory, initializes Git, installs
 the full experiment environment, and adds the PsyNet Agent Skills.
 
-This assumes PsyNet's system prerequisites are already available (Python 3.13,
-Git, uv, PostgreSQL, Redis, Chrome). See the
-:doc:`/getting_started/installation/index` documentation if you are setting up a machine for
-the first time. On Windows, use WSL (Ubuntu) and paste these same commands in
-the Ubuntu terminal; see
-:doc:`/getting_started/installation/virtual_environment_installation/windows`. Native Windows
-is not supported.
+This assumes the tools in :doc:`/getting_started/install` are already
+installed. On Windows, run these commands in the Ubuntu (WSL) terminal;
+native Windows is not supported.
 
 3. Describe the experiment
 ^^^^^^^^^^^^^^^^^^^^^^^^^^

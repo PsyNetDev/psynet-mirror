@@ -8,6 +8,7 @@ something specific in your own experiment.
 .. toctree::
    :maxdepth: 2
 
+   by_hand/index
    project/index
    pages/index
    trials/index

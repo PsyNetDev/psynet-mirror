@@ -1,20 +1,13 @@
 Getting started
 ===============
 
-This section is a step-by-step introduction to PsyNet, from installation to
-collecting your first data online. Read the chapters in order, starting with
-:doc:`how_to_learn`. The ideas behind PsyNet experiments, such as timelines,
-pages, and trial makers, are explained in :doc:`/designing/index`.
+This section takes you from nothing to an experiment running on your own
+computer. You install the tools once, create your first experiment and hand
+it to a coding agent, then choose where to go next.
 
 .. toctree::
    :maxdepth: 1
 
-   how_to_learn
-   prerequisites
-   installation/index
-   running_a_demo_locally
-   pipelines
-   customizing_an_experiment
-   running_remotely
-   collecting_data
-   where_next
+   install
+   quickstart
+   next_steps
