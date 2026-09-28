@@ -339,3 +339,68 @@ custom ``navbar-nav`` template that renders Bootstrap dropdowns. The section
 index pages would then be reached only from breadcrumbs, and could redirect
 to the section's first page. The dropdowns also need to work in the
 collapsed header on phones.
+
+Stop the Prolific study when an experiment ends
+-----------------------------------------------
+
+Date
+++++
+
+2026-09-28
+
+Problem
++++++++
+
+PsyNet settles Prolific submissions itself. Participants who finish receive
+an auto-approving completion code, and ``approve_hit`` completes submissions
+that are still active or approves those already awaiting review. Researchers
+therefore don't approve submissions by hand, which older lab documentation
+told them to do.
+
+Ending the study is still manual. Dallinger's ``ProlificRecruiter.close_recruitment``
+deliberately does nothing, so the study stays open on Prolific after
+recruitment finishes and even after ``psynet destroy ssh`` removes the app.
+Participants who start it then reach an address that no longer exists. The
+runbook warns researchers to stop the study on Prolific before destroying the
+app, but this is easy to forget.
+
+Idea
+++++
+
+Stop the Prolific study from PsyNet: offer it during ``psynet destroy ssh``
+when the recruiter is Prolific (defaulting to yes), and add a dashboard button.
+Prolific's API supports this with a ``STOP`` action on
+``/studies/<id>/transition/``, the same endpoint Dallinger already uses to
+publish. Stopping could also move into Dallinger's ``close_recruitment``,
+guarded by a config option so existing behavior doesn't change silently.
+Before relying on the automatic approval described above, confirm it once end
+to end on a live Prolific study, since the documentation now depends on it.
+
+Check EC2 provisioning settings before booting
+----------------------------------------------
+
+Date
+++++
+
+2026-09-28
+
+Problem
++++++++
+
+``dallinger ec2 provision`` checks that ``dashboard_user`` and
+``dashboard_password`` are set in ``~/.dallingerconfig`` only after it has
+booted the instance, resized its storage and connected over SSH (in
+``prepare_docker_experiment_setup``). If either setting is missing,
+provisioning stops with an assertion error and leaves a running instance
+that is being billed, which the researcher then has to find and tear down.
+
+Idea
+++++
+
+In Dallinger, load the configuration and check every required setting
+(``dashboard_user``, ``dashboard_password``, ``server_pem``, AWS credentials)
+at the start of ``prepare_instance``, before ``boot_instance``, and raise a
+``click.UsageError`` that names the missing keys. It's a short PR with a unit
+test that mocks the EC2 client and asserts that no instance is booted when a
+key is missing. Once it ships, update step 5 of the provisioning steps in
+:doc:`/deploy/reference/aws_automatic_provisioning`.
