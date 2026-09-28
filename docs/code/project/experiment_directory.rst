@@ -53,7 +53,7 @@ PsyNet experiment, the `Carillon Experiment <https://github.com/pmcharrison/2022
 -   ``templates`` is used for customising PsyNet’s front-end. It contains
     `Jinja2 templates <https://jinja.palletsprojects.com/en/2.11.x/>`_; Jinja2 is a popular templating library for Python.
     Most experiments do not need to use this folder, but for an example of how to use it, see
-    :doc:`/code/pages/writing_custom_frontends`.
+    :doc:`/code/pages/custom_front_ends`.
 
 -   ``.gitignore`` controls which files Git tracks. It does not control which
     files enter debug staging or deployment; that is ``deploy.toml``.

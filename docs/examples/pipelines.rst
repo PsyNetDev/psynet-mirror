@@ -19,7 +19,7 @@ Standalone experiments also maintain a generated ``constraints.txt`` (created by
 ``psynet setup`` / ``psynet generate-constraints``) and a ``Dockerfile`` for the
 system environment. Bundled demos intentionally omit those generated files until
 you copy a demo out and run the standalone setup workflow
-(see :doc:`customizing_an_experiment` and :doc:`running_a_demo_locally`).
+(see :doc:`/code/project/creating_an_experiment` and :doc:`running_a_demo_locally`).
 
 PsyNet includes a collection of pipelines designed for audio stimuli.
 However, it is perfectly possible to design analogous pipelines for images, videos, or other
@@ -90,4 +90,4 @@ Further information
 - Files in ``static/`` are deployed with the experiment and served to
   participants' browsers at URLs such as
   ``/static/instrument_sounds/clarinet.mp3``. For stimulus sets larger than
-  the deployment size limit, see :doc:`/code/trials/large_stimulus_sets`.
+  the deployment size limit, see :doc:`/code/using_stimuli`.

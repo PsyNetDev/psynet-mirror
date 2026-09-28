@@ -14,6 +14,7 @@ Deployment reference
    aws_server_setup
    physical_server_setup
    deploy_tokens
+   ad_page
    deploy_from_archive
    deployment_monitor
    setting_up_slack

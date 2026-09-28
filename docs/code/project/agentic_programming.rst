@@ -135,7 +135,7 @@ The researcher decides when the experiment is scientifically and
 operationally ready.
 
 If you would rather start from an existing demo and edit it yourself, see
-:doc:`/code/project/creating_a_new_experiment`.
+:doc:`/code/project/creating_an_experiment`.
 
 Debugging with coding agents
 ----------------------------
@@ -156,7 +156,7 @@ observed issue and ask the agent to investigate the running system directly.
 See also
 --------
 
-* :doc:`/code/project/creating_a_new_experiment`
+* :doc:`/code/project/creating_an_experiment`
 * :doc:`development_workflow`
 * :doc:`/reference/audit`
 

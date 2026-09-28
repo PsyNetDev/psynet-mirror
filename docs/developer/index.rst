@@ -17,6 +17,7 @@ experiments.
    prescreening_tasks
    updating_documentation
    future_work
+   translating_psynet
    /dashboards/translation
    running_tests
    asv_performance_tests

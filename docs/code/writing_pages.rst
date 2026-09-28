@@ -54,7 +54,7 @@ Commonly used controls:
 For consent, use one of the classes in :mod:`psynet.consent`, such as
 :class:`~psynet.consent.MainConsent`, usually as the first element of the
 timeline. Pages that go beyond prompts and controls are written as
-:doc:`custom front-ends </code/pages/writing_custom_frontends>`.
+:doc:`custom front-ends </code/pages/custom_front_ends>`.
 
 What happens to a response
 --------------------------

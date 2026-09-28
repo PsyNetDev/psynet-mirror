@@ -7,4 +7,5 @@ Testing experiments
    backend
    frontend
    scalability
+   sqlalchemy_profiling
    audits

@@ -166,7 +166,7 @@ per-page resources that are refreshed across fragment swaps:
 The standalone script should read its configuration from ``psynet.var`` (via
 ``vars`` in ``activate()``), not ad-hoc globals. Deprecated ``window`` access
 to ``js_vars`` is controlled by ``legacy_js_var_globals``; see
-:doc:`/code/pages/writing_custom_frontends` and
+:doc:`/code/pages/custom_front_ends` and
 :doc:`/reference/configuration`.
 
 .. code-block:: javascript

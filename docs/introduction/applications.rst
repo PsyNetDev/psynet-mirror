@@ -190,7 +190,7 @@ What's PsyNet for?
 
          **PsyNet handles:** forming groups as participants arrive, keeping them in step, and passing messages between their browsers.
 
-         **Docs:** :doc:`/code/multiplayer/index`
+         **Docs:** :doc:`/code/index`
 
 
 .. card:: Across languages and countries

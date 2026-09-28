@@ -36,7 +36,7 @@ Related reading (not a second checklist):
 | Topic | Published | Source checkout |
 | --- | --- | --- |
 | Release highlights | https://psynetdev.gitlab.io/PsyNet/whats_new/psynet_14.html | ``docs/whats_new/psynet_14.rst`` |
-| Authoring patterns | https://psynetdev.gitlab.io/PsyNet/code/pages/writing_custom_frontends.html | ``docs/code/pages/writing_custom_frontends.rst`` |
+| Authoring patterns | https://psynetdev.gitlab.io/PsyNet/code/pages/custom_front_ends.html | ``docs/code/pages/custom_front_ends.rst`` |
 | Maintainer lifecycle | https://psynetdev.gitlab.io/PsyNet/developer/page_lifecycle.html | ``docs/developer/page_lifecycle.rst`` |
 | Config knobs | https://psynetdev.gitlab.io/PsyNet/reference/configuration.html | ``docs/reference/configuration.rst`` |
 

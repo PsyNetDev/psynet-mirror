@@ -10,7 +10,7 @@ Creating pre-screening tasks
 Put custom pre-screens in your experiment, not in the PsyNet package.
 Ready-made tests for color blindness, color vocabulary, headphones, and
 audio classification are listed in
-:doc:`/code/participants/prescreening_tasks`.
+:doc:`/code/participants/prescreening_and_questionnaires`.
 
 A simple pre-screen
 ^^^^^^^^^^^^^^^^^^^

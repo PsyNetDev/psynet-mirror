@@ -1,0 +1,1 @@
+Reorganized the Code documentation by task into Starting a project, Timeline, Pages, Trials, Stimuli and media, Participants, Multiplayer and Database, merging overlapping pages and correcting broken examples. The ad page moved to the Deploy reference, SQLAlchemy profiling to Test, and the demo and pipeline walkthroughs to Examples; old URLs redirect.

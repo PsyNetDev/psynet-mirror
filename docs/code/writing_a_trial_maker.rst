@@ -155,6 +155,53 @@ override :meth:`~psynet.trial.main.TrialMaker.get_end_feedback_passed_page`.
 ``fail_trials_on_participant_performance_check`` (default ``True``) controls
 whether a failed check also fails the participant's trials.
 
+Trials without a trial maker
+----------------------------
+
+:meth:`~psynet.trial.main.Trial.cue` puts a single trial into the timeline,
+with no trial maker. You then choose the trials yourself with timeline
+constructs such as :func:`~psynet.timeline.for_loop`. The argument is either
+the trial's definition or a node. In ``demos/experiments/trial``, each
+participant rates three randomly sampled words:
+
+.. literalinclude:: ../../demos/experiments/trial/experiment.py
+   :start-at: word_ratings = Module(
+   :end-before: class Exp
+
+With a node, the trial takes the node's definition and can use its assets
+through ``self.node.assets``. Pass the nodes to the enclosing
+:class:`~psynet.timeline.Module`; functions inside the module can then take a
+``nodes`` argument. From ``demos/experiments/trial_2``:
+
+.. literalinclude:: ../../demos/experiments/trial_2/experiment.py
+   :start-at: audio_ratings = Module(
+   :end-before: class Exp
+
+Without nodes, pass trial-specific assets to ``cue`` with ``assets``. This
+suits externally hosted and on-demand assets, as in
+``demos/experiments/trial_3``:
+
+.. literalinclude:: ../../demos/experiments/trial_3/experiment.py
+   :start-at: audio_ratings = Module(
+   :end-before: class Exp
+
+To create related database records in the same transaction as the trial, pass
+an ``on_trial_created`` callback, and pass request-local values for it through
+``creation_context``. Assign relationships in the callback rather than IDs,
+because the trial's database ID may not exist until the transaction flushes.
+``demos/features/trial_cue_adaptive`` uses this for a participant-level
+staircase inside a :func:`~psynet.timeline.while_loop`:
+
+.. literalinclude:: ../../demos/features/trial_cue_adaptive/experiment.py
+   :pyobject: record_decision
+
+.. literalinclude:: ../../demos/features/trial_cue_adaptive/experiment.py
+   :pyobject: select_and_cue
+
+A trial maker is the better choice when trials should be balanced across
+nodes or participants, when chains develop across participants, or when you
+need performance checks or trial-based recruitment.
+
 Where the data goes
 -------------------
 

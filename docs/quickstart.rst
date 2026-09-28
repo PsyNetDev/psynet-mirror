@@ -76,4 +76,4 @@ The agent reads the PsyNet instructions that ``psynet setup`` installed,
 proposes a plan, writes the experiment and tests it. When it's done, run
 ``psynet debug local`` again and take part yourself.
 
-To write the code yourself instead, see :doc:`/code/by_hand/index`.
+To write the code yourself instead, see :doc:`/code/index`.

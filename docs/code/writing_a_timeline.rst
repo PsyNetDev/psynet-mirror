@@ -89,6 +89,30 @@ To store a page's answer in a variable, pass ``save_answer``:
 
 The most recent answer is also available as ``participant.answer``.
 
+Experiment variables
+--------------------
+
+Experiment variables are shared by all participants. Declare them, with their
+initial values, in the experiment class's ``variables`` dictionary:
+
+.. code-block:: python
+
+    class Exp(psynet.experiment.Experiment):
+        variables = {
+            "max_participant_payment": 10.0,  # overrides a default
+            "difficulty": 1,  # a new variable
+        }
+
+PsyNet's built-in variables, such as ``max_participant_payment``, have
+defaults that entries here override; see
+:class:`~psynet.experiment.Experiment` for the list. Read them with
+``experiment.var.difficulty`` and change them during the experiment with
+``set``:
+
+.. code-block:: python
+
+    CodeBlock(lambda experiment: experiment.var.set("difficulty", 2))
+
 When code runs
 --------------
 
@@ -115,6 +139,33 @@ maker:
         lambda participant: InfoPage(f"Your number is {participant.var.number}"),
         time_estimate=5,
     ),
+
+.. _pre_deploy_routines:
+
+Pre-deploy routines
+-------------------
+
+A :class:`~psynet.timeline.PreDeployRoutine` runs a function once, on the
+machine that launches the experiment, before the experiment starts. It takes
+a label, the function, and a dictionary of keyword arguments for the function.
+It can go anywhere in the timeline, any number of times, and shows nothing to
+participants. This one configures an Amazon S3 bucket:
+
+.. code-block:: python
+
+    from psynet.media import setup_bucket_for_presigned_urls
+    from psynet.timeline import PreDeployRoutine
+
+    PreDeployRoutine(
+        "setup_bucket_for_presigned_urls",
+        setup_bucket_for_presigned_urls,
+        {"bucket_name": "recordings_s3_bucket", "public_read": True},
+    )
+
+The function can also take an ``experiment`` argument. Database changes it
+makes are carried into the launched experiment, so it suits database setup
+tasks. Assets it deposits count as prepared before launch and are left out of
+``psynet export``.
 
 Branching and repetition
 ------------------------

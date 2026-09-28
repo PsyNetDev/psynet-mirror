@@ -87,7 +87,7 @@ that the slowest participants experience. The report also shows:
   worker processes are needed.
 
 If response times are high, profile the database queries with ``psynet test
-local --sql-profile``; see :doc:`/code/sqlalchemy_profiling`.
+local --sql-profile``; see :doc:`/test/sqlalchemy_profiling`.
 
 .. _performance_testing_server:
 

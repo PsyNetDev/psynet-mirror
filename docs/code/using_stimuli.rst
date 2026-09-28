@@ -30,6 +30,123 @@ Pass the URL to the page, for example:
 :class:`~psynet.timeline.MediaSpec` accepts URLs in the same way, for pages
 that play several files, such as the similarity demo's pair of sounds.
 
+.. _large_stimulus_sets:
+
+Large stimulus sets
+~~~~~~~~~~~~~~~~~~~
+
+The deployment package has a size limit, currently 1024 MB by default (see
+:doc:`/code/project/experiment_directory`). Larger sets of pregenerated
+images, audio, or video can be hosted in an Amazon Web Services S3 bucket and
+linked into the experiment by URL.
+
+1. Install the `AWS CLI
+   <https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html>`_
+   and check the installation with ``aws --version``.
+
+2. Upload the files from their folder to a bucket and key (subdirectory),
+   here ``my-bucket`` and ``my-key``, and list them to check the upload:
+
+   .. code-block:: bash
+
+       cd ~/my-audio-files/
+       aws s3 cp . s3://my-bucket/my-key/
+       aws s3 ls s3://my-bucket/my-key/
+
+   .. warning::
+       Spaces and special characters in file names can break the URLs. Use
+       only lowercase Latin letters (``a-z``), digits, underscores (``_``) and
+       hyphens (``-``).
+
+3. Allow public read access with a bucket policy. Save the following as
+   ``my-policy.json``:
+
+   .. code-block:: json
+
+       {
+           "Version": "2012-10-17",
+           "Statement": [
+               {
+                   "Sid": "PublicReadGetObject",
+                   "Effect": "Allow",
+                   "Principal": "*",
+                   "Action": "s3:GetObject",
+                   "Resource": "arn:aws:s3:::my-bucket/my-key/*"
+               }
+           ]
+       }
+
+   and apply it:
+
+   .. code-block:: bash
+
+       aws s3api put-bucket-policy --bucket my-bucket --policy file://my-policy.json
+
+   The files are then available at URLs such as
+   ``https://my-bucket.s3.amazonaws.com/my-key/my-file.wav``.
+
+4. Allow cross-origin requests with a CORS policy. Save the following as
+   ``my-cors.json``:
+
+   .. code-block:: json
+
+       [
+           {
+               "AllowedHeaders": ["*"],
+               "AllowedMethods": ["GET"],
+               "AllowedOrigins": ["*"],
+               "ExposeHeaders": [],
+               "MaxAgeSeconds": 3000
+           }
+       ]
+
+   and apply it:
+
+   .. code-block:: bash
+
+       aws s3api put-bucket-cors --bucket my-bucket --cors-configuration file://my-cors.json
+
+5. List the file names in a text file. Filtering by extension leaves out
+   other files, such as the ``.DS_Store`` files created by macOS:
+
+   .. code-block:: bash
+
+       ls *.wav > stimuli.txt
+
+6. Create one node per file in ``experiment.py``:
+
+   .. code-block:: python
+
+       from psynet.modular_page import AudioPrompt, ModularPage, PushButtonControl
+       from psynet.trial.static import StaticNode, StaticTrial
+
+       S3_BUCKET = "my-bucket"
+       S3_KEY = "my-key"
+
+
+       def get_s3_url(stimulus):
+           return f"https://{S3_BUCKET}.s3.amazonaws.com/{S3_KEY}/{stimulus}"
+
+
+       with open("stimuli.txt", "r") as f:
+           stimuli = f.read().splitlines()
+
+       nodes = [
+           StaticNode(definition={"url": get_s3_url(stimulus)})
+           for stimulus in stimuli
+       ]
+
+
+       class AudioRatingTrial(StaticTrial):
+           time_estimate = 5
+
+           def show_trial(self, experiment, participant):
+               return ModularPage(
+                   "audio_rating",
+                   AudioPrompt(self.definition["url"], "How much do you like this song?"),
+                   PushButtonControl(["Not at all", "A little", "Very much"]),
+               )
+
 Files generated from code
 -------------------------
 

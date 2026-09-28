@@ -24,7 +24,7 @@ Let's say you have the following info page in your experiment:
 
 .. code-block:: python
 
-    from dominate.tags import h1, hr, div
+    from dominate.tags import div, h1, hr, p
     from psynet.page import InfoPage
 
     my_info_page = InfoPage(
@@ -43,9 +43,7 @@ You can easily translate it by marking the strings that need to be translated wi
 
 .. code-block:: python
 
-    import os
-
-    from dominate.tags import h1, hr, div
+    from dominate.tags import div, h1, hr, p
     from psynet.page import InfoPage
     from psynet.utils import get_translator
 
@@ -200,6 +198,13 @@ Texts that no longer occur in the source code will be removed from the translati
 PsyNet does not make any backup of your translations, so make sure you include your experiments `locales`
 directory in your experiment's git repository and commit your changes regularly.
 
+Missing translations
+--------------------
+
+If a marked string has no translation in the experiment's catalog,
+``psynet debug`` and ``psynet test local`` raise an error. A live experiment
+reports the error and shows the English text instead.
+
 
 Advanced usage
 ==============
@@ -230,29 +235,3 @@ You can translate an arbitrary Python package for use in PsyNet by navigating to
 the package and running ``psynet translate``. This will create a ``locales`` directory in the package's
 source directory and populate it with the translations for the supported locales.
 If you do not specify which locales to translate it to, it will default to PsyNet's own list of supported locales.
-
-
-Contributing to PsyNet
-----------------------
-
-Merge requests that change PsyNet source should not update ``psynet/locales``.
-Package catalogs are refreshed on the release branch with ``psynet translate``,
-where ``psynet.translation.check.check_translations`` also runs. Until
-then, a missing PsyNet catalog entry raises under ``psynet debug`` and on
-release-branch tests. Non-release test runs show the English source text and
-log a warning instead. Live experiments report the error and show English.
-Tests that pin translated PsyNet copy should therefore run only on release
-branches. Experiment catalogs are unaffected: a missing experiment translation
-still raises outside live mode, whether you are running ``psynet debug`` or
-``psynet test local``.
-
-To contribute to PsyNet you need to:
-- have a local version of psynet on your computer e.g.: ``cd ~ && git clone https://gitlab.com/PsyNetDev/PsyNet``
-- go to the master branch and pull the latest changes: ``cd ~/PsyNet && git checkout master && git pull``
-- create a new branch for your changes: ``git checkout -b my_new_translations``
-- optionally translate to the new language: ``psynet translate <new_locale>``
-- go to the locale folder and your new locale: ``cd ~/PsyNet/tests/experiments/translation/locales/<new_locale>/LC_MESSAGES``
-- open the ``experiment.po`` file with PoEdit, go through each entry and validate it or change it
-- save the file, commit your changes, and push them
-- create a merge request on the GitLab page of PsyNet
-- thank you for your contribution!

@@ -16,7 +16,7 @@ node's definition only needs to record which file it uses.
 
 The deployment has a size limit, currently 1024 MB by default. For larger
 sets, host the files elsewhere and link to them; see
-:doc:`/code/trials/large_stimulus_sets`.
+:doc:`/code/using_stimuli`.
 
 Files generated from code
 -------------------------

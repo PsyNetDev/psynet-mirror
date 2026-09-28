@@ -6,7 +6,7 @@ This checklist migrates an existing experiment onto PsyNet 14: in-place
 timeline transitions, recruiter and leave APIs, and new participant-theme
 defaults. It is the single source of truth for **migration order and search
 targets**. Frontend patterns and full examples live in
-:doc:`/code/pages/writing_custom_frontends`.
+:doc:`/code/pages/custom_front_ends`.
 
 The Cursor skill ``/upgrade-to-psynet-14`` is a thin wrapper that points agents
 here. When PsyNet is not available as a source checkout (typical experiment
@@ -42,7 +42,7 @@ Search for ``template_path=``, ``template_str=``, and
 
 Convert complete templates to fragments
 (``template_fragment_path`` / ``template_fragment_str``) and supply assets via
-page arguments. See :doc:`/code/pages/writing_custom_frontends`
+page arguments. See :doc:`/code/pages/custom_front_ends`
 (Custom page templates).
 
 2. Migrate CSS
@@ -73,7 +73,7 @@ Converting the HTML template alone is not enough: leftover ``scripts=`` /
 
 Move load-once classic libraries to ``js_dependencies`` /
 ``get_js_dependencies()``. Do not put per-page initialization there. See
-:doc:`/code/pages/writing_custom_frontends` (Managing JavaScript lifecycles).
+:doc:`/code/pages/custom_front_ends` (Managing JavaScript lifecycles).
 
 5. Migrate per-page behavior
 ----------------------------
@@ -82,7 +82,7 @@ Rewrite classic top-level scripts as ES modules that export ``activate``,
 wired with ``js_page_modules`` / ``get_js_page_modules()``. Short snippets may
 use ``js_page_code`` / ``get_js_page_code()`` instead.
 
-See :doc:`/code/pages/writing_custom_frontends` for ``activate(context)``
+See :doc:`/code/pages/custom_front_ends` for ``activate(context)``
 examples and cleanup guidance.
 
 6. Migrate page variables to ``psynet.var``
@@ -97,7 +97,7 @@ key (for example ``name``, ``status``, ``event``, ``history``) silently
 keeps the browser's value; the page data is still available on
 ``psynet.var``. Page construction warns for these common collisions so they
 show up in ``psynet test local`` / ``psynet debug local``. See
-:doc:`/code/pages/writing_custom_frontends` and
+:doc:`/code/pages/custom_front_ends` and
 :doc:`/reference/configuration`.
 
 7. Migrate JsPsych timelines
@@ -113,7 +113,7 @@ show up in ``psynet test local`` / ``psynet debug local``. See
 * Page setup → ``activate()`` / ``js_page_code`` (not ``DOMContentLoaded``)
 * Timing gates → ``pageReady`` / ``trialConstruct``
 
-Details: :doc:`/code/pages/writing_custom_frontends`.
+Details: :doc:`/code/pages/custom_front_ends`.
 
 9. Migrate trial-selection hooks
 --------------------------------
@@ -200,7 +200,7 @@ Search for ``show_abort_button``, ``show_termination_button``,
 * Participant field: ``Participant.early_exited``.
 * Remove ``Experiment.ad_requirements`` and
   ``Experiment.ad_payment_information``. Customize ``templates/ad.html``
-  instead; see :doc:`/code/pages/ad_page`.
+  instead; see :doc:`/deploy/reference/ad_page`.
 * Replace ``error_page_content`` with recruiter
   ``error_page_presentation``. A custom recruiter that shows recovery UI
   must also override ``shows_error_recovery_page``; a button in the
@@ -246,7 +246,7 @@ From a complete experiment directory. At minimum you typically need:
 * ``.gitignore``, ``deploy.toml``, and ``.python-version``
 
 If you are scaffolding from scratch, see
-:doc:`/code/project/creating_a_new_experiment` or run ``psynet scripts update``
+:doc:`/code/project/creating_an_experiment` or run ``psynet scripts update``
 to generate the standard support files.
 
 .. code-block:: console
