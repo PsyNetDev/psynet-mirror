@@ -93,7 +93,7 @@ What happens to the data
 Participants' responses are stored in the app's database on the server, and
 any files they create are stored in the experiment's asset storage.
 ``psynet export ssh`` downloads the data to your computer (see
-:doc:`/data/index`); export regularly while the study runs. ``psynet destroy
+:doc:`/data/exporting_data`); export regularly while the study runs. ``psynet destroy
 ssh`` stops the app and deletes its files from the server, and tearing down an
 EC2 server deletes the machine with every database on it. Export before either
 step.

@@ -35,7 +35,7 @@ Key features:
 - **Basic data tab:** A preview of the experiment's basic data, if
   ``get_basic_data`` is implemented.
 - **Export tab:** Export the data. See
-  :doc:`Data </data/index>` for the full export reference.
+  :doc:`/data/exporting_data` for the full export reference.
 - **Lucid tab:** CINT survey status and metrics, for CINT experiments; see
   :doc:`/deploy/recruiters/cint`.
 - **Deployments tab:** The deployment monitor described below.
@@ -103,7 +103,7 @@ Actions
 If the experiment is **running**, you can:
 
 - **Access the dashboard**: Click the icon to open the experiment dashboard in a new browser tab.
-- **Access the data endpoint**: Click the icon to view the experiment’s :doc:`data endpoint </data/index>` in a new tab.
+- **Access the data endpoint**: Click the icon to view the experiment’s :doc:`basic data endpoint </data/basic_data>` in a new tab.
 
 If the experiment is **not running**, you can:
 

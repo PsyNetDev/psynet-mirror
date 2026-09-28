@@ -87,7 +87,7 @@ Export data from an experiment (``export``)
 -------------------------------------------
 
 This command exports data from an experiment. The data is saved by default to
-``exports/latest/`` in the experiment directory; see :doc:`/data/index`.
+``exports/latest/`` in the experiment directory; see :doc:`/data/exporting_data`.
 
 .. code:: bash
 
