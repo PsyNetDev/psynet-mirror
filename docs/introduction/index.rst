@@ -7,7 +7,6 @@ it builds on, and the people behind it.
 .. toctree::
    :maxdepth: 1
 
-   overview
    applications
    what_its_like
    research

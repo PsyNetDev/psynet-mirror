@@ -195,5 +195,6 @@
   "guides/testing/introduction_to_sql_alchemy": "testing/introduction_to_sql_alchemy",
   "guides/testing/troubleshooting": "testing/troubleshooting",
   "guides/project/audit": "testing/audit",
-  "running_studies/reference/data": "data/index"
+  "running_studies/reference/data": "data/index",
+  "introduction/overview": "introduction/applications"
 }
