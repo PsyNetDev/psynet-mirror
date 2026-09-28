@@ -95,16 +95,19 @@ that file and list the matching techniques in its ``keywords`` field, for
 example ``keywords = {chains, recording}``. The allowed tags are the keys of
 ``TECHNIQUES`` in ``docs/_ext/research_list.py``; the build warns about
 entries with missing or unknown tags. Techniques without papers are left off
-the page.
+the page. Gallery cards that mention papers use
+``.. example-publications:: <tag>``, which lists each paper as an author–year
+link to its URL or DOI.
 
 Gallery screenshots
 -------------------
 
 The demo carousels on :doc:`/introduction/applications` show phone-sized
 screenshots from ``docs/_static/images/gallery/``. Each carousel lists demo
-paths, and a demo without a screenshot shows a placeholder. To add or refresh
+paths, and a demo without a screenshot shows a placeholder. Hover captions
+come from ``CAPTIONS`` in ``docs/_ext/demo_carousel.py``. To add or refresh
 screenshots, add a step for the demo to
-``docs/scripts/gallery_screenshots/gallery.spec.js`` and run:
+``docs/scripts/gallery_screenshots/gallery.spec.js``, add a caption, and run:
 
 .. code-block:: console
 

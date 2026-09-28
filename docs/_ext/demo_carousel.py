@@ -9,7 +9,7 @@ Each line of the directive body is a demo path relative to ``demos/``::
 
 A demo's screenshot is ``_static/images/gallery/<path with / replaced by __>.png``.
 Demos without a screenshot show a placeholder. Each slide links to the demo's
-source on GitLab.
+source on GitLab. Hover captions come from ``CAPTIONS`` below.
 """
 
 import html
@@ -22,6 +22,32 @@ from sphinx.util.docutils import SphinxDirective
 DEMO_URL = "https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/{}"
 GALLERY_DIR = Path("_static") / "images" / "gallery"
 PLACEHOLDER = "phone_placeholder.svg"
+
+# Hover labels for gallery demos. Sentence case, name the paradigm, and add
+# "demo" only when the name would otherwise be generic. Keep them short enough
+# to read in the overlay.
+CAPTIONS = {
+    "pipelines/simple_rating": "Simple rating demo",
+    "pipelines/similarity": "Similarity rating demo",
+    "experiments/staircase_pitch_discrimination": "Staircase pitch discrimination",
+    "features/trial_cue_adaptive": "Adaptive cueing",
+    "experiments/gibbs": "Gibbs sampling with people",
+    "experiments/gibbs_image": "Gibbs sampling with images",
+    "experiments/mcmcp": "MCMC with people",
+    "experiments/chain_trial_maker": "Story chains",
+    "experiments/imitation_chain": "Digit-span imitation",
+    "experiments/tapping_iterated": "Iterated tapping",
+    "pipelines/tapping": "Tapping demo",
+    "experiments/vertical_processing": "Singing back chords",
+    "experiments/create_and_rate/basic": "Create and rate",
+    "experiments/create_and_rate/robot_voice": "Robot voice",
+    "experiments/create_and_rate/picnic": "Picnic game",
+    "experiments/chatroom_simple": "Chatroom",
+    "experiments/rock_paper_scissors": "Rock paper scissors",
+    "experiments/unity_autoplay": "Unity game",
+    "experiments/translation": "Translation demo",
+    "experiments/language_tests": "Language tests",
+}
 
 
 class DemoCarousel(SphinxDirective):
@@ -61,11 +87,19 @@ class DemoCarousel(SphinxDirective):
         if not (Path(self.env.srcdir) / GALLERY_DIR / image).exists():
             image = PLACEHOLDER
         src = posixpath.join(static_root, "images", "gallery", image)
-        name = html.escape(demo.rsplit("/", 1)[-1])
+        caption = CAPTIONS.get(demo)
+        if caption is None:
+            raise self.error(
+                f"Demo {demo!r} has no gallery caption. Add one to CAPTIONS "
+                "in docs/_ext/demo_carousel.py."
+            )
+        label = html.escape(caption)
         return (
             f'<a class="demo-carousel-slide" href="{DEMO_URL.format(demo)}">'
-            f'<img class="demo-phone" src="{src}" alt="Screenshot of the {name} demo" loading="lazy">'
-            f'<span class="demo-carousel-caption">{name}</span></a>'
+            f'<span class="demo-phone">'
+            f'<img src="{src}" alt="Screenshot of the {label}" loading="lazy">'
+            f"</span>"
+            f'<span class="demo-carousel-caption">{label}</span></a>'
         )
 
 

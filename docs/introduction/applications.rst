@@ -39,7 +39,7 @@ explains the idea.
 
          **Docs:** :doc:`/designing/trials`
 
-         **Research:** :ref:`papers <research-rating>`
+         .. example-publications:: rating
 
 
 .. card:: Adaptive procedures
@@ -66,7 +66,7 @@ explains the idea.
 
          **Docs:** :doc:`/designing/chains`
 
-         **Research:** :ref:`papers <research-adaptive>`
+         .. example-publications:: adaptive
 
 
 .. card:: Sampling with people
@@ -94,7 +94,7 @@ explains the idea.
 
          **Docs:** :doc:`/designing/chains`
 
-         **Research:** :ref:`papers <research-sampling>`
+         .. example-publications:: sampling
 
 
 .. card:: Chains and cultural transmission
@@ -122,7 +122,7 @@ explains the idea.
 
          **Docs:** :doc:`/designing/chains`
 
-         **Research:** :ref:`papers <research-chains>`
+         .. example-publications:: chains
 
 
 .. card:: Recording and production
@@ -149,7 +149,7 @@ explains the idea.
 
          **Docs:** :doc:`/designing/stimuli`
 
-         **Research:** :ref:`papers <research-recording>`
+         .. example-publications:: recording
 
 
 .. card:: Create and rate
@@ -177,7 +177,7 @@ explains the idea.
 
          **Docs:** :doc:`/guides/trials/create_and_rate`
 
-         **Research:** :ref:`papers <research-create-and-rate>`
+         .. example-publications:: create-and-rate
 
 
 .. card:: Groups and interaction
@@ -230,7 +230,7 @@ explains the idea.
 
          **Docs:** :doc:`/guides/participants/internationalization`
 
-         **Research:** :ref:`papers <research-languages>`
+         .. example-publications:: languages
 
 
 When PsyNet isn't the right tool
