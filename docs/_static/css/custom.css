@@ -50,3 +50,43 @@ h1 img[alt="PsyNet logo"] {
   text-indent: -1.5em;
   overflow-wrap: anywhere;
 }
+
+/* "What's it like" steps: a vertical line joins the numbered steps. */
+section.study-step {
+  position: relative;
+  margin-left: 0.6rem;
+  padding: 0 0 1.5rem 1.6rem;
+  border-left: 2px solid var(--pst-color-border);
+}
+
+section.study-step:last-of-type {
+  border-left-color: transparent;
+}
+
+section.study-step > h2 {
+  font-size: 1.25rem;
+  margin-top: 0;
+}
+
+section.study-step > h2::before {
+  content: "";
+  position: absolute;
+  left: -0.45rem;
+  top: 0.45rem;
+  width: 0.8rem;
+  height: 0.8rem;
+  border-radius: 50%;
+  background: var(--pst-color-primary);
+}
+
+section.study-step img {
+  width: 100%;
+  border-radius: 0.6rem;
+}
+
+section.study-step img.study-step-phone {
+  display: block;
+  width: 9.5rem;
+  margin: 0 auto;
+  border-radius: 0.6rem;
+}
