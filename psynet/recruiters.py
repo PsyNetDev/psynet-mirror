@@ -28,7 +28,7 @@ Key design constraints for maintainers:
   writes those fields onto the participant; ``report_submission_outcome``
   reports the terminal outcome and delegates real bonus transfers to
   ``reward_bonus`` by default. Recruiters with ``reports_zero_outcomes``
-  (Lab Recruiter) also report zero bonuses through that hook. ``False``
+  (Lab Recruiter, Lucid) also report zero bonuses through that hook. ``False``
   means the platform rejected the report or transfer.
   ``Experiment.on_recruiter_submission_complete`` owns this sequence,
   always re-recording status and platform base, and uses ``bonus_status``
@@ -2409,6 +2409,7 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
     supports_delayed_publishing = True
     # Lucid forbids showing rewards inside the survey.
     shows_reward_by_default = False
+    reports_zero_outcomes = True
     MARKETPLACE_CODE = "Marketplace codes"
     IN_SURVEY = "Currently in Client Survey or Drop"
     COMPLETED = "Returned as Complete"
@@ -2988,6 +2989,10 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
             platform_base=0.0,
             bonus=0.0,
         )
+
+    def report_submission_outcome(self, participant, amount, reason):
+        """Complete or terminate the respondent on Lucid, even with a zero bonus."""
+        return self.reward_bonus(participant, amount, reason)
 
     def reward_bonus(self, participant, amount, reason):
         """
