@@ -9,9 +9,9 @@ targets**. Frontend patterns and full examples live in
 :doc:`/code/pages/custom_front_ends`.
 
 The Cursor skill ``/upgrade-to-psynet-14`` is a thin wrapper that points agents
-here. When PsyNet is not available as a source checkout (typical experiment
-venv), agents should fetch the published HTML version of this page rather than
-looking for ``docs/*.rst`` on disk.
+here. Agents read this page with
+``psynet docs show whats_new/upgrading_to_psynet_14``, which works without a
+PsyNet source checkout.
 
 Also see: :doc:`/whats_new/psynet_14`,
 :doc:`/reference/configuration`.
