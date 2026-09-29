@@ -182,10 +182,14 @@ Trials
     performance check.
 
 `experiments/simple_audio_rating <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/simple_audio_rating>`__
-    Participants rate sounds on several 1–5 scales.
+    Participants rate a fixed list of instrument sounds on several 1–5
+    scales, six trials each. For your own stimuli, start from
+    ``pipelines/simple_rating``, which reads a folder of files.
 
 `experiments/audio_similarity <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/audio_similarity>`__
-    Participants rate the similarity of pairs of instrument sounds from 1 to 5.
+    Participants rate the similarity of pairs from a fixed list of instrument
+    sounds from 1 to 5. For your own stimuli, start from
+    ``pipelines/similarity``, which reads a folder of files.
 
 `experiments/audio_stimulus_set_from_dir <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/audio_stimulus_set_from_dir>`__
     ``compile_nodes_from_directory`` turning folders of audio files into
@@ -228,7 +232,7 @@ Chains
 `experiments/gibbs <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/gibbs>`__
     Gibbs Sampling with People: participants adjust one dimension of a color
     at a time to match a word, in across-participant chains with two
-    participant groups. See :ref:`demos_catalog_gibbs`.
+    participant groups. See :ref:`gibbs_participant_groups`.
 
 `experiments/gibbs_within <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/gibbs_within>`__
     The same task with within-participant chains.

@@ -25,8 +25,8 @@ page**. Add the token, the workspace, and the project to
    prolific_workspace = your-workspace
    prolific_project = your-project
 
-The workspace must exist already. Create the project in the Prolific
-interface if it does not exist.
+The workspace must exist already; Dallinger creates the project in it if it
+doesn't exist.
 
 .. lab-note::
 
@@ -162,7 +162,8 @@ pre-screening task), confirm **Leave** from the timeline footer or error
 page (with ``show_early_exit_button``), or hit an error page, are marked
 as failed. By default (``prolific_pay_unsuccessful = true``) PsyNet
 registers an extra completion code with a fixed screen-out payment
-(``prolific_unsuccessful_base_payment``). When the participant clicks
+(``prolific_unsuccessful_base_payment``, default 0.25). Prolific requires it
+to be less than ``base_payment``, and deployment fails otherwise. When the participant clicks
 **Submit to Prolific**, PsyNet completes the submission with that code,
 Prolific pays the fixed amount, and PsyNet tops the participant up to the
 reward they had earned with a bonus. Prolific discourages giving many

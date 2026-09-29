@@ -10,8 +10,9 @@ A PsyNet server is a Linux machine (Ubuntu is recommended) that meets these
 requirements:
 
 - You can log in over SSH with a key file, without a password.
-- The account you log in with has passwordless ``sudo``, so that Dallinger
-  can install Docker.
+- The account you log in with can run Docker: either it is in the ``docker``
+  group, or it has passwordless ``sudo`` so that Dallinger can install Docker
+  and add it to the group when you register the server.
 - Ports 80 and 443 are free and reachable from the internet.
 - It has a DNS name, and every subdomain of that name resolves to the server
   as well (a wildcard record such as ``*.my-server.example.org``). Each
@@ -310,5 +311,6 @@ Stopping and removing the server
 
       Teardown deletes the instance with every database on it, removes the
       DNS records and removes both server registrations. Data you have not
-      exported is lost. ``dallinger ec2 list instances --running`` shows the
-      instances that are still running.
+      exported is lost. Teardown only finds a running instance, so start a
+      stopped server first with ``dallinger ec2 start``. ``dallinger ec2 list
+      instances --running`` shows the instances that are still running.

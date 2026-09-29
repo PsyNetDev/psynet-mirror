@@ -96,8 +96,8 @@ this:
       :columns: 12 12 8 8
 
       The agent sends a crowd of simulated participants through the
-      whole experiment and load-tests the server as if hundreds of
-      people arrived at once. The simulated answers form a practice
+      whole experiment and load-tests the server with many participants
+      arriving at once. The simulated answers form a practice
       dataset, so you can write your analysis now. Everything is
       collected into an audit, a small website that you, or a
       supervisor, read before signing off.
@@ -119,8 +119,8 @@ this:
    .. grid-item::
       :columns: 12 12 8 8
 
-      One command puts the experiment on your server and creates the study
-      on Prolific, ready for participants.
+      One command puts the experiment on your server and creates a draft
+      study on Prolific, which you check and publish.
 
 .. rst-class:: study-step
 
@@ -140,9 +140,10 @@ this:
       :columns: 12 12 8 8
 
       Participants start arriving within minutes. The dashboard shows who is
-      part-way through, who has finished and what each has been paid, and
-      PsyNet keeps recruiting until every chord has its 20 ratings,
-      replacing ratings from participants who fail its attention checks.
+      part-way through, who has finished and what each has been paid. You add
+      places on Prolific in batches while you watch the first data, or let
+      PsyNet recruit automatically until every chord has its 20 ratings;
+      ratings from participants who fail its checks don't count towards them.
 
 .. rst-class:: study-step
 

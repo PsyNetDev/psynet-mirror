@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import os
 
+import click
+
 DEFAULT_EXP_MAX_SIZE_MB = 1024
 EXP_MAX_SIZE_MB_ENV = "EXP_MAX_SIZE_MB"
 HEROKU_MAX_SLUG_MB = 500
@@ -38,7 +40,7 @@ def get_exp_max_size_mb(*, heroku: bool = False) -> int:
         except ValueError:
             configured = 0
         if configured <= 0:
-            raise ValueError(
+            raise click.UsageError(
                 f"{EXP_MAX_SIZE_MB_ENV} must be a positive integer number of "
                 f"megabytes (got {raw!r})."
             )

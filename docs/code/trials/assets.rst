@@ -179,6 +179,13 @@ inside a page maker. Assets prepared before launch are not: files come from
 the experiment directory, and generated assets are recreated at every launch.
 On-demand and external assets are never exported.
 
+"Before launch" means while PsyNet prepares the deployment, which covers the
+timeline's assets and the start nodes of across-participant chains. Assets
+deposited later count as created during the experiment and are exported, even
+if they come from the experiment directory: for example, assets deposited in
+an ``on_launch`` hook, or the start nodes of within-participant chains, which
+are created for each participant.
+
 Storage and URLs
 ^^^^^^^^^^^^^^^^
 

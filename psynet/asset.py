@@ -2887,9 +2887,8 @@ class S3Storage(AssetStorage):
 
 
 class AssetRegistry:
-    def __init__(self, storage: AssetStorage, n_parallel=None):
+    def __init__(self, storage: AssetStorage):
         self.storage = storage
-        self.n_parallel = n_parallel
         self._staged_asset_specifications = []
         self._staged_asset_lookup_table = {}
 

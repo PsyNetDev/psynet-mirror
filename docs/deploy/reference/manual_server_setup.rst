@@ -81,8 +81,8 @@ Creating an EC2 instance in the AWS console
    **Launch instances**.
 2. Name the instance and choose the Ubuntu image.
 3. Choose an x86 instance type, such as ``m7i.large`` for a pilot or
-   ``m7i.xlarge`` for a live study; ``dallinger ec2 provision`` uses the same
-   kind. See `EC2 instance types <https://aws.amazon.com/ec2/instance-types/>`_
+   ``m7i.xlarge`` for a live study (``dallinger ec2 provision`` defaults to
+   ``m5.xlarge``). See `EC2 instance types <https://aws.amazon.com/ec2/instance-types/>`_
    and `On-Demand pricing <https://aws.amazon.com/ec2/pricing/on-demand/>`_.
 4. Click **Create key pair**, choose RSA, and download the PEM file. Move it
    to ``~/.ssh`` and set it as ``server_pem`` as described in
