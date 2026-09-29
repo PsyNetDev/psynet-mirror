@@ -80,6 +80,6 @@ class TestExp(object):
             # after the release-branch ``psynet translate`` pass.
             if is_release_branch():
                 end_page = driver.find_element(By.ID, "main-body").text
-                assert "Das ist das Ende des Experiments!" in end_page
+                assert "Das ist das Ende!" in end_page
 
             click_finish_button(driver)
