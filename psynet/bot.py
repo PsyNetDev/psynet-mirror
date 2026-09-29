@@ -64,6 +64,9 @@ class Bot(Participant):
         self.experiment.timeline.advance_page(self.experiment, self)
 
     def initialize(self, experiment):
+        # Participant.__init__ has already added the bot to the session;
+        # flushing gives initialize_bot a valid bot.id.
+        db.session.flush()
         self.experiment.initialize_bot(bot=self)
         super().initialize(experiment)
 
