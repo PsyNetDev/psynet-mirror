@@ -2645,7 +2645,76 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
             # We preserve this commit just in case Dallinger removes the external commit in the future
             session.commit()
 
+    def record_presence(self, participant):
+        """Remember that this participant's Lucid page is still open."""
+        self.store.set(
+            self._presence_key(participant.id),
+            datetime.now().isoformat(timespec="seconds"),
+        )
+
+    def _presence_key(self, participant_id):
+        return self.get_survey_storage_key(f"presence:{participant_id}")
+
+    def _presence_time(self, participant_id):
+        """Return the last presence signal, or ``None`` when the page never sent one."""
+        value = self.store.get(self._presence_key(participant_id))
+        if not value:
+            return None
+        return datetime.fromisoformat(value)
+
+    @staticmethod
+    def _naive(stamp):
+        if stamp is None:
+            return None
+        if stamp.tzinfo is not None:
+            return stamp.replace(tzinfo=None)
+        return stamp
+
+    def _return_inactive_participants(self):
+        """Return working participants whose page has gone silent.
+
+        An open tab posts ``/lucid_presence`` often enough to stay inside
+        ``inactivity_timeout_in_s``. Closing the tab stops those posts, and
+        it also stops new responses, so the clock applies the same limit the
+        page would have applied. A recent response still counts as activity
+        in case the presence post has not landed yet.
+        """
+        timeout = self.inactivity_timeout_in_s
+        if not timeout:
+            return
+        cutoff = datetime.now() - timedelta(seconds=int(timeout))
+        participants = Participant.query.filter_by(status="working", failed=False).all()
+        if not participants:
+            return
+        last_response = dict(
+            db.session.query(Response.participant_id, func.max(Response.creation_time))
+            .filter(
+                Response.participant_id.in_(
+                    [participant.id for participant in participants]
+                )
+            )
+            .group_by(Response.participant_id)
+            .all()
+        )
+        reason = f"inactivity-timeout-{int(timeout)}s"
+        for participant in participants:
+            if participant.progress == 1:
+                continue
+            stamps = [
+                stamp
+                for stamp in (
+                    self._naive(participant.creation_time),
+                    self._naive(last_response.get(participant.id)),
+                    self._naive(self._presence_time(participant.id)),
+                )
+                if stamp is not None
+            ]
+            if not stamps or max(stamps) > cutoff:
+                continue
+            self.terminate_participant(participant=participant, reason=reason)
+
     def run_checks(self):
+        self._return_inactive_participants()
         self._recheck_paused_entry()
         logger.info("Polling Lucid API to count entry_df")
 
@@ -3577,8 +3646,9 @@ def get_lucid_settings(
     collects_pii: bool, default False, whether the survey collects personally identifiable information.
 
     inactivity_timeout_in_s: int, default 120, the inactivity timeout in seconds. If the participant is inactive for
-        this amount of time, the participant is terminated via the front-end. Inactive means that the participant does
-        not interact with the page (i.e., no ["click", "keypress", "load", "mousedown", "mousemove", "touchstart"]).
+        this amount of time, the participant is terminated. While the page is open, inactive means no
+        ["click", "keypress", "load", "mousedown", "mousemove", "touchstart"]. If the tab is closed, the page
+        stops its presence signal and the recruiter clock applies the same limit.
 
     no_focus_timeout_in_s: int, default 60, the no focus timeout in seconds. If the participant moves the mouse outside
         the window or opens another tab, the participant is terminated via the front-end after this amount of time.

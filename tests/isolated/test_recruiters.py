@@ -1,5 +1,6 @@
 import json
 from contextlib import contextmanager
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import MagicMock, PropertyMock, patch
 
@@ -2233,7 +2234,10 @@ def test_lucid_run_checks_reevaluates_recruitment_while_entry_is_paused():
     recruiter.lucidservice.get_submissions.return_value = []
     experiment = MagicMock()
 
-    with patch("psynet.experiment.get_experiment", return_value=experiment):
+    with (
+        patch("psynet.experiment.get_experiment", return_value=experiment),
+        patch.object(BaseLucidRecruiter, "_return_inactive_participants"),
+    ):
         recruiter.run_checks()
         experiment.recruit.assert_not_called()
 
@@ -2243,6 +2247,93 @@ def test_lucid_run_checks_reevaluates_recruitment_while_entry_is_paused():
             recruiter.close_recruitment()
         recruiter.run_checks()
     experiment.recruit.assert_called_once_with()
+
+
+def _lucid_recruiter_with_inactivity_timeout(timeout=60):
+    recruiter = _lucid_recruiter_with_service()
+    recruiter.config = FakeConfig(
+        id="exp",
+        lucid_recruitment_config=json.dumps({"inactivity_timeout_in_s": timeout}),
+    )
+    recruiter.store = _FakeRedisStore()
+    return recruiter
+
+
+def _working_lucid_participant(participant_id, minutes_ago):
+    return MagicMock(
+        id=participant_id,
+        progress=0.3,
+        creation_time=datetime.now() - timedelta(minutes=minutes_ago),
+        failed=False,
+        status="working",
+    )
+
+
+def _patch_working_participants(participants, last_responses=None):
+    last_responses = [] if last_responses is None else last_responses
+    query = MagicMock()
+    query.filter_by.return_value.all.return_value = participants
+    response_query = MagicMock()
+    response_query.filter.return_value.group_by.return_value.all.return_value = (
+        last_responses
+    )
+    return (
+        patch("psynet.recruiters.Participant.query", query),
+        patch("psynet.recruiters.db.session.query", return_value=response_query),
+    )
+
+
+def test_lucid_clock_returns_a_participant_whose_page_went_silent():
+    recruiter = _lucid_recruiter_with_inactivity_timeout()
+    silent = _working_lucid_participant(14, minutes_ago=20)
+    present = _working_lucid_participant(23, minutes_ago=20)
+    recruiter.record_presence(present)
+    participant_query, response_query = _patch_working_participants([silent, present])
+
+    with (
+        participant_query,
+        response_query,
+        patch.object(recruiter, "terminate_participant") as terminate,
+    ):
+        recruiter._return_inactive_participants()
+
+    terminate.assert_called_once_with(
+        participant=silent, reason="inactivity-timeout-60s"
+    )
+
+
+def test_lucid_clock_keeps_a_participant_who_just_responded():
+    recruiter = _lucid_recruiter_with_inactivity_timeout()
+    participant = _working_lucid_participant(14, minutes_ago=20)
+    participant_query, response_query = _patch_working_participants(
+        [participant],
+        last_responses=[(14, datetime.now())],
+    )
+
+    with (
+        participant_query,
+        response_query,
+        patch.object(recruiter, "terminate_participant") as terminate,
+    ):
+        recruiter._return_inactive_participants()
+
+    terminate.assert_not_called()
+
+
+def test_lucid_clock_keeps_a_participant_who_already_finished():
+    recruiter = _lucid_recruiter_with_inactivity_timeout()
+    participant = _working_lucid_participant(14, minutes_ago=20)
+    participant.progress = 1
+    participant_query, response_query = _patch_working_participants([participant])
+
+    with (
+        participant_query,
+        response_query,
+        patch.object(recruiter, "terminate_participant") as terminate,
+    ):
+        recruiter._return_inactive_participants()
+
+    terminate.assert_not_called()
 
 
 def _lucid_submit_url(ris, rid):

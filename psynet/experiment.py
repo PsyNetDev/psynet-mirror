@@ -5140,6 +5140,27 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             external_submit_url=external_submit_url,
         )
 
+    @experiment_route("/lucid_presence/<unique_id>", methods=["POST"])
+    @classmethod
+    def record_lucid_presence(cls, unique_id):
+        """Record that a Lucid participant's page is still open.
+
+        The page posts this on a short interval. When the posts stop, the
+        recruiter clock treats the tab as closed and returns the participant
+        after ``inactivity_timeout_in_s``.
+        """
+        participant = cls.get_participant_from_unique_id(unique_id, for_update=False)
+        cls.check_unique_id(participant, unique_id)
+        recruiter = get_experiment().recruiter
+        record_presence = getattr(recruiter, "record_presence", None)
+        if (
+            record_presence is not None
+            and participant.status == "working"
+            and not participant.failed
+        ):
+            record_presence(participant)
+        return success_response()
+
     @experiment_route("/change_lucid_status", methods=["GET"])
     @classmethod
     def change_lucid_status(cls):

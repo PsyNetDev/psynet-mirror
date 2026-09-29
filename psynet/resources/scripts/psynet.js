@@ -3918,9 +3918,17 @@
       psynet.removeBeforeUnloadEventListener();
       clearInterval(checkTriedToLeaveIntervalID);
       clearInterval(clockIntervalID);
+      clearInterval(presenceIntervalID);
       return window.location.replace(
         `/terminate_participant?participant_id=${psynetTemplateData.participantId}&reason=${reason}`,
       );
+    }
+
+    function sendPresence() {
+      fetch(
+        "/lucid_presence/" + encodeURIComponent(psynetTemplateData.uniqueId),
+        { method: "POST", keepalive: true },
+      ).catch(function () {});
     }
 
     function checkTriedToLeave() {
@@ -3996,10 +4004,20 @@
       POLLING_INTERVAL,
     );
     const clockIntervalID = setInterval(updateClocks, POLLING_INTERVAL);
+    // Often enough that a closed tab goes silent inside the inactivity
+    // limit, and rarely enough that one missed post does not look like
+    // the tab closed. The clock applies inactivity_timeout_in_s.
+    const presenceIntervalMs = Math.max(
+      5000,
+      Math.floor(psynetTemplateData.lucid.inactivityTimeoutMs / 3),
+    );
+    sendPresence();
+    const presenceIntervalID = setInterval(sendPresence, presenceIntervalMs);
 
     psynet.lucidTerminationIntervalIds = [
       checkTriedToLeaveIntervalID,
       clockIntervalID,
+      presenceIntervalID,
     ];
 
     $(document).on(
