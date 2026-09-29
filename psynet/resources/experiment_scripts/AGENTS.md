@@ -212,6 +212,7 @@ the matching version.
 | --- | --- |
 | Installing tools, local services | `install` |
 | First experiment with a coding agent | `quickstart`, `code/project/agentic_programming` |
+| Which Agent Skill to use | `code/project/agent_skills` |
 | Design concepts (timeline, pages, trials, chains, stimuli, participants, groups) | `design/timeline`, `design/pages`, `design/trials`, `design/chains`, `design/stimuli`, `design/participants`, `design/groups` |
 | Experiment files and dependencies | `code/project/experiment_directory`, `code/project/dependencies` |
 | Running and debugging locally | `code/project/running_and_debugging` |

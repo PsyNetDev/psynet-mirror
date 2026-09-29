@@ -6,6 +6,7 @@ Writing code
    :maxdepth: 1
 
    project/agentic_programming
+   project/agent_skills
    project/creating_an_experiment
    project/experiment_directory
    project/dependencies

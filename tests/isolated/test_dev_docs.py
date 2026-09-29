@@ -652,3 +652,15 @@ def test_agents_md_documentation_map_points_at_existing_pages():
         page for page in pages if not (root / "docs" / f"{page}.rst").is_file()
     )
     assert not missing, f"AGENTS.md links to missing docs pages: {missing}"
+
+
+def test_agent_skills_page_lists_every_shipped_skill():
+    from psynet.utils import get_psynet_root
+
+    root = get_psynet_root()
+    page = (root / "docs/code/project/agent_skills.rst").read_text()
+    skills = sorted(
+        p.parent.name for p in (root / ".cursor/skills/experiment").glob("*/SKILL.md")
+    )
+    missing = [skill for skill in skills if f"``{skill}``" not in page]
+    assert not missing, f"docs/code/project/agent_skills.rst does not list: {missing}"
