@@ -7,7 +7,7 @@ description: Design, implement, and validate task-specific pre-screening for Psy
 
 ## Read first
 
-Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rst`; otherwise fetch `https://psynetdev.gitlab.io/PsyNet/<page>.html`.
+Read these pages before acting, with `psynet docs show <page>`; search all pages with `rg -n -i "<term>" "$(psynet docs path)"`.
 
 - `code/participants/prescreening_and_questionnaires` — built-in prescreeners and questionnaires
 - `code/participants/creating_prescreening_tasks` — writing custom prescreening tasks

@@ -166,6 +166,20 @@ def make_docs(
         ) from exc
 
 
+@docs.command("bundle")
+def bundle_docs():
+    """Build the plain-text docs that release wheels ship for `psynet docs`.
+
+    Run before `python -m build` when releasing. Writes
+    psynet/resources/docs_text/, which is gitignored but packaged.
+    """
+    try:
+        path = docs_module.bundle_command()
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo(f"Wrote text docs to {path}")
+
+
 @docs.command("linkcheck")
 @click.option(
     "--clean/--no-clean",

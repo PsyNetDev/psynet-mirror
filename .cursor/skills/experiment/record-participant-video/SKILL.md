@@ -8,7 +8,7 @@ compatibility: Requires Playwright, ffmpeg, ffprobe, and on Linux/PulseAudio set
 
 ## Read first
 
-Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rst`; otherwise fetch `https://psynetdev.gitlab.io/PsyNet/<page>.html`.
+Read these pages before acting, with `psynet docs show <page>`; search all pages with `rg -n -i "<term>" "$(psynet docs path)"`.
 
 - `test/frontend` — participant walks, screenshots, and video
 

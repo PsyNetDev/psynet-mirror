@@ -7,7 +7,7 @@ description: Design and implement PsyNet websocket experiments with live synchro
 
 ## Read first
 
-Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rst`; otherwise fetch `https://psynetdev.gitlab.io/PsyNet/<page>.html`.
+Read these pages before acting, with `psynet docs show <page>`; search all pages with `rg -n -i "<term>" "$(psynet docs path)"`.
 
 - `code/multiplayer/realtime_interaction` — channels, `WebSocketElt`, the
   server-authority model, consistency, disconnects, and testing

@@ -8,7 +8,7 @@ compatibility: Requires editable PsyNet at ~/PsyNet, PostgreSQL, Redis, Heroku C
 
 ## Read first
 
-Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rst`; otherwise fetch `https://psynetdev.gitlab.io/PsyNet/<page>.html`.
+Read these pages before acting, with `psynet docs show <page>`; search all pages with `rg -n -i "<term>" "$(psynet docs path)"`.
 
 - `code/project/agentic_programming` — the coding-agent workflow for experiments
 - `code/project/creating_an_experiment` — starting from a demo or an existing experiment

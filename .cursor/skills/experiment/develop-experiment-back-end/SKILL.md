@@ -7,7 +7,7 @@ description: Choose the trial architecture (static, chain, or graph trial maker,
 
 ## Read first
 
-Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rst`; otherwise fetch `https://psynetdev.gitlab.io/PsyNet/<page>.html`.
+Read these pages before acting, with `psynet docs show <page>`; search all pages with `rg -n -i "<term>" "$(psynet docs path)"`.
 
 - `design/trials` and `design/chains`: trials, nodes, and chains as design concepts
 - `code/writing_a_timeline`: timelines, code blocks, loops, and variables

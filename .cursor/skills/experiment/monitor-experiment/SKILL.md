@@ -7,7 +7,7 @@ description: Monitor active or recently deployed PsyNet experiments for particip
 
 ## Read first
 
-Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rst`; otherwise fetch `https://psynetdev.gitlab.io/PsyNet/<page>.html`.
+Read these pages before acting, with `psynet docs show <page>`; search all pages with `rg -n -i "<term>" "$(psynet docs path)"`.
 
 - `deploy/running_a_study` — monitoring and closing a live study
 - `deploy/reference/deployment_monitor` — the deployment monitor

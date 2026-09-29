@@ -12,7 +12,7 @@ servers, deployment, export, or teardown, use `deploy-experiment`.
 
 ## Read first
 
-Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rst`; otherwise fetch `https://psynetdev.gitlab.io/PsyNet/<page>.html`.
+Read these pages before acting, with `psynet docs show <page>`; search all pages with `rg -n -i "<term>" "$(psynet docs path)"`.
 
 - `deploy/recruiters/cint`: recruiter settings, consent, qualifications, and the qualification script
 - `deploy/recruiters/index`: choosing and configuring a recruiter

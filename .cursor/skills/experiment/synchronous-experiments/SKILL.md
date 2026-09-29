@@ -10,7 +10,7 @@ If participants exchange live actions or messages within a trial, also read
 
 ## Read first
 
-Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rst`; otherwise fetch `https://psynetdev.gitlab.io/PsyNet/<page>.html`.
+Read these pages before acting, with `psynet docs show <page>`; search all pages with `rg -n -i "<term>" "$(psynet docs path)"`.
 
 - `design/groups` — group design concepts
 - `code/multiplayer/synchronization` — grouping, barriers, waiting, and release callbacks

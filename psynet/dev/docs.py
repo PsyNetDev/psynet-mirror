@@ -7,6 +7,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -85,6 +86,45 @@ def make_command(
         open_html_index(target, build_dir)
 
     return 0
+
+
+def bundle_command() -> Path:
+    """Build the plain-text docs that release wheels ship for ``psynet docs``."""
+    from psynet import __version__
+    from psynet.local_docs import BUNDLED_DOCS_DIR
+
+    docs_dir = assert_docs_available()
+    with tempfile.TemporaryDirectory() as tmp:
+        text_dir = Path(tmp) / "text"
+        command = [
+            sys.executable,
+            "-m",
+            "sphinx",
+            "-b",
+            "text",
+            "-q",
+            "-W",
+            "--keep-going",
+            "-d",
+            str(Path(tmp) / "doctrees"),
+            ".",
+            str(text_dir),
+        ]
+        try:
+            subprocess.run(command, cwd=docs_dir, check=True)
+        except subprocess.CalledProcessError as exc:
+            raise ValueError(
+                f"Text docs build failed with exit code {exc.returncode}: "
+                f"{shlex.join(command)}"
+            ) from exc
+
+        shutil.rmtree(BUNDLED_DOCS_DIR, ignore_errors=True)
+        for source in text_dir.rglob("*.txt"):
+            target = BUNDLED_DOCS_DIR / source.relative_to(text_dir)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, target)
+    (BUNDLED_DOCS_DIR / "VERSION").write_text(f"{__version__}\n")
+    return BUNDLED_DOCS_DIR
 
 
 def run_live_preview(

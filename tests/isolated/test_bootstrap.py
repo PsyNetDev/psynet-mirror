@@ -461,9 +461,17 @@ def test_bootstrap_and_full_cli_share_setup_scripts_services_commands():
     from click.testing import CliRunner
 
     from psynet.bootstrap_cli import _bootstrap
-    from psynet.bootstrap_commands import generate_constraints, scripts, services, setup
+    from psynet.bootstrap_commands import (
+        docs,
+        generate_constraints,
+        scripts,
+        services,
+        setup,
+    )
     from psynet.command_line import psynet
 
+    assert _bootstrap.commands["docs"] is docs
+    assert psynet.commands["docs"] is docs
     assert _bootstrap.commands["setup"] is setup
     assert psynet.commands["setup"] is setup
     assert _bootstrap.commands["scripts"] is scripts

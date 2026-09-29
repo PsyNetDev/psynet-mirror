@@ -7,7 +7,7 @@ description: Implement basic data export functionality. Use when implementing an
 
 ## Read first
 
-Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rst`; otherwise fetch `https://psynetdev.gitlab.io/PsyNet/<page>.html`.
+Read these pages before acting, with `psynet docs show <page>`; search all pages with `rg -n -i "<term>" "$(psynet docs path)"`.
 
 - `data/basic_data` — writing `get_basic_data` and the files it exports
 - `data/exporting_data` — how to export data and where exports land

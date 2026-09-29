@@ -202,11 +202,15 @@ SELECT id, answer FROM response ORDER BY id DESC LIMIT 10;
 
 The PsyNet documentation is the source of truth for how PsyNet works. Read the
 relevant page before writing or changing experiment code, rather than relying on
-memory. In a PsyNet source checkout, read `docs/<page>.rst`. Elsewhere, fetch
-`https://psynetdev.gitlab.io/PsyNet/<page>.html`; pip installs do not ship the
-`docs/` tree. The published site follows PsyNet's development version, so if
-the installed version (`psynet --version`) differs, prefer a source checkout at
-the matching version.
+memory. Use the local copy that matches the installed PsyNet version:
+
+- `psynet docs show <page>` prints a page from the table below.
+- `rg -n -i "<term>" "$(psynet docs path)"` searches every page at once.
+
+In a PsyNet source checkout these are the RST sources in `docs/`; release
+installs ship the same pages as plain text. If `psynet docs path` reports that
+there is no local copy (for example in a Git install), it prints the matching
+version of the documentation website; fetch `<that URL><page>.html`.
 
 | Topic | Page |
 | --- | --- |

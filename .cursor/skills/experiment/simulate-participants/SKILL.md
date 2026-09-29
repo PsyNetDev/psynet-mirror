@@ -7,7 +7,7 @@ description: Design, implement, and validate simulated participants for PsyNet e
 
 ## Read first
 
-Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rst`; otherwise fetch `https://psynetdev.gitlab.io/PsyNet/<page>.html`.
+Read these pages before acting, with `psynet docs show <page>`; search all pages with `rg -n -i "<term>" "$(psynet docs path)"`.
 
 - `test/backend` — bots and how they answer
 - `test/audits` — simulation evidence in an audit

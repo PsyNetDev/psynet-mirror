@@ -1,6 +1,6 @@
 """Shared Click commands for the bootstrap and full PsyNet CLIs.
 
-``setup``, ``scripts``, ``services``, and ``generate-constraints`` are
+``setup``, ``scripts``, ``services``, ``generate-constraints``, and ``docs`` are
 registered on both the thin bootstrap group and the full
 ``psynet.command_line`` group. Keeping a single definition prevents
 option/help drift (for example ``--force-foreign-env``).
@@ -194,9 +194,41 @@ def generate_constraints():
     generate_constraints_file()
 
 
+@click.group("docs")
+def docs():
+    """Read the documentation for the installed PsyNet version.
+
+    Search all pages with: rg -n -i "<term>" "$(psynet docs path)"
+    """
+
+
+@docs.command("path")
+def docs_path():
+    """Print the local documentation directory."""
+    from psynet.local_docs import DocsNotAvailable, docs_dir
+
+    try:
+        click.echo(docs_dir())
+    except DocsNotAvailable as exc:
+        raise click.ClickException(str(exc)) from exc
+
+
+@docs.command("show")
+@click.argument("page")
+def docs_show(page):
+    """Print PAGE, for example code/participants/payment."""
+    from psynet.local_docs import DocsNotAvailable, page_path
+
+    try:
+        click.echo(page_path(page).read_text(encoding="utf-8"))
+    except DocsNotAvailable as exc:
+        raise click.ClickException(str(exc)) from exc
+
+
 def register_bootstrap_commands(group: click.Group) -> None:
     """Attach shared thin-bootstrap commands to ``group``."""
     group.add_command(setup)
     group.add_command(scripts)
     group.add_command(services)
     group.add_command(generate_constraints)
+    group.add_command(docs)

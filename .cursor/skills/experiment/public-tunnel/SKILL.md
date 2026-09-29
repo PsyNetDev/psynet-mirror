@@ -7,7 +7,7 @@ description: Expose a local HTTP service, usually a running PsyNet experiment, t
 
 ## Read first
 
-Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rst`; otherwise fetch `https://psynetdev.gitlab.io/PsyNet/<page>.html`.
+Read these pages before acting, with `psynet docs show <page>`; search all pages with `rg -n -i "<term>" "$(psynet docs path)"`.
 
 - `code/project/running_and_debugging`: running an experiment locally
 

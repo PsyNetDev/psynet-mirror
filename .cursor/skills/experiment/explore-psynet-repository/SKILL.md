@@ -7,7 +7,7 @@ description: Explore the local PsyNet source, demos, feature examples, documenta
 
 ## Read first
 
-Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rst`; otherwise fetch `https://psynetdev.gitlab.io/PsyNet/<page>.html`.
+Read these pages before acting, with `psynet docs show <page>`; search all pages with `rg -n -i "<term>" "$(psynet docs path)"`.
 
 - `code/project/agentic_programming` — implementing an experiment with a coding agent
 - `code/project/creating_an_experiment` — creating an experiment directory from a demo

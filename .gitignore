@@ -257,3 +257,6 @@ docs/skills/*
 !docs/skills/index.rst
 docs/developer/skills/*
 !docs/developer/skills/index.rst
+
+# Plain-text docs built by `psynet dev docs bundle` for release wheels
+psynet/resources/docs_text/
