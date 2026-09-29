@@ -153,6 +153,67 @@ triggers to the same event. :class:`~psynet.modular_page.AudioPrompt` makes
    :pyobject: AudioPrompt.update_events
    :dedent: 4
 
+Measuring reaction time
+-----------------------
+
+The event log records a browser timestamp (``localTime``) for every event, so
+reaction times need no timing code of their own. In this page, the
+:class:`~psynet.graphics.GraphicPrompt` holds back ``responseEnable`` until
+its stimulus frame starts (see :doc:`graphics`), and each key press logs
+``pushButtonClicked``. The control's ``format_answer`` saves the time between
+the two:
+
+.. code-block:: python
+
+    from datetime import datetime
+
+    from psynet.graphics import Circle, Frame, GraphicPrompt, Path
+    from psynet.modular_page import KeyboardPushButtonControl, ModularPage
+
+
+    def reaction_time_ms(event_log):
+        onset = next((e["localTime"] for e in event_log if e["eventType"] == "responseEnable"), None)
+        press = next((e["localTime"] for e in reversed(event_log) if e["eventType"] == "pushButtonClicked"), None)
+        if onset is None or press is None:
+            return None
+        parse = lambda t: datetime.fromisoformat(t.replace("Z", "+00:00"))
+        return (parse(press) - parse(onset)).total_seconds() * 1000
+
+
+    class TimedRatingControl(KeyboardPushButtonControl):
+        def format_answer(self, raw_answer, **kwargs):
+            event_log = kwargs["metadata"].get("event_log", [])
+            return {"rating": int(raw_answer), "rt_ms": reaction_time_ms(event_log)}
+
+
+    ModularPage(
+        "trial",
+        prompt=GraphicPrompt(
+            dimensions=[200, 100],
+            frames=[
+                Frame([Path("fixation", "M93,50 L107,50 M100,43 L100,57")], duration=0.8),
+                Frame(
+                    [Circle("left", 60, 50, radius=26), Circle("right", 140, 50, radius=26)],
+                    activate_control_response=True,
+                    activate_control_submit=True,
+                ),
+            ],
+            prevent_control_response=True,
+            prevent_control_submit=True,
+        ),
+        control=TimedRatingControl(
+            choices=["1", "2", "3"], keys=["Digit1", "Digit2", "Digit3"]
+        ),
+        time_estimate=5,
+    )
+
+A bot's default push-button answer has no event log, so ``rt_ms`` is
+``None``. To test the timing path, return
+``BotResponse(raw_answer=..., metadata={"event_log": [...]})`` from
+``get_bot_response`` with synthetic ``responseEnable`` and
+``pushButtonClicked`` entries, and leave ``bot_response`` unset so that
+``get_bot_response`` is called (see :doc:`/test/backend`).
+
 Built-in events
 ---------------
 

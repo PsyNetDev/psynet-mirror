@@ -21,7 +21,7 @@ Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rs
   details, `run_bot` pitfalls, and performance-test expectations.
 - Read `participant-quality-telemetry/SKILL.md` when profiles exercise
   attention, paste, disclosure, or AI-assistance review signals.
-- Read `prepare-experiment-tunnel/SKILL.md` when a temporary public preview is
+- Read `public-tunnel/SKILL.md` ("Preview a running experiment") when a temporary public preview is
   needed for live manual or human review. Do not replace live review with
   simulated data.
 - Read `verify-ai-model-usability/SKILL.md` before any real LLM-in-the-loop

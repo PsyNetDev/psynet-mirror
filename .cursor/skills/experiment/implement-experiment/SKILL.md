@@ -31,8 +31,8 @@ review; do not invent workshop-only layouts in this skill.
 
 ## Preview links
 
-When a temporary public preview is needed, use `prepare-experiment-tunnel`
-(and `public-tunnel`).
+When a temporary public preview is needed, follow "Preview a running
+experiment" in `public-tunnel/SKILL.md`.
 
 ## Steps
 
@@ -248,7 +248,7 @@ Return to previous steps if necessary to address these.
 
 Compile a final report of the experiment (`audit/REPORT.md`), summarizing the
 process taken and any findings that arose. This is the core audit report section.
-When a temporary public preview is needed, use `prepare-experiment-tunnel`.
+When a temporary public preview is needed, use `public-tunnel`.
 
 ### Completion gate
 

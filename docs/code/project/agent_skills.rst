@@ -52,11 +52,11 @@ and the table below lists the main one for each skill.
      - Build live interactions between participants over websockets.
      - :doc:`/code/multiplayer/realtime_interaction`
    * - ``psychophysics``
-     - Get precise visual displays, timing and responses.
-     - :doc:`/code/pages/graphics`
+     - Get precise visual displays, timing, responses and reaction times.
+     - :doc:`/code/pages/graphics`, :doc:`/code/pages/event_management`
    * - ``tapping-experiments``
      - Build tapping and sensorimotor synchronization experiments.
-     - :doc:`/code/writing_a_trial_maker`
+     - :doc:`/code/participants/prescreening_and_questionnaires`
    * - ``filter-participants``
      - Add pre-screening that matches the recruiter's own filters.
      - :doc:`/code/participants/prescreening_and_questionnaires`
@@ -120,9 +120,7 @@ and the table below lists the main one for each skill.
    * - **Previewing**
      -
      -
-   * - ``prepare-experiment-tunnel``
-     - Share a running local experiment through a temporary public link.
-     - :doc:`running_and_debugging`
    * - ``public-tunnel``
-     - Open a temporary public HTTPS tunnel to any local service.
+     - Share a running local experiment, or any local service, through a
+       temporary public link.
      - :doc:`running_and_debugging`

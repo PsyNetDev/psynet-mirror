@@ -28,7 +28,7 @@ Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rs
   no server ever ran).
 - If the experiment needs implementation changes, use
   `implement-experiment`.
-- For a live handoff, use `prepare-experiment-tunnel` (and `public-tunnel`) when
+- For a live handoff, use `public-tunnel` ("Preview a running experiment") when
   a temporary public preview is needed.
 
 ## Workflow

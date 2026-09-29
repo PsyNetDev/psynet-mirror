@@ -32,6 +32,7 @@ needed, but not the payment.
            "locale": LOCALE,  # ISO 639-1 code of the experiment language, e.g. "tr"
            "auto_recruit": False,
            "wage_per_hour": 6.5,  # minimum wage of the target country
+           "publish_experiment": True,
            "title": "Put your experiment title here (Chrome browser, ~XX mins)",
            "contact_email_on_error": "you@example.org",
            "organization_name": "Your institution",
@@ -79,6 +80,14 @@ and ``show_reward`` to ``False``; CINT recruitment fails with
        no_focus_timeout_in_s=60,
        aggressive_no_focus_timeout_in_s=3,
    )
+
+``get_lucid_settings`` reads the qualification file when ``experiment.py``
+is imported, so the file must exist before any local run or test.
+
+Set ``publish_experiment`` in the config as well, because CINT deployment
+stops with an error when it is missing. With ``True``, a live deployment sets
+the survey live immediately. With ``False``, the survey is created without
+going live, so you can check it in the marketplace first.
 
 Consent
 ^^^^^^^
@@ -151,6 +160,13 @@ Please find an example code below that you can adjust and create a qualification
            config_path=config_path,
            debug=True,
        )
+
+Generating the file needs the CINT API credentials. The keys of
+``question_answer_dict`` must be qualification names on your CINT account;
+otherwise ``create_lucid_recruitment_config`` raises ``Unknown question``. It also adds some qualifications itself:
+``TIMEOUT v1`` with the answer ``Agree``; mobile and tablet exclusions unless
+``allow_mobile_devices`` is set; and a Chrome requirement when
+``force_google_chrome`` is set.
 
 You need to specify the language, country, and the path
 to the generated JSON configuration. This path is then used in

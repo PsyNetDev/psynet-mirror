@@ -36,6 +36,17 @@ from the options or a number in the allowed range. The ``bot_response``
 argument of a page overrides this, either with a fixed value or with a
 function called each time a bot reaches the page.
 
+Custom pages and controls answer bots through ``get_bot_response``. A plain
+value, whether from ``bot_response`` or ``get_bot_response``, is saved as the
+final answer without passing through ``format_answer``. To send the bot's
+answer through ``format_answer`` like a browser response, return
+:class:`~psynet.bot.BotResponse` with ``raw_answer``:
+
+.. code-block:: python
+
+    def get_bot_response(self, experiment, bot, page, prompt):
+        return BotResponse(raw_answer="hello")
+
 Pages that collect recordings need a sample file for bots to submit:
 
 .. code-block:: python

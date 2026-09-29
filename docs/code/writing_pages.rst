@@ -17,6 +17,22 @@ An :class:`~psynet.page.InfoPage` shows text. Wrap HTML in
 
     InfoPage(Markup("Welcome to the <strong>experiment</strong>!"), time_estimate=5)
 
+Pages and prompts also accept `dominate <https://pypi.org/project/dominate/>`_
+tags, which build longer structured content without writing HTML strings:
+
+.. code-block:: python
+
+    from dominate import tags
+
+    InfoPage(
+        tags.div(tags.h2("Instructions"), tags.p("Press Next to begin.")),
+        time_estimate=5,
+    )
+
+Use one approach per piece of content. ``dominate`` escapes strings placed
+inside its tags, including ``Markup`` strings, so their HTML is shown as text.
+Only put trusted text in ``Markup``, never participant-provided data.
+
 A :class:`~psynet.modular_page.ModularPage` takes a label, a prompt (plain text
 or a prompt object), and optionally a control. The
 :doc:`API reference </reference/api/modular_page>` documents every prompt and
