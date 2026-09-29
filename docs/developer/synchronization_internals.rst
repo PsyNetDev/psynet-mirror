@@ -17,8 +17,8 @@ When the last needed member arrives, PsyNet commits the arrival and then
 evaluates the barrier in a short coordination transaction, before rendering
 the response. A :class:`~psynet.sync.SimpleGrouper` can therefore form the
 group immediately, and a :class:`~psynet.sync.GroupBarrier` releases the
-partners without waiting for the poller. The last arriver skips the wait
-indicator and continues to the next page. If a partner's wait row is locked,
+partners without waiting for the poller. The last participant to arrive
+skips the wait indicator and continues to the next page. If a partner's wait row is locked,
 the regular 0.5-second barrier check completes the release instead.
 
 Barrier evaluation and participant locking belong to the framework and are
@@ -48,10 +48,10 @@ do :meth:`~psynet.sync.Barrier.receive_participant` and arrival
 notification. :class:`~psynet.sync.Barrier` documents which methods are
 live-only.
 
-Overlay copy may vary between participants in one pool; it is not part of
-the behavior identity. A barrier ID identifies one release behavior, so a
-timeline that lists the same ID with two different behaviors is rejected
-when the experiment is constructed.
+The overlay text may differ between participants in one pool, because it
+doesn't affect release behavior. A barrier ID identifies one release
+behavior, so PsyNet rejects a timeline that uses the same ID for two
+different behaviors when the experiment is constructed.
 
 Arrival notices
 ---------------

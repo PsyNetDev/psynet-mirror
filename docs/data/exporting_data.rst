@@ -7,9 +7,12 @@ From the dashboard
 ------------------
 
 The dashboard's **Export** tab downloads ``export.zip``, with or without the
-assets created during the run. The server also keeps the most recent
-dashboard download as the deployment's latest export; each download replaces
-the previous one.
+assets created during the run. If the experiment has artifact storage, the
+server also keeps the most recent dashboard download as the deployment's
+latest export; each download replaces the previous one. The default
+``artifact_storage`` is a
+:class:`~psynet.artifact.LocalArtifactStorage` in ``~/psynet-data/artifacts``
+on the machine running the experiment.
 
 From the command line
 ---------------------
@@ -130,6 +133,8 @@ legitimately exceed the limit. Change the limit with the
 Automatic backups
 -----------------
 
-Automatic backups are experimental and disabled by default. To enable them,
-set the ``automatic_backups`` class attribute to ``True`` in your experiment
-class.
+Automatic backups are currently disabled for every experiment, deployed or
+not, and are experimental. Don't rely on them; export with ``psynet export``
+instead. To try them, set ``automatic_backups = True`` on the experiment
+class. Every minute, the experiment then stores its basic data and a
+complete export in its artifact storage.

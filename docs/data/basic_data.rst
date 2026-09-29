@@ -32,39 +32,11 @@ As data frames
 In exports, a dictionary of data frames also works, and each is saved as a
 CSV file. The dashboard tab, the ``/basic_data`` endpoint and backups need
 JSON data, so check ``context`` and return data frames only when it is
-``"export"``:
+``"export"``. The ``static`` demo does this:
 
-.. code:: python
-
-    @classmethod
-    def get_basic_data(cls, context=None, **kwargs):
-        import pandas as pd
-
-        trials = [
-            {
-                "id": trial.id,
-                "participant_id": trial.participant_id,
-                "animal": trial.definition.get("animal"),
-                "block": trial.block,
-                "answer": trial.answer,
-                "score": trial.score,
-            }
-            for trial in StaticTrial.query.all()
-        ]
-        participants = [
-            {
-                "id": participant.id,
-                "status": participant.status,
-                "bonus": participant.bonus,
-            }
-            for participant in Participant.query.all()
-        ]
-        if context != "export":
-            return {"trial": trials, "participant": participants}
-        return {
-            "trial": pd.DataFrame.from_records(trials),
-            "participant": pd.DataFrame.from_records(participants),
-        }
+.. literalinclude:: ../../demos/experiments/static/experiment.py
+   :pyobject: Exp.get_basic_data
+   :dedent: 4
 
 PsyNet doesn't anonymize basic data. If a public release must omit
 identifiers, leave them out in ``get_basic_data``.

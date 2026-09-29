@@ -55,10 +55,12 @@ Files you edit
 Generated files
 ---------------
 
-Don't edit these files by hand. Commit all of them except
-``.cursor/skills/psynet/``. ``psynet scripts update``
-replaces the boilerplate templates with those of the installed PsyNet
-version, and ``psynet scripts scaffold`` recreates any that are missing.
+Don't edit these files by hand, with one exception: ``constraints.txt`` can
+be written by hand when generation fails (see
+:ref:`dependencies_handwritten_constraints`). Commit all of them except
+``.cursor/skills/psynet/``. ``psynet scripts update`` replaces the
+boilerplate templates with those of the installed PsyNet version, and
+``psynet scripts scaffold`` recreates any that are missing.
 
 ``constraints.txt``
     Exact versions of every Python package, generated from

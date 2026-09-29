@@ -4,8 +4,8 @@ Using Git with an experiment
 ============================
 
 Every PsyNet experiment is a Git repository. ``psynet setup`` runs
-``git init`` if the directory isn't one already, and Git itself is installed
-as part of :doc:`/install`.
+``git init`` if the directory isn't one already. :doc:`/install` covers
+installing Git.
 
 What PsyNet uses Git for
 ------------------------

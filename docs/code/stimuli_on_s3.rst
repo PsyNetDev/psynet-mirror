@@ -3,8 +3,8 @@
 Hosting stimuli on S3
 =====================
 
-Stimulus sets larger than the deployment size limit (1024 MB by default; see
-:doc:`/code/project/experiment_directory`) can be hosted in an Amazon Web
+Stimulus sets larger than the deployment size limit (see
+:doc:`/deploy/how_deployment_works`) can be hosted in an Amazon Web
 Services S3 bucket and linked into the experiment by URL. The examples use
 the bucket ``my-bucket`` and the key (subdirectory) ``my-key``.
 

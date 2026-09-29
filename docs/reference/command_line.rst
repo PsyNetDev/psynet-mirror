@@ -144,14 +144,10 @@ experiment's ``./.venv``), setup still scaffolds and writes constraints, but
 refuses to ``uv pip sync`` into that environment unless you confirm
 interactively or pass ``--force-foreign-env``.
 
-**Inside bundled demos / test experiments**, ``psynet setup`` always performs
-only lightweight file preparation and never installs packages or rewrites
-requirements. You do not need ``--no-install`` there; that behavior is
-automatic. PsyNet CI scaffolds ignored demo boilerplate before collecting
-``test.py``, and the pytest harness restores the authored-only tree afterwards
-so later isolated tests are not polluted. After preparation, ``psynet setup``
-in demos only **verifies** local services (it does not offer to start Docker
-containers).
+In a demo inside a PsyNet source checkout, ``psynet setup`` only adds the
+boilerplate files; it never installs packages or rewrites requirements, so
+``--no-install`` isn't needed. It then checks the local services but doesn't
+offer to start them in Docker.
 
 
 .. _services:
