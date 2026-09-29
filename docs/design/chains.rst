@@ -38,8 +38,8 @@ definition of the next node. For example:
 - **carrying information forward**: the next node keeps the original question
   and adds the new answer, so each node still knows what it is about;
 - **adaptive procedures**: the next difficulty level goes up after a correct
-  answer and down after a mistake (see :doc:`adaptive_experiments` for other
-  ways to adapt).
+  answer and down after a mistake (the :doc:`/skills/make-experiment-adaptive`
+  skill covers other ways to adapt).
 
 Only responses that are complete, fully processed (for example, a recording
 whose analysis has finished), and not failed are passed to the rule.
@@ -96,7 +96,10 @@ the stimuli and the page:
   a stimulus at a time to match a description;
 - **Markov Chain Monte Carlo with People**, where participants choose between
   two stimuli;
-- **Staircases**, which adjust difficulty according to performance;
+- **Staircases**, which make the task harder after a run of correct answers
+  and easier after a mistake, stop after a maximum number of trials or of
+  **reversals** (points where the difficulty changes direction), and can pass
+  or fail participants on the mean difficulty at the reversals;
 - **Create and rate**, where some participants create stimuli and others
   rate them;
 - **Graph chains**, where each node draws on several neighbors rather than a

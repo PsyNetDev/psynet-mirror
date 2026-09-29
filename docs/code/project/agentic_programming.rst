@@ -13,7 +13,7 @@ What PsyNet gives the agent
 ``.cursor/skills/psynet/`` and an ``AGENTS.md`` file into the experiment
 directory. Compatible agents read them from the project directory. They
 tell the agent how to plan an experiment, choose PsyNet components, test with
-simulated participants, and debug; :doc:`agent_skills` lists them.
+simulated participants, and debug; :doc:`/skills/index` lists them.
 
 The skills also tell the agent to keep an **experiment audit**: a record of
 the original request, the implementation plan, the development timeline,

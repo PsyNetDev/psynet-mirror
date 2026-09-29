@@ -105,6 +105,39 @@ To let the trial maker decide when recruitment stops, pass
 ``recruit_mode="n_participants"`` with ``target_n_participants``, or
 ``recruit_mode="n_trials"`` with ``target_trials_per_node``.
 
+.. _custom_node_selection:
+
+To choose the node yourself, for example in an adaptive design, override two
+hooks. :meth:`~psynet.trial.static.StaticTrialMaker.custom_node_filter`
+removes nodes the participant must not receive, and
+:meth:`~psynet.trial.static.StaticTrialMaker.select_node` picks one of the
+rest; blocks, repeat rules, performance checks and trial-based recruitment
+keep working. The nodes arrive shuffled, then sorted by balancing (when it is
+on) and by block, and the default ``select_node`` takes the first. ``select_node`` must return one of the objects it was given, not a
+re-queried copy, either directly or wrapped in a
+:class:`~psynet.trial.main.Selection` with a ``context``. Returning ``None``
+raises ``TypeError``. PsyNet passes the context to
+:meth:`~psynet.trial.main.NetworkTrialMaker.on_trial_created` as
+``selection_context``:
+
+.. code-block:: python
+
+    class AdaptiveTrialMaker(StaticTrialMaker):
+        def select_node(self, nodes, participant, experiment):
+            scores = [score_item(node.definition) for node in nodes]
+            best = max(range(len(nodes)), key=scores.__getitem__)
+            return Selection(value=nodes[best], context={"score": scores[best]})
+
+        def on_trial_created(self, trial, experiment, participant, selection_context=None):
+            record = SelectionRecord(participant_id=participant.id, details=selection_context)
+            record.trial = trial
+            db.session.add(record)
+
+``on_trial_created`` runs in the same database transaction as trial creation,
+once per selection, for primary trials only: not for repeat trials or for the
+copies given to other members of a synchronized group. Chain trial makers have
+the equivalent hooks for chains; see :doc:`/code/writing_a_chain_experiment`.
+
 .. _trial_after_the_response:
 
 After the response
@@ -206,9 +239,12 @@ To create related database records in the same transaction as the trial, pass
 an ``on_trial_created`` callback, and pass request-local values for it through
 ``creation_context``. Assign relationships in the callback rather than IDs,
 because the trial's database ID may not exist until the transaction flushes.
-``demos/features/trial_cue_adaptive`` uses this for a participant-level
-staircase inside a :func:`~psynet.timeline.while_loop`; see
-:doc:`/code/adaptive_experiments`.
+If the callback raises an exception, the trial and the related records are
+both rolled back. Passing ``creation_context`` without ``on_trial_created``
+raises an error. ``demos/features/trial_cue_adaptive`` uses this for a
+participant-level staircase inside a :func:`~psynet.timeline.while_loop`; the
+:doc:`/skills/make-experiment-adaptive` skill describes the recommended
+approach to adaptive designs.
 
 A trial maker is the better choice when trials should be balanced across
 nodes or participants, when chains develop across participants, or when you

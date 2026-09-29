@@ -24,7 +24,7 @@ end with a period.
 
 Then commit. Note that `git add changelog.d` stages untracked fragments
 too, so make sure any fragments belonging to unmerged work have been moved
-aside first (see [Pre-existing local changes](#pre-existing-local-changes)):
+aside first (see [Pre-existing local changes](../SKILL.md#pre-existing-local-changes)):
 
 ```bash
 git add CHANGELOG.md changelog.d
@@ -183,7 +183,7 @@ Verify the release is live at `https://pypi.org/project/psynet/X.Y.Z/`.
 
 This step applies to **final releases only**. Release candidates and
 other prereleases are tag-only on GitLab — see
-[Release candidates](#release-candidates-minor-releases) for why.
+[Release candidates](release-candidates.md) for why.
 
 Compose a release-notes file (e.g. `release-notes-X.Y.Z.md`) that
 mirrors the corresponding section of `CHANGELOG.md` and points at the

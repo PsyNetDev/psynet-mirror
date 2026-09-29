@@ -89,6 +89,13 @@ Choosing the next chain
   on.
 - Participant groups work as in :doc:`/code/writing_a_trial_maker`: set ``participant_group`` on
   the start nodes and pass ``choose_participant_group``.
+- To choose the chain yourself, override
+  :meth:`~psynet.trial.chain.ChainTrialMaker.custom_chain_filter`, which
+  removes chains the participant must not receive, and
+  :meth:`~psynet.trial.chain.ChainTrialMaker.select_chain`, which picks one of
+  the rest. They follow the same rules as the static trial maker's node hooks
+  (see :ref:`choosing nodes yourself <custom_node_selection>`); PsyNet then gives the participant the
+  selected chain's current node.
 
 Chain length and trials per node
 --------------------------------
@@ -121,6 +128,18 @@ Built-in paradigms
 The ``demos/experiments`` folder has a demo for each, for example
 ``imitation_chain``, ``gibbs``, ``mcmcp``, ``staircase_pitch_discrimination``,
 ``create_and_rate``, and ``graph``.
+
+A :class:`~psynet.trial.staircase.GeometricStaircaseTrialMaker` runs
+within-participant staircases. Subclass
+:class:`~psynet.trial.staircase.GeometricStaircaseNode` to set ``k`` (the
+number of consecutive correct answers needed before the task gets harder;
+default ``2``) and define the ``increase_difficulty`` and
+``decrease_difficulty`` methods; the ``staircase_pitch_discrimination`` demo
+multiplies or divides the parameter by a fixed ``step``. The trial maker takes ``max_nodes_per_chain`` and optionally
+``max_reversals_per_chain``, where a reversal is a node at which the
+difficulty changes direction. At the end, it scores each staircase as the mean
+parameter at its reversals and passes or fails the participant against
+``min_passing_score`` and ``max_passing_score`` if you set them.
 
 .. _demos_catalog_gibbs:
 

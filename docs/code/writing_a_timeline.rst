@@ -47,6 +47,12 @@ With ``wait=False``, the participant carries on while the function runs. The
    :end-before: def test_check_bot
    :dedent: 4
 
+Code blocks from different participants can run at the same time. For
+periodic work that isn't tied to a participant, decorate a static method of
+the experiment class with ``scheduled_task`` from :mod:`psynet.experiment`,
+for example ``@scheduled_task("interval", seconds=10, max_instances=1)``, as
+``demos/features/bot_2`` does. Scheduled tasks run in the clock process.
+
 Remembering things about a participant
 --------------------------------------
 
@@ -109,6 +115,15 @@ maker, as the demo does:
    :end-before: ModularPage(
    :dedent: 8
 
+More precisely, PsyNet calls a page maker's function again each time the
+participant moves to the next element inside it, when the function returns
+several elements, and whenever the page is refreshed. Keep the function free
+of side effects. When it returns :meth:`~psynet.trial.main.Trial.cue`, only
+the first call creates the trial, so later calls don't change it, but they
+still repeat any work the function does. If that work is expensive, do it once
+in a code block, store the result in ``participant.var``, and have the page
+maker only read it.
+
 Branching and repetition
 ------------------------
 
@@ -125,7 +140,11 @@ preceding page:
    :dedent: 8
 
 :func:`~psynet.timeline.while_loop` takes a label, a ``condition`` and
-``logic``, plus ``expected_repetitions`` for time estimation.
+``logic``, plus ``expected_repetitions`` for time estimation. By default
+(``fix_time_credit=True``), every participant gets time credit for
+``expected_repetitions`` iterations, however many they actually do.
+``max_loop_time`` limits the time in the loop in seconds; participants who
+reach it are sent to the unsuccessful end unless ``fail_on_timeout=False``.
 :func:`~psynet.timeline.conditional` takes a label, a ``condition``, and
 ``logic_if_true`` and ``logic_if_false``. This loop repeats until the random
 score is above 5, with feedback that depends on the score:

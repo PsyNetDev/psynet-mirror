@@ -55,7 +55,9 @@ Pages that collect recordings need a sample file for bots to submit:
 
 For practice data and power analysis, bot answers can come from a
 **response model**: code, kept with the experiment, that generates answers
-from assumptions about how participants behave. ``psynet audit simulate``
+from assumptions about how participants behave (the
+:doc:`/skills/participant-response-models` skill describes how to write
+one). ``psynet audit simulate``
 runs bots and saves their export in the audit. The export has the same
 tables, columns and files as a real one, so the analysis can be written and
 tested before data collection, and it should recover the effects built into

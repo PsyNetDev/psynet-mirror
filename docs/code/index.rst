@@ -6,7 +6,6 @@ Writing code
    :maxdepth: 1
 
    project/agentic_programming
-   project/agent_skills
    project/creating_an_experiment
    project/experiment_directory
    project/dependencies
@@ -39,7 +38,6 @@ Writing code
 
    writing_a_trial_maker
    writing_a_chain_experiment
-   adaptive_experiments
    trials/create_and_rate
    trials/participant_and_trial_failure
 

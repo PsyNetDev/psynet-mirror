@@ -3,7 +3,8 @@
 Put the comparison in the **Adaptive procedure** section of
 `audit/simulate/design/simulation.ipynb`, with policy as a design factor in the
 same campaign as the power analysis. The concepts are in "Simulating before
-deployment" of `design/adaptive_experiments`; this file is the procedure.
+deployment" of [adaptive-design.md](adaptive-design.md); this file is the
+procedure.
 
 ## Before running
 

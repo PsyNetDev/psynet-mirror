@@ -1,21 +1,37 @@
 ---
 name: make-experiment-adaptive
-description: Implement a PsyNet experiment in which accumulated responses influence later measurements or assignments.
+description: Specify, implement, simulate and validate a PsyNet experiment in which accumulated responses decide later measurements or assignments, such as staircases, adaptive tests, active learning, or adaptive allocation. Use when earlier answers should choose what a participant, or a later participant, is given next.
 ---
 
 # Make an experiment adaptive
 
 Use this skill when earlier responses should decide what a participant, or a
-later participant, is given next.
+later participant, is given next. It takes an adaptive design from
+specification to a tested PsyNet implementation: classify the procedure, agree
+every design decision with the user, write and test the policy, wire it into
+PsyNet, simulate it against a non-adaptive baseline, and validate it with bots.
+
+This skill has three references:
+
+- [references/adaptive-design.md](references/adaptive-design.md): kinds of
+  adaptivity, the PsyNet building blocks, the specification decisions, where
+  the state lives, stopping, decision records, simulation, risks, and the
+  review checklist.
+- [references/adaptive-implementation.md](references/adaptive-implementation.md):
+  project layout and code patterns, walking through
+  `demos/features/trial_cue_adaptive`.
+- [references/benchmark-adaptive-procedure.md](references/benchmark-adaptive-procedure.md):
+  how to compare the adaptive policy with a non-adaptive baseline in the
+  design simulation.
 
 ## Read first
 
 Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rst`; otherwise fetch `https://psynetdev.gitlab.io/PsyNet/<page>.html`.
 
-- `design/adaptive_experiments` — kinds of adaptivity, the specification, state and snapshots, stopping, decision records, simulation, review checklist
-- `code/adaptive_experiments` — project layout, `Trial.cue` loops, trial-maker selection hooks, snapshot tables, decision records, tests
-- `code/writing_a_trial_maker` — trial makers and "Trials without a trial maker"
-- `design/chains` and `code/writing_a_chain_experiment` — chains and staircases
+- `code/writing_a_trial_maker` — "Trials without a trial maker" (`Trial.cue`, `on_trial_created`, `creation_context`) and the node selection hooks
+- `code/writing_a_timeline` — page makers, `while_loop` time credit and limits, async code blocks and scheduled tasks
+- `design/chains` and `code/writing_a_chain_experiment` — chains, staircases, and the chain selection hooks
+- `code/project/classes_and_sqlalchemy` — custom tables and trial columns
 - `test/audits` and `test/audit_reference` — the design-simulation section
 
 Also use `power-analysis/SKILL.md` for the design simulation and
@@ -24,19 +40,20 @@ Also use `power-analysis/SKILL.md` for the design simulation and
 ## 1. Classify the procedure
 
 Tell the user which kind of adaptivity the request is (within-participant,
-across-participant, or combined; see "Kinds of adaptivity" in
-`design/adaptive_experiments`) and what it estimates. Propose the PsyNet
-building block: a staircase trial maker, a chain, a `Trial.cue` loop, or
-custom trial-maker selection. Prefer a `Trial.cue` loop for a custom
-within-participant procedure, and trial-maker hooks when balancing,
-performance checks, or trial-based recruitment are needed.
+across-participant, or combined; see "Kinds of adaptivity" in the design
+reference) and what it estimates. Propose the PsyNet building block: a
+staircase trial maker, a chain, a `Trial.cue` loop, or custom trial-maker
+selection. Prefer a `Trial.cue` loop for a custom within-participant
+procedure, and trial-maker hooks when blocks, performance checks, or
+trial-based recruitment are needed.
 
-## 2. Complete the specification gate
+## 2. Complete the specification
 
 Do not implement until the user has answered every item below, unless they
 explicitly ask you to propose a design. If anything is missing, list the open
 decisions and wait. If asked to propose, make the smallest coherent proposal
-and label each assumption. Record the agreed answers in `audit/PLAN.md`.
+and label each assumption. Each item is explained in "Specification decisions"
+of the design reference. Record the agreed answers in `audit/PLAN.md`.
 
 - [ ] Adaptive unit
 - [ ] Observations: mapping from raw answers (`y`)
@@ -62,22 +79,23 @@ deployment image.
 
 ## 3. Write and test the policy
 
-Create `adaptive_logic.py` with the selection and stopping functions, using
-the layout in "Project layout" of `code/adaptive_experiments`. Write unit tests
+Create `adaptive_logic.py` with the selection and stopping functions, using the
+layout in "Project layout" of the implementation reference. Write unit tests
 for it first, in the style of `tests/isolated/test_trial_cue_adaptive_logic.py`.
 Pass an explicit random-number generator to any stochastic function.
 
-Use the same table shapes in the experiment, the simulation, and the
-analysis: an observations table (response, `participant_id`, `item_id`,
-position), a participants table, and an items table, with unique IDs.
+Use the same table shapes in the experiment, the simulation, and the analysis:
+an observations table (response, `participant_id`, `item_id`, position), a
+participants table, and an items table, with unique IDs.
 
 ## 4. Wire it into PsyNet
 
-Start from `demos/features/trial_cue_adaptive` for a `Trial.cue` loop, or
-from the trial-maker example in "Kinds of adaptivity" of
-`code/adaptive_experiments`. Add a decision table and write each row from
-`on_trial_created` ("Recording decisions"). For across-participant state,
-add the snapshot table and a background refit ("Where the state lives").
+Start from `demos/features/trial_cue_adaptive` for a `Trial.cue` loop, or from
+the selection hooks in `code/writing_a_trial_maker` for custom trial-maker
+selection. Add a decision table and write each row from `on_trial_created`
+("Recording decisions" in the implementation reference). For
+across-participant state, add the snapshot table and a background refit
+("Where the state lives").
 
 Time data loading, fitting, and scoring separately. If selection exceeds the
 agreed budget, present the options (caching, vectorizing, background refits,
@@ -97,7 +115,7 @@ in the same campaign as the power analysis.
 
 Run `psynet test local` with a `test_check_bot` like the demo's. For
 across-participant designs, also run parallel bots. Check the export against
-"What to check when reviewing" in `design/adaptive_experiments`.
+the review checklist in the design reference.
 
 ## Hand back
 
@@ -109,3 +127,5 @@ Report to the user:
 - the adaptive-versus-baseline comparison, including misspecification
   scenarios, and whether the acceptance criteria were met;
 - test results, and any blockers recorded in the audit.
+
+Ask the user to go through the review checklist in the design reference.

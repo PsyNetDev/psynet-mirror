@@ -94,6 +94,7 @@ dev = [
     "beautifulsoup4",
     "citeproc-py",
     "google-cloud-translate",
+    "myst-parser",
     "openai",
     "pre-commit",
     "pydata-sphinx-theme",

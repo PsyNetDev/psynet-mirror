@@ -212,7 +212,7 @@ the matching version.
 | --- | --- |
 | Installing tools, local services | `install` |
 | First experiment with a coding agent | `quickstart`, `code/project/agentic_programming` |
-| Which Agent Skill to use | `code/project/agent_skills` |
+| Recommended workflows (Agent Skills) | `skills/index` |
 | Design concepts (timeline, pages, trials, chains, stimuli, participants, groups) | `design/timeline`, `design/pages`, `design/trials`, `design/chains`, `design/stimuli`, `design/participants`, `design/groups` |
 | Experiment files and dependencies | `code/project/experiment_directory`, `code/project/dependencies` |
 | Running and debugging locally | `code/project/running_and_debugging` |
@@ -220,7 +220,7 @@ the matching version.
 | Pages, prompts, controls, validation | `code/writing_pages` |
 | Static trial makers, scoring, performance checks | `code/writing_a_trial_maker` |
 | Chains (iterated, Gibbs, MCMCP, create and rate) | `code/writing_a_chain_experiment` |
-| Adaptive experiments | `design/adaptive_experiments`, `code/adaptive_experiments` |
+| Adaptive experiments | `code/writing_a_trial_maker`, `skills/make-experiment-adaptive` |
 | Stimuli, `static/`, assets | `code/using_stimuli`, `code/trials/assets` |
 | Payment and bonuses | `code/participants/payment` |
 | Pre-screening and questionnaires | `code/participants/prescreening_and_questionnaires` |
@@ -230,7 +230,7 @@ the matching version.
 | Browser layout checks | `test/frontend` |
 | Performance tests | `test/scalability` |
 | Audits | `test/audits`, `test/audit_reference` |
-| Design simulation and power analysis | `design/design_simulation`, `test/design_simulation` |
+| Design simulation and power analysis | `test/audit_reference`, `skills/power-analysis` |
 | Deploying and running a study | `deploy/how_deployment_works`, `deploy/setting_up_a_server`, `deploy/running_a_study`, `deploy/recruiters/index` |
 | Exporting and basic data | `data/exporting_data`, `data/basic_data` |
 | Configuration and commands | `reference/configuration`, `reference/command_line` |

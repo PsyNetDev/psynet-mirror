@@ -47,7 +47,8 @@ Sections
 
 **Design simulation**
    The simulation used to choose the numbers of participants, stimuli and
-   trials, if the study has one; see :doc:`design_simulation`.
+   trials, if the study has one; see :ref:`audit_design_simulation` and the
+   :doc:`/skills/power-analysis` skill.
 
 **Analysis**
    The planned analysis, run on the simulated export.

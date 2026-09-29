@@ -141,13 +141,15 @@ counterpart, give both pages the same section headings so readers can move
 between them, and end the concept page with a ``seealso`` link to its code
 page.
 
-The Design section has two groups. **Concepts** describe how PsyNet itself
-works. **Methods** describe recommended research practice built on PsyNet,
-such as adaptive designs and design simulation, where part of the approach is
-code the experimenter writes. Every methods page, and its code or task
-counterpart, opens with a "Who does what" box with three points: what PsyNet provides,
-what a coding agent does with the matching skill, and what the reader decides
-and reviews.
+The documentation describes what PsyNet provides and how it works.
+Recommended workflows and research methodology built on PsyNet, such as
+adaptive designs and design simulation, belong in the Agent Skills under
+``.cursor/skills/experiment/``, which are published in the Skills section of
+this site. Skills are read by people as well as agents, so write them with
+clear steps and checklists and explain what a person needs to know. When a
+skill relies on a PsyNet fact, such as a hook, a command or an audit file,
+document the fact here and link to it from the skill; when a docs page
+mentions a workflow, link to the skill rather than repeating it.
 
 On concept pages:
 

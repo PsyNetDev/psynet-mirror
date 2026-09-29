@@ -635,6 +635,18 @@ def test_timeline_hold_trace_witnesses_exist():
     )
 
 
+def _docs_page_exists(root, page):
+    """Return whether ``page`` is a docs page, including generated skill pages."""
+    if (root / "docs" / f"{page}.rst").is_file():
+        return True
+    parts = page.split("/")
+    return (
+        len(parts) >= 2
+        and parts[0] == "skills"
+        and (root / ".cursor/skills/experiment" / parts[1] / "SKILL.md").is_file()
+    )
+
+
 def test_agents_md_documentation_map_points_at_existing_pages():
     from psynet.utils import get_psynet_root
 
@@ -658,12 +670,12 @@ def test_agent_skills_page_lists_every_shipped_skill():
     from psynet.utils import get_psynet_root
 
     root = get_psynet_root()
-    page = (root / "docs/code/project/agent_skills.rst").read_text()
+    page = (root / "docs/skills/index.rst").read_text()
     skills = sorted(
         p.parent.name for p in (root / ".cursor/skills/experiment").glob("*/SKILL.md")
     )
-    missing = [skill for skill in skills if f"``{skill}``" not in page]
-    assert not missing, f"docs/code/project/agent_skills.rst does not list: {missing}"
+    missing = [skill for skill in skills if f":doc:`{skill}`" not in page]
+    assert not missing, f"docs/skills/index.rst does not list: {missing}"
 
 
 def test_skill_read_first_sections_point_at_existing_pages():
@@ -677,6 +689,6 @@ def test_skill_read_first_sections_point_at_existing_pages():
             continue
         section = text.split("## Read first", 1)[1].split("\n## ", 1)[0]
         for page in re.findall(r"^- `([a-z_0-9/]+)`", section, flags=re.M):
-            if not (root / "docs" / f"{page}.rst").is_file():
+            if not _docs_page_exists(root, page):
                 missing.append(f"{skill.parent.name}: {page}")
     assert not missing, f"Read first sections link to missing docs pages: {missing}"

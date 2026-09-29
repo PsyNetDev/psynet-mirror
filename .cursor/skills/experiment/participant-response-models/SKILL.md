@@ -9,13 +9,18 @@ This skill builds one response model that bots, design simulations and
 standalone adaptive simulations all import. It stops at a tested model and
 bot adapter; `power-analysis` and `simulate-participants` use it.
 
+What a response model is, and how it differs from the estimator and the
+adaptive learner, is explained in "Response models" of
+[power-analysis/references/design-simulation-method.md](../power-analysis/references/design-simulation-method.md).
+The package layout, `sample_responses` and the bot adapter are in "Response
+model package" and "Bot adapter" of
+[power-analysis/references/design-simulation-setup.md](../power-analysis/references/design-simulation-setup.md).
+
 ## Read first
 
 Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rst`; otherwise fetch `https://psynetdev.gitlab.io/PsyNet/<page>.html`.
 
-- `design/design_simulation` — what a response model is and how it differs from the estimator and learner
-- `test/design_simulation` — the `response_model/` package, `sample_responses`, and the bot adapter
-- `test/backend` — how bots answer
+- `test/backend` — how bots answer, and `psynet audit simulate`
 - `test/audits` — where design simulation sits in an audit
 
 ## Procedure
@@ -25,7 +30,7 @@ Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rs
    noise, rounded to the scale), list every parameter with its value and
    source (pilot data, literature, or judgment), and name any alternative
    parameter sets with stable keys.
-2. **Write `response_model/`** as in `test/design_simulation`: a frozen
+2. **Write `response_model/`** as in the setup reference: a frozen
    dataclass of parameters, one vectorized `sample_responses(...)` with an
    explicit NumPy generator, the response control's rounding and clipping
    inside it, and re-exports in `__init__.py`. It must not import PsyNet or

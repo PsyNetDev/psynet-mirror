@@ -369,5 +369,10 @@
   "introduction/dallinger": "introduction/history",
   "reference/audit": "test/audit_reference",
   "reference/troubleshooting": "troubleshooting",
-  "reference/wsl_troubleshooting": "wsl_troubleshooting"
+  "reference/wsl_troubleshooting": "wsl_troubleshooting",
+  "code/project/agent_skills": "skills/index",
+  "design/adaptive_experiments": "skills/make-experiment-adaptive",
+  "code/adaptive_experiments": "skills/make-experiment-adaptive/references/adaptive-implementation",
+  "design/design_simulation": "skills/power-analysis",
+  "test/design_simulation": "skills/power-analysis/references/design-simulation-setup"
 }

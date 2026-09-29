@@ -11,12 +11,21 @@ experiments with the shared response model, and writes precision results.
 Follow `power-analysis` for everything around it. For an adaptive design,
 also follow `make-experiment-adaptive`.
 
+The concepts and code this skill relies on are in the `power-analysis`
+references:
+
+- [power-analysis/references/design-simulation-method.md](../power-analysis/references/design-simulation-method.md):
+  estimands, precision measures, the default criterion, and what to simulate
+  ("Precision and power" and "What to simulate");
+- [power-analysis/references/design-simulation-setup.md](../power-analysis/references/design-simulation-setup.md):
+  `config.toml`, `core.py`, seeding, parallelism, and the results columns and
+  formulas.
+
 ## Read first
 
 Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rst`; otherwise fetch `https://psynetdev.gitlab.io/PsyNet/<page>.html`.
 
-- `design/design_simulation` — estimands, precision measures, the default criterion, what to simulate
-- `test/design_simulation` — `config.toml`, `core.py`, seeding, parallelism, results columns and formulas
+- `test/audit_reference` — "Design simulation": the audit artifacts `core.py` produces
 - `test/audits` — where the design simulation sits in an audit
 
 ## Procedure
@@ -32,7 +41,8 @@ Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rs
    first met. If an adaptive policy stops early, disable stopping for
    matched-budget cells or report `mean_n_observations` beside every
    precision metric.
-3. **Implement `core.py`** as in `test/design_simulation`: one small class
+3. **Implement `core.py`** as in "Simulation script" of the setup
+   reference: one small class
    per target, trial-level replicates from `sample_responses`, the estimator
    planned for the real data (statsmodels by default), deterministic
    scenario seeds, one `loky` job per scenario sharing its replicates across
@@ -44,7 +54,8 @@ Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rs
 4. **Smoke-run** with `n_jobs = 1` and few replicates. Check recovery, bias,
    interval coverage when the estimator produces intervals, and fit
    failures. Fix problems before the full grid.
-5. **Compute the results** with the formulas in `test/design_simulation`.
+5. **Compute the results** with the formulas in "Results table" of the setup
+   reference.
    Unless the user chose another criterion, set `decision_metric =
    "standardized_margin_of_error"`, `decision_threshold = 0.20` at 95%
    confidence, and fill `decision_value` and `meets_requirement` for every

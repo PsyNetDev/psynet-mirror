@@ -78,6 +78,10 @@ The trial maker controls which nodes each participant visits:
   example at random or from a questionnaire answer; PsyNet requires this
   rule whenever nodes are reserved for groups.
 
+You can also replace the choice itself with your own rule, for example one
+that picks the node a model expects to be most informative, while blocks,
+repeats and performance checks keep working.
+
 A trial maker can also decide when recruitment stops: once enough
 participants have finished it, or once every node has enough responses.
 

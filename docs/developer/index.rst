@@ -16,6 +16,7 @@ experiments.
 
    contributing_a_feature_or_bugfix
    branch_review
+   skills/index
    running_tests
    asv_performance_tests
    Benchmarks <https://psynetdev.gitlab.io/PsyNet/benchmarks/>
