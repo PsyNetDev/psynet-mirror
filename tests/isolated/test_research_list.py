@@ -4,8 +4,6 @@ from pathlib import Path
 
 import pytest
 
-pytest.importorskip("citeproc", reason="citeproc-py is a docs-only dependency")
-
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -30,6 +28,9 @@ BIB = """
 
 
 def test_example_publication_labels_urls_and_order(tmp_path):
+    # Skip inside the test: a module-level skip collects no tests, which makes
+    # pytest exit with code 5 and fails the CI shard.
+    pytest.importorskip("citeproc", reason="citeproc-py is a docs-only dependency")
     module = _load_research_list()
     bib = tmp_path / "research.bib"
     bib.write_text(BIB, encoding="utf-8")
