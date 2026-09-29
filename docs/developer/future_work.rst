@@ -526,3 +526,15 @@ documentation, and haven't yet been checked end to end.
 - **Unity C# snippets** (:doc:`/code/pages/unity_integration`): build them in
   a current Unity version and check that a Unity page exchanges data with
   PsyNet as described.
+
+Mark launch-time assets as prepared stimuli
+-------------------------------------------
+
+Whether an asset is exported depends on whether it was deposited while PsyNet
+prepared the deployment. Stimuli deposited later from the experiment
+directory, such as those in ``on_launch`` hooks or the start nodes of
+within-participant chains, are therefore exported with every export, often
+once per participant. A public context manager (for example
+``psynet.asset.preparing_for_deployment()``) would let authors mark such
+deposits as prepared stimuli, and within-participant start nodes could use it
+automatically.

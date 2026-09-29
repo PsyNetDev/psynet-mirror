@@ -29,6 +29,37 @@ trials, and the saved responses.
 Coding agents write these tests using the ``playwright-testing`` skill,
 which ``psynet setup`` installs in the experiment directory.
 
+To install Playwright in the experiment directory:
+
+.. code-block:: shell
+
+    npm init -y
+    npm install --save-dev @playwright/test
+    npx playwright install chromium
+
+Then start ``psynet debug local`` in one terminal and run
+``npx playwright test`` in another.
+
+Waiting for the next page
+-------------------------
+
+When a timeline page is ready for the participant, PsyNet sets
+``data-page-ready="true"`` on its ``#main-body`` element. After a click on
+*Next*, the old page keeps that attribute until the server replies, so a
+test also waits for ``window.pageUuid``, which differs on every timeline
+page, to change:
+
+.. code-block:: js
+
+    const oldUuid = await page.evaluate(() => window.pageUuid);
+    await page.locator("#next-button").click();
+    await page.waitForFunction(
+      (uuid) =>
+        window.pageUuid !== uuid &&
+        document.getElementById("main-body")?.dataset.pageReady === "true",
+      oldUuid,
+    );
+
 Layout checks
 -------------
 
@@ -48,7 +79,6 @@ empty list:
 
 .. code-block:: js
 
-    await page.waitForSelector("#main-body[data-page-ready='true']");
     const violations = await page.evaluate(() => window.psynetLayout.check());
     expect(violations).toEqual([]);
 

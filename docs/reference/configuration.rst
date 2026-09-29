@@ -829,13 +829,9 @@ Web server
     When given the default value of ``auto`` the number of worker processes will be calculated
     using the formula ``round(multiprocessing.cpu_count() * worker_multiplier)) + 1`` by making use
     of the ``worker_multiplier`` config variable. Default: ``auto``.
-    ``psynet debug --legacy`` currently starts four workers by default rather
-    than ``auto``. Ordinary ``psynet debug local`` is the Flask reloader (one
-    process); there is no worker-count flag on that path. Playwright stacked-hold
-    tests set
-    ``PSYNET_LEGACY_DEBUG_GUNICORN_THREADS`` to the number of sessions plus two
-    spares so concurrent last-arrival ``GET /timeline`` can overlap every waiter
-    hold-resume POST without starving a waiter Redis subscribe.
+    ``psynet debug local --legacy`` starts four workers rather than ``auto``.
+    Plain ``psynet debug local`` runs the Flask reloader as one web process
+    and ignores this setting.
 
 ``worker_multiplier`` *float* |dlgr-icon|
     Multiplier used to determine the number of gunicorn web worker processes

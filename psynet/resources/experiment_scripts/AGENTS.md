@@ -9,6 +9,11 @@ and with the development of individual PsyNet experiments.
 If the root contains a file called `experiment.py`, assume that we are working on an experiment.
 Otherwise assume we are working on the PsyNet source code.
 
+To implement an experiment from a description, follow the `implement-experiment`
+skill before writing code: `.cursor/skills/psynet/implement-experiment/SKILL.md`
+in an experiment directory, or `.cursor/skills/experiment/implement-experiment/SKILL.md`
+in the PsyNet source code. It says when to use the other experiment skills.
+
 From `experiment.py`, import sibling modules with `from . import my_module`.
 Do not run `python experiment.py` to validate imports; use `psynet test local`.
 See `docs/code/project/experiment_directory.rst`
@@ -86,8 +91,10 @@ Cursor: disable sandboxing when running PsyNet commands by setting `required_per
 
 ## Demos
 
-Demos are contained in `demos/experiments` and `demos/features`.
-If a user asks for the X demo, list all child directories in `demos/experiments` and `demos/features` to see which they mean.
+Demos are contained in `demos/experiments`, `demos/features` and `demos/pipelines`
+of the PsyNet source code; pip installs do not include them. Outside a source checkout,
+the `demos/index` documentation page describes every demo and links to its code.
+If a user asks for the X demo, list all child directories of those three folders to see which they mean.
 
 ## Running experiments locally
 
@@ -131,7 +138,7 @@ Wait for 8 seconds for the server to start.
 
 Inspect the logs to see relevant URLs.
 Look out for an ad page URL, something like
-http://127.0.0.1:5000/ad?generate_tokens=true&recruiter=generic.
+http://127.0.0.1:5000/ad?generate_tokens=true&recruiter=hotair.
 
 When the demo is running, offer the user to navigate the experiment automatically.
 
@@ -226,10 +233,11 @@ version of the documentation website; fetch `<that URL><page>.html`.
 | Experiment files and dependencies | `code/project/experiment_directory`, `code/project/dependencies` |
 | Running and debugging locally | `code/project/running_and_debugging` |
 | Timelines, code blocks, loops, variables | `code/writing_a_timeline` |
-| Pages, prompts, controls, validation | `code/writing_pages` |
+| Pages, prompts, controls, validation | `code/writing_pages`, `code/pages/control_gallery` |
+| Custom front ends and graphics | `code/pages/custom_front_ends`, `code/pages/graphics` |
 | Static trial makers, scoring, performance checks | `code/writing_a_trial_maker` |
 | Chains (iterated, Gibbs, MCMCP, create and rate) | `code/writing_a_chain_experiment` |
-| Adaptive experiments | `code/writing_a_trial_maker`, `skills/make-experiment-adaptive` |
+| Adaptive experiments | `code/writing_a_trial_maker`, `code/writing_a_chain_experiment`; workflow in the `make-experiment-adaptive` skill |
 | Stimuli, `static/`, assets | `code/using_stimuli`, `code/trials/assets` |
 | Payment and bonuses | `code/participants/payment` |
 | Pre-screening and questionnaires | `code/participants/prescreening_and_questionnaires` |
@@ -239,9 +247,10 @@ version of the documentation website; fetch `<that URL><page>.html`.
 | Browser layout checks | `test/frontend` |
 | Performance tests | `test/scalability` |
 | Audits | `test/audits`, `test/audit_reference` |
-| Design simulation and power analysis | `test/audit_reference`, `skills/power-analysis` |
+| Design simulation and power analysis | `test/audit_reference`; workflow in the `power-analysis` skill |
 | Deploying and running a study | `deploy/how_deployment_works`, `deploy/setting_up_a_server`, `deploy/running_a_study`, `deploy/recruiters/index` |
-| Exporting and basic data | `data/exporting_data`, `data/basic_data` |
+| Exporting, basic data and analysis | `data/exporting_data`, `data/basic_data`, `data/analyzing_data` |
+| Demos to start from | `demos/index` |
 | Configuration and commands | `reference/configuration`, `reference/command_line` |
 | Classes and functions (API) | `reference/api/index` |
 | Local problems | `troubleshooting`, `wsl_troubleshooting` |

@@ -1480,9 +1480,11 @@ class Grouper(Barrier):
         visible waiting time.
 
     fail_participants_below_min_size
-        If ``True`` (default), participants in a group that is below minimum size and does not accept
-        top-ups are failed and released when they hit a GroupBarrier. If ``False``, they are released
-        without being failed. (Only applies to groups that have a minimum size, e.g. created by SimpleGrouper.)
+        Applies to groups that have a minimum size and don't accept top-ups, such as those created
+        by :class:`~psynet.sync.SimpleGrouper`. When a member leaves and the group falls below its
+        minimum size, the group is dissolved at once. If ``True`` (default), the remaining members
+        are failed. If ``False``, they are removed from the group without being failed and continue
+        alone.
     """
 
     def __init__(
@@ -1642,8 +1644,10 @@ class SimpleGrouper(Grouper):
         To be used in conjunction with ``join_existing_groups=True``.
 
     fail_participants_below_min_size
-        If ``True`` (default), participants in a group below minimum size that does not accept top-ups
-        are failed and released at GroupBarriers. If ``False``, they are released without being failed.
+        When a member leaves a group that doesn't accept top-ups and the group falls below
+        ``min_group_size``, the group is dissolved at once. If ``True`` (default), the remaining
+        members are failed. If ``False``, they are removed from the group without being failed and
+        continue alone.
 
     kwargs
         Further arguments to pass to Grouper.

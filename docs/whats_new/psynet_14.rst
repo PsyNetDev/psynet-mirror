@@ -27,8 +27,9 @@ migrate, ``requires_full_page_reload=True`` exempts a single page and
 :doc:`/code/pages/custom_front_ends`.
 
 **A new default theme.** Pages sit on a content panel with a readable line
-length, a blue accent and a matching footer and progress bar, and follow the
-participant's light or dark mode. Radio buttons and checkboxes are full-width
+length, a blue accent and a matching footer and progress bar, and have a dark
+palette; ``color_mode = auto`` follows the participant's system setting.
+Radio buttons and checkboxes are full-width
 rows that are easy to tap. If your CSS targeted bare ``label`` or ``input``
 elements, check how those controls look.
 
@@ -73,7 +74,8 @@ Trials and groups
 ``prioritize_networks`` are replaced by hooks for each kind of trial maker:
 ``find_chains``, ``select_chain`` and ``custom_chain_filter`` for chains, and
 ``find_nodes``, ``select_node`` and ``custom_node_filter`` for static
-experiments. A hook can return a ``Selection`` to record why it chose a node,
+experiments. A selection hook can return a ``Selection``, whose ``context``
+is passed to the trial maker's ``on_trial_created`` hook with the new trial,
 and ``Trial.cue`` supports adaptive procedures such as staircases. See
 :doc:`/code/writing_a_trial_maker`.
 
@@ -137,8 +139,7 @@ that the deployment matches your experiment directory. Exports go to
 
 **What an export contains.** By default an export includes the files created
 during the study, such as recordings, but not the stimuli you supplied; the
-``--assets all`` option is removed. Tables that were never used are left
-out, and yes/no columns contain ``True`` and ``False``. See
+``--assets all`` option is removed. Empty tables are left out, and yes/no columns contain ``True`` and ``False``. See
 :doc:`/data/what_an_export_contains`.
 
 Upgrading

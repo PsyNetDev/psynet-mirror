@@ -58,12 +58,17 @@ extensions = [
     "skill_pages",
 ]
 
+# Render defaults as written in the source. Defaults computed at import time,
+# such as paths into the installed package or the home directory, would
+# otherwise show the build machine's paths.
+autodoc_preserve_defaults = True
+
 # Old page paths are published and linked externally, so every moved or
 # deleted page needs an entry in redirects.json (old docname -> new docname).
 with open("redirects.json") as f:
     _redirect_docnames = json.load(f)
 redirects = {
-    old: posixpath.relpath(new, posixpath.dirname(old) or ".") + ".html"
+    old: posixpath.relpath(new + ".html", posixpath.dirname(old) or ".")
     for old, new in _redirect_docnames.items()
 }
 # The stub body names the new page for readers that don't follow redirects,
@@ -137,9 +142,6 @@ linkcheck_ignore = [
     # running during linkcheck.
     r"https?://localhost(:\d+)?(/.*)?$",
     r"https?://127\.0\.0\.1(:\d+)?(/.*)?$",
-    # Placeholder deployment URL used in SSH deployment examples.
-    r"https://your-app-name\.121\.101\.152\.23\.nip\.io/?",
-    r"https://your-app-name\.my-web-server\.com/?",
     # Stable reference page that aggressively rate-limits automated checks.
     r"https://www\.gnu\.org/software/gettext/manual/html_node/Usual-Language-Codes\.html",
     # ColorBlindnessTest media prefix. Listing the prefix is forbidden;

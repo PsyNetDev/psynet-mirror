@@ -73,10 +73,10 @@ few tokens rather than overriding rules.
    * - ``--psynet-danger``
      - ``#c0454c``
      - Recording, warnings, "too loud" audio-meter states, and the footer's
-       ``Exit`` control. The named color ``red`` resolves here.
+       **Leave** button. The named color ``red`` resolves here.
    * - ``--psynet-danger-soft``
      - ``#fbeff0``
-     - Quiet danger surface, for example hovering ``Exit``.
+     - Quiet danger surface, for example hovering **Leave**.
    * - ``--psynet-success``
      - ``#2f7d5b``
      - Completed stages and "just right" audio-meter states. The named

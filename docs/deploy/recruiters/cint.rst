@@ -101,8 +101,9 @@ Deployment fails with any other combination.
 Qualifications
 --------------
 
-CINT provides a standard qualification library and also supports custom qualifications.
-Custom qualifications are specific to each CINT account.
+Qualifications decide which panel members can take the survey. CINT has a
+standard qualification library, and each CINT account can add its own
+custom qualifications.
 
 .. lab-note::
 
@@ -112,34 +113,26 @@ Custom qualifications are specific to each CINT account.
 Standard CINT qualifications
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-These qualifications are available for all accounts. Example:
+Every account has the standard qualifications, for example **HAS_AUDIO**,
+which checks that the participant can play audio.
 
-- **HAS_AUDIO**
-  Checks whether participants are able to play audio during the experiment.
+Languages and countries
+^^^^^^^^^^^^^^^^^^^^^^^
 
-
-Working with languages and countries
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-There are a variety of languages and countries available on CINT with
-specific tags. You can get a list of all the available language (3
-capital letters) and country (2 capital letters) tags by running the
-following code in your terminal:
+CINT identifies languages with three capital letters and countries with two.
+These are CINT's own codes, not always ISO codes. To list them, run:
 
 .. code:: bash
 
    psynet lucid locale
 
-Creating qualification configs
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Creating qualification files
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-After getting the desired locales, you can generate qualifications
-specific to each country by using a custom code.
-
-This step will create a JSON file, which is necessary during deployment
-for setting up CINT qualifications for your experiment.
-
-Please find an example code below that you can adjust and create a qualifications JSON file:
+Each language and country needs a qualification JSON file, which PsyNet
+uses at deployment to set up the survey's qualifications. Generate the files
+with :func:`~psynet.lucid.qualifications.create_lucid_recruitment_config`,
+for example in a script that you adapt:
 
 .. code:: python
 
@@ -163,35 +156,32 @@ Please find an example code below that you can adjust and create a qualification
 
 Generating the file needs the CINT API credentials. The keys of
 ``question_answer_dict`` must be qualification names on your CINT account;
-otherwise ``create_lucid_recruitment_config`` raises ``Unknown question``. It also adds some qualifications itself:
-``TIMEOUT v1`` with the answer ``Agree``; mobile and tablet exclusions unless
+otherwise ``create_lucid_recruitment_config`` raises ``Unknown question``.
+The function also adds some qualifications itself: ``TIMEOUT v1`` with the
+answer ``Agree``; mobile and tablet exclusions unless
 ``allow_mobile_devices`` is set; and a Chrome requirement when
-``force_google_chrome`` is set.
+``force_google_chrome`` is set. ``debug=True`` prints the English and
+translated text of each qualification.
 
-You need to specify the language, country, and the path
-to the generated JSON configuration. This path is then used in
-``experiment.py`` to load the correct qualification setup during runtime.
-
-Please find an example below that should be added to your
-``experiment.py``:
+In ``experiment.py``, point ``get_lucid_settings`` at the file for the
+language and country you are recruiting:
 
 .. code:: python
 
-   LANGUAGE = "DUT"
-   COUNTRY = "NL"
+   LANGUAGE = "DUT"  # CINT language code, not the ISO code
+   COUNTRY = "NL"  # CINT country code, not always the ISO code
+   LOCALE = "nl"  # ISO 639-1 code of the experiment language
    LUCID_CONFIG_PATH = f"qualifications/lucid/lucid-{LANGUAGE}-{COUNTRY}.json"
 
-Front-end confirmation of qualifications
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Confirming qualifications in the experiment
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-It is recommended to confirm key qualifications in the experiment frontend.
-
-Reasons:
--  Reduces early participant drop-off due to qualification issues
--  Ensures participants meet required criteria
--  Improves data quality and reduces invalid completions
-
-Example implementation:
+Ask the key qualification questions again at the start of the experiment.
+Participants who meet the criteria continue, and those who don't are
+terminated before they spend time on the study, which improves data quality.
+:func:`~psynet.lucid.qualifications.verify_lucid_qualifications` asks the
+qualification questions from the file and ends the experiment for answers the
+qualification doesn't allow:
 
 .. code:: python
 
@@ -212,7 +202,7 @@ Example implementation:
            SuccessfulEndPage(),
        )
 
-You can optionally restrict which qualifications are shown:
+To ask only some of the questions, pass ``question_names``:
 
 .. code:: python
 
@@ -220,27 +210,6 @@ You can optionally restrict which qualifications are shown:
        LUCID_CONFIG_PATH,
        question_names=["HAS_AUDIO"],
    )
-
-Summary of CINT qualification steps
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-1. Use ``psynet lucid locale`` to retrieve available language/country
-   tags.
-2. Create a JSON qualification file that, for example, includes the
-   ``HAS_AUDIO`` qualification.
-3. Be sure that you have added the following parameters to your
-   experiment.py:
-
-   .. code:: python
-
-      LANGUAGE = "DUT"  # lucid language code, not ISO language code
-      COUNTRY = "NL"  # lucid country code, not always ISO country code
-      LOCALE = "nl"  # ISO-2 code for experiment language
-      LUCID_CONFIG_PATH = f"qualifications/lucid/lucid-{LANGUAGE}-{COUNTRY}.json"
-
-4. Implement front-end verification for participant validation if
-   necessary.
-
 
 After deploying
 ---------------
@@ -252,9 +221,9 @@ the marketplace pages for the survey and shows its reports.
 .. image:: /_static/images/running_studies/recruiters/cint/dashboard-lucid-tab.png
    :width: 8.5in
 
-1. **Checking qualifications:** Here, click the “Qualifications” tab to
-   check if the qualifications are set correctly. This will direct you
-   to the official marketplace site.
+1. **Check the qualifications.** Click **Qualifications** to open the
+   survey's qualifications on the marketplace and check that they are set
+   correctly.
 
    .. image:: /_static/images/running_studies/recruiters/cint/dashboard-qualifications-button.png
       :width: 8.5in
@@ -262,25 +231,21 @@ the marketplace pages for the survey and shows its reports.
    .. image:: /_static/images/running_studies/recruiters/cint/survey-qualifications.png
       :width: 8.5in
 
-2. **Adjusting quota:** To manage the quota settings, go to the ‘Quota’
-   tab. This will direct you to the official marketplace site.
+2. **Set the quota.** Click **Quota** to open the survey's quota settings on
+   the marketplace.
 
    .. image:: /_static/images/running_studies/recruiters/cint/dashboard-quota-button.png
       :width: 8.5in
 
-   There are two types of calculations in CINT: completed and
-   prescreens. Completes are when a survey fills based on respondents
-   that complete the survey. Prescreens are when a survey fills based on
-   respondents that complete the Marketplace prescreener. By default,
-   deployments are set to 'Completes.' However, it's advisable to
-   consider switching to 'Prescreens' and setting a quota at the outset
-   of your experiment. This proactive measure helps prevent server
-   overload, especially during periods of high participant influx, which
-   could otherwise lead to experiment crashes. To implement this,
-   navigate to the 'CALCULATION TYPE' and switch to 'Prescreens.' Begin
-   by setting a modest quota, such as 10, then gradually adjust it based
-   on experiment progression and participant traffic. You can change it
-   back to ‘Completes’ if the experiment pace slows down.
+   CINT counts a quota in one of two ways. With **Completes** (the default),
+   the survey fills as respondents complete it. With **Prescreens**, it
+   fills as respondents complete the marketplace prescreener. Switching to
+   **Prescreens** with a small quota at the start limits how many
+   participants arrive at once, which protects the server from overload and
+   the experiment from crashing. Under **CALCULATION TYPE**, choose
+   **Prescreens** and start with a quota such as 10, then raise it as the
+   experiment runs smoothly. Switch back to **Completes** if recruitment
+   slows down.
 
    .. image:: /_static/images/running_studies/recruiters/cint/quota-calculation-type.png
       :width: 8.5in
@@ -290,67 +255,60 @@ the marketplace pages for the survey and shows its reports.
 Monitoring
 ----------
 
-The dashboard's **Recruiter > Lucid** page offers a variety of ways to
-monitor the experiment. Participants cannot contact you through CINT, so
-check these reports and the dashboard's errors regularly.
+The dashboard's **Recruiter > Lucid** page shows the survey's reports.
+Participants can't contact you through CINT, so check these reports and the
+dashboard's errors regularly.
 
-1. Check how many participants are working, terminated, and completed.
-   It is important to inspect ‘Termination reasons’ as it might reveal
-   if something is wrong with the experiment.
+1. Check how many participants are working, terminated and completed. Check
+   the **Termination reasons** too, as they can reveal a problem with the
+   experiment.
 
    .. image:: /_static/images/running_studies/recruiters/cint/dashboard-status.png
       :width: 8.5in
 
-2. Check the vital metrics of the experiment. Note that they are usually
-   not optimized at the beginning of the experiment so you need to wait
-   a little to see the realistic results:
+2. Check the survey metrics. They settle only after the survey has run for
+   a while, so early values can be misleading.
 
-   -  **Conversion rate** gives the percentage of respondents who
-      complete the study after exiting the Marketplace prescreener. To
-      increase the conversion rate you can build quotas into the
-      Marketplace to avoid client side over quotas. It should be higher
-      than 10%.
+   -  **Conversion rate**: the percentage of respondents who complete the
+      study after leaving the marketplace prescreener. Aim for more than
+      10%. To raise it, build quotas into the marketplace so that
+      respondents aren't turned away by quotas in the experiment itself.
 
-   -  **Dropoff rate** gives the percentage of respondents who passed
-      the qualifications but did not return to the Marketplace. This
-      should be less than 20%. If this is high you should look for
-      possible setup errors i.e. routing, images/videos are displayed
-      correctly
+   -  **Dropoff rate**: the percentage of respondents who passed the
+      qualifications but didn't return to the marketplace. Aim for less
+      than 20%. If it is higher, look for setup errors, for example in
+      routing or in how images and videos are displayed.
 
-   -  **Incidence rate** gives the percentage of respondents that will
-      qualify for the study after qualification targeting. It is set to
-      66% by default on psynet lucid setting. You should aim for as high
-      a number as possible. However, you can change it to a lower value
-      if necessary. Use the bid_incidence parameter in the
-      get_lucid_settings() to change it.
+   -  **Incidence rate**: the percentage of respondents expected to qualify
+      after qualification targeting. It comes from the ``bid_incidence``
+      argument of ``get_lucid_settings`` (default 66). Keep it as high as is
+      realistic.
 
-   -  **EPC (Earnings Per Click)** measures the gross dollar amount a
-      supplier can expect for each respondent they send into a survey,
-      indicating whether the survey is appropriately priced. EPCs of
-      $0.20 - $0.30 are considered healthy, whereas EPCs below $0.15
-      will struggle to attract supplier traffic.
+   -  **EPC (earnings per click)**: the gross amount in dollars a supplier
+      can expect for each respondent they send to the survey, which shows
+      whether the survey is priced well. $0.20 to $0.30 is healthy; below
+      $0.15, the survey struggles to attract respondents.
 
    .. image:: /_static/images/running_studies/recruiters/cint/dashboard-metrics.png
       :width: 8.5in
 
-3. Check how many participants enter the survey overtime on the
-   ‘Respondents’ graph. If it is dying out, you may need to adjust the
-   quota.
+3. Check the **Respondents** graph for how many participants enter the
+   survey over time. If the number is falling off, adjust the quota.
 
    .. image:: /_static/images/running_studies/recruiters/cint/respondents-over-time.png
       :width: 8.5in
 
-4. Monitor participant status across survey pages by clicking on bars to
-   access participant IDs and termination reasons. It is typical to have
-   a high termination rate at the early stage of the experiment.
+4. Check participant status on each survey page. Click a bar to see the
+   participant IDs and termination reasons. A high termination rate early
+   in the survey is normal.
 
    .. image:: /_static/images/running_studies/recruiters/cint/responses-per-participant.png
       :width: 8.5in
 
-5. Check completion LOI and termination LOI. The completion LOI should
-   match your time estimate. Termination LOI should be low as much as
-   possible. If it is higher than expected you should inspect for
-   possible errors in your experiment.
+5. Check the completion and termination **LOI** (length of interview). The
+   completion LOI should match your time estimate, and the termination LOI
+   should be as low as possible. If either is higher than expected, look for
+   errors in the experiment.
 
    .. image:: /_static/images/running_studies/recruiters/cint/length-of-interview.png
       :width: 8.5in
@@ -369,16 +327,13 @@ still working before destroying the app (see
 Reconciling participants
 ^^^^^^^^^^^^^^^^^^^^^^^^
 
-If people are terminated for the wrong reasons or errors occurred in the
-experiment, you need to reconcile your survey. Your survey must have the
-status completed.
-
-You can compensate with the following command:
+If participants were terminated for the wrong reason, or the experiment
+had errors, reconcile the survey once its status is **Complete**:
 
 .. code:: bash
 
    psynet lucid compensate SURVEY_NUMBER RID_1 RID_2 […] RID_N
 
-You need to add all completed RIDs, **so also those that are already
-marked as completed! Otherwise, already completed participants are
-marked as terminated!**
+The command marks the listed RIDs as completed and every other participant
+as terminated. List every RID that should count as completed, **including
+those already marked as completed**.

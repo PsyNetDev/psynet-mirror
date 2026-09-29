@@ -660,9 +660,7 @@ def test_agents_md_documentation_map_points_at_existing_pages():
     ]
     pages = set(re.findall(r"`([a-z_0-9/]+)`", "\n".join(page_cells)))
     assert pages, "the documentation map lists no pages"
-    missing = sorted(
-        page for page in pages if not (root / "docs" / f"{page}.rst").is_file()
-    )
+    missing = sorted(page for page in pages if not _docs_page_exists(root, page))
     assert not missing, f"AGENTS.md links to missing docs pages: {missing}"
 
 

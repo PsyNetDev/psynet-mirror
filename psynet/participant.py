@@ -1294,7 +1294,8 @@ class ParticipantDriver:
         time_factor : float, optional
             Factor to multiply the simulated page time by (default is 0.0).
         response : optional
-            If provided, the participant's raw_answer will be set to this value.
+            If provided, submitted as the page's final answer instead of the
+            page's bot response, without passing through ``format_answer``.
 
         Returns
         -------

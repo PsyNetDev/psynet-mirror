@@ -16,10 +16,7 @@ backticked page names in a skill's "Read first" list become links.
 """
 
 import re
-import shutil
 from pathlib import Path
-
-GENERATED_MARKER = ".generated"
 
 EXPERIMENT_NOTE = """```{{note}}
 This is an Agent Skill: a workflow written mainly for coding agents, and also
@@ -89,32 +86,34 @@ def _reference_markdown(path, name):
 
 
 def _write_skills(source_dirs, out_dir, note):
-    if out_dir.exists():
-        for child in out_dir.iterdir():
-            if child.name == "index.rst":
-                continue
-            if child.is_dir():
-                shutil.rmtree(child)
-            else:
-                child.unlink()
-    out_dir.mkdir(parents=True, exist_ok=True)
-    names = []
+    pages = {}
     for skill_dir in source_dirs:
         skill_md = skill_dir / "SKILL.md"
         if not skill_md.is_file():
             continue
         name = skill_dir.name
         references = sorted((skill_dir / "references").glob("*.md"))
-        (out_dir / f"{name}.md").write_text(
-            _skill_markdown(skill_md, name, note, references), encoding="utf-8"
+        pages[out_dir / f"{name}.md"] = _skill_markdown(
+            skill_md, name, note, references
         )
         for ref in references:
-            target = out_dir / name / "references" / ref.name
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(_reference_markdown(ref, name), encoding="utf-8")
-        names.append(name)
-    (out_dir / GENERATED_MARKER).write_text("\n".join(names) + "\n")
-    return names
+            pages[out_dir / name / "references" / ref.name] = _reference_markdown(
+                ref, name
+            )
+
+    # Rewrite only changed pages, so incremental and live-preview builds don't
+    # see every skill page as modified on each run.
+    for path, text in pages.items():
+        if not path.is_file() or path.read_text(encoding="utf-8") != text:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text, encoding="utf-8")
+    if out_dir.exists():
+        for path in sorted(out_dir.rglob("*"), reverse=True):
+            if path.is_file() and path.name != "index.rst" and path not in pages:
+                path.unlink()
+            elif path.is_dir() and not any(path.iterdir()):
+                path.rmdir()
+    return [path.stem for path in pages if path.parent == out_dir]
 
 
 def generate_skill_pages(app):

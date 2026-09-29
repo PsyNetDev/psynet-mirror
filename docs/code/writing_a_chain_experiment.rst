@@ -141,7 +141,7 @@ difficulty changes direction. At the end, it scores each staircase as the mean
 parameter at its reversals and passes or fails the participant against
 ``min_passing_score`` and ``max_passing_score`` if you set them.
 
-.. _demos_catalog_gibbs:
+.. _gibbs_participant_groups:
 
 Writing a Gibbs Sampling with People experiment
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

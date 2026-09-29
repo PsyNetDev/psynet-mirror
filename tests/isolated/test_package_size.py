@@ -1,5 +1,6 @@
 import os
 
+import click
 import pytest
 
 from psynet.package_size import (
@@ -35,7 +36,7 @@ def test_get_exp_max_size_mb_reads_explicit_env(monkeypatch):
 @pytest.mark.parametrize("value", ["1GB", "0", "-5"])
 def test_get_exp_max_size_mb_rejects_invalid_env(monkeypatch, value):
     monkeypatch.setenv("EXP_MAX_SIZE_MB", value)
-    with pytest.raises(ValueError, match="positive integer number of megabytes"):
+    with pytest.raises(click.UsageError, match="positive integer number of megabytes"):
         get_exp_max_size_mb()
 
 

@@ -100,6 +100,8 @@ Bundled demos in the PsyNet repository don't have a ``constraints.txt``,
 because they use the repository's development environment. A copied demo gets
 one from ``psynet setup``.
 
+.. _dependencies_handwritten_constraints:
+
 Write constraints by hand
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 

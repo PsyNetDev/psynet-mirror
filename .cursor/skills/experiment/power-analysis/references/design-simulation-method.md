@@ -89,8 +89,12 @@ estimand:
 - The **margin of error** is half the width of an approximate confidence
   interval, about 1.96 sampling standard errors at 95% confidence. An estimate
   of 0.7 with a margin of error of 0.2 means roughly 0.5 to 0.9.
-- The **standardized margin of error** divides the margin of error by the noise
-  in a single response, so that designs are comparable across response scales.
+- The **standardized margin of error** divides the margin of error by a fixed
+  **reference standard deviation**: the noise in a single response under the
+  reference assumption set. This makes designs comparable across response
+  scales. Use the same reference in every scenario. Dividing each scenario by
+  its own noise would relax the requirement as responses get noisier, so the
+  noisiest assumption set would appear to need the fewest participants.
 - **Bias** is the average difference between the estimates and the true value
   built into the response model. A precise but biased estimator is not
   acceptable.
@@ -98,7 +102,9 @@ estimand:
   true value, when the estimator produces intervals.
 
 Unless the experimenter chooses otherwise, require a 95% margin of error of at
-most 0.20 single-response standard deviations for every primary estimand. For a
+most 0.20 reference standard deviations for every primary estimand. When the
+research question has a natural unit, such as points on the rating scale, the
+experimenter can instead state the required margin of error in that unit. For a
 profile or other set of values, the largest margin of error across the set is a
 conservative criterion.
 

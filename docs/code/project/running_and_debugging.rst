@@ -15,8 +15,7 @@ Start the local database and cache, then the experiment:
 they aren't running. ``psynet debug local`` starts the same web, worker and
 clock processes that a deployed experiment runs, which takes 10 to 15
 seconds, then opens the dashboard and a participant session in your browser.
-Press
-:kbd:`Ctrl+C` in the terminal to stop it.
+Press :kbd:`Ctrl+C` in the terminal to stop it.
 
 Most code changes, such as editing a page, adding timeline elements or
 changing code block logic, take effect when you save the file and refresh the
@@ -60,13 +59,12 @@ read that part of the PsyNet source to see what it expected. A breakpoint
 just before the failing line shows the values of the local variables.
 
 If the cause is still unclear, simplify the experiment until the error
-disappears, for example by commenting out parts of the timeline. The
-smallest version that still fails is also the easiest to share when asking
-for help.
+disappears, for example by commenting out parts of the timeline. Share the
+smallest version that still fails when you ask for help.
 
 Inspect the experiment in the dashboard
 ---------------------------------------
 
 The dashboard (see :ref:`experiment_dashboard`) shows the current state of
-the experiment. Its database tab lists the objects in the database, and its
-monitor tab shows the experiment's networks.
+the experiment. Its **Database** tab lists the objects in the database, and
+**Monitor > Monitoring** shows the experiment's networks.

@@ -4,9 +4,9 @@ Upgrading to PsyNet 14
 
 This checklist migrates an existing experiment onto PsyNet 14: in-place
 timeline transitions, recruiter and leave APIs, changed defaults, setup and
-deployment files, participant failure, groups, assets and exports. It is the single source of truth for **migration order and search
-targets**. Frontend patterns and full examples live in
-:doc:`/code/pages/custom_front_ends`.
+deployment files, participant failure, groups, assets and exports. Work
+through the steps in order; each lists what to search for. Frontend patterns
+and full examples are in :doc:`/code/pages/custom_front_ends`.
 
 The Cursor skill ``/upgrade-to-psynet-14`` is a thin wrapper that points agents
 here. Agents read this page with
@@ -31,7 +31,7 @@ Also see: :doc:`/whats_new/psynet_14`,
    files, participant failure, responses, groups, assets, exports, and
    validation).
 
-To surface SPA contract errors, run ``psynet debug local`` /
+To find pages that can't load in place, run ``psynet debug local`` /
 ``psynet test local`` and read the traceback. Incompatible pages raise one
 short message that lists **error codes** in parentheses; use the glossary
 below to map each code to a checklist step.
@@ -426,7 +426,7 @@ Search scripts and notes for ``--assets all``, ``--legacy``,
 * ``--assets`` takes ``collected`` (the default: files created during the
   study) or ``none``. ``--assets all``, ``--legacy`` and ``--anonymize`` are
   removed, and stimuli declared in the timeline are not exported.
-* Tables that were never used have no CSV; check ``table_row_counts`` in
+* Empty tables have no CSV; check ``table_row_counts`` in
   ``manifest.json`` before reading one.
 * Yes/no columns contain ``True`` and ``False`` rather than ``t`` and
   ``f``, and the ``type`` column of ``assets/manifest.csv`` uses the new
@@ -453,16 +453,15 @@ to generate the standard support files.
 
     psynet test local
 
-``psynet test local`` checks static timeline pages for SPA contract problems
-before bots run, so migration errors should appear directly in the pytest
-failure. PageMaker-created pages are still checked when first rendered.
+Before the bots run, ``psynet test local`` checks static timeline pages
+against the in-place page requirements, so migration errors appear directly
+in the test failure. Pages created by a ``PageMaker`` are checked when they
+are first rendered.
 
 Confirm the default in-place mode works (opt-out removed if possible), page
 modules activate without console errors, cleanup runs for persistent
 listeners, and ``config.txt`` no longer uses ``mturk``, ``bots``, or
 ``multi``.
-
-PsyNet-repository Playwright coverage is optional and harness-specific.
 
 Error codes
 -----------
@@ -476,7 +475,7 @@ only author-provided template content, not PsyNet's own timeline shell or
 assets supplied through supported page arguments. A page that fails it may
 still work in legacy reload mode.
 
-SPA incompatibility messages list codes such as
+The error message for a page that can't load in place lists codes such as
 ``(error codes: complete_template, style_tag)``. Use them to jump to the
 relevant step:
 

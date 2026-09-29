@@ -6,33 +6,6 @@ Troubleshooting local development
 =================================
 
 
-Docker unauthorized
-^^^^^^^^^^^^^^^^^^^
-
-Suppose you see an error message like this when trying to run an experiment using Docker:
-
-.. code:: bash
-
-     => ERROR [internal] load metadata for registry.gitlab.com/psynetdev/psynet:vX.Y.Z
-     => [auth] psynetdev/psynet:pull token for registry.gitlab.com
-    ------
-     > [internal] load metadata for registry.gitlab.com/psynetdev/psynet:vX.Y.Z:
-    ------
-    Dockerfile:1
-    --------------------
-       1 | >>> # syntax = docker/dockerfile:1.2
-       2 |     #
-       3 |     # Note - the syntax of this Dockerfile differs in several ways from the sample Dockerfile
-    --------------------
-    ERROR: failed to solve: failed to authorize: failed to fetch oauth token: unexpected status: 401 Unauthorized
-
-This normally means you have out-of-date credentials in your Docker client. Try running the following:
-
-.. code:: bash
-
-    docker login registry.gitlab.com
-
-
 .. _develop_troubleshooting_docker_space:
 
 Docker no space left on device
@@ -89,17 +62,23 @@ Suppose you see an error message like this:
     connection to server at "localhost" (::1), port 5432 failed: Connection refused
         Is the server running on that host and accepting TCP/IP connections?
 
-This means that your local Postgres database cannot be accessed.
-This would normally only happen if you are not using PsyNet through Docker.
+PostgreSQL isn't running. If you use the Docker services that
+:doc:`/install` sets up, check and start them from the experiment directory:
 
-If you are on a Mac, you can check the status of your database by running this command:
+.. code:: bash
+
+    psynet services check
+    psynet services ensure
+
+The rest of this section applies only to a PostgreSQL installed with Homebrew
+on a Mac. Check the status of your database by running this command:
 
 .. code:: bash
 
     brew services
 
-If you don't see a line with ``postgresql``, you have not installed PostgreSQL.
-Follow the virtual environment installation instructions to do so.
+If you don't see a line with ``postgresql``, PostgreSQL isn't installed with
+Homebrew; use the Docker services above instead.
 
 If you do see a line with ``postgresql``, it probably has ``error`` written next to it.
 You need to get access to the logs to debug this error.
@@ -212,10 +191,8 @@ experiment with the Heroku CLI's ``heroku local`` command, so a broken Heroku
 CLI installation can stop local tests from starting.
 
 
-If you're experiencing issues with Heroku CLI not responding or encountering errors, you can try uninstalling and reinstalling it first. After that, enable debugging environment variables to get more detailed logs and information about what might be going wrong. This can help you diagnose and resolve the problem more effectively.
-
-
-If the CLI is not responding or you're experiencing issues, you can try uninstalling and reinstalling it.
+If the Heroku CLI doesn't respond, uninstall and reinstall it, then turn on its
+debug output to see what goes wrong.
 
 .. code-block:: bash
 

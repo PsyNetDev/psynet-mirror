@@ -19,8 +19,6 @@ or deployment command after that auto-created file stops before copying files,
 whether the file was created by setup or by the launch command itself.
 The message lists files covered by ``.gitignore`` but not by the new policy.
 Git-ignored files may still be deployed after that one-time review.
-In-repo demo prepare and pytest's temporary scaffold skip that pause so the
-first local test or debug can run.
 
 Preview the complete deployment plan:
 
@@ -85,22 +83,12 @@ debug and test runs may use a newly initialized repository.
 Pregenerated stimuli
 --------------------
 
-Put public audio, images, and video in ``static/`` and link them with
-:func:`~psynet.media.static_url_for` (or a literal ``/static/...`` URL).
-Gitignored files under ``static/`` are still deployed
-unless you exclude them. Generated ``static/assets`` stays excluded.
+Git-ignored files under ``static/`` are deployed unless ``deploy.toml``
+excludes them; the generated ``static/assets`` folder stays excluded. The
+deployment plan has a size limit, described in
+:doc:`/deploy/how_deployment_works`. PsyNet commands apply PsyNet's default
+limit, but ``dallinger verify`` run on its own uses Dallinger's smaller
+default unless you set ``EXP_MAX_SIZE_MB``.
 
-The default package-size limit is 1024 MB so a typical stimulus set can ship
-in the image. That ceiling is meant for ``static/`` media. Before setting
-``EXP_MAX_SIZE_MB`` higher, run ``dallinger deployment-files list`` and
-exclude anything that should stay local.
-
-PsyNet commands apply that 1024 MB default for Dallinger's size check.
-``dallinger verify`` on its own still uses Dallinger's 256 MB default unless
-you set ``EXP_MAX_SIZE_MB``.
-
-``compile_nodes_from_directory`` now requires the media
-directory to live under ``static/`` and stores ``/static/...`` URLs on each
-node definition (default key ``url``) instead of creating assets. Move files out of ``data/`` (or any directory outside ``static/``)
-and pass ``self.definition["url"]`` to prompts. Nodes are compiled in
-alphabetical order by participant group, block, and filename.
+To move stimuli into ``static/``, follow step 18 of
+:doc:`upgrading_to_psynet_14` and :doc:`/code/using_stimuli`.

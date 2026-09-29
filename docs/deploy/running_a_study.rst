@@ -164,6 +164,7 @@ recruiting. Set the recruiter in ``config.txt``:
 
 .. code-block:: ini
 
+   [Config]
    recruiter = generic
 
 Shorten the experiment if that makes piloting easier (for example fewer
@@ -202,6 +203,7 @@ live recruiter, and commit:
 
 .. code-block:: ini
 
+   [Config]
    recruiter = prolific
 
 For CINT, ``get_lucid_settings()`` sets the recruiter; for Lab Recruiter,

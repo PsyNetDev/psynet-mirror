@@ -148,4 +148,6 @@ Terminating an instance
 ``teardown`` terminates the instance, which deletes its disk with every
 experiment database on it. It then removes the DNS records for ``--dns-host``
 and both server registrations. Without ``--dns-host``, the DNS records and the
-``--dns-host`` registration stay behind. Export all data first.
+``--dns-host`` registration stay behind. Export all data first. Teardown only
+finds a running instance: start a stopped one first, or terminate it in the
+AWS console and remove its DNS records by hand.

@@ -171,6 +171,23 @@ sections). Each section's ``kind`` selects one panel:
   supported for older packets;
 * ``checks`` panels are omitted when no checks are recorded.
 
+The ``screenshots`` panel shows the images under ``artifacts/screenshots/``.
+Their captions come from the optional ``artifacts/screenshots/manifest.json``,
+whose keys are paths relative to ``artifacts/`` (a leading ``artifacts/`` is
+also accepted):
+
+.. code-block:: json
+
+   {
+     "captions": {
+       "screenshots/01-consent.png": "Consent page.",
+       "screenshots/02-rating-trial.png": "First rating trial."
+     }
+   }
+
+A screenshot without a matching key is captioned with its file name, so a key
+such as ``"01-consent.png"`` is ignored.
+
 Profiles and extensions
 -----------------------
 

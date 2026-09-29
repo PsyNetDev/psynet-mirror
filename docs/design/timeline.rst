@@ -90,8 +90,9 @@ end, wherever they are in the timeline. You can also place an unsuccessful
 end page explicitly, for example at the end of a branch for ineligible
 participants.
 
-If the experiment pays participants, those who leave early are paid what
-they have earned so far. See :doc:`/code/trials/participant_and_trial_failure`
+If the experiment pays participants, those who leave early are usually paid
+for the parts they completed, depending on the recruiter; see
+:doc:`participants`. See :doc:`/code/trials/participant_and_trial_failure`
 for what happens to their data.
 
 Time estimates

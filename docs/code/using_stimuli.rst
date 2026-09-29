@@ -27,9 +27,9 @@ Pass the URL to the page, for example:
 :class:`~psynet.timeline.MediaSpec` accepts URLs in the same way, for pages
 that play several files, such as the similarity demo's pair of sounds.
 
-The deployment package has a size limit, currently 1024 MB by default (see
-:doc:`/code/project/experiment_directory`). Larger sets of pregenerated files
-can be hosted elsewhere and linked by URL, as described in
+The deployment package has a size limit (see
+:doc:`/deploy/how_deployment_works`). Larger sets of pregenerated files can
+be hosted elsewhere and linked by URL, as described in
 :doc:`/code/stimuli_on_s3`.
 
 Files generated from code

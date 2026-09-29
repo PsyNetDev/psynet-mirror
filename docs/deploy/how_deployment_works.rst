@@ -5,14 +5,18 @@ A deployed experiment runs on a web server so that participants can take part
 over the internet. You run every deployment command on your own computer, from
 the experiment directory; PsyNet and Dallinger connect to the server over SSH.
 
+.. _deployment_build_context:
+
 What gets deployed
 ------------------
 
 PsyNet packages the experiment directory, leaving out the files that
-``deploy.toml`` excludes (see :ref:`deployment_build_context`). Docker on the
-server builds this package into an image that contains the experiment code and
-its Python dependencies. The image is built on the server itself, so no Docker
-registry is involved.
+``deploy.toml`` excludes. Docker on the server builds this package into an
+image that contains the experiment code and its Python dependencies. The image
+is built on the server itself, so no Docker registry is involved. Running
+``docker build`` by hand in the experiment directory ignores ``deploy.toml``
+and can send files such as ``.env`` and ``.venv`` to Docker; use
+``psynet debug local --docker`` or a deploy command instead.
 
 The same list of files, the **deployment plan**, is used for local debug
 staging and for every deployment. Only ``deploy.toml`` decides what is in it;

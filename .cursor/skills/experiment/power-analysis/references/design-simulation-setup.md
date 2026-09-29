@@ -131,6 +131,7 @@ method = "precision-estimation"
 metric = "standardized_margin_of_error"
 confidence_level = 0.95
 threshold = 0.20
+reference_sd = 1.0  # trial_noise_sd of the reference assumptions, fixed across scenarios
 
 [design]
 n_participants = [40, 60, 80, 100]
@@ -157,6 +158,13 @@ be imported:
 ```shell
 python -m audit.simulate.design.core
 ```
+
+`psynet[experiment]` already installs NumPy, pandas and Joblib, but not
+statsmodels, PyArrow (for Parquet) or the notebook tools (Plotly, Jupyter,
+nbconvert). Add the
+packages the simulation and notebook import to `requirements.txt` and rerun
+`psynet setup`; packages installed with `uv pip install` alone are removed by
+the next `psynet setup`.
 
 For each scenario, the script simulates every replicate at the trial level with
 `sample_responses`, fits the planned analysis to each simulated dataset, and
@@ -226,15 +234,16 @@ failed fits. For the decision, add `decision_metric`, `decision_value`,
 the notebook can compare them.
 
 For one target in one scenario, with `estimates` holding one estimate per
-replicate:
+replicate and `reference_sd` read from `[decision]` in `config.toml`:
 
 ```python
+from statistics import NormalDist
+
 import numpy as np
-from scipy import stats
 
 sampling_se = estimates.std(ddof=1)
-margin_of_error = stats.norm.ppf(0.975) * sampling_se
-standardized_margin_of_error = margin_of_error / trial_noise_sd
+margin_of_error = NormalDist().inv_cdf(0.975) * sampling_se
+standardized_margin_of_error = margin_of_error / reference_sd
 bias = (estimates - true_value).mean()
 margin_of_error_mcse = margin_of_error / np.sqrt(2 * (replicates - 1))
 ```
