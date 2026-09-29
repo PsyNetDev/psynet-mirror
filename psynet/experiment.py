@@ -1398,35 +1398,37 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         context=None,
         **kwargs,
     ):
-        """
+        """Return the experiment's basic data, a summary for analysis defined by the experimenter.
+
         Parameters
         ----------
+        context : str, optional
+            Where the data is being requested:
 
-        context: str
-             Will receive a string that describes the context in which the function has been called.
-             Possibles include:
-             - "dashboard": The function is producing data to be displayed in the dashboard
-             - "export": The function is being called within psynet export
-             - "backup": The function is being called within PsyNet autobackups
-             The default implementation of get_basic_data ignores this context parameter and just returns the same data in all
-             contexts, but experimenters can optionally make their logical conditional on this variable.
+            - ``"monitor"``: the dashboard's Basic data tab;
+            - ``"route"``: the ``/basic_data`` HTTP endpoint;
+            - ``"export"``: ``psynet export``;
+            - ``"backup"``: automatic backups.
 
-        ** kwargs:
-            Dictionary of arbitrary URL GET parameters that can optionally be used by the get_basic_data implementation to
-            further customiser what data is provided.
+            The default implementation ignores it; an override can return
+            different data depending on the context.
+        **kwargs
+            Query parameters from the dashboard tab or the ``/basic_data``
+            endpoint, including ``dashboard_user`` and ``dashboard_password``
+            for the endpoint. Empty for exports and backups.
 
         Returns
         -------
         dict | None
-            A dictionary of data to be returned to the client. The keys of the dictionary should be strings, and the
-            values can be any JSON-serializable object. Return ``None`` if no basic data is provided.
+            A dictionary of JSON-serializable data, saved as ``basic_data.json``,
+            or a dictionary of pandas data frames, each saved as a CSV file under
+            ``basic_data/``. Return ``None`` if the experiment defines no basic
+            data. See :doc:`/data/basic_data`.
 
         Raises
         ------
         DataError
-            A custom exception that can be raised if the data cannot be retrieved for some reason.
-
-        See `artifact_storage` for an example.
+            If the data cannot be retrieved.
         """
         return None
 

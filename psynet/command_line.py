@@ -1692,6 +1692,11 @@ def run_pre_checks(mode, local_, heroku=False, docker=False, app=None):
             config.load()
         check_todos_before_deployment()
 
+        # Docker deploys set SKIP_DEPENDENCY_CHECK for Dallinger later in
+        # _pre_launch, so the server would otherwise build from a stale lockfile.
+        if not is_in_repo_experiment() and not os.environ.get("SKIP_DEPENDENCY_CHECK"):
+            _check_constraints()
+
         if docker:
             if config.get("docker_image_base_name", None) is None:
                 raise click.UsageError(
@@ -2270,8 +2275,13 @@ def _check_constraints(spinner=None):
             + generate_constraints_cmd
         )
 
-    from .constraints_compile import constraints_are_up_to_date
+    from .constraints_compile import (
+        constraints_are_hand_written,
+        constraints_are_up_to_date,
+    )
 
+    if constraints_are_hand_written(constraints_path):
+        return
     if not constraints_are_up_to_date(
         requirements_path=requirements_path,
         constraints_path=constraints_path,

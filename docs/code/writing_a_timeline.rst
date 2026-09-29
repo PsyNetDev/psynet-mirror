@@ -40,6 +40,10 @@ With ``wait=False``, the participant carries on while the function runs. The
 
 .. literalinclude:: ../../demos/features/async_codeblock/experiment.py
    :start-at: def set_participant_var1
+   :end-before: class Exp
+
+.. literalinclude:: ../../demos/features/async_codeblock/experiment.py
+   :start-at: timeline = Timeline(
    :end-before: def test_check_bot
    :dedent: 4
 
@@ -75,7 +79,7 @@ experiment class's ``variables`` dictionary, as in
    :dedent: 4
 
 The same dictionary overrides the defaults of PsyNet's built-in variables,
-such as ``max_participant_payment``; see
+as ``max_participant_payment`` does here; see
 :class:`~psynet.experiment.Experiment` for the list. Change an experiment
 variable during the experiment with ``set``:
 

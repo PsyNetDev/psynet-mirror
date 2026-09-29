@@ -1,8 +1,11 @@
 from datetime import datetime
 
 import numpy
+from dallinger import db
 from dallinger.experiment import experiment_route
+from dallinger.experiment_server.utils import error_response, success_response
 from dominate import tags
+from flask import request
 
 import psynet.experiment
 from psynet.consent import MainConsent
@@ -15,6 +18,7 @@ from psynet.modular_page import (
     TimedPushButtonControl,
 )
 from psynet.page import InfoPage
+from psynet.participant import Participant
 from psynet.timeline import (
     CodeBlock,
     Module,
@@ -31,6 +35,7 @@ class Exp(psynet.experiment.Experiment):
 
     variables = {
         "new_variable": "some-value",
+        "max_participant_payment": 10.0,
     }
 
     config = {
@@ -42,6 +47,18 @@ class Exp(psynet.experiment.Experiment):
     @classmethod
     def custom_route(cls):
         return f"A custom route for {cls.__name__}."
+
+    @experiment_route("/set_dollars", methods=["POST"])
+    @classmethod
+    def set_dollars(cls):
+        participant = Participant.query.filter_by(
+            id=int(request.values["participant_id"])
+        ).one()
+        if participant.unique_id != request.values["unique_id"]:
+            return error_response(error_text="Invalid participant")
+        participant.var.dollars = float(request.values["dollars"])
+        db.session.commit()
+        return success_response()
 
     timeline = Timeline(
         MainConsent(),

@@ -57,10 +57,9 @@ Check the code and dependencies
   remote.
 - The PsyNet and Dallinger versions you tested locally must match
   ``requirements.txt``. If you change ``requirements.txt``, regenerate and
-  commit ``constraints.txt`` with ``psynet generate-constraints``. SSH
-  deployments build the image from whatever ``constraints.txt`` they
-  receive, so run ``psynet check-constraints`` before deploying. See
-  :doc:`/code/project/dependencies`.
+  commit ``constraints.txt`` with ``psynet generate-constraints``. Remote
+  deployment refuses to start while a generated ``constraints.txt`` is out
+  of date with ``requirements.txt``. See :doc:`/code/project/dependencies`.
 - Remote deployment refuses to start while the experiment contains
   ``# TODO`` or ``// TODO`` comments in ``.py``, ``.html`` or ``.js``
   files. Resolve them, or set ``SKIP_TODO_CHECK=1``.

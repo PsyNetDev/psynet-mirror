@@ -885,10 +885,6 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         )
 
     @property
-    def locale(self):
-        return self.var.get("locale", default=None)
-
-    @property
     def failure_cascade(self):
         """Return no owned objects. ``failed`` is not an ownership marker."""
         return []

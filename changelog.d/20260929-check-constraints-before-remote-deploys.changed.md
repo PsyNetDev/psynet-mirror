@@ -1,0 +1,1 @@
+Remote deployments now stop when a generated `constraints.txt` is out of date with `requirements.txt`, instead of building the Docker image from the stale lockfile. A `constraints.txt` without the generator's header counts as written by hand, as in Dallinger: `psynet setup`, `psynet check-constraints` and the deployment check leave it unchanged.

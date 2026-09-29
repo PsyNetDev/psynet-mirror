@@ -106,14 +106,9 @@ Write constraints by hand
 Generation can fail when Dallinger's pins leave no compatible version of a
 package. In that case, edit ``constraints.txt`` by hand, for example by
 removing the pin on the conflicting package, and delete the header.
-Without the header, Dallinger's checks during debugging and deployment
-treat the file as hand-written and leave it alone. ``psynet setup``
-regenerates any file that lacks the header, so install a hand-written file
-directly:
-
-.. code-block:: bash
-
-    uv pip sync constraints.txt --strict
+Without the header, ``psynet setup`` and the checks during debugging and
+deployment treat the file as hand-written and leave it alone, so keep it in
+step with ``requirements.txt`` yourself.
 
 Add system packages
 -------------------

@@ -77,28 +77,8 @@ server's state. Routes that save information use ``methods=["POST"]`` and are
 called with ``dallinger.post()``. They must call ``db.session.commit()`` after
 changing database objects:
 
-.. code-block:: python
-
-    from dallinger import db
-    from dallinger.experiment import experiment_route
-    from dallinger.experiment_server.utils import error_response, success_response
-    from flask import request
-
-    from psynet.participant import Participant
-
-
-    class Exp(psynet.experiment.Experiment):
-        @experiment_route("/set_dollars", methods=["POST"])
-        @classmethod
-        def set_dollars(cls):
-            participant = Participant.query.filter_by(
-                id=int(request.values["participant_id"])
-            ).one()
-            if participant.unique_id != request.values["unique_id"]:
-                return error_response(error_text="Invalid participant")
-            participant.var.dollars = float(request.values["dollars"])
-            db.session.commit()
-            return success_response()
+.. literalinclude:: ../../../demos/experiments/timeline/experiment.py
+   :pyobject: Exp.set_dollars
 
 .. code-block:: javascript
 
