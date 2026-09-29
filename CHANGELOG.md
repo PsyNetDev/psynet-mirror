@@ -1,5 +1,18 @@
 # CHANGELOG
 
+## [14.0.0rc2](https://gitlab.com/PsyNetDev/PsyNet/-/tags/v14.0.0rc2) Release candidate - 2026-09-29
+
+### Changed
+
+- Changed Lucid recruitment to stop new entrants as soon as finished plus working participants cover the target, by lowering the survey's total quota while it stays live. The survey is set to complete once nobody is still working, and entry reopens if a working participant drops out. Experiments no longer need to close the Lucid survey themselves.
+
+### Fixed
+
+- Fixed the Lucid deployment test closing its survey while participants were still working, which made Lucid record their completes as Survey Closed.
+- Fixed Lucid submissions not sending PsyNet's server-side complete or terminate call, so Lucid only recorded a complete when the participant's browser made it back to the panel.
+- Fixed Prolific participants who leave early seeing an error page instead of the "Your submission has been sent to Prolific" confirmation when the page reloads after Submit.
+- Fixed the wrong-browser and mobile-device warnings, which crashed before they appeared, so participants were neither warned nor, on Lucid, sent back to the panel.
+
 ## [14.0.0rc1](https://gitlab.com/PsyNetDev/PsyNet/-/tags/v14.0.0rc1) Release candidate - 2026-09-23
 
 ### Breaking Changes
