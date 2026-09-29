@@ -515,7 +515,7 @@ def test_debug_legacy_starts_four_gunicorn_workers(monkeypatch):
     ]
 
 
-def test_debug_auto_reload_uses_base_port_and_no_browsers(monkeypatch, tmp_path):
+def test_debug_auto_reload_uses_base_port_and_no_browsers(monkeypatch):
     import os
 
     from psynet.command_line import _debug_auto_reload
@@ -527,10 +527,7 @@ def test_debug_auto_reload_uses_base_port_and_no_browsers(monkeypatch, tmp_path)
             calls.append(kwargs)
 
     config = Mock()
-    config.get.side_effect = {
-        "base_port": 5123,
-        "dallinger_develop_directory": str(tmp_path),
-    }.get
+    config.get.side_effect = {"base_port": 5123}.get
     monkeypatch.setattr("psynet.command_line.get_config", lambda: config)
     monkeypatch.setattr("psynet.command_line.run_pre_auto_reload_checks", lambda: None)
     monkeypatch.setattr("psynet.command_line.db.session.commit", lambda: None)
@@ -3824,7 +3821,6 @@ def test_worker_cleanup_spares_other_experiments(monkeypatch, tmp_path):
     from psynet.command_line import (
         LOCAL_EXPERIMENT_DIR_ENV,
         _refuse_if_other_experiment_uses_database,
-        _refuse_if_other_experiment_uses_develop_directory,
         kill_psynet_worker_processes,
     )
 
@@ -3836,22 +3832,18 @@ def test_worker_cleanup_spares_other_experiments(monkeypatch, tmp_path):
     monkeypatch.setenv("DATABASE_URL", database_url)
     monkeypatch.chdir(own_dir)
 
-    def spawn(directory, cwd):
+    def spawn(directory):
         env = {**os.environ, LOCAL_EXPERIMENT_DIR_ENV: os.path.realpath(directory)}
         return subprocess.Popen(
             [sys.executable, "-c", "import time; time.sleep(60)", "dallinger_heroku_"],
             env=env,
-            cwd=cwd,
         )
 
-    own, other = spawn(own_dir, cwd=tmp_path), spawn(other_dir, cwd=other_dir)
+    own, other = spawn(own_dir), spawn(other_dir)
     try:
         time.sleep(0.5)
         with pytest.raises(click.ClickException, match=str(other.pid)):
             _refuse_if_other_experiment_uses_database()
-        with pytest.raises(click.ClickException, match=str(other.pid)):
-            _refuse_if_other_experiment_uses_develop_directory(other_dir)
-        _refuse_if_other_experiment_uses_develop_directory(tmp_path)
         kill_psynet_worker_processes()
         assert own.wait(timeout=10) is not None
         assert other.poll() is None
