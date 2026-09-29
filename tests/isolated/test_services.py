@@ -14,6 +14,14 @@ from psynet.services import (
 )
 
 
+@pytest.fixture(autouse=True)
+def default_service_urls(monkeypatch):
+    """Keep ensure tests independent of services running on this machine."""
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("REDIS_URL", raising=False)
+    monkeypatch.setattr("psynet.services._port_in_use", lambda host, port: False)
+
+
 def _ok_checks():
     return [
         ServiceCheck("PostgreSQL", True, "reachable"),
@@ -61,8 +69,8 @@ def test_services_ensure_starts_when_needed(monkeypatch):
     monkeypatch.setattr("psynet.services.check_local_services", fake_checks)
     monkeypatch.setattr("psynet.services._is_interactive", lambda: False)
 
-    def fake_start():
-        calls["started"] = True
+    def fake_start(names):
+        calls["started"] = names
 
     monkeypatch.setattr("psynet.services.start_local_services_via_docker", fake_start)
     monkeypatch.setattr(
@@ -72,8 +80,39 @@ def test_services_ensure_starts_when_needed(monkeypatch):
 
     result = CliRunner().invoke(psynet, ["services", "ensure", "--yes"])
     assert result.exit_code == 0, result.output
-    assert calls["started"] is True
+    assert calls["started"] == {"PostgreSQL", "Redis"}
     assert "Local services are ready." in result.output
+
+
+@pytest.mark.parametrize(
+    "database_url, port_in_use, expected",
+    [
+        ("postgresql://u:p@localhost:5433/db", False, "localhost:5433"),
+        (None, True, "already listening on localhost:5432"),
+    ],
+)
+def test_services_ensure_does_not_fight_other_postgres(
+    monkeypatch, database_url, port_in_use, expected
+):
+    if database_url:
+        monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setattr("psynet.services._port_in_use", lambda h, p: port_in_use)
+    monkeypatch.setattr("psynet.services._docker_container_running", lambda n: False)
+    monkeypatch.setattr(
+        "psynet.services.check_local_services",
+        lambda: [
+            ServiceCheck("PostgreSQL", False, "password authentication failed"),
+            ServiceCheck("Redis", True, "responded to PING"),
+        ],
+    )
+    monkeypatch.setattr(
+        "psynet.services.start_local_services_via_docker",
+        lambda names: pytest.fail("must not start Docker"),
+    )
+
+    result = CliRunner().invoke(psynet, ["services", "ensure", "--yes"])
+    assert result.exit_code != 0
+    assert expected in result.output
 
 
 def test_services_ensure_noninteractive_requires_yes(monkeypatch):
@@ -81,7 +120,7 @@ def test_services_ensure_noninteractive_requires_yes(monkeypatch):
     monkeypatch.setattr("psynet.services._is_interactive", lambda: False)
     monkeypatch.setattr(
         "psynet.services.start_local_services_via_docker",
-        lambda: pytest.fail("must not start without --yes"),
+        lambda names: pytest.fail("must not start without --yes"),
     )
 
     result = CliRunner().invoke(psynet, ["services", "ensure"])

@@ -37,6 +37,10 @@ import click
 
 _REDIS_CONTAINER = "dallinger_redis"
 _POSTGRES_CONTAINER = "dallinger_postgres"
+_DOCKER_SERVICES = {
+    "PostgreSQL": (_POSTGRES_CONTAINER, 5432, "DATABASE_URL"),
+    "Redis": (_REDIS_CONTAINER, 6379, "REDIS_URL"),
+}
 _READY_WAIT_SECONDS = 30
 _READY_POLL_INTERVAL_SECONDS = 0.5
 
@@ -384,8 +388,56 @@ def _ensure_docker_container(name: str, run_args: list[str]) -> None:
     _run_docker(run_args, description=f"create Docker container {name}")
 
 
-def start_local_services_via_docker() -> None:
-    """Start localhost-mapped Postgres/Redis containers used by venv debug."""
+def _service_address(name: str) -> tuple[str, int]:
+    """Return the configured ``(host, port)`` of a service."""
+    if name == "PostgreSQL":
+        return _postgres_connection_params(_postgres_url())[:2]
+    return _host_port_from_url(
+        _redis_url(), schemes={"redis", "rediss"}, default_port=6379
+    )
+
+
+def _port_in_use(host: str, port: int) -> bool:
+    try:
+        with socket.create_connection((host, port), timeout=1):
+            return True
+    except OSError:
+        return False
+
+
+def _docker_start_blocker(check: ServiceCheck) -> str | None:
+    """Return why a PsyNet Docker container cannot fix a failed check, if so."""
+    container, default_port, env_var = _DOCKER_SERVICES[check.name]
+    try:
+        host, port = _service_address(check.name)
+    except ValueError as exc:
+        return f"{env_var} is invalid ({exc})."
+    if host not in {"localhost", "127.0.0.1", "::1"} or port != default_port:
+        return (
+            f"{check.name} is configured at {host}:{port} via {env_var}; "
+            f"PsyNet's Docker container only serves localhost:{default_port}. "
+            f"Start the service at {host}:{port}, or unset {env_var}."
+        )
+    if _port_in_use(host, port) and not _docker_container_running(container):
+        return (
+            f"Another {check.name} install is already listening on "
+            f"localhost:{port}, but PsyNet cannot use it ({check.detail}). "
+            f"Set {env_var} to a URL that install accepts, or stop it; PsyNet "
+            "will not start a second server on the same port."
+        )
+    return None
+
+
+def start_local_services_via_docker(names: set[str] | None = None) -> None:
+    """Start localhost-mapped Postgres/Redis containers used by venv debug.
+
+    Parameters
+    ----------
+    names :
+        Services to start (``"PostgreSQL"``, ``"Redis"``); all by default.
+    """
+    if names is None:
+        names = set(_DOCKER_SERVICES)
     if not docker_available():
         raise click.ClickException(
             "Docker is not available, so PsyNet cannot start PostgreSQL/Redis "
@@ -394,6 +446,13 @@ def start_local_services_via_docker() -> None:
         )
 
     click.echo("Starting local services with Docker...")
+    if "Redis" in names:
+        _ensure_redis_container()
+    if "PostgreSQL" in names:
+        _ensure_postgres_container()
+
+
+def _ensure_redis_container() -> None:
     _ensure_docker_container(
         _REDIS_CONTAINER,
         [
@@ -411,6 +470,9 @@ def start_local_services_via_docker() -> None:
             "yes",
         ],
     )
+
+
+def _ensure_postgres_container() -> None:
     _ensure_docker_container(
         _POSTGRES_CONTAINER,
         [
@@ -485,6 +547,15 @@ def ensure_local_services(*, assume_yes: bool = False, strict: bool = True) -> b
     if all_ok:
         return True
 
+    failed = [check for check in checks if not check.ok]
+    blockers = [b for b in map(_docker_start_blocker, failed) if b]
+    if blockers:
+        message = "\n".join(blockers)
+        if strict:
+            raise click.ClickException(message)
+        click.echo(f"Warning: {message}", err=True)
+        return False
+
     if not assume_yes:
         if not _is_interactive():
             message = (
@@ -508,7 +579,7 @@ def ensure_local_services(*, assume_yes: bool = False, strict: bool = True) -> b
             return False
 
     try:
-        start_local_services_via_docker()
+        start_local_services_via_docker({check.name for check in failed})
     except click.ClickException as exc:
         if strict:
             raise

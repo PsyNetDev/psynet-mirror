@@ -2019,7 +2019,7 @@ class AssetStorage:
         if not url.startswith("http"):
             host = get_from_config("host")
             if host == "0.0.0.0":
-                prefix = "http://localhost:5000"
+                prefix = f"http://localhost:{get_from_config('base_port')}"
             else:
                 prefix = host
             url = prefix + url

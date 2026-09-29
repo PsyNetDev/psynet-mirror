@@ -124,6 +124,40 @@ where ``postgresql@14`` should be replaced with the exact name for the Postgres 
 If that doesn't work, try searching Google for help. If you find another solution,
 please share your experience here.
 
+.. _running_several_experiments:
+
+Running several experiments at once
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+By default every local experiment uses the same PostgreSQL database, the same
+Redis database, and port 5000, so starting a second experiment fails with
+"Another local experiment is using the same database". To run two experiments
+side by side, give the second one its own database, Redis database and port.
+PostgreSQL and Redis can stay on their usual ports 5432 and 6379.
+
+.. code:: bash
+
+    # Once: create a second database (here inside the psynet services container)
+    docker exec dallinger_postgres createdb -U dallinger second_experiment
+
+    # In the second experiment's terminal
+    export DATABASE_URL=postgresql://dallinger:dallinger@localhost/second_experiment
+    export REDIS_URL=redis://localhost:6379/1
+    psynet debug local
+
+and set a different port in that experiment's ``config.txt``:
+
+.. code:: ini
+
+    [Server]
+    base_port = 5001
+
+``psynet services check`` and ``psynet services ensure`` test the services at
+``DATABASE_URL`` and ``REDIS_URL``. ``psynet services ensure`` only starts
+Docker containers on the default localhost ports, and refuses to start one
+when another PostgreSQL or Redis install already uses that port; in that case,
+point ``DATABASE_URL`` or ``REDIS_URL`` at the existing install instead.
+
 
 MISCONF Redis is configured to save RDB snapshots
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
