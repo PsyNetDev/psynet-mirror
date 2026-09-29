@@ -12,6 +12,7 @@ from psynet.audit.cli import (
     validate_audit,
 )
 from psynet.command_line import psynet
+from psynet.version import psynet_version
 
 LFS_VIDEO_POINTER = (
     b"version https://git-lfs.github.com/spec/v1\noid sha256:abc\nsize 1\n"
@@ -1577,6 +1578,7 @@ def test_init_audit_creates_starter_structure_and_manifest(tmp_path: Path) -> No
     assert "title" not in manifest["experiment"]
     assert "source_base" not in manifest["experiment"]
     assert "source_path" not in manifest["experiment"]
+    assert manifest["experiment"]["psynet_version"] == psynet_version
     assert manifest["profile"] == "psynet.core"
     assert manifest["extensions"] == []
     assert [section["id"] for section in manifest["sections"]] == [
