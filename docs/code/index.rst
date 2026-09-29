@@ -75,3 +75,12 @@ has written, checking it, and changing it yourself.
    :maxdepth: 1
 
    project/classes_and_sqlalchemy
+
+.. toctree::
+   :caption: Exercises
+   :maxdepth: 1
+
+   exercises/timeline
+   exercises/graphics
+   exercises/js_synth
+   exercises/donation_game

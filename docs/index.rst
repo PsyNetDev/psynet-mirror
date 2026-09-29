@@ -51,7 +51,7 @@ the virtual lab framework
    data/index
    Code <code/index>
    Agent Skills <skills/index>
-   examples/index
+   Demos <demos/index>
    reference/index
    whats_new/index
    developer/index

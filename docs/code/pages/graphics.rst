@@ -110,4 +110,4 @@ graphics that advance by themselves.
 
 .. seealso::
 
-   :doc:`/examples/exercises/graphics` and :doc:`/reference/api/graphics`.
+   :doc:`/code/exercises/graphics` and :doc:`/reference/api/graphics`.

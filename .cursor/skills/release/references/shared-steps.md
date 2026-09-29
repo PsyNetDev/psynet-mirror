@@ -281,7 +281,7 @@ file, e.g. `/tmp/release-highlights-X.Y.Z.md`:
     confirm the anchor is present on the rendered page before linking.
   - Link new or moved demos to their directory in the repo at the tag
     (`https://gitlab.com/PsyNetDev/PsyNet/-/tree/vX.Y.Z/demos/...`),
-    and also to the demo catalog (`docs/examples/demos/index.rst`) if the
+    and also to the demo catalog (`docs/demos/index.rst`) if the
     demo is new, after adding it to the catalog.
   - Link to external sources when a change is driven by a third-party
     platform — e.g. a Prolific or Lucid announcement or documentation
