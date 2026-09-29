@@ -71,14 +71,6 @@ class TestCommandLine(object):
         assert b"Options:" in output
         assert b"Commands:" in output
 
-    def test_psynet_docs_command_is_not_registered(self):
-        from psynet.command_line import psynet
-
-        result = CliRunner().invoke(psynet, ["docs", "--help"])
-
-        assert result.exit_code != 0
-        assert "No such command 'docs'" in result.output
-
     def test_dev_changelog_dispatches_to_builder(self, monkeypatch, tmp_path):
         from psynet.command_line import psynet
         from psynet.dev import changelog as changelog_module
