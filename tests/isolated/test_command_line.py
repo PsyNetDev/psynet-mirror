@@ -515,6 +515,43 @@ def test_debug_legacy_starts_four_gunicorn_workers(monkeypatch):
     ]
 
 
+def _run_debug_auto_reload(monkeypatch, dallinger_supports_no_browsers):
+    import click
+
+    from psynet.command_line import _debug_auto_reload
+
+    calls = []
+
+    class _Ctx:
+        def invoke(self, _command, **kwargs):
+            calls.append(kwargs)
+
+    params = [click.Option(["--skip-flask"], is_flag=True)]
+    if dallinger_supports_no_browsers:
+        params.append(click.Option(["--no-browsers"], is_flag=True))
+    from dallinger.command_line.develop import debug as dallinger_debug
+
+    monkeypatch.setattr(dallinger_debug, "params", params)
+    monkeypatch.setattr("psynet.command_line.run_pre_auto_reload_checks", lambda: None)
+    monkeypatch.setattr("psynet.command_line.patch_dallinger_develop", lambda: None)
+    monkeypatch.setattr("psynet.command_line.db.session.commit", lambda: None)
+    monkeypatch.setattr("psynet.command_line.reset_console", lambda: None)
+    _debug_auto_reload(_Ctx(), archive=None, no_browsers=True)
+    return calls
+
+
+def test_debug_auto_reload_passes_no_browsers_to_dallinger(monkeypatch):
+    calls = _run_debug_auto_reload(monkeypatch, dallinger_supports_no_browsers=True)
+    assert calls == [{"skip_flask": False, "no_browsers": True}]
+
+
+def test_debug_auto_reload_no_browsers_needs_supporting_dallinger(monkeypatch):
+    import click
+
+    with pytest.raises(click.UsageError, match="newer Dallinger"):
+        _run_debug_auto_reload(monkeypatch, dallinger_supports_no_browsers=False)
+
+
 def test_debug_legacy_gunicorn_workers_follow_env(monkeypatch):
     """Playwright hold tests set workers to the session count plus two spares."""
     from psynet.command_line import _debug_legacy

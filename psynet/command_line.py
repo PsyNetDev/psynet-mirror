@@ -944,15 +944,19 @@ def _debug_docker(ctx, archive, no_browsers):
 
 
 def _debug_auto_reload(ctx, archive, no_browsers):
-    if no_browsers:
-        raise click.UsageError(
-            "--no-browsers option is not supported in this debug mode."
-        )
-
-    run_pre_auto_reload_checks()
-
     from dallinger.command_line.develop import debug as dallinger_debug
     from dallinger.deployment import DevelopmentDeployment
+
+    debug_kwargs = {"skip_flask": False}
+    if no_browsers:
+        if "no_browsers" not in {param.name for param in dallinger_debug.params}:
+            raise click.UsageError(
+                "--no-browsers needs a newer Dallinger in the default debug mode; "
+                "upgrade Dallinger or use `psynet debug local --legacy --no-browsers`."
+            )
+        debug_kwargs["no_browsers"] = True
+
+    run_pre_auto_reload_checks()
 
     DevelopmentDeployment.archive = archive
     patch_dallinger_develop()
@@ -961,7 +965,7 @@ def _debug_auto_reload(ctx, archive, no_browsers):
     develop_module.header = ""
 
     try:
-        ctx.invoke(dallinger_debug, skip_flask=False)
+        ctx.invoke(dallinger_debug, **debug_kwargs)
     finally:
         db.session.commit()
         reset_console()
