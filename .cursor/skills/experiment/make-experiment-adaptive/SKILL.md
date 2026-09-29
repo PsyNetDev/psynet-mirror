@@ -26,7 +26,7 @@ This skill has three references:
 
 ## Read first
 
-Read these pages before acting, with `psynet docs show <page>`; search all pages with `rg -n -i "<term>" "$(psynet docs path)"`.
+Read these pages before acting. Get the docs folder once with `psynet docs path`, then read `<folder>/<page>.txt` (or `.rst` in a source checkout) and search with `rg -n -i "<term>" <folder>`.
 
 - `code/writing_a_trial_maker` — "Trials without a trial maker" (`Trial.cue`, `on_trial_created`, `creation_context`) and the node selection hooks
 - `code/writing_a_timeline` — page makers, `while_loop` time credit and limits, async code blocks and scheduled tasks

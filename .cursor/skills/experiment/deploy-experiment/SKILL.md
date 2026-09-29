@@ -7,7 +7,7 @@ description: Audit PsyNet experiment folders for deployment readiness, deploymen
 
 ## Read first
 
-Read these pages before acting, with `psynet docs show <page>`; search all pages with `rg -n -i "<term>" "$(psynet docs path)"`.
+Read these pages before acting. Get the docs folder once with `psynet docs path`, then read `<folder>/<page>.txt` (or `.rst` in a source checkout) and search with `rg -n -i "<term>" <folder>`.
 
 - `deploy/how_deployment_works` — what gets deployed and how `deploy.toml` selects files
 - `deploy/setting_up_a_server` — provisioning and registering servers

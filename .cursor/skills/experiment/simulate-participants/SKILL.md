@@ -7,7 +7,7 @@ description: Design, implement, and validate simulated participants for PsyNet e
 
 ## Read first
 
-Read these pages before acting, with `psynet docs show <page>`; search all pages with `rg -n -i "<term>" "$(psynet docs path)"`.
+Read these pages before acting. Get the docs folder once with `psynet docs path`, then read `<folder>/<page>.txt` (or `.rst` in a source checkout) and search with `rg -n -i "<term>" <folder>`.
 
 - `test/backend` — bots and how they answer
 - `test/audits` — simulation evidence in an audit

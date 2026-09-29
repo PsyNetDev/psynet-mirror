@@ -7,7 +7,7 @@ description: Use this skill when a PsyNet experiment has two participants intera
 
 ## Read first
 
-Read these pages before acting, with `psynet docs show <page>`; search all pages with `rg -n -i "<term>" "$(psynet docs path)"`.
+Read these pages before acting. Get the docs folder once with `psynet docs path`, then read `<folder>/<page>.txt` (or `.rst` in a source checkout) and search with `rg -n -i "<term>" <folder>`.
 
 - `data/basic_data` — `get_basic_data`; its "Group experiments" section covers the group tables, rounds, the player-round layout and a worked example
 - `data/analyzing_data` — joining group tables in an export

@@ -8,7 +8,7 @@ compatibility: Requires Playwright, ffmpeg, ffprobe, and on Linux/PulseAudio set
 
 ## Read first
 
-Read these pages before acting, with `psynet docs show <page>`; search all pages with `rg -n -i "<term>" "$(psynet docs path)"`.
+Read these pages before acting. Get the docs folder once with `psynet docs path`, then read `<folder>/<page>.txt` (or `.rst` in a source checkout) and search with `rg -n -i "<term>" <folder>`.
 
 - `test/frontend` — participant walks, screenshots, and video
 

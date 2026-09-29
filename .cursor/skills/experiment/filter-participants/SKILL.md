@@ -7,7 +7,7 @@ description: Design, implement, and validate task-specific pre-screening for Psy
 
 ## Read first
 
-Read these pages before acting, with `psynet docs show <page>`; search all pages with `rg -n -i "<term>" "$(psynet docs path)"`.
+Read these pages before acting. Get the docs folder once with `psynet docs path`, then read `<folder>/<page>.txt` (or `.rst` in a source checkout) and search with `rg -n -i "<term>" <folder>`.
 
 - `code/participants/prescreening_and_questionnaires` — built-in prescreeners and questionnaires
 - `code/participants/creating_prescreening_tasks` — writing custom prescreening tasks

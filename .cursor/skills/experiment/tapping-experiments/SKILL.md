@@ -7,7 +7,7 @@ description: Design-discipline checklist for PsyNet tapping, rhythm, beat-percep
 
 ## Read first
 
-Read these pages before acting, with `psynet docs show <page>`; search all pages with `rg -n -i "<term>" "$(psynet docs path)"`.
+Read these pages before acting. Get the docs folder once with `psynet docs path`, then read `<folder>/<page>.txt` (or `.rst` in a source checkout) and search with `rg -n -i "<term>" <folder>`.
 
 - `code/participants/prescreening_and_questionnaires`: REPP volume calibration, tapping calibration, and recording tests
 - `code/using_stimuli`: generated audio stimuli such as metronomes

@@ -10,7 +10,7 @@ If participants exchange live actions or messages within a trial, also read
 
 ## Read first
 
-Read these pages before acting, with `psynet docs show <page>`; search all pages with `rg -n -i "<term>" "$(psynet docs path)"`.
+Read these pages before acting. Get the docs folder once with `psynet docs path`, then read `<folder>/<page>.txt` (or `.rst` in a source checkout) and search with `rg -n -i "<term>" <folder>`.
 
 - `design/groups` — group design concepts
 - `code/multiplayer/synchronization` — grouping, barriers, waiting, and release callbacks

@@ -7,7 +7,7 @@ description: Choose and build participant-facing PsyNet pages, from built-in Mod
 
 ## Read first
 
-Read these pages before acting, with `psynet docs show <page>`; search all pages with `rg -n -i "<term>" "$(psynet docs path)"`.
+Read these pages before acting. Get the docs folder once with `psynet docs path`, then read `<folder>/<page>.txt` (or `.rst` in a source checkout) and search with `rg -n -i "<term>" <folder>`.
 
 - `code/writing_pages`: pages, prompts, controls, validation, and timing within a page
 - `code/pages/control_gallery`: built-in controls

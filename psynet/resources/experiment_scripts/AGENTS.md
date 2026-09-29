@@ -204,8 +204,10 @@ The PsyNet documentation is the source of truth for how PsyNet works. Read the
 relevant page before writing or changing experiment code, rather than relying on
 memory. Use the local copy that matches the installed PsyNet version:
 
-- `psynet docs show <page>` prints a page from the table below.
-- `rg -n -i "<term>" "$(psynet docs path)"` searches every page at once.
+- Run `psynet docs path` once per session and reuse the printed folder.
+- `rg -n -i "<term>" <folder>` searches every page at once.
+- Read a page from the table below at `<folder>/<page>` plus `.txt` (release
+  installs) or `.rst` (source checkouts), or with `psynet docs show <page>`.
 
 In a PsyNet source checkout these are the RST sources in `docs/`; release
 installs ship the same pages as plain text. If `psynet docs path` reports that
