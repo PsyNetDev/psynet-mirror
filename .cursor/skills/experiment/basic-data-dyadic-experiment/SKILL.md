@@ -8,6 +8,14 @@ description: Use this skill when a PsyNet experiment has two participants intera
 The default clean layout is one row per experimental batch, dyad, round or node,
 and player.
 
+## Read first
+
+Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rst`; otherwise fetch `https://psynetdev.gitlab.io/PsyNet/<page>.html`.
+
+- `data/basic_data` — writing `get_basic_data` for clean analysis tables
+- `data/what_an_export_contains` — raw export tables and their identifiers
+- `code/multiplayer/synchronization` — groups, barriers, and group identifiers
+
 ## Prerequisites
 
 - Read `implement-experiment/SKILL.md` for simulation, exported data,

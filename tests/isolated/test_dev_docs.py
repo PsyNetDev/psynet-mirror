@@ -664,3 +664,19 @@ def test_agent_skills_page_lists_every_shipped_skill():
     )
     missing = [skill for skill in skills if f"``{skill}``" not in page]
     assert not missing, f"docs/code/project/agent_skills.rst does not list: {missing}"
+
+
+def test_skill_read_first_sections_point_at_existing_pages():
+    from psynet.utils import get_psynet_root
+
+    root = get_psynet_root()
+    missing = []
+    for skill in sorted((root / ".cursor/skills/experiment").glob("*/SKILL.md")):
+        text = skill.read_text()
+        if "## Read first" not in text:
+            continue
+        section = text.split("## Read first", 1)[1].split("\n## ", 1)[0]
+        for page in re.findall(r"^- `([a-z_0-9/]+)`", section, flags=re.M):
+            if not (root / "docs" / f"{page}.rst").is_file():
+                missing.append(f"{skill.parent.name}: {page}")
+    assert not missing, f"Read first sections link to missing docs pages: {missing}"

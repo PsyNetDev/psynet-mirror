@@ -9,6 +9,13 @@ compatibility: Requires PsyNet with `psynet audit` CLI; ffprobe recommended for 
 A standalone audit is an `audit/` folder inside the experiment directory. Run
 the CLI from the experiment root.
 
+## Read first
+
+Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rst`; otherwise fetch `https://psynetdev.gitlab.io/PsyNet/<page>.html`.
+
+- `test/audits` — what an audit contains and how to build it
+- `reference/audit` — `audit.json` fields and status conventions
+
 ## Prerequisites
 
 - Read `references/populating-an-audit.md`; it is the shared operational source

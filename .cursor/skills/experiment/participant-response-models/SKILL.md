@@ -10,6 +10,13 @@ can generate data for scientific bots, power analyses, and standalone adaptive
 simulations. They may also share mathematical components with cognitive models
 used for inference.
 
+## Read first
+
+Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rst`; otherwise fetch `https://psynetdev.gitlab.io/PsyNet/<page>.html`.
+
+- `test/audits` — where design simulation sits in an audit
+- `test/backend` — how bots answer
+
 ## Layout
 
 Use this layout unless the model is large enough to justify more modules:

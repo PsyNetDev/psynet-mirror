@@ -5,6 +5,15 @@ description: Implement psychophysics experiments with PsyNet, focusing on precis
 
 # Implement PsyNet psychophysics experiment
 
+## Read first
+
+Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rst`; otherwise fetch `https://psynetdev.gitlab.io/PsyNet/<page>.html`.
+
+- `code/pages/graphics` — Native Graphics displays and frame sequences
+- `code/pages/event_management` — page events and reaction-time evidence
+- `code/pages/control_gallery` — built-in response controls
+- `code/writing_a_trial_maker` — trials, scoring, and performance checks
+
 ## General guidelines
 
 Follow the general workflow in `implement-experiment/SKILL.md`.

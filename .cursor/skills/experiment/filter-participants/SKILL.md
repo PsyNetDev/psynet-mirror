@@ -5,11 +5,18 @@ description: Design, implement, and validate task-specific pre-screening for Psy
 
 # Implement task-specific pre-screening
 
+## Read first
+
+Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rst`; otherwise fetch `https://psynetdev.gitlab.io/PsyNet/<page>.html`.
+
+- `code/participants/prescreening_and_questionnaires` — built-in prescreeners and questionnaires
+- `code/participants/creating_prescreening_tasks` — writing custom prescreening tasks
+- `reference/api/prescreen` — prescreener API
+- `code/trials/participant_and_trial_failure` — failing participants and performance checks
+
 ## Prerequisites
 
-- Inspect PsyNet's current prescreening docs and demos before custom code:
-  `~/PsyNet/docs/code/participants/prescreening_and_questionnaires.rst`,
-  `~/PsyNet/docs/reference/api/prescreen.rst`, and relevant demos under
+- Inspect relevant prescreening demos before custom code, under
   `~/PsyNet/demos/features/` and `~/PsyNet/demos/experiments/`.
 - Read `references/recruitment-platform-notes.md` when the prescreener affects
   Prolific, Lucid/Cint, CloudResearch Connect, or lab recruiter setup.

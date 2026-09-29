@@ -24,6 +24,15 @@ attributes, population parameters, or a combination. The two levels may use
 different models and update schedules; do not force them through one generic
 state object.
 
+## Read first
+
+Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rst`; otherwise fetch `https://psynetdev.gitlab.io/PsyNet/<page>.html`.
+
+- `code/writing_a_trial_maker` — `Trial.cue` for participant-level adaptive selection
+- `design/chains` — chains that carry state across participants
+- `code/writing_a_chain_experiment` — implementing chain trial makers
+- `test/audits` — the design-simulation section of an audit
+
 ## Layout
 
 Keep the adaptive models and selection policy outside `experiment.py`:

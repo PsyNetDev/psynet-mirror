@@ -14,6 +14,12 @@ reporting, and human-review workflow. Use the shared model described in
 `participant-response-models/SKILL.md` to generate synthetic responses. For an
 adaptive design, also read `make-experiment-adaptive/SKILL.md`.
 
+## Read first
+
+Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rst`; otherwise fetch `https://psynetdev.gitlab.io/PsyNet/<page>.html`.
+
+- `test/audits` — the design-simulation section of an audit
+
 ## Plan the estimands and simulated population
 
 An **estimand** is a quantity the experiment is intended to estimate. Examples

@@ -5,6 +5,15 @@ description: Develop PsyNet experiment front-end interfaces with ModularPage, Na
 
 # Develop experiment front end
 
+## Read first
+
+Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rst`; otherwise fetch `https://psynetdev.gitlab.io/PsyNet/<page>.html`.
+
+- `code/writing_pages` — pages, prompts, controls, and validation
+- `code/pages/control_gallery` — built-in controls
+- `code/pages/graphics` — Native Graphics
+- `code/pages/custom_front_ends` — custom page JavaScript when built-ins are not enough
+
 ## Prerequisites
 
 - For Playwright walks and layout checks, use `playwright-testing/SKILL.md`.

@@ -15,6 +15,13 @@ This is detailed in the `precision-estimation` skill.
 Most PsyNet experiments pay participants for the time they spend on the experiment. Some experiments additionally deliver bonuses for good performance. These financial considerations should form part of the power analysis;
 see `references/psynet-costing.md` for information.
 
+## Read first
+
+Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rst`; otherwise fetch `https://psynetdev.gitlab.io/PsyNet/<page>.html`.
+
+- `test/audits` — the design-simulation section of an audit
+- `code/participants/payment` — wages, base payment, and bonuses for costing
+
 ## Terminology
 
 | Term | Meaning |

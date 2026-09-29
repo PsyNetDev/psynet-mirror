@@ -5,6 +5,14 @@ description: Implement PsyNet-native participant quality and AI-assistance telem
 
 # PsyNet participant quality telemetry
 
+## Read first
+
+Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rst`; otherwise fetch `https://psynetdev.gitlab.io/PsyNet/<page>.html`.
+
+- `code/pages/event_management` — page events and the event log
+- `code/participants/prescreening_and_questionnaires` — attention tests and questionnaires
+- `code/trials/participant_and_trial_failure` — failing participants and performance checks
+
 ## Prerequisites
 
 - Read `implement-experiment/SKILL.md` for the general PsyNet

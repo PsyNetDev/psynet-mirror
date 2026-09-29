@@ -6,6 +6,12 @@ compatibility: Requires Playwright, ffmpeg, ffprobe, and on Linux/PulseAudio set
 
 # Record participant visual evidence
 
+## Read first
+
+Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rst`; otherwise fetch `https://psynetdev.gitlab.io/PsyNet/<page>.html`.
+
+- `test/frontend` — participant walks, screenshots, and video
+
 ## Goal
 
 Create an MP4 recording of the participant-facing PsyNet flow that includes:

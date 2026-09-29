@@ -5,6 +5,13 @@ description: Explore the local PsyNet source, demos, feature examples, documenta
 
 # Explore PsyNet repository
 
+## Read first
+
+Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rst`; otherwise fetch `https://psynetdev.gitlab.io/PsyNet/<page>.html`.
+
+- `code/project/agentic_programming` — implementing an experiment with a coding agent
+- `code/project/creating_an_experiment` — creating an experiment directory from a demo
+
 ## PsyNet source code
 
 It is essential that you have access to the local PsyNet source code and demos.
@@ -16,11 +23,6 @@ Useful starting points:
 - `~/PsyNet/psynet/` for the PsyNet source code.
 - `~/PsyNet/demos/experiments/` for complete experiments (authored files only).
 - `~/PsyNet/demos/features/` for focused feature examples.
-- `~/PsyNet/docs/` for user-facing documentation.
-- `~/PsyNet/docs/code/project/agentic_programming.rst` for
-  implementing an experiment with a coding agent.
-- `~/PsyNet/docs/code/project/creating_an_experiment.rst` for creating an
-  experiment directory by copying a demo (prefer `psynet setup`).
 - `~/PsyNet/psynet/resources/experiment_scripts/AGENTS.md` for setup and command
   guidance.
 

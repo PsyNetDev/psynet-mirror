@@ -19,6 +19,13 @@ only that the runner can click Next.
 For constructing pages, use `develop-experiment-front-end/SKILL.md`. For
 ffmpeg participant recordings, use `record-participant-video/SKILL.md`.
 
+## Read first
+
+Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rst`; otherwise fetch `https://psynetdev.gitlab.io/PsyNet/<page>.html`.
+
+- `test/frontend` — Playwright walks and `psynetLayout.check()`
+- `test/backend` — what bots check and what they miss
+
 ## Layout checks
 
 Every participant page loads `psynetLayout`. After the page is ready, call

@@ -11,6 +11,15 @@ translation marking or POT extraction, use `prepare-for-translation`. For server
 provisioning, SSH deployment, export, app destruction, or EC2 teardown, use
 `deploy-experiment`.
 
+## Read first
+
+Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rst`; otherwise fetch `https://psynetdev.gitlab.io/PsyNet/<page>.html`.
+
+- `deploy/recruiters/cint` — Cint/Lucid recruiter settings and qualifications
+- `deploy/recruiters/index` — choosing and configuring a recruiter
+- `code/participants/payment` — `wage_per_hour` and bonuses
+- `code/participants/internationalization` — locales and translated experiments
+
 ## Prerequisites
 
 - Read the target experiment's `experiment.py`, `config.txt`,

@@ -5,6 +5,16 @@ description: Implement basic data export functionality. Use when implementing an
 
 # Overview
 
+## Read first
+
+Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rst`; otherwise fetch `https://psynetdev.gitlab.io/PsyNet/<page>.html`.
+
+- `data/basic_data` — writing `get_basic_data` and the files it exports
+- `data/exporting_data` — how to export data and where exports land
+- `data/what_an_export_contains` — the raw database tables in an export
+
+## Basic data exports
+
 By default, the data export of a PsyNet experient involves dumping the database to a collection
 of csv files. These csv files are comprehensive but often messy.
 

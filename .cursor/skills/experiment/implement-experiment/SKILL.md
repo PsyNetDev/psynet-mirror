@@ -6,6 +6,15 @@ compatibility: Requires editable PsyNet at ~/PsyNet, PostgreSQL, Redis, Heroku C
 
 # Implement PsyNet experiments
 
+## Read first
+
+Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rst`; otherwise fetch `https://psynetdev.gitlab.io/PsyNet/<page>.html`.
+
+- `code/project/agentic_programming` — the coding-agent workflow for experiments
+- `code/project/creating_an_experiment` — starting from a demo or an existing experiment
+- `code/project/running_and_debugging` — running locally and inspecting the dashboard
+- `test/backend` — bots and `psynet test local`
+
 ## Prerequisites
 
 - Use the `explore-psynet-repository` skill before starting.
@@ -95,7 +104,7 @@ boilerplate (`Dockerfile`, `test.py`, `.gitignore`, `deploy.toml`, managed
 skills) when setup/scaffold can produce it. Experiment-local `docker/` helper
 scripts are obsolete; use `psynet debug local --docker`.
 
-Canonical human docs: `~/PsyNet/docs/code/project/agentic_programming.rst`
+Canonical setup guidance: `code/project/agentic_programming` (see Read first)
 and `~/PsyNet/psynet/resources/experiment_scripts/AGENTS.md`.
 
 **1. Choose a starting point**

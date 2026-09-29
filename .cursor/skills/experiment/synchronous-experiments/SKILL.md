@@ -8,15 +8,21 @@ description: Design and implement PsyNet synchronous experiments using cohort, g
 If participants exchange live actions or messages within a trial, also read
 `realtime-synchronous-experiments/SKILL.md`.
 
+## Read first
+
+Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rst`; otherwise fetch `https://psynetdev.gitlab.io/PsyNet/<page>.html`.
+
+- `design/groups` — group design concepts
+- `code/multiplayer/synchronization` — grouping, barriers, waiting, and release callbacks
+- `reference/api/sync` — synchronization API
+
 ## Prerequisites
 
 - Read `implement-experiment/SKILL.md` for the general PsyNet
   implementation workflow and validation expectations.
 - Read `references/source-notes.md` for the source map, platform notes, and
   practical caveats behind this skill.
-- Inspect current PsyNet docs and demos before coding:
-  `~/PsyNet/docs/code/multiplayer/synchronization.rst`,
-  `~/PsyNet/docs/reference/api/sync.rst`,
+- Inspect current PsyNet demos before coding:
   `~/PsyNet/demos/experiments/simple_sync_group/`,
   `~/PsyNet/demos/experiments/create_rate_sync/`,
   `~/PsyNet/demos/experiments/rock_paper_scissors/`,
@@ -58,7 +64,7 @@ If participants exchange live actions or messages within a trial, also read
   assignment, scoring, aggregation, or recording round outcomes. The
   callback's `barrier` argument is the reconstructed registry object; read
   `content` and timeouts from it. Wait pages stay on the live timeline
-  barrier (see `docs/code/multiplayer/synchronization.rst` (published at https://psynetdev.gitlab.io/PsyNet/code/multiplayer/synchronization.html), "Release callbacks").
+  barrier (see "Release callbacks" in `code/multiplayer/synchronization`).
 - Sort `sync_group.participants` by participant ID before deterministic role
   assignment; PsyNet does not guarantee the stored order.
 - Use `sync_group_type` on trial makers when all group members should follow the

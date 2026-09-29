@@ -5,6 +5,15 @@ description: Implement PsyNet tapping, rhythm, beat perception, and sensorimotor
 
 # PsyNet tapping experiments
 
+## Read first
+
+Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rst`; otherwise fetch `https://psynetdev.gitlab.io/PsyNet/<page>.html`.
+
+- `code/using_stimuli` — audio stimuli and participant recordings
+- `code/participants/prescreening_and_questionnaires` — volume calibration and headphone tests
+- `code/writing_a_trial_maker` — performance checks that analyze tapping recordings
+- `code/trials/assets` — managing recorded and generated assets
+
 ## Prerequisites
 
 - Read `implement-experiment/SKILL.md` for the general planning,

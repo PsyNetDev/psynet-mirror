@@ -5,6 +5,15 @@ description: Design and implement PsyNet websocket experiments with live synchro
 
 # Implement real-time synchronous PsyNet experiments
 
+## Read first
+
+Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rst`; otherwise fetch `https://psynetdev.gitlab.io/PsyNet/<page>.html`.
+
+- `code/multiplayer/synchronization` — groups, barriers, and synchronized trial makers
+- `code/multiplayer/chatroom` — live messaging between participants
+- `code/pages/custom_routes` — exchanging data with the server
+- `code/pages/custom_front_ends` — custom page JavaScript
+
 ## Prerequisites
 
 - Read `implement-experiment/SKILL.md` for the general PsyNet

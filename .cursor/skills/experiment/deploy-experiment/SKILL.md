@@ -5,6 +5,15 @@ description: Audit PsyNet experiment folders for deployment readiness, deploymen
 
 # PsyNet Deployment Ops
 
+## Read first
+
+Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rst`; otherwise fetch `https://psynetdev.gitlab.io/PsyNet/<page>.html`.
+
+- `deploy/how_deployment_works` — what gets deployed and how `deploy.toml` selects files
+- `deploy/setting_up_a_server` — provisioning and registering servers
+- `deploy/running_a_study` — launching, monitoring, and closing a study
+- `data/exporting_data` — exporting data before teardown
+
 ## Safety rules
 
 - Do not run paid recruitment, app destruction, EC2 teardown, or other

@@ -5,6 +5,15 @@ description: Develop PsyNet experiment back-end logic.
 
 # Develop experiment back end
 
+## Read first
+
+Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rst`; otherwise fetch `https://psynetdev.gitlab.io/PsyNet/<page>.html`.
+
+- `code/writing_a_timeline` — timelines, code blocks, loops, and variables
+- `code/writing_a_trial_maker` — static trial makers, scoring, and `Trial.cue`
+- `code/writing_a_chain_experiment` — chain trial makers
+- `code/project/experiment_directory` — experiment files and importing helper modules
+
 ## Approach
 
 PsyNet experiments centre on the `Timeline` component,
@@ -64,8 +73,7 @@ same helpers as top-level names (``from adaptive_logic import select_item``).
 Run the design command from the experiment root. Keep runtime helpers beside
 ``experiment.py``; stock ``deploy.toml`` excludes ``audit/``.
 
-See ``docs/code/project/experiment_directory.rst``
-("Importing other Python files").
+See "Importing other Python files" in `code/project/experiment_directory`.
 
 ## Internationalization
 
