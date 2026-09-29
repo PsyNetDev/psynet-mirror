@@ -66,6 +66,9 @@ redirects = {
     old: posixpath.relpath(new, posixpath.dirname(old) or ".") + ".html"
     for old, new in _redirect_docnames.items()
 }
+# The stub body names the new page for readers that don't follow redirects,
+# such as coding agents fetching pages with curl.
+redirect_html_template_file = "_templates/redirect.html"
 
 
 def _check_redirects(app, env):
