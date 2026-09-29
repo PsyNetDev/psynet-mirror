@@ -420,17 +420,3 @@ Database, bots and data
 `features/artifact_storage <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/artifact_storage>`__
     ``S3ArtifactStorage`` with automatic backups of the data defined in
     ``get_basic_data``. :doc:`/data/exporting_data`.
-
-Complete studies
-----------------
-
-Each of these experiments is a standalone Git repository with everything
-needed to run it, starting from its ``experiment.py`` file. They were written
-for PsyNet 12 and pin that version in ``requirements.txt``.
-
-.. toctree::
-   :maxdepth: 1
-
-   complete_studies/carillon
-   complete_studies/emotions-scales
-   complete_studies/pitch-matching

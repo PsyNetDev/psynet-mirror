@@ -125,9 +125,8 @@ For example, to install ``unzip``:
 The script replaces PsyNet's default script,
 ``psynet/resources/scripts/prepare_docker_image.sh``, which installs build
 tools so that packages can be compiled from source. Start from a copy of the
-default to keep them. The
-:ref:`Consonance and the carillon <consonance_carillon>` experiment uses this
-script to install ``libsndfile1``.
+default to keep them. The ``demos/experiments/gibbs_video`` demo uses this
+script to install ``ffmpeg``.
 
 .. warning::
 
