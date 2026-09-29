@@ -9,6 +9,15 @@ model, analyzes each one, and saves a results table, a run record and an
 executed notebook for review. :doc:`/design/design_simulation` explains the
 method and the terms used on this page.
 
+.. admonition:: What PsyNet provides
+
+   PsyNet reads the three files under ``audit/simulate/design/`` (results
+   table, run record and notebook) and shows them in the audit, and
+   ``psynet audit simulate`` runs the experiment's bots and exports their
+   data. The rest of this page, including the ``response_model/`` package,
+   ``config.toml`` and the simulation script, is a recommended layout rather
+   than something PsyNet requires or runs.
+
 Files
 -----
 

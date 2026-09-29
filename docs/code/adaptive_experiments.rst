@@ -7,6 +7,13 @@ difficulty goes up after a correct answer and down after a mistake, and the
 staircase stops after two reversals or eight trials. To run it from a PsyNet
 source checkout:
 
+.. admonition:: What PsyNet provides
+
+   The trial makers, hooks, ``Trial.cue``, page makers and code blocks on this
+   page are part of PsyNet. The ``adaptive_logic.py`` module, the snapshot
+   table and the ``AdaptiveDecision`` table are defined in the demo's own
+   code, as examples to adapt.
+
 .. code-block:: console
 
     cd demos/features/trial_cue_adaptive

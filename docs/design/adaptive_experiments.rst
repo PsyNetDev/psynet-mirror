@@ -10,6 +10,17 @@ makes this choice is the **selection policy**, and the thing it chooses is the
 **adaptive unit**, such as a stimulus, an item, a node, a chain, or a
 condition.
 
+.. admonition:: What PsyNet provides
+
+   PsyNet provides the building blocks: staircase and chain trial makers,
+   selection hooks on trial makers (``custom_node_filter``, ``select_node``,
+   ``custom_chain_filter`` and ``select_chain``), ``Trial.cue`` with page
+   makers and loops for selection in the timeline, and asynchronous
+   code blocks and scheduled tasks for background updates. It has no built-in
+   adaptive-design framework: the specification, the state snapshots and the
+   decision records described here are a recommended way of using those
+   building blocks, implemented in your experiment's own code.
+
 Kinds of adaptivity
 -------------------
 

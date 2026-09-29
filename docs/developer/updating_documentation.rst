@@ -141,6 +141,13 @@ counterpart, give both pages the same section headings so readers can move
 between them, and end the concept page with a ``seealso`` link to its code
 page.
 
+The Design section has two groups. **Concepts** describe how PsyNet itself
+works. **Methods** describe recommended research practice built on PsyNet,
+such as adaptive designs and design simulation, where part of the approach is
+code the experimenter writes. Every methods page, and its code or task
+counterpart, opens with a "What PsyNet provides" box that separates PsyNet's
+built-in features from the conventions the page recommends.
+
 On concept pages:
 
 - Write so the page reads completely without code. Use at most a tiny

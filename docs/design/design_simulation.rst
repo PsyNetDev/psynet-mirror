@@ -11,6 +11,16 @@ experiment pays participants, what each design would cost. Experimenters use
 it to choose the number of participants, stimuli and trials. The simulation
 is optional; when there is one, it is part of the experiment's audit.
 
+.. admonition:: What PsyNet provides
+
+   PsyNet runs simulated participants (bots) through an experiment and displays
+   a design simulation's results in the experiment's audit: the audit has
+   slots for a results table (``simulate/design/results.csv``), a run record
+   (``run.json``) and an executed notebook (``simulation.ipynb``). The
+   simulation itself, including the response model and the analysis, is code
+   you write; PsyNet has no command that runs it. This page describes the
+   method, and :doc:`/test/design_simulation` a recommended way to set it up.
+
 Designs, assumptions and scenarios
 ----------------------------------
 
