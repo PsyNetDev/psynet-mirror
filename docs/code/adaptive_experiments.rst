@@ -14,6 +14,9 @@ source checkout:
    table and the ``AdaptiveDecision`` table are defined in the demo's own
    code, as examples to adapt.
 
+A coding agent following the ``make-experiment-adaptive`` skill writes this
+code; the details here are for reviewing its work or writing it yourself.
+
 .. code-block:: console
 
     cd demos/features/trial_cue_adaptive

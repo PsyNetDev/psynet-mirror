@@ -21,6 +21,12 @@ condition.
    decision records described here are a recommended way of using those
    building blocks, implemented in your experiment's own code.
 
+With a coding agent, the ``make-experiment-adaptive`` skill (see
+:doc:`/code/project/agent_skills`) goes through the design decisions below
+with you before writing any code, then implements the procedure and
+simulates it. Your part is to make those decisions and to review the result,
+using the review questions at the end of this page.
+
 Kinds of adaptivity
 -------------------
 

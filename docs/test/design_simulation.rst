@@ -18,6 +18,9 @@ method and the terms used on this page.
    ``config.toml`` and the simulation script, is a recommended layout rather
    than something PsyNet requires or runs.
 
+A coding agent following the ``power-analysis`` skill sets all of this up;
+the details here are for reviewing its work or writing a simulation yourself.
+
 Files
 -----
 

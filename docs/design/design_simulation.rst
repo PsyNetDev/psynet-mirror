@@ -18,8 +18,15 @@ is optional; when there is one, it is part of the experiment's audit.
    slots for a results table (``simulate/design/results.csv``), a run record
    (``run.json``) and an executed notebook (``simulation.ipynb``). The
    simulation itself, including the response model and the analysis, is code
-   you write; PsyNet has no command that runs it. This page describes the
+   in your experiment; PsyNet has no command that runs it. This page describes the
    method, and :doc:`/test/design_simulation` a recommended way to set it up.
+
+With a coding agent, you usually don't write any of this yourself. The agent's
+``power-analysis`` skill (see :doc:`/code/project/agent_skills`) agrees the
+question, the candidate designs and the assumptions with you, writes the
+response model and the simulation, and hands back the results. Your part is to
+check that the assumptions are plausible and that the conclusions follow from
+the results, using the review questions at the end of this page.
 
 Designs, assumptions and scenarios
 ----------------------------------
