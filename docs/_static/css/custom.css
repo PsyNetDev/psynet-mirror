@@ -20,6 +20,33 @@ html[data-theme="dark"] {
   --pst-color-link-higher-contrast: #7db2f2;
 }
 
+/* Every link hovers to the same colour; the theme uses its secondary
+   (purple) for the navbar and dropdowns. */
+.bd-header ul.navbar-nav > li.nav-item > .nav-link:hover,
+html .pst-navbar-icon:hover,
+.bd-header .dropdown-menu a:hover,
+.bd-header .dropdown-menu a:focus,
+.prev-next-area a:hover,
+.prev-next-area a:hover p,
+a.headerlink,
+a.headerlink:hover {
+  color: var(--pst-color-link-hover);
+}
+
+.bd-header ul.navbar-nav > li.nav-item > .nav-link:hover::before,
+html .pst-navbar-icon:hover::before {
+  border-bottom-color: var(--pst-color-link-hover);
+}
+
+button.btn.version-switcher__button:hover {
+  box-shadow: 0 0 0 0.1875rem var(--pst-color-link-hover);
+}
+
+#pst-back-to-top:hover {
+  background-color: var(--pst-color-link-hover);
+  color: #fff;
+}
+
 html[data-theme="light"] .bd-header {
   background-color: #eef1f6 !important;
 }
