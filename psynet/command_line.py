@@ -54,6 +54,7 @@ from .data import (
 from .experiment_scaffold import (
     _clear_deployment_policy_review_marker,
     _deployment_policy_needs_review,
+    _deployment_policy_review_is_migration,
     _remove_obsolete_generated_docker_scripts,
     _remove_obsolete_generated_dockerignore,
     _without_deployment_policy_review,
@@ -1687,6 +1688,7 @@ def _check_experiment_directory(mode, *, require_git_commit=False):
     # Runs after the Git checks so 'git check-ignore' can report which
     # deployment-selected files the old .gitignore used to keep local.
     if _deployment_policy_needs_review():
+        migrating = _deployment_policy_review_is_migration()
         ignored_paths = deployment_info._git_ignored_deployment_paths()
         ignored_summary = ""
         if ignored_paths:
@@ -1695,17 +1697,32 @@ def _check_experiment_directory(mode, *, require_git_commit=False):
             remaining = len(ignored_paths) - preview_limit
             if remaining > 0:
                 preview += f"\n  ... and {remaining} more"
-            ignored_summary = (
-                "\n\nYour existing .gitignore covered the following files, but "
-                "your new deploy.toml does not:\n" + preview
+            if migrating:
+                intro = (
+                    "Your existing .gitignore covered the following files, but "
+                    "your new deploy.toml does not:"
+                )
+            else:
+                intro = (
+                    "Your .gitignore covers the following files, but deploy.toml "
+                    "does not exclude them:"
+                )
+            ignored_summary = f"\n\n{intro}\n{preview}"
+        if migrating:
+            intro = (
+                "PsyNet now requires experiments to provide a deploy.toml file to "
+                "specify which files to include in the deployed experiment. "
+                "Previously .gitignore was used for this purpose.\n\nPsyNet "
+                "created a new deploy.toml file for this experiment."
+            )
+        else:
+            intro = (
+                "PsyNet created a deploy.toml file for this experiment. It "
+                "specifies which files are included when the experiment is deployed."
             )
         _clear_deployment_policy_review_marker()
         raise click.ClickException(
-            "PsyNet now requires experiments to provide a deploy.toml file to "
-            "specify which files to include in the deployed experiment. Previously "
-            ".gitignore was used for this purpose.\n\nPsyNet created a new "
-            "deploy.toml file for this experiment."
-            f"{ignored_summary}\n\nBefore continuing:\n"
+            f"{intro}{ignored_summary}\n\nBefore continuing:\n"
             "  1. Run 'dallinger deployment-files list'. This only prints the files "
             "that PsyNet would copy; it does not start or deploy the experiment.\n"
             "  2. Check the list for credentials, private data, large files, and "

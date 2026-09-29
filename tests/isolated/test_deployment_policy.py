@@ -351,7 +351,8 @@ def test_check_experiment_directory_stops_after_setup_creates_deploy_toml(
             _check_experiment_directory("debug")
 
         message = str(error.value)
-        assert "PsyNet created a new deploy.toml file for this experiment." in message
+        assert "PsyNet created a deploy.toml file for this experiment." in message
+        assert "Previously .gitignore" not in message
         assert "secret.txt" in message
         assert not _deployment_policy_needs_review()
 

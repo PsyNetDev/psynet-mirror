@@ -758,8 +758,12 @@ def _report_scaffold_result(written, *, overwrite):
     click.echo("Nothing to scaffold; experiment boilerplate is already present.")
 
 
-def _copy_template_file(relative_path, overwrite):
-    """Copy one scaffold-managed template file into the experiment directory."""
+def _copy_template_file(relative_path, overwrite, *, migrating=True):
+    """Copy one scaffold-managed template file into the experiment directory.
+
+    ``migrating`` records whether a newly created ``deploy.toml`` replaces the
+    older ``.gitignore``-based file selection of an existing experiment.
+    """
     destination = Path(relative_path)
     if relative_path in _PRESERVE_EXISTING_TEMPLATE_FILES:
         overwrite = False
@@ -772,7 +776,7 @@ def _copy_template_file(relative_path, overwrite):
     with resources.as_file(_experiment_script_resource(relative_path)) as path:
         shutil.copyfile(path, destination)
     if relative_path == "deploy.toml" and not _suppress_policy_review_marker.get():
-        _mark_deployment_policy_for_review()
+        _mark_deployment_policy_for_review(migrating=migrating)
     return True
 
 
@@ -782,11 +786,16 @@ _suppress_policy_review_marker: ContextVar[bool] = ContextVar(
 )
 
 
-def _mark_deployment_policy_for_review() -> None:
+_MIGRATION_REVIEW_LINE = "reason: migration from .gitignore-based selection"
+
+
+def _mark_deployment_policy_for_review(*, migrating: bool) -> None:
     """Record that a newly created ``deploy.toml`` still needs a launch-time review."""
     marker = _DEPLOYMENT_POLICY_REVIEW_MARKER
     marker.parent.mkdir(parents=True, exist_ok=True)
+    reason = _MIGRATION_REVIEW_LINE if migrating else "reason: new experiment"
     marker.write_text(
+        f"{reason}\n"
         "PsyNet created deploy.toml for this experiment. The next debug, test, "
         "or deploy command stops once so you can inspect the deployment plan "
         "with 'dallinger deployment-files list'. This file is local-only; "
@@ -797,6 +806,12 @@ def _mark_deployment_policy_for_review() -> None:
 def _deployment_policy_needs_review() -> bool:
     """Return whether the current ``deploy.toml`` still has a one-shot review marker."""
     return _DEPLOYMENT_POLICY_REVIEW_MARKER.is_file()
+
+
+def _deployment_policy_review_is_migration() -> bool:
+    """Return whether the pending ``deploy.toml`` review follows a migration."""
+    lines = _DEPLOYMENT_POLICY_REVIEW_MARKER.read_text(encoding="utf-8").splitlines()
+    return bool(lines) and lines[0] == _MIGRATION_REVIEW_LINE
 
 
 def _clear_deployment_policy_review_marker() -> None:
@@ -1085,6 +1100,7 @@ def scaffold_experiment_directory(
 
     written = []
     skipped = []
+    migrating = Path(".gitignore").exists()
 
     try:
         bootstrap_written, bootstrap_skipped = _bootstrap_authored_files(skip_files)
@@ -1098,7 +1114,7 @@ def scaffold_experiment_directory(
             skipped.append(relative_path)
             continue
 
-        if _copy_template_file(relative_path, overwrite):
+        if _copy_template_file(relative_path, overwrite, migrating=migrating):
             written.append(relative_path)
         else:
             skipped.append(relative_path)
