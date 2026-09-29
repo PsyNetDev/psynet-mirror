@@ -269,6 +269,7 @@ html_theme_options = {
     "github_url": "https://gitlab.com/PsyNetDev/PsyNet/",
     "use_edit_page_button": True,
     "header_links_before_dropdown": 11,
+    "footer_start": ["sphinx-version"],
     # Keep page TOC available in the right sidebar as well.
     "secondary_sidebar_items": ["page-toc", "edit-this-page"],
     # Include top-level page sections in section navigation.

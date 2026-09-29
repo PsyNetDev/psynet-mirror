@@ -6,6 +6,7 @@ About PsyNet
 
    applications
    what_its_like
+   software_stack
    research
    citing
    team

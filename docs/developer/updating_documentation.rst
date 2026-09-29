@@ -144,7 +144,7 @@ page.
 The documentation describes what PsyNet provides and how it works.
 Recommended workflows and research methodology built on PsyNet, such as
 adaptive designs and design simulation, belong in the Agent Skills under
-``.cursor/skills/experiment/``, which are published in the Skills section of
+``.cursor/skills/experiment/``, which are published in the Agent Skills section of
 this site. Skills are read by people as well as agents, so write them with
 clear steps and checklists and explain what a person needs to know. When a
 skill relies on a PsyNet fact, such as a hook, a command or an audit file,

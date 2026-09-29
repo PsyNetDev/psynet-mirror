@@ -2,6 +2,32 @@
     color: inherit;
 } */
 
+/* Accent and header colours from PsyNet's participant pages
+   (psynet/resources/css/participant.css). */
+html[data-theme="light"] {
+  --pst-color-primary: #3070c8;
+  --pst-color-primary-bg: #eaf1fb;
+  --pst-color-link: #3070c8;
+  --pst-color-link-hover: #275ba4;
+  --pst-color-link-higher-contrast: #275ba4;
+}
+
+html[data-theme="dark"] {
+  --pst-color-primary: #5b9bea;
+  --pst-color-primary-bg: #253449;
+  --pst-color-link: #5b9bea;
+  --pst-color-link-hover: #7db2f2;
+  --pst-color-link-higher-contrast: #7db2f2;
+}
+
+html[data-theme="light"] .bd-header {
+  background-color: #eef1f6 !important;
+}
+
+html[data-theme="dark"] .bd-header {
+  background-color: #1a2029 !important;
+}
+
 .icon-home {
     color: #fcfcfc !important;
 }
