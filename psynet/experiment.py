@@ -1420,10 +1420,12 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         Returns
         -------
         dict | None
-            A dictionary of JSON-serializable data, saved as ``basic_data.json``,
-            or a dictionary of pandas data frames, each saved as a CSV file under
-            ``basic_data/``. Return ``None`` if the experiment defines no basic
-            data. See :doc:`/data/basic_data`.
+            A dictionary of JSON-serializable data, saved as ``basic_data.json``
+            in exports. When ``context`` is ``"export"``, the values may instead
+            be pandas data frames, each saved as a CSV file under
+            ``basic_data/``; the other contexts need JSON-serializable data.
+            Return ``None`` if the experiment defines no basic data. See
+            :doc:`/data/basic_data`.
 
         Raises
         ------

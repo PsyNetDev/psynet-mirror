@@ -1648,6 +1648,9 @@ def run_pre_checks(mode, local_, heroku=False, docker=False, app=None):
     # Directory readiness is checked earlier in ``_pre_launch`` (before Redis)
     # and directly from ``psynet test local``. Avoid duplicating that work here.
 
+    if not local_:
+        _check_constraints_before_remote_deploy()
+
     exp = get_experiment()
     exp.check_config()
     exp.check_size(heroku=heroku)
@@ -1691,11 +1694,6 @@ def run_pre_checks(mode, local_, heroku=False, docker=False, app=None):
         if not config.ready:
             config.load()
         check_todos_before_deployment()
-
-        # Docker deploys set SKIP_DEPENDENCY_CHECK for Dallinger later in
-        # _pre_launch, so the server would otherwise build from a stale lockfile.
-        if not is_in_repo_experiment() and not os.environ.get("SKIP_DEPENDENCY_CHECK"):
-            _check_constraints()
 
         if docker:
             if config.get("docker_image_base_name", None) is None:
@@ -1744,6 +1742,18 @@ def run_pre_checks(mode, local_, heroku=False, docker=False, app=None):
             run_pre_checks_sandbox()
         elif mode == "live":
             run_pre_checks_deploy(local_, recruiter)
+
+
+def _check_constraints_before_remote_deploy():
+    """Stop a remote deploy of a standalone experiment with a stale ``constraints.txt``.
+
+    Docker deploys set ``SKIP_DEPENDENCY_CHECK`` for Dallinger later in
+    ``_pre_launch``, so without this check the image would be built from the
+    stale lockfile. In-repo demos use PsyNet's development environment instead.
+    """
+    if is_in_repo_experiment() or os.environ.get("SKIP_DEPENDENCY_CHECK"):
+        return
+    _check_constraints()
 
 
 def run_pre_checks_sandbox():
@@ -2281,6 +2291,10 @@ def _check_constraints(spinner=None):
     )
 
     if constraints_are_hand_written(constraints_path):
+        click.echo(
+            "constraints.txt was written by hand, so it is not checked against "
+            "requirements.txt."
+        )
         return
     if not constraints_are_up_to_date(
         requirements_path=requirements_path,

@@ -29,7 +29,10 @@ Return a dictionary of data, and it is saved as a JSON file:
 As data frames
 --------------
 
-Return a dictionary of data frames, and each is saved as a CSV file:
+In exports, a dictionary of data frames also works, and each is saved as a
+CSV file. The dashboard tab, the ``/basic_data`` endpoint and backups need
+JSON data, so check ``context`` and return data frames only when it is
+``"export"``:
 
 .. code:: python
 
@@ -56,6 +59,8 @@ Return a dictionary of data frames, and each is saved as a CSV file:
             }
             for participant in Participant.query.all()
         ]
+        if context != "export":
+            return {"trial": trials, "participant": participants}
         return {
             "trial": pd.DataFrame.from_records(trials),
             "participant": pd.DataFrame.from_records(participants),

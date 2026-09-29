@@ -1,3 +1,4 @@
+import math
 from datetime import datetime
 
 import numpy
@@ -51,12 +52,19 @@ class Exp(psynet.experiment.Experiment):
     @experiment_route("/set_dollars", methods=["POST"])
     @classmethod
     def set_dollars(cls):
-        participant = Participant.query.filter_by(
-            id=int(request.values["participant_id"])
-        ).one()
-        if participant.unique_id != request.values["unique_id"]:
-            return error_response(error_text="Invalid participant")
-        participant.var.dollars = float(request.values["dollars"])
+        try:
+            participant_id = int(request.values["participant_id"])
+            dollars = float(request.values["dollars"])
+        except (KeyError, ValueError):
+            return error_response(error_text="Invalid request")
+        participant = Participant.query.filter_by(id=participant_id).one_or_none()
+        if (
+            participant is None
+            or participant.unique_id != request.values.get("unique_id")
+            or not math.isfinite(dollars)
+        ):
+            return error_response(error_text="Invalid request")
+        participant.var.dollars = dollars
         db.session.commit()
         return success_response()
 
