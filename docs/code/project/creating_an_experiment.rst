@@ -10,7 +10,7 @@ The quickest start is a copy of a demo from the ``demos`` directory of the
 
 ``demos/features/pages`` and ``demos/features/timeline`` cover the core
 building blocks: info pages, modular pages, prompts, controls, page makers,
-code blocks, conditions and loops. :doc:`/examples/demos/index` describes
+code blocks, conditions and loops. :doc:`/demos/index` describes
 every demo.
 
 An experiment from elsewhere, such as a published experiment repository, is

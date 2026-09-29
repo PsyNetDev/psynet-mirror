@@ -127,6 +127,12 @@ language = "en"
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
 linkcheck_ignore = [
+    # GitLab answers signed-out automated requests for these with 403 or 404:
+    # the public issue list, and pages that need a login or a private repo.
+    r"https://gitlab\.com/PsyNetDev/PsyNet/-/issues/?$",
+    r"https://gitlab\.com/PsyNetDev/PsyNet/-/releases/new$",
+    r"https://gitlab\.com/-/user_settings/personal_access_tokens$",
+    r"https://gitlab\.com/computational-audition-lab/psynet-deployment-tests/?$",
     # Local development URLs used in tutorial examples; no server is
     # running during linkcheck.
     r"https?://localhost(:\d+)?(/.*)?$",
@@ -269,6 +275,7 @@ html_theme_options = {
     "github_url": "https://gitlab.com/PsyNetDev/PsyNet/",
     "use_edit_page_button": True,
     "header_links_before_dropdown": 11,
+    "footer_start": ["sphinx-version"],
     # Keep page TOC available in the right sidebar as well.
     "secondary_sidebar_items": ["page-toc", "edit-this-page"],
     # Include top-level page sections in section navigation.

@@ -1,5 +1,3 @@
-from functools import wraps
-
 EXPOSED_FUNCTIONS = {}
 
 
@@ -58,11 +56,6 @@ def expose_to_api(endpoint):
                 "Endpoint already registered"
             )
         EXPOSED_FUNCTIONS[endpoint] = f
-
-        @wraps(f)
-        def wrapper(*args, **kwargs):
-            return f(*args, **kwargs)
-
-        return wrapper
+        return staticmethod(f) if is_static else f
 
     return decorator

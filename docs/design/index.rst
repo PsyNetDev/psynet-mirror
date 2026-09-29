@@ -11,3 +11,4 @@ Designing experiments
    stimuli
    participants
    groups
+   glossary

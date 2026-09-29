@@ -57,7 +57,7 @@ virtual environment active. ``psynet <command> --help`` lists every option.
      - Update the installed PsyNet and Dallinger packages
        (see `Update the PsyNet/Dallinger installation (installation update)`_).
    * - ``psynet install autocomplete``
-     - Install shell tab completion; see :ref:`shell_completion`.
+     - Install shell tab completion (see :ref:`shell_completion`).
    * - ``psynet docs show PAGE`` / ``path``
      - Print a documentation page for the installed PsyNet version, or the
        folder that holds every page, for searching (for example with
@@ -279,19 +279,34 @@ Install PsyNet components (``install``)
 Install additional PsyNet components and utilities.
 
 .. _install_autocomplete:
+.. _shell_completion:
 
 Install shell completion (``install autocomplete``)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-This command installs shell tab completion for the ``psynet`` command. It automatically
-detects your shell and adds the appropriate completion setup to your shell configuration file.
+Shell completion lets you press Tab to complete ``psynet`` commands,
+subcommands and options, for example ``psynet debug l<TAB>`` becomes
+``psynet debug local``. This command detects your shell (bash or zsh), writes
+a completion script to ``~/.local/bin/``, and adds a line that loads it to
+``~/.bashrc`` or ``~/.zshrc``:
 
 .. code:: bash
 
   psynet install autocomplete
 
-This is equivalent to running the ``./install-completion.sh`` script manually from the root directory
-of an editable PsyNet installation. For more information about shell completion, see :ref:`shell_completion`.
+In an editable PsyNet installation, running
+``./psynet/resources/scripts/install-completion.sh`` from the PsyNet
+directory does the same. Restart the terminal, or load the script directly:
+
+.. code-block:: bash
+
+   source ~/.local/bin/.psynet-completion.bash  # for bash
+   source ~/.local/bin/.psynet-completion.zsh   # for zsh
+
+If completion doesn't work, check that the script exists
+(``ls ~/.local/bin/.psynet-completion.*``), that ``~/.local/bin`` and
+``psynet`` are on your ``PATH``, and that your shell configuration file
+contains the ``source`` line above.
 
 .. _update:
 

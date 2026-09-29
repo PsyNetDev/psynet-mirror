@@ -1,7 +1,7 @@
-Skills
-======
+Agent Skills
+============
 
-PsyNet's **Agent Skills** describe recommended workflows for PsyNet users:
+PsyNet's Agent Skills describe recommended workflows for PsyNet users:
 how to implement an experiment, simulate participants, plan a design
 simulation, prepare a deployment, and more. They are written mainly for
 coding agents, which follow them step by step, and they also work as
