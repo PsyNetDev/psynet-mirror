@@ -467,3 +467,43 @@ Store ``sync_group_id`` on each trial when a trial maker with
 ``sync_group_type`` creates it, and either set
 ``ParticipantLinkSyncGroup.arrival_time`` when a participant joins a group or
 remove the column. The data docs could then join trials to groups directly.
+
+Learning tracks
+---------------
+
+Date
+++++
+
+2026-09-29
+
+Problem
++++++++
+
+The documentation used to include a "music perception track": a reading
+order through the demos, pages and exercises for researchers running online
+music perception studies. It was the only track, and it sat awkwardly among
+the exercises, so it was removed. Its outline was:
+
+#. Install PsyNet (:doc:`/install`) and create a first experiment
+   (:doc:`/quickstart`).
+#. Run ``demos/experiments/hello_world`` and ``demos/features/timeline``;
+   match each demo's code to what a participant sees, then change some text.
+#. Read :doc:`/design/timeline`, :doc:`/code/writing_a_timeline` and
+   :doc:`/code/writing_pages`, then do the timeline exercise.
+#. Run ``demos/experiments/audio`` (JSSynth chords and audio recording), then
+   do the JSSynth exercise.
+#. Read :doc:`/design/trials` and :doc:`/code/writing_a_trial_maker`, then run
+   ``demos/experiments/trial``, ``trial_2``, ``trial_3`` and ``static_audio``.
+#. Read :doc:`/code/project/classes_and_sqlalchemy`.
+#. Apply ``demos/pipelines/simple_rating`` or ``demos/pipelines/tapping`` to
+   your own stimuli.
+
+``demos/experiments/vertical_processing`` and the example experiments are
+complete music experiments.
+
+Idea
+++++
+
+If there is demand, add a small "Learning tracks" section with several tracks
+(for example music perception, language, visual perception), each a reading
+order through existing pages, demos and exercises rather than new content.

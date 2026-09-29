@@ -5,12 +5,9 @@
 Deploying from archive
 ======================
 
-Sometimes it's useful to redeploy a PsyNet experiment on the basis of previously exported data.
-Perhaps you had to shut down the experiment server due to some problem which you've now fixed.
-It's easy to do this with PsyNet. First, find a previous export: ``psynet export``
-writes it to ``exports/latest/`` in your experiment directory, and the dashboard
-export gives you an ``export.zip``. Then run the same deploy command as you normally would,
-but pass that path using the ``--archive`` option:
+A PsyNet experiment can be redeployed with the data from an earlier export,
+for example after the server was shut down because of a problem that you have
+since fixed. Pass the export to the usual deploy command with ``--archive``:
 
 .. code:: bash
 
@@ -18,21 +15,23 @@ but pass that path using the ``--archive`` option:
     # or: --archive export.zip
     # or: --archive path/to/database
 
+``psynet export`` writes the export to ``exports/latest/`` in the experiment
+directory, and the dashboard's Export tab downloads it as ``export.zip``.
+``--archive`` also accepts the ``database/`` directory itself.
+
 Only the table CSVs under ``database/`` are sent to the server. PsyNet re-packs
 whatever you pass to ``--archive`` before deploying it, so the recruiter
 identifier sidecars and any exported asset files in an ``export.zip`` stay on
 your computer.
 
-When you deploy an experiment in this way, PsyNet will use the latest version of the code that you
-have in your current experiment directory. This means that you can use this opportunity to address small
-bugs in your code. Note that the database structure is, however, sensitive to what PsyNet version you use.
-It's a bad idea however to upgrade PsyNet versions in between exporting and deploying from archive,
-unless you're sure what you're doing.
-Note also that the experiment deployment will reuse any assets you uploaded previously;
-it's currently not supported to change your asset generation code and redeploy to obtain new assets.
+The deployment uses the code currently in your experiment directory, so you
+can fix small bugs before redeploying. The database structure depends on the
+PsyNet version, so don't upgrade PsyNet between exporting and redeploying
+unless you know that the structure hasn't changed. The deployment reuses the
+assets uploaded previously; changing the asset generation code and
+redeploying does not create new assets.
 
-It's also possible to debug an experiment using a previously exported archive using analogous logic.
-For example, the following command runs a local debug experiment based on ``export.zip``:
+``psynet debug`` accepts ``--archive`` in the same way, for example:
 
 .. code:: bash
 

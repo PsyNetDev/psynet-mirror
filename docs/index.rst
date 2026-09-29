@@ -36,21 +36,6 @@ the virtual lab framework
   because PsyNet is open source, any part of it can be customized or
   replaced.
 
-.. container:: landing-buttons
-
-   .. button-ref:: introduction/applications
-      :ref-type: doc
-      :color: primary
-
-      What's PsyNet for?
-
-   .. button-ref:: install
-      :ref-type: doc
-      :color: primary
-      :outline:
-
-      Get started
-
 .. toctree::
    :hidden:
    :maxdepth: 3

@@ -3,6 +3,12 @@
 Lab Recruiter
 =============
 
+.. warning::
+
+   Lab Recruiter is currently available only to Nori Jacoby and
+   collaborators. If you would like to set it up for your own lab, contact
+   `Nori Jacoby <https://norijacoby.com/>`_.
+
 Lab Recruiter is a web application in which a lab manages its own
 participant pool: participants register, take experiments, and have their
 payments tracked, without a third-party marketplace. You need access to a

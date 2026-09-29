@@ -1,6 +1,10 @@
 Writing code
 ============
 
+PsyNet users can often rely on coding agents to write their experiment code
+for them. These pages are still useful for understanding the code an agent
+has written, checking it, and changing it yourself.
+
 .. toctree::
    :caption: Starting a project
    :maxdepth: 1

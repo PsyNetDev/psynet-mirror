@@ -56,7 +56,7 @@ EXPECTED_EXCLUDE_SUFFIXES = (
 )
 
 
-def test_prototype_metadata_and_platform_warnings():
+def test_prototype_metadata_declares_posix_only():
     root = get_psynet_root()
     project = tomllib.loads((root / "pyproject.toml").read_text())["project"]
     classifiers = project["classifiers"]
@@ -65,16 +65,6 @@ def test_prototype_metadata_and_platform_warnings():
     assert "Programming Language :: Python :: 3.10" not in classifiers
     assert "Operating System :: POSIX" in classifiers
     assert "Operating System :: OS Independent" not in classifiers
-
-    documentation = [
-        root / "docs" / "deploy" / "reference" / "index.rst",
-        root / "docs" / "deploy" / "how_deployment_works.rst",
-    ]
-    for path in documentation:
-        text = " ".join(path.read_text().split())
-        assert ".. warning::" in text
-        assert "is not supported on Windows" in text
-        assert "POSIX" in text
 
 
 def _template_directory():

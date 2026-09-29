@@ -263,7 +263,7 @@ often continue with a
    tick its checkbox on the Messages page and click **Archive**.
 
    .. image:: /_static/images/running_studies/recruiters/prolific/messages-in-prolific.png
-      :width: 8.5in
+      :width: 460px
       :alt: Archiving a Prolific message
 
 Ending the study

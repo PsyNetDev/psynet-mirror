@@ -1,24 +1,18 @@
 Deployment reference
 ====================
 
-.. warning::
-
-   ``deploy.toml`` planning currently requires a POSIX filesystem and is not
-   supported on Windows.
-
 .. toctree::
    :maxdepth: 1
 
    ssh_server
    aws_automatic_provisioning
-   aws_server_setup
-   physical_server_setup
+   manual_server_setup
    deploy_tokens
-   ad_page
    deploy_from_archive
+   ad_page
    deployment_monitor
-   setting_up_slack
    errors
+   setting_up_slack
    troubleshooting
 
 .. _deployment_build_context:

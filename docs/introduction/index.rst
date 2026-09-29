@@ -7,5 +7,5 @@ About PsyNet
    applications
    what_its_like
    research
-   history
+   citing
    team

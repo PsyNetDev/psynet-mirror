@@ -37,32 +37,19 @@ Creating a Slack app
 3. Click "Create" to create the app.
 4. Scroll down to "Display Information", set a bot icon if you like, then click "Save Changes".
 5. Go to the Settings menu item "Install app" and install it into the workspace.
-6. Copy the "Bot User OAuth Token" and put it into your ``.dallingerconfig``:
+6. Copy the "Bot User OAuth Token".
+7. In Slack, create a public channel for the bot to report to, for example
+   ``#psynet-experiments``.
+8. Add the token, the channel name without ``#``, your name as it appears on
+   Slack and the notifier to ``~/.dallingerconfig``. ``experimenter_name``
+   must match your Slack name for you to receive @-mentions.
 
-::
+.. code-block:: ini
 
+    [Slack]
     slack_bot_token = xxxxxxxx-xxxxxxxx-xxxxxxxx-xxxxxxxxx
-
-7. Using the Slack app, create a Slack channel for your bot to report to.
-   Note that this channel must be public.
-   Enter the name of this Slack channel in your ``.dallingerconfig``,
-   for example (here the channel is called ``#psynet-experiments``):
-
-::
-
     slack_channel_name = psynet-experiments
-
-8. Make sure your ``experimenter_name`` matches your name on Slack in order to receive @-mentions and receive notifications when messages arrive.
-
-::
-
     experimenter_name = Max Mustermann
-
-
-9. Add the following line to your config to use Slack as the notification service:
-
-::
-
     notifier = slack
 
 

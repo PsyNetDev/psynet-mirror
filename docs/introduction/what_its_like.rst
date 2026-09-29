@@ -3,9 +3,9 @@
 What's it like to use PsyNet?
 =============================
 
-In this walkthrough a coding agent writes the code. You can also write it
-yourself, starting from a demo; see
-:doc:`/code/project/creating_an_experiment`.
+Nowadays coding agents (e.g. ChatGPT, Cursor) make it straightforward to design
+and run complex experiments in minutes. Your workflow might look something like
+this:
 
 .. rst-class:: study-step
 
@@ -165,9 +165,3 @@ yourself, starting from a demo; see
       a table for each kind of record. You run
       the analysis you wrote against the practice data, and take the server
       down.
-
-.. button-ref:: /install
-   :ref-type: doc
-   :color: primary
-
-   Get started

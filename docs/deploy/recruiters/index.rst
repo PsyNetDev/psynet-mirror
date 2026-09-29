@@ -22,7 +22,7 @@ qualification requirements.
    * - Account
      - Your own or your lab's Prolific account
      - A CINT account, usually held by the lab
-     - A Lab Recruiter instance run by your institution
+     - Access to a Lab Recruiter instance (currently Nori Jacoby and collaborators only)
    * - Payment
      - Through Prolific, with automatic bonuses and screen-out payments
      - EUR, set by ``get_lucid_settings()``; wage at the target country's

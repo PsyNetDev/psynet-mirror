@@ -19,7 +19,9 @@ requirements:
 
 For a live study with several participants at a time, choose a machine with
 at least 16 GB of RAM and 4 CPU cores, such as an AWS ``m7i.xlarge``
-instance. A pilot runs on a smaller machine such as ``m7i.large``.
+instance. A pilot runs on a smaller machine such as ``m7i.large``. As a rough
+guide, allow 5 GB of RAM for each experiment that runs on the server at the
+same time.
 
 The usual choices are:
 
@@ -28,10 +30,12 @@ The usual choices are:
   while it exists; at the time of writing (January 2026) an ``m7i.xlarge``
   costs around $0.20 an hour, so a five-hour study costs around $1.
 - **A virtual machine from any cloud provider**, such as Hetzner, Contabo, or
-  AWS configured by hand in the console (see
-  :doc:`/deploy/reference/aws_server_setup`).
-- **A physical machine** run by you or your institution (see
-  :doc:`/deploy/reference/physical_server_setup`).
+  AWS configured by hand in the console.
+- **A physical machine** run by you or your institution.
+
+A server that Dallinger doesn't provision needs key-based SSH login and DNS
+records before you register it; see
+:doc:`/deploy/reference/manual_server_setup`.
 
 .. lab-note::
 
@@ -98,7 +102,7 @@ account:
     docker_image_base_name = psynet-experiments
 
 A registry is needed only if you push images yourself; see
-:doc:`/deploy/reference/ssh_server`.
+:ref:`docker_registry`.
 
 Dashboard credentials and contact email
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -157,8 +161,7 @@ Registering the server
       ``https://<app>.my-server.example.org``.
 
       You can register a server by IP address instead of a name. Deployments
-      then need ``--dns-host`` as well; see
-      :doc:`/deploy/reference/ssh_server`.
+      then need ``--dns-host`` as well; see :ref:`ssh_server_addresses`.
 
    .. tab-item:: AWS (automatic)
       :sync: aws

@@ -41,11 +41,6 @@ By default, the plan may be at most 1024 MB. Before raising the limit with the
 ``EXP_MAX_SIZE_MB`` environment variable, check the plan for exports, virtual
 environments and private data.
 
-.. warning::
-
-   ``deploy.toml`` planning requires a POSIX filesystem and is not supported
-   on Windows. On Windows, run PsyNet in WSL.
-
 Remote deployments need a Git repository with at least one commit. PsyNet
 records the deployed commit and whether any file in the deployment plan had
 uncommitted changes, including untracked or Git-ignored files. Changes to

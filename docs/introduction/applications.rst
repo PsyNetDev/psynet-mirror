@@ -3,6 +3,8 @@
 What's PsyNet for?
 ==================
 
+PsyNet supports a great range of experiments, from simple to complex.
+
 .. card:: Rating large stimulus sets
    :class-card: sd-mb-4 sd-shadow-sm
    :class-title: sd-fs-5

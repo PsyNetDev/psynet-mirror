@@ -21,20 +21,11 @@ Listing regions, instance types and instances
 
    dallinger ec2 list regions
    dallinger ec2 list instance_types --region <region>
-
-Instances can have the following states: pending, running, shutting-down,
-terminated, stopping, stopped. To list your instances:
-
-.. code:: bash
-
    dallinger ec2 list instances
 
-Filter them with ``--region <region>`` and with any of ``--running``,
-``--stopped`` and ``--terminated``, for example:
-
-.. code:: bash
-
-   dallinger ec2 list instances --region <region> --running
+``list instances`` shows every instance with its state (pending, running,
+shutting-down, terminated, stopping or stopped). Filter it with ``--region
+<region>`` and with any of ``--running``, ``--stopped`` and ``--terminated``.
 
 Provisioning an instance
 ========================
@@ -54,7 +45,7 @@ Options:
 ``--type``
    Instance type (default ``m5.xlarge``). See
    `EC2 instance types <https://aws.amazon.com/ec2/instance-types/>`_ for the
-   options and their storage.
+   options.
 ``--storage``
    Disk size in GB (default 32).
 ``--image_name``
@@ -71,7 +62,8 @@ Provisioning runs these steps and prints each one to the terminal:
 1. If ``--dns-host`` is given, checks that Route 53 has a hosted zone for its
    last two parts (for example ``cool-psychology.org``). If records for the
    name already exist, Dallinger asks before overwriting them, because they
-   may belong to another running server.
+   may belong to another running server. It also removes the name's entries
+   from ``~/.ssh/known_hosts``.
 2. Creates the security group if it does not exist in the region, allowing
    incoming traffic from anywhere on ports 22, 80, 443 and 5000.
 3. Imports the key pair named by ``ec2_default_pem`` from
@@ -94,18 +86,19 @@ At the end, you should see something like this:
    Provisioning complete! Time taken: 192.402161359787. memory-lab is
    ready at ec2-52-91-24-127.compute-1.amazonaws.com
 
-If the experiment stores large or many assets with ``LocalStorage``, for
-example iterative singing or GSP experiments, make sure that the disk is
-large enough; an experiment can crash when the disk fills up. Use
-``S3Storage`` for experiments with many assets, or increase the storage of
-an existing instance:
+Increasing storage
+==================
+
+Experiments that store many or large assets with ``LocalStorage``, for
+example iterative singing or GSP experiments, can crash when the disk fills
+up. Use ``S3Storage`` for them (see :doc:`/code/trials/assets`), or grow the
+disk of a running instance:
 
 .. code:: bash
 
    dallinger ec2 increase-storage --name <server_name> --region <region> --storage <size_in_gb>
 
-The new size must be larger than the current one. For more on storage
-back-ends, see the :doc:`Assets guide </code/trials/assets>`.
+The new size must be larger than the current one.
 
 Stopping, starting and restarting an instance
 =============================================
@@ -119,8 +112,8 @@ Stopping, starting and restarting an instance
 keeping the server registrations. AWS continues to charge for the instance's
 storage while it is stopped. ``start`` waits until the instance has stopped,
 starts it and recreates the DNS records, pointing them at the instance's new
-AWS hostname. Pass ``--name`` to ``start``. Docker restarts the experiments
-with the instance.
+AWS hostname. Pass ``--name`` to ``start``; it cannot find the instance by
+``--dns``. Docker restarts the experiments with the instance.
 
 ``restart`` reboots a running instance without changing its hostname or DNS
 records:
@@ -141,8 +134,7 @@ Log in with the key pair's PEM file as the ``ubuntu`` user, using either the
 
    ssh -i ~/.ssh/<ec2_default_pem>.pem ubuntu@<subdomain>.<your-domain>
 
-SSH access is useful if you need to restart a Docker container or inspect
-assets on the server; see :doc:`/deploy/reference/ssh_server`.
+For what to do on the server, see :ref:`ssh_server_working_over_ssh`.
 
 .. _aws_automatic_teardown:
 
@@ -156,11 +148,4 @@ Terminating an instance
 ``teardown`` terminates the instance, which deletes its disk with every
 experiment database on it. It then removes the DNS records for ``--dns-host``
 and both server registrations. Without ``--dns-host``, the DNS records and the
-``--dns-host`` registration stay behind. Export all data first; see
-:doc:`/deploy/running_a_study`.
-
-Custom machine images
-=====================
-
-To start from your own machine image, pass its AMI ID or name with
-``--image_name``. Most experiments should use the default Ubuntu image.
+``--dns-host`` registration stay behind. Export all data first.

@@ -309,7 +309,7 @@ participants, depending on how efficient the experiment code is. Keep the
 median hourly wage on the Prolific study page above Prolific's minimum.
 
 .. image:: /_static/images/running_studies/recruiters/prolific/recruitment-strategy.png
-   :width: 8.5in
+   :width: 360px
    :alt: Increasing places on a Prolific study
 
 Auto-recruit

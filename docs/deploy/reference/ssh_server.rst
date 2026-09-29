@@ -5,374 +5,239 @@
 SSH servers
 ===========
 
-PsyNet deploys experiments over SSH with ``psynet debug ssh`` and ``psynet
-deploy ssh`` to a Linux server that you have
-:doc:`set up and registered </deploy/setting_up_a_server>`.
+``psynet debug ssh`` and ``psynet deploy ssh`` deploy to a Linux server that
+you have :doc:`set up and registered </deploy/setting_up_a_server>`. This page
+describes their addressing options, what they do on the server, and how to
+work with a deployed app over SSH.
 
-Server size
-^^^^^^^^^^^
+.. _ssh_server_addresses:
 
-As a very approximate rule of thumb, allow 5 GB of RAM for each experiment
-that the server hosts at the same time.
+Server names and experiment addresses
+-------------------------------------
 
-Servers that only accept passwords
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+``--server`` is a name registered with ``dallinger docker-ssh servers add`` or
+``dallinger ec2 provision``, as listed by ``dallinger docker-ssh servers
+list``. With one registered server it can be left out; with several, PsyNet
+asks you to choose, or fails if the command is not run in an interactive
+terminal.
 
-Dallinger needs passwordless SSH access. If you normally log in to the server
-with a password, generate a key on your local machine if you don't have one:
+``--dns-host`` sets the domain the experiment is served under. It defaults to
+the ``--server`` name, so the experiment is served at
+``https://<app>.<server>``. Pass it:
 
-.. code:: bash
+- if the server is registered by IP address. ``--server`` is then the IP
+  address and ``--dns-host`` the public name, and leaving ``--dns-host`` out
+  is an error:
 
-    ssh-keygen
+  .. code:: bash
 
-Then upload it to the server, replacing the username and address as
-appropriate:
+      psynet deploy ssh --app my-study --server 121.101.152.23 --dns-host my-server.example.org
 
-.. code:: bash
+- to use `nip.io <https://nip.io>`_ instead of a domain of your own.
+  ``--dns-host nip.io`` serves the experiment at
+  ``https://my-study.121.101.152.23.nip.io``. Some browsers warn participants
+  about such names, and HTTPS certificates for nip.io names are sometimes
+  unavailable because of rate limits.
 
-    ssh-copy-id your-username@your-server.example.org
+Before deploying, Dallinger checks that ``<app>.<dns-host>`` resolves to the
+server's IP address and stops with a ``DNS resolution error`` otherwise. A
+wildcard record (``*.my-server.example.org``) covers every app name; with a
+fixed list of records, ``--app`` must be one of them.
 
-Check that you can now log in without a password:
+``--app`` may contain only lowercase letters, digits and hyphens, and must not
+already be in use on the server. Without ``--app``, the experiment is served at
+the ``--dns-host`` name itself rather than a subdomain, and its logs at
+``https://<dns-host>/logs``. Such a deployment needs a server with no other
+apps: Dallinger offers to destroy any it finds first.
 
-.. code:: bash
+.. _ssh_server_launch_info:
 
-    ssh your-username@your-server.example.org
+Launch information
+------------------
 
-Set ``server_pem`` to the private key (for example ``~/.ssh/id_ed25519``)
-before registering the server.
-
-Setting up a Docker registry (optional)
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-A Docker registry is needed only if you push your images, for example with Dallinger's ``dallinger docker-ssh
-deploy --push-build`` or ``--local_build`` options. In that case
-``docker_image_base_name`` must point to a registry you can push to.
-
-Personal Docker registry on docker.io
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-- Create an account on `docker.io <https://www.docker.com/>`_.
-- Install the Docker Desktop app and sign in.
-- Set ``docker_image_base_name`` in ``config.txt`` for one experiment, or in
-  ``~/.dallingerconfig`` for all of them:
-
-  .. code:: ini
-
-      docker_image_base_name = docker.io/<docker_io_username>/<name_of_your_image>
-
-Group Docker registry on GitLab
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-A group registry keeps a team's images in one place. GitLab provides a
-container registry for each project, on gitlab.com or on a self-hosted
-instance.
-
-1. Create a GitLab project to hold the images, for example
-   ``experiment-images``, inside a GitLab group.
-2. Give everyone who deploys permission to push to the project's container
-   registry, for example by adding the group as a project member with the
-   Developer role or higher.
-3. Log in to the registry from your computer:
-
-   .. code:: bash
-
-       docker login registry.gitlab.com
-
-   On a self-hosted GitLab instance, use its registry hostname instead, for
-   example ``registry.gitlab.example.org``.
-
-4. Point ``docker_image_base_name`` in ``~/.dallingerconfig`` at the project:
-
-   .. code:: ini
-
-       docker_image_base_name = registry.gitlab.com/<group>/<project>/experiment-images
-
-5. Open an SSH session on the server and run the same ``docker login``
-   command there, so that the server can pull the images:
-
-   .. code:: bash
-
-       ssh your-username@your-server.example.org
-
-If you cannot log in with your password on the command line (for example
-with federated authentication), create a
-`personal access token <https://gitlab.com/-/user_settings/personal_access_tokens>`_
-and log in with your username, entering the token when prompted for a
-password:
-
-.. code:: bash
-
-    docker login registry.gitlab.com -u your-username
-
-.. note::
-
-    Docker may warn that your password will be stored unencrypted in
-    ``~/.docker/config.json`` and suggest a credential helper. You can usually
-    continue without one.
-
-.. note::
-
-    If you created your GitLab account through an external service (for
-    example GitHub or Google), you may need to set a GitLab password first.
-    Make sure that you can log in to GitLab in the browser with only your
-    email address; you may need to disconnect the external account (User
-    Settings > Account) and reset your password.
-
-Deploying experiments via SSH
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-You deploy experiments using the ``psynet deploy`` command:
-
-.. code:: bash
-
-    psynet deploy ssh --app your-app-name --server your-server.example.org
-
-``--server`` chooses which server, registered with
-``dallinger docker-ssh servers add`` (or ``dallinger ec2 provision``), to deploy
-to. You can leave it out if you have registered only one server; with several,
-PsyNet asks you to choose. For a server created with ``dallinger ec2
-provision``, pass the ``--dns-host`` name. The experiment is served at a subdomain of the
-server's name, here ``your-app-name.your-server.example.org``.
-
-You only need ``--dns-host`` if you registered the server by IP address, or to
-serve the experiment under a different domain.
-
-If the server was registered by IP, pass both flags. ``--server`` is the
-IP as stored by ``dallinger docker-ssh servers add``; ``--dns-host`` is
-the public name:
-
-.. code:: bash
-
-    psynet deploy ssh --app your-app-name --server 121.101.152.23 --dns-host your-server.example.org
-
-To use nip.io instead of a real domain, pass ``--dns-host nip.io``. The
-experiment URL then looks like
-``https://your-app-name.121.101.152.23.nip.io``. Omitting ``--dns-host``
-on an IP-registered server is an error; PsyNet does not invent a nip.io
-name for you.
-
-Set up DNS so that each app name is a subdomain. A wildcard record such as
-``*.your-server.example.org`` covers every app; a fixed list of names
-means ``--app`` must be one of those names.
-
-.. note::
-
-    Do not use an underscore character (``_``) in ``your-app-name``. This can cause an
-    error during deployment. The app name will be visible to participants, since it's
-    used in the experiment URL, so make it meaningful without revealing too much about
-    the experiment to participants.
-
-When the experiment is successfully deployed, the terminal prints the dashboard URL
-and login credentials, similar to this:
+At the end of a deployment, the command prints the log command, the Dozzle
+address and the dashboard link with its credentials:
 
 .. code:: text
 
     You can now log in to the console at
-    https://admin:XXX@your-app-name.your-server.example.org/dashboard
+    https://admin:XXX@my-study.my-server.example.org/dashboard
     (user = admin, password = XXX)
 
-PsyNet also saves the credentials in ``launch-info.json`` under
-``~/psynet-data/launch-data/<deployment-id>/``, where the deployment ID
-has the form ``<label>__mode=live__launch=<timestamp>``.
-Save the dashboard link so that you can monitor the experiment while it collects data.
-See :doc:`Deployment monitor </deploy/reference/deployment_monitor>` for details on what the
-dashboard shows and how to interpret it.
+PsyNet also saves the credentials in
+``~/psynet-data/launch-data/<deployment-id>/launch-info.json``, where the
+deployment ID has the form ``<label>__mode=<mode>__launch=<timestamp>``.
 
-Under the hood, the deployment command works as follows:
+What a deployment does
+----------------------
 
-- Run any preliminary steps, e.g. uploading assets to the remote server
-- Build the Docker image on the remote server (using the remote Docker daemon over SSH),
-  packaging up all local code and dependencies
-- Instruct the remote server to spin up the Docker app
-- Instruct the remote server to launch the experiment
+1. PsyNet runs its pre-deployment checks and prepares the experiment files
+   from ``deploy.toml``.
+2. Dallinger adds ``server_pem`` to your SSH agent and builds the Docker image
+   with the server's Docker daemon, over SSH. The image stays on the server.
+3. It writes the shared ``docker-compose.yml`` and ``Caddyfile`` to
+   ``~/dallinger`` and starts the shared services.
+4. It creates the app's database and database user, writes
+   ``~/dallinger/<app>/docker-compose.yml``, starts the app's containers and
+   initializes the database.
+5. It adds the app's address to Caddy and calls the experiment's ``/launch``
+   route, which opens recruitment.
 
-This command can go wrong at several points. The parts that happen on the local
-machine are usually easiest to debug. When things go wrong on the remote server,
-check the logs in the server's log viewer (Dozzle) at
-``https://logs.<dns-host>``, where ``<dns-host>`` is the DNS name the
-experiment is served under.
-Often you will see the real error message in the `web` instance.
+Services
+^^^^^^^^
 
-In some cases you may need to connect to the server via a separate SSH terminal to work out what's going on.
-To connect to the server, run this in a separate terminal:
+Each app runs these Docker Compose services:
 
-.. code:: bash
+- ``web``, which serves HTTP requests;
+- ``worker_1`` to ``worker_N``, which process background tasks, one for each
+  of ``num_dynos_worker``;
+- ``clock``, which runs scheduled tasks;
+- ``redis``, which holds the app's cache and task queue;
+- ``pgbouncer``, which pools the app's database connections.
 
-    ssh your-username@your-server.example.org
+All apps share these services, defined in ``~/dallinger/docker-compose.yml``:
 
-Navigate to the experiment's folder:
+- ``postgresql``, which holds one database for each app;
+- ``httpserver``, a `Caddy <https://caddyserver.com/>`_ server that routes
+  each address to its app and obtains HTTPS certificates;
+- ``dozzle``, the log viewer at ``https://logs.<dns-host>``.
 
-.. code:: bash
+Every service has the restart policy ``unless-stopped``, so Docker restarts
+the apps when the server reboots.
 
-    cd ~/dallinger/your-app-name
+Files on the server
+^^^^^^^^^^^^^^^^^^^
 
-If this folder doesn't exist yet, your command probably failed before it got
-to the remote server.
+``~/dallinger/``
+   The shared ``docker-compose.yml``, ``Caddyfile`` and Dozzle login
+   (``dozzle-users.yml``).
+``~/dallinger/caddy.d/<app>``
+   The app's Caddy configuration.
+``~/dallinger/<app>/docker-compose.yml``
+   The app's services and configuration.
+``~/dallinger-data/<app>/``
+   Files the app stores on the server, mounted in its containers at
+   ``/var/lib/dallinger``.
 
-This gives you another way to view the Docker logs for the web instance:
+``psynet destroy ssh`` stops the app's containers and removes
+``~/dallinger/<app>/``, its Caddy configuration, and its image if no other app
+uses it. The app's database stays in PostgreSQL until an app with the same
+name is deployed, which replaces it.
 
-.. code:: bash
+.. _ssh_server_working_over_ssh:
 
-    docker compose logs
+Working with an app over SSH
+----------------------------
 
-Sometimes it is useful to execute code on this remote Docker instance to work out
-what happened. You can do this as follows:
-
-.. code:: bash
-
-    docker compose exec web /bin/bash
-
-Under the hood
-^^^^^^^^^^^^^^
-
-It's worth knowing a few things about what's happening under the hood here so that you
-are better positioned to debug things when they go wrong.
-
-The SSH server works using Docker. Docker is a containerization service that virtualizes
-entire operating systems and installed dependencies. This isolation is very helpful for ensuring
-application portability.
-
-When we work with Docker, we begin by creating a Docker *image*. A docker image is a snapshot
-of an operating system in a particular status. The operating system we use here is Linux.
-If you are familiar with the terminal in MacOS, then you will find Linux fairly intuitive.
-
-Docker images are defined by writing Dockerfiles. Your experiment directory contains such a file,
-it will be named ``Dockerfile``. Have a read through one such file to get a picture of how
-the Docker image ends up being defined.
-
-When we run an app we create one or more containers based on Dockerfiles. Containers are virtual
-computers that are initialized according the snapshot provided in the Docker image.
-You can run many containers on the same computer, but of course they all consume their own
-computational resources.
-
-The SSH server uses a tool called *docker compose* to orchestrate multiple containers for the
-same app. Each PsyNet experiment contains the following services:
-
-- ``web`` - serves HTTP requests
-- ``worker_1``, ``worker_2``, ... - process asynchronous tasks (one per worker, set by ``num_dynos_worker``)
-- ``clock`` - schedules tasks
-- ``redis`` - stores variable values
-- ``pgbouncer`` - pools the experiment's database connections
-
-The SSH server additionally provides further services which are shared across all experiments:
-
-- ``postgresql`` - hosts the experiment databases
-- ``httpserver`` - a Caddy server that redirects HTTP requests to the appropriate experiment app. See
-  `Caddy server <https://caddyserver.com/>`_ for more details.
-- ``dozzle`` - serves the log viewer at ``https://logs.<dns-host>``
-
-When you deploy an experiment to the SSH server, a folder is created in the location
-``~/dallinger/your-app-name`` which contains a Docker compose configuration called
-``docker-compose.yml``. You can inspect this configuration file to learn about how the app
-is defined. When you SSH to this server, you can interact with this folder to
-gain entry to your application. For example, you can run the following code to gain SSH access
-to the web process of your app:
+Log in to the server with the key from ``server_pem`` and go to the app's
+folder:
 
 .. code:: bash
 
-    cd ~/dallinger/your-app-name
-    docker compose exec web /bin/bash
+    ssh -i ~/.ssh/my-server.pem ubuntu@my-server.example.org
+    cd ~/dallinger/my-study
 
-Within the same directory, you can run the following command to see live logs from your app:
-
-.. code:: bash
-
-    docker compose logs
-
-You can run the following command to view the status of all Docker containers currently running on the server,
-including containers from other apps:
+If the folder doesn't exist, the deployment failed before it reached the
+server. In the folder:
 
 .. code:: bash
 
-    docker ps
+    docker compose logs          # logs of all the app's services
+    docker compose logs -f web   # follow the web service's log
+    docker compose exec web /bin/bash   # open a shell in the web container
+    docker compose restart web   # restart one service
 
-Exporting the data and removing the app are covered in
-:doc:`/deploy/running_a_study`.
+``docker ps`` lists the running containers of every app on the server. The
+deployment command prints a one-line version of the log command that you
+can run on your computer.
 
-Connecting to the database via SSH
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Connecting to the database
+--------------------------
 
-It is possible to connect to the remote server's PostgreSQL database via SSH.
-This requires a one-time setup where you connect your local database client to the remote server.
-We know that this is straightforward using Postico, a free database client for MacOS that we
-recommend for use with PsyNet.
+The PostgreSQL server starts with the first deployment. To open ``psql`` on
+the server:
 
-.. note::
+.. code:: bash
 
-    You can only connect to the database once you have deployed at least one experiment to the server,
-    thereby initializing the PostgreSQL instance.
+    docker compose -f ~/dallinger/docker-compose.yml exec postgresql psql -U dallinger
 
-Before you can connect to the database, you need to find what internal IP address the database is running on.
-To do this, SSH to the server and run the following command:
+The database of each app has the app's name.
+
+To connect a desktop client such as `Postico <https://eggerapps.at/postico2/>`_
+through an SSH tunnel, first look up the database container's internal IP
+address on the server:
 
 .. code:: bash
 
     docker inspect \
         -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' dallinger-postgresql-1
 
-Copy and paste the IP address that is returned.
+Then create a connection with these settings:
 
-Now, within Postico (or your alternative client), you should select the option to create a new connection,
-and then fill in the following details:
-
-- Host: the IP address you just copied
+- Host: the IP address from ``docker inspect``
 - Port: 5432
-- User: dallinger
-- Password: dallinger
-- Tick 'Connect via SSH tunnel'
-- SSH Host: the (external) IP address of your server, or its domain name
-- SSH User: your username on the server
-- Private key: the path to your private key (e.g. ``~/.ssh/id_rsa``)
+- User: ``dallinger``
+- Password: ``dallinger``
+- SSH tunnel: on, with the server's name or IP address as the SSH host, your
+  username on the server, and the private key from ``server_pem``
 
-You should now be able to connect to the PostgreSQL instance on the remote server.
-This should contain multiple databases, one for each experiment you have deployed.
+Too many database connections
+-----------------------------
 
-Known issues
-^^^^^^^^^^^^
+Many apps on one server can use up PostgreSQL's connections, which are
+limited to 100 by default. Apps then fail with:
 
-When many apps are deployed on the same server it is possible that certain apps
-eat up too many database connections. This can manifest as an error like this:
-
-.. code:: bash
+.. code:: text
 
     psycopg2.OperationalError: FATAL:  remaining connection slots are reserved for non-replication superuser connections
 
-To check the current connections to the database,
-run this on the remote server:
+To count the open connections, open ``psql`` as above and run:
 
-.. code:: bash
+.. code:: sql
 
-    cd ~/dallinger
-    docker compose exec postgresql /bin/bash
-    psql -U dallinger
+    select datname as database_name, count(*)
+    from pg_stat_activity
+    group by datname;
 
-    select pid as process_id,
-       usename as username,
-       datname as database_name,
-       client_addr as client_address,
-       application_name,
-       backend_start,
-       state,
-       state_change
-    from pg_stat_activity;
+Restarting an app's ``web``, ``worker_1`` and ``clock`` services with
+``docker compose restart`` closes its connections. Restarts have occasionally
+been followed by SQLAlchemy errors, so restart only when needed and check
+that the app still works afterwards.
 
-This will print a table of database connections. The number of rows is the number of database
-connections. The limit is by default 100; if you are close to 100, then you are close to trouble.
+.. _docker_registry:
 
-Normally you can (temporarily) resolve problems with the number of connections by restarting certain
-processes in an experiment. Restarting is fast and should not significantly impact on user experiences.
-To restart processes for a given app, run the following:
+Docker registries
+-----------------
 
-.. code:: bash
+``psynet debug ssh`` and ``psynet deploy ssh`` never push the image, so they
+need no registry. A registry is needed only to deploy a prebuilt image named
+by ``docker_image_name``, or to push images with Dallinger's ``dallinger
+docker-ssh deploy --push-build`` or ``--local_build``. For pushing,
+``docker_image_base_name`` must name a registry you can push to. The server
+must be able to pull from the registry: run the same ``docker login`` on the
+server as on your computer.
 
-    cd ~/dallinger/your-app-name
-    docker compose restart web
-    docker compose restart worker_1
-    docker compose restart clock
+Docker Hub
+   Create an account on `Docker Hub <https://hub.docker.com/>`_, sign in with
+   ``docker login``, and set
+   ``docker_image_base_name = docker.io/<username>/<image-name>``.
 
+GitLab container registry
+   Each GitLab project has a registry, which suits a team that shares
+   images. Create a project such as ``experiment-images`` in the team's
+   group, give everyone who deploys the Developer role or higher, and set
+   ``docker_image_base_name =
+   registry.gitlab.com/<group>/<project>/experiment-images`` (on a
+   self-hosted GitLab, use its registry hostname). Sign in with:
 
-.. warning::
+   .. code:: bash
 
-    Sometimes we see SQLAlchemy errors as a result of running related commands, we're not entirely
-    sure when/why this happens. For now it's worth avoiding restarting processes unless absolutely
-    necessary. It's good to test that your app still works after doing this.
+       docker login registry.gitlab.com -u your-username
+
+   If you sign in to GitLab through another service, such as GitHub, Google
+   or your institution, enter a
+   `personal access token <https://gitlab.com/-/user_settings/personal_access_tokens>`_
+   as the password.
+
+Docker may warn that it stores the password unencrypted in
+``~/.docker/config.json``; this works without a credential helper.
