@@ -1443,9 +1443,12 @@ class FunctionAssetMixin:
     def generate_input_path(self):
         if self.is_folder:
             return tempfile.mkdtemp()
-        else:
-            suffix = self.extension if self.extension else ""
-            return tempfile.NamedTemporaryFile(delete=False, suffix=suffix).name
+        suffix = self.extension if self.extension else ""
+        # Close the descriptor immediately. Dropping a NamedTemporaryFile
+        # and letting the garbage collector close it warns on Python 3.14.
+        descriptor, path = tempfile.mkstemp(suffix=suffix)
+        os.close(descriptor)
+        return path
 
     @property
     def instructions(self):
