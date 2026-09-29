@@ -538,3 +538,19 @@ once per participant. A public context manager (for example
 ``psynet.asset.preparing_for_deployment()``) would let authors mark such
 deposits as prepared stimuli, and within-participant start nodes could use it
 automatically.
+
+Run several local experiments at once
+-------------------------------------
+
+Local experiments share port 5000, the PostgreSQL database, Redis and
+Dallinger's ``/tmp/dallinger_develop`` folder, and each launch stops every
+PsyNet worker process on the machine, so a second experiment breaks the first.
+The documentation and Agent Skills tell users and agents to run one at a
+time. Proper isolation would need launches to stop only their own workers
+(for example by marking processes with the experiment directory), a refusal
+to rebuild a development folder another experiment is serving from,
+``base_port`` honoured in the default debug mode, per-experiment databases or
+Redis databases, and Chrome cleanup limited to the experiment's own windows.
+A first implementation was prototyped and then reverted in
+`!1253 <https://gitlab.com/PsyNetDev/PsyNet/-/merge_requests/1253>`_, as too
+large for a bug-fix merge request.

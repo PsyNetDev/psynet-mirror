@@ -127,6 +127,13 @@ cd demos/.../<experiment_name>
 psynet debug local
 ```
 
+Run one local experiment at a time. Local experiments share port 5000, the
+PostgreSQL database, Redis and Dallinger's development folder, and starting
+one stops the other's worker processes. Before `psynet debug local` or
+`psynet test local`, check that nothing is listening on port 5000
+(`lsof -nP -iTCP:5000 -sTCP:LISTEN`). If another experiment is running, ask
+the user to stop it (Ctrl+C in its terminal) instead of stopping it yourself.
+
 For example, to run the timeline demo:
 
 ```bash
