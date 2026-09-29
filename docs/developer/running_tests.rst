@@ -252,6 +252,7 @@ alongside a demo using that same database.
     pytest tests/isolated/test_recording_submission.py
     npx playwright test media_upload_queue.spec.js
     npx playwright test asynchronous_recording.spec.js
+    npx playwright test missing_chain_recording.spec.js
     pytest tests/isolated/test_background_recording.py
     npx playwright test background_recording.spec.js
     npx playwright test background_capture.spec.js
@@ -263,6 +264,15 @@ Both attach ``recording-sizes`` JSON to their Playwright results. These measure
 fake-device output for a sanity check, not an upper bound on real recording sizes.
 The demo checks still exercise the existing upload path; they do not establish
 that asynchronous trial-failure handling works.
+
+The ``missing_chain_recording`` fixture exercises the asynchronous path with two
+within-participant imitation chains. It drops the first upload and waits for the
+real server deadline, then completes the unaffected chain, including playback of
+its deposited parent recording. Final server assertions check that the missing
+recording expired, its trial was not analyzed or reassigned, and the successful
+chain finalized. The configured performance check still counts the failed trial:
+two successful trials out of three yield a score of 2/3. Allow about two minutes
+for this test; it does not shorten the production upload allowance.
 
 The private ``asynchronous_recording`` fixture enables
 ``VideoRecordControl._async_upload``. Its browser test holds a media request while
@@ -307,8 +317,9 @@ that required clips hold finalization, allow ordinary answer analysis, and fail
 only the parent trial when missing. Real WebM deposit releases the finalization
 gate without invoking answer analysis. Bots deliberately bypass required capture.
 
-Keep the answer-recording switch private until complete missing-media
-navigation tests are in place.
+Keep the answer-recording switch private until reload/exit and non-trial
+missing-media navigation paths are also validated. The focused chain test does
+not establish compatibility with every existing recording page.
 
 The provisional upload allowance uses a conservative 1 Mbit/s rate, 30 seconds
 of overhead, and twice the estimated transfer time, bounded to 60–600 seconds.
