@@ -210,3 +210,8 @@ To translate a Python package for use with PsyNet, run ``psynet translate``
 in the root of the package. This creates a ``locales`` directory in the
 package's source directory with translations for the locales you list, or
 for all locales PsyNet supports if you list none.
+
+.. seealso::
+
+   The :doc:`/skills/prepare-for-translation` skill describes how to prepare
+   an experiment for translation.

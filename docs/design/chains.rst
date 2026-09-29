@@ -136,3 +136,7 @@ responses that the next node was made from.
    :doc:`/code/writing_a_chain_experiment` shows how each of these ideas
    appears in ``experiment.py``, using the
    ``demos/experiments/chain_trial_maker`` demo.
+
+   The :doc:`/skills/make-experiment-adaptive` skill describes how to plan,
+   simulate and check an adaptive procedure, such as a staircase.
+

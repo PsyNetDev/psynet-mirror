@@ -505,3 +505,8 @@ problem is solved, post what fixed it in the same thread.
 
    Search your lab's chat history first, and ask in the lab's public
    support channel rather than in direct messages.
+
+.. seealso::
+
+   The :doc:`/skills/deploy-experiment` and :doc:`/skills/monitor-experiment`
+   skills.

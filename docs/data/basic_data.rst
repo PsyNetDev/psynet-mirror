@@ -187,3 +187,7 @@ participants are regrouped, a participant has one ``participant_link_sync_group`
 row per group; assign each trial to the group whose link ``creation_time``
 precedes the trial's ``creation_time`` and whose ``end_time`` is empty or
 follows it.
+
+.. seealso::
+
+   The :doc:`/skills/basic-data` and :doc:`/skills/basic-data-dyadic-experiment` skills.

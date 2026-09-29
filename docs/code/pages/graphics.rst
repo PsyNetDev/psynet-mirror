@@ -111,3 +111,7 @@ graphics that advance by themselves.
 .. seealso::
 
    :doc:`/code/exercises/graphics` and :doc:`/reference/api/graphics`.
+
+   The :doc:`/skills/develop-experiment-front-end` and
+   :doc:`/skills/psychophysics` skills.
+

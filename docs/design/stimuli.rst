@@ -72,3 +72,7 @@ What to check when reviewing stimuli
 
    :doc:`/code/using_stimuli` shows how each of these ideas appears in
    ``experiment.py``.
+
+   The :doc:`/skills/psychophysics` skill covers displaying visual stimuli at
+   exact sizes and timings.
+

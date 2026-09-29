@@ -190,3 +190,8 @@ Bots don't display pages, so they don't detect layout problems or broken
 browser behavior; see :doc:`frontend`. Bot answers are generated, not
 collected from people, so simulated data can't show whether participants
 understand the task or how they will respond.
+
+.. seealso::
+
+   The :doc:`/skills/simulate-participants` skill describes how to design and
+   check simulated participants.

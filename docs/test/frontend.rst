@@ -113,3 +113,7 @@ The same browser tests can take screenshots and record a video of a
 participant's session (the ``record-participant-video`` skill). An
 :doc:`audit <audits>` includes them in its Screenshots and Participant video
 sections, so that a reviewer can see the experiment without running it.
+
+.. seealso::
+
+   The :doc:`/skills/playwright-testing` and :doc:`/skills/record-participant-video` skills.

@@ -69,3 +69,7 @@ hidden when no checks are recorded.
 .. seealso::
 
    :doc:`/test/audit_reference`, for the audit's files and commands.
+
+   The :doc:`/skills/produce-experiment-audit` skill describes how to prepare
+   an audit.
+

@@ -50,8 +50,8 @@ the virtual lab framework
    Deploy <deploy/index>
    data/index
    Code <code/index>
-   Agent Skills <skills/index>
    Demos <demos/index>
+   Agent Skills <skills/index>
    reference/index
    whats_new/index
    developer/index
