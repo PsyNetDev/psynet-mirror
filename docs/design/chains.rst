@@ -38,7 +38,8 @@ definition of the next node. For example:
 - **carrying information forward**: the next node keeps the original question
   and adds the new answer, so each node still knows what it is about;
 - **adaptive procedures**: the next difficulty level goes up after a correct
-  answer and down after a mistake.
+  answer and down after a mistake (see :doc:`adaptive_experiments` for other
+  ways to adapt).
 
 Only responses that are complete, fully processed (for example, a recording
 whose analysis has finished), and not failed are passed to the rule.

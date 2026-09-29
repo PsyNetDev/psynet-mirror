@@ -123,3 +123,15 @@ While loops
 ===========
 
 .. autofunction:: psynet.timeline.while_loop
+
+=======
+NullElt
+=======
+
+.. autoclass:: psynet.timeline.NullElt
+
+============
+WebSocketElt
+============
+
+.. autoclass:: psynet.timeline.WebSocketElt

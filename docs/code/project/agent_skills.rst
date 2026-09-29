@@ -44,13 +44,13 @@ and the table below lists the main one for each skill.
      - :doc:`/code/writing_pages`
    * - ``make-experiment-adaptive``
      - Make later trials depend on earlier responses.
-     - :doc:`/design/trials`
+     - :doc:`/design/adaptive_experiments`, :doc:`/code/adaptive_experiments`
    * - ``synchronous-experiments``
      - Group participants and keep them in step with barriers.
      - :doc:`/code/multiplayer/synchronization`
    * - ``realtime-synchronous-experiments``
      - Build live interactions between participants over websockets.
-     - :doc:`/design/groups`
+     - :doc:`/code/multiplayer/realtime_interaction`
    * - ``psychophysics``
      - Get precise visual displays, timing and responses.
      - :doc:`/code/pages/graphics`
@@ -83,13 +83,13 @@ and the table below lists the main one for each skill.
      - :doc:`/test/backend`
    * - ``participant-response-models``
      - Model how participants respond, for simulations.
-     - :doc:`/test/backend`
+     - :doc:`/test/design_simulation`
    * - ``power-analysis``
      - Choose participant, stimulus and trial counts before collecting data.
-     - :doc:`/test/audits`
+     - :doc:`/test/design_simulation`
    * - ``precision-estimation``
      - Run the default simulation method for ``power-analysis``.
-     - :doc:`/test/audits`
+     - :doc:`/test/design_simulation`
    * - ``playwright-testing``
      - Write browser tests and layout checks for participant pages.
      - :doc:`/test/frontend`

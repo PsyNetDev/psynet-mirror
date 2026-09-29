@@ -8,5 +8,6 @@ Testing experiments
    frontend
    scalability
    sqlalchemy_profiling
+   design_simulation
    audits
    audit_reference

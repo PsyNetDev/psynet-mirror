@@ -1,126 +1,46 @@
 ---
 name: participant-response-models
-description: Define a scientific participant-response model used for experiment testing and simulation.
+description: Build the shared response_model/ package that generates simulated PsyNet participant answers from scientific assumptions, and wire it into bots. Use when bots need realistic answers or a design simulation needs synthetic data; it does not run simulations or choose sample sizes (see power-analysis).
 ---
 
 # Participant response models
 
-Participant response models implement hypothesized participant behaviour. They
-can generate data for scientific bots, power analyses, and standalone adaptive
-simulations. They may also share mathematical components with cognitive models
-used for inference.
+This skill builds one response model that bots, design simulations and
+standalone adaptive simulations all import. It stops at a tested model and
+bot adapter; `power-analysis` and `simulate-participants` use it.
 
 ## Read first
 
 Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rst`; otherwise fetch `https://psynetdev.gitlab.io/PsyNet/<page>.html`.
 
-- `test/audits` — where design simulation sits in an audit
+- `design/design_simulation` — what a response model is and how it differs from the estimator and learner
+- `test/design_simulation` — the `response_model/` package, `sample_responses`, and the bot adapter
 - `test/backend` — how bots answer
+- `test/audits` — where design simulation sits in an audit
 
-## Layout
+## Procedure
 
-Use this layout unless the model is large enough to justify more modules:
-
-```text
-response_model/
-├── __init__.py
-└── core.py
-```
-
-Put parameter definitions, expected responses when useful, and the canonical
-`sample_responses(...)` function in `core.py`. Re-export the public interface
-from `__init__.py`.
-
-Keep this package at the experiment's top level, separate from `experiment.py`
-and `audit/simulate/design/`. Import the same package from scientific bots, power analyses, and
-standalone adaptive simulations. It must not import PsyNet or access its
-database.
-
-## Vectorized interface
-
-Use dataclasses for related model parameters and NumPy arrays for batches of
-trials. The exact predictors are experiment-specific; this example illustrates
-the interface rather than prescribing a scientific model:
-
-```python
-from dataclasses import dataclass
-
-import numpy as np
-from numpy.random import Generator
-
-
-@dataclass(frozen=True)
-class ResponseParameters:
-    intercept: float = 0.0
-    condition_effect: float = 0.4
-    trial_noise_sd: float = 1.0
-
-
-def sample_responses(
-    *,
-    condition: np.ndarray,
-    participant_bias: np.ndarray,
-    parameters: ResponseParameters,
-    rng: Generator,
-) -> np.ndarray:
-    expected = (
-        parameters.intercept
-        + participant_bias
-        + parameters.condition_effect * condition
-    )
-    return expected + rng.normal(
-        0.0,
-        parameters.trial_noise_sd,
-        size=expected.shape,
-    )
-```
-
-The trial arrays should broadcast explicitly and return one response per input
-trial. Pass an explicit NumPy random-number generator rather than using global
-random state. If the participant-facing response is discrete or bounded, apply
-the same rounding and clipping here that simulated participants should exhibit.
-
-A PsyNet bot uses the same batch function for one trial:
-
-```python
-response = sample_responses(
-    condition=np.asarray([condition]),
-    participant_bias=np.asarray([participant_bias]),
-    parameters=parameters,
-    rng=rng,
-)[0]
-```
-
-Keep PsyNet-specific answer formatting in a thin adapter near the page or trial
-code. The adapter converts `response` into the expected answer shape; it must not
-recreate the expectation, noise, rounding, or clipping logic.
-
-## Parameters and provenance
-
-Keep related parameters together rather than scattering constants through bots
-and simulation code. Named parameter sets are useful when the experiment
-compares several scientific assumptions; give them stable, descriptive keys.
-
-Record the chosen key or parameter values in bot exports. Power-analysis
-`run.json` should record the parameter values and a hash or version identifier
-for the response-model code used by the run.
-
-## Relationship to estimation and adaptive learning
-
-The response model generates synthetic responses under assumed behaviour. An
-estimator attempts to recover scientific quantities from those responses; an
-adaptive learner uses its own assumed model to update beliefs and choose what to
-present next. Keep these roles separate even when they share mathematical
-components.
-
-In adaptive simulations, the response model may match the learner model or
-deliberately differ from it to test robustness to misspecification. In a real
-experiment, participants supply the responses; the code does not specify their
-"actual response model."
-
-## Validation
-
-Test that a fixed seed reproduces the same responses, vectorized inputs produce
-the expected output shape, and broadcasting behaves as intended. Check at least
-one response through both the standalone simulation interface and the PsyNet bot
-adapter, including answer formatting, rounding, and clipping where applicable.
+1. **Agree the model with the user.** Describe in task terms how a
+   response arises (for example participant level plus condition effect plus
+   noise, rounded to the scale), list every parameter with its value and
+   source (pilot data, literature, or judgment), and name any alternative
+   parameter sets with stable keys.
+2. **Write `response_model/`** as in `test/design_simulation`: a frozen
+   dataclass of parameters, one vectorized `sample_responses(...)` with an
+   explicit NumPy generator, the response control's rounding and clipping
+   inside it, and re-exports in `__init__.py`. It must not import PsyNet or
+   touch the database. Split into more modules only when the model is large.
+3. **Add the bot adapter** near the trial code: draw participant-level
+   values in `Experiment.initialize_bot`, call `sample_responses` with
+   one-element arrays, and only reshape the output into the page's answer.
+   Do not repeat the expectation, noise, rounding or clipping there. Store
+   the parameter-set key or values in `bot.var` so the export records them.
+4. **Keep roles separate.** Do not reuse the response model as the
+   estimator or adaptive learner, even when they share formulas.
+5. **Validate**: a fixed seed reproduces the same responses; array inputs
+   return one response per trial and broadcast as intended; at least one
+   response passes through both `sample_responses` and the bot adapter with
+   the same formatting, rounding and clipping. Run `psynet test local`.
+6. **Hand back** the parameter table with sources and the list of
+   judgment-based values, so the user can review them before a design
+   simulation depends on them.

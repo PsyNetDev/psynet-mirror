@@ -405,3 +405,65 @@ and raise a
 test that mocks the EC2 client and asserts that no instance is booted when a
 key is missing. Once it ships, update step 5 of the provisioning steps in
 :doc:`/deploy/reference/aws_automatic_provisioning`.
+
+Safer WebSocket elements
+------------------------
+
+Date
+++++
+
+2026-09-29
+
+Problem
++++++++
+
+Real-time experiments built on ``WebSocketElt`` have several rough edges
+(see :doc:`/code/multiplayer/realtime_interaction`):
+
+- The ``participant`` passed to ``handle_message`` comes from the ``sender``
+  or ``participant_id`` field that the browser writes, and nothing checks it.
+  Any browser can also connect to any channel, so private data has to go over
+  an authenticated HTTP route instead.
+- ``WebSocketElt`` can't be used on its own: its ``consume`` reaches
+  ``Elt.consume``, which raises ``NotImplementedError``, so authors must also
+  subclass ``NullElt``.
+- Connect and disconnect events on ``dallinger_control`` never reach
+  ``WebSocketElt`` handlers, although the ``WEBSOCKET_CHANNEL`` docstring
+  suggests they do; authors override ``receive_message`` instead.
+- A ``WebSocketElt`` on the ``dallinger_control`` channel is handled twice,
+  because the experiment is subscribed to that channel twice.
+
+Idea
+++++
+
+Give ``WebSocketElt`` ``NullElt`` behavior by default; add connect and
+disconnect hooks; reject reserved channel names; and authenticate the sender
+of each message, for example by having ``PsyNetWebSocketChannel`` send the
+participant's ``unique_id`` and checking it before calling the handler.
+
+Record sync groups on trials
+----------------------------
+
+Date
+++++
+
+2026-09-29
+
+Problem
++++++++
+
+Trials from trial makers with ``sync_group_type`` don't record which group
+they were taken in. To pair up group members' trials, an analysis joins
+``trial`` to ``participant_link_sync_group`` and, when participants can join
+several groups, matches each trial to a group by comparing creation times
+(see the "Group experiments" section of :doc:`/data/basic_data`). Also,
+``ParticipantLinkSyncGroup.arrival_time`` is declared but never set, unlike
+``ParticipantLinkBarrier.arrival_time``, so exports carry an empty column.
+
+Idea
+++++
+
+Store ``sync_group_id`` on each trial when a trial maker with
+``sync_group_type`` creates it, and either set
+``ParticipantLinkSyncGroup.arrival_time`` when a participant joins a group or
+remove the column. The data docs could then join trials to groups directly.

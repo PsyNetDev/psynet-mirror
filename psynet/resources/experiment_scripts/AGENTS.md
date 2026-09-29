@@ -220,15 +220,17 @@ the matching version.
 | Pages, prompts, controls, validation | `code/writing_pages` |
 | Static trial makers, scoring, performance checks | `code/writing_a_trial_maker` |
 | Chains (iterated, Gibbs, MCMCP, create and rate) | `code/writing_a_chain_experiment` |
+| Adaptive experiments | `design/adaptive_experiments`, `code/adaptive_experiments` |
 | Stimuli, `static/`, assets | `code/using_stimuli`, `code/trials/assets` |
 | Payment and bonuses | `code/participants/payment` |
 | Pre-screening and questionnaires | `code/participants/prescreening_and_questionnaires` |
 | Translation | `code/participants/internationalization` |
-| Groups, barriers, chatrooms | `code/multiplayer/synchronization` |
+| Groups, barriers, chatrooms, real-time interaction | `code/multiplayer/synchronization`, `code/multiplayer/realtime_interaction` |
 | Bots and automated tests | `test/backend` |
 | Browser layout checks | `test/frontend` |
 | Performance tests | `test/scalability` |
-| Audits and design simulation | `test/audits` |
+| Audits | `test/audits`, `test/audit_reference` |
+| Design simulation and power analysis | `design/design_simulation`, `test/design_simulation` |
 | Deploying and running a study | `deploy/how_deployment_works`, `deploy/setting_up_a_server`, `deploy/running_a_study`, `deploy/recruiters/index` |
 | Exporting and basic data | `data/exporting_data`, `data/basic_data` |
 | Configuration and commands | `reference/configuration`, `reference/command_line` |

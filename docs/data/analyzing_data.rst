@@ -52,6 +52,31 @@ Reading the tables
         "participant_identifiers.csv",
     )
 
+In group experiments, join trials to their groups through
+``participant_link_sync_group`` (see :ref:`basic_data_groups`). This example
+pairs each trial with the trials of the other group members in the same
+round:
+
+.. code:: python
+
+    groups = load_export_table("export.zip", "sync_group")
+    links = load_export_table("export.zip", "participant_link_sync_group")
+    trials = load_export_table("export.zip", "trial")
+
+    groups = groups.rename(columns={"id": "sync_group_id"})
+    members = links.merge(groups[["sync_group_id", "group_type"]], on="sync_group_id")
+    members = members[members["group_type"] == "rock_paper_scissors"]
+
+    trials = trials[(trials["trial_maker_id"] == "rock_paper_scissors") & ~trials["failed"]]
+    trials = trials.merge(members[["participant_id", "sync_group_id"]], on="participant_id")
+    partners = trials[["sync_group_id", "position", "participant_id", "answer"]].rename(
+        columns={"participant_id": "partner_id", "answer": "partner_answer"}
+    )
+    player_rounds = trials.merge(partners, on=["sync_group_id", "position"])
+    player_rounds = player_rounds[
+        player_rounds["participant_id"] != player_rounds["partner_id"]
+    ]
+
 Loading an export into a local database
 ---------------------------------------
 

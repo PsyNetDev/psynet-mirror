@@ -197,8 +197,8 @@ a listener attached to ``window`` survives removal of the page DOM:
     }
 
 PsyNet runs returned cleanup functions in reverse activation order before
-leaving the page. WebSockets, workers, observers, and raw timers are other
-common cases requiring cleanup. ``psynet.addPageEventListener(...)`` and
+leaving the page. WebSockets (see :ref:`realtime_interaction`), workers,
+observers, and raw timers are other common cases requiring cleanup. ``psynet.addPageEventListener(...)`` and
 ``psynet.addPageCleanupCallback(...)`` register listeners and callbacks that
 PsyNet removes or runs when the page ends.
 

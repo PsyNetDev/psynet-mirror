@@ -46,14 +46,8 @@ Sections
    :doc:`backend`.
 
 **Design simulation**
-   The power analysis, if the study has one. PsyNet's default approach is
-   precision estimation: the whole experiment is simulated many times, with
-   bots whose answers come from a response model; the planned analysis is run
-   on each simulated dataset; and the precision of its estimates is compared
-   across numbers of participants, stimuli or trials. If participants are
-   paid, each design's precision is compared with its cost. The section also
-   records where the response model's parameter values come from: pilot
-   data, the literature, or a guess.
+   The simulation used to choose the numbers of participants, stimuli and
+   trials, if the study has one; see :doc:`design_simulation`.
 
 **Analysis**
    The planned analysis, run on the simulated export.

@@ -58,6 +58,15 @@ Talking to each other
 A **chatroom** lets group members exchange messages on a page. Messages are
 stored with the experiment's data, so conversations can be analyzed later.
 
+Other **real-time interaction**, such as taking turns in a game on one page,
+works the same way: each member's page sends actions to the server as they
+happen. The server is the authority on the shared state. It accepts or rejects
+each action, for example one made out of turn, and sends the result to every
+member, whose page shows only what the server sent. Decide what each member
+is allowed to see, what happens when a member's connection drops or they
+reload the page, and which parts of the interaction are recorded for
+analysis.
+
 What to check when reviewing group experiments
 ----------------------------------------------
 
@@ -67,10 +76,13 @@ What to check when reviewing group experiments
 - What happens to each remaining member when someone drops out mid-round?
 - Are maximum waiting times long enough for the slowest pages, and short
   enough that participants don't give up?
+- In a real-time interaction, can a member see information meant only for
+  others, and can the interaction resume after a reload?
 
 .. seealso::
 
    :doc:`/code/multiplayer/synchronization` (forming groups, keeping a group
-   in step, waiting and dropouts) and :doc:`/code/multiplayer/chatroom`
-   (talking to each other) show these ideas in ``experiment.py``, using the
-   ``rock_paper_scissors`` and ``chatroom_simple`` demos.
+   in step, waiting and dropouts), :doc:`/code/multiplayer/chatroom`
+   (talking to each other) and :doc:`/code/multiplayer/realtime_interaction`
+   show these ideas in ``experiment.py``, using the ``rock_paper_scissors``,
+   ``chatroom_simple`` and ``websocket_chatroom`` demos.

@@ -203,8 +203,9 @@ def _class_identity(cls) -> tuple[str, str]:
 def _reuse_inherited_columns(cls):
     """Reuse an inherited table's column when a subclass redeclares its name.
 
-    Dallinger models such as ``Info`` use single-table inheritance, so every
-    ``Trial`` subclass contributes its columns to the shared ``info`` table.
+    PsyNet and Dallinger models use single-table inheritance, so, for
+    example, every ``Trial`` subclass contributes its columns to the shared
+    ``trial`` table.
     A plain ``Column`` in a subclass body therefore fails as soon as that name
     is already on the table. This happens for sibling classes, and also when
     PsyNet executes the same ``experiment.py`` more than once in one process,

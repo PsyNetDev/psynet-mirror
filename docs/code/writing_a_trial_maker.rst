@@ -207,13 +207,8 @@ an ``on_trial_created`` callback, and pass request-local values for it through
 ``creation_context``. Assign relationships in the callback rather than IDs,
 because the trial's database ID may not exist until the transaction flushes.
 ``demos/features/trial_cue_adaptive`` uses this for a participant-level
-staircase inside a :func:`~psynet.timeline.while_loop`:
-
-.. literalinclude:: ../../demos/features/trial_cue_adaptive/experiment.py
-   :pyobject: record_decision
-
-.. literalinclude:: ../../demos/features/trial_cue_adaptive/experiment.py
-   :pyobject: select_and_cue
+staircase inside a :func:`~psynet.timeline.while_loop`; see
+:doc:`/code/adaptive_experiments`.
 
 A trial maker is the better choice when trials should be balanced across
 nodes or participants, when chains develop across participants, or when you

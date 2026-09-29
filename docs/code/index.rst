@@ -39,6 +39,7 @@ Writing code
 
    writing_a_trial_maker
    writing_a_chain_experiment
+   adaptive_experiments
    trials/create_and_rate
    trials/participant_and_trial_failure
 
@@ -65,6 +66,7 @@ Writing code
 
    multiplayer/synchronization
    multiplayer/chatroom
+   multiplayer/realtime_interaction
 
 .. toctree::
    :caption: Database

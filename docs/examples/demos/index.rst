@@ -396,6 +396,7 @@ Groups
     occupancy to every client, and a custom route returns a room's history
     to late joiners. ``config.txt`` sets ``num_chatrooms``,
     ``chatroom_max_occupancy`` and ``chatroom_show_history``.
+    :doc:`/code/multiplayer/realtime_interaction`.
     :doc:`/code/pages/custom_routes`.
 
 Database, bots and data

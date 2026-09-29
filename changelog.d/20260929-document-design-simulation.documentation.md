@@ -1,0 +1,1 @@
+Added documentation pages on design simulation: a design page on response models, precision estimation, costs and review, and a testing page on the `audit/simulate/design/` files, response-model code, bot adapters and audit commands.

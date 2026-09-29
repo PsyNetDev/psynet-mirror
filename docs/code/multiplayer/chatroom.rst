@@ -67,7 +67,8 @@ Customizing the chatroom
 ------------------------
 
 The built-in chatroom widget is the Jinja macro ``chatroom_widget`` in
-``psynet/templates/macros/chatroom.html``. To replace it with your own
+``psynet/templates/macros/chatroom.html``; it talks to the server over
+WebSockets as described in :doc:`realtime_interaction`. To replace it with your own
 HTML, CSS and JavaScript, subclass :class:`~psynet.chatroom.ChatRoom` and point
 it at a template in your experiment's ``templates/`` directory:
 
