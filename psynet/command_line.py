@@ -960,6 +960,11 @@ def _debug_auto_reload(ctx, archive, no_browsers):
 
     run_pre_auto_reload_checks()
 
+    from dallinger.utils import develop_target_path
+
+    _refuse_if_other_experiment_uses_develop_directory(
+        develop_target_path(get_config())
+    )
     port = get_config().get("base_port")
     os.environ["FLASK_RUN_PORT"] = str(port)
     debug_kwargs["port"] = port
@@ -1155,6 +1160,27 @@ def _classify_worker_processes():
 def list_psynet_worker_processes():
     """List worker processes that belong to this experiment."""
     return _classify_worker_processes()[0]
+
+
+def _refuse_if_other_experiment_uses_develop_directory(develop_dir):
+    """Fail before re-bootstrapping a development directory another server runs from."""
+    own_dir = os.path.realpath(os.getcwd())
+    develop_dir = os.path.realpath(develop_dir)
+    for process in psutil.process_iter():
+        try:
+            if os.path.realpath(process.cwd()) != develop_dir:
+                continue
+            owner = process.environ().get(LOCAL_EXPERIMENT_DIR_ENV)
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            continue
+        if owner != own_dir:
+            raise click.ClickException(
+                f"Another local experiment server (pid {process.pid}) is running "
+                f"from the development directory {develop_dir}. Stop it first, or "
+                "set a different dallinger_develop_directory in this "
+                "experiment's config.txt (see 'Running several experiments at "
+                "once' in the PsyNet documentation)."
+            )
 
 
 def _refuse_if_other_experiment_uses_database():

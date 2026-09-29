@@ -130,9 +130,11 @@ Running several experiments at once
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 By default every local experiment uses the same PostgreSQL database, the same
-Redis database, and port 5000, so starting a second experiment fails with
-"Another local experiment is using the same database". To run two experiments
-side by side, give the second one its own database, Redis database and port.
+Redis database, the same development directory and port 5000, so starting a
+second experiment fails with "Another local experiment is using the same
+database" or "Another local experiment server ... is running from the
+development directory". To run two experiments side by side, give the second
+one its own database, Redis database, development directory and port.
 PostgreSQL and Redis can stay on their usual ports 5432 and 6379.
 
 .. code:: bash
@@ -145,12 +147,14 @@ PostgreSQL and Redis can stay on their usual ports 5432 and 6379.
     export REDIS_URL=redis://localhost:6379/1
     psynet debug local
 
-and set a different port in that experiment's ``config.txt``:
+and set a different port and development directory in that experiment's
+``config.txt`` (the directory path must not contain a period):
 
 .. code:: ini
 
     [Server]
     base_port = 5001
+    dallinger_develop_directory = /tmp/dallinger_develop_second
 
 ``psynet services check`` and ``psynet services ensure`` test the services at
 ``DATABASE_URL`` and ``REDIS_URL``. ``psynet services ensure`` only starts
