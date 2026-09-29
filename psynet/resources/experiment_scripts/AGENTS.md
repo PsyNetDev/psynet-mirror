@@ -36,8 +36,9 @@ challenge/attempt workflows and `psynetsk-validate`.
 
 ## Initial setup
 
-- Install Python 3.13 (use same version specified in `Dockerfile`)
-- Install uv (`pip3 install uv`)
+- Install uv (`curl -LsSf https://astral.sh/uv/install.sh | sh`); uv installs
+  Python 3.13, the version in the `Dockerfile`.
+- Follow the Install page for the other tools (see "Documentation" below).
 
 ## Before running commands
 
@@ -49,13 +50,14 @@ Local agents should check for their availability and install if necessary.
 - **Python 3.13.x**: Install a 3.13 release and verify `python3 --version`.
   Check the repository Dockerfile for the exact patch version we target
   (e.g., `psynet/resources/experiment_scripts/Dockerfile` or the root `Dockerfile`).
-- **uv**: Install via `pip`.
-- **PostgreSQL**: Install the server and client, ensure the service is running,
-  and create the `dallinger` user/database if they do not exist. When prompted by
-  `createuser -P`, set the password to `dallinger` (per the installation docs).
-  Verify with `psql -h localhost -U dallinger -d dallinger`.
-- **Redis**: Install the Redis server, ensure it is running, and verify with
-  `redis-cli ping` (expect `PONG`).
+- **uv**: Install with `curl -LsSf https://astral.sh/uv/install.sh | sh`.
+- **PostgreSQL and Redis**: Where Docker is available, run
+  `psynet services ensure`, which starts both in Docker containers, and check
+  them with `psynet services check`. Without Docker (for example on some cloud
+  agents), install the servers natively: ensure both services are running,
+  create the `dallinger` PostgreSQL user and database with password
+  `dallinger`, and verify with `psql -h localhost -U dallinger -d dallinger`
+  and `redis-cli ping` (expect `PONG`).
 - **Heroku CLI**: Install the CLI and verify with `heroku --version`.
   `psynet test local` uses its `heroku local` process manager; no Heroku
   account is needed.
@@ -129,7 +131,7 @@ Wait for 8 seconds for the server to start.
 
 Inspect the logs to see relevant URLs.
 Look out for an ad page URL, something like
-http://127.0.0.1:5000/ad?generate_tokens=true&recruiter=hotair.
+http://127.0.0.1:5000/ad?generate_tokens=true&recruiter=generic.
 
 When the demo is running, offer the user to navigate the experiment automatically.
 
@@ -147,7 +149,7 @@ experiments that still ship that directory.
 Pregenerated public stimuli belong in `static/` (served as `/static/...`).
 They are included in the deployment plan. Generated `static/assets` is
 excluded. The default package-size limit is 1024 MB; raise `EXP_MAX_SIZE_MB`
-only after reviewing the file list. Heroku deploys are capped at 500 MB.
+only after reviewing the file list.
 Use PsyNet assets for recordings and other files created during the experiment.
 
 `.dockerignore` is no longer supported. Move any custom exclusions into
@@ -177,12 +179,11 @@ Cursor: this needs `required_permissions: ["network"]`.
 Key tables:
 
 - `participant` - Experiment participants (id, worker_id, status, creation_time)
-- `response` - Participant responses/answers
-- `node` - Network nodes
-- `network` - Experiment networks
-- `info` - Information objects
-- `experiment` - Experiment metadata
-- `experiment_status` - Current experiment status
+- `trial` - Trials, with their definitions and answers
+- `response` - Page responses/answers
+- `node` - Trial maker nodes
+- `network` - Trial maker networks (chains)
+- `asset` - Stored files and their metadata
 
 Example queries:
 
@@ -197,14 +198,42 @@ SELECT id, answer FROM response ORDER BY id DESC LIMIT 10;
 \dt
 ```
 
-## Further information
+## Documentation
 
-If in the PsyNet repository, find further documentation in `docs`.
-If in an experiment directory, find more information at https://psynetdev.gitlab.io/PsyNet/.
+The PsyNet documentation is the source of truth for how PsyNet works. Read the
+relevant page before writing or changing experiment code, rather than relying on
+memory. In a PsyNet source checkout, read `docs/<page>.rst`. Elsewhere, fetch
+`https://psynetdev.gitlab.io/PsyNet/<page>.html`; pip installs do not ship the
+`docs/` tree. The published site follows PsyNet's development version, so if
+the installed version (`psynet --version`) differs, prefer a source checkout at
+the matching version.
+
+| Topic | Page |
+| --- | --- |
+| Installing tools, local services | `install` |
+| First experiment with a coding agent | `quickstart`, `code/project/agentic_programming` |
+| Design concepts (timeline, pages, trials, chains, stimuli, participants, groups) | `design/timeline`, `design/pages`, `design/trials`, `design/chains`, `design/stimuli`, `design/participants`, `design/groups` |
+| Experiment files and dependencies | `code/project/experiment_directory`, `code/project/dependencies` |
+| Running and debugging locally | `code/project/running_and_debugging` |
+| Timelines, code blocks, loops, variables | `code/writing_a_timeline` |
+| Pages, prompts, controls, validation | `code/writing_pages` |
+| Static trial makers, scoring, performance checks | `code/writing_a_trial_maker` |
+| Chains (iterated, Gibbs, MCMCP, create and rate) | `code/writing_a_chain_experiment` |
+| Stimuli, `static/`, assets | `code/using_stimuli`, `code/trials/assets` |
+| Payment and bonuses | `code/participants/payment` |
+| Pre-screening and questionnaires | `code/participants/prescreening_and_questionnaires` |
+| Translation | `code/participants/internationalization` |
+| Groups, barriers, chatrooms | `code/multiplayer/synchronization` |
+| Bots and automated tests | `test/backend` |
+| Browser layout checks | `test/frontend` |
+| Performance tests | `test/scalability` |
+| Audits and design simulation | `test/audits` |
+| Deploying and running a study | `deploy/how_deployment_works`, `deploy/setting_up_a_server`, `deploy/running_a_study`, `deploy/recruiters/index` |
+| Exporting and basic data | `data/exporting_data`, `data/basic_data` |
+| Configuration and commands | `reference/configuration`, `reference/command_line` |
+| Local problems | `reference/troubleshooting` |
 
 For PsyNet 14 migrations (in-place timeline defaults, fragment templates,
 managed page JavaScript, `psynet.var`, JsPsych module timelines), follow
-https://psynetdev.gitlab.io/PsyNet/whats_new/upgrading_to_psynet_14.html
-(pip installs do not ship the `docs/` RST tree). In a PsyNet source checkout
-you may read `docs/whats_new/upgrading_to_psynet_14.rst` instead. In Cursor,
-run `/upgrade-to-psynet-14` to follow that checklist.
+`whats_new/upgrading_to_psynet_14`. In Cursor, run `/upgrade-to-psynet-14` to
+follow that checklist.

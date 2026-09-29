@@ -58,7 +58,7 @@ If participants exchange live actions or messages within a trial, also read
   assignment, scoring, aggregation, or recording round outcomes. The
   callback's `barrier` argument is the reconstructed registry object; read
   `content` and timeouts from it. Wait pages stay on the live timeline
-  barrier (see `docs/tutorials/synchronization.rst`, "Release callbacks").
+  barrier (see `docs/code/multiplayer/synchronization.rst` (published at https://psynetdev.gitlab.io/PsyNet/code/multiplayer/synchronization.html), "Release callbacks").
 - Sort `sync_group.participants` by participant ID before deterministic role
   assignment; PsyNet does not guarantee the stored order.
 - Use `sync_group_type` on trial makers when all group members should follow the

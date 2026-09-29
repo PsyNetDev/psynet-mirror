@@ -633,3 +633,22 @@ def test_timeline_hold_trace_witnesses_exist():
         "docs/developer/timeline_hold_traces.rst cites tests in the wrong file: "
         + "; ".join(mismatches)
     )
+
+
+def test_agents_md_documentation_map_points_at_existing_pages():
+    from psynet.utils import get_psynet_root
+
+    root = get_psynet_root()
+    agents = (root / "psynet/resources/experiment_scripts/AGENTS.md").read_text()
+    section = agents.split("## Documentation", 1)[1]
+    page_cells = [
+        line.rstrip(" |").rsplit("|", 1)[-1]
+        for line in section.splitlines()
+        if line.startswith("| ") and not line.startswith("| Topic")
+    ]
+    pages = set(re.findall(r"`([a-z_0-9/]+)`", "\n".join(page_cells)))
+    assert pages, "the documentation map lists no pages"
+    missing = sorted(
+        page for page in pages if not (root / "docs" / f"{page}.rst").is_file()
+    )
+    assert not missing, f"AGENTS.md links to missing docs pages: {missing}"

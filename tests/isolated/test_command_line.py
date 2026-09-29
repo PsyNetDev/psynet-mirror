@@ -1181,6 +1181,7 @@ def test_scripts_update_installs_managed_skills_and_preserves_user_skills():
             assert custom_skill.read_text(encoding="utf-8") == "# Custom skill\n"
             assert not stale_skill.exists()
             assert Path(".cursor/skills/psynet/implement-experiment/SKILL.md").is_file()
+            assert Path(".cursor/skills/psynet/upgrade-to-psynet-14/SKILL.md").is_file()
             assert Path(".cursor/skills/psynet/playwright-testing/SKILL.md").is_file()
             assert Path(
                 ".cursor/skills/psynet/record-participant-video/SKILL.md"
