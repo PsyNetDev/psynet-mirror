@@ -7,7 +7,7 @@ description: Explore the local PsyNet source, demos, feature examples, documenta
 
 ## Read first
 
-Read these pages before acting. Get the docs folder once with `psynet docs path`, then read `<folder>/<page>.txt` (or `.rst` in a source checkout) and search with `rg -n -i "<term>" <folder>`.
+Read these pages before acting. Get the docs folder once with `psynet docs path`, then read `<folder>/<page>.txt` (or `.rst` in a source checkout) and search with `rg -n -i "<term>" <folder>`. If there is no local copy, fetch the pages from the website URL that `psynet docs path` prints.
 
 - `code/project/agentic_programming` — implementing an experiment with a coding agent
 - `code/project/creating_an_experiment` — creating an experiment directory from a demo

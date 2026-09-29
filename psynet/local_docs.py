@@ -20,6 +20,8 @@ Keep imports light: this module runs on every ``psynet docs`` call.
 import re
 from pathlib import Path
 
+import click
+
 from psynet.light_utils import get_psynet_root
 
 BUNDLED_DOCS_DIR = Path(__file__).parent / "resources" / "docs_text"
@@ -27,14 +29,15 @@ DOCS_URL = "https://psynetdev.gitlab.io/PsyNet/"
 _PAGE_SUFFIXES = (".txt", ".rst", ".md")
 
 
-class DocsNotAvailable(Exception):
-    """Raised when no local documentation matches the installed version."""
+class DocsError(click.ClickException):
+    """Raised when the local documentation or a page in it can't be found."""
 
 
 def published_docs_url(version: str) -> str:
     """Return the website URL for the documentation of ``version``."""
-    if re.fullmatch(r"\d+\.\d+\.\d+", version):
-        return f"{DOCS_URL}v{version}/"
+    stable = re.fullmatch(r"(\d+\.\d+\.\d+)(\.post\d+)?", version)
+    if stable:
+        return f"{DOCS_URL}v{stable.group(1)}/"
     if re.fullmatch(r"\d+\.\d+\.\d+rc\d+", version):
         return f"{DOCS_URL}rc/v{version}/"
     return f"{DOCS_URL}alpha/"
@@ -42,12 +45,14 @@ def published_docs_url(version: str) -> str:
 
 def _locate_docs(source_root: Path, bundled_dir: Path, version: str) -> Path:
     source_docs = source_root / "docs"
-    if (source_docs / "conf.py").exists():
+    if (source_root / "pyproject.toml").is_file() and (
+        source_docs / "conf.py"
+    ).is_file():
         return source_docs
     version_file = bundled_dir / "VERSION"
-    if version_file.exists() and version_file.read_text().strip() == version:
+    if version_file.exists() and version_file.read_text().split()[:1] == [version]:
         return bundled_dir
-    raise DocsNotAvailable(
+    raise DocsError(
         f"This PsyNet installation ({version}) has no local documentation. "
         f"Read it online at {published_docs_url(version)}"
     )
@@ -60,15 +65,30 @@ def docs_dir() -> Path:
     return _locate_docs(get_psynet_root(), BUNDLED_DOCS_DIR, __version__)
 
 
-def page_path(page: str) -> Path:
-    """Return the file for a page name such as ``code/participants/payment``."""
-    root = docs_dir()
-    page = page.strip("/").removesuffix(".html")
-    for suffix in ("", *_PAGE_SUFFIXES):
-        candidate = root / f"{page}{suffix}"
-        if candidate.is_file():
+def _page_name(page: str) -> str:
+    """Reduce a page name or website URL to a path such as ``code/pages/theming``."""
+    page = page.split("#", 1)[0]
+    if page.startswith(DOCS_URL):
+        page = re.sub(r"^(v[^/]+/|rc/[^/]+/|alpha/)", "", page[len(DOCS_URL) :])
+    return page.strip("/").removesuffix(".html")
+
+
+def _find_page(root: Path, page: str) -> Path:
+    name = _page_name(page)
+    root = root.resolve()
+    for suffix in _PAGE_SUFFIXES:
+        candidate = (root / f"{name}{suffix}").resolve()
+        if candidate.is_relative_to(root) and candidate.is_file():
             return candidate
-    raise DocsNotAvailable(
-        f"No documentation page {page!r} in {root}. "
+    raise DocsError(
+        f"No documentation page {name!r} in {root}. "
         f'Search for the topic with: rg -n -i "<term>" "{root}"'
     )
+
+
+def page_path(page: str) -> Path:
+    """Return the file for a page name such as ``code/participants/payment``.
+
+    Website URLs, ``.html`` suffixes and ``#`` anchors are accepted too.
+    """
+    return _find_page(docs_dir(), page)

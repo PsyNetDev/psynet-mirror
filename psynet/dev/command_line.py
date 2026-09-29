@@ -170,8 +170,10 @@ def make_docs(
 def bundle_docs():
     """Build the plain-text docs that release wheels ship for `psynet docs`.
 
-    Run before `python -m build` when releasing. Writes
-    psynet/resources/docs_text/, which is gitignored but packaged.
+    Run immediately before `python -m build` when releasing. Writes a
+    snapshot of the current docs, with the version and Git commit in its
+    VERSION file, to psynet/resources/docs_text/, which is gitignored but
+    packaged.
     """
     try:
         path = docs_module.bundle_command()

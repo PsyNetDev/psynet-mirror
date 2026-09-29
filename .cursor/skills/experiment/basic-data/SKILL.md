@@ -7,7 +7,7 @@ description: Implement basic data export functionality. Use when implementing an
 
 ## Read first
 
-Read these pages before acting. Get the docs folder once with `psynet docs path`, then read `<folder>/<page>.txt` (or `.rst` in a source checkout) and search with `rg -n -i "<term>" <folder>`.
+Read these pages before acting. Get the docs folder once with `psynet docs path`, then read `<folder>/<page>.txt` (or `.rst` in a source checkout) and search with `rg -n -i "<term>" <folder>`. If there is no local copy, fetch the pages from the website URL that `psynet docs path` prints.
 
 - `data/basic_data` — writing `get_basic_data` and the files it exports
 - `data/exporting_data` — how to export data and where exports land

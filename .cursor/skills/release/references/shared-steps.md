@@ -167,7 +167,7 @@ rm -rf dist/ build/ *.egg-info
 
 `psynet dev docs bundle` builds the plain-text documentation that
 `psynet docs` reads in release installs; the `unzip` check must print
-`X.Y.Z`. The build then puts both the sdist (`.tar.gz`) and wheel (`.whl`)
+`X.Y.Z` and the tagged commit. The build then puts both the sdist (`.tar.gz`) and wheel (`.whl`)
 into the `dist/` directory, and `twine` uploads them to PyPI. The pre-build `rm -rf` ensures we
 start from a clean slate; the upload glob is intentionally narrow because
 `dist/psynet-X.Y.Z*` would also match leftover RC artifacts such as

@@ -205,24 +205,25 @@ def docs():
 @docs.command("path")
 def docs_path():
     """Print the local documentation directory."""
-    from psynet.local_docs import DocsNotAvailable, docs_dir
+    from psynet.local_docs import docs_dir
 
-    try:
-        click.echo(docs_dir())
-    except DocsNotAvailable as exc:
-        raise click.ClickException(str(exc)) from exc
+    click.echo(docs_dir())
 
 
 @docs.command("show")
 @click.argument("page")
 def docs_show(page):
     """Print PAGE, for example code/participants/payment."""
-    from psynet.local_docs import DocsNotAvailable, page_path
+    from psynet.local_docs import page_path
 
-    try:
-        click.echo(page_path(page).read_text(encoding="utf-8"))
-    except DocsNotAvailable as exc:
-        raise click.ClickException(str(exc)) from exc
+    click.echo(page_path(page).read_text(encoding="utf-8"))
+
+
+@docs.command("make", hidden=True, context_settings={"ignore_unknown_options": True})
+@click.argument("args", nargs=-1, type=click.UNPROCESSED)
+def docs_make(args):
+    """Point to the command that builds the documentation."""
+    raise click.UsageError("To build the documentation, run `psynet dev docs make`.")
 
 
 def register_bootstrap_commands(group: click.Group) -> None:

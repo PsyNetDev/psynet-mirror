@@ -123,7 +123,14 @@ def bundle_command() -> Path:
             target = BUNDLED_DOCS_DIR / source.relative_to(text_dir)
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, target)
-    (BUNDLED_DOCS_DIR / "VERSION").write_text(f"{__version__}\n")
+    commit = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=docs_dir,
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout.strip()
+    (BUNDLED_DOCS_DIR / "VERSION").write_text(f"{__version__}\n{commit}\n")
     return BUNDLED_DOCS_DIR
 
 

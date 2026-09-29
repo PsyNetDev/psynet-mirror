@@ -209,8 +209,9 @@ memory. Use the local copy that matches the installed PsyNet version:
 - Read a page from the table below at `<folder>/<page>` plus `.txt` (release
   installs) or `.rst` (source checkouts), or with `psynet docs show <page>`.
 
-In a PsyNet source checkout these are the RST sources in `docs/`; release
-installs ship the same pages as plain text. If `psynet docs path` reports that
+Release installs ship the pages as plain text, including the API reference.
+In a PsyNet source checkout the folder is `docs/`, whose RST sources only
+reference the API; search `psynet/` for docstrings there. If `psynet docs path` reports that
 there is no local copy (for example in a Git install), it prints the matching
 version of the documentation website; fetch `<that URL><page>.html`.
 

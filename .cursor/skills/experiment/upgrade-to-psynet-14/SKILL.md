@@ -21,9 +21,9 @@ Read and follow the full upgrade checklist, which matches the installed PsyNet:
 psynet docs show whats_new/upgrading_to_psynet_14
 ```
 
-If that command doesn't exist or reports no local copy, fetch the published
-page instead:
-
+If it reports no local copy, fetch `whats_new/upgrading_to_psynet_14.html`
+from the website URL it prints. If the command doesn't exist (PsyNet before
+this release), use
 https://psynetdev.gitlab.io/PsyNet/whats_new/upgrading_to_psynet_14.html
 
 That checklist owns migration order and search targets. Keep this skill thin;

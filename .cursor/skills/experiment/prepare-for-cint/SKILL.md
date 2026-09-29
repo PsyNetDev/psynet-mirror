@@ -12,7 +12,7 @@ servers, deployment, export, or teardown, use `deploy-experiment`.
 
 ## Read first
 
-Read these pages before acting. Get the docs folder once with `psynet docs path`, then read `<folder>/<page>.txt` (or `.rst` in a source checkout) and search with `rg -n -i "<term>" <folder>`.
+Read these pages before acting. Get the docs folder once with `psynet docs path`, then read `<folder>/<page>.txt` (or `.rst` in a source checkout) and search with `rg -n -i "<term>" <folder>`. If there is no local copy, fetch the pages from the website URL that `psynet docs path` prints.
 
 - `deploy/recruiters/cint`: recruiter settings, consent, qualifications, and the qualification script
 - `deploy/recruiters/index`: choosing and configuring a recruiter

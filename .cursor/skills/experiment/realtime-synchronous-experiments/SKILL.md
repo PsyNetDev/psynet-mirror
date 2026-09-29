@@ -7,7 +7,7 @@ description: Design and implement PsyNet websocket experiments with live synchro
 
 ## Read first
 
-Read these pages before acting. Get the docs folder once with `psynet docs path`, then read `<folder>/<page>.txt` (or `.rst` in a source checkout) and search with `rg -n -i "<term>" <folder>`.
+Read these pages before acting. Get the docs folder once with `psynet docs path`, then read `<folder>/<page>.txt` (or `.rst` in a source checkout) and search with `rg -n -i "<term>" <folder>`. If there is no local copy, fetch the pages from the website URL that `psynet docs path` prints.
 
 - `code/multiplayer/realtime_interaction` — channels, `WebSocketElt`, the
   server-authority model, consistency, disconnects, and testing
