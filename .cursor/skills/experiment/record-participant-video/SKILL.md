@@ -62,7 +62,11 @@ screenshot, so a passing image cannot hide overflow or footer occlusion.
 
 When screenshots need review-facing captions, add
 `audit/artifacts/screenshots/manifest.json` with a `captions` object that maps
-screenshot paths to concise descriptions of what each image demonstrates.
+each screenshot's path relative to `audit/artifacts/` to a concise description
+of what the image demonstrates, for example
+`{"captions": {"screenshots/01-instructions.png": "Task instructions."}}`.
+Keys relative to the manifest (`"01-instructions.png"`) are ignored; see the
+screenshots panel in `test/audit_reference`.
 
 Use video for behavior that screenshots cannot prove well: audio playback,
 timing-sensitive displays, animation, masking, continuous interaction, live

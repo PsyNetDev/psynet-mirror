@@ -26,6 +26,75 @@ Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rs
 - `test/frontend` — Playwright walks and `psynetLayout.check()`
 - `test/backend` — what bots check and what they miss
 
+## Setup
+
+Install Playwright in the experiment directory and commit `package.json` and
+`package-lock.json`:
+
+```bash
+npm init -y
+npm install --save-dev @playwright/test
+npx playwright install chromium
+```
+
+Add `node_modules/` and `test-results/` to `.gitignore`. The stock `deploy.toml`
+already excludes `node_modules`; add `test-results` to its `[exclude].paths`.
+Start the experiment with `psynet debug local` in one terminal and wait for the
+ad URL in its log. Set `PSYNET_URL` to that URL's scheme, host and port, and run
+the walk from another terminal:
+
+```bash
+PSYNET_URL=http://127.0.0.1:5000 npx playwright test tests/participant-flow.spec.js
+```
+
+PsyNet's own Playwright tests import helpers from `tests/playwright/` in the
+PsyNet source repository. Those helpers are not installed with PsyNet, so an
+experiment's tests define the few they need, as below.
+
+## Walking the pages
+
+Enter the timeline through the ad and consent pages, then wait for the first
+timeline page:
+
+```js
+const { test, expect } = require("@playwright/test");
+
+const BASE = process.env.PSYNET_URL || "http://127.0.0.1:5000";
+
+async function startParticipant(page) {
+  await page.goto(`${BASE}/ad?generate_tokens=true&recruiter=hotair`);
+  await page.locator("#begin-button").click();
+  await page.locator("#consent").waitFor();
+  await clickAndWaitForNextPage(page, page.locator("#consent"));
+}
+```
+
+After a click that leaves the page, wait for the **next** page, not for a
+ready page. `#main-body[data-page-ready='true']` is still true on the old page
+until the server answers, so waiting for it alone returns immediately and the
+next check or screenshot runs one page behind. Every timeline page has its own
+`window.pageUuid`; wait until it changes and the new page is ready:
+
+```js
+async function clickAndWaitForNextPage(page, locator) {
+  const oldUuid = await page.evaluate(() => window.pageUuid ?? null);
+  await locator.click();
+  await page.waitForFunction(
+    (uuid) =>
+      window.pageUuid &&
+      window.pageUuid !== uuid &&
+      document.getElementById("main-body")?.dataset.pageReady === "true",
+    oldUuid,
+  );
+}
+
+await clickAndWaitForNextPage(page, page.locator("#next-button"));
+await expect(page.locator("#main-body")).toContainText("How pleasant");
+```
+
+A barrier or `wait_while` hold keeps the visible page and its
+`window.pageUuid` until the hold ends, so the helper also waits through holds.
+
 ## Layout checks
 
 Every participant page loads `psynetLayout`. After the page is ready, call
@@ -45,7 +114,7 @@ async function assertPageLayout(page, label) {
   expect(violations, label).toEqual([]);
 }
 
-await page.waitForSelector("#main-body[data-page-ready='true']");
+await clickAndWaitForNextPage(page, page.locator("#next-button"));
 await assertPageLayout(page, "radio page");
 ```
 
@@ -60,51 +129,9 @@ fold these checks into `psynet test local`.
 
 ## Stable waits
 
-Wait for the effect the last action was supposed to produce: a durable prompt,
-a control becoming enabled, or a URL change. Do not assert countdown text or
-short-lived status labels. When the contract is first paint — for example the
-last group member skipping a partner wait — assert the first `GET /timeline`
-HTML. An eventual prompt can arrive from the poller after a hold was already
-shown. `entry.timeline.durationMs` is that HTML 200 (or 503). Last-arrival
-grouping work is `lastArriverWorkRecord` (the 302, or the submit POST), not
-the follow-up body:
-
-```js
-const entry = await enterTimelineAfterGateway(page);
-expect(entry.paint.type).toBe("ModularPage");
-expect(entry.paint.showsHold).toBe(false);
-expect(entry.timeline.busy).toBe(false);
-expect(entry.timeline.durationMs).toBeLessThan(3000);
-expect(requestHandlerMs(lastArriverWorkRecord(entry))).toBeLessThan(3000);
-expect(entry.start.consentToTimelineMs).toBeLessThan(6000);
-```
-
-When a partner is already on a hold, use `stackedHoldHarness.js`:
-`enterWaitingHold` wraps the resume probe, silences the 2s safety poll, and
-arms `waitForHeldParticipantToResume` before the last arriver consents.
-`assertWaiterReleasedWithLastArriver` then checks that overlay leave
-(`resumedAtMs`) is timed from `lastArriverReleaseAtMs` (the grouping request
-finish, not the follow-up HTML 200), resume is `server notification` or
-`queued hold wake` (not `safety poll` or `hold timeout`), inplace mode issues no
-extra `GET /timeline`, and overlay linger (wake→end wallclock, including
-gunicorn listen-queue) is logged and fails only past 30000ms. A short HTTP 503
-may retry once; do not fold gunicorn `queue~` into linger. Print
-`queue~` in summaries so a long wait can be split into handler time versus
-pool occupancy:
-
-```js
-await enterWaitingHold(first, { holdText: "Waiting for your partner" });
-const lastEntry = await enterSkippingHold(last);
-await assertWaiterReleasedWithLastArriver(first, lastEntry);
-```
-
-Legacy reload mode may issue one follow-up timeline document.
-
-Concurrent late arrivals must wrap and arm at first paint, inside the same
-`Promise.all` as consent. If the hold chip is already gone, still assert the
-first-paint `wake_token`, a hold-resume POST, and no extra GET `/timeline` in
-inplace mode. Those late waiters may resume from `websocket connection` as well
-as `server notification`.
+Wait for the effect the last action was supposed to produce: the next page (as
+above), a durable prompt, a control becoming enabled, or a URL change. Do not
+assert countdown text or short-lived status labels.
 
 Gateway, consent, and timeline pages have different DOM. Do not assume
 `#main-body` exists on the ad page. If the timeline is known in advance, encode

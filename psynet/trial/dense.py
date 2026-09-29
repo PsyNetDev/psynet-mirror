@@ -171,9 +171,9 @@ class DenseTrialMaker(StaticTrialMaker):
         Returns the networks owned by the trial maker.
 
     performance_threshold : float
-        Score threshold used by the default performance check method, defaults to 0.0.
-        By default, corresponds to the minimum proportion of non-failed trials that
-        the participant must achieve to pass the performance check.
+        Threshold for the built-in performance check chosen by ``performance_check_type``,
+        defaults to -1.0. The participant passes when the score (the summed trial scores,
+        the proportion of non-failed trials, or the consistency) is at least this value.
         Override this to change the behavior.
 
     end_performance_check_waits : bool

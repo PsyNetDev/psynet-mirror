@@ -1,7 +1,7 @@
 ---
 name: implement-experiment
 description: A structured process for implementing PsyNet experiments, including planning, simulations, analysis, and reporting. Use when implementing a PsyNet experiment from a natural-language specification.
-compatibility: Requires editable PsyNet at ~/PsyNet, PostgreSQL, Redis, Heroku CLI, and matplotlib/jupyter for executed analysis notebooks.
+compatibility: Requires PsyNet installed in the experiment's .venv (from PyPI via psynet setup, or optionally an editable PsyNet checkout), PostgreSQL, Redis, the Heroku CLI, and Jupyter tooling listed in requirements.txt for executed analysis notebooks.
 ---
 
 # Implement PsyNet experiments
@@ -17,7 +17,8 @@ Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rs
 
 ## Prerequisites
 
-- Use the `explore-psynet-repository` skill before starting.
+- Use the `explore-psynet-repository` skill to find the closest demo and the
+  relevant documentation before starting.
 - Read `references/validation.md` before finalizing functional, interactive, or
   performance checks.
 - Read `simulate-participants/SKILL.md` before designing multi-profile,
@@ -105,18 +106,18 @@ skills) when setup/scaffold can produce it. Experiment-local `docker/` helper
 scripts are obsolete; use `psynet debug local --docker`.
 
 Canonical setup guidance: `code/project/agentic_programming` (see Read first)
-and `~/PsyNet/psynet/resources/experiment_scripts/AGENTS.md`.
+and the experiment's `AGENTS.md`, which `psynet setup` writes.
 
 **1. Choose a starting point**
 
-- Prefer copying an authored PsyNet demo (or a prior experiment) into a new
-  directory **outside** the PsyNet package tree (for example
-  `~/psynet-experiments/<name>/` or a challenge `code/<experiment_slug>/`).
-  Bundled demos ship authored files only (`experiment.py`, `requirements.txt`,
-  assets); boilerplate and `constraints.txt` are intentionally omitted.
-- Or start from an empty directory with a valid Python package name (not
-  `code`, not names that cannot be imported).
-- Use `explore-psynet-repository` to pick the closest demo before copying.
+- Start from an empty directory with a valid Python package name (not
+  `code`, not names that cannot be imported), for example
+  `~/psynet-experiments/<name>/`.
+- Or copy the authored files of the closest PsyNet demo (or a prior
+  experiment) into it. Demos ship authored files only (`experiment.py`,
+  `requirements.txt`, assets); boilerplate and `constraints.txt` are
+  intentionally omitted. `explore-psynet-repository` explains where to find
+  demo code when PsyNet was installed with pip.
 
 **2. Bootstrap, then run setup**
 
@@ -142,10 +143,12 @@ When splitting logic out of `experiment.py`, follow
 `develop-experiment-back-end/SKILL.md`: import sibling modules with
 `from . import my_module`.
 
-**3. Editable local PsyNet (agents / contributors)**
+**3. Optional: editable PsyNet checkout (contributors)**
 
-When developing against an editable `~/PsyNet` checkout, keep a **dedicated**
-experiment `.venv` (do not sync into `~/PsyNet/.venv`):
+Skip this step unless you are changing PsyNet itself alongside the
+experiment. When developing against an editable checkout (for example
+`~/PsyNet`), keep a **dedicated** experiment `.venv` (do not sync into the
+checkout's own `.venv`):
 
 ```bash
 uv pip install -e ~/PsyNet
@@ -211,12 +214,28 @@ The notebook should be self-contained for review, including all code, tables,
 and plots.
 If the implementation is inspired by a published paper, replicate the analyses reported in the paper as closely as possible.
 
-The analysis-notebook tooling is not part of the PsyNet editable install. Install
-it into the PsyNet virtualenv before executing the notebook, and execute it
-headlessly so its outputs are embedded for review:
+The analysis-notebook tooling is not part of `psynet[experiment]`. Add the
+packages the notebooks use to `requirements.txt` and rerun `psynet setup`,
+which relocks `constraints.txt` and installs them. Do not `uv pip install` them
+ad hoc: the next `psynet setup` synchronizes `.venv` with `constraints.txt` and
+removes unlisted packages (see `code/project/dependencies`). The same applies to
+design-simulation dependencies such as statsmodels. Deployments install these
+packages too, which only makes the image larger.
+
+```text
+# requirements.txt, below the PsyNet pin
+matplotlib
+plotly
+jupyter
+nbconvert
+nbformat
+ipykernel
+```
+
+Then execute the notebook headlessly so its outputs are embedded for review:
 
 ```bash
-uv pip install matplotlib plotly jupyter nbconvert nbformat ipykernel
+psynet setup
 # nbconvert uses the notebook directory as cwd; resolve data paths from the
 # experiment root (for example Path(__file__) is unavailable in notebooks—
 # walk parents until experiment.py is found, or pass an absolute data path).

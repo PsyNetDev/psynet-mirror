@@ -58,7 +58,8 @@ Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rs
    reference.
    Unless the user chose another criterion, set `decision_metric =
    "standardized_margin_of_error"`, `decision_threshold = 0.20` at 95%
-   confidence, and fill `decision_value` and `meets_requirement` for every
+   confidence, with one `reference_sd` for all scenarios (never each
+   scenario's own noise SD), and fill `decision_value` and `meets_requirement` for every
    primary estimand. For a profile, use the maximum pointwise margin and
    bootstrap its Monte Carlo interval. When `keep_replicates` is true, also
    save replicate-level estimates as Parquet.

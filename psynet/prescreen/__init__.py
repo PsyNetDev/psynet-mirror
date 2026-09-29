@@ -1676,6 +1676,10 @@ class HugginsHeadphoneTest(GeneralHeadphoneTest):
     """
     Implements: Milne, A.E., Bianco, R., Poole, K.C. et al. An online headphone screening test based on dichotic pitch.
     Behav Res 53, 1551–1562 (2021). https://doi.org/10.3758/s13428-020-01514-0
+
+    Participants pass when at least ``performance_threshold`` (default 4) of the
+    ``n_trials`` (default 6) answers are correct. Bots answer correctly unless
+    ``bot.var.is_good_bot`` is ``False``, in which case every answer is wrong.
     """
 
     def __init__(
@@ -1725,6 +1729,10 @@ class AntiphaseHeadphoneTest(GeneralHeadphoneTest):
     https://doi.org/10.3758/s13414-017-1361-2
 
     Note: we currently recommend using the HugginsHeadphoneTest instead.
+
+    Participants pass when at least ``performance_threshold`` (default 4) of the
+    ``n_trials`` (default 6) answers are correct. Bots answer correctly unless
+    ``bot.var.is_good_bot`` is ``False``, in which case every answer is wrong.
     """
 
     def __init__(

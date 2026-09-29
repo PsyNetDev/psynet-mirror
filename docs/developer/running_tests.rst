@@ -137,6 +137,21 @@ Example:
 Hold-resume probes
 ^^^^^^^^^^^^^^^^^^
 
+Hold specs use the helpers in ``tests/playwright/psynetHarness.js`` and
+``tests/playwright/stackedHoldHarness.js``; experiments cannot import them.
+When the contract is first paint, for example the last group member skipping
+a partner wait, ``enterTimelineAfterGateway`` returns the first
+``GET /timeline`` HTML (``entry.timeline.durationMs``), and
+``lastArriverWorkRecord`` returns the last arriver's grouping request (the
+302 or the submit POST), whose handler time ``requestHandlerMs`` reads. An
+eventual prompt can arrive from the poller after a hold was already shown,
+so do not assert it instead. When a partner is already on a hold,
+``enterWaitingHold`` wraps the resume probe, silences the 2s safety poll, and
+arms ``waitForHeldParticipantToResume`` before the last arriver consents;
+``assertWaiterReleasedWithLastArriver`` then checks the release against
+``enterSkippingHold``'s entry. Concurrent late arrivals must wrap and arm at
+first paint, inside the same ``Promise.all`` as consent.
+
 Legacy hold resumes reload the document, which destroys Playwright's execution
 context. ``wrapTimelineHoldResumeProbe`` retries ``page.evaluate`` after that
 navigation. ``waitForHeldParticipantToResume`` treats the same navigation as a

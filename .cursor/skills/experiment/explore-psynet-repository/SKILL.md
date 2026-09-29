@@ -1,6 +1,6 @@
 ---
 name: explore-psynet-repository
-description: Explore the local PsyNet source, demos, feature examples, documentation, and setup guidance.
+description: Find the PsyNet demo, documentation page and source code closest to an experiment, whether PsyNet was installed with pip or from a source checkout. Use before starting a new experiment or when looking for an example of a PsyNet feature.
 ---
 
 # Explore PsyNet repository
@@ -11,20 +11,28 @@ Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rs
 
 - `code/project/agentic_programming` — implementing an experiment with a coding agent
 - `code/project/creating_an_experiment` — creating an experiment directory from a demo
+- `demos/index` — what every demo shows, with links to its code
 
-## PsyNet source code
+## Finding demo code
 
-It is essential that you have access to the local PsyNet source code and demos.
-Ensure you have a source code repository available at `~/PsyNet`
-(if necessary, clone it from `https://gitlab.com/PsyNetDev/PsyNet`).
+The PsyNet package installed with pip contains the source code under
+`.venv/lib/python3.*/site-packages/psynet/` but no demos. The demos live in the
+`demos/` directory of the PsyNet repository:
 
-Useful starting points:
+- `demos/experiments/` for complete experiments;
+- `demos/features/` for focused feature examples;
+- `demos/pipelines/` for end-to-end pipelines for common paradigms.
 
-- `~/PsyNet/psynet/` for the PsyNet source code.
-- `~/PsyNet/demos/experiments/` for complete experiments (authored files only).
-- `~/PsyNet/demos/features/` for focused feature examples.
-- `~/PsyNet/psynet/resources/experiment_scripts/AGENTS.md` for setup and command
-  guidance.
+Pick a demo from `demos/index`, then read its code in one of these ways:
+
+- Open its GitLab tree link from `demos/index`, for example
+  `https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/headphone_test`.
+  Fetch single files from the raw URL, for example
+  `https://gitlab.com/PsyNetDev/PsyNet/-/raw/master/demos/features/headphone_test/experiment.py`.
+  Replace `master` with `v<version>` to match `psynet --version`.
+- Use a local clone of `https://gitlab.com/PsyNetDev/PsyNet` if one exists
+  (often `~/PsyNet`), or clone one when the user agrees. A clone is optional,
+  but it makes it easy to search all demos and the PsyNet source at once.
 
 When starting a new experiment, copy the closest demo's authored files into a
 new directory, then prefer `psynet setup` over hand-written boilerplate. Details
@@ -32,11 +40,11 @@ live in `implement-experiment/SKILL.md` (Setup).
 
 ## Useful demos
 
-- `~/PsyNet/demos/experiments/hello_world/experiment.py` for a minimal
-  experiment.
-- `~/PsyNet/demos/experiments/simple_audio_rating/experiment.py` for static
-  trials, audio prompts, and rating controls.
-- `~/PsyNet/demos/experiments/timeline/experiment.py` for timeline control flow,
-  modules, variables, conditional logic, and custom routes.
-- `~/PsyNet/demos/features/color_vocabulary/experiment.py` for prescreening and
-  bot checks.
+- `demos/experiments/hello_world` for a minimal experiment.
+- `demos/experiments/simple_audio_rating` for static trials, audio prompts, and
+  rating controls.
+- `demos/experiments/timeline` for timeline control flow, modules, variables,
+  conditional logic, and custom routes.
+- `demos/features/color_vocabulary` for prescreening and bot checks.
+- `demos/features/headphone_test` for headphone prescreeners with a bot that
+  fails them.

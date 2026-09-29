@@ -128,7 +128,8 @@ Choose evidence that matches the experiment. Common artifacts are:
 
 - `artifacts/participant.mp4`: concise participant walkthrough;
 - `artifacts/screenshots/*.png`: targeted participant-facing states;
-- `artifacts/screenshots/manifest.json`: optional screenshot captions;
+- `artifacts/screenshots/manifest.json`: optional screenshot captions, keyed by
+  paths relative to `artifacts/` (`"screenshots/01-consent.png"`);
 - `artifacts/performance.json`: sustained performance-test output;
 - `artifacts/monitor.html`: static monitor snapshot;
 - `artifacts/data.zip`: exported local or real-run data;
@@ -379,6 +380,10 @@ fig.show()
 Use `AUDIT_FIGURE_LAYOUT` for the simpler case of a single encoding with a few
 short labels, where a legend row above the plot reads better than a side
 column.
+
+Both layouts contain a `title` key, so set the title text in the Plotly Express
+call, as above, or in a separate `fig.update_layout(title_text=...)` call.
+`fig.update_layout(title="...", **AUDIT_FIGURE_LAYOUT)` raises `TypeError`.
 
 ### Metric controls
 

@@ -33,8 +33,20 @@ How bots answer
 
 By default, a bot gives a valid answer to each page, such as a random choice
 from the options or a number in the allowed range. The ``bot_response``
-argument of a page overrides this, either with a fixed value or with a
-function called each time a bot reaches the page.
+argument of a page or control overrides this, either with a fixed value or with a
+function called each time a bot reaches the page. The function can take any
+of these arguments, which PsyNet passes by name: ``bot`` (the
+:class:`~psynet.bot.Bot`, also available as ``participant``), ``experiment``,
+``page``, ``trial`` and ``trial_maker`` (the bot's current trial and its trial
+maker, inside a trial maker), and, for a control's ``bot_response``,
+``prompt``:
+
+.. code-block:: python
+
+    PushButtonControl(
+        ["1", "2", "3"],
+        bot_response=lambda trial: trial.definition["correct_answer"],
+    )
 
 Custom pages and controls answer bots through ``get_bot_response``. A plain
 value, whether from ``bot_response`` or ``get_bot_response``, is saved as the
@@ -97,6 +109,45 @@ bots play against each other and check each result:
 
             assert "You chose rock, your partner chose paper. You lost." in bots[0].current_page_text
             assert "You chose paper, your partner chose rock. You won!" in bots[1].current_page_text
+
+Each element of ``bots`` is a :class:`~psynet.bot.BotDriver`. Its methods and
+properties, such as ``take_page``, ``current_page_label`` and
+``current_page_text``, are documented under
+:class:`~psynet.participant.ParticipantDriver`.
+
+Bots that fail a prescreener
+----------------------------
+
+To test the path for participants who fail a prescreener, make some bots
+answer it wrongly. :class:`~psynet.prescreen.HugginsHeadphoneTest` and
+:class:`~psynet.prescreen.AntiphaseHeadphoneTest` answer wrongly when the bot
+variable ``is_good_bot`` is ``False``. The ``headphone_test`` demo sets it in a
+code block, where the participant ID is known, and checks the outcome:
+
+.. literalinclude:: ../../demos/features/headphone_test/experiment.py
+   :language: python
+   :start-at: timeline = Timeline(
+   :end-at: assert bot.failed
+   :dedent: 4
+
+For other prescreeners, steer the bot through the prescreener's pages in
+``test_serial_run_bots``, passing wrong answers to ``take_page``, then let
+PsyNet finish the run:
+
+.. code-block:: python
+
+    def test_serial_run_bots(self, bots: List[BotDriver]):
+        for bot in bots:
+            if bot.id % 4 == 0:
+                while bot.current_page_label != "color_vocabulary_trial":
+                    bot.take_page()
+                while bot.current_page_label == "color_vocabulary_trial":
+                    bot.take_page(response="wrong")
+            self.run_bot(bot, time_factor=self.test_time_factor)
+
+``response`` is saved as the final answer, like a plain ``bot_response``
+value. Find the page label and the answer format in the prescreener's source
+code or in the ``response`` table of a previous test run.
 
 Several bots at once
 --------------------

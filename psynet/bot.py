@@ -241,7 +241,7 @@ class BotDriver(ParticipantDriver):
     """
     Driver class for automating bot participants in an experiment.
 
-    The :class:`~psynet.participant.BotDriver` class is a convenience subclass of :class:`~psynet.participant.ParticipantDriver`
+    The :class:`~psynet.bot.BotDriver` class is a convenience subclass of :class:`~psynet.participant.ParticipantDriver`
     specifically focused on creating and controlling bot participants.
 
     If no ``id_`` is specified, a new :class:`~psynet.bot.Bot` instance is created automatically.

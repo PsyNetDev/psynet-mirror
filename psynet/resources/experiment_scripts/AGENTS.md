@@ -9,6 +9,11 @@ and with the development of individual PsyNet experiments.
 If the root contains a file called `experiment.py`, assume that we are working on an experiment.
 Otherwise assume we are working on the PsyNet source code.
 
+To implement an experiment from a description, follow the `implement-experiment`
+skill before writing code: `.cursor/skills/psynet/implement-experiment/SKILL.md`
+in an experiment directory, or `.cursor/skills/experiment/implement-experiment/SKILL.md`
+in the PsyNet source code. It says when to use the other experiment skills.
+
 From `experiment.py`, import sibling modules with `from . import my_module`.
 Do not run `python experiment.py` to validate imports; use `psynet test local`.
 See `docs/code/project/experiment_directory.rst`
@@ -86,7 +91,9 @@ Cursor: disable sandboxing when running PsyNet commands by setting `required_per
 
 ## Demos
 
-Demos are contained in `demos/experiments`, `demos/features` and `demos/pipelines`.
+Demos are contained in `demos/experiments`, `demos/features` and `demos/pipelines`
+of the PsyNet source code; pip installs do not include them. Outside a source checkout,
+the `demos/index` documentation page describes every demo and links to its code.
 If a user asks for the X demo, list all child directories of those three folders to see which they mean.
 
 ## Running experiments locally
@@ -131,7 +138,7 @@ Wait for 8 seconds for the server to start.
 
 Inspect the logs to see relevant URLs.
 Look out for an ad page URL, something like
-http://127.0.0.1:5000/ad?generate_tokens=true&recruiter=generic.
+http://127.0.0.1:5000/ad?generate_tokens=true&recruiter=hotair.
 
 When the demo is running, offer the user to navigate the experiment automatically.
 

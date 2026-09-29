@@ -58,6 +58,11 @@ extensions = [
     "skill_pages",
 ]
 
+# Render defaults as written in the source. Defaults computed at import time,
+# such as paths into the installed package or the home directory, would
+# otherwise show the build machine's paths.
+autodoc_preserve_defaults = True
+
 # Old page paths are published and linked externally, so every moved or
 # deleted page needs an entry in redirects.json (old docname -> new docname).
 with open("redirects.json") as f:
