@@ -11,22 +11,19 @@ experiment pays participants, what each design would cost. Experimenters use
 it to choose the number of participants, stimuli and trials. The simulation
 is optional; when there is one, it is part of the experiment's audit.
 
-.. admonition:: What PsyNet provides
+.. admonition:: Who does what
 
-   PsyNet runs simulated participants (bots) through an experiment and displays
-   a design simulation's results in the experiment's audit: the audit has
-   slots for a results table (``simulate/design/results.csv``), a run record
-   (``run.json``) and an executed notebook (``simulation.ipynb``). The
-   simulation itself, including the response model and the analysis, is code
-   in your experiment; PsyNet has no command that runs it. This page describes the
-   method, and :doc:`/test/design_simulation` a recommended way to set it up.
-
-With a coding agent, you usually don't write any of this yourself. The agent's
-``power-analysis`` skill (see :doc:`/code/project/agent_skills`) agrees the
-question, the candidate designs and the assumptions with you, writes the
-response model and the simulation, and hands back the results. Your part is to
-check that the assumptions are plausible and that the conclusions follow from
-the results, using the review questions at the end of this page.
+   - **PsyNet** runs simulated participants (bots) through the experiment and
+     shows a simulation's results table, run record and notebook in the
+     experiment's audit. It has no command that runs the simulation itself.
+   - **A coding agent**, with the ``power-analysis`` skill (see
+     :doc:`/code/project/agent_skills`), agrees the question, candidate
+     designs and assumptions with you, then writes the response model and the
+     simulation in your experiment and hands back the results.
+   - **You** check that the assumptions are plausible and that the
+     conclusions follow from the results, using the review questions at the
+     end of this page. :doc:`/test/design_simulation` describes the
+     recommended setup, for reviewing the agent's work or doing it yourself.
 
 Designs, assumptions and scenarios
 ----------------------------------

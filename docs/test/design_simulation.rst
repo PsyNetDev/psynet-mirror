@@ -9,17 +9,18 @@ model, analyzes each one, and saves a results table, a run record and an
 executed notebook for review. :doc:`/design/design_simulation` explains the
 method and the terms used on this page.
 
-.. admonition:: What PsyNet provides
+.. admonition:: Who does what
 
-   PsyNet reads the three files under ``audit/simulate/design/`` (results
-   table, run record and notebook) and shows them in the audit, and
-   ``psynet audit simulate`` runs the experiment's bots and exports their
-   data. The rest of this page, including the ``response_model/`` package,
-   ``config.toml`` and the simulation script, is a recommended layout rather
-   than something PsyNet requires or runs.
-
-A coding agent following the ``power-analysis`` skill sets all of this up;
-the details here are for reviewing its work or writing a simulation yourself.
+   - **PsyNet** reads the three files under ``audit/simulate/design/``
+     (results table, run record and notebook) and shows them in the audit;
+     ``psynet audit simulate`` runs the experiment's bots and exports their
+     data.
+   - **A coding agent** following the ``power-analysis`` skill sets up the
+     rest of this page. The ``response_model/`` package, ``config.toml`` and
+     the simulation script are a recommended layout, not something PsyNet
+     requires or runs.
+   - **You** use this page to review the agent's work, or to write the
+     simulation yourself.
 
 Files
 -----

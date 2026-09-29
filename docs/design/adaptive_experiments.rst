@@ -10,22 +10,21 @@ makes this choice is the **selection policy**, and the thing it chooses is the
 **adaptive unit**, such as a stimulus, an item, a node, a chain, or a
 condition.
 
-.. admonition:: What PsyNet provides
+.. admonition:: Who does what
 
-   PsyNet provides the building blocks: staircase and chain trial makers,
-   selection hooks on trial makers (``custom_node_filter``, ``select_node``,
-   ``custom_chain_filter`` and ``select_chain``), ``Trial.cue`` with page
-   makers and loops for selection in the timeline, and asynchronous
-   code blocks and scheduled tasks for background updates. It has no built-in
-   adaptive-design framework: the specification, the state snapshots and the
-   decision records described here are a recommended way of using those
-   building blocks, implemented in your experiment's own code.
-
-With a coding agent, the ``make-experiment-adaptive`` skill (see
-:doc:`/code/project/agent_skills`) goes through the design decisions below
-with you before writing any code, then implements the procedure and
-simulates it. Your part is to make those decisions and to review the result,
-using the review questions at the end of this page.
+   - **PsyNet** provides the building blocks: staircase and chain trial
+     makers, selection hooks on trial makers (``custom_node_filter``,
+     ``select_node``, ``custom_chain_filter`` and ``select_chain``),
+     ``Trial.cue`` with page makers and loops, and asynchronous code blocks
+     and scheduled tasks for background updates. It has no built-in
+     adaptive-design framework.
+   - **A coding agent**, with the ``make-experiment-adaptive`` skill (see
+     :doc:`/code/project/agent_skills`), goes through the design decisions
+     below with you before writing any code, then implements the procedure in
+     your experiment, including the state snapshots and decision records this
+     page recommends, and simulates it.
+   - **You** make those decisions and review the result, using the review
+     questions at the end of this page.
 
 Kinds of adaptivity
 -------------------

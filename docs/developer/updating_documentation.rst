@@ -145,10 +145,9 @@ The Design section has two groups. **Concepts** describe how PsyNet itself
 works. **Methods** describe recommended research practice built on PsyNet,
 such as adaptive designs and design simulation, where part of the approach is
 code the experimenter writes. Every methods page, and its code or task
-counterpart, opens with a "What PsyNet provides" box that separates PsyNet's
-built-in features from the conventions the page recommends, followed by a
-short paragraph on what a coding agent does with the matching skill and what
-the reader decides and reviews.
+counterpart, opens with a "Who does what" box with three points: what PsyNet provides,
+what a coding agent does with the matching skill, and what the reader decides
+and reviews.
 
 On concept pages:
 
