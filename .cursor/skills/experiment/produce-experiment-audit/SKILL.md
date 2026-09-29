@@ -14,7 +14,7 @@ the CLI from the experiment root.
 Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rst`; otherwise fetch `https://psynetdev.gitlab.io/PsyNet/<page>.html`.
 
 - `test/audits` — what an audit contains and how to build it
-- `reference/audit` — `audit.json` fields and status conventions
+- `test/audit_reference` — `audit.json` fields and status conventions
 
 ## Prerequisites
 

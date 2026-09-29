@@ -12,11 +12,7 @@ a carillon timbre, and are asked to rate them for 'pleasantness' on a numeric sc
 The tones are synthesized by taking a library of audio samples recorded from a real carillon
 and pitch-shifting them to reach a desired pitch.
 
-This experiment illustrates a particularly important feature of PsyNet: the real-time
-generation of stimuli using Python functions. This experiment involves sampling stimuli
-densely from a continuous range of pitch intervals, so it is much more efficient to generate
-stimuli on-demand than to try and generate all possibilities in advance. The code to
-generate the stimuli takes advantage of the powerful Python package
-`librosa <https://librosa.org/>`_,
-which contains a sophisticated pitch shift algorithm that is used to generate the
-stimuli.
+The experiment generates stimuli in real time with Python functions. It samples
+pitch intervals densely from a continuous range, so generating each stimulus on
+demand is much more efficient than generating every possibility in advance. The
+pitch shifting uses the Python package `librosa <https://librosa.org/>`_.

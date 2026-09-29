@@ -18,7 +18,7 @@ simulated participants, and debug; :doc:`agent_skills` lists them.
 The skills also tell the agent to keep an **experiment audit**: a record of
 the original request, the implementation plan, the development timeline,
 validation results, evidence and remaining blockers. You review the rendered
-audit when the agent hands over. :doc:`/reference/audit` describes the format
+audit when the agent hands over. :doc:`/test/audit_reference` describes the format
 and commands.
 
 Implement an experiment with an agent

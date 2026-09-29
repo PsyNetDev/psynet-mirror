@@ -44,3 +44,23 @@ in part with support from the Cambridge Humanities Research Grants Scheme.
 
 PsyNet has been used for research since 2020 and is now developed as open-source software
 for the wider research community.
+
+How PsyNet is built
+-------------------
+
+PsyNet is built on `Dallinger <https://dallinger.readthedocs.io/>`_, which
+provides the web server, database models for networks, nodes and
+participants, recruiter integrations, and deployment tooling. PsyNet adds the
+timeline, trial makers, pages, and asset handling on top. A few commands, such
+as ``dallinger deployment-files list``, are still run through Dallinger
+directly.
+
+`Docker <https://www.docker.com/>`_ runs software in containers that behave
+like self-contained operating systems. PsyNet uses it in two places. On your
+computer, it runs the PostgreSQL database and Redis cache that PsyNet needs
+(``psynet services ensure``); the experiment itself runs in its own Python
+environment, and ``psynet debug local`` uses Docker for the experiment only
+with ``--docker``. When you deploy, PsyNet builds the experiment into a Docker
+image that captures its dependencies, so later changes to Python versions or
+operating systems don't affect the deployed experiment (see
+:ref:`deployment_build_context`).

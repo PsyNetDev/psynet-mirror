@@ -102,4 +102,10 @@ Choose your operating system:
 
       Work in your Linux home folder (``cd ~``) rather than under
       ``/mnt/c``; it is much faster. If WSL won't install, see
-      :doc:`/reference/wsl_troubleshooting`.
+      :doc:`/wsl_troubleshooting`.
+
+.. toctree::
+   :hidden:
+
+   troubleshooting
+   wsl_troubleshooting

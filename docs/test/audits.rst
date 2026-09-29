@@ -73,4 +73,4 @@ hidden when no checks are recorded.
 
 .. seealso::
 
-   :doc:`/reference/audit`, for the audit's files and commands.
+   :doc:`/test/audit_reference`, for the audit's files and commands.

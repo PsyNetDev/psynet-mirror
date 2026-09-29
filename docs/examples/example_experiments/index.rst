@@ -3,10 +3,9 @@
 Example experiments
 ===================
 
-This section provides a few example implementations of PsyNet experiments.
-Each experiment is shared as a standalone Git repository that contains all the information
-you should need to run the experiment yourself. If you're interested in exploring the experiment code,
-a good starting point is the ``experiment.py`` file.
+Each of these experiments is a standalone Git repository with everything
+needed to run it, starting from its ``experiment.py`` file. They were written
+for PsyNet 12 and pin that version in ``requirements.txt``.
 
 .. toctree::
    :maxdepth: 1

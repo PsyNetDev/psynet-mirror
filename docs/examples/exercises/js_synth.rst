@@ -6,8 +6,10 @@ Prerequisites
 ^^^^^^^^^^^^^
 
 - :doc:`/design/timeline`
+- :doc:`/code/writing_pages`
 - :doc:`Modular pages guide </code/pages/control_gallery>`
-- :doc:`Audio demo </examples/demos/audio>`
+- The `audio demo <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/audio>`__
+  (``demos/experiments/audio``)
 
 Exercise 1
 ^^^^^^^^^^
@@ -25,7 +27,7 @@ and plays them that arpeggio.
 Exercise 3
 ^^^^^^^^^^
 
-Create an modular page that plays a random sequence of tones drawn from the chromatic scale.
+Create a modular page that plays a random sequence of tones drawn from the chromatic scale.
 
 Exercise 4
 ^^^^^^^^^^

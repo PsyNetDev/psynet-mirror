@@ -1,10 +1,7 @@
 .. _additional_developer_installation:
 
-Additional developer installation steps
----------------------------------------
-
-These are some additional steps you should take if you plan to contribute
-to PsyNet's source code and you are using the virtual environment installation method.
+Setting up a development checkout
+---------------------------------
 
 
 Add your SSH key to GitLab
@@ -85,84 +82,63 @@ For Linux or Windows
     then looking for a line that says '"Chromedriver was blocked from use because it is not from an
     identified developer"'. Click 'Allow anyway', then try rerunning Chromedriver.
 
-Download Dallinger and PsyNet
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Clone PsyNet and Dallinger
+~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Download Dallinger from GitHub:
-
-.. code-block:: bash
-
-    cd
-    git clone https://github.com/Dallinger/Dallinger
-
-If you haven't already done so, download PsyNet from GitLab:
+Follow :doc:`/install` for the system tools (uv, Git, Docker, Chrome and
+the Heroku CLI), then clone both repositories next to each other:
 
 .. code-block:: bash
 
     cd
     git clone https://gitlab.com/PsyNetDev/PsyNet
+    git clone https://github.com/Dallinger/Dallinger
 
-Open PsyNet in your IDE
-~~~~~~~~~~~~~~~~~~~~~~~~
+Create the development environment
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Open the PsyNet folder (the folder you downloaded from GitLab) in your IDE.
-Use your IDE to create a virtual environment for PsyNet, using the Python version specified
-in ``pyproject.toml``.
-
-Install PsyNet and Dallinger in editable mode
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Within the virtual environment you just created, install PsyNet and Dallinger in editable mode:
+Create a virtual environment in the PsyNet checkout and install PsyNet in
+editable mode with its development extras. uv installs the Python version
+that PsyNet requires.
 
 .. code-block:: bash
 
-    cd ~/Dallinger
-    pip3 install --editable ".[data]"
-    cd ~/Psynet
-    pip3 install --editable ".[dev]"
-
-Editable mode means that any changes you make to the
-Dallinger/PsyNet source code will be automatically reflected in your virtual environment.
-
-You can then check your installation by running
-
-.. code-block:: bash
-
+    cd ~/PsyNet
+    uv venv --python 3.13
+    source .venv/bin/activate
+    uv pip install -e ".[dev,demos,slack]"
     psynet --version
 
-.. note::
+If you are changing Dallinger as well, install your checkout in editable mode
+into the same environment:
 
-    When you are developing in PsyNet/Dallinger it's important to keep track of which versions of the packages
-    you need. Particular versions of PsyNet are tied to particular versions of Dallinger.
-    To switch to a particular version of Dallinger or PsyNet, navigate to the relevant directory and run
-    ``git checkout <tag>`` where ``<tag>`` is the version you want to use. For example:
+.. code-block:: bash
 
-    .. code-block:: bash
+    uv pip install -e ~/Dallinger
 
-       cd ~/PsyNet
-       git checkout vX.Y.Z
+Editable mode means that changes to the PsyNet or Dallinger source are used
+immediately. Particular PsyNet versions need particular Dallinger versions:
+to work on an older release, check out its tag in both repositories, taking
+the Dallinger version from that tag's ``pyproject.toml``.
 
-    Check out the Dallinger tag or commit that the PsyNet release requires
-    (see that tag's ``pyproject.toml``).
+Start PostgreSQL and Redis for local runs and tests:
 
+.. code-block:: bash
+
+    psynet services ensure
 
 Install the Git pre-commit hook
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-With the virtual environment still activated:
+``pre-commit`` is part of the ``dev`` extras. Install the hook, which lints
+and formats code with `ruff <https://docs.astral.sh/ruff/>`__ on every commit:
 
 .. code-block:: bash
 
-   pip3 install pre-commit
-   pre-commit install
+    pre-commit install
 
-This will install the pre-commit hooks defined in ``.pre-commit-config.yaml`` to lint, sort imports,
-and format Python code using `ruff <https://docs.astral.sh/ruff/>`__.
-You can run the Ruff checks manually at any time by running:
+Run the same checks on the whole repository at any time with:
 
 .. code-block:: bash
 
-   pre-commit run --all-files
-
-You may also want to install Ruff support for your own code editor, though this is not strictly necessary,
-since the pre-commit hook will run Ruff for you on commit.
+    pre-commit run --all-files

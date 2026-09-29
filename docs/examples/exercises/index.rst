@@ -1,11 +1,10 @@
 Exercises
 =========
 
-These exercises introduce various parts of PsyNet.
-
 .. toctree::
     :maxdepth: 1
 
+    music_perception
     timeline
     graphics
     js_synth

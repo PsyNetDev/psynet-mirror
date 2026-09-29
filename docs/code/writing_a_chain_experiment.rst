@@ -122,6 +122,41 @@ The ``demos/experiments`` folder has a demo for each, for example
 ``imitation_chain``, ``gibbs``, ``mcmcp``, ``staircase_pitch_discrimination``,
 ``create_and_rate``, and ``graph``.
 
+.. _demos_catalog_gibbs:
+
+Writing a Gibbs Sampling with People experiment
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A Gibbs experiment subclasses three classes from :mod:`psynet.trial.gibbs`:
+
+#. A :class:`~psynet.trial.gibbs.GibbsNode` subclass sets ``vector_length``,
+   the number of stimulus dimensions, and defines ``random_sample(i)``, which
+   returns a random value for dimension ``i``:
+
+   .. literalinclude:: ../../demos/experiments/gibbs/experiment.py
+      :pyobject: CustomNode
+
+   Start nodes can carry a ``context``, which stays fixed within a chain,
+   such as the target word, and a ``participant_group``. For
+   within-participant chains, ``start_nodes`` is a function that creates
+   fresh nodes.
+
+#. A :class:`~psynet.trial.gibbs.GibbsTrial` subclass defines
+   ``show_trial``. The page shows the stimulus for ``self.initial_vector``,
+   lets the participant change dimension ``self.active_index``, and returns
+   the new value of that dimension as the answer. ``self.context`` holds the
+   chain's fixed parameters:
+
+   .. literalinclude:: ../../demos/experiments/gibbs/experiment.py
+      :pyobject: CustomTrial.show_trial
+      :dedent: 4
+
+   ``show_trial`` can return a list of pages and code blocks; the answer
+   then comes from the last page.
+
+#. A :class:`~psynet.trial.gibbs.GibbsTrialMaker` combines the node and
+   trial classes and goes in the timeline.
+
 When a trial fails
 ------------------
 

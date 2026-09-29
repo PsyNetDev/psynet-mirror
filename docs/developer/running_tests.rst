@@ -1,4 +1,3 @@
-.. _developer:
 .. highlight:: shell
 
 =============
@@ -12,7 +11,7 @@ they complete in the correct state.
 Whenever you push a contribution to a branch of the PsyNet repository,
 these automated tests will be automatically queued. They normally take 10-15 minutes
 to complete. Keep an eye on the GitLab interface to see if any errors have occurred.
-Errors should be resolved before merging branches into ``dev`` or ``master``.
+Resolve any errors before merging into ``master``.
 
 Test parallelization
 --------------------

@@ -4,129 +4,79 @@
 Command line
 ============
 
-Once you have installed PsyNet, you interact with it by running commands in your Unix shell.
-Generally speaking, you should execute these commands inside the experiment directory you are
-working on.
+Run ``psynet`` commands in the experiment directory, with the experiment's
+virtual environment active. ``psynet <command> --help`` lists every option.
 
-PsyNet has two common kinds of experiment folder:
+.. list-table::
+   :header-rows: 1
+   :widths: 35 65
 
-* **Bundled demos / test experiments inside the PsyNet repository**
-  (for example ``PsyNet/demos/experiments/timeline``). These use the PsyNet
-  repository's development ``.venv``. Generated boilerplate is omitted from git
-  on purpose; ``debug`` / ``test`` prepare it automatically.
-* **Standalone experiments outside the PsyNet repository** (your own project
-  copy). These should use a dedicated ``.venv`` in that project directory.
-  Run ``psynet setup`` there to prepare files, write ``constraints.txt``, and
-  install packages.
+   * - Command
+     - What it does
+   * - ``psynet setup``
+     - Prepare a standalone experiment: files, ``constraints.txt``,
+       packages and Git (see `Set up an experiment (setup)`_).
+   * - ``psynet services check`` / ``ensure``
+     - Check, or start in Docker, the local PostgreSQL and Redis
+       (see `Local PostgreSQL and Redis (services)`_).
+   * - ``psynet scripts scaffold`` / ``update`` / ``prune``
+     - Create, refresh or remove boilerplate files
+       (see `Manage experiment boilerplate (scripts)`_).
+   * - ``psynet generate-constraints``
+     - Refresh ``constraints.txt`` after changing ``requirements.txt``.
+   * - ``psynet check-constraints``
+     - Check that ``constraints.txt`` is up to date with
+       ``requirements.txt``; see :doc:`/code/project/dependencies`.
+   * - ``psynet debug local``
+     - Run the experiment on your computer; see
+       :doc:`/code/project/running_and_debugging`.
+   * - ``psynet debug ssh --app NAME``
+     - Run a debug deployment on a server. It uses the configured
+       recruiter, so pilot with ``recruiter = generic``; see
+       :doc:`/deploy/running_a_study`.
+   * - ``psynet deploy ssh --app NAME``
+     - Deploy the experiment for data collection; see
+       :doc:`/deploy/running_a_study`. ``--archive`` redeploys from a
+       previous export; see :doc:`/deploy/reference/deploy_from_archive`.
+   * - ``psynet export local`` / ``ssh``
+     - Export the data to ``exports/latest/``; see
+       :doc:`/data/exporting_data`.
+   * - ``psynet test local``
+     - Run the experiment's automated tests with bots; see
+       :doc:`/test/backend`.
+   * - ``psynet performance-test local`` / ``ssh``
+     - Measure how the server copes with many participants; see
+       :doc:`/test/scalability`.
+   * - ``psynet audit ...``
+     - Create, validate and render the experiment audit; see
+       :doc:`/test/audit_reference`.
+   * - ``psynet estimate``
+     - Estimate the completion time and maximum reward
+       (see `Estimate maximum reward and completion time (estimate)`_).
+   * - ``psynet installation update``
+     - Update the installed PsyNet and Dallinger packages
+       (see `Update the PsyNet/Dallinger installation (installation update)`_).
+   * - ``psynet install autocomplete``
+     - Install shell tab completion; see :ref:`shell_completion`.
 
-Do not treat a bundled demo path as the place to run a full standalone
-``psynet setup`` install unless you intentionally want only the lightweight
-in-repo preparation.
-
-
-.. _debug:
-
-Run an experiment in debug mode (``debug``)
--------------------------------------------
-
-The following code runs an experiment in debug mode on your local computer:
-
-.. code:: bash
-
-    psynet debug local
-
-The following code runs an experiment in debug mode on your own web server, via SSH;
-this will push the experiment code to the server, but won't recruit any participants,
-even if your recruiter is set to ``prolific``.
-Note the specification of an app name.
-
-.. code:: bash
-
-    psynet debug ssh --app my-app-name
-
-
-.. _deploy:
-
-Deploy an experiment (``deploy``)
----------------------------------
-
-This command deploys an experiment, and enables the recruiter so you can collect real data.
-
-.. code:: bash
-
-    psynet deploy ssh --app my-app-name
-
-(Experimental): To deploy an experiment that resurrects the state of a previous
-deployment, add ``--archive path/to/export``, where ``path/to/export`` is an
-export created by a previous ``psynet export`` (such as ``exports/latest``), an
-``export.zip`` downloaded from the dashboard, or a ``database/`` directory from
-either.
-
+Bundled demos in the PsyNet repository use the repository's development
+``.venv``; ``psynet debug`` and ``psynet test`` prepare their boilerplate
+automatically. Standalone experiments have their own ``.venv``, prepared with
+``psynet setup``.
 
 .. _estimate:
 
 Estimate maximum reward and completion time (``estimate``)
 ----------------------------------------------------------
 
-This command examines the timeline, estimates how long the participant will take to complete the experiment,
-and how much they need to be paid as a result.
-
-.. code:: bash
-
-    psynet estimate
-
-.. warning::
-
-    This functionality is still experimental and is known to produce inaccurate results
-    in certain cases. Always check these estimates manually before finalizing an experiment implementation.
-
-
-.. _export:
-
-Export data from an experiment (``export``)
--------------------------------------------
-
-This command exports data from an experiment. The data is saved by default to
-``exports/latest/`` in the experiment directory; see :doc:`/data/exporting_data`.
-
-.. code:: bash
-
-    psynet export local
-    psynet export ssh --app my-app-name
-
-To see further options for the export command (e.g. if you want to control the export of assets),
-append ``--help`` to these commands:
-
-.. code:: bash
-
-    psynet export local --help
-    psynet export ssh --help
-
+``psynet estimate`` examines the timeline and estimates how long a participant
+takes and how much they are paid as a result. It is experimental and can be
+inaccurate for some timelines, so check the estimates by piloting.
 
 .. _experiment_setup_commands:
 
 Experiment setup and boilerplate
 --------------------------------
-
-Recommended commands by goal:
-
-* **Run a bundled demo inside the PsyNet repo:** activate the repository
-  ``.venv``, then ``psynet debug local`` (boilerplate is prepared automatically).
-* **Start a standalone experiment:** in a dedicated project
-  ``.venv``, run ``uv pip install psynet`` (thin bootstrap install), then
-  ``psynet setup`` (installs the full ``psynet[experiment]`` runtime via
-  ``constraints.txt``).
-* **Run or deploy that experiment with Docker:** after ``psynet setup``, use
-  ``psynet debug local --docker`` or a Docker deploy command.
-* **Refresh template files only:** ``psynet scripts update`` (overwrites
-  scaffold-managed files; preserves ``config.txt``, ``README.md``, and
-  ``deploy.toml``).
-* **Refresh dependency locks only:** ``psynet generate-constraints``.
-* **Upgrade the installed PsyNet/Dallinger packages:**
-  ``psynet installation update`` (not the same as ``psynet scripts update``).
-* **Check local PostgreSQL/Redis:** ``psynet services check``.
-* **Start missing local services with Docker:** ``psynet services ensure``.
-
 
 .. _setup:
 
@@ -146,8 +96,9 @@ it:
    ``[experiment]`` extra is the full runtime; a "bare" requirement is just
    the word ``psynet`` with no version, URL, or extras.)
 2. Ensures ``constraints.txt`` (the locked dependency list): reuses it when it
-   is already up to date with ``requirements.txt``, otherwise regenerates it
-   (same freshness rule as ``psynet check-constraints``).
+   is already up to date with ``requirements.txt`` or was written by hand,
+   otherwise regenerates it (same freshness rule as
+   ``psynet check-constraints``).
 3. Installs from ``constraints.txt`` with ``uv pip sync`` and verifies with
    ``uv pip check``.
 4. Ensures the experiment has a Git repository for deployment. An experiment
@@ -312,57 +263,6 @@ This runs Dallinger's standalone constraints script via ``uv run`` (the same
 lock policy as ``dallinger constraints generate``). An editable Dallinger
 checkout supplies its local script; otherwise PsyNet runs the canonical script
 from Dallinger's GitHub repository.
-
-
-Run the experiment's regression test
-------------------------------------
-
-This command runs the experiment's regression test, as defined in ``test.py``. This normally involves
-running one or more simulated participants through the experiment; see :doc:`/test/backend`.
-
-.. code:: bash
-
-  psynet test local
-  psynet test ssh --app my-app-name
-
-
-.. _performance_test:
-
-Performance test an experiment (``performance-test``)
------------------------------------------------------
-
-This command measures how your experiment server copes under sustained load. It
-keeps a target number of bots running for a fixed duration and reports detailed
-latency and throughput statistics.
-
-.. code:: bash
-
-  psynet performance-test local --n-bots 25 --duration-minutes 5
-  psynet performance-test ssh --app my-app-name --n-bots 50 --duration-minutes 10
-
-Unlike ``psynet test``, which checks correctness, ``performance-test`` is about
-performance under load. A short first pass is enough to inspect HTTP times;
-lengthen the window when finalizing if you want bots to finish. For a full
-guide, including how to sweep several concurrency levels and how to interpret
-the results, see the
-:doc:`scalability testing guide </test/scalability>`.
-Use ``psynet audit performance-test`` when the result should become
-canonical audit evidence; see :doc:`/reference/audit`.
-
-
-Simulate audit data for an experiment
--------------------------------------
-
-``psynet audit simulate`` generates simulated data by running the experiment's
-regression test and exporting the result to
-``audit/simulate/analysis/simulated_export/``.
-
-.. code:: bash
-
-  psynet audit simulate
-
-The command requires an initialized audit packet and marks ``simulate_export``
-present in ``audit.json``. See :doc:`/reference/audit`.
 
 
 .. _install:
