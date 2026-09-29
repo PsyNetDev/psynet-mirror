@@ -39,7 +39,6 @@ EXPECTED_EXCLUDE_NAMES = (
     ".env",
     ".idea",
     ".pytest_cache",
-    ".python-version",
     ".venv",
     "__pycache__",
     "env",
@@ -668,4 +667,6 @@ def test_scaffolded_debug_source_prepares_from_policy(tmp_path):
     assert (staging_root / "experiment.py").is_file()
     assert (staging_root / "deploy.toml").is_file()
     assert "experiment.py" in source.deployment_plan.destinations
+    # Dallinger's staging recompiles constraints against .python-version.
+    assert ".python-version" in source.deployment_plan.destinations
     assert "deploy.toml" in source.deployment_plan.destinations
