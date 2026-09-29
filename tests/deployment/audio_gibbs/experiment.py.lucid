@@ -192,7 +192,7 @@ class Exp(psynet.experiment.Experiment):
         super().on_launch()
 
     def recruit(self):
-        """Stop Lucid fielding once the participant target is reached.
+        """Stop Lucid fielding once the target number of participants has finished.
 
         PsyNet calls ``recruiter.close_recruitment()`` when no more
         participants are needed, but ``LucidRecruiter.close_recruitment`` is
@@ -200,9 +200,14 @@ class Exp(psynet.experiment.Experiment):
         promptly stop admitting entrants at the quota on its own (a fast
         survey ran to 14 completes on a quota of 10 with entrants still
         arriving), so the survey is set to ``complete`` explicitly here.
+
+        This waits for finished participants rather than using
+        ``need_more_participants``, which also counts participants still
+        working. Lucid records anyone who returns after the survey leaves
+        ``live`` as Survey Closed (code 136), not as a complete.
         """
         super().recruit()
-        if not self.need_more_participants:
+        if trial_maker.n_complete_participants >= TARGET_N_PARTICIPANTS:
             self._stop_lucid_fielding()
 
     def _stop_lucid_fielding(self):
