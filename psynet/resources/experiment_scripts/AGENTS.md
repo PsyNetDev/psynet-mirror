@@ -234,6 +234,7 @@ the matching version.
 | Deploying and running a study | `deploy/how_deployment_works`, `deploy/setting_up_a_server`, `deploy/running_a_study`, `deploy/recruiters/index` |
 | Exporting and basic data | `data/exporting_data`, `data/basic_data` |
 | Configuration and commands | `reference/configuration`, `reference/command_line` |
+| Classes and functions (API) | `reference/api/index` |
 | Local problems | `troubleshooting`, `wsl_troubleshooting` |
 
 For PsyNet 14 migrations (in-place timeline defaults, fragment templates,

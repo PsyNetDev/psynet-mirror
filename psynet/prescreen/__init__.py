@@ -440,17 +440,17 @@ class FreeTappingRecordTest(StaticTrialMaker):
     label : string
         The label for the test, default: "free_tapping_record_test".
 
-    performance_threshold : int
-        The performance threshold, default: 0.6.
+    performance_threshold : float
+        The performance threshold, default: 0.5.
 
     duration_rec_sec : float
         Length of the recording, default: 8 sec.
 
-    min_num_detected_taps : float
-        Mininum number of detected taps to pass the test, default: 1.
+    min_num_detected_taps : int
+        Minimum number of detected taps to pass a trial, default: 3.
 
-    n_repeat_trials : float
-        Number of trials to repeat in the trial maker, default: 0.
+    n_repeat_trials : int
+        Number of trials to repeat in the trial maker, default: 1.
 
     time_estimate_per_trial : float
         The time estimate in seconds per trial, default: 10.0.
@@ -1771,6 +1771,23 @@ class BeepHeadphoneTrial(HeadphoneTrial):
 
 
 class BeepHeadphoneTest(GeneralHeadphoneTest):
+    """
+    Headphone check in which the participant picks the sound that differs from the other two.
+
+    Parameters
+    ----------
+    label : str
+        Trial maker ID.
+    media_url : str, optional
+        Base URL of the test sounds; defaults to PsyNet's hosted copies.
+    time_estimate_per_trial : float
+        Time estimate in seconds per trial.
+    performance_threshold : int
+        Minimum number of correct trials needed to pass.
+    n_trials : int
+        Number of trials.
+    """
+
     def __init__(
         self,
         label="beep_headphone_test",
@@ -1809,6 +1826,14 @@ class BeepHeadphoneTest(GeneralHeadphoneTest):
 
 
 class AudioForcedChoiceTrial(StaticTrial):
+    """
+    Trial class for :class:`AudioForcedChoiceTest`: plays the ``stimulus`` asset and shows answer buttons.
+
+    The node definition holds the CSV row plus ``question`` and ``answer_options``.
+    A trial scores 1 if the answer equals ``definition["answer"]`` and 0 otherwise.
+    Subclass it and override :meth:`show_trial` to customize the page.
+    """
+
     def show_trial(self, experiment, participant):
         return ModularPage(
             "audio_forced_choice_trial",

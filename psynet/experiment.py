@@ -218,6 +218,11 @@ def error_response(*args, **kwargs):
 
 
 def is_experiment_launched():
+    """
+    Return ``True`` once :meth:`Experiment.on_launch` has finished.
+
+    Useful as a guard in scheduled tasks that should not run before launch.
+    """
     return redis_vars.get("launch_finished", default=False)
 
 

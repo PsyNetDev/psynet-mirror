@@ -8,11 +8,19 @@ Create and rate
     :members:
     :show-inheritance:
 
+.. autoclass:: psynet.trial.create_and_rate.RateOrSelectTrialMixin
+    :members:
+    :show-inheritance:
+
 .. autoclass:: psynet.trial.create_and_rate.RateTrialMixin
     :members:
     :show-inheritance:
 
 .. autoclass:: psynet.trial.create_and_rate.SelectTrialMixin
+    :members:
+    :show-inheritance:
+
+.. autoclass:: psynet.trial.create_and_rate.CreateAndRateNodeMixin
     :members:
     :show-inheritance:
 

@@ -15,6 +15,9 @@ AudioForcedChoiceTest
 .. autoclass:: psynet.prescreen.AudioForcedChoiceTest
     :members:
 
+.. autoclass:: psynet.prescreen.AudioForcedChoiceTrial
+    :members:
+
 ==================
 ColorBlindnessTest
 ==================
@@ -34,6 +37,13 @@ HugginsHeadphoneTest
 ====================
 
 .. autoclass:: psynet.prescreen.HugginsHeadphoneTest
+    :members:
+
+=================
+BeepHeadphoneTest
+=================
+
+.. autoclass:: psynet.prescreen.BeepHeadphoneTest
     :members:
 
 ======================
@@ -60,6 +70,31 @@ LexTaleTest
 ===========
 
 .. autoclass:: psynet.prescreen.LexTaleTest
+    :members:
+
+=========
+VocabTest
+=========
+
+.. autoclass:: psynet.prescreen.vocabtest.VocabTest
+
+=========
+WikiVocab
+=========
+
+.. autoclass:: psynet.prescreen.WikiVocab
+
+==========
+BibleVocab
+==========
+
+.. autoclass:: psynet.prescreen.BibleVocab
+
+=====================
+FreeTappingRecordTest
+=====================
+
+.. autoclass:: psynet.prescreen.FreeTappingRecordTest
     :members:
 
 ===============

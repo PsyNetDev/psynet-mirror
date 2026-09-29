@@ -48,7 +48,7 @@ Headphones and audio:
   plays three noises, and the participant picks the one with a hidden beep.
 - :class:`~psynet.prescreen.AntiphaseHeadphoneTest`: the participant picks the
   softest of three sounds.
-- ``BeepHeadphoneTest``: the participant picks the sound that differs from the
+- :class:`~psynet.prescreen.BeepHeadphoneTest`: the participant picks the sound that differs from the
   other two.
 - :class:`~psynet.prescreen.AudioForcedChoiceTest`: the participant
   classifies sounds listed in a CSV file.

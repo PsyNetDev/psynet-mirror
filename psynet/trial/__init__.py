@@ -63,7 +63,7 @@ def compile_nodes_from_directory(
     are copied with the deployment plan and served as ``/static/...`` URLs.
     Paths outside ``static/`` (including directories outside the experiment)
     are not supported. Each node definition stores that URL under ``url_key``
-    (default ``"url"``). Pass ``self.definition[url_key]`` to ``AudioPrompt``.
+    (default ``"url"``) and the file name under ``"name"``. Pass ``self.definition[url_key]`` to ``AudioPrompt``.
     Participant groups, blocks, and files are visited in alphabetical order
     by name.
 
@@ -73,7 +73,7 @@ def compile_nodes_from_directory(
         The path to the directory containing the media files.
     media_ext : str
         The extension of the media files.
-    node_class : type
+    node_class : class
         The class of the node to compile.
     url_key : str, optional
         Key in the node definition that stores the media URL.

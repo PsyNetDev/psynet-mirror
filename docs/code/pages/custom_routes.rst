@@ -69,6 +69,35 @@ take the parameters as an object and return a jQuery deferred:
         console.log(resp.messages);
     });
 
+Exposing a function with ``expose_to_api``
+------------------------------------------
+
+For a route that doesn't need Flask's request object,
+:func:`~psynet.api.expose_to_api` is shorter. It makes a module-level
+function, or a static method on a page class, callable at
+``/api/<endpoint>``. These functions from ``demos/features/api`` return a
+greeting and a random number:
+
+.. literalinclude:: ../../../demos/features/api/custom_pages.py
+   :pyobject: hello
+
+.. literalinclude:: ../../../demos/features/api/custom_pages.py
+   :pyobject: RandomDigitInputPage.random_number
+   :dedent: 4
+
+Arguments come from the query string for GET requests and from the JSON body
+for POST requests (for example ``/api/hello?name=world``), and the return
+value is sent back as the response. A dictionary arrives as JSON:
+
+.. code-block:: javascript
+
+    const response = await fetch("/api/random_digit_input");
+    const {random_number} = await response.json();
+
+PsyNet commits the database session after the function returns. These
+endpoints are public too, so check the participant's ``unique_id`` before
+returning or changing their data.
+
 Saving data with POST routes
 ----------------------------
 

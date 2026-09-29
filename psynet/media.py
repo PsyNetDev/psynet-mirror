@@ -55,6 +55,18 @@ def static_url_for(
 
 
 def make_batch_file(in_files, output_path):
+    """
+    Concatenate files into a single batch file, each prefixed by its 4-byte size.
+
+    Use :func:`unpack_batch_file` to split the batch again.
+
+    Parameters
+    ----------
+    in_files : list of str
+        Paths of the files to pack, in order.
+    output_path : str
+        Path of the batch file to write.
+    """
     with open(output_path, "wb") as output:
         for in_file in in_files:
             b = os.path.getsize(in_file)
@@ -143,6 +155,19 @@ def get_s3_bucket(bucket_name: str):
 
 
 def setup_bucket_for_presigned_urls(bucket_name, public_read=False):
+    """
+    Configure an S3 bucket so browsers can GET and PUT objects through presigned URLs.
+
+    Replaces the bucket's CORS rules. Typically run from a
+    :class:`~psynet.timeline.PreDeployRoutine`.
+
+    Parameters
+    ----------
+    bucket_name : str
+        Name of the S3 bucket.
+    public_read : bool
+        Also add a bucket policy allowing public reads of all objects.
+    """
     logger.info("Setting bucket CORSRules and policies...")
 
     s3_resource = get_s3_resource()

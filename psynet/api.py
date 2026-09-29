@@ -15,6 +15,30 @@ def test_function_equality(f1, f2):
 
 
 def expose_to_api(endpoint):
+    """
+    Decorator that makes a function callable from the browser at ``/api/<endpoint>``.
+
+    The route accepts GET (arguments from the query string) and POST (arguments from
+    the JSON body); the arguments are passed to the function as keyword arguments and
+    its return value is sent back as the response. Decorate a module-level function or
+    a static method (place ``@expose_to_api`` above ``@staticmethod``).
+
+    Parameters
+    ----------
+    endpoint : str
+        Endpoint name; must not contain ``/`` or already be used by a different function.
+
+    Examples
+    --------
+    ::
+
+        @expose_to_api("hello")
+        def hello(name):
+            return f"Hello {name}!"
+
+    JavaScript can then call ``fetch("/api/hello?name=Ada")``.
+    """
+
     def decorator(f):
         assert "/" not in endpoint, "Endpoint cannot contain '/'"
 

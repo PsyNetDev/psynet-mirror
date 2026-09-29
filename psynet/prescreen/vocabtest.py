@@ -917,7 +917,7 @@ class WikiVocab(VocabTest):
     The WikiVocab test is a vocabulary test that checks the participant's knowledge of words in a given language.
     Make sure you set the `performance_threshold_per_trial` according to your requirements.
 
-    See `VocabTest` for more information.
+    See :class:`~psynet.prescreen.vocabtest.VocabTest` for the other arguments.
     """
 
     def __init__(
@@ -947,7 +947,7 @@ class BibleVocab(VocabTest):
     Since the quality of the vocabulary test items is less controlled than the WikiVocab test, one can use the
     "consistency" `performance_check_type` instead.
 
-    Make sure you set the `performance_threshold_per_trial` according to your requirements.
+    See :class:`~psynet.prescreen.vocabtest.VocabTest` for the other arguments.
     """
 
     def __init__(

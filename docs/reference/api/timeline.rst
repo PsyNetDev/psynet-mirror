@@ -97,6 +97,12 @@ PreDeployRoutine
 .. autoclass:: psynet.timeline.PreDeployRoutine
   :show-inheritance:
 
+=========
+randomize
+=========
+
+.. autofunction:: psynet.timeline.randomize
+
 ========
 Response
 ========

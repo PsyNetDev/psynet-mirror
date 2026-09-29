@@ -16,7 +16,7 @@
   "api/js_synth": "reference/api/js_synth",
   "api/media": "reference/api/media",
   "api/modular_page": "reference/api/modular_page",
-  "api/overview": "reference/api/overview",
+  "api/overview": "reference/api/index",
   "api/page": "reference/api/page",
   "api/participant": "reference/api/participant",
   "api/prescreen": "reference/api/prescreen",
@@ -378,5 +378,6 @@
   "introduction/history": "introduction/team",
   "examples/exercises/music_perception": "examples/exercises/index",
   "deploy/reference/aws_server_setup": "deploy/reference/manual_server_setup",
-  "deploy/reference/physical_server_setup": "deploy/reference/manual_server_setup"
+  "deploy/reference/physical_server_setup": "deploy/reference/manual_server_setup",
+  "reference/api/overview": "reference/api/index"
 }

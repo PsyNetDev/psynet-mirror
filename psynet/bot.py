@@ -14,6 +14,15 @@ logger = get_logger()
 
 
 class Bot(Participant):
+    """
+    Simulated participant stored in the participant table, used for automated tests and simulations.
+
+    Creating a bot waits for the experiment launch to finish, calls
+    :meth:`~psynet.experiment.Experiment.initialize_bot`, and advances the bot to the first page.
+    Hooks such as :meth:`~psynet.experiment.Experiment.test_check_bot` receive ``Bot`` objects.
+    To drive a bot through pages over HTTP, use :class:`BotDriver`.
+    """
+
     def __init__(
         self,
         recruiter_id=None,
@@ -189,6 +198,23 @@ class BotResponse:
 
 
 def advance_past_wait_pages(bots: List["BotDriver"], max_iterations=10):
+    """
+    Repeatedly take wait pages and timeline holds for a group of bots until none are waiting.
+
+    Useful in synchronous bot tests, where bots must pass barriers or wait pages together.
+
+    Parameters
+    ----------
+    bots : list of BotDriver
+        Bots to advance.
+    max_iterations : int
+        Maximum number of passes over ``bots``.
+
+    Raises
+    ------
+    RuntimeError
+        If some bots are still waiting after ``max_iterations`` passes.
+    """
     from .page import WaitPage
 
     iteration = 0

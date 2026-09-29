@@ -15,6 +15,20 @@ BasicDemography
     :members:
     :show-inheritance:
 
+===
+Age
+===
+
+.. autoclass:: psynet.demography.general.Age
+    :show-inheritance:
+
+======
+Gender
+======
+
+.. autoclass:: psynet.demography.general.Gender
+    :show-inheritance:
+
 ==========
 BasicMusic
 ==========
