@@ -18,7 +18,7 @@ model package" and "Bot adapter" of
 
 ## Read first
 
-Read these pages before acting. Get the docs folder once with `psynet docs path`, then read `<folder>/<page>.txt` (or `.rst` in a source checkout) and search with `rg -n -i "<term>" <folder>`. If there is no local copy, fetch the pages from the website URL that `psynet docs path` prints.
+Read these pages before acting. Get the docs folder once with `psynet docs path`, then read `<folder>/<page>.txt` (or `.rst` in a source checkout) and search with `rg -n -i --no-ignore "<term>" <folder>`. If there is no local copy, fetch the pages from the website URL that `psynet docs path` prints.
 
 - `test/backend` — how bots answer, and `psynet audit simulate`
 - `test/audits` — where design simulation sits in an audit

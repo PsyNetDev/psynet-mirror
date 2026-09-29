@@ -61,7 +61,7 @@ virtual environment active. ``psynet <command> --help`` lists every option.
    * - ``psynet docs show PAGE`` / ``path``
      - Print a documentation page for the installed PsyNet version, or the
        folder that holds every page, for searching (for example with
-       ``rg -n -i "<term>" "$(psynet docs path)"``). Page names are the
+       ``rg -n -i --no-ignore "<term>" "$(psynet docs path)"``). Page names are the
        website paths without ``.html``, such as
        ``code/participants/payment``.
 

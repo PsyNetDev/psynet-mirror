@@ -82,7 +82,7 @@ def _find_page(root: Path, page: str) -> Path:
             return candidate
     raise DocsError(
         f"No documentation page {name!r} in {root}. "
-        f'Search for the topic with: rg -n -i "<term>" "{root}"'
+        f'Search for the topic with: rg -n -i --no-ignore "<term>" "{root}"'
     )
 
 

@@ -198,7 +198,7 @@ def generate_constraints():
 def docs():
     """Read the documentation for the installed PsyNet version.
 
-    Search all pages with: rg -n -i "<term>" "$(psynet docs path)"
+    Search all pages with: rg -n -i --no-ignore "<term>" "$(psynet docs path)"
     """
 
 
