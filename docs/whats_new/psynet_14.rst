@@ -9,7 +9,7 @@ also adds tools for developing experiments with coding agents.
 
 Some of these changes break existing experiments. Each section below says
 what to change, and :doc:`upgrading_to_psynet_14` gives the step-by-step
-checklist for custom pages, recruiters and the Leave button. The
+checklist. The
 `changelog <https://gitlab.com/PsyNetDev/PsyNet/-/blob/master/CHANGELOG.md>`_
 lists every change.
 
@@ -144,9 +144,7 @@ out, and yes/no columns contain ``True`` and ``False``. See
 Upgrading
 ---------
 
-1. Read :doc:`upgrading_to_psynet_14` and work through it; in Cursor,
-   ``/upgrade-to-psynet-14`` follows the same checklist.
-2. Check the sections above for changes that affect your experiment: trial
-   selection hooks, ``fail_participant``, group membership, asset names,
-   ``deploy.toml`` and analysis code that reads exports.
-3. Run ``psynet test local``, then a debug deployment, before collecting data.
+1. Work through :doc:`upgrading_to_psynet_14`, which covers each of the
+   changes above; in Cursor, ``/upgrade-to-psynet-14`` follows the same
+   checklist.
+2. Run ``psynet test local``, then a debug deployment, before collecting data.

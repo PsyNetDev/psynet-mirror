@@ -3,8 +3,8 @@ Upgrading to PsyNet 14
 ======================
 
 This checklist migrates an existing experiment onto PsyNet 14: in-place
-timeline transitions, recruiter and leave APIs, and new participant-theme
-defaults. It is the single source of truth for **migration order and search
+timeline transitions, recruiter and leave APIs, changed defaults, setup and
+deployment files, participant failure, groups, assets and exports. It is the single source of truth for **migration order and search
 targets**. Frontend patterns and full examples live in
 :doc:`/code/pages/custom_front_ends`.
 
@@ -26,8 +26,10 @@ Also see: :doc:`/whats_new/psynet_14`,
    only as a short-term experiment-wide opt-out, then keep migrating so you
    can remove it.
 4. Work page by page.
-5. Even with no custom frontend, continue through steps 10–13
-   (recruiter, leave/error APIs, changed defaults, and validate).
+5. Even with no custom frontend, continue through steps 10–20
+   (recruiters, Leave and error pages, changed defaults, setup, deployment
+   files, participant failure, responses, groups, assets, exports, and
+   validation).
 
 To surface SPA contract errors, run ``psynet debug local`` /
 ``psynet test local`` and read the traceback. Incompatible pages raise one
@@ -227,6 +229,21 @@ If the study currently runs on MTurk, move it to another platform before
 upgrading. Amazon is closing MTurk on September 30, 2026. See
 :doc:`/whats_new/psynet_14`.
 
+For Prolific, search for ``prolific_enable_screen_out`` and
+``prolific_screen_out_slots``:
+
+* Prolific now pays participants who fail or hit an error a fixed amount
+  (``prolific_unsuccessful_base_payment``, default 0.25) plus a bonus up to
+  their accumulated reward. This is on by default
+  (``prolific_pay_unsuccessful = true``).
+* While it is on, set ``prolific_screen_out_slots``, which caps how many
+  participants can be paid this way; deployment fails without it. See
+  :doc:`/deploy/recruiters/prolific`.
+* Set ``prolific_pay_unsuccessful = false`` to keep the old return-for-bonus
+  behaviour, for example if the Prolific workspace rejects the screen-out
+  completion code.
+* Remove ``prolific_enable_screen_out``; it is no longer a valid key.
+
 11. Leave, ads, and error recovery
 ----------------------------------
 
@@ -281,7 +298,145 @@ migration instructions in the error.
   them as direct children of ``#trial-stage`` should target
   ``.psynet-actions`` instead.
 
-13. Validate
+13. Set up the experiment environment
+-------------------------------------
+
+``pip install psynet`` now installs only a small command-line tool. In the
+experiment directory, run:
+
+.. code-block:: console
+
+    psynet setup
+
+It creates the experiment's ``.venv``, installs the full PsyNet runtime from
+``constraints.txt``, adds the boilerplate files, and starts a Git repository
+if the experiment lacks its own. PsyNet needs Python 3.11 or later.
+
+* ``psynet setup --docker`` is removed; run ``psynet setup``, then
+  ``psynet debug local --docker``.
+* ``psynet services ensure`` starts PostgreSQL and Redis in Docker.
+
+See :doc:`/install` and :doc:`/code/project/creating_an_experiment`.
+
+14. Deployment files
+--------------------
+
+Look for ``.dockerignore`` and a ``docker/`` folder of helper scripts in the
+experiment directory.
+
+``deploy.toml`` now decides which files are deployed; ``.gitignore`` and
+``.dockerignore`` no longer do, so Git-ignored files under ``static/`` are
+deployed. PsyNet creates ``deploy.toml`` when it is missing, and the first
+debug, test or deploy command afterwards stops so that you can review the
+file list.
+
+* Move any custom ``.dockerignore`` entries into ``deploy.toml``'s
+  ``[exclude]`` table, then delete ``.dockerignore``. PsyNet removes
+  generated copies itself.
+* Review the list with ``dallinger deployment-files list``.
+* Commit your changes before a remote deployment; PsyNet records the commit
+  instead of packaging the source code.
+
+See :doc:`upgrading_deployment_file_selection`.
+
+15. Failing participants and trial maker arguments
+--------------------------------------------------
+
+Search for ``def fail_participant``, ``data_check_failed``,
+``attention_check_failed`` and positional arguments to ``TrialMaker(`` or
+``NetworkTrialMaker(``.
+
+* Overriding ``Experiment.fail_participant`` raises an error. Call
+  ``participant.fail()``, or register a ``ParticipantFailRoutine`` for code
+  that must run when a participant fails.
+* Dallinger's ``data_check_failed`` and ``attention_check_failed`` only log
+  a warning; they no longer fail the participant.
+* ``TrialMaker`` and ``NetworkTrialMaker`` take keyword arguments only, like
+  the other trial makers.
+* The ``fail_trials_on_premature_exit`` argument is ignored: when a
+  participant leaves or fails, their unfinished trials always fail and their
+  submitted trials are kept.
+
+See :doc:`/code/trials/participant_and_trial_failure`.
+
+16. Response processing and rendering
+-------------------------------------
+
+Search for ``def process_response``, ``response_approved``,
+``render_partial_timeline_payload``, and code in ``render()`` or templates
+that changes the database.
+
+* Pages now render in a read-only transaction. Move database writes from
+  ``render()`` or templates to ``pre_render()``.
+* An override of ``Experiment.process_response`` must return a
+  ``ResponseResult`` (``from psynet.experiment import ResponseResult``) and
+  accept ``**kwargs``.
+* ``Experiment.response_approved`` is removed; customize approved responses
+  through ``process_response`` or the page-rendering hooks.
+
+17. Groups and barriers
+-----------------------
+
+Search for code that changes ``SyncGroup.participants``, custom ``Barrier``
+subclasses, ``get_waiting_participants(`` and ``SimpleGrouper(``.
+
+* Change group membership with ``SyncGroup.add_participant()`` and
+  ``SyncGroup.remove_participant()``. ``SyncGroup.participants`` is
+  read-only and lists only active members.
+* Custom barriers implement ``check_waiting_participants()`` and
+  ``choose_who_to_release()`` instead of overriding ``check()``. Barrier
+  state is saved as data, so custom release state must be JSON-compatible
+  values, importable classes or functions, or database objects.
+* ``Barrier.get_waiting_participants()`` takes the participant as its first
+  argument; pass ``for_update`` as a keyword.
+  ``get_waiting_participants_from_barrier_id`` is removed.
+* ``SimpleGrouper`` IDs now include the group size. Pass the same ``id_``
+  to two groupers that should share a waiting pool.
+
+See :doc:`/code/multiplayer/synchronization`.
+
+18. Assets and stimuli
+----------------------
+
+Search for ``ExperimentAsset``, ``CachedAsset``, ``CachedFunctionAsset``,
+``personal=``, ``cache=`` and ``compile_nodes_from_directory``.
+
+* Rename ``ExperimentAsset`` and ``CachedAsset`` to ``FileAsset``, and
+  ``CachedFunctionAsset`` to ``GeneratedAsset``. The old names still work
+  but warn, and ``asset(..., cache=...)`` no longer has an effect.
+* Remove ``personal=``; it now raises an error. Treat exported media as
+  potentially identifying.
+* ``compile_nodes_from_directory`` reads media from ``static/``: move the
+  files there from ``data/``, replace ``asset_label`` with ``url_key``, and
+  pass ``self.definition["url"]`` to prompts.
+* Ready-made stimuli can live in ``static/`` and be referenced with
+  ``psynet.media.static_url_for``; see :doc:`/code/using_stimuli`.
+
+19. Exports and analysis scripts
+--------------------------------
+
+Search scripts and notes for ``--assets all``, ``--legacy``,
+``--anonymize``, ``psynet.zip``, ``database.zip``, ``extra_var`` and
+``export_classes_to_skip``.
+
+* ``psynet export`` writes one archive to ``exports/latest/`` and keeps
+  earlier exports under ``exports/history/``. Table CSVs are in a flat
+  ``database/`` folder, with pseudonymous participant IDs; recruiter IDs are
+  in ``participant_identifiers.csv``.
+* ``--assets`` takes ``collected`` (the default: files created during the
+  study) or ``none``. ``--assets all``, ``--legacy`` and ``--anonymize`` are
+  removed, and stimuli declared in the timeline are not exported.
+* Tables that were never used have no CSV; check ``table_row_counts`` in
+  ``manifest.json`` before reading one.
+* Yes/no columns contain ``True`` and ``False`` rather than ``t`` and
+  ``f``, and the ``type`` column of ``assets/manifest.csv`` uses the new
+  asset class names.
+* ``extra_var`` is removed; read variables from the ``vars`` column with
+  ``psynet.export.unpack_json_column``.
+
+See :doc:`/data/what_an_export_contains`.
+
+20. Validate
 ------------
 
 From a complete experiment directory. At minimum you typically need:
