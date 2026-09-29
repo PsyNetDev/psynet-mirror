@@ -2186,6 +2186,65 @@ def _lucid_recruiter_with_service():
     return recruiter
 
 
+class _FakeRedisStore(dict):
+    def set(self, key, value):
+        self[key] = str(value)
+
+
+def _lucid_recruiter_with_live_survey(quantity=10, completes=1):
+    recruiter = _lucid_recruiter_with_service()
+    recruiter.config = FakeConfig(id="exp")
+    recruiter.store = _FakeRedisStore()
+    recruiter._record_current_survey_number(123)
+    service = recruiter.lucidservice
+    service.get_survey_status.return_value = "live"
+    service.get_survey_quantity_and_completes.return_value = (quantity, completes)
+    return recruiter
+
+
+def test_lucid_close_recruitment_pauses_entry_until_nobody_is_working():
+    """Closing the survey while people work would return their completes as 136."""
+    recruiter = _lucid_recruiter_with_live_survey(quantity=10, completes=1)
+    service = recruiter.lucidservice
+
+    with patch.object(BaseLucidRecruiter, "_n_working_participants", return_value=9):
+        recruiter.close_recruitment()
+        recruiter.close_recruitment()
+    service.set_survey_quantity.assert_called_once_with("123", 1)
+    service.change_status.assert_not_called()
+
+    recruiter.recruit(n=1)
+    service.set_survey_quantity.assert_called_with("123", 10)
+
+    with patch.object(BaseLucidRecruiter, "_n_working_participants", return_value=2):
+        recruiter.close_recruitment()
+    with patch.object(BaseLucidRecruiter, "_n_working_participants", return_value=0):
+        recruiter.close_recruitment()
+    service.change_status.assert_called_once_with("123", "complete")
+
+    service.set_survey_quantity.reset_mock()
+    recruiter.recruit(n=1)
+    service.set_survey_quantity.assert_not_called()
+
+
+def test_lucid_run_checks_reevaluates_recruitment_while_entry_is_paused():
+    """A participant who times out never submits, so the clock must re-decide."""
+    recruiter = _lucid_recruiter_with_live_survey()
+    recruiter.lucidservice.get_submissions.return_value = []
+    experiment = MagicMock()
+
+    with patch("psynet.experiment.get_experiment", return_value=experiment):
+        recruiter.run_checks()
+        experiment.recruit.assert_not_called()
+
+        with patch.object(
+            BaseLucidRecruiter, "_n_working_participants", return_value=3
+        ):
+            recruiter.close_recruitment()
+        recruiter.run_checks()
+    experiment.recruit.assert_called_once_with()
+
+
 def _lucid_submit_url(ris, rid):
     return f"https://lucid.test/callback?RIS={ris}&RID={rid}"
 

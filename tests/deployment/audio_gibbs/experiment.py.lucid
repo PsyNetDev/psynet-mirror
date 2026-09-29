@@ -24,7 +24,6 @@ from psynet.trial.audio_gibbs import (
     AudioGibbsTrial,
     AudioGibbsTrialMaker,
 )
-from psynet.utils import get_logger
 
 # The vendored consents_cococo package (copied from
 # https://gitlab.com/computational-audition-lab/cococo-shared) uses absolute
@@ -38,8 +37,6 @@ from consents_cococo.consent_cultural_foundation import (  # noqa: E402
 )
 
 from . import custom_synth
-
-logger = get_logger()
 
 TARGETS = ["dominant", "trustworthy"]
 DIMENSIONS = 7
@@ -190,47 +187,6 @@ class Exp(psynet.experiment.Experiment):
                 "Copy experiment.py.lucid with config.txt.lucid before deploy."
             )
         super().on_launch()
-
-    def recruit(self):
-        """Stop Lucid fielding once the target number of participants has finished.
-
-        PsyNet calls ``recruiter.close_recruitment()`` when no more
-        participants are needed, but ``LucidRecruiter.close_recruitment`` is
-        a no-op that relies on Lucid stopping at the quota. Lucid does not
-        promptly stop admitting entrants at the quota on its own (a fast
-        survey ran to 14 completes on a quota of 10 with entrants still
-        arriving), so the survey is set to ``complete`` explicitly here.
-
-        This waits for finished participants rather than using
-        ``need_more_participants``, which also counts participants still
-        working. Lucid records anyone who returns after the survey leaves
-        ``live`` as Survey Closed (code 136), not as a complete.
-        """
-        super().recruit()
-        if trial_maker.n_complete_participants >= TARGET_N_PARTICIPANTS:
-            self._stop_lucid_fielding()
-
-    def _stop_lucid_fielding(self):
-        recruiter = self.recruiter
-        if not hasattr(recruiter, "lucidservice"):
-            return  # not recruiting via Lucid (e.g. local debug/bot runs)
-        try:
-            survey_number = recruiter.current_survey_number()
-            if survey_number is None:
-                return
-            service = recruiter.lucidservice
-            if service.get_survey_status(survey_number) == "live":
-                service.change_status(survey_number, "complete")
-                logger.info(
-                    "Participant target reached: set Lucid survey %s to complete.",
-                    survey_number,
-                )
-        except Exception:
-            logger.warning(
-                "Failed to complete the Lucid survey after reaching the "
-                "participant target; it may keep fielding.",
-                exc_info=True,
-            )
 
     test_n_bots = 2
 
