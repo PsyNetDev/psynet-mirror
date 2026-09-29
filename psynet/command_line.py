@@ -2477,9 +2477,10 @@ def _ambiguous_psynet_requirement_message(requirement: str | None) -> str:
         parts.append(f"\n\nYour current requirements.txt entry is:\n  {requirement}")
         if _is_local_psynet_requirement(requirement):
             parts.append(
-                "\n\nLocal path and editable installs cannot be resolved on a "
-                "remote deploy server. If you developed against a local PsyNet "
-                "checkout, re-run:\n"
+                "\n\nLocal path, wheel and editable installs cannot be resolved "
+                "on a remote deploy server. Replace this entry with a published "
+                "version or a pushed Git commit (see the examples below). If you "
+                "developed against a local PsyNet checkout, re-run:\n"
                 "  psynet setup --psynet-source commit\n"
                 "to pin a pushed Git commit before deploying."
             )

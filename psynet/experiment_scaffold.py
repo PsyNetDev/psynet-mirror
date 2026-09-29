@@ -470,11 +470,17 @@ def _default_psynet_requirement() -> str:
 
     direct = installed_psynet_direct_requirement()
     if direct is not None:
-        return _with_experiment_extra(direct)
-
-    local_path = _installed_psynet_file_path()
-    if local_path is not None:
-        return f"psynet[experiment] @ {local_path.as_uri()}"
+        requirement = _with_experiment_extra(direct)
+        if _installed_psynet_file_path() is not None:
+            click.echo(
+                f"Warning: PsyNet is installed from a local file, so "
+                f"requirements.txt will pin '{requirement}'. This only works on "
+                "this machine, so remote deployments will fail. Before deploying, "
+                f"replace it with a published version (psynet[experiment]=="
+                f"{psynet_version}) or a pushed Git commit.",
+                err=True,
+            )
+        return requirement
 
     return f"psynet[experiment]=={psynet_version}"
 
