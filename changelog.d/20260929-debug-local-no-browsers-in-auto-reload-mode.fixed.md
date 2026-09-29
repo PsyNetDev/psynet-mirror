@@ -1,1 +1,0 @@
-Fixed `psynet debug local --no-browsers` failing in the default auto-reload mode. It now skips opening browsers when the installed Dallinger supports this, and otherwise explains which Dallinger version or mode to use.

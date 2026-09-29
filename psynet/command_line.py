@@ -465,7 +465,6 @@ def _run_local(ctx, docker, archive, legacy, no_browsers, mode, context_group):
             "It is not possible to select both --legacy and --docker modes simultaneously."
         )
 
-    _mark_local_launch()
     _pre_launch(ctx, mode=mode, archive=archive, local_=True, docker=docker, app=None)
     _cleanup_before_debug()
 
@@ -792,7 +791,6 @@ def _prepare_after_stopping_local_workers(ctx, archive):
     windows are left alone here so a remote deploy does not close the
     author's browser.
     """
-    _refuse_if_other_experiment_uses_database()
     kill_psynet_worker_processes()
     ctx.invoke(prepare, archive=archive)
 
@@ -946,23 +944,15 @@ def _debug_docker(ctx, archive, no_browsers):
 
 
 def _debug_auto_reload(ctx, archive, no_browsers):
-    from dallinger.command_line.develop import debug as dallinger_debug
-    from dallinger.deployment import DevelopmentDeployment
-
-    debug_kwargs = {"skip_flask": False}
     if no_browsers:
-        if "no_browsers" not in {param.name for param in dallinger_debug.params}:
-            raise click.UsageError(
-                "--no-browsers needs a newer Dallinger in the default debug mode; "
-                "upgrade Dallinger or use `psynet debug local --legacy --no-browsers`."
-            )
-        debug_kwargs["no_browsers"] = True
+        raise click.UsageError(
+            "--no-browsers option is not supported in this debug mode."
+        )
 
     run_pre_auto_reload_checks()
 
-    port = get_config().get("base_port")
-    os.environ["FLASK_RUN_PORT"] = str(port)
-    debug_kwargs["port"] = port
+    from dallinger.command_line.develop import debug as dallinger_debug
+    from dallinger.deployment import DevelopmentDeployment
 
     DevelopmentDeployment.archive = archive
     patch_dallinger_develop()
@@ -971,7 +961,7 @@ def _debug_auto_reload(ctx, archive, no_browsers):
     develop_module.header = ""
 
     try:
-        ctx.invoke(dallinger_debug, **debug_kwargs)
+        ctx.invoke(dallinger_debug, skip_flask=False)
     finally:
         db.session.commit()
         reset_console()
@@ -1036,12 +1026,6 @@ def safely_kill_process(p):
 
 
 def kill_psynet_worker_processes():
-    """Stop leftover worker processes that belong to this experiment.
-
-    Only workers launched from the current experiment directory, or unmarked
-    workers (from older PsyNet versions or plain Dallinger) using the same
-    database, are stopped. Workers of other local experiments are left alone.
-    """
     processes = list_psynet_worker_processes()
     if not processes:
         return
@@ -1105,76 +1089,8 @@ def is_psynet_chrome_process(process):
     return False
 
 
-LOCAL_EXPERIMENT_DIR_ENV = "PSYNET_LOCAL_EXPERIMENT_DIR"
-
-
-def _mark_local_launch():
-    """Tag processes started by this launch with the experiment directory.
-
-    Child processes inherit the environment, which lets later cleanup tell
-    this experiment's workers apart from other local experiments' workers.
-    """
-    os.environ[LOCAL_EXPERIMENT_DIR_ENV] = os.path.realpath(os.getcwd())
-
-
-def _local_database_url(environ):
-    from dallinger.db import corrected_db_url, db_url_default
-
-    return corrected_db_url(environ.get("DATABASE_URL", db_url_default))
-
-
-def _classify_worker_processes():
-    """Split local worker processes into this experiment's and other experiments'.
-
-    Returns
-    -------
-    tuple[list, list]
-        ``(own, foreign)``. ``foreign`` only contains workers of other
-        experiments that use the same database as this one; workers on other
-        databases, and workers whose environment cannot be read, are omitted.
-    """
-    own_dir = os.path.realpath(os.getcwd())
-    own_db = _local_database_url(os.environ)
-    own, foreign = [], []
-    for process in psutil.process_iter():
-        if not is_psynet_worker_process(process):
-            continue
-        try:
-            environ = process.environ()
-        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-            continue
-        if _local_database_url(environ) != own_db:
-            continue
-        if environ.get(LOCAL_EXPERIMENT_DIR_ENV, own_dir) == own_dir:
-            own.append(process)
-        else:
-            foreign.append(process)
-    return own, foreign
-
-
 def list_psynet_worker_processes():
-    """List worker processes that belong to this experiment."""
-    return _classify_worker_processes()[0]
-
-
-def _refuse_if_other_experiment_uses_database():
-    """Fail before resetting a database that another local experiment is using."""
-    foreign = _classify_worker_processes()[1]
-    if not foreign:
-        return
-    details = []
-    for process in foreign:
-        try:
-            directory = process.environ().get(LOCAL_EXPERIMENT_DIR_ENV)
-            details.append(f"pid {process.pid} from {directory}")
-        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-            continue
-    raise click.ClickException(
-        "Another local experiment is using the same database "
-        f"({', '.join(details)}). Stop it first, or give each experiment its "
-        "own DATABASE_URL, REDIS_URL and base_port (see 'Running several "
-        "experiments at once' in the PsyNet documentation)."
-    )
+    return [p for p in psutil.process_iter() if is_psynet_worker_process(p)]
 
 
 def is_psynet_worker_process(process):

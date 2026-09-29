@@ -515,31 +515,6 @@ def test_debug_legacy_starts_four_gunicorn_workers(monkeypatch):
     ]
 
 
-def test_debug_auto_reload_uses_base_port_and_no_browsers(monkeypatch):
-    import os
-
-    from psynet.command_line import _debug_auto_reload
-
-    calls = []
-
-    class _Ctx:
-        def invoke(self, _command, **kwargs):
-            calls.append(kwargs)
-
-    config = Mock()
-    config.get.side_effect = {"base_port": 5123}.get
-    monkeypatch.setattr("psynet.command_line.get_config", lambda: config)
-    monkeypatch.setattr("psynet.command_line.run_pre_auto_reload_checks", lambda: None)
-    monkeypatch.setattr("psynet.command_line.db.session.commit", lambda: None)
-    monkeypatch.setattr("psynet.command_line.reset_console", lambda: None)
-    monkeypatch.setenv("FLASK_RUN_PORT", "")
-
-    _debug_auto_reload(_Ctx(), archive=None, no_browsers=True)
-
-    assert calls == [{"skip_flask": False, "no_browsers": True, "port": 5123}]
-    assert os.environ["FLASK_RUN_PORT"] == "5123"
-
-
 def test_debug_legacy_gunicorn_workers_follow_env(monkeypatch):
     """Playwright hold tests set workers to the session count plus two spares."""
     from psynet.command_line import _debug_legacy
@@ -3811,46 +3786,6 @@ def test_kill_psynet_worker_processes_warns_with_pids(caplog):
     assert "4321" in caplog.text
     assert "4322" in caplog.text
     assert "4321" in str(logged.call_args)
-
-
-def test_worker_cleanup_spares_other_experiments(monkeypatch, tmp_path):
-    import os
-    import sys
-    import time
-
-    from psynet.command_line import (
-        LOCAL_EXPERIMENT_DIR_ENV,
-        _refuse_if_other_experiment_uses_database,
-        kill_psynet_worker_processes,
-    )
-
-    own_dir = tmp_path / "own"
-    other_dir = tmp_path / "other"
-    own_dir.mkdir()
-    other_dir.mkdir()
-    database_url = f"postgresql://test@localhost/worker_cleanup_{os.getpid()}"
-    monkeypatch.setenv("DATABASE_URL", database_url)
-    monkeypatch.chdir(own_dir)
-
-    def spawn(directory):
-        env = {**os.environ, LOCAL_EXPERIMENT_DIR_ENV: os.path.realpath(directory)}
-        return subprocess.Popen(
-            [sys.executable, "-c", "import time; time.sleep(60)", "dallinger_heroku_"],
-            env=env,
-        )
-
-    own, other = spawn(own_dir), spawn(other_dir)
-    try:
-        time.sleep(0.5)
-        with pytest.raises(click.ClickException, match=str(other.pid)):
-            _refuse_if_other_experiment_uses_database()
-        kill_psynet_worker_processes()
-        assert own.wait(timeout=10) is not None
-        assert other.poll() is None
-    finally:
-        for process in (own, other):
-            process.kill()
-            process.wait()
 
 
 def test_pre_launch_stops_workers_before_prepare(monkeypatch):

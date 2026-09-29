@@ -132,7 +132,7 @@ General
 +++++++
 
 ``base_port`` *int* |dlgr-icon|
-    The port to be used to access the web application. Normally there should not be the need to change this from the default, except when :ref:`running several experiments at once <running_several_experiments>`. Default ``5000``.
+    The port to be used to access the web application. Normally there should not be the need to change this from the default. Default ``5000``.
 
 ``check_dallinger_version`` *bool* |psynet-icon|
     Set this to ``False`` if you want to bypass the check for the version of Dallinger that is recommended for the current PsyNet release. This allows for flexibility, e.g. when deploying `Dallinger` development branches.
