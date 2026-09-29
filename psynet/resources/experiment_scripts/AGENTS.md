@@ -86,8 +86,8 @@ Cursor: disable sandboxing when running PsyNet commands by setting `required_per
 
 ## Demos
 
-Demos are contained in `demos/experiments` and `demos/features`.
-If a user asks for the X demo, list all child directories in `demos/experiments` and `demos/features` to see which they mean.
+Demos are contained in `demos/experiments`, `demos/features` and `demos/pipelines`.
+If a user asks for the X demo, list all child directories of those three folders to see which they mean.
 
 ## Running experiments locally
 
@@ -217,10 +217,11 @@ the matching version.
 | Experiment files and dependencies | `code/project/experiment_directory`, `code/project/dependencies` |
 | Running and debugging locally | `code/project/running_and_debugging` |
 | Timelines, code blocks, loops, variables | `code/writing_a_timeline` |
-| Pages, prompts, controls, validation | `code/writing_pages` |
+| Pages, prompts, controls, validation | `code/writing_pages`, `code/pages/control_gallery` |
+| Custom front ends and graphics | `code/pages/custom_front_ends`, `code/pages/graphics` |
 | Static trial makers, scoring, performance checks | `code/writing_a_trial_maker` |
 | Chains (iterated, Gibbs, MCMCP, create and rate) | `code/writing_a_chain_experiment` |
-| Adaptive experiments | `code/writing_a_trial_maker`, `skills/make-experiment-adaptive` |
+| Adaptive experiments | `code/writing_a_trial_maker`, `code/writing_a_chain_experiment`; workflow in the `make-experiment-adaptive` skill |
 | Stimuli, `static/`, assets | `code/using_stimuli`, `code/trials/assets` |
 | Payment and bonuses | `code/participants/payment` |
 | Pre-screening and questionnaires | `code/participants/prescreening_and_questionnaires` |
@@ -230,9 +231,10 @@ the matching version.
 | Browser layout checks | `test/frontend` |
 | Performance tests | `test/scalability` |
 | Audits | `test/audits`, `test/audit_reference` |
-| Design simulation and power analysis | `test/audit_reference`, `skills/power-analysis` |
+| Design simulation and power analysis | `test/audit_reference`; workflow in the `power-analysis` skill |
 | Deploying and running a study | `deploy/how_deployment_works`, `deploy/setting_up_a_server`, `deploy/running_a_study`, `deploy/recruiters/index` |
-| Exporting and basic data | `data/exporting_data`, `data/basic_data` |
+| Exporting, basic data and analysis | `data/exporting_data`, `data/basic_data`, `data/analyzing_data` |
+| Demos to start from | `demos/index` |
 | Configuration and commands | `reference/configuration`, `reference/command_line` |
 | Classes and functions (API) | `reference/api/index` |
 | Local problems | `troubleshooting`, `wsl_troubleshooting` |

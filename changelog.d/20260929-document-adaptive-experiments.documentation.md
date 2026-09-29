@@ -1,1 +1,0 @@
-Added design and code documentation pages for adaptive experiments, covering within- and across-participant adaptivity, the specification decisions, model snapshots, stopping rules, decision records and simulation, with examples from the `trial_cue_adaptive` demo.

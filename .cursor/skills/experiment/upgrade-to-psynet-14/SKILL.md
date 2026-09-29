@@ -11,7 +11,7 @@ migration error (``mturk``, ``bots``, ``multi``, ``error_page_content``,
 ``ad_requirements``), or an ``early_exit`` rename warning.
 
 **Do not use this skill for greenfield custom pages.** Point new authors at the
-custom-frontends tutorial instead (published URL below).
+`code/pages/custom_front_ends` page instead.
 
 ## Source of truth
 
