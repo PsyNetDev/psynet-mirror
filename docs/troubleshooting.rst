@@ -53,6 +53,32 @@ This means too many old Docker images have accumulated on your system. This can 
 If the error is on a remote SSH server rather than your laptop, also prune volumes and see
 :ref:`Troubleshooting deployments <deploy_troubleshooting>`.
 
+Docker connection errors
+^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. code:: text
+
+   docker.errors.DockerException: Error while fetching server API version:
+   ('Connection aborted.', ConnectionRefusedError(61, 'Connection refused'))
+
+The Docker daemon on your computer is not running; start Docker Desktop.
+
+.. code:: text
+
+   docker.errors.DockerException: Error while fetching server API
+   version: ('Connection aborted.', PermissionError(13, 'Permission denied'))
+
+Your user cannot access the Docker socket. On Linux, add your user to the
+``docker`` group and log in again; otherwise, change the socket's
+permissions.
+
+Port 5000 is already in use
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+On macOS, turn off AirPlay Receiver (**System Settings > General > AirDrop &
+Handoff**), which uses port 5000. Otherwise, stop any other experiment running
+in another terminal or IDE window.
+
 Database connection refused
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 

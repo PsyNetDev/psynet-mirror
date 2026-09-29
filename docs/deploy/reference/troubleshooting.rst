@@ -142,29 +142,3 @@ down, start the shared services and then the app:
    docker compose -f ~/dallinger/docker-compose.yml up -d
    cd ~/dallinger/my-study
    docker compose up -d
-
-Docker connection errors
-^^^^^^^^^^^^^^^^^^^^^^^^
-
-.. code:: text
-
-   docker.errors.DockerException: Error while fetching server API version:
-   ('Connection aborted.', ConnectionRefusedError(61, 'Connection refused'))
-
-The Docker daemon on your computer is not running; start Docker Desktop.
-
-.. code:: text
-
-   docker.errors.DockerException: Error while fetching server API
-   version: ('Connection aborted.', PermissionError(13, 'Permission denied'))
-
-Your user cannot access the Docker socket. On Linux, add your user to the
-``docker`` group and log in again; otherwise, change the socket's
-permissions.
-
-Port 5000 is already in use
-^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-On macOS, turn off AirPlay Receiver (**System Settings > General > AirDrop &
-Handoff**), which uses port 5000. Otherwise, stop any other experiment running
-in another terminal or IDE window.
