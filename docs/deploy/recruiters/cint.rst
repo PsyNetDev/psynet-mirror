@@ -19,7 +19,7 @@ Experiment configuration
 
 Set ``wage_per_hour`` to the minimum wage in the target country (one
 source is
-`this spreadsheet <https://docs.google.com/spreadsheets/d/1Yl-eEsLTxFAVyZECZfRQnDlYM8ykY9xlJpnsTpi5oKQ/edit#gid=0>`__).
+`this spreadsheet <https://docs.google.com/spreadsheets/d/1Yl-eEsLTxFAVyZECZfRQnDlYM8ykY9xlJpnsTpi5oKQ/edit>`__).
 Put the duration in the title, plus Chrome, headphones or a microphone if
 needed, but not the payment.
 
@@ -328,8 +328,7 @@ check these reports and the dashboard's errors regularly.
       supplier can expect for each respondent they send into a survey,
       indicating whether the survey is appropriately priced. EPCs of
       $0.20 - $0.30 are considered healthy, whereas EPCs below $0.15
-      will struggle to attract supplier traffic. Find more information
-      `here <https://support.lucidhq.com/s/article/EPC-FAQ>`__.
+      will struggle to attract supplier traffic.
 
    .. image:: /_static/images/running_studies/recruiters/cint/dashboard-metrics.png
       :width: 8.5in

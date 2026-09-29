@@ -498,8 +498,7 @@ the exercises, so it was removed. Its outline was:
 #. Apply ``demos/pipelines/simple_rating`` or ``demos/pipelines/tapping`` to
    your own stimuli.
 
-``demos/experiments/vertical_processing`` and the example experiments are
-complete music experiments.
+``demos/experiments/vertical_processing`` is a complete music experiment.
 
 Idea
 ++++
@@ -507,3 +506,23 @@ Idea
 If there is demand, add a small "Learning tracks" section with several tracks
 (for example music perception, language, visual perception), each a reading
 order through existing pages, demos and exercises rather than new content.
+
+Check documentation claims against live services
+------------------------------------------------
+
+Some documentation describes behaviour that can only be confirmed on a real
+service. These claims were written from the code and the services' own
+documentation, and haven't yet been checked end to end.
+
+- **Prolific auto-approval** (:doc:`/deploy/recruiters/prolific`, "How
+  PsyNet pays participants"): on a live study, check that clicking
+  **Submit to Prolific** completes the submission with the auto-approve
+  completion code, that Prolific approves it and pays ``base_payment``, and
+  that any bonus arrives.
+- **S3 Block Public Access** (:doc:`/code/stimuli_on_s3`): on a real bucket,
+  check the ``put-public-access-block`` step and the bucket policy, and
+  whether an account-level Block Public Access setting has to be turned off
+  as well.
+- **Unity C# snippets** (:doc:`/code/pages/unity_integration`): build them in
+  a current Unity version and check that a Unity page exchanges data with
+  PsyNet as described.

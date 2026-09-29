@@ -127,6 +127,12 @@ language = "en"
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
 linkcheck_ignore = [
+    # GitLab answers signed-out automated requests for these with 403 or 404:
+    # the public issue list, and pages that need a login or a private repo.
+    r"https://gitlab\.com/PsyNetDev/PsyNet/-/issues/?$",
+    r"https://gitlab\.com/PsyNetDev/PsyNet/-/releases/new$",
+    r"https://gitlab\.com/-/user_settings/personal_access_tokens$",
+    r"https://gitlab\.com/computational-audition-lab/psynet-deployment-tests/?$",
     # Local development URLs used in tutorial examples; no server is
     # running during linkcheck.
     r"https?://localhost(:\d+)?(/.*)?$",

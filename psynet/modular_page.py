@@ -2386,7 +2386,7 @@ class AudioMeterControl(Control):
                 ]
             )
         else:
-            self.slider = None
+            self.sliders = None
 
     display_range = {"min": -60, "max": 0}
 
