@@ -8,7 +8,8 @@ The argument is an extracted ``psynet export`` directory (the one containing
 ``database/``). Each check prints PASS, FAIL, or WARN with the internal
 participant IDs involved. WARN marks results that real participants can
 cause without a PsyNet bug, such as a manual page reload or blocked
-autoplay. The script exits non-zero if any check fails.
+autoplay. INFO lines summarise statuses, devices, and transition times. The
+script exits non-zero if any check fails.
 
 See the ``experiment.py`` docstring for the transitions being checked.
 """
@@ -16,30 +17,51 @@ See the ``experiment.py`` docstring for the transitions being checked.
 import csv
 import hashlib
 import json
+import statistics
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 
 COMPONENT_TOKEN = "component-js-vars-ok"
 LEAVE_EVERY = 8
 LEAVE_REMAINDER = 3
 
+# WaitPage always uses the label "wait".
+PAGE_BY_QUESTION = {"wait": "lt_auto_advance"}
+AUTO_ADVANCING = {"lt_auto_advance"}
+
 SAME = "same document"
 NEW = "new document"
 
-# How each probed step's document should relate to the previous probed step's.
+# How each probed page's document should relate to the previous probed page's.
 EXPECTED_DOCUMENT = {
     "lt_component": SAME,
     "lt_choices": SAME,
     "lt_after_wait": SAME,
     "lt_audio": SAME,
     "lt_after_audio": SAME,
+    "lt_auto_advance": SAME,
+    "lt_after_auto": SAME,
+    "lt_reload": NEW,
     "lt_full_reload": NEW,
     "lt_after_full_reload": NEW,
     "lt_after_jspsych": NEW,
     "lt_leave_request": SAME,
     "lt_final": SAME,
 }
+
+# Transitions timed from the previous page's submission, with nothing else in
+# between (no hold, jsPsych page, or participant-initiated reload).
+TIMED_IN_PLACE = {
+    "lt_component",
+    "lt_choices",
+    "lt_audio",
+    "lt_after_audio",
+    "lt_auto_advance",
+    "lt_after_auto",
+    "lt_final",
+}
+TIMED_RELOAD = {"lt_full_reload", "lt_after_full_reload"}
 
 results = []
 
@@ -66,16 +88,23 @@ def read_table(export_dir, table):
         return list(csv.DictReader(file))
 
 
-def load_records(responses):
-    """Return {participant_id: [(question, lifecycle, answer), ...]} in response order."""
+def load_pages(responses, participant_ids):
+    """Return {participant_id: [page, ...]} for this test's pages, in response order."""
     by_participant = defaultdict(list)
     for row in sorted(responses, key=lambda r: int(r["id"])):
-        if not row["question"].startswith("lt_"):
+        pid = int(row["participant_id"])
+        question = row["question"]
+        page = PAGE_BY_QUESTION.get(question, question)
+        if pid not in participant_ids or not page.startswith("lt_"):
             continue
         metadata = json.loads(row["metadata_"] or "{}")
-        answer = json.loads(row["answer"]) if row["answer"] else None
-        by_participant[int(row["participant_id"])].append(
-            (row["question"], metadata.get("lifecycle"), answer)
+        by_participant[pid].append(
+            {
+                "page": page,
+                "question": question,
+                "lifecycle": metadata.get("lifecycle"),
+                "answer": json.loads(row["answer"]) if row["answer"] else None,
+            }
         )
     return by_participant
 
@@ -85,74 +114,92 @@ def jspsych_document_id(answer):
     return data[0].get("lifecycle_document_id") if data else None
 
 
-def check_transitions(records):
-    failures, reloads = [], []
-    for pid, rows in records.items():
+def check_transitions(pages):
+    failures, manual_reloads = [], []
+    not_reloaded, reload_failures = [], []
+    for pid, rows in pages.items():
         previous = None
         jspsych_doc = None
-        for question, lifecycle, answer in rows:
-            if question == "lt_jspsych":
-                jspsych_doc = jspsych_document_id(answer)
+        for row in rows:
+            page, lc = row["page"], row["lifecycle"]
+            if page == "lt_jspsych":
+                jspsych_doc = jspsych_document_id(row["answer"])
                 if previous and jspsych_doc == previous["document_id"]:
                     failures.append(pid)
                 continue
-            if lifecycle is None:
+            if lc is None:
                 continue
-            expected = EXPECTED_DOCUMENT.get(question)
-            if previous and expected:
-                same = lifecycle["document_id"] == previous["document_id"]
-                if expected == SAME and not same:
-                    if lifecycle["navigation_type"] in ("reload", "back_forward"):
-                        reloads.append(pid)
-                    else:
-                        failures.append(pid)
-                elif expected == NEW and same:
+            same = previous is not None and lc["document_id"] == previous["document_id"]
+            expected = EXPECTED_DOCUMENT.get(page)
+            if page == "lt_reload":
+                if lc["navigation_type"] == "reload" and not same:
+                    pass
+                elif same:
+                    not_reloaded.append(pid)
+                else:
+                    reload_failures.append(pid)
+            elif previous and expected == SAME and not same:
+                if lc["navigation_type"] in ("reload", "back_forward"):
+                    manual_reloads.append(pid)
+                else:
                     failures.append(pid)
-            if (
-                question == "lt_after_jspsych"
-                and jspsych_doc == lifecycle["document_id"]
-            ):
+            elif previous and expected == NEW and same:
                 failures.append(pid)
-            previous = lifecycle
+            if page == "lt_after_jspsych" and jspsych_doc == lc["document_id"]:
+                failures.append(pid)
+            previous = lc
     check(
         "document kept or replaced as expected at each transition",
         failures,
-        reloads,
-        "(WARN: participant reloaded the page)" if reloads and not failures else "",
+        manual_reloads,
+        "(WARN: participant reloaded the page)"
+        if manual_reloads and not failures
+        else "",
+    )
+    check(
+        "lt_reload was answered from a page rebuilt after a reload",
+        reload_failures,
+        not_reloaded,
+        "(WARN: sessionStorage unavailable, so Next was shown without a reload)"
+        if not_reloaded and not reload_failures
+        else "",
     )
 
 
-def check_per_record(records):
+def check_page_records(pages):
     probed = {
-        pid: [(q, lc) for q, lc, _ in rows if lc is not None]
-        for pid, rows in records.items()
+        pid: [
+            (row["page"], row["question"], row["lifecycle"])
+            for row in rows
+            if row["lifecycle"]
+        ]
+        for pid, rows in pages.items()
     }
     probed = {pid: rows for pid, rows in probed.items() if rows}
 
-    missing = [pid for pid, rows in records.items() if pid not in probed]
+    def failing(predicate):
+        return [
+            pid
+            for pid, rows in probed.items()
+            if any(predicate(p, q, lc) for p, q, lc in rows)
+        ]
+
+    missing = [pid for pid in pages if pid not in probed]
     check("every participant with lt_ responses submitted lifecycle records", missing)
 
     check(
         "js_dependencies ran once per document",
-        [
-            pid
-            for pid, rows in probed.items()
-            if any(lc["dependency_executions"] != 1 for _, lc in rows)
-        ],
+        failing(lambda p, q, lc: lc["dependency_executions"] != 1),
     )
     check(
         "page modules activated once per page",
-        [
-            pid
-            for pid, rows in probed.items()
-            if any(lc["activations_of_this_page"] != 1 for _, lc in rows)
-        ],
+        failing(lambda p, q, lc: lc["activations_of_this_page"] != 1),
     )
 
     module_mismatch = []
     for pid, rows in probed.items():
         instances = defaultdict(set)
-        for _, lc in rows:
+        for _, _, lc in rows:
             instances[lc["document_id"]].add(lc["module_instance"])
         if any(len(v) > 1 for v in instances.values()):
             module_mismatch.append(pid)
@@ -160,33 +207,34 @@ def check_per_record(records):
 
     check(
         "psynet.var belongs to the current page",
-        [pid for pid, rows in probed.items() if any(lc["step"] != q for q, lc in rows)],
+        failing(lambda p, q, lc: lc["step"] != p),
     )
     check(
         "page stylesheet applies only to its own page",
-        [
-            pid
-            for pid, rows in probed.items()
-            if any(lc["page_style_applied"] != (q == "lt_component") for q, lc in rows)
-        ],
+        failing(lambda p, q, lc: lc["page_style_applied"] != (p == "lt_component")),
     )
     check(
         "component get_js_vars reaches only its own page",
-        [
-            pid
-            for pid, rows in probed.items()
-            if any(
+        failing(
+            lambda p, q, lc: (
                 lc["component_token"]
-                != (COMPONENT_TOKEN if q == "lt_component" else None)
-                for q, lc in rows
+                != (COMPONENT_TOKEN if p == "lt_component" else None)
             )
-        ],
+        ),
+    )
+    check(
+        "pages needing a click were submitted after participant input",
+        failing(
+            lambda p, q, lc: (
+                p not in AUTO_ADVANCING and not lc["user_input_before_submit"]
+            )
+        ),
     )
 
     silent, still_playing = [], []
     for pid, rows in probed.items():
-        by_step = dict(rows)
-        audio, after = by_step.get("lt_audio"), by_step.get("lt_after_audio")
+        by_page = {p: lc for p, _, lc in rows}
+        audio, after = by_page.get("lt_audio"), by_page.get("lt_after_audio")
         if audio and audio["sounds_at_submit"] == 0:
             silent.append(pid)
         if after and (
@@ -205,16 +253,16 @@ def check_per_record(records):
         else "",
     )
 
-    layout = defaultdict(lambda: defaultdict(int))
+    layout = defaultdict(Counter)
     for pid, rows in probed.items():
-        device = "touch" if rows[0][1]["touch"] else "no-touch"
-        for q, lc in rows:
-            for violation in lc["layout_violations"] or []:
-                layout[(q, device)][violation] += 1
+        device = "touch" if rows[0][2]["touch"] else "no-touch"
+        for p, _, lc in rows:
+            layout[(p, device)].update(lc["layout_violations"] or [])
+    layout = {key: counts for key, counts in layout.items() if counts}
     if layout:
         detail = "; ".join(
-            f"{q} [{device}] {dict(counts)}"
-            for (q, device), counts in sorted(layout.items())
+            f"{p} [{device}] {dict(counts)}"
+            for (p, device), counts in sorted(layout.items())
         )
         report("WARN", "psynetLayout violations", detail)
     else:
@@ -223,19 +271,61 @@ def check_per_record(records):
     return probed
 
 
-def check_server_side(export_dir, records, participants, probed):
+def check_duplicate_responses(responses, participant_ids):
+    counts = Counter(
+        (int(r["participant_id"]), r["question"])
+        for r in responses
+        if int(r["participant_id"]) in participant_ids
+        and r["successful_validation"] == "True"
+    )
+    duplicates = [(pid, q) for (pid, q), n in counts.items() if n > 1]
+    check(
+        "each page accepted exactly one response",
+        [pid for pid, _ in duplicates],
+        detail=f"pages {sorted({q for _, q in duplicates})}" if duplicates else "",
+    )
+
+
+def report_transition_times(probed):
+    samples = defaultdict(list)
+    for rows in probed.values():
+        device = "touch" if rows[0][2]["touch"] else "no-touch"
+        previous = None
+        for p, _, lc in rows:
+            timed = (
+                lc["transition_ms"] is not None and lc["transition_from"] == previous
+            )
+            if timed and p in TIMED_IN_PLACE:
+                samples[("in place", device)].append(lc["transition_ms"])
+            elif timed and p in TIMED_RELOAD:
+                samples[("full reload", device)].append(lc["transition_ms"])
+            previous = p
+    if not samples:
+        report("INFO", "transition times", "no timed transitions")
+        return
+    detail = "; ".join(
+        f"{kind} [{device}] median {statistics.median(values):.0f} ms, "
+        f"max {max(values):.0f} ms (n={len(values)})"
+        for (kind, device), values in sorted(samples.items())
+    )
+    report("INFO", "transition times from submit to next page", detail)
+
+
+def check_server_side(export_dir, pages, participants, probed):
     by_id = {int(p["id"]): p for p in participants}
 
-    reached_wait = [
-        pid
-        for pid, rows in records.items()
-        if any(q == "lt_after_wait" for q, _, _ in rows)
-    ]
+    def reached(page):
+        return [
+            pid
+            for pid, rows in pages.items()
+            if any(row["page"] == page for row in rows)
+        ]
+
     check(
         "AsyncCodeBlock finished before lt_after_wait",
         [
             pid
-            for pid in reached_wait
+            for pid in reached("lt_after_wait")
             if not json.loads(by_id[pid]["vars"] or "{}").get(
                 "lifecycle_async_finished"
             )
@@ -248,13 +338,8 @@ def check_server_side(export_dir, records, participants, probed):
         if a["local_key"] == "lifecycle_summary"
     ]
     by_owner = {int(a["participant_id"]): a for a in assets}
-    reached_asset = [
-        pid
-        for pid, rows in records.items()
-        if any(q == "lt_after_jspsych" for q, _, _ in rows)
-    ]
     bad_assets = []
-    for pid in reached_asset:
+    for pid in reached("lt_after_jspsych"):
         row = by_owner.get(pid)
         if (
             row is None
@@ -276,11 +361,14 @@ def check_server_side(export_dir, records, participants, probed):
                 break
     check("participant asset stored under its SHA-256 digest", bad_assets)
 
-    asked = [pid for pid in records if pid % LEAVE_EVERY == LEAVE_REMAINDER]
-    left = [pid for pid in asked if by_id[pid]["early_exited"] == "True"]
-    pressed_next = [
-        pid for pid in asked if any(q == "lt_final" for q, _, _ in records[pid])
+    # Leave submits no response, so select by ID among those who reached the branch.
+    asked = [
+        pid
+        for pid in reached("lt_after_jspsych")
+        if pid % LEAVE_EVERY == LEAVE_REMAINDER
     ]
+    left = [pid for pid in asked if by_id[pid]["early_exited"] == "True"]
+    pressed_next = [pid for pid in asked if pid in reached("lt_final")]
     check(
         "participants asked to leave used Leave",
         [pid for pid in asked if pid not in left and pid not in pressed_next],
@@ -292,15 +380,17 @@ def check_server_side(export_dir, records, participants, probed):
 
     statuses = defaultdict(list)
     for p in participants:
-        statuses[p["status"]].append(int(p["id"]))
+        if int(p["id"]) in by_id:
+            statuses[p["status"]].append(int(p["id"]))
     report("INFO", "participant statuses", json.dumps(dict(statuses), sort_keys=True))
 
-    devices = defaultdict(int)
-    for pid, rows in records.items():
-        for q, _, answer in rows:
-            if q == "lt_choices" and answer is not None:
-                devices[str(answer)] += 1
-    touch = sum(1 for rows in probed.values() if rows[0][1]["touch"])
+    devices = Counter(
+        str(row["answer"])
+        for rows in pages.values()
+        for row in rows
+        if row["page"] == "lt_choices" and row["answer"] is not None
+    )
+    touch = sum(1 for rows in probed.values() if rows[0][2]["touch"])
     report(
         "INFO",
         "devices",
@@ -314,13 +404,15 @@ def main(argv):
         return 2
     export_dir = Path(argv[1])
     responses = read_table(export_dir, "response")
-    participants = read_table(export_dir, "participant")
     # Bots do not run JavaScript, so they cannot submit lifecycle records.
-    bots = {int(p["id"]) for p in participants if p["type"].endswith(".Bot")}
-    records = {
-        pid: rows for pid, rows in load_records(responses).items() if pid not in bots
-    }
-    if not records:
+    participants = [
+        p
+        for p in read_table(export_dir, "participant")
+        if not p["type"].endswith(".Bot")
+    ]
+    participant_ids = {int(p["id"]) for p in participants}
+    pages = load_pages(responses, participant_ids)
+    if not pages:
         report(
             "FAIL",
             "export contains lt_ responses from non-bot participants",
@@ -328,9 +420,11 @@ def main(argv):
         )
         return 1
 
-    check_transitions(records)
-    probed = check_per_record(records)
-    check_server_side(export_dir, records, participants, probed)
+    check_transitions(pages)
+    probed = check_page_records(pages)
+    check_duplicate_responses(responses, participant_ids)
+    check_server_side(export_dir, pages, participants, probed)
+    report_transition_times(probed)
     return 1 if "FAIL" in results else 0
 
 

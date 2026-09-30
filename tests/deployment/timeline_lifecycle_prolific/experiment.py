@@ -13,7 +13,9 @@ through ``js_page_modules`` (once per page). The probe submits a record as
 ``metadata.lifecycle`` on the page's response: a per-document ID, how often
 the dependency and the page module ran, whether page-scoped CSS and
 ``psynet.var`` values are the current page's, how many sounds are playing,
-and the result of ``psynetLayout.collectViolations()``.
+whether the participant clicked or typed before the page was submitted, how
+long the transition into the page took, and the result of
+``psynetLayout.collectViolations()``.
 
 The timeline mixes transitions that must keep the document with ones that
 must replace it, so the reload cases double as positive controls for the
@@ -24,6 +26,10 @@ detection:
   ``AsyncCodeBlock(wait=True)`` hold.
 - ``lt_audio`` to ``lt_after_audio``: in place; looping audio on ``lt_audio``
   must stop before the next page activates.
+- ``lt_auto_advance`` (a ``WaitPage``) to ``lt_after_auto``: in place; the
+  wait timer must submit once and must not submit the next page.
+- ``lt_reload``: Next appears only after the participant reloads the page, so
+  its response comes from a page ``/timeline`` rebuilt in a new document.
 - ``lt_full_reload`` (``requires_full_page_reload=True``) and the jsPsych page
   each get a new document on entry and on exit.
 - ``lt_after_jspsych`` to ``lt_final``: in place again after the reloads.
@@ -79,7 +85,7 @@ from psynet.modular_page import (
     PushButtonControl,
     RadioButtonControl,
 )
-from psynet.page import InfoPage, JsPsychPage, SuccessfulEndPage
+from psynet.page import InfoPage, JsPsychPage, SuccessfulEndPage, WaitPage
 from psynet.timeline import AsyncCodeBlock, CodeBlock, Timeline, conditional
 
 # The vendored consents_cococo package (copied from
@@ -94,6 +100,7 @@ from consents_cococo.consent_cultural_foundation import (  # noqa: E402
 
 DOCUMENT_MARKER = "/static/lifecycle-document.js"
 PROBE_MODULE = "/static/lifecycle-probe.js"
+RELOAD_MODULE = "/static/reload-step.js"
 COMPONENT_TOKEN = "component-js-vars-ok"
 EXCLUSION_MARKER = os.path.join("local_only", "deploy-exclusion-marker.txt")
 LEAVE_EVERY = 8
@@ -108,23 +115,25 @@ JSPSYCH_DEPENDENCIES = [
 ]
 
 
-def _probe_assets(step):
+def _probe_assets(step, extra_modules=()):
     """Page arguments that attach the lifecycle probe to a page."""
     return {
         "js_dependencies": [DOCUMENT_MARKER],
-        "js_page_modules": [PROBE_MODULE],
+        "js_page_modules": [PROBE_MODULE, *extra_modules],
         "js_vars": {"lifecycle_step": step},
     }
 
 
-def probed_page(label, prompt, control=None, time_estimate=8, **kwargs):
+def probed_page(
+    label, prompt, control=None, time_estimate=8, extra_modules=(), **kwargs
+):
     """A ModularPage whose response carries a lifecycle record."""
     return ModularPage(
         label,
         prompt,
         control,
         time_estimate=time_estimate,
-        **_probe_assets(label),
+        **_probe_assets(label, extra_modules),
         **kwargs,
     )
 
@@ -277,14 +286,35 @@ class Exp(psynet.experiment.Experiment):
         probed_page(
             "lt_audio",
             AudioPrompt(
-                "/static/bier.wav",
-                "You may hear a short repeating sound. Press Continue at any time.",
+                # Long enough to still be playing when most participants press
+                # Continue; a very short looped clip restarts the trial many
+                # times a second and floods the event log.
+                "/static/tone.wav",
+                "You may hear a soft tone. Press Continue at any time.",
                 loop=True,
             ),
             continue_button(),
             bot_response="Continue",
         ),
         probed_page("lt_after_audio", "The sound should have stopped now."),
+        WaitPage(
+            wait_time=2,
+            content="This screen continues automatically.",
+            **_probe_assets("lt_auto_advance"),
+        ),
+        probed_page("lt_after_auto", "The automatic screen has finished."),
+        probed_page(
+            "lt_reload",
+            Markup(
+                "<p>Please reload this page using the button below. "
+                "Next appears after the page has reloaded.</p>"
+                '<button type="button" id="lifecycle-reload" '
+                'class="btn btn-outline-primary">Reload this page</button>'
+                '<p id="lifecycle-reload-done" style="display: none">'
+                "Thank you, the page has reloaded.</p>"
+            ),
+            extra_modules=[RELOAD_MODULE],
+        ),
         probed_page(
             "lt_full_reload",
             "This page is loaded in a different way from the previous pages.",
