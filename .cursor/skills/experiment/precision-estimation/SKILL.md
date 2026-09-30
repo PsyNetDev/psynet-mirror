@@ -59,7 +59,10 @@ Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rs
    reference.
    Use the decision metric and threshold agreed with the user, at 95%
    confidence, in the response's units and the same for all scenarios
-   ("Choosing the required precision" in the method reference). Fill
+   ("Choosing the required precision" in the method reference). For a power
+   decision, compute the rejection rate of the planned test at the planned α
+   in each scenario, with the effect calibrated to the stated size ("What to
+   simulate"), and keep the margin-of-error columns alongside. Fill
    `decision_value` and `meets_requirement` for every primary estimand, or
    leave them empty if the user chose to decide from the curves. For a
    profile, decide on the RMS margin across the set and bootstrap its Monte

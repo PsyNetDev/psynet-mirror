@@ -40,7 +40,8 @@ Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rs
 
 1. **Agree the question with the user.** List the primary analysis targets,
    the candidate design factors and ranges, the assumption sets, and the
-   required precision and its rationale (see "Designs, assumptions and
+   required precision (or, when the question is whether an effect exists,
+   the smallest effect and required power) and its rationale (see "Designs, assumptions and
    scenarios", "Precision and power" and "Choosing the required precision" in
    the method reference). State which parameter
    values come from pilot data, the literature, or judgment. Keep sample sizes

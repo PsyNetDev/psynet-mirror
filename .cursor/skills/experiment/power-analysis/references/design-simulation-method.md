@@ -78,6 +78,18 @@ measure profiles, rankings or many stimulus-specific values, where there is no
 single test to power, and it still applies when there is one. The
 `precision-estimation` skill implements it.
 
+Use **power** as the decision metric when the question is whether an effect
+exists: the experimenter names a smallest effect worth detecting, or asks for
+a power analysis. Power is the share of replicates in which the planned test
+rejects the null hypothesis at the planned α, with the true effect set to that
+smallest size. Its Monte Carlo standard error is √(p(1 − p)/R) for power p over
+R replicates. The usual requirement is 80% or 90%; agree it with the
+experimenter. Report the margin of error alongside, so readers see what the
+study will estimate as well as whether it will detect. If the analysis tests
+several effects, report power at any corrected α the analysis will use, and,
+when the response model sets some effects to zero, how often those tests
+reject (the false-positive rate, which should be close to α).
+
 Each quantity of interest is an **estimand**, such as a mean difference between
 conditions, a regression slope, or a stimulus's response profile. Across
 replicates, the planned estimator gives a spread of estimates for each
@@ -157,9 +169,12 @@ it.
    improve on.
 2. If the experimenter has no view, propose a threshold derived from the
    question and explain the derivation:
-   - To compare conditions, require the margin of error of the difference to be
-     at most half the smallest effect worth finding. If the true effect is that
-     large, the 95% interval then excludes zero about 97.5% of the time.
+   - To detect an effect, use power, as in "Precision and power". A
+     margin-of-error requirement is equivalent to a power requirement: 80%
+     power at two-sided α = 0.05 needs a margin of error of about 0.7 times
+     the smallest effect worth detecting, and 90% power about 0.6 times.
+     Requiring half the effect amounts to about 97.5% power, which is much
+     stricter than usual.
    - To rank or profile stimuli, choose the smallest difference between two
      stimuli that the study should order reliably, and apply it to the margin
      of error of a difference. The smallest spread for a 0.9 correlation
@@ -192,6 +207,14 @@ Draw participants afresh for each replicate. Draw stimuli afresh too when the
 study aims to generalize beyond the particular stimuli used; keep them fixed
 when the claim is only about that set. The same reasoning applies to items,
 groups and networks.
+
+The experimenter may state the effect on the observed scale, such as a
+correlation of 0.15 between a questionnaire score and behaviour, while the
+response model generates it from latent quantities, measurement error and
+interaction. Calibrate the model's parameter so that the observed effect, as
+the planned analysis measures it on a very large simulated sample, equals the
+stated size. Calibrate separately for each assumption set, and report the
+calibrated values.
 
 Run the design simulation as standalone code on the experimenter's computer,
 not through PsyNet's server, so that it can run thousands of replicates. In an

@@ -132,7 +132,7 @@ metric = "margin_of_error"
 confidence_level = 0.95
 threshold = 0.20
 unit = "rating points"
-rationale = "Half the smallest condition effect worth finding (0.4 points)."
+rationale = "Condition means should be known as precisely as the published norms (±0.2 points)."
 
 [design]
 n_participants = [40, 60, 80, 100]
@@ -146,6 +146,11 @@ replicates = 1000
 base_seed = 20260824
 n_jobs = -2
 ```
+
+For a power decision, use `metric = "power"`, the planned `alpha`, the
+required power as `threshold` (such as 0.8), `unit = "share of studies"` and
+the smallest effect as `effect_size`. Record `power` and its Monte Carlo
+interval in `results.csv`, alongside the margin of error.
 
 Use the same number of replicates for every scenario, so that Monte Carlo error
 is comparable across results.
