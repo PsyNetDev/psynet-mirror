@@ -11,6 +11,12 @@ to date as it works. To view it, run
 ``psynet audit serve --render`` in the experiment folder and open the address
 it prints.
 
+For an example, see the `chord pleasantness audit
+<https://psynetdev.gitlab.io/example-audits/chord-pleasantness/>`_, which a
+coding agent produced while implementing the study in :doc:`/introduction/what_its_like`.
+The experiment's code is in the `example-audits repository
+<https://gitlab.com/PsyNetDev/example-audits>`_.
+
 Sections
 --------
 
