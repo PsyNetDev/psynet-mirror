@@ -75,6 +75,15 @@ def _utcnow():
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
+def _recording_resolution_deadline(recording):
+    """Return the existing deadline including any remaining processing allowance."""
+    if recording.upload_status == "pending":
+        return recording.upload_deadline + timedelta(
+            seconds=recording.upload_context["processing_timeout"]
+        )
+    return recording.upload_processing_deadline
+
+
 def _recording_wait_timeout(participant_id, default_timeout=20.0, *, trial_id=None):
     """Keep dependent waits alive through existing recording deadlines.
 
@@ -109,12 +118,7 @@ def _recording_wait_timeout(participant_id, default_timeout=20.0, *, trial_id=No
     now = _utcnow()
     remaining = 0.0
     for recording in query:
-        deadline = (
-            recording.upload_deadline
-            + timedelta(seconds=recording.upload_context["processing_timeout"])
-            if recording.upload_status == "pending"
-            else recording.upload_processing_deadline
-        )
+        deadline = _recording_resolution_deadline(recording)
         remaining = max(remaining, (deadline - now).total_seconds())
     return default_timeout + remaining
 

@@ -24,7 +24,7 @@ from .timeline import (
     join,
     while_loop,
 )
-from .utils import get_logger, get_translator
+from .utils import call_function, get_logger, get_translator
 
 logger = get_logger()
 warnings.simplefilter("always", DeprecationWarning)
@@ -314,6 +314,57 @@ def wait_while(
             max_loop_time=max_wait_time,
             fail_on_timeout=fail_on_timeout,
         ),
+    )
+
+
+def wait_for_recording(recording, expected_wait=0, check_interval=2.0):
+    """Wait for a recording to deposit or become unavailable without failing the participant.
+
+    ``recording`` is a :class:`~psynet.trial.record.Recording` or a callable
+    accepting ``participant`` and/or ``experiment`` that returns one. The
+    callable is evaluated at each poll and should resolve the same recording.
+    Check its ``deposited`` property afterwards and provide a fallback page
+    when False; finishing this wait does not guarantee playable media.
+
+    The wait budget is fixed on entry using the recording's upload and
+    processing deadlines plus 20 seconds for polling. Legacy recordings
+    without these deadlines have a 20-second limit. If processing stalls,
+    the participant can still proceed after this limit. This helper does not
+    alter recording deadlines, trial failure rules, or performance checks.
+
+    ``expected_wait`` and ``check_interval`` are in seconds, as in
+    :func:`~psynet.page.wait_while`.
+    """
+    from .media_upload import _recording_resolution_deadline, _utcnow
+    from .trial.record import Recording
+
+    def resolve(participant, experiment):
+        asset = (
+            call_function(recording, participant=participant, experiment=experiment)
+            if callable(recording)
+            else recording
+        )
+        if not isinstance(asset, Recording):
+            raise TypeError("wait_for_recording requires a Recording.")
+        return asset
+
+    def pending(participant, experiment):
+        asset = resolve(participant, experiment)
+        return not asset.deposited and asset.upload_status not in {"failed", "expired"}
+
+    def budget(participant, experiment):
+        asset = resolve(participant, experiment)
+        deadline = _recording_resolution_deadline(asset)
+        if deadline is None:
+            return 20.0
+        return 20.0 + max(0.0, (deadline - _utcnow()).total_seconds())
+
+    return wait_while(
+        pending,
+        expected_wait=expected_wait,
+        check_interval=check_interval,
+        max_wait_time=budget,
+        fail_on_timeout=False,
     )
 
 

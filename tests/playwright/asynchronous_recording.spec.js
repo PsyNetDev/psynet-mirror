@@ -92,3 +92,29 @@ test("stalled upload module permits independent navigation @inplace-only", async
     await expect(p.locator("#main-body")).toContainText("Independent page reached.");
   });
 });
+
+test("missing non-trial recording shows fallback without failing participant @inplace-only", async ({page, context}) => {
+  test.setTimeout(120000);
+  await context.route("**/media-upload/*", route => route.fulfill({status:403, body:"Upload unavailable"}));
+  await withExperiment(page, context, path.resolve("tests/playwright/experiments/asynchronous_recording"), async p => {
+    await completeInitialGateway(p);
+    await expect(p.locator("#main-body")).toContainText("Record a short clip.");
+    await waitForVideoRecordingReady(p, {timeoutMs:45000});
+    await waitForNextEnabled(p,30000);
+    const response = p.waitForResponse(r => new URL(r.url()).pathname === "/response" && r.request().method() === "POST");
+    await p.locator("#next-button").click();
+    const accepted = await (await response).json();
+    const id = accepted.recording_uploads[0].id;
+    await expect(p.locator("#main-body")).toContainText("Independent page reached.");
+    await waitForNextEnabled(p,30000);
+    await p.locator("#next-button").click();
+    await expect(p.locator("#main-body")).toContainText("Recording unavailable. Your answer was saved.", {timeout:90000});
+    await expect(p.locator("video#prompt")).toHaveCount(0);
+    const state = await (await context.request.get(new URL(`/test-recording-state/${id}`, p.url()).href)).json();
+    expect(state.status).toBe("expired");
+    expect(state.participant_failed).toBe(false);
+    await waitForNextEnabled(p,30000);
+    await p.locator("#next-button").click();
+    await expect(p.locator("#Finish")).toBeVisible();
+  });
+});

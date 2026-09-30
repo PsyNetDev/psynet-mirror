@@ -8,7 +8,7 @@ from dallinger.experiment import experiment_route
 from flask import jsonify
 from psynet.db import with_transaction
 from psynet.modular_page import ModularPage, VideoPrompt, VideoRecordControl
-from psynet.page import InfoPage, wait_while
+from psynet.page import InfoPage, wait_for_recording
 from psynet.timeline import PageMaker, Timeline, join
 from psynet.trial.record import Recording
 
@@ -47,11 +47,7 @@ class Exp(psynet.experiment.Experiment):
         ),
         InfoPage("Independent page reached.", time_estimate=1),
         None if os.environ.get("PSYNET_TEST_RECORDING_EXIT") == "1" else join(
-            wait_while(
-                lambda participant: not participant.assets["recording"].deposited,
-                expected_wait=0,
-                max_wait_time=45,
-            ),
+            wait_for_recording(lambda participant: participant.assets["recording"]),
             PageMaker(
                 lambda participant: ModularPage(
                     "playback",
@@ -63,6 +59,10 @@ class Exp(psynet.experiment.Experiment):
                         muted=True,
                     ),
                     time_estimate=3,
+                )
+                if participant.assets["recording"].deposited
+                else InfoPage(
+                    "Recording unavailable. Your answer was saved.", time_estimate=3
                 ),
                 time_estimate=3,
             ),

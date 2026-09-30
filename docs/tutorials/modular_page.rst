@@ -263,3 +263,38 @@ failure. Inspect the recording asset's ``required_for_trial``, ``recording_role`
 ``upload_status``, ``upload_failed_reason``, and ``upload_context`` fields alongside
 the parent trial. Browser and server checks are described in
 :doc:`/developer/running_tests`.
+
+
+Waiting for a recording before playback
+--------------------------------------
+
+For playback outside a trial, use :func:`~psynet.page.wait_for_recording` and
+check whether the recording was deposited before constructing the playback page.
+This preserves navigation when media is unavailable. For example, after a
+recording page with label ``recording``::
+
+    from psynet.modular_page import ModularPage, VideoPrompt
+    from psynet.page import InfoPage, wait_for_recording
+    from psynet.timeline import PageMaker, join
+
+    playback = join(
+        wait_for_recording(lambda participant: participant.assets["recording"]),
+        PageMaker(
+            lambda participant: ModularPage(
+                "playback",
+                VideoPrompt(participant.assets["recording"], "Your recording."),
+                time_estimate=5,
+            )
+            if participant.assets["recording"].deposited
+            else InfoPage("Recording unavailable. Please continue.", time_estimate=5),
+            time_estimate=5,
+        ),
+    )
+
+The helper waits through the existing upload and processing allowance, with a
+fixed 20-second polling margin. Failed or expired recordings release the wait
+at the next poll. If processing stalls, the wait eventually releases without failing
+the participant; the fallback must therefore handle any undeposited recording.
+Legacy recordings without upload deadlines have a 20-second limit. Trial failure
+and performance policies are unchanged. Asynchronous answer recording remains
+under development and disabled by default.

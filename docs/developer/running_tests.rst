@@ -249,7 +249,7 @@ alongside a demo using that same database.
 .. code-block:: shell
 
     pytest tests/isolated/test_media_upload.py tests/isolated/test_chain_growth_queries.py tests/isolated/test_finalize_pending_trials.py
-    pytest tests/isolated/test_recording_submission.py
+    pytest tests/isolated/test_recording_submission.py tests/isolated/test_wait_for_recording.py
     npx playwright test media_upload_queue.spec.js
     npx playwright test asynchronous_recording.spec.js
     npx playwright test missing_chain_recording.spec.js
@@ -326,9 +326,14 @@ that required clips hold finalization, allow ordinary answer analysis, and fail
 only the parent trial when missing. Real WebM deposit releases the finalization
 gate without invoking answer analysis. Bots deliberately bypass required capture.
 
-Keep the answer-recording switch private until reload/exit and non-trial
-missing-media navigation paths are also validated. The focused chain test does
-not establish compatibility with every existing recording page.
+The asynchronous fixture also exercises :func:`~psynet.page.wait_for_recording`: a
+missing non-trial upload reaches a fallback page at its real deadline and the
+participant can finish. Successful uploads reach playable video. Unit tests cover
+stalled processing and bounded legacy waits.
+
+Keep the answer-recording switch private until compatibility with existing
+recording pages and deployment modes is validated. These focused tests do not
+establish compatibility with every existing recording page.
 
 The provisional upload allowance uses a conservative 1 Mbit/s rate, 30 seconds
 of overhead, and twice the estimated transfer time, bounded to 60–600 seconds.
