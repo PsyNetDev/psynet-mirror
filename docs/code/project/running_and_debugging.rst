@@ -68,3 +68,24 @@ Inspect the experiment in the dashboard
 The dashboard (see :ref:`experiment_dashboard`) shows the current state of
 the experiment. Its **Database** tab lists the objects in the database, and
 **Monitor > Monitoring** shows the experiment's networks.
+
+Query the database directly
+---------------------------
+
+The local experiment stores its data in PostgreSQL. Connect with:
+
+.. code-block:: bash
+
+    psql -h localhost -U dallinger -d dallinger
+
+The password is ``dallinger``. The main tables are ``participant``,
+``trial``, ``response`` (page answers), ``node`` and ``network`` (trial maker
+nodes and chains) and ``asset``; ``\dt`` lists them all. For example:
+
+.. code-block:: sql
+
+    -- Recent participants
+    SELECT id, worker_id, status, creation_time FROM participant
+    ORDER BY creation_time DESC LIMIT 5;
+    -- Latest answers
+    SELECT id, answer FROM response ORDER BY id DESC LIMIT 10;

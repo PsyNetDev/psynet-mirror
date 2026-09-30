@@ -3,9 +3,6 @@
 On Windows, develop in WSL (Ubuntu) using Linux commands. Native Windows is not supported.
 
 PsyNet is a framework for designing and deploying online psychological experiments.
-The agent is there to help both with the development of the PsyNet source code,
-and with the development of individual PsyNet experiments.
-
 If the root contains a file called `experiment.py`, assume that we are working on an experiment.
 Otherwise assume we are working on the PsyNet source code.
 
@@ -14,118 +11,23 @@ skill before writing code: `.cursor/skills/psynet/implement-experiment/SKILL.md`
 in an experiment directory, or `.cursor/skills/experiment/implement-experiment/SKILL.md`
 in the PsyNet source code. It says when to use the other experiment skills.
 
-From `experiment.py`, import sibling modules with `from . import my_module`.
-Do not run `python experiment.py` to validate imports; use `psynet test local`.
-See `docs/code/project/experiment_directory.rst`
-("Importing other Python files").
+`psynet scripts update` installs the PsyNet skills under `.cursor/skills/psynet/`.
+Don't edit them there; that directory is gitignored and overwritten on update.
+Skills elsewhere under `.cursor/skills/` belong to the experiment.
 
-PsyNet experiment skills are installed under `.cursor/skills/psynet/` by
-`psynet scripts update` (and created when missing by `psynet scripts scaffold`).
-Treat that directory as PsyNet-managed: update the canonical skills in the
-PsyNet source repository rather than editing generated copies in an experiment.
-It is gitignored in experiment repositories. Skills elsewhere under
-`.cursor/skills/` belong to the experiment and are preserved by
-`psynet scripts update`.
+## Setup
 
-## Agent Skills authoring
+Follow the `install` page (see "Documentation" below). In short: use a
+virtual environment at `.venv/` (ask the user before creating one), then run
+`uv pip install psynet` and `psynet setup`, which installs the experiment
+dependencies. Start PostgreSQL and Redis with `psynet services ensure`.
+Without Docker (for example on some cloud agents), install both natively and
+create a `dallinger` PostgreSQL user and database with password `dallinger`.
 
-The canonical skill format spec is `.cursor/skills/create-skill/SKILL.md` in the
-PsyNet source repository. Experiment skills live under
-`.cursor/skills/experiment/`; repo meta skills live under `.cursor/skills/`.
-After editing skills, run `python scripts/validate_agent_skills.py` and refresh
-experiment copies with `psynet scripts update`. Then reread the result using
-the "After writing" section of that skill.
-
-The PsyNetSkills workshop repository adds a thin `create-skill` addendum for
-challenge/attempt workflows and `psynetsk-validate`.
-
-## Initial setup
-
-- Install uv (`curl -LsSf https://astral.sh/uv/install.sh | sh`); uv installs
-  Python 3.13, the version in the `Dockerfile`.
-- Follow the Install page for the other tools (see "Documentation" below).
-
-## Before running commands
-
-### System dependencies
-
-Cloud agents will need to install the following dependencies.
-Local agents should check for their availability and install if necessary.
-
-- **Python 3.13.x**: Install a 3.13 release and verify `python3 --version`.
-  Check the repository Dockerfile for the exact patch version we target
-  (e.g., `psynet/resources/experiment_scripts/Dockerfile` or the root `Dockerfile`).
-- **uv**: Install with `curl -LsSf https://astral.sh/uv/install.sh | sh`.
-- **PostgreSQL and Redis**: Where Docker is available, run
-  `psynet services ensure`, which starts both in Docker containers, and check
-  them with `psynet services check`. Without Docker (for example on some cloud
-  agents), install the servers natively: ensure both services are running,
-  create the `dallinger` PostgreSQL user and database with password
-  `dallinger`, and verify with `psql -h localhost -U dallinger -d dallinger`
-  and `redis-cli ping` (expect `PONG`).
-- **Heroku CLI**: Install the CLI and verify with `heroku --version`.
-  `psynet test local` uses its `heroku local` process manager; no Heroku
-  account is needed.
-- **Chromedriver**: Leave uninstalled by default; only install it if you need
-  browser automation.
-
-### Python dependencies
-
-By default, assume a Python virtual environment located at `.venv/`.
-Activate it before running Python commands.
-Cloud agents should create this environment automatically via `uv`.
-Local agents should prompt the user before doing so.
-
-Install dependencies as follows:
-
-- (For PsyNet source checkout): `uv pip install -e '.[dev,demos,slack]'`
-- (For standalone experiments): `uv pip install psynet` (bootstrap only), followed by
-  `psynet setup` to scaffold and install `psynet[experiment]` via the generated
-  `constraints.txt`.
-
-If dependency installation fails with `pg_config executable not found`, install
-PostgreSQL development headers (e.g. `libpq-dev` on Debian/Ubuntu,
-`postgresql-devel` on Fedora, `brew install postgresql` on macOS) and retry.
-
-Cursor: disable sandboxing when running PsyNet commands by setting `required_permissions: ["all"]`.
-
-## Demos
-
-Demos are contained in `demos/experiments`, `demos/features` and `demos/pipelines`
-of the PsyNet source code; pip installs do not include them. Outside a source checkout,
-the `demos/index` documentation page describes every demo and links to its code.
-If a user asks for the X demo, list all child directories of those three folders to see which they mean.
+In Cursor, disable sandboxing when running PsyNet commands by setting
+`required_permissions: ["all"]`.
 
 ## Running experiments locally
-
-The PsyNet demo directories include just the authored experiment files.
-Their unpinned `requirements.txt` files and omitted constraints are intentional.
-Within the PsyNet source checkout, PsyNet automatically generates ignored
-boilerplate when a bundled demo is run or tested:
-
-```bash
-psynet debug local
-```
-
-Pytest scaffolds demos temporarily via the `in_experiment_directory` fixture.
-On teardown it removes only paths that were absent when the fixture started,
-so pre-existing scaffold leftovers and customized files remain untouched.
-
-For a copied standalone demo, create its complete environment:
-
-```bash
-uv venv --python 3.13
-source .venv/bin/activate
-uv pip install psynet      # bootstrap only (no experiment runtime yet)
-psynet setup               # scaffolds files, initializes Git, installs psynet[experiment]
-```
-
-To run an experiment in debug mode:
-
-```bash
-cd demos/.../<experiment_name>
-psynet debug local
-```
 
 Run one local experiment at a time. Local experiments share port 5000, the
 PostgreSQL database, Redis and Dallinger's development folder, and starting
@@ -134,83 +36,16 @@ one stops the other's worker processes. Before `psynet debug local` or
 (`lsof -nP -iTCP:5000 -sTCP:LISTEN`). If another experiment is running, ask
 the user to stop it (Ctrl+C in its terminal) instead of stopping it yourself.
 
-For example, to run the timeline demo:
+From `experiment.py`, import sibling modules with `from . import my_module`.
+Validate code with `psynet test local`, not `python experiment.py`. For
+running, debugging and inspecting the database, read
+`code/project/running_and_debugging`. After `psynet debug local`, the log
+prints an ad page URL such as
+`http://127.0.0.1:5000/ad?generate_tokens=true&recruiter=hotair`; offer to
+walk through the experiment in the browser.
 
-```bash
-cd demos/experiments/timeline
-psynet debug local
-```
-
-Wait for 8 seconds for the server to start.
-
-Inspect the logs to see relevant URLs.
-Look out for an ad page URL, something like
-http://127.0.0.1:5000/ad?generate_tokens=true&recruiter=hotair.
-
-When the demo is running, offer the user to navigate the experiment automatically.
-
-## Deployment files
-
-`deploy.toml` uses an `[exclude]` table: `paths` (root-relative prefixes),
-`names` (basenames in every directory), and `suffixes` (literal endings
-such as `.db`). PsyNet creates it from the template when missing and never
-overwrites a custom copy. Inspect the current plan with
-`dallinger deployment-files list`. Stock excludes include the local
-`audit/` review packet (not needed at runtime). PsyNet never overwrites a
-custom `deploy.toml`; add `audit` to `[exclude].paths` on existing
-experiments that still ship that directory.
-
-Pregenerated public stimuli belong in `static/` (served as `/static/...`).
-They are included in the deployment plan. Generated `static/assets` is
-excluded. The default package-size limit is 1024 MB; raise `EXP_MAX_SIZE_MB`
-only after reviewing the file list.
-Use PsyNet assets for recordings and other files created during the experiment.
-
-`.dockerignore` is no longer supported. Move any custom exclusions into
-`deploy.toml` and remove `.dockerignore` before debug or deployment.
-
-## Navigating experiments
-
-Cursor's browser extension can be used to interact with experiments programmatically:
-
-1. Navigate to the ad page URL
-2. Click "Begin Experiment"
-3. Progress through consent and experiment pages
-4. Form inputs can be filled and buttons clicked automatically
-
-This is useful for automated testing of experiment flows.
-
-## Database access
-
-PsyNet uses PostgreSQL. Connect using:
-
-```bash
-psql -h localhost -U dallinger -d dallinger
-```
-
-Cursor: this needs `required_permissions: ["network"]`.
-
-Key tables:
-
-- `participant` - Experiment participants (id, worker_id, status, creation_time)
-- `trial` - Trials, with their definitions and answers
-- `response` - Page responses/answers
-- `node` - Trial maker nodes
-- `network` - Trial maker networks (chains)
-- `asset` - Stored files and their metadata
-
-Example queries:
-
-```sql
--- List recent participants
-SELECT id, worker_id, status, creation_time FROM participant ORDER BY creation_time DESC LIMIT 5;
-
--- View participant responses
-SELECT id, answer FROM response ORDER BY id DESC LIMIT 10;
-
--- List all tables
-\dt
-```
+Demos live in `demos/` of the PsyNet source code, not in pip installs; the
+`demos/index` page describes each one and links to its code.
 
 ## Documentation
 
@@ -255,7 +90,7 @@ version of the documentation website; fetch `<that URL><page>.html`.
 | Performance tests | `test/scalability` |
 | Audits | `test/audits`, `test/audit_reference` |
 | Design simulation and power analysis | `test/audit_reference`; workflow in the `power-analysis` skill |
-| Deploying and running a study | `deploy/how_deployment_works`, `deploy/setting_up_a_server`, `deploy/running_a_study`, `deploy/recruiters/index` |
+| Deploying, `deploy.toml` and running a study | `deploy/how_deployment_works`, `deploy/setting_up_a_server`, `deploy/running_a_study`, `deploy/recruiters/index` |
 | Exporting, basic data and analysis | `data/exporting_data`, `data/basic_data`, `data/analyzing_data` |
 | Demos to start from | `demos/index` |
 | Configuration and commands | `reference/configuration`, `reference/command_line` |

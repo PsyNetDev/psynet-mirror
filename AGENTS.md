@@ -6,6 +6,32 @@ Start by following `psynet/resources/experiment_scripts/AGENTS.md`.
 
 Then act on the following PsyNet developer instructions:
 
+## Source checkout setup
+
+Install PsyNet in editable mode with `uv pip install -e '.[dev,demos,slack]'`.
+
+Demo directories contain only the authored experiment files; their unpinned
+`requirements.txt` files and missing constraints are intentional. Running
+`psynet debug local` or `psynet test local` in a bundled demo generates the
+ignored boilerplate. Pytest scaffolds demos temporarily via the
+`in_experiment_directory` fixture, which on teardown removes only paths that
+were absent when it started.
+
+If a user asks for the X demo, list the child directories of
+`demos/experiments`, `demos/features` and `demos/pipelines` to see which they mean.
+
+## Agent Skills authoring
+
+The canonical skill format spec is `.cursor/skills/create-skill/SKILL.md`.
+Experiment skills live under `.cursor/skills/experiment/`; repo meta skills
+live under `.cursor/skills/`. After editing skills, run
+`python scripts/validate_agent_skills.py` and refresh experiment copies with
+`psynet scripts update`. Then reread the result using the "After writing"
+section of that skill.
+
+The PsyNetSkills workshop repository adds a thin `create-skill` addendum for
+challenge/attempt workflows and `psynetsk-validate`.
+
 ## Sandbox reminder
 
 When running PsyNet commands from Cursor, disable sandboxing by setting
