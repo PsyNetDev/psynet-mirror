@@ -294,7 +294,8 @@ The canonical analysis is `simulate/analysis/analysis.ipynb`. Follow "Writing
 notebooks for readers" above. It should:
 
 - read exported data directly;
-- show data loading and cleaning after the main results;
+- describe data loading and cleaning in a section after the main results
+  (the code itself runs in the first cell, behind the summary);
 - display useful summary tables or plots. Prefer Plotly with
   `pio.renderers.default = "plotly_mimetype"` for offline interactive figures
   and `pio.templates.default = "plotly_white"` for consistent presentation;
@@ -471,7 +472,10 @@ Array.from(document.querySelectorAll(".notebook-plotly-target")).flatMap((figure
 });
 ```
 
-An empty result is the standard to hold each figure to. Anything reported is a
+Open collapsed audit sections before running it: on a closed section the
+check returns an empty result without checking anything. Run it at full width
+and again in a window about 900 px wide, where legends start wrapping into
+titles. An empty result is the standard to hold each figure to. Anything reported is a
 layout bug to fix by shortening labels, adding margin, moving the legend, or
 increasing the figure height, not something to leave for the reviewer.
 
