@@ -128,10 +128,10 @@ scenario:
 method = "precision-estimation"
 
 [decision]
-metric = "standardized_margin_of_error"
+metric = "margin_of_error"
 confidence_level = 0.95
-threshold = 0.20
-reference_sd = 1.0  # trial_noise_sd of the reference assumptions, fixed across scenarios
+threshold = 0.20  # 0.20 × the reference trial_noise_sd of 1.0, fixed across scenarios
+unit = "rating points"
 
 [design]
 n_participants = [40, 60, 80, 100]
@@ -226,26 +226,50 @@ values.
   stimulus.
 
 Add the design and assumption values, then the summaries: the number of
-replicates evaluated, bias, sampling standard error, margin of error,
-standardized margin of error, its Monte Carlo interval, and the number of
-failed fits. For the decision, add `decision_metric`, `decision_value`,
-`decision_threshold` and `meets_requirement`, and, if participants are paid,
-`participant_payment` and `currency`. Keep column names the same across runs so
-the notebook can compare them.
+replicates evaluated, bias, sampling standard error, margin of error, its
+Monte Carlo interval, and the number of failed fits. For a profile, also add
+the difference margin of error, the true spread, the profile correlation and
+the smallest spread for the target correlation. For the decision, add
+`decision_metric`, `decision_value`, `decision_threshold` and
+`meets_requirement`, and, if participants are paid, `participant_payment` and
+`currency`. Keep column names the same across runs so the notebook can compare
+them.
 
 For one target in one scenario, with `estimates` holding one estimate per
-replicate and `reference_sd` read from `[decision]` in `config.toml`:
+replicate:
 
 ```python
 from statistics import NormalDist
 
 import numpy as np
 
+z = NormalDist().inv_cdf(0.975)
 sampling_se = estimates.std(ddof=1)
-margin_of_error = NormalDist().inv_cdf(0.975) * sampling_se
-standardized_margin_of_error = margin_of_error / reference_sd
+margin_of_error = z * sampling_se
 bias = (estimates - true_value).mean()
 margin_of_error_mcse = margin_of_error / np.sqrt(2 * (replicates - 1))
+```
+
+For a profile, `estimates` has one row per replicate and one column per value,
+and `truth` holds the true values:
+
+```python
+max_margin_of_error = (z * estimates.std(axis=0, ddof=1)).max()
+
+covariance = np.cov(estimates, rowvar=False)
+variances = np.diag(covariance)
+difference_variances = variances[:, None] + variances[None, :] - 2 * covariance
+max_difference_margin_of_error = z * np.sqrt(difference_variances.max())
+
+true_spread = truth.std()
+correlations = [np.corrcoef(row, truth)[0, 1] for row in estimates]
+profile_correlation = np.tanh(np.mean(np.arctanh(correlations)))  # Fisher-z average
+centered = estimates - estimates.mean(axis=1, keepdims=True)
+centered_se = np.sqrt(centered.var(axis=0, ddof=1).mean())
+target_correlation = 0.9
+spread_for_target_correlation = (
+    centered_se * target_correlation / np.sqrt(1 - target_correlation**2)
+)
 ```
 
 The Monte Carlo standard error formula assumes roughly normal estimates.
@@ -309,8 +333,13 @@ pio.templates.default = "plotly_white"
 
 Plot the decision metric against the number of participants, with other design
 factors as facets or line styles, the threshold as a horizontal line, and the
-Monte Carlo interval as a shaded band. Add a table of every metric at the chosen
-design. Plotly `updatemenus` buttons can switch a figure between metrics;
+Monte Carlo interval as a shaded band. Give band traces `mode="lines"`;
+otherwise Plotly draws a marker at every corner of the band. Label the axis in
+the response's units.
+Add a table of the smallest design meeting the criterion under each assumption
+set, and a table of every metric at the chosen design. For a profile, also plot
+the smallest spread for the target correlation against the number of
+participants, with the true spread under each assumption set for comparison. Plotly `updatemenus` buttons can switch a figure between metrics;
 ipywidgets and page-level tabs don't work in the rendered audit. Restyle one
 set of traces per button instead of adding a set of traces per metric, which
 keeps the notebook small. Executed notebooks may be up to 10 MB.

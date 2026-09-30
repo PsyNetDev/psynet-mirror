@@ -57,16 +57,22 @@ Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rs
 5. **Compute the results** with the formulas in "Results table" of the setup
    reference.
    Unless the user chose another criterion, set `decision_metric =
-   "standardized_margin_of_error"`, `decision_threshold = 0.20` at 95%
-   confidence, with one `reference_sd` for all scenarios (never each
-   scenario's own noise SD), and fill `decision_value` and `meets_requirement` for every
-   primary estimand. For a profile, use the maximum pointwise margin and
-   bootstrap its Monte Carlo interval. When `keep_replicates` is true, also
-   save replicate-level estimates as Parquet.
+   "margin_of_error"` at 95% confidence, with `decision_threshold` equal to
+   0.20 times the reference assumptions' single-response noise SD, in the
+   response's units, for all scenarios (never each scenario's own noise SD).
+   Fill `decision_value` and `meets_requirement` for every primary estimand.
+   For a profile, use the maximum pointwise margin and bootstrap its Monte
+   Carlo interval, and also report the difference margin, the profile
+   correlation and the smallest spread for a 0.9 correlation. When
+   `keep_replicates` is true, also save replicate-level estimates as Parquet.
 6. **Check Monte Carlo error.** If it could change the selected design,
    raise the common replicate count and rerun.
-7. **Return to `power-analysis`** with `results.csv` and `run.json`
+7. **Prepare the check after data collection.** Make sure the analysis
+   notebook reports the achieved margin of error and, for a profile, the
+   split-half reliability ("After data collection" in the method
+   reference).
+8. **Return to `power-analysis`** with `results.csv` and `run.json`
    (including seed, replicate count, worker count, response parameters and
    response-model hash) for costing, the notebook and the review. In the
-   notebook, plot standardized margin of error against participants with
-   the 0.20 line and a Monte Carlo ribbon.
+   notebook, plot the margin of error, in the response's units, against
+   participants with the threshold line and a Monte Carlo ribbon.
