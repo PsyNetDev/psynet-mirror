@@ -11,6 +11,7 @@ from urllib import parse
 import dallinger.pytest_dallinger
 import pexpect
 import pexpect.exceptions
+import psutil
 import pytest
 import requests
 import sqlalchemy.exc
@@ -40,7 +41,6 @@ from .command_line import (
     kill_psynet_chrome_processes,
     kill_psynet_worker_processes,
     list_heroku_local_processes,
-    safely_kill_process,
     stop_local_debug_process,
 )
 from .experiment import get_experiment, import_local_experiment
@@ -485,7 +485,11 @@ def clear_workers():
 
     def _zap():
         for process in list_heroku_local_processes():
-            safely_kill_process(process)
+            # SIGTERM lets heroku local stop the processes it supervises.
+            try:
+                process.terminate()
+            except psutil.NoSuchProcess:
+                pass
         kill_psynet_worker_processes()
 
     _zap()

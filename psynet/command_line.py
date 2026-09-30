@@ -1149,12 +1149,17 @@ def list_heroku_local_processes():
 
 
 def is_heroku_local_process(process):
-    """Return whether ``process`` is a ``heroku local`` process supervisor."""
+    """
+    Return whether ``process`` is part of the Heroku CLI's ``heroku local``.
+
+    The CLI runs as shell wrappers and ``node`` processes whose paths contain a
+    ``heroku`` directory.
+    """
     try:
         cmdline = process.cmdline()
     except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
         return False
-    return any("heroku" in part for part in cmdline) and "local" in cmdline
+    return any("heroku" in part.split(os.sep) for part in cmdline)
 
 
 def list_chromedriver_processes():
