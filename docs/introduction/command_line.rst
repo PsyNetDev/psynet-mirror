@@ -367,12 +367,9 @@ regression test and exporting the result to
 .. code:: bash
 
   psynet audit simulate
-  psynet audit simulate --n-bots 20
 
 The command requires an initialized audit packet and marks ``simulate_export``
-present in ``audit.json``. ``--n-bots`` sets the number of bots for this run,
-like ``psynet test local --n-bots``; without it, the command uses
-``Experiment.test_n_bots``.
+present in ``audit.json``.
 
 
 .. _install:
