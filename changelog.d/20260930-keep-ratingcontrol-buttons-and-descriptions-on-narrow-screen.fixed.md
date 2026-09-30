@@ -1,0 +1,1 @@
+Fixed `RatingControl` and `MultiRatingControl` scales turning into a "Tap to rate here..." dropdown on narrow screens, which hid `min_description` and `max_description`. Scales now always show buttons, and screen readers announce each option by its label (plus the description at either end) rather than as "rating".

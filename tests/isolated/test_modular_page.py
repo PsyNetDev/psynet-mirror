@@ -491,6 +491,12 @@ def test_get_values_and_labels():
     assert list(labels) == ["bad", "good"]
 
 
+def test_rating_scale_keeps_buttons_on_narrow_screens():
+    """SurveyJS's automatic dropdown would hide the scale descriptions."""
+    scale = RatingScale("rating", 7, min_description="Low", max_description="High")
+    assert scale.design["displayMode"] == "buttons"
+
+
 def test_prompt_metadata_excludes_text():
     prompt = Prompt("Hi!")
     assert "text" not in prompt.metadata
