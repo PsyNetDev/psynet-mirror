@@ -946,13 +946,30 @@ def _debug_docker(ctx, archive, no_browsers):
 def launch_app_without_browsers(port, **kwargs):
     """Launch the development app without opening browsers.
 
-    Stands in for Dallinger's ``launch_app_and_open_browser`` RQ job when the
-    installed Dallinger's ``develop debug`` has no ``--no-browsers`` option.
+    Stands in for Dallinger's ``launch_app_and_open_browser`` RQ job in
+    auto-reload ``--no-browsers`` runs. Dallinger's job discards the launch
+    response and logs into the dashboard through the browser it opens, so this
+    job prints the recruitment message and the dashboard credentials instead.
     It must stay importable by module path because RQ workers resolve it that way.
     """
-    from dallinger.command_line.develop import _launch_app
+    from dallinger.command_line.develop import BASE_URL
+    from dallinger.deployment import handle_launch_data
 
-    _launch_app(port)
+    launch_data = handle_launch_data(
+        BASE_URL.format(port) + "launch", error=log, delay=1.0, context="local"
+    )
+    if launch_data.get("recruitment_msg"):
+        log(launch_data["recruitment_msg"], chevrons=False)
+
+    config = get_config()
+    if not config.ready:
+        config.load()
+    log(f"Experiment dashboard: {BASE_URL.format(port)}dashboard")
+    log(
+        f"Dashboard user: {config.get('dashboard_user')} "
+        f"password: {config.get('dashboard_password')}",
+        chevrons=False,
+    )
 
 
 def _debug_auto_reload(ctx, archive, no_browsers):
@@ -963,10 +980,7 @@ def _debug_auto_reload(ctx, archive, no_browsers):
     launch_job = develop_module.launch_app_and_open_browser
     debug_kwargs = {"skip_flask": False}
     if no_browsers:
-        if "no_browsers" in {param.name for param in dallinger_debug.params}:
-            debug_kwargs["no_browsers"] = True
-        else:
-            develop_module.launch_app_and_open_browser = launch_app_without_browsers
+        develop_module.launch_app_and_open_browser = launch_app_without_browsers
 
     try:
         run_pre_auto_reload_checks()

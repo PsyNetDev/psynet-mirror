@@ -516,60 +516,42 @@ def test_debug_legacy_starts_four_gunicorn_workers(monkeypatch):
     ]
 
 
-def _run_debug_auto_reload(monkeypatch, dallinger_supports_no_browsers):
-    import click
-
-    from psynet.command_line import _debug_auto_reload
+def test_debug_auto_reload_no_browsers_launches_without_browsers(monkeypatch, capsys):
+    """PsyNet's launch job opens no browsers and prints what the browser would show."""
+    from psynet.command_line import _debug_auto_reload, launch_app_without_browsers
 
     develop = importlib.import_module("dallinger.command_line.develop")
-
+    original_job = develop.launch_app_and_open_browser
     calls = []
 
     class _Ctx:
         def invoke(self, _command, **kwargs):
             calls.append((kwargs, develop.launch_app_and_open_browser))
 
-    params = [click.Option(["--skip-flask"], is_flag=True)]
-    if dallinger_supports_no_browsers:
-        params.append(click.Option(["--no-browsers"], is_flag=True))
-
-    monkeypatch.setattr(develop.debug, "params", params)
     monkeypatch.setattr("psynet.command_line.run_pre_auto_reload_checks", lambda: None)
     monkeypatch.setattr("psynet.command_line.patch_dallinger_develop", lambda: None)
     monkeypatch.setattr("psynet.command_line.db.session.commit", lambda: None)
     monkeypatch.setattr("psynet.command_line.reset_console", lambda: None)
     _debug_auto_reload(_Ctx(), archive=None, no_browsers=True)
-    return calls
-
-
-def test_debug_auto_reload_passes_no_browsers_to_dallinger(monkeypatch):
-    develop = importlib.import_module("dallinger.command_line.develop")
-
-    calls = _run_debug_auto_reload(monkeypatch, dallinger_supports_no_browsers=True)
-    assert calls == [
-        (
-            {"skip_flask": False, "no_browsers": True},
-            develop.launch_app_and_open_browser,
-        )
-    ]
-
-
-def test_debug_auto_reload_no_browsers_with_older_dallinger(monkeypatch):
-    """Older Dallinger enqueues a PsyNet launch job that opens no browsers."""
-    develop = importlib.import_module("dallinger.command_line.develop")
-
-    from psynet.command_line import launch_app_without_browsers
-
-    original_job = develop.launch_app_and_open_browser
-    calls = _run_debug_auto_reload(monkeypatch, dallinger_supports_no_browsers=False)
     assert calls == [({"skip_flask": False}, launch_app_without_browsers)]
     assert develop.launch_app_and_open_browser is original_job
 
-    launched = []
-    monkeypatch.setattr(develop, "_launch_app", launched.append)
+    config = Mock(ready=True)
+    config.get.side_effect = {
+        "dashboard_user": "admin",
+        "dashboard_password": "s3cret",
+    }.get
+    monkeypatch.setattr("psynet.command_line.get_config", lambda: config)
+    monkeypatch.setattr(
+        "dallinger.deployment.handle_launch_data",
+        lambda url, **kwargs: {"recruitment_msg": "Prolific study simulated"},
+    )
     monkeypatch.setattr(develop, "_async_browser", pytest.fail)
-    launch_app_without_browsers(5001)
-    assert launched == [5001]
+    launch_app_without_browsers(5001, no_browsers=False)
+    output = capsys.readouterr().out
+    assert "Prolific study simulated" in output
+    assert "http://127.0.0.1:5001/dashboard" in output
+    assert "Dashboard user: admin password: s3cret" in output
 
 
 def test_debug_legacy_gunicorn_workers_follow_env(monkeypatch):
