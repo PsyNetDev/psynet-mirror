@@ -33,7 +33,7 @@ Sections
    Decisions made along the way, and anything a reviewer should know.
 
 **Experiment code**
-   The experiment's ``experiment.py``.
+   The experiment's ``experiment.py``, followed by its other Python modules.
 
 **Screenshots**
    Screenshots of the participant pages; see :doc:`frontend`.

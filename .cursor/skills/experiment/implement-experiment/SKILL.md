@@ -206,6 +206,11 @@ local experiment is running. If local data disappears unexpectedly, check
   placeholder text, and list "replace the placeholder consent with the
   institution's ethics-approved text" as a pre-deployment item in
   `audit/REPORT.md`.
+- Once the timeline's time estimates are set, run `psynet estimate` and set
+  the recruiter's listing in `config.txt` from it: for Prolific,
+  `prolific_estimated_completion_minutes` and a `base_payment` that gives at
+  least `wage_per_hour` for that time (`code/participants/payment`). The
+  scaffolded values are placeholders.
 
 ### Run simulations
 
