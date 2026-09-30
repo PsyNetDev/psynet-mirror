@@ -321,7 +321,10 @@ def test_render_evidence_section_renders_notebook_rich_outputs() -> None:
     assert "<h2>Results</h2>" in html
     assert "<ul>" in html
     assert "<li>passed</li>" in html
-    assert '<div class="notebook-code"><pre class="highlight">' in html
+    assert (
+        '<details class="notebook-code"><summary>Show code</summary>'
+        '<pre class="highlight">'
+    ) in html
     assert '<div class="notebook-html">' in html
     assert "<table>" in html
     assert "<th>n</th>" in html

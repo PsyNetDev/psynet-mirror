@@ -653,12 +653,14 @@ def render_notebook_cell(cell: dict[str, object]) -> str:
         if cell_type == "markdown":
             return render_markdown_block(source)
         if cell_type == "code":
-            return (
-                '<div class="notebook-code">'
+            code = (
+                '<details class="notebook-code"><summary>Show code</summary>'
                 f"{render_code_block(source, 'python')}"
-                "</div>"
-                f"{render_notebook_outputs(cell.get('outputs'))}"
+                "</details>"
+                if source.strip()
+                else ""
             )
+            return f"{code}{render_notebook_outputs(cell.get('outputs'))}"
         return f"<pre><code>{html.escape(source)}</code></pre>"
 
     body = safe_section_html(f"notebook-cell-{cell_type}", render_body)
