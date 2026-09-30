@@ -251,14 +251,11 @@ behind it, and keep the statistical detail for the end:
    replicates, Monte Carlo intervals, bias, coverage, failed fits, and a table
    of every metric with readable column names.
 
-Plain words should not hide the numbers. Name assumption sets by what they
-mean and give their values with the name, such as "noisier raters (rating
-noise SD 1.3)", in the text, legends and tables. When the text uses a
-statistical idea in plain words, add the technical term in brackets, such as
-"how closely the estimates match the true values (correlation)". Plot only the
+Follow "Writing notebooks for readers" in
+`produce-experiment-audit/references/populating-an-audit.md`: compute the summary, and give numbers with
+the plain words, such as "noisier raters (rating noise SD 1.3)". Plot only the
 factors that change the answer: if two assumption levels give the same result,
-show one and say so. Round numbers in the text to two decimals; tables and
-hover text can be more precise.
+show one and say so.
 
 ## After data collection
 

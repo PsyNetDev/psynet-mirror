@@ -252,17 +252,49 @@ Declare screenshots either as individual artifacts or in the `captions` map of
 the present `screenshots` manifest artifact. Rendering publishes safe image
 paths referenced by that manifest and builds the screenshot carousel.
 
+## Writing notebooks for readers
+
+The audit's notebooks (the analysis and the power analysis) are read by
+someone who knows the study but not the code or the statistics, such as the
+experimenter's supervisor. The audit collapses code behind a "Show code"
+toggle, so the reader sees prose, figures and tables.
+
+- **Answer first.** Start with a summary of what the notebook shows, then one
+  section per question, headed by the question in plain words ("How pleasant
+  is each chord?"). Put data checks, definitions and full tables last.
+- **Compute the summary.** Load the data and compute the headline numbers in
+  the first code cell, and write the summary from them with
+  `display(Markdown(f"..."))`. Numbers typed into Markdown go stale when the
+  data or simulation change. Later sections can then show the details of
+  loading and cleaning.
+
+  ```python
+  display(Markdown(f"""
+  **{n} participants passed the headphone check; {len(screened_out)} were screened out.**
+  Each chord's average is known to within ±{rms(half_width):.2f} points (95% confidence interval).
+  """))
+  ```
+
+- **Keep the numbers.** Plain words go with the values, not instead of them:
+  "noisier raters (SD 1.3)" rather than "noisier raters", in text, legends and
+  tables. Add the technical term in brackets after a plain description, such
+  as "known to within ±0.18 points (95% confidence interval)". Use readable
+  column names and round numbers in the text to two decimals.
+- **Execute before rendering.** The audit shows only the outputs saved in the
+  notebook, so run it after every change, for example with
+  `jupyter nbconvert --to notebook --execute --inplace analysis.ipynb`.
+  `psynet audit validate` warns when a notebook has no saved outputs.
+- **Read it back.** Open the rendered section and read it as that reader
+  would. Check that every figure and table appears, that headings aren't
+  repeated, and that the summary matches the figures.
+
 ## Analysis and reporting
 
-The canonical analysis is `simulate/analysis/analysis.ipynb`. Write it for a
-reader who knows the study but not the code, as for the power analysis
-(`power-analysis/references/design-simulation-method.md`, "Reporting the
-results"): start with a short summary of what the analysis shows, in plain
-words with the numbers; head each section with the question it answers; and
-put data checks and technical detail after the main results. It should:
+The canonical analysis is `simulate/analysis/analysis.ipynb`. Follow "Writing
+notebooks for readers" above. It should:
 
 - read exported data directly;
-- show data loading and cleaning;
+- show data loading and cleaning after the main results;
 - display useful summary tables or plots. Prefer Plotly with
   `pio.renderers.default = "plotly_mimetype"` for offline interactive figures
   and `pio.templates.default = "plotly_white"` for consistent presentation;
