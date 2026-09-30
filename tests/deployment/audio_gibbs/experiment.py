@@ -1,26 +1,10 @@
-"""Audio Gibbs sampler test experiment.
+"""Lucid variant of the audio Gibbs test experiment.
 
-Participants adjust a slider to make a synthesized word sound as
-"dominant" or "trustworthy" as possible. Compared to the sibling
-payment-flow test experiment, this one additionally exercises on-the-fly
-audio synthesis (parselmouth), asset generation and storage, parallel
-async worker processes, and a headphone prescreen.
-
-The recruiter is selected via the config file rather than in this experiment file:
-
-- ``config.txt`` (default) sets ``recruiter = devprolific``, which simulates the Prolific API
-    locally (requests are logged instead of sent, and no credentials or payments are involved), so
-    running this directory directly cannot accidentally start paid recruitment.
-- ``config.txt.prolific`` sets ``recruiter = prolific`` and is swapped in explicitly for paid test
-    deployments with real participants.
-
-The Lucid variant still lives in ``experiment.py.lucid`` (with ``config.txt.lucid``) because its
-timeline and Experiment class genuinely differ (LucidConsent, a welcome page, and a ``recruit()``
-override). ``on_launch`` aborts unless the configured recruiter is ``prolific`` or
-``devprolific``, so a Lucid config cannot start a paid survey with this timeline.
+To use it, copy this file over ``experiment.py`` and ``config.txt.lucid``
+over ``config.txt`` (the recruiter settings live in the config file and
+``lucid_recruitment_config.json``).
 """
 
-import json
 import os
 import sys
 from typing import List
@@ -30,8 +14,9 @@ from markupsafe import Markup
 import psynet.experiment
 from psynet.asset import LocalStorage
 from psynet.bot import Bot
+from psynet.consent import LucidConsent
 from psynet.demography.general import ExperimentFeedback, HearingLoss
-from psynet.page import InfoPage, SuccessfulEndPage
+from psynet.page import InfoPage, Page, SuccessfulEndPage
 from psynet.prescreen import HugginsHeadphoneTest
 from psynet.timeline import Timeline
 from psynet.trial.audio_gibbs import (
@@ -62,8 +47,33 @@ NUM_ITERATIONS_PER_CHAIN = 2
 CHAINS_PER_PARTICIPANT = len(TARGETS)
 NUM_TRIALS_PER_PARTICIPANT = NUM_ITERATIONS_PER_CHAIN * CHAINS_PER_PARTICIPANT
 
-INITIAL_RECRUITMENT_SIZE = 3
-TARGET_N_PARTICIPANTS = 5
+# Matches TARGET_N_PARTICIPANTS so the Lucid survey is created with its full
+# quota up front: the marketplace UI then shows "Expected Completes = 10" and
+# Lucid keeps fielding until 10 completes without PsyNet-side quota top-ups.
+INITIAL_RECRUITMENT_SIZE = 10
+TARGET_N_PARTICIPANTS = 10
+
+
+class CulturalFoundationLucidConsent(LucidConsent):
+    """Lucid-compatible consent page using the approved CINT consent text."""
+
+    class LucidConsentPage(LucidConsent.LucidConsentPage):
+        def __init__(self, time_estimate=60):
+            consent = consent_irb_cultural_foundation(
+                consent="CINT",
+                DURATION=4,
+                PAYMENT=0,
+            )
+            source_page = next(elt for elt in consent.elts if isinstance(elt, Page))
+            Page.__init__(
+                self,
+                label="lucid_consent",
+                template_str=source_page.template_str,
+                template_arg=source_page.template_arg,
+                time_estimate=time_estimate,
+                show_early_exit_button=False,
+                requires_full_page_reload=True,
+            )
 
 
 class CustomTrial(AudioGibbsTrial):
@@ -129,62 +139,36 @@ trial_maker = CustomTrialMaker(
 )
 
 
-def get_prolific_settings():
-    """Prolific-related settings shared by both recruiters.
-
-    The recruiter itself is set in ``config.txt`` (``devprolific`` by default,
-    ``prolific`` in ``config.txt.prolific`` for paid deployments); see the
-    module docstring.
-    """
-    with open("qualification_prolific_en.json", "r") as f:
-        qualification = json.dumps(json.load(f))
-
-    return {
-        "base_payment": 0.50,
-        "prolific_estimated_completion_minutes": 3,
-        "prolific_recruitment_config": qualification,
-        # True so deployment tests exercise the programmatic top-up path
-        # (ProlificRecruiter.recruit); recruitment grows from
-        # INITIAL_RECRUITMENT_SIZE toward TARGET_N_PARTICIPANTS.
-        "auto_recruit": True,
-        "currency": "£",
-        "wage_per_hour": 10,
-    }
-
-
 class Exp(psynet.experiment.Experiment):
     label = "Audio game - play with sounds."
     asset_storage = LocalStorage()
     config = {
-        **get_prolific_settings(),
         "initial_recruitment_size": INITIAL_RECRUITMENT_SIZE,
-        # Required for Prolific deployments: caps the number of automatic
-        # screen-out payments (see prolific_pay_unsuccessful).
-        "prolific_screen_out_slots": 10 * INITIAL_RECRUITMENT_SIZE,
         "force_incognito_mode": False,
         "title": "Sound game: play with sounds (Chrome browser, Headphones required ~3 min)",
         "description": "A short sound game. Requires a Chrome browser and headphones. The game lasts approximately 3 minutes.",
         "contact_email_on_error": "computational.audition@gmail.com",
         "organization_name": "Max Planck Institute for Empirical Aesthetics",
         "show_reward": False,
+        # Lucid's QuotaCPI is derived from estimated_max_reward(wage_per_hour).
+        # The default wage of 9/hour yielded a CPI of ~0.5, which converted
+        # poorly; doubling the wage roughly doubles the CPI.
+        "wage_per_hour": 18,
     }
 
-    def on_launch(self):
-        from dallinger.config import get_config
-
-        recruiter = get_config().get("recruiter")
-        if recruiter not in ("prolific", "devprolific"):
-            raise RuntimeError(
-                f"Prolific experiment.py but recruiter={recruiter!r}. "
-                "For Lucid, copy experiment.py.lucid with config.txt.lucid."
-            )
-        super().on_launch()
-
     timeline = Timeline(
-        # DURATION/PAYMENT are passed explicitly because this experiment sets
-        # prolific_estimated_completion_minutes and base_payment in Exp.config
-        # rather than config.txt, where the consent module would read them.
-        consent_irb_cultural_foundation(consent="MAIN", DURATION=3, PAYMENT=0.50),
+        # Panelists decide within seconds whether to stay; a short plain
+        # description up front reduces bounces at entry.
+        InfoPage(
+            Markup(
+                "<h3>4-minute listening study</h3>"
+                "<p><strong>Headphones required.</strong> You will make "
+                f"{NUM_TRIALS_PER_PARTICIPANT + 1} short sound ratings by "
+                "adjusting a slider.</p>"
+            ),
+            time_estimate=5,
+        ),
+        CulturalFoundationLucidConsent(time_estimate=60),
         HugginsHeadphoneTest(performance_threshold=0),
         trial_maker,
         HearingLoss(),
@@ -192,6 +176,17 @@ class Exp(psynet.experiment.Experiment):
         debrief_page(),
         SuccessfulEndPage(),
     )
+
+    def on_launch(self):
+        from dallinger.config import get_config
+
+        recruiter = get_config().get("recruiter")
+        if recruiter != "lucid-recruiter":
+            raise RuntimeError(
+                f"Lucid experiment.py but recruiter={recruiter!r}. "
+                "Copy experiment.py.lucid with config.txt.lucid before deploy."
+            )
+        super().on_launch()
 
     test_n_bots = 2
 
