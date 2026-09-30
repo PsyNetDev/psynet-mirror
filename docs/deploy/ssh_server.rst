@@ -188,11 +188,20 @@ You deploy experiments using the ``psynet deploy command``:
 
     psynet deploy ssh --app your-app-name
 
-To replace the code of an app that is already running, keep its database,
-and skip a fresh launch, add ``--update``. Repeat the ``--ingress`` the app
-was deployed with. The update still runs the usual pre-deploy steps, and it
-keeps the app's deployment ID, so exports and dashboard records stay under one
-deployment.
+To ship a fix to an app that is already running, add ``--update`` to the
+command that created it: ``psynet deploy ssh --update`` for a live app, or
+``psynet debug ssh --update`` for a debug app. Repeat the ``--ingress`` the app
+was deployed with. PsyNet asks you to confirm, then rebuilds the image and
+restarts the app. The update keeps:
+
+- the app's database and the participants in it;
+- its deployment ID and secret, so exports and dashboard records stay together;
+- participants' sessions.
+
+An update rebuilds only the image. It doesn't deposit new assets, set up
+networks, or run pre-deploy routines again, so a new stimulus set needs a fresh
+deploy. Participants' progress is a position in the timeline: don't change the
+page sequence, module IDs or trial makers while anyone is still taking part.
 
 By default, this will deploy your app to a hostname that looks like this:
 
