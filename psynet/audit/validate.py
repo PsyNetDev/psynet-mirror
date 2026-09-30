@@ -47,7 +47,11 @@ from psynet.audit.timeline import (
     ALLOWED_TIMELINE_ACTORS,
     unparsed_timeline_entry_lines,
 )
-from psynet.audit.video import is_git_lfs_pointer, probe_video_metadata
+from psynet.audit.video import (
+    is_git_lfs_pointer,
+    probe_video_metadata,
+    silent_audio_warning,
+)
 
 
 def validate_audit_blockers(
@@ -329,7 +333,7 @@ def collect_media_validation_warnings(
     audit_dir: Path,
     manifest: dict[str, Any],
 ) -> list[str]:
-    """Return warnings when present video artifacts could not be probed."""
+    """Return warnings for present videos that could not be probed or are silent."""
 
     artifacts = manifest.get("artifacts")
     if not isinstance(artifacts, list):
@@ -359,6 +363,10 @@ def collect_media_validation_warnings(
                 "video limits were not checked",
             )
             break
+        if probe.metadata is not None:
+            silent_warning = silent_audio_warning(artifact_path, probe.metadata)
+            if silent_warning:
+                warnings.append(silent_warning)
     return warnings
 
 
