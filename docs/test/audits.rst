@@ -33,7 +33,9 @@ Sections
    Screenshots of the participant pages; see :doc:`frontend`.
 
 **Participant video**
-   A recording of a participant's session; see :doc:`frontend`.
+   A recording of a participant's session, with the experiment's sound; see
+   :doc:`frontend` and :doc:`/skills/record-participant-video`, whose helper
+   records audio from headless Chromium on macOS and Linux.
 
 **Monitor snapshot**
    A static copy of the PsyNet monitor page.

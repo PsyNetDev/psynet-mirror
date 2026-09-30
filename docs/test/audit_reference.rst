@@ -47,7 +47,8 @@ dependencies. Participant video validation also requires ``ffprobe`` from
   blockers are still recorded and that readiness may still be incomplete.
   Executed notebooks may be up to 10 MB, accommodating embedded figures while
   keeping packet validation bounded.
-  Warnings (non-fatal) include a still-placeholder ``implementation.summary``
+  Warnings (non-fatal) include a participant video whose audio track is
+  silent (peaks below -60 dBFS), a still-placeholder ``implementation.summary``
   and ``TIMELINE.md`` lines that look like entries but were ignored because the
   actor tag was not one of ``agent-start``, ``agent``, ``agent-stop``,
   ``manual``, or ``system``. The starter TODO summary is omitted from the
@@ -111,7 +112,8 @@ Each entry in ``blockers`` needs ``artifact_id`` (an artifact declared in
 ``artifacts``), ``severity``, ``reason`` and ``next_step``. Use ``"severity":
 "error"`` when the evidence is missing or unusable; starter blockers use it.
 Use ``"warning"`` for a limitation of evidence that is still worth
-inspecting, such as a participant video without audio. Validation treats both
+inspecting, such as a participant video without audio when audio capture
+failed. Validation treats both
 severities the same. ``mark-present`` removes an artifact's blockers, so add
 a warning after marking the artifact present.
 
