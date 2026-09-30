@@ -986,6 +986,18 @@ def test_approve_hit_does_not_notify_when_submission_status_cannot_be_read():
     experiment.notifier.notify.assert_not_called()
 
 
+def test_dev_prolific_open_recruitment_says_study_is_simulated():
+    recruiter = object.__new__(DevProlificRecruiter)
+    created = {"items": ["https://example.com/ad"], "message": "Study created"}
+    with patch.object(
+        dallinger.recruiters.ProlificRecruiter, "open_recruitment", return_value=created
+    ):
+        response = recruiter.open_recruitment(n=1)
+    assert response["items"] == ["https://example.com/ad"]
+    assert "simulated" in response["message"]
+    assert "nothing was created" in response["message"]
+
+
 def test_dev_prolific_reports_active_without_reading_the_api():
     """Dev mode must report the status a local submit really sees.
 

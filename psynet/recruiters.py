@@ -1999,6 +1999,14 @@ class ProlificRecruiter(
 class DevProlificRecruiter(
     PsyNetProlificRecruiterMixin, dallinger.recruiters.DevProlificRecruiter
 ):
+    def open_recruitment(self, n: int = 1) -> dict:
+        """Open a simulated Prolific study, saying that nothing was created."""
+        response = super().open_recruitment(n=n)
+        response["message"] = (
+            "Prolific study simulated in debug mode; nothing was created on Prolific"
+        )
+        return response
+
     def _live_submission_status(self, assignment_id: str) -> str:
         """Dev mode has no live row; report ACTIVE so local submit exercises COMPLETE."""
         return "ACTIVE"
