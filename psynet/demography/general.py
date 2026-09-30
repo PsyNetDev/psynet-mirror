@@ -215,7 +215,7 @@ class CountryDropdown(ModularPage):
             self.get_prompt(),
             control=control,
             time_estimate=self.time_estimate,
-            save_answer="country",
+            save_answer=label,
         )
 
     def get_prompt(self):
