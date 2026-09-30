@@ -14,7 +14,8 @@ lives at ``./audit/``. Experiment source is that experiment directory (the paren
 of ``audit/``). If ``experiment.py`` is in a subdirectory, set
 ``experiment.entry_point``. Commands take no packet path and no
 ``--experiment`` option. ``psynet audit simulate`` writes the simulated export
-directly into this experiment's ``./audit/``. Running from a directory named
+directly into this experiment's ``./audit/``; pass ``--n-bots N`` to override
+``Experiment.test_n_bots`` for that run. Running from a directory named
 ``audit`` is an error.
 
 .. note::
@@ -60,7 +61,10 @@ dependencies. Participant video validation also requires ``ffprobe`` from
   ``audit/site/``. Pass ``--allow-invalid`` only when you need to preview a
   broken manifest. Text previews are truncated after 100 KB. Rendered notebook
   previews have a separate 10 MB allowance for embedded figures and other rich
-  output.
+  output. The page header shows the experiment's short Git commit, with
+  ``-dirty`` when files outside ``audit/`` have uncommitted changes. Set
+  ``experiment.git_commit`` in ``audit.json`` to show a fixed value instead,
+  for example when rendering outside the experiment's Git repository.
 * ``serve`` hosts that static site over HTTP (default ``http://127.0.0.1:8765/``).
   Pass ``--render`` to rebuild first. It does not create a public tunnel.
   Binding to a non-localhost host (for example ``--host 0.0.0.0``) exposes the
