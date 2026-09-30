@@ -1193,6 +1193,25 @@ def test_heroku_pre_checks_do_not_prompt_to_unignore_deploy(tmp_path, monkeypatc
     assert not any(".deploy" in message for message in prompts)
 
 
+@pytest.mark.parametrize(
+    "variables, kept",
+    [({"deployment_id": "exp__launch=1"}, True), (None, False)],
+)
+def test_update_keeps_the_running_deployment_id(tmp_path, monkeypatch, variables, kept):
+    from psynet import deployment_info
+    from psynet.command_line import _keep_running_deployment_id
+    from psynet.experiment import Experiment
+
+    monkeypatch.chdir(tmp_path)
+    deployment_info.write_all({"mode": "live"})
+    monkeypatch.setattr(
+        "psynet.command_line._read_experiment_variables", lambda *a, **k: variables
+    )
+    _keep_running_deployment_id("musix", "consonance")
+    Experiment.update_deployment_id()
+    assert (deployment_info.read("deployment_id") == "exp__launch=1") is kept
+
+
 def test_scripts_update_installs_managed_skills_and_preserves_user_skills():
     with tempfile.TemporaryDirectory() as directory:
         with working_directory(directory):

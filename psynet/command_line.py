@@ -1239,6 +1239,28 @@ def _abort_if_app_exists(server, app, *, update=False):
         raise click.Abort
 
 
+def _keep_running_deployment_id(server, app):
+    """Record the running app's deployment ID so that ``--update`` keeps it.
+
+    Parameters
+    ----------
+    server : str
+        SSH server name.
+    app : str
+        Experiment app name.
+    """
+    try:
+        variables = _read_experiment_variables("ssh", app=app, server=server)
+        deployment_id = variables["deployment_id"]
+    except Exception as err:
+        click.echo(
+            f"Warning: could not read the deployment ID of {app} ({err}); "
+            "the update will record a new one."
+        )
+        return
+    deployment_info.write(deployment_id=deployment_id, keep_deployment_id=True)
+
+
 ##########
 # deploy #
 ##########
@@ -1293,6 +1315,8 @@ def _pre_launch(
 
         ensure_remote_host_in_known_hosts(ssh_host, ssh_user)
         _abort_if_app_exists(server, app, update=update)
+        if update:
+            _keep_running_deployment_id(server, app)
 
     run_pre_checks(mode, local_, heroku, docker, app)
 
