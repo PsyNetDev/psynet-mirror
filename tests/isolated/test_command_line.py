@@ -91,28 +91,21 @@ class TestCommandLine(object):
         assert "use_local_dallinger" in names
 
     def test_awaken_ssh_app_skips_missing_front_door(self):
-        from dallinger.command_line import docker_ssh as dssh
-
         from psynet.command_line import _awaken_ssh_app
 
+        dssh = importlib.import_module("dallinger.command_line.docker_ssh")
         ctx = Mock()
-        with patch.object(
-            dssh, "awaken_app", return_value=False, create=True
-        ) as awaken_app:
+        with patch.object(dssh, "awaken_app", return_value=False) as awaken_app:
             _awaken_ssh_app(ctx, "musix", "consonance")
         awaken_app.assert_called_once_with("musix", "consonance", required=False)
 
     def test_awaken_ssh_app_reraises_real_failures(self):
-        from dallinger.command_line import docker_ssh as dssh
-
         from psynet.command_line import _awaken_ssh_app
 
+        dssh = importlib.import_module("dallinger.command_line.docker_ssh")
         ctx = Mock()
         with patch.object(
-            dssh,
-            "awaken_app",
-            side_effect=RuntimeError("controller failed"),
-            create=True,
+            dssh, "awaken_app", side_effect=RuntimeError("controller failed")
         ):
             with pytest.raises(RuntimeError, match="controller failed"):
                 _awaken_ssh_app(ctx, "musix", "consonance")
