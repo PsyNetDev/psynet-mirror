@@ -189,7 +189,10 @@ You deploy experiments using the ``psynet deploy command``:
     psynet deploy ssh --app your-app-name
 
 To replace the code of an app that is already running, keep its database,
-and skip a fresh launch, add ``--update``.
+and skip a fresh launch, add ``--update``. Repeat the ``--ingress`` the app
+was deployed with. The update still runs the usual pre-deploy steps, and the
+new image gets a new deployment ID, while the running database keeps the
+original one.
 
 By default, this will deploy your app to a hostname that looks like this:
 
