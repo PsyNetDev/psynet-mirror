@@ -1,4 +1,5 @@
 import hashlib
+import importlib
 import io
 import json
 import os
@@ -71,10 +72,10 @@ class TestCommandLine(object):
         assert b"Commands:" in output
 
     def test_deploy_ssh_exposes_ingress_when_dallinger_supports_it(self):
-        from dallinger.command_line import docker_ssh as dssh
-
         from psynet.command_line import deploy__docker_ssh
 
+        # ``dallinger.command_line.docker_ssh`` as an attribute is the click group.
+        dssh = importlib.import_module("dallinger.command_line.docker_ssh")
         names = [param.name for param in deploy__docker_ssh.params]
         if hasattr(dssh, "option_ingress"):
             assert "ingress" in names
