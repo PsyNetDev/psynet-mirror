@@ -1,1 +1,0 @@
-Fixed Lucid participants who close the tab staying `working` indefinitely. The recruiter clock now terminates them one minute after `termination_time_in_s` has passed, so a paused survey can complete on its own.
