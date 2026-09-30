@@ -16,9 +16,9 @@ the name of an existing Python module such as ``code`` or ``test``.
 
 .. note::
 
-   The version of PsyNet currently on PyPI (13.3) doesn't have
-   ``psynet setup`` yet. Until the next release, replace
-   ``uv pip install psynet`` below with:
+   PsyNet 13 and earlier don't have ``psynet setup``. If
+   ``uv pip install psynet`` below installs one of these (check with
+   ``psynet --version``), replace it with:
 
    .. code-block:: bash
 

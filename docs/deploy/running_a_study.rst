@@ -72,7 +72,10 @@ Consent
 The timeline must contain a consent page, or ``NoConsent`` if it needs
 none; deployment fails without one.
 Some recruiters require a particular consent (CINT requires
-``LucidConsent``). See :doc:`/reference/api/consent`.
+``LucidConsent``). The built-in consent forms name the institutions they
+were written for. Unless your study is covered by one of those approvals,
+use a consent page with your own ethics-approved text (see
+:doc:`/code/participants/consent`).
 
 Time estimate and payment
 ^^^^^^^^^^^^^^^^^^^^^^^^^

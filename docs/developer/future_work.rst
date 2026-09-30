@@ -135,6 +135,28 @@ excluded from the published package, so the command would either download
 them or the package would need to ship them. Cloning would then be needed
 only by contributors.
 
+Read demo code offline
+----------------------
+
+Date
+++++
+
+2026-09-30
+
+Problem
++++++++
+
+The installed package ships the documentation but not the demos, so a
+coding agent without network access can't read a demo's ``experiment.py``.
+It has to rely on the fragments that documentation pages quote.
+
+Idea
+++++
+
+Ship each demo's source in the bundled documentation as text, or add a
+``psynet demos show <name>`` command that prints it. Either would also serve
+``psynet demo copy`` above if the package ships the demos.
+
 Separate Docker layer for static stimuli
 ----------------------------------------
 

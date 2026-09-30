@@ -83,6 +83,34 @@ Status conventions
 * Use ``not_applicable`` when the experiment design makes the artifact
   unnecessary.
 
+Checks and blockers
+-------------------
+
+There is no command for adding checks or blockers; edit ``audit.json``. Each
+entry in ``checks`` records one validation step:
+
+.. code-block:: json
+
+   {
+     "id": "participant_walk",
+     "title": "Playwright participant walk",
+     "status": "pass",
+     "command": "npx playwright test tests/participant-flow.spec.js"
+   }
+
+``id`` (lowercase words joined by underscores), ``title`` and ``status`` are
+required. ``status`` is ``pass``, ``fail``, ``warning`` or ``not_run``. The
+Checks panel shows the status, the title and the optional ``command``; other
+fields are allowed but not shown.
+
+Each entry in ``blockers`` needs ``artifact_id`` (an artifact declared in
+``artifacts``), ``severity``, ``reason`` and ``next_step``. Use ``"severity":
+"error"`` when the evidence is missing or unusable; starter blockers use it.
+Use ``"warning"`` for a limitation of evidence that is still worth
+inspecting, such as a participant video without audio. Validation treats both
+severities the same. ``mark-present`` removes an artifact's blockers, so add
+a warning after marking the artifact present.
+
 Bundle layout
 -------------
 

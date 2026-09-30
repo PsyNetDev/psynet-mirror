@@ -17,6 +17,11 @@ clock processes that a deployed experiment runs, which takes 10 to 15
 seconds, then opens the dashboard and a participant session in your browser.
 Press :kbd:`Ctrl+C` in the terminal to stop it.
 
+When a script or a coding agent starts ``psynet debug local`` in a
+background shell without a terminal, keep its standard input open, for
+example ``tail -f /dev/null | psynet debug local``. Otherwise the server can
+stop without a log message when standard input closes.
+
 Most code changes, such as editing a page, adding timeline elements or
 changing code block logic, take effect when you save the file and refresh the
 page. Changes to assets in the timeline need a restart.

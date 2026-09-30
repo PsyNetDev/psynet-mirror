@@ -141,7 +141,10 @@ cd demos/experiments/timeline
 psynet debug local
 ```
 
-Wait for 8 seconds for the server to start.
+Wait for 8 seconds for the server to start. When you start it from a
+non-interactive background shell, keep stdin open
+(`tail -f /dev/null | psynet debug local`); otherwise the server can stop
+without a log line when stdin closes.
 
 Inspect the logs to see relevant URLs.
 Look out for an ad page URL, something like
