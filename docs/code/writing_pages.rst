@@ -65,14 +65,9 @@ Commonly used controls:
 - surveys: :class:`~psynet.modular_page.SurveyJSControl`;
 - clickable graphics: :class:`~psynet.graphics.GraphicControl`.
 
-Consent pages come from :mod:`psynet.consent` and usually open the timeline:
-
-.. code-block:: python
-
-    Timeline(
-        MainConsent(),
-        ...
-    )
+A consent page usually opens the timeline. The built-in forms in
+:mod:`psynet.consent` name the institutions they were written for, so most
+studies need their own; see :doc:`/code/participants/consent`.
 
 Pages that go beyond prompts and controls are
 :doc:`custom front ends </code/pages/custom_front_ends>`.

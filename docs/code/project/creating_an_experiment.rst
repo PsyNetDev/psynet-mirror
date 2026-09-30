@@ -39,8 +39,9 @@ The tools in :doc:`/install` must be installed first.
 
    .. Remove this note together with the matching note in quickstart.rst.
 
-   Until the next PsyNet release, install PsyNet from ``master`` instead of
-   PyPI, as described in the note in :doc:`/quickstart`.
+   If ``psynet setup`` is not a command, the install picked PsyNet 13 or
+   earlier; install PsyNet from ``master`` instead, as described in the note
+   in :doc:`/quickstart`.
 
 #. Start the local services and run the experiment:
 

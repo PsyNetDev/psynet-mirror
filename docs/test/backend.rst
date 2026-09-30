@@ -130,6 +130,9 @@ code block, where the participant ID is known, and checks the outcome:
    :end-at: assert bot.failed
    :dedent: 4
 
+Don't call ``super().test_check_bot`` for bots that are meant to fail: it
+asserts that the bot didn't fail.
+
 For other prescreeners, steer the bot through the prescreener's pages in
 ``test_serial_run_bots``, passing wrong answers to ``take_page``, then let
 PsyNet finish the run:

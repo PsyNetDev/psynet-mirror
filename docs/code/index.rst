@@ -57,6 +57,7 @@ has written, checking it, and changing it yourself.
    :caption: Participants
    :maxdepth: 1
 
+   participants/consent
    participants/prescreening_and_questionnaires
    participants/creating_prescreening_tasks
    participants/payment

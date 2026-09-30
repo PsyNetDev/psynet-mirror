@@ -197,6 +197,12 @@ it yourself, and record the wait in the audit timeline.
 - Put pregenerated public media in `static/` and pass `/static/...` URLs to
   prompts (`psynet.media.static_url_for`). Use PsyNet assets for recordings
   and generated files.
+- Don't default to `MainConsent` or another built-in consent form: each names
+  the institution it was written for (`code/participants/consent`). Unless the
+  user names the form to use, write a custom consent page with clearly marked
+  placeholder text, and list "replace the placeholder consent with the
+  institution's ethics-approved text" as a pre-deployment item in
+  `audit/REPORT.md`.
 
 ### Run simulations
 
@@ -228,8 +234,9 @@ packages the notebooks use to `requirements.txt` and rerun `psynet setup`,
 which relocks `constraints.txt` and installs them. Do not `uv pip install` them
 ad hoc: the next `psynet setup` synchronizes `.venv` with `constraints.txt` and
 removes unlisted packages (see `code/project/dependencies`). The same applies to
-design-simulation dependencies such as statsmodels. Deployments install these
-packages too, which only makes the image larger.
+statistics packages: `psynet[experiment]` doesn't include SciPy or statsmodels,
+so add `scipy` or `statsmodels` too if the analysis or design simulation needs
+them. Deployments install these packages too, which only makes the image larger.
 
 ```text
 # requirements.txt, below the PsyNet pin

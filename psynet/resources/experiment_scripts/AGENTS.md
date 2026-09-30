@@ -42,7 +42,10 @@ running, debugging and inspecting the database, read
 `code/project/running_and_debugging`. After `psynet debug local`, the log
 prints an ad page URL such as
 `http://127.0.0.1:5000/ad?generate_tokens=true&recruiter=hotair`; offer to
-walk through the experiment in the browser.
+walk through the experiment in the browser. When you start the server from a
+non-interactive background shell, keep stdin open
+(`tail -f /dev/null | psynet debug local`); otherwise it can stop without a
+log line.
 
 Demos live in `demos/` of the PsyNet source code, not in pip installs; the
 `demos/index` page describes each one and links to its code.

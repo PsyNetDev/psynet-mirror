@@ -28,7 +28,7 @@ this:
       coding agent, and describe the study the way you would brief a
       research assistant, for example: 40 synthesized chords, each rated
       for pleasantness on a seven-point scale,
-      about 20 ratings per chord, participants from Prolific. The agent
+      about 160 ratings per chord, participants from Prolific. The agent
       asks a couple of questions, such as whether everyone should hear
       every chord, then proposes a plan before writing anything.
 
@@ -98,7 +98,9 @@ this:
       The agent sends a crowd of simulated participants through the
       whole experiment and load-tests the server with many participants
       arriving at once. The simulated answers form a practice
-      dataset, so you can write your analysis now. Everything is
+      dataset, so you can write your analysis now. A design simulation
+      checks that 160 ratings per chord measure each chord's
+      pleasantness precisely enough. Everything is
       collected into an audit, a small website that you, or a
       supervisor, read before signing off.
 
@@ -142,7 +144,7 @@ this:
       Participants start arriving within minutes. The dashboard shows who is
       part-way through, who has finished and what each has been paid. You add
       places on Prolific in batches while you watch the first data, or let
-      PsyNet recruit automatically until every chord has its 20 ratings;
+      PsyNet recruit automatically until every chord has its 160 ratings;
       ratings from participants who fail its checks don't count towards them.
 
 .. rst-class:: study-step

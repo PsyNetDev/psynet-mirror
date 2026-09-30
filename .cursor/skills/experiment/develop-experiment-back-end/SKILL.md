@@ -69,7 +69,9 @@ Apply these unless the user's specification says otherwise:
 
 Test throughout. `psynet test local` runs bots end to end; override
 `test_check_bot` to assert that the data the design needs was saved. For
-audio experiments, use committed or generated demo audio, check that each
-file's duration matches the task, document how real stimuli replace the demo
-set, and assert that responses are saved against the correct stimulus IDs.
+audio experiments, test with the real stimuli or a stand-in set (committed or
+generated files, or `JSSynth` sequences; see "Synthesizing stimuli" in
+`code/using_stimuli`), check that each stimulus's duration matches the task,
+document how real stimuli replace a stand-in set, and assert that responses
+are saved against the correct stimulus IDs.
 For screenshots or video, use `record-participant-video/SKILL.md` sparingly.
