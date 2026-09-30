@@ -3478,7 +3478,9 @@
       // resent. ``retry`` carries the deadline across one submission's tries.
       let delay = psynet.hibernationRetryDelayMs(request);
       if (delay !== null) {
-        retry.deadline ??= Date.now() + psynet.hibernationRetryLimitMs;
+        if (retry.deadline === undefined) {
+          retry.deadline = Date.now() + psynet.hibernationRetryLimitMs;
+        }
         if (Date.now() < retry.deadline) {
           psynet.log.warn("The experiment is waking up; retrying the submission.");
           if (!options.timelineHoldResume) {

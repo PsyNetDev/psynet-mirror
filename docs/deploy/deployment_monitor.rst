@@ -57,7 +57,8 @@ reach PostgreSQL and Redis:
 ``requests_last_hour`` counts participant-facing page requests already stored
 by PsyNet, not status-page probes of ``/health``. If PostgreSQL or Redis is
 unavailable, the endpoint returns ``503`` with ``{"status": "unavailable"}``
-and no extra fields.
+and no extra fields. Docker-ssh hibernation treats ``/health`` as idle: a
+sleeping app stays asleep, and probes do not reset the idle timer.
 
 The response never includes participant counts, costs, errors, dashboard URLs,
 or exception details. Metadata collection is best-effort: a failure there still

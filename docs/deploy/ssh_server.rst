@@ -325,8 +325,11 @@ To sleep apps automatically after a quiet period, set in ``config.txt``::
 
 ``/health`` probes do not reset the idle timer. While idle sleep is on,
 PsyNet pages ping the server every few minutes while a participant is using
-them: they interacted within the idle window, or audible audio or video is
-playing. The app therefore does not sleep under a participant, even on a
+them: they interacted within the idle window, or an audible ``<audio>`` or
+``<video>`` element is playing. Sound played through Web Audio, as
+``AudioPrompt`` does, does not count, so a participant who listens for
+longer than the idle window without interacting may wait for the app to
+wake afterwards. The app therefore does not sleep under a participant, even on a
 quiet or WebSocket-only page, while an abandoned tab stops pinging. Pages
 that poll the server themselves, such as pages waiting for other
 participants or pages that update progress live, keep the app awake for as
@@ -338,7 +341,10 @@ Idle sleep suits experiments with a bounded recruitment window. Leave it off
 for experiments that recruit replacements or otherwise recruit throughout
 their life: sleep pauses the clock process and recruiter callbacks during
 the gaps between participants. Leave it off for first canary deploys too.
-Hibernate by hand only apps that are not recruiting or serving participants. ``psynet export ssh`` awakens a
+Idle sleep needs the matching Dallinger release.
+
+Hibernate by hand only apps that are not recruiting or serving participants.
+``psynet export ssh`` awakens a
 sleeping app before reading its database. If the app crashes while awake, it
 returns HTTP 503 until Docker restarts it.
 
