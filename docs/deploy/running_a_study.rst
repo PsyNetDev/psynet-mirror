@@ -231,7 +231,10 @@ registered, PsyNet asks you to choose.
 
 The command builds the experiment image on the server, starts the
 experiment's services, and opens recruitment; see
-:doc:`/deploy/how_deployment_works`. When it finishes it prints:
+:doc:`/deploy/how_deployment_works`. It prepares the experiment's starting
+database on your computer first, which clears the local PostgreSQL database
+and Redis and stops local PsyNet workers, so stop any local experiment before
+you deploy. When it finishes it prints:
 
 - the recruitment message (for Prolific, a link to the new draft study);
 - the dashboard link with its user name and password;
