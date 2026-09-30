@@ -297,7 +297,7 @@ class Exp(psynet.experiment.Experiment):
             timeline="/static/jspsych-check.js",
             time_estimate=5,
             js_dependencies=JSPSYCH_DEPENDENCIES,
-            css_links=[],
+            css_links=["/static/jspsych/jspsych.css"],
             bot_response=None,
         ),
         probed_page("lt_after_jspsych", "The automatic screen has finished."),
