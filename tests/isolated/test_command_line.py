@@ -1230,7 +1230,7 @@ def test_ssh_update_keeps_the_running_identity(tmp_path, monkeypatch):
             {"deployment_id": "d", "secret": "s", "mode": "live"},
             False,
             click.exceptions.Abort,
-            "",
+            None,
         ),
     ],
 )
