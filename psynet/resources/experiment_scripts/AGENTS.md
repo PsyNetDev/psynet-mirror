@@ -35,6 +35,8 @@ one stops the other's worker processes. Before `psynet debug local` or
 `psynet test local`, check that nothing is listening on port 5000
 (`lsof -nP -iTCP:5000 -sTCP:LISTEN`). If another experiment is running, ask
 the user to stop it (Ctrl+C in its terminal) instead of stopping it yourself.
+`psynet deploy` also clears the local database and Redis, so don't run it
+while a local experiment is running.
 
 From `experiment.py`, import sibling modules with `from . import my_module`.
 Validate code with `psynet test local`, not `python experiment.py`. For
