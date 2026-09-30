@@ -1058,6 +1058,28 @@ def test_collect_audit_warnings_when_plan_section_missing(tmp_path: Path) -> Non
     assert any("no plan section" in warning for warning in warnings)
 
 
+def test_collect_audit_warnings_for_unexecuted_notebook(tmp_path: Path) -> None:
+    from psynet.audit.cli import collect_audit_warnings
+
+    audit_dir = tmp_path / "audit"
+    init_audit(audit_dir)
+    manifest = json.loads((audit_dir / "audit.json").read_text(encoding="utf-8"))
+    for artifact in manifest["artifacts"]:
+        if artifact["id"] == "analysis_notebook":
+            artifact["status"] = "present"
+    write(audit_dir / "audit.json", json.dumps(manifest) + "\n")
+    cell = {"cell_type": "code", "metadata": {}, "source": ["print(1)"], "outputs": []}
+    notebook = audit_dir / "simulate/analysis/analysis.ipynb"
+
+    def warnings_for(cell):
+        write(notebook, json.dumps({"nbformat": 4, "metadata": {}, "cells": [cell]}))
+        return [w for w in collect_audit_warnings(audit_dir) if "saved outputs" in w]
+
+    assert warnings_for(cell)
+    executed = dict(cell, outputs=[{"output_type": "stream", "text": "1\n"}])
+    assert not warnings_for(executed)
+
+
 def test_unparsed_timeline_entry_lines_skips_headings_and_examples() -> None:
     from psynet.audit.cli import STARTER_TIMELINE
     from psynet.audit.timeline import (

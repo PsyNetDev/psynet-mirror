@@ -413,6 +413,8 @@ def render_data_exports(
 ) -> str:
     """Render the real-data export download link."""
 
+    if evidence.data_file is None:
+        return '<p class="missing-artifact">No real data yet.</p>'
     items = [
         evidence_action_item(
             "Data export",
