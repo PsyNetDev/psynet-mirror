@@ -595,7 +595,7 @@ def render_design_simulation(
             notebook_file,
             evidence.simulation_notebook,
             section_id="simulation-notebook",
-            heading="Design simulation notebook",
+            heading="Power analysis notebook",
             standalone=standalone,
             url_transform=url_transform,
         )

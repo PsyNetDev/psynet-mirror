@@ -327,8 +327,8 @@ timeline exists, use planned durations and label the costs as provisional.
 `simulation.ipynb` reads `config.toml`, `results.csv` and `run.json` rather than
 rerunning the simulation. It has a *Power analysis* section and, for an adaptive
 experiment, an *Adaptive procedure* section. Order each section as in
-"Reporting the results" of the method page: summary, what the results would
-look like, one subsection per question, assumptions, then details for
+"Reporting the results" of the method page: summary, assumptions, what the
+results would look like, one subsection per question, then details for
 reviewers.
 
 The audit renders the notebook's saved outputs, so execute it before adding it.
@@ -350,7 +350,8 @@ Plot the decision metric against the number of participants, with other design
 factors as facets or line styles, the threshold as a horizontal line, and the
 Monte Carlo interval as a shaded band. Give band traces `mode="lines"`;
 otherwise Plotly draws a marker at every corner of the band. Label the axis in
-the response's units and the legend in plain words. Below it, add a table of
+the response's units and the legend in plain words with the values, such as
+"Noisier raters (SD 1.3)". Below it, add a table of
 the smallest design meeting the criterion under each assumption set, with its
 cost.
 

@@ -509,7 +509,8 @@ def test_render_audit_site_polishes_core_section_layout(tmp_path: Path) -> None:
     audit_dir = tmp_path / "audit"
     init_audit(audit_dir)
     manifest = json.loads((audit_dir / "audit.json").read_text(encoding="utf-8"))
-    manifest["sections"][2]["kind"] = "markdown"  # Legacy packets used this kind.
+    timeline = next(s for s in manifest["sections"] if s["id"] == "timeline")
+    timeline["kind"] = "markdown"  # Legacy packets used this kind.
     write(audit_dir / "audit.json", json.dumps(manifest) + "\n")
     write(audit_dir / "PLAN.md", "# Plan\n\nBuild a small experiment.\n")
     write(audit_dir / "REPORT.md", "# Report\n\nThe experiment works.\n")
@@ -714,7 +715,9 @@ def test_render_backfills_design_simulation_section(tmp_path: Path) -> None:
 
     index = (render_audit_site(audit_dir) / "index.html").read_text(encoding="utf-8")
 
-    assert 'id="design_simulation"' in index
+    assert index.index('<details id="plan"') < index.index(
+        '<details id="design_simulation"'
+    )
     assert "Design simulation notebook" in index
 
 
@@ -1582,6 +1585,7 @@ def test_init_audit_creates_starter_structure_and_manifest(tmp_path: Path) -> No
     assert [section["id"] for section in manifest["sections"]] == [
         "prompt",
         "plan",
+        "design_simulation",
         "timeline",
         "report",
         "source",
@@ -1590,7 +1594,6 @@ def test_init_audit_creates_starter_structure_and_manifest(tmp_path: Path) -> No
         "monitor",
         "performance",
         "data_exports",
-        "design_simulation",
         "analysis",
         "files",
         "blockers",

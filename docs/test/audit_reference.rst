@@ -152,8 +152,8 @@ rather than hidden by rendering.
 
 .. _audit_design_simulation:
 
-Design simulation
------------------
+Power analysis
+--------------
 
 A design simulation runs the planned experiment many times on simulated
 participants, outside PsyNet, to choose the numbers of participants, stimuli
@@ -173,7 +173,8 @@ artifacts there, all with status ``missing``:
 
 Leave them ``missing`` when there is no design simulation. Once the files
 exist, mark each one present with ``psynet audit mark-present``, which also
-checks that the notebook is valid. The Design simulation section then shows a
+checks that the notebook is valid. The Power analysis section, which follows
+the Plan, then shows a
 summary of ``run.json`` (its ``method``, ``command``, ``replicates``,
 ``result_row_count``, ``created_at`` and ``note`` fields, when present), the
 notebook's saved outputs, and the other files in the directory. The notebook

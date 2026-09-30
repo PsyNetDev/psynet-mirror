@@ -151,9 +151,9 @@ test, design simulation, and analysis their own top-level sections, so each of
 those artifacts is reviewed on its own rather than inside one combined evidence
 panel.
 
-### Design simulation
+### Power analysis
 
-The optional `simulate/design/simulation.ipynb` contains a **Power analysis**
+The Power analysis section follows the Plan. The optional `simulate/design/simulation.ipynb` contains a **Power analysis**
 section and, for adaptive experiments, may contain an **Adaptive procedure**
 section. Follow `power-analysis/SKILL.md`, then mark `simulation_notebook`,
 `simulation_run`, and `simulation_results` present.
@@ -254,7 +254,12 @@ paths referenced by that manifest and builds the screenshot carousel.
 
 ## Analysis and reporting
 
-The canonical analysis is `simulate/analysis/analysis.ipynb`. It should:
+The canonical analysis is `simulate/analysis/analysis.ipynb`. Write it for a
+reader who knows the study but not the code, as for the power analysis
+(`power-analysis/references/design-simulation-method.md`, "Reporting the
+results"): start with a short summary of what the analysis shows, in plain
+words with the numbers; head each section with the question it answers; and
+put data checks and technical detail after the main results. It should:
 
 - read exported data directly;
 - show data loading and cleaning;
