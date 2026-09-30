@@ -1,6 +1,7 @@
 import hashlib
 import io
 import json
+import os
 import subprocess
 import tempfile
 from datetime import date, datetime
@@ -68,6 +69,58 @@ class TestCommandLine(object):
         output = subprocess.check_output(["psynet", "--help"])
         assert b"Options:" in output
         assert b"Commands:" in output
+
+    def test_deploy_ssh_accepts_use_local_dallinger(self):
+        from psynet.command_line import deploy__docker_ssh
+
+        names = [param.name for param in deploy__docker_ssh.params]
+        assert "use_local_dallinger" in names
+
+    def test_configure_dallinger_image_source_sets_source(self, monkeypatch, tmp_path):
+        from psynet.command_line import _configure_dallinger_image_source
+
+        src = tmp_path / "Dallinger"
+        src.mkdir()
+        (src / "pyproject.toml").write_text("[project]\nname='dallinger'\n")
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("DALLINGER_SOURCE", str(src))
+        monkeypatch.setenv("DALLINGER_NO_EGG_BUILD", "1")
+        _configure_dallinger_image_source(use_local_dallinger=True)
+        assert os.environ["DALLINGER_SOURCE"] == str(src)
+        assert "DALLINGER_NO_EGG_BUILD" not in os.environ
+
+    def test_configure_dallinger_image_source_accepts_wheel_dockerfile(
+        self, monkeypatch, tmp_path
+    ):
+        from psynet.command_line import _configure_dallinger_image_source
+
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "Dockerfile").write_text(
+            "FROM python:3.12\n"
+            "COPY . /experiment\n"
+            "RUN pip install --force-reinstall --no-deps dallinger-*.whl\n"
+        )
+        src = tmp_path / "Dallinger"
+        src.mkdir()
+        (src / "pyproject.toml").write_text("[project]\nname='dallinger'\n")
+        monkeypatch.setenv("DALLINGER_SOURCE", str(src))
+        monkeypatch.setenv("DALLINGER_NO_EGG_BUILD", "1")
+        _configure_dallinger_image_source(use_local_dallinger=True)
+        assert os.environ["DALLINGER_SOURCE"] == str(src)
+
+    def test_export_launch_info_records_public_origin(self, tmp_path):
+        from psynet.command_line import _export_launch_info
+
+        _export_launch_info(
+            tmp_path,
+            dashboard_user="admin",
+            dashboard_password="secret",
+            public_origin="https://consonance.science-of-music.org",
+            ingress="cloudflare",
+        )
+        payload = json.loads((tmp_path / "launch-info.json").read_text())
+        assert payload["public_origin"] == "https://consonance.science-of-music.org"
+        assert payload["ingress"] == "cloudflare"
 
     def test_psynet_docs_command_is_not_registered(self):
         from psynet.command_line import psynet

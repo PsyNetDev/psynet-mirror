@@ -36,6 +36,34 @@ Below each recruiter group, a cost summary is shown for all associated experimen
 You can filter the table by experiment name, experimenter name, recruiter name, or experiment status. This helps quickly identify issues
 like budget overruns by recruiter or experimenter.
 
+External availability checks
+============================
+
+Every PsyNet experiment exposes an unauthenticated ``GET /health`` endpoint for
+external availability monitors. It returns ``200`` when the web process can
+reach PostgreSQL and Redis:
+
+.. code-block:: json
+
+    {
+      "status": "ok",
+      "title": "Melody Origin Classification",
+      "label": "melody-origin",
+      "experimenter_name": "David Whyatt",
+      "recruitment_status": "recruiting",
+      "requests_last_hour": 17
+    }
+
+``requests_last_hour`` counts participant-facing page requests already stored
+by PsyNet, not status-page probes of ``/health``. If PostgreSQL or Redis is
+unavailable, the endpoint returns ``503`` with ``{"status": "unavailable"}``
+and no extra fields. Docker-ssh hibernation treats ``/health`` as idle: a
+sleeping app stays asleep, and probes do not reset the idle timer.
+
+The response never includes participant counts, costs, errors, dashboard URLs,
+or exception details. Metadata collection is best-effort: a failure there still
+leaves ``{"status": "ok"}`` if the required services are reachable.
+
 The table includes the following columns:
 
 - **Study**: Shows the experiment’s label and current status (indicated by a traffic light icon). Click the experiment name to view more details such as repository URL, deployed Git commit, clean or dirty working-tree state, title, and description.

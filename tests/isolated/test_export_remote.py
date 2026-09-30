@@ -168,6 +168,9 @@ def test_incremental_oserror_falls_back_to_the_complete_archive(
         "psynet.command_line.get_experiment_url", lambda app, server: "https://ex.test"
     )
     monkeypatch.setattr(
+        "psynet.command_line._remote_public_origin", lambda app, server: None
+    )
+    monkeypatch.setattr(
         "psynet.export.client.fetch_preflight",
         lambda endpoint: {
             "experiment_label": "demo",

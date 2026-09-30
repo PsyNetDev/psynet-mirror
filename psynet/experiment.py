@@ -67,7 +67,7 @@ from flask import (
 from flask import g as flask_app_globals
 from flask_login import login_required
 from markupsafe import escape
-from sqlalchemy import Column, Float, ForeignKey, Integer, String, func
+from sqlalchemy import Column, Float, ForeignKey, Integer, String, func, text
 from sqlalchemy.orm import lazyload
 
 from psynet import __version__
@@ -1445,6 +1445,46 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             and config.get("dashboard_password") == password
         )
 
+    @experiment_route("/health", methods=["GET"])
+    @nocache
+    @staticmethod
+    def health():
+        """Report availability and a small public-safe snapshot of the experiment.
+
+        This endpoint is unauthenticated. It never includes participant counts,
+        errors, dashboard URLs, or other internal details.
+        """
+        try:
+            with db.engine.connect() as connection:
+                connection.execute(text("SELECT 1"))
+            if not db.redis_conn.ping():
+                raise RuntimeError("Redis ping failed")
+        except Exception:
+            logger.exception("Experiment health check failed")
+            return jsonify({"status": "unavailable"}), 503
+
+        payload = {"status": "ok"}
+        try:
+            config = get_config()
+            lookback = datetime.now() - timedelta(hours=1)
+            payload.update(
+                {
+                    "title": config.get("title", default=None) or None,
+                    "label": config.get("label", default=None) or None,
+                    "experimenter_name": config.get("experimenter_name", default=None)
+                    or None,
+                    "recruitment_status": redis_vars.get(
+                        "recruitment_study_status", default=None
+                    ),
+                    "requests_last_hour": Request.query.filter(
+                        Request.creation_time > lookback
+                    ).count(),
+                }
+            )
+        except Exception:
+            logger.exception("Failed to collect public health metadata")
+        return jsonify(payload), 200
+
     @experiment_route("/basic_data", methods=["GET"])
     @nocache
     @staticmethod
@@ -2024,9 +2064,17 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @classmethod
     def get_username(cls):
+        """Return the account that launched this process.
+
+        ``os.getlogin`` reports the login that started the Docker daemon.
+        Inside a container that name is root even when the process uid is
+        the SSH user, so the account database and ``USER`` are used instead.
+        """
+        import getpass
+
         try:
-            return os.getlogin()
-        except OSError:
+            return getpass.getuser()
+        except (KeyError, OSError):
             return "unknown"
 
     @classmethod
@@ -2048,6 +2096,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             "default_translator": "chat_gpt",
             "disable_browser_autotranslate": True,
             "disable_when_duration_exceeded": False,
+            "docker_ssh_monitoring_kind": "psynet",
+            "docker_ssh_monitoring_path": "/health",
             "docker_volumes": "${HOME}/psynet-data/assets:/psynet-data/assets",
             "duration": 100000000.0,
             "experimenter_name": cls.get_username(),
@@ -3977,6 +4027,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         config.register("lab_recruiter_auth_token", str, sensitive=True)
         config.register("lab_recruiter_external_submission_url", str)
         config.register("check_dallinger_version", bool)
+        if "docker_ssh_monitoring_kind" not in config.types:
+            config.register("docker_ssh_monitoring_kind", str)
+        if "docker_ssh_monitoring_path" not in config.types:
+            config.register("docker_ssh_monitoring_path", str)
         config.register("check_participant_opened_devtools", bool)
         config.register("currency", str)
         config.register("default_translator", str)
