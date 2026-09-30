@@ -253,6 +253,7 @@ alongside a demo using that same database.
     npx playwright test media_upload_queue.spec.js
     npx playwright test asynchronous_recording.spec.js
     npx playwright test missing_chain_recording.spec.js
+    npx playwright test recording_document_loss.spec.js
     pytest tests/isolated/test_background_recording.py
     npx playwright test background_recording.spec.js
     npx playwright test background_capture.spec.js
@@ -273,6 +274,14 @@ recording expired, its trial was not analyzed or reassigned, and the successful
 chain finalized. The configured performance check still counts the failed trial:
 two successful trials out of three yield a score of 2/3. Allow about two minutes
 for this test; it does not shorten the production upload allowance.
+
+The ``recording_document_loss`` checks reload and close the participant page while
+an upload is pending. Browser-only bytes expire without failing a participant who
+has no parent trial; fully received bytes are deposited after document loss.
+Reload preserves the original deadline and adds no upload warning. A separate
+case holds the upload while the normal Finish button reaches recruiter exit.
+The private fixture exposes a read-only state endpoint for these checks; this
+endpoint is not part of the PsyNet API.
 
 The private ``asynchronous_recording`` fixture enables
 ``VideoRecordControl._async_upload``. Its browser test holds a media request while
