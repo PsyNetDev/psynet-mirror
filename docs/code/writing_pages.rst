@@ -138,3 +138,7 @@ each string in ``_``, obtained from :func:`~psynet.utils.get_translator`.
 
    :doc:`/reference/api/page` and :doc:`/reference/api/modular_page` in the API
    reference.
+
+   The :doc:`/skills/develop-experiment-front-end` and
+   :doc:`/skills/playwright-testing` skills.
+

@@ -337,3 +337,8 @@ had errors, reconcile the survey once its status is **Complete**:
 The command marks the listed RIDs as completed and every other participant
 as terminated. List every RID that should count as completed, **including
 those already marked as completed**.
+
+.. seealso::
+
+   The :doc:`/skills/prepare-for-cint` skill walks through preparing an
+   experiment for CINT.

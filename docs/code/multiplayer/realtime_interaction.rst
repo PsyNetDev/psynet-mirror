@@ -200,3 +200,7 @@ context per participant, so that each has its own identity; the test for the
 does this with two participants. Test out-of-turn and duplicate actions,
 reloading the page mid-interaction, and what each participant can see, as
 well as the normal flow.
+
+.. seealso::
+
+   The :doc:`/skills/realtime-synchronous-experiments` skill.

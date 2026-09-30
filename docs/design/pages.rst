@@ -73,3 +73,8 @@ What to check when reviewing pages
 
    :doc:`/code/writing_pages` shows how each of these ideas appears in
    ``experiment.py``, using the ``demos/features/pages`` demo.
+
+   The :doc:`/skills/develop-experiment-front-end` skill helps choose and
+   build pages, and :doc:`/skills/playwright-testing` checks them in a
+   browser.
+

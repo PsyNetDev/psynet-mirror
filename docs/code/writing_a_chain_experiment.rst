@@ -201,3 +201,7 @@ Nodes, trials, and chains are database rows:
 .. seealso::
 
    :doc:`/reference/api/trial/chain` in the API reference.
+
+   The :doc:`/skills/make-experiment-adaptive` skill describes how to plan,
+   simulate and check an adaptive chain.
+

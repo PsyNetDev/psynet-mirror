@@ -105,3 +105,7 @@ What to check when reviewing participants
    :doc:`/code/trials/participant_and_trial_failure` and
    :doc:`/code/participants/internationalization` show these ideas in
    ``experiment.py``.
+
+   Agent Skills for this topic: :doc:`/skills/filter-participants` (pre-
+   screening), :doc:`/skills/prepare-for-translation`, :doc:`/skills/prepare-for-cint` and :doc:`/skills/participant-quality-telemetry`.
+

@@ -261,3 +261,7 @@ By default, participants are credited for the time they actually wait, up to
 ``expected_wait`` seconds instead (1.5 seconds by default). With
 ``waiting_logic``, the waiting pages are credited by their own time
 estimates.
+
+.. seealso::
+
+   The :doc:`/skills/synchronous-experiments` skill.

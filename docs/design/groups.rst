@@ -86,3 +86,8 @@ What to check when reviewing group experiments
    (talking to each other) and :doc:`/code/multiplayer/realtime_interaction`
    show these ideas in ``experiment.py``, using the ``rock_paper_scissors``,
    ``chatroom_simple`` and ``websocket_chatroom`` demos.
+
+   The :doc:`/skills/synchronous-experiments` and :doc:`/skills/realtime-synchronous-experiments` skills describe how to design and test group
+   experiments, and :doc:`/skills/basic-data-dyadic-experiment` how to turn
+   their data into an analysis table.
+

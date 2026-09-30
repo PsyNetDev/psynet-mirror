@@ -127,3 +127,7 @@ What to check when reviewing a timeline
 
    :doc:`/code/writing_a_timeline` shows how each of these ideas appears in
    ``experiment.py``, using the ``demos/features/timeline`` demo.
+
+   The :doc:`/skills/implement-experiment` skill describes the recommended
+   workflow for building a whole experiment.
+

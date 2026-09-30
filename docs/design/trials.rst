@@ -159,3 +159,8 @@ What to check when reviewing trials
 
    :doc:`/code/writing_a_trial_maker` shows how each of these ideas appears in
    ``experiment.py``, using the ``demos/pipelines/simple_rating`` demo.
+
+   The :doc:`/skills/develop-experiment-back-end` skill helps choose a trial
+   maker, and :doc:`/skills/power-analysis` helps decide how many participants
+   and trials to plan for.
+
