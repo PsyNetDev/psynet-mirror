@@ -123,7 +123,10 @@ simulation, Analysis, Additional files, Blockers, and Checks. Data
 exports have their own download
 panel rather than being repeated under Additional files. The Experiment code panel reads ``experiment.py``
 (or ``experiment.entry_point`` when configured) from the experiment directory
-and displays it as Python source. Each evidence kind
+and displays it as Python source, followed by the experiment's other Python
+modules, such as a ``response_model/`` package. Hidden folders, ``audit/``,
+``tests/``, ``static/``, ``node_modules/``, ``test.py`` and empty
+``__init__.py`` files are left out. Each evidence kind
 is its own top-level section, so a section kind maps to one panel:
 
 * ``screenshots``, ``participant_video``, ``monitor``, ``performance``,

@@ -556,8 +556,37 @@ def experiment_entry_point(
     return source_file, entry_point
 
 
+_SOURCE_EXCLUDED_DIRS = {"audit", "node_modules", "static", "tests", "__pycache__"}
+_MAX_SOURCE_MODULES = 30
+
+
+def experiment_python_modules(source_root: Path, entry_file: Path) -> list[Path]:
+    """
+    List the experiment's own Python modules other than the entry point.
+
+    Covers modules beside ``experiment.py`` and in its packages, such as a
+    ``response_model/`` package. Skips virtual environments and other hidden
+    directories, the audit folder, tests, static files, the scaffolded
+    ``test.py`` and empty ``__init__.py`` files.
+    """
+    modules = []
+    for path in sorted(source_root.rglob("*.py")):
+        relative = path.relative_to(source_root)
+        if any(
+            part.startswith(".") or part in _SOURCE_EXCLUDED_DIRS
+            for part in relative.parts[:-1]
+        ):
+            continue
+        if path == entry_file or relative == Path("test.py"):
+            continue
+        if path.name == "__init__.py" and path.stat().st_size == 0:
+            continue
+        modules.append(path)
+    return modules[:_MAX_SOURCE_MODULES]
+
+
 def render_source_section(audit_dir: Path, manifest: dict[str, Any]) -> str:
-    """Render the experiment entry point from the experiment directory."""
+    """Render the experiment entry point and the experiment's other Python modules."""
 
     source_file, entry_point = experiment_entry_point(audit_dir, manifest)
     if source_file is None or not source_file.is_file():
@@ -565,24 +594,34 @@ def render_source_section(audit_dir: Path, manifest: dict[str, Any]) -> str:
             '<p class="missing">Experiment entry point missing: '
             f"<code>{html.escape(entry_point)}</code>.</p>"
         )
-    content, truncated = read_audit_artifact_content(source_file)
-    if content is None:
-        return (
-            '<p class="missing">Experiment entry point could not be read: '
-            f"<code>{html.escape(entry_point)}</code>.</p>"
+    source_root = experiment_source_root(audit_dir)
+    files = []
+    for path in [source_file, *experiment_python_modules(source_root, source_file)]:
+        content, truncated = read_audit_artifact_content(path)
+        if content is None:
+            if path == source_file:
+                return (
+                    '<p class="missing">Experiment entry point could not be read: '
+                    f"<code>{html.escape(entry_point)}</code>.</p>"
+                )
+            continue
+        relative = (
+            entry_point
+            if path == source_file
+            else path.relative_to(source_root).as_posix()
         )
-    return render_file_grid(
-        [
+        files.append(
             AuditFile(
-                path=entry_point,
+                path=relative,
                 url="",
                 content=content,
-                size_bytes=source_file.stat().st_size,
-                kind=file_kind(entry_point),
+                size_bytes=path.stat().st_size,
+                kind=file_kind(relative),
                 truncated=truncated,
             )
-        ],
-        empty_message="Experiment entry point was not found.",
+        )
+    return render_file_grid(
+        files, empty_message="Experiment entry point was not found."
     )
 
 
@@ -878,7 +917,10 @@ def render_audit_site(
     blocker_count = len(blockers) if isinstance(blockers, list) else 0
     metadata = render_metadata_grid(
         [
-            ("Entry point", render_metadata_code(experiment.get("entry_point"))),
+            (
+                "Entry point",
+                render_metadata_code(experiment.get("entry_point") or "experiment.py"),
+            ),
             ("PsyNet version", render_metadata_value(experiment.get("psynet_version"))),
             ("Git commit", render_metadata_code(experiment.get("git_commit"))),
             ("OS", render_metadata_value(environment.get("os"))),

@@ -1,0 +1,1 @@
+The audit's Experiment code section shows the experiment's other Python modules after `experiment.py`, such as a `response_model/` package, and the audit header shows `experiment.py` as the entry point when none is configured.

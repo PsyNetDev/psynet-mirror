@@ -1,8 +1,11 @@
 import hashlib
 import io
 import json
+import os
 import subprocess
+import sys
 import tempfile
+import time
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -3762,6 +3765,31 @@ def test_prepare_after_stopping_local_workers_kills_then_prepares():
     ctx.invoke.assert_called_once_with(prepare, archive="export.zip")
 
 
+def test_worker_cleanup_only_targets_this_database(monkeypatch):
+    from psynet.command_line import list_psynet_worker_processes
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql://dallinger@localhost/this_test")
+    sleeper = [
+        sys.executable,
+        "-c",
+        "import time; time.sleep(30)",
+        "dallinger_heroku_web",
+    ]
+    ours = subprocess.Popen(sleeper)
+    theirs = subprocess.Popen(
+        sleeper,
+        env={**os.environ, "DATABASE_URL": "postgresql://dallinger@localhost/other"},
+    )
+    try:
+        time.sleep(0.5)
+        pids = {p.pid for p in list_psynet_worker_processes()}
+        assert ours.pid in pids
+        assert theirs.pid not in pids
+    finally:
+        ours.kill()
+        theirs.kill()
+
+
 def test_kill_psynet_worker_processes_warns_with_pids(caplog):
     import logging
 
@@ -4441,3 +4469,20 @@ def test_destroy_ssh_batch_succeeds(monkeypatch):
     assert destroyed == ["kept-1", "kept-2"], result.output
     assert result.exception is None, result.output
     assert result.exit_code == 0, result.output
+
+
+def test_prolific_listing_warnings():
+    from psynet.command_line import prolific_listing_warnings
+
+    def warnings(minutes, payment):
+        return prolific_listing_warnings(
+            completion_time_s=8.5 * 60,
+            listed_minutes=minutes,
+            base_payment=payment,
+            wage_per_hour=9.0,
+            currency="£",
+        )
+
+    assert warnings(10, 1.50) == []
+    assert "shorter than the estimated 8.5 minutes" in warnings(2, 0.34)[0]
+    assert "£6.35/hour" in " ".join(warnings(12, 1.27))

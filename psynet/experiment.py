@@ -2,6 +2,7 @@ import configparser
 import inspect
 import json
 import os
+import re
 import shutil
 import signal
 import sys
@@ -1363,7 +1364,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     def record_experiment_status(cls, online: bool = True):
         status = cls.get_status(lookback_s=60)  # since we poll every minute
         status["isOffline"] = not online
-        status_obj = ExperimentStatus(**status)
+        # The deployments dashboard reads the secret from artifact storage;
+        # database exports shouldn't carry it.
+        status_obj = ExperimentStatus(
+            **{key: value for key, value in status.items() if key != "secret"}
+        )
         db.session.add(status_obj)
         if cls.automatic_backups:
             cls.artifact_storage.write_experiment_status(status, cls.deployment_id)
@@ -2295,8 +2300,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     @classmethod
     def generate_deployment_id(cls):
         mode = deployment_info.read("mode")
-        id_ = f"{cls.label}"
-        id_ = id_.replace(" ", "-").lower()
+        id_ = re.sub(r"[^a-z0-9]+", "-", cls.label.lower()).strip("-")
         id_ += (
             "__mode="
             + mode

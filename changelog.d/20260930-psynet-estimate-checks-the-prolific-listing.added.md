@@ -1,0 +1,1 @@
+When the recruiter is Prolific, `psynet estimate` warns if `prolific_estimated_completion_minutes` is shorter than the estimated duration, or if `base_payment` for that time is below `wage_per_hour`. Prolific lists the hourly rate from the base payment alone.

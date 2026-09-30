@@ -1949,3 +1949,29 @@ def test_audit_serve_cli_render_then_serve(tmp_path: Path, monkeypatch) -> None:
     assert result.exit_code == 0, result.output
     assert "Rendered experiment audit site" in result.output
     assert calls == [(audit_dir / "site", "127.0.0.1", 9123)]
+
+
+def test_source_section_shows_experiment_modules(tmp_path: Path) -> None:
+    from psynet.audit.site import render_source_section
+
+    for relative in [
+        "experiment.py",
+        "personality.py",
+        "response_model/core.py",
+        "test.py",
+        "tests/test_flow.py",
+        ".venv/lib/site.py",
+        "audit/simulate/design/core.py",
+    ]:
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"# {relative}\n")
+    (tmp_path / "response_model" / "__init__.py").write_text("")
+
+    rendered = render_source_section(tmp_path / "audit", {"experiment": {}})
+
+    for shown in ["experiment.py", "personality.py", "response_model/core.py"]:
+        assert f"# {shown}" in rendered
+    for hidden in ["test.py", "tests/test_flow.py", ".venv/lib/site.py", "audit/"]:
+        assert f"# {hidden}" not in rendered
+    assert rendered.index("# experiment.py") < rendered.index("# personality.py")

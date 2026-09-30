@@ -1241,16 +1241,23 @@ class ParticipantDriver:
         return self.status["status"] == "working"
 
     @property
+    def _current_page(self):
+        return (self.status or {}).get("page") or {}
+
+    @property
     def current_page_label(self):
-        return self.status["page"]["label"]
+        """Label of the current page, or ``None`` once the participant has left."""
+        return self._current_page.get("label")
 
     @property
     def current_page_text(self):
-        return self.status["page"]["text"]
+        """Text of the current page, or ``None`` once the participant has left."""
+        return self._current_page.get("text")
 
     @property
     def current_page_time_estimate(self):
-        return self.status["page"]["time_estimate"]
+        """Time estimate of the current page, or ``None`` once the participant has left."""
+        return self._current_page.get("time_estimate")
 
     @property
     def current_page_uuid(self):
