@@ -15,8 +15,9 @@ The concepts and code this skill relies on are in the `power-analysis`
 references:
 
 - [power-analysis/references/design-simulation-method.md](../power-analysis/references/design-simulation-method.md):
-  estimands, precision measures, the default criterion, and what to simulate
-  ("Precision and power" and "What to simulate");
+  estimands, precision measures, the required precision, and what to
+  simulate ("Precision and power", "Choosing the required precision" and
+  "What to simulate");
 - [power-analysis/references/design-simulation-setup.md](../power-analysis/references/design-simulation-setup.md):
   `config.toml`, `core.py`, seeding, parallelism, and the results columns and
   formulas.
@@ -56,13 +57,13 @@ Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rs
    failures. Fix problems before the full grid.
 5. **Compute the results** with the formulas in "Results table" of the setup
    reference.
-   Unless the user chose another criterion, set `decision_metric =
-   "margin_of_error"` at 95% confidence, with `decision_threshold` equal to
-   0.20 times the reference assumptions' single-response noise SD, in the
-   response's units, for all scenarios (never each scenario's own noise SD).
-   Fill `decision_value` and `meets_requirement` for every primary estimand.
-   For a profile, use the maximum pointwise margin and bootstrap its Monte
-   Carlo interval, and also report the difference margin, the profile
+   Use the decision metric and threshold agreed with the user, at 95%
+   confidence, in the response's units and the same for all scenarios
+   ("Choosing the required precision" in the method reference). Fill
+   `decision_value` and `meets_requirement` for every primary estimand, or
+   leave them empty if the user chose to decide from the curves. For a
+   profile, decide on the RMS margin across the set and bootstrap its Monte
+   Carlo interval, and also report the largest margins, the profile
    correlation and the smallest spread for a 0.9 correlation. When
    `keep_replicates` is true, also save replicate-level estimates as Parquet.
 6. **Check Monte Carlo error.** If it could change the selected design,

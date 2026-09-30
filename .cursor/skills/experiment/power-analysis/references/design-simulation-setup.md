@@ -130,8 +130,9 @@ method = "precision-estimation"
 [decision]
 metric = "margin_of_error"
 confidence_level = 0.95
-threshold = 0.20  # 0.20 × the reference trial_noise_sd of 1.0, fixed across scenarios
+threshold = 0.20
 unit = "rating points"
+rationale = "Half the smallest condition effect worth finding (0.4 points)."
 
 [design]
 n_participants = [40, 60, 80, 100]
@@ -228,8 +229,9 @@ values.
 Add the design and assumption values, then the summaries: the number of
 replicates evaluated, bias, sampling standard error, margin of error, its
 Monte Carlo interval, and the number of failed fits. For a profile, also add
-the difference margin of error, the true spread, the profile correlation and
-the smallest spread for the target correlation. For the decision, add
+the RMS and largest margins of single values and of differences, the true
+spread, the profile correlation and the smallest spread for the target
+correlation. For the decision, add
 `decision_metric`, `decision_value`, `decision_threshold` and
 `meets_requirement`, and, if participants are paid, `participant_payment` and
 `currency`. Keep column names the same across runs so the notebook can compare
@@ -254,12 +256,20 @@ For a profile, `estimates` has one row per replicate and one column per value,
 and `truth` holds the true values:
 
 ```python
-max_margin_of_error = (z * estimates.std(axis=0, ddof=1)).max()
+def rms(values):
+    return np.sqrt(np.mean(np.square(values)))
+
+
+margins = z * estimates.std(axis=0, ddof=1)
+rms_margin_of_error, max_margin_of_error = rms(margins), margins.max()
 
 covariance = np.cov(estimates, rowvar=False)
 variances = np.diag(covariance)
 difference_variances = variances[:, None] + variances[None, :] - 2 * covariance
-max_difference_margin_of_error = z * np.sqrt(difference_variances.max())
+pairs = np.triu_indices(len(variances), k=1)
+difference_margins = z * np.sqrt(difference_variances[pairs])
+rms_difference_margin_of_error = rms(difference_margins)
+max_difference_margin_of_error = difference_margins.max()
 
 true_spread = truth.std()
 correlations = [np.corrcoef(row, truth)[0, 1] for row in estimates]
@@ -273,7 +283,7 @@ spread_for_target_correlation = (
 ```
 
 The Monte Carlo standard error formula assumes roughly normal estimates.
-Otherwise, and for a summary such as the largest margin of error across a
+Otherwise, and for a summary such as the RMS margin of error across a
 profile, bootstrap over replicates: resample whole replicates and recompute the
 summary each time.
 

@@ -40,8 +40,9 @@ Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rs
 
 1. **Agree the question with the user.** List the primary analysis targets,
    the candidate design factors and ranges, the assumption sets, and the
-   decision criterion (see "Designs, assumptions and scenarios" and
-   "Precision and power" in the method reference). State which parameter
+   required precision and its rationale (see "Designs, assumptions and
+   scenarios", "Precision and power" and "Choosing the required precision" in
+   the method reference). State which parameter
    values come from pilot data, the literature, or judgment. Keep sample sizes
    in `audit/PLAN.md` provisional until the user has reviewed the results.
 2. **Build or reuse the response model** with `participant-response-models`.

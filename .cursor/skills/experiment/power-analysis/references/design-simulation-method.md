@@ -99,7 +99,11 @@ estimand:
 When the estimand is a set of values, such as each stimulus's mean rating,
 also report:
 
-- The **largest margin of error** across the set.
+- The **root mean square (RMS) margin of error** across the set, the square
+  root of the mean squared margin, and the **largest** margin. With many
+  values, the largest of their Monte Carlo estimates is inflated by Monte
+  Carlo error, so it is not a stable basis for a decision. If the largest is
+  much bigger than the RMS, say which values are least precise.
 - The **margin of error of a difference**: how far apart two values must be
   for the study to order them reliably. Compute it from the replicates rather
   than as √2 times the margin of error of a single value. When every participant responds to
@@ -126,29 +130,12 @@ on the noise, so it states the design's resolving power without assuming the
 answer.
 
 For example, in a study where 160 participants each rate 40 chords on a 1–7
-scale, the design simulation might report that every chord's mean is known to
-within ±0.19 rating points, that chords more than 0.23 points apart are
-reliably ordered, and that the estimated means correlate at least 0.9 with the
+scale, the design simulation might report that each chord's mean is known to
+within about ±0.18 rating points, that chords more than about 0.22 points apart
+are reliably ordered, and that the estimated means correlate at least 0.9 with the
 true ones whenever the true means have a standard deviation of at least 0.16
 points. The response model assumes a spread of 0.71, which gives a profile
 correlation of 0.99, but the last conclusion holds for any spread above 0.16.
-
-Unless the experimenter chooses otherwise, require a 95% margin of error for
-every primary estimand of at most 0.20 times the standard deviation of a single
-response's noise under the reference assumption set, stated in the response's
-units. With a reference noise of 1 rating point, that is 0.20 rating points.
-Keep this threshold fixed across scenarios; deriving it from each scenario's
-own noise would relax the requirement as responses get noisier, so the
-noisiest assumptions would appear to need the fewest participants. When the
-research question has a natural precision, such as a difference on the rating
-scale that would matter, the experimenter can state that instead. For a
-profile or other set of values, apply the criterion to the largest margin of
-error across the set.
-
-Choose the design under the reference assumptions, and report the smallest
-design that meets the criterion under each alternative assumption set. If the
-chosen design fails under an alternative that the experimenter considers
-plausible, say so and give the design that alternative would need.
 
 Because the simulation uses a finite number of replicates, its own summaries are
 uncertain too. Report this **Monte Carlo error** alongside each result; if it
@@ -157,6 +144,40 @@ could change which design is chosen, run more replicates.
 For adaptive experiments, the main measure is often how closely each
 participant's final estimate matches their true value, reported as the root
 mean squared error (RMSE), with correlation, bias and coverage as diagnostics.
+
+## Choosing the required precision
+
+There is no default threshold: how precise an estimate must be depends on the
+research question. Agree the threshold with the experimenter before running the
+full simulation, state it in the response's units, and record the reason with
+it.
+
+1. Ask what precision the question needs: the smallest difference that would
+   matter, or the precision of earlier estimates the study should match or
+   improve on.
+2. If the experimenter has no view, propose a threshold derived from the
+   question and explain the derivation:
+   - To compare conditions, require the margin of error of the difference to be
+     at most half the smallest effect worth finding. If the true effect is that
+     large, the 95% interval then excludes zero about 97.5% of the time.
+   - To rank or profile stimuli, choose the smallest difference between two
+     stimuli that the study should order reliably, and apply it to the margin
+     of error of a difference. The smallest spread for a 0.9 correlation
+     shows whether that also separates the stimuli as a whole.
+3. If no value can be justified, make no pass/fail decision. Show precision and
+   cost against the design, point out where more participants or trials bring
+   little gain, and let the experimenter choose.
+
+Keep the threshold fixed across scenarios. Deriving it from each scenario's own
+noise would relax the requirement as responses get noisier, so the noisiest
+assumptions would appear to need the fewest participants. For a set of values,
+apply it to the RMS margin across the set, of single values or of differences,
+and report the largest alongside.
+
+Choose the design under the reference assumptions, and report the smallest
+design that meets the threshold under each alternative assumption set. If the
+chosen design fails under an alternative that the experimenter considers
+plausible, say so and give the design that alternative would need.
 
 ## What to simulate
 
@@ -206,7 +227,8 @@ or extra recruitment to replace participants who drop out.
 Start the report with how to read the statistics and with the simulation's
 assumptions: the response model, where its parameter values come from, the
 numbers of participants and replicates, missing data, costs left out, and the
-purpose of each alternative assumption set. Then show precision against the
+purpose of each alternative assumption set. State the required precision and
+its rationale. Then show precision against the
 number of participants or trials, with the required precision marked, and list
 the smallest designs that meet the criterion, nearby alternatives, and how the
 choice changes under the alternative assumptions.
@@ -234,6 +256,8 @@ or an agent did:
 
 - [ ] Are the estimands the quantities the research question is about, and is
       every primary estimand evaluated?
+- [ ] Does the required precision follow from the research question, and did
+      the experimenter confirm it and its rationale?
 - [ ] Is the estimator the analysis that will be run on the real data?
 - [ ] Where do the response model's parameter values come from, and are values
       based on judgment identified as such?
