@@ -149,6 +149,7 @@ class Gender(ModularPage):
                 _p("gender", "I prefer not to answer"),
             ],
             name="gender",
+            arrange_vertically=False,
             show_free_text_option=True,
             placeholder_text_free_text=_p("gender", "Specify yourself"),
         )
