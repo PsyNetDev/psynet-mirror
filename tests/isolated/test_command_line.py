@@ -4480,3 +4480,34 @@ def test_destroy_ssh_batch_succeeds(monkeypatch):
     assert destroyed == ["kept-1", "kept-2"], result.output
     assert result.exception is None, result.output
     assert result.exit_code == 0, result.output
+
+
+def test_signalled_debug_process_stops_its_child_processes(tmp_path):
+    import signal
+    import sys
+    import time
+
+    import psutil
+
+    pid_file = tmp_path / "child.pid"
+    script = (
+        "import subprocess\n"
+        "from psynet.command_line import _stop_child_processes_on_signal\n"
+        "with _stop_child_processes_on_signal():\n"
+        "    child = subprocess.Popen(['sleep', '60'])\n"
+        f"    open({str(pid_file)!r}, 'w').write(str(child.pid))\n"
+        "    child.wait()\n"
+    )
+    parent = subprocess.Popen([sys.executable, "-c", script])
+    deadline = time.monotonic() + 60
+    while not pid_file.exists() or not pid_file.read_text():
+        assert time.monotonic() < deadline, "child process did not start"
+        time.sleep(0.1)
+    child_pid = int(pid_file.read_text())
+
+    parent.send_signal(signal.SIGTERM)
+    assert parent.wait(timeout=30) == 128 + signal.SIGTERM
+    deadline = time.monotonic() + 10
+    while psutil.pid_exists(child_pid):
+        assert time.monotonic() < deadline, "child process outlived its parent"
+        time.sleep(0.1)

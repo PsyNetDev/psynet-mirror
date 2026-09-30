@@ -972,6 +972,37 @@ def launch_app_without_browsers(port, **kwargs):
     )
 
 
+@contextmanager
+def _stop_child_processes_on_signal():
+    """Terminate descendant processes when this process is signalled.
+
+    Ctrl-C in a terminal reaches the whole foreground process group, but a
+    signal sent to the ``psynet`` PID alone would otherwise leave the
+    ``flask run`` server started by ``dallinger develop debug`` running.
+    Must be entered from the main thread.
+    """
+
+    def handler(signum, frame):
+        children = psutil.Process().children(recursive=True)
+        for child in children:
+            try:
+                child.terminate()
+            except psutil.NoSuchProcess:
+                pass
+        psutil.wait_procs(children, timeout=5)
+        if signum == signal.SIGINT:
+            raise KeyboardInterrupt
+        raise SystemExit(128 + signum)
+
+    signals = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
+    previous = {sig: signal.signal(sig, handler) for sig in signals}
+    try:
+        yield
+    finally:
+        for sig, previous_handler in previous.items():
+            signal.signal(sig, previous_handler)
+
+
 def _debug_auto_reload(ctx, archive, no_browsers):
     from dallinger.command_line.develop import debug as dallinger_debug
     from dallinger.deployment import DevelopmentDeployment
@@ -991,7 +1022,8 @@ def _debug_auto_reload(ctx, archive, no_browsers):
         develop_module.header = ""
 
         try:
-            ctx.invoke(dallinger_debug, **debug_kwargs)
+            with _stop_child_processes_on_signal():
+                ctx.invoke(dallinger_debug, **debug_kwargs)
         finally:
             db.session.commit()
             reset_console()
