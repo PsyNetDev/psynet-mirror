@@ -52,6 +52,25 @@ def test_pre_deploy_archive_deployment():
         mock_db.assert_not_called()
 
 
+def test_pre_deploy_update_prepares_only_the_image():
+    experiment = MockExperiment()
+    experiment.timeline.modules = {"module": MagicMock()}
+    with (
+        patch.object(experiment, "update_deployment_id") as update_id,
+        patch.object(experiment, "setup_experiment_config") as setup_config,
+        patch("psynet.experiment._write_pre_deploy_constant_registry") as registry,
+        patch.object(experiment, "create_database_snapshot") as snapshot,
+    ):
+        experiment.pre_deploy(update=True)
+
+    update_id.assert_called_once()
+    registry.assert_called_once()
+    setup_config.assert_not_called()
+    experiment.timeline.modules["module"].prepare_for_deployment.assert_not_called()
+    experiment.assets.prepare_for_deployment.assert_not_called()
+    snapshot.assert_not_called()
+
+
 def test_source_code_archive_functionality_is_removed():
     assert not hasattr(Experiment, "create_source_code_zip_file")
     import psynet.command_line as command_line

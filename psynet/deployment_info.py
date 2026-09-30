@@ -194,7 +194,11 @@ def write(**kwargs):
 @retry(stop=stop_after_attempt(5), wait=wait_fixed(1), reraise=True)
 def read_all():
     with open(path, "r") as file:
-        txt = file.read()
+        return loads(file.read())
+
+
+def loads(txt: str) -> dict:
+    """Decode a ``deployment_info.json`` document, for example one read from a server."""
     content = jsonpickle.decode(txt, keys=True)
     assert isinstance(content, dict)
     return content

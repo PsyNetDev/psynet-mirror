@@ -1,1 +1,1 @@
-Added `psynet deploy ssh --update` to replace a running app in place, keeping its database and deployment ID and skipping a fresh launch.
+Added `--update` to `psynet deploy ssh` and `psynet debug ssh`. It rebuilds a running app's image in place after a confirmation, keeping its database, deployment ID and secret, and refuses to switch an app between debug and live.
