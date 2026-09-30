@@ -1316,6 +1316,7 @@ def _pre_launch(
         ensure_remote_host_in_known_hosts(ssh_host, ssh_user)
         _abort_if_app_exists(server, app, update=update)
         if update:
+            _awaken_ssh_app(server, app)
             _keep_running_deployment_id(server, app)
 
     run_pre_checks(mode, local_, heroku, docker, app)
