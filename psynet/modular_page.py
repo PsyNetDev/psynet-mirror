@@ -4065,10 +4065,10 @@ class SurveyJSControl(Control):
             .sd-root-modern {
                 --sjs-general-backcolor: transparent;
             }
-            /* SurveyJS gives pages a 348px minimum width, which overflows the
-            content surface on phones. */
-            .sd-body .sd-body__page {
-                min-width: 0;
+            /* SurveyJS gives the page a fixed minimum width, which overflows
+            the PsyNet surface on phones. */
+            .sd-page {
+                min-width: 0 !important;
             }
             /* This removes the shadow from the survey elements. */
             .sd-element--with-frame:not(.sd-element--collapsed) {
