@@ -1531,6 +1531,11 @@ def _configure_dallinger_image_source(use_local_dallinger=False):
     """Choose the Dallinger tree that docker-ssh bakes into the experiment image."""
     if not use_local_dallinger:
         os.environ["DALLINGER_NO_EGG_BUILD"] = "1"
+        # Dallinger bakes DALLINGER_SOURCE whenever it is set.
+        if os.environ.pop("DALLINGER_SOURCE", None):
+            click.echo(
+                "Ignoring DALLINGER_SOURCE; pass --use-local-dallinger to bake it."
+            )
         return
     os.environ.pop("DALLINGER_NO_EGG_BUILD", None)
     source = os.environ.get("DALLINGER_SOURCE", "").strip()
@@ -1552,7 +1557,7 @@ def _configure_dallinger_image_source(use_local_dallinger=False):
     click.echo(f"Baking local Dallinger from {source} into the experiment image.")
 
 
-def _awaken_ssh_app(ctx, server, app):
+def _awaken_ssh_app(server, app):
     """Wake a sleeping docker-ssh app before export or other database access."""
     try:
         from dallinger.command_line.docker_ssh import awaken_app
@@ -2666,7 +2671,7 @@ def export__docker_ssh(ctx, app, server, **kwargs):
     Export the experiment from a remote server via Docker and SSH.
     """
     app = _resolve_ssh_app(ctx, app, server)
-    _awaken_ssh_app(ctx, server, app)
+    _awaken_ssh_app(server, app)
     export_(
         ctx,
         get_exp_variables=lambda: _read_experiment_variables(
@@ -3377,9 +3382,7 @@ def hibernate__ssh(ctx, app, server):
     """
     Hibernate the experiment on a remote server via SSH.
     """
-    from dallinger.command_line.docker_ssh import hibernate as dallinger_hibernate
-
-    ctx.invoke(dallinger_hibernate, server=server, app=app)
+    ctx.invoke(_dallinger_hibernation_command("hibernate"), server=server, app=app)
 
 
 @psynet.group("awaken")
@@ -3398,9 +3401,18 @@ def awaken__ssh(ctx, app, server):
     """
     Awaken the experiment on a remote server via SSH.
     """
-    from dallinger.command_line.docker_ssh import awaken as dallinger_awaken
+    ctx.invoke(_dallinger_hibernation_command("awaken"), server=server, app=app)
 
-    ctx.invoke(dallinger_awaken, server=server, app=app)
+
+def _dallinger_hibernation_command(name):
+    """Return Dallinger's docker-ssh ``hibernate`` or ``awaken`` command."""
+    docker_ssh = importlib.import_module("dallinger.command_line.docker_ssh")
+    command = getattr(docker_ssh, name, None)
+    if command is None:
+        raise click.UsageError(
+            "The installed Dallinger does not support docker-ssh hibernation."
+        )
+    return command
 
 
 @destroy.command("ssh")
