@@ -3425,6 +3425,73 @@
 
     psynet.timelineHoldBusyRetryMs = 250;
 
+    // How long a submission keeps retrying while a docker-ssh app wakes;
+    // longer than the controller's slowest wake.
+    psynet.hibernationRetryLimitMs = 5 * 60 * 1000;
+
+    psynet.hibernationRetryDelayMs = function (request) {
+      // A sleeping or waking docker-ssh app answers 503 with this status
+      // from its front door; the request never reached the experiment, so
+      // resending it cannot record an answer twice.
+      if (request.status !== 503) return null;
+      let body;
+      try {
+        body = JSON.parse(request.response);
+      } catch (error) {
+        return null;
+      }
+      if (body?.status !== "hibernating" && body?.status !== "waking") {
+        return null;
+      }
+      let seconds = Number(request.getResponseHeader("Retry-After"));
+      if (!Number.isFinite(seconds) || seconds <= 0) {
+        seconds = 5;
+      }
+      return Math.min(seconds, 10) * 1000;
+    };
+
+    psynet.showWakingNotice = function (visible) {
+      let notice = document.getElementById("psynet-waking-notice");
+      if (!visible) {
+        notice?.remove();
+        return;
+      }
+      if (notice) return;
+      notice = document.createElement("div");
+      notice.id = "psynet-waking-notice";
+      notice.className = "alert alert-info";
+      notice.setAttribute("role", "status");
+      notice.style.cssText =
+        "position: fixed; top: 1rem; left: 50%; transform: translateX(-50%); z-index: 1080;";
+      document.body.appendChild(notice);
+      // Screen readers announce a status region's text only if it changes
+      // after the region is in the page.
+      setTimeout(() => {
+        notice.textContent =
+          psynetTemplateData.strings?.wakingUp ||
+          "Getting ready, please wait...";
+      }, 0);
+    };
+
+    psynet.waitIfAppIsWaking = async function (request, retry, options = {}) {
+      // Return true, after waiting, when a sleeping app's 503 should be
+      // resent. ``retry`` carries the deadline across one submission's tries.
+      let delay = psynet.hibernationRetryDelayMs(request);
+      if (delay !== null) {
+        retry.deadline ??= Date.now() + psynet.hibernationRetryLimitMs;
+        if (Date.now() < retry.deadline) {
+          psynet.log.warn("The experiment is waking up; retrying the submission.");
+          if (!options.timelineHoldResume) {
+            psynet.showWakingNotice(true);
+          }
+          await new Promise((resolve) => setTimeout(resolve, delay));
+          return true;
+        }
+      }
+      psynet.showWakingNotice(false);
+      return false;
+    };
+
     psynet.scheduleTimelineHoldBusyRetry = function (controller) {
       if (!controller || controller.stopped) {
         return;
@@ -3594,10 +3661,15 @@
 
       return new Promise((resolve) => {
         let attempt = 0;
+        let wakeRetry = {};
         let send = function () {
           let request = new XMLHttpRequest();
           request.onreadystatechange = async function () {
             if (request.readyState !== 4) return;
+            if (await psynet.waitIfAppIsWaking(request, wakeRetry, options)) {
+              send();
+              return;
+            }
             if (psynet.isBusyResponse(request) && attempt === 0) {
               attempt += 1;
               psynet.log.warn(

@@ -312,9 +312,30 @@ while the app stays reachable. To sleep or wake an app by hand::
     psynet hibernate ssh --app your-app-name
     psynet awaken ssh --app your-app-name
 
-Hibernate only apps that are not recruiting or serving participants. A
-visitor to a sleeping app sees "Getting ready, please wait..." while it
-wakes. ``GET /health`` probes do not wake it. ``psynet export ssh`` awakens a
+A visitor to a sleeping app sees "Getting ready, please wait..." while it
+wakes. ``GET /health`` probes do not wake it.
+
+To sleep apps automatically after a quiet period, set in ``config.txt``::
+
+    docker_ssh_idle_hibernate = true
+    docker_ssh_idle_hibernate_minutes = 60
+
+``/health`` probes do not reset the idle timer. While idle sleep is on,
+PsyNet pages ping the server every few minutes while a participant is using
+them: they interacted within the idle window, or audible audio or video is
+playing. The app therefore does not sleep under a participant, even on a
+quiet or WebSocket-only page, while an abandoned tab stops pinging. Pages
+that poll the server themselves, such as pages waiting for other
+participants or pages that update progress live, keep the app awake for as
+long as they stay open. If a participant submits while the app is asleep or
+waking, PsyNet shows "Getting ready, please wait..." and retries the
+submission for up to five minutes instead of showing the error page.
+
+Idle sleep suits experiments with a bounded recruitment window. Leave it off
+for experiments that recruit replacements or otherwise recruit throughout
+their life: sleep pauses the clock process and recruiter callbacks during
+the gaps between participants. Leave it off for first canary deploys too.
+Hibernate by hand only apps that are not recruiting or serving participants. ``psynet export ssh`` awakens a
 sleeping app before reading its database. If the app crashes while awake, it
 returns HTTP 503 until Docker restarts it.
 
