@@ -3103,6 +3103,7 @@ def _destroy(
     server=None,
     ask_for_confirmation=True,
 ):
+    """Destroy a single app."""
     confirmed = (
         user_confirms(
             "Would you like to delete the app from the web server?", default=True
@@ -3112,7 +3113,7 @@ def _destroy(
     )
 
     if confirmed:
-        with yaspin("Destroying app...") as spinner:
+        with yaspin(f"Destroying {app}...") as spinner:
             try:
                 kwargs = {"app": app}
                 kwargs = {**kwargs, "server": server} if server else kwargs
@@ -3133,8 +3134,15 @@ def _destroy(
             except subprocess.CalledProcessError:
                 spinner.fail("✗")
                 click.echo(
-                    "Failed to destroy the app. Maybe it was already destroyed, or the app name was wrong?"
+                    f"Failed to destroy {app}. "
+                    "Maybe it was already destroyed, or the app name was wrong?"
                 )
+                return False
+            except click.Abort:
+                spinner.fail("✗")
+                raise
+        return True
+    return False
 
 
 @destroy.command("ssh")
@@ -3149,6 +3157,8 @@ def destroy__docker_ssh(ctx, app, apps, server):
     from dallinger.command_line.docker_ssh import destroy
 
     example_usage = "`psynet destroy ssh <app> <app> [--server <server>]`"
+    if not app and not apps:
+        raise click.UsageError(f"Provide an app name. Example: {example_usage}")
     if app:
         assert len(apps) == 0, "You cannot provide both --app and a list of apps."
         click.echo(f"Consider using the batch syntax: {example_usage}")
@@ -3164,14 +3174,34 @@ def destroy__docker_ssh(ctx, app, apps, server):
             Are you sure you want to remove {len(apps)} apps on {server} ({apps})?
             """
         if click.confirm(confirmation, abort=True):
+            failed = []
             for app in apps:
-                _destroy(
-                    ctx,
-                    destroy,
-                    app=app,
-                    server=server,
-                    ask_for_confirmation=False,
-                )
+                try:
+                    if not _destroy(
+                        ctx,
+                        destroy,
+                        app=app,
+                        server=server,
+                        ask_for_confirmation=False,
+                    ):
+                        failed.append(app)
+                except click.Abort:
+                    click.echo(
+                        f"Failed to destroy {app}. "
+                        "Maybe it was already destroyed, or the app name was wrong?"
+                    )
+                    failed.append(app)
+                except Exception:
+                    logger.exception(
+                        "Failed to destroy app %s; continuing with remaining apps.",
+                        app,
+                    )
+                    click.echo(
+                        f"Failed to destroy {app}; continuing with remaining apps."
+                    )
+                    failed.append(app)
+            if failed:
+                raise click.Abort()
 
 
 @psynet.group("apps")

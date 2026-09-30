@@ -6,6 +6,4 @@ to review the current branch against the open merge request's target.
 Start by running `/update-onto-target` (follow that skill) so the
 review is of the real merge with the MR target. Then apply the
 review workflow and report format in full. Always update the merge
-request title and description as part of the review. Do not
-reorganize commits here; see
-`.cursor/skills/reorganize-onto-target/SKILL.md` (When to run).
+request title and description as part of the review.
