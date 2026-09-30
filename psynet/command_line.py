@@ -1555,13 +1555,10 @@ def _configure_dallinger_image_source(use_local_dallinger=False):
 def _awaken_ssh_app(ctx, server, app):
     """Wake a sleeping docker-ssh app before export or other database access."""
     try:
-        from dallinger.command_line import docker_ssh as dssh
+        from dallinger.command_line.docker_ssh import awaken_app
     except ImportError:
         return
-    awaken = getattr(dssh, "awaken_app", None)
-    if awaken is None:
-        return
-    awaken(server, app, required=False)
+    awaken_app(server, app, required=False)
 
 
 def _post_deploy(result):
