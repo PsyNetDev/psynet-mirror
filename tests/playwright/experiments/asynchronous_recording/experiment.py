@@ -17,6 +17,35 @@ class AsyncVideoControl(VideoRecordControl):
     _async_upload = True
 
 
+def _playback(source, dual):
+    """Resolve each source independently, retaining clips that did arrive."""
+    key = "recording_" + source if dual else "recording"
+    return join(
+        wait_for_recording(lambda participant: participant.assets[key]),
+        PageMaker(
+            lambda participant: ModularPage(
+                "playback_" + source,
+                VideoPrompt(
+                    participant.assets[key],
+                    f"Uploaded {source} clip." if dual else "Uploaded clip.",
+                    controls=True,
+                    hide_when_finished=False,
+                    muted=True,
+                ),
+                time_estimate=3,
+            )
+            if participant.assets[key].deposited
+            else InfoPage(
+                f"{source.capitalize()} recording unavailable. Your answer was saved."
+                if dual
+                else "Recording unavailable. Your answer was saved.",
+                time_estimate=3,
+            ),
+            time_estimate=3,
+        ),
+    )
+
+
 class Exp(psynet.experiment.Experiment):
     label = "Asynchronous recording test"
 
@@ -35,36 +64,25 @@ class Exp(psynet.experiment.Experiment):
             trial_id=asset.trial_id,
         )
 
+    dual = os.environ.get("PSYNET_TEST_RECORDING_DUAL") == "1"
+
     timeline = Timeline(
         ModularPage(
             "recording",
             "Record a short clip.",
             AsyncVideoControl(
-                duration=3, record_audio=False, controls=True, show_preview=True
+                duration=3,
+                record_audio=False,
+                controls=True,
+                show_preview=True,
+                recording_source="both" if dual else "camera",
             ),
             time_estimate=3,
             save_answer="recorded_video",
         ),
         InfoPage("Independent page reached.", time_estimate=1),
         None if os.environ.get("PSYNET_TEST_RECORDING_EXIT") == "1" else join(
-            wait_for_recording(lambda participant: participant.assets["recording"]),
-            PageMaker(
-                lambda participant: ModularPage(
-                    "playback",
-                    VideoPrompt(
-                        participant.var.recorded_video["camera_url"],
-                        "Uploaded clip.",
-                        controls=True,
-                        hide_when_finished=False,
-                        muted=True,
-                    ),
-                    time_estimate=3,
-                )
-                if participant.assets["recording"].deposited
-                else InfoPage(
-                    "Recording unavailable. Your answer was saved.", time_estimate=3
-                ),
-                time_estimate=3,
-            ),
+            _playback("camera", dual),
+            _playback("screen", dual) if dual else None,
         ),
     )

@@ -251,7 +251,8 @@ alongside a demo using that same database.
     pytest tests/isolated/test_media_upload.py tests/isolated/test_chain_growth_queries.py tests/isolated/test_finalize_pending_trials.py
     pytest tests/isolated/test_recording_submission.py tests/isolated/test_wait_for_recording.py
     npx playwright test media_upload_queue.spec.js
-    npx playwright test asynchronous_recording.spec.js
+    npx playwright test asynchronous_recording.spec.js dual_recording_upload.spec.js
+    inplace_timeline_transitions=false npx playwright test recording_legacy_navigation.spec.js
     npx playwright test missing_chain_recording.spec.js
     npx playwright test recording_document_loss.spec.js
     pytest tests/isolated/test_background_recording.py
@@ -282,6 +283,24 @@ Reload preserves the original deadline and adds no upload warning. A separate
 case holds the upload while the normal Finish button reaches recruiter exit.
 The private fixture exposes a read-only state endpoint for these checks; this
 endpoint is not part of the PsyNet API.
+
+The ``dual_recording_upload`` checks capture camera and screen together, hold both
+uploads while the answer advances, then verify playable deposits for both sources.
+A second case drops only the screen upload: camera playback survives, screen
+playback becomes an explicit fallback at its deadline, and the participant can
+finish. These use fake devices; the real screen-sharing chooser still needs a
+manual check.
+
+The ``recording_legacy_navigation`` check runs with
+``inplace_timeline_transitions=false``. It verifies an actual document replacement
+and a missing-video fallback without participant failure. This establishes loss
+handling, not reliable upload delivery across full-page navigation. The upload
+queue belongs to the old document, so unfinished bytes can be abandoned on every
+such transition. Keep this distinction when evaluating default enablement.
+When a test needs acceptance evidence across document replacement, capture it
+with ``route.fetch()`` before fulfilling the browser response; Chromium can
+discard response bodies during navigation. Assert the destination page before
+reading the captured result.
 
 The private ``asynchronous_recording`` fixture enables
 ``VideoRecordControl._async_upload``. Its browser test holds a media request while
