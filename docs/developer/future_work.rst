@@ -576,3 +576,11 @@ Redis databases, and Chrome cleanup limited to the experiment's own windows.
 A first implementation was prototyped and then reverted in
 `!1253 <https://gitlab.com/PsyNetDev/PsyNet/-/merge_requests/1253>`_, as too
 large for a bug-fix merge request.
+
+Remote deployments have the same problem. ``psynet deploy ssh`` builds the
+starting database on the local PostgreSQL and Redis: it clears every Redis
+key, drops the local tables and stops every local ``dallinger_heroku_*``
+worker, so it wipes a local debug experiment running at the same time.
+Building the template in a temporary database, clearing only PsyNet's own
+Redis keys, or refusing to deploy while a local server is running would
+avoid this.

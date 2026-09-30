@@ -57,6 +57,8 @@ the PostgreSQL database, Redis and Dallinger's development folder, so starting
 a second one stops the first one's worker processes and can break both. Stop
 the other experiment (Ctrl+C in its terminal) before starting another; to see
 what is using the port, run ``lsof -nP -iTCP:5000 -sTCP:LISTEN``.
+``psynet deploy`` also uses the local database and Redis while it prepares a
+deployment, so it wipes a local experiment that is running at the same time.
 
 Database connection refused
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
