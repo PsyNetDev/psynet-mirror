@@ -2401,6 +2401,7 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
     # Lucid forbids showing rewards inside the survey.
     shows_reward_by_default = False
     MARKETPLACE_CODE = "Marketplace codes"
+    CLOCK_TIMEOUT_GRACE_S = 60
     IN_SURVEY = "Currently in Client Survey or Drop"
     COMPLETED = "Returned as Complete"
     TERMINATED = "Returned as Terminate"
@@ -2742,22 +2743,8 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
                 # skip terminated entrants
                 continue
 
-            details = None
-            reason = None
             participant = entrant.resolve_participant()
-            if participant is not None:
-                responses = (
-                    Response.query.filter_by(participant_id=participant.id)
-                    .order_by(Response.creation_time)
-                    .all()
-                )
-                if len(responses) == 0:
-                    reason = "first-response-timeout"
-            else:
-                # Do not terminate participants who did not pass the qualifications
-                if entrant.lucid_status != self.MARKETPLACE_CODE:
-                    reason = "never-entered-experiment"
-
+            reason = self._clock_termination_reason(entrant, participant, now)
             if reason:
                 try:
                     participant_info = (
@@ -2765,9 +2752,7 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
                         if participant
                         else {"assignment_id": entrant.rid}
                     )
-                    self.terminate_participant(
-                        reason=reason, details=details, **participant_info
-                    )
+                    self.terminate_participant(reason=reason, **participant_info)
 
                     logger.info(
                         f"Successfully terminated participant with RID '{entrant.rid}'."
@@ -2776,6 +2761,33 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
                     logger.error(
                         f"Error terminating participant with RID '{entrant.rid}': {e}"
                     )
+
+    def _clock_termination_reason(self, entrant, participant, now):
+        """Return why the clock should terminate this entrant, or ``None``.
+
+        The browser enforces the overall time limit, but a participant who
+        closes the tab stays ``working`` forever and keeps a paused survey
+        from completing. The grace period lets the browser terminate first.
+        """
+        if participant is None:
+            # Do not terminate participants who did not pass the qualifications
+            if entrant.lucid_status != self.MARKETPLACE_CODE:
+                return "never-entered-experiment"
+            return None
+
+        if Response.query.filter_by(participant_id=participant.id).first() is None:
+            return "first-response-timeout"
+
+        limit_s = self.termination_time_in_s
+        if (
+            limit_s is not None
+            and participant.status == "working"
+            and now
+            > entrant.registered_at
+            + timedelta(seconds=limit_s + self.CLOCK_TIMEOUT_GRACE_S)
+        ):
+            return f"overall-timeout-{limit_s}s"
+        return None
 
     def get_survey_storage_key(self, name):
         experiment_id = self.config.get("id")
