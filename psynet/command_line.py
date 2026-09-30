@@ -1478,6 +1478,11 @@ def _configure_dallinger_image_source(use_local_dallinger=False):
     """Choose the Dallinger tree that docker-ssh bakes into the experiment image."""
     if not use_local_dallinger:
         os.environ["DALLINGER_NO_EGG_BUILD"] = "1"
+        # Dallinger bakes DALLINGER_SOURCE whenever it is set.
+        if os.environ.pop("DALLINGER_SOURCE", None):
+            click.echo(
+                "Ignoring DALLINGER_SOURCE; pass --use-local-dallinger to bake it."
+            )
         return
     os.environ.pop("DALLINGER_NO_EGG_BUILD", None)
     source = os.environ.get("DALLINGER_SOURCE", "").strip()
