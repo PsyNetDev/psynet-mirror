@@ -94,24 +94,13 @@ class TestCommandLine(object):
         assert os.environ["DALLINGER_SOURCE"] == str(src)
         assert "DALLINGER_NO_EGG_BUILD" not in os.environ
 
-    def test_configure_dallinger_image_source_accepts_wheel_dockerfile(
-        self, monkeypatch, tmp_path
-    ):
+    def test_configure_dallinger_image_source_ignores_a_stale_export(self, monkeypatch):
         from psynet.command_line import _configure_dallinger_image_source
 
-        monkeypatch.chdir(tmp_path)
-        (tmp_path / "Dockerfile").write_text(
-            "FROM python:3.12\n"
-            "COPY . /experiment\n"
-            "RUN pip install --force-reinstall --no-deps dallinger-*.whl\n"
-        )
-        src = tmp_path / "Dallinger"
-        src.mkdir()
-        (src / "pyproject.toml").write_text("[project]\nname='dallinger'\n")
-        monkeypatch.setenv("DALLINGER_SOURCE", str(src))
-        monkeypatch.setenv("DALLINGER_NO_EGG_BUILD", "1")
-        _configure_dallinger_image_source(use_local_dallinger=True)
-        assert os.environ["DALLINGER_SOURCE"] == str(src)
+        monkeypatch.setenv("DALLINGER_SOURCE", "/somewhere/Dallinger")
+        _configure_dallinger_image_source(use_local_dallinger=False)
+        assert "DALLINGER_SOURCE" not in os.environ
+        assert os.environ["DALLINGER_NO_EGG_BUILD"] == "1"
 
     def test_invoke_docker_ssh_deploy_forwards_ingress(self):
         from psynet.command_line import _invoke_docker_ssh_deploy

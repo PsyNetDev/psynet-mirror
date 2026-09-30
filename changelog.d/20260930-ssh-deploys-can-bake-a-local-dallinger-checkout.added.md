@@ -1,1 +1,1 @@
-Added ``--use-local-dallinger`` to ``psynet deploy ssh`` and ``psynet debug ssh`` to bake an unreleased Dallinger checkout into the experiment image. PsyNet records ``kind=psynet`` monitoring metadata in the Dallinger deployment manifest.
+Added ``--use-local-dallinger`` to ``psynet deploy ssh`` and ``psynet debug ssh`` to bake an unreleased Dallinger checkout into the experiment image. Without the flag, an exported ``DALLINGER_SOURCE`` is ignored.
