@@ -2339,6 +2339,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @classmethod
     def update_deployment_id(cls):
+        """Record a new deployment ID, unless ``--update`` is keeping the running one."""
+        if deployment_info.read_all().get("keep_deployment_id"):
+            return
         deployment_id = cls.generate_deployment_id()
         deployment_info.write(deployment_id=deployment_id)
 
