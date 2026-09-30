@@ -130,8 +130,8 @@ scale, the design simulation might report that every chord's mean is known to
 within ±0.19 rating points, that chords more than 0.23 points apart are
 reliably ordered, and that the estimated means correlate at least 0.9 with the
 true ones whenever the true means have a standard deviation of at least 0.16
-points. The response model assumes 0.71, a profile correlation of 0.99, but
-the conclusion holds for any spread above 0.16.
+points. The response model assumes a spread of 0.71, which gives a profile
+correlation of 0.99, but the last conclusion holds for any spread above 0.16.
 
 Unless the experimenter chooses otherwise, require a 95% margin of error for
 every primary estimand of at most 0.20 times the standard deviation of a single
