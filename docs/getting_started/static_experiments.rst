@@ -867,7 +867,8 @@ and implement the following changes:
 .. hint::
 
     You can customize the number of bots used by ``psynet audit simulate``
-    by setting ``test_n_bots = ...`` in your experiment class.
+    by setting ``test_n_bots = ...`` in your experiment class, or for a
+    single run with ``psynet audit simulate --n-bots 20``.
 
 7. So far we have been using a fixed audio file for all nodes.
    Let's say we now want each trial to involve a random pitch shift of the node's audio.

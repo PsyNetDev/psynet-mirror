@@ -195,7 +195,7 @@ Run from the experiment root:
 psynet audit simulate
 ```
 
-The command writes the only copy to
+Add `--n-bots N` to override `Exp.test_n_bots` for this run. The command writes the only copy to
 `audit/simulate/analysis/simulated_export/` and marks `simulate_export`
 present.
 

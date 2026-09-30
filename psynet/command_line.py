@@ -3703,13 +3703,21 @@ def _replace_directory(source: Path, destination: Path) -> None:
         shutil.rmtree(backup)
 
 
-def _run_simulate(ctx):
-    """Run experiment bots and export their data into the audit packet."""
+def _run_simulate(ctx, n_bots=None):
+    """Run experiment bots and export their data into the audit packet.
+
+    Parameters
+    ----------
+    ctx :
+        Click context used to invoke ``psynet test local`` and ``psynet export local``.
+    n_bots :
+        Number of bots; defaults to ``Experiment.test_n_bots``.
+    """
 
     from psynet.audit.content import artifact_path_is_ready
 
     export_path = resolve_audit_artifact_path(SIMULATED_EXPORT_PATH)
-    ctx.invoke(test__local)
+    ctx.invoke(test__local, n_bots=n_bots)
     staging = Path(
         tempfile.mkdtemp(prefix=".simulated_export.", dir=export_path.parent)
     )
@@ -4273,12 +4281,13 @@ def audit(ctx):
 
 
 @audit.command("simulate")
+@_test_options["n_bots"]
 @click.pass_context
 @require_exp_directory
-def audit_simulate(ctx):
+def audit_simulate(ctx, n_bots=None):
     """Run test bots and write the simulated export into the audit packet."""
 
-    _run_simulate(ctx)
+    _run_simulate(ctx, n_bots=n_bots)
 
 
 @audit.command("performance-test")
