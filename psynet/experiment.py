@@ -1364,7 +1364,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     def record_experiment_status(cls, online: bool = True):
         status = cls.get_status(lookback_s=60)  # since we poll every minute
         status["isOffline"] = not online
-        status_obj = ExperimentStatus(**status)
+        # Status rows are exported with the database, so they must not store the
+        # dashboard credentials that ``basic_data_url`` embeds. The artifact copy
+        # keeps the URL for the deployments dashboard's data shortcut.
+        row = {key: value for key, value in status.items() if key != "basic_data_url"}
+        status_obj = ExperimentStatus(**row)
         db.session.add(status_obj)
         if cls.automatic_backups:
             cls.artifact_storage.write_experiment_status(status, cls.deployment_id)
