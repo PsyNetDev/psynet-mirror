@@ -1,13 +1,25 @@
-# Minor release path
+# From-master path (major and minor)
 
 
-Example: releasing 13.2.0 from `master` while `master` is at `13.2.0a0`.
+Use this path after the release manager has affirmed a **major** or
+**minor** type in the skill's [Choose the release type](../SKILL.md#choose-the-release-type)
+step. The steps are the same; only the version numbers change.
 
-**Default to a release candidate first.** For minor releases, cut an RC
-(e.g. `13.2.0rc1`) before the final version, unless the release manager
-explicitly instructs otherwise. After creating the release branch (step 1
-below), switch to the [release candidate flow](#release-candidates-minor-releases)
-instead of continuing with steps 2–7; return to the final-release steps via
+Example (minor): releasing `13.2.0` from `master` while `master` is at
+`13.2.0a0`. Branch `release-13.2`. After the release, bump `master` to
+`13.3.0a0`.
+
+Example (major): last final tag `v13.3.0`, committed `*.breaking.md`
+fragments, releasing `14.0.0`. Branch `release-14.0`. After the
+release, bump `master` to `14.1.0a0`. What's new is required on a
+major (see [Update What's new](#update-whats-new)).
+
+**Default to a release candidate first.** For major and minor releases,
+cut an RC (e.g. `13.2.0rc1` or `14.0.0rc1`) before the final version,
+unless the release manager explicitly instructs otherwise. After
+creating the release branch (step 1 below), switch to the
+[release candidate flow](#release-candidates-minor-releases) instead of
+continuing with steps 2–7; return to the final-release steps via
 [Promote the final RC to the official release](#promote-the-final-rc-to-the-official-release)
 once the RC has been validated.
 

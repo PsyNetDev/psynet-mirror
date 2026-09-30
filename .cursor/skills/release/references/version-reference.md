@@ -37,9 +37,11 @@ The version is tracked in two files, both updated together:
 
 ## Naming conventions
 
-- Release branch: `release-MAJOR.MINOR` (e.g. `release-13.2`)
-- Tag: `vMAJOR.MINOR.PATCH` (e.g. `v13.2.0`)
+- Release branch: `release-MAJOR.MINOR` (e.g. `release-13.2` for a
+  minor, `release-14.0` for a major)
+- Tag: `vMAJOR.MINOR.PATCH` (e.g. `v13.2.0`, `v14.0.0`)
 - Post-release bump branch: `bump-master-post-release`
+  (next alpha is `X.(Y+1).0a0` after a minor, `X.1.0a0` after `X.0.0`)
 - Commit messages follow the pattern seen in past releases:
   - `Update CHANGELOG for version X.Y.Z`
   - `Bump version to X.Y.Z`
