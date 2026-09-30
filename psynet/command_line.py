@@ -943,32 +943,46 @@ def _debug_docker(ctx, archive, no_browsers):
         reset_console()
 
 
+def launch_app_without_browsers(port, **kwargs):
+    """Launch the development app without opening browsers.
+
+    Stands in for Dallinger's ``launch_app_and_open_browser`` RQ job when the
+    installed Dallinger's ``develop debug`` has no ``--no-browsers`` option.
+    It must stay importable by module path because RQ workers resolve it that way.
+    """
+    from dallinger.command_line.develop import _launch_app
+
+    _launch_app(port)
+
+
 def _debug_auto_reload(ctx, archive, no_browsers):
     from dallinger.command_line.develop import debug as dallinger_debug
     from dallinger.deployment import DevelopmentDeployment
 
+    develop_module = importlib.import_module("dallinger.command_line.develop")
+    launch_job = develop_module.launch_app_and_open_browser
     debug_kwargs = {"skip_flask": False}
     if no_browsers:
-        if "no_browsers" not in {param.name for param in dallinger_debug.params}:
-            raise click.UsageError(
-                "--no-browsers needs a newer Dallinger in the default debug mode; "
-                "upgrade Dallinger or use `psynet debug local --legacy --no-browsers`."
-            )
-        debug_kwargs["no_browsers"] = True
-
-    run_pre_auto_reload_checks()
-
-    DevelopmentDeployment.archive = archive
-    patch_dallinger_develop()
-
-    develop_module = importlib.import_module("dallinger.command_line.develop")
-    develop_module.header = ""
+        if "no_browsers" in {param.name for param in dallinger_debug.params}:
+            debug_kwargs["no_browsers"] = True
+        else:
+            develop_module.launch_app_and_open_browser = launch_app_without_browsers
 
     try:
-        ctx.invoke(dallinger_debug, **debug_kwargs)
+        run_pre_auto_reload_checks()
+
+        DevelopmentDeployment.archive = archive
+        patch_dallinger_develop()
+
+        develop_module.header = ""
+
+        try:
+            ctx.invoke(dallinger_debug, **debug_kwargs)
+        finally:
+            db.session.commit()
+            reset_console()
     finally:
-        db.session.commit()
-        reset_console()
+        develop_module.launch_app_and_open_browser = launch_job
 
 
 def _load_runtime_server_config(config=None, deployment_id=None):

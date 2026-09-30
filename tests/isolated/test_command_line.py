@@ -1,4 +1,5 @@
 import hashlib
+import importlib
 import io
 import json
 import subprocess
@@ -520,18 +521,19 @@ def _run_debug_auto_reload(monkeypatch, dallinger_supports_no_browsers):
 
     from psynet.command_line import _debug_auto_reload
 
+    develop = importlib.import_module("dallinger.command_line.develop")
+
     calls = []
 
     class _Ctx:
         def invoke(self, _command, **kwargs):
-            calls.append(kwargs)
+            calls.append((kwargs, develop.launch_app_and_open_browser))
 
     params = [click.Option(["--skip-flask"], is_flag=True)]
     if dallinger_supports_no_browsers:
         params.append(click.Option(["--no-browsers"], is_flag=True))
-    from dallinger.command_line.develop import debug as dallinger_debug
 
-    monkeypatch.setattr(dallinger_debug, "params", params)
+    monkeypatch.setattr(develop.debug, "params", params)
     monkeypatch.setattr("psynet.command_line.run_pre_auto_reload_checks", lambda: None)
     monkeypatch.setattr("psynet.command_line.patch_dallinger_develop", lambda: None)
     monkeypatch.setattr("psynet.command_line.db.session.commit", lambda: None)
@@ -541,15 +543,33 @@ def _run_debug_auto_reload(monkeypatch, dallinger_supports_no_browsers):
 
 
 def test_debug_auto_reload_passes_no_browsers_to_dallinger(monkeypatch):
+    develop = importlib.import_module("dallinger.command_line.develop")
+
     calls = _run_debug_auto_reload(monkeypatch, dallinger_supports_no_browsers=True)
-    assert calls == [{"skip_flask": False, "no_browsers": True}]
+    assert calls == [
+        (
+            {"skip_flask": False, "no_browsers": True},
+            develop.launch_app_and_open_browser,
+        )
+    ]
 
 
-def test_debug_auto_reload_no_browsers_needs_supporting_dallinger(monkeypatch):
-    import click
+def test_debug_auto_reload_no_browsers_with_older_dallinger(monkeypatch):
+    """Older Dallinger enqueues a PsyNet launch job that opens no browsers."""
+    develop = importlib.import_module("dallinger.command_line.develop")
 
-    with pytest.raises(click.UsageError, match="newer Dallinger"):
-        _run_debug_auto_reload(monkeypatch, dallinger_supports_no_browsers=False)
+    from psynet.command_line import launch_app_without_browsers
+
+    original_job = develop.launch_app_and_open_browser
+    calls = _run_debug_auto_reload(monkeypatch, dallinger_supports_no_browsers=False)
+    assert calls == [({"skip_flask": False}, launch_app_without_browsers)]
+    assert develop.launch_app_and_open_browser is original_job
+
+    launched = []
+    monkeypatch.setattr(develop, "_launch_app", launched.append)
+    monkeypatch.setattr(develop, "_async_browser", pytest.fail)
+    launch_app_without_browsers(5001)
+    assert launched == [5001]
 
 
 def test_debug_legacy_gunicorn_workers_follow_env(monkeypatch):
