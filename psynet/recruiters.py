@@ -259,7 +259,7 @@ def configured_recruiter_class(config=None):
 
     Returns
     -------
-    type or None
+    class or None
         The recruiter class, or ``None`` if the configured name is unknown
         in debug mode (where ``from_config`` also returns ``None``).
     """
