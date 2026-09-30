@@ -123,6 +123,7 @@ from .recruiters import (  # noqa: F401
     PsyNetProlificRecruiterMixin,
     StagingCapRecruiter,  # noqa: F401  # Backward compatibility alias
     StagingLabRecruiter,
+    configured_recruiter_class,
 )
 from .redis import redis_vars
 from .serialize import serialize, unserialize
@@ -3258,13 +3259,32 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         explicit = get_config().get("show_reward", None)
         if explicit is not None:
             return explicit
-        return self.recruiter.shows_reward_by_default
+        return self.recruiter_class.shows_reward_by_default
+
+    @property
+    def recruiter_class(self):
+        """Return the recruiter's class without building a recruiter.
+
+        Dallinger routes create a new experiment object for every request, so
+        instantiating ``self.recruiter`` just to check its type is expensive.
+        """
+        if "recruiter" in self.__dict__:
+            return type(self.__dict__["recruiter"])
+        return configured_recruiter_class()
 
     def with_lucid_recruitment(self):
-        return issubclass(self.recruiter.__class__, BaseLucidRecruiter)
+        """Return whether participants are recruited through Lucid."""
+        recruiter_class = self.recruiter_class
+        return recruiter_class is not None and issubclass(
+            recruiter_class, BaseLucidRecruiter
+        )
 
     def with_prolific_recruitment(self):
-        return issubclass(self.recruiter.__class__, ProlificRecruiter)
+        """Return whether participants are recruited through Prolific."""
+        recruiter_class = self.recruiter_class
+        return recruiter_class is not None and issubclass(
+            recruiter_class, ProlificRecruiter
+        )
 
     def _approved_payload(self, participant, page):
         return {

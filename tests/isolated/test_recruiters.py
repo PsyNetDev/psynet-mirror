@@ -3752,6 +3752,56 @@ def _resolve_show_reward(recruiter_cls, configured):
         return exp.show_reward
 
 
+@pytest.mark.parametrize(
+    "settings, expected, lucid, prolific",
+    [
+        ({"recruiter": "prolific", "mode": "live"}, "ProlificRecruiter", False, True),
+        (
+            {"recruiter": "prolific", "mode": "debug"},
+            "DevProlificRecruiter",
+            False,
+            True,
+        ),
+        (
+            {"recruiter": "lucid-recruiter", "mode": "live"},
+            "LucidRecruiter",
+            True,
+            False,
+        ),
+        (
+            {
+                "recruiter": "lucid-recruiter",
+                "mode": "debug",
+                "debug_recruiter": "DevLucidRecruiter",
+            },
+            "DevLucidRecruiter",
+            True,
+            False,
+        ),
+        ({"recruiter": "generic", "mode": "live"}, "GenericRecruiter", False, False),
+        ({"recruiter": "generic", "mode": "debug"}, "HotAirRecruiter", False, False),
+    ],
+)
+def test_recruitment_checks_do_not_build_a_recruiter(
+    settings, expected, lucid, prolific
+):
+    from psynet.experiment import Experiment
+    from psynet.recruiters import configured_recruiter_class
+
+    config = MagicMock()
+    config.get.side_effect = lambda key, default=None: settings.get(key, default)
+    exp = object.__new__(Experiment)
+    with (
+        patch("psynet.recruiters.get_config", return_value=config),
+        patch.object(
+            dallinger.recruiters.Recruiter, "__init__", side_effect=AssertionError
+        ),
+    ):
+        assert configured_recruiter_class().__name__ == expected
+        assert exp.with_lucid_recruitment() is lucid
+        assert exp.with_prolific_recruitment() is prolific
+
+
 def test_show_reward_defaults_to_the_recruiter():
     from psynet.recruiters import GenericRecruiter, HotAirRecruiter, ProlificRecruiter
 

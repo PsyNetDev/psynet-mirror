@@ -108,7 +108,12 @@ from .timeline import (
     join,
     while_loop,
 )
-from .utils import get_logger, get_translator, render_template_with_translations
+from .utils import (
+    get_descendent_class_by_name,
+    get_logger,
+    get_translator,
+    render_template_with_translations,
+)
 
 logger = get_logger()
 
@@ -231,6 +236,60 @@ def _prolific_error_status(error: ProlificServiceException):
         return payload["response"]["error"]["status"]
     except (KeyError, TypeError):
         return None
+
+
+def _recruiter_class_by_name(name):
+    try:
+        return get_descendent_class_by_name(dallinger.recruiters.Recruiter, name)
+    except AssertionError:
+        return None
+
+
+def configured_recruiter_class(config=None):
+    """Return the recruiter class that the configuration selects.
+
+    This mirrors :func:`dallinger.recruiters.from_config` without
+    instantiating the recruiter, which can be expensive (for example, building
+    a Prolific API client). Use it when only the recruiter type matters.
+
+    Parameters
+    ----------
+    config :
+        Dallinger configuration; defaults to the active configuration.
+
+    Returns
+    -------
+    type or None
+        The recruiter class, or ``None`` if the configured name is unknown
+        in debug mode (where ``from_config`` also returns ``None``).
+    """
+    config = config or get_config()
+    if config.get("replay"):
+        return dallinger.recruiters.HotAirRecruiter
+
+    name = config.get("recruiter", None)
+    recruiter_class = _recruiter_class_by_name(name) if name is not None else None
+    if recruiter_class is not None and issubclass(
+        recruiter_class,
+        (dallinger.recruiters.BotRecruiter, dallinger.recruiters.MultiRecruiter),
+    ):
+        return recruiter_class
+
+    if config.get("mode") == "debug":
+        if recruiter_class is not None:
+            if issubclass(recruiter_class, MockRecruiter):
+                return recruiter_class
+            if issubclass(recruiter_class, dallinger.recruiters.ProlificRecruiter):
+                return _recruiter_class_by_name("devprolific")
+        return _recruiter_class_by_name(
+            config.get("debug_recruiter", "HotAirRecruiter")
+        )
+
+    if recruiter_class is not None:
+        return recruiter_class
+    if name:
+        raise NotImplementedError("No such recruiter {}".format(name))
+    return dallinger.recruiters.MTurkRecruiter
 
 
 class PsyNetRecruiterMixin:
