@@ -93,6 +93,13 @@ ensure_runtime()
 
 logger = get_logger()
 
+try:
+    from dallinger.command_line.docker_ssh import option_ingress
+except ImportError:  # pragma: no cover - older Dallinger without Cloudflare ingress
+
+    def option_ingress(func):
+        return func
+
 
 def _use_local_dallinger_option(func):
     return click.option(
@@ -1201,8 +1208,19 @@ def run_pre_checks_deploy(local_, recruiter):
         )
 
 
-def _abort_if_app_exists(server, app):
-    if not app:
+def _abort_if_app_exists(server, app, *, update=False):
+    """Refuse to create an app that is already on the server.
+
+    Parameters
+    ----------
+    server : str
+        SSH server name.
+    app : str or None
+        Experiment app name.
+    update : bool
+        When true, an existing app is the one being replaced.
+    """
+    if update or not app:
         return
 
     from dallinger.command_line.docker_ssh import get_apps
@@ -1237,6 +1255,7 @@ def _pre_launch(
     heroku=False,
     server=None,
     app=None,
+    update=False,
 ):
     from .experiment import get_experiment
 
@@ -1273,7 +1292,7 @@ def _pre_launch(
         from dallinger.command_line.docker_ssh import ensure_remote_host_in_known_hosts
 
         ensure_remote_host_in_known_hosts(ssh_host, ssh_user)
-        _abort_if_app_exists(server, app)
+        _abort_if_app_exists(server, app, update=update)
 
     run_pre_checks(mode, local_, heroku, docker, app)
 
@@ -1421,13 +1440,29 @@ def _deploy__docker_heroku(ctx, app, archive):
     "--dns-host",
     help="DNS name to use. Must resolve all its subdomains to the IP address specified as ssh host",
 )
+@option_ingress
 @_use_local_dallinger_option
+@click.option(
+    "--update",
+    is_flag=True,
+    help="Replace a running app in place, keeping its database and skipping launch.",
+)
 @click.pass_context
-def deploy__docker_ssh(ctx, app, archive, dns_host, server, use_local_dallinger=False):
+def deploy__docker_ssh(
+    ctx,
+    app,
+    archive,
+    dns_host,
+    server,
+    ingress=None,
+    use_local_dallinger=False,
+    update=False,
+):
     """
     Deploy the experiment to a remote server via Docker and SSH.
     """
     try:
+        _validate_ssh_deploy_update(app, archive, update)
         _configure_dallinger_image_source(use_local_dallinger=use_local_dallinger)
 
         _pre_launch(
@@ -1439,6 +1474,7 @@ def deploy__docker_ssh(ctx, app, archive, dns_host, server, use_local_dallinger=
             docker=True,
             server=server,
             app=app,
+            update=update,
         )
 
         from dallinger.command_line.docker_ssh import (
@@ -1453,6 +1489,8 @@ def deploy__docker_ssh(ctx, app, archive, dns_host, server, use_local_dallinger=
             server=server,
             dns_host=dns_host,
             app=app,
+            ingress=ingress,
+            update=update,
         )
 
         _post_deploy(result)
@@ -1461,17 +1499,32 @@ def deploy__docker_ssh(ctx, app, archive, dns_host, server, use_local_dallinger=
         reset_console()
 
 
-def _invoke_docker_ssh_deploy(ctx, command, *, server, dns_host, app):
-    """Invoke Dallinger docker-ssh deploy/sandbox for a fresh app."""
-    return ctx.invoke(
-        command,
-        server=server,
-        dns_host=dns_host,
-        app_name=app,
-        config_options={},
-        archive_path=None,
-        update=False,
-    )
+def _validate_ssh_deploy_update(app, archive, update):
+    """Reject an in-place SSH update that cannot keep an existing app."""
+    if not update:
+        return
+    if not app:
+        raise click.UsageError("Updating an SSH app requires --app.")
+    if archive is not None:
+        raise click.UsageError("--archive and --update cannot be used together.")
+
+
+def _invoke_docker_ssh_deploy(
+    ctx, command, *, server, dns_host, app, ingress=None, update=False
+):
+    """Invoke Dallinger docker-ssh deploy/sandbox, forwarding ingress when supported."""
+    kwargs = {
+        "server": server,
+        "dns_host": dns_host,
+        "app_name": app,
+        "config_options": {},
+        "archive_path": None,
+        "update": bool(update),
+    }
+    params = getattr(command, "params", ())
+    if any(getattr(param, "name", None) == "ingress" for param in params):
+        kwargs["ingress"] = ingress
+    return ctx.invoke(command, **kwargs)
 
 
 def _configure_dallinger_image_source(use_local_dallinger=False):
@@ -1854,9 +1907,12 @@ def debug__docker_heroku(ctx, app, archive):
     "--dns-host",
     help="DNS name to use. Must resolve all its subdomains to the IP address specified as ssh host",
 )
+@option_ingress
 @_use_local_dallinger_option
 @click.pass_context
-def debug__docker_ssh(ctx, app, archive, server, dns_host, use_local_dallinger=False):
+def debug__docker_ssh(
+    ctx, app, archive, server, dns_host, ingress=None, use_local_dallinger=False
+):
     """
     Debug the experiment on a remote server via SSH.
     """
@@ -1884,6 +1940,7 @@ def debug__docker_ssh(ctx, app, archive, server, dns_host, use_local_dallinger=F
             server=server,
             dns_host=dns_host,
             app=app,
+            ingress=ingress,
         )
 
         _post_deploy(result)

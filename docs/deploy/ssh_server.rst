@@ -188,6 +188,9 @@ You deploy experiments using the ``psynet deploy command``:
 
     psynet deploy ssh --app your-app-name
 
+To replace the code of an app that is already running, keep its database,
+and skip a fresh launch, add ``--update``.
+
 By default, this will deploy your app to a hostname that looks like this:
 
 https://your-app-name.121.101.152.23.nip.io
@@ -278,6 +281,28 @@ what happened. You can do this as follows:
 
     docker compose exec web /bin/bash
 
+Cloudflare tunnels (optional)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Classic docker-ssh deployments go through the host Caddy reverse proxy on
+ports 80/443. You can instead deploy with a per-app Cloudflare tunnel so the
+experiment is reachable at a first-level hostname such as
+``https://consonance.science-of-music.org`` without opening those ports::
+
+    psynet deploy ssh --app consonance --ingress cloudflare
+
+Classic ``--dns-host`` is only for host Caddy. Cloudflare hostnames use
+``cloudflare_dns_zone`` from Dallinger config (for example
+``science-of-music.org``).
+
+Set the non-secret ``cloudflare_account_id``, ``cloudflare_zone_id``, and
+``cloudflare_dns_zone`` in ``~/.dallingerconfig``. The API token is read from
+``CLOUDFLARE_API_TOKEN``, then ``~/.dallingerconfig``, then the macOS
+Keychain item ``dallinger-cloudflare-api-token``. It is never stored in host
+records. Until a server default is changed, omitting ``--ingress`` keeps
+classic Caddy. ``psynet export ssh`` reaches a Cloudflare app at its public
+name rather than ``https://<app>.<ssh-host>``.
+
 Under the hood
 ^^^^^^^^^^^^^^
 
@@ -309,11 +334,15 @@ same app. Each PsyNet experiment contains four distinct containers:
 - ``clock`` - schedules tasks
 - ``redis`` - stores variable values
 
-The SSH server additionally provides two further containers which are shared across all experiments:
+The SSH server additionally provides two further containers which are shared across all **classic** experiments:
 
 - ``postgresql`` - hosts the experiment databases
 - ``caddy`` - redirects HTTP requests to the appropriate experiment app. See
   `Caddy server <https://caddyserver.com/>`_ for more details.
+
+Cloudflare-ingress apps instead run their own Postgres in the Compose project
+and reach the internet through ``cloudflared``. They do not publish ports
+80/443.
 
 When you deploy an experiment to the SSH server, a folder is created in the location
 ``~/dallinger/your-app-name`` which contains a Docker compose configuration called
