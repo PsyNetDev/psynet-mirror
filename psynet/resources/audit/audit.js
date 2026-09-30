@@ -31,6 +31,27 @@ document.querySelectorAll(".notebook-plotly").forEach((wrapper) => {
   }
 });
 
+// Static servers such as GitLab Pages and `psynet audit serve` ignore
+// byte-range requests, and browsers can't seek a video served that way.
+// Such videos are downloaded once and played from memory instead.
+document.querySelectorAll("video").forEach((video) => {
+  const makeSeekable = async () => {
+    const seekable =
+      video.seekable.length > 0 &&
+      video.seekable.end(0) >= video.duration - 1;
+    if (seekable || video.currentSrc.startsWith("blob:")) return;
+    try {
+      const response = await fetch(video.currentSrc);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      video.src = URL.createObjectURL(await response.blob());
+    } catch (exception) {
+      console.warn("Could not make video seekable", video.currentSrc, exception);
+    }
+  };
+  if (video.readyState >= HTMLMediaElement.HAVE_METADATA) makeSeekable();
+  else video.addEventListener("loadedmetadata", makeSeekable, { once: true });
+});
+
 document.querySelectorAll("[data-screenshot-gallery]").forEach((gallery) => {
   const cards = Array.from(
     gallery.querySelectorAll("[data-screenshot-card]"),
