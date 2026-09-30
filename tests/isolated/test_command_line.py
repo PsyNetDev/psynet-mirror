@@ -70,6 +70,15 @@ class TestCommandLine(object):
         assert b"Options:" in output
         assert b"Commands:" in output
 
+    def test_hibernate_and_awaken_ssh_help(self):
+        runner = CliRunner()
+        hibernate = runner.invoke(psynet, ["hibernate", "ssh", "--help"])
+        awaken = runner.invoke(psynet, ["awaken", "ssh", "--help"])
+        assert hibernate.exit_code == 0
+        assert awaken.exit_code == 0
+        assert "--app" in hibernate.output
+        assert "--server" in awaken.output
+
     def test_deploy_ssh_exposes_ingress_when_dallinger_supports_it(self):
         from dallinger.command_line import docker_ssh as dssh
 
@@ -79,6 +88,33 @@ class TestCommandLine(object):
         if hasattr(dssh, "option_ingress"):
             assert "ingress" in names
         assert "use_local_dallinger" in names
+
+    def test_awaken_ssh_app_skips_missing_front_door(self):
+        from dallinger.command_line import docker_ssh as dssh
+
+        from psynet.command_line import _awaken_ssh_app
+
+        ctx = Mock()
+        with patch.object(
+            dssh, "awaken_app", return_value=False, create=True
+        ) as awaken_app:
+            _awaken_ssh_app(ctx, "musix", "consonance")
+        awaken_app.assert_called_once_with("musix", "consonance", required=False)
+
+    def test_awaken_ssh_app_reraises_real_failures(self):
+        from dallinger.command_line import docker_ssh as dssh
+
+        from psynet.command_line import _awaken_ssh_app
+
+        ctx = Mock()
+        with patch.object(
+            dssh,
+            "awaken_app",
+            side_effect=RuntimeError("controller failed"),
+            create=True,
+        ):
+            with pytest.raises(RuntimeError, match="controller failed"):
+                _awaken_ssh_app(ctx, "musix", "consonance")
 
     def test_configure_dallinger_image_source_sets_source(self, monkeypatch, tmp_path):
         from psynet.command_line import _configure_dallinger_image_source

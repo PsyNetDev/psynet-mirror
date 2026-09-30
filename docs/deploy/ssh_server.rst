@@ -303,6 +303,21 @@ records. Until a server default is changed, omitting ``--ingress`` keeps
 classic Caddy. ``psynet export ssh`` reaches a Cloudflare app at its public
 name rather than ``https://<app>.<ssh-host>``.
 
+Hibernation
+^^^^^^^^^^^
+
+Each docker-ssh app has a front door that can stop its expensive containers
+while the app stays reachable. To sleep or wake an app by hand::
+
+    psynet hibernate ssh --app your-app-name
+    psynet awaken ssh --app your-app-name
+
+Hibernate only apps that are not recruiting or serving participants. A
+visitor to a sleeping app sees "Getting ready, please wait..." while it
+wakes. ``GET /health`` probes do not wake it. ``psynet export ssh`` awakens a
+sleeping app before reading its database. If the app crashes while awake, it
+returns HTTP 503 until Docker restarts it.
+
 Under the hood
 ^^^^^^^^^^^^^^
 
@@ -342,7 +357,8 @@ The SSH server additionally provides two further containers which are shared acr
 
 Cloudflare-ingress apps instead run their own Postgres in the Compose project
 and reach the internet through ``cloudflared``. They do not publish ports
-80/443.
+80/443. Every app also has an unprivileged front-door Caddy and a private
+hibernation controller.
 
 When you deploy an experiment to the SSH server, a folder is created in the location
 ``~/dallinger/your-app-name`` which contains a Docker compose configuration called

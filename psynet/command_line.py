@@ -1552,6 +1552,18 @@ def _configure_dallinger_image_source(use_local_dallinger=False):
     click.echo(f"Baking local Dallinger from {source} into the experiment image.")
 
 
+def _awaken_ssh_app(ctx, server, app):
+    """Wake a sleeping docker-ssh app before export or other database access."""
+    try:
+        from dallinger.command_line import docker_ssh as dssh
+    except ImportError:
+        return
+    awaken = getattr(dssh, "awaken_app", None)
+    if awaken is None:
+        return
+    awaken(server, app, required=False)
+
+
 def _post_deploy(result):
     assert isinstance(result, dict)
     assert "dashboard_user" in result
@@ -2657,6 +2669,7 @@ def export__docker_ssh(ctx, app, server, **kwargs):
     Export the experiment from a remote server via Docker and SSH.
     """
     app = _resolve_ssh_app(ctx, app, server)
+    _awaken_ssh_app(ctx, server, app)
     export_(
         ctx,
         get_exp_variables=lambda: _read_experiment_variables(
@@ -3349,6 +3362,48 @@ def _destroy(
                 raise
         return True
     return False
+
+
+@psynet.group("hibernate")
+def hibernate():
+    """
+    Hibernate a deployed experiment.
+    """
+    pass
+
+
+@hibernate.command("ssh")
+@click.option("--app", required=True, callback=verify_id, help="Experiment id")
+@option_server
+@click.pass_context
+def hibernate__ssh(ctx, app, server):
+    """
+    Hibernate the experiment on a remote server via SSH.
+    """
+    from dallinger.command_line.docker_ssh import hibernate as dallinger_hibernate
+
+    ctx.invoke(dallinger_hibernate, server=server, app=app)
+
+
+@psynet.group("awaken")
+def awaken():
+    """
+    Awaken a hibernated experiment.
+    """
+    pass
+
+
+@awaken.command("ssh")
+@click.option("--app", required=True, callback=verify_id, help="Experiment id")
+@option_server
+@click.pass_context
+def awaken__ssh(ctx, app, server):
+    """
+    Awaken the experiment on a remote server via SSH.
+    """
+    from dallinger.command_line.docker_ssh import awaken as dallinger_awaken
+
+    ctx.invoke(dallinger_awaken, server=server, app=app)
 
 
 @destroy.command("ssh")
