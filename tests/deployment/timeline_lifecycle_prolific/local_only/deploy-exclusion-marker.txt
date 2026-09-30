@@ -1,0 +1,3 @@
+deploy.toml excludes local_only/. Exp.on_launch refuses to start if this file
+reaches the running experiment, because that would mean deployment file
+selection ignored deploy.toml.

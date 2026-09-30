@@ -181,6 +181,7 @@ extend-exclude = [
     "tests/deployment/audio_gibbs/consents_cococo",
     "tests/deployment/auto_recruit_prolific/consents_cococo",
     "tests/deployment/payment_flows_prolific/consents_cococo",
+    "tests/deployment/timeline_lifecycle_prolific/consents_cococo",
 ]
 
 [tool.ruff.lint]

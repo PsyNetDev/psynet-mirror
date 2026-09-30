@@ -1,0 +1,10 @@
+/* Linked only by the lt_component page. lifecycle-probe.js reads the
+   sentinel colour to detect this stylesheet leaking onto later pages. */
+.lifecycle-sentinel {
+  color: rgb(1, 2, 3);
+}
+
+.lifecycle-card {
+  border-left: 4px solid #4989c8;
+  padding-left: 1em;
+}

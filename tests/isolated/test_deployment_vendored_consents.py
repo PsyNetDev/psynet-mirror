@@ -16,6 +16,7 @@ VENDORED_DIRS = [
     Path("tests/deployment/audio_gibbs/consents_cococo"),
     Path("tests/deployment/auto_recruit_prolific/consents_cococo"),
     Path("tests/deployment/payment_flows_prolific/consents_cococo"),
+    Path("tests/deployment/timeline_lifecycle_prolific/consents_cococo"),
 ]
 
 

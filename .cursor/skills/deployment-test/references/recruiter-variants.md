@@ -5,9 +5,9 @@ Every deployment-test experiment defaults to `devprolific`, which cannot start
 paid recruitment. Before starting the three staggered deploy commands above,
 swap in the paid variants.
 
-`auto_recruit_prolific` is an on-demand extra rather than part of a full
-deployment test; when it is requested, prepare it exactly like
-`payment_flows_prolific` in step 1 below.
+`auto_recruit_prolific` and `timeline_lifecycle_prolific` are on-demand
+extras rather than part of a full deployment test; when one is requested,
+prepare it exactly like `payment_flows_prolific` in step 1 below.
 
 Copy the matching variant files, then **diff-check** before deploy and
 **inspect the running container** after launch. A paid Prolific

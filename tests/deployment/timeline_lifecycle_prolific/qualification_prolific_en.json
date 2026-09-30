@@ -1,0 +1,8 @@
+{
+    "device_compatibility": [
+        "desktop",
+        "mobile",
+        "tablet"
+    ],
+    "peripheral_requirements": []
+}

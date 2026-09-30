@@ -31,6 +31,17 @@ sets `recruiter = prolific`) and needs no worktree, so the preparation steps
 below apply to it unchanged — just add it to the `for exp in ...` loops and
 give it its own app name.
 
+`tests/deployment/timeline_lifecycle_prolific` is also on demand. Deploy it
+when a release changes page lifecycle code: in-place timeline transitions,
+page JavaScript or CSS APIs, media cleanup, timeline holds, or early exit.
+Eight participants take about three minutes each, which costs roughly £5–6
+including fees. It follows the same config-file recruiter pattern and needs
+no worktree. Launch aborts if `local_only/`, which `deploy.toml` excludes,
+reached the container. After recruitment finishes, export the data and run
+`python analyze.py <export-dir>` in the experiment directory. Report its
+PASS, FAIL, and WARN lines as-is; the `experiment.py` docstring explains each
+check.
+
 Every experiment above defaults to `recruiter = devprolific`, which simulates
 the Prolific API locally (requests are logged, not sent), so running a directory
 directly cannot accidentally start paid recruitment; every paid deployment

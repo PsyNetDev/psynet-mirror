@@ -1,0 +1,9 @@
+[Parameters]
+aws_region = us-east-1
+
+# check_dallinger_version = false
+publish_experiment = true
+
+# Safe default: simulates the Prolific API locally (no credentials, no payments).
+# Paid deployments swap in config.txt.prolific, which sets recruiter = prolific.
+recruiter = devprolific

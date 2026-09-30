@@ -118,6 +118,7 @@ TEST_EXPERIMENT_CUSTOM_CONFIGS = {
     "tests/deployment/payment_flows_prolific/config.txt",
     "tests/deployment/audio_gibbs/config.txt",
     "tests/deployment/auto_recruit_prolific/config.txt",
+    "tests/deployment/timeline_lifecycle_prolific/config.txt",
 }
 
 AUTHORED_TEST_EXPERIMENT_FILENAMES = {
@@ -133,6 +134,8 @@ AUTHORED_TEST_EXPERIMENT_FILENAMES = {
     "DEPLOYMENT_ID",
     "custom_synth.py",
     "pre_deployed_assets.csv",
+    "analyze.py",
+    "deploy-exclusion-marker.txt",
 }
 
 
@@ -152,7 +155,7 @@ def _is_authored_test_experiment_path(relative_path: str) -> bool:
         return True
     if "templates" in parts and name.endswith(".html"):
         return True
-    if "static" in parts and name.endswith((".js", ".css")):
+    if "static" in parts and (name.endswith((".js", ".css")) or name == "LICENSE.txt"):
         return True
     if "locales" in parts and name.endswith((".po", ".pot")):
         return True

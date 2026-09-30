@@ -19,6 +19,7 @@ def test_deployment_experiments_select_recruiter_in_config():
         "payment_flows_prolific",
         "auto_recruit_prolific",
         "audio_gibbs",
+        "timeline_lifecycle_prolific",
     ):
         exp_dir = DEPLOYMENT_ROOT / experiment
         assert _config_recruiter(exp_dir, "config.txt") == "devprolific"
