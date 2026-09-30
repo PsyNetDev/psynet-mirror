@@ -19,6 +19,7 @@ from psynet.exit import (
     PaymentDecision,
     PaymentState,
 )
+from psynet.lucid import LucidService
 from psynet.participant import (
     BONUS_PAY_IN_PROGRESS,
     BONUS_STATUS_CAPPED,
@@ -2263,6 +2264,24 @@ def test_lucid_clock_times_out_working_participants_who_closed_the_tab():
         assert reason(entrant, working, now) == "overall-timeout-600s"
         assert reason(entrant, working, now - timedelta(minutes=2)) is None
         assert reason(entrant, approved, now) is None
+
+
+def test_lucid_time_limit_does_not_reset_after_a_day():
+    service = object.__new__(LucidService)
+    service.recruitment_config = {"termination_time_in_s": 600}
+    registered_at = datetime.now() - timedelta(days=1, minutes=5)
+
+    def entrant(progress):
+        participant = SimpleNamespace(progress=progress)
+        return SimpleNamespace(
+            registered_at=registered_at,
+            terminated_at=None,
+            resolve_participant=lambda: participant,
+        )
+
+    assert service.can_be_terminated(entrant(progress=0))
+    with patch("psynet.lucid.get_lucid_rid", return_value=entrant(progress=0.5)):
+        assert service.time_until_termination_in_s("rid") < 0
 
 
 def _lucid_submit_url(ris, rid):
