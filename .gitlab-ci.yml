@@ -66,8 +66,10 @@ before_script:
         - Dockerfile
         - Dockerfile.playwright
         - MANIFEST.in
+        - benchmarks/**/*
         - ci/**/*
         - demos/**/*
+        - docs/scripts/**/*
         - deployment-tests/**/*
         - dev-requirements.in
         - install-ci-dependencies.sh
@@ -113,9 +115,10 @@ changelog_check:
   image: python:3.13
   stage: test
   services: []
-  # The checker is stdlib-only once ``psynet`` is on PYTHONPATH (the checkout).
-  # Installing ``.[dev]`` pulled Dallinger and Sphinx for no benefit.
-  before_script: []
+  # Importing ``psynet.dev.changelog`` from the checkout needs only ``click``
+  # (via ``psynet.version``); ``.[dev]`` would also pull Dallinger and Sphinx.
+  before_script:
+    - pip install -q click
   script:
     - |
       git fetch --unshallow origin || git fetch --depth=100 origin
@@ -277,7 +280,8 @@ playwright_e2e_default:
 merge_test_results:
   image: python:3.13-alpine
   stage: test
-  <<: *default_rules
+  # Must match the jobs it needs, or skipped test jobs break pipeline creation.
+  <<: *docker_test_rules
   services: []
   needs:
     - "tests_python_3_13"
