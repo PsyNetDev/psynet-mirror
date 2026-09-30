@@ -326,9 +326,10 @@ timeline exists, use planned durations and label the costs as provisional.
 
 `simulation.ipynb` reads `config.toml`, `results.csv` and `run.json` rather than
 rerunning the simulation. It has a *Power analysis* section and, for an adaptive
-experiment, an *Adaptive procedure* section. Start it with two prose sections,
-*How to read the statistics* and *Simulation assumptions*, covering the items in
-"Reporting the results" of the method page.
+experiment, an *Adaptive procedure* section. Order each section as in
+"Reporting the results" of the method page: summary, what the results would
+look like, one subsection per question, assumptions, then details for
+reviewers.
 
 The audit renders the notebook's saved outputs, so execute it before adding it.
 Plotly figures stay interactive, offline, if the notebook selects the MIME
@@ -341,18 +342,38 @@ pio.renderers.default = "plotly_mimetype"
 pio.templates.default = "plotly_white"
 ```
 
+For the example dataset, simulate one replicate at the chosen design with
+`sample_responses` and a fixed seed, run the planned estimator, and plot each
+estimate with its interval, sorted by the estimate.
+
 Plot the decision metric against the number of participants, with other design
 factors as facets or line styles, the threshold as a horizontal line, and the
 Monte Carlo interval as a shaded band. Give band traces `mode="lines"`;
 otherwise Plotly draws a marker at every corner of the band. Label the axis in
-the response's units.
-Add a table of the smallest design meeting the criterion under each assumption
-set, and a table of every metric at the chosen design. For a profile, also plot
-the smallest spread for the target correlation against the number of
-participants, with the true spread under each assumption set for comparison. Plotly `updatemenus` buttons can switch a figure between metrics;
-ipywidgets and page-level tabs don't work in the rendered audit. Restyle one
-set of traces per button instead of adding a set of traces per metric, which
-keeps the notebook small. Executed notebooks may be up to 10 MB.
+the response's units and the legend in plain words. Below it, add a table of
+the smallest design meeting the criterion under each assumption set, with its
+cost.
+
+For a profile, show how much the ranking depends on the assumed spread: at the
+chosen design, plot the expected profile correlation against the true spread,
+with the assumed spread and the smallest spread for the target correlation
+marked. The expected correlation follows from the smallest spread `s_target`
+for the target correlation `r_target`:
+
+```python
+spread = np.linspace(0.01, 1.5 * true_spread, 200)
+centered_se = s_target * np.sqrt(1 - r_target**2) / r_target
+expected_correlation = spread / np.sqrt(spread**2 + centered_se**2)
+```
+
+Put the table of every metric at the chosen design in the details section,
+with readable column names, such as "Difference margin (points)" rather than
+`rms_difference_margin_of_error`. Plotly `updatemenus` buttons can switch a
+figure between metrics; ipywidgets and page-level tabs don't work in the
+rendered audit. Restyle one set of traces per button instead of adding a set of
+traces per metric, which keeps the notebook small. Executed notebooks may be up
+to 10 MB. The audit collapses code cells behind a "Show code" toggle, so
+readers see the prose, figures and tables first.
 
 ## Adding the simulation to the audit
 

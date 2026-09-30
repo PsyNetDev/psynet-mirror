@@ -224,14 +224,35 @@ or extra recruitment to replace participants who drop out.
 
 ## Reporting the results
 
-Start the report with how to read the statistics and with the simulation's
-assumptions: the response model, where its parameter values come from, the
-numbers of participants and replicates, missing data, costs left out, and the
-purpose of each alternative assumption set. State the required precision and
-its rationale. Then show precision against the
-number of participants or trials, with the required precision marked, and list
-the smallest designs that meet the criterion, nearby alternatives, and how the
-choice changes under the alternative assumptions.
+Write the report for someone who knows the study but not the statistics, such
+as the experimenter's supervisor. Give the answer first and keep the
+statistical detail for the end:
+
+1. **Summary.** A few plain sentences: the chosen design and what it achieves,
+   in the response's units; the required precision and why; the smallest
+   design that meets it under the reference assumptions and under each
+   alternative; and what those designs cost.
+2. **What the results would look like.** One simulated dataset at the chosen
+   design, analyzed as planned: for example, each stimulus's estimate with its
+   interval. This shows what the precision means before any statistic is
+   defined.
+3. **One section per question**, headed by the question in plain words, such
+   as "How many participants do we need?" or "How much does the ranking depend
+   on our assumptions?". Give each one figure with the required precision
+   marked, and a sentence saying what it shows. Show the smallest adequate
+   design under each assumption set, with its cost, in a small table.
+4. **Assumptions** in everyday words: what the response model says, where its
+   values come from and which are judgment, what each alternative assumption
+   set represents, missing data, and the costs left out.
+5. **Details for reviewers**: definitions of the statistics, the numbers of
+   replicates, Monte Carlo intervals, bias, coverage, failed fits, and a table
+   of every metric with readable column names.
+
+Name assumption sets by what they mean, such as "noisier raters than
+assumed", and give their parameter values in the assumptions section. Plot
+only the factors that change the answer: if two assumption levels give the
+same result, show one and say so. Round numbers in the text to two decimals;
+tables and hover text can be more precise.
 
 ## After data collection
 

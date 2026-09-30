@@ -72,9 +72,10 @@ Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rs
 
 ## Notebook rules
 
-- Begin with two prose sections, **How to read the statistics** and
-  **Simulation assumptions**, covering the items in "Reporting the results" of
-  the method reference.
+- Write for a reader who knows the study but not the statistics. Follow the
+  order in "Reporting the results" of the method reference: summary, what the
+  results would look like, one subsection per question, assumptions, details
+  for reviewers.
 - Use Plotly with the `plotly_mimetype` renderer. Put the primary metric in
   its own always-visible figure. Use translucent Monte Carlo ribbons for dense
   curves and error bars only for a few unrelated designs; keep exact bounds in
