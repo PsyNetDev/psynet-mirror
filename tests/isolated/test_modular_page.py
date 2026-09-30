@@ -524,6 +524,7 @@ def test_rating_scale_keeps_buttons_on_narrow_screens():
     """SurveyJS's automatic dropdown would hide the scale descriptions."""
     scale = RatingScale("rating", 7, min_description="Low", max_description="High")
     assert scale.design["displayMode"] == "buttons"
+    assert scale.design["minWidth"] == "0px"
 
 
 def test_prompt_metadata_excludes_text():

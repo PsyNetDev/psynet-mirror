@@ -4065,6 +4065,11 @@ class SurveyJSControl(Control):
             .sd-root-modern {
                 --sjs-general-backcolor: transparent;
             }
+            /* SurveyJS gives pages a 348px minimum width, which overflows the
+            content surface on phones. */
+            .sd-body .sd-body__page {
+                min-width: 0;
+            }
             /* This removes the shadow from the survey elements. */
             .sd-element--with-frame:not(.sd-element--collapsed) {
                 box-shadow: 0px 0px 0px !important;
@@ -4334,6 +4339,8 @@ class RatingScale:
         # SurveyJS's default "auto" mode swaps narrow scales for a dropdown
         # that hides the min/max descriptions.
         design["displayMode"] = "buttons"
+        # SurveyJS's default 300px minimum overflows the page card on phones.
+        design["minWidth"] = "0px"
 
         if self.min_description:
             design["minRateDescription"] = self.min_description
