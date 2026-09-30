@@ -4857,3 +4857,18 @@ def test_lucid_rejected_consent_uses_a_terminate_callback():
         participant=participant,
         allow_complete=False,
     )
+
+
+def test_status_check_without_study_id_warns_once_and_skips_api(caplog, monkeypatch):
+    monkeypatch.setattr(PsyNetProlificRecruiterMixin, "_warned_missing_study_id", False)
+    recruiter = object.__new__(DevProlificRecruiter)
+    recruiter.prolificservice = MagicMock()
+    with patch.object(
+        DevProlificRecruiter, "current_study_id", new_callable=PropertyMock
+    ) as study_id:
+        study_id.return_value = None
+        recruiter.verify_status_of([make_participant()])
+        recruiter.verify_status_of([make_participant()])
+    recruiter.prolificservice.get_assignments_for_study.assert_not_called()
+    warnings = [r for r in caplog.records if "no Prolific study ID" in r.getMessage()]
+    assert len(warnings) == 1

@@ -837,9 +837,29 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
         }
     )
 
+    _warned_missing_study_id = False
+
     def shows_error_recovery_page(self, plan: exit_domain.ExitPlan) -> bool:
         """Prolific recovery asks the participant to submit or return."""
         return plan.context is exit_domain.ExitContext.ERROR_RECOVERY
+
+    def verify_status_of(self, participants):
+        """Sync participant statuses with Prolific, or skip if no study is recorded.
+
+        No study ID is recorded when PsyNet did not open the study itself
+        (for example with ``auto_recruit = false``, including debug runs), so
+        there are no submissions to compare against. The clock runs this check
+        every few seconds, so the skip is logged only once per process.
+        """
+        if not self.current_study_id:
+            if not PsyNetProlificRecruiterMixin._warned_missing_study_id:
+                PsyNetProlificRecruiterMixin._warned_missing_study_id = True
+                logger.warning(
+                    "Skipping Prolific participant status checks: no Prolific "
+                    "study ID is recorded for this experiment."
+                )
+            return
+        super().verify_status_of(participants)
 
     @property
     def unsuccessful_base_payment(self):
