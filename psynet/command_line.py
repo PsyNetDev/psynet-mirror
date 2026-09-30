@@ -804,16 +804,29 @@ def run_prepare_in_subprocess():
     run_subprocess_with_live_output(prepare_cmd)
 
 
-def _prepare_after_stopping_local_workers(ctx, archive):
+def _prepare_after_stopping_local_workers(ctx, archive, update=False):
     """Stop leftover local debug workers, then reset the local database.
 
     Every launch path runs ``prepare`` against this machine's Postgres, so
     leftover ``dallinger_heroku_*`` backends must be gone first. Chrome
     windows are left alone here so a remote deploy does not close the
-    author's browser.
+    author's browser. An ``--update`` prepares only the image.
     """
     kill_psynet_worker_processes()
-    ctx.invoke(prepare, archive=archive)
+    if update:
+        _prepare_image_for_update()
+    else:
+        ctx.invoke(prepare, archive=archive)
+
+
+def _prepare_image_for_update():
+    """Prepare the image for ``--update``; the running app keeps its database."""
+    from .experiment import get_experiment
+
+    redis_vars.clear()
+    get_experiment().pre_deploy(update=True)
+    clean_sys_modules()
+    update_docker_tag()
 
 
 def _stop_leftover_debug_processes():
@@ -1239,8 +1252,38 @@ def _abort_if_app_exists(server, app, *, update=False):
         raise click.Abort
 
 
-def _keep_running_deployment_id(server, app):
-    """Record the running app's deployment ID so that ``--update`` keeps it.
+_option_ssh_update = click.option(
+    "--update",
+    is_flag=True,
+    help="Rebuild a running app in place, keeping its database and skipping launch.",
+)
+
+
+_SSH_COMMAND_FOR_MODE = {"sandbox": "psynet debug ssh", "live": "psynet deploy ssh"}
+
+
+def _read_running_deployment_info(server, app):
+    """Return the ``deployment_info`` baked into a running SSH app's image.
+
+    A stopped ``web``, as in a hibernated app, is read from a one-off container.
+    """
+    from dallinger.command_line.docker_ssh import Executor
+
+    server_info = CONFIGURED_HOSTS[server]
+    executor = Executor(server_info["host"], user=server_info.get("user"), app=app)
+    compose = f"docker compose -f ~/dallinger/{app}/docker-compose.yml"
+    path = f"/experiment/{deployment_info.path}"
+    output = executor.run(
+        f"{compose} exec -T web cat {path} 2>/dev/null "
+        f"|| {compose} run --rm --no-deps -T web cat {path}",
+        raise_=False,
+    )
+    text = output or ""
+    return deployment_info.loads(text[text.find("{") : text.rfind("}") + 1])
+
+
+def _check_ssh_update(server, app, mode):
+    """Check and confirm an in-place SSH update, keeping the app's identity.
 
     Parameters
     ----------
@@ -1248,17 +1291,36 @@ def _keep_running_deployment_id(server, app):
         SSH server name.
     app : str
         Experiment app name.
+    mode : str
+        ``"sandbox"`` for ``debug ssh`` or ``"live"`` for ``deploy ssh``.
     """
     try:
-        variables = _read_experiment_variables("ssh", app=app, server=server)
-        deployment_id = variables["deployment_id"]
+        running = _read_running_deployment_info(server, app)
+        identity = {key: running[key] for key in ("deployment_id", "secret", "mode")}
     except Exception as err:
-        click.echo(
-            f"Warning: could not read the deployment ID of {app} ({err}); "
-            "the update will record a new one."
+        raise click.ClickException(
+            f"Could not read the deployment ID and secret of {app} on {server} "
+            f"({err!r}). --update needs them to keep the app's records together."
         )
-        return
-    deployment_info.write(deployment_id=deployment_id, keep_deployment_id=True)
+    if identity["mode"] != mode:
+        original = _SSH_COMMAND_FOR_MODE.get(identity["mode"], identity["mode"])
+        raise click.UsageError(
+            f"{app} was created with `{original}`. Update it with "
+            f"`{original} --app {app} --update`."
+        )
+    if not user_confirms(
+        f"This rebuilds and restarts {app} on {server}, keeping its database. "
+        "Participants may see a short interruption. New assets are not deposited, "
+        "and networks and pre-deploy routines are not run again. Don't change the "
+        "timeline while participants are still taking part. Continue?",
+        default=mode != "live",
+    ):
+        raise click.Abort
+    deployment_info.write(
+        deployment_id=identity["deployment_id"],
+        secret=identity["secret"],
+        keep_deployment_id=True,
+    )
 
 
 ##########
@@ -1316,7 +1378,7 @@ def _pre_launch(
         ensure_remote_host_in_known_hosts(ssh_host, ssh_user)
         _abort_if_app_exists(server, app, update=update)
         if update:
-            _keep_running_deployment_id(server, app)
+            _check_ssh_update(server, app, mode)
 
     run_pre_checks(mode, local_, heroku, docker, app)
 
@@ -1343,7 +1405,7 @@ def _pre_launch(
     if config.get("check_dallinger_version"):
         check_installed_dallinger_version_is_recommended()
 
-    _prepare_after_stopping_local_workers(ctx, archive)
+    _prepare_after_stopping_local_workers(ctx, archive, update=update)
 
     _forget_tables_defined_in_experiment_directory()
 
@@ -1466,11 +1528,7 @@ def _deploy__docker_heroku(ctx, app, archive):
 )
 @option_ingress
 @_use_local_dallinger_option
-@click.option(
-    "--update",
-    is_flag=True,
-    help="Replace a running app in place, keeping its database and skipping launch.",
-)
+@_option_ssh_update
 @click.pass_context
 def deploy__docker_ssh(
     ctx,
@@ -1938,9 +1996,17 @@ def debug__docker_heroku(ctx, app, archive):
 )
 @option_ingress
 @_use_local_dallinger_option
+@_option_ssh_update
 @click.pass_context
 def debug__docker_ssh(
-    ctx, app, archive, server, dns_host, ingress=None, use_local_dallinger=False
+    ctx,
+    app,
+    archive,
+    server,
+    dns_host,
+    ingress=None,
+    use_local_dallinger=False,
+    update=False,
 ):
     """
     Debug the experiment on a remote server via SSH.
@@ -1948,6 +2014,7 @@ def debug__docker_ssh(
     try:
         from dallinger.command_line.docker_ssh import sandbox
 
+        _validate_ssh_deploy_update(app, archive, update)
         _configure_dallinger_image_source(use_local_dallinger=use_local_dallinger)
 
         _pre_launch(
@@ -1959,10 +2026,10 @@ def debug__docker_ssh(
             docker=True,
             server=server,
             app=app,
+            update=update,
         )
 
         # Note: PsyNet bypasses Dallinger's deploy-from-archive system and uses its own, so we set archive_path=None.
-        # Explicitly pass update=False to avoid Click converting the default to the string 'False'
         result = _invoke_docker_ssh_deploy(
             ctx,
             sandbox,
@@ -1970,6 +2037,7 @@ def debug__docker_ssh(
             dns_host=dns_host,
             app=app,
             ingress=ingress,
+            update=update,
         )
 
         _post_deploy(result)

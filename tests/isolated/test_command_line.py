@@ -1193,23 +1193,61 @@ def test_heroku_pre_checks_do_not_prompt_to_unignore_deploy(tmp_path, monkeypatc
     assert not any(".deploy" in message for message in prompts)
 
 
-@pytest.mark.parametrize(
-    "variables, kept",
-    [({"deployment_id": "exp__launch=1"}, True), (None, False)],
-)
-def test_update_keeps_the_running_deployment_id(tmp_path, monkeypatch, variables, kept):
+def test_ssh_update_keeps_the_running_identity(tmp_path, monkeypatch):
     from psynet import deployment_info
-    from psynet.command_line import _keep_running_deployment_id
+    from psynet.command_line import _check_ssh_update
     from psynet.experiment import Experiment
 
     monkeypatch.chdir(tmp_path)
-    deployment_info.write_all({"mode": "live"})
+    deployment_info.write_all({"mode": "live", "secret": "new"})
+    running = {"deployment_id": "exp__launch=1", "secret": "old", "mode": "live"}
     monkeypatch.setattr(
-        "psynet.command_line._read_experiment_variables", lambda *a, **k: variables
+        "psynet.command_line._read_running_deployment_info", lambda *a: running
     )
-    _keep_running_deployment_id("musix", "consonance")
+    monkeypatch.setattr("psynet.command_line.user_confirms", lambda *a, **k: True)
+    _check_ssh_update("musix", "consonance", "live")
     Experiment.update_deployment_id()
-    assert (deployment_info.read("deployment_id") == "exp__launch=1") is kept
+    assert deployment_info.read("deployment_id") == "exp__launch=1"
+    assert deployment_info.read("secret") == "old"
+
+
+@pytest.mark.parametrize(
+    "running, confirmed, error, message",
+    [
+        (
+            {"deployment_id": "d", "secret": "s", "mode": "sandbox"},
+            True,
+            click.UsageError,
+            "psynet debug ssh",
+        ),
+        (
+            OSError("unreachable"),
+            True,
+            click.ClickException,
+            "deployment ID and secret",
+        ),
+        (
+            {"deployment_id": "d", "secret": "s", "mode": "live"},
+            False,
+            click.exceptions.Abort,
+            "",
+        ),
+    ],
+)
+def test_ssh_update_refuses_unsafe_updates(
+    monkeypatch, running, confirmed, error, message
+):
+    from psynet.command_line import _check_ssh_update
+
+    def read(*args):
+        if isinstance(running, Exception):
+            raise running
+        return running
+
+    monkeypatch.setattr("psynet.command_line._read_running_deployment_info", read)
+    monkeypatch.setattr("psynet.command_line.user_confirms", lambda *a, **k: confirmed)
+    with pytest.raises(error, match=message):
+        _check_ssh_update("musix", "consonance", "live")
 
 
 def test_scripts_update_installs_managed_skills_and_preserves_user_skills():
@@ -3933,7 +3971,7 @@ def test_pre_launch_stops_workers_before_prepare(monkeypatch):
     monkeypatch.setattr("psynet.command_line.get_config", lambda: config)
     monkeypatch.setattr(
         "psynet.command_line._prepare_after_stopping_local_workers",
-        lambda ctx, archive: calls.append(("prepare", archive)),
+        lambda ctx, archive, update=False: calls.append(("prepare", archive)),
     )
     monkeypatch.setattr(
         "psynet.command_line._forget_tables_defined_in_experiment_directory",

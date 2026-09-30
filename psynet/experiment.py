@@ -2316,12 +2316,26 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 experiment=self,
             )
 
-    def pre_deploy(self, redeploying_from_archive=False):
+    def pre_deploy(self, redeploying_from_archive=False, *, update=False):
+        """Prepare the experiment's files and database snapshot for deployment.
+
+        Parameters
+        ----------
+        redeploying_from_archive : bool
+            Skip asset deposits and the database snapshot.
+        update : bool
+            Prepare only the image for an in-place SSH update. The running app
+            keeps its database and assets, so networks, pre-deploy routines,
+            asset deposits and the snapshot are skipped.
+        """
         self.update_deployment_id()
-        self.setup_experiment_config()
-        self.setup_experiment_variables()
+        if not update:
+            self.setup_experiment_config()
+            self.setup_experiment_variables()
 
         _write_pre_deploy_constant_registry()
+        if update:
+            return
 
         for module in self.timeline.modules.values():
             module.prepare_for_deployment(experiment=self)
