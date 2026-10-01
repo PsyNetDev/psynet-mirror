@@ -24,14 +24,23 @@ class VideoTrial(CameraImitationChainTrial):
     def show_trial(self, experiment, participant):
         """Record seeds directly and play the parent clip before imitation."""
         recording = ModularPage(
-            "recording", "Record the gesture.",
-            AsyncControl(duration=2, record_audio=False, show_preview=True, controls=True),
+            "recording",
+            "Record the gesture.",
+            AsyncControl(
+                duration=2, record_audio=False, show_preview=True, controls=True
+            ),
             time_estimate=2,
         )
         if self.degree == 0:
             return recording
         return join(
-            ModularPage("watch", VideoPrompt(self.assets["stimulus"], "Watch the previous recording.", muted=True), time_estimate=1),
+            ModularPage(
+                "watch",
+                VideoPrompt(
+                    self.assets["stimulus"], "Watch the previous recording.", muted=True
+                ),
+                time_estimate=1,
+            ),
             recording,
         )
 
@@ -52,7 +61,10 @@ class VideoNode(CameraImitationChainNode):
     def synthesize_target(self, output_file):
         """Use a fixture seed, then only deposited parent recordings."""
         if self.degree == 0:
-            source = Path(psynet.__file__).resolve().parents[1] / "demos/experiments/imitation_chain_video/assets/example_recording.webm"
+            source = (
+                Path(psynet.__file__).resolve().parents[1]
+                / "demos/experiments/imitation_chain_video/assets/example_recording.webm"
+            )
             shutil.copyfile(source, output_file)
         else:
             self.parent.alive_trials[0].recording.export(output_file)
@@ -90,11 +102,18 @@ class Exp(psynet.experiment.Experiment):
     label = "Missing chain recording"
     timeline = Timeline(
         VideoTrialMaker(
-            id_="video-chain", trial_class=VideoTrial, node_class=VideoNode,
-            chain_type="within", expected_trials_per_participant=4,
-            max_nodes_per_chain=2, chains_per_participant=2, trials_per_node=1,
-            target_n_participants=1, check_performance_at_end=True,
-            propagate_failure=False, wait_for_networks=False,
+            id_="video-chain",
+            trial_class=VideoTrial,
+            node_class=VideoNode,
+            chain_type="within",
+            expected_trials_per_participant=4,
+            max_nodes_per_chain=2,
+            chains_per_participant=2,
+            trials_per_node=1,
+            target_n_participants=1,
+            check_performance_at_end=True,
+            propagate_failure=False,
+            wait_for_networks=False,
         ),
         CodeBlock(_assert_complete),
         InfoPage("Chain checks passed.", time_estimate=1),

@@ -1331,8 +1331,7 @@ class Page(Elt):
         self.background_recording = _normalize_config(
             background_recording,
             self,
-            delegated=delegated_render or requires_full_page_reload,
-            session_id=session_id,
+            delegated=delegated_render,
         )
         legacy_js_links = _normalize_javascript_urls(js_links, "js_links")
         legacy_scripts = _normalize_js_page_code(scripts, "scripts")
@@ -1613,6 +1612,9 @@ class Page(Elt):
         """
         from psynet.page import UnityPage
 
+        from .background_recording import _browser_config
+        from .experiment import get_experiment
+
         return {
             "session_id": self.session_id,
             "type": type(self).__name__,
@@ -1621,6 +1623,11 @@ class Page(Elt):
             "is_unity_page": isinstance(self, UnityPage),
             "requires_full_page_reload": self.requires_full_page_reload,
             "expect_scrolling": self.expect_scrolling,
+            "background_recording": (
+                _browser_config(self, get_experiment(), participant)
+                if self.background_recording is not None
+                else None
+            ),
         }
 
     @property
@@ -1921,6 +1928,7 @@ class Page(Elt):
         # transitions. The public timeline route now serves full pages (plus
         # mode=json), while /response embeds this fragment payload directly.
         from .background_recording import _browser_config
+        from .modular_page import VideoRecordControl
 
         internal_js_vars = {
             "backgroundRecording": _browser_config(self, experiment, participant),
@@ -1928,6 +1936,13 @@ class Page(Elt):
             "pageUuid": participant.page_uuid,
             "dynamicallyUpdateProgressBarAndReward": self.dynamically_update_progress_bar_and_reward,
         }
+        control = getattr(self, "control", None)
+        if isinstance(control, VideoRecordControl):
+            internal_js_vars["asynchronousVideoUploadSources"] = (
+                control.recording_sources
+                if control._uses_async_upload(experiment)
+                else None
+            )
         locale = get_locale()
         language_dict = get_language_dict(locale)
         config = get_config()

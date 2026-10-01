@@ -2865,7 +2865,14 @@
 
       if (psynet.isSameSessionPageUpdate(response)) {
         psynet.page = response.page;
-        psynet.trial.registerEvent("pageUpdated");
+        psynet.var.pageUuid = response.page.attributes.page_uuid;
+        window.pageUuid = psynet.var.pageUuid;
+        psynet.pageLoadTime = new Date();
+        psynet.var.backgroundRecording = response.page.attributes.background_recording;
+        // A persistent task advances only after the next capture decision. The
+        // accepted clip is already queued under its original page identity.
+        await psynet.prepareBackgroundRecording();
+        await psynet.trial.registerEvent("pageUpdated");
         psynet.nextPagePending = false;
         return true;
       }
@@ -2909,6 +2916,7 @@
     };
 
     let onPageUpdated = function (event) {
+      if (typeof unityInstance === "undefined") return;
       console.log(
         "Dispatched 'onPageUpdated' event. Sending data to Unity:\nattributes:" +
           psynet.page.attributes +

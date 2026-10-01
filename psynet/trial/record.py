@@ -38,6 +38,33 @@ class Recording(ExperimentAsset):
     upload_max_bytes = Column(Integer)
     upload_context = Column(PythonDict)
 
+    @property
+    def recording_summary(self):
+        """Return researcher-facing outcomes without upload credentials or file paths.
+
+        The dashboard and asset manifest share these columns. A deposited clip
+        can still have a capture outcome (for example, sharing stopped early).
+        Legacy recordings use their existing deposit flag as the status.
+        """
+        context = self.upload_context or {}
+        return {
+            "recording_role": self.recording_role or "answer",
+            "recording_status": self.upload_status
+            or ("deposited" if self.deposited else "awaiting_deposit"),
+            "required_for_trial": self.required_for_trial,
+            "response_id": context.get("response_id"),
+            "page_uuid": context.get("page_uuid"),
+            "page_label": context.get("page_label"),
+            "recording_source": context.get("source"),
+            "capture_outcome": context.get("capture_outcome"),
+            "recording_failure_reason": (
+                self.upload_failed_reason or context.get("unavailable_reason")
+            ),
+            "upload_deadline": self.upload_deadline,
+            "upload_received_at": self.upload_received_at,
+            "upload_processing_deadline": self.upload_processing_deadline,
+        }
+
 
 class RecordingAnalysisPlot(ExperimentAsset):
     pass

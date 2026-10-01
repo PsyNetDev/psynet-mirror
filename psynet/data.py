@@ -1022,6 +1022,7 @@ def export_assets(
     """
     from .asset import ExperimentAsset, OnDemandAsset
     from .export.path_safety import UnsafePathError, assert_semantic_asset_path
+    from .trial.record import Recording
 
     # ExperimentAsset covers deposits for this deployment. CachedAsset and
     # ExternalAsset are omitted. OnDemandAsset subclasses ExperimentAsset
@@ -1055,7 +1056,11 @@ def export_assets(
             "object_path": asset.object_path,
             "extension": asset.extension,
             "is_folder": bool(asset.is_folder),
-            "url": asset.url,
+            "url": (
+                asset.url
+                if not isinstance(asset, Recording) or asset.deposited
+                else None
+            ),
             "module_id": asset.module_id,
             "participant_id": asset.participant_id,
             "trial_id": asset.trial_id,
@@ -1064,11 +1069,22 @@ def export_assets(
             "description": asset.description,
             "storage": _asset_storage_kind(asset),
         }
-        asset_ids_needing_bytes.append(asset.id)
+        if isinstance(asset, Recording):
+            row.update(asset.recording_summary)
+        if not isinstance(asset, Recording) or asset.deposited:
+            asset_ids_needing_bytes.append(asset.id)
         manifest_rows.append(row)
 
     if server is not None and not manifest_only:
-        _prefetch_ssh_local_objects(assets, server, logger)
+        _prefetch_ssh_local_objects(
+            [
+                asset
+                for asset in assets
+                if not isinstance(asset, Recording) or asset.deposited
+            ],
+            server,
+            logger,
+        )
     exported_meta = {}
     if manifest_only:
         asset_ids_needing_bytes = []
@@ -1110,6 +1126,18 @@ def export_assets(
         "network_id",
         "description",
         "storage",
+        "recording_role",
+        "recording_status",
+        "required_for_trial",
+        "response_id",
+        "page_uuid",
+        "page_label",
+        "recording_source",
+        "capture_outcome",
+        "recording_failure_reason",
+        "upload_deadline",
+        "upload_received_at",
+        "upload_processing_deadline",
     ]
     with open(manifest_path, "w", newline="") as csv_file:
         writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
@@ -1286,6 +1314,7 @@ def export_asset(asset_id, assets_root, server, local):
     """
     from .asset import Asset, ExternalAsset, OnDemandAsset
     from .experiment import import_local_experiment
+    from .trial.record import Recording
     from .utils import sha256_directory, sha256_file
 
     if server is None:
@@ -1298,6 +1327,9 @@ def export_asset(asset_id, assets_root, server, local):
 
     import_local_experiment()
     a = Asset.query.filter_by(id=asset_id).one()
+
+    if isinstance(a, Recording) and not a.deposited:
+        return None
 
     if isinstance(a, ExternalAsset) or isinstance(a, OnDemandAsset):
         return None

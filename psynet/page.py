@@ -141,6 +141,10 @@ class UnityPage(Page):
         debug: bool = False,
         **kwargs,
     ):
+        if debug and kwargs.get("background_recording") is not None:
+            raise ValueError(
+                "Background recording requires browser-hosted Unity, not Unity IDE debug mode."
+            )
         self.title = title
         self.resources = resources
         self.contents = contents

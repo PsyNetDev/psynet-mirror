@@ -1,11 +1,12 @@
-"""Private recording transport fixture; production controls remain disabled."""
+"""Recording transport fixture with forced legacy-mode loss coverage."""
 
 import os
 
-import psynet.experiment
 from dallinger import db
 from dallinger.experiment import experiment_route
 from flask import jsonify
+
+import psynet.experiment
 from psynet.db import with_transaction
 from psynet.modular_page import ModularPage, VideoPrompt, VideoRecordControl
 from psynet.page import InfoPage, wait_for_recording
@@ -14,7 +15,9 @@ from psynet.trial.record import Recording
 
 
 class AsyncVideoControl(VideoRecordControl):
-    _async_upload = True
+    def _uses_async_upload(self, experiment):
+        """Force transport on even in legacy-mode document-loss regression tests."""
+        return True
 
 
 def _playback(source, dual):
@@ -23,23 +26,25 @@ def _playback(source, dual):
     return join(
         wait_for_recording(lambda participant: participant.assets[key]),
         PageMaker(
-            lambda participant: ModularPage(
-                "playback_" + source,
-                VideoPrompt(
-                    participant.assets[key],
-                    f"Uploaded {source} clip." if dual else "Uploaded clip.",
-                    controls=True,
-                    hide_when_finished=False,
-                    muted=True,
-                ),
-                time_estimate=3,
-            )
-            if participant.assets[key].deposited
-            else InfoPage(
-                f"{source.capitalize()} recording unavailable. Your answer was saved."
-                if dual
-                else "Recording unavailable. Your answer was saved.",
-                time_estimate=3,
+            lambda participant: (
+                ModularPage(
+                    "playback_" + source,
+                    VideoPrompt(
+                        participant.assets[key],
+                        f"Uploaded {source} clip." if dual else "Uploaded clip.",
+                        controls=True,
+                        hide_when_finished=False,
+                        muted=True,
+                    ),
+                    time_estimate=3,
+                )
+                if participant.assets[key].deposited
+                else InfoPage(
+                    f"{source.capitalize()} recording unavailable. Your answer was saved."
+                    if dual
+                    else "Recording unavailable. Your answer was saved.",
+                    time_estimate=3,
+                )
             ),
             time_estimate=3,
         ),
@@ -81,7 +86,9 @@ class Exp(psynet.experiment.Experiment):
             save_answer="recorded_video",
         ),
         InfoPage("Independent page reached.", time_estimate=1),
-        None if os.environ.get("PSYNET_TEST_RECORDING_EXIT") == "1" else join(
+        None
+        if os.environ.get("PSYNET_TEST_RECORDING_EXIT") == "1"
+        else join(
             _playback("camera", dual),
             _playback("screen", dual) if dual else None,
         ),

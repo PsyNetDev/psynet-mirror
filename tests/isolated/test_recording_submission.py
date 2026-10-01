@@ -350,3 +350,31 @@ def test_lost_acceptance_replays_original_slots_without_advancing(
     participant.page_uuid = "later-page"
     db.session.commit()
     assert submit()["submission"] == "rejected"
+
+
+@pytest.mark.parametrize(
+    "inplace, local_storage, asynchronous",
+    [(True, True, True), (False, True, False), (True, False, False)],
+)
+def test_default_video_transport_preserves_legacy_and_other_storage(
+    submission, monkeypatch, inplace, local_storage, asynchronous
+):
+    from psynet.asset import NoStorage
+    from psynet.utils import get_config
+
+    exp, _, _, _ = submission
+    control = VideoRecordControl(duration=1)
+    config = get_config()
+    original_get = config.get
+    monkeypatch.setattr(
+        config,
+        "get",
+        lambda key, *args: (
+            inplace
+            if key == "inplace_timeline_transitions"
+            else original_get(key, *args)
+        ),
+    )
+    if not local_storage:
+        monkeypatch.setattr(exp, "asset_storage", NoStorage())
+    assert control._uses_async_upload(exp) is asynchronous

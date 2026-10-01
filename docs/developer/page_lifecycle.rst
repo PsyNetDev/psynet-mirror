@@ -131,6 +131,21 @@ Manual-start pages require both ``pageReady`` and ``trialManualRequest`` before
 ``trialPrepare``. This prevents trial-start, response-enable, submit-enable, and
 auto-advance behavior from running while navigation is still blocked.
 
+Background capture and task startup
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Background recording resolves its permission decision before ``trialConstruct``.
+Page modules can register task handlers during activation, but must start the task
+from ``trialStart`` rather than executing it inside ``activate()``. The built-in
+jsPsych integration follows this boundary. The Unity template also defers loading
+its engine until ``trialStart``, so a task cannot run behind the permission dialog.
+
+The browser document owns capture streams and the upload queue. Normal page
+cleanup must not stop those streams or cancel accepted uploads. Each logical page
+has its own recorder and collected bytes. A full document replacement can abandon
+unfinished uploads; fully received files remain eligible for server processing.
+See :doc:`/tutorials/modular_page` for the public recording API and failure policy.
+
 JavaScript resource categories
 ------------------------------
 
@@ -212,7 +227,11 @@ Same-session pages
 
 Pages sharing a non-null ``session_id`` update ``psynet.page`` and dispatch
 ``pageUpdated`` without replacing the fragment. This supports persistent
-sessions such as Unity integrations.
+sessions such as Unity integrations. The submission UUID and page timer advance
+with the logical page even though its DOM stays in place. Background capture
+finishes before submission; after acceptance, the browser queues that clip,
+applies the next page's recording policy, and resolves its permission decision
+before dispatching ``pageUpdated``. Uploads keep their original page identity.
 
 Document-owning pages
 ~~~~~~~~~~~~~~~~~~~~~

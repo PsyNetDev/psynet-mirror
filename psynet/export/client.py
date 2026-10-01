@@ -395,6 +395,13 @@ class AssetTransferPlan:
         return not self.ineligible
 
 
+def _recording_bytes_unavailable(row):
+    """Keep unavailable recordings in the manifest without requesting their bytes."""
+    return (
+        bool(row.get("recording_role")) and row.get("recording_status") != "deposited"
+    )
+
+
 def plan_asset_transfer(staging_dir: str) -> AssetTransferPlan:
     """Read ``assets/manifest.csv`` and decide whether rsync can supply the bytes."""
     manifest_path = Path(staging_dir) / "assets" / "manifest.csv"
@@ -410,6 +417,8 @@ def plan_asset_transfer(staging_dir: str) -> AssetTransferPlan:
     ineligible: list[dict] = []
     seen = set()
     for row in rows:
+        if _recording_bytes_unavailable(row):
+            continue
         asset_type = (row.get("type") or "").lower()
         if asset_type == "external_asset":
             # URL-only; nothing to transfer.
@@ -462,6 +471,8 @@ def hydrate_assets(
     # transfer itself cannot run (for example when rsync is unavailable).
     safe_export_paths = {}
     for row in plan.rows:
+        if _recording_bytes_unavailable(row):
+            continue
         export_path = row.get("export_path")
         if not row.get("sha256_contents") or not export_path:
             continue
@@ -503,6 +514,8 @@ def hydrate_assets(
     assets_root = Path(staging_dir) / "assets"
     materialized = 0
     for row in plan.rows:
+        if _recording_bytes_unavailable(row):
+            continue
         digest = row.get("sha256_contents")
         export_path = row.get("export_path")
         if not digest or not export_path:

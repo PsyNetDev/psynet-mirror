@@ -9,7 +9,7 @@ publish complete receipt exactly once.
 
 Receipt is not deposit: a worker validates and stores bytes before a short
 transaction publishes success. A poller expires overdue recordings even when
-the browser has closed. This infrastructure is disabled by default in controls.
+the browser has closed. In-place LocalStorage video controls use this transport.
 Do not wrap the streaming route in a participant transaction or expose received
 files through the asset endpoint before successful deposit.
 """
@@ -205,6 +205,7 @@ def _reserve_recording(
     asset.upload_max_bytes = max_bytes
     asset.upload_context = {
         "response_id": response.id,
+        "page_label": response.question,
         "page_uuid": page_uuid,
         "source": source,
         "processing_timeout": processing_timeout,

@@ -240,8 +240,8 @@ but it should be close enough. We might document alternative approaches later.
 Recording upload development checks
 -----------------------------------
 
-The asynchronous recording transport is under development and disabled by default.
-The private test control connects accepted answers to the upload queue. Run its
+LocalStorage answer video uses asynchronous delivery in in-place experiments.
+The private fixture also forces this transport in legacy mode for loss checks. Run its
 server and browser checks separately from the experiment demos; database fixtures
 reset their database and must not run
 alongside a demo using that same database.
@@ -250,6 +250,7 @@ alongside a demo using that same database.
 
     pytest tests/isolated/test_media_upload.py tests/isolated/test_chain_growth_queries.py tests/isolated/test_finalize_pending_trials.py
     pytest tests/isolated/test_recording_submission.py tests/isolated/test_wait_for_recording.py
+    pytest tests/isolated/test_recording_reporting.py tests/isolated/test_export_transport.py
     npx playwright test media_upload_queue.spec.js
     npx playwright test asynchronous_recording.spec.js dual_recording_upload.spec.js
     inplace_timeline_transitions=false npx playwright test recording_legacy_navigation.spec.js
@@ -257,15 +258,16 @@ alongside a demo using that same database.
     npx playwright test recording_document_loss.spec.js
     pytest tests/isolated/test_background_recording.py
     npx playwright test background_recording.spec.js
-    npx playwright test background_capture.spec.js
+    npx playwright test background_capture.spec.js same_session_page_update.spec.js
+    npx playwright test task_background_recording.spec.js
     npx playwright test demos/imitation_chain_video.spec.js demos/video_feature.spec.js
 
 The video imitation-chain demo exercises recording-dependent playback and chain
 progression. The ordinary video demo also covers camera-plus-screen recording.
 Both attach ``recording-sizes`` JSON to their Playwright results. These measure
 fake-device output for a sanity check, not an upper bound on real recording sizes.
-The demo checks still exercise the existing upload path; they do not establish
-that asynchronous trial-failure handling works.
+The demo checks exercise the default transport for the selected navigation mode.
+The dedicated missing-recording fixtures cover asynchronous trial-failure handling.
 
 The ``missing_chain_recording`` fixture exercises the asynchronous path with two
 within-participant imitation chains. It drops the first upload and waits for the
@@ -302,8 +304,8 @@ with ``route.fetch()`` before fulfilling the browser response; Chromium can
 discard response bodies during navigation. Assert the destination page before
 reading the captured result.
 
-The private ``asynchronous_recording`` fixture enables
-``VideoRecordControl._async_upload``. Its browser test holds a media request while
+The private ``asynchronous_recording`` fixture forces independent uploads even
+when testing legacy document replacement. Its browser test holds a media request while
 the accepted answer advances to an independent page, then releases the request
 and checks playback after worker deposit. Submission tests cover rejected answers,
 source validation, accumulated answers, named answer variables, and rollback.
@@ -350,9 +352,18 @@ missing non-trial upload reaches a fallback page at its real deadline and the
 participant can finish. Successful uploads reach playable video. Unit tests cover
 stalled processing and bounded legacy waits.
 
-Keep the answer-recording switch private until compatibility with existing
-recording pages and deployment modes is validated. These focused tests do not
-establish compatibility with every existing recording page.
+Before release, validate the default answer path against the existing video and
+imitation-chain demos, browser-hosted jsPsych/Unity startup and same-session
+capture, exports with unavailable assets, and SSH LocalStorage deployment. These
+checks remain required after the implementation changes; earlier fixture results
+do not establish that the new default or these integrations pass. Legacy mode
+retains the existing answer-upload path.
+
+The ``task_background_recording`` fixture uses the real UnityPage template with a
+small engine stand-in and the repository's vendored jsPsych. It checks enabled
+and skipped capture: task startup follows the permission decision, persistent
+Unity pages produce separate recording identities, and a new jsPsych document
+asks again. This does not replace a manual test with the deployed Unity game.
 
 The provisional upload allowance uses a conservative 1 Mbit/s rate, 30 seconds
 of overhead, and twice the estimated transfer time, bounded to 60–600 seconds.

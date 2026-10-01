@@ -259,3 +259,69 @@ def test_required_background_needs_trial(submission):
         _browser_config(page, exp, participant)
     with pytest.raises(ValueError, match="boolean"):
         VideoRecordConfig(required="yes")
+
+
+def test_framework_task_pages_accept_background_capture():
+    from psynet.page import JsPsychPage, UnityPage
+
+    unity = UnityPage(
+        "Unity",
+        "/static/unity",
+        {},
+        "shared",
+        time_estimate=1,
+        background_recording="camera",
+    )
+    jspsych = JsPsychPage(
+        "task",
+        "/static/task.js",
+        1,
+        [],
+        [],
+        background_recording="camera",
+    )
+    shared = InfoPage(
+        "Shared",
+        time_estimate=1,
+        session_id="shared",
+        background_recording="camera",
+    )
+    assert all(
+        page.background_recording.source == "camera"
+        for page in (unity, jspsych, shared)
+    )
+    with pytest.raises(ValueError, match="Unity IDE"):
+        UnityPage(
+            "Unity",
+            "/static/unity",
+            {},
+            "shared",
+            time_estimate=1,
+            debug=True,
+            background_recording="camera",
+        )
+
+
+def test_same_session_payload_carries_next_capture_policy(submission, monkeypatch):
+    exp, participant, _, _ = submission
+    timeline = Timeline(
+        InfoPage("First", time_estimate=1, session_id="shared"),
+        InfoPage(
+            "Second",
+            time_estimate=1,
+            session_id="shared",
+            background_recording=VideoRecordConfig(source="screen"),
+        ),
+    )
+    monkeypatch.setattr(exp, "timeline", timeline)
+    participant.elt_id = ["main", -1]
+    timeline.advance_page(exp, participant)
+    original_uuid = participant.page_uuid
+    timeline.advance_page(exp, participant)
+    payload = exp.response_approved(
+        participant, include_timeline_fragment=False
+    ).get_json()
+    attributes = payload["page"]["attributes"]
+    assert attributes["session_id"] == "shared"
+    assert attributes["page_uuid"] != original_uuid
+    assert attributes["background_recording"]["sources"] == ["screen"]

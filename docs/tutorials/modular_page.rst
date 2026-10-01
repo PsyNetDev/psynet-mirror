@@ -204,11 +204,18 @@ the existing clip for resubmission. Completion hooks run only after successful
 answer validation. Transient loss of the acceptance response triggers bounded
 retries using the same recordings and original upload deadline.
 
-This implementation supports background recordings on ordinary timeline
-pages with local asset storage. It does not support
-answer-recording controls, delegated pages, full-reload pages, or same-session
-pages. Leaving or reloading the document can lose pending uploads; there is no
-upload wait page.
+Background recordings require :class:`~psynet.asset.LocalStorage`. Ordinary pages,
+:class:`~psynet.page.JsPsychPage`, and browser-hosted :class:`~psynet.page.UnityPage`
+resolve the permission decision before starting the task. Unity starts its loader
+after that decision. Each logical page in a shared ``session_id`` gets its own
+clip; the next page's capture decision completes before ``pageUpdated`` reaches
+the task. Camera and screen tracks can be reused within the document. A new
+document asks again through an explicit button, including after a reload.
+
+Answer-recording controls cannot also record background video. Custom renderers
+that bypass the PsyNet page lifecycle and Unity IDE debug mode cannot use this
+capture API. Leaving or reloading the document can lose pending uploads; there is
+no upload wait page. Fully received bytes can still be processed on the server.
 
 Requiring a background recording
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -296,5 +303,47 @@ fixed 20-second polling margin. Failed or expired recordings release the wait
 at the next poll. If processing stalls, the wait eventually releases without failing
 the participant; the fallback must therefore handle any undeposited recording.
 Legacy recordings without upload deadlines have a 20-second limit. Trial failure
-and performance policies are unchanged. Asynchronous answer recording remains
-under development and disabled by default.
+and performance policies are unchanged.
+
+Video answer upload defaults
+----------------------------
+
+:class:`~psynet.modular_page.VideoRecordControl` submits answers independently of
+video uploads when using :class:`~psynet.asset.LocalStorage` and in-place timeline
+transitions (the default). Trial-dependent analysis and finalization wait for
+deposit. A missing upload fails only its trial at the upload deadline, without a
+recording retry; configured performance rules still apply. Non-trial playback
+should use the fallback pattern above.
+
+Custom :meth:`~psynet.timeline.Page.validate` implementations receive recording
+metadata with ``None`` ID/URL placeholders before acceptance. Final asset IDs and
+URLs are installed before the answer is saved and ``on_complete`` runs, but the
+bytes may still be uploading. Analyze recording bytes through the trial's
+post-trial processing after deposit; do not fetch them inside answer validation
+or ``on_complete``.
+
+The upload deadline starts when the answer is accepted. The allowance is
+30 seconds plus twice the transfer time at 1 Mbit/s, bounded to 60–600 seconds.
+Complete receipt starts a separate 20-second processing allowance. Retransmitting
+or recovering a lost acceptance response does not extend either deadline.
+
+Legacy experiments with ``inplace_timeline_transitions=false`` and other storage
+backends retain the existing answer-upload path. This avoids routinely losing
+answer recordings on every legacy page change. In an in-place experiment, crossing
+a full-document boundary (for example entering Unity) can still abandon queued
+bytes; avoid such a boundary before required playback. Background recording always
+uses independent uploads, including on full-reload pages.
+
+Inspecting recording outcomes
+----------------------------
+
+Open **Monitor → Recordings** for answer/background role, required policy, original
+page and source, capture outcome, upload status, failure reason, and deadlines.
+Only deposited recordings have download links. Early sharing loss or a duration
+limit may produce a usable partial clip; its capture outcome remains visible.
+
+The same fields are included in ``assets/manifest.csv`` during export. Unavailable
+recordings remain in the manifest with no file or download URL; exporting does
+not attempt to download them. Legacy recordings without the upload protocol show
+``awaiting_deposit`` until their existing deposit completes. This report label is
+not an S3 upload state or a new trial policy.

@@ -757,6 +757,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             "dashboard.dashboard_monitoring",
             "dashboard.dashboard_timeline",
             "dashboard.dashboard_resources",
+            "dashboard.dashboard_recordings",
             "dashboard.dashboard_sync_groups",
             "dashboard.dashboard_participants",
             "dashboard.dashboard_logger",
@@ -4083,6 +4084,14 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             timeline_modules=json.dumps(module_info, default=serialise),
             currency=get_config().currency,
         )
+
+    @dashboard_tab("Recordings")
+    @classmethod
+    def dashboard_recordings(cls):
+        """Show deposited, pending, and unavailable answer/background recordings."""
+        from .dashboard.recordings import report_recordings
+
+        return report_recordings()
 
     @dashboard_tab("Resources")
     @classmethod

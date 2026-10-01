@@ -18,8 +18,9 @@ class VideoRecordConfig:
     deadline, and holds finalization until deposit. The default is optional.
     Bots skip capture, including this requirement, for timeline testing only.
     ``source`` is camera, screen, or both. Audio is disabled by default. Limits
-    apply per source; capture stops when either limit is reached. This initial
-    API supports ordinary timeline pages, not delegated or same-session pages.
+    apply per source; capture stops when either limit is reached. Capture starts
+    after the permission decision, before the page task (including jsPsych and
+    Unity), and starts a new clip for each logical page in a persistent session.
     """
 
     source: str = "camera"
@@ -46,7 +47,7 @@ class VideoRecordConfig:
         return ["camera", "screen"] if self.source == "both" else [self.source]
 
 
-def _normalize_config(value, page, *, delegated=False, session_id=None):
+def _normalize_config(value, page, *, delegated=False):
     """Reject unsupported combinations before a page can acquire devices."""
     if value is None:
         return None
@@ -63,15 +64,16 @@ def _normalize_config(value, page, *, delegated=False, session_id=None):
         getattr(page, "control", None), (AudioRecordControl, VideoRecordControl)
     ):
         raise ValueError("Background recording cannot accompany an answer recorder.")
-    if delegated or session_id is not None:
+    if delegated:
         raise ValueError(
-            "Background recording does not yet support delegated, full-reload, or same-session pages."
+            "Background recording requires the PsyNet browser page lifecycle; custom delegated renderers are not supported."
         )
     return config
 
 
 def _browser_config(page, experiment, participant):
     """Require stored AV consent when the experiment uses a stock AV module."""
+    from .asset import LocalStorage
     from .bot import Bot
     from .consent import AudiovisualConsent, LabRecruiterAudiovisualConsent
 
@@ -80,6 +82,8 @@ def _browser_config(page, experiment, participant):
         raise ValueError("Required background recording needs a parent trial.")
     if config is None or isinstance(participant, Bot):
         return None
+    if not isinstance(experiment.asset_storage, LocalStorage):
+        raise ValueError("Background recording requires LocalStorage.")
     for module, key in (
         (AudiovisualConsent, "audiovisual_consent"),
         (LabRecruiterAudiovisualConsent, "lab-recruiter_audiovisual_consent"),
@@ -105,6 +109,14 @@ def _accept_background_recordings(page, response, participant, experiment, page_
         raise ValueError("Invalid background recording metadata.")
     sizes = reported.get("sizes", {})
     unavailable = reported.get("unavailable", {})
+    outcomes = reported.get("outcomes", {})
+    if not isinstance(outcomes, dict) or any(
+        source not in config["sources"]
+        or not isinstance(outcome, str)
+        or outcome not in {"source_ended", "duration_limit"}
+        for source, outcome in outcomes.items()
+    ):
+        raise ValueError("Invalid background capture outcome.")
     if not isinstance(sizes, dict) or not isinstance(unavailable, dict):
         raise ValueError("Invalid background recording metadata.")
     allowed = {
@@ -154,6 +166,7 @@ def _accept_background_recordings(page, response, participant, experiment, page_
             "page_label": page.label,
             "captured_size_bytes": size,
             "unavailable_reason": reason,
+            "capture_outcome": outcomes.get(source),
         }
         if reason:
             asset.upload_token_hash = None
