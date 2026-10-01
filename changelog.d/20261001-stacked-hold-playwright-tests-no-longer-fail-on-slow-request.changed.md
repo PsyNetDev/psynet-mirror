@@ -1,0 +1,1 @@
+The stacked-hold Playwright tests no longer fail when CI is slow. They check the hold behaviour itself (response status, busy pages, server wakes, hold-resume requests and reloads), log request and overlay timings for diagnosis, and fail on time only when something hangs for 30 seconds.

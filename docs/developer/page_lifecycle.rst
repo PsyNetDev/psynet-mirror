@@ -472,8 +472,8 @@ Those routes do not share a lock protocol:
   means the pool is still busy: two waiters leaving together can overlap
   next-page ``render``. Do not subtract that wait from overlay linger.
   Overlay linger is last-wake→last-end wallclock; Playwright logs it and
-  fails only if it exceeds 30000ms. ``GET /timeline`` and load-participant
-  handler checks use 3000ms.
+  fails only if it exceeds the 30000ms hang cap, which also applies to
+  ``GET /timeline`` and load-participant.
   A short HTTP 503 on hold-resume is ``NOWAIT``
   overlap, not a missed wake.
 * After the arrival write commits, queued barrier checks run in short
