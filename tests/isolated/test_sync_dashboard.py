@@ -15,7 +15,7 @@ from psynet.utils import get_authenticated_session
     [path_to_demo_experiment("simple_sync_group")],
     indirect=True,
 )
-def test_sync_groups_dashboard_renders_empty_leader_as_placeholder(
+def test_dashboard_renders_sync_groups_and_protects_sensitive_requests(
     launched_experiment, db_session
 ):
     group = SimpleSyncGroup(
@@ -67,6 +67,17 @@ def test_sync_groups_dashboard_renders_empty_leader_as_placeholder(
         f"/participant/{participant.id}"
     )
     unauthenticated_session = requests.Session()
+    # Experiment status artifacts can contain the credential-bearing basic data URL.
+    assert (
+        unauthenticated_session.get(
+            f"{launched_experiment.base_url}/dashboard/status/get",
+            params={
+                "deployment_id": "deployment-1",
+                "type": "experiment",
+            },
+        ).status_code
+        == 401
+    )
     assert (
         unauthenticated_session.post(
             f"{action_url}/fail", data={"fail_reason": "manual_failure"}

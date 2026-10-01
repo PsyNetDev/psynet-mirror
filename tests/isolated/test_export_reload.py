@@ -8,6 +8,7 @@ from live tables and, where it matters, loads the result straight back.
 """
 
 import csv
+import json
 import uuid
 
 import pytest
@@ -16,6 +17,7 @@ from sqlalchemy import Boolean, Column, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import UUID
 
 from psynet.data import SQLBase, ingest_to_model
+from psynet.experiment import ExperimentStatus
 from psynet.export.database import copy_database_to_csv_dir, write_identifier_sidecars
 from psynet.export.identifier_schema import UnsupportedIdentifierSchemaError
 from psynet.pytest_psynet import path_to_test_experiment
@@ -148,6 +150,35 @@ def test_exported_booleans_and_blank_strings_reload_unchanged(scratch_table, tmp
     assert reloaded[2].failed is True
     assert reloaded[2].optional_flag is None
     assert reloaded[2].note == ""
+
+
+@in_consents_experiment
+def test_export_redacts_credentials_from_historical_status_rows(db_session, tmp_path):
+    """Canonical exports remove credentials that old PsyNet versions stored."""
+    db_session.add(
+        ExperimentStatus(
+            basic_data_url="https://user:password@example.com/data",
+            secret="dashboard-password",
+            deployment_id="deployment-1",
+        )
+    )
+    db_session.commit()
+
+    copy_database_to_csv_dir(str(tmp_path), ["experiment_status"], pseudonymize=True)
+    rows = _read_rows(tmp_path / "experiment_status.csv")
+    assert len(rows) == 1
+    row = next(iter(rows.values()))
+    assert json.loads(row["extra_info"]) == {"deployment_id": "deployment-1"}
+
+    db_session.query(ExperimentStatus).delete()
+    db_session.commit()
+    with open(
+        tmp_path / "experiment_status.csv", encoding="utf8", newline=""
+    ) as handle:
+        ingest_to_model(handle, ExperimentStatus, db.engine)
+
+    reloaded = db_session.query(ExperimentStatus).one()
+    assert reloaded.extra_info == {"deployment_id": "deployment-1"}
 
 
 @in_consents_experiment

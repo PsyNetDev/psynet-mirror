@@ -850,7 +850,11 @@ def ensure_deployment_policy() -> None:
     pytest scaffold or in-repo auto-prepare.
     """
     _assert_managed_path_is_safe("deploy.toml")
-    _copy_template_file("deploy.toml", overwrite=False)
+    _copy_template_file(
+        "deploy.toml",
+        overwrite=False,
+        migrating=Path(".gitignore").exists(),
+    )
 
 
 def _remove_obsolete_generated_dockerignore() -> bool:

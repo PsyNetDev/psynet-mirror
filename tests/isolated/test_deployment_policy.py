@@ -15,6 +15,7 @@ from psynet.experiment_scaffold import (
     _GENERATED_DOCKERIGNORE_VARIANTS,
     _clear_deployment_policy_review_marker,
     _deployment_policy_needs_review,
+    ensure_deployment_policy,
     scaffold_experiment_directory,
     scaffold_missing_files,
 )
@@ -142,6 +143,15 @@ def test_scaffold_creates_stock_deployment_policy(tmp_path):
     assert policy.exclude_names == EXPECTED_EXCLUDE_NAMES
     assert policy.exclude_suffixes == EXPECTED_EXCLUDE_SUFFIXES
     assert not (tmp_path / ".dockerignore").exists()
+
+
+def test_ensure_deployment_policy_uses_new_experiment_review_wording(tmp_path):
+    """Creating deploy.toml without an old .gitignore is not a migration."""
+    with working_directory(tmp_path):
+        ensure_deployment_policy()
+
+    marker = tmp_path / _DEPLOYMENT_POLICY_REVIEW_MARKER
+    assert marker.read_text().startswith("reason: new experiment\n")
 
 
 def test_scaffold_missing_files_does_not_leave_review_marker(tmp_path, monkeypatch):

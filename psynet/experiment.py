@@ -4144,6 +4144,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             return error_response("Failed to decode JSON file.")
 
     @dashboard.route("/status/get")
+    @login_required
     # Avoid overriding Experiment.get_status
     def get_experiment_status():  # noqa F811
         exp = get_experiment()
