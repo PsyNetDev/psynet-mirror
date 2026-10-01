@@ -71,6 +71,18 @@ def psynet_source_prefixes():
 
 
 def get_logger(name="psynet"):
+    """
+    Return a standard-library logger, by default the shared ``psynet`` logger.
+
+    Parameters
+    ----------
+    name : str
+        Logger name passed to :func:`logging.getLogger`.
+
+    Returns
+    -------
+    logging.Logger
+    """
     return logging.getLogger(name)
 
 
@@ -218,6 +230,15 @@ config_defaults = {}
 
 
 def get_config():
+    """
+    Return the Dallinger configuration object, loading it first if needed.
+
+    Read values with ``get_config().get(key)``.
+
+    Returns
+    -------
+    dallinger.config.Configuration
+    """
     from dallinger.config import get_config as dallinger_get_config
 
     config = dallinger_get_config()
@@ -500,6 +521,30 @@ def json_to_data_frame(json_data):
 def wait_until(
     condition, max_wait, poll_interval=0.5, error_message=None, *args, **kwargs
 ):
+    """
+    Poll ``condition`` until it returns a truthy value.
+
+    Parameters
+    ----------
+    condition : callable
+        Called as ``condition(*args, **kwargs)``.
+    max_wait : float
+        Maximum time to wait, in seconds.
+    poll_interval : float
+        Time between checks, in seconds.
+    error_message : str, optional
+        Message for the error raised on timeout.
+
+    Returns
+    -------
+    bool
+        ``True`` once the condition is satisfied.
+
+    Raises
+    ------
+    RuntimeError
+        If the condition is not satisfied within ``max_wait`` seconds.
+    """
     if condition(*args, **kwargs):
         return True
     else:
@@ -1419,6 +1464,18 @@ def check_todos_before_deployment():
 
 
 def as_plain_text(html):
+    """
+    Convert HTML to readable text using ``html2text``, collapsing whitespace to single spaces.
+
+    Parameters
+    ----------
+    html : str or markupsafe.Markup
+        HTML to convert.
+
+    Returns
+    -------
+    str
+    """
     text = html2text.HTML2Text().handle(str(html))
     pattern = re.compile(r"\s+")
     text = re.sub(pattern, " ", text).strip()

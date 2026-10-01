@@ -203,16 +203,6 @@
 
   syncJsVars();
 
-  $(document).on("change", "#iso-language", function () {
-    const locale = $(this).val();
-    $.get(
-      `${psynetTemplateData.routes.setLocaleParticipant}?locale=${locale}`,
-      function () {
-        location.reload();
-      },
-    );
-  });
-
   let beforeunloadFunction = function () {};
   var psynet = (function () {
     /**

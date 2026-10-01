@@ -3,48 +3,29 @@ name: basic-data
 description: Implement basic data export functionality. Use when implementing an experiment to create clean export csv files that are helpful for future analysis.
 ---
 
-# Overview
+# Basic data
 
-By default, the data export of a PsyNet experient involves dumping the database to a collection
-of csv files. These csv files are comprehensive but often messy.
+## Read first
 
-The `basic_data` functionality allows one to construct additional export files that are cleaner
-and hence more straightforward to analyse. This is accomplished by writing a custom method
-on the experiment class, for example:
+Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rst`; otherwise fetch `https://psynetdev.gitlab.io/PsyNet/<page>.html`.
 
-```py
-    @classmethod
-    def get_basic_data(cls, context=None, **kwargs):
-        trials = [
-            {
-                "id": trial.id,
-                "participant_id": trial.participant_id,
-                "animal": trial.definition.get("animal"),
-                "block": trial.block,
-                "answer": trial.answer,
-                "score": trial.score,
-            }
-            for trial in StaticTrial.query.all()
-        ]
-        participants = [
-            {
-                "id": participant.id,
-                "status": participant.status,
-                "bonus": participant.bonus,
-            }
-            for participant in Participant.query.all()
-        ]
-        return {
-            "trial": pd.DataFrame.from_records(trials),
-            "participant": pd.DataFrame.from_records(participants),
-        }
-```
+- `data/basic_data` — writing `get_basic_data` and the files it exports
+- `data/exporting_data` — how to export data and where exports land
+- `data/what_an_export_contains` — the raw database tables in an export
 
-The method above results in two exported csv files: trial and participant.
+## Checklist
 
-The art here is thinking about (a) what rows should be included and (b) what attributes
-should be included. It's worth thinking carefully about the research question when planning this.
-
-Look out for specific basic-data skills for specific experiment types, for example:
-
-- `basic-data-dyadic-experiment`
+1. From the research question, list the units of analysis (rows) and the
+   variables (columns) each analysis needs. Plan one table per unit, such as
+   trials and participants.
+2. Implement `get_basic_data` as described in `data/basic_data`, returning
+   data frames only when `context == "export"`.
+3. Give every row the IDs that trace it back to the database, such as
+   `trial_id` and `participant_id`.
+4. Leave out identifiers and sensitive values; basic data is not anonymized.
+5. Run `psynet debug local`, take a few participants through the experiment,
+   and export with `psynet export local`. Check the basic data files: row
+   counts match the expected numbers of participants and trials, and no
+   column is unexpectedly empty.
+6. If participants interact in groups, also follow
+   `basic-data-dyadic-experiment/SKILL.md`.

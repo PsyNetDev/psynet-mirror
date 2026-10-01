@@ -28,98 +28,65 @@ def create_lucid_recruitment_config(
     service=None,
 ):
     """
-    Create a Lucid recruitment config.
+    Build the Lucid (Cint) recruitment config for one language-country pair.
+
+    Looks up each qualification and its translated answer options through the Lucid API,
+    so it needs the Lucid API credentials. It also adds ``TIMEOUT v1`` (answer ``Agree``),
+    mobile and tablet exclusions unless ``allow_mobile_devices`` is true, and a Chrome
+    requirement when ``force_google_chrome`` is true.
+
     Parameters
     ----------
-    language_tag: str, 3-letter lanugage name, NOT an ISO language tag, if you specify a wrong language tag, the Lucid
-        API will tell you which ones are available.
-
-    country_tag: str, 2-letter country code, NOT an ISO country code, if you specify a wrong country tag, the Lucid API
-        will tell you which ones are available.
-
-    question_answer_dict: dict, a dictionary with question names as keys and a list of allowed answers as values. The
-        question names must occur in CUSTOM_QUALIFICATIONS_LUCID.
-
-    config_path: str, default None, if None, it will return the config as a dictionary, if a path is specified, it will
-
-    allow_mobile_devices: bool, default None, if None, it will be taken from the config file
-
-    force_google_chrome: bool, default None, if None, it will be taken from the config file
-
-    unique_ip: bool, default True, whether the participant must have a unique IP
-
-    unique_pid: bool, default True, whether the participant must have a unique PID
-
-    industry_id: int, default 30, which is the default for "Other", pick from:
-        {
-         '1': 'Automotive',
-         '2': 'Beauty/Cosmetics',
-         '3': 'Beverages - Alcoholic',
-         '4': 'Beverages - Non Alcoholic',
-         '5': 'Education',
-         '6': 'Electronics/Computer/Software',
-         '7': 'Entertainment (Movies, Music, TV, etc)',
-         '8': 'Fashion/Clothing',
-         '9': 'Financial Services/Insurance',
-         '10': 'Food/Snacks',
-         '11': 'Gambling/Lottery',
-         '12': 'Healthcare/Pharmaceuticals',
-         '13': 'Home (Utilities, Appliances, ...)',
-         '14': 'Home Entertainment (DVD, VHS)',
-         '15': 'Home Improvement/Real Estate/Construction',
-         '16': 'IT (Servers, Databases, etc)',
-         '17': 'Personal Care/Toiletries',
-         '18': 'Pets',
-         '19': 'Politics',
-         '20': 'Publishing (Newspaper, Magazines, Books)',
-         '21': 'Restaurants',
-         '22': 'Sports',
-         '23': 'Telecommunications (phone, cell phone, cable)',
-         '24': 'Tobacco (Smokers)',
-         '25': 'Toys',
-         '26': 'Transportation/Shipping',
-         '27': 'Travel',
-         '28': 'Video Games',
-         '29': 'Websites/Internet/E-Commerce',
-         '30': 'Other',
-         '31': 'Sensitive Content',
-         '32': 'Explicit Content'
-        }
-
-    study_type_id: int, default 1, which is the default for "Adhoc", pick from:
-        {
-         '1': 'Adhoc',
-         '2': 'Diary',
-         '5': 'IHUT',
-         '8': 'Community Build',
-         '9': 'Face to Face',
-         '11': 'Recruit - Panel',
-         '13': 'Tracking - Monthly',
-         '14': 'Tracking - Quarterly',
-         '15': 'Tracking - Weekly',
-         '16': 'Wave Study',
-         '17': 'Qualitative Screening',
-         '18': 'Internal Use',
-         '21': 'Incidence Check',
-         '22': 'Recontact',
-         '23': 'Ad Effectiveness Research',
-         '24': 'Proof Exposed',
-         '25': 'Proof Control'
-         }
-
-    debug: bool, default True, whether to print debug information, i.e. see the translations of the qualifications
-
-    qualification_dict: dict, default None, a dictionary with question names as keys and question ids as values, if None,
-        it will be taken from the service; it takes some time to get the qualifications from the service, so it is better to
-        pass it as an argument if you can't wait
-
-    config: dict, default None, if None, it will be loaded. Pass the config for speed.
-
-    service: LucidService, default None, if None, it will be loaded. Pass the service for speed.
+    language_tag : str
+        Three-letter Lucid language code (not an ISO tag); the API lists valid codes on error.
+    country_tag : str
+        Two-letter Lucid country code (not an ISO code); the API lists valid codes on error.
+    question_answer_dict : dict
+        Maps qualification names on your Lucid account to lists of allowed English answers.
+        Modified in place to add ``TIMEOUT v1``.
+    config_path : str, optional
+        If given, write the config to this JSON file and return ``None``.
+    allow_mobile_devices : bool, optional
+        Defaults to the ``allow_mobile_devices`` config value.
+    force_google_chrome : bool, optional
+        Defaults to the ``force_google_chrome`` config value.
+    unique_ip : bool
+        Require a unique IP address per participant.
+    unique_pid : bool
+        Require a unique panelist ID per participant.
+    industry_id : int
+        Lucid industry ID; default 30 (Other). Options: 1 Automotive, 2 Beauty/Cosmetics,
+        3 Beverages - Alcoholic, 4 Beverages - Non Alcoholic, 5 Education,
+        6 Electronics/Computer/Software, 7 Entertainment (Movies, Music, TV, etc),
+        8 Fashion/Clothing, 9 Financial Services/Insurance, 10 Food/Snacks,
+        11 Gambling/Lottery, 12 Healthcare/Pharmaceuticals, 13 Home (Utilities, Appliances, ...),
+        14 Home Entertainment (DVD, VHS), 15 Home Improvement/Real Estate/Construction,
+        16 IT (Servers, Databases, etc), 17 Personal Care/Toiletries, 18 Pets, 19 Politics,
+        20 Publishing (Newspaper, Magazines, Books), 21 Restaurants, 22 Sports,
+        23 Telecommunications (phone, cell phone, cable), 24 Tobacco (Smokers), 25 Toys,
+        26 Transportation/Shipping, 27 Travel, 28 Video Games, 29 Websites/Internet/E-Commerce,
+        30 Other, 31 Sensitive Content, 32 Explicit Content.
+    study_type_id : int
+        Lucid study type ID; default 1 (Adhoc). Options: 1 Adhoc, 2 Diary, 5 IHUT,
+        8 Community Build, 9 Face to Face, 11 Recruit - Panel, 13 Tracking - Monthly,
+        14 Tracking - Quarterly, 15 Tracking - Weekly, 16 Wave Study, 17 Qualitative Screening,
+        18 Internal Use, 21 Incidence Check, 22 Recontact, 23 Ad Effectiveness Research,
+        24 Proof Exposed, 25 Proof Control.
+    debug : bool
+        Print the English and translated text of each qualification.
+    qualifications_dict : dict, optional
+        Maps qualification names to Lucid question IDs. Fetched from the API if omitted;
+        pass it to save time when building several configs.
+    config : dallinger.config.Configuration, optional
+        Experiment config; loaded if omitted.
+    service : LucidService, optional
+        Lucid service; created with :func:`psynet.lucid.get_lucid_service` if omitted.
 
     Returns
     -------
-
+    dict or None
+        The config (with ``survey``, ``qualifications``, ``country`` and ``language`` keys),
+        or ``None`` if ``config_path`` is given.
     """
 
     logger = get_logger()
@@ -393,6 +360,25 @@ class LucidTwoForcedChoiceQualification(LucidScreeningQuestion):
 
 
 def verify_lucid_qualifications(config_path: str, question_names: List[str] = None):
+    """
+    Re-ask Lucid qualification questions in the experiment, ending it for disallowed answers.
+
+    Each question is shown in the participant's language with two buttons; choosing an
+    answer not allowed by the qualification terminates the experiment.
+
+    Parameters
+    ----------
+    config_path : str
+        JSON file written by :func:`create_lucid_recruitment_config`.
+    question_names : list of str, optional
+        Qualifications to ask. Defaults to all except the built-in ``MS_`` ones.
+        Each must have exactly two answer options.
+
+    Returns
+    -------
+    list
+        Timeline elements, one page per question.
+    """
     with open(config_path, "r") as f:
         config = json.load(f)
 

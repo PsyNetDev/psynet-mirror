@@ -167,11 +167,6 @@ class StaticTrialMaker(ChainTrialMaker):
     allow_repeated_nodes
         Determines whether the participant can be administered the same node more than once.
 
-    max_unique_nodes_per_block
-        Determines the maximum number of unique nodes that a participant will be allowed to experience
-        in each block. Once this quota is reached, the participant will be forced to repeat
-        previously experienced nodes.
-
     balance_across_nodes
         If ``True`` (default), active balancing across participants is enabled, meaning that
         node selection favours nodes that have been presented fewest times to any participant
@@ -259,9 +254,9 @@ class StaticTrialMaker(ChainTrialMaker):
         Returns the networks owned by the trial maker.
 
     performance_threshold : float
-        Score threshold used by the default performance check method, defaults to 0.0.
-        By default, corresponds to the minimum proportion of non-failed trials that
-        the participant must achieve to pass the performance check.
+        Threshold for the built-in performance check chosen by ``performance_check_type``,
+        defaults to -1.0. The participant passes when the score (the summed trial scores,
+        the proportion of non-failed trials, or the consistency) is at least this value.
 
     end_performance_check_waits : bool
         If ``True`` (default), then the final performance check waits until all trials no

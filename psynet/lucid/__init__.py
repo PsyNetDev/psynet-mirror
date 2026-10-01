@@ -816,6 +816,25 @@ class LucidService(object):
 
 
 def get_lucid_service(config=None, recruitment_config=None):
+    """
+    Create a :class:`LucidService` client for the Lucid (Cint) API.
+
+    Reads ``lucid_api_key`` and ``lucid_sha1_hashing_key`` from the experiment config
+    when run in an experiment directory (one with ``config.txt``), otherwise from
+    ``~/.dallingerconfig``.
+
+    Parameters
+    ----------
+    config : dallinger.config.Configuration, optional
+        Experiment config; loaded if omitted. Ignored outside an experiment directory.
+    recruitment_config : dict, optional
+        Lucid recruitment config, as returned by
+        :func:`psynet.lucid.qualifications.create_lucid_recruitment_config`.
+
+    Returns
+    -------
+    LucidService
+    """
     if os.path.exists("config.txt"):
         if config is None:
             config = get_config()

@@ -1,0 +1,207 @@
+Writing a chain experiment
+==========================
+
+The examples on this page come from ``demos/experiments/chain_trial_maker``,
+a serial-reproduction task in which each participant retells the previous
+participant's story. To run it from a PsyNet source checkout:
+
+.. code-block:: console
+
+    cd demos/experiments/chain_trial_maker
+    psynet debug local
+
+How a chain grows
+-----------------
+
+Start nodes are built in a function, like the nodes of a static experiment:
+
+.. literalinclude:: ../../demos/experiments/chain_trial_maker/experiment.py
+   :pyobject: get_start_nodes
+
+The rule for making the next node is the node class's
+:meth:`~psynet.trial.chain.ChainNode.make_next_definition` method. PsyNet calls
+it on the current node once that node has ``trials_per_node`` usable trials,
+and uses the returned dictionary as the next node's definition. In the demo,
+the next story is the previous participant's retelling:
+
+.. literalinclude:: ../../demos/experiments/chain_trial_maker/experiment.py
+   :pyobject: CustomChainNode
+
+Inside the method:
+
+- ``self.definition`` is the current node's definition;
+- ``self.completed_and_processed_trials`` lists the trials to build on: those
+  that are complete, finalized (so any recording analysis has finished), and
+  not failed, excluding repeat trials;
+- ``self.degree`` is the current node's position in the chain, starting at 0;
+  the new node will have degree ``self.degree + 1``;
+- ``participant`` is the participant whose trial completed the node.
+
+With several trials per node, combine their answers, and carry forward any
+fields the next node still needs:
+
+.. code-block:: python
+
+    import statistics
+
+    class RatingNode(ChainNode):
+        def make_next_definition(self, experiment, participant):
+            return {
+                "question": self.definition["question"],
+                "mean_rating": statistics.mean(
+                    float(t.answer) for t in self.completed_and_processed_trials
+                ),
+            }
+
+The trial is a subclass of :class:`~psynet.trial.chain.ChainTrial` and works
+like a static trial:
+
+.. literalinclude:: ../../demos/experiments/chain_trial_maker/experiment.py
+   :pyobject: CustomTrial
+
+If a node needs new media, for example a sound synthesized from the previous
+participant's answer, override the node's ``async_on_deploy`` method and call
+``self.add_assets`` there. It runs in the background after the node is
+created, and participants cannot visit the node until it finishes.
+
+Within and across participants
+------------------------------
+
+The :class:`~psynet.trial.chain.ChainTrialMaker` goes in the timeline:
+
+.. literalinclude:: ../../demos/experiments/chain_trial_maker/experiment.py
+   :pyobject: get_timeline
+
+``chain_type`` is ``"across"`` or ``"within"``. For within-participant chains,
+``start_nodes`` must be a function that creates fresh nodes; it may take a
+``participant`` argument. Without ``start_nodes``, set
+``chains_per_experiment`` (across) or ``chains_per_participant`` (within).
+
+Choosing the next chain
+-----------------------
+
+- ``allow_revisiting_networks_in_across_chains`` (default ``False``) lets
+  participants return to a chain they have already contributed to.
+- ``balance_across_chains`` (default ``False``) sends new trials to the chains
+  with fewest responses.
+- ``wait_for_networks`` (default ``False``) makes participants wait when
+  chains exist but are waiting on asynchronous processing, instead of moving
+  on.
+- Participant groups work as in :doc:`/code/writing_a_trial_maker`: set ``participant_group`` on
+  the start nodes and pass ``choose_participant_group``.
+- To choose the chain yourself, override
+  :meth:`~psynet.trial.chain.ChainTrialMaker.custom_chain_filter`, which
+  removes chains the participant must not receive, and
+  :meth:`~psynet.trial.chain.ChainTrialMaker.select_chain`, which picks one of
+  the rest. They follow the same rules as the static trial maker's node hooks
+  (see :ref:`choosing nodes yourself <custom_node_selection>`); PsyNet then gives the participant the
+  selected chain's current node.
+
+Chain length and trials per node
+--------------------------------
+
+- ``trials_per_node`` (default ``1``): responses a node needs before the next
+  node is made.
+- ``max_nodes_per_chain``: the chain is full after this many nodes.
+- ``expected_trials_per_participant`` and ``max_trials_per_participant``: an
+  integer, or ``"n_start_nodes"``.
+- ``recruit_mode`` (default ``"n_participants"``, with
+  ``target_n_participants``), or ``"n_trials"`` to recruit until every chain is
+  full.
+
+Built-in paradigms
+------------------
+
+- :class:`~psynet.trial.imitation_chain.ImitationChainTrialMaker`, with
+  :class:`~psynet.trial.audio.AudioImitationChainTrialMaker` and
+  :class:`~psynet.trial.video.CameraImitationChainTrialMaker` for recorded
+  reproductions;
+- :class:`~psynet.trial.gibbs.GibbsTrialMaker` and
+  :class:`~psynet.trial.media_gibbs.AudioGibbsTrialMaker` (with image, HTML,
+  and video variants);
+- :class:`~psynet.trial.mcmcp.MCMCPTrialMaker`;
+- :class:`~psynet.trial.staircase.GeometricStaircaseTrialMaker`;
+- the create-and-rate mixins in ``psynet.trial.create_and_rate`` (see
+  :doc:`/code/trials/create_and_rate`);
+- :class:`~psynet.trial.graph.GraphChainTrialMaker`.
+
+The ``demos/experiments`` folder has a demo for each, for example
+``imitation_chain``, ``gibbs``, ``mcmcp``, ``staircase_pitch_discrimination``,
+``create_and_rate``, and ``graph``.
+
+A :class:`~psynet.trial.staircase.GeometricStaircaseTrialMaker` runs
+within-participant staircases. Subclass
+:class:`~psynet.trial.staircase.GeometricStaircaseNode` to set ``k`` (the
+number of consecutive correct answers needed before the task gets harder;
+default ``2``) and define the ``increase_difficulty`` and
+``decrease_difficulty`` methods; the ``staircase_pitch_discrimination`` demo
+multiplies or divides the parameter by a fixed ``step``. The trial maker takes ``max_nodes_per_chain`` and optionally
+``max_reversals_per_chain``, where a reversal is a node at which the
+difficulty changes direction. At the end, it scores each staircase as the mean
+parameter at its reversals and passes or fails the participant against
+``min_passing_score`` and ``max_passing_score`` if you set them.
+
+.. _gibbs_participant_groups:
+
+Writing a Gibbs Sampling with People experiment
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A Gibbs experiment subclasses three classes from :mod:`psynet.trial.gibbs`:
+
+#. A :class:`~psynet.trial.gibbs.GibbsNode` subclass sets ``vector_length``,
+   the number of stimulus dimensions, and defines ``random_sample(i)``, which
+   returns a random value for dimension ``i``:
+
+   .. literalinclude:: ../../demos/experiments/gibbs/experiment.py
+      :pyobject: CustomNode
+
+   Start nodes can carry a ``context``, which stays fixed within a chain,
+   such as the target word, and a ``participant_group``. For
+   within-participant chains, ``start_nodes`` is a function that creates
+   fresh nodes.
+
+#. A :class:`~psynet.trial.gibbs.GibbsTrial` subclass defines
+   ``show_trial``. The page shows the stimulus for ``self.initial_vector``,
+   lets the participant change dimension ``self.active_index``, and returns
+   the new value of that dimension as the answer. ``self.context`` holds the
+   chain's fixed parameters:
+
+   .. literalinclude:: ../../demos/experiments/gibbs/experiment.py
+      :pyobject: CustomTrial.show_trial
+      :dedent: 4
+
+   ``show_trial`` can return a list of pages and code blocks; the answer
+   then comes from the last page.
+
+#. A :class:`~psynet.trial.gibbs.GibbsTrialMaker` combines the node and
+   trial classes and goes in the timeline.
+
+When a trial fails
+------------------
+
+When a participant leaves early, PsyNet fails their incomplete trials and
+keeps their completed ones. ``fail_trials_on_participant_performance_check``
+defaults to ``False`` for chains, so completed trials are also kept when a
+participant fails a check. ``propagate_failure`` (default ``True``) fails the
+nodes that a failed, finalized trial helped to create. See
+:doc:`/code/trials/participant_and_trial_failure`.
+
+Where the data goes
+-------------------
+
+Nodes, trials, and chains are database rows:
+
+.. code-block:: python
+
+    CustomChainNode.query.filter_by(trial_maker_id="stories").order_by(CustomChainNode.degree)
+    node.network      # the chain
+    node.child        # the next node, if any
+    node.all_trials
+
+.. seealso::
+
+   :doc:`/reference/api/trial/chain` in the API reference.
+
+   The :doc:`/skills/make-experiment-adaptive` skill describes how to plan,
+   simulate and check an adaptive chain.
+
