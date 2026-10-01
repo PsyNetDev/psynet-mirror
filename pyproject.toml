@@ -55,7 +55,7 @@ dependencies = [
 # this runtime.
 experiment = [
     "babel",
-    "dallinger[docker] @ git+https://github.com/Dallinger/Dallinger.git@e4b7d2e01414ee776c2df11eed376d045dc2073a",
+    "dallinger[docker]>=12.4.0,<13",
     # Unpin dominate once a new version is released which includes the following
     # fix for the Python 3.12 event loop warning:
     # https://github.com/Knio/dominate/commit/bdbdb8e5ddcf3213518dba0c7d054f14933460bf

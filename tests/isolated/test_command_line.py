@@ -516,25 +516,42 @@ def test_debug_legacy_starts_four_gunicorn_workers(monkeypatch):
     ]
 
 
-def test_debug_auto_reload_passes_no_browsers_to_dallinger(monkeypatch):
-    """Auto-reload debug passes --no-browsers through to `dallinger develop debug`."""
-    from dallinger.command_line.develop import debug as dallinger_debug
+def test_debug_auto_reload_no_browsers_launches_without_browsers(monkeypatch, capsys):
+    """PsyNet's launch job opens no browsers and prints what the browser would show."""
+    from psynet.command_line import _debug_auto_reload, launch_app_without_browsers
 
-    from psynet.command_line import _debug_auto_reload
-
+    develop = importlib.import_module("dallinger.command_line.develop")
+    original_job = develop.launch_app_and_open_browser
     calls = []
 
     class _Ctx:
-        def invoke(self, command, **kwargs):
-            calls.append((command, kwargs))
+        def invoke(self, _command, **kwargs):
+            calls.append((kwargs, develop.launch_app_and_open_browser))
 
     monkeypatch.setattr("psynet.command_line.run_pre_auto_reload_checks", lambda: None)
     monkeypatch.setattr("psynet.command_line.patch_dallinger_develop", lambda: None)
     monkeypatch.setattr("psynet.command_line.db.session.commit", lambda: None)
     monkeypatch.setattr("psynet.command_line.reset_console", lambda: None)
     _debug_auto_reload(_Ctx(), archive=None, no_browsers=True)
-    assert calls == [(dallinger_debug, {"skip_flask": False, "no_browsers": True})]
-    assert "no_browsers" in [p.name for p in dallinger_debug.params]
+    assert calls == [({"skip_flask": False}, launch_app_without_browsers)]
+    assert develop.launch_app_and_open_browser is original_job
+
+    config = Mock(ready=True)
+    config.get.side_effect = {
+        "dashboard_user": "admin",
+        "dashboard_password": "s3cret",
+    }.get
+    monkeypatch.setattr("psynet.command_line.get_config", lambda: config)
+    monkeypatch.setattr(
+        "dallinger.deployment.handle_launch_data",
+        lambda url, **kwargs: {"recruitment_msg": "Prolific study simulated"},
+    )
+    monkeypatch.setattr(develop, "_async_browser", pytest.fail)
+    launch_app_without_browsers(5001, no_browsers=False)
+    output = capsys.readouterr().out
+    assert "Prolific study simulated" in output
+    assert "http://127.0.0.1:5001/dashboard" in output
+    assert "Dashboard user: admin password: s3cret" in output
 
 
 def test_debug_legacy_gunicorn_workers_follow_env(monkeypatch):
@@ -4360,6 +4377,7 @@ def test_write_json_results_emits_expected_schema_with_coerced_values(tmp_path):
 
 
 def _invoke_destroy_ssh(monkeypatch, destroy_app, apps=(), app=None):
+    import importlib
 
     from psynet.command_line import destroy__docker_ssh
 
