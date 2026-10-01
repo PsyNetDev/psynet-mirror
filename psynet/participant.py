@@ -1330,7 +1330,7 @@ class ParticipantDriver:
             # so last-arrival can skip this waiter.
             time.sleep(_TIMELINE_HOLD_POLL_SECONDS)
 
-        return True
+        return self.is_working
 
     def refresh_status(self):
         """Reload the cached page and response files from the experiment server."""

@@ -43,7 +43,11 @@ class Exp(psynet.experiment.Experiment):
 
     def test_serial_run_bots(self, bots):
         for bot in bots:
-            if bot.id == 4:
+            if bot.id == 2:
+                while bot.take_page():
+                    pass
+                assert bot.current_page_label is None
+            elif bot.id == 4:
                 # Advance bot 4 past consent (and the var-init CodeBlock,
                 # which is consumed silently) to the InfoPage.
                 bot.take_page()
