@@ -1153,13 +1153,16 @@ def is_heroku_local_process(process):
     Return whether ``process`` is part of the Heroku CLI's ``heroku local``.
 
     The CLI runs as shell wrappers and ``node`` processes whose paths contain a
-    ``heroku`` directory.
+    ``heroku`` directory. Requiring the ``local`` argument leaves other Heroku
+    commands alone, such as ``psynet deploy heroku`` or ``git push heroku``.
     """
     try:
         cmdline = process.cmdline()
     except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
         return False
-    return any("heroku" in part.split(os.sep) for part in cmdline)
+    return "local" in cmdline[1:] and any(
+        "heroku" in part.split(os.sep) for part in cmdline
+    )
 
 
 def list_chromedriver_processes():
