@@ -178,10 +178,10 @@ PsyNet. Do not treat `scripts update` as a substitute for first-time setup.
 
 Use `psynet audit simulate` to simulate participants and produce an example dataset.
 This dataset should contain a decent number of participants representative of a real study;
-adjust `Exp.test_n_bots` to ensure this. From the experiment root:
+set `Exp.test_n_bots`, or pass `--n-bots N` for one run. From the experiment root:
 
 ```bash
-psynet audit simulate
+psynet audit simulate --n-bots 40
 ```
 
 The command writes the only export to

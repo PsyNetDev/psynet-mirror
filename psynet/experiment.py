@@ -123,6 +123,7 @@ from .recruiters import (  # noqa: F401
     PsyNetProlificRecruiterMixin,
     StagingCapRecruiter,  # noqa: F401  # Backward compatibility alias
     StagingLabRecruiter,
+    configured_recruiter_class,
 )
 from .redis import redis_vars
 from .serialize import serialize, unserialize
@@ -1368,11 +1369,15 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     def record_experiment_status(cls, online: bool = True):
         status = cls.get_status(lookback_s=60)  # since we poll every minute
         status["isOffline"] = not online
-        # The deployments dashboard reads the secret from artifact storage;
-        # database exports shouldn't carry it.
-        status_obj = ExperimentStatus(
-            **{key: value for key, value in status.items() if key != "secret"}
-        )
+        # Status rows are exported with the database, so they must not store the
+        # dashboard credentials. The artifact copy keeps them for the deployments
+        # dashboard.
+        row = {
+            key: value
+            for key, value in status.items()
+            if key not in ("basic_data_url", "secret")
+        }
+        status_obj = ExperimentStatus(**row)
         db.session.add(status_obj)
         if cls.automatic_backups:
             cls.artifact_storage.write_experiment_status(status, cls.deployment_id)
@@ -2395,19 +2400,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         cls._warn_about_overridden_experiment_config(config)
 
     @staticmethod
-    def _configured_recruiter_class(name):
-        """Resolve a configured recruiter name to a class, if it is loaded."""
-        name = str(name or "").strip()
-        if not name:
-            return None
-        for candidate in (name, name.split(".")[-1]):
-            try:
-                return get_descendent_class_by_name(Recruiter, candidate)
-            except AssertionError:
-                continue
-        return None
-
-    @staticmethod
     def check_recruiter_support(config):
         """Reject recruitment platforms that PsyNet no longer supports."""
         configured_recruiters = (
@@ -2421,7 +2413,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 "recruiter such as Prolific, Lucid, or the Lab Recruiter."
             )
         recruiter_name = str(config.get("recruiter", "")).strip()
-        recruiter_class = Experiment._configured_recruiter_class(recruiter_name)
+        try:
+            recruiter_class = configured_recruiter_class(config)
+        except NotImplementedError:
+            recruiter_class = None
         unsupported = recruiter_class is not None and issubclass(
             recruiter_class, (BotRecruiter, MultiRecruiter)
         )
@@ -3266,13 +3261,32 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         explicit = get_config().get("show_reward", None)
         if explicit is not None:
             return explicit
-        return self.recruiter.shows_reward_by_default
+        return self.recruiter_class.shows_reward_by_default
+
+    @property
+    def recruiter_class(self):
+        """Return the recruiter's class without building a recruiter.
+
+        Dallinger routes create a new experiment object for every request, so
+        instantiating ``self.recruiter`` just to check its type is expensive.
+        """
+        if "recruiter" in self.__dict__:
+            return type(self.__dict__["recruiter"])
+        return configured_recruiter_class()
 
     def with_lucid_recruitment(self):
-        return issubclass(self.recruiter.__class__, BaseLucidRecruiter)
+        """Return whether participants are recruited through Lucid."""
+        recruiter_class = self.recruiter_class
+        return recruiter_class is not None and issubclass(
+            recruiter_class, BaseLucidRecruiter
+        )
 
     def with_prolific_recruitment(self):
-        return issubclass(self.recruiter.__class__, ProlificRecruiter)
+        """Return whether participants are recruited through Prolific."""
+        recruiter_class = self.recruiter_class
+        return recruiter_class is not None and issubclass(
+            recruiter_class, ProlificRecruiter
+        )
 
     def _approved_payload(self, participant, page):
         return {

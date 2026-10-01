@@ -15,8 +15,12 @@ def test_status_and_backups_skips_before_launch_finished():
     get_experiment.assert_not_called()
 
 
-def test_record_experiment_status_keeps_secret_out_of_database():
-    status = {"secret": "launch-secret", "requests_per_minute": 3}
+def test_record_experiment_status_keeps_credentials_out_of_database():
+    status = {
+        "basic_data_url": "http://x/basic_data?dashboard_password=s3cret",
+        "secret": "launch-secret",
+        "requests_per_minute": 3,
+    }
 
     class Exp:
         automatic_backups = True

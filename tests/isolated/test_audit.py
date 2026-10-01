@@ -1,4 +1,5 @@
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -11,7 +12,9 @@ from psynet.audit.cli import (
     starter_audit_manifest,
     validate_audit,
 )
+from psynet.audit.site import experiment_git_commit
 from psynet.command_line import psynet
+from psynet.version import psynet_version
 
 LFS_VIDEO_POINTER = (
     b"version https://git-lfs.github.com/spec/v1\noid sha256:abc\nsize 1\n"
@@ -1599,6 +1602,7 @@ def test_init_audit_creates_starter_structure_and_manifest(tmp_path: Path) -> No
     assert "title" not in manifest["experiment"]
     assert "source_base" not in manifest["experiment"]
     assert "source_path" not in manifest["experiment"]
+    assert manifest["experiment"]["psynet_version"] == psynet_version
     assert manifest["profile"] == "psynet.core"
     assert manifest["extensions"] == []
     assert [section["id"] for section in manifest["sections"]] == [
@@ -1971,6 +1975,32 @@ def test_audit_serve_cli_render_then_serve(tmp_path: Path, monkeypatch) -> None:
     assert result.exit_code == 0, result.output
     assert "Rendered experiment audit site" in result.output
     assert calls == [(audit_dir / "site", "127.0.0.1", 9123)]
+
+
+def test_rendered_header_shows_experiment_git_commit(tmp_path, monkeypatch):
+    def git(*args):
+        return subprocess.run(
+            ["git", "-c", "user.name=t", "-c", "user.email=t@t", *args],
+            cwd=tmp_path,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+
+    git("init", "-q")
+    (tmp_path / "experiment.py").write_text("x = 1\n", encoding="utf-8")
+    git("add", "experiment.py")
+    git("commit", "-qm", "init")
+    sha = git("rev-parse", "--short", "HEAD")
+    init_audit(tmp_path / "audit")
+    monkeypatch.chdir(tmp_path)
+
+    site_dir = render_audit_site(tmp_path / "audit", allow_invalid=True)
+    index = (site_dir / "index.html").read_text(encoding="utf-8")
+    assert f"<code>{sha}</code>" in index
+
+    (tmp_path / "experiment.py").write_text("x = 2\n", encoding="utf-8")
+    assert experiment_git_commit() == f"{sha}-dirty"
 
 
 @pytest.mark.parametrize("has_deploy_toml", [True, False])

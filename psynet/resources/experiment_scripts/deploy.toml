@@ -21,7 +21,6 @@ names = [
     ".env",
     ".idea",
     ".pytest_cache",
-    ".python-version",
     ".venv",
     "__pycache__",
     "env",

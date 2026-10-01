@@ -287,9 +287,9 @@ def test_write_export_manifest_records_git_provenance(tmp_path, monkeypatch):
     (csv_dir / "trial.csv").write_text("id\n1\n")
 
     experiment = Mock()
-    experiment.deployment_id = "demo__export"
     experiment.label = "demo"
     experiment.var.get.side_effect = lambda name, default=None: {
+        "deployment_id": "demo__export",
         "git_commit_sha": "abc123def",
         "git_dirty": True,
     }.get(name, default)
@@ -337,3 +337,27 @@ def test_unpack_json_column_does_not_overwrite_unless_requested():
     assert kept.iloc[0]["animal"] == "dog"
     overwritten = unpack_json_column(frame, "definition", overwrite=True)
     assert overwritten.iloc[0]["animal"] == "cat"
+
+
+def test_export_manifest_without_deployment_info_uses_database_vars(
+    tmp_path, monkeypatch, caplog
+):
+    from psynet.export.database import write_export_manifest
+
+    monkeypatch.chdir(tmp_path)
+    experiment = Mock()
+    type(experiment).deployment_id = property(
+        lambda self: pytest.fail("must not read the missing deployment_info.json")
+    )
+    experiment.label = "demo"
+    experiment.var.get.side_effect = {"deployment_id": "demo__db"}.get
+    monkeypatch.setattr("psynet.experiment.get_experiment", lambda: experiment)
+
+    manifest = json.loads(
+        Path(
+            write_export_manifest(str(tmp_path), table_names=[], csv_dir=str(tmp_path))
+        ).read_text()
+    )
+    assert manifest["deployment_id"] == "demo__db"
+    assert "Traceback" not in caplog.text
+    assert "Could not" not in caplog.text
