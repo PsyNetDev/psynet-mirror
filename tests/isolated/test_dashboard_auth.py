@@ -1,9 +1,15 @@
 import pytest
 from dallinger.experiment_server.dashboard import dashboard
-from flask import Flask
+from flask import Blueprint, Flask
 from flask_login import LoginManager
 
-import psynet.experiment  # noqa: F401 (registers PsyNet's dashboard routes)
+from psynet.experiment import Experiment
+
+DASHBOARD_EXPERIMENT_ROUTES = [
+    ("/module/progress_info", "get_progress_info"),
+    ("/module/update_spending_limits", "update_spending_limits"),
+    ("/change_lucid_status", "change_lucid_status"),
+]
 
 
 @pytest.fixture
@@ -12,6 +18,15 @@ def client():
     app.config["SECRET_KEY"] = "test"
     LoginManager(app).user_loader(lambda user_id: None)
     app.register_blueprint(dashboard)
+    experiment_routes = Blueprint("experiment_routes", __name__)
+    for rule, func_name in DASHBOARD_EXPERIMENT_ROUTES:
+        experiment_routes.add_url_rule(
+            rule,
+            endpoint=func_name,
+            view_func=getattr(Experiment, func_name),
+            methods=["GET", "POST"],
+        )
+    app.register_blueprint(experiment_routes)
     return app.test_client()
 
 
@@ -29,6 +44,9 @@ def client():
         ("POST", "/dashboard/participants/dismiss-bonus"),
         ("POST", "/dashboard/sync-groups/1/participant/1/fail"),
         ("POST", "/dashboard/sync-groups/1/participant/1/kick"),
+        ("GET", "/module/progress_info"),
+        ("POST", "/module/update_spending_limits"),
+        ("GET", "/change_lucid_status?status=paused"),
     ],
 )
 def test_dashboard_routes_reject_anonymous_requests(client, method, path):

@@ -4960,6 +4960,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @experiment_route("/module/progress_info", methods=["GET"])
     @classmethod
+    @login_required
     @with_transaction
     def get_progress_info(cls):
         exp = get_experiment()
@@ -5010,6 +5011,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @experiment_route("/module/update_spending_limits", methods=["POST"])
     @classmethod
+    @login_required
     @with_transaction
     def update_spending_limits(cls):
         hard_max_experiment_payment = request.values["hard_max_experiment_payment"]
@@ -5149,6 +5151,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @experiment_route("/change_lucid_status", methods=["GET"])
     @classmethod
+    @login_required
     def change_lucid_status(cls):
         get_experiment().recruiter.change_lucid_status(request.values.get("status", ""))
         return success_response()
