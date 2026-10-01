@@ -1,0 +1,1 @@
+The dashboard routes for deployment status, archiving, restoring, recruitment updates, deployment comments and `/dashboard/export/trigger` now require a dashboard login. Previously anyone who knew the URL could call them. Logged-in dashboard users and the Slack "Trigger export" link (via the login page) are unaffected.

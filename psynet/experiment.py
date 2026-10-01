@@ -4130,12 +4130,14 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             return error_response("Failed to decode JSON file.")
 
     @dashboard.route("/status/get")
+    @login_required
     # Avoid overriding Experiment.get_status
     def get_experiment_status():  # noqa F811
         exp = get_experiment()
         return exp._parse_status(request.args)
 
     @dashboard.route("/archive/deployment")
+    @login_required
     def archive_deployment():  # noqa F811
         try:
             exp = get_experiment()
@@ -4148,6 +4150,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             return error_response(f"Failed to archive deployment: {str(e)}")
 
     @dashboard.route("/restore/deployment")
+    @login_required
     def restore_deployment():  # noqa F811
         try:
             exp = get_experiment()
@@ -4160,6 +4163,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             return error_response(f"Failed to restore deployment: {str(e)}")
 
     @dashboard.route("/update/recruitment")
+    @login_required
     def update_recruitment():  # noqa F811
         try:
             exp = get_experiment()
@@ -4208,6 +4212,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             )
 
     @dashboard.route("/comment/set/<deployment_id>", methods=["POST"])
+    @login_required
     @with_transaction
     def set_comment(deployment_id):  # noqa F811
         params = request.form
@@ -4222,6 +4227,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         return success_response()
 
     @dashboard.route("/comment/get/<deployment_id>", methods=["GET"])
+    @login_required
     def get_comment(deployment_id):  # noqa F811
         return get_experiment().artifact_storage.read_comment(deployment_id)
 
@@ -4836,6 +4842,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @dashboard.route("/export/trigger", methods=["GET"])
     @staticmethod
+    @login_required
     @with_transaction
     def trigger_export():
         """Build a complete export and store it, without sending it anywhere."""
