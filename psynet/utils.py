@@ -46,6 +46,7 @@ from psynet.light_utils import (  # noqa: F401 – re-exported for backwards com
     git_repository_available,
     is_in_repo_experiment,
     md5_directory,
+    strip_url_credentials,
 )
 from psynet.translation.utils import load_po
 
@@ -120,6 +121,9 @@ def call_function(function, *args, **kwargs):
 def find_git_repo():
     """
     Finds the origin of the git repository of the current directory.
+
+    Any credentials embedded in the remote URL are removed, because the
+    result is stored in deployment records and exports.
     """
     import subprocess
 
@@ -129,7 +133,7 @@ def find_git_repo():
             .strip()
             .decode("utf-8")
         )
-        return origin
+        return strip_url_credentials(origin)
     except subprocess.CalledProcessError:
         return None
 

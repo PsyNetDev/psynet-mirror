@@ -28,6 +28,7 @@ import shutil
 import subprocess
 from pathlib import Path
 from typing import Union
+from urllib.parse import urlsplit, urlunsplit
 
 
 class ExperimentDirectoryNameError(ValueError):
@@ -100,6 +101,19 @@ def git_repository_available() -> bool:
         stderr=subprocess.PIPE,
     )
     return result.returncode == 0
+
+
+def strip_url_credentials(url: str) -> str:
+    """Return ``url`` without its ``user:password@`` part.
+
+    Only URL-style remotes (``https://user:token@host/path``) are changed.
+    scp-style remotes such as ``git@host:path`` and local paths are returned
+    unchanged.
+    """
+    parts = urlsplit(url)
+    if not parts.scheme or "@" not in parts.netloc:
+        return url
+    return urlunsplit(parts._replace(netloc=parts.netloc.rpartition("@")[2]))
 
 
 def git_commit_available() -> bool:

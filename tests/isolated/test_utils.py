@@ -20,6 +20,7 @@ from psynet.utils import (
     check_todos_before_deployment,
     corr,
     ensure_experiment_directory_name_does_not_conflict,
+    find_git_repo,
     format_timedelta,
     generate_text_file,
     get_authenticated_session,
@@ -42,6 +43,7 @@ from psynet.utils import (
     pretty_format_seconds,
     psynet_source_prefixes,
     safe,
+    strip_url_credentials,
     working_directory,
 )
 
@@ -628,6 +630,34 @@ def test_git_repository_available_true(tmp_path):
     with working_directory(tmp_path):
         subprocess.run(["git", "init"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         assert git_repository_available() is True
+
+
+@pytest.mark.parametrize(
+    "url, expected",
+    [
+        (
+            "https://user:token@gitlab.com/org/repo.git",
+            "https://gitlab.com/org/repo.git",
+        ),
+        ("https://oauth2@github.com:443/org/repo", "https://github.com:443/org/repo"),
+        ("ssh://git@example.org/org/repo.git", "ssh://example.org/org/repo.git"),
+        ("https://gitlab.com/org/repo.git", "https://gitlab.com/org/repo.git"),
+        ("git@github.com:org/repo.git", "git@github.com:org/repo.git"),
+        ("/srv/git/repo.git", "/srv/git/repo.git"),
+    ],
+)
+def test_strip_url_credentials(url, expected):
+    assert strip_url_credentials(url) == expected
+
+
+def test_find_git_repo_strips_credentials(tmp_path):
+    with working_directory(tmp_path):
+        subprocess.run(["git", "init", "-q"], check=True)
+        subprocess.run(
+            ["git", "remote", "add", "origin", "https://u:secret@host/r.git"],
+            check=True,
+        )
+        assert find_git_repo() == "https://host/r.git"
 
 
 def test_git_repository_available_false(tmp_path):
