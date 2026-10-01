@@ -87,15 +87,17 @@ R replicates. Count a replicate whose fit fails as a non-rejection, and report
 how many failed in each scenario; more than a few percent suggests the
 estimator or design needs changing. The usual requirement is 80% or 90%;
 agree it with the experimenter. Report the margin of error alongside, so
-readers see what the study will estimate as well as whether it will detect. If the analysis tests
-several effects, apply the planned multiplicity procedure in every replicate,
-and state whether the requirement concerns one effect, any effect or all
+readers see what the study will estimate as well as whether it will
+detect. If the analysis tests several effects, apply the planned
+multiplicity procedure in every replicate, and state whether the requirement concerns one effect, any effect or all
 effects. Do not replace a stepwise or data-dependent procedure with a single
 "corrected α". When the response model sets some effects to zero, also report
 the matching false-positive rate, such as each null effect's rejection rate or
 the chance that any null effect is rejected. Compare it with the error rate
 the procedure controls: a Bonferroni family-wise error rate is at most its
-nominal α, not necessarily equal to it.
+nominal α, not necessarily equal to it. Counting failed fits as
+non-rejections makes a false-positive rate look lower, so also report it
+among the fits that succeeded.
 
 Each quantity of interest is an **estimand**, such as a mean difference between
 conditions, a regression slope, or a stimulus's response profile. Across
