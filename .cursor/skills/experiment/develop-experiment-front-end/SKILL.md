@@ -7,7 +7,7 @@ description: Choose and build participant-facing PsyNet pages, from built-in Mod
 
 ## Read first
 
-Read these pages before acting. Get the docs folder once with `psynet docs path`, then read `<folder>/<page>.txt` (or `.rst` in a source checkout) and search with `rg -n -i --no-ignore "<term>" <folder>`. If there is no local copy, fetch the pages from the website URL that `psynet docs path` prints.
+Read these pages before acting. The "Documentation" section of the experiment's `AGENTS.md` explains how to find and search them.
 
 - `code/writing_pages`: pages, prompts, controls, validation, and timing within a page
 - `code/pages/control_gallery`: built-in controls

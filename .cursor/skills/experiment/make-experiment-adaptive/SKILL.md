@@ -26,7 +26,7 @@ This skill has three references:
 
 ## Read first
 
-Read these pages before acting. Get the docs folder once with `psynet docs path`, then read `<folder>/<page>.txt` (or `.rst` in a source checkout) and search with `rg -n -i --no-ignore "<term>" <folder>`. If there is no local copy, fetch the pages from the website URL that `psynet docs path` prints.
+Read these pages before acting. The "Documentation" section of the experiment's `AGENTS.md` explains how to find and search them.
 
 - `code/writing_a_trial_maker` — "Trials without a trial maker" (`Trial.cue`, `on_trial_created`, `creation_context`) and the node selection hooks
 - `code/writing_a_timeline` — page makers, `while_loop` time credit and limits, async code blocks and scheduled tasks
