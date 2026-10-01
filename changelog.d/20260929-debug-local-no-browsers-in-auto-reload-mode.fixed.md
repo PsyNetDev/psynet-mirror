@@ -1,1 +1,1 @@
-Fixed `psynet debug local --no-browsers` failing in the default auto-reload mode. It now skips opening browsers with any supported Dallinger version, and prints the recruitment message and the dashboard login that the browsers would otherwise have handled.
+Fixed `psynet debug local --no-browsers` failing in the default auto-reload mode. It now passes the flag to `dallinger develop debug`, which skips opening browsers and logs the recruitment message, the dashboard URL and the dashboard login instead.

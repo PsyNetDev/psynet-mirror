@@ -943,35 +943,6 @@ def _debug_docker(ctx, archive, no_browsers):
         reset_console()
 
 
-def launch_app_without_browsers(port, **kwargs):
-    """Launch the development app without opening browsers.
-
-    Stands in for Dallinger's ``launch_app_and_open_browser`` RQ job in
-    auto-reload ``--no-browsers`` runs. Dallinger's job discards the launch
-    response and logs into the dashboard through the browser it opens, so this
-    job prints the recruitment message and the dashboard credentials instead.
-    It must stay importable by module path because RQ workers resolve it that way.
-    """
-    from dallinger.command_line.develop import BASE_URL
-    from dallinger.deployment import handle_launch_data
-
-    launch_data = handle_launch_data(
-        BASE_URL.format(port) + "launch", error=log, delay=1.0, context="local"
-    )
-    if launch_data.get("recruitment_msg"):
-        log(launch_data["recruitment_msg"], chevrons=False)
-
-    config = get_config()
-    if not config.ready:
-        config.load()
-    log(f"Experiment dashboard: {BASE_URL.format(port)}dashboard")
-    log(
-        f"Dashboard user: {config.get('dashboard_user')} "
-        f"password: {config.get('dashboard_password')}",
-        chevrons=False,
-    )
-
-
 @contextmanager
 def _stop_child_processes_on_signal():
     """Terminate descendant processes when this process is signalled.
@@ -1007,28 +978,20 @@ def _debug_auto_reload(ctx, archive, no_browsers):
     from dallinger.command_line.develop import debug as dallinger_debug
     from dallinger.deployment import DevelopmentDeployment
 
+    run_pre_auto_reload_checks()
+
+    DevelopmentDeployment.archive = archive
+    patch_dallinger_develop()
+
     develop_module = importlib.import_module("dallinger.command_line.develop")
-    launch_job = develop_module.launch_app_and_open_browser
-    debug_kwargs = {"skip_flask": False}
-    if no_browsers:
-        develop_module.launch_app_and_open_browser = launch_app_without_browsers
+    develop_module.header = ""
 
     try:
-        run_pre_auto_reload_checks()
-
-        DevelopmentDeployment.archive = archive
-        patch_dallinger_develop()
-
-        develop_module.header = ""
-
-        try:
-            with _stop_child_processes_on_signal():
-                ctx.invoke(dallinger_debug, **debug_kwargs)
-        finally:
-            db.session.commit()
-            reset_console()
+        with _stop_child_processes_on_signal():
+            ctx.invoke(dallinger_debug, skip_flask=False, no_browsers=no_browsers)
     finally:
-        develop_module.launch_app_and_open_browser = launch_job
+        db.session.commit()
+        reset_console()
 
 
 def _load_runtime_server_config(config=None, deployment_id=None):
