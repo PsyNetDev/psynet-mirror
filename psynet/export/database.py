@@ -247,10 +247,15 @@ def _provenance_for_manifest() -> dict:
         "git_dirty": None,
     }
     try:
+        from psynet import deployment_info
         from psynet.experiment import get_experiment
 
         experiment = get_experiment()
-        provenance["deployment_id"] = experiment.deployment_id
+        # The database is authoritative; .deploy can be missing (local exports
+        # run after the server removed it) or left over from another run.
+        provenance["deployment_id"] = experiment.var.get("deployment_id", None)
+        if provenance["deployment_id"] is None and deployment_info.is_available():
+            provenance["deployment_id"] = experiment.deployment_id
         provenance["experiment_label"] = experiment.label
         provenance["git_commit_sha"] = experiment.var.get("git_commit_sha", None)
         provenance["git_dirty"] = experiment.var.get("git_dirty", None)

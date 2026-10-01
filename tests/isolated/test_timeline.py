@@ -2191,7 +2191,7 @@ def test_consent_pages_hide_footer_exit_by_default():
 
 def _experiment_offering_early_exit(in_end_logic):
     experiment = MagicMock()
-    experiment.recruiter.show_early_exit_button = True
+    experiment.recruiter_class.show_early_exit_button = True
     experiment.timeline.participant_is_in_end_logic.return_value = in_end_logic
     return experiment
 
@@ -2226,6 +2226,6 @@ def test_page_level_early_exit_setting_overrides_the_recruiter_and_config():
     hidden = InfoPage("Hello", time_estimate=1, show_early_exit_button=False)
     assert hidden.early_exit_available(experiment, participant) is False
 
-    experiment.recruiter.show_early_exit_button = False
+    experiment.recruiter_class.show_early_exit_button = False
     shown = InfoPage("Hello", time_estimate=1, show_early_exit_button=True)
     assert shown.early_exit_available(experiment, participant) is True

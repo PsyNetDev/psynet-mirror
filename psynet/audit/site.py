@@ -6,6 +6,7 @@ import html
 import json
 import os
 import shutil
+import subprocess
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -310,6 +311,30 @@ def render_metadata_value(value: object, fallback: str = "-") -> str:
     if value is None or value == "":
         return html.escape(fallback)
     return html.escape(str(value))
+
+
+def experiment_git_commit() -> str | None:
+    """Return the experiment's short Git commit, or ``None`` outside Git.
+
+    Appends ``-dirty`` when experiment files have uncommitted changes. The
+    ``audit/`` folder is ignored, because the audit itself is usually edited
+    after the experiment is committed.
+    """
+
+    def git(*args: str) -> str | None:
+        try:
+            result = subprocess.run(
+                ["git", *args], capture_output=True, text=True, check=False
+            )
+        except FileNotFoundError:
+            return None
+        return result.stdout.strip() if result.returncode == 0 else None
+
+    commit = git("rev-parse", "--short", "HEAD")
+    if not commit:
+        return None
+    status = git("status", "--porcelain", "--", ".", ":(exclude)audit")
+    return f"{commit}-dirty" if status else commit
 
 
 def render_metadata_code(value: object, fallback: str = "-") -> str:
@@ -973,7 +998,12 @@ def render_audit_site(
                 render_metadata_code(experiment.get("entry_point") or "experiment.py"),
             ),
             ("PsyNet version", render_metadata_value(experiment.get("psynet_version"))),
-            ("Git commit", render_metadata_code(experiment.get("git_commit"))),
+            (
+                "Git commit",
+                render_metadata_code(
+                    experiment.get("git_commit") or experiment_git_commit()
+                ),
+            ),
             ("OS", render_metadata_value(environment.get("os"))),
             ("Python", render_metadata_value(environment.get("python_version"))),
             ("Sections", render_metadata_value(len(sections))),

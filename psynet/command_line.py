@@ -54,6 +54,7 @@ from .data import (
 from .experiment_scaffold import (
     _clear_deployment_policy_review_marker,
     _deployment_policy_needs_review,
+    _deployment_policy_review_is_migration,
     _remove_obsolete_generated_docker_scripts,
     _remove_obsolete_generated_dockerignore,
     _without_deployment_policy_review,
@@ -942,28 +943,92 @@ def _debug_docker(ctx, archive, no_browsers):
         reset_console()
 
 
+def launch_app_without_browsers(port, **kwargs):
+    """Launch the development app without opening browsers.
+
+    Stands in for Dallinger's ``launch_app_and_open_browser`` RQ job in
+    auto-reload ``--no-browsers`` runs. Dallinger's job discards the launch
+    response and logs into the dashboard through the browser it opens, so this
+    job prints the recruitment message and the dashboard credentials instead.
+    It must stay importable by module path because RQ workers resolve it that way.
+    """
+    from dallinger.command_line.develop import BASE_URL
+    from dallinger.deployment import handle_launch_data
+
+    launch_data = handle_launch_data(
+        BASE_URL.format(port) + "launch", error=log, delay=1.0, context="local"
+    )
+    if launch_data.get("recruitment_msg"):
+        log(launch_data["recruitment_msg"], chevrons=False)
+
+    config = get_config()
+    if not config.ready:
+        config.load()
+    log(f"Experiment dashboard: {BASE_URL.format(port)}dashboard")
+    log(
+        f"Dashboard user: {config.get('dashboard_user')} "
+        f"password: {config.get('dashboard_password')}",
+        chevrons=False,
+    )
+
+
+@contextmanager
+def _stop_child_processes_on_signal():
+    """Terminate descendant processes when this process is signalled.
+
+    Ctrl-C in a terminal reaches the whole foreground process group, but a
+    signal sent to the ``psynet`` PID alone would otherwise leave the
+    ``flask run`` server started by ``dallinger develop debug`` running.
+    Must be entered from the main thread.
+    """
+
+    def handler(signum, frame):
+        children = psutil.Process().children(recursive=True)
+        for child in children:
+            try:
+                child.terminate()
+            except psutil.NoSuchProcess:
+                pass
+        psutil.wait_procs(children, timeout=5)
+        if signum == signal.SIGINT:
+            raise KeyboardInterrupt
+        raise SystemExit(128 + signum)
+
+    signals = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
+    previous = {sig: signal.signal(sig, handler) for sig in signals}
+    try:
+        yield
+    finally:
+        for sig, previous_handler in previous.items():
+            signal.signal(sig, previous_handler)
+
+
 def _debug_auto_reload(ctx, archive, no_browsers):
-    if no_browsers:
-        raise click.UsageError(
-            "--no-browsers option is not supported in this debug mode."
-        )
-
-    run_pre_auto_reload_checks()
-
     from dallinger.command_line.develop import debug as dallinger_debug
     from dallinger.deployment import DevelopmentDeployment
 
-    DevelopmentDeployment.archive = archive
-    patch_dallinger_develop()
-
     develop_module = importlib.import_module("dallinger.command_line.develop")
-    develop_module.header = ""
+    launch_job = develop_module.launch_app_and_open_browser
+    debug_kwargs = {"skip_flask": False}
+    if no_browsers:
+        develop_module.launch_app_and_open_browser = launch_app_without_browsers
 
     try:
-        ctx.invoke(dallinger_debug, skip_flask=False)
+        run_pre_auto_reload_checks()
+
+        DevelopmentDeployment.archive = archive
+        patch_dallinger_develop()
+
+        develop_module.header = ""
+
+        try:
+            with _stop_child_processes_on_signal():
+                ctx.invoke(dallinger_debug, **debug_kwargs)
+        finally:
+            db.session.commit()
+            reset_console()
     finally:
-        db.session.commit()
-        reset_console()
+        develop_module.launch_app_and_open_browser = launch_job
 
 
 def _load_runtime_server_config(config=None, deployment_id=None):
@@ -1638,6 +1703,7 @@ def _check_experiment_directory(mode, *, require_git_commit=False):
     # Runs after the Git checks so 'git check-ignore' can report which
     # deployment-selected files the old .gitignore used to keep local.
     if _deployment_policy_needs_review():
+        migrating = _deployment_policy_review_is_migration()
         ignored_paths = deployment_info._git_ignored_deployment_paths()
         ignored_summary = ""
         if ignored_paths:
@@ -1646,17 +1712,32 @@ def _check_experiment_directory(mode, *, require_git_commit=False):
             remaining = len(ignored_paths) - preview_limit
             if remaining > 0:
                 preview += f"\n  ... and {remaining} more"
-            ignored_summary = (
-                "\n\nYour existing .gitignore covered the following files, but "
-                "your new deploy.toml does not:\n" + preview
+            if migrating:
+                intro = (
+                    "Your existing .gitignore covered the following files, but "
+                    "your new deploy.toml does not:"
+                )
+            else:
+                intro = (
+                    "Your .gitignore covers the following files, but deploy.toml "
+                    "does not exclude them:"
+                )
+            ignored_summary = f"\n\n{intro}\n{preview}"
+        if migrating:
+            intro = (
+                "PsyNet now requires experiments to provide a deploy.toml file to "
+                "specify which files to include in the deployed experiment. "
+                "Previously .gitignore was used for this purpose.\n\nPsyNet "
+                "created a new deploy.toml file for this experiment."
+            )
+        else:
+            intro = (
+                "PsyNet created a deploy.toml file for this experiment. It "
+                "specifies which files are included when the experiment is deployed."
             )
         _clear_deployment_policy_review_marker()
         raise click.ClickException(
-            "PsyNet now requires experiments to provide a deploy.toml file to "
-            "specify which files to include in the deployed experiment. Previously "
-            ".gitignore was used for this purpose.\n\nPsyNet created a new "
-            "deploy.toml file for this experiment."
-            f"{ignored_summary}\n\nBefore continuing:\n"
+            f"{intro}{ignored_summary}\n\nBefore continuing:\n"
             "  1. Run 'dallinger deployment-files list'. This only prints the files "
             "that PsyNet would copy; it does not start or deploy the experiment.\n"
             "  2. Check the list for credentials, private data, large files, and "
@@ -2430,9 +2511,10 @@ def _ambiguous_psynet_requirement_message(requirement: str | None) -> str:
         parts.append(f"\n\nYour current requirements.txt entry is:\n  {requirement}")
         if _is_local_psynet_requirement(requirement):
             parts.append(
-                "\n\nLocal path and editable installs cannot be resolved on a "
-                "remote deploy server. If you developed against a local PsyNet "
-                "checkout, re-run:\n"
+                "\n\nLocal path, wheel and editable installs cannot be resolved "
+                "on a remote deploy server. Replace this entry with a published "
+                "version or a pushed Git commit (see the examples below). If you "
+                "developed against a local PsyNet checkout, re-run:\n"
                 "  psynet setup --psynet-source commit\n"
                 "to pin a pushed Git commit before deploying."
             )
@@ -3701,13 +3783,21 @@ def _replace_directory(source: Path, destination: Path) -> None:
         shutil.rmtree(backup)
 
 
-def _run_simulate(ctx):
-    """Run experiment bots and export their data into the audit packet."""
+def _run_simulate(ctx, n_bots=None):
+    """Run experiment bots and export their data into the audit packet.
+
+    Parameters
+    ----------
+    ctx :
+        Click context used to invoke ``psynet test local`` and ``psynet export local``.
+    n_bots :
+        Number of bots; defaults to ``Experiment.test_n_bots``.
+    """
 
     from psynet.audit.content import artifact_path_is_ready
 
     export_path = resolve_audit_artifact_path(SIMULATED_EXPORT_PATH)
-    ctx.invoke(test__local)
+    ctx.invoke(test__local, n_bots=n_bots)
     staging = Path(
         tempfile.mkdtemp(prefix=".simulated_export.", dir=export_path.parent)
     )
@@ -4271,12 +4361,13 @@ def audit(ctx):
 
 
 @audit.command("simulate")
+@_test_options["n_bots"]
 @click.pass_context
 @require_exp_directory
-def audit_simulate(ctx):
+def audit_simulate(ctx, n_bots=None):
     """Run test bots and write the simulated export into the audit packet."""
 
-    _run_simulate(ctx)
+    _run_simulate(ctx, n_bots=n_bots)
 
 
 @audit.command("performance-test")

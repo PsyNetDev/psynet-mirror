@@ -1,0 +1,1 @@
+Fixed `psynet debug local --legacy` failing with "missing a .python-version file" for experiments using the stock `deploy.toml`. The template no longer excludes `.python-version`, which Dallinger needs to check the experiment's constraints when staging it. Experiments whose `deploy.toml` was created by PsyNet 14.0.0rc1 should remove `".python-version"` from `[exclude] names`.

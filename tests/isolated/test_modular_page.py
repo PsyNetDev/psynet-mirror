@@ -491,6 +491,42 @@ def test_get_values_and_labels():
     assert list(labels) == ["bad", "good"]
 
 
+def test_push_button_renders_only_valid_attributes():
+    from html.parser import HTMLParser
+    from pathlib import Path
+
+    import jinja2
+
+    import psynet
+    from psynet.modular_page import PushButton
+
+    templates = Path(psynet.__file__).parent / "templates"
+    macros = (
+        jinja2.Environment(loader=jinja2.FileSystemLoader(templates))
+        .get_template("macros/control.html")
+        .module
+    )
+    button = PushButton(
+        "yes", label="Yes", style="min-width: 100px", arrange_vertically=False
+    )
+
+    attributes = []
+
+    class _Parser(HTMLParser):
+        def handle_starttag(self, tag, attrs):
+            attributes.extend(name for name, _ in attrs)
+
+    _Parser().feed(str(macros.push_button(button)))
+    assert attributes == ["type", "class", "id", "style", "disabled"]
+
+
+def test_rating_scale_keeps_buttons_on_narrow_screens():
+    """SurveyJS's automatic dropdown would hide the scale descriptions."""
+    scale = RatingScale("rating", 7, min_description="Low", max_description="High")
+    assert scale.design["displayMode"] == "buttons"
+    assert scale.design["minWidth"] == "0px"
+
+
 def test_prompt_metadata_excludes_text():
     prompt = Prompt("Hi!")
     assert "text" not in prompt.metadata

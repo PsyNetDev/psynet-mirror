@@ -13,7 +13,12 @@ import uuid
 from pathlib import Path
 
 import jsonpickle
-from tenacity import retry, stop_after_attempt, wait_fixed
+from tenacity import (
+    retry,
+    retry_if_not_exception_type,
+    stop_after_attempt,
+    wait_fixed,
+)
 
 from .utils import find_git_repo
 
@@ -191,7 +196,12 @@ def write(**kwargs):
     write_all(content)
 
 
-@retry(stop=stop_after_attempt(5), wait=wait_fixed(1), reraise=True)
+@retry(
+    retry=retry_if_not_exception_type(FileNotFoundError),
+    stop=stop_after_attempt(5),
+    wait=wait_fixed(1),
+    reraise=True,
+)
 def read_all():
     with open(path, "r") as file:
         txt = file.read()

@@ -11,6 +11,7 @@ import sys
 import time
 from _hashlib import HASH as Hash
 from collections import OrderedDict
+from collections.abc import Mapping
 from datetime import datetime
 from functools import reduce, wraps
 from os.path import exists
@@ -624,6 +625,28 @@ def _cached_template_from_string(environment, template_string):
     return template
 
 
+class _TemplateConfig(Mapping):
+    """Read-only template view of ``config.as_dict()`` that reads keys on access.
+
+    ``as_dict()`` looks up every registered key, which is slow to repeat on each
+    render; templates read only a few. Sensitive and unset keys stay hidden.
+    """
+
+    def __init__(self, config):
+        self._config = config
+
+    def __getitem__(self, key):
+        if key not in self._config.types or key in self._config.sensitive:
+            raise KeyError(key)
+        return self._config.get(key)
+
+    def __iter__(self):
+        return iter(self._config.as_dict())
+
+    def __len__(self):
+        return len(self._config.as_dict())
+
+
 def _render_with_translations(
     locale, template_name=None, template_string=None, all_template_args=None
 ):
@@ -633,7 +656,7 @@ def _render_with_translations(
     if all_template_args is None:
         all_template_args = {}
 
-    all_template_args["config"] = dict(get_config().as_dict().items())
+    all_template_args["config"] = _TemplateConfig(get_config())
 
     assert [template_name, template_string].count(None) == 1, (
         "Only one of template_name or template_string should be provided."
