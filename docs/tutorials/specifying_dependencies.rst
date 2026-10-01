@@ -15,7 +15,10 @@ different to other Python packages. It looks like this:
 
 .. code-block:: text
 
-  psynet@git+https://gitlab.com/PsyNetDev/PsyNet#egg=psynet
+  psynet[experiment]@git+https://gitlab.com/PsyNetDev/PsyNet#egg=psynet
+
+The ``[experiment]`` extra installs the experiment runtime, including Dallinger.
+A pin without it installs only the command-line tools, and deploying refuses it.
 
 It is usually a good idea to specify a particular version of PsyNet here so that
 your experiment doesn't break when later versions of PsyNet are released.
@@ -23,7 +26,7 @@ You can do this by adding `@<tag>` after the repository link, for example:
 
 .. code-block:: text
 
-  psynet@git+https://gitlab.com/PsyNetDev/PsyNet@v10.0.0#egg=psynet
+  psynet[experiment]@git+https://gitlab.com/PsyNetDev/PsyNet@v10.0.0#egg=psynet
 
 to specify PsyNet 10.0.0. You can also use a Git commit hash instead of a tag
 if you want to link to a particular commit, or indeed a particular Git branch name.

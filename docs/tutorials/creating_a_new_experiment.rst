@@ -94,7 +94,7 @@ for a number that looks like ``10.1.0``. For example, you might see something li
 
 ::
 
-    psynet@git+https://gitlab.com/PsyNetDev/PsyNet@v10.1.0#egg=psynet
+    psynet[experiment]@git+https://gitlab.com/PsyNetDev/PsyNet@v10.1.0#egg=psynet
 
 It's a good idea to check what the latest released version of PsyNet is.
 You should be able to see this in the top-left corner of the online documentation website.

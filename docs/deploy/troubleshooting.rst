@@ -140,3 +140,5 @@ you tried to launch the experiment.
 Note: A common problem is that you are using a different version (e.g. branch or commit) of PsyNet locally than on the remote server. 
 This can lead to unexpected errors. You should check your ``requirements.txt`` before deploying and verify that it 
 gives the same branch/commit that you have selected locally.
+The PsyNet line must also include the ``[experiment]`` extra, for example ``psynet[experiment]==14.0.0``.
+Deploying refuses a pin that omits it: the image would install only the command-line tools, and the clock process would fail to start.

@@ -256,8 +256,11 @@ git commit -m "Refresh experiment scripts via psynet scripts update"
 
      ```text
      dallinger[docker] @ git+https://github.com/Dallinger/Dallinger.git@v12.2.1
-     psynet @ git+https://gitlab.com/PsyNetDev/PsyNet.git@v13.3.0rc0
+     psynet[experiment] @ git+https://gitlab.com/PsyNetDev/PsyNet.git@v13.3.0rc0
      ```
+
+     Keep the `[experiment]` extra on the PsyNet line. Without it the image
+     has no Dallinger, and PsyNet's deploy pre-check refuses the pin.
 
    - **Master-based deployment**: pin PsyNet to the latest pushed `master`
      commit hash, and Dallinger to the SHA that `pyproject.toml` declares.

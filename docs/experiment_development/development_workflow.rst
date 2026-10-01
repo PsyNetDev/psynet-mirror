@@ -265,7 +265,7 @@ For example, if you are using a custom PsyNet branch, you would change the depen
 
 .. code:: text
 
-    psynet@git+https://gitlab.com/PsyNetDev/PsyNet@your-branch-name#egg=psynet
+    psynet[experiment]@git+https://gitlab.com/PsyNetDev/PsyNet@your-branch-name#egg=psynet
 
 After making this change, you will need to run ``psynet generate-constraints`` to update the ``constraints.txt`` file
 (see :ref:`dependencies` for more details).

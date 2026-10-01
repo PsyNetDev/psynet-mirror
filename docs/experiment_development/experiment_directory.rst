@@ -138,7 +138,7 @@ PsyNet experiment, the `Carillon Experiment <https://github.com/pmcharrison/2022
 
     ::
 
-        psynet@git+https://gitlab.com/psynetdev/psynet@d54c3f7a0afddebe1e53676c47c9a31f9cb9a827#egg=psynet
+        psynet[experiment]@git+https://gitlab.com/psynetdev/psynet@d54c3f7a0afddebe1e53676c47c9a31f9cb9a827#egg=psynet
 
     This particular example indicates that the experiment should use a particular version of PsyNet from
     GitHub. The version is specified here by the long string that comes after the ``@`` symbol:
