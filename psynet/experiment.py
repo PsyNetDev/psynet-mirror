@@ -2,6 +2,7 @@ import configparser
 import inspect
 import json
 import os
+import re
 import shutil
 import signal
 import sys
@@ -28,7 +29,6 @@ import dallinger.experiment
 import dallinger.models
 import flask
 import psutil
-import rpdb
 import sqlalchemy.orm.exc
 from dallinger import db
 from dallinger.config import get_config as dallinger_get_config
@@ -400,6 +400,11 @@ class ExperimentStatus(SQLBase, SQLMixin):
             "n_working_participants": self.n_working_participants,
             "extra_info": self.extra_info,
         }
+
+
+def _deployment_label_slug(label):
+    """Turn an experiment label into the path-safe start of a deployment ID."""
+    return re.sub(r"[\W_]+", "-", label.lower()).strip("-") or "experiment"
 
 
 class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
@@ -1363,7 +1368,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     def record_experiment_status(cls, online: bool = True):
         status = cls.get_status(lookback_s=60)  # since we poll every minute
         status["isOffline"] = not online
-        status_obj = ExperimentStatus(**status)
+        # The deployments dashboard reads the secret from artifact storage;
+        # database exports shouldn't carry it.
+        status_obj = ExperimentStatus(
+            **{key: value for key, value in status.items() if key != "secret"}
+        )
         db.session.add(status_obj)
         if cls.automatic_backups:
             cls.artifact_storage.write_experiment_status(status, cls.deployment_id)
@@ -2295,8 +2304,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     @classmethod
     def generate_deployment_id(cls):
         mode = deployment_info.read("mode")
-        id_ = f"{cls.label}"
-        id_ = id_.replace(" ", "-").lower()
+        id_ = _deployment_label_slug(cls.label)
         id_ += (
             "__mode="
             + mode
@@ -4130,12 +4138,14 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             return error_response("Failed to decode JSON file.")
 
     @dashboard.route("/status/get")
+    @login_required
     # Avoid overriding Experiment.get_status
     def get_experiment_status():  # noqa F811
         exp = get_experiment()
         return exp._parse_status(request.args)
 
     @dashboard.route("/archive/deployment")
+    @login_required
     def archive_deployment():  # noqa F811
         try:
             exp = get_experiment()
@@ -4148,6 +4158,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             return error_response(f"Failed to archive deployment: {str(e)}")
 
     @dashboard.route("/restore/deployment")
+    @login_required
     def restore_deployment():  # noqa F811
         try:
             exp = get_experiment()
@@ -4160,6 +4171,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             return error_response(f"Failed to restore deployment: {str(e)}")
 
     @dashboard.route("/update/recruitment")
+    @login_required
     def update_recruitment():  # noqa F811
         try:
             exp = get_experiment()
@@ -4208,6 +4220,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             )
 
     @dashboard.route("/comment/set/<deployment_id>", methods=["POST"])
+    @login_required
     @with_transaction
     def set_comment(deployment_id):  # noqa F811
         params = request.form
@@ -4222,6 +4235,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         return success_response()
 
     @dashboard.route("/comment/get/<deployment_id>", methods=["GET"])
+    @login_required
     def get_comment(deployment_id):  # noqa F811
         return get_experiment().artifact_storage.read_comment(deployment_id)
 
@@ -4836,6 +4850,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @dashboard.route("/export/trigger", methods=["GET"])
     @staticmethod
+    @login_required
     @with_transaction
     def trigger_export():
         """Build a complete export and store it, without sending it anywhere."""
@@ -4953,6 +4968,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @experiment_route("/module/progress_info", methods=["GET"])
     @classmethod
+    @login_required
     @with_transaction
     def get_progress_info(cls):
         exp = get_experiment()
@@ -5003,6 +5019,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @experiment_route("/module/update_spending_limits", methods=["POST"])
     @classmethod
+    @login_required
     @with_transaction
     def update_spending_limits(cls):
         hard_max_experiment_payment = request.values["hard_max_experiment_payment"]
@@ -5017,17 +5034,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             f"Experiment variable 'soft_max_experiment_payment set' set to {soft_max_experiment_payment}."
         )
         return success_response()
-
-    @experiment_route("/debugger/<password>", methods=["GET"])
-    @classmethod
-    @with_transaction
-    def route_debugger(cls, password):
-        exp = get_experiment()
-        if password == "my-secure-password-195762":
-            exp.new(db.session)
-            rpdb.set_trace()
-            return success_response()
-        return error_response()
 
     @experiment_route("/node/<int:node_id>/fail", methods=["GET", "POST"])
     @staticmethod
@@ -5142,6 +5148,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @experiment_route("/change_lucid_status", methods=["GET"])
     @classmethod
+    @login_required
     def change_lucid_status(cls):
         get_experiment().recruiter.change_lucid_status(request.values.get("status", ""))
         return success_response()
