@@ -62,7 +62,8 @@ memory. Use the local copy that matches the installed PsyNet version:
 - Run `psynet docs path` once per session and reuse the printed folder.
 - `rg -n -i --no-ignore "<term>" <folder>` searches every page at once.
   Keep `--no-ignore`: release installs keep the pages inside the Git-ignored
-  `.venv`, which `rg` otherwise skips.
+  `.venv`, which `rg` otherwise skips. In a PsyNet source checkout, also pass
+  `-g '!_build'` so that matches in the built HTML don't drown out the pages.
 - Read a page from the table below at `<folder>/<page>` plus `.txt` (release
   installs) or `.rst` (source checkouts), or with `psynet docs show <page>`.
 
