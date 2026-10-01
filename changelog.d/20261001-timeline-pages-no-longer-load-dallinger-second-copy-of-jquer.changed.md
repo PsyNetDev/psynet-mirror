@@ -1,1 +1,1 @@
-Timeline pages now load jQuery only once. They use Dallinger's new `jquery` template block to skip the copy that Dallinger's base layout loads at the end of the page, instead of undoing it with `jQuery.noConflict(true)`. Requires Dallinger 12.5.0 or later.
+Timeline pages now load jQuery only once. They use Dallinger's new `jquery` template block to skip the copy that Dallinger's base layout loads at the end of the page. Requires Dallinger 12.5.0 or later.
