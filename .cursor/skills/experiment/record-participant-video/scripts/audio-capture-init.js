@@ -56,7 +56,6 @@
 
   function startRecorder() {
     if (recorder) return;
-    segment = `${documentId}-mix`;
     recorder = new MediaRecorder(mix.stream, {
       mimeType: "audio/webm;codecs=opus",
       audioBitsPerSecond: 128000,
@@ -80,12 +79,15 @@
     if (mixContext) return;
     mixContext = new NativeContext();
     mix = mixContext.createMediaStreamDestination();
+    segment = `${documentId}-mix`;
     if (mixContext.state === "running") {
       startRecorder();
       return;
     }
     // Without --autoplay-policy=no-user-gesture-required, a context created
     // outside a user gesture starts suspended; retry on the next gesture.
+    // Reporting the segment now lets finish() warn if it never starts.
+    send({ kind: "suspended" });
     const resume = () =>
       mixContext.resume().then(() => {
         if (mixContext.state !== "running") return;
@@ -179,7 +181,14 @@
     if (!(element instanceof HTMLMediaElement) || !element.captureStream) return;
     if (tappedElements.has(element) || webAudioElements.has(element)) return;
     tappedElements.add(element);
-    const stream = element.captureStream();
+    let stream;
+    try {
+      stream = element.captureStream();
+    } catch (error) {
+      // Loaded cross-origin media without CORS headers can't be captured; let it play unrecorded.
+      console.warn("[psynet audio capture] could not capture media element", element.currentSrc, error);
+      return;
+    }
     const trackIds = new Set();
     // Tracks already present can also fire "addtrack"; mixing one twice doubles its level.
     const addTrack = (track) => {

@@ -149,7 +149,7 @@ async function startParticipantRecording(context, options = {}) {
     }
     if (unstarted.length) {
       console.warn(
-        `[psynet audio capture] ${unstarted.length} page(s) produced audio that was not recorded ` +
+        `[psynet audio capture] ${unstarted.length} page(s) set up audio that was not recorded ` +
           "(the mixing AudioContext never started). Launch Chromium with AUDIO_CAPTURE_LAUNCH_ARGS.",
       );
     }
