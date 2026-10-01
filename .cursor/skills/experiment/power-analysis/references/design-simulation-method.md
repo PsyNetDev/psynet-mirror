@@ -83,8 +83,10 @@ exists: the experimenter names a smallest effect worth detecting, or asks for
 a power analysis. Power is the share of replicates in which the planned test
 rejects the null hypothesis at the planned α, with the true effect set to that
 smallest size. Its Monte Carlo standard error is √(p(1 − p)/R) for power p over
-R replicates. The usual requirement is 80% or 90%; agree it with the
-experimenter. Report the margin of error alongside, so readers see what the
+R replicates. Count a replicate whose fit fails as a non-rejection, and report
+how many failed in each scenario; more than a few percent suggests the
+estimator or design needs changing. The usual requirement is 80% or 90%;
+agree it with the experimenter. Report the margin of error alongside, so readers see what the
 study will estimate as well as whether it will detect. If the analysis tests
 several effects, apply the planned multiplicity procedure in every replicate,
 and state whether the requirement concerns one effect, any effect or all

@@ -249,8 +249,8 @@ the RMS and largest margins of single values and of differences, the true
 spread, the profile correlation and the smallest spread for the target
 correlation. For the decision, add
 `decision_metric`, `decision_value`, `decision_threshold` and
-`meets_requirement`, and, if participants are paid, `participant_payment` and
-`currency`. Keep column names the same across runs so the notebook can compare
+`meets_requirement`, and, if participants are paid, `total_participant_payment`
+(for all participants) and `currency`. Keep column names the same across runs so the notebook can compare
 them.
 
 For one target in one scenario, with `estimates` holding one estimate per
@@ -348,7 +348,7 @@ the design loop:
 ```python
 reward_per_trial = trial_seconds * wage_per_hour / 3600
 fixed_reward = reference_reward - reference_trials * reward_per_trial
-results["participant_payment"] = results["n_participants"] * (
+results["total_participant_payment"] = results["n_participants"] * (
     fixed_reward + results["trials_per_participant"] * reward_per_trial
 )
 ```
