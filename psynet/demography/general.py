@@ -165,6 +165,7 @@ class Gender(ModularPage):
                 _p("gender", "I prefer not to answer"),
             ],
             name="gender",
+            arrange_vertically=False,
             show_free_text_option=True,
             placeholder_text_free_text=_p("gender", "Specify yourself"),
         )
@@ -233,7 +234,7 @@ class CountryDropdown(ModularPage):
             self.get_prompt(),
             control=control,
             time_estimate=self.time_estimate,
-            save_answer="country",
+            save_answer=label,
         )
 
     def get_prompt(self):
