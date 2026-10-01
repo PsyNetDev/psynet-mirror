@@ -644,6 +644,7 @@ def test_git_repository_available_true(tmp_path):
         ("https://gitlab.com/org/repo.git", "https://gitlab.com/org/repo.git"),
         ("git@github.com:org/repo.git", "git@github.com:org/repo.git"),
         ("/srv/git/repo.git", "/srv/git/repo.git"),
+        ("https://u:t@[bad/repo", "https://[bad/repo"),
     ],
 )
 def test_strip_url_credentials(url, expected):

@@ -28,7 +28,8 @@ import shutil
 import subprocess
 from pathlib import Path
 from typing import Union
-from urllib.parse import urlsplit, urlunsplit
+
+_URL_CREDENTIALS = re.compile(r"^([A-Za-z][A-Za-z0-9+.-]*://)[^/?#]*@")
 
 
 class ExperimentDirectoryNameError(ValueError):
@@ -108,12 +109,10 @@ def strip_url_credentials(url: str) -> str:
 
     Only URL-style remotes (``https://user:token@host/path``) are changed.
     scp-style remotes such as ``git@host:path`` and local paths are returned
-    unchanged.
+    unchanged. Malformed URLs are handled without raising, because Git
+    accepts any string as a remote URL.
     """
-    parts = urlsplit(url)
-    if not parts.scheme or "@" not in parts.netloc:
-        return url
-    return urlunsplit(parts._replace(netloc=parts.netloc.rpartition("@")[2]))
+    return _URL_CREDENTIALS.sub(r"\1", url)
 
 
 def git_commit_available() -> bool:
