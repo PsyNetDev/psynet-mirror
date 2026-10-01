@@ -43,7 +43,11 @@ document.querySelectorAll("video").forEach((video) => {
     try {
       const response = await fetch(video.currentSrc);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      video.src = URL.createObjectURL(await response.blob());
+      const blob = await response.blob();
+      const { currentTime, paused } = video;
+      video.src = URL.createObjectURL(blob);
+      video.currentTime = currentTime;
+      if (!paused) await video.play();
     } catch (exception) {
       console.warn("Could not make video seekable", video.currentSrc, exception);
     }
