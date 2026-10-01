@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,6 +15,9 @@ MAX_EVIDENCE_VIDEO_HEIGHT = 720
 ACCEPTED_VIDEO_CONTAINER_FORMATS = frozenset(
     {"mp4", "mov", "m4v", "isom", "iso5", "iso6", "avc1", "qt"},
 )
+# Peak level below which an audio track counts as silent. Encoded digital
+# silence measures about -91 dBFS; quiet but audible stimuli sit far above this.
+SILENT_AUDIO_MAX_VOLUME_DB = -60.0
 
 
 @dataclass(frozen=True)
@@ -59,6 +63,67 @@ def probe_video_metadata(video_file: Path) -> VideoProbeResult:
     except json.JSONDecodeError:
         return VideoProbeResult(None, "invalid")
     return VideoProbeResult(metadata, None)
+
+
+def audio_max_volume_db(video_file: Path) -> float | None:
+    """Return the peak level of the first audio stream in dBFS.
+
+    Parameters
+    ----------
+    video_file
+        Media file to measure with ffmpeg ``volumedetect``.
+
+    Returns
+    -------
+    float or None
+        Peak level in dBFS, or ``None`` when ffmpeg is unavailable, the file
+        has no audio stream, or the level could not be measured.
+    """
+
+    try:
+        result = subprocess.run(
+            [
+                "ffmpeg",
+                "-hide_banner",
+                "-nostats",
+                "-i",
+                str(video_file),
+                "-map",
+                "0:a:0",
+                "-af",
+                "volumedetect",
+                "-f",
+                "null",
+                "-",
+            ],
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return None
+    match = re.search(r"max_volume:\s*(-?(?:inf|[\d.]+)) dB", result.stderr)
+    return float(match.group(1)) if match else None
+
+
+def silent_audio_warning(video_file: Path, metadata: dict[str, Any]) -> str | None:
+    """Return a warning when a video's audio track is effectively silent.
+
+    Videos without an audio stream are not checked.
+    """
+
+    has_audio = any(
+        stream.get("codec_type") == "audio" for stream in metadata.get("streams", [])
+    )
+    if not has_audio:
+        return None
+    max_volume = audio_max_volume_db(video_file)
+    if max_volume is None or max_volume >= SILENT_AUDIO_MAX_VOLUME_DB:
+        return None
+    return (
+        f"{video_file}: audio track is silent (peak {max_volume:.1f} dBFS); if the "
+        "experiment plays sound, audio capture failed. Re-record, or drop the "
+        "audio track and record missing audio as a blocker"
+    )
 
 
 def is_git_lfs_pointer(path: Path) -> bool:
