@@ -1,0 +1,1 @@
+When the recruiter is Prolific, `psynet estimate` warns if `prolific_estimated_completion_minutes` is shorter than the estimated duration, or if `base_payment` over the longer of the two falls below Prolific's minimum hourly rate (£6 or $8), which bonuses don't count towards.

@@ -104,7 +104,9 @@ using Playwright's UI mode during development:
     HEADLESS=false npx playwright test --ui
 
 These tests launch demo experiments locally, so you still need PostgreSQL and
-Redis running (same as for the pytest-driven e2e tests).
+Redis running (same as for the pytest-driven e2e tests). They need Node 20 or
+later, and ``participant_recording.spec.js`` also needs ``ffmpeg`` and
+``ffprobe`` on ``PATH``.
 
 Mode tags
 ^^^^^^^^^

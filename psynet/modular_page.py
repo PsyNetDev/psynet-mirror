@@ -4385,6 +4385,11 @@ class RatingScale:
         design["type"] = "rating"
         design["name"] = self.name
         design["isRequired"] = self.required
+        # SurveyJS's default "auto" mode swaps narrow scales for a dropdown
+        # that hides the min/max descriptions.
+        design["displayMode"] = "buttons"
+        # SurveyJS's default 300px minimum overflows the page card on phones.
+        design["minWidth"] = "0px"
 
         if self.min_description:
             design["minRateDescription"] = self.min_description

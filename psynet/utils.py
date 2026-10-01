@@ -11,6 +11,7 @@ import sys
 import time
 from _hashlib import HASH as Hash
 from collections import OrderedDict
+from collections.abc import Mapping
 from datetime import datetime
 from functools import reduce, wraps
 from os.path import exists
@@ -46,6 +47,7 @@ from psynet.light_utils import (  # noqa: F401 – re-exported for backwards com
     git_repository_available,
     is_in_repo_experiment,
     md5_directory,
+    strip_url_credentials,
 )
 from psynet.translation.utils import load_po
 
@@ -132,6 +134,9 @@ def call_function(function, *args, **kwargs):
 def find_git_repo():
     """
     Finds the origin of the git repository of the current directory.
+
+    Any credentials embedded in the remote URL are removed, because the
+    result is stored in deployment records and exports.
     """
     import subprocess
 
@@ -141,7 +146,7 @@ def find_git_repo():
             .strip()
             .decode("utf-8")
         )
-        return origin
+        return strip_url_credentials(origin)
     except subprocess.CalledProcessError:
         return None
 
@@ -665,6 +670,28 @@ def _cached_template_from_string(environment, template_string):
     return template
 
 
+class _TemplateConfig(Mapping):
+    """Read-only template view of ``config.as_dict()`` that reads keys on access.
+
+    ``as_dict()`` looks up every registered key, which is slow to repeat on each
+    render; templates read only a few. Sensitive and unset keys stay hidden.
+    """
+
+    def __init__(self, config):
+        self._config = config
+
+    def __getitem__(self, key):
+        if key not in self._config.types or key in self._config.sensitive:
+            raise KeyError(key)
+        return self._config.get(key)
+
+    def __iter__(self):
+        return iter(self._config.as_dict())
+
+    def __len__(self):
+        return len(self._config.as_dict())
+
+
 def _render_with_translations(
     locale, template_name=None, template_string=None, all_template_args=None
 ):
@@ -674,7 +701,7 @@ def _render_with_translations(
     if all_template_args is None:
         all_template_args = {}
 
-    all_template_args["config"] = dict(get_config().as_dict().items())
+    all_template_args["config"] = _TemplateConfig(get_config())
 
     assert [template_name, template_string].count(None) == 1, (
         "Only one of template_name or template_string should be provided."

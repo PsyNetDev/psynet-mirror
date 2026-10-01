@@ -1,0 +1,1 @@
+Fixed the launch notification written to the server log (for example the `web.1` lines of `psynet debug local`) including the dashboard password. The log now shows `<redacted>`. The launch banner and Slack notifications still show the password.

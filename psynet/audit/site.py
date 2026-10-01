@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import html
 import json
+import os
 import shutil
+import subprocess
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -311,6 +313,30 @@ def render_metadata_value(value: object, fallback: str = "-") -> str:
     return html.escape(str(value))
 
 
+def experiment_git_commit() -> str | None:
+    """Return the experiment's short Git commit, or ``None`` outside Git.
+
+    Appends ``-dirty`` when experiment files have uncommitted changes. The
+    ``audit/`` folder is ignored, because the audit itself is usually edited
+    after the experiment is committed.
+    """
+
+    def git(*args: str) -> str | None:
+        try:
+            result = subprocess.run(
+                ["git", *args], capture_output=True, text=True, check=False
+            )
+        except FileNotFoundError:
+            return None
+        return result.stdout.strip() if result.returncode == 0 else None
+
+    commit = git("rev-parse", "--short", "HEAD")
+    if not commit:
+        return None
+    status = git("status", "--porcelain", "--", ".", ":(exclude)audit")
+    return f"{commit}-dirty" if status else commit
+
+
 def render_metadata_code(value: object, fallback: str = "-") -> str:
     """Render one metadata value as code."""
 
@@ -556,8 +582,70 @@ def experiment_entry_point(
     return source_file, entry_point
 
 
+_SOURCE_EXCLUDED_DIRS = {"audit", "static", "tests"}
+_MAX_SOURCE_MODULES = 30
+_STOCK_DEPLOYMENT_POLICY = (
+    Path(__file__).resolve().parents[1] / "resources/experiment_scripts/deploy.toml"
+)
+
+
+def experiment_python_modules(source_root: Path, entry_file: Path) -> list[Path]:
+    """
+    List the experiment's deployed Python modules other than the entry point.
+
+    Covers modules beside ``experiment.py`` and in its packages, such as a
+    ``response_model/`` package, but only those that the experiment's
+    ``deploy.toml`` selects for deployment. Without a ``deploy.toml``, PsyNet's
+    stock policy is applied, because PsyNet creates that file before the
+    experiment is launched. Hidden directories, virtual environments (detected
+    by ``pyvenv.cfg``), the audit folder, tests, static files, the scaffolded
+    ``test.py`` and empty ``__init__.py`` files are also skipped.
+
+    Raises
+    ------
+    dallinger.deployment_plan.DeploymentPolicyError
+        If the experiment's ``deploy.toml`` is invalid.
+    """
+    from dallinger.deployment_plan import parse_deployment_policy
+
+    from psynet.deployment_info import policy_selects_path
+
+    policy_path = source_root / "deploy.toml"
+    policy = parse_deployment_policy(
+        policy_path if policy_path.is_file() else _STOCK_DEPLOYMENT_POLICY
+    )
+
+    modules = []
+    for root, directories, filenames in os.walk(source_root):
+        relative_root = Path(root).relative_to(source_root)
+        directories[:] = sorted(
+            directory
+            for directory in directories
+            if not directory.startswith(".")
+            and directory not in _SOURCE_EXCLUDED_DIRS
+            and not (Path(root) / directory / "pyvenv.cfg").is_file()
+            and policy_selects_path((relative_root / directory).as_posix(), policy)
+        )
+        for filename in filenames:
+            if filename.endswith(".py") and policy_selects_path(
+                (relative_root / filename).as_posix(), policy
+            ):
+                modules.append(Path(root) / filename)
+    modules.sort(key=lambda path: path.relative_to(source_root).as_posix())
+
+    included = []
+    for path in modules:
+        relative = path.relative_to(source_root)
+        if path == entry_file or relative == Path("test.py"):
+            continue
+        if path.name == "__init__.py" and path.stat().st_size == 0:
+            continue
+        included.append(path)
+    return included
+
+
 def render_source_section(audit_dir: Path, manifest: dict[str, Any]) -> str:
-    """Render the experiment entry point from the experiment directory."""
+    """Render the experiment entry point and the experiment's other Python modules."""
 
     source_file, entry_point = experiment_entry_point(audit_dir, manifest)
     if source_file is None or not source_file.is_file():
@@ -565,25 +653,52 @@ def render_source_section(audit_dir: Path, manifest: dict[str, Any]) -> str:
             '<p class="missing">Experiment entry point missing: '
             f"<code>{html.escape(entry_point)}</code>.</p>"
         )
-    content, truncated = read_audit_artifact_content(source_file)
-    if content is None:
+    from dallinger.deployment_plan import DeploymentPolicyError
+
+    source_root = experiment_source_root(audit_dir)
+    try:
+        modules = experiment_python_modules(source_root, source_file)
+    except DeploymentPolicyError as error:
         return (
-            '<p class="missing">Experiment entry point could not be read: '
-            f"<code>{html.escape(entry_point)}</code>.</p>"
+            '<p class="missing">Experiment code could not be listed because '
+            f"<code>deploy.toml</code> is invalid: {html.escape(str(error))}</p>"
         )
-    return render_file_grid(
-        [
+    omitted = len(modules) - _MAX_SOURCE_MODULES
+    files = []
+    for path in [source_file, *modules[:_MAX_SOURCE_MODULES]]:
+        content, truncated = read_audit_artifact_content(path)
+        if content is None:
+            if path == source_file:
+                return (
+                    '<p class="missing">Experiment entry point could not be read: '
+                    f"<code>{html.escape(entry_point)}</code>.</p>"
+                )
+            continue
+        relative = (
+            entry_point
+            if path == source_file
+            else path.relative_to(source_root).as_posix()
+        )
+        files.append(
             AuditFile(
-                path=entry_point,
+                path=relative,
                 url="",
                 content=content,
-                size_bytes=source_file.stat().st_size,
-                kind=file_kind(entry_point),
+                size_bytes=path.stat().st_size,
+                kind=file_kind(relative),
                 truncated=truncated,
             )
-        ],
-        empty_message="Experiment entry point was not found.",
+        )
+    grid = render_file_grid(
+        files, empty_message="Experiment entry point was not found."
     )
+    if omitted > 0:
+        grid += (
+            f'<p class="missing">{omitted} more Python '
+            f"module{'s' if omitted != 1 else ''} omitted; this section shows "
+            f"at most {_MAX_SOURCE_MODULES}.</p>"
+        )
+    return grid
 
 
 def section_paths(manifest: dict[str, Any], evidence: Any = None) -> set[str]:
@@ -878,9 +993,17 @@ def render_audit_site(
     blocker_count = len(blockers) if isinstance(blockers, list) else 0
     metadata = render_metadata_grid(
         [
-            ("Entry point", render_metadata_code(experiment.get("entry_point"))),
+            (
+                "Entry point",
+                render_metadata_code(experiment.get("entry_point") or "experiment.py"),
+            ),
             ("PsyNet version", render_metadata_value(experiment.get("psynet_version"))),
-            ("Git commit", render_metadata_code(experiment.get("git_commit"))),
+            (
+                "Git commit",
+                render_metadata_code(
+                    experiment.get("git_commit") or experiment_git_commit()
+                ),
+            ),
             ("OS", render_metadata_value(environment.get("os"))),
             ("Python", render_metadata_value(environment.get("python_version"))),
             ("Sections", render_metadata_value(len(sections))),

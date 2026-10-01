@@ -15,6 +15,7 @@ from psynet.experiment_scaffold import (
     _GENERATED_DOCKERIGNORE_VARIANTS,
     _clear_deployment_policy_review_marker,
     _deployment_policy_needs_review,
+    ensure_deployment_policy,
     scaffold_experiment_directory,
     scaffold_missing_files,
 )
@@ -39,7 +40,6 @@ EXPECTED_EXCLUDE_NAMES = (
     ".env",
     ".idea",
     ".pytest_cache",
-    ".python-version",
     ".venv",
     "__pycache__",
     "env",
@@ -132,6 +132,15 @@ def test_scaffold_creates_stock_deployment_policy(tmp_path):
     assert policy.exclude_names == EXPECTED_EXCLUDE_NAMES
     assert policy.exclude_suffixes == EXPECTED_EXCLUDE_SUFFIXES
     assert not (tmp_path / ".dockerignore").exists()
+
+
+def test_ensure_deployment_policy_uses_new_experiment_review_wording(tmp_path):
+    """Creating deploy.toml without an old .gitignore is not a migration."""
+    with working_directory(tmp_path):
+        ensure_deployment_policy()
+
+    marker = tmp_path / _DEPLOYMENT_POLICY_REVIEW_MARKER
+    assert marker.read_text().startswith("reason: new experiment\n")
 
 
 def test_scaffold_missing_files_does_not_leave_review_marker(tmp_path, monkeypatch):
@@ -340,7 +349,8 @@ def test_check_experiment_directory_stops_after_setup_creates_deploy_toml(
             _check_experiment_directory("debug")
 
         message = str(error.value)
-        assert "PsyNet created a new deploy.toml file for this experiment." in message
+        assert "PsyNet created a deploy.toml file for this experiment." in message
+        assert "Previously .gitignore" not in message
         assert "secret.txt" in message
         assert not _deployment_policy_needs_review()
 
@@ -687,4 +697,6 @@ def test_scaffolded_debug_source_prepares_from_policy(tmp_path):
     assert (staging_root / "experiment.py").is_file()
     assert (staging_root / "deploy.toml").is_file()
     assert "experiment.py" in source.deployment_plan.destinations
+    # Dallinger's staging recompiles constraints against .python-version.
+    assert ".python-version" in source.deployment_plan.destinations
     assert "deploy.toml" in source.deployment_plan.destinations

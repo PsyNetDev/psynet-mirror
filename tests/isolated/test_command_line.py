@@ -1,8 +1,12 @@
 import hashlib
+import importlib
 import io
 import json
+import os
 import subprocess
+import sys
 import tempfile
+import time
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -10,6 +14,7 @@ from unittest.mock import Mock, patch
 
 import click
 import pandas as pd
+import psutil
 import pytest
 from click.testing import CliRunner
 
@@ -507,6 +512,44 @@ def test_debug_legacy_starts_four_gunicorn_workers(monkeypatch):
             "exp_config": {"threads": "4"},
         }
     ]
+
+
+def test_debug_auto_reload_no_browsers_launches_without_browsers(monkeypatch, capsys):
+    """PsyNet's launch job opens no browsers and prints what the browser would show."""
+    from psynet.command_line import _debug_auto_reload, launch_app_without_browsers
+
+    develop = importlib.import_module("dallinger.command_line.develop")
+    original_job = develop.launch_app_and_open_browser
+    calls = []
+
+    class _Ctx:
+        def invoke(self, _command, **kwargs):
+            calls.append((kwargs, develop.launch_app_and_open_browser))
+
+    monkeypatch.setattr("psynet.command_line.run_pre_auto_reload_checks", lambda: None)
+    monkeypatch.setattr("psynet.command_line.patch_dallinger_develop", lambda: None)
+    monkeypatch.setattr("psynet.command_line.db.session.commit", lambda: None)
+    monkeypatch.setattr("psynet.command_line.reset_console", lambda: None)
+    _debug_auto_reload(_Ctx(), archive=None, no_browsers=True)
+    assert calls == [({"skip_flask": False}, launch_app_without_browsers)]
+    assert develop.launch_app_and_open_browser is original_job
+
+    config = Mock(ready=True)
+    config.get.side_effect = {
+        "dashboard_user": "admin",
+        "dashboard_password": "s3cret",
+    }.get
+    monkeypatch.setattr("psynet.command_line.get_config", lambda: config)
+    monkeypatch.setattr(
+        "dallinger.deployment.handle_launch_data",
+        lambda url, **kwargs: {"recruitment_msg": "Prolific study simulated"},
+    )
+    monkeypatch.setattr(develop, "_async_browser", pytest.fail)
+    launch_app_without_browsers(5001, no_browsers=False)
+    output = capsys.readouterr().out
+    assert "Prolific study simulated" in output
+    assert "http://127.0.0.1:5001/dashboard" in output
+    assert "Dashboard user: admin password: s3cret" in output
 
 
 def test_debug_legacy_gunicorn_workers_follow_env(monkeypatch):
@@ -3836,6 +3879,87 @@ def test_prepare_after_stopping_local_workers_kills_then_prepares():
     ctx.invoke.assert_called_once_with(prepare, archive="export.zip")
 
 
+def test_worker_cleanup_only_targets_this_database(monkeypatch, tmp_path):
+    from psynet.command_line import list_psynet_worker_processes
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql://dallinger@localhost/this_test")
+    worker_entry_point = tmp_path / "dallinger_heroku_web"
+    worker_entry_point.write_text("import time; time.sleep(30)\n")
+    sleeper = [sys.executable, str(worker_entry_point)]
+    ours = subprocess.Popen(sleeper)
+    theirs = subprocess.Popen(
+        sleeper,
+        env={**os.environ, "DATABASE_URL": "postgresql://dallinger@localhost/other"},
+    )
+    try:
+        time.sleep(0.5)
+        pids = {p.pid for p in list_psynet_worker_processes()}
+        assert ours.pid in pids
+        assert theirs.pid not in pids
+    finally:
+        for process in (ours, theirs):
+            process.kill()
+            process.wait()
+
+
+@pytest.mark.parametrize(
+    "name, cmdline, expected",
+    [
+        ("dallinger_herok", ["dallinger_heroku_web"], True),
+        ("Python", ["/venv/bin/dallinger_heroku_clock"], True),
+        (
+            "Python",
+            ["/usr/bin/python", "/venv/bin/dallinger_heroku_worker"],
+            True,
+        ),
+        ("not-dallinger_herok", ["unrelated"], False),
+        (
+            "Python",
+            ["/usr/bin/python", "-m", "pytest", "-k", "dallinger_heroku_worker"],
+            False,
+        ),
+    ],
+)
+def test_is_psynet_worker_process(name, cmdline, expected):
+    from psynet.command_line import is_psynet_worker_process
+
+    process = Mock()
+    process.name.return_value = name
+    process.cmdline.return_value = cmdline
+    assert is_psynet_worker_process(process) is expected
+
+
+def test_uses_current_database_normalizes_urls_and_handles_the_default(monkeypatch):
+    from psynet.command_line import uses_current_database
+
+    process = Mock()
+    monkeypatch.setenv("DATABASE_URL", "postgres://dallinger@localhost/experiment")
+    process.environ.return_value = {
+        "DATABASE_URL": "postgresql://dallinger@localhost/experiment"
+    }
+    assert uses_current_database(process)
+
+    monkeypatch.delenv("DATABASE_URL")
+    process.environ.return_value = {}
+    assert uses_current_database(process)
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        pytest.param(psutil.AccessDenied(1), id="access-denied"),
+        pytest.param(psutil.NoSuchProcess(1), id="gone"),
+        pytest.param(psutil.ZombieProcess(1), id="zombie"),
+    ],
+)
+def test_uses_current_database_rejects_unreadable_processes(error):
+    from psynet.command_line import uses_current_database
+
+    process = Mock()
+    process.environ.side_effect = error
+    assert not uses_current_database(process)
+
+
 def test_kill_psynet_worker_processes_warns_with_pids(caplog):
     import logging
 
@@ -4515,3 +4639,51 @@ def test_destroy_ssh_batch_succeeds(monkeypatch):
     assert destroyed == ["kept-1", "kept-2"], result.output
     assert result.exception is None, result.output
     assert result.exit_code == 0, result.output
+
+
+def test_signalled_debug_process_stops_its_child_processes(tmp_path):
+    import signal
+    import sys
+    import time
+
+    import psutil
+
+    pid_file = tmp_path / "child.pid"
+    script = (
+        "import subprocess\n"
+        "from psynet.command_line import _stop_child_processes_on_signal\n"
+        "with _stop_child_processes_on_signal():\n"
+        "    child = subprocess.Popen(['sleep', '60'])\n"
+        f"    open({str(pid_file)!r}, 'w').write(str(child.pid))\n"
+        "    child.wait()\n"
+    )
+    parent = subprocess.Popen([sys.executable, "-c", script])
+    deadline = time.monotonic() + 60
+    while not pid_file.exists() or not pid_file.read_text():
+        assert time.monotonic() < deadline, "child process did not start"
+        time.sleep(0.1)
+    child_pid = int(pid_file.read_text())
+
+    parent.send_signal(signal.SIGTERM)
+    assert parent.wait(timeout=30) == 128 + signal.SIGTERM
+    deadline = time.monotonic() + 10
+    while psutil.pid_exists(child_pid):
+        assert time.monotonic() < deadline, "child process outlived its parent"
+        time.sleep(0.1)
+
+
+def test_prolific_listing_warnings():
+    from psynet.command_line import prolific_listing_warnings
+
+    def warnings(minutes, payment):
+        return prolific_listing_warnings(
+            completion_time_s=8.5 * 60,
+            listed_minutes=minutes,
+            base_payment=payment,
+            currency="£",
+        )
+
+    assert warnings(10, 1.00) == []
+    assert "shorter than the estimated 8.5 minutes" in warnings(2, 0.85)[0]
+    assert "£5.00/hour" in " ".join(warnings(12, 1.00))
+    assert "£4.24/hour" in " ".join(warnings(5, 0.60))

@@ -92,21 +92,21 @@ def test_bootstrap_install_ignores_vcs_metadata_for_editable_checkout(monkeypatc
     assert installed_psynet_direct_requirement() is None
 
 
-def test_default_psynet_requirement_uses_local_file_install(tmp_path, monkeypatch):
+def test_default_psynet_requirement_warns_for_local_wheel(
+    tmp_path, monkeypatch, capsys
+):
+    wheel = tmp_path / "psynet-13.4.0a0-py3-none-any.whl"
     monkeypatch.setattr("psynet.experiment_scaffold.psynet_version", "13.4.0a0")
     monkeypatch.setattr(
-        "psynet.experiment_scaffold.get_editable_psynet_source",
-        lambda: None,
-    )
-    monkeypatch.setattr(
-        "psynet.experiment_scaffold._installed_psynet_file_path",
-        lambda: tmp_path,
+        "psynet.experiment_scaffold._psynet_direct_url_info",
+        lambda: {"url": wheel.as_uri(), "archive_info": {}},
     )
     from psynet.experiment_scaffold import _default_psynet_requirement
 
     assert _default_psynet_requirement() == (
-        f"psynet[experiment] @ {tmp_path.resolve().as_uri()}"
+        f"psynet[experiment] @ {wheel.resolve().as_uri()}"
     )
+    assert "remote deployments will fail" in capsys.readouterr().err
 
 
 def test_editable_psynet_requirement_includes_experiment(tmp_path):
