@@ -3,6 +3,7 @@
 
   const channels = new Map();
   const LISTENING_PROBE_TYPE = "psynet_listening_probe";
+  const LISTENING_PROBE_RETRY_MS = 1000;
 
   function buildUrl(channel) {
     const scheme = location.protocol === "https:" ? "wss://" : "ws://";
@@ -18,22 +19,35 @@
     );
   }
 
+  function stopListeningProbe(entry) {
+    clearInterval(entry.probeTimer);
+    entry.probeTimer = null;
+  }
+
   function markListening(entry, event) {
+    stopListeningProbe(entry);
     entry.listening = true;
     entry.subscribers.forEach((subscriber) => subscriber.onOpen?.(event));
   }
 
   // Dallinger subscribes the server to Redis after the socket opens, so
   // messages published in between are dropped. Our own probe echoing back
-  // proves the subscription is live.
+  // proves the subscription is live. A probe published before the
+  // subscription is dropped too, so it is repeated until one echoes.
   function sendListeningProbe(entry, event) {
+    stopListeningProbe(entry);
     entry.probeId = Math.random().toString(36).slice(2);
     entry.probeEvent = event;
-    entry.socket.send(
+    const payload =
       entry.channel +
-        ":" +
-        JSON.stringify({ type: LISTENING_PROBE_TYPE, probe_id: entry.probeId }),
-    );
+      ":" +
+      JSON.stringify({ type: LISTENING_PROBE_TYPE, probe_id: entry.probeId });
+    entry.socket.send(payload);
+    entry.probeTimer = setInterval(() => {
+      if (entry.socket.readyState === WebSocket.OPEN) {
+        entry.socket.send(payload);
+      }
+    }, LISTENING_PROBE_RETRY_MS);
   }
 
   function createChannel(channel, confirmListening) {
@@ -46,6 +60,7 @@
       listening: false,
       probeEvent: null,
       probeId: null,
+      probeTimer: null,
       socket,
       subscribers,
     };
@@ -78,6 +93,7 @@
       subscribers.forEach((subscriber) => subscriber.onMessage?.(message));
     };
     socket.onclose = function (event) {
+      stopListeningProbe(entry);
       entry.listening = false;
       subscribers.forEach((subscriber) => subscriber.onClose?.(event));
     };
@@ -88,6 +104,7 @@
 
   function closeChannel(entry) {
     channels.delete(entry.channel);
+    stopListeningProbe(entry);
     entry.socket.onopen = function () {
       entry.socket.close();
     };
