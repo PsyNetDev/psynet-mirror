@@ -15,6 +15,11 @@ directory. Compatible agents read them from the project directory. They
 tell the agent how to plan an experiment, choose PsyNet components, test with
 simulated participants, and debug; :doc:`/skills/index` lists them.
 
+``AGENTS.md`` also maps each topic to a page of this documentation. The agent
+reads those pages with ``psynet docs``, which serves the documentation for the
+installed PsyNet version from disk, so it can search every page at once
+without going online.
+
 The skills also tell the agent to keep an **experiment audit**: a record of
 the original request, the implementation plan, the development timeline,
 validation results, evidence and remaining blockers. You review the rendered

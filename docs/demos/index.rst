@@ -11,6 +11,11 @@ of runnable demo: ``demos/features`` shows one building block per demo,
 ``psynet debug local``, either in place in a PsyNet source checkout or as a
 copy, as described in :doc:`/code/project/creating_an_experiment`.
 
+To read a demo's code without leaving your editor, run ``psynet docs demos``.
+It prints a folder with the demos' code for the installed PsyNet version.
+Release installs leave out the demos' media files and vendored libraries, so
+to run a demo that uses them, take it from the repository instead.
+
 .. _demos_catalog_pipelines:
 
 Pipelines

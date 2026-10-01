@@ -7,7 +7,7 @@ description: Use this skill when a PsyNet experiment has two participants intera
 
 ## Read first
 
-Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rst`; otherwise fetch `https://psynetdev.gitlab.io/PsyNet/<page>.html`.
+Read these pages before acting. The "Documentation" section of the experiment's `AGENTS.md` explains how to find and search them.
 
 - `data/basic_data` — `get_basic_data`; its "Group experiments" section covers the group tables, rounds, the player-round layout and a worked example
 - `data/analyzing_data` — joining group tables in an export
