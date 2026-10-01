@@ -208,9 +208,10 @@ local experiment is running. If local data disappears unexpectedly, check
   `audit/REPORT.md`.
 - Once the timeline's time estimates are set, run `psynet estimate` and set
   the recruiter's listing in `config.txt` from it: for Prolific,
-  `prolific_estimated_completion_minutes` and a `base_payment` that gives at
-  least `wage_per_hour` for that time (`code/participants/payment`). The
-  scaffolded values are placeholders.
+  set `prolific_estimated_completion_minutes` to at least the estimate, and a
+  `base_payment` that alone meets Prolific's minimum hourly rate; the command
+  warns if either falls short (`code/participants/payment`). The scaffolded
+  values are placeholders.
 
 ### Run simulations
 
