@@ -19,6 +19,7 @@ def test_recorded_status_does_not_store_dashboard_password():
     status = {
         "cpu_usage_pct": 1.0,
         "basic_data_url": "http://x/basic_data?dashboard_user=admin&dashboard_password=s3cret",
+        "secret": "launch-s3cret",
     }
     with (
         patch.object(Experiment, "get_status", return_value=status),

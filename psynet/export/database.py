@@ -1,12 +1,11 @@
 """COPY-based database table export into a flat ``database/`` directory.
 
 Every table is written by a single ``COPY (SELECT …) TO STDOUT WITH CSV HEADER``
-that applies the value transformations the export needs: boolean columns are
-spelled ``True``/``False``, recruiter identifiers are replaced with pseudonyms
-by :mod:`psynet.export.identifiers`, and framework credentials are removed.
-Doing this in the query rather than by rewriting the CSVs afterwards is
-deliberate — see that module for why re-serializing a ``COPY`` CSV in Python
-silently corrupts empty strings.
+that already applies both value transformations the export needs: boolean
+columns are spelled ``True``/``False``, and recruiter identifiers are replaced
+with pseudonyms by :mod:`psynet.export.identifiers`. Doing this in the query
+rather than by rewriting the CSVs afterwards is deliberate — see that module for
+why re-serializing a ``COPY`` CSV in Python silently corrupts empty strings.
 """
 
 from __future__ import annotations
@@ -78,21 +77,6 @@ def _boolean_expression(name: str) -> sql.Composable:
     ).format(col=sql.Identifier(name))
 
 
-def _framework_sensitive_expression(table: str, column: str) -> sql.Composable | None:
-    """Remove framework credentials and identifiers from exported status rows.
-
-    ``extra_info`` is serialized Python, which spells non-finite floats as bare
-    ``NaN`` or ``Infinity``. ``jsonb`` rejects those tokens, so they become
-    ``null`` before the cast; otherwise one such row would fail the whole export.
-    """
-    if (table, column) != ("experiment_status", "extra_info"):
-        return None
-    return sql.SQL(
-        "(regexp_replace({column}, '([:,\\[]\\s*)(NaN|-?Infinity)\\M', '\\1null', 'g')"
-        "::jsonb - 'basic_data_url' - 'secret')::text"
-    ).format(column=sql.Identifier(column))
-
-
 def _select_column(
     table: str,
     column: dict,
@@ -104,8 +88,8 @@ def _select_column(
 ) -> sql.Composable:
     """Return the SELECT expression used to export one column."""
     name = column["name"]
-    expression = _framework_sensitive_expression(table, name)
-    if pseudonymize and expression is None:
+    expression = None
+    if pseudonymize:
         expression = identifier_override(
             table, name, not_null=not_null, has_id=has_id, kind=kind
         )
@@ -132,8 +116,7 @@ def copy_database_to_csv_dir(
     pseudonymize :
         Replace recruiter identifiers with participant-id pseudonyms, as
         :mod:`psynet.export.identifiers` defines. Exports always do this; it is
-        optional so that a caller can preserve recruiter identifiers. Framework
-        credentials are always removed.
+        optional so that a caller can obtain the unmodified tables.
 
     Returns
     -------

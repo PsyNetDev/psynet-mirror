@@ -1365,9 +1365,13 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         status = cls.get_status(lookback_s=60)  # since we poll every minute
         status["isOffline"] = not online
         # Status rows are exported with the database, so they must not store the
-        # dashboard credentials that ``basic_data_url`` embeds. The artifact copy
-        # keeps the URL for the deployments dashboard's data shortcut.
-        row = {key: value for key, value in status.items() if key != "basic_data_url"}
+        # dashboard credentials. The artifact copy keeps them for the deployments
+        # dashboard.
+        row = {
+            key: value
+            for key, value in status.items()
+            if key not in ("basic_data_url", "secret")
+        }
         status_obj = ExperimentStatus(**row)
         db.session.add(status_obj)
         if cls.automatic_backups:
