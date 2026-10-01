@@ -23,11 +23,14 @@ It may be included in the timeline as follows:
     SimpleGrouper(
         group_type="rock_paper_scissors",
         initial_group_size=2,
+        content="Waiting for another participant",
     ),
 
 This ``SimpleGrouper`` organizes participants into groups of 2. By default it will create a new
 group of 2 each time 2 participants are ready and waiting, but an optional ``batch_size``
 parameter can be used to delay group formation until more participants are waiting.
+Like ``GroupBarrier``, it accepts ``content`` to customize the default in-place
+waiting indicator.
 Set ``fail_participants_below_min_size=False`` to release the remaining members without failing
 them if a group that cannot accept top-ups drops below its minimum size.
 
@@ -77,10 +80,12 @@ Groupers with the same ``group_type`` can be used to regroup the participants in
 as they progress through the experiment.
 However, it is not possible to be in multiple groups with the same ``group_type`` simultaneously;
 one must place a ``GroupCloser`` in the timeline to close the group before assigning the participants
-to a new one.
+to a new one. Sequential same-type groupers with different sizes get distinct default IDs
+(``{group_type}_grouper_{size}``). Give them explicit ``id_`` values if they should share a pool,
+and only when their release behavior matches.
 
 
-Group Barrier
+Group barrier
 -------------
 
 A Group Barrier may be included in the timeline as follows:
@@ -90,13 +95,111 @@ A Group Barrier may be included in the timeline as follows:
     GroupBarrier(
         id_="finished_trial",
         group_type="rock_paper_scissors",
+        content="Waiting for your partner",
         on_release=self.score_trial,
     )
 
 
-When participants reach this barrier, they will be told to wait until all participants in their group
+When participants reach this barrier, they will wait until all participants in their group
 are also waiting at that barrier. An optional ``on_release`` function can be provided to the barrier,
 which will be executed on the group of participants at the point when they leave the barrier.
+
+Treat a barrier's ``id_`` as the identity of one kind of waiting point. Reusing
+an ID with a different barrier class is an error. Within one active waiting
+pool, its release behavior and callbacks must also remain consistent; use a
+different ID for different release behavior. A timeline that lists the same ID
+with two different behaviors is rejected when the experiment is constructed.
+Waiting presentation may vary between participants sharing a pool. Group
+barriers keep separate waiting pools for each group and visit, so different
+groups may safely use callbacks bound to their own group-specific objects.
+
+By default, a barrier keeps the participant's current page visible, disables
+interaction, and displays a small waiting indicator. Pass ``content`` to
+customize that overlay (for example ``"Waiting for your partner"``).
+If ``content`` is omitted, the overlay says "Waiting for other participants…".
+For localized experiments, mark custom ``content`` for translation as described
+in :doc:`internationalization`.
+The browser receives a WebSocket notification when the barrier releases and
+performs only occasional HTTP checks as a fallback. When the last needed
+member arrives, PsyNet commits the arrival and evaluates the barrier in a short
+coordination transaction before rendering the response. This lets a
+:class:`~psynet.sync.SimpleGrouper` form the group immediately and a
+:class:`~psynet.sync.GroupBarrier` release partners without waiting for the
+poller. The last arriver skips the wait indicator and continues to the next
+page. If a partner's wait row is locked, the regular 0.5-second barrier check
+finishes the release instead. To display dedicated pages or filler tasks while
+participants wait, pass them explicitly with ``waiting_logic``.
+
+Custom barriers should implement
+:meth:`~psynet.sync.Barrier.check_waiting_participants` for side-effecting
+preparation and :meth:`~psynet.sync.Barrier.choose_who_to_release` for the
+release decision. Barrier evaluation and participant locking are
+framework-owned and are not extension points.
+
+.. _sync-reconstructed-barriers:
+
+Release callbacks
+^^^^^^^^^^^^^^^^^
+
+PsyNet persists the release behavior of each active waiting pool as a
+versioned declarative specification. Custom attributes used by the release
+hooks must therefore contain JSON-compatible values, supported callables,
+classes, or persisted PsyNet ORM records.
+
+``on_release`` and ``on_arrival_message`` receive that reconstructed
+barrier. Read scalar fields such as ``content`` and ``max_wait_time``
+from it::
+
+    def on_release(*, group, participants, barrier, **kwargs):
+        group.var.wait_copy = barrier.content
+
+Wait pages (``waiting_logic``) stay on the live timeline object. Overlay
+copy may still vary between participants in one pool; it is not part of
+behavior identity. See :class:`~psynet.sync.Barrier` for which methods
+are live-only.
+
+By default, group members still on an earlier page see a pill on the
+progress bar (``Your partner is ready.``, or
+``{ARRIVED}/{TOTAL} of your group are ready.``). The browser opens that
+live-update websocket only while the participant is in an active sync
+group; hold pages reuse the hold-channel socket instead. That pill stays on one line;
+longer custom notice copy ellipsizes instead of wrapping over the prompt.
+In groups of three or more the hold overlay adds a remaining-not-ready
+line (``2 of 3 not ready yet``). Pairs keep the hold title only, because
+``1 of 2`` is redundant with "Waiting for your partner". Set
+``notify_arrivals=False`` to disable both. Pass
+``on_arrival_message`` to customize that copy; it receives ``kind``
+(``"hold"`` or ``"notice"``), ``waiting_count``, and ``group_size``.
+Return ``None`` to hide a surface. Keep ``kind="notice"`` return values
+to a short sentence::
+
+    def arrival_message(*, kind, waiting_count, group_size, **kwargs):
+        remaining = group_size - waiting_count
+        if kind == "hold":
+            if group_size <= 2 or remaining <= 0:
+                return None
+            return f"{remaining} of {group_size} not ready yet"
+        return "Your partner is ready."
+
+    GroupBarrier(
+        id_="finished_trial",
+        group_type="rock_paper_scissors",
+        content="Waiting for your partner",
+        on_arrival_message=arrival_message,
+    )
+
+Default holds credit the participant's actual visible waiting time, including
+the interval between server release and browser resumption, up to
+``max_wait_time``. Progress continues to use the estimated duration so early
+arrivals do not appear further through the experiment. Set
+``fix_time_credit=True`` to give every participant the fixed ``expected_wait``
+credit instead. If ``expected_wait`` is omitted, barriers preserve the
+historical 1.5-second estimate. Dedicated :class:`~psynet.page.WaitPage`
+waiting logic retains its page-based accounting.
+
+Existing experiments that require the former predictable wait credit should
+set ``fix_time_credit=True``. Use explicit ``waiting_logic`` only when the
+participant should navigate to a dedicated waiting page or filler task.
 
 
 Synchronization in trial makers
@@ -118,13 +221,16 @@ for example:
         expected_trials_per_participant=3,
         max_trials_per_participant=3,
         sync_group_type="rock_paper_scissors",
+        sync_group_wait_content="Waiting for your partner",
     )
 
 This tells the trial maker to synchronize the logic of assigning participants to nodes according to their
 SyncGroup. By default, each group has a randomly assigned leader; node allocation is determined
 by standard PsyNet logic for that leader, as if that person were taking that trial maker by themselves;
 the other participants in that group then 'follow' that leader, being assigned to the same nodes as the leader
-on each trial.
+on each trial. Pass ``sync_group_wait_content`` so the trial maker's own waits use the same overlay
+copy as your grouper and :class:`~psynet.sync.GroupBarrier` waits. If omitted, those internal waits
+say "Waiting for other participants…".
 
 Using a ``sync_group_type`` parameter means that the beginning of each trial is synchronized across all participants
 within a given group. It is possible to synchronize other parts of the trial by including further
@@ -137,11 +243,13 @@ GroupBarriers within the trial, for example:
             GroupBarrier(
                 id_="wait_for_trial",
                 group_type="rock_paper_scissors",
+                content="Waiting for your partner",
             ),
             self.choose_action(color=self.definition["color"]),
             GroupBarrier(
                 id_="finished_trial",
                 group_type="rock_paper_scissors",
+                content="Waiting for your partner",
                 on_release=self.score_trial,
             ),
         )

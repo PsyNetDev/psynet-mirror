@@ -151,6 +151,7 @@ trial_maker = GibbsTrialMaker(
     # but if we want to make maximum use of participant trials, we can set propagate_failure=False.
     propagate_failure=False,
     wait_for_networks=True,
+    sync_group_wait_content="Waiting for more people to join your group",
 )
 
 
@@ -183,6 +184,7 @@ class Exp(psynet.experiment.Experiment):
             initial_group_size=3,
             join_existing_groups=True,
             join_criterion=is_group_joinable,
+            content="Waiting for more people to join your group",
         ),
         trial_maker,
     )
@@ -190,16 +192,13 @@ class Exp(psynet.experiment.Experiment):
     test_n_bots = 4
 
     def test_serial_run_bots(self, bots: List[BotDriver]):
-        from psynet.page import WaitPage
-
         original_bots = bots[:3]
 
         for bot in original_bots:
             assert bot.get_current_page().content == "Welcome to the experiment!"
             bot.take_page()
-            assert isinstance(bot.get_current_page(), WaitPage)
 
-        # Send the first three bots into the trial maker
+        # The last arriver skips the grouper hold; refresh drivers off that page.
         advance_past_wait_pages(original_bots)
 
         # Trial 1 (degree = 0)
@@ -207,7 +206,6 @@ class Exp(psynet.experiment.Experiment):
             page = bot.get_current_page()
             assert page.label == "color_trial"
             bot.take_page(response=response)
-            assert isinstance(bot.get_current_page(), WaitPage)
 
         # Going now to the next trial;
         # Trial 2 (degree = 1)
@@ -236,8 +234,8 @@ class Exp(psynet.experiment.Experiment):
 
         # Now the participant should be waiting at the prepare_trial barrier.
         # The other two bots need to finish the previous trial before this new trial can begin
-        assert isinstance(new_bot.get_current_page(), WaitPage)
-        assert "prepare_trial" in new_bot.active_barriers
+        assert new_bot.get_current_page().is_timeline_hold
+        assert trial_maker.with_namespace("prepare_trial") in new_bot.active_barriers
 
         # Let's have them finish the trial, then
         for bot in [bots[1], bots[2]]:

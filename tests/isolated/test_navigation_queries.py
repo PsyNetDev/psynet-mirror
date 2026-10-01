@@ -15,7 +15,7 @@ from psynet.exit import (
     ExitPlan,
     PaymentState,
 )
-from psynet.experiment import get_experiment
+from psynet.experiment import Experiment, get_experiment
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.sqlalchemy_profiling import assert_query_count
@@ -141,6 +141,23 @@ def test_locked_request_query_keeps_relationships_unloaded(
         assert participant.module_state.module_id == "navigation"
 
 
+def test_locked_unique_id_request_query_keeps_relationships_unloaded(
+    db_session, participant_with_module_state
+):
+    """Cover the locking unique-id load used by ``/timeline``."""
+    experiment = get_experiment()
+    with assert_query_count(min_queries=1, max_queries=1):
+        participant = experiment._get_request_participant_from_unique_id(
+            participant_with_module_state, for_update=True
+        )
+
+    unloaded = inspect(participant).unloaded
+    assert {"module_state", "_module_states", "active_barriers"} <= unloaded
+
+    with assert_query_count(min_queries=1, max_queries=1):
+        assert participant.module_state.module_id == "navigation"
+
+
 def test_public_participant_getter_retains_eager_relationships_when_detached(
     db_session, participant_with_module_state
 ):
@@ -227,12 +244,22 @@ def test_timeline_handler_skips_unused_participant_relationships(
     db.session.remove()
 
     with _timeline_request(unique_id):
-        with assert_query_count(min_queries=1, max_queries=2) as profiler:
+        # Write/commit/read-only render plus SET LOCAL lock_timeout. The table
+        # assertions below are the unused-relationship regression check.
+        # One extra statement is the arrival-websocket membership EXISTS.
+        with assert_query_count(min_queries=1, max_queries=7) as profiler:
             second = experiment.route_timeline()
     assert second.status_code == 200
     assert json.loads(second.get_data())["attributes"]["unique_id"] == unique_id
     assert _table_query_count(profiler, "participant_link_barrier") == 0
+    assert _table_query_count(profiler, "participant_link_sync_group") <= 1
     assert _table_query_count(profiler, "module_state") == 0
+    timing = second.headers.get("Server-Timing", "")
+    assert "lock;dur=" in timing
+    assert "page;dur=" in timing
+    assert "barriers;dur=" in timing
+    assert "render;dur=" in timing
+    assert "app;dur=" in timing
 
 
 def test_response_handler_skips_unused_participant_relationships(
@@ -257,14 +284,21 @@ def test_response_handler_skips_unused_participant_relationships(
     db.session.remove()
 
     with _response_request(payload):
-        with assert_query_count(max_queries=12) as profiler:
+        # One extra statement is the memoized arrival-websocket membership EXISTS.
+        with assert_query_count(max_queries=13) as profiler:
             result = experiment.route_response()
     assert result.status_code == 200
     body = json.loads(result.get_data())
     assert body["status"] == "success"
     assert body["submission"] == "approved"
     assert _table_query_count(profiler, "participant_link_barrier") == 0
+    assert _table_query_count(profiler, "participant_link_sync_group") <= 1
     assert _table_query_count(profiler, "module_state") <= 2
+    timing = result.headers.get("Server-Timing", "")
+    assert "app;dur=" in timing
+    assert "process;dur=" in timing
+    assert "barriers;dur=" in timing
+    assert "render;dur=" in timing
 
 
 def test_timeline_redirects_finished_participants_to_the_exit_page(
@@ -310,3 +344,12 @@ def test_timeline_does_not_redirect_before_successful_end_logic(
 
     assert response.status_code == 200
     assert json.loads(response.get_data())["attributes"]["unique_id"] == unique_id
+
+
+def test_server_timing_header_formats_phases():
+    header = Experiment._server_timing_header(
+        {"process": 12.34, "barriers": 0.0, "app": 100}
+    )
+    assert "process;dur=12.3" in header
+    assert "barriers;dur=0.0" in header
+    assert "app;dur=100.0" in header

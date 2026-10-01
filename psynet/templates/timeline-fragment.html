@@ -1,0 +1,67 @@
+{# In-place /response payload. Child templates that extend timeline-page.html
+   are rewritten to this parent so Jinja does not compile Dallinger's document
+   shell and then throw it away. Architecture: docs/developer/page_lifecycle.rst #}
+{% import "macros/prompt.html" as psynet_prompts %}
+{% import "macros/control.html" as psynet_controls %}
+{% import "macros/chatroom.html" as psynet_chatroom %}
+{% import "macros/consent.html" as consent %}
+{% import "macros/progress.html" as progress %}
+{% import "macros/media.html" as media %}
+{% from "macros/early_exit.html" import early_exit_modal %}
+{% from "macros/timeline-shell.html" import
+    template_data_script,
+    timeline_header,
+    timeline_hold_region,
+    timeline_footer
+    with context %}
+
+{# Children of timeline-page.html may override these. Empty here so extras
+   such as wait-page CSS are only the child's additions, not the document head. #}
+{% block title %}{% endblock %}
+{% block head %}{% endblock %}
+{% block libs %}{% endblock %}
+{% block stylesheets %}{% endblock %}
+{% block scripts %}{% endblock %}
+
+<div id="psynet-timeline-fragment">
+    {{ timeline_header() }}
+    {{ timeline_hold_region() }}
+    <div id="main-body" class="container psynet-surface" style="clear: both;"
+         data-page-ready="false"
+         data-expect-scrolling="{{ page.expect_scrolling | tojson }}">
+        {% block main_body %}
+            {{ media.media_container() }}
+            {{ progress.trial_progress_display(trial_progress_display_config) }}
+        {% endblock %}
+
+        <span id="psynet-event-listener"></span>
+
+        <div id="psynet-fragment-assets" style="display: none;">
+            <div id="psynet-page-css-links">
+                {% for x in css_links %}
+                    <link rel="stylesheet" href="{{ x }}">
+                {% endfor %}
+            </div>
+            <div id="psynet-page-css">
+                {% for x in css %}
+                    <style>
+                        {{ x }}
+                    </style>
+                {% endfor %}
+            </div>
+            {{ self.stylesheets() }}
+            <div id="psynet-embedded-scripts">
+                {{ self.scripts() }}
+            </div>
+        </div>
+    </div>
+    {{ timeline_footer() }}
+    {% if early_exit_offer_id %}
+        {{ early_exit_modal(
+            participant.assignment_id,
+            early_exit_offer_id,
+            early_exit_confirmation
+        ) }}
+    {% endif %}
+    {{ template_data_script() }}
+</div>

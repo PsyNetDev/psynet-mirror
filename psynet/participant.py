@@ -200,6 +200,89 @@ def _extract_server_error_details(response_text):
     return None
 
 
+def _response_json_dict(response):
+    """Return a JSON object body, or ``None`` if the response is not JSON."""
+    try:
+        json_fn = getattr(response, "json", None)
+        if callable(json_fn):
+            body = json_fn()
+        else:
+            body = json.loads(getattr(response, "text", "") or "")
+    except (TypeError, ValueError, AttributeError):
+        return None
+    if not isinstance(body, dict):
+        return None
+    return body
+
+
+def _is_psynet_busy_response(response):
+    """Return whether a response is a structured PsyNet busy 503.
+
+    Matches ``psynet.isBusyResponse()`` so automated drivers do not retry
+    unstructured proxy or application failures.
+    """
+    if getattr(response, "status_code", None) != 503:
+        return False
+    body = _response_json_dict(response)
+    if body is None:
+        return False
+    return body.get("status") == "busy" or body.get("submission") == "busy"
+
+
+def _is_psynet_stale_timeline_response(response):
+    """Return whether JSON ``GET /timeline`` reported a mid-render cursor move.
+
+    HTML GETs redirect in that case. JSON returns HTTP 409 with
+    ``status: stale``. Shipped bots fetch ``/participant_status`` instead of
+    JSON ``GET /timeline``, so this retry is for custom drivers that use that
+    endpoint. A Leave-offer 409 is a different body and is not retried here.
+    """
+    if getattr(response, "status_code", None) != 409:
+        return False
+    body = _response_json_dict(response)
+    if body is None:
+        return False
+    return body.get("status") == "stale"
+
+
+_TIMELINE_HOLD_POLL_SECONDS = 0.1
+_BOT_TIMELINE_BUSY_ATTEMPTS = 5
+
+
+def _status_is_timeline_hold(status):
+    """Return whether cached driver status is a timeline hold overlay."""
+    page = (status or {}).get("page") or {}
+    return bool(page.get("is_timeline_hold"))
+
+
+def _retry_busy_http(send, *, delay_s=0.25, attempts=2):
+    """Call ``send`` and retry structured busy 503 and stale-timeline 409.
+
+    Browser submissions retry a structured busy response once; automated
+    drivers follow the same policy by default so lock timeouts do not fail
+    the bot on the first hit. Timeline GETs and bot POSTs may pass a higher
+    ``attempts`` count because a partner skip can hold the participant row
+    for more than one ``lock_timeout``. JSON ``GET /timeline`` also retries
+    HTTP 409 ``status: stale`` when last-arrival advanced this waiter
+    between write and render. Shipped drivers do not issue that JSON GET;
+    they use ``/participant_status``. Generic or malformed 503s and other
+    409s are not retried.
+    """
+    if attempts < 1:
+        raise ValueError("attempts must be at least 1.")
+    response = send()
+    for _ in range(attempts - 1):
+        if not (
+            _is_psynet_busy_response(response)
+            or _is_psynet_stale_timeline_response(response)
+        ):
+            break
+        time.sleep(delay_s)
+        response = send()
+    _raise_for_status_with_server_details(response)
+    return response
+
+
 def _raise_for_status_with_server_details(response):
     """Like ``Response.raise_for_status``, but include useful server details."""
     try:
@@ -1232,8 +1315,19 @@ class ParticipantDriver:
         self._submit_response(self.status, self.response_files, response)
         if render_pages:
             self._render_page()
+            # GET /timeline can skip a ready hold after the submit fetch.
+            self.refresh_status()
+        if _status_is_timeline_hold(self.status):
+            # Ordinary Next on an unready hold takes FOR UPDATE and busy-loops
+            # parallel bots. Hold-resume already skipped the row lock; pause
+            # so last-arrival can skip this waiter.
+            time.sleep(_TIMELINE_HOLD_POLL_SECONDS)
 
         return True
+
+    def refresh_status(self):
+        """Reload the cached page and response files from the experiment server."""
+        self._fetch_status()
 
     def _fetch_status(self):
         """
@@ -1246,10 +1340,11 @@ class ParticipantDriver:
         directory : str
             Path to a directory for extracting files.
         """
-        response = self.experiment.authenticated_session.get(
-            f"{self.experiment.base_url}/participant_status/{self.id}"
+        response = _retry_busy_http(
+            lambda: self.experiment.authenticated_session.get(
+                f"{self.experiment.base_url}/participant_status/{self.id}"
+            )
         )
-        response.raise_for_status()
 
         self.response_files = {}
 
@@ -1274,14 +1369,19 @@ class ParticipantDriver:
         self.status_time_fetched = time.monotonic()
 
     def _render_page(self):
+        """Compile the current page template so automation still catches Jinja errors.
+
+        Uses the HTML ``GET /timeline`` path (``kind="full"``). JSON snapshots
+        skip template compilation. Busy 503s are retried; a stale cursor
+        redirects to the live page, which ``requests`` follows.
         """
-        Render the current page for the participant.
-        """
-        response = requests.get(
-            f"{self.experiment.base_url}/timeline",
-            params={"unique_id": self.participant_unique_id},
+        _retry_busy_http(
+            lambda: requests.get(
+                f"{self.experiment.base_url}/timeline",
+                params={"unique_id": self.participant_unique_id},
+            ),
+            attempts=_BOT_TIMELINE_BUSY_ATTEMPTS,
         )
-        _raise_for_status_with_server_details(response)
 
     def _simulate_page_time(self, time_factor):
         """
@@ -1303,7 +1403,37 @@ class ParticipantDriver:
         if remaining_sleep_duration > 0:
             time.sleep(remaining_sleep_duration)
 
-    def _submit_response(self, status, response_files, response=NoArgumentProvided):
+    def _retry_submit_after_page_advanced(self, status, response, already_retried):
+        """Retry once when last-arrival already rotated this driver's page uuid.
+
+        Bots cache ``/participant_status`` and POST that ``page_uuid``. A
+        partner can skip this waiter onto the next hold in between. A uuid
+        that still matches this participant's hold record is catch-up;
+        humans stay in place. An unknown uuid is a genuine sync mismatch.
+        Drivers refresh and submit the live page once.
+        """
+        if already_retried:
+            return False
+        previous_uuid = status.get("page_uuid")
+        self._fetch_status()
+        if self.status.get("page_uuid") == previous_uuid:
+            return False
+        self._submit_response(
+            self.status,
+            self.response_files,
+            response,
+            _retried_stale_page=True,
+        )
+        return True
+
+    def _submit_response(
+        self,
+        status,
+        response_files,
+        response=NoArgumentProvided,
+        *,
+        _retried_stale_page=False,
+    ):
         """
         Submit the participant's response to the server.
 
@@ -1343,6 +1473,8 @@ class ParticipantDriver:
             # Drivers fetch status separately and do not consume SPA fragments.
             "include_timeline_fragment": False,
         }
+        if _status_is_timeline_hold(status):
+            submission_data["timeline_hold_resume"] = True
 
         if "time_taken" not in submission_data["metadata"]:
             submission_data["metadata"]["time_taken"] = time_estimate
@@ -1352,14 +1484,25 @@ class ParticipantDriver:
             for key, path in response_files.items():
                 file_obj = stack.enter_context(open(path, "rb"))
                 files[key] = (os.path.basename(path), file_obj)
-            response = requests.post(
-                f"{self.experiment.base_url}/response",
-                data={"json": json.dumps(submission_data)},
-                files=files,
-            )
-        _raise_for_status_with_server_details(response)
-        resp_json = response.json()
+
+            def send():
+                for _, file_tuple in files.items():
+                    file_obj = file_tuple[1]
+                    if hasattr(file_obj, "seek"):
+                        file_obj.seek(0)
+                return requests.post(
+                    f"{self.experiment.base_url}/response",
+                    data={"json": json.dumps(submission_data)},
+                    files=files,
+                )
+
+            http_response = _retry_busy_http(send, attempts=_BOT_TIMELINE_BUSY_ATTEMPTS)
+        resp_json = http_response.json()
         if resp_json.get("submission") != "approved":
+            if self._retry_submit_after_page_advanced(
+                status, response, _retried_stale_page
+            ):
+                return
             raise RuntimeError(
                 f"The participant's response was rejected: {resp_json.get('message')}"
             )

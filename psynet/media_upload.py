@@ -696,6 +696,25 @@ def _save_recording_receipt(response, participant, page_uuid, secret, payload):
     }
 
 
+def _refresh_recording_receipt(response_id, participant, payload):
+    """Retain the final successor after barrier settlement and page preparation.
+
+    Receipt capabilities were assigned atomically with answer acceptance. Only
+    navigation metadata changes here; upload deadlines and tokens stay fixed.
+    """
+    from .timeline import Response
+
+    response = db.session.get(Response, response_id)
+    cached = copy.deepcopy(payload)
+    for upload in cached["recording_uploads"]:
+        upload.pop("token", None)
+    response.recording_receipt = {
+        **response.recording_receipt,
+        "next_page_uuid": participant.page_uuid,
+        "payload": cached,
+    }
+
+
 def _recover_recording_receipt(participant, page_uuid, secret):
     """Replay only this participant's accepted page while its successor is current.
 

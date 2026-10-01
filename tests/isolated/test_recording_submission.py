@@ -60,8 +60,7 @@ def submission(db_session, monkeypatch, tmp_path):
             },
             page_uuid=participant.page_uuid,
             client_ip_address="127.0.0.1",
-            include_timeline_fragment=False,
-        ).get_json()
+        ).payload
 
     return exp, participant, page, submit
 
@@ -308,8 +307,7 @@ def test_lost_acceptance_replays_original_slots_without_advancing(
             {**metadata, "recording_recovery_secret": key},
             original_page,
             "127.0.0.1",
-            include_timeline_fragment=False,
-        ).get_json()
+        ).payload
 
     accepted = submit()
     db.session.commit()
@@ -378,3 +376,51 @@ def test_default_video_transport_preserves_legacy_and_other_storage(
     if not local_storage:
         monkeypatch.setattr(exp, "asset_storage", NoStorage())
     assert control._uses_async_upload(exp) is asynchronous
+
+
+def test_recording_recovery_uses_prepared_successor(submission, monkeypatch):
+    """HTTP retries retain upload slots while rendering the prepared next page."""
+    import json
+
+    from flask import Flask
+
+    exp, participant, _, _ = submission
+    original_uuid = participant.page_uuid
+    successor = next(
+        elt for elt in exp.timeline.elts["main"] if isinstance(elt, InfoPage)
+    )
+    monkeypatch.setattr(
+        successor,
+        "pre_render",
+        lambda: setattr(successor, "contents", {"prepared": True}),
+    )
+    payload = {
+        "participant_id": participant.id,
+        "page_uuid": original_uuid,
+        "raw_answer": None,
+        "metadata": {
+            "time_taken": 5,
+            "recording_uploads": {"camera": 100, "screen": 100},
+            "recording_recovery_secret": "ab" * 32,
+        },
+        "include_timeline_fragment": True,
+    }
+
+    def submit():
+        with Flask(__name__).test_request_context(
+            "/response", method="POST", data={"json": json.dumps(payload)}
+        ):
+            return exp.route_response().get_json()
+
+    accepted = submit()
+    replay = submit()
+    assert accepted["submission"] == replay["submission"] == "approved"
+    assert (
+        accepted["page"]["contents"] == replay["page"]["contents"] == {"prepared": True}
+    )
+    assert accepted["recording_uploads"] == replay["recording_uploads"]
+    assert "timeline_fragment" in replay
+    assert Response.query.count() == 1
+    assert Recording.query.count() == 2
+    stored = json.dumps(Response.query.one().recording_receipt)
+    assert all(upload["token"] not in stored for upload in replay["recording_uploads"])

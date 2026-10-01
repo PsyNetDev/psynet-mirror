@@ -340,6 +340,32 @@ class TestHandleMessage:
         assert record.participant_id == participant.id
         assert record.receive_time == send_time
 
+    def test_message_publishes_untargeted_history(
+        self, in_experiment_directory, db_session
+    ):
+        """Persisting a line republishes the room log so an empty feed can catch up."""
+        handler, exp = self._handler_and_exp()
+        experiment = get_experiment()
+        participant = _new_participant(experiment)
+        db.session.flush()
+
+        self._send(
+            handler,
+            exp,
+            participant,
+            {"type": "message", "room_id": "room_C_history", "content": "hello"},
+        )
+
+        payloads = _published_payloads(exp)
+        assert len(payloads) == 1
+        history = payloads[0]
+        assert history["type"] == "history"
+        assert history["room_id"] == "room_C_history"
+        assert "target_participant_id" not in history
+        assert history["messages"] == [
+            {"content": "hello", "sender": str(participant.id)}
+        ]
+
     def test_request_state_sends_history(self, in_experiment_directory, db_session):
         handler, exp = self._handler_and_exp()
         experiment = get_experiment()

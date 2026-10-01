@@ -10,12 +10,13 @@ import re
 import sys
 import time
 from _hashlib import HASH as Hash
+from collections import OrderedDict
 from datetime import datetime
 from functools import reduce, wraps
 from os.path import exists
 from os.path import join as join_path
 from pathlib import Path
-from typing import List, OrderedDict, Type, Union
+from typing import List, Type, Union
 
 import click
 import html2text
@@ -564,6 +565,61 @@ def require_requirements_txt(f):
     return wrapper
 
 
+_PSYNET_JINJA_LOCALES_KEY = "psynet_jinja_locale_envs"
+_PSYNET_STRING_TEMPLATE_CACHE_SIZE = 256
+
+
+def _translation_environment(app, locale):
+    """Return a locale-specific Jinja environment, cached on the Flask app.
+
+    A new Environment on every page render recompiled Dallinger's layout for
+    each ``/response``. Hold-resume ``render`` times of several hundred
+    milliseconds were that compile, not BeautifulSoup. Environments are per
+    locale so gettext catalogs do not race across concurrent requests.
+    """
+    cache = app.extensions.setdefault(_PSYNET_JINJA_LOCALES_KEY, {})
+    environment = cache.get(locale)
+    if environment is not None:
+        return environment
+
+    gettext = get_translator()
+    pgettext = get_translator(context=True)
+    from psynet.static_resources import versioned_url_for
+
+    jinja_functions = {
+        **app.jinja_env.globals,
+        "gettext": gettext,
+        "pgettext": pgettext,
+        "url_for": versioned_url_for,
+    }
+    translation = Translations.load("translations", [locale])
+    environment = Environment(
+        loader=app.jinja_env.loader, extensions=["jinja2.ext.i18n"], app=app
+    )
+    environment.install_gettext_translations(translation)
+    environment.globals.update(**jinja_functions)
+    environment.psynet_string_templates = OrderedDict()
+    cache[locale] = environment
+    return environment
+
+
+def _cached_template_from_string(environment, template_string):
+    """Compile a template string once per locale environment."""
+    cache = getattr(environment, "psynet_string_templates", None)
+    if cache is None:
+        cache = OrderedDict()
+        environment.psynet_string_templates = cache
+    template = cache.get(template_string)
+    if template is not None:
+        cache.move_to_end(template_string)
+        return template
+    template = environment.from_string(template_string)
+    cache[template_string] = template
+    while len(cache) > _PSYNET_STRING_TEMPLATE_CACHE_SIZE:
+        cache.popitem(last=False)
+    return template
+
+
 def _render_with_translations(
     locale, template_name=None, template_string=None, all_template_args=None
 ):
@@ -583,30 +639,12 @@ def _render_with_translations(
         locale = get_locale()
 
     app = current_app._get_current_object()  # type: ignore[attr-defined]
-    gettext = get_translator()
-    pgettext = get_translator(context=True)
-    from psynet.static_resources import versioned_url_for
-
-    jinja_functions = {
-        **app.jinja_env.globals,
-        "gettext": gettext,
-        "pgettext": pgettext,
-        "url_for": versioned_url_for,
-    }
-
-    translation = Translations.load("translations", [locale])
-
-    environment = Environment(
-        loader=app.jinja_env.loader, extensions=["jinja2.ext.i18n"], app=app
-    )
-    environment.install_gettext_translations(translation)
-
-    environment.globals.update(**jinja_functions)
+    environment = _translation_environment(app, locale)
 
     if template_name is not None:
         template = environment.get_template(template_name)
     else:
-        template = environment.from_string(template_string)
+        template = _cached_template_from_string(environment, template_string)
     return _render(app, template, all_template_args)
 
 

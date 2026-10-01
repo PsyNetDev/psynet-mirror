@@ -87,8 +87,7 @@ def test_background_answer_and_expiry(submission, monkeypatch, required, unavail
             },
             page_uuid,
             "127.0.0.1",
-            include_timeline_fragment=False,
-        ).get_json()
+        ).payload
 
     if required:
         page = timeline.get_current_elt(exp, participant)
@@ -193,8 +192,7 @@ def test_rejected_background_answer_creates_no_assets(submission, monkeypatch):
             },
             original_page,
             "127.0.0.1",
-            include_timeline_fragment=False,
-        ).get_json()
+        ).payload
 
     assert submit()["submission"] == "rejected"
     assert completions == []
@@ -318,9 +316,9 @@ def test_same_session_payload_carries_next_capture_policy(submission, monkeypatc
     timeline.advance_page(exp, participant)
     original_uuid = participant.page_uuid
     timeline.advance_page(exp, participant)
-    payload = exp.response_approved(
-        participant, include_timeline_fragment=False
-    ).get_json()
+    payload = exp._approved_payload(
+        participant, timeline.get_current_elt(exp, participant)
+    )
     attributes = payload["page"]["attributes"]
     assert attributes["session_id"] == "shared"
     assert attributes["page_uuid"] != original_uuid

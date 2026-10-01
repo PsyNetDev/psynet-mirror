@@ -92,17 +92,18 @@ def test_feedback_honors_recording_deadline_and_releases_a_resumed_tab(
     db_session, participant, monkeypatch, tmp_path
 ):
     from datetime import datetime, timedelta
-    from types import SimpleNamespace
+
+    from timeline_hold_helpers import _process_response
 
     import psynet.media_upload as uploads
-    import psynet.timeline as timeline_module
     from psynet.asset import LocalStorage
-    from psynet.page import InfoPage, WaitPage
+    from psynet.page import InfoPage
     from psynet.timeline import Response, Timeline
+    from psynet.timeline_hold import _ConditionHoldPage
 
     now = datetime.now()
     monkeypatch.setattr(uploads, "_utcnow", lambda: now)
-    monkeypatch.setattr(timeline_module, "datetime", SimpleNamespace(now=lambda: now))
+    monkeypatch.setattr("psynet.timeline_hold.timenow", lambda: now)
     exp = get_experiment()
     network = _create_network(_chain_trial_maker(), exp)
     trial = _add_complete_unfinalized_trial(network.head, participant)
@@ -143,8 +144,10 @@ def test_feedback_honors_recording_deadline_and_releases_a_resumed_tab(
     participant.elt_id = ["main", -1]
     timeline.advance_page(exp, participant)
     now += timedelta(seconds=30)
-    timeline.advance_page(exp, participant)
-    assert isinstance(timeline.get_current_elt(exp, participant), WaitPage)
+    _process_response(
+        exp, participant, participant.page_uuid, timeline_hold_resume=True
+    )
+    assert isinstance(timeline.get_current_elt(exp, participant), _ConditionHoldPage)
     assert not participant.failed
     participant_id, trial_id = participant.id, trial.id
     deadline = asset.upload_deadline
@@ -155,7 +158,9 @@ def test_feedback_honors_recording_deadline_and_releases_a_resumed_tab(
     assert participant.current_trial.failed_reason == "recording_upload_timeout"
     assert uploads._recording_wait_timeout(participant_id, trial_id=trial_id) == 20
     now += timedelta(seconds=1000)
-    timeline.advance_page(exp, participant)
+    _process_response(
+        exp, participant, participant.page_uuid, timeline_hold_resume=True
+    )
     assert timeline.get_current_elt(exp, participant).content == "Continue"
     assert not participant.failed
     assert participant.current_trial.assets["video"].upload_deadline == deadline
@@ -226,9 +231,12 @@ def test_failed_trial_does_not_run_late_analysis(db_session, participant, monkey
 def test_recording_failure_exits_feedback_wait(
     db_session, participant, monkeypatch, reason
 ):
+    from timeline_hold_helpers import _process_response
+
     from psynet.asset import ExperimentAsset
-    from psynet.page import InfoPage, WaitPage
+    from psynet.page import InfoPage
     from psynet.timeline import Timeline
+    from psynet.timeline_hold import _ConditionHoldPage
 
     exp = get_experiment()
     network = _create_network(_chain_trial_maker(), exp)
@@ -257,11 +265,13 @@ def test_recording_failure_exits_feedback_wait(
     monkeypatch.setattr(exp, "timeline", timeline)
     participant.elt_id = ["main", -1]
     timeline.advance_page(exp, participant)
-    assert isinstance(timeline.get_current_elt(exp, participant), WaitPage)
+    assert isinstance(timeline.get_current_elt(exp, participant), _ConditionHoldPage)
     trial.fail(reason=reason)
     if reason == "analysis":
         asset.deposited = True
-    timeline.advance_page(exp, participant)
+    _process_response(
+        exp, participant, participant.page_uuid, timeline_hold_resume=True
+    )
     if reason == "analysis":
         assert timeline.get_current_elt(exp, participant).content == "Feedback"
         assert feedback
@@ -282,9 +292,12 @@ def test_recording_failure_exits_feedback_wait(
 def test_failed_recording_releases_end_wait_without_bypassing_performance_check(
     db_session, participant, monkeypatch, threshold, passed
 ):
+    from timeline_hold_helpers import _process_response
+
     from psynet.asset import ExperimentAsset
-    from psynet.page import InfoPage, WaitPage
+    from psynet.page import InfoPage
     from psynet.timeline import Timeline
+    from psynet.timeline_hold import _ConditionHoldPage
 
     exp = get_experiment()
     maker = _chain_trial_maker()
@@ -314,9 +327,11 @@ def test_failed_recording_releases_end_wait_without_bypassing_performance_check(
     monkeypatch.setattr(exp, "timeline", timeline)
     participant.elt_id = ["main", -1]
     timeline.advance_page(exp, participant)
-    assert isinstance(timeline.get_current_elt(exp, participant), WaitPage)
+    assert isinstance(timeline.get_current_elt(exp, participant), _ConditionHoldPage)
     trial.fail(reason="recording_upload_timeout")
-    timeline.advance_page(exp, participant)
+    _process_response(
+        exp, participant, participant.page_uuid, timeline_hold_resume=True
+    )
     assert participant.module_state.performance_check["passed"] is passed
     assert timeline.get_current_elt(exp, participant).content == (
         "Continue" if passed else "Failed check"

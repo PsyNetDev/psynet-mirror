@@ -45,9 +45,20 @@ If participants exchange live actions or messages within a trial, also read
 - Prefer `TrialMaker`s for organizing rounds. For choosing `StaticTrialMaker`
   vs chain-based makers, read `develop-experiment-back-end/SKILL.md`.
 - Use `SimpleGrouper(group_type=..., initial_group_size=...)` to create cohorts
-  and `GroupBarrier(id_=..., group_type=...)` to release group members together.
+  and `GroupBarrier(id_=..., group_type=..., content=...)` to release group
+  members together. Pass `content` to customize the hold overlay; omit
+  `waiting_logic` unless you need a full wait page or filler task. Arrival
+  notices are on by default. The partner-ready pill sits on the progress
+  bar. Pair holds keep the title only; groups of three or more show
+  remaining-not-ready copy (`2 of 3 not ready yet`). Keep
+  `on_arrival_message` notice copy to one short sentence. Groupers form
+  groups when the last needed member arrives, without waiting for the
+  barrier poller.
 - Use `GroupBarrier(on_release=...)` for atomic shared updates such as role
-  assignment, scoring, aggregation, or recording round outcomes.
+  assignment, scoring, aggregation, or recording round outcomes. The
+  callback's `barrier` argument is the reconstructed registry object; read
+  `content` and timeouts from it. Wait pages stay on the live timeline
+  barrier (see `docs/tutorials/synchronization.rst`, "Release callbacks").
 - Sort `sync_group.participants` by participant ID before deterministic role
   assignment; PsyNet does not guarantee the stored order.
 - Use `sync_group_type` on trial makers when all group members should follow the
@@ -66,8 +77,11 @@ If participants exchange live actions or messages within a trial, also read
 - For chain or Gibbs designs, distinguish true co-presence from async
   across-participant chains. Use `wait_for_networks=True` when participants may
   otherwise exit while async network growth is still pending.
-- Use `ChatRoom(room_id=f"group_{participant.sync_group.id}")` only for
-  participant communication; keep phase advancement and scoring in barriers.
+- Use `ChatRoom` only for participant communication; keep phase advancement
+  and scoring in barriers. Inside a trial, scope the room with
+  `self.sync_group.id`. Elsewhere use
+  `participant.active_sync_groups[group_type].id`.
+  `participant.sync_group` raises if more than one group is active.
 - Prefer engaging waiting trials over passive wait screens when waits may be
   long. Participants may be distracted or running multiple experiments at once;
   useful filler tasks can improve retention and reduce idle no-shows.

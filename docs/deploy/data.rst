@@ -290,6 +290,15 @@ as they may contain confidential information.
 A dashboard or CLI export combines these pieces into one ``export.zip`` (or an
 extracted export directory).
 
+Loading an export
+=================
+
+``psynet load export.zip`` replaces the local database with the archive.
+Stop ``psynet debug`` and any other client using the same database role
+first. PsyNet refuses to drop tables while another client using that role
+is still connected to that database. Launch commands stop leftover local
+debug workers before prepare resets the database.
+
 Analysing database tables
 =========================
 
