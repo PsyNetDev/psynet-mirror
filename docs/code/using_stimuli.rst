@@ -30,7 +30,17 @@ that play several files, such as the similarity demo's pair of sounds.
 The deployment package has a size limit (see
 :doc:`/deploy/how_deployment_works`). Larger sets of pregenerated files can
 be hosted elsewhere and linked by URL, as described in
-:doc:`/code/stimuli_on_s3`.
+:doc:`/code/stimuli_on_s3`, or kept in ``data/`` and attached to their nodes
+as assets:
+
+.. code-block:: python
+
+    Node(definition={"name": path.name}, assets={"stimulus": asset(path)})
+
+PsyNet uploads assets to the experiment's asset storage, skipping files it
+has already stored, and the page plays ``self.assets["stimulus"].url``.
+``compile_nodes_from_directory`` reads only ``static/``, so build these nodes
+in your own loop (see :doc:`/code/trials/assets`).
 
 Files generated from code
 -------------------------
