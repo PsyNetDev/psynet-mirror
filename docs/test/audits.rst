@@ -11,6 +11,12 @@ to date as it works. To view it, run
 ``psynet audit serve --render`` in the experiment folder and open the address
 it prints.
 
+For an example, see the `chord pleasantness audit
+<https://psynetdev.gitlab.io/example-audits/chord-pleasantness/>`_, which a
+coding agent produced while implementing the study in :doc:`/introduction/what_its_like`.
+The experiment's code is in the `example-audits repository
+<https://gitlab.com/PsyNetDev/example-audits>`_.
+
 Sections
 --------
 
@@ -27,13 +33,15 @@ Sections
    Decisions made along the way, and anything a reviewer should know.
 
 **Experiment code**
-   The experiment's ``experiment.py``.
+   The experiment's ``experiment.py``, followed by its other Python modules.
 
 **Screenshots**
    Screenshots of the participant pages; see :doc:`frontend`.
 
 **Participant video**
-   A recording of a participant's session; see :doc:`frontend`.
+   A recording of a participant's session, with the experiment's sound; see
+   :doc:`frontend` and :doc:`/skills/record-participant-video`, whose helper
+   records audio from headless Chromium on macOS and Linux.
 
 **Monitor snapshot**
    A static copy of the PsyNet monitor page.

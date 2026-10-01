@@ -13,15 +13,16 @@ Time reward
 
 Every page and trial has a ``time_estimate`` in seconds. When a participant
 completes part of the timeline, PsyNet adds its time estimate to their time
-credit, and pays that credit at ``wage_per_hour`` (default ``9.0``):
+credit, and pays that credit at ``wage_per_hour`` (default ``9.0``). New
+experiments set it in ``config.txt``:
 
-.. code-block:: python
+.. code-block:: ini
 
-    class Exp(psynet.experiment.Experiment):
-        config = {
-            "wage_per_hour": 12.0,
-            "currency": "£",
-        }
+    currency = £
+    wage_per_hour = 12.0
+
+A key can be set in ``config.txt`` or in the experiment class's ``config``
+dictionary, but not both.
 
 ``psynet estimate`` reports the maximum time reward and the duration of the
 longest route through the timeline:
@@ -75,6 +76,12 @@ still receives the full base payment and no bonus. Set ``base_payment`` at or
 below the smallest reward you expect from a successful participant; for a
 timeline without optional parts, that is the reward from
 ``psynet estimate``.
+
+On Prolific, participants choose studies by the listed rate: ``base_payment``
+for ``prolific_estimated_completion_minutes``. Bonuses aren't part of it, so
+a low base payment makes a well-paid study look badly paid. When the recruiter
+is Prolific, ``psynet estimate`` warns if the listed time is shorter than its
+estimate, or if the listed rate is below ``wage_per_hour``.
 
 To change how a recruiter computes the payment, subclass it and override
 :meth:`~psynet.recruiters.PsyNetRecruiterMixin.decide_payment`,

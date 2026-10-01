@@ -22,12 +22,13 @@ Read these pages before acting. Get the docs folder once with `psynet docs path`
   implementation workflow and validation expectations.
 - Read `references/source-notes.md` for the source map, platform notes, and
   practical caveats behind this skill.
-- Inspect current PsyNet demos before coding:
-  `~/PsyNet/demos/experiments/simple_sync_group/`,
-  `~/PsyNet/demos/experiments/create_rate_sync/`,
-  `~/PsyNet/demos/experiments/rock_paper_scissors/`,
-  `~/PsyNet/demos/experiments/sync_quorum/`, and
-  `~/PsyNet/demos/experiments/gibbs_within_sync/`.
+- Read these demos before coding, found as described in
+  `explore-psynet-repository/SKILL.md` ("Finding demo code"):
+  `demos/experiments/simple_sync_group`,
+  `demos/experiments/create_rate_sync`,
+  `demos/experiments/rock_paper_scissors`,
+  `demos/experiments/sync_quorum`, and
+  `demos/experiments/gibbs_within_sync`.
 
 ## Choose the synchronization model
 

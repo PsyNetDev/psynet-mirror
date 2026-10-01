@@ -102,7 +102,9 @@ this:
       checks that 160 ratings per chord measure each chord's
       pleasantness precisely enough. Everything is
       collected into an audit, a small website that you, or a
-      supervisor, read before signing off.
+      supervisor, read before signing off. You can browse the
+      `audit an agent produced for this study
+      <https://psynetdev.gitlab.io/example-audits/chord-pleasantness/>`_.
 
 .. rst-class:: study-step
 
