@@ -346,11 +346,33 @@ long as they stay open. If a participant submits while the app is asleep or
 waking, PsyNet shows "Getting ready, please wait..." and retries the
 submission for up to five minutes instead of showing the error page.
 
-Idle sleep suits experiments with a bounded recruitment window. Leave it off
-for experiments that recruit replacements or otherwise recruit throughout
-their life: sleep pauses the clock process and recruiter callbacks during
-the gaps between participants. Leave it off for first canary deploys too.
-Idle sleep needs the matching Dallinger release.
+.. warning::
+
+   Do not enable idle hibernation for experiments that replace failed
+   participants or otherwise recruit reactively throughout their lifetime.
+   This includes experiments that use ``auto_recruit`` to keep recruiting
+   until they reach their target.
+
+   While the app sleeps, the clock process and recruiter callbacks are
+   suspended. For rolling-recruitment experiments, the quiet gaps *between*
+   participants are when the system does critical work: detecting timeouts,
+   triggering replacements, and preparing for the next arrival. Sleeping
+   during those gaps means that work never happens.
+
+   This restriction applies for the **entire lifetime** of a
+   rolling-recruitment experiment, not only during active recruitment waves.
+
+Idle sleep suits experiments with a clearly bounded recruitment window:
+recruit N participants, run the session, recruitment ends. Once the session
+is complete the app can safely sleep until you export the data. Leave it off
+for first canary deploys too.
+
+As a backstop, the app stays awake while ``auto_recruit`` is on, including
+after you switch it on from the dashboard, and while any participant is
+still working, until the clock times out abandoned participants. The app's
+logs say why it stayed awake. An experiment that recruits in other ways can
+add conditions by overriding ``reason_to_stay_awake`` on its ``Experiment``
+class. Idle sleep needs the matching Dallinger release.
 
 Hibernate by hand only apps that are not recruiting or serving participants.
 ``psynet export ssh`` awakens a
