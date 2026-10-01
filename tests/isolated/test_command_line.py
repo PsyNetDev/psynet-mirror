@@ -4498,10 +4498,10 @@ def test_prolific_listing_warnings():
             completion_time_s=8.5 * 60,
             listed_minutes=minutes,
             base_payment=payment,
-            wage_per_hour=9.0,
             currency="£",
         )
 
-    assert warnings(10, 1.50) == []
-    assert "shorter than the estimated 8.5 minutes" in warnings(2, 0.34)[0]
-    assert "£6.35/hour" in " ".join(warnings(12, 1.27))
+    assert warnings(10, 1.00) == []
+    assert "shorter than the estimated 8.5 minutes" in warnings(2, 0.85)[0]
+    assert "£5.00/hour" in " ".join(warnings(12, 1.00))
+    assert "£4.24/hour" in " ".join(warnings(5, 0.60))

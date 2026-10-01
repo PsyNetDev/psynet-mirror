@@ -2195,21 +2195,24 @@ def _estimate(mode):
                     "prolific_estimated_completion_minutes", None
                 ),
                 base_payment=config.get("base_payment", None),
-                wage_per_hour=wage_per_hour,
                 currency=config.currency,
             ):
                 log(f"Warning: {warning}")
 
 
+# Prolific's published minimum hourly rates; update these if Prolific changes them.
+_PROLIFIC_MINIMUM_PER_HOUR = {"£": 6.0, "$": 8.0}
+
+
 def prolific_listing_warnings(
-    completion_time_s, listed_minutes, base_payment, wage_per_hour, currency
+    completion_time_s, listed_minutes, base_payment, currency
 ):
     """
     Compare the Prolific listing in ``config.txt`` with PsyNet's estimates.
 
-    Prolific shows participants ``base_payment`` for
-    ``prolific_estimated_completion_minutes``; bonuses are paid later and
-    aren't part of the listed hourly rate.
+    Prolific requires ``base_payment`` alone, without bonuses, to meet its
+    minimum hourly rate over participants' median completion time. The check
+    therefore uses the longer of the listed and estimated durations.
     """
     warnings = []
     estimated_minutes = completion_time_s / 60
@@ -2218,14 +2221,16 @@ def prolific_listing_warnings(
             f"prolific_estimated_completion_minutes ({listed_minutes}) is shorter "
             f"than the estimated {estimated_minutes:.1f} minutes."
         )
-    if listed_minutes and base_payment is not None and wage_per_hour:
-        listed_rate = base_payment / (listed_minutes / 60)
-        if listed_rate < 0.95 * wage_per_hour:
+    minimum = _PROLIFIC_MINIMUM_PER_HOUR.get(currency)
+    minutes = max(listed_minutes or 0, estimated_minutes)
+    if minimum and base_payment is not None and minutes:
+        rate = base_payment / (minutes / 60)
+        if rate < minimum:
             warnings.append(
-                f"Prolific will list {currency}{base_payment:.2f} for {listed_minutes} "
-                f"minutes ({currency}{listed_rate:.2f}/hour), below wage_per_hour "
-                f"({currency}{wage_per_hour:.2f}); bonuses aren't shown in that rate. "
-                "Raise base_payment or adjust prolific_estimated_completion_minutes."
+                f"base_payment ({currency}{base_payment:.2f}) for {minutes:.1f} "
+                f"minutes is {currency}{rate:.2f}/hour, below Prolific's minimum "
+                f"of {currency}{minimum:.2f}/hour. Bonuses don't count towards "
+                "Prolific's minimum, so raise base_payment."
             )
     return warnings
 
