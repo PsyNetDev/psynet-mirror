@@ -1,8 +1,12 @@
+from pathlib import Path
+
 import pytest
 from click.testing import CliRunner
 
 from psynet.bootstrap_cli import _bootstrap
+from psynet.dev.docs import _bundle_demo_code
 from psynet.local_docs import DocsError, _find_page, _locate_docs, published_docs_url
+from psynet.utils import get_psynet_root
 
 
 @pytest.mark.parametrize(
@@ -51,3 +55,22 @@ def test_docs_show_prints_page_from_source_checkout():
 
     assert result.exit_code == 0, result.output
     assert result.output.startswith("=======\nPayment\n")
+
+
+def test_docs_demos_prints_demos_from_source_checkout():
+    result = CliRunner().invoke(_bootstrap, ["docs", "demos"])
+
+    assert result.exit_code == 0, result.output
+    assert (Path(result.output.strip()) / "experiments" / "hello_world").is_dir()
+
+
+def test_bundled_demo_code_keeps_authored_files_only(tmp_path):
+    _bundle_demo_code(get_psynet_root(), tmp_path)
+
+    assert (
+        tmp_path / "experiments" / "rock_paper_scissors" / "experiment.py"
+    ).is_file()
+    assert not (
+        tmp_path / "experiments" / "jspsych" / "static" / "jspsych" / "jspsych.js"
+    ).exists()
+    assert not list(tmp_path.rglob("*.wav"))

@@ -64,6 +64,10 @@ virtual environment active. ``psynet <command> --help`` lists every option.
        ``rg -n -i --no-ignore "<term>" "$(psynet docs path)"``). Page names are the
        website paths without ``.html``, such as
        ``code/participants/payment``.
+   * - ``psynet docs demos``
+     - Print the folder that holds the demos' code for the installed PsyNet
+       version (see :doc:`/demos/index`). Release installs include the demos'
+       code and text files, but not their media.
 
 Bundled demos in the PsyNet repository use the repository's development
 ``.venv``; ``psynet debug`` and ``psynet test`` prepare their boilerplate

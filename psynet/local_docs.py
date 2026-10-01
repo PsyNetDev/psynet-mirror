@@ -9,7 +9,8 @@ website, and the website may describe a different PsyNet version. So
   ``psynet/resources/docs_text/``. ``psynet dev docs bundle`` creates it
   before ``python -m build``; it is gitignored and packaged as a Hatch
   artifact. Its ``VERSION`` file guards against a bundle left over from
-  another version.
+  another version. The bundle also holds the demos' authored files under
+  ``demos/``, which ``psynet docs demos`` points to.
 
 Other installs, such as Git installs, have no local copy; the error message
 points to the matching version of the website instead.
@@ -63,6 +64,16 @@ def docs_dir() -> Path:
     from psynet import __version__
 
     return _locate_docs(get_psynet_root(), BUNDLED_DOCS_DIR, __version__)
+
+
+def demos_dir() -> Path:
+    """Return the local demo code for the installed PsyNet.
+
+    In a source checkout this is the repository's ``demos/``; release installs
+    bundle the demos' authored files with the documentation.
+    """
+    docs = docs_dir()
+    return docs / "demos" if docs == BUNDLED_DOCS_DIR else docs.parent / "demos"
 
 
 def _page_name(page: str) -> str:

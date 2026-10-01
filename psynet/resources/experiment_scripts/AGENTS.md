@@ -49,8 +49,8 @@ non-interactive background shell, keep stdin open
 (`tail -f /dev/null | psynet debug local`); otherwise it can stop without a
 log line.
 
-Demos live in `demos/` of the PsyNet source code, not in pip installs; the
-`demos/index` page describes each one and links to its code.
+The `demos/index` page describes each PsyNet demo. `psynet docs demos` prints
+the folder holding their code for the installed version (without media).
 
 ## Documentation
 

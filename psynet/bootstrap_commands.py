@@ -210,6 +210,14 @@ def docs_path():
     click.echo(docs_dir())
 
 
+@docs.command("demos")
+def docs_demos():
+    """Print the local demo code directory."""
+    from psynet.local_docs import demos_dir
+
+    click.echo(demos_dir())
+
+
 @docs.command("show")
 @click.argument("page")
 def docs_show(page):
