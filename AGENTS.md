@@ -194,7 +194,11 @@ When adding or updating Playwright E2E tests, follow these rules to reduce CI fl
     - After each action, wait for the exact intended effect (expected text, expected control state, expected URL/page transition).
     - Prefer short bounded waits on deterministic invariants over long generic polls.
 
-12. **Assert playback/recording via the actual implementation path**:
+12. **Do not assert performance budgets**:
+ - CI load routinely doubles request and page times, so per-request or per-page duration limits flake.
+ - Log timings in failure messages, assert behaviour structurally, and keep at most a generous hang cap (e.g. 30 s) that fails a deadlock before the step timeout.
+
+13. **Assert playback/recording via the actual implementation path**:
     - For `AudioPrompt`, verify PsyNet sound-state/event transitions instead of DOM `<audio>` elements.
     - For `VideoPrompt`, verify `video#prompt` playback behavior.
     - Align assertions with how that step is implemented in experiment/template code.

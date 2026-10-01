@@ -164,9 +164,10 @@ page as a cleared hold (wake token and hold-resume POST) instead of failing on
 the destroyed context.
 
 Overlay linger after a published wake is last-wake→last-end wallclock,
-including gunicorn listen-queue. Summaries log that interval; the hung-overlay
-cap is 30000ms (fail-fast versus the 120s step timeout), not a per-hop
-performance budget. A slow approved POST is not a missed wake; still assert
+including gunicorn listen-queue. Summaries log that interval. Stacked-hold
+tests have no performance budgets, because CI load routinely doubles request
+times; the only time limit is a 30000ms hang cap (fail-fast versus the 120s
+step timeout) on requests, signups and overlays. A slow approved POST is not a missed wake; still assert
 that the resume reason is not ``safety poll`` or ``hold timeout``. If a
 legacy reload drops in-page wake clocks, a published wake token plus an
 approved hold-resume POST still counts as a server wake.
@@ -176,12 +177,11 @@ POST so a long linger can be split into handler time versus pool occupancy.
 Do not subtract ``queue~`` from overlay linger.
 ``GET /timeline`` also prints ``lock``, ``page``, ``barriers``, and
 ``render``. Blocking-request checks use ``app`` when that header is present, so
-worker-pool queueing is not treated as a slow handler. The 3000ms entry
-budget applies to ``GET /timeline`` and ``POST /load-participant``, not to
-``POST /participant``. Dallinger ``@db.serialized`` retries concurrent
-signups with ``expovariate(0.5)`` sleep (mean 2s); overlapping
-``consent→timeline`` uses a 15000ms serialized-signup budget. Sequential
-starts still have the 6000ms start-page budget. GitLab Playwright jobs always set ``PSYNET_USE_LEGACY_DEBUG=1``, so they
+worker-pool queueing is not treated as a slow handler. They cover
+``GET /timeline`` and ``POST /load-participant``, not ``POST /participant``:
+Dallinger ``@db.serialized`` retries concurrent signups with
+``expovariate(0.5)`` sleep (mean 2s). GitLab Playwright jobs always set
+``PSYNET_USE_LEGACY_DEBUG=1``, so they
 run ``psynet debug --legacy`` (gunicorn). The default single-process Flask
 reloader (``psynet debug local`` without ``--legacy``) is not exercised in
 CI; run that locally when debugging reloader-only issues. Playwright hold
