@@ -26,7 +26,7 @@ references:
 
 Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rst`; otherwise fetch `https://psynetdev.gitlab.io/PsyNet/<page>.html`.
 
-- `test/audit_reference` — "Design simulation": the audit artifacts `core.py` produces
+- `test/audit_reference` — "Power analysis": the audit artifacts `core.py` produces
 - `test/audits` — where the design simulation sits in an audit
 
 ## Procedure

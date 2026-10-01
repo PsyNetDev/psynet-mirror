@@ -7,7 +7,7 @@ saves a results table, a run record and an executed notebook for review. The
 terms are explained in [design-simulation-method.md](design-simulation-method.md).
 
 Only the three files PsyNet displays in the audit (`simulation.ipynb`,
-`run.json` and `results.csv`) have fixed names; see "Design simulation" in the
+`run.json` and `results.csv`) have fixed names; see "Power analysis" in the
 PsyNet audit reference (`test/audit_reference`). The `response_model/` package,
 `config.toml` and `core.py` are recommendations; PsyNet neither requires nor
 runs them. Add files when the method needs them.
@@ -258,17 +258,22 @@ margin_of_error_mcse = margin_of_error / np.sqrt(2 * (replicates - 1))
 ```
 
 For a profile, `estimates` has one row per replicate and one column per value,
-and `truth` holds the true values:
+and `truth` holds the true values: one row per replicate when stimuli are
+drawn afresh, or a single row when they are fixed. Working with the errors
+`estimates - truth` makes the same code correct in both cases:
 
 ```python
 def rms(values):
     return np.sqrt(np.mean(np.square(values)))
 
 
-margins = z * estimates.std(axis=0, ddof=1)
+truth = np.broadcast_to(truth, estimates.shape)
+errors = estimates - truth
+
+margins = z * errors.std(axis=0, ddof=1)
 rms_margin_of_error, max_margin_of_error = rms(margins), margins.max()
 
-covariance = np.cov(estimates, rowvar=False)
+covariance = np.cov(errors, rowvar=False)
 variances = np.diag(covariance)
 difference_variances = variances[:, None] + variances[None, :] - 2 * covariance
 pairs = np.triu_indices(len(variances), k=1)
@@ -276,10 +281,10 @@ difference_margins = z * np.sqrt(difference_variances[pairs])
 rms_difference_margin_of_error = rms(difference_margins)
 max_difference_margin_of_error = difference_margins.max()
 
-true_spread = truth.std()
-correlations = [np.corrcoef(row, truth)[0, 1] for row in estimates]
+true_spread = truth.std(axis=1).mean()
+correlations = [np.corrcoef(e, t)[0, 1] for e, t in zip(estimates, truth)]
 profile_correlation = np.tanh(np.mean(np.arctanh(correlations)))  # Fisher-z average
-centered = estimates - estimates.mean(axis=1, keepdims=True)
+centered = errors - errors.mean(axis=1, keepdims=True)
 centered_se = np.sqrt(centered.var(axis=0, ddof=1).mean())
 target_correlation = 0.9
 spread_for_target_correlation = (

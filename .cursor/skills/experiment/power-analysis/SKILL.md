@@ -31,7 +31,7 @@ This skill has two references:
 
 Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rst`; otherwise fetch `https://psynetdev.gitlab.io/PsyNet/<page>.html`.
 
-- `test/audit_reference` — "Design simulation": the three audit artifacts and how the section renders
+- `test/audit_reference` — "Power analysis": the three audit artifacts and how the section renders
 - `test/audits` — where the design simulation sits in an audit
 - `test/backend` — bots and `psynet audit simulate`
 - `code/participants/payment` — wages and bonuses for costing

@@ -35,7 +35,7 @@ the world, and what the analysis tries to learn.
   analyzed from the same simulated experiments; they don't need separate
   simulated worlds.
 - A **decision criterion** is the rule that says whether a design is good
-  enough for a target, such as a maximum margin of error.
+  enough for a target, such as an upper limit on the margin of error.
 
 Test several plausible assumption sets when the choice of design depends on
 them. A design that works only under optimistic assumptions is less convincing
@@ -117,10 +117,14 @@ also report:
   Carlo error, so it is not a stable basis for a decision. If the largest is
   much bigger than the RMS, say which values are least precise.
 - The **margin of error of a difference**: how far apart two values must be
-  for the study to order them reliably. Compute it from the replicates rather
-  than as √2 times the margin of error of a single value. When every participant responds to
-  every stimulus, shared variation such as a participant's overall bias cancels
-  in differences, so they are more precise than that approximation suggests.
+  for the study to order them reliably. Two values that far apart come out in
+  the right order in about 97.5% of studies, but their difference is
+  statistically significant only about half the time; to show that a
+  particular pair differs, use power. Compute this margin from the replicates
+  rather than as √2 times the margin of error of a single value. When every
+  participant responds to every stimulus, shared variation such as a
+  participant's overall bias cancels in differences, so they are more precise
+  than that approximation suggests.
 - The **profile correlation**: in each replicate, the correlation between the
   estimated and the true values, averaged over replicates on the Fisher-z
   scale. It answers whether the study can tell the stimuli apart.
