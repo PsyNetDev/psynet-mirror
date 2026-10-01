@@ -2,6 +2,7 @@ import configparser
 import inspect
 import json
 import os
+import re
 import shutil
 import signal
 import sys
@@ -399,6 +400,11 @@ class ExperimentStatus(SQLBase, SQLMixin):
             "n_working_participants": self.n_working_participants,
             "extra_info": self.extra_info,
         }
+
+
+def _deployment_label_slug(label):
+    """Turn an experiment label into the path-safe start of a deployment ID."""
+    return re.sub(r"[\W_]+", "-", label.lower()).strip("-") or "experiment"
 
 
 class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
@@ -1362,7 +1368,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     def record_experiment_status(cls, online: bool = True):
         status = cls.get_status(lookback_s=60)  # since we poll every minute
         status["isOffline"] = not online
-        status_obj = ExperimentStatus(**status)
+        # The deployments dashboard reads the secret from artifact storage;
+        # database exports shouldn't carry it.
+        status_obj = ExperimentStatus(
+            **{key: value for key, value in status.items() if key != "secret"}
+        )
         db.session.add(status_obj)
         if cls.automatic_backups:
             cls.artifact_storage.write_experiment_status(status, cls.deployment_id)
@@ -2294,8 +2304,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     @classmethod
     def generate_deployment_id(cls):
         mode = deployment_info.read("mode")
-        id_ = f"{cls.label}"
-        id_ = id_.replace(" ", "-").lower()
+        id_ = _deployment_label_slug(cls.label)
         id_ += (
             "__mode="
             + mode

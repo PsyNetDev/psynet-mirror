@@ -123,7 +123,16 @@ simulation, Analysis, Additional files, Blockers, and Checks. Data
 exports have their own download
 panel rather than being repeated under Additional files. The Experiment code panel reads ``experiment.py``
 (or ``experiment.entry_point`` when configured) from the experiment directory
-and displays it as Python source. Each evidence kind
+and displays it as Python source, followed by the experiment's other Python
+modules, such as a ``response_model/`` package. Only modules that the
+experiment's ``deploy.toml`` deploys are listed, so files in excluded folders
+such as ``local_only/`` or ``develop/`` stay out of published audits. Without a
+``deploy.toml``, PsyNet's stock ``deploy.toml`` rules are applied. Hidden
+folders, virtual environments (folders with ``pyvenv.cfg``), ``audit/``,
+``tests/``, ``static/``, ``test.py`` and empty ``__init__.py`` files are also
+left out. The panel shows at most 30 extra modules and says how many more were
+omitted.
+Each evidence kind
 is its own top-level section, so a section kind maps to one panel:
 
 * ``screenshots``, ``participant_video``, ``monitor``, ``performance``,
