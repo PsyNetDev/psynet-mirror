@@ -32,7 +32,7 @@ Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rs
 - `code/writing_a_timeline` — page makers, `while_loop` time credit and limits, async code blocks and scheduled tasks
 - `design/chains` and `code/writing_a_chain_experiment` — chains, staircases, and the chain selection hooks
 - `code/project/classes_and_sqlalchemy` — custom tables and trial columns
-- `test/audits` and `test/audit_reference` — the design-simulation section
+- `test/audits` and `test/audit_reference` — the Power analysis section
 
 Also use `power-analysis/SKILL.md` for the design simulation and
 `participant-response-models/SKILL.md` for `response_model/`.

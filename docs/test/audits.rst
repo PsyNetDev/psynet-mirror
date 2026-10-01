@@ -34,6 +34,11 @@ Sections
 **Plan**
    The implementation plan agreed before the code was written.
 
+**Power analysis**
+   The design simulation used to choose the numbers of participants, stimuli
+   and trials, if the study has one; see :ref:`audit_design_simulation` and the
+   :doc:`/skills/power-analysis` skill.
+
 **Implementation timeline**
    What was done, in order.
 
@@ -60,11 +65,6 @@ Sections
 **Data exports**
    The export produced by bots, in the same format as a real export; see
    :doc:`backend`.
-
-**Design simulation**
-   The simulation used to choose the numbers of participants, stimuli and
-   trials, if the study has one; see :ref:`audit_design_simulation` and the
-   :doc:`/skills/power-analysis` skill.
 
 **Analysis**
    The planned analysis, run on the simulated export.
