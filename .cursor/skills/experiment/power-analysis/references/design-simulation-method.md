@@ -174,11 +174,15 @@ it.
 2. If the experimenter has no view, propose a threshold derived from the
    question and explain the derivation:
    - To detect an effect, use power, as in "Precision and power". A
-     margin-of-error requirement is equivalent to a power requirement: 80%
+     margin-of-error requirement on the effect estimate itself (for a
+     comparison of two conditions, the margin of error of their difference,
+     not of each condition's mean) is equivalent to a power requirement: 80%
      power at two-sided α = 0.05 needs a margin of error of about 0.7 times
      the smallest effect worth detecting, and 90% power about 0.6 times.
      Requiring half the effect amounts to about 97.5% power, which is much
-     stricter than usual.
+     stricter than usual. These factors assume an approximately normal
+     estimate, as in large samples; with few participants, simulate power
+     directly.
    - To rank or profile stimuli, choose the smallest difference between two
      stimuli that the study should order reliably, and apply it to the margin
      of error of a difference. The smallest spread for a 0.9 correlation
