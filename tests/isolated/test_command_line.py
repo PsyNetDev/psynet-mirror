@@ -3786,8 +3786,9 @@ def test_worker_cleanup_only_targets_this_database(monkeypatch):
         assert ours.pid in pids
         assert theirs.pid not in pids
     finally:
-        ours.kill()
-        theirs.kill()
+        for process in (ours, theirs):
+            process.kill()
+            process.wait()
 
 
 def test_kill_psynet_worker_processes_warns_with_pids(caplog):
