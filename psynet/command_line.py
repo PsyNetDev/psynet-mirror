@@ -1025,7 +1025,10 @@ def safely_kill_process(p):
 
 
 def kill_psynet_worker_processes():
-    processes = list_psynet_worker_processes()
+    """Kill local ``dallinger_heroku_*`` processes that use this shell's database."""
+    from dallinger.heroku.tools import local_worker_processes
+
+    processes = local_worker_processes()
     if not processes:
         return
     pids = []
@@ -1083,57 +1086,6 @@ def is_psynet_chrome_process(process):
                     return True
                 if "--user-data-dir=" in cmd and "psynet-chrome-" in cmd:
                     return True
-    except (psutil.NoSuchProcess, psutil.AccessDenied):
-        pass
-
-    return False
-
-
-def _current_database_url():
-    from dallinger.db import corrected_db_url, db_url_default
-
-    return corrected_db_url(os.environ.get("DATABASE_URL", db_url_default))
-
-
-def uses_current_database(process):
-    """
-    Return whether ``process`` was started with this shell's ``DATABASE_URL``.
-
-    Local servers inherit ``DATABASE_URL`` from the command that launched them,
-    so this distinguishes this experiment's leftovers from other local
-    experiments on the same machine. Processes whose environment can't be read
-    are treated as someone else's.
-    """
-    from dallinger.db import corrected_db_url, db_url_default
-
-    try:
-        url = process.environ().get("DATABASE_URL", db_url_default)
-    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-        return False
-    return corrected_db_url(url) == _current_database_url()
-
-
-def list_psynet_worker_processes():
-    """List local ``dallinger_heroku_*`` workers that use this shell's database."""
-    return [
-        p
-        for p in psutil.process_iter()
-        if is_psynet_worker_process(p) and uses_current_database(p)
-    ]
-
-
-def is_psynet_worker_process(process):
-    """Return whether ``process`` is a local Dallinger web or worker process."""
-    try:
-        # This version catches processes in Linux
-        if process.name().startswith("dallinger_herok"):
-            return True
-        # This version catches process in MacOS
-        if "python" in process.name().lower():
-            return any(
-                Path(argument).name.startswith("dallinger_heroku_")
-                for argument in process.cmdline()[:2]
-            )
     except (psutil.NoSuchProcess, psutil.AccessDenied):
         pass
 

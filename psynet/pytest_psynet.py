@@ -474,21 +474,12 @@ def skip_constraints_check():
         os.environ["SKIP_DEPENDENCY_CHECK"] = original
 
 
-# dallinger_clear_workers = pytest_dallinger.clear_workers.__wrapped__
-
-
 @pytest.fixture(scope="class")
 def clear_workers():
-    """Stop leftover local servers that use this test run's database."""
-
-    def _zap():
-        # Once a worker stops, heroku local's foreman exits, and then the
-        # Heroku CLI that started it.
-        kill_psynet_worker_processes()
-
-    _zap()
+    """Class-scoped version of Dallinger's fixture, for ``debug_experiment``."""
+    kill_psynet_worker_processes()
     yield
-    _zap()
+    kill_psynet_worker_processes()
 
 
 pytest_dallinger.clear_workers = clear_workers
