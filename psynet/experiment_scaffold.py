@@ -134,9 +134,9 @@ class Exp(psynet.experiment.Experiment):
 _REQUIREMENTS_TXT_COMMENTS = """\
 
 # Alternatively, you can use one of the following syntaxes to specify a custom PsyNet version
-# psynet@git+https://gitlab.com/PsyNetDev/PsyNet@v10.4.0#egg=psynet
-# psynet@git+https://gitlab.com/PsyNetDev/PsyNet@45f317688af59350f9a6f3052fd73076318f2775#egg=psynet
-# psynet@git+https://gitlab.com/PsyNetDev/PsyNet@45f31768#egg=psynet
+# psynet[experiment]@git+https://gitlab.com/PsyNetDev/PsyNet@v10.4.0#egg=psynet
+# psynet[experiment]@git+https://gitlab.com/PsyNetDev/PsyNet@45f317688af59350f9a6f3052fd73076318f2775#egg=psynet
+# psynet[experiment]@git+https://gitlab.com/PsyNetDev/PsyNet@45f31768#egg=psynet
 """
 
 
@@ -583,6 +583,22 @@ def _is_psynet_requirement_line(line: str) -> bool:
         re.match(r"(?i)^psynet(?:\s*$|\s*[@<>=!~\[])", stripped)
         or re.search(r"(?i)#egg=psynet(?:\[[\w,]+\])?(?:\s|$)", stripped)
     )
+
+
+def requirement_includes_experiment_extra(requirement: str) -> bool:
+    """Return whether a PsyNet requirement installs the experiment runtime.
+
+    The extra may be written on the package name (``psynet[experiment]``) or,
+    for an editable install, on the egg fragment (``#egg=psynet[experiment]``).
+    """
+    match = re.search(
+        r"(?i)(?:^|\s|#egg=)psynet\[([^]]*)\]",
+        requirement.strip(),
+    )
+    if match is None:
+        return False
+    extras = [part.strip().lower() for part in match.group(1).split(",")]
+    return "experiment" in extras
 
 
 def is_unambiguous_psynet_requirement(requirement: str) -> bool:
