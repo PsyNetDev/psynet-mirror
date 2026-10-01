@@ -403,6 +403,11 @@ class ExperimentStatus(SQLBase, SQLMixin):
         }
 
 
+def _deployment_label_slug(label):
+    """Turn an experiment label into the path-safe start of a deployment ID."""
+    return re.sub(r"[\W_]+", "-", label.lower()).strip("-") or "experiment"
+
+
 class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     # pylint: disable=abstract-method
     """
@@ -2300,7 +2305,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     @classmethod
     def generate_deployment_id(cls):
         mode = deployment_info.read("mode")
-        id_ = re.sub(r"[^a-z0-9]+", "-", cls.label.lower()).strip("-")
+        id_ = _deployment_label_slug(cls.label)
         id_ += (
             "__mode="
             + mode
