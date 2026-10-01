@@ -516,12 +516,20 @@ class _TimelineHoldPage(Page):
         raise NotImplementedError
 
     def participant_timed_out(self, participant):
-        """Return whether the authoritative hold deadline has passed."""
+        """Return whether the authoritative hold deadline has passed.
+
+        A hold released before its deadline has not timed out, even if the
+        participant only checks in afterwards (for example after a missed wake).
+        """
         record = self.get_hold_record(participant)
         if record is None:
             return False
         deadline = record.deadline
-        return deadline is not None and timenow() >= deadline
+        if deadline is None:
+            return False
+        if record.released_at is not None and record.released_at < deadline:
+            return False
+        return timenow() >= deadline
 
     def is_ready_to_resume(self, experiment, participant):
         """Return whether this hold can resume, without timeout side effects.

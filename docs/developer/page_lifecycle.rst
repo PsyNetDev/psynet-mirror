@@ -388,6 +388,13 @@ resume check, and the server re-evaluates the condition. ``check_interval``
 remains the bounded fallback for missed messages and arbitrary conditions
 without a framework event.
 
+Dallinger subscribes the server to Redis only after the WebSocket opens, so a
+wake published in that gap would be lost. Hold and arrival-update sockets
+therefore connect with ``confirmListening``: the browser publishes a probe on
+its own channel, and ``onOpen`` (with its resume check) runs only once the
+probe echoes back. A hold whose barrier released it before the deadline does
+not time out, even if the participant's next check arrives after the deadline.
+
 When the last hold on a page ends, the browser closes the hold-channel
 WebSocket. The next hold reconnects. Partner-ready notices use the same
 channel; the extra arrival-update socket opens only while the participant

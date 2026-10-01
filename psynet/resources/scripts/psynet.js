@@ -978,6 +978,7 @@
         channel: config.channel,
         connection: PsyNetWebSocketChannel.connect({
           channel: config.channel,
+          confirmListening: true,
           onMessage: psynet.handleArrivalUpdateMessage,
           onOpen: psynet.fetchArrivalNotice,
         }),
@@ -1144,6 +1145,7 @@
     psynet._connectTimelineHoldSocket = function (controller) {
       controller.connection = PsyNetWebSocketChannel.connect({
         channel: controller.hold.channel,
+        confirmListening: true,
         onOpen() {
           if (!controller.stopped) {
             psynet.resumeTimelineHold("websocket connection");
