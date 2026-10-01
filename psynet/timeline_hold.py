@@ -692,6 +692,8 @@ class _ConditionHoldPage(_TimelineHoldPage):
 
     def prepare_resume_if_ready(self, experiment, participant):
         """Do not fail a resumed tab for work that finished while it was inactive."""
+        if participant.failed or participant.pending_redirect is not None:
+            return super().prepare_resume_if_ready(experiment, participant)
         from .media_upload import _expire_participant_recordings
 
         _expire_participant_recordings(participant.id)

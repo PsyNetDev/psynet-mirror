@@ -187,35 +187,23 @@ The shorthand ``background_recording="camera"`` uses the same defaults.
 WebM asset per page visit, including when labels repeat or a
 :class:`~psynet.timeline.PageMaker` generates the page.
 
-Participants explicitly enable camera/screen access or continue without recording
-before the page starts. A denied or skipped source is not requested again in the
-same document. Live tracks are reused between pages; a new recorder captures
-each page. Stock audiovisual consent modules must have recorded acceptance before
-capture is offered. Consent pages cannot record background video.
-Audio capture is off by default; screen audio availability depends on the browser
-and the shared source.
+Capture requires accepted audiovisual consent and an explicit browser permission
+step before the task starts. Participants can continue without recording; skipped
+or denied sources are not requested again until a new document loads. Audio is
+off by default. Screen audio availability depends on the browser and shared source.
 
 By default, capture stops after 120 seconds or at 16 MiB per source. Exceeding
 the size limit discards that clip; reaching the duration limit retains the
-captured portion. Queue exhaustion skips capture. Missing clips expire at the
-upload deadline and invalid clips fail validation, without failing the trial,
-blocking analysis, or replacing its answer recording. A rejected answer keeps
-the existing clip for resubmission. Completion hooks run only after successful
-answer validation. Transient loss of the acceptance response triggers bounded
-retries using the same recordings and original upload deadline.
+captured portion. Missing optional clips do not fail the trial or block analysis.
+See :class:`~psynet.modular_page.VideoRecordConfig` for configuration options.
 
-Background recordings require :class:`~psynet.asset.LocalStorage`. Ordinary pages,
-:class:`~psynet.page.JsPsychPage`, and browser-hosted :class:`~psynet.page.UnityPage`
-resolve the permission decision before starting the task. Unity starts its loader
-after that decision. Each logical page in a shared ``session_id`` gets its own
-clip; the next page's capture decision completes before ``pageUpdated`` reaches
-the task. Camera and screen tracks can be reused within the document. A new
-document asks again through an explicit button, including after a reload.
+Background recordings require :class:`~psynet.asset.LocalStorage` and support
+ordinary pages, :class:`~psynet.page.JsPsychPage`, and browser-hosted
+:class:`~psynet.page.UnityPage`. Pages sharing a ``session_id`` each get their own clip.
 
-Answer-recording controls cannot also record background video. Custom renderers
-that bypass the PsyNet page lifecycle and Unity IDE debug mode cannot use this
-capture API. Leaving or reloading the document can lose pending uploads; there is
-no upload wait page. Fully received bytes can still be processed on the server.
+Consent pages and answer-recording controls cannot also record background video.
+Unity IDE debug mode and custom renderers that bypass the PsyNet page lifecycle
+are unsupported. Leaving or reloading the document can lose pending uploads.
 
 Requiring a background recording
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -234,24 +222,21 @@ a trial to count as valid. Set this on a page returned by the trial's
             background_recording=VideoRecordConfig(source="camera", required=True),
         )
 
-The choice is saved immediately and independent pages can advance while the clip
-uploads. The trial cannot finalize until all required clips are deposited.
-Analysis of the ordinary answer can proceed; background clips never become the
-trial's answer recording. Feedback that waits for trial processing and dependent
-chain growth continue to respect required uploads.
+The answer is saved immediately and its analysis can proceed, but the trial cannot
+finalize until all required clips are deposited. Independent pages can advance.
 
 Missing clips fail only their parent trial at the upload deadline, with no
-recording retry. This includes denied or skipped capture. Invalid received media
-can fail earlier during validation. Existing performance and payment policies
-still apply. Required recording on a page without a parent trial raises an error.
+recording retry. This includes denied or skipped capture. Existing performance
+and payment policies still apply. Required recording on a page without a parent
+trial raises an error.
 With ``source="both"``, both clips are required.
 
 Bots skip background capture and bypass the required-media condition for timeline
 testing. A passing bot run does not validate recording availability; use browser
 tests or manual capture to check the required policy.
 
-Manual testing
-~~~~~~~~~~~~~~
+Try the demo
+~~~~~~~~~~~~
 
 For a runnable example, use ``demos/features/background_recording``:
 
@@ -260,16 +245,9 @@ For a runnable example, use ``demos/features/background_recording``:
     cd demos/features/background_recording
     psynet debug local
 
-Accept audiovisual consent, enable the camera, and answer both button pages.
-Repeat after denying permission or choosing “Continue without recording”; both
-answers should still advance. Continue to the optional and required comparison
-trials. Hold their media requests in the browser: independent navigation should
-continue, while the required trial remains unfinalized. Release its upload to
-allow finalization, or leave it missing until its deadline to observe trial
-failure. Inspect the recording asset's ``required_for_trial``, ``recording_role``,
-``upload_status``, ``upload_failed_reason``, and ``upload_context`` fields alongside
-the parent trial. Browser and server checks are described in
-:doc:`/developer/running_tests`.
+Compare optional and required trials with camera permission enabled and denied.
+Answers should advance in both cases; a missing required clip fails its trial at
+the deadline. Inspect the results under **Monitor → Recordings**.
 
 
 Waiting for a recording before playback
@@ -298,12 +276,9 @@ recording page with label ``recording``::
         ),
     )
 
-The helper waits through the existing upload and processing allowance, with a
-fixed 20-second polling margin. Failed or expired recordings release the wait
-at the next poll. If processing stalls, the wait eventually releases without failing
-the participant; the fallback must therefore handle any undeposited recording.
-Legacy recordings without upload deadlines have a 20-second limit. Trial failure
-and performance policies are unchanged.
+The helper stops waiting when the recording is available, fails, or reaches its
+waiting limit. Always provide a fallback for an undeposited recording. Legacy
+recordings without upload deadlines have a 20-second waiting limit.
 
 Video answer upload defaults
 ----------------------------
@@ -324,49 +299,22 @@ or ``on_complete``.
 
 The upload deadline starts when the answer is accepted. The allowance is
 30 seconds plus twice the transfer time at 1 Mbit/s, bounded to 60–600 seconds.
-Complete receipt starts a separate 20-second processing allowance. Retransmitting
-or recovering a lost acceptance response does not extend either deadline.
+Complete receipt starts a separate 20-second processing allowance. Retries do not
+extend either deadline.
 
-**Compatibility exception:** legacy experiments with
-``inplace_timeline_transitions=false`` and other storage backends retain the
-existing answer-upload path: video bytes still travel with ``/response``, and
-navigation waits for that transfer. This avoids routinely losing
-answer recordings on every legacy page change. In an in-place experiment, crossing
-a full-document boundary (for example entering Unity) can still abandon queued
-bytes; avoid such a boundary before required playback. Background recording always
-uses independent uploads, including on full-reload pages.
-
-Shared capture and permissions
-------------------------------
-
-Answer and background recorders share document-owned camera/screen streams and
-create a fresh WebM recorder for each clip. Compatible streams survive in-place
-page changes. Changing microphone requirements can require reacquisition;
-background clips never include microphone audio unless explicitly enabled.
-Background camera and screen capture request at most 640 × 480 pixels at 15 fps.
-Answer capture retains the control's recording timing, preview, and audio settings.
+With ``inplace_timeline_transitions=false`` or other storage backends, answer video
+uploads still complete before navigation. Background uploads remain independent.
+Full-document navigation can abandon pending uploads; wait for required recordings
+before crossing such a boundary.
 
 The first answer screen recording displays a **Share screen** button before task
-startup. Subsequent compatible screen recordings reuse that stream. A full reload
-requires a new permission decision. Closing the chooser or continuing without
-recording leaves the answer without that source; the asynchronous missing-media
-policy described above applies.
-
-Active dependency polls also resolve expired recordings if the clock process is
-delayed. This fails the affected required-media trial, rather than failing the
-participant through a generic waiting timeout. Unrelated analysis timeouts and
-configured performance checks retain their existing behavior.
+startup. Compatible later pages reuse the stream; a full reload requires a new
+permission decision. Skipping capture follows the missing-upload policy above.
 
 Inspecting recording outcomes
 -----------------------------
 
-Open **Monitor → Recordings** for answer/background role, required policy, original
-page and source, capture outcome, upload status, failure reason, and deadlines.
-Only deposited recordings have download links. Early sharing loss or a duration
-limit may produce a usable partial clip; its capture outcome remains visible.
-
-The same fields are included in ``assets/manifest.csv`` during export. Unavailable
-recordings remain in the manifest with no file or download URL; exporting does
-not attempt to download them. Legacy recordings without the upload protocol show
-``awaiting_deposit`` until their existing deposit completes. This report label is
-not an S3 upload state or a new trial policy.
+Open **Monitor → Recordings** for each clip's source, required/optional policy,
+capture outcome, upload status, and failure reason. These fields also appear in
+``assets/manifest.csv``. Unavailable recordings remain listed without download
+links; partial clips are identified by their capture outcome.

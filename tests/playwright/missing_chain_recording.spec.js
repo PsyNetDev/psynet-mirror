@@ -24,11 +24,16 @@ test("missing answer expires and the unaffected imitation chain completes @inpla
       await expect(p.locator("#main-body")).toContainText("Record the gesture.", {timeout:90000});
       await waitForVideoRecordingReady(p, {timeoutMs:30000});
       await waitForNextEnabled(p,30000);
+      const submittedPageUuid = await p.evaluate(() => window.pageUuid);
       const acceptance = p.waitForResponse(r => new URL(r.url()).pathname === "/response" && r.request().method() === "POST");
       await p.locator("#next-button").click();
       const accepted = await (await acceptance).json();
       expect(accepted.submission).toBe("approved");
       expect(accepted.recording_uploads).toHaveLength(1);
+      // An upload hold keeps the old prompt visible until the deadline expires.
+      // Wait for a new page before matching the repeated recording prompt.
+      await expect.poll(() => p.evaluate(() => window.pageUuid), {timeout:90000})
+        .not.toBe(submittedPageUuid);
       if (trial > 0) {
         await expect(p.locator("#main-body")).toContainText("Recording accepted.", {timeout:60000});
         await waitForNextEnabled(p,30000);

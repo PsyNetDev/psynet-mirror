@@ -730,6 +730,7 @@ def test_required_background_deposit_releases_finalization(
     from psynet.trial.record import Recording, RecordTrial
 
     exp = get_experiment()
+    monkeypatch.setattr(type(exp), "deployment_id", "test-deployment")
     network = _create_network(_chain_trial_maker(), exp)
     trial = _add_complete_unfinalized_trial(network.head, participant)
     response = Response(

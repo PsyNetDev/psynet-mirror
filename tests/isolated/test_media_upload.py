@@ -61,8 +61,9 @@ def test_upload_spool_uses_private_shared_deployment_directory(monkeypatch, ssh)
 
 
 @pytest.fixture
-def reservation(db_session, tmp_path):
+def reservation(db_session, tmp_path, monkeypatch):
     """Reserve a recording as part of a committed, accepted page response."""
+    monkeypatch.setattr(Experiment, "deployment_id", "test-deployment")
     participant = Participant(
         experiment=get_experiment(),
         recruiter_id="hotair",
@@ -391,9 +392,7 @@ def received_video(reservation, tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("optional", [False, True])
-def test_received_video_is_validated_and_deposited(
-    received_video, monkeypatch, optional
-):
+def test_received_video_is_deposited(received_video, monkeypatch, optional):
     import hashlib
 
     recording_id, payload = received_video
