@@ -283,7 +283,7 @@ toggle, so the reader sees prose, figures and tables.
 - **Execute before rendering.** The audit shows only the outputs saved in the
   notebook, so run it after every change, for example with
   `jupyter nbconvert --to notebook --execute --inplace analysis.ipynb`.
-  `psynet audit validate` warns when a notebook has no saved outputs.
+  Neither `psynet audit validate` nor `mark-present` checks for saved outputs.
 - **Read it back.** Open the rendered section and read it as that reader
   would. Check that every figure and table appears, that headings aren't
   repeated, and that the summary matches the figures.

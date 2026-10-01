@@ -201,10 +201,14 @@ class ConditionEffect:
 
     @staticmethod
     def estimate(data):
-        # This example assumes that rows are independent.
-        model = smf.ols("response ~ condition", data=data).fit()
+        model = smf.mixedlm(
+            "response ~ condition", data=data, groups=data["participant"]
+        ).fit(method="lbfgs")
         return model.params["condition"]
 ```
+
+The random intercept per participant matches `participant_bias` in the
+response model; add stimulus terms when the claim generalizes over stimuli.
 
 Make results reproducible and independent of how the work is split. Derive each
 scenario's random seed from `base_seed` and a stable scenario identifier, and
