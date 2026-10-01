@@ -1,1 +1,1 @@
-Lucid time limits no longer reset after a day
+Fixed Lucid elapsed-time checks that wrapped around every 24 hours. A participant who reloaded a page a day or more after entering got a fresh time limit, and the Lucid dashboard's time since the last API call and the rate-limit cache check were wrong after a day.
