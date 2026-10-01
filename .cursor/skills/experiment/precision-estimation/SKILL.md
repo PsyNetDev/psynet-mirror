@@ -61,18 +61,17 @@ Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rs
    confidence, in the response's units and the same for all scenarios
    ("Choosing the required precision" in the method reference). For a power
    decision, compute the rejection rate of the planned test at the planned α
-   in each scenario, apply the planned multiplicity procedure to the complete
-   set of tests, define the rejection event at the level the question needs,
-   calibrate the effect to the stated size ("What to simulate"), and keep the
-   margin-of-error columns alongside. Fill `decision_value` and
-   `meets_requirement` for every primary estimand, or leave them empty if the
-   user chose to decide from the curves. For a profile with a typical-value or
-   typical-pair requirement, decide on the RMS margin across the set and
-   bootstrap its Monte Carlo interval. If the question concerns every value,
-   top-k selection or the whole ranking, simulate that global criterion
-   instead. Also report the RMS and largest margins, the profile correlation
-   and the smallest spread for a 0.9 correlation. When `keep_replicates` is
-   true, also save replicate-level estimates as Parquet.
+   in each scenario, with the planned multiplicity procedure and rejection
+   event ("Precision and power") and the effect calibrated to the stated size
+   ("What to simulate"); keep the margin-of-error columns alongside. Fill
+   `decision_value` and `meets_requirement` for every primary estimand, or
+   leave them empty if the user chose to decide from the curves. For a
+   profile, decide on the RMS margin across the set and bootstrap its Monte
+   Carlo interval, or simulate the global criterion if the requirement covers
+   every value or the whole ranking ("Choosing the required precision"). Also
+   report the RMS and largest margins, the profile correlation and the
+   smallest spread for a 0.9 correlation. When `keep_replicates` is true, also
+   save replicate-level estimates as Parquet.
 6. **Check Monte Carlo error.** If it could change the selected design,
    raise the common replicate count and rerun.
 7. **Prepare the check after data collection.** Make sure the analysis

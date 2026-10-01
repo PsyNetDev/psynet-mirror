@@ -179,11 +179,10 @@ For each scenario, the script simulates every replicate at the trial level with
 `sample_responses`, fits the planned analysis to each simulated dataset, and
 summarizes the estimates for every analysis target. Use the estimator planned
 for the real data, for example a statsmodels regression or mixed model. Count
-failed fits instead of dropping them. Match its dependence structure to the
-design: ordinary least squares standard errors are not valid for repeated
-rows from the same participant, and crossed participant and stimulus sampling
-usually requires both variance components. Apply the planned multiplicity
-procedure to the replicate's complete set of tests.
+failed fits instead of dropping them. Match the estimator to the design's
+dependence structure and apply the planned multiplicity procedure in every
+replicate, as described in "What to simulate" and "Precision and power" of the
+method page.
 
 Keep each analysis target's question, true value, estimator and resampling rule
 together, for example in one small class per target:
@@ -313,12 +312,10 @@ spread_for_target_correlation = (
 The Monte Carlo standard error formula assumes roughly normal estimates.
 Otherwise, and for a summary such as the RMS margin of error across a
 profile, bootstrap over replicates: resample whole replicates and recompute the
-summary each time. Treat the difference margins as pointwise pair summaries;
-an RMS margin describes typical pairwise precision, not the probability that
-the complete ranking is correct. Simulate a top-k, all-pairs or whole-ranking
-criterion directly when that is the research question. The smallest-spread
-formula also assumes negligible stimulus-specific bias and error that is
-uncorrelated with truth and roughly unchanged as the true spread changes.
+summary each time. The difference margins are pointwise, and the
+smallest-spread formula has assumptions of its own; see "Precision and power"
+and "Choosing the required precision" in the method page before deciding on
+either.
 
 ## Run record
 
@@ -400,10 +397,9 @@ centered_se = s_target * np.sqrt(1 - r_target**2) / r_target
 expected_correlation = spread / np.sqrt(spread**2 + centered_se**2)
 ```
 
-Use that curve only when the formula's assumptions hold. With bounded
-responses, heteroscedastic errors or an estimator whose precision changes with
-the true profile, simulate the spread as an assumption factor and plot the
-simulated correlations instead.
+Use this curve only when the formula's assumptions hold ("Precision and
+power" in the method page). Otherwise, simulate the spread as an assumption
+factor and plot the simulated correlations.
 
 Put the table of every metric at the chosen design in the details section,
 with readable column names, such as "Difference margin (points)" rather than
