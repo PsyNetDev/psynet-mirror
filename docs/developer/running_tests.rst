@@ -433,6 +433,12 @@ checks remain required after the implementation changes; earlier fixture results
 do not establish that the new default or these integrations pass. Legacy mode
 retains the existing answer-upload path.
 
+For answer screen-recording pages, call the harness helper
+``acceptAnswerScreenPermission(page)`` at the first known screen-capture step,
+before waiting for task startup. Compatible later pages reuse the shared stream;
+they do not show another dialog. The capture lifecycle spec also checks that
+background and answer clips reuse a stream and each play independently.
+
 The ``task_background_recording`` fixture uses the real UnityPage template with a
 small engine stand-in and the repository's vendored jsPsych. It checks enabled
 and skipped capture: task startup follows the permission decision, persistent

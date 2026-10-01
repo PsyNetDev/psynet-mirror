@@ -5,7 +5,7 @@ const { test, expect } = require("./fixtures");
 test.describe("Optional background capture lifecycle @both", () => {
   test.beforeEach(async ({ page }) => {
     await page.route("https://capture.test/", route => route.fulfill({contentType:"text/html",body:"<main>Page</main>"}));
-    for (const module of ["background-recording", "media-upload"]) {
+    for (const module of ["background-recording", "media-upload", "recording-capture"]) {
       await page.route(`https://capture.test/${module}.js`, route => route.fulfill({contentType:"text/javascript",path:path.resolve(`psynet/resources/scripts/${module}.js`)}));
     }
     await page.goto("https://capture.test/");
@@ -70,4 +70,64 @@ test.describe("Optional background capture lifecycle @both", () => {
     expect(result.unavailable).toEqual({});
     expect(result.audioTracks).toBe(0);
   });
+});
+
+// Both facades use the same native recorder and retain compatible source tracks.
+test.describe("Shared recording capture @both", () => {
+  test.beforeEach(async ({page}) => {
+    await page.route("https://capture.test/", route => route.fulfill({contentType:"text/html",body:"<main>Capture</main>"}));
+    for (const module of ["background-recording", "media-upload", "recording-capture"]) {
+      await page.route(`https://capture.test/${module}.js`, route => route.fulfill({contentType:"text/javascript",path:path.resolve(`psynet/resources/scripts/${module}.js`)}));
+    }
+    await page.goto("https://capture.test/");
+  });
+
+  for (const source of ["camera", "screen"]) {
+    test(`background and answer clips share ${source} tracks and play independently`, async ({page}) => {
+      await page.evaluate(async source => {
+        const {BackgroundRecorder} = await import("/background-recording.js");
+        const {MediaUploadQueue} = await import("/media-upload.js");
+        window.capture = new BackgroundRecorder(new MediaUploadQueue());
+        window.started = capture.begin({sources:[source],audio:false,max_duration:1,max_bytes:1024*1024});
+      }, source);
+      await page.getByRole("button", {name:source === "camera" ? "Enable camera" : "Share screen",exact:true}).click();
+      await page.evaluate(() => started);
+      await expect.poll(() => page.evaluate(source => capture.outcomes[source], source)).toBe("duration_limit");
+      await page.evaluate(async source => {
+        const {RecordingClip} = await import("/recording-capture.js");
+        window.backgroundBlob = (await capture.finish()).recordings[source];
+        const original = capture.streams.get(source);
+        const settings = original.getVideoTracks()[0].getSettings();
+        window.captureSettings = settings;
+        await capture.discard();
+        const stream = await capture.devices.acquireAnswer(source, false);
+        window.reusedStream = stream === original;
+        window.answerClip = new RecordingClip(stream, {maxDuration:1});
+        answerClip.startRecording();
+      }, source);
+      expect(await page.evaluate(() => reusedStream)).toBe(true);
+      const settings = await page.evaluate(() => captureSettings);
+      expect(settings.width).toBeLessThanOrEqual(640);
+      expect(settings.height).toBeLessThanOrEqual(480);
+      expect(settings.frameRate).toBeLessThanOrEqual(15);
+      await expect(page.locator("#answer-recording-permission")).toHaveCount(0);
+      await expect.poll(() => page.evaluate(() => answerClip.outcome)).toBe("duration_limit");
+      await page.evaluate(async () => {
+        await answerClip.stopRecording();
+        for (const [id, blob] of [["background", backgroundBlob], ["answer", answerClip.getBlob()]]) {
+          const video = document.createElement("video");
+          video.id = id;
+          video.muted = true;
+          video.src = URL.createObjectURL(blob);
+          document.body.append(video);
+        }
+      });
+      for (const id of ["background", "answer"]) {
+        const video = page.locator(`video#${id}`);
+        await expect.poll(() => video.evaluate(element => element.readyState >= 2 && element.videoWidth > 0)).toBe(true);
+        await video.evaluate(element => element.play());
+        await expect.poll(() => video.evaluate(element => element.currentTime)).toBeGreaterThan(0);
+      }
+    });
+  }
 });

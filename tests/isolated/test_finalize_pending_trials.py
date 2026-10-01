@@ -88,8 +88,10 @@ def test_runtime_wait_budget_is_fixed_and_only_times_out_active_waits(
     "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
 )
 @pytest.mark.usefixtures("in_experiment_directory")
+@pytest.mark.parametrize("expiry_source", ["clock", "poll", "late_poll"])
+@pytest.mark.parametrize("upload_state", ["pending", "processing"])
 def test_feedback_honors_recording_deadline_and_releases_a_resumed_tab(
-    db_session, participant, monkeypatch, tmp_path
+    db_session, participant, monkeypatch, tmp_path, expiry_source, upload_state
 ):
     from datetime import datetime, timedelta
 
@@ -129,8 +131,10 @@ def test_feedback_honors_recording_deadline_and_releases_a_resumed_tab(
     asset.upload_status = "received"
     asset.upload_processing_deadline = now + timedelta(seconds=10)
     assert uploads._recording_wait_timeout(participant.id, trial_id=trial.id) == 30
-    asset.upload_status = "pending"
-    asset.upload_processing_deadline = None
+    asset.upload_status = upload_state
+    asset.upload_processing_deadline = (
+        now + timedelta(seconds=60) if upload_state == "processing" else None
+    )
 
     def show_feedback(self, experiment, participant):
         raise AssertionError("Missing media must not reach feedback")
@@ -153,14 +157,28 @@ def test_feedback_honors_recording_deadline_and_releases_a_resumed_tab(
     deadline = asset.upload_deadline
     db.session.commit()
     now += timedelta(seconds=40)
-    uploads._expire_recordings()
-    participant = db.session.get(Participant, participant_id)
-    assert participant.current_trial.failed_reason == "recording_upload_timeout"
-    assert uploads._recording_wait_timeout(participant_id, trial_id=trial_id) == 20
-    now += timedelta(seconds=1000)
+    if expiry_source == "clock":
+        uploads._expire_recordings()
+        participant = db.session.get(Participant, participant_id)
+        now += timedelta(seconds=1000)
+    elif expiry_source == "late_poll":
+        now += timedelta(seconds=1000)
+    else:
+        # Read-only readiness detects the elapsed deadline but must not fail
+        # anything before the request acquires its participant lock.
+        hold = timeline.get_current_elt(exp, participant)
+        assert hold.is_ready_to_resume(exp, participant)
+        assert not trial.failed
+        assert asset.upload_status == upload_state
     _process_response(
         exp, participant, participant.page_uuid, timeline_hold_resume=True
     )
+    assert participant.current_trial.failed_reason == (
+        "recording_upload_timeout"
+        if upload_state == "pending"
+        else "recording_processing_timeout"
+    )
+    assert uploads._recording_wait_timeout(participant_id, trial_id=trial_id) == 20
     assert timeline.get_current_elt(exp, participant).content == "Continue"
     assert not participant.failed
     assert participant.current_trial.assets["video"].upload_deadline == deadline

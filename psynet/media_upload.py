@@ -485,6 +485,11 @@ def _store_recording_bytes(path, storage):
 @with_transaction
 def _complete_recording(recording_id, *, output=None, error=None):
     """Resolve one recording atomically and return its input path for cleanup."""
+    return _resolve_recording(recording_id, output=output, error=error)
+
+
+def _resolve_recording(recording_id, *, output=None, error=None):
+    """Resolve inside the caller's transaction without committing navigation."""
     from .participant import Participant
     from .trial.main import Trial
 
@@ -607,25 +612,37 @@ def _clean_abandoned_receipts():
             continue
 
 
+def _due_recordings(participant_id=None):
+    """Select elapsed upload/processing deadlines without mutating state."""
+    now = _utcnow()
+    query = db.session.query(Recording.id).filter(
+        ((Recording.upload_status == "pending") & (Recording.upload_deadline <= now))
+        | (
+            Recording.upload_status.in_(["received", "queued", "processing"])
+            & (Recording.upload_processing_deadline <= now)
+        )
+    )
+    if participant_id is not None:
+        query = query.filter(Recording.participant_id == participant_id)
+    return query.order_by(Recording.id)
+
+
+def _expire_participant_recordings(participant_id):
+    """Apply due outcomes under the request's participant lock, without committing.
+
+    Dependency checks must not depend on the clock process being available.
+    The resolver rechecks deadlines under row locks, including receipt races.
+    """
+    for (recording_id,) in _due_recordings(participant_id).all():
+        path = _resolve_recording(recording_id)
+        if path is not None:
+            Path(path).unlink(missing_ok=True)
+
+
 @with_transaction
 def _expire_recordings():
     """Expire missing or stalled recordings independently of browser activity."""
-    now = _utcnow()
-    ids = (
-        db.session.query(Recording.id)
-        .filter(
-            (
-                (Recording.upload_status == "pending")
-                & (Recording.upload_deadline <= now)
-            )
-            | (
-                Recording.upload_status.in_(["received", "queued", "processing"])
-                & (Recording.upload_processing_deadline <= now)
-            )
-        )
-        .all()
-    )
-    for (recording_id,) in ids:
+    for (recording_id,) in _due_recordings().all():
         path = _complete_recording(recording_id)
         if path is not None:
             Path(path).unlink(missing_ok=True)

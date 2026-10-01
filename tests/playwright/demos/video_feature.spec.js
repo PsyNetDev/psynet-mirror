@@ -12,6 +12,7 @@ const {
   waitForMainBodyContains,
   waitForTrialEvents,
   waitForVideoRecordingReady,
+  acceptAnswerScreenPermission,
   withExperiment
 } = require("../psynetHarness");
 
@@ -236,6 +237,8 @@ test("video feature demo", { tag: "@both" }, async ({ page, context }) => {
         "simultaneous screen recording",
         PROMPT_TIMEOUT_MS
       );
+      // Screen acquisition needs an explicit gesture before task startup.
+      await acceptAnswerScreenPermission(experimentPage);
       const dualRecordButton = experimentPage.locator("#btn-record-record");
       await expect(dualRecordButton).toBeVisible();
       await expect(dualRecordButton).toBeEnabled();

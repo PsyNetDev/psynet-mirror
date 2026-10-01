@@ -602,3 +602,20 @@ def test_receiver_crash_releases_ownership_and_cleans_partials(
     assert db.session.get(Recording, asset_id).upload_status == "expired"
     assert db.session.get(Recording, asset_id).input_path is None
     assert not files[0].exists()
+
+
+def test_request_expiry_does_not_commit_navigation(reservation, monkeypatch):
+    """Expiry performed by a participant request rolls back with that request."""
+    from psynet import media_upload
+
+    asset, _ = reservation
+    recording_id, participant_id = asset.id, asset.participant_id
+    deadline = asset.upload_deadline
+    db.session.commit()
+    monkeypatch.setattr(
+        media_upload, "_utcnow", lambda: deadline + timedelta(seconds=1)
+    )
+    media_upload._expire_participant_recordings(participant_id)
+    assert db.session.get(Recording, recording_id).upload_status == "expired"
+    db.session.rollback()
+    assert db.session.get(Recording, recording_id).upload_status == "pending"

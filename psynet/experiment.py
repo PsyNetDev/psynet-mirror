@@ -3365,6 +3365,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     .populate_existing()
                     .get(participant_id)
                 )
+            from .media_upload import _expire_participant_recordings
+
+            _expire_participant_recordings(participant.id)
             if not isinstance(participant, Bot):
                 participant.client_ip_address = client_ip_address
             if recovery_secret is not None and not timeline_hold_resume:
@@ -3848,6 +3851,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     resources.files("psynet")
                     / "resources/scripts/background-recording.js",
                     "/static/scripts/background-recording.js",
+                ),
+                (
+                    resources.files("psynet")
+                    / "resources/scripts/recording-capture.js",
+                    "/static/scripts/recording-capture.js",
                 ),
                 (
                     resources.files("psynet") / "resources/scripts/media-upload.js",

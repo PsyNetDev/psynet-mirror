@@ -1430,9 +1430,10 @@
     </div>
 
     <script>
-        {% include "macros/control/RecordRTC.js" %}
-        {% include "macros/control/adapter.js" %}
-
+        let sharedCapture;
+        psynet.trial.onEvent("trialConstruct", async () => {
+            sharedCapture = await psynet.getRecordingCapture();
+        });
         let videoPreviewPlayer = document.getElementById('video-control');
         let screenVideo = document.getElementById('screen-recording');
 
@@ -1453,18 +1454,13 @@
             }
             else { audioSettings = false; }
 
-            psynet.trial.onEvent("trialConstruct", () => new Promise((resolve) => {
-                navigator.mediaDevices.getUserMedia({
-                    audio: audioSettings,
-                    video: true,
-                }).then((stream) => {
-                    psynet.log.debug("Initialising video recorder.");
-                    cameraStream = stream;
-                    resolve();
-                }).catch((error) => {
-                    throw new Error('Cannot start video recording:', error.name + ":", error.message);
-                });
-            }));
+            psynet.trial.onEvent("trialConstruct", async () => {
+                try {
+                    cameraStream = await sharedCapture.devices.acquireAnswer("camera", audioSettings);
+                } catch (error) {
+                    psynet.log.warn(`Camera recording unavailable: ${error.message}`);
+                }
+            });
 
             psynet.trial.onEvent("trialConstruct", async function() {
                 await loadCameraPreview();
@@ -1472,9 +1468,7 @@
 
             psynet.trial.onEvent("trialPrepare", () => {
                 if (!recorderState.replayMode) {
-                    videoRecorder = new RecordRTCPromisesHandler(cameraStream, {
-                        mimeType: "video/webm",
-                    });
+                    videoRecorder = new sharedCapture.RecordingClip(cameraStream);
                     videoRecorder.stream = cameraStream;
                 }
             });
@@ -1524,7 +1518,8 @@
                 }
                 videoPreviewPlayer.src = null;
                 videoPreviewPlayer.srcObject = null;
-                setSrcObject(cameraStream, videoPreviewPlayer);
+                if (!cameraStream) return;
+                videoPreviewPlayer.srcObject = cameraStream;
                 videoPreviewPlayer.muted = true;
                 await videoPreviewPlayer.play();
                 videoDisplayMode = "preview";
@@ -1558,7 +1553,7 @@
             });
 
             psynet.addPageCleanupCallback(function() {
-                psynet.media.stopStream(cameraStream);
+                videoRecorder?.reset();
                 cameraStream = null;
                 if (recordedVideoObjectUrl !== null) {
                     psynet.media.revokeObjectUrl(recordedVideoObjectUrl);
@@ -1574,22 +1569,17 @@
         let screenStream = null;
 
         if (recordingScreen) {
-            psynet.trial.onEvent("trialConstruct", () => new Promise((resolve) => {
-                navigator.mediaDevices.getDisplayMedia({
-                    video: true
-                }).then((stream => {
-                    screenStream = stream;
-                    resolve(true);
-                })).catch((error) => {
-                    throw new Error("Unable to capture your screen. " + error.name + ":" + error.message);
-                });
-            }));
+            psynet.trial.onEvent("trialConstruct", async () => {
+                try {
+                    screenStream = await sharedCapture.devices.acquireAnswer("screen");
+                } catch (error) {
+                    psynet.log.warn(`Screen recording unavailable: ${error.message}`);
+                }
+            });
 
             psynet.trial.onEvent("trialPrepare", () => {
                 if (!recorderState.replayMode) {
-                    screenRecorder = new RecordRTCPromisesHandler(screenStream, {
-                        mimeType: 'video/webm'
-                    });
+                    screenRecorder = new sharedCapture.RecordingClip(screenStream);
                     screenRecorder.stream = screenStream;
                 }
             });
@@ -1609,6 +1599,7 @@
             });
 
             psynet.trial.onEvent("trialStop", async function() {
+                if (screenRecorder === null) return;
                 let state = await screenRecorder.getState();
                 if (state != "inactive") {
                     await screenRecorder.stopRecording();
@@ -1617,7 +1608,7 @@
             });
 
             psynet.addPageCleanupCallback(function() {
-                psynet.media.stopStream(screenStream);
+                screenRecorder?.reset();
                 screenStream = null;
             });
 

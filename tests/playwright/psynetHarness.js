@@ -605,6 +605,14 @@ async function waitForAudioRecordingReady(page, timeoutMs = 45000) {
     .toBe(true);
 }
 
+// Call at a known first screen-recording page, before waiting for trial startup.
+async function acceptAnswerScreenPermission(page) {
+  const dialog = page.locator("#answer-recording-permission");
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", {name:"Share screen", exact:true}).click();
+  await expect(dialog).toHaveCount(0);
+}
+
 async function waitForVideoRecordingReady(
   page,
   { timeoutMs = 45000, requireScreen = false } = {}
@@ -1687,6 +1695,7 @@ module.exports = {
   waitForTrialEvents,
   waitForAudioRecordingReady,
   waitForVideoRecordingReady,
+  acceptAnswerScreenPermission,
   waitForTimelinePageReady,
   readTimelinePageFromHtml,
   startParticipantRequestTracker,

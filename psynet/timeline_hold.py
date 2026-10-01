@@ -682,8 +682,19 @@ class _ConditionHoldPage(_TimelineHoldPage):
         self.condition = condition
         super().__init__(**kwargs)
 
+    def is_ready_to_resume(self, experiment, participant):
+        """Request a locked check when media expires, without writing on a poll."""
+        from .media_upload import _due_recordings
+
+        if _due_recordings(participant.id).first() is not None:
+            return True
+        return super().is_ready_to_resume(experiment, participant)
+
     def prepare_resume_if_ready(self, experiment, participant):
         """Do not fail a resumed tab for work that finished while it was inactive."""
+        from .media_upload import _expire_participant_recordings
+
+        _expire_participant_recordings(participant.id)
         if (
             not participant.failed
             and participant.pending_redirect is None

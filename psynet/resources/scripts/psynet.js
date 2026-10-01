@@ -3572,6 +3572,14 @@
     };
 
     // Document ownership preserves uploads across in-place page cleanup.
+    let recordingCapture;
+    psynet.getRecordingCapture = function () {
+      recordingCapture ||= recordingModule("/static/scripts/recording-capture.js").then(module => ({
+        devices: new module.RecordingDevices(),
+        RecordingClip: module.RecordingClip,
+      })).catch(error => { recordingCapture = null; throw error; });
+      return recordingCapture;
+    };
     let recordingUploadQueue;
     let backgroundRecorder;
     let backgroundUnavailable = false;
@@ -3598,7 +3606,7 @@
       try {
         const queue = await getRecordingQueue();
         const {BackgroundRecorder} = await recordingModule("/static/scripts/background-recording.js");
-        backgroundRecorder ||= new BackgroundRecorder(queue);
+        backgroundRecorder ||= new BackgroundRecorder(queue, (await psynet.getRecordingCapture()).devices);
         await backgroundRecorder.begin(config);
       } catch (error) {
         psynet.log.warn(`Background recording unavailable: ${error.message}`);

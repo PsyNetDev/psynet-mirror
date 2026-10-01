@@ -1,10 +1,13 @@
+import {RecordingDevices, RecordingClip} from "./recording-capture.js";
+
 /** Document-owned optional capture. Tracks survive ordinary SPA page cleanup;
  * each page owns its recorder/chunks. Uploads use the existing media queue.
  */
 export class BackgroundRecorder {
-  constructor(queue) {
+  constructor(queue, devices = new RecordingDevices()) {
     this.queue = queue;
-    this.streams = new Map();
+    this.devices = devices;
+    this.streams = devices.streams;
     this.decisions = new Map();
     this.clips = {};
   }
@@ -24,12 +27,8 @@ export class BackgroundRecorder {
       return;
     }
     const needed = config.sources.filter(source => {
-      const stream = this.streams.get(source);
-      if (stream && stream.getVideoTracks().some(track => track.readyState === "live") && stream._psynetAudio === config.audio) return false;
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop());
-        this.streams.delete(source);
-      }
+      if (this.devices.reusable(source, config.audio)) return false;
+      this.devices.release(source);
       return !this.decisions.has(source);
     });
     if (needed.length) await this.askPermission(needed);
@@ -54,28 +53,20 @@ export class BackgroundRecorder {
       remaining -= limit;
       slots -= 1;
       try {
-        const recorder = new MediaRecorder(stream, {mimeType:"video/webm", videoBitsPerSecond:256000, audioBitsPerSecond:32000});
-        const clip = {recorder, chunks:[], size:0, limit};
-        this.clips[source] = clip;
-        clip.done = new Promise(resolve => { clip.resolve = resolve; });
-        recorder.ondataavailable = event => {
-          if (this.unavailable[source]) return;
-          if (clip.size + event.data.size > limit) {
-            this.unavailable[source] = "size_limit";
-            clip.chunks = [];
-            this.stopClip(source);
-          } else {
-            clip.chunks.push(event.data);
-            clip.size += event.data.size;
+        await this.devices.acquire(source, {audio:config.audio, lowResolution:true});
+        const clip = new RecordingClip(stream, {
+          maxBytes:limit, maxDuration:config.max_duration, lowBitrate:true,
+          onChange: current => {
+            if (current.error) this.unavailable[source] = current.error;
+            if (current.outcome) this.outcomes[source] = current.outcome;
+            if (current.outcome === "source_ended") this.decisions.set(source, "source_ended");
             this.indicator.dataset.bytes = String(Object.values(this.clips).reduce((sum, item) => sum + item.size, 0));
-          }
-        };
-        recorder.onstop = () => { clearTimeout(clip.timer); clip.resolve(); this.updateIndicator(); };
-        recorder.onerror = () => { this.unavailable[source] = "capture_error"; clip.chunks = []; this.stopClip(source); };
-        clip.ended = () => { this.outcomes[source] = "source_ended"; this.decisions.set(source,"source_ended"); this.stopClip(source); };
-        stream.getVideoTracks().forEach(track => track.addEventListener("ended",clip.ended));
-        recorder.start(1000);
-        clip.timer = setTimeout(() => { this.outcomes[source] = "duration_limit"; this.stopClip(source); }, config.max_duration * 1000);
+            this.updateIndicator();
+          },
+        });
+        this.clips[source] = clip;
+        clip.startRecording();
+        if (clip.error) this.unavailable[source] = clip.error;
       } catch (error) {
         console.warn("Could not start background recording", source, error);
         this.unavailable[source] = "capture_error";
@@ -110,12 +101,8 @@ export class BackgroundRecorder {
           try {
             // Acquisition is called directly from this click: screen sharing
             // must retain the browser's user activation.
-            const stream = await (source === "camera"
-              ? navigator.mediaDevices.getUserMedia({video:{width:{ideal:640},height:{ideal:480},frameRate:{ideal:15,max:15}},audio:this.config.audio})
-              : navigator.mediaDevices.getDisplayMedia({video:{frameRate:{ideal:15,max:15}},audio:this.config.audio}));
-            if (finished) { stream.getTracks().forEach(track => track.stop()); return; }
-            stream._psynetAudio = this.config.audio;
-            this.streams.set(source,stream);
+            await this.devices.acquire(source, {audio:this.config.audio, lowResolution:true});
+            if (finished) { this.devices.release(source); return; }
             this.decisions.delete(source);
           } catch (error) {
             if (!finished) this.decisions.set(source,"permission_denied");
@@ -133,32 +120,17 @@ export class BackgroundRecorder {
   }
 
   updateIndicator() {
-    if (this.indicator) this.indicator.textContent = Object.values(this.clips).some(clip => clip.recorder.state === "recording") ? "Recording" : "Recording stopped";
-  }
-
-  stopClip(source) {
-    const clip = this.clips[source];
-    if (!clip) return;
-    clearTimeout(clip.timer);
-    try {
-      if (clip.recorder.state !== "inactive") clip.recorder.stop();
-    } catch (error) {
-      console.warn("Could not stop background recording",source,error);
-      this.unavailable[source] = "capture_error";
-      clip.resolve();
-    }
+    if (this.indicator) this.indicator.textContent = Object.values(this.clips).some(clip => clip.getState() === "recording") ? "Recording" : "Recording stopped";
   }
 
   async finish() {
     if (this.result) return this.result;
     const recordings = {};
     for (const [source, clip] of Object.entries(this.clips)) {
-      this.stopClip(source);
-      let timer;
-      try {
-        await Promise.race([clip.done, new Promise(resolve => { timer = setTimeout(() => { this.unavailable[source] = "capture_error"; resolve(); }, 3000); })]);
-      } finally { clearTimeout(timer); }
-      recordings[source] = this.unavailable[source] ? new Blob([]) : new Blob(clip.chunks,{type:"video/webm"});
+      await clip.stopRecording();
+      if (clip.error) this.unavailable[source] = clip.error;
+      if (clip.outcome) this.outcomes[source] = clip.outcome;
+      recordings[source] = this.unavailable[source] ? new Blob([]) : clip.getBlob();
       clip.chunks = [];
     }
     const sizes = Object.fromEntries(this.config.sources.map(source => [source,recordings[source]?.size || 0]));
@@ -169,12 +141,7 @@ export class BackgroundRecorder {
   }
 
   async discard() {
-    for (const [source,clip] of Object.entries(this.clips)) {
-      this.stopClip(source);
-      this.streams.get(source)?.getVideoTracks().forEach(track => track.removeEventListener("ended",clip.ended));
-      clip.recorder.ondataavailable = null;
-      clip.chunks = [];
-    }
+    for (const clip of Object.values(this.clips)) clip.reset();
     this.clips = {};
     this.result = null;
     this.indicator?.remove();

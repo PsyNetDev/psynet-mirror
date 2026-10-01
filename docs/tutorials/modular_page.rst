@@ -327,12 +327,35 @@ The upload deadline starts when the answer is accepted. The allowance is
 Complete receipt starts a separate 20-second processing allowance. Retransmitting
 or recovering a lost acceptance response does not extend either deadline.
 
-Legacy experiments with ``inplace_timeline_transitions=false`` and other storage
-backends retain the existing answer-upload path. This avoids routinely losing
+**Compatibility exception:** legacy experiments with
+``inplace_timeline_transitions=false`` and other storage backends retain the
+existing answer-upload path: video bytes still travel with ``/response``, and
+navigation waits for that transfer. This avoids routinely losing
 answer recordings on every legacy page change. In an in-place experiment, crossing
 a full-document boundary (for example entering Unity) can still abandon queued
 bytes; avoid such a boundary before required playback. Background recording always
 uses independent uploads, including on full-reload pages.
+
+Shared capture and permissions
+------------------------------
+
+Answer and background recorders share document-owned camera/screen streams and
+create a fresh WebM recorder for each clip. Compatible streams survive in-place
+page changes. Changing microphone requirements can require reacquisition;
+background clips never include microphone audio unless explicitly enabled.
+Background camera and screen capture request at most 640 × 480 pixels at 15 fps.
+Answer capture retains the control's recording timing, preview, and audio settings.
+
+The first answer screen recording displays a **Share screen** button before task
+startup. Subsequent compatible screen recordings reuse that stream. A full reload
+requires a new permission decision. Closing the chooser or continuing without
+recording leaves the answer without that source; the asynchronous missing-media
+policy described above applies.
+
+Active dependency polls also resolve expired recordings if the clock process is
+delayed. This fails the affected required-media trial, rather than failing the
+participant through a generic waiting timeout. Unrelated analysis timeouts and
+configured performance checks retain their existing behavior.
 
 Inspecting recording outcomes
 ----------------------------
