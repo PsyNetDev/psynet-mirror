@@ -60,10 +60,10 @@ def get_timeline():
 
 
 all_assets = {
-    "bier": asset("local_only/bier.wav", cache=True),
-    "file-concatenated": asset("local_only/file_concatenated.mp3", cache=True),
-    "funk-game-loop": asset("local_only/funk-game-loop.mp3", cache=True),
-    "train-1": asset("local_only/train1.wav", cache=True),
+    "bier": asset("local_only/bier.wav"),
+    "file-concatenated": asset("local_only/file_concatenated.mp3"),
+    "funk-game-loop": asset("local_only/funk-game-loop.mp3"),
+    "train-1": asset("local_only/train1.wav"),
 }
 
 example_js_synth_1 = ModularPage(

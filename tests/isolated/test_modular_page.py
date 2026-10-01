@@ -4,6 +4,7 @@ from jinja2 import DictLoader
 from markupsafe import Markup
 
 from psynet.modular_page import (  # AudioPrompt,; VideoSliderControl,
+    AudioMeterControl,
     Control,
     ModularPage,
     MusicNotationPrompt,
@@ -13,6 +14,10 @@ from psynet.modular_page import (  # AudioPrompt,; VideoSliderControl,
 )
 
 # from importlib import resources
+
+
+def test_audio_meter_without_calibration_has_no_sliders():
+    assert AudioMeterControl(calibrate=False).sliders is None
 
 
 def test_import_templates():

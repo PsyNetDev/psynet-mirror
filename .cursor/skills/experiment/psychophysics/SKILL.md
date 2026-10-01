@@ -1,152 +1,68 @@
 ---
 name: psychophysics
-description: Implement psychophysics experiments with PsyNet, focusing on precise visual displays, timing, response collection, and conservative interpretation of reference figures.
+description: Design-discipline checklist for PsyNet psychophysics experiments; exact visual displays with nothing extra on screen, neutral UI chrome, faithful stimulus sizes from papers, and reaction time only when asked. Use alongside implement-experiment when a task depends on precise visual stimuli, timing, or response latency.
 ---
 
-# Implement PsyNet psychophysics experiment
+# Psychophysics experiments
 
-## General guidelines
+## Read first
 
-Follow the general workflow in `implement-experiment/SKILL.md`.
+Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rst`; otherwise fetch `https://psynetdev.gitlab.io/PsyNet/<page>.html`.
 
-- Prioritize correct display of all visual elements, correct timing, and no
-  additional lingering display items such as fixation crosses or unrelated
-  graphical elements that are not specified.
+- `code/pages/graphics`: Native Graphics displays, frame sequences, and gating the control from a frame
+- `code/pages/event_management`: page events, the event log, and "Measuring reaction time"
+- `code/pages/control_gallery`: built-in response controls
+- `code/pages/theming`: color tokens for buttons, progress, and page chrome
+- `code/writing_a_trial_maker`: trials, scoring, and performance checks
 
-- Do not display any additional elements that are not mentioned in the task
-  description, including participant-facing text overlays inside the visual
-  stimulus area.
+Follow the overall workflow in `implement-experiment/SKILL.md`, and choose
+the page technology as in `develop-experiment-front-end/SKILL.md`.
 
-- During visual presentation frames, do not insert prompts or labels such as
-  "same or different" between/over stimuli unless the instructions explicitly
-  require that text to appear within the visual display itself. Put decision
-  wording in instructions or response controls otherwise.
+## What appears on screen
 
-- For white image or stimulus backgrounds, avoid visible borders, container
-  frames, or contrasting panels unless the experiment design explicitly calls
-  for them. A frame around a white visual field can change the apparent stimulus
-  context; white stimulus backgrounds should normally blend into the surrounding
-  white page background.
-
-- Make sure that PsyNet node and trial constructs are used correctly.
-
-- Measure reaction time with JavaScript only when needed, and keep it minimal.
-  Reaction time should be strongly tied to native events in PsyNet's event
-  management system, and reaction-time JavaScript should be isolated. Responses
-  should be recorded in the answer of each trial. Prefer existing PsyNet Control
-  mechanisms where possible, for example `GraphicPrompt` frame sequencing with
-  `prevent_control_response`/`activate_control_response`,
-  `KeyboardPushButtonControl`, and event-log reaction-time extraction before
-  adding custom JavaScript.
-
-- Implement keyboard-button responses with `KeyboardPushButtonControl` rather
-  than dedicated JavaScript.
-
-- Center response buttons and questions around the stimuli.
-
-- Do not show technical details that are not participant-facing, such as labeling
+- Show exactly the specified display elements, with correct timing. Do not
+  add fixation crosses, labels, borders, or other elements that the design
+  does not specify, and remove each element when the design says it ends.
+- Keep decision wording such as "same or different?" out of the stimulus
+  area during presentation frames unless the design puts it there. Put it in
+  the instructions or on the response controls.
+- Do not remove all trial-level guidance if the task would become ambiguous.
+  Put a short reminder outside the visual field, for example as the
+  `GraphicPrompt` text above the graphic.
+- Do not add frames, panels, or contrasting backgrounds around white
+  stimuli. They change the apparent context; white stimuli should blend into
+  the white content surface.
+- Center response buttons and questions on the stimulus.
+- Do not show terms that are not meant for participants, such as calling
   display items "stimuli".
 
-- When implementing an experiment based on a PDF paper, keep in mind that display
-  items such as dots and stimuli may be exaggerated in size in schematic figures.
-  If the paper provides explicit size specifications for the elements, use those
-  values. If not, be cautious when estimating sizes from schematic figures,
-  especially when the figure contains multiple components and the actual display
-  is only one part of the image. However, if a screenshot or a clear
-  single-display schematic is provided, the relative sizes are likely to be more
-  indicative of the intended appearance.
+## Neutral UI chrome
 
-- Use a neutral color theme for psynet buttons and progress bars (e.g. gray) to
-  avoid biasing color-related experiments.
+For color-related or color-sensitive experiments, make buttons, the progress
+rail, and selected states neutral (for example gray) by redefining the accent
+and chrome tokens described in `code/pages/theming`, not by styling buttons
+alone. Check the final participant screenshot to confirm that the progress
+indicator changed as well as the buttons.
 
-## Task guidance and neutral UI chrome
+## Sizes from papers
 
-- Avoid putting decision prompts or labels inside the stimulus area, but do not
-  remove all trial-level guidance when the participant's task would become
-  ambiguous. Put concise task guidance outside the visual field, for example
-  above the `GraphicPrompt`, when participants need a reminder such as "Choose
-  the number of the original item most similar to the probe."
+Use explicit size specifications from the paper when it gives them.
+Schematic figures often exaggerate dots and stimuli, especially when the
+display is one panel of a larger figure, so be cautious about estimating
+sizes from them. A screenshot or a clear single-display schematic is a more
+reliable guide to relative sizes.
 
-- PsyNet's top progress bar may keep its default blue styling even when response
-  buttons are customized. For color-related or color-sensitive experiments,
-  neutralize the progress bar along with buttons and other UI chrome, for
-  example by adding page CSS for `#timeline-progress-bar` and `.progress`.
+## Reaction time
 
-- Verify neutral UI chrome in the final participant screenshot or video. For
-  PsyNet pages, target the actual header selectors, including
-  `#timeline-progress-bar`, `.progress-bar[role="progressbar"]`, and
-  `.header .progress`, not only response-button classes.
+Do not measure reaction time unless the user asks for it. When it is
+required:
 
-## Reaction time from the native event log
-
-You should not measure reaction time, unless explicitly instructed to do so.
-All instructions below applies only if you explicitly required to provide reaction times.
-
-Reaction time can usually be recorded without any bespoke timing JavaScript. Drive
-the stimulus with a `GraphicPrompt` whose response is locked until the stimulus
-frame, and read the timing back from the page's event log in `format_answer`.
-
-The key wiring:
-
-- Set `prevent_control_response=True` (and usually `prevent_control_submit=True`)
-  on the `GraphicPrompt`, so the response interface is locked during the fixation
-  frame.
-- Mark the stimulus frame with `activate_control_response=True` (and
-  `activate_control_submit=True`). PsyNet then fires the standard `responseEnable`
-  event exactly at stimulus onset, which is logged in the event log.
-- Use `KeyboardPushButtonControl`; each press logs a `pushButtonClicked` event.
-- Reaction time is `localTime(pushButtonClicked) − localTime(responseEnable)`,
-  i.e. stimulus-onset-to-response.
-
-```python
-from datetime import datetime
-from psynet.graphics import Circle, Frame, GraphicPrompt, Path
-from psynet.modular_page import KeyboardPushButtonControl, ModularPage
-
-
-def _parse(t):
-    # Front-end localTime values are ISO 8601 strings ending in "Z".
-    return datetime.fromisoformat(t.replace("Z", "+00:00"))
-
-
-def reaction_time_msec(event_log):
-    onset = next((e["localTime"] for e in event_log if e["eventType"] == "responseEnable"), None)
-    click = next((e["localTime"] for e in reversed(event_log) if e["eventType"] == "pushButtonClicked"), None)
-    if onset is None or click is None:
-        return None
-    return (_parse(click) - _parse(onset)).total_seconds() * 1000.0
-
-
-class RatingControl(KeyboardPushButtonControl):
-    def format_answer(self, raw_answer, **kwargs):
-        event_log = kwargs["metadata"].get("event_log", [])
-        return {"rating": int(raw_answer), "rt_msec": reaction_time_msec(event_log)}
-
-
-page = ModularPage(
-    "trial",
-    prompt=GraphicPrompt(
-        text="How similar are these two shapes?",
-        dimensions=[200, 100],
-        frames=[
-            Frame([Path("fixation", "M93,50 L107,50 M100,43 L100,57",
-                        attributes={"stroke": "#000", "stroke-width": 3, "fill": "none"})],
-                  duration=0.8),
-            Frame([Circle("left", 60, 50, radius=26, attributes={"fill": "#ff0000"}),
-                   Circle("right", 140, 50, radius=26, attributes={"fill": "#0000ff"})],
-                  duration=None, activate_control_response=True, activate_control_submit=True),
-        ],
-        prevent_control_response=True,
-        prevent_control_submit=True,
-    ),
-    control=RatingControl(choices=["1", "2", "3", "4", "5"],
-                          keys=["Digit1", "Digit2", "Digit3", "Digit4", "Digit5"]),
-    time_estimate=5,
-)
-```
-
-For simulation, leave `bot_response` unset and implement `get_bot_response` to
-return `BotResponse(raw_answer=..., metadata={"event_log": [...]})` with a
-synthetic `responseEnable`/`pushButtonClicked` pair, so simulated bots flow through
-the same `format_answer` and produce real `rt_msec` values. (Passing
-`bot_response=None` instead would bypass `get_bot_response` and `format_answer`.)
+- Use the pattern in "Measuring reaction time" in
+  `code/pages/event_management`: a `GraphicPrompt` that gates the response
+  until the stimulus frame, `KeyboardPushButtonControl`, and a
+  `format_answer` that computes the latency from the event log. Store the
+  latency in each trial's answer.
+- Write custom timing JavaScript only if that pattern cannot express the
+  design, keep it isolated, and trigger it from PsyNet events.
+- Give bots a synthetic event log as that section describes, so simulated
+  data contains real latencies.

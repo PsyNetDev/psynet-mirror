@@ -8,7 +8,7 @@ otherwise. RCs are tagged and uploaded to PyPI but are **not** merged back
 into `master` until the final release.
 
 The human checkpoints from the
-[Human-in-the-loop policy](#human-in-the-loop-policy) apply at the
+[Human-in-the-loop policy](../SKILL.md#human-in-the-loop-policy) apply at the
 equivalent points: pushing the release branch, pushing the RC tag,
 uploading the RC to PyPI, and posting the Slack announcement.
 
@@ -38,13 +38,13 @@ Start from the release branch created in step 1 of the minor release path.
 Instead of bumping straight to `13.2.0`, bump to `13.2.0rc1` and tag it,
 using the shared steps with the RC version:
 
-1. [Update the CHANGELOG](#update-the-changelog) with
+1. [Update the CHANGELOG](shared-steps.md#update-the-changelog) with
    `psynet dev changelog release 13.2.0rc1 YYYY-MM-DD`. This creates a
    `# [13.2.0rc1](...) Release candidate - YYYY-MM-DD` section. If further
    changes land before the next RC or final release, record them as new
    fragments in `changelog.d/`.
-2. [Bump the version](#bump-the-version) from `13.2.0a0` to `13.2.0rc1`.
-3. [Update What's new](#update-whats-new) for experimenter-facing highlights
+2. [Bump the version](shared-steps.md#bump-the-version) from `13.2.0a0` to `13.2.0rc1`.
+3. [Update What's new](shared-steps.md#update-whats-new) for experimenter-facing highlights
    or breaking changes (usually on the first RC of a minor/major).
 4. Push the release branch and tag the RC. RC tags are pushed directly from
    the release branch — there is **no MR** and **no merge to `master`** at
@@ -57,19 +57,19 @@ using the shared steps with the RC version:
    ```
 
    Wait for the tag pipeline to pass on GitLab.
-6. [Build and upload to PyPI](#build-and-upload-to-pypi) using the RC
+6. [Build and upload to PyPI](shared-steps.md#build-and-upload-to-pypi) using the RC
    version. Since the pre-build `rm -rf` guarantees a clean `dist/`, the
    broader glob `dist/psynet-13.2.0rc1*` is safe here. RCs are not marked
    as the latest release on PyPI, so users must opt in with
    `pip install psynet==13.2.0rc1`.
-7. [Verify the documentation deployment](#verify-the-documentation-deployment):
+7. [Verify the documentation deployment](shared-steps.md#verify-the-documentation-deployment):
    confirm that `https://psynetdev.gitlab.io/PsyNet/rc/v13.2.0rc1/` loads
    and that the RC appears in the version dropdown at
    <https://psynetdev.gitlab.io/PsyNet/>.
 8. **Skip the GitLab release entry.** RCs are tag-only on GitLab (see
-   above); the [Create the GitLab release](#create-the-gitlab-release)
+   above); the [Create the GitLab release](shared-steps.md#create-the-gitlab-release)
    step applies to final releases only.
-9. [Announce the release on Slack](#announce-the-release-on-slack) with the
+9. [Announce the release on Slack](shared-steps.md#announce-the-release-on-slack) with the
    RC version, writing the highlights file from the RC's CHANGELOG
    section as described there. `psynet dev release announce 13.2.0rc1
    --summary-file ...` auto-detects the `rc` segment and generates an
@@ -154,10 +154,10 @@ Once the latest RC has been validated and no further changes are needed:
    Then review the generated/folded section and remove any now-empty
    intermediate RC headings.
 
-2. [Bump the version](#bump-the-version) from `13.2.0rcN` to `13.2.0`.
+2. [Bump the version](shared-steps.md#bump-the-version) from `13.2.0rcN` to `13.2.0`.
 
 3. Resume the minor release path from
-   [step 4 (Create a merge request)](#4-create-a-merge-request) onwards
+   [step 4 (Create a merge request)](minor-release.md#4-create-a-merge-request) onwards
    to review the release MR, tag `v13.2.0` from the release branch,
    publish to PyPI, create the GitLab release, announce on Slack, and
    then merge the release branch back into `master`.

@@ -92,7 +92,9 @@ dev = [
     "psynet[experiment]",
     "asv",
     "beautifulsoup4",
+    "citeproc-py",
     "google-cloud-translate",
+    "myst-parser",
     "openai",
     "pre-commit",
     "pydata-sphinx-theme",
@@ -102,7 +104,9 @@ dev = [
     "sphinx-autobuild",
     "sphinx-autodoc-typehints<3.0.0",
     "sphinx-copybutton",
+    "sphinx-design",
     "sphinx-inline-tabs",
+    "sphinx-reredirects",
     "virtualenv",
 ]
 slack = [

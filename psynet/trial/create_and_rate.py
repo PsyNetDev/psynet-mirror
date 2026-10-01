@@ -112,10 +112,25 @@ class CreateAndRateTrialMixin(object):
 
 
 class CreateTrialMixin(CreateAndRateTrialMixin):
+    """
+    Mixin for creator trials. List it before a :class:`~psynet.trial.chain.ChainTrial` subclass.
+
+    Example: ``class CreateTrial(CreateTrialMixin, ImitationChainTrial)``.
+    """
+
     pass
 
 
 class RateOrSelectTrialMixin(CreateAndRateTrialMixin):
+    """
+    Base mixin for trials that evaluate creations; see :class:`RateTrialMixin` and :class:`SelectTrialMixin`.
+
+    On construction, the trial stores its evaluation targets in ``targets``. Candidates are
+    the node's finalized, non-failed creator trials, plus the node itself when the trial maker
+    sets ``include_previous_iteration=True``. Use ``isinstance(trial, RateOrSelectTrialMixin)``
+    to tell evaluation trials apart from creator trials.
+    """
+
     def __init__(self, experiment, node, participant, *args, **kwargs):
         super().__init__(experiment, node, participant, *args, **kwargs)
         self.targets = self.get_targets()
@@ -153,6 +168,12 @@ class RateOrSelectTrialMixin(CreateAndRateTrialMixin):
 
 
 class SelectTrialMixin(RateOrSelectTrialMixin):
+    """
+    Mixin for trials where the participant picks one target; used with ``rate_mode="select"``.
+
+    The answer must be the string form of one of ``targets``.
+    """
+
     def get_targets(self):
         assert self.trial_maker.target_selection_method == "all"
         return self.get_all_targets()
@@ -166,6 +187,13 @@ class SelectTrialMixin(RateOrSelectTrialMixin):
 
 
 class RateTrialMixin(RateOrSelectTrialMixin):
+    """
+    Mixin for trials where the participant gives numeric ratings; used with ``rate_mode="rate"``.
+
+    With ``target_selection_method="one"``, each trial rates the target with the fewest ratings
+    so far; with ``"all"``, it rates every target and the answer is a list of numbers.
+    """
+
     def get_targets(self):
         target_selection_method = self.trial_maker.target_selection_method
         if target_selection_method == "all":
@@ -243,6 +271,15 @@ class RateTrialMixin(RateOrSelectTrialMixin):
 
 
 class CreateAndRateNodeMixin(object):
+    """
+    Mixin that adds create-and-rate aggregation to a :class:`~psynet.trial.chain.ChainNode` subclass.
+
+    List it before the node class, e.g.
+    ``class MyNode(CreateAndRateNodeMixin, ImitationChainNode)``.
+    :meth:`summarize_trials` returns the winning target: the one with the highest mean
+    rating (``rate_mode="rate"``) or the most selections (``rate_mode="select"``).
+    """
+
     def __init__(self, **kwargs):
         extended_class = get_extended_class(self)
         assert issubclass(extended_class, ChainNode), (
@@ -289,6 +326,7 @@ class CreateAndRateNodeMixin(object):
         return str2target[target_str_with_highest_count]
 
     def summarize_trials(self, trials, experiment, participant):
+        """Return the winning target from this node's finalized rater or selector trials."""
         trial_maker = self.trial_maker
         all_rate_trials = trial_maker.rater_class.query.filter_by(
             node_id=self.id, failed=False, finalized=True
@@ -305,6 +343,8 @@ class CreateAndRateNodeMixin(object):
 
 
 class CreateAndRateNode(CreateAndRateNodeMixin, ChainNode):
+    """Ready-made create-and-rate node whose definition is its seed (default ``{}``)."""
+
     def create_initial_seed(self, experiment, participant):
         return {}
 
@@ -313,6 +353,41 @@ class CreateAndRateNode(CreateAndRateNodeMixin, ChainNode):
 
 
 class CreateAndRateTrialMakerMixin(object):
+    """
+    Mixin that turns a chain trial maker into a create-and-rate trial maker.
+
+    List it before the trial maker class, e.g.
+    ``class MyTrialMaker(CreateAndRateTrialMakerMixin, ImitationChainTrialMaker)``.
+    Pass the arguments below alongside the usual trial maker arguments;
+    ``creator_class`` is used as the trial maker's ``trial_class``.
+
+    Parameters
+    ----------
+    n_creators : int
+        Creator trials per node.
+    n_raters : int
+        Rater or selector trials per node.
+    node_class : class
+        Node class, which must include :class:`CreateAndRateNodeMixin`.
+    creator_class : class
+        Creator trial class, which must include :class:`CreateTrialMixin`.
+    rater_class : class
+        Evaluation trial class, which must include :class:`RateTrialMixin`
+        (``rate_mode="rate"``) or :class:`SelectTrialMixin` (``rate_mode="select"``).
+    start_nodes : list
+        Initial nodes, one per chain.
+    rate_mode : str
+        ``"rate"`` or ``"select"``.
+    include_previous_iteration : bool
+        If ``True``, the current node is also a target; start nodes then need a non-empty seed.
+    target_selection_method : str
+        ``"one"`` (one target per rater trial) or ``"all"`` (every target per trial).
+    randomize_target_order : bool
+        Shuffle the order in which targets are presented.
+    verbose : bool
+        Log the ratings behind each target selection.
+    """
+
     NEEDS_CREATORS = "needs_creators"
     WAITING_FOR_CREATORS = "waiting_for_creators"
     READY_FOR_RATERS = "ready_for_raters"

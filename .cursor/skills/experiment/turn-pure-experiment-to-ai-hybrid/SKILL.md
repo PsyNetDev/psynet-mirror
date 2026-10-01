@@ -5,6 +5,14 @@ description: Convert a pure-human PsyNet experiment into an AI or hybrid human-A
 
 # Turn a pure-human experiment into an AI hybrid
 
+## Read first
+
+Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rst`; otherwise fetch `https://psynetdev.gitlab.io/PsyNet/<page>.html`.
+
+- `test/backend` — bots and scripted answers
+- `deploy/running_a_study` — recruitment during a live study
+- `reference/configuration` — configuration variables
+
 ## Workflow
 
 - For local mock or stochastic participant profiles before live hybrid launch,

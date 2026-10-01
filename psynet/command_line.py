@@ -67,7 +67,7 @@ from .experiment_scaffold import (
 )
 from .log import bold
 from .lucid import get_lucid_service
-from .recruiters import BaseLucidRecruiter, HotAirRecruiter
+from .recruiters import BaseLucidRecruiter, GenericRecruiter, HotAirRecruiter
 from .redis import redis_vars
 from .serialize import serialize, unserialize
 from .utils import (
@@ -1278,7 +1278,7 @@ def run_pre_checks_deploy(local_, recruiter):
     check_psynet_requirement_is_unambiguous()
     check_core_dependency_versions_match_requirements()
 
-    if local_ and not isinstance(recruiter, HotAirRecruiter):
+    if local_ and not isinstance(recruiter, (GenericRecruiter, HotAirRecruiter)):
         raise click.UsageError(
             "``psynet deploy local`` currently only supports the 'generic' recruiter. "
             "Set recruiter = generic in your experiment config, or deploy to a remote server instead "
@@ -1764,9 +1764,12 @@ def run_pre_checks(mode, local_, heroku=False, docker=False, app=None):
     # Directory readiness is checked earlier in ``_pre_launch`` (before Redis)
     # and directly from ``psynet test local``. Avoid duplicating that work here.
 
+    if not local_:
+        _check_constraints_before_remote_deploy()
+
     exp = get_experiment()
     exp.check_config()
-    exp.check_size()
+    exp.check_size(heroku=heroku)
     exp.check_consents()
     exp.check_python_dependencies()
 
@@ -1812,8 +1815,9 @@ def run_pre_checks(mode, local_, heroku=False, docker=False, app=None):
             if config.get("docker_image_base_name", None) is None:
                 raise click.UsageError(
                     "docker_image_base_name must be specified in config.txt or ~/.dallingerconfig before you can "
-                    "launch an experiment using Docker. For example, you might write the following: \n"
-                    "docker_image_base_name = registry.gitlab.developers.cam.ac.uk/mus/cms/psynet-experiment-images"
+                    "launch an experiment using Docker. Any image name works unless you push to a "
+                    "registry, for example: \n"
+                    "docker_image_base_name = my-psynet-experiments"
                 )
             _expected_docker_volumes = "${HOME}/psynet-data/assets:/psynet-data/assets"
             if _expected_docker_volumes not in config.get(
@@ -1854,6 +1858,18 @@ def run_pre_checks(mode, local_, heroku=False, docker=False, app=None):
             run_pre_checks_sandbox()
         elif mode == "live":
             run_pre_checks_deploy(local_, recruiter)
+
+
+def _check_constraints_before_remote_deploy():
+    """Stop a remote deploy of a standalone experiment with a stale ``constraints.txt``.
+
+    Docker deploys set ``SKIP_DEPENDENCY_CHECK`` for Dallinger later in
+    ``_pre_launch``, so without this check the image would be built from the
+    stale lockfile. In-repo demos use PsyNet's development environment instead.
+    """
+    if is_in_repo_experiment() or os.environ.get("SKIP_DEPENDENCY_CHECK"):
+        return
+    _check_constraints()
 
 
 def run_pre_checks_sandbox():
@@ -2430,8 +2446,17 @@ def _check_constraints(spinner=None):
             + generate_constraints_cmd
         )
 
-    from .constraints_compile import constraints_are_up_to_date
+    from .constraints_compile import (
+        constraints_are_hand_written,
+        constraints_are_up_to_date,
+    )
 
+    if constraints_are_hand_written(constraints_path):
+        click.echo(
+            "constraints.txt was written by hand, so it is not checked against "
+            "requirements.txt."
+        )
+        return
     if not constraints_are_up_to_date(
         requirements_path=requirements_path,
         constraints_path=constraints_path,
@@ -2593,9 +2618,9 @@ def export_arguments(func):
             default="collected",
             help=(
                 "Which assets to export; valid values are none and collected. "
-                "'collected' (the default) exports files uploaded or recorded "
-                "during this deployment (e.g. recordings), excluding cached "
-                "stimuli, external URLs, and on-demand generation. "
+                "'collected' (the default) exports assets created while the "
+                "experiment was running (e.g. recordings), excluding assets prepared before "
+                "launch, external URLs, and on-demand generation. "
                 "'none' omits the assets folder."
             ),
         ),

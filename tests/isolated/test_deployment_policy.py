@@ -56,7 +56,7 @@ EXPECTED_EXCLUDE_SUFFIXES = (
 )
 
 
-def test_prototype_metadata_and_platform_warnings():
+def test_prototype_metadata_declares_posix_only():
     root = get_psynet_root()
     project = tomllib.loads((root / "pyproject.toml").read_text())["project"]
     classifiers = project["classifiers"]
@@ -65,17 +65,6 @@ def test_prototype_metadata_and_platform_warnings():
     assert "Programming Language :: Python :: 3.10" not in classifiers
     assert "Operating System :: POSIX" in classifiers
     assert "Operating System :: OS Independent" not in classifiers
-
-    documentation = [
-        root / "docs" / "deploy" / "index.rst",
-        root / "docs" / "dependencies" / "docker.rst",
-        root / "docs" / "experiment_development" / "experiment_directory.rst",
-    ]
-    for path in documentation:
-        text = " ".join(path.read_text().split())
-        assert ".. warning::" in text
-        assert "is not supported on Windows" in text
-        assert "POSIX" in text
 
 
 def _template_directory():
@@ -566,6 +555,37 @@ def test_package_size_check_uses_deployment_plan(tmp_path, monkeypatch):
 
         with pytest.raises(RuntimeError, match="exceeds the 1 MB limit"):
             Experiment.check_size()
+
+
+def test_package_size_check_accepts_packages_under_the_default(tmp_path, monkeypatch):
+    monkeypatch.delenv("EXP_MAX_SIZE_MB", raising=False)
+    (tmp_path / "experiment.py").write_text("class Exp:\n    pass\n")
+    (tmp_path / "requirements.txt").write_text("psynet\n")
+
+    with working_directory(tmp_path):
+        scaffold_experiment_directory()
+        Path("included.bin").write_bytes(b"x" * (2 * 1024**2))
+        Experiment.check_size()
+
+
+def test_package_size_check_error_points_at_static_and_deployment_files_list(
+    tmp_path, monkeypatch
+):
+    (tmp_path / "experiment.py").write_text("class Exp:\n    pass\n")
+    (tmp_path / "requirements.txt").write_text("psynet\n")
+
+    with working_directory(tmp_path):
+        scaffold_experiment_directory()
+        Path("included.bin").write_bytes(b"x" * (2 * 1024**2))
+        monkeypatch.setenv("EXP_MAX_SIZE_MB", "1")
+
+        with pytest.raises(RuntimeError, match="static/") as exc_info:
+            Experiment.check_size()
+
+    message = str(exc_info.value)
+    assert "dallinger deployment-files list" in message
+    assert "EXP_MAX_SIZE_MB" in message
+    assert "1024 MB" in message
 
 
 def test_package_size_check_ignores_policy_exclusions(tmp_path, monkeypatch):

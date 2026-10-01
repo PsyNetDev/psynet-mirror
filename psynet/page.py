@@ -10,7 +10,7 @@ from dominate import tags
 from dominate.dom_tag import dom_tag
 from markupsafe import Markup
 
-from .asset import CachedAsset, ExternalAsset
+from .asset import ExternalAsset, FileAsset
 from .modular_page import AudioPrompt, ModularPage
 from .timeline import (
     CodeBlock,
@@ -454,6 +454,8 @@ class DebugResponsePage(PageMaker):
 
 
 class VolumeCalibration(Module):
+    """Module that loops a sound so the participant can set a comfortable volume."""
+
     def __init__(
         self,
         url=str(resources.files("psynet") / "resources/audio/brown_noise.wav"),
@@ -473,7 +475,7 @@ class VolumeCalibration(Module):
         if str(url).startswith("http"):
             return ExternalAsset(url=url)
         else:
-            return CachedAsset(input_path=url)
+            return FileAsset(input_path=url)
 
     def page(self, min_time, time_estimate, id_):
         return PageMaker(

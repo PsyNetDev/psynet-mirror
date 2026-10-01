@@ -33,10 +33,14 @@ configuring translator API credentials, generating translated `.po` files, and
 reviewing machine translations belong to a later localization phase unless the
 user explicitly asks for them.
 
+## Read first
+
+Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rst`; otherwise fetch `https://psynetdev.gitlab.io/PsyNet/<page>.html`.
+
+- `code/participants/internationalization` — marking text and extracting `experiment.pot`
+
 ## Prerequisites
 
-- Read PsyNet's internationalization documentation, currently
-  `~/PsyNet/docs/tutorials/internationalization.rst`.
 - Inspect the translation demo
   (`demos/experiments/translation/experiment.py`).
 - Review the target experiment's `experiment.py`, templates, config files, and

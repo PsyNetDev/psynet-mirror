@@ -454,7 +454,12 @@ class ArtifactStorage:
 
 class LocalArtifactStorage(ArtifactStorage):
     """
-    Manage the storage of artifacts in a local directory.
+    Manage the storage of artifacts in a local directory; the default ``artifact_storage``.
+
+    Parameters
+    ----------
+    root : str
+        Directory for artifacts, created if missing. Defaults to ``~/psynet-data/artifacts``.
     """
 
     def __init__(self, root: str = os.path.expanduser("~/psynet-data/artifacts")):
@@ -652,6 +657,24 @@ class LocalArtifactStorage(ArtifactStorage):
 class S3ArtifactStorage(ArtifactStorage):
     """
     Manage the storage of artifacts in an S3 bucket.
+
+    Set it as the experiment's ``artifact_storage`` class attribute to share export backups
+    and deployment status across servers. Uses the AWS credentials and ``aws_region`` from
+    the Dallinger config.
+
+    Parameters
+    ----------
+    root : str
+        Key prefix inside the bucket under which artifacts are stored.
+    bucket_name : str
+        Name of an existing S3 bucket.
+
+    Examples
+    --------
+    ::
+
+        class Exp(psynet.experiment.Experiment):
+            artifact_storage = S3ArtifactStorage(root="artifacts", bucket_name="my-bucket")
     """
 
     def __init__(self, root: str, bucket_name: str):

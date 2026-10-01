@@ -112,9 +112,10 @@ section. That warning is expected for retrospective audits.
    ```
 
    Add a manifest entry first when the artifact is not already declared.
-6. Record checks and blockers honestly in `audit.json`. A coherent packet may
-   still have blockers; validate success means structure is OK, not that the
-   experiment is ready.
+6. Record checks and blockers honestly in `audit.json` (fields, statuses and
+   severities: "Checks and blockers" in `test/audit_reference`). A coherent
+   packet may still have blockers; validate success means structure is OK, not
+   that the experiment is ready.
 7. Before handoff, run:
 
    ```bash
@@ -128,7 +129,8 @@ Choose evidence that matches the experiment. Common artifacts are:
 
 - `artifacts/participant.mp4`: concise participant walkthrough;
 - `artifacts/screenshots/*.png`: targeted participant-facing states;
-- `artifacts/screenshots/manifest.json`: optional screenshot captions;
+- `artifacts/screenshots/manifest.json`: optional screenshot captions, keyed by
+  paths relative to `artifacts/` (`"screenshots/01-consent.png"`);
 - `artifacts/performance.json`: sustained performance-test output;
 - `artifacts/monitor.html`: static monitor snapshot;
 - `artifacts/data.zip`: exported local or real-run data;
@@ -137,6 +139,8 @@ Choose evidence that matches the experiment. Common artifacts are:
 - `simulate/design/simulation.ipynb` and `simulate/design/run.json`: optional
   design simulation;
 - `logs/*.log`: concise logs that explain commands and failures.
+  `psynet debug local` prints the dashboard password; replace it (for example
+  with `<redacted>`) before saving that output.
 
 Use `record-participant-video` for screenshot and video production. Keep videos
 at most 3 minutes and 1280×720. Audit notebooks may be up to 10 MB, but avoid
@@ -379,6 +383,10 @@ fig.show()
 Use `AUDIT_FIGURE_LAYOUT` for the simpler case of a single encoding with a few
 short labels, where a legend row above the plot reads better than a side
 column.
+
+Both layouts contain a `title` key, so set the title text in the Plotly Express
+call, as above, or in a separate `fig.update_layout(title_text=...)` call.
+`fig.update_layout(title="...", **AUDIT_FIGURE_LAYOUT)` raises `TypeError`.
 
 ### Metric controls
 

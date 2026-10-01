@@ -1,4 +1,3 @@
-.. _developer:
 .. highlight:: shell
 
 .. |br| raw:: html
@@ -8,6 +7,11 @@
 =============================
 Contributing a feature/bugfix
 =============================
+
+PsyNet's ``master`` branch is the default branch. Each change is made on its
+own feature or bugfix branch, created from ``master`` and merged back through
+a merge request once it has been reviewed. Releases are cut from ``master``
+onto ``release-MAJOR.MINOR`` branches (see :doc:`making_a_release`).
 
 Step 1: Creating an issue
 +++++++++++++++++++++++++

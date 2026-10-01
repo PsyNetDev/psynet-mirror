@@ -219,6 +219,11 @@ def error_response(*args, **kwargs):
 
 
 def is_experiment_launched():
+    """
+    Return ``True`` once :meth:`Experiment.on_launch` has finished.
+
+    Useful as a guard in scheduled tasks that should not run before launch.
+    """
     return redis_vars.get("launch_finished", default=False)
 
 
@@ -464,7 +469,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     Default experiment variables accessible through `psynet.experiment.Experiment.var` are:
 
     max_participant_payment : `float`
-        The maximum payment in US dollars a participant is allowed to get. Default: `25.0`.
+        The maximum payment a participant is allowed to get, in the currency set by
+        the ``currency`` configuration key. Default: `25.0`.
 
     soft_max_experiment_payment : `float`
         The recruiting process stops if ``amount_spent()`` (recorded
@@ -581,7 +587,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         Default: ``768``.
 
     supported_locales : ``list``
-        List of locales (i.e., ISO language codes) a user can pick from, e.g., ``'["en"]'``.
+        Locales (ISO language codes) that the experiment is translated into, e.g., ``'["de", "nl"]'``.
+        Each deployment runs in the single locale set by ``locale``.
         Default: ``'[]'``.
 
     force_google_chrome : ``bool``
@@ -1410,35 +1417,39 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         context=None,
         **kwargs,
     ):
-        """
+        """Return the experiment's basic data, a summary for analysis defined by the experimenter.
+
         Parameters
         ----------
+        context : str, optional
+            Where the data is being requested:
 
-        context: str
-             Will receive a string that describes the context in which the function has been called.
-             Possibles include:
-             - "dashboard": The function is producing data to be displayed in the dashboard
-             - "export": The function is being called within psynet export
-             - "backup": The function is being called within PsyNet autobackups
-             The default implementation of get_basic_data ignores this context parameter and just returns the same data in all
-             contexts, but experimenters can optionally make their logical conditional on this variable.
+            - ``"monitor"``: the dashboard's Basic data tab;
+            - ``"route"``: the ``/basic_data`` HTTP endpoint;
+            - ``"export"``: ``psynet export``;
+            - ``"backup"``: automatic backups.
 
-        ** kwargs:
-            Dictionary of arbitrary URL GET parameters that can optionally be used by the get_basic_data implementation to
-            further customiser what data is provided.
+            The default implementation ignores it; an override can return
+            different data depending on the context.
+        **kwargs
+            Query parameters from the dashboard tab or the ``/basic_data``
+            endpoint, including ``dashboard_user`` and ``dashboard_password``
+            for the endpoint. Empty for exports and backups.
 
         Returns
         -------
         dict | None
-            A dictionary of data to be returned to the client. The keys of the dictionary should be strings, and the
-            values can be any JSON-serializable object. Return ``None`` if no basic data is provided.
+            A dictionary of JSON-serializable data, saved as ``basic_data.json``
+            in exports. When ``context`` is ``"export"``, the values may instead
+            be pandas data frames, each saved as a CSV file under
+            ``basic_data/``; the other contexts need JSON-serializable data.
+            Return ``None`` if the experiment defines no basic data. See
+            :doc:`/data/basic_data`.
 
         Raises
         ------
         DataError
-            A custom exception that can be raised if the data cannot be retrieved for some reason.
-
-        See `artifact_storage` for an example.
+            If the data cannot be retrieved.
         """
         return None
 
@@ -2281,6 +2292,20 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             )
 
     def pre_deploy(self, redeploying_from_archive=False):
+        """
+        Prepare the experiment for deployment, on the machine that launches it.
+
+        Assets deposited during this method count as prepared before launch, so they are
+        left out of ``psynet export``. Deposit assets from a ``PreDeployRoutine`` rather
+        than from an override of this method.
+        """
+        from .asset import _preparing_for_deployment
+
+        with _preparing_for_deployment():
+            self._pre_deploy(redeploying_from_archive=redeploying_from_archive)
+
+    def _pre_deploy(self, redeploying_from_archive=False):
+        """Run the deployment preparation steps; see :meth:`pre_deploy`."""
         self.update_deployment_id()
         self.setup_experiment_config()
         self.setup_experiment_variables()
@@ -2335,20 +2360,19 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             )
 
     @classmethod
-    def check_size(cls):
+    def check_size(cls, *, heroku: bool = False):
         """Reject deployment plans that exceed the configured package limit."""
         from dallinger.utils import ExperimentFileSource
 
-        size_in_mb = ExperimentFileSource(os.getcwd()).size / (1024**2)
+        from .package_size import get_exp_max_size_mb, package_size_limit_error
+
+        # Megabytes of 10**6 bytes, matching Dallinger's own size check.
+        size_in_mb = ExperimentFileSource(os.getcwd()).size / (1000**2)
         logger.info("Experiment deployment size: %.3f MB.", size_in_mb)
-        max_size_in_mb = int(os.environ.get("EXP_MAX_SIZE_MB", "256"))
+        max_size_in_mb = get_exp_max_size_mb(heroku=heroku)
         if size_in_mb > max_size_in_mb:
             raise RuntimeError(
-                f"Your experiment deployment plan exceeds the {max_size_in_mb} MB "
-                "limit. Large packages make deployment slow. Exclude local files "
-                "in deploy.toml or use PsyNet's asset management system. Set "
-                "EXP_MAX_SIZE_MB to override this limit when the package size is "
-                "intentional."
+                package_size_limit_error(size_in_mb, max_size_in_mb, heroku=heroku)
             )
 
     @classmethod
@@ -2717,7 +2741,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         """Fail a still-working participant after a recruiter exit event.
 
         Recruiter abandonment, return, and reassignment are premature exits.
-        See :doc:`/tutorials/participant_and_trial_failure`.
+        See :doc:`/code/trials/participant_and_trial_failure`.
         """
         if participant.complete:
             logger.info(
@@ -7009,6 +7033,7 @@ def get_experiment() -> Experiment:
 
 @cache
 def get_trial_maker(trial_maker_id) -> TrialMaker:
+    """Return the trial maker with the given ID from the experiment's timeline."""
     exp = get_experiment()
     return exp.timeline.get_trial_maker(trial_maker_id)
 

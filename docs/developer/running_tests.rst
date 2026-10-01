@@ -1,4 +1,3 @@
-.. _developer:
 .. highlight:: shell
 
 =============
@@ -12,7 +11,7 @@ they complete in the correct state.
 Whenever you push a contribution to a branch of the PsyNet repository,
 these automated tests will be automatically queued. They normally take 10-15 minutes
 to complete. Keep an eye on the GitLab interface to see if any errors have occurred.
-Errors should be resolved before merging branches into ``dev`` or ``master``.
+Resolve any errors before merging into ``master``.
 
 Test parallelization
 --------------------
@@ -140,6 +139,21 @@ Example:
 Hold-resume probes
 ^^^^^^^^^^^^^^^^^^
 
+Hold specs use the helpers in ``tests/playwright/psynetHarness.js`` and
+``tests/playwright/stackedHoldHarness.js``; experiments cannot import them.
+When the contract is first paint, for example the last group member skipping
+a partner wait, ``enterTimelineAfterGateway`` returns the first
+``GET /timeline`` HTML (``entry.timeline.durationMs``), and
+``lastArriverWorkRecord`` returns the last arriver's grouping request (the
+302 or the submit POST), whose handler time ``requestHandlerMs`` reads. An
+eventual prompt can arrive from the poller after a hold was already shown,
+so do not assert it instead. When a partner is already on a hold,
+``enterWaitingHold`` wraps the resume probe, silences the 2s safety poll, and
+arms ``waitForHeldParticipantToResume`` before the last arriver consents;
+``assertWaiterReleasedWithLastArriver`` then checks the release against
+``enterSkippingHold``'s entry. Concurrent late arrivals must wrap and arm at
+first paint, inside the same ``Promise.all`` as consent.
+
 Legacy hold resumes reload the document, which destroys Playwright's execution
 context. ``wrapTimelineHoldResumeProbe`` retries ``page.evaluate`` after that
 navigation. ``waitForHeldParticipantToResume`` treats the same navigation as a
@@ -234,10 +248,10 @@ Playwright harness startup options
 
 The Playwright harness launches experiments with ``psynet debug local`` by default
 and does not force legacy mode. That Flask reloader is one process; use
-``PSYNET_USE_LEGACY_DEBUG=1`` (or ``psynet debug --legacy``) for gunicorn
+``PSYNET_USE_LEGACY_DEBUG=1`` (or ``psynet debug local --legacy``) for gunicorn
 workers. GitLab Playwright jobs set
 ``PSYNET_USE_LEGACY_DEBUG=1`` so those runs use gunicorn. CI therefore never
-exercises the default single-process Flask debug server. ``psynet debug
+exercises the default single-process Flask debug server. ``psynet debug local
 --legacy`` starts four gunicorn workers by default. Playwright stacked-hold
 tests set ``PSYNET_LEGACY_DEBUG_GUNICORN_THREADS`` to the session count plus
 two spares so concurrent last-arrival ``GET /timeline`` can overlap every waiter
@@ -249,7 +263,7 @@ Optional environment variables:
 
 - ``PSYNET_USE_LEGACY_DEBUG=1``: add ``--legacy`` to the debug command.
 - ``PSYNET_LEGACY_DEBUG_GUNICORN_THREADS``: gunicorn worker processes for
-  ``psynet debug --legacy`` (default ``4``). Stacked-hold tests set this to
+  ``psynet debug local --legacy`` (default ``4``). Stacked-hold tests set this to
   the session count plus two spares.
 - ``PSYNET_DEBUG_EXTRA_FLAGS="..."``: append extra flags to the debug command
   (for local troubleshooting).
