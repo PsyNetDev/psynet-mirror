@@ -3,7 +3,9 @@ import io
 import json
 import os
 import subprocess
+import sys
 import tempfile
+import time
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -11,6 +13,7 @@ from unittest.mock import Mock, patch
 
 import click
 import pandas as pd
+import psutil
 import pytest
 from click.testing import CliRunner
 
@@ -3468,6 +3471,7 @@ def test_pre_launch_skips_dependency_check_for_in_repo_experiments(
     tmp_path, monkeypatch
 ):
     """In-repo demos must not let Dallinger invent constraints.txt."""
+    import os
 
     from psynet.command_line import _pre_launch
 
@@ -3762,7 +3766,88 @@ def test_prepare_after_stopping_local_workers_kills_then_prepares():
     ctx.invoke.assert_called_once_with(prepare, archive="export.zip")
 
 
-def test_kill_psynet_worker_processes_kills_dallinger_workers(caplog):
+def test_worker_cleanup_only_targets_this_database(monkeypatch, tmp_path):
+    from psynet.command_line import list_psynet_worker_processes
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql://dallinger@localhost/this_test")
+    worker_entry_point = tmp_path / "dallinger_heroku_web"
+    worker_entry_point.write_text("import time; time.sleep(30)\n")
+    sleeper = [sys.executable, str(worker_entry_point)]
+    ours = subprocess.Popen(sleeper)
+    theirs = subprocess.Popen(
+        sleeper,
+        env={**os.environ, "DATABASE_URL": "postgresql://dallinger@localhost/other"},
+    )
+    try:
+        time.sleep(0.5)
+        pids = {p.pid for p in list_psynet_worker_processes()}
+        assert ours.pid in pids
+        assert theirs.pid not in pids
+    finally:
+        for process in (ours, theirs):
+            process.kill()
+            process.wait()
+
+
+@pytest.mark.parametrize(
+    "name, cmdline, expected",
+    [
+        ("dallinger_herok", ["dallinger_heroku_web"], True),
+        ("Python", ["/venv/bin/dallinger_heroku_clock"], True),
+        (
+            "Python",
+            ["/usr/bin/python", "/venv/bin/dallinger_heroku_worker"],
+            True,
+        ),
+        ("not-dallinger_herok", ["unrelated"], False),
+        (
+            "Python",
+            ["/usr/bin/python", "-m", "pytest", "-k", "dallinger_heroku_worker"],
+            False,
+        ),
+    ],
+)
+def test_is_psynet_worker_process(name, cmdline, expected):
+    from psynet.command_line import is_psynet_worker_process
+
+    process = Mock()
+    process.name.return_value = name
+    process.cmdline.return_value = cmdline
+    assert is_psynet_worker_process(process) is expected
+
+
+def test_uses_current_database_normalizes_urls_and_handles_the_default(monkeypatch):
+    from psynet.command_line import uses_current_database
+
+    process = Mock()
+    monkeypatch.setenv("DATABASE_URL", "postgres://dallinger@localhost/experiment")
+    process.environ.return_value = {
+        "DATABASE_URL": "postgresql://dallinger@localhost/experiment"
+    }
+    assert uses_current_database(process)
+
+    monkeypatch.delenv("DATABASE_URL")
+    process.environ.return_value = {}
+    assert uses_current_database(process)
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        pytest.param(psutil.AccessDenied(1), id="access-denied"),
+        pytest.param(psutil.NoSuchProcess(1), id="gone"),
+        pytest.param(psutil.ZombieProcess(1), id="zombie"),
+    ],
+)
+def test_uses_current_database_rejects_unreadable_processes(error):
+    from psynet.command_line import uses_current_database
+
+    process = Mock()
+    process.environ.side_effect = error
+    assert not uses_current_database(process)
+
+
+def test_kill_psynet_worker_processes_warns_with_pids(caplog):
     import logging
 
     from psynet.command_line import kill_psynet_worker_processes
@@ -3773,7 +3858,7 @@ def test_kill_psynet_worker_processes_kills_dallinger_workers(caplog):
     second.pid = 4322
     with (
         patch(
-            "dallinger.heroku.tools.local_worker_processes",
+            "psynet.command_line.list_psynet_worker_processes",
             return_value=[first, second],
         ),
         patch("psynet.command_line.safely_kill_process") as kill,
