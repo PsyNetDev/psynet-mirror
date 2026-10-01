@@ -28,7 +28,6 @@ import dallinger.experiment
 import dallinger.models
 import flask
 import psutil
-import rpdb
 import sqlalchemy.orm.exc
 from dallinger import db
 from dallinger.config import get_config as dallinger_get_config
@@ -5026,17 +5025,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             f"Experiment variable 'soft_max_experiment_payment set' set to {soft_max_experiment_payment}."
         )
         return success_response()
-
-    @experiment_route("/debugger/<password>", methods=["GET"])
-    @classmethod
-    @with_transaction
-    def route_debugger(cls, password):
-        exp = get_experiment()
-        if password == "my-secure-password-195762":
-            exp.new(db.session)
-            rpdb.set_trace()
-            return success_response()
-        return error_response()
 
     @experiment_route("/node/<int:node_id>/fail", methods=["GET", "POST"])
     @staticmethod
