@@ -150,7 +150,10 @@ n_jobs = -2
 For a power decision, use `metric = "power"`, the planned `alpha`, the
 required power as `threshold` (such as 0.8), `unit = "share of studies"` and
 the smallest effect as `effect_size`. Record `power` and its Monte Carlo
-interval in `results.csv`, alongside the margin of error.
+interval in `results.csv`, alongside the margin of error. When several tests
+are planned, also record the multiplicity procedure and the rejection event
+the power requirement uses, such as rejection of the primary effect or of all
+primary effects.
 
 Use the same number of replicates for every scenario, so that Monte Carlo error
 is comparable across results.
@@ -176,7 +179,11 @@ For each scenario, the script simulates every replicate at the trial level with
 `sample_responses`, fits the planned analysis to each simulated dataset, and
 summarizes the estimates for every analysis target. Use the estimator planned
 for the real data, for example a statsmodels regression or mixed model. Count
-failed fits instead of dropping them.
+failed fits instead of dropping them. Match its dependence structure to the
+design: ordinary least squares standard errors are not valid for repeated
+rows from the same participant, and crossed participant and stimulus sampling
+usually requires both variance components. Apply the planned multiplicity
+procedure to the replicate's complete set of tests.
 
 Keep each analysis target's question, true value, estimator and resampling rule
 together, for example in one small class per target:
@@ -195,6 +202,7 @@ class ConditionEffect:
 
     @staticmethod
     def estimate(data):
+        # This example assumes that rows are independent.
         model = smf.ols("response ~ condition", data=data).fit()
         return model.params["condition"]
 ```
@@ -254,7 +262,8 @@ z = NormalDist().inv_cdf(0.975)
 sampling_se = estimates.std(ddof=1)
 margin_of_error = z * sampling_se
 bias = (estimates - true_value).mean()
-margin_of_error_mcse = margin_of_error / np.sqrt(2 * (replicates - 1))
+n_evaluated = len(estimates)
+margin_of_error_mcse = margin_of_error / np.sqrt(2 * (n_evaluated - 1))
 ```
 
 For a profile, `estimates` has one row per replicate and one column per value,
@@ -276,14 +285,23 @@ rms_margin_of_error, max_margin_of_error = rms(margins), margins.max()
 covariance = np.cov(errors, rowvar=False)
 variances = np.diag(covariance)
 difference_variances = variances[:, None] + variances[None, :] - 2 * covariance
+difference_variances = np.maximum(difference_variances, 0.0)  # roundoff
 pairs = np.triu_indices(len(variances), k=1)
 difference_margins = z * np.sqrt(difference_variances[pairs])
 rms_difference_margin_of_error = rms(difference_margins)
 max_difference_margin_of_error = difference_margins.max()
 
 true_spread = truth.std(axis=1).mean()
-correlations = [np.corrcoef(e, t)[0, 1] for e, t in zip(estimates, truth)]
-profile_correlation = np.tanh(np.mean(np.arctanh(correlations)))  # Fisher-z average
+if estimates.shape[1] < 3:
+    raise ValueError("Profile correlation needs at least three values.")
+correlations = np.asarray(
+    [np.corrcoef(e, t)[0, 1] for e, t in zip(estimates, truth)]
+)
+if not np.all(np.isfinite(correlations)):
+    raise ValueError("Profile correlation needs varying estimates and truths.")
+eps = np.finfo(float).eps
+fisher_z = np.arctanh(np.clip(correlations, -1 + eps, 1 - eps))
+profile_correlation = np.tanh(fisher_z.mean())
 centered = errors - errors.mean(axis=1, keepdims=True)
 centered_se = np.sqrt(centered.var(axis=0, ddof=1).mean())
 target_correlation = 0.9
@@ -295,7 +313,12 @@ spread_for_target_correlation = (
 The Monte Carlo standard error formula assumes roughly normal estimates.
 Otherwise, and for a summary such as the RMS margin of error across a
 profile, bootstrap over replicates: resample whole replicates and recompute the
-summary each time.
+summary each time. Treat the difference margins as pointwise pair summaries;
+an RMS margin describes typical pairwise precision, not the probability that
+the complete ranking is correct. Simulate a top-k, all-pairs or whole-ranking
+criterion directly when that is the research question. The smallest-spread
+formula also assumes negligible stimulus-specific bias and error that is
+uncorrelated with truth and roughly unchanged as the true spread changes.
 
 ## Run record
 
@@ -376,6 +399,11 @@ spread = np.linspace(0.01, 1.5 * true_spread, 200)
 centered_se = s_target * np.sqrt(1 - r_target**2) / r_target
 expected_correlation = spread / np.sqrt(spread**2 + centered_se**2)
 ```
+
+Use that curve only when the formula's assumptions hold. With bounded
+responses, heteroscedastic errors or an estimator whose precision changes with
+the true profile, simulate the spread as an assumption factor and plot the
+simulated correlations instead.
 
 Put the table of every metric at the chosen design in the details section,
 with readable column names, such as "Difference margin (points)" rather than

@@ -86,9 +86,15 @@ smallest size. Its Monte Carlo standard error is √(p(1 − p)/R) for power p o
 R replicates. The usual requirement is 80% or 90%; agree it with the
 experimenter. Report the margin of error alongside, so readers see what the
 study will estimate as well as whether it will detect. If the analysis tests
-several effects, report power at any corrected α the analysis will use, and,
-when the response model sets some effects to zero, how often those tests
-reject (the false-positive rate, which should be close to α).
+several effects, apply the planned multiplicity procedure inside every
+replicate and state whether the requirement concerns one effect, any effect or
+all effects. Do not replace a stepwise or data-dependent procedure with a
+single "corrected α". When the response model sets some effects to zero,
+report the corresponding false-positive criterion too: for example, each
+null effect's rejection rate or the chance that any null effect is rejected.
+Compare it with the error rate that the planned procedure controls; a
+Bonferroni family-wise error rate is at most, not necessarily equal to, its
+nominal α.
 
 Each quantity of interest is an **estimand**, such as a mean difference between
 conditions, a regression slope, or a stimulus's response profile. Across
@@ -114,17 +120,24 @@ also report:
 - The **root mean square (RMS) margin of error** across the set, the square
   root of the mean squared margin, and the **largest** margin. With many
   values, the largest of their Monte Carlo estimates is inflated by Monte
-  Carlo error, so it is not a stable basis for a decision. If the largest is
-  much bigger than the RMS, say which values are least precise.
+  Carlo error, so it needs more replicates than the RMS to estimate stably.
+  The RMS describes typical precision; it does not guarantee the required
+  precision for every value. If the largest is much bigger than the RMS, say
+  which values are least precise.
 - The **margin of error of a difference**: how far apart two values must be
-  for the study to order them reliably. Two values that far apart come out in
-  the right order in about 97.5% of studies, but their difference is
-  statistically significant only about half the time; to show that a
-  particular pair differs, use power. Compute this margin from the replicates
-  rather than as √2 times the margin of error of a single value. When every
-  participant responds to every stimulus, shared variation such as a
-  participant's overall bias cancels in differences, so they are more precise
-  than that approximation suggests.
+  for the study to order that pair reliably. With negligible bias and an
+  approximately normal difference estimate, two values one pointwise 95%
+  difference margin apart come out in the right order in about 97.5% of
+  studies. Their difference is significant in only about half of studies in
+  an unadjusted two-sided 5% test; to show that a particular pair differs, use
+  power with the planned multiplicity procedure. Compute this margin from the
+  replicates rather than as √2 times the margin of error of a single value.
+  When every participant responds to every stimulus, shared variation such as
+  a participant's overall bias cancels in differences, so they are more
+  precise than that approximation suggests. These probabilities concern one
+  specified pair. If the question concerns every pair, the top-ranked
+  stimulus or the whole ordering, simulate that success criterion directly;
+  pointwise 97.5% ordering does not make the complete ranking 97.5% reliable.
 - The **profile correlation**: in each replicate, the correlation between the
   estimated and the true values, averaged over replicates on the Fisher-z
   scale. It answers whether the study can tell the stimuli apart.
@@ -134,16 +147,22 @@ also report:
   about S² / (S² + SE²), where S is that standard deviation and SE is the root
   mean square sampling standard error of the estimates after subtracting each
   replicate's mean across the set. The smallest spread for a correlation r is
-  therefore SE × r / √(1 − r²).
+  therefore SE × r / √(1 − r²). This approximation assumes negligible
+  stimulus-specific bias, errors uncorrelated with the true values, and an SE
+  that stays roughly constant as the spread changes. If scale bounds,
+  heteroscedasticity or the estimator make precision depend on the true
+  values, simulate several spreads instead of extrapolating this formula.
 
 These measures differ in how much they depend on the assumptions. The margin
-of error, including the margin of error of a difference, depends on how noisy
-responses are, which pilot data or earlier studies with the same scale estimate
-well. The profile correlation also depends on how much the stimuli truly
-differ, which is what the study sets out to measure and usually the least
-certain assumption. The smallest spread for a target correlation depends only
-on the noise, so it states the design's resolving power without assuming the
-answer.
+of error, including the margin of error of a difference, depends on all
+relevant variance components: response noise, differences between
+participants and stimuli, clustering, missingness and the estimator. Pilot
+data or earlier studies can estimate them, with uncertainty. The profile
+correlation also depends on how much the stimuli truly differ, which is what
+the study sets out to measure and usually the least certain assumption. Under
+the approximation above, the smallest spread for a target correlation depends
+on the estimation noise rather than the assumed true spread, so it states the
+design's resolving power without assuming the answer.
 
 For example, in a study where 160 participants each rate 40 chords on a 1–7
 scale, the design simulation might report that each chord's mean is known to
@@ -151,7 +170,9 @@ within about ±0.18 rating points, that chords more than about 0.22 points apart
 are reliably ordered, and that the estimated means correlate at least 0.9 with the
 true ones whenever the true means have a standard deviation of at least 0.16
 points. The response model assumes a spread of 0.71, which gives a profile
-correlation of 0.99, but the last conclusion holds for any spread above 0.16.
+correlation of 0.99. The last conclusion extrapolates to other spreads only if
+the formula's assumptions hold; otherwise report results simulated at those
+spreads.
 
 Because the simulation uses a finite number of replicates, its own summaries are
 uncertain too. Report this **Monte Carlo error** alongside each result; if it
@@ -184,18 +205,25 @@ it.
      estimate, as in large samples; with few participants, simulate power
      directly.
    - To rank or profile stimuli, choose the smallest difference between two
-     stimuli that the study should order reliably, and apply it to the margin
-     of error of a difference. The smallest spread for a 0.9 correlation
-     shows whether that also separates the stimuli as a whole.
+     stimuli that the study should order reliably, and apply it to the
+     pointwise margin of error of a difference. Decide whether this is a
+     typical-pair requirement, an every-pair requirement or a global ranking
+     requirement. The RMS difference margin summarizes typical pairwise
+     precision; for every-pair or global requirements, simulate the relevant
+     maximum, top-k or whole-ranking success criterion. The smallest spread
+     for a 0.9 correlation describes recovery of the overall profile, not a
+     guarantee that every pair is correctly ordered.
 3. If no value can be justified, make no pass/fail decision. Show precision and
    cost against the design, point out where more participants or trials bring
    little gain, and let the experimenter choose.
 
 Keep the threshold fixed across scenarios. Deriving it from each scenario's own
 noise would relax the requirement as responses get noisier, so the noisiest
-assumptions would appear to need the fewest participants. For a set of values,
-apply it to the RMS margin across the set, of single values or of differences,
-and report the largest alongside.
+assumptions would appear to need the fewest participants. For a typical-value
+or typical-pair requirement, apply it to the RMS margin across the set, of
+single values or of differences, and report the largest alongside. Use the
+global criterion chosen above when the requirement covers every value or the
+whole ranking.
 
 Choose the design under the reference assumptions, and report the smallest
 design that meets the threshold under each alternative assumption set. If the
@@ -209,7 +237,12 @@ allocation to conditions and stimuli, missing responses, the response scale and
 its rounding, and differences between participants and stimuli. The planned
 analysis then runs on each simulated dataset. Shortcuts such as analytical
 formulas or rejection rates of a simpler test are not substitutes for the
-planned analysis.
+planned analysis. The estimator and its test must account for the dependence
+in the design. Repeated observations from a participant are not independent,
+and a study that generalizes over both participants and stimuli commonly needs
+both variance components, for example in a crossed mixed model. Naive
+observation-level standard errors can give badly wrong power and achieved
+margins even when the point estimate is unbiased.
 
 Draw participants afresh for each replicate. Draw stimuli afresh too when the
 study aims to generalize beyond the particular stimuli used; keep them fixed
@@ -298,7 +331,14 @@ the true values. Report, in the analysis:
 - for a profile, the **split-half reliability**: split the participants
   randomly into two halves, correlate the two halves' estimates, apply the
   Spearman–Brown correction 2r / (1 + r), and average over many random
-  splits. Its square root estimates the profile correlation.
+  splits. Under the classical parallel-halves model, with independent
+  participant-sampling errors and no shared stimulus-specific bias, the square
+  root of the corrected reliability estimates the correlation between the
+  full-sample profile and the true profile. Report unstable or negative
+  split-half correlations rather than taking their square root, and do not use
+  this diagnostic for a profile with too few varying values. Splitting
+  participants measures precision conditional on the observed stimuli; it
+  does not measure uncertainty from sampling new stimuli.
 
 Put these beside the values the design simulation predicted for the chosen
 design. Before launch, the same code runs on the simulated export, so it has
@@ -314,6 +354,12 @@ or an agent did:
 - [ ] Does the required precision follow from the research question, and did
       the experimenter confirm it and its rationale?
 - [ ] Is the estimator the analysis that will be run on the real data?
+- [ ] Does the estimator account for repeated observations and every
+      participant, stimulus, item, group or network variance component over
+      which the claim generalizes?
+- [ ] If there are several tests, is the planned multiplicity procedure
+      applied within each replicate, and is the power or false-positive event
+      defined at the right per-effect or family level?
 - [ ] Where do the response model's parameter values come from, and are values
       based on judgment identified as such?
 - [ ] Do the alternative assumption sets cover the plausible range, and does
@@ -321,6 +367,10 @@ or an agent did:
 - [ ] Are margins of error stated in the response's units, and, for a
       profile, are the difference margin, the profile correlation and the
       smallest spread for the target correlation reported?
+- [ ] Does a profile criterion distinguish typical pairwise precision from an
+      every-pair, top-k or whole-ranking requirement?
+- [ ] If the smallest-spread formula is extrapolated, are its bias,
+      independence and constant-SE assumptions plausible?
 - [ ] Are stimuli drawn afresh between replicates when the claim generalizes
       beyond the sampled stimuli?
 - [ ] Is bias reported next to precision, and is the Monte Carlo error small
