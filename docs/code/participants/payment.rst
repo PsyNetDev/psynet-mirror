@@ -77,11 +77,12 @@ below the smallest reward you expect from a successful participant; for a
 timeline without optional parts, that is the reward from
 ``psynet estimate``.
 
-On Prolific, participants choose studies by the listed rate: ``base_payment``
-for ``prolific_estimated_completion_minutes``. Bonuses aren't part of it, so
-a low base payment makes a well-paid study look badly paid. When the recruiter
-is Prolific, ``psynet estimate`` warns if the listed time is shorter than its
-estimate, or if the listed rate is below ``wage_per_hour``.
+Prolific requires ``base_payment`` alone to meet its minimum hourly rate
+(£6 or $8), measured over participants' median completion time; bonuses
+don't count. When the recruiter is Prolific, ``psynet estimate`` warns if
+``prolific_estimated_completion_minutes`` is shorter than its estimate, or if
+``base_payment`` over the longer of the two durations falls below Prolific's
+minimum.
 
 To change how a recruiter computes the payment, subclass it and override
 :meth:`~psynet.recruiters.PsyNetRecruiterMixin.decide_payment`,
