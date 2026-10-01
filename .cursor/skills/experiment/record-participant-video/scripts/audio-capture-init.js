@@ -142,14 +142,21 @@
 
   AudioNode.prototype.disconnect = function (destination) {
     const result = nativeDisconnect.apply(this, arguments);
-    if (destination instanceof AudioDestinationNode) {
-      const tap = taps.get(destination.context);
-      if (tap) {
-        try {
-          nativeDisconnect.call(this, tap);
-        } catch (error) {
-          // The node was never connected to the tap (e.g. connected before capture started).
-        }
+    const tap = taps.get(this.context);
+    const args = Array.from(arguments);
+    const tapArgs =
+      args.length === 0
+        ? [tap]
+        : typeof destination === "number"
+          ? [tap, ...args]
+          : destination instanceof AudioDestinationNode
+            ? [tap, ...args.slice(1)]
+            : null;
+    if (tap && tapArgs) {
+      try {
+        nativeDisconnect.apply(this, tapArgs);
+      } catch (error) {
+        // The node was never connected to the tap (e.g. connected before capture started).
       }
     }
     return result;

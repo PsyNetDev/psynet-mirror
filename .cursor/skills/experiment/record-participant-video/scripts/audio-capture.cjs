@@ -6,10 +6,14 @@
 //   test.use({ launchOptions: { args: AUDIO_CAPTURE_LAUNCH_ARGS } });
 //
 //   const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
-//   const recording = await startParticipantRecording(context);
-//   const page = recording.page;
-//   // ... drive the participant flow ...
-//   await recording.finish("audit/artifacts/participant.mp4");
+//   try {
+//     const recording = await startParticipantRecording(context);
+//     const page = recording.page;
+//     // ... drive the participant flow ...
+//     await recording.finish("audit/artifacts/participant.mp4");
+//   } finally {
+//     await context.close();
+//   }
 //
 // Video comes from page.screencast; audio from audio-capture-init.js. Each
 // document's audio segment is placed on the video timeline by wall-clock time,
@@ -101,7 +105,9 @@ async function startParticipantRecording(context, options = {}) {
     path: rawVideo,
     size,
     onFrame: ({ timestamp }) => {
-      if (video.startMs === null) video.startMs = timestamp;
+      if (video.startMs === null) {
+        video.startMs = Number.isFinite(timestamp) ? timestamp : NaN;
+      }
     },
   });
 
@@ -123,6 +129,11 @@ async function startParticipantRecording(context, options = {}) {
       await page.screencast.stop();
     }
     if (video.startMs === null) throw new Error("The screencast produced no frames.");
+    if (!Number.isFinite(video.startMs)) {
+      throw new Error(
+        "Audio synchronization needs Playwright 1.62 or later, which provides screencast frame timestamps.",
+      );
+    }
 
     const audioFiles = [];
     const unstarted = [];

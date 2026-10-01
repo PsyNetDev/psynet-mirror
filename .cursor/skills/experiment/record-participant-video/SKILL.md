@@ -1,7 +1,7 @@
 ---
 name: record-participant-video
 description: Record PsyNet participant-flow visual evidence with Playwright-driven interaction, screenshots, and headless video with in-page audio capture. Use when collecting participant evidence, creating participant.mp4, or documenting participant-facing behavior.
-compatibility: Requires Playwright with page.screencast (tested with 1.63), Chromium, ffmpeg and ffprobe. The alternative device-capture routes need Xvfb and PulseAudio on Linux, or BlackHole on macOS.
+compatibility: Requires Playwright 1.62+ (tested with 1.63), Chromium, ffmpeg and ffprobe. The alternative device-capture routes need Xvfb and PulseAudio on Linux, or BlackHole on macOS.
 ---
 
 # Record participant visual evidence
@@ -133,20 +133,30 @@ test.use({ launchOptions: { args: AUDIO_CAPTURE_LAUNCH_ARGS } });
 
 test("recorded participant walk", async ({ browser }) => {
   const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
-  const recording = await startParticipantRecording(context);
-  const page = recording.page;
-  await page.goto(`${BASE}/ad?generate_tokens=true&recruiter=hotair`);
-  // ... drive the walk ...
-  await recording.finish("audit/artifacts/participant.mp4");
-  await context.close();
+  try {
+    const recording = await startParticipantRecording(context);
+    const page = recording.page;
+    await page.goto(`${BASE}/ad?generate_tokens=true&recruiter=hotair`);
+    // ... drive the walk ...
+    await recording.finish("audit/artifacts/participant.mp4");
+  } finally {
+    await context.close();
+  }
 });
 ```
 
 Use a fresh context, and the page returned by `startParticipantRecording`.
 `AUDIO_CAPTURE_LAUNCH_ARGS` lets pages start audio without a click; without it
-audio that starts before the first click is lost. `finish` also writes the raw
-video, per-page audio segments and `recording.json` to `recording.workDir`
-(pass `{ workDir }` to choose it).
+audio that starts before the first click is lost. In-page capture does not need
+an operating-system audio device. The helper checks for system `ffmpeg` before
+opening its page and reports how to install it when missing.
+
+Always close the context in `finally`, as above, so Playwright stops its
+screencast encoder if the walk fails before `finish`. `finish` also writes the
+raw video, per-page audio segments and `recording.json` to `recording.workDir`
+(pass `{ workDir }` to choose it). The helper intentionally leaves this
+directory in place for inspection; remove it when the raw files are no longer
+needed.
 
 Each segment is shifted by a fixed pipeline latency, 100 ms by default. It was
 measured on macOS with Chromium headless shell. On another machine or browser
