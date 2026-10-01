@@ -373,6 +373,39 @@ def test_every_participant_page_declares_the_viewport():
     assert 'name="viewport"' not in browser_detect
 
 
+def test_browser_warning_does_not_depend_on_page_logo_markup():
+    """Participant pages have no #psynet_logo; reading it crashed the warning
+    before it showed and before Lucid sent the participant back."""
+    from flask import Flask, render_template_string
+
+    from psynet.graphics import PsyNetLogo
+
+    app = Flask(__name__, template_folder=str(resources.files("psynet") / "templates"))
+    app.jinja_env.add_extension("jinja2.ext.i18n")
+    app.jinja_env.install_null_translations(newstyle=True)
+    app.jinja_env.globals["pgettext"] = lambda context, message: message
+
+    with app.test_request_context("/timeline"):
+        html = render_template_string(
+            '{% import "macros/browser-detect.html" as bd with context %}'
+            "{{ bd.head() }}",
+            experiment=SimpleNamespace(
+                psynet_logo=PsyNetLogo(), with_lucid_recruitment=lambda: True
+            ),
+            config=SimpleNamespace(
+                allow_mobile_devices=False,
+                force_google_chrome=True,
+                force_incognito_mode=False,
+                min_browser_version="80.0",
+            ),
+        )
+
+    logo_function = html[html.index("function getPsyNetLogo") :]
+    logo_function = logo_function[: logo_function.index("function renderMobileWarning")]
+    assert "psynet_logo" not in logo_function
+    assert "psynet-logo_alt" in logo_function
+
+
 def test_footer_is_in_document_flow_at_every_width():
     """The footer follows content without a responsive layout fork."""
     css = (resources.files("psynet") / "resources/css/participant.css").read_text(

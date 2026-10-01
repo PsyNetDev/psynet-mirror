@@ -2,15 +2,16 @@
 
 
 Publishing one or more release candidates (RCs) from the release branch
-before the final tag is the **default** for minor releases; skip straight
-to the final version only when the release manager explicitly instructs
-otherwise. RCs are tagged and uploaded to PyPI but are **not** merged back
+before the final tag is the **default** for major and minor releases;
+skip straight to the final version only when the release manager
+explicitly instructs otherwise. RCs are tagged and uploaded to PyPI but are **not** merged back
 into `master` until the final release.
 
 The human checkpoints from the
 [Human-in-the-loop policy](#human-in-the-loop-policy) apply at the
 equivalent points: pushing the release branch, pushing the RC tag,
-uploading the RC to PyPI, and posting the Slack announcement.
+uploading the RC to PyPI, posting the Slack announcement, and launching
+paid recruitment for the deployment test.
 
 RCs are **tag-only** on GitLab: do **not** create a GitLab release entry
 for them. GitLab has no pre-release flag (unlike GitHub), so an RC
@@ -34,7 +35,7 @@ RCs are especially valuable when:
 
 ### RC1: Cut the first release candidate
 
-Start from the release branch created in step 1 of the minor release path.
+Start from the release branch created in step 1 of the from-master path.
 Instead of bumping straight to `13.2.0`, bump to `13.2.0rc1` and tag it,
 using the shared steps with the RC version:
 
@@ -57,19 +58,28 @@ using the shared steps with the RC version:
    ```
 
    Wait for the tag pipeline to pass on GitLab.
-6. [Build and upload to PyPI](#build-and-upload-to-pypi) using the RC
+5. [Build and upload to PyPI](#build-and-upload-to-pypi) using the RC
    version. Since the pre-build `rm -rf` guarantees a clean `dist/`, the
    broader glob `dist/psynet-13.2.0rc1*` is safe here. RCs are not marked
    as the latest release on PyPI, so users must opt in with
    `pip install psynet==13.2.0rc1`.
-7. [Verify the documentation deployment](#verify-the-documentation-deployment):
+6. [Verify the documentation deployment](#verify-the-documentation-deployment):
    confirm that `https://psynetdev.gitlab.io/PsyNet/rc/v13.2.0rc1/` loads
    and that the RC appears in the version dropdown at
    <https://psynetdev.gitlab.io/PsyNet/>.
-8. **Skip the GitLab release entry.** RCs are tag-only on GitLab (see
+7. **Skip the GitLab release entry.** RCs are tag-only on GitLab (see
    above); the [Create the GitLab release](#create-the-gitlab-release)
    step applies to final releases only.
-9. [Announce the release on Slack](#announce-the-release-on-slack) with the
+
+Steps 8 and 9 are independent: neither waits for the other, and either
+may run first. Propose them to the release manager as two separate
+steps and get approval for each on its own; approving one does not
+approve the other. In particular, a blocked deployment test (for
+example, the deployment server is unreachable) does not hold back the
+Slack announcement, and the announcement's approval does not cover
+launching paid recruitment.
+
+8. [Announce the release on Slack](#announce-the-release-on-slack) with the
    RC version, writing the highlights file from the RC's CHANGELOG
    section as described there. `psynet dev release announce 13.2.0rc1
    --summary-file ...` auto-detects the `rc` segment and generates an
@@ -90,7 +100,7 @@ using the shared steps with the RC version:
 
    Tag any specific people whose feedback you need on a thread under the
    post rather than `@channel`-ing the whole channel.
-10. **Validate the RC with a deployment test.** Run the deployment test
+9. **Validate the RC with a deployment test.** Run the deployment test
    suite against the RC tag by following the `deployment-test` skill
    (`.cursor/skills/deployment-test/SKILL.md`): by default this deploys
    the two Prolific test experiments (`payment_flows_prolific` and

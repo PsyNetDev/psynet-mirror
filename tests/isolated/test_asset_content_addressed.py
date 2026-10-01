@@ -1,6 +1,8 @@
 """Tests for content-addressed managed assets and access tokens."""
 
 import hashlib
+import os
+import warnings
 from pathlib import Path
 
 import pytest
@@ -42,6 +44,23 @@ def test_on_demand_asset_rejects_secret_kwarg():
 
 def test_content_object_path_helper():
     assert content_object_path("abc") == "objects/sha256/abc"
+
+
+def test_generate_input_path_closes_the_temporary_file():
+    """The generated path stays on disk and its handle is already closed.
+
+    Python 3.14 warns if a ``NamedTemporaryFile`` is closed only by the
+    garbage collector, and pytest treats that warning as a test failure.
+    """
+    asset = CachedFunctionAsset(function=_write_generated_asset, extension=".txt")
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", ResourceWarning)
+        path = asset.generate_input_path()
+    try:
+        assert os.path.isfile(path)
+        assert os.path.getsize(path) == 0
+    finally:
+        os.remove(path)
 
 
 @pytest.mark.parametrize(

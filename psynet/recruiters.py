@@ -28,7 +28,7 @@ Key design constraints for maintainers:
   writes those fields onto the participant; ``report_submission_outcome``
   reports the terminal outcome and delegates real bonus transfers to
   ``reward_bonus`` by default. Recruiters with ``reports_zero_outcomes``
-  (Lab Recruiter) also report zero bonuses through that hook. ``False``
+  (Lab Recruiter, Lucid) also report zero bonuses through that hook. ``False``
   means the platform rejected the report or transfer.
   ``Experiment.on_recruiter_submission_complete`` owns this sequence,
   always re-recording status and platform base, and uses ``bonus_status``
@@ -1361,6 +1361,15 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
         """
         if hasattr(experiment, "recruiter_exit_info"):
             experiment.recruiter_exit_info(participant)
+        return self.render_submission_page(participant)
+
+    def render_submission_page(self, participant) -> str:
+        """Render the Submit/confirmation document without writing payment state.
+
+        ``RecordedSubmissionPage`` calls this from the read-only timeline
+        render, where the submission handler has already stamped the
+        completion code.
+        """
         recorded = self._submission_already_recorded(participant)
         heading, body = self._recorded_submission_copy()
         return render_template_with_translations(
@@ -2400,7 +2409,9 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
     supports_delayed_publishing = True
     # Lucid forbids showing rewards inside the survey.
     shows_reward_by_default = False
+    reports_zero_outcomes = True
     MARKETPLACE_CODE = "Marketplace codes"
+    CLOCK_TIMEOUT_GRACE_S = 60
     IN_SURVEY = "Currently in Client Survey or Drop"
     COMPLETED = "Returned as Complete"
     TERMINATED = "Returned as Terminate"
@@ -2531,7 +2542,8 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
         self.store = kwargs.get("store", RedisStore())
 
     def recruit(self, n=1):
-        """Incremental recruitment isn't implemented for now, so we return an empty list."""
+        """Reopen entry if ``close_recruitment`` paused it; Lucid sends the entrants."""
+        self._resume_entry()
         return []
 
     def get_status(self, submissions=None) -> LucidRecruitmentStatus:
@@ -2635,6 +2647,7 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
             session.commit()
 
     def run_checks(self):
+        self._recheck_paused_entry()
         logger.info("Polling Lucid API to count entry_df")
 
         survey_number = self.current_survey_number()
@@ -2740,22 +2753,8 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
                 # skip terminated entrants
                 continue
 
-            details = None
-            reason = None
             participant = entrant.resolve_participant()
-            if participant is not None:
-                responses = (
-                    Response.query.filter_by(participant_id=participant.id)
-                    .order_by(Response.creation_time)
-                    .all()
-                )
-                if len(responses) == 0:
-                    reason = "first-response-timeout"
-            else:
-                # Do not terminate participants who did not pass the qualifications
-                if entrant.lucid_status != self.MARKETPLACE_CODE:
-                    reason = "never-entered-experiment"
-
+            reason = self._clock_termination_reason(entrant, participant, now)
             if reason:
                 try:
                     participant_info = (
@@ -2763,9 +2762,7 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
                         if participant
                         else {"assignment_id": entrant.rid}
                     )
-                    self.terminate_participant(
-                        reason=reason, details=details, **participant_info
-                    )
+                    self.terminate_participant(reason=reason, **participant_info)
 
                     logger.info(
                         f"Successfully terminated participant with RID '{entrant.rid}'."
@@ -2774,6 +2771,33 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
                     logger.error(
                         f"Error terminating participant with RID '{entrant.rid}': {e}"
                     )
+
+    def _clock_termination_reason(self, entrant, participant, now):
+        """Return why the clock should terminate this entrant, or ``None``.
+
+        The browser enforces the overall time limit, but a participant who
+        closes the tab stays ``working`` forever and keeps a paused survey
+        from completing. The grace period lets the browser terminate first.
+        """
+        if participant is None:
+            # Do not terminate participants who did not pass the qualifications
+            if entrant.lucid_status != self.MARKETPLACE_CODE:
+                return "never-entered-experiment"
+            return None
+
+        if Response.query.filter_by(participant_id=participant.id).first() is None:
+            return "first-response-timeout"
+
+        limit_s = self.termination_time_in_s
+        if (
+            limit_s is not None
+            and participant.status == "working"
+            and now
+            > entrant.registered_at
+            + timedelta(seconds=limit_s + self.CLOCK_TIMEOUT_GRACE_S)
+        ):
+            return f"overall-timeout-{limit_s}s"
+        return None
 
     def get_survey_storage_key(self, name):
         experiment_id = self.config.get("id")
@@ -2880,11 +2904,79 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
         }
 
     def close_recruitment(self):
+        """Stop new entrants, and complete the survey once nobody is still working.
+
+        PsyNet calls this as soon as finished plus working participants cover
+        the target. Lucid records anyone who returns after the survey leaves
+        ``live`` as Survey Closed (code 136) rather than as a complete, so while
+        participants are still working the survey stays ``live`` and entry is
+        paused by lowering its total quota to the completes Lucid already has.
+        ``run_checks`` re-evaluates recruitment every minute while entry is
+        paused, which completes the survey once the last working participant
+        has finished or timed out, or reopens entry if more are needed.
         """
-        Lucid automatically ends recruitment when the number of completes has reached the
-        target.
-        """
-        self.lucidservice.log("Recruitment is automatically handled by Lucid.")
+        survey_number = self.current_survey_number()
+        if survey_number is None:
+            return
+        try:
+            if self.lucidservice.get_survey_status(survey_number) != "live":
+                return
+            if self._n_working_participants() == 0:
+                self.lucidservice.change_status(survey_number, "complete")
+                self.store.set(self._paused_quantity_key, "")
+            elif not self._paused_quantity():
+                quantity, completes = (
+                    self.lucidservice.get_survey_quantity_and_completes(survey_number)
+                )
+                self.lucidservice.set_survey_quantity(survey_number, completes)
+                self.store.set(self._paused_quantity_key, quantity)
+                self.lucidservice.log(
+                    f"Paused entry to survey {survey_number} while participants finish."
+                )
+        except Exception:
+            logger.warning(
+                "Failed to close Lucid survey %s; it may keep fielding.",
+                survey_number,
+                exc_info=True,
+            )
+
+    def _resume_entry(self):
+        """Restore the total quota that ``close_recruitment`` lowered, if any."""
+        quantity = self._paused_quantity()
+        if not quantity:
+            return
+        survey_number = self.current_survey_number()
+        try:
+            self.lucidservice.set_survey_quantity(survey_number, quantity)
+            self.store.set(self._paused_quantity_key, "")
+            self.lucidservice.log(f"Reopened entry to survey {survey_number}.")
+        except Exception:
+            logger.warning(
+                "Failed to reopen entry to Lucid survey %s.",
+                survey_number,
+                exc_info=True,
+            )
+
+    def _recheck_paused_entry(self):
+        """Let the experiment complete or reopen a survey whose entry is paused."""
+        if not self._paused_quantity():
+            return
+        from .experiment import get_experiment
+
+        get_experiment().recruit()
+
+    @property
+    def _paused_quantity_key(self):
+        return self.get_survey_storage_key("paused_quantity")
+
+    def _paused_quantity(self):
+        """Return the total quota to restore when entry is paused, else ``None``."""
+        value = self.store.get(self._paused_quantity_key)
+        return int(value) if value else None
+
+    @staticmethod
+    def _n_working_participants():
+        return Participant.query.filter_by(status="working", failed=False).count()
 
     def normalize_entry_information(self, entry_information):
         """Accepts data from the recruited user and returns data needed to validate,
@@ -2979,6 +3071,10 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
             platform_base=0.0,
             bonus=0.0,
         )
+
+    def report_submission_outcome(self, participant, amount, reason):
+        """Complete or terminate the respondent on Lucid, even with a zero bonus."""
+        return self.reward_bonus(participant, amount, reason)
 
     def reward_bonus(self, participant, amount, reason):
         """
@@ -3484,7 +3580,8 @@ def get_lucid_settings(
     lucid_recruitment_config_path: str, path to the Lucid recruitment config.
 
     termination_time_in_s: int, maximal time a participant can spend on the experiment. If this time is exceeded,
-        the participant is terminated via the front-end.
+        the participant is terminated via the front-end. If the participant has closed the tab, the recruiter
+        clock terminates them one minute later instead.
 
     bid_incidence: int, default 66, the bid incidence. Bid incidence is the number of completes/(number of completes +
         participants who did not pass the qualifications). It is a percentage, so if you expect 66% of the participants

@@ -1,5 +1,6 @@
 import json
 from contextlib import contextmanager
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import MagicMock, PropertyMock, patch
 
@@ -18,6 +19,7 @@ from psynet.exit import (
     PaymentDecision,
     PaymentState,
 )
+from psynet.lucid import LucidService
 from psynet.participant import (
     BONUS_PAY_IN_PROGRESS,
     BONUS_STATUS_CAPPED,
@@ -2184,6 +2186,153 @@ def _lucid_recruiter_with_service():
     recruiter = object.__new__(BaseLucidRecruiter)
     recruiter.lucidservice = MagicMock()
     return recruiter
+
+
+class _FakeRedisStore(dict):
+    def set(self, key, value):
+        self[key] = str(value)
+
+
+def _lucid_recruiter_with_live_survey(quantity=10, completes=1):
+    recruiter = _lucid_recruiter_with_service()
+    recruiter.config = FakeConfig(id="exp")
+    recruiter.store = _FakeRedisStore()
+    recruiter._record_current_survey_number(123)
+    service = recruiter.lucidservice
+    service.get_survey_status.return_value = "live"
+    service.get_survey_quantity_and_completes.return_value = (quantity, completes)
+    return recruiter
+
+
+def test_lucid_close_recruitment_pauses_entry_until_nobody_is_working():
+    """Closing the survey while people work would return their completes as 136."""
+    recruiter = _lucid_recruiter_with_live_survey(quantity=10, completes=1)
+    service = recruiter.lucidservice
+
+    with patch.object(BaseLucidRecruiter, "_n_working_participants", return_value=9):
+        recruiter.close_recruitment()
+        recruiter.close_recruitment()
+    service.set_survey_quantity.assert_called_once_with("123", 1)
+    service.change_status.assert_not_called()
+
+    recruiter.recruit(n=1)
+    service.set_survey_quantity.assert_called_with("123", 10)
+
+    with patch.object(BaseLucidRecruiter, "_n_working_participants", return_value=2):
+        recruiter.close_recruitment()
+    with patch.object(BaseLucidRecruiter, "_n_working_participants", return_value=0):
+        recruiter.close_recruitment()
+    service.change_status.assert_called_once_with("123", "complete")
+
+    service.set_survey_quantity.reset_mock()
+    recruiter.recruit(n=1)
+    service.set_survey_quantity.assert_not_called()
+
+
+def test_lucid_run_checks_reevaluates_recruitment_while_entry_is_paused():
+    """A participant who times out never submits, so the clock must re-decide."""
+    recruiter = _lucid_recruiter_with_live_survey()
+    recruiter.lucidservice.get_submissions.return_value = []
+    experiment = MagicMock()
+
+    with patch("psynet.experiment.get_experiment", return_value=experiment):
+        recruiter.run_checks()
+        experiment.recruit.assert_not_called()
+
+        with patch.object(
+            BaseLucidRecruiter, "_n_working_participants", return_value=3
+        ):
+            recruiter.close_recruitment()
+        recruiter.run_checks()
+    experiment.recruit.assert_called_once_with()
+
+
+def test_lucid_clock_times_out_working_participants_who_closed_the_tab():
+    """Only the browser enforces the overall limit, so a closed tab stays working."""
+    recruiter = _lucid_recruiter_with_service()
+    recruiter.config = FakeConfig(
+        lucid_recruitment_config=json.dumps({"termination_time_in_s": 600})
+    )
+    now = datetime(2026, 9, 30, 12, 0)
+    entrant = SimpleNamespace(registered_at=now - timedelta(minutes=12))
+    working = SimpleNamespace(id=19, status="working")
+    approved = SimpleNamespace(id=20, status="approved")
+
+    with patch("psynet.recruiters.Response") as response:
+        response.query.filter_by.return_value.first.return_value = object()
+        reason = recruiter._clock_termination_reason
+        assert reason(entrant, working, now) == "overall-timeout-600s"
+        assert reason(entrant, working, now - timedelta(minutes=2)) is None
+        assert reason(entrant, approved, now) is None
+
+        response.query.filter_by.return_value.first.return_value = None
+        assert reason(entrant, working, now) == "first-response-timeout"
+
+    entrant.lucid_status = recruiter.IN_SURVEY
+    assert reason(entrant, None, now) == "never-entered-experiment"
+    entrant.lucid_status = recruiter.MARKETPLACE_CODE
+    assert reason(entrant, None, now) is None
+
+
+def test_lucid_clock_skips_overall_timeout_without_a_limit():
+    recruiter = _lucid_recruiter_with_service()
+    recruiter.config = FakeConfig(lucid_recruitment_config=json.dumps({}))
+    now = datetime(2026, 9, 30, 12, 0)
+    entrant = SimpleNamespace(registered_at=now - timedelta(days=2))
+    working = SimpleNamespace(id=19, status="working")
+
+    with patch("psynet.recruiters.Response") as response:
+        response.query.filter_by.return_value.first.return_value = object()
+        assert recruiter._clock_termination_reason(entrant, working, now) is None
+
+
+def test_lucid_time_limit_does_not_reset_after_a_day():
+    service = object.__new__(LucidService)
+    service.recruitment_config = {"termination_time_in_s": 600}
+    registered_at = datetime.now() - timedelta(days=1, minutes=5)
+
+    def entrant(progress):
+        participant = SimpleNamespace(progress=progress)
+        return SimpleNamespace(
+            registered_at=registered_at,
+            terminated_at=None,
+            resolve_participant=lambda: participant,
+        )
+
+    assert service.can_be_terminated(entrant(progress=0))
+    with patch("psynet.lucid.get_lucid_rid", return_value=entrant(progress=0.5)):
+        assert service.time_until_termination_in_s("rid") < 0
+
+
+def test_lucid_uses_cached_submissions_only_shortly_after_a_rate_limit():
+    service = object.__new__(LucidService)
+    service.headers = {}
+    cached = MagicMock()
+    cached.get.return_value = "cached"
+    experiment = MagicMock()
+    experiment.get_last_n_from_class.return_value = [cached]
+    redis_conn = MagicMock()
+
+    def rate_limited(minutes_ago):
+        timestamp = datetime.now() - timedelta(minutes=minutes_ago)
+        redis_conn.get.return_value = timestamp.isoformat().encode()
+
+    with (
+        patch("psynet.lucid.session") as session,
+        patch("dallinger.db.redis_conn", redis_conn),
+        patch("psynet.experiment.get_experiment", return_value=experiment),
+        patch("psynet.lucid.requests.get") as api_get,
+    ):
+        session.query.return_value.filter.return_value.order_by.return_value.all.return_value = []
+        api_get.return_value = SimpleNamespace(ok=False, status_code=500)
+
+        rate_limited(minutes_ago=1)
+        assert service.get_submissions(1) == "cached"
+        api_get.assert_not_called()
+
+        rate_limited(minutes_ago=10)
+        assert service.get_submissions(1) is None
+        api_get.assert_called_once()
 
 
 def _lucid_submit_url(ris, rid):
@@ -4397,6 +4546,31 @@ def test_lucid_reward_bonus_terminates_when_responses_empty():
     recruiter.terminate_participant.assert_called_once_with(
         participant=participant, reason="participant-did-not-complete"
     )
+
+
+def test_lucid_submission_reports_complete_to_lucid_without_a_bonus():
+    """Lucid pays no PsyNet bonus, but the server-side complete must still run."""
+    recruiter = _lucid_recruiter_with_service()
+    participant = MagicMock(
+        id=7,
+        assignment_id="rid-1",
+        status="submitted",
+        failed=False,
+        complete=True,
+        progress=1,
+        exit_plan=None,
+        recruiter=recruiter,
+        bonus=None,
+        bonus_status=BONUS_STATUS_NOT_DUE_YET,
+        planned_bonus=0.0,
+        end_time=None,
+    )
+
+    PaymentHarness().on_recruiter_submission_complete(participant, event=None)
+
+    recruiter.lucidservice.complete_respondent.assert_called_once_with("rid-1")
+    assert participant.status == "approved"
+    assert participant.bonus_status == BONUS_STATUS_SUCCESS
 
 
 def test_experiment_bonus_raises():

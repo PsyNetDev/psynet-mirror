@@ -255,9 +255,15 @@ git commit -m "Refresh experiment scripts via psynet scripts update"
      Dallinger to its matching tag, e.g.
 
      ```text
-     dallinger[docker] @ git+https://github.com/Dallinger/Dallinger.git@v12.2.1
-     psynet @ git+https://gitlab.com/PsyNetDev/PsyNet.git@v13.3.0rc0
+     dallinger[docker] @ git+https://github.com/Dallinger/Dallinger.git@v12.4.0
+     psynet[experiment] @ git+https://gitlab.com/PsyNetDev/PsyNet.git@v14.0.0rc2
      ```
+
+     Keep the `[experiment]` extra in every PsyNet pin, including the
+     master-based one. Since PsyNet 14 the base package only bootstraps the
+     CLI, so without the extra the image has no Dallinger runtime and the
+     `clock` container fails with `dallinger_heroku_clock: executable file
+     not found`.
 
    - **Master-based deployment**: pin PsyNet to the latest pushed `master`
      commit hash, and Dallinger to the SHA that `pyproject.toml` declares.

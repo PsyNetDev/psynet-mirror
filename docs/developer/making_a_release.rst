@@ -8,11 +8,13 @@ Making a release
 PsyNet releases are made periodically by the core developers. There is no real rule about how often these releases are made; it comes down to a balance between making new features available early and avoiding spamming PsyNet users with too many updates to keep track of.
 
 The step-by-step release process is maintained as a Cursor skill at
-``.cursor/skills/release/SKILL.md``. It currently covers patch and minor releases,
-and can be invoked in Cursor via the ``/release`` slash command (skills are
-auto-discovered and exposed as slash commands under their skill name).
-Pass the release type as an argument to select the corresponding path in
-the skill, e.g. ``/release minor`` or ``/release patch``.
+``.cursor/skills/release/SKILL.md``. It covers major, minor, and patch
+releases, and can be invoked in Cursor via the ``/release`` slash command
+(skills are auto-discovered and exposed as slash commands under their
+skill name). The skill proposes a type from committed changelog fragments
+and the current branch; the release manager must affirm (or override)
+before any release-branch work. ``/release major``, ``/release minor``,
+or ``/release patch`` is an override to weigh against that proposal.
 The Slack announcement step is documented in a separate Cursor skill at
 ``.cursor/skills/announce-release/SKILL.md`` (``/announce-release``).
 
@@ -22,14 +24,16 @@ an AI agent, but it works equally well as a plain checklist read directly.
 Overview
 --------
 
-1. Decide on a version number following `semantic versioning guidelines
-   <https://semver.org/>`_:
+1. Affirm the version the release skill proposes from committed
+   changelog fragments (see ``.cursor/skills/release/SKILL.md``). In
+   outline, that follows `semantic versioning <https://semver.org/>`_:
 
-   * **Major** (breaking changes)
-   * **Minor** (backwards-compatible features and/or bugfixes) — released
-     from ``master`` via a new ``release-MAJOR.MINOR`` branch.
-   * **Patch** (bugfixes only) — released from the existing
+   * **Major** (``*.breaking.md`` fragments) — from ``master`` as
+     ``X.0.0`` on ``release-X.0``.
+   * **Minor** (backwards-compatible work from ``master``) — new
      ``release-MAJOR.MINOR`` branch.
+   * **Patch** (bugfixes only) — existing ``release-MAJOR.MINOR``
+     branch.
 
 2. Prepare the release commits on the release branch:
 
@@ -57,15 +61,17 @@ Overview
    ``export SLACK_BOT_TOKEN=<slack-bot-token>`` followed by
    ``psynet dev release announce X.Y.Z --summary-file highlights.md --channel psynet-release-test --dry-run``.
 
-4. For minor releases, merge the release branch back into ``master`` (merge
-   commit, no squash) and bump ``master`` to the next alpha version.
+4. For major and minor releases, merge the release branch back into
+   ``master`` (merge commit, no squash) and bump ``master`` to the next
+   alpha version (``X.(Y+1).0a0`` after a minor, ``X.1.0a0`` after
+   ``X.0.0``).
 
 Externally visible or irreversible steps (pushing tags, PyPI uploads, GitLab
 releases, Slack posts) require explicit approval from the human release
 manager; the skill marks each of these with a **Human checkpoint** callout.
 
-Minor releases go through a release-candidate flow (``X.Y.Zrc1``,
-``rc2``, …) by default before the final tag: RCs are tagged, uploaded to
+Major and minor releases go through a release-candidate flow
+(``X.Y.Zrc1``, ``rc2``, …) by default before the final tag: RCs are tagged, uploaded to
 PyPI as pre-releases, and announced on Slack, but get no GitLab release
 entry (GitLab has no pre-release flag, so an RC entry would displace the
 "latest release" permalink). Skip the RC stage only when the release

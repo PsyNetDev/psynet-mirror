@@ -466,13 +466,13 @@ msgstr "ᱪᱟᱹᱵᱟ ᱠᱚᱱᱛᱮ ᱟᱢᱮᱱ ᱥᱮᱥᱤᱭᱚᱱ ᱠ�
 #, fuzzy
 msgctxt "final_page_successful"
 msgid "That's the end!"
-msgstr "ᱟᱢᱮᱱ ᱠᱚᱱᱛᱮᱭᱟᱜᱼᱟ᱾"
+msgstr "ᱱᱚᱣᱟ ᱪᱟᱹᱵᱟ ᱠᱟᱱᱟ!"
 
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_unsuccessful"
 msgid "Unfortunately we have to stop early."
-msgstr "ᱟᱢᱮᱱ ᱠᱚᱱᱛᱮᱭᱟᱜᱼᱟ᱾ ᱟᱢᱮᱱ ᱠᱚᱱᱛᱮᱭᱟᱜᱼᱟ᱾"
+msgstr "ᱫᱩᱠᱷ ᱥᱟᱶ, ᱟᱞᱮ ᱢᱟᱲᱟᱝ ᱛᱮ ᱛᱷᱟᱢᱟᱜ ᱦᱚᱪᱚ ᱠᱟᱱᱟ᱾"
 
 #: psynet/end.py
 #, fuzzy
@@ -484,18 +484,18 @@ msgstr "ᱢᱮᱱᱠᱷᱟᱱ, ᱟᱢ ᱢᱟᱲᱟᱝ ᱠᱷᱚᱱ ᱠᱷᱚᱨ�
 #, fuzzy
 msgctxt "final_page_rejected_consent"
 msgid "You chose not to continue."
-msgstr "ᱟᱢᱮᱱ ᱠᱚᱱᱛᱮᱭᱟᱜᱼᱟ᱾"
+msgstr "ᱟᱢ ᱞᱟᱦᱟ ᱛᱮ ᱵᱟᱝ ᱪᱟᱞᱟᱣ ᱠᱟᱱᱟ᱾"
 
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_rejected_consent"
 msgid "You may close this page."
-msgstr "ᱟᱢᱮᱱ ᱠᱚᱱᱛᱮᱭᱟᱜᱼᱟ᱾"
+msgstr "ᱟᱢ ᱱᱚᱣᱟ ᱯᱮᱡ ᱵᱚᱸᱫ ᱠᱚᱭ ᱫᱟᱲᱮᱭᱟ᱾"
 
 #: psynet/end.py
 #, fuzzy
 msgid "We will return you to your panel in a few seconds."
-msgstr "ᱟᱢᱮᱱ ᱠᱚᱱᱛᱮᱭᱟᱜᱼᱟ᱾"
+msgstr "ᱟᱞᱮ ᱟᱢᱮᱱ ᱠᱟᱹᱛᱤᱡ ᱥᱮᱠᱮᱱᱰ ᱨᱮ ᱟᱢᱟᱜ ᱯᱮᱱᱮᱞ ᱠᱚᱱ ᱨᱩᱣᱟᱹᱲ ᱠᱚᱣᱟ᱾"
 
 #: psynet/equipment.py
 #, fuzzy
@@ -505,12 +505,11 @@ msgid ""
 msgstr ""
 "Hena agan page-ko cegiakena permissions request dekha menak'na; dobar do."
 
-# Needs native review: machine translation was unusable, English kept.
 #: psynet/experiment.py
 #, fuzzy
 msgctxt "timeline_problem"
 msgid "This session has already ended. Please reload the page."
-msgstr "This session has already ended. Please reload the page."
+msgstr "ᱱᱚᱣᱟ ᱥᱮᱥᱚᱱ ᱢᱟᱲᱟᱝ ᱜᱮ ᱢᱩᱪᱟᱫ ᱦᱩᱭ ᱮᱱᱟ। ᱫᱚᱭᱟ ᱠᱟᱛᱮ ᱯᱟᱱᱟ ᱫᱚᱦᱚᱲᱟ ᱨᱤᱞᱚᱰ ᱢᱮ।"
 
 #: psynet/experiment.py
 #, fuzzy
@@ -522,11 +521,10 @@ msgstr ""
 "Synchronization samasya pao geche. Apne ki ekai experiment ko anek browser "
 "tab re chala reya? Kripaya sab tab band korya encha page ko refresh korya."
 
-# Needs native review: machine translation was unusable, English kept.
 #: psynet/experiment.py
 #, fuzzy
 msgid "The experiment is temporarily busy. Please try again."
-msgstr "The experiment is temporarily busy. Please try again."
+msgstr "ᱮᱠᱥᱯᱮᱨᱤᱢᱮᱱᱴ ᱫᱚ ᱛᱷᱚᱲᱟ ᱚᱠᱛᱚ ᱵᱤᱥᱤ ᱜᱮᱭᱟ। ᱫᱚᱭᱟ ᱠᱟᱛᱮ ᱫᱚᱦᱲᱟ ᱠᱩᱥᱤᱥ ᱢᱮ।"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -761,7 +759,9 @@ msgctxt "early_exit"
 msgid ""
 "If you leave now, you will not be able to continue later. Your responses so "
 "far will still be saved."
-msgstr "ᱡᱩᱢᱟᱱ ᱠᱩᱱ ᱛᱟᱲᱟ ᱟᱹᱲᱟᱹᱲ ᱨᱮᱞ ᱨᱮᱜᱚᱯ ᱠᱟᱹᱲ ᱨᱮᱯᱦᱟᱹᱸ ᱠᱟᱹᱲ ᱥᱟᱣᱮ ᱯᱮᱸᱜᱟᱣᱟᱜᱼᱟ ᱾"
+msgstr ""
+"ᱱᱤᱛᱚᱜ ᱟᱢ ᱞᱟᱫᱟᱹᱢ ᱨᱮ, ᱛᱟᱭᱚᱢ ᱟᱢ ᱟᱨ ᱪᱟᱹᱞᱟᱣ ᱵᱟᱝ ᱫᱟᱲᱮᱭᱟ ᱾ ᱱᱤᱛ ᱦᱟᱹᱵᱤᱡ ᱟᱢ ᱮᱢ ᱞᱮᱠᱟᱜ "
+"ᱡᱚᱵᱟᱵ ᱫᱚ ᱥᱟᱢᱟᱹᱫᱚᱢ ᱛᱟᱦᱮᱱᱟ ᱾"
 
 #: psynet/recruiters.py
 #, fuzzy, python-brace-format
@@ -934,7 +934,9 @@ msgctxt "early_exit_error_prolific"
 msgid ""
 "To receive payment for the work you completed, you will need to return your "
 "submission on Prolific."
-msgstr "ᱡᱚᱯᱚᱦ ᱞᱮᱫᱮᱯᱮ ᱴᱮ ᱥᱟᱛᱟᱹᱨ, ᱡᱟᱹᱢᱟᱭᱟᱡ ᱨᱮᱞ ᱞᱮᱫᱮᱯᱮ ᱾"
+msgstr ""
+"ᱟᱢ ᱡᱚᱯᱚᱦ ᱠᱟᱹᱢᱤ ᱞᱟᱹᱜᱤᱫ ᱯᱟᱭᱥᱟ ᱧᱟᱢ ᱞᱟᱹᱜᱤᱫ, Prolific ᱨᱮ ᱟᱢᱟᱜ ᱡᱟᱹᱢᱟᱭᱟᱡ ᱫᱚ ᱨᱤᱴᱟᱨᱱ "
+"ᱞᱮᱛᱮᱭᱟ ᱾"
 
 #: psynet/recruiters.py
 #, fuzzy
@@ -948,7 +950,9 @@ msgctxt "early_exit_error_prolific"
 msgid ""
 "We could not open the payment instructions. Please try again. If this keeps "
 "happening, message the researcher through Prolific."
-msgstr "ᱡᱚᱯᱚᱦ ᱞᱮᱫᱮᱯᱮ ᱴᱮ ᱥᱟᱛᱟᱹᱨ, ᱡᱟᱹᱢᱟᱭᱟᱡ ᱨᱮᱞ ᱞᱮᱫᱮᱯᱮ ᱾"
+msgstr ""
+"ᱪᱟᱹᱞᱟᱣ ᱯᱟᱭᱥᱟ ᱢᱟᱹᱱᱚᱛ ᱠᱚ ᱵᱟᱝ ᱠᱷᱩᱞᱟᱣ ᱫᱟᱲᱮᱞᱮᱫᱟ ᱾ ᱫᱚᱦᱲᱟ ᱪᱮᱥᱴᱟ ᱢᱮ ᱾ ᱡᱩᱫᱤ ᱱᱚᱶᱟ "
+"ᱛᱤᱠᱟᱹ ᱛᱤᱠᱟᱹ ᱦᱩᱭᱚᱜ ᱛᱟᱦᱮᱱᱟ, Prolific ᱛᱮ ᱨᱤᱥᱟᱨᱪᱟᱨ ᱠᱚ ᱥᱟᱸᱫᱮᱥ ᱮᱢ ᱢᱮ ᱾"
 
 #: psynet/recruiters.py
 #, fuzzy
@@ -985,8 +989,8 @@ msgid ""
 "We could not send your submission to Prolific. Please try again. If this "
 "keeps happening, message the researcher through Prolific."
 msgstr ""
-"ᱡᱟᱹᱢᱟᱭᱟᱡ ᱨᱮᱞ ᱞᱮᱫᱮᱯᱮ ᱴᱮ ᱥᱟᱛᱟᱹᱨ ᱠᱟᱹᱲ ᱢᱟᱱᱟᱹᱜᱮ ᱾ ᱡᱩᱢᱟᱱ ᱠᱩᱱ ᱛᱟᱲᱟ ᱡᱚᱦᱚ ᱰᱤᱭᱟᱹᱜ ᱦᱚᱱ "
-"ᱨᱮᱥᱟᱛᱟᱹᱨ ᱯᱮ ᱠᱚᱱᱛᱵᱷᱟᱹᱲ ᱫᱚ ᱟᱹᱲᱟᱹᱨᱛ ᱥᱟᱢᱟᱹᱫᱚᱢ ᱥᱟᱠᱟᱜᱼᱟ ᱾"
+"ᱟᱢᱟᱜ ᱡᱟᱹᱢᱟᱭᱟᱡ ᱫᱚ Prolific ᱛᱮ ᱵᱟᱝ ᱠᱩᱞ ᱫᱟᱲᱮᱞᱮᱫᱟ ᱾ ᱫᱚᱦᱲᱟ ᱪᱮᱥᱴᱟ ᱢᱮ ᱾ ᱡᱩᱫᱤ ᱱᱚᱶᱟ "
+"ᱛᱤᱠᱟᱹ ᱛᱤᱠᱟᱹ ᱦᱩᱭᱚᱜ ᱛᱟᱦᱮᱱᱟ, Prolific ᱛᱮ ᱨᱤᱥᱟᱨᱪᱟᱨ ᱠᱚ ᱥᱟᱸᱫᱮᱥ ᱮᱢ ᱢᱮ ᱾"
 
 #: psynet/recruiters.py
 #, fuzzy
@@ -995,8 +999,8 @@ msgid ""
 "Please return your submission via the Prolific interface and click Next. We "
 "will then automatically pay you a bonus."
 msgstr ""
-"ᱡᱚᱯᱚᱦ ᱞᱮᱫᱮᱯᱮ ᱴᱮ ᱥᱟᱛᱟᱹᱨ, ᱡᱟᱹᱢᱟᱭᱟᱡ ᱨᱮᱞ ᱞᱮᱫᱮᱯᱮ ᱾ ᱟᱲᱟᱜ ᱨᱮᱞᱮ ᱵᱟᱪᱷ ᱡᱟᱹᱢᱟᱭᱟᱜ "
-"ᱥᱟᱢᱟᱹᱫᱚᱢ ᱾"
+"ᱵᱤᱱᱛᱤ ᱠᱟᱛᱮ Prolific ᱤᱱᱴᱟᱨᱯᱷᱮᱥ ᱨᱮ ᱟᱢᱟᱜ ᱡᱟᱹᱢᱟᱭᱟᱡ ᱨᱤᱴᱟᱨᱱ ᱢᱮ ᱟᱨ ᱛᱟᱭᱚᱢ ᱚᱛᱟᱣ ᱢᱮ ᱾ "
+"ᱚᱱᱟ ᱛᱟᱭᱚᱢ ᱟᱞᱮ ᱟᱢᱟᱜ ᱢᱟᱹᱦᱫᱟᱹᱞ ᱯᱟᱭᱥᱟ ᱟᱯᱱᱟᱨ ᱛᱮ ᱮᱢᱟᱭᱟᱞᱮ ᱾"
 
 #: psynet/recruiters.py
 #, fuzzy
@@ -1016,8 +1020,9 @@ msgid ""
 "automatically. The researcher has been notified and will arrange payment. "
 "You may close this page."
 msgstr ""
-"ᱡᱚᱯᱚᱦ ᱞᱮᱫᱮᱯᱮ ᱴᱮ ᱥᱟᱛᱟᱹᱨ, ᱡᱟᱹᱢᱟᱭᱟᱡ ᱨᱮᱞ ᱞᱮᱫᱮᱯᱮ ᱾ ᱟᱲᱟᱜ ᱨᱮᱞᱮ ᱵᱟᱪᱷ ᱡᱟᱹᱢᱟᱭᱟᱜ "
-"ᱥᱟᱢᱟᱹᱫᱚᱢ ᱾"
+"ᱟᱢᱟᱜ ᱨᱤᱴᱟᱨᱱ ᱨᱮᱠᱚᱨᱰ ᱦᱩᱭ ᱞᱮᱱᱟ, ᱢᱮᱱᱠᱷᱟᱱ ᱟᱞᱮ ᱢᱟᱹᱦᱫᱟᱹᱞ ᱯᱟᱭᱥᱟ ᱟᱯᱱᱟᱨ ᱛᱮ ᱵᱟᱝ ᱮᱢ "
+"ᱫᱟᱲᱮᱞᱮᱫᱟ ᱾ ᱨᱤᱥᱟᱨᱪᱟᱨ ᱠᱚ ᱠᱚ ᱥᱩᱪᱱᱟ ᱮᱢ ᱟᱠᱟᱱᱟ ᱟᱨ ᱚᱱᱠᱚ ᱯᱟᱭᱥᱟ ᱮᱢ ᱞᱟᱹᱜᱤᱫ ᱵᱮᱵᱚᱥᱛᱟ "
+"ᱠᱚᱣᱟ ᱾ ᱟᱢ ᱱᱚᱣᱟ ᱥᱟᱦᱴᱟ ᱵᱚᱸᱫ ᱫᱟᱲᱮᱭᱟᱢ ᱾"
 
 #: psynet/recruiters.py
 #, fuzzy
@@ -1035,8 +1040,9 @@ msgid ""
 "Prolific and message the researcher there. They will review your case and "
 "arrange payment if it is due. You may close this page."
 msgstr ""
-"ᱡᱚᱯᱚᱦ ᱞᱮᱫᱮᱯᱮ ᱴᱮ ᱥᱟᱛᱟᱹᱨ, ᱡᱟᱹᱢᱟᱭᱟᱡ ᱨᱮᱞ ᱞᱮᱫᱮᱯᱮ ᱾ ᱟᱲᱟᱜ ᱨᱮᱞᱮ ᱵᱟᱪᱷ ᱡᱟᱹᱢᱟᱭᱟᱜ "
-"ᱥᱟᱢᱟᱹᱫᱚᱢ ᱾"
+"ᱟᱢ ᱡᱟᱹᱯᱛᱤ ᱛᱤᱠᱤᱱᱟᱹ ᱯᱟᱭᱥᱟ ᱧᱟᱢ ᱞᱟᱹᱜᱤᱫ, Prolific ᱨᱮ ᱟᱢᱟᱜ ᱡᱟᱹᱢᱟᱭᱟᱡ ᱨᱤᱴᱟᱨᱱ ᱢᱮ ᱟᱨ "
+"ᱚᱱᱰᱮ ᱨᱤᱥᱟᱨᱪᱟᱨ ᱠᱚ ᱥᱟᱸᱫᱮᱥ ᱮᱢ ᱢᱮ ᱾ ᱚᱱᱠᱚ ᱟᱢᱟᱜ ᱠᱮᱥ ᱧᱮᱞ ᱠᱟᱛᱮ, ᱯᱟᱭᱥᱟ ᱮᱢ ᱞᱟᱹᱜᱤᱫ ᱦᱩᱭ "
+"ᱛᱟᱦᱮᱱ ᱨᱮ ᱵᱮᱵᱚᱥᱛᱟ ᱠᱚᱣᱟ ᱾ ᱟᱢ ᱱᱚᱣᱟ ᱥᱟᱦᱴᱟ ᱵᱚᱸᱫ ᱫᱟᱲᱮᱭᱟᱢ ᱾"
 
 #: psynet/recruiters.py
 #, fuzzy
@@ -1046,19 +1052,23 @@ msgid ""
 "return to your panel provider. This session will not issue a payment; any "
 "payment depends on your panel provider's rules. Your responses so far will "
 "still be saved."
-msgstr "ᱡᱩᱢᱟᱱ ᱠᱩᱱ ᱛᱟᱲᱟ ᱟᱹᱲᱟᱹᱲ ᱨᱮᱞ ᱨᱮᱜᱚᱯ ᱠᱟᱹᱲ ᱨᱮᱯᱦᱟᱹᱸ ᱠᱟᱹᱲ ᱥᱟᱣᱮ ᱯᱮᱸᱜᱟᱣᱟᱜᱼᱟ ᱾"
+msgstr ""
+"ᱱᱤᱛᱚᱜ ᱟᱢ ᱞᱟᱫᱟᱹᱢ ᱨᱮ, ᱛᱟᱭᱚᱢ ᱟᱢ ᱟᱨ ᱪᱟᱹᱞᱟᱣ ᱵᱟᱝ ᱫᱟᱲᱮᱭᱟ, ᱟᱨ ᱟᱢ ᱟᱢᱟᱜ ᱯᱮᱱᱮᱞ ᱮᱢᱟᱜ "
+"ᱥᱮᱵᱟᱫᱟᱛᱟ ᱠᱚ ᱨᱮ ᱨᱩᱣᱟᱹᱲ ᱟᱢ ᱾ ᱱᱚᱣᱟ ᱥᱮᱥᱚᱱ ᱛᱮ ᱯᱟᱭᱥᱟ ᱵᱟᱝ ᱮᱢᱚᱜᱼᱟ; ᱯᱟᱭᱥᱟ ᱧᱟᱢ ᱫᱚ ᱟᱢᱟᱜ"
+" ᱯᱮᱱᱮᱞ ᱮᱢᱟᱜ ᱥᱮᱵᱟᱫᱟᱛᱟ ᱨᱮᱜᱮ ᱢᱮᱱᱟᱜᱼᱟ ᱾ ᱱᱤᱛ ᱦᱟᱹᱵᱤᱡ ᱟᱢ ᱮᱢ ᱞᱮᱠᱟᱜ ᱡᱚᱵᱟᱵ ᱫᱚ ᱥᱟᱢᱟᱹᱫᱚᱢ"
+" ᱛᱟᱦᱮᱱᱟ ᱾"
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "lucid_error"
 msgid "We will return you to your panel in a few seconds."
-msgstr "ᱡᱚᱯᱚᱦ ᱞᱮᱫᱮᱯᱮ ᱴᱮ ᱥᱟᱛᱟᱹᱨ, ᱡᱟᱹᱢᱟᱭᱟᱡ ᱨᱮᱞ ᱞᱮᱫᱮᱯᱮ ᱾"
+msgstr "ᱠᱟᱹᱴᱤᱡ ᱥᱮᱠᱮᱱ ᱨᱮ ᱟᱞᱮ ᱟᱢᱟᱜ ᱯᱮᱱᱮᱞ ᱨᱮ ᱨᱩᱣᱟᱹᱲ ᱟᱢᱟᱞᱮ ᱾"
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "early_exit_error_lucid"
 msgid "We will return you to your panel in a few seconds."
-msgstr "ᱡᱚᱯᱚᱦ ᱞᱮᱫᱮᱯᱮ ᱴᱮ ᱥᱟᱛᱟᱹᱨ, ᱡᱟᱹᱢᱟᱭᱟᱡ ᱨᱮᱞ ᱞᱮᱫᱮᱯᱮ ᱾"
+msgstr "ᱠᱟᱹᱴᱤᱡ ᱥᱮᱠᱮᱱ ᱨᱮ ᱟᱞᱮ ᱟᱢᱟᱜ ᱯᱮᱱᱮᱞ ᱨᱮ ᱨᱩᱣᱟᱹᱲ ᱟᱢᱟᱞᱮ ᱾"
 
 #: psynet/recruiters.py
 #, fuzzy
@@ -1067,8 +1077,8 @@ msgid ""
 "We could not return you to your panel. Please try again. If this keeps "
 "happening, contact your panel provider."
 msgstr ""
-"ᱡᱟᱹᱢᱟᱭᱟᱡ ᱨᱮᱞ ᱞᱮᱫᱮᱯᱮ ᱴᱮ ᱥᱟᱛᱟᱹᱨ ᱠᱟᱹᱲ ᱢᱟᱱᱟᱹᱜᱮ ᱾ ᱡᱩᱢᱟᱱ ᱠᱩᱱ ᱛᱟᱲᱟ ᱡᱚᱦᱚ ᱰᱤᱭᱟᱹᱜ ᱦᱚᱱ "
-"ᱨᱮᱥᱟᱛᱟᱹᱨ ᱯᱮ ᱠᱚᱱᱛᱵᱷᱟᱹᱲ ᱫᱚ ᱟᱹᱲᱟᱹᱨᱛ ᱥᱟᱢᱟᱹᱫᱚᱢ ᱥᱟᱠᱟᱜᱼᱟ ᱾"
+"ᱟᱞᱮ ᱟᱢᱟᱜ ᱯᱮᱱᱮᱞ ᱨᱮ ᱟᱢ ᱨᱩᱣᱟᱹᱲ ᱵᱟᱝ ᱫᱟᱲᱮᱞᱮᱫᱟ ᱾ ᱫᱚᱦᱲᱟ ᱪᱮᱥᱴᱟ ᱢᱮ ᱾ ᱡᱩᱫᱤ ᱱᱚᱶᱟ ᱛᱤᱠᱟᱹ "
+"ᱛᱤᱠᱟᱹ ᱦᱩᱭᱚᱜ ᱛᱟᱦᱮᱱᱟ, ᱟᱢᱟᱜ ᱯᱮᱱᱮᱞ ᱥᱮᱵᱟᱫᱟᱛᱟ ᱠᱚ ᱥᱟᱶ ᱡᱚᱜᱟᱡᱚᱜ ᱢᱮ ᱾"
 
 #: psynet/recruiters.py
 #, fuzzy
@@ -2553,17 +2563,13 @@ msgstr ""
 #, fuzzy
 msgctxt "exit_recruiter_prolific"
 msgid "Please wait."
-msgstr ""
-"ᱯᱟᱹᱨᱛᱷᱟᱹᱨ ᱠᱷᱚᱸ ᱠᱷᱚᱸᱜᱚ ᱥᱟᱹᱢᱤᱵᱮᱛ ᱟᱹᱞ Prolific ᱠᱚ ᱵᱟᱝᱜᱟᱹᱲᱤᱭᱟᱹᱣᱟᱜᱼᱟ। ᱟᱹᱞ "
-"completion code ᱠᱚ ᱵᱟᱝᱜᱟᱹᱲᱤᱭᱟᱹᱣᱟᱜᱼᱟ ᱫᱚᱦᱚᱜᱟᱹᱲᱤᱭᱟᱹᱣᱟᱜᱼᱟ ᱫᱚᱦᱚᱜᱟᱹᱲᱤᱭᱟᱹᱣᱟᱜᱼᱟ।"
+msgstr "ᱛᱟᱹᱞᱟᱜ ᱢᱮ।"
 
 #: psynet/templates/exit_recruiter_prolific_submitted.html
 #, fuzzy
 msgctxt "exit_recruiter_prolific"
 msgid "Try again"
-msgstr ""
-"ᱯᱟᱹᱨᱛᱷᱟᱹᱨ ᱠᱷᱚᱸ ᱠᱷᱚᱸᱜᱚ ᱥᱟᱹᱢᱤᱵᱮᱛ ᱟᱹᱞ Prolific ᱠᱚ ᱵᱟᱝᱜᱟᱹᱲᱤᱭᱟᱹᱣᱟᱜᱼᱟ। ᱟᱹᱞ "
-"completion code ᱠᱚ ᱵᱟᱝᱜᱟᱹᱲᱤᱭᱟᱹᱣᱟᱜᱼᱟ ᱫᱚᱦᱚᱜᱟᱹᱲᱤᱭᱟᱹᱣᱟᱜᱼᱟ ᱫᱚᱦᱚᱜᱟᱹᱲᱤᱭᱟᱹᱣᱟᱜᱼᱟ।"
+msgstr "ᱫᱚᱦᱚᱲ ᱪᱮᱥᱴᱟ ᱢᱮ"
 
 #: psynet/templates/keyboard.html
 #, fuzzy
@@ -3217,61 +3223,61 @@ msgstr "Image not found"
 #, fuzzy
 msgctxt "timeline_problem"
 msgid "Comment stored."
-msgstr "ᱱᱚ"
+msgstr "ᱢᱚᱱᱛᱚᱵᱽᱭ ᱡᱚᱢᱟ ᱟᱠᱟᱱᱟ।"
 
 #: psynet/templates/macros/timeline-shell.html
 #, fuzzy
 msgctxt "timeline_problem"
 msgid "Please wait for the page to load."
-msgstr "ᱚᱛᱮ ᱠᱷᱚᱱᱮ?"
+msgstr "ᱥᱟᱦᱴᱟ ᱞᱚᱰ ᱦᱚᱪᱚ ᱡᱟᱠᱟᱫ ᱛᱟᱦᱮᱸ ᱢᱮ।"
 
 #: psynet/templates/macros/timeline-shell.html
 #, fuzzy
 msgctxt "timeline_problem"
 msgid "Try again in a couple of seconds."
-msgstr "ᱟᱢᱟᱱ ᱠᱚᱢᱮᱱᱴ ᱠᱚᱞᱮᱫ"
+msgstr "ᱟᱨ ᱵᱟᱨ ᱥᱮᱠᱮᱱᱰ ᱛᱟᱭᱚᱢ ᱛᱮ ᱠᱚᱥᱤᱥ ᱢᱮ।"
 
 #: psynet/templates/macros/timeline-shell.html
 #, fuzzy
 msgctxt "timeline"
 msgid "Reward"
-msgstr "ᱚᱛᱮ ᱠᱷᱚᱱᱮ?"
+msgstr "ᱯᱩᱨᱥᱠᱟᱨ"
 
 #: psynet/templates/macros/timeline-shell.html
 #, fuzzy
 msgctxt "timeline_reward"
 msgid "Reward earned so far"
-msgstr "ᱚᱛᱮ ᱠᱷᱚᱱᱮ?"
+msgstr "ᱱᱤᱛ ᱦᱟᱵᱤᱡ ᱧᱟᱢ ᱟᱠᱟᱱ ᱯᱩᱨᱥᱠᱟᱨ"
 
 #: psynet/templates/macros/timeline-shell.html
 #, fuzzy
 msgctxt "timeline_reward"
 msgid "for time"
-msgstr "ᱟᱢᱟᱱ ᱠᱚᱢᱮᱱᱴ ᱠᱚᱞᱮᱫ"
+msgstr "ᱚᱠᱛᱚ ᱞᱟᱹᱜᱤᱫ"
 
 #: psynet/templates/macros/timeline-shell.html
 #, fuzzy
 msgctxt "timeline_reward"
 msgid "for performance"
-msgstr "ᱟᱢᱟᱱ ᱠᱚᱢᱮᱱᱴ ᱠᱚᱞᱮᱫ"
+msgstr "ᱠᱟᱹᱢᱤ ᱞᱟᱹᱜᱤᱫ"
 
 #: psynet/templates/macros/timeline-shell.html
 #, fuzzy
 msgctxt "timeline"
 msgid "Comment"
-msgstr "ᱟᱢᱟᱱ ᱠᱚᱢᱮᱱᱴ ᱠᱚᱞᱮᱫ"
+msgstr "ᱢᱚᱱᱛᱚᱵᱽᱭ"
 
 #: psynet/templates/macros/timeline-shell.html
 #, fuzzy
 msgctxt "timeline_problem"
 msgid "Leave"
-msgstr "ᱟᱢᱟᱱ ᱠᱚᱢᱮᱱᱴ ᱠᱚᱞᱮᱫ"
+msgstr "ᱟᱫ"
 
 #: psynet/templates/macros/timeline-shell.html
 #, fuzzy
 msgctxt "timeline_problem"
 msgid "Leave without finishing."
-msgstr "ᱟᱢᱟᱱ ᱠᱚᱢᱮᱱᱴ ᱠᱚᱞᱮᱫ"
+msgstr "ᱢᱩᱪᱟᱹᱫ ᱵᱟᱭ ᱪᱟᱵᱟ ᱠᱟᱛᱮ ᱟᱫ।"
 
 #: psynet/templates/psynet_error.html
 #, fuzzy
