@@ -6,7 +6,7 @@ import pytest
 from dallinger import db
 
 from psynet.asset import LocalStorage
-from psynet.experiment import get_experiment
+from psynet.experiment import Experiment, get_experiment
 from psynet.modular_page import ModularPage, VideoRecordControl
 from psynet.page import InfoPage
 from psynet.participant import Participant
@@ -394,6 +394,9 @@ def test_recording_recovery_uses_prepared_successor(submission, monkeypatch):
         "pre_render",
         lambda: setattr(successor, "contents", {"prepared": True}),
     )
+    monkeypatch.setattr(
+        Experiment, "_render_page_read_only", lambda **kwargs: "<div>Next page</div>"
+    )
     payload = {
         "participant_id": participant.id,
         "page_uuid": original_uuid,
@@ -408,7 +411,10 @@ def test_recording_recovery_uses_prepared_successor(submission, monkeypatch):
 
     def submit():
         with Flask(__name__).test_request_context(
-            "/response", method="POST", data={"json": json.dumps(payload)}
+            "/response",
+            method="POST",
+            data={"json": json.dumps(payload)},
+            environ_base={"REMOTE_ADDR": "127.0.0.1"},
         ):
             return exp.route_response().get_json()
 

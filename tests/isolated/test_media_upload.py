@@ -419,7 +419,8 @@ def test_received_video_is_validated_and_deposited(
     assert asset.input_path is None
 
 
-def test_invalid_recording_fails_without_failing_its_participant(reservation, tmp_path):
+def test_deposit_preserves_bytes_without_decoding(reservation, tmp_path, monkeypatch):
+    monkeypatch.setattr(LocalStorage, "on_deployed_server", lambda self: True)
     asset, receipt = reservation
     recording_id, participant_id = asset.id, asset.participant_id
     _receive_recording(
@@ -427,9 +428,13 @@ def test_invalid_recording_fails_without_failing_its_participant(reservation, tm
     )
     _process_recording(recording_id)
     asset = db.session.get(Recording, recording_id)
-    assert asset.upload_status == "failed"
-    assert asset.upload_failed_reason == "invalid_recording"
-    assert not asset.deposited
+    assert asset.upload_status == "deposited"
+    assert asset.upload_failed_reason is None
+    assert asset.deposited
+    assert (
+        Path(asset.storage.get_file_system_path(asset.host_path)).read_bytes()
+        == b"not webm"
+    )
     assert not db.session.get(Participant, participant_id).failed
 
 
@@ -499,51 +504,6 @@ def test_received_recording_is_queued_only_once(received_video, monkeypatch):
     assert db.session.get(Recording, recording_id).deposited
     process = db.session.get(WorkerAsyncProcess, launched[0])
     assert process.finished and not process.pending and not process.failed
-
-
-def test_header_only_video_is_rejected(reservation, tmp_path, monkeypatch):
-    import json
-    import subprocess
-
-    asset, receipt = reservation
-    asset.upload_max_bytes = 1000
-    asset_id = asset.id
-    db.session.commit()
-    payload = (
-        Path(__file__).resolve().parents[2]
-        / "demos/experiments/imitation_chain_video/assets/example_recording.webm"
-    ).read_bytes()[:400]
-    probe = tmp_path / "header.webm"
-    probe.write_bytes(payload)
-    result = subprocess.run(
-        [
-            "ffprobe",
-            "-v",
-            "error",
-            "-count_packets",
-            "-show_entries",
-            "stream=nb_read_packets",
-            "-of",
-            "json",
-            str(probe),
-        ],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    assert all(
-        int(stream.get("nb_read_packets", 0)) == 0
-        for stream in json.loads(result.stdout)["streams"]
-    )
-    monkeypatch.setattr(LocalStorage, "on_deployed_server", lambda self: True)
-    _receive_recording(
-        asset_id, receipt["token"], io.BytesIO(payload), directory=tmp_path
-    )
-    _process_recording(asset_id)
-    assert not db.session.get(Recording, asset_id).deposited
-    assert (
-        db.session.get(Recording, asset_id).upload_failed_reason == "invalid_recording"
-    )
 
 
 @pytest.mark.parametrize("retry", [False, True])

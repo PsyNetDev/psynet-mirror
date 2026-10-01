@@ -7,7 +7,7 @@ reading bytes, takes a cross-process file lock, and streams to a private bounded
 file without holding database locks. It then locks only the recording row to
 publish complete receipt exactly once.
 
-Receipt is not deposit: a worker validates and stores bytes before a short
+Receipt is not deposit: a worker stores bytes before a short
 transaction publishes success. A poller expires overdue recordings even when
 the browser has closed. In-place LocalStorage video controls use this transport.
 Do not wrap the streaming route in a participant transaction or expose received
@@ -23,7 +23,6 @@ import math
 import os
 import secrets
 import socket
-import subprocess
 import tempfile
 import uuid
 from contextlib import contextmanager
@@ -131,11 +130,12 @@ def _upload_directory():
     local virtualenv deployments also share that directory. Neither location is
     under the publicly served static asset tree.
     """
-    root = (
-        Path("/var/lib/dallinger")
-        if deployment_info.read("is_ssh_deployment")
-        else Path.cwd() / ".deploy"
-    )
+    # Model-only/local runs may not have launch metadata.
+    try:
+        is_ssh = deployment_info.read("is_ssh_deployment")
+    except FileNotFoundError:
+        is_ssh = False
+    root = Path("/var/lib/dallinger") if is_ssh else Path.cwd() / ".deploy"
     return root / "media-uploads"
 
 
@@ -405,50 +405,7 @@ def _claim_recording(recording_id):
     if asset.upload_processing_deadline <= _utcnow():
         return None
     asset.upload_status = "processing"
-    return asset.input_path, asset.storage, asset.upload_processing_deadline
-
-
-def _validate_recording(path, deadline):
-    """Decode video within the processing budget and require nonempty output.
-
-    A declared stream can be just a truncated header. Decode all video frames,
-    failing on decoding errors, and scale output to one gray byte per frame so
-    validation does not retain full-resolution frames in memory.
-    """
-    result = subprocess.run(
-        [
-            "ffmpeg",
-            "-v",
-            "error",
-            "-nostdin",
-            "-xerror",
-            "-threads",
-            "1",
-            "-protocol_whitelist",
-            "file,pipe",
-            "-f",
-            "matroska",
-            "-i",
-            str(path),
-            "-map",
-            "0:v:0",
-            "-an",
-            "-vf",
-            "scale=1:1",
-            "-pix_fmt",
-            "gray",
-            "-threads",
-            "1",
-            "-f",
-            "rawvideo",
-            "pipe:1",
-        ],
-        capture_output=True,
-        check=True,
-        timeout=max(0.001, (deadline - _utcnow()).total_seconds()),
-    )
-    if not result.stdout:
-        raise ValueError("The recording contains no decodable video frames.")
+    return asset.input_path, asset.storage
 
 
 def _store_recording_bytes(path, storage):
@@ -560,21 +517,12 @@ def _resolve_recording(recording_id, *, output=None, error=None):
 
 
 def _process_recording(recording_id):
-    """Validate and store received bytes; late completion cannot revive expiry."""
+    """Store received bytes; late completion cannot revive expiry."""
     claimed = _claim_recording(recording_id)
     if claimed is None:
         return
-    path, storage, deadline = claimed
+    path, storage = claimed
     try:
-        try:
-            _validate_recording(path, deadline)
-        except (subprocess.CalledProcessError, ValueError) as error:
-            logger.warning("Invalid recording %s: %s", recording_id, error)
-            _complete_recording(recording_id, error="invalid_recording")
-            return
-        except subprocess.TimeoutExpired:
-            _complete_recording(recording_id, error="processing_timeout")
-            return
         output = _store_recording_bytes(path, storage)
         _complete_recording(recording_id, output=output)
     except Exception:

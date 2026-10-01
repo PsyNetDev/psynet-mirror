@@ -218,7 +218,7 @@ capture API. Leaving or reloading the document can lose pending uploads; there i
 no upload wait page. Fully received bytes can still be processed on the server.
 
 Requiring a background recording
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Use ``VideoRecordConfig(required=True)`` when a background clip is necessary for
 a trial to count as valid. Set this on a page returned by the trial's
@@ -273,7 +273,7 @@ the parent trial. Browser and server checks are described in
 
 
 Waiting for a recording before playback
---------------------------------------
+---------------------------------------
 
 For playback outside a trial, use :func:`~psynet.page.wait_for_recording` and
 check whether the recording was deposited before constructing the playback page.
@@ -358,7 +358,7 @@ participant through a generic waiting timeout. Unrelated analysis timeouts and
 configured performance checks retain their existing behavior.
 
 Inspecting recording outcomes
-----------------------------
+-----------------------------
 
 Open **Monitor → Recordings** for answer/background role, required policy, original
 page and source, capture outcome, upload status, failure reason, and deadlines.

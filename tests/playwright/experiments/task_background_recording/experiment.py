@@ -21,7 +21,7 @@ class Exp(psynet.experiment.Experiment):
         """Use the repo's vendored jsPsych instead of duplicating its library."""
         if name not in {"jspsych.js", "plugin-html-keyboard-response.js"}:
             abort(404)
-        root = Path(__file__).resolve().parents[4]
+        root = Path(psynet.__file__).resolve().parent.parent
         return send_file(root / "demos/experiments/jspsych/static/jspsych" / name)
 
     @experiment_route("/test-capture-state")
