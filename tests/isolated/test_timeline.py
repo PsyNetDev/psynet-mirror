@@ -110,9 +110,13 @@ def test_timeline_template_emits_js_dependencies_as_blocking_head_scripts():
     # SurveyJS is 8 MB; pages that need it declare it via js_dependencies.
     assert "survey-jquery.js" not in template
     # Dallinger's libs block reloads jQuery, which would drop head-loaded plugins.
+    head_block = template.split("{% block head %}")[1].split("{% endblock %}")[0]
+    assert head_block.index("jquery-3.7.1.min.js") < head_block.index(
+        "window.psynetHeadJQuery = jQuery;"
+    )
     libs_block = template.split("{% block libs %}")[1].split("{% endblock %}")[0]
     assert libs_block.index("{{ super() }}") < libs_block.index(
-        "jQuery.noConflict(true)"
+        "window.jQuery = window.$ = window.psynetHeadJQuery;"
     )
 
 
