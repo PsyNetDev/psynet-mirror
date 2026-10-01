@@ -1,8 +1,12 @@
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
+from psynet.audit.validate import collect_media_validation_warnings
 from psynet.audit.video import (
     VideoProbeResult,
     is_git_lfs_pointer,
@@ -120,3 +124,43 @@ def test_is_git_lfs_pointer_detects_pointer(tmp_path: Path) -> None:
     path = tmp_path / "participant.mp4"
     path.write_bytes(b"version https://git-lfs.github.com/spec/v1\n")
     assert is_git_lfs_pointer(path) is True
+
+
+@pytest.mark.skipif(
+    not (shutil.which("ffmpeg") and shutil.which("ffprobe")),
+    reason="requires ffmpeg and ffprobe",
+)
+@pytest.mark.parametrize(
+    ("audio_source", "expect_warning"),
+    [
+        ("anullsrc=r=48000:cl=mono", True),
+        ("sine=frequency=440:sample_rate=48000", False),
+        (None, False),
+    ],
+    ids=["silent-audio", "audible-audio", "no-audio"],
+)
+def test_media_warnings_flag_silent_audio_track(
+    tmp_path: Path, audio_source: str | None, expect_warning: bool
+) -> None:
+    video = tmp_path / "artifacts" / "participant.mp4"
+    video.parent.mkdir()
+    inputs = ["-f", "lavfi", "-i", "color=c=black:s=64x64:d=1"]
+    if audio_source:
+        inputs += ["-f", "lavfi", "-i", f"{audio_source}:d=1", "-c:a", "aac"]
+    subprocess.run(
+        ["ffmpeg", "-v", "error", *inputs, "-c:v", "libx264", "-shortest", str(video)],
+        check=True,
+    )
+    manifest = {
+        "artifacts": [
+            {
+                "id": "participant_video",
+                "status": "present",
+                "path": "artifacts/participant.mp4",
+            }
+        ]
+    }
+
+    warnings = collect_media_validation_warnings(tmp_path, manifest)
+
+    assert any("audio track is silent" in w for w in warnings) is expect_warning

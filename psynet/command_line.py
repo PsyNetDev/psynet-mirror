@@ -1103,7 +1103,7 @@ def kill_psynet_worker_processes():
     logger.warning(
         "Stopping %s leftover local PsyNet worker process(es) (pids %s). "
         "Launch paths including remote deploy do this so a stale "
-        "dallinger_heroku_* backend cannot hold the shared Postgres database.",
+        "dallinger_heroku_* backend cannot hold this Postgres database.",
         len(processes),
         pid_list,
     )
@@ -1140,12 +1140,13 @@ def list_psynet_chrome_processes():
 
 
 def is_psynet_chrome_process(process):
+    """Return whether ``process`` is a Chrome window PsyNet opened for local debugging or tests."""
     try:
         if "chrome" in process.name().lower():
             for cmd in process.cmdline():
                 if "localhost:5000" in cmd:
                     return True
-                if "user-data-dir" in cmd:
+                if "--user-data-dir=" in cmd and "psynet-chrome-" in cmd:
                     return True
     except (psutil.NoSuchProcess, psutil.AccessDenied):
         pass
@@ -1153,20 +1154,51 @@ def is_psynet_chrome_process(process):
     return False
 
 
+def _current_database_url():
+    from dallinger.db import corrected_db_url, db_url_default
+
+    return corrected_db_url(os.environ.get("DATABASE_URL", db_url_default))
+
+
+def uses_current_database(process):
+    """
+    Return whether ``process`` was started with this shell's ``DATABASE_URL``.
+
+    Local servers inherit ``DATABASE_URL`` from the command that launched them,
+    so this distinguishes this experiment's leftovers from other local
+    experiments on the same machine. Processes whose environment can't be read
+    are treated as someone else's.
+    """
+    from dallinger.db import corrected_db_url, db_url_default
+
+    try:
+        url = process.environ().get("DATABASE_URL", db_url_default)
+    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+        return False
+    return corrected_db_url(url) == _current_database_url()
+
+
 def list_psynet_worker_processes():
-    return [p for p in psutil.process_iter() if is_psynet_worker_process(p)]
+    """List local ``dallinger_heroku_*`` workers that use this shell's database."""
+    return [
+        p
+        for p in psutil.process_iter()
+        if is_psynet_worker_process(p) and uses_current_database(p)
+    ]
 
 
 def is_psynet_worker_process(process):
+    """Return whether ``process`` is a local Dallinger web or worker process."""
     try:
         # This version catches processes in Linux
-        if "dallinger_herok" in process.name():
+        if process.name().startswith("dallinger_herok"):
             return True
         # This version catches process in MacOS
         if "python" in process.name().lower():
-            for cmd in process.cmdline():
-                if "dallinger_heroku_" in cmd:
-                    return True
+            return any(
+                Path(argument).name.startswith("dallinger_heroku_")
+                for argument in process.cmdline()[:2]
+            )
     except (psutil.NoSuchProcess, psutil.AccessDenied):
         pass
 
@@ -1178,10 +1210,13 @@ def list_chromedriver_processes():
 
 
 def is_chromedriver_process(process):
+    """Return whether ``process`` is a chromedriver that PsyNet's test driver started."""
     try:
-        return "chromedriver" in process.name().lower()
-    except psutil.NoSuchProcess:
-        pass
+        return "chromedriver" in process.name().lower() and any(
+            "psynet-chromedriver-" in part for part in process.cmdline()
+        )
+    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+        return False
 
 
 ###########
@@ -2209,6 +2244,51 @@ def _estimate(mode):
         log(
             f"Estimated time to complete experiment: {pretty_format_seconds(completion_time)}."
         )
+        if config.get("recruiter", None) == "prolific":
+            for warning in prolific_listing_warnings(
+                completion_time_s=completion_time,
+                listed_minutes=config.get(
+                    "prolific_estimated_completion_minutes", None
+                ),
+                base_payment=config.get("base_payment", None),
+                currency=config.currency,
+            ):
+                log(f"Warning: {warning}")
+
+
+# Prolific's published minimum hourly rates; update these if Prolific changes them.
+_PROLIFIC_MINIMUM_PER_HOUR = {"£": 6.0, "$": 8.0}
+
+
+def prolific_listing_warnings(
+    completion_time_s, listed_minutes, base_payment, currency
+):
+    """
+    Compare the Prolific listing in ``config.txt`` with PsyNet's estimates.
+
+    Prolific requires ``base_payment`` alone, without bonuses, to meet its
+    minimum hourly rate over participants' median completion time. The check
+    therefore uses the longer of the listed and estimated durations.
+    """
+    warnings = []
+    estimated_minutes = completion_time_s / 60
+    if listed_minutes and listed_minutes < estimated_minutes:
+        warnings.append(
+            f"prolific_estimated_completion_minutes ({listed_minutes}) is shorter "
+            f"than the estimated {estimated_minutes:.1f} minutes."
+        )
+    minimum = _PROLIFIC_MINIMUM_PER_HOUR.get(currency)
+    minutes = max(listed_minutes or 0, estimated_minutes)
+    if minimum and base_payment is not None and minutes:
+        rate = base_payment / (minutes / 60)
+        if rate < minimum:
+            warnings.append(
+                f"base_payment ({currency}{base_payment:.2f}) for {minutes:.1f} "
+                f"minutes is {currency}{rate:.2f}/hour, below Prolific's minimum "
+                f"of {currency}{minimum:.2f}/hour. Bonuses don't count towards "
+                "Prolific's minimum, so raise base_payment."
+            )
+    return warnings
 
 
 @psynet.command()

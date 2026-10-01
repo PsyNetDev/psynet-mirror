@@ -1,5 +1,5 @@
 from contextlib import nullcontext
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from psynet.experiment import Experiment
 
@@ -15,19 +15,28 @@ def test_status_and_backups_skips_before_launch_finished():
     get_experiment.assert_not_called()
 
 
-def test_recorded_status_does_not_store_dashboard_password():
+def test_record_experiment_status_keeps_credentials_out_of_database():
     status = {
-        "cpu_usage_pct": 1.0,
-        "basic_data_url": "http://x/basic_data?dashboard_user=admin&dashboard_password=s3cret",
-        "secret": "launch-s3cret",
+        "basic_data_url": "http://x/basic_data?dashboard_password=s3cret",
+        "secret": "launch-secret",
+        "requests_per_minute": 3,
     }
+
+    class Exp:
+        automatic_backups = True
+        artifact_storage = Mock()
+        deployment_id = "deployment"
+        get_status = Mock(return_value=status)
+
     with (
-        patch.object(Experiment, "get_status", return_value=status),
-        patch.object(Experiment, "automatic_backups", False),
+        patch("psynet.experiment.ExperimentStatus") as status_model,
         patch("psynet.experiment.db.session.add") as add,
     ):
-        Experiment.record_experiment_status()
+        Experiment.record_experiment_status.__func__(Exp)
 
-    (row,) = add.call_args.args
-    assert row.cpu_usage_pct == 1.0
-    assert "s3cret" not in repr(row.to_dict())
+    status_model.assert_called_once_with(requests_per_minute=3, isOffline=False)
+    add.assert_called_once_with(status_model.return_value)
+    Exp.artifact_storage.write_experiment_status.assert_called_once_with(
+        {**status, "isOffline": False},
+        "deployment",
+    )

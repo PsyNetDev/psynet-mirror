@@ -15,7 +15,7 @@ from urllib.parse import unquote, urlparse
 
 import click
 
-from psynet.light_utils import md5_directory
+from psynet.light_utils import md5_directory, strip_url_credentials
 from psynet.version import psynet_version
 
 _TEMPLATE_FILES = (
@@ -255,7 +255,7 @@ def _normalize_git_remote_to_pip_base(remote_url: str) -> str:
 
 
 def _git_remote_url(source: Path, remote: str = "origin") -> str | None:
-    """Return the configured URL for a git remote, if present."""
+    """Return the configured URL for a git remote without credentials, if present."""
     try:
         url = subprocess.check_output(
             ["git", "-C", str(source), "remote", "get-url", remote],
@@ -264,7 +264,7 @@ def _git_remote_url(source: Path, remote: str = "origin") -> str | None:
         ).strip()
     except (OSError, subprocess.CalledProcessError):
         return None
-    return url or None
+    return strip_url_credentials(url) or None
 
 
 def _remote_advertises_commit(
