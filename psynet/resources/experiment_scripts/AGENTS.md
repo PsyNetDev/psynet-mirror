@@ -52,7 +52,7 @@ challenge/attempt workflows and `psynetsk-validate`.
 Cloud agents will need to install the following dependencies.
 Local agents should check for their availability and install if necessary.
 
-- **Python 3.13.x**: Install a 3.13 release and verify `python3 --version`.
+- **Python 3.13.x**: `uv venv --python 3.13` downloads it if it is missing.
   Check the repository Dockerfile for the exact patch version we target
   (e.g., `psynet/resources/experiment_scripts/Dockerfile` or the root `Dockerfile`).
 - **uv**: Install with `curl -LsSf https://astral.sh/uv/install.sh | sh`.
