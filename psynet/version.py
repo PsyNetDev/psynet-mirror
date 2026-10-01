@@ -130,7 +130,8 @@ def collect_core_dependency_version_info_from_requirements(file_content):
         if specified == package_name.lower():
             continue
 
-        if is_release_version_specifier(specified):
+        release_pin = is_release_version_specifier(specified)
+        if release_pin:
             if specified.startswith("v"):
                 specified = specified[1:]
             # Get installed version via the Dallinger/PsyNet API
@@ -139,16 +140,20 @@ def collect_core_dependency_version_info_from_requirements(file_content):
             # Get installed version from `pip freeze`
             installed = get_installed_commit_or_version_from_pip_freeze(package_name)
 
-        if is_development_version(installed):
-            # It's hard to check consistency when the installed version is a development version,
-            # because a development version could correspond to many possible branches/commits.
-            # We therefore skip the comparison and continue.
+        # A release pin must match exactly even for a development install: the
+        # deployment copies templates and static files from the local package,
+        # while the image installs the pinned one.
+        if not release_pin and is_development_version(installed):
+            # A development version could correspond to many possible branches/commits,
+            # so it cannot be compared with a branch or commit pin.
             status = "skipped"
             skip_reason = "installed version is a development version"
         else:
             status = (
                 "consistent"
-                if specified is None or specified == installed
+                if specified is None
+                or specified == installed
+                or _commit_pin_matches(specified, installed)
                 else "inconsistent"
             )
             skip_reason = None
@@ -161,11 +166,24 @@ def collect_core_dependency_version_info_from_requirements(file_content):
     return versions
 
 
-def is_release_version_specifier(specified):
+def _commit_pin_matches(specified, installed):
+    """Return whether a pinned commit hash, possibly abbreviated, names the installed commit."""
     return (
-        specified.startswith("v")
-        or re.search(r"^\d+\.\d+\.\d+(?:rc\d+)?$", specified) is not None
+        re.fullmatch(r"[0-9a-fA-F]{8,40}", specified) is not None
+        and re.fullmatch(r"[0-9a-fA-F]{40}", installed) is not None
+        and installed.lower().startswith(specified.lower())
     )
+
+
+def is_release_version_specifier(specified):
+    """Return whether a requirement pins a release version rather than a branch or commit.
+
+    Release pins are stable or release-candidate versions, with or without a
+    leading ``v`` (``v14.0.0``, ``14.0.0rc2``). Alpha versions are never
+    tagged, and branch names that merely start with ``v`` (e.g.
+    ``vocal-fixes``) are not release pins.
+    """
+    return re.search(r"^v?\d+\.\d+\.\d+(?:rc\d+)?$", specified) is not None
 
 
 def is_development_version(version):

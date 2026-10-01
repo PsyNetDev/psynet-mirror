@@ -1,0 +1,1 @@
+Fixed `psynet deploy` accepting a local development version of PsyNet or Dallinger when `requirements.txt` pins a release. The deployed image installs the pinned release but copies templates and static files from the local package, so a mismatch could ship outdated participant pages.
