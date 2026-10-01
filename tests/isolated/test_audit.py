@@ -681,15 +681,20 @@ def test_render_audit_site_inlines_experiment_entry_point(
     assert index.index('<details id="source"') < index.index('<details id="blockers"')
 
 
-def test_render_backfills_design_simulation_section(tmp_path: Path) -> None:
+@pytest.mark.parametrize("anchor", ["plan", "prompt"])
+def test_render_backfills_design_simulation_section(
+    tmp_path: Path, anchor: str
+) -> None:
     audit_dir = tmp_path / "audit"
     init_audit(audit_dir)
     manifest = json.loads((audit_dir / "audit.json").read_text(encoding="utf-8"))
+    removed = (
+        {"design_simulation"} if anchor == "plan" else {"design_simulation", "plan"}
+    )
     manifest["sections"] = [
         section
         for section in manifest["sections"]
-        if section.get("id") != "design_simulation"
-        and section.get("kind") != "simulation"
+        if section.get("id") not in removed and section.get("kind") != "simulation"
     ]
     for artifact in manifest["artifacts"]:
         if artifact.get("id") == "simulation_notebook":
@@ -715,7 +720,7 @@ def test_render_backfills_design_simulation_section(tmp_path: Path) -> None:
 
     index = (render_audit_site(audit_dir) / "index.html").read_text(encoding="utf-8")
 
-    assert index.index('<details id="plan"') < index.index(
+    assert index.index(f'<details id="{anchor}"') < index.index(
         '<details id="design_simulation"'
     )
     assert "Design simulation notebook" in index
