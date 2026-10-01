@@ -483,23 +483,16 @@ def display_sections(
         and evidence is not None
         and getattr(evidence, "has_design_simulation", False)
     ):
-        analysis_position = next(
-            (
-                index
-                for index, section in enumerate(displayable)
-                if isinstance(section, dict)
-                and (
-                    section.get("id") == "analysis" or section.get("kind") == "analysis"
-                )
-            ),
-            None,
-        )
-        insert_at = (
-            analysis_position if analysis_position is not None else len(displayable)
-        )
+        positions = {
+            section.get("id"): index
+            for index, section in enumerate(displayable)
+            if isinstance(section, dict)
+        }
+        anchor = positions.get("plan", positions.get("prompt"))
+        insert_at = anchor + 1 if anchor is not None else 0
         displayable.insert(
             insert_at,
-            starter_section("design_simulation", "Design simulation", "simulation"),
+            starter_section("design_simulation", "Power analysis", "simulation"),
         )
     return displayable
 

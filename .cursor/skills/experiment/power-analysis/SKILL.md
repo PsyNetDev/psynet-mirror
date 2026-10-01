@@ -31,7 +31,7 @@ This skill has two references:
 
 Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rst`; otherwise fetch `https://psynetdev.gitlab.io/PsyNet/<page>.html`.
 
-- `test/audit_reference` — "Design simulation": the three audit artifacts and how the section renders
+- `test/audit_reference` — "Power analysis": the three audit artifacts and how the section renders
 - `test/audits` — where the design simulation sits in an audit
 - `test/backend` — bots and `psynet audit simulate`
 - `code/participants/payment` — wages and bonuses for costing
@@ -40,8 +40,10 @@ Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rs
 
 1. **Agree the question with the user.** List the primary analysis targets,
    the candidate design factors and ranges, the assumption sets, and the
-   decision criterion (see "Designs, assumptions and scenarios" and
-   "Precision and power" in the method reference). State which parameter
+   required precision (or, when the question is whether an effect exists,
+   the smallest effect and required power) and its rationale (see "Designs, assumptions and
+   scenarios", "Precision and power" and "Choosing the required precision" in
+   the method reference). State which parameter
    values come from pilot data, the literature, or judgment. Keep sample sizes
    in `audit/PLAN.md` provisional until the user has reviewed the results.
 2. **Build or reuse the response model** with `participant-response-models`.
@@ -71,9 +73,11 @@ Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rs
 
 ## Notebook rules
 
-- Begin with two prose sections, **How to read the statistics** and
-  **Simulation assumptions**, covering the items in "Reporting the results" of
-  the method reference.
+- Write for a reader who knows the study but not the statistics. Follow the
+  order in "Reporting the results" of the method reference: summary,
+  assumptions, what the results would look like, one subsection per question,
+  details for reviewers. Then follow "Writing notebooks for readers" in
+  `produce-experiment-audit/references/populating-an-audit.md`.
 - Use Plotly with the `plotly_mimetype` renderer. Put the primary metric in
   its own always-visible figure. Use translucent Monte Carlo ribbons for dense
   curves and error bars only for a few unrelated designs; keep exact bounds in

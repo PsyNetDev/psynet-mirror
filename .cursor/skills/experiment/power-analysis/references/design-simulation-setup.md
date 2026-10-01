@@ -7,7 +7,7 @@ saves a results table, a run record and an executed notebook for review. The
 terms are explained in [design-simulation-method.md](design-simulation-method.md).
 
 Only the three files PsyNet displays in the audit (`simulation.ipynb`,
-`run.json` and `results.csv`) have fixed names; see "Design simulation" in the
+`run.json` and `results.csv`) have fixed names; see "Power analysis" in the
 PsyNet audit reference (`test/audit_reference`). The `response_model/` package,
 `config.toml` and `core.py` are recommendations; PsyNet neither requires nor
 runs them. Add files when the method needs them.
@@ -128,10 +128,11 @@ scenario:
 method = "precision-estimation"
 
 [decision]
-metric = "standardized_margin_of_error"
+metric = "margin_of_error"
 confidence_level = 0.95
 threshold = 0.20
-reference_sd = 1.0  # trial_noise_sd of the reference assumptions, fixed across scenarios
+unit = "rating points"
+rationale = "Condition means should be known as precisely as the published norms (±0.2 points)."
 
 [design]
 n_participants = [40, 60, 80, 100]
@@ -145,6 +146,14 @@ replicates = 1000
 base_seed = 20260824
 n_jobs = -2
 ```
+
+For a power decision, use `metric = "power"`, the planned `alpha`, the
+required power as `threshold` (such as 0.8), `unit = "share of studies"` and
+the smallest effect as `effect_size`. Record `power` and its Monte Carlo
+interval in `results.csv`, alongside the margin of error. When several tests
+are planned, also record the multiplicity procedure and the rejection event
+the power requirement uses, such as rejection of the primary effect or of all
+primary effects.
 
 Use the same number of replicates for every scenario, so that Monte Carlo error
 is comparable across results.
@@ -170,7 +179,10 @@ For each scenario, the script simulates every replicate at the trial level with
 `sample_responses`, fits the planned analysis to each simulated dataset, and
 summarizes the estimates for every analysis target. Use the estimator planned
 for the real data, for example a statsmodels regression or mixed model. Count
-failed fits instead of dropping them.
+failed fits instead of dropping them. Match the estimator to the design's
+dependence structure and apply the planned multiplicity procedure in every
+replicate, as described in "What to simulate" and "Precision and power" of the
+method page.
 
 Keep each analysis target's question, true value, estimator and resampling rule
 together, for example in one small class per target:
@@ -189,9 +201,14 @@ class ConditionEffect:
 
     @staticmethod
     def estimate(data):
-        model = smf.ols("response ~ condition", data=data).fit()
+        model = smf.mixedlm(
+            "response ~ condition", data=data, groups=data["participant"]
+        ).fit(method="lbfgs")
         return model.params["condition"]
 ```
+
+The random intercept per participant matches `participant_bias` in the
+response model; add stimulus terms when the claim generalizes over stimuli.
 
 Make results reproducible and independent of how the work is split. Derive each
 scenario's random seed from `base_seed` and a stable scenario identifier, and
@@ -226,32 +243,83 @@ values.
   stimulus.
 
 Add the design and assumption values, then the summaries: the number of
-replicates evaluated, bias, sampling standard error, margin of error,
-standardized margin of error, its Monte Carlo interval, and the number of
-failed fits. For the decision, add `decision_metric`, `decision_value`,
-`decision_threshold` and `meets_requirement`, and, if participants are paid,
-`participant_payment` and `currency`. Keep column names the same across runs so
-the notebook can compare them.
+replicates evaluated, bias, sampling standard error, margin of error, its
+Monte Carlo interval, and the number of failed fits. For a profile, also add
+the RMS and largest margins of single values and of differences, the true
+spread, the profile correlation and the smallest spread for the target
+correlation. For the decision, add
+`decision_metric`, `decision_value`, `decision_threshold` and
+`meets_requirement`, and, if participants are paid, `total_participant_payment`
+(for all participants) and `currency`. Keep column names the same across runs
+so the notebook can compare them.
 
 For one target in one scenario, with `estimates` holding one estimate per
-replicate and `reference_sd` read from `[decision]` in `config.toml`:
+replicate:
 
 ```python
 from statistics import NormalDist
 
 import numpy as np
 
+z = NormalDist().inv_cdf(0.975)
 sampling_se = estimates.std(ddof=1)
-margin_of_error = NormalDist().inv_cdf(0.975) * sampling_se
-standardized_margin_of_error = margin_of_error / reference_sd
+margin_of_error = z * sampling_se
 bias = (estimates - true_value).mean()
-margin_of_error_mcse = margin_of_error / np.sqrt(2 * (replicates - 1))
+n_evaluated = len(estimates)
+margin_of_error_mcse = margin_of_error / np.sqrt(2 * (n_evaluated - 1))
+```
+
+For a profile, `estimates` has one row per replicate and one column per value,
+and `truth` holds the true values: one row per replicate when stimuli are
+drawn afresh, or a single row when they are fixed. Working with the errors
+`estimates - truth` makes the same code correct in both cases:
+
+```python
+def rms(values):
+    return np.sqrt(np.mean(np.square(values)))
+
+
+truth = np.broadcast_to(truth, estimates.shape)
+errors = estimates - truth
+
+margins = z * errors.std(axis=0, ddof=1)
+rms_margin_of_error, max_margin_of_error = rms(margins), margins.max()
+
+covariance = np.cov(errors, rowvar=False)
+variances = np.diag(covariance)
+difference_variances = variances[:, None] + variances[None, :] - 2 * covariance
+difference_variances = np.maximum(difference_variances, 0.0)  # roundoff
+pairs = np.triu_indices(len(variances), k=1)
+difference_margins = z * np.sqrt(difference_variances[pairs])
+rms_difference_margin_of_error = rms(difference_margins)
+max_difference_margin_of_error = difference_margins.max()
+
+true_spread = truth.std(axis=1).mean()
+if estimates.shape[1] < 3:
+    raise ValueError("Profile correlation needs at least three values.")
+correlations = np.asarray(
+    [np.corrcoef(e, t)[0, 1] for e, t in zip(estimates, truth)]
+)
+if not np.all(np.isfinite(correlations)):
+    raise ValueError("Profile correlation needs varying estimates and truths.")
+eps = np.finfo(float).eps
+fisher_z = np.arctanh(np.clip(correlations, -1 + eps, 1 - eps))
+profile_correlation = np.tanh(fisher_z.mean())
+centered = errors - errors.mean(axis=1, keepdims=True)
+centered_se = np.sqrt(centered.var(axis=0, ddof=1).mean())
+target_correlation = 0.9
+spread_for_target_correlation = (
+    centered_se * target_correlation / np.sqrt(1 - target_correlation**2)
+)
 ```
 
 The Monte Carlo standard error formula assumes roughly normal estimates.
-Otherwise, and for a summary such as the largest margin of error across a
+Otherwise, and for a summary such as the RMS margin of error across a
 profile, bootstrap over replicates: resample whole replicates and recompute the
-summary each time.
+summary each time. The difference margins are pointwise, and the
+smallest-spread formula has assumptions of its own; see "Precision and power"
+and "Choosing the required precision" in the method page before deciding on
+either.
 
 ## Run record
 
@@ -280,7 +348,7 @@ the design loop:
 ```python
 reward_per_trial = trial_seconds * wage_per_hour / 3600
 fixed_reward = reference_reward - reference_trials * reward_per_trial
-results["participant_payment"] = results["n_participants"] * (
+results["total_participant_payment"] = results["n_participants"] * (
     fixed_reward + results["trials_per_participant"] * reward_per_trial
 )
 ```
@@ -292,9 +360,10 @@ timeline exists, use planned durations and label the costs as provisional.
 
 `simulation.ipynb` reads `config.toml`, `results.csv` and `run.json` rather than
 rerunning the simulation. It has a *Power analysis* section and, for an adaptive
-experiment, an *Adaptive procedure* section. Start it with two prose sections,
-*How to read the statistics* and *Simulation assumptions*, covering the items in
-"Reporting the results" of the method page.
+experiment, an *Adaptive procedure* section. Order each section as in
+"Reporting the results" of the method page: summary, assumptions, what the
+results would look like, one subsection per question, then details for
+reviewers.
 
 The audit renders the notebook's saved outputs, so execute it before adding it.
 Plotly figures stay interactive, offline, if the notebook selects the MIME
@@ -307,13 +376,43 @@ pio.renderers.default = "plotly_mimetype"
 pio.templates.default = "plotly_white"
 ```
 
+For the example dataset, simulate one replicate at the chosen design with
+`sample_responses` and a fixed seed, run the planned estimator, and plot each
+estimate with its interval, sorted by the estimate.
+
 Plot the decision metric against the number of participants, with other design
 factors as facets or line styles, the threshold as a horizontal line, and the
-Monte Carlo interval as a shaded band. Add a table of every metric at the chosen
-design. Plotly `updatemenus` buttons can switch a figure between metrics;
-ipywidgets and page-level tabs don't work in the rendered audit. Restyle one
-set of traces per button instead of adding a set of traces per metric, which
-keeps the notebook small. Executed notebooks may be up to 10 MB.
+Monte Carlo interval as a shaded band. Give band traces `mode="lines"`;
+otherwise Plotly draws a marker at every corner of the band. Label the axis in
+the response's units and the legend in plain words with the values, such as
+"Noisier raters (SD 1.3)". Below it, add a table of
+the smallest design meeting the criterion under each assumption set, with its
+cost.
+
+For a profile, show how much the ranking depends on the assumed spread: at the
+chosen design, plot the expected profile correlation against the true spread,
+with the assumed spread and the smallest spread for the target correlation
+marked. The expected correlation follows from the smallest spread `s_target`
+for the target correlation `r_target`:
+
+```python
+spread = np.linspace(0.01, 1.5 * true_spread, 200)
+centered_se = s_target * np.sqrt(1 - r_target**2) / r_target
+expected_correlation = spread / np.sqrt(spread**2 + centered_se**2)
+```
+
+Use this curve only when the formula's assumptions hold ("Precision and
+power" in the method page). Otherwise, simulate the spread as an assumption
+factor and plot the simulated correlations.
+
+Put the table of every metric at the chosen design in the details section,
+with readable column names, such as "Difference margin (points)" rather than
+`rms_difference_margin_of_error`. Plotly `updatemenus` buttons can switch a
+figure between metrics; ipywidgets and page-level tabs don't work in the
+rendered audit. Restyle one set of traces per button instead of adding a set of
+traces per metric, which keeps the notebook small. Executed notebooks may be up
+to 10 MB. The audit collapses code cells behind a "Show code" toggle, so
+readers see the prose, figures and tables first.
 
 ## Adding the simulation to the audit
 

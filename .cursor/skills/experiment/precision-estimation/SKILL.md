@@ -15,8 +15,9 @@ The concepts and code this skill relies on are in the `power-analysis`
 references:
 
 - [power-analysis/references/design-simulation-method.md](../power-analysis/references/design-simulation-method.md):
-  estimands, precision measures, the default criterion, and what to simulate
-  ("Precision and power" and "What to simulate");
+  estimands, precision measures, the required precision, and what to
+  simulate ("Precision and power", "Choosing the required precision" and
+  "What to simulate");
 - [power-analysis/references/design-simulation-setup.md](../power-analysis/references/design-simulation-setup.md):
   `config.toml`, `core.py`, seeding, parallelism, and the results columns and
   formulas.
@@ -25,7 +26,7 @@ references:
 
 Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rst`; otherwise fetch `https://psynetdev.gitlab.io/PsyNet/<page>.html`.
 
-- `test/audit_reference` — "Design simulation": the audit artifacts `core.py` produces
+- `test/audit_reference` — "Power analysis": the audit artifacts `core.py` produces
 - `test/audits` — where the design simulation sits in an audit
 
 ## Procedure
@@ -56,17 +57,29 @@ Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rs
    failures. Fix problems before the full grid.
 5. **Compute the results** with the formulas in "Results table" of the setup
    reference.
-   Unless the user chose another criterion, set `decision_metric =
-   "standardized_margin_of_error"`, `decision_threshold = 0.20` at 95%
-   confidence, with one `reference_sd` for all scenarios (never each
-   scenario's own noise SD), and fill `decision_value` and `meets_requirement` for every
-   primary estimand. For a profile, use the maximum pointwise margin and
-   bootstrap its Monte Carlo interval. When `keep_replicates` is true, also
+   Use the decision metric and threshold agreed with the user, at 95%
+   confidence, in the response's units and the same for all scenarios
+   ("Choosing the required precision" in the method reference). For a power
+   decision, compute the rejection rate of the planned test at the planned α
+   in each scenario, with the planned multiplicity procedure and rejection
+   event ("Precision and power") and the effect calibrated to the stated size
+   ("What to simulate"); keep the margin-of-error columns alongside. Fill
+   `decision_value` and `meets_requirement` for every primary estimand, or
+   leave them empty if the user chose to decide from the curves. For a
+   profile, decide on the RMS margin across the set and bootstrap its Monte
+   Carlo interval, or simulate the global criterion if the requirement covers
+   every value or the whole ranking ("Choosing the required precision"). Also
+   report the RMS and largest margins, the profile correlation and the
+   smallest spread for a 0.9 correlation. When `keep_replicates` is true, also
    save replicate-level estimates as Parquet.
 6. **Check Monte Carlo error.** If it could change the selected design,
    raise the common replicate count and rerun.
-7. **Return to `power-analysis`** with `results.csv` and `run.json`
+7. **Prepare the check after data collection.** Make sure the analysis
+   notebook reports the achieved margin of error and, for a profile, the
+   split-half reliability ("After data collection" in the method
+   reference).
+8. **Return to `power-analysis`** with `results.csv` and `run.json`
    (including seed, replicate count, worker count, response parameters and
    response-model hash) for costing, the notebook and the review. In the
-   notebook, plot standardized margin of error against participants with
-   the 0.20 line and a Monte Carlo ribbon.
+   notebook, plot the margin of error, in the response's units, against
+   participants with the threshold line and a Monte Carlo ribbon.

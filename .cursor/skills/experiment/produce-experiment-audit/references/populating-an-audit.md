@@ -151,9 +151,9 @@ test, design simulation, and analysis their own top-level sections, so each of
 those artifacts is reviewed on its own rather than inside one combined evidence
 panel.
 
-### Design simulation
+### Power analysis
 
-The optional `simulate/design/simulation.ipynb` contains a **Power analysis**
+The Power analysis section follows the Plan. The optional `simulate/design/simulation.ipynb` contains a **Power analysis**
 section and, for adaptive experiments, may contain an **Adaptive procedure**
 section. Follow `power-analysis/SKILL.md`, then mark `simulation_notebook`,
 `simulation_run`, and `simulation_results` present.
@@ -252,12 +252,50 @@ Declare screenshots either as individual artifacts or in the `captions` map of
 the present `screenshots` manifest artifact. Rendering publishes safe image
 paths referenced by that manifest and builds the screenshot carousel.
 
+## Writing notebooks for readers
+
+The audit's notebooks (the analysis and the power analysis) are read by
+someone who knows the study but not the code or the statistics, such as the
+experimenter's supervisor. The audit collapses code behind a "Show code"
+toggle, so the reader sees prose, figures and tables.
+
+- **Answer first.** Start with a summary of what the notebook shows, then one
+  section per question, headed by the question in plain words ("How pleasant
+  is each chord?"). Put data checks, definitions and full tables last.
+- **Compute the summary.** Load the data and compute the headline numbers in
+  the first code cell, and write the summary from them with
+  `display(Markdown(f"..."))`. Numbers typed into Markdown go stale when the
+  data or simulation change. Later sections can then show the details of
+  loading and cleaning.
+
+  ```python
+  display(Markdown(f"""
+  **{n} participants passed the headphone check; {len(screened_out)} were screened out.**
+  Each chord's average is known to within ±{rms(half_width):.2f} points (95% confidence interval).
+  """))
+  ```
+
+- **Keep the numbers.** Plain words go with the values, not instead of them:
+  "noisier raters (SD 1.3)" rather than "noisier raters", in text, legends and
+  tables. Add the technical term in brackets after a plain description, such
+  as "known to within ±0.18 points (95% confidence interval)". Use readable
+  column names and round numbers in the text to two decimals.
+- **Execute before rendering.** The audit shows only the outputs saved in the
+  notebook, so run it after every change, for example with
+  `jupyter nbconvert --to notebook --execute --inplace analysis.ipynb`.
+  Neither `psynet audit validate` nor `mark-present` checks for saved outputs.
+- **Read it back.** Open the rendered section and read it as that reader
+  would. Check that every figure and table appears, that headings aren't
+  repeated, and that the summary matches the figures.
+
 ## Analysis and reporting
 
-The canonical analysis is `simulate/analysis/analysis.ipynb`. It should:
+The canonical analysis is `simulate/analysis/analysis.ipynb`. Follow "Writing
+notebooks for readers" above. It should:
 
 - read exported data directly;
-- show data loading and cleaning;
+- describe data loading and cleaning in a section after the main results
+  (the code itself runs in the first cell, behind the summary);
 - display useful summary tables or plots. Prefer Plotly with
   `pio.renderers.default = "plotly_mimetype"` for offline interactive figures
   and `pio.templates.default = "plotly_white"` for consistent presentation;
@@ -434,7 +472,10 @@ Array.from(document.querySelectorAll(".notebook-plotly-target")).flatMap((figure
 });
 ```
 
-An empty result is the standard to hold each figure to. Anything reported is a
+Open collapsed audit sections before running it: on a closed section the
+check returns an empty result without checking anything. Run it at full width
+and again in a window about 900 px wide, where legends start wrapping into
+titles. An empty result is the standard to hold each figure to. Anything reported is a
 layout bug to fix by shortening labels, adding margin, moving the legend, or
 increasing the figure height, not something to leave for the reviewer.
 

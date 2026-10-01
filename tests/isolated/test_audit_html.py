@@ -218,7 +218,9 @@ def test_render_design_simulation_renders_notebook_and_provenance() -> None:
     )
 
     html = render_design_simulation(view)
+    nested_html = render_design_simulation(view, standalone=False)
 
+    assert "Power analysis notebook" in nested_html
     assert "precision-estimation" in html
     assert "1000" in html
     assert "Precision by design" in html
