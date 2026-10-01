@@ -485,11 +485,12 @@ def clear_workers():
 
     def _zap():
         for process in list_heroku_local_processes():
-            # SIGTERM lets heroku local stop the processes it supervises.
             try:
                 process.terminate()
             except psutil.NoSuchProcess:
                 pass
+        # heroku local's forked foreman process doesn't receive the SIGTERM
+        # above; it exits once one of the workers it supervises stops.
         kill_psynet_worker_processes()
 
     _zap()
