@@ -80,8 +80,8 @@ this:
 
 .. rst-class:: study-step
 
-4. Check it without anyone real
--------------------------------
+4. Check it with simulated participants
+---------------------------------------
 
 .. grid:: 1 1 2 2
    :gutter: 4
@@ -101,10 +101,9 @@ this:
       dataset, so you can write your analysis now. A design simulation
       checks that 160 ratings per chord measure each chord's
       pleasantness precisely enough. Everything is
-      collected into an audit, a small website that you, or a
-      supervisor, read before signing off. You can browse the
-      `audit an agent produced for this study
-      <https://psynetdev.gitlab.io/example-audits/chord-pleasantness/>`_.
+      collected into an audit, a small website that you read before
+      signing off (see `examples
+      <https://psynetdev.gitlab.io/example-audits/>`_).
 
 .. rst-class:: study-step
 

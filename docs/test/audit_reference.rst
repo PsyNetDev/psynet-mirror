@@ -199,7 +199,10 @@ sections). Each section's ``kind`` selects one panel:
 * ``analysis`` renders ``simulate/analysis/analysis.ipynb`` and lists files in
   the adjacent ``simulated_export/`` directory;
 * ``source`` renders ``experiment.py`` (or ``experiment.entry_point`` when
-  configured) from the experiment directory as Python source;
+  configured) from the experiment directory as Python source, followed by the
+  experiment's other Python modules. Hidden folders, ``audit/``, ``tests/``,
+  ``static/``, ``node_modules/``, ``test.py`` and empty ``__init__.py`` files
+  are left out;
 * ``files`` lists the remaining artifacts; data exports are not repeated here
   because they have their own download panel;
 * ``evidence`` renders every evidence subsection in a single panel and remains
