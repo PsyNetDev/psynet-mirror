@@ -21,8 +21,9 @@ Smoke test for the record-participant-video skill's audio-capture helper.
 1. Start a recording page in the test context and open the static_audio demo.
 2. Clear the gateway and wait on the volume calibration page, which loops a
    sound and enables Next after 2.5 s of playback.
-3. Finish the recording and check that the MP4 is non-empty and has both a
-   video and an audio stream.
+3. Finish the recording and check that the MP4 is non-empty, has both a
+   video and an audio stream, and that the audio is not silent (the
+   calibration sound is loud brown noise; silence measures about -91 dB).
 
 Intentionally not covered: audio/video synchronization and audio content.
 */
@@ -35,6 +36,18 @@ function streamTypes(file) {
   );
   expect(result.status, result.stderr).toBe(0);
   return result.stdout.split("\n").filter(Boolean);
+}
+
+function maxVolumeDb(file) {
+  const result = spawnSync(
+    "ffmpeg",
+    ["-hide_banner", "-nostats", "-i", file, "-map", "0:a", "-af", "volumedetect", "-f", "null", "-"],
+    { encoding: "utf8" }
+  );
+  expect(result.status, result.stderr).toBe(0);
+  const match = result.stderr.match(/max_volume: (\S+) dB/);
+  expect(match, result.stderr).not.toBeNull();
+  return Number(match[1]);
 }
 
 test("participant recording helper writes an MP4 with audio", { tag: "@both" }, async ({
@@ -62,4 +75,5 @@ test("participant recording helper writes an MP4 with audio", { tag: "@both" }, 
 
   expect(fs.statSync(outPath).size).toBeGreaterThan(0);
   expect(streamTypes(outPath)).toEqual(expect.arrayContaining(["video", "audio"]));
+  expect(maxVolumeDb(outPath)).toBeGreaterThan(-40);
 });
