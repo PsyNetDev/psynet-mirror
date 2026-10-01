@@ -1140,32 +1140,6 @@ def is_psynet_worker_process(process):
     return False
 
 
-def list_heroku_local_processes():
-    """List ``heroku local`` supervisors that use this shell's database."""
-    return [
-        p
-        for p in psutil.process_iter()
-        if is_heroku_local_process(p) and uses_current_database(p)
-    ]
-
-
-def is_heroku_local_process(process):
-    """
-    Return whether ``process`` is part of the Heroku CLI's ``heroku local``.
-
-    The CLI runs as shell wrappers and ``node`` processes whose paths contain a
-    ``heroku`` directory. Requiring the ``local`` argument leaves other Heroku
-    commands alone, such as ``psynet deploy heroku`` or ``git push heroku``.
-    """
-    try:
-        cmdline = process.cmdline()
-    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-        return False
-    return "local" in cmdline[1:] and any(
-        "heroku" in part.split(os.sep) for part in cmdline
-    )
-
-
 def list_chromedriver_processes():
     return [p for p in psutil.process_iter() if is_chromedriver_process(p)]
 

@@ -3847,24 +3847,6 @@ def test_uses_current_database_rejects_unreadable_processes(error):
     assert not uses_current_database(process)
 
 
-@pytest.mark.parametrize(
-    "cmdline, expected",
-    [
-        (["/bin/sh", "/opt/homebrew/bin/heroku", "local", "-p", "5000"], True),
-        (["node", "/usr/local/lib/heroku/bin/run", "local", "-p", "5000"], True),
-        (["/opt/homebrew/bin/heroku", "logs", "--tail"], False),
-        (["python", "/venv/bin/psynet", "deploy", "heroku"], False),
-        (["git", "push", "heroku", "HEAD:master"], False),
-        (["python", "/venv/bin/psynet", "test", "local"], False),
-    ],
-)
-def test_is_heroku_local_process(cmdline, expected):
-    from psynet.command_line import is_heroku_local_process
-
-    process = Mock(cmdline=Mock(return_value=cmdline))
-    assert is_heroku_local_process(process) is expected
-
-
 def test_kill_psynet_worker_processes_warns_with_pids(caplog):
     import logging
 

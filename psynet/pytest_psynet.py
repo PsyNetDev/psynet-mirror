@@ -11,7 +11,6 @@ from urllib import parse
 import dallinger.pytest_dallinger
 import pexpect
 import pexpect.exceptions
-import psutil
 import pytest
 import requests
 import sqlalchemy.exc
@@ -40,7 +39,6 @@ from .command_line import (
     kill_chromedriver_processes,
     kill_psynet_chrome_processes,
     kill_psynet_worker_processes,
-    list_heroku_local_processes,
     stop_local_debug_process,
 )
 from .experiment import get_experiment, import_local_experiment
@@ -484,13 +482,8 @@ def clear_workers():
     """Stop leftover local servers that use this test run's database."""
 
     def _zap():
-        for process in list_heroku_local_processes():
-            try:
-                process.terminate()
-            except psutil.NoSuchProcess:
-                pass
-        # heroku local's forked foreman process doesn't receive the SIGTERM
-        # above; it exits once one of the workers it supervises stops.
+        # Once a worker stops, heroku local's foreman exits, and then the
+        # Heroku CLI that started it.
         kill_psynet_worker_processes()
 
     _zap()
