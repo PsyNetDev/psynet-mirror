@@ -1949,3 +1949,62 @@ def test_audit_serve_cli_render_then_serve(tmp_path: Path, monkeypatch) -> None:
     assert result.exit_code == 0, result.output
     assert "Rendered experiment audit site" in result.output
     assert calls == [(audit_dir / "site", "127.0.0.1", 9123)]
+
+
+@pytest.mark.parametrize("has_deploy_toml", [True, False])
+def test_source_section_shows_deployed_experiment_modules(
+    tmp_path: Path, has_deploy_toml: bool
+) -> None:
+    from psynet.audit.site import render_source_section
+
+    if has_deploy_toml:
+        (tmp_path / "deploy.toml").write_text(
+            'version = 1\n[exclude]\npaths = ["local_only"]\nnames = ["env"]\n'
+        )
+    for relative in [
+        "experiment.py",
+        "personality.py",
+        "response_model/core.py",
+        "test.py",
+        "tests/test_flow.py",
+        "local_only/scratch.py",
+        ".venv/lib/site.py",
+        "env/lib/python3.12/site-packages/pkg.py",
+        "custom_environment/pyvenv.cfg",
+        "custom_environment/bin/activate_this.py",
+        "audit/simulate/design/core.py",
+    ]:
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"# {relative}\n")
+    (tmp_path / "response_model" / "__init__.py").write_text("")
+
+    rendered = render_source_section(tmp_path / "audit", {"experiment": {}})
+
+    for shown in ["experiment.py", "personality.py", "response_model/core.py"]:
+        assert f"# {shown}" in rendered
+    for hidden in [
+        "test.py",
+        "tests/test_flow.py",
+        "local_only/",
+        ".venv/lib/site.py",
+        "env/lib/",
+        "custom_environment/",
+        "audit/",
+    ]:
+        assert f"# {hidden}" not in rendered
+    assert rendered.index("# experiment.py") < rendered.index("# personality.py")
+
+
+def test_source_section_notes_omitted_modules(tmp_path: Path) -> None:
+    from psynet.audit.site import render_source_section
+
+    for index in range(33):
+        (tmp_path / f"module_{index:02}.py").write_text(f"# module {index}\n")
+    (tmp_path / "experiment.py").write_text("# experiment\n")
+
+    rendered = render_source_section(tmp_path / "audit", {"experiment": {}})
+
+    assert "# module 29" in rendered
+    assert "# module 30" not in rendered
+    assert "3 more Python modules omitted" in rendered
