@@ -140,6 +140,11 @@ Homepage = "https://www.psynet.dev/"
 Issues = "https://gitlab.com/PsyNetDev/PsyNet/-/issues"
 Repository = "https://gitlab.com/PsyNetDev/PsyNet/"
 
+# Built by `psynet dev docs bundle` for `psynet docs`; gitignored, so it must
+# be listed as an artifact to reach the sdist and wheel.
+[tool.hatch.build]
+artifacts = ["/psynet/resources/docs_text"]
+
 [tool.hatch.build.targets.wheel]
 include = ["/psynet"]
 

@@ -7,7 +7,7 @@ description: Find the PsyNet demo, documentation page and source code closest to
 
 ## Read first
 
-Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rst`; otherwise fetch `https://psynetdev.gitlab.io/PsyNet/<page>.html`.
+Read these pages before acting. The "Documentation" section of the experiment's `AGENTS.md` explains how to find and search them.
 
 - `code/project/agentic_programming` — implementing an experiment with a coding agent
 - `code/project/creating_an_experiment` — creating an experiment directory from a demo
@@ -15,9 +15,7 @@ Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rs
 
 ## Finding demo code
 
-The PsyNet package installed with pip contains the source code under
-`.venv/lib/python3.*/site-packages/psynet/` but no demos. The demos live in the
-`demos/` directory of the PsyNet repository:
+The demos live in the `demos/` directory of the PsyNet repository:
 
 - `demos/experiments/` for complete experiments;
 - `demos/features/` for focused feature examples;
@@ -25,7 +23,14 @@ The PsyNet package installed with pip contains the source code under
 
 Pick a demo from `demos/index`, then read its code in one of these ways:
 
-- Open its GitLab tree link from `demos/index`, for example
+- Run `psynet docs demos` once and read the demo under the printed folder, for
+  example `<folder>/features/headphone_test/experiment.py`. Search all demos
+  with `rg -n --no-ignore "<term>" <folder>`. Release installs bundle the
+  demos' code and text files for the installed version, but not their media or
+  vendored libraries; in a source checkout the folder is the repository's
+  `demos/`.
+- If `psynet docs demos` reports no local copy (for example in a Git install),
+  open the demo's GitLab tree link from `demos/index`, for example
   `https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/headphone_test`.
   Fetch single files from the raw URL, for example
   `https://gitlab.com/PsyNetDev/PsyNet/-/raw/master/demos/features/headphone_test/experiment.py`.

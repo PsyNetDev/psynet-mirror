@@ -8,7 +8,7 @@ compatibility: Requires PsyNet installed in the experiment's .venv (from PyPI vi
 
 ## Read first
 
-Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rst`; otherwise fetch `https://psynetdev.gitlab.io/PsyNet/<page>.html`.
+Read these pages before acting. The "Documentation" section of the experiment's `AGENTS.md` explains how to find and search them.
 
 - `code/project/agentic_programming` — the coding-agent workflow for experiments
 - `code/project/creating_an_experiment` — starting from a demo or an existing experiment

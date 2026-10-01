@@ -158,13 +158,17 @@ Once CI passes, build the package and upload it to PyPI:
 ```bash
 git checkout vX.Y.Z
 rm -rf dist/ build/ *.egg-info
+psynet dev docs bundle
 python -m build
+unzip -p dist/psynet-X.Y.Z-*.whl psynet/resources/docs_text/VERSION
 twine upload dist/psynet-X.Y.Z.tar.gz dist/psynet-X.Y.Z-*.whl
 rm -rf dist/ build/ *.egg-info
 ```
 
-This builds both the sdist (`.tar.gz`) and wheel (`.whl`) into the `dist/`
-directory, then uploads them to PyPI. The pre-build `rm -rf` ensures we
+`psynet dev docs bundle` builds the plain-text documentation that
+`psynet docs` reads in release installs; the `unzip` check must print
+`X.Y.Z` and the tagged commit. The build then puts both the sdist (`.tar.gz`) and wheel (`.whl`)
+into the `dist/` directory, and `twine` uploads them to PyPI. The pre-build `rm -rf` ensures we
 start from a clean slate; the upload glob is intentionally narrow because
 `dist/psynet-X.Y.Z*` would also match leftover RC artifacts such as
 `psynet-X.Y.Zrc1*`. The post-upload `rm -rf` removes generated files.

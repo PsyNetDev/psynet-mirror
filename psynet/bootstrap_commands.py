@@ -1,6 +1,6 @@
 """Shared Click commands for the bootstrap and full PsyNet CLIs.
 
-``setup``, ``scripts``, ``services``, and ``generate-constraints`` are
+``setup``, ``scripts``, ``services``, ``generate-constraints``, and ``docs`` are
 registered on both the thin bootstrap group and the full
 ``psynet.command_line`` group. Keeping a single definition prevents
 option/help drift (for example ``--force-foreign-env``).
@@ -194,9 +194,50 @@ def generate_constraints():
     generate_constraints_file()
 
 
+@click.group("docs")
+def docs():
+    """Read the documentation for the installed PsyNet version.
+
+    Search all pages with: rg -n -i --no-ignore "<term>" "$(psynet docs path)"
+    """
+
+
+@docs.command("path")
+def docs_path():
+    """Print the local documentation directory."""
+    from psynet.local_docs import docs_dir
+
+    click.echo(docs_dir())
+
+
+@docs.command("demos")
+def docs_demos():
+    """Print the local demo code directory."""
+    from psynet.local_docs import demos_dir
+
+    click.echo(demos_dir())
+
+
+@docs.command("show")
+@click.argument("page")
+def docs_show(page):
+    """Print PAGE, for example code/participants/payment."""
+    from psynet.local_docs import page_path
+
+    click.echo(page_path(page).read_text(encoding="utf-8"))
+
+
+@docs.command("make", hidden=True, context_settings={"ignore_unknown_options": True})
+@click.argument("args", nargs=-1, type=click.UNPROCESSED)
+def docs_make(args):
+    """Point to the command that builds the documentation."""
+    raise click.UsageError("To build the documentation, run `psynet dev docs make`.")
+
+
 def register_bootstrap_commands(group: click.Group) -> None:
     """Attach shared thin-bootstrap commands to ``group``."""
     group.add_command(setup)
     group.add_command(scripts)
     group.add_command(services)
     group.add_command(generate_constraints)
+    group.add_command(docs)

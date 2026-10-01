@@ -23,7 +23,7 @@ references:
 
 ## Read first
 
-Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rst`; otherwise fetch `https://psynetdev.gitlab.io/PsyNet/<page>.html`.
+Read these pages before acting. The "Documentation" section of the experiment's `AGENTS.md` explains how to find and search them.
 
 - `test/audit_reference` — "Design simulation": the audit artifacts `core.py` produces
 - `test/audits` — where the design simulation sits in an audit

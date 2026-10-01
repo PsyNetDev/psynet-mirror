@@ -7,7 +7,7 @@ description: Choose and build participant-facing PsyNet pages, from built-in Mod
 
 ## Read first
 
-Read these pages before acting. In a PsyNet source checkout read `docs/<page>.rst`; otherwise fetch `https://psynetdev.gitlab.io/PsyNet/<page>.html`.
+Read these pages before acting. The "Documentation" section of the experiment's `AGENTS.md` explains how to find and search them.
 
 - `code/writing_pages`: pages, prompts, controls, validation, and timing within a page
 - `code/pages/control_gallery`: built-in controls
