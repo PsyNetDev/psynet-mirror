@@ -1962,6 +1962,8 @@ def test_source_section_shows_experiment_modules(tmp_path: Path) -> None:
         "tests/test_flow.py",
         ".venv/lib/site.py",
         "env/lib/python3.12/site-packages/pkg.py",
+        "custom_environment/pyvenv.cfg",
+        "custom_environment/bin/activate_this.py",
         "audit/simulate/design/core.py",
     ]:
         path = tmp_path / relative
@@ -1978,6 +1980,7 @@ def test_source_section_shows_experiment_modules(tmp_path: Path) -> None:
         "tests/test_flow.py",
         ".venv/lib/site.py",
         "env/lib/",
+        "custom_environment/",
         "audit/",
     ]:
         assert f"# {hidden}" not in rendered

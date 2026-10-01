@@ -125,9 +125,10 @@ panel rather than being repeated under Additional files. The Experiment code pan
 (or ``experiment.entry_point`` when configured) from the experiment directory
 and displays it as Python source, followed by the experiment's other Python
 modules, such as a ``response_model/`` package. Hidden folders, virtual
-environments (``venv/``, ``env/``, ``site-packages/``), ``audit/``,
-``tests/``, ``static/``, ``node_modules/``, ``test.py`` and empty
-``__init__.py`` files are left out. Each evidence kind
+environments (including directories with ``pyvenv.cfg``, ``venv/``, ``env/``
+and ``site-packages/``), ``audit/``, ``tests/``, ``static/``,
+``node_modules/``, ``test.py`` and empty ``__init__.py`` files are left out.
+Each evidence kind
 is its own top-level section, so a section kind maps to one panel:
 
 * ``screenshots``, ``participant_video``, ``monitor``, ``performance``,

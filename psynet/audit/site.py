@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import html
 import json
+import os
 import shutil
 from dataclasses import replace
 from pathlib import Path
@@ -575,24 +576,33 @@ def experiment_python_modules(source_root: Path, entry_file: Path) -> list[Path]
 
     Covers modules beside ``experiment.py`` and in its packages, such as a
     ``response_model/`` package. Skips hidden directories, virtual environments
-    (``venv/``, ``env/`` and anything under ``site-packages/``), the audit
-    folder, tests, static files, the scaffolded ``test.py`` and empty
-    ``__init__.py`` files.
+    (including directories with ``pyvenv.cfg``, ``venv/``, ``env/`` and
+    anything under ``site-packages/``), the audit folder, tests, static files,
+    the scaffolded ``test.py`` and empty ``__init__.py`` files.
     """
     modules = []
-    for path in sorted(source_root.rglob("*.py")):
+    for root, directories, filenames in os.walk(source_root):
+        directories[:] = sorted(
+            directory
+            for directory in directories
+            if not directory.startswith(".")
+            and directory not in _SOURCE_EXCLUDED_DIRS
+            and not (Path(root) / directory / "pyvenv.cfg").is_file()
+        )
+        for filename in filenames:
+            if filename.endswith(".py"):
+                modules.append(Path(root) / filename)
+    modules.sort(key=lambda path: path.relative_to(source_root).as_posix())
+
+    included = []
+    for path in modules:
         relative = path.relative_to(source_root)
-        if any(
-            part.startswith(".") or part in _SOURCE_EXCLUDED_DIRS
-            for part in relative.parts[:-1]
-        ):
-            continue
         if path == entry_file or relative == Path("test.py"):
             continue
         if path.name == "__init__.py" and path.stat().st_size == 0:
             continue
-        modules.append(path)
-    return modules[:_MAX_SOURCE_MODULES]
+        included.append(path)
+    return included[:_MAX_SOURCE_MODULES]
 
 
 def render_source_section(audit_dir: Path, manifest: dict[str, Any]) -> str:

@@ -1126,13 +1126,14 @@ def is_psynet_worker_process(process):
     """Return whether ``process`` is a local Dallinger web or worker process."""
     try:
         # This version catches processes in Linux
-        if "dallinger_herok" in process.name():
+        if process.name().startswith("dallinger_herok"):
             return True
         # This version catches process in MacOS
         if "python" in process.name().lower():
-            for cmd in process.cmdline():
-                if "dallinger_heroku_" in cmd:
-                    return True
+            return any(
+                Path(argument).name.startswith("dallinger_heroku_")
+                for argument in process.cmdline()[:2]
+            )
     except (psutil.NoSuchProcess, psutil.AccessDenied):
         pass
 
