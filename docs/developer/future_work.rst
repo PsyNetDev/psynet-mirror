@@ -39,3 +39,28 @@ withhold or clip, bonus POST started, bonus POST result, Pay clicked,
 dismissed, and platform poll. Commit "POST started" before the HTTP call
 so a crash still leaves a row. That is also enough to show that a pay
 request was started, without a separate in-progress ``bonus_status``.
+
+Cross-site request protection for dashboard actions
+---------------------------------------------------
+
+Date
+++++
+
+2026-10-01
+
+Problem
++++++++
+
+Several dashboard actions that change state are plain GET requests, for
+example archiving or restoring a deployment, updating recruitment status,
+triggering an export and changing the Lucid survey status. They require a
+login, but a logged-in operator who opens a malicious page could still
+trigger them through the browser's session cookie.
+
+Idea
+++++
+
+Move state-changing dashboard actions to POST and set
+``SESSION_COOKIE_SAMESITE`` (``"Lax"`` or ``"Strict"``) on the experiment
+server, so browsers don't send the session cookie with cross-site requests.
+Update the dashboard JavaScript and the Slack "Trigger export" link to match.
