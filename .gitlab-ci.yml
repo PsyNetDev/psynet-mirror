@@ -57,6 +57,12 @@ before_script:
 # Docker pytest / Playwright jobs. MR pipelines skip these when the diff
 # cannot affect experiment runtime, tests, demos, or the CI image. Default
 # branch, tags, and branch pipelines without an MR still always run them.
+#
+# The `changes` list is an allowlist, so a path missing from it silently
+# skips the tests on MRs that touch only that path. When you add a top-level
+# file or directory that tests, the CI image, or packaging depend on, or a
+# test that reads a docs page, add it here. GitLab `changes` patterns cannot
+# exclude paths, so "everything except docs/" cannot be written instead.
 .docker_test_rules: &docker_test_rules
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
@@ -70,6 +76,11 @@ before_script:
         - ci/**/*
         - demos/**/*
         - docs/scripts/**/*
+        # Docs pages whose content is checked by isolated tests.
+        - docs/dependencies/docker.rst
+        - docs/deploy/index.rst
+        - docs/developer/timeline_hold_traces.rst
+        - docs/experiment_development/experiment_directory.rst
         - deployment-tests/**/*
         - dev-requirements.in
         - install-ci-dependencies.sh
