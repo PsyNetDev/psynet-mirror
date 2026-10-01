@@ -79,12 +79,18 @@ def _boolean_expression(name: str) -> sql.Composable:
 
 
 def _framework_sensitive_expression(table: str, column: str) -> sql.Composable | None:
-    """Remove framework credentials and identifiers from exported status rows."""
+    """Remove framework credentials and identifiers from exported status rows.
+
+    ``extra_info`` is serialized Python, which spells non-finite floats as bare
+    ``NaN`` or ``Infinity``. ``jsonb`` rejects those tokens, so they become
+    ``null`` before the cast; otherwise one such row would fail the whole export.
+    """
     if (table, column) != ("experiment_status", "extra_info"):
         return None
-    return sql.SQL("({column}::jsonb - 'basic_data_url' - 'secret')::text").format(
-        column=sql.Identifier(column)
-    )
+    return sql.SQL(
+        "(regexp_replace({column}, '([:,\\[]\\s*)(NaN|-?Infinity)\\M', '\\1null', 'g')"
+        "::jsonb - 'basic_data_url' - 'secret')::text"
+    ).format(column=sql.Identifier(column))
 
 
 def _select_column(

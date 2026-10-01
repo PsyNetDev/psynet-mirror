@@ -160,6 +160,7 @@ def test_export_redacts_credentials_from_historical_status_rows(db_session, tmp_
             basic_data_url="https://user:password@example.com/data",
             secret="dashboard-password",
             deployment_id="deployment-1",
+            total_cost=float("nan"),
         )
     )
     db_session.commit()
@@ -168,7 +169,8 @@ def test_export_redacts_credentials_from_historical_status_rows(db_session, tmp_
     rows = _read_rows(tmp_path / "experiment_status.csv")
     assert len(rows) == 1
     row = next(iter(rows.values()))
-    assert json.loads(row["extra_info"]) == {"deployment_id": "deployment-1"}
+    expected = {"deployment_id": "deployment-1", "total_cost": None}
+    assert json.loads(row["extra_info"]) == expected
 
     db_session.query(ExperimentStatus).delete()
     db_session.commit()
@@ -178,7 +180,7 @@ def test_export_redacts_credentials_from_historical_status_rows(db_session, tmp_
         ingest_to_model(handle, ExperimentStatus, db.engine)
 
     reloaded = db_session.query(ExperimentStatus).one()
-    assert reloaded.extra_info == {"deployment_id": "deployment-1"}
+    assert reloaded.extra_info == expected
 
 
 @in_consents_experiment
