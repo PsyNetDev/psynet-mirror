@@ -556,7 +556,16 @@ def experiment_entry_point(
     return source_file, entry_point
 
 
-_SOURCE_EXCLUDED_DIRS = {"audit", "node_modules", "static", "tests", "__pycache__"}
+_SOURCE_EXCLUDED_DIRS = {
+    "audit",
+    "env",
+    "node_modules",
+    "site-packages",
+    "static",
+    "tests",
+    "venv",
+    "__pycache__",
+}
 _MAX_SOURCE_MODULES = 30
 
 
@@ -565,9 +574,10 @@ def experiment_python_modules(source_root: Path, entry_file: Path) -> list[Path]
     List the experiment's own Python modules other than the entry point.
 
     Covers modules beside ``experiment.py`` and in its packages, such as a
-    ``response_model/`` package. Skips virtual environments and other hidden
-    directories, the audit folder, tests, static files, the scaffolded
-    ``test.py`` and empty ``__init__.py`` files.
+    ``response_model/`` package. Skips hidden directories, virtual environments
+    (``venv/``, ``env/`` and anything under ``site-packages/``), the audit
+    folder, tests, static files, the scaffolded ``test.py`` and empty
+    ``__init__.py`` files.
     """
     modules = []
     for path in sorted(source_root.rglob("*.py")):

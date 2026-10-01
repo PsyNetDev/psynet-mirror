@@ -1961,6 +1961,7 @@ def test_source_section_shows_experiment_modules(tmp_path: Path) -> None:
         "test.py",
         "tests/test_flow.py",
         ".venv/lib/site.py",
+        "env/lib/python3.12/site-packages/pkg.py",
         "audit/simulate/design/core.py",
     ]:
         path = tmp_path / relative
@@ -1972,6 +1973,12 @@ def test_source_section_shows_experiment_modules(tmp_path: Path) -> None:
 
     for shown in ["experiment.py", "personality.py", "response_model/core.py"]:
         assert f"# {shown}" in rendered
-    for hidden in ["test.py", "tests/test_flow.py", ".venv/lib/site.py", "audit/"]:
+    for hidden in [
+        "test.py",
+        "tests/test_flow.py",
+        ".venv/lib/site.py",
+        "env/lib/",
+        "audit/",
+    ]:
         assert f"# {hidden}" not in rendered
     assert rendered.index("# experiment.py") < rendered.index("# personality.py")
