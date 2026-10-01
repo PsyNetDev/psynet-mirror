@@ -109,11 +109,8 @@ def test_timeline_template_emits_js_dependencies_as_blocking_head_scripts():
     assert "data-psynet-load-failed" in template
     # SurveyJS is 8 MB; pages that need it declare it via js_dependencies.
     assert "survey-jquery.js" not in template
-    # Dallinger's libs block reloads jQuery, which would drop head-loaded plugins.
-    libs_block = template.split("{% block libs %}")[1].split("{% endblock %}")[0]
-    assert libs_block.index("{{ super() }}") < libs_block.index(
-        "jQuery.noConflict(true)"
-    )
+    # A second jQuery from Dallinger's libs block would drop head-loaded plugins.
+    assert "{% block jquery %}{% endblock %}" in template
 
 
 def test_automatic_trial_waits_for_page_ready():

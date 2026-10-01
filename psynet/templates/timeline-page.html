@@ -282,11 +282,12 @@
     {{ browser_detect.head() }}
 {% endblock %}
 
+{# The head already loads jQuery. A second copy from Dallinger's libs would
+   replace it and drop jQuery plugins loaded as js_dependencies (e.g. SurveyJS). #}
+{% block jquery %}{% endblock %}
+
 {% block libs %}
     {{ super() }}
-    {# Dallinger's libs reload jQuery; restore the head copy so jQuery plugins
-       loaded as js_dependencies (e.g. SurveyJS) stay registered. #}
-    <script>jQuery.noConflict(true);</script>
     <script src="{{ url_for('static', filename='scripts/platform.min.js') }}"></script>
 {% endblock %}
 
