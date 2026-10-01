@@ -436,7 +436,7 @@ class LucidService(object):
         last_rate_limit = redis_conn.get(self.RATE_LIMIT_KEY)
         if len(cached_submissions) > 0 and last_rate_limit is not None:
             last_rate_limit = datetime.fromisoformat(last_rate_limit.decode("utf-8"))
-            if (datetime.now() - last_rate_limit).total_seconds() > n_minutes * 60:
+            if (datetime.now() - last_rate_limit).total_seconds() <= n_minutes * 60:
                 self.log("Using cached submissions")
                 return cached_submissions[0].get()
 
