@@ -1973,7 +1973,7 @@ class Page(Elt):
         if self.show_early_exit_button is not None:
             return bool(self.show_early_exit_button)
         return bool(
-            experiment.recruiter.show_early_exit_button
+            experiment.recruiter_class.show_early_exit_button
             or get_config().get("show_early_exit_button", False)
         )
 

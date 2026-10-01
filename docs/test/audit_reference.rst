@@ -200,9 +200,14 @@ sections). Each section's ``kind`` selects one panel:
   the adjacent ``simulated_export/`` directory;
 * ``source`` renders ``experiment.py`` (or ``experiment.entry_point`` when
   configured) from the experiment directory as Python source, followed by the
-  experiment's other Python modules. Hidden folders, ``audit/``, ``tests/``,
-  ``static/``, ``node_modules/``, ``test.py`` and empty ``__init__.py`` files
-  are left out;
+  experiment's other Python modules, such as a ``response_model/`` package.
+  Only modules that the experiment's ``deploy.toml`` deploys are listed, so
+  files in excluded folders such as ``local_only/`` or ``develop/`` stay out of
+  published audits; without a ``deploy.toml``, PsyNet's stock ``deploy.toml``
+  rules are applied. Hidden folders, virtual environments (folders with
+  ``pyvenv.cfg``), ``audit/``, ``tests/``, ``static/``, ``test.py`` and empty
+  ``__init__.py`` files are also left out. The panel shows at most 30 extra
+  modules and says how many more were omitted;
 * ``files`` lists the remaining artifacts; data exports are not repeated here
   because they have their own download panel;
 * ``evidence`` renders every evidence subsection in a single panel and remains

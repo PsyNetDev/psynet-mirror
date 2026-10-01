@@ -3,6 +3,7 @@ import json
 from psynet.audit.constants import MAX_AUDIT_NOTEBOOK_BYTES
 from psynet.audit.html import (
     render_analysis_notebook,
+    render_data_exports,
     render_design_simulation,
     render_evidence_section,
     render_file_grid,
@@ -174,6 +175,15 @@ def test_render_design_simulation_reports_absence() -> None:
     assert "No design simulation" in render_design_simulation(view)
 
 
+def test_render_data_exports_reports_absence() -> None:
+    view = classify_audit_evidence([])
+
+    assert "No real data yet" in render_data_exports(view)
+    assert "Download data export" in render_data_exports(
+        classify_audit_evidence([file("data.zip", None)])
+    )
+
+
 def test_render_design_simulation_renders_notebook_and_provenance() -> None:
     view = classify_audit_evidence(
         [
@@ -323,7 +333,10 @@ def test_render_evidence_section_renders_notebook_rich_outputs() -> None:
     assert "<h2>Results</h2>" in html
     assert "<ul>" in html
     assert "<li>passed</li>" in html
-    assert '<div class="notebook-code"><pre class="highlight">' in html
+    assert (
+        '<details class="notebook-code"><summary>Show code</summary>'
+        '<pre class="highlight">'
+    ) in html
     assert '<div class="notebook-html">' in html
     assert "<table>" in html
     assert "<th>n</th>" in html

@@ -13,7 +13,12 @@ import uuid
 from pathlib import Path
 
 import jsonpickle
-from tenacity import retry, stop_after_attempt, wait_fixed
+from tenacity import (
+    retry,
+    retry_if_not_exception_type,
+    stop_after_attempt,
+    wait_fixed,
+)
 
 from .utils import find_git_repo
 
@@ -70,7 +75,7 @@ def _experiment_relative_git_path(path, prefix):
     return posix
 
 
-def _policy_selects_path(path, policy):
+def policy_selects_path(path, policy):
     """Return whether ``path`` would be copied under ``policy`` if it existed."""
     from dallinger.deployment_plan import _is_excluded, _is_omitted_anywhere
 
@@ -143,7 +148,7 @@ def _get_git_provenance():
     selected_untracked = selected - tracked
     selected_changed = selected & changed
     selected_deleted = {
-        path for path in deleted if _policy_selects_path(path, plan.policy)
+        path for path in deleted if policy_selects_path(path, plan.policy)
     }
     return commit_sha, bool(selected_untracked or selected_changed or selected_deleted)
 
@@ -191,7 +196,12 @@ def write(**kwargs):
     write_all(content)
 
 
-@retry(stop=stop_after_attempt(5), wait=wait_fixed(1), reraise=True)
+@retry(
+    retry=retry_if_not_exception_type(FileNotFoundError),
+    stop=stop_after_attempt(5),
+    wait=wait_fixed(1),
+    reraise=True,
+)
 def read_all():
     with open(path, "r") as file:
         txt = file.read()

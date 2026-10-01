@@ -16,8 +16,8 @@ depends on npm packages. Assert enabled and disabled controls, trial
 transitions, validation or feedback, completion, and saved responses — not
 only that the runner can click Next.
 
-For constructing pages, use `develop-experiment-front-end/SKILL.md`. For
-ffmpeg participant recordings, use `record-participant-video/SKILL.md`.
+For constructing pages, use `develop-experiment-front-end/SKILL.md`. To record
+the walk as `participant.mp4` with audio, use `record-participant-video/SKILL.md`.
 
 ## Read first
 

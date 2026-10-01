@@ -1,0 +1,1 @@
+Fixed `bot.id` being `None` inside `Experiment.initialize_bot`. The bot is now flushed to the database before the hook runs, so `initialize_bot` can use the bot's ID, for example to seed per-bot randomness.
