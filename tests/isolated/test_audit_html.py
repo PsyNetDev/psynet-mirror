@@ -3,6 +3,7 @@ import json
 from psynet.audit.constants import MAX_AUDIT_NOTEBOOK_BYTES
 from psynet.audit.html import (
     render_analysis_notebook,
+    render_data_exports,
     render_design_simulation,
     render_evidence_section,
     render_file_grid,
@@ -172,6 +173,15 @@ def test_render_design_simulation_reports_absence() -> None:
     view = classify_audit_evidence([file("simulate/analysis/analysis.ipynb", "{}")])
 
     assert "No design simulation" in render_design_simulation(view)
+
+
+def test_render_data_exports_reports_absence() -> None:
+    view = classify_audit_evidence([])
+
+    assert "No real data yet" in render_data_exports(view)
+    assert "Download data export" in render_data_exports(
+        classify_audit_evidence([file("data.zip", None)])
+    )
 
 
 def test_render_design_simulation_renders_notebook_and_provenance() -> None:
