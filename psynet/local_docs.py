@@ -19,6 +19,7 @@ Keep imports light: this module runs on every ``psynet docs`` call.
 """
 
 import re
+import tomllib
 from pathlib import Path
 
 import click
@@ -34,6 +35,19 @@ class DocsError(click.ClickException):
     """Raised when the local documentation or a page in it can't be found."""
 
 
+def _is_source_checkout(root: Path) -> bool:
+    """Return whether ``root`` is a PsyNet source checkout with documentation."""
+    pyproject = root / "pyproject.toml"
+    if not pyproject.is_file() or not (root / "docs" / "conf.py").is_file():
+        return False
+    try:
+        metadata = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return False
+    name = metadata.get("project", {}).get("name")
+    return isinstance(name, str) and name.casefold() == "psynet"
+
+
 def published_docs_url(version: str) -> str:
     """Return the website URL for the documentation of ``version``."""
     stable = re.fullmatch(r"(\d+\.\d+\.\d+)(\.post\d+)?", version)
@@ -46,13 +60,20 @@ def published_docs_url(version: str) -> str:
 
 def _locate_docs(source_root: Path, bundled_dir: Path, version: str) -> Path:
     source_docs = source_root / "docs"
-    if (source_root / "pyproject.toml").is_file() and (
-        source_docs / "conf.py"
-    ).is_file():
+    if _is_source_checkout(source_root):
         return source_docs
     version_file = bundled_dir / "VERSION"
-    if version_file.exists() and version_file.read_text().split()[:1] == [version]:
-        return bundled_dir
+    if version_file.is_file():
+        bundled_version = version_file.read_text(encoding="utf-8").split()[:1]
+        if bundled_version == [version]:
+            return bundled_dir
+        if bundled_version:
+            raise DocsError(
+                f"This PsyNet installation is version {version}, but its local "
+                f"documentation is for version {bundled_version[0]}. "
+                f"Read the matching documentation online at "
+                f"{published_docs_url(version)}"
+            )
     raise DocsError(
         f"This PsyNet installation ({version}) has no local documentation. "
         f"Read it online at {published_docs_url(version)}"

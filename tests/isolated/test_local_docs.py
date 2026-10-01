@@ -29,8 +29,31 @@ def test_bundled_docs_are_used_only_for_their_own_version(tmp_path):
     (bundle / "VERSION").write_text("14.0.0\nabc123\n")
 
     assert _locate_docs(tmp_path, bundle, "14.0.0") == bundle
-    with pytest.raises(DocsError, match="PsyNet/v14.0.1/"):
+    with pytest.raises(
+        DocsError,
+        match=(
+            r"installation is version 14\.0\.1, but its local documentation "
+            r"is for version 14\.0\.0.*PsyNet/v14\.0\.1/"
+        ),
+    ):
         _locate_docs(tmp_path, bundle, "14.0.1")
+
+
+def test_source_docs_require_a_psynet_checkout(tmp_path):
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "conf.py").write_text("")
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "unrelated-sphinx-project"\n'
+    )
+    bundle = tmp_path / "docs_text"
+    bundle.mkdir()
+    (bundle / "VERSION").write_text("14.0.0\nabc123\n")
+
+    assert _locate_docs(tmp_path, bundle, "14.0.0") == bundle
+
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "psynet"\n')
+    assert _locate_docs(tmp_path, bundle, "14.0.0") == docs
 
 
 def test_find_page_accepts_urls_and_stays_inside_the_docs(tmp_path):
