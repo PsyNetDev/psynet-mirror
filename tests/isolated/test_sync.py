@@ -5492,6 +5492,29 @@ def test_savepoint_then_outer_rollback_does_not_publish_hold_wakes(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
+def test_session_close_discards_uncommitted_hold_wakes(
+    in_experiment_directory, db_session, monkeypatch
+):
+    """``Session.close()`` fires no ``after_rollback``, so wakes must not leak."""
+    participant = new_participant(get_experiment())
+    hold = _participant_hold(participant, "closed-wake", "closed")
+    publications = _hold_wake_publications(monkeypatch)
+
+    _enqueue_timeline_hold_wake(
+        participant.id,
+        page_uuid="closed-wake",
+        reason="barrier_released",
+        hold=hold,
+    )
+    db_session.close()
+    db_session.commit()
+
+    assert publications == []
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
 def test_nested_rollback_keeps_wakes_queued_before_the_savepoint(
     in_experiment_directory, db_session, monkeypatch
 ):

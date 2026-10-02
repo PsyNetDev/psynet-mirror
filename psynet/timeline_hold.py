@@ -329,11 +329,13 @@ def _discard_timeline_hold_wakes(session):
 
 @event.listens_for(db.session, "after_transaction_end")
 def _pop_nested_wake_snapshot(session, transaction):
-    if not transaction.nested:
-        return
-    stack = session.info.get(_NESTED_WAKE_SNAPSHOTS_KEY)
-    if stack:
-        stack.pop()
+    if transaction.nested:
+        stack = session.info.get(_NESTED_WAKE_SNAPSHOTS_KEY)
+        if stack:
+            stack.pop()
+    elif transaction.parent is None:
+        # Session.close() ends the root transaction without after_rollback.
+        session.info.pop(_PENDING_WAKE_KEY, None)
 
 
 @register_table
