@@ -1371,12 +1371,12 @@ class GroupBarrier(Barrier):
             if self._participant_is_waiting(member):
                 hold_html = None
                 if self._uses_timeline_hold:
-                    waiting = self.waiting_logic
+                    hold_page = self.waiting_logic
                     if getattr(
-                        waiting, "_is_silent_for", None
-                    ) and waiting._is_silent_for(member):
+                        hold_page, "_is_silent_for", None
+                    ) and hold_page._is_silent_for(member):
                         continue
-                    hold_html = waiting.overlay_html(member)
+                    hold_html = hold_page.overlay_html(member)
                 _queue_arrival_update(member.id, hold_message=hold_html)
                 continue
             text = self._call_arrival_message(
