@@ -118,8 +118,8 @@ def blocking_psycopg():
     because psycopg2 rejects ``COPY`` while the callback is installed. The
     callback is process-wide, so overlapping suspensions from different
     greenlets or threads are counted and the callback returns only when the
-    last one exits. Keep the block short: it blocks every greenlet in the
-    process, and other queries in the process run without the callback.
+    last one exits. Keep the block short: while it is active, every query in
+    the process, from any greenlet, blocks the whole process until it returns.
     """
     global _blocking_psycopg_depth, _suspended_wait_callback
     with _blocking_psycopg_lock:
