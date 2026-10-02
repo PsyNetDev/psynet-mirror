@@ -1659,7 +1659,32 @@ async function advanceUntilFinish(page, options = {}) {
   throw new Error("Experiment did not finish within expected steps.");
 }
 
+async function prepareRecordingFixture(page, {screen = false} = {}) {
+  await completeInitialGateway(page);
+  await expect(page.locator("#main-body")).toContainText("Record a short clip.");
+  if (screen) await acceptAnswerScreenPermission(page);
+  await waitForVideoRecordingReady(page, {timeoutMs:45000, requireScreen:screen});
+  await waitForNextEnabled(page, 30000);
+}
+
+async function submitRecordingFixture(page, options) {
+  await prepareRecordingFixture(page, options);
+  const acceptance = page.waitForResponse(response =>
+    new URL(response.url()).pathname === "/response" &&
+    response.request().method() === "POST", {timeout:20000}
+  );
+  await page.locator("#next-button").click();
+  const response = await acceptance;
+  const accepted = await response.json();
+  expect(accepted.submission).toBe("approved");
+  expect(response.request().postData()).not.toContain('name="cameraRecording"');
+  await expect(page.locator("#main-body")).toContainText("Independent page reached.");
+  return {accepted, response};
+}
+
 module.exports = {
+  prepareRecordingFixture,
+  submitRecordingFixture,
   advanceUntilFinish,
   advanceUntilPromptContains,
   assertNoBackendError,

@@ -1,7 +1,7 @@
 const path = require("path");
 const { test, expect } = require("./fixtures");
 const {
-  withExperiment, completeInitialGateway, waitForVideoRecordingReady,
+  withExperiment, submitRecordingFixture,
   waitForNextEnabled,
 } = require("./psynetHarness");
 
@@ -20,13 +20,7 @@ for (const receiveBeforeClosing of [false, true]) {
       // Keep the browser request pending in both cases; only one sends bytes.
     });
     await withExperiment(page, context, path.resolve("tests/playwright/experiments/asynchronous_recording"), async p => {
-      await completeInitialGateway(p);
-      await expect(p.locator("#main-body")).toContainText("Record a short clip.");
-      await waitForVideoRecordingReady(p, {timeoutMs:45000});
-      await waitForNextEnabled(p,30000);
-      const response = p.waitForResponse(r => new URL(r.url()).pathname === "/response" && r.request().method() === "POST");
-      await p.locator("#next-button").click();
-      const accepted = await (await response).json();
+      const {accepted} = await submitRecordingFixture(p);
       expect(accepted.recording_uploads).toHaveLength(1);
       const id = accepted.recording_uploads[0].id;
       const stateUrl = new URL(`/test-recording-state/${id}`, p.url()).href;
@@ -35,7 +29,6 @@ for (const receiveBeforeClosing of [false, true]) {
         expect(response.ok()).toBe(true);
         return response.json();
       };
-      await expect(p.locator("#main-body")).toContainText("Independent page reached.");
       await expect.poll(() => Boolean(held)).toBe(true);
       if (receiveBeforeClosing) await expect.poll(() => received).toBe(true);
       const initial = await readState();
@@ -64,12 +57,7 @@ test("Finish reaches recruiter exit while recording upload is held @inplace-only
   process.env.PSYNET_TEST_RECORDING_EXIT = "1";
   try {
     await withExperiment(page, context, path.resolve("tests/playwright/experiments/asynchronous_recording"), async p => {
-      await completeInitialGateway(p);
-      await expect(p.locator("#main-body")).toContainText("Record a short clip.");
-      await waitForVideoRecordingReady(p, {timeoutMs:30000});
-      await waitForNextEnabled(p,30000);
-      await p.locator("#next-button").click();
-      await expect(p.locator("#main-body")).toContainText("Independent page reached.");
+      await submitRecordingFixture(p);
       await expect.poll(() => Boolean(held)).toBe(true);
       await waitForNextEnabled(p,30000);
       await p.locator("#next-button").click();

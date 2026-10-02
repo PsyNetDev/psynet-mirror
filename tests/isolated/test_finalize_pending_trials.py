@@ -10,6 +10,30 @@ from psynet.trial.chain import ChainNetwork, ChainNode, ChainTrial, ChainTrialMa
 from psynet.trial.main import Trial
 
 
+def _reserve_trial_recording(trial, directory, *, background=False, required=True):
+    """Reserve a camera clip for an accepted trial response."""
+    from psynet.asset import LocalStorage
+    from psynet.media_upload import _reserve_recording
+    from psynet.timeline import Response
+
+    label = "choice" if background else "video"
+    response = Response(
+        participant=trial.participant, label=label, page_type="ModularPage"
+    )
+    response.successful_validation = True
+    return _reserve_recording(
+        response=response,
+        parent=trial,
+        page_uuid=label,
+        source="camera",
+        local_key="background_choice_camera" if background else "video",
+        storage=LocalStorage(str(directory)),
+        role="background" if background else "answer",
+        required_for_trial=required,
+        upload_timeout=60,
+    )
+
+
 class FinalizeBackstopTrial(ChainTrial):
     time_estimate = 1
 
@@ -98,9 +122,8 @@ def test_feedback_honors_recording_deadline_and_releases_a_resumed_tab(
     from timeline_hold_helpers import _process_response
 
     import psynet.media_upload as uploads
-    from psynet.asset import LocalStorage
     from psynet.page import InfoPage
-    from psynet.timeline import Response, Timeline
+    from psynet.timeline import Timeline
     from psynet.timeline_hold import _ConditionHoldPage
 
     now = datetime.now()
@@ -110,17 +133,7 @@ def test_feedback_honors_recording_deadline_and_releases_a_resumed_tab(
     network = _create_network(_chain_trial_maker(), exp)
     trial = _add_complete_unfinalized_trial(network.head, participant)
     participant.current_trial = trial
-    response = Response(participant=participant, label="video", page_type="ModularPage")
-    response.successful_validation = True
-    asset, _ = uploads._reserve_recording(
-        response=response,
-        parent=trial,
-        page_uuid="video",
-        source="camera",
-        local_key="video",
-        storage=LocalStorage(str(tmp_path)),
-        upload_timeout=60,
-    )
+    asset, _ = _reserve_trial_recording(trial, tmp_path)
     assert uploads._recording_wait_timeout(participant.id, trial_id=trial.id) == 100
     assert uploads._recording_wait_timeout(participant.id + 100) == 20
     assert (
@@ -504,27 +517,13 @@ def test_optional_recording_can_expire_after_trial_finalization(
     from datetime import timedelta
 
     from psynet import media_upload
-    from psynet.asset import LocalStorage
-    from psynet.timeline import Response
     from psynet.trial.record import Recording
 
     exp = get_experiment()
     network = _create_network(_chain_trial_maker(), exp)
     trial = _add_complete_unfinalized_trial(network.head, participant)
-    response = Response(
-        participant=participant, label="choice", page_type="ModularPage"
-    )
-    response.successful_validation = True
-    asset, _ = media_upload._reserve_recording(
-        response=response,
-        parent=trial,
-        page_uuid="choice",
-        source="camera",
-        local_key="background_choice_camera",
-        storage=LocalStorage(str(tmp_path)),
-        role="background",
-        required_for_trial=False,
-        upload_timeout=60,
+    asset, _ = _reserve_trial_recording(
+        trial, tmp_path, background=True, required=False
     )
     trial_id, asset_id, answer = trial.id, asset.id, trial.answer
     deadline = asset.upload_deadline
@@ -726,28 +725,20 @@ def test_required_background_deposit_releases_finalization(
 
     from psynet import media_upload
     from psynet.asset import LocalStorage
-    from psynet.timeline import Response
     from psynet.trial.record import Recording, RecordTrial
 
     exp = get_experiment()
-    monkeypatch.setattr(type(exp), "deployment_id", "test-deployment")
+    monkeypatch.setattr(
+        "psynet.deployment_info.read_all",
+        lambda: {
+            "deployment_id": "test-deployment",
+            "is_local_deployment": True,
+            "is_ssh_deployment": False,
+        },
+    )
     network = _create_network(_chain_trial_maker(), exp)
     trial = _add_complete_unfinalized_trial(network.head, participant)
-    response = Response(
-        participant=participant, label="choice", page_type="ModularPage"
-    )
-    response.successful_validation = True
-    asset, receipt = media_upload._reserve_recording(
-        response=response,
-        parent=trial,
-        page_uuid="choice",
-        source="camera",
-        local_key="background_choice_camera",
-        storage=LocalStorage(str(tmp_path)),
-        role="background",
-        required_for_trial=True,
-        upload_timeout=60,
-    )
+    asset, receipt = _reserve_trial_recording(trial, tmp_path, background=True)
     trial_id, asset_id, answer = trial.id, asset.id, trial.answer
     db.session.commit()
     assert Trial.finalize_pending_trials() == 0

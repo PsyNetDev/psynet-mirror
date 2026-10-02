@@ -1,7 +1,7 @@
 const path = require("path");
 const { test, expect } = require("./fixtures");
 const {
-  withExperiment, completeInitialGateway, waitForVideoRecordingReady,
+  withExperiment, prepareRecordingFixture,
   waitForNextEnabled,
 } = require("./psynetHarness");
 
@@ -19,11 +19,8 @@ test("legacy navigation preserves an answer when document-owned video is lost @l
   // Never deliver bytes: full document navigation is allowed to abandon this queue.
   await context.route("**/media-upload/*", () => {});
   await withExperiment(page, context, path.resolve("tests/playwright/experiments/asynchronous_recording"), async p => {
-    await completeInitialGateway(p);
-    await expect(p.locator("#main-body")).toContainText("Record a short clip.");
+    await prepareRecordingFixture(p);
     expect(await p.evaluate(() => window.psynetTemplateData.flags.inplaceTimelineTransitions)).toBe(false);
-    await waitForVideoRecordingReady(p, {timeoutMs:45000});
-    await waitForNextEnabled(p,30000);
     await p.evaluate(() => { window.recordingDocumentMarker = true; });
     await p.locator("#next-button").click();
     await expect(p.locator("#main-body")).toContainText("Independent page reached.", {timeout:10000});

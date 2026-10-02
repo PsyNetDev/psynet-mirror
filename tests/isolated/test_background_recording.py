@@ -3,12 +3,14 @@
 import pytest
 from dallinger import db
 from test_recording_submission import pytestmark as pytestmark
+from test_recording_submission import recording_trial as recording_trial
 from test_recording_submission import submission as submission
 
 from psynet.background_recording import VideoRecordConfig
 from psynet.modular_page import ModularPage, PushButtonControl, VideoRecordControl
 from psynet.page import InfoPage
 from psynet.timeline import Timeline
+from psynet.trial.main import Trial
 from psynet.trial.record import Recording, RecordTrial
 
 
@@ -26,11 +28,12 @@ def test_configuration_rejects_conflicts():
 
 @pytest.mark.parametrize("required", [False, True])
 @pytest.mark.parametrize("unavailable", [{}, {"camera": "permission_denied"}])
-def test_background_answer_and_expiry(submission, monkeypatch, required, unavailable):
+def test_background_answer_and_expiry(
+    submission, recording_trial, monkeypatch, required, unavailable
+):
     from datetime import timedelta
 
     from psynet import media_upload
-    from psynet.trial.main import GenericTrialNode, Trial
 
     exp, participant, _, _ = submission
     timeline = Timeline(
@@ -46,17 +49,7 @@ def test_background_answer_and_expiry(submission, monkeypatch, required, unavail
     monkeypatch.setattr(exp, "timeline", timeline)
     participant.elt_id = ["main", -1]
     timeline.advance_page(exp, participant)
-    trial = Trial(
-        experiment=exp,
-        node=GenericTrialNode("background", exp),
-        participant=participant,
-        propagate_failure=False,
-        is_repeat_trial=False,
-        definition={},
-    )
-    db.session.add(trial)
-    db.session.flush()
-    participant.current_trial = trial
+    trial = recording_trial
     db.session.commit()
     if required:
 
@@ -89,13 +82,6 @@ def test_background_answer_and_expiry(submission, monkeypatch, required, unavail
             "127.0.0.1",
         ).payload
 
-    if required:
-        page = timeline.get_current_elt(exp, participant)
-        with monkeypatch.context() as patch:
-            patch.setattr(page, "validate", lambda **kwargs: "Try again")
-            assert submit()["submission"] == "rejected"
-            assert Recording.query.count() == 0
-        assert participant.page_uuid == page_uuid
     result = submit()
     assert result["submission"] == "approved"
     assert participant.answer == "Yes"
@@ -160,7 +146,12 @@ def test_consent_pages_cannot_record():
         ConsentPage(background_recording="camera")
 
 
-def test_rejected_background_answer_creates_no_assets(submission, monkeypatch):
+@pytest.mark.parametrize("required", [False, True])
+def test_rejected_background_answer_creates_no_assets(
+    submission, monkeypatch, request, required
+):
+    if required:
+        request.getfixturevalue("recording_trial")
     exp, participant, _, _ = submission
     completions = []
     page = ModularPage(
@@ -168,7 +159,7 @@ def test_rejected_background_answer_creates_no_assets(submission, monkeypatch):
         "Choose",
         PushButtonControl(["Yes"]),
         time_estimate=1,
-        background_recording="both",
+        background_recording=VideoRecordConfig(source="both", required=required),
     )
     monkeypatch.setattr(
         exp, "timeline", Timeline(page, InfoPage("Continue", time_estimate=1))
@@ -204,21 +195,10 @@ def test_rejected_background_answer_creates_no_assets(submission, monkeypatch):
     assert participant.answer == "Yes"
 
 
-def test_required_assets_still_block_trial(submission, tmp_path):
+def test_required_assets_still_block_trial(recording_trial, tmp_path):
     from psynet.asset import ExperimentAsset
-    from psynet.trial.main import GenericTrialNode, Trial
 
-    exp, participant, _, _ = submission
-    trial = Trial(
-        experiment=exp,
-        node=GenericTrialNode("background", exp),
-        participant=participant,
-        propagate_failure=False,
-        is_repeat_trial=False,
-        definition={},
-    )
-    db.session.add(trial)
-    db.session.flush()
+    trial = recording_trial
     path = tmp_path / "pending.txt"
     path.write_text("pending")
     required = ExperimentAsset(parent=trial, local_key="required", input_path=str(path))

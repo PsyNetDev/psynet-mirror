@@ -1,8 +1,7 @@
 const path = require("path");
 const { test, expect } = require("./fixtures");
 const {
-  withExperiment, completeInitialGateway, waitForVideoRecordingReady,
-  waitForNextEnabled, acceptAnswerScreenPermission,
+  withExperiment, submitRecordingFixture, waitForNextEnabled,
 } = require("./psynetHarness");
 
 for (const missingScreen of [false, true]) {
@@ -16,16 +15,8 @@ for (const missingScreen of [false, true]) {
     process.env.PSYNET_TEST_RECORDING_DUAL = "1";
     try {
       await withExperiment(page, context, path.resolve("tests/playwright/experiments/asynchronous_recording"), async p => {
-        await completeInitialGateway(p);
-        await expect(p.locator("#main-body")).toContainText("Record a short clip.");
-        await acceptAnswerScreenPermission(p);
-        await waitForVideoRecordingReady(p, {timeoutMs:45000, requireScreen:true});
-        await waitForNextEnabled(p,30000);
-        const response = p.waitForResponse(r => new URL(r.url()).pathname === "/response" && r.request().method() === "POST");
-        await p.locator("#next-button").click();
-        const accepted = await (await response).json();
+        const {accepted} = await submitRecordingFixture(p, {screen:true});
         expect(accepted.recording_uploads.map(upload => upload.source).sort()).toEqual(["camera", "screen"]);
-        await expect(p.locator("#main-body")).toContainText("Independent page reached.");
         await expect.poll(() => held.size).toBe(2);
         for (const upload of accepted.recording_uploads) {
           const route = held.get(upload.url);

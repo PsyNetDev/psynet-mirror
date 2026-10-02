@@ -12,6 +12,7 @@ from psynet.page import InfoPage
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.timeline import Response, Timeline
+from psynet.trial.main import GenericTrialNode, Trial
 from psynet.trial.record import Recording
 
 pytestmark = [
@@ -177,16 +178,13 @@ def test_completion_hook_sees_final_references_and_custom_answer_fields(
     assert observed[0]["custom_field"] == "retained"
 
 
-def test_recordings_keep_the_original_trial_when_completion_moves_the_cursor(
-    submission, monkeypatch
-):
-    from psynet.trial.main import GenericTrialNode, Trial
-
-    exp, participant, page, submit = submission
-    node = GenericTrialNode("recording_submission", exp)
+@pytest.fixture
+def recording_trial(submission):
+    """Attach a trial to the participant submitting a recording."""
+    exp, participant, _, _ = submission
     trial = Trial(
         experiment=exp,
-        node=node,
+        node=GenericTrialNode("recording_submission", exp),
         participant=participant,
         propagate_failure=False,
         is_repeat_trial=False,
@@ -196,6 +194,14 @@ def test_recordings_keep_the_original_trial_when_completion_moves_the_cursor(
     db.session.flush()
     participant.current_trial = trial
     db.session.commit()
+    return trial
+
+
+def test_recordings_keep_the_original_trial_when_completion_moves_the_cursor(
+    submission, recording_trial, monkeypatch
+):
+    _, participant, page, submit = submission
+    trial = recording_trial
     monkeypatch.setattr(
         page,
         "on_complete",
@@ -219,28 +225,16 @@ def test_recordings_keep_the_original_trial_when_completion_moves_the_cursor(
     ],
 )
 def test_unavailable_recording_fails_only_its_trial_at_deadline(
-    submission, monkeypatch, size, unavailable, reason
+    submission, recording_trial, monkeypatch, size, unavailable, reason
 ):
     from datetime import timedelta
 
     from psynet import media_upload
-    from psynet.trial.main import GenericTrialNode, Trial
 
     exp, participant, _, submit = submission
     monkeypatch.delenv("PASSTHROUGH_ERRORS")
     monkeypatch.setattr(type(exp), "report_error", lambda *args, **kwargs: None)
-    trial = Trial(
-        experiment=exp,
-        node=GenericTrialNode("recording_submission", exp),
-        participant=participant,
-        propagate_failure=False,
-        is_repeat_trial=False,
-        definition={},
-    )
-    db.session.add(trial)
-    db.session.flush()
-    participant.current_trial = trial
-    db.session.commit()
+    trial = recording_trial
     participant_id, trial_id = participant.id, trial.id
     result = submit({"camera": size, "screen": 10}, unavailable)
     assert result["submission"] == "approved"

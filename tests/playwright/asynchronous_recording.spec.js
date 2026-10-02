@@ -1,7 +1,7 @@
 const path = require("path");
 const { test, expect } = require("./fixtures");
 const {
-  withExperiment, completeInitialGateway, waitForVideoRecordingReady,
+  withExperiment, prepareRecordingFixture, submitRecordingFixture,
   waitForNextEnabled,
 } = require("./psynetHarness");
 
@@ -22,20 +22,9 @@ test(`accepted video advances and plays deposited bytes (lost acceptance: ${lost
   let held;
   await context.route("**/media-upload/*", route => { held = route; });
   await withExperiment(page, context, path.resolve("tests/playwright/experiments/asynchronous_recording"), async experimentPage => {
-    await completeInitialGateway(experimentPage);
-    await expect(experimentPage.locator("#main-body")).toContainText("Record a short clip.");
-    await waitForVideoRecordingReady(experimentPage, { timeoutMs: 45000 });
-    await waitForNextEnabled(experimentPage, 30000);
-    const acceptance = experimentPage.waitForResponse(response =>
-      new URL(response.url()).pathname === "/response" && response.request().method() === "POST", { timeout: 20000 }
-    );
-    await experimentPage.locator("#next-button").click();
-    const response = await acceptance;
-    const accepted = await response.json();
-    expect(accepted.submission).toBe("approved");
+    const {accepted} = await submitRecordingFixture(experimentPage);
+    expect(lost).toBe(lostAcceptance);
     expect(accepted.recording_uploads).toHaveLength(1);
-    expect(response.request().postData()).not.toContain('name="cameraRecording"');
-    await expect(experimentPage.locator("#main-body")).toContainText("Independent page reached.");
     await expect.poll(() => Boolean(held)).toBe(true);
     expect(held.request().postDataBuffer().length).toBeGreaterThan(0);
     const received = experimentPage.waitForResponse(response =>
@@ -59,19 +48,9 @@ test("upload module failure preserves submission and independent navigation @inp
   test.setTimeout(120000);
   await context.route("**/static/scripts/media-upload.js", route => route.abort("failed"));
   await withExperiment(page, context, path.resolve("tests/playwright/experiments/asynchronous_recording"), async p => {
-    await completeInitialGateway(p);
-    await expect(p.locator("#main-body")).toContainText("Record a short clip.");
-    await waitForVideoRecordingReady(p, { timeoutMs: 45000 });
-    await waitForNextEnabled(p, 30000);
-    const acceptance = p.waitForResponse(r => new URL(r.url()).pathname === "/response" && r.request().method() === "POST", { timeout: 20000 });
-    await p.locator("#next-button").click();
-    const response = await acceptance;
-    const accepted = await response.json();
-    expect(accepted.submission).toBe("approved");
+    const {accepted, response} = await submitRecordingFixture(p);
     expect(accepted.recording_uploads).toEqual([]);
     expect(response.request().postData()).toContain("transport_unavailable");
-    expect(response.request().postData()).not.toContain('name="cameraRecording"');
-    await expect(p.locator("#main-body")).toContainText("Independent page reached.");
     await waitForNextEnabled(p, 30000);
   });
 });
@@ -81,10 +60,7 @@ test("stalled upload module permits independent navigation @inplace-only", async
   let held;
   await context.route("**/static/scripts/media-upload.js", route => {held=route;});
   await withExperiment(page,context,path.resolve("tests/playwright/experiments/asynchronous_recording"),async p=>{
-    await completeInitialGateway(p);
-    await expect(p.locator("#main-body")).toContainText("Record a short clip.");
-    await waitForVideoRecordingReady(p,{timeoutMs:45000});
-    await waitForNextEnabled(p,30000);
+    await prepareRecordingFixture(p);
     await p.clock.install();
     await p.locator("#next-button").click();
     await expect.poll(()=>Boolean(held)).toBe(true);
@@ -97,15 +73,8 @@ test("missing non-trial recording shows fallback without failing participant @in
   test.setTimeout(120000);
   await context.route("**/media-upload/*", route => route.fulfill({status:403, body:"Upload unavailable"}));
   await withExperiment(page, context, path.resolve("tests/playwright/experiments/asynchronous_recording"), async p => {
-    await completeInitialGateway(p);
-    await expect(p.locator("#main-body")).toContainText("Record a short clip.");
-    await waitForVideoRecordingReady(p, {timeoutMs:45000});
-    await waitForNextEnabled(p,30000);
-    const response = p.waitForResponse(r => new URL(r.url()).pathname === "/response" && r.request().method() === "POST");
-    await p.locator("#next-button").click();
-    const accepted = await (await response).json();
+    const {accepted} = await submitRecordingFixture(p);
     const id = accepted.recording_uploads[0].id;
-    await expect(p.locator("#main-body")).toContainText("Independent page reached.");
     await waitForNextEnabled(p,30000);
     await p.locator("#next-button").click();
     await expect(p.locator("#main-body")).toContainText("Recording unavailable. Your answer was saved.", {timeout:90000});

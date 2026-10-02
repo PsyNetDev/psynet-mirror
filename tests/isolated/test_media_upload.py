@@ -38,13 +38,6 @@ pytestmark = [
 ]
 
 
-@pytest.mark.parametrize(
-    "size, seconds", [(1, 60), (1024**2, 60), (10 * 1024**2, 198), (128 * 1024**2, 600)]
-)
-def test_upload_allowance_scales_with_file_size(size, seconds):
-    assert _upload_timeout(size) == seconds
-
-
 @pytest.mark.parametrize("size", [0, -1, True, 1.5, None])
 def test_upload_allowance_rejects_invalid_size(size):
     with pytest.raises(ValueError):
@@ -63,7 +56,14 @@ def test_upload_spool_uses_private_shared_deployment_directory(monkeypatch, ssh)
 @pytest.fixture
 def reservation(db_session, tmp_path, monkeypatch):
     """Reserve a recording as part of a committed, accepted page response."""
-    monkeypatch.setattr(Experiment, "deployment_id", "test-deployment")
+    monkeypatch.setattr(
+        "psynet.deployment_info.read_all",
+        lambda: {
+            "deployment_id": "test-deployment",
+            "is_local_deployment": True,
+            "is_ssh_deployment": False,
+        },
+    )
     participant = Participant(
         experiment=get_experiment(),
         recruiter_id="hotair",
@@ -104,7 +104,14 @@ def test_reservation_retains_original_identity_without_deposit(reservation):
 
 @pytest.mark.parametrize(
     "size, override, seconds",
-    [(10 * 1024**2, None, 198), (None, None, 600), (10 * 1024**2, 75, 75)],
+    [
+        (1, None, 60),
+        (1024**2, None, 60),
+        (10 * 1024**2, None, 198),
+        (128 * 1024**2, None, 600),
+        (None, None, 600),
+        (10 * 1024**2, 75, 75),
+    ],
 )
 def test_reservation_fixes_size_based_or_explicit_deadline(
     reservation, monkeypatch, size, override, seconds
@@ -373,13 +380,17 @@ def test_stalled_http_upload_is_interrupted_at_deadline(reservation):
 
 
 @pytest.fixture
-def received_video(reservation, tmp_path, monkeypatch):
-    """Receive a real WebM into the same pipeline used by the HTTP route."""
+def received_video(reservation, tmp_path, monkeypatch, request):
+    """Receive test bytes through the same pipeline used by the HTTP route."""
     path = (
         Path(__file__).resolve().parents[2]
         / "demos/experiments/imitation_chain_video/assets/example_recording.webm"
     )
-    payload = path.read_bytes()
+    payload = (
+        b"not webm"
+        if getattr(request, "param", "webm") == "arbitrary"
+        else path.read_bytes()
+    )
     asset, receipt = reservation
     asset.upload_max_bytes = len(payload)
     recording_id = asset.id
@@ -391,8 +402,12 @@ def received_video(reservation, tmp_path, monkeypatch):
     return recording_id, payload
 
 
-@pytest.mark.parametrize("optional", [False, True])
-def test_received_video_is_deposited(received_video, monkeypatch, optional):
+@pytest.mark.parametrize(
+    "received_video,optional",
+    [("webm", False), ("webm", True), ("arbitrary", False)],
+    indirect=["received_video"],
+)
+def test_received_bytes_are_deposited_unchanged(received_video, monkeypatch, optional):
     import hashlib
 
     recording_id, payload = received_video
@@ -416,25 +431,8 @@ def test_received_video_is_deposited(received_video, monkeypatch, optional):
         == payload
     )
     assert asset.input_path is None
-
-
-def test_deposit_preserves_bytes_without_decoding(reservation, tmp_path, monkeypatch):
-    monkeypatch.setattr(LocalStorage, "on_deployed_server", lambda self: True)
-    asset, receipt = reservation
-    recording_id, participant_id = asset.id, asset.participant_id
-    _receive_recording(
-        recording_id, receipt["token"], io.BytesIO(b"not webm"), directory=tmp_path
-    )
-    _process_recording(recording_id)
-    asset = db.session.get(Recording, recording_id)
-    assert asset.upload_status == "deposited"
     assert asset.upload_failed_reason is None
-    assert asset.deposited
-    assert (
-        Path(asset.storage.get_file_system_path(asset.host_path)).read_bytes()
-        == b"not webm"
-    )
-    assert not db.session.get(Participant, participant_id).failed
+    assert not asset.participant.failed
 
 
 def test_missing_upload_expires_without_a_browser_request(reservation):

@@ -14,7 +14,7 @@ from psynet.modular_page import (
     VideoPrompt,
     VideoRecordControl,
 )
-from psynet.page import InfoPage, wait_while
+from psynet.page import InfoPage, wait_for_recording, wait_while
 from psynet.timeline import (
     Event,
     MediaSpec,
@@ -516,14 +516,19 @@ example_record_audio_video = join(
         ),
         time_estimate=5,
     ),
+    wait_for_recording(lambda participant: participant.assets["video_record_page"]),
     PageMaker(
-        lambda participant: ModularPage(
-            "playback",
-            VideoPrompt(
-                participant.assets["video_record_page"],
-                "Here's the recording you just made.",
-                mirrored=True,
-            ),
+        lambda participant: (
+            ModularPage(
+                "playback",
+                VideoPrompt(
+                    participant.assets["video_record_page"],
+                    "Here's the recording you just made.",
+                    mirrored=True,
+                ),
+            )
+            if participant.assets["video_record_page"].deposited
+            else InfoPage("Recording unavailable. Please continue.", time_estimate=5)
         ),
         time_estimate=5,
     ),
