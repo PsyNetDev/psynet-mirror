@@ -1442,6 +1442,15 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
         """
         if hasattr(experiment, "recruiter_exit_info"):
             experiment.recruiter_exit_info(participant)
+        return self.render_submission_page(participant)
+
+    def render_submission_page(self, participant) -> str:
+        """Render the Submit/confirmation document without writing payment state.
+
+        ``RecordedSubmissionPage`` calls this from the read-only timeline
+        render, where the submission handler has already stamped the
+        completion code.
+        """
         recorded = self._submission_already_recorded(participant)
         heading, body = self._recorded_submission_copy()
         return render_template_with_translations(

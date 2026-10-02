@@ -212,9 +212,9 @@ class RecordedSubmissionPage(Page):
 
     ``/timeline`` and ``/recruiter-exit`` both render
     ``exit_recruiter_prolific_submitted.html`` through
-    ``recruiter.exit_response()``, so this page must not use timeline chrome,
-    a progress bar, or a reward footer. It does not store confirmation copy;
-    that lives on the recruiter (``_recorded_submission_copy``).
+    ``recruiter.render_submission_page()``, so this page must not use timeline
+    chrome, a progress bar, or a reward footer. It does not store confirmation
+    copy; that lives on the recruiter (``_recorded_submission_copy``).
     """
 
     requires_full_page_reload = True
@@ -235,7 +235,7 @@ class RecordedSubmissionPage(Page):
         from flask import make_response
 
         response = make_response(
-            experiment.recruiter.exit_response(experiment, participant)
+            experiment.recruiter.render_submission_page(participant)
         )
         response.headers["Cache-Control"] = "no-store"
         return response
