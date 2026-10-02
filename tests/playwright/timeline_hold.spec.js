@@ -849,7 +849,7 @@ test("timeline hold client overlay and busy retry stay on a live hold", { tag: "
           message: "The experiment is temporarily busy. Please try again."
         })
       };
-      const effects = { queuedWakes: 0, scheduleCalls: 0 };
+      const effects = { queuedWakes: 0, scheduleCalls: 0, externalWakes: [] };
       // Websocket onOpen from the client-behavior probe can leave a resume
       // in flight. Swallow new resumes, wait for that POST to settle, then
       // measure handleBusyResponse rather than the resumeInFlight
@@ -875,10 +875,15 @@ test("timeline hold client overlay and busy retry stay on a live hold", { tag: "
         psynet.scheduleTimelineHoldCheck = () => {
           effects.scheduleCalls += 1;
         };
+        // A websocket reconnect or server notification during the probe
+        // would legitimately set resumeRequested and queue a wake, so
+        // swallow those and only count wakes queued by the busy path.
         psynet.resumeTimelineHold = async function (reason) {
-          if (reason === "queued hold wake") {
-            effects.queuedWakes += 1;
+          if (reason !== "queued hold wake") {
+            effects.externalWakes.push(reason);
+            return false;
           }
+          effects.queuedWakes += 1;
           return originalResume.apply(this, arguments);
         };
         psynet.nextPage = async function (
@@ -893,6 +898,12 @@ test("timeline hold client overlay and busy retry stay on a live hold", { tag: "
         };
         await originalResume.call(psynet, "busy livelock");
         await new Promise((resolve) => setTimeout(resolve, 0));
+        if (effects.externalWakes.length) {
+          console.log(
+            "busy livelock probe ignored wakes: " +
+              effects.externalWakes.join(", ")
+          );
+        }
         return {
           queuedWakes: effects.queuedWakes,
           scheduleCalls: effects.scheduleCalls,
