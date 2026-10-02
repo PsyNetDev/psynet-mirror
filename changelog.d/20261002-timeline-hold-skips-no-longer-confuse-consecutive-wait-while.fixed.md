@@ -1,0 +1,1 @@
+Removed a timeline hold check that compared holds by `hold_id`. Consecutive `wait_while` holds share an id, so this check could treat one hold as another and check readiness against the wrong hold record.

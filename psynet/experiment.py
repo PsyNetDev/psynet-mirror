@@ -3591,16 +3591,13 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         wait is marked silent so the overlay stays a spinner until partners
         catch up.
 
-        ``page`` can be a stale hold object from earlier in the request. If
-        that hold is not ready but the live cursor has already left it
-        (another session released and advanced this participant), follow
-        ``get_current_elt`` instead of first-painting the overlay.
-
-        Page makers reconstruct barrier holds on each ``get_current_elt``, so
-        a still-waiting visit is a new object with the same ``hold_id``. Treat
-        that as the same wait; identity ``is`` would loop until timeout.
-        After the last allowed skip, this walk observes the landing page so
-        settling on the cap still succeeds.
+        ``page`` must be ``get_current_elt`` read after taking that row lock.
+        Hold checks find their record through ``participant.page_uuid``, and
+        the lock stops other sessions from moving the cursor, so ``page`` is
+        still the live hold when it is not ready. Consecutive holds can share
+        a ``hold_id`` (every ``wait_while`` does), so an id is not a visit
+        identity. After the last allowed skip, this walk observes the landing
+        page so settling on the cap still succeeds.
         """
         from .sync import _MAX_BARRIER_WALK_PASSES, _barrier_walk_budget
         from .timeline_hold import holding_next_hold_catchup
@@ -3609,13 +3606,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             if not _is_timeline_hold(page):
                 return page
             if not page.prepare_resume_if_ready(self, participant):
-                live = self.timeline.get_current_elt(self, participant)
-                if self._is_same_timeline_hold(page, live):
-                    return live
-                if not can_work:
-                    break
-                page = live
-                continue
+                return page
             if not can_work:
                 break
             page.account_wait(participant, settle=True)
@@ -3626,17 +3617,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         raise RuntimeError(
             f"Timeline hold skip did not settle after {_MAX_BARRIER_WALK_PASSES} steps."
         )
-
-    @staticmethod
-    def _is_same_timeline_hold(page, live):
-        """Return whether ``live`` is still the hold represented by ``page``."""
-        if page is live:
-            return True
-        if not _is_timeline_hold(live):
-            return False
-        page_id = getattr(page, "hold_id", None)
-        live_id = getattr(live, "hold_id", None)
-        return isinstance(page_id, str) and page_id == live_id
 
     def response_rejected(self, message):
         logger.warning(
