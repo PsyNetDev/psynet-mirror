@@ -13,6 +13,17 @@ these automated tests will be automatically queued. They normally take 10-15 min
 to complete. Keep an eye on the GitLab interface to see if any errors have occurred.
 Resolve any errors before merging into ``master``.
 
+Merge requests that change only documentation, changelog fragments, ``AGENTS.md``,
+or non-experiment Cursor skills skip the Docker pytest and Playwright jobs.
+The ``.docker_test_rules`` block in ``.gitlab-ci.yml`` lists the paths that
+still trigger them, including the few docs pages whose content tests check.
+Default-branch, tag, and non-MR branch pipelines always run the full suite.
+
+That list is an allowlist: a path missing from it skips the tests on merge
+requests that change only that path. If you add a top-level file or directory
+that tests or the CI image depend on, or a test that reads a docs page, add
+its path to ``.docker_test_rules``.
+
 Test parallelization
 --------------------
 
