@@ -112,6 +112,7 @@ from sqlalchemy.orm import (
     backref,
     deferred,
     joinedload,
+    lazyload,
     object_session,
     relationship,
     selectinload,
@@ -135,6 +136,7 @@ from psynet.participant import Participant
 from psynet.serialize import serialize_callable
 from psynet.timeline import CodeBlock, EltCollection, _is_timeline_hold, conditional
 from psynet.timeline_hold import (
+    TimelineHoldRecord,
     _defer_timeline_hold_wakes,
     _queue_arrival_update,
     _queue_timeline_hold_wake,
@@ -416,8 +418,8 @@ def _get_waiting_participants(
     that alias is not in the ``OF`` list. The follow-up ``IN`` queries do
     not take extra row locks.
 
-    ``sync_group_links`` is populated separately; see
-    ``_populate_sync_group_links``.
+    ``active_barriers`` and ``sync_group_links`` are populated separately;
+    see ``_populate_active_barriers`` and ``_populate_sync_group_links``.
     """
     query = (
         ParticipantLinkBarrier.query.join(Participant)
@@ -430,7 +432,7 @@ def _get_waiting_participants(
         )
         .options(
             joinedload(ParticipantLinkBarrier.participant, innerjoin=True).options(
-                selectinload(Participant.active_barriers),
+                lazyload(Participant.active_barriers),
             ),
             selectinload(ParticipantLinkBarrier.timeline_hold),
         )
@@ -441,9 +443,93 @@ def _get_waiting_participants(
             of=[ParticipantLinkBarrier, Participant],
             nowait=nowait,
         ).populate_existing()
-    waiters = [link.participant for link in query.all()]
+    links = query.all()
+    waiters = [link.participant for link in links]
+    _populate_active_barriers(waiters)
     _populate_sync_group_links(waiters)
     return waiters
+
+
+def _populate_active_barriers(participants):
+    """Batch-load ``active_barriers`` without a relationship loader option.
+
+    The waiter links are themselves members of ``active_barriers``. A nested
+    loader under ``populate_existing`` reloads those same links and resets
+    their eager-loaded ``timeline_hold``, so releasing each waiter lazy-loads
+    it and flushes its UPDATEs one row at a time. An explicit ``IN`` query
+    returns the identity-mapped links unchanged, provided the caller still
+    holds them: the identity map is weak.
+    """
+    if not participants:
+        return
+    grouped = {participant.id: [] for participant in participants}
+    for link in ParticipantLinkBarrier.query.filter(
+        ParticipantLinkBarrier.participant_id.in_(list(grouped)),
+        ~ParticipantLinkBarrier.released,
+    ):
+        grouped[link.participant_id].append(link)
+    for participant in participants:
+        set_committed_value(participant, "active_barriers", grouped[participant.id])
+
+
+def _load_link_participants(links):
+    """Batch-load ``link.participant`` for group links that have not loaded it.
+
+    Group walks would otherwise lazy-load each member, plus that member's
+    select-in collections, once per member.
+    """
+    unloaded = [
+        link
+        for link in links
+        if "participant" in sa_inspect(link).unloaded and link.participant_id
+    ]
+    if not unloaded:
+        return
+    session = db.session()
+    mapper = sa_inspect(Participant)
+    by_id = {}
+    for link in unloaded:
+        key = mapper.identity_key_from_primary_key((link.participant_id,))
+        cached = session.identity_map.get(key)
+        if cached is not None and not sa_inspect(cached).expired:
+            by_id[link.participant_id] = cached
+    missing_ids = {link.participant_id for link in unloaded} - set(by_id)
+    if len(missing_ids) > 1:
+        by_id.update(
+            (participant.id, participant)
+            for participant in Participant.query.filter(Participant.id.in_(missing_ids))
+        )
+    for link in unloaded:
+        if link.participant_id in by_id:
+            set_committed_value(link, "participant", by_id[link.participant_id])
+
+
+def _prime_timeline_hold_records(participants, barrier_id):
+    """Batch-load waiters' hold records so per-member hold lookups skip SQL."""
+    links = {p.id: p.active_barriers.get(barrier_id) for p in participants}
+    hold_ids = {
+        link.timeline_hold_id
+        for link in links.values()
+        if link is not None
+        and link.timeline_hold_id
+        and "timeline_hold" in sa_inspect(link).unloaded
+    }
+    if len(hold_ids) < 2:
+        return
+    records = {
+        record.id: record
+        for record in TimelineHoldRecord.query.filter(
+            TimelineHoldRecord.id.in_(hold_ids)
+        )
+    }
+    for participant in participants:
+        link = links[participant.id]
+        record = records.get(link.timeline_hold_id) if link is not None else None
+        if record is None:
+            continue
+        set_committed_value(link, "timeline_hold", record)
+        if record.page_uuid == participant.page_uuid:
+            participant._timeline_hold_record = record
 
 
 def _populate_sync_group_links(participants):
@@ -1259,13 +1345,13 @@ class GroupBarrier(Barrier):
         group = arriving_participant.active_sync_groups.get(self.group_type)
         if group is None:
             return
-        waiting_count = sum(
-            1
-            for member in group.active_participants
-            if self._participant_is_waiting(member)
-        )
-        group_size = len(group.active_participants)
-        for member in group.active_participants:
+        members = group.active_participants
+        waiting = [m for m in members if self._participant_is_waiting(m)]
+        waiting_count = len(waiting)
+        group_size = len(members)
+        if self._uses_timeline_hold:
+            _prime_timeline_hold_records(waiting, self.id)
+        for member in members:
             if member.failed:
                 continue
             if self._participant_is_waiting(member):
@@ -1833,11 +1919,11 @@ class SyncGroup(SQLBase, SQLMixin):
 
         Use ``group.add_participant(participant)`` to add a participant.
         """
-        return _ReadOnlyParticipantList(
-            link.participant
-            for link in self.participant_links
-            if getattr(link, "active", True)
-        )
+        links = [
+            link for link in self.participant_links if getattr(link, "active", True)
+        ]
+        _load_link_participants(links)
+        return _ReadOnlyParticipantList(link.participant for link in links)
 
     def add_participant(self, participant: Participant):
         """Add a participant to the group (creates an active link)."""

@@ -47,18 +47,18 @@ pytestmark = [
     pytest.mark.usefixtures("in_experiment_directory"),
 ]
 
-# Precise snapshot of the current ORM path.
-# Check = 19 (original 17 plus extra-connection lock_timeout, ORM
-# lock_timeout). Last-arrival no longer skip-after-commits partners.
-# Finalize = check + 6 overhead statements.
+# Precise snapshot of the current ORM path, profiled from a cold session.
+# Check = 20 (18 plus extra-connection lock_timeout, ORM lock_timeout).
+# Last-arrival no longer skip-after-commits partners.
+# Finalize = check + 3 overhead statements.
 # Statement-by-statement analysis:
 # docs/developer/sqlalchemy_performance.rst ("Barrier last-arrival SQL budgets").
 # Lower counts are an improvement: update these constants and that section.
 # Per-row writes still scale with group size; SQLAlchemy flushes them as one
 # executemany statement per table, so UPDATE *statement* count stays 1.
-_CHECK_BASE_QUERIES = 19
+_CHECK_BASE_QUERIES = 20
 _SKIP_QUERIES_PER_WAITER = 0
-_FINALIZE_OVERHEAD_QUERIES = 6
+_FINALIZE_OVERHEAD_QUERIES = 3
 
 
 def _statement_count(profiler, pattern):
@@ -132,9 +132,10 @@ def _budget(profiler):
             profiler,
             r"FROM participant_link_sync_group WHERE .*participant_link_sync_group\.participant_id",
         ),
-        "active_barriers_selectin": _statement_count(
+        "active_barriers_batch": _statement_count(
             profiler,
-            r"JOIN participant_link_barrier ON .*released = false WHERE participant_1\.id IN",
+            r"FROM participant_link_barrier WHERE "
+            r"participant_link_barrier\.participant_id IN .*NOT participant_link_barrier\.released",
         ),
         "active_barriers_lazy": _statement_count(
             profiler,
@@ -315,7 +316,7 @@ def _check_expected(n):
         "update_hold_release": 1,
         "update_participant_wait": 1,
         "sync_links_by_participant": 1,
-        "active_barriers_selectin": 1,
+        "active_barriers_batch": 1,
         "active_barriers_lazy": 0,
         "hold_by_pk": 0,
         "hold_selectin": 1,
@@ -338,7 +339,6 @@ def _finalize_expected(n):
             "for_update": expected["for_update"] + 1,
             "relock_for_update": 1,
             "lock_timeout": expected["lock_timeout"] + 2,
-            "active_barriers_lazy": 1,
         }
     )
     return expected
@@ -384,12 +384,14 @@ def test_stacked_finalize_commit_and_lock_budget_does_not_grow_with_group_size(
                 for participant in participants:
                     participant.status = "working"
                 db.session.commit()
-                for waiter in participants[:-1]:
-                    assert _json_timeline(exp, waiter).status_code == 200
+                ids = [participant.id for participant in participants]
+                del participants
+                for waiter_id in ids[:-1]:
+                    assert _cold_json_timeline(exp, waiter_id).status_code == 200
                 monkeypatch.setattr(
                     Experiment, "_finalize_barrier_arrivals", wrapped_finalize
                 )
-                last_response = _json_timeline(exp, participants[-1])
+                last_response = _cold_json_timeline(exp, ids[-1])
                 monkeypatch.setattr(
                     Experiment, "_finalize_barrier_arrivals", original_finalize
                 )
@@ -401,12 +403,12 @@ def test_stacked_finalize_commit_and_lock_budget_does_not_grow_with_group_size(
                     label=f"stacked_finalize n={group_size}",
                 )
                 observed[group_size] = _budget(profiler)
-                last = Participant.query.get(participants[-1].id)
+                last = Participant.query.get(ids[-1])
                 last_page = exp.timeline.get_current_elt(exp, last)
                 assert last.sync_group is not None
                 assert last_page.label in ("wait", "choose_action")
-                for waiter in participants[:-1]:
-                    waiter = Participant.query.get(waiter.id)
+                for waiter_id in ids[:-1]:
+                    waiter = Participant.query.get(waiter_id)
                     page = exp.timeline.get_current_elt(exp, waiter)
                     assert getattr(page, "is_timeline_hold", False)
         finally:
@@ -421,12 +423,7 @@ def test_stacked_finalize_commit_and_lock_budget_does_not_grow_with_group_size(
         "waiter_join",
     ):
         assert observed[2][key] == observed[4][key]
-    # Evaluating the filled visit still loads per-waiter rows as group size
-    # grows. A smaller delta is an improvement.
-    extra_members = 2
-    query_delta = observed[4]["queries"] - observed[2]["queries"]
-    assert query_delta >= 0
-    assert query_delta <= 80 * extra_members
+    assert observed[2]["queries"] == observed[4]["queries"]
 
 
 def test_check_instance_sql_matches_waiter_formula(db_session):
@@ -441,7 +438,8 @@ def test_check_instance_sql_matches_waiter_formula(db_session):
             id_=f"gate_{n}_{uuid.uuid4().hex[:8]}", group_type=f"q{n}"
         )
         checks = _queued_last_arrival_checks(exp, barrier, waiters, last)
-        db.session.expire_all()
+        # A real request's session holds none of the waiters.
+        db.session.expunge_all()
         _drop_barrier_spec_cache()
         with sqlalchemy_profile(db.engine) as profiler:
             assert _run_pending_barrier_checks(checks) is True
@@ -459,7 +457,7 @@ def test_check_instance_sql_matches_waiter_formula(db_session):
         "waiter_join",
         "savepoint",
         "sync_links_by_participant",
-        "active_barriers_selectin",
+        "active_barriers_batch",
         "hold_selectin",
         "update_link",
         "update_hold_release",
@@ -487,12 +485,13 @@ def test_finalize_commits_check_then_relock_independent_of_group_size(db_session
         )
         checks = _queued_last_arrival_checks(exp, barrier, waiters, last)
         result = SimpleNamespace(page=None, payload={})
-        db.session.expire_all()
+        last_id = last.id
+        db.session.expunge_all()
         _drop_barrier_spec_cache()
         with _restored_experiment(exp):
             page = _stub_finalize_timeline(exp)
             with sqlalchemy_profile(db.engine) as profiler:
-                Experiment._finalize_barrier_arrivals(exp, last.id, checks, result)
+                Experiment._finalize_barrier_arrivals(exp, last_id, checks, result)
         _assert_budget(profiler, _finalize_expected(n), label=f"finalize n={n}")
         assert result.page is page
         observed[n] = _budget(profiler)
@@ -528,17 +527,65 @@ def test_pending_arrival_notice_reconstructs_each_instance_once(db_session):
     with sqlalchemy_profile(db.engine) as profiler:
         notice = pending_arrival_notice_for(last)
     assert notice
-    # 5 + 3(N-1): see docs/developer/sqlalchemy_performance.rst
+    # Independent of group size: see docs/developer/sqlalchemy_performance.rst
     # (Barrier last-arrival SQL budgets). Update both if this gets cheaper.
     _assert_budget(
         profiler,
         {
-            "queries": 5 + 3 * (n - 1),
+            "queries": 8,
             "commits": 0,
             "for_update": 0,
             "spec_select": 1,
-            "active_barriers_lazy": n - 1,
-            "participant_pk": n - 1,
+            "active_barriers_lazy": 0,
+            "participant_pk": 1,
         },
         label="pending_arrival_notice n=8",
     )
+
+
+def _grouped_then_barrier_timeline(group_type, group_size):
+    return Timeline(
+        SimpleGrouper(group_type=group_type, initial_group_size=group_size),
+        GroupBarrier(id_=f"{group_type}_gate", group_type=group_type),
+        ModularPage("action", "Action", time_estimate=1),
+    )
+
+
+def _cold_json_timeline(exp, participant_id):
+    """GET /timeline with a session that holds no other participants."""
+    db.session.expunge_all()
+    return _json_timeline(exp, Participant.query.get(participant_id))
+
+
+def test_barrier_arrival_get_sql_does_not_grow_with_group_size(db_session):
+    """Arrival and last-arrival GETs must not load group members one by one."""
+    exp = get_experiment()
+    _reset_experiment(exp)
+    counts = {}
+    with _restored_experiment(exp):
+        for group_size in (3, 7):
+            group_type = f"grow{group_size}_{uuid.uuid4().hex[:6]}"
+            exp.timeline = _grouped_then_barrier_timeline(group_type, group_size)
+            participants = [_new_participant(exp) for _ in range(group_size)]
+            for participant in participants:
+                participant.status = "working"
+            db.session.commit()
+            ids = [participant.id for participant in participants]
+            del participants
+            # Fill the group; the last grouped participant self-skips to the gate.
+            for participant_id in ids:
+                assert _cold_json_timeline(exp, participant_id).status_code == 200
+            for participant_id in ids[2:-1]:
+                assert _cold_json_timeline(exp, participant_id).status_code == 200
+            with sqlalchemy_profile(db.engine) as arrival:
+                assert _cold_json_timeline(exp, ids[1]).status_code == 200
+            with sqlalchemy_profile(db.engine) as last_arrival:
+                assert _cold_json_timeline(exp, ids[0]).status_code == 200
+            released = (
+                db_session.query(ParticipantLinkBarrier)
+                .filter_by(barrier_id=f"{group_type}_gate", released=True)
+                .count()
+            )
+            assert released == group_size
+            counts[group_size] = (arrival.total_count, last_arrival.total_count)
+    assert counts[3] == counts[7], counts
