@@ -411,8 +411,13 @@ connect is still shown. Hold-resume POSTs set
 in-place update. A genuine reject, or a missing timeline fragment, still
 reloads ``/timeline`` instead of leaving the overlay in place.
 
-Holds emit ``timelineHoldStarted`` and ``timelineHoldEnded`` browser events.
-Their ``detail.holdId`` identifies the wait. Authors that deliberately want a
+Holds emit ``timelineHoldStarted`` and ``timelineHoldEnded`` browser events
+when the waiting overlay appears and disappears. Their ``detail.holdId``
+identifies the wait. When one hold leads straight into another, for example
+stacked group barriers, the overlay stays up and the browser emits
+``timelineHoldChanged`` instead, with ``detail.holdId`` and
+``detail.previousHoldId``. ``timelineHoldEnded`` then carries the last hold's
+id. Authors that deliberately want a
 separate waiting screen should use :class:`psynet.page.WaitPage` directly or
 pass it explicitly as ``wait_page``/``waiting_logic``.
 
