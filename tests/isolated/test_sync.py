@@ -3873,6 +3873,40 @@ def test_stale_wait_while_uuid_is_catch_up_after_get_skip(
         exp.timeline = original_timeline
 
 
+@pytest.mark.parametrize("resume", [False, True])
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_stale_hold_uuid_catches_up_across_a_skipped_hold(
+    in_experiment_directory, db_session, resume
+):
+    """Pages consumed since the old hold were all holds, so it is still catch-up."""
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    ready = {"a": False, "b": False}
+    exp.timeline = Timeline(
+        wait_while(lambda: not ready["a"], expected_wait=1),
+        wait_while(lambda: not ready["b"], expected_wait=1),
+        wait_while(lambda: True, expected_wait=1, max_wait_time=60),
+        InfoPage("done", time_estimate=1),
+    )
+    try:
+        (first,) = _working_participants(exp, 1)
+        assert _json_timeline(exp, first).status_code == 200
+        first = Participant.query.get(first.id)
+        hold_uuid = first.page_uuid
+        for key in ready:
+            ready[key] = True
+            assert _json_timeline(exp, first).status_code == 200
+            db.session.expire_all()
+            first = Participant.query.get(first.id)
+
+        result = _process_response(exp, first, hold_uuid, timeline_hold_resume=resume)
+        assert result.payload["submission"] == "approved"
+    finally:
+        exp.timeline = original_timeline
+
+
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
