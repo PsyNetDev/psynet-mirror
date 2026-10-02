@@ -46,8 +46,12 @@ _TIMELINE_HOLD_CHANNEL = "psynet_timeline_hold"
 
 
 def _timeline_hold_channel(participant_id):
-    """Return the Redis/Websocket channel for one participant's holds."""
-    return f"{_TIMELINE_HOLD_CHANNEL}:{participant_id}"
+    """Return the Redis/Websocket channel for one participant's holds.
+
+    No colon: Dallinger splits browser-sent messages at the first colon to
+    find the channel, so the browser's listening probe needs a colon-free name.
+    """
+    return f"{_TIMELINE_HOLD_CHANNEL}_{participant_id}"
 
 
 _PENDING_WAKE_KEY = "psynet_timeline_hold_wakes"

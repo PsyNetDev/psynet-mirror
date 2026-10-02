@@ -133,6 +133,13 @@
     if (!channel) {
       throw new Error("A WebSocket channel name is required.");
     }
+    if (confirmListening && channel.includes(":")) {
+      // Dallinger takes everything before the first colon of a browser
+      // message as the channel, so the probe would never echo back.
+      throw new Error(
+        `confirmListening needs a channel name without ":" (got "${channel}").`,
+      );
+    }
 
     const entry =
       channels.get(channel) || createChannel(channel, confirmListening);
