@@ -189,3 +189,35 @@ def test_processes_launch_only_on_their_own_sessions_commit(monkeypatch):
     db.session.rollback()
     db.session.commit()
     assert launched == [created["id"]]
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("static")], indirect=True
+)
+@pytest.mark.usefixtures("launched_experiment")
+def test_launch_queue_follows_savepoints_and_close(monkeypatch):
+    """SAVEPOINTs and close() must not launch or lose processes early."""
+    launched = []
+    monkeypatch.setattr(
+        LocalAsyncProcess,
+        "launch",
+        classmethod(lambda cls, p: launched.append(p["id"])),
+    )
+
+    outer = LocalAsyncProcess(do_nothing).id
+    with db.session.begin_nested():
+        released = LocalAsyncProcess(do_nothing).id
+    assert launched == []
+    nested = db.session.begin_nested()
+    LocalAsyncProcess(do_nothing)
+    nested.rollback()
+    db.session.commit()
+    assert launched == [outer, released]
+
+    with db.session.begin_nested():
+        LocalAsyncProcess(do_nothing)
+    db.session.rollback()
+    LocalAsyncProcess(do_nothing)
+    db.session.close()
+    db.session.commit()
+    assert launched == [outer, released]
