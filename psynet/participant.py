@@ -1099,8 +1099,14 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
 
         # A failed participant can leave their hold, so wake an overlay
         # failed from another request instead of waiting for its safety poll.
+        cached_hold = getattr(self, "_timeline_hold_record", None)
+        if cached_hold is not None and cached_hold.page_uuid != self.page_uuid:
+            cached_hold = None
         _queue_timeline_hold_wake(
-            self.id, page_uuid=self.page_uuid, reason="participant_failed"
+            self.id,
+            page_uuid=self.page_uuid,
+            reason="participant_failed",
+            hold=cached_hold,
         )
 
         for group in list(self.active_sync_groups.values()):
