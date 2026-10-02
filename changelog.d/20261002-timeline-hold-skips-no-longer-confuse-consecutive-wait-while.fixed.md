@@ -1,1 +1,1 @@
-Removed a timeline hold check that compared holds by `hold_id`. Consecutive `wait_while` holds share an id, so this check could treat one hold as another and check readiness against the wrong hold record.
+When a participant's timeline moved on to a later `wait_while` hold during a hold check, PsyNet could show that hold without checking its condition. The participant then waited until the next safety poll even if the condition had already cleared. Consecutive `wait_while` holds share a `hold_id`, so the check mistook the later hold for the earlier one.
