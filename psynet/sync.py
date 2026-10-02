@@ -1128,6 +1128,20 @@ def _advance_released_hold_waiters_after_commit(participant_ids):
             raise
 
 
+def _group_barrier_outcome(group, members, waiting_ids):
+    """Return ``"dissolve"``, ``"release"`` or ``"wait"`` for one group visit.
+
+    Pure: ``GroupBarrier.would_release`` passes the members it projects will
+    remain, and ``choose_who_to_release`` passes the live members, so the
+    peek and the real release share one decision.
+    """
+    if len(members) < group.min_group_size:
+        return "wait" if group.accepts_top_ups else "dissolve"
+    if all(participant.id in waiting_ids for participant in members):
+        return "release"
+    return "wait"
+
+
 class GroupBarrier(Barrier):
     """
     A GroupBarrier is a Barrier that waits until all participants in a given :class:`~psynet.sync.SyncGroup`
@@ -1390,31 +1404,24 @@ class GroupBarrier(Barrier):
 
         for group in groups.values():
             group.check_numbers()
-
-            if group.n_active_participants < group.min_group_size:
-                # If join_existing_groups is False, then the group will never be able
-                # to get to the minimum size, so we remove all participants from the group
-                # and release participants who are waiting at this barrier. Optionally fail them
-                # (when fail_participants_below_min_size is True).
-                if not group.accepts_top_ups:
-                    for participant in list(group.active_participants):
-                        if group.fail_participants_below_min_size:
-                            participant.fail("sync group below minimum size")
-                        group.remove_participant(participant)
-                        if participant.id in waiting_participant_ids:
-                            participants_to_release.append(participant)
-                    group.check_numbers()
-                    if group.n_active_participants == 0:
-                        group.close()
-                continue
-
-            all_participants_present = all(
-                [
-                    participant.id in waiting_participant_ids
-                    for participant in group.active_participants
-                ]
+            outcome = _group_barrier_outcome(
+                group, group.active_participants, waiting_participant_ids
             )
-            if all_participants_present:
+
+            if outcome == "dissolve":
+                # The group can never reach its minimum size, so remove everyone
+                # and release whoever is waiting here, failing them first when
+                # fail_participants_below_min_size is True.
+                for participant in list(group.active_participants):
+                    if group.fail_participants_below_min_size:
+                        participant.fail("sync group below minimum size")
+                    group.remove_participant(participant)
+                    if participant.id in waiting_participant_ids:
+                        participants_to_release.append(participant)
+                group.check_numbers()
+                if group.n_active_participants == 0:
+                    group.close()
+            elif outcome == "release":
                 group.check_leader()
                 for participant in group.active_participants:
                     participants_to_release.append(participant)
@@ -1468,11 +1475,7 @@ class GroupBarrier(Barrier):
                 for participant in group.active_participants
                 if participant.id not in late_ids
             ]
-            if len(members) < group.min_group_size:
-                if not group.accepts_top_ups:
-                    return True
-                continue
-            if all(participant.id in waiting_ids for participant in members):
+            if _group_barrier_outcome(group, members, waiting_ids) != "wait":
                 return True
         return any(
             self.group_type not in participant.active_sync_groups
