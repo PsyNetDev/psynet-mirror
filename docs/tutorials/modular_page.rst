@@ -313,12 +313,14 @@ extend either deadline.
 With ``inplace_timeline_transitions=false`` or other storage backends, answer video
 uploads still complete before navigation. Background recording is unsupported
 with these settings. In-place experiments drain pending uploads before full-page
-transitions and recruiter exit; failures and the original deadlines bound this wait.
+transitions and recruiter exit, displaying an upload message; failures and the
+original deadlines bound this wait. Deliberate early-exit and error redirects
+can abandon pending uploads without an additional browser warning.
 
 Shared camera and screen tracks stay active across pages until the document closes.
-Clips with audio disabled exclude microphone tracks, even when the shared camera
-was previously used with audio. In the asynchronous path, denied capture saves the
-answer and fails its parent trial at the upload deadline instead of throwing a
+Clips with audio disabled stop and remove cached audio tracks, even when the shared
+camera was previously used with audio. In the asynchronous path, denied capture
+saves the answer and fails its parent trial at the upload deadline instead of throwing a
 permission error. Legacy upload behavior is unchanged.
 
 Uploads must begin with the WebM/EBML header. This rejects obvious non-media input;

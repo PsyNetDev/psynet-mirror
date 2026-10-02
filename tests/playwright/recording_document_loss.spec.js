@@ -66,6 +66,7 @@ test("Finish drains recordings before recruiter exit @inplace-only", async ({pag
       await p.locator("#Finish").click();
       await p.waitForFunction(() => window.drainStarted);
       expect(p.url()).not.toContain("recruiter-exit");
+      await expect(p.locator("#psynet-timeline-hold-indicator")).toContainText("Uploading your recording, please keep this page open.");
       await held.continue();
       await expect(p).toHaveURL(/recruiter-exit/, {timeout:10000});
       const state = await (await context.request.get(new URL(`/test-recording-state/${accepted.recording_uploads[0].id}`, p.url()).href)).json();
@@ -103,6 +104,7 @@ test("full-document transition waits for received recording bytes @inplace-only"
       await expect.poll(() => Boolean(held)).toBe(true);
       await p.waitForFunction(() => window.drainStarted);
       await expect(p.locator("#main-body")).toContainText("Record a short clip.");
+      await expect(p.locator("#psynet-timeline-hold-indicator")).toContainText("Uploading your recording, please keep this page open.");
       await held.continue();
       await expect(p.locator("#main-body")).toContainText("Independent page reached.");
       expect(await p.evaluate(() => window.drainStarted)).toBeUndefined();

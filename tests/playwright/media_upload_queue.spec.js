@@ -1,8 +1,8 @@
 const path = require("path");
 const { test, expect } = require("./fixtures");
 
-// Browser component tests; the recorder/response integration is tested separately.
-// No experiment server or fake capture device is needed for this transport layer.
+// Browser fetch/abort, deadline, DOM lifetime and unload checks. Pure transport
+// policy lives in tests/javascript/media-upload-queue.test.mjs.
 test.describe("Document-owned media upload queue @both", () => {
   test.beforeEach(async ({ page }) => {
     await page.route("http://media.test/", (route) =>
@@ -56,16 +56,6 @@ test.describe("Document-owned media upload queue @both", () => {
     expect(await page.evaluate(() => window.dispatchEvent(new Event("beforeunload", {cancelable:true})))).toBe(true);
   });
 
-  test("retries the same file after a temporary server error", async ({ page }) => {
-    const bodies = [];
-    await page.route("**/media-upload/retry", (route) => {
-      bodies.push(route.request().postData());
-      return route.fulfill({ status: bodies.length === 1 ? 503 : 204 });
-    });
-    expect(await page.evaluate(() => enqueue("retry"))).toEqual({ status: "received" });
-    expect(bodies).toEqual(["recorded bytes", "recorded bytes"]);
-  });
-
   test("allows a slow delivery to finish without restarting at ten seconds", async ({ page }) => {
     await page.clock.install();
     const uploads = [];
@@ -77,31 +67,6 @@ test.describe("Document-owned media upload queue @both", () => {
     expect(await page.evaluate(() => results.slow)).toBeUndefined();
     await uploads[0].fulfill({ status: 204 });
     await expect.poll(() => page.evaluate(() => results.slow)).toEqual({ status: "received" });
-  });
-
-  test("does not retry a permanent rejection", async ({ page }) => {
-    let requests = 0;
-    await page.route("**/media-upload/rejected", (route) => {
-      requests += 1;
-      return route.fulfill({ status: 403 });
-    });
-    expect(await page.evaluate(() => enqueue("rejected"))).toEqual({
-      status: "failed", reason: "http_error", httpStatus: 403
-    });
-    expect(requests).toBe(1);
-  });
-
-  test("bounds retry attempts and releases the file after repeated network failure", async ({ page }) => {
-    let requests = 0;
-    await page.route("**/media-upload/offline", (route) => {
-      requests += 1;
-      return route.abort("connectionfailed");
-    });
-    expect(await page.evaluate(() => enqueue("offline"))).toEqual({
-      status: "failed", reason: "attempts_exhausted"
-    });
-    expect(requests).toBe(3);
-    expect(await page.evaluate(() => queue.pendingBytes)).toBe(0);
   });
 
   test("does not extend the deadline when scheduling another attempt", async ({ page }) => {
@@ -116,24 +81,6 @@ test.describe("Document-owned media upload queue @both", () => {
     await page.clock.runFor(1001);
     expect(await page.evaluate(() => results.short)).toEqual({ status: "failed", reason: "deadline" });
     expect(requests).toBe(1);
-  });
-
-  test("rejects duplicate pending IDs without replacing the original file", async ({ page }) => {
-    let held;
-    await page.route("**/media-upload/duplicate", (route) => { held = route; });
-    expect(await page.evaluate(() => {
-      enqueue("duplicate");
-      try {
-        enqueue("duplicate", 60000, "replacement bytes");
-      } catch (error) {
-        return error.message;
-      }
-    })).toContain("already queued");
-    await expect.poll(() => Boolean(held)).toBe(true);
-    expect(held.request().postData()).toBe("recorded bytes");
-    await held.fulfill({ status: 204 });
-    await expect.poll(() => page.evaluate(() => results.duplicate?.status)).toBe("received");
-    expect(await page.evaluate(() => queue.pendingBytes)).toBe(0);
   });
 
   test("expires queued files without resetting their deadline when a slot opens", async ({ page }) => {
@@ -165,59 +112,15 @@ test.describe("Document-owned media upload queue @both", () => {
       queue.drain().then(() => { window.drained = true; });
     });
     await expect.poll(() => started).toBe(true);
+    expect(await page.evaluate(() => {
+      queue.allowUnload();
+      return window.dispatchEvent(new Event("beforeunload", {cancelable:true}));
+    })).toBe(true);
     await page.clock.runFor(1001);
     await expect.poll(() => page.evaluate(() => results.next?.status)).toBe("received");
     expect(await page.evaluate(() => results.stalled)).toEqual({ status: "failed", reason: "deadline" });
     await expect.poll(() => page.evaluate(() => drained)).toBe(true);
     expect(await page.evaluate(() => queue.pendingBytes)).toBe(0);
-  });
-
-  test("bounds retained bytes and reclaims capacity after completion", async ({ page }) => {
-    let held;
-    await page.route("**/media-upload/large", (route) => { held = route; });
-    await page.route("**/media-upload/after", (route) => route.fulfill({ status: 204 }));
-    await page.evaluate(() => { enqueue("large", 60000, "x".repeat(90)); });
-    expect(await page.evaluate(() => enqueue("overflow"))).toEqual({ status: "failed", reason: "queue_full" });
-    await expect.poll(() => Boolean(held)).toBe(true);
-    await held.fulfill({ status: 204 });
-    await expect.poll(() => page.evaluate(() => queue.pendingBytes)).toBe(0);
-    expect(await page.evaluate(() => enqueue("after"))).toEqual({ status: "received" });
-  });
-
-  test("rejects cross-origin uploads before exposing the capability or file", async ({ page }) => {
-    expect(await page.evaluate(() => {
-      try {
-        queue.enqueue({ id: "bad", url: "https://elsewhere.test/upload", token: "secret",
-          deadline: performance.now() + 1000, blob: new Blob(["private"]) });
-      } catch (error) {
-        return error.message;
-      }
-    })).toContain("same origin");
-    expect(await page.evaluate(() => queue.pendingBytes)).toBe(0);
-  });
-
-  test("plans a pair against shared capacity before answer acceptance", async ({ page }) => {
-    await page.route("**/media-upload/held", () => {});
-    const selected = await page.evaluate(() => {
-      enqueue("held", 60000, "x".repeat(60));
-      const result = queue.prepare({camera:new Blob(["x".repeat(30)]),screen:new Blob(["x".repeat(30)])}, 50);
-      return {sources:Object.keys(result.recordings),unavailable:result.unavailable};
-    });
-    expect(selected).toEqual({sources:["camera"], unavailable:{screen:"queue_full"}});
-  });
-
-  test("default queue admits two recordings up to the server source limit", async ({ page }) => {
-    expect(await page.evaluate(async () => {
-      const {MediaUploadQueue} = await import("/media-upload.js");
-      const q = new MediaUploadQueue();
-      const blob = new Blob([new Uint8Array(80 * 1024**2)]);
-      return Object.keys(q.prepare({camera:blob,screen:blob},128 * 1024**2).recordings);
-    })).toEqual(["camera","screen"]);
-  });
-
-  test("preparation distinguishes missing and oversized captures", async ({ page }) => {
-    expect(await page.evaluate(() => queue.prepare({camera:new Blob([]),screen:new Blob(["x".repeat(60)])},50).unavailable))
-      .toEqual({camera:"missing_recording",screen:"size_limit"});
   });
 
 });

@@ -3584,9 +3584,14 @@
       return recordingCapture;
     };
     let recordingUploadQueue;
+    let recordingUploadMessage;
+    psynet.allowRecordingUnload = function () {
+      recordingUploadQueue?.allowUnload();
+    };
     psynet.drainRecordingUploads = async function () {
       if (!recordingUploadQueue?.pendingBytes) return;
       psynet.setTimelineTransitionBusy(true);
+      psynet.showTimelineHoldIndicator(recordingUploadMessage);
       try { await recordingUploadQueue.drain(); }
       finally { psynet.setTimelineTransitionBusy(false); }
     };
@@ -3601,6 +3606,7 @@
       } finally { clearTimeout(timer); }
     }
     async function getRecordingQueue(maxBytes = 128 * 1024 * 1024) {
+      recordingUploadMessage = (psynet.var.recordingLabels || psynet.var.backgroundRecording?.labels)?.uploading || recordingUploadMessage;
       if (!recordingUploadQueue) {
         const {MediaUploadQueue} = await recordingModule("/static/scripts/media-upload.js");
         recordingUploadQueue = new MediaUploadQueue({maxBytes:2 * maxBytes});

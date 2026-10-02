@@ -38,6 +38,11 @@ export class MediaUploadQueue {
     return this._jobs.size ? new Promise(resolve => this._drains.push(resolve)) : Promise.resolve();
   }
 
+  /** Permit a deliberate early-exit/error redirect without an unload warning. */
+  allowUnload() {
+    window.removeEventListener("beforeunload", this._beforeUnload);
+  }
+
   get pendingBytes() {
     return this._pendingBytes;
   }

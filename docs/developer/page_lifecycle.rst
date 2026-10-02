@@ -266,7 +266,8 @@ The browser document owns capture streams and the upload queue. Normal page
 cleanup must not stop those streams or cancel accepted uploads. Each logical page
 has its own recorder and collected bytes. PsyNet drains uploads before initiating
 a full-document transition or recruiter exit. Manual navigation warns while
-uploads remain pending; leaving anyway can abandon them.
+uploads remain pending; leaving anyway can abandon them. Deliberate early-exit
+and error redirects suppress that warning and can abandon pending uploads.
 See :doc:`/tutorials/modular_page` for the public recording API and failure policy.
 
 JavaScript resource categories

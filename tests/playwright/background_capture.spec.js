@@ -126,11 +126,14 @@ test.describe("Shared recording capture @both", () => {
       };
       try {
         const first = await devices.acquire("camera", {audio:true});
+        const microphone = first.getAudioTracks()[0];
         const silent = await devices.acquire("camera");
+        const microphoneStopped = microphone.readyState === "ended" && devices.streams.get("camera").getAudioTracks().length === 0;
         const changed = await devices.acquire("camera", {audio:{channelCount:1}});
         return {
           sameVideo: [silent, changed].every(stream => stream.getVideoTracks()[0] === first.getVideoTracks()[0]),
           silent: silent.getAudioTracks().length === 0,
+          microphoneStopped,
           videoRequests: requests.filter(request => request.video).length,
           microphoneRequests: requests.filter(request => request.video === false).length,
         };
@@ -139,7 +142,7 @@ test.describe("Shared recording capture @both", () => {
         devices.release("camera");
       }
     });
-    expect(result).toEqual({sameVideo:true,silent:true,videoRequests:1,microphoneRequests:1});
+    expect(result).toEqual({sameVideo:true,silent:true,microphoneStopped:true,videoRequests:1,microphoneRequests:1});
   });
 
   for (const source of ["camera", "screen"]) {

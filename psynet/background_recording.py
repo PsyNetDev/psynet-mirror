@@ -104,6 +104,7 @@ def _recording_labels():
         "skip": _("Continue without recording"),
         "recording": _("Recording"),
         "stopped": _("Recording stopped"),
+        "uploading": _("Uploading your recording, please keep this page open."),
     }
 
 

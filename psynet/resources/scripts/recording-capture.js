@@ -44,7 +44,11 @@ export class RecordingDevices {
       this.release(source);
       throw error;
     }
-    // Never include a cached microphone track in a clip that requested no audio.
+    // Silent pages must also release the microphone, not just omit its samples.
+    if (!audio) {
+      stream.getAudioTracks().forEach(track => { stream.removeTrack(track); track.stop(); });
+      stream._psynetAudio = JSON.stringify(false);
+    }
     return audio ? stream : new MediaStream(stream.getVideoTracks());
   }
 
