@@ -1,3 +1,4 @@
+import threading
 from contextlib import contextmanager
 from contextvars import ContextVar
 from functools import wraps
@@ -64,6 +65,7 @@ def install_gevent_wait_callback():
     return True
 
 
+_blocking_psycopg_lock = threading.Lock()
 _blocking_psycopg_depth = 0
 _suspended_wait_callback = None
 
@@ -73,21 +75,24 @@ def blocking_psycopg():
     """Suspend the psycopg2 wait callback, e.g. around ``copy_expert``.
 
     The callback is process-wide, so overlapping suspensions from different
-    greenlets are counted and the callback returns only when the last one
-    exits. Keep the block short: it blocks every greenlet in the process.
+    greenlets or threads are counted and the callback returns only when the
+    last one exits. Keep the block short: it blocks every greenlet in the
+    process, and other queries in the process run without the callback.
     """
     global _blocking_psycopg_depth, _suspended_wait_callback
-    if _blocking_psycopg_depth == 0:
-        _suspended_wait_callback = psycopg2.extensions.get_wait_callback()
-        psycopg2.extensions.set_wait_callback(None)
-    _blocking_psycopg_depth += 1
+    with _blocking_psycopg_lock:
+        if _blocking_psycopg_depth == 0:
+            _suspended_wait_callback = psycopg2.extensions.get_wait_callback()
+            psycopg2.extensions.set_wait_callback(None)
+        _blocking_psycopg_depth += 1
     try:
         yield
     finally:
-        _blocking_psycopg_depth -= 1
-        if _blocking_psycopg_depth == 0:
-            psycopg2.extensions.set_wait_callback(_suspended_wait_callback)
-            _suspended_wait_callback = None
+        with _blocking_psycopg_lock:
+            _blocking_psycopg_depth -= 1
+            if _blocking_psycopg_depth == 0:
+                psycopg2.extensions.set_wait_callback(_suspended_wait_callback)
+                _suspended_wait_callback = None
 
 
 def is_transient_transaction_error(error):

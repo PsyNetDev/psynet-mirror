@@ -126,8 +126,10 @@ The overlay still posts the old hold uuid. That POST is catch-up, not a
 multi-tab reject, while every page consumed since that hold, apart from
 the current one, was another hold. Each hold record stores
 ``participant.page_count`` so this costs one count on the catch-up path.
-After the participant has been shown an ordinary page, the old uuid comes
-from a stale tab and is rejected.
+The old uuid therefore stays valid on the first ordinary page after the
+hold, which a release can skip the overlay onto. Once the participant
+advances past that page, the old uuid comes from a stale tab and is
+rejected.
 
 Witness:
 

@@ -5910,16 +5910,17 @@ def test_group_barrier_timeout_between_barriers_kick_releases_waiters_after_diss
 
 @pytest.mark.parametrize("action", ["kick", "fail"])
 @pytest.mark.parametrize("min_group_size", [2, 3])
+@pytest.mark.parametrize("accepts_top_ups", [False, True])
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
 def test_group_barrier_would_release_predicts_timeout_between_barriers(
-    in_experiment_directory, db_session, action, min_group_size
+    in_experiment_directory, db_session, action, min_group_size, accepts_top_ups
 ):
     """The release peek must see the late member the check will remove."""
     exp = get_experiment()
     barrier = GroupBarrier(
-        id_=f"would_release_between_{action}_{min_group_size}",
+        id_=f"would_release_between_{action}_{min_group_size}_{accepts_top_ups}",
         group_type="main",
         timeout_between_barriers_time=5,
         timeout_between_barriers_action=action,
@@ -5934,7 +5935,7 @@ def test_group_barrier_would_release_predicts_timeout_between_barriers(
         max_group_size=3,
         min_group_size=min_group_size,
         n_active_participants=3,
-        accepts_top_ups=False,
+        accepts_top_ups=accepts_top_ups,
         fail_participants_below_min_size=False,
     )
     group.last_barrier_pass_time = timenow() - timedelta(seconds=10)
@@ -5942,15 +5943,17 @@ def test_group_barrier_would_release_predicts_timeout_between_barriers(
     for p in participants:
         group.add_participant(p)
     db_session.commit()
+    # A group that accepts top-ups waits below its minimum instead of dissolving.
+    expected = (
+        set() if accepts_top_ups and min_group_size == 3 else set(waiting_participants)
+    )
 
-    assert barrier.would_release(waiting_participants) is True
+    assert barrier.would_release(waiting_participants) is bool(expected)
     assert len(group.active_participants) == 3
     assert not db_session.dirty
 
     barrier.check_waiting_participants(waiting_participants)
-    assert set(barrier.choose_who_to_release(waiting_participants)) == set(
-        waiting_participants
-    )
+    assert set(barrier.choose_who_to_release(waiting_participants)) == expected
 
 
 @pytest.mark.parametrize(
