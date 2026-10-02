@@ -46,8 +46,12 @@ _TIMELINE_HOLD_CHANNEL = "psynet_timeline_hold"
 
 
 def _timeline_hold_channel(participant_id):
-    """Return the Redis/Websocket channel for one participant's holds."""
-    return f"{_TIMELINE_HOLD_CHANNEL}:{participant_id}"
+    """Return the Redis/Websocket channel for one participant's holds.
+
+    No colon: Dallinger splits browser-sent messages at the first colon to
+    find the channel, so the browser's listening probe needs a colon-free name.
+    """
+    return f"{_TIMELINE_HOLD_CHANNEL}_{participant_id}"
 
 
 _PENDING_WAKE_KEY = "psynet_timeline_hold_wakes"
@@ -516,12 +520,20 @@ class _TimelineHoldPage(Page):
         raise NotImplementedError
 
     def participant_timed_out(self, participant):
-        """Return whether the authoritative hold deadline has passed."""
+        """Return whether the authoritative hold deadline has passed.
+
+        A hold released before its deadline has not timed out, even if the
+        participant only checks in afterwards (for example after a missed wake).
+        """
         record = self.get_hold_record(participant)
         if record is None:
             return False
         deadline = record.deadline
-        return deadline is not None and timenow() >= deadline
+        if deadline is None:
+            return False
+        if record.released_at is not None and record.released_at < deadline:
+            return False
+        return timenow() >= deadline
 
     def is_ready_to_resume(self, experiment, participant):
         """Return whether this hold can resume, without timeout side effects.

@@ -65,7 +65,7 @@ this module. That loop:
 
 Each default barrier visit links to a durable ``TimelineHoldRecord``. Releasing
 the link accounts waiting through the release time and queues a targeted browser
-wake. Each participant's hold channel (`psynet_timeline_hold:<id>`) publishes
+wake. Each participant's hold channel (`psynet_timeline_hold_<id>`) publishes
 that wake only after the database transaction commits; the browser then
 rechecks the authoritative link state.
 
