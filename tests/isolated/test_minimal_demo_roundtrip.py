@@ -130,7 +130,6 @@ AUTHORED_TEST_EXPERIMENT_FILENAMES = {
     "shell.sh",
     "lucid_recruitment_config.json",
     "qualification_prolific_en.json",
-    "DEPLOYMENT_ID",
     "custom_synth.py",
 }
 
