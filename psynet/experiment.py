@@ -89,7 +89,6 @@ from .data import SQLBase, SQLMixin, ingest_zip, register_table
 from .db import (
     _set_transaction_lock_timeout,
     blocking_psycopg,
-    install_gevent_wait_callback,
     is_transient_transaction_error,
     read_only_transaction,
     transaction,
@@ -1096,7 +1095,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @staticmethod
     def gunicorn_post_worker_init(worker):
-        install_gevent_wait_callback()
         if not _is_replacement_gunicorn_worker(worker):
             return
         exp = get_experiment()

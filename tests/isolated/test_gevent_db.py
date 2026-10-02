@@ -18,26 +18,35 @@ from psynet.experiment import _is_replacement_gunicorn_worker
 
 _SCRIPT = textwrap.dedent(
     """
+    import sys
+
+    mode, dsn = sys.argv[1], sys.argv[2]
+    if mode == "imported_before_patching":
+        import dallinger.db  # noqa: F401
+
     from gevent import monkey
 
     monkey.patch_all()
 
     import io
     import json
-    import sys
     import time
 
     import gevent
     import psycopg2
     from psycopg2.extensions import get_wait_callback
 
-    from psynet.db import blocking_psycopg, install_gevent_wait_callback
-
-    mode, dsn = sys.argv[1], sys.argv[2]
     result = {}
-    if mode == "green":
-        result["installed"] = install_gevent_wait_callback()
+    if mode != "stock":
+        import dallinger.db
+
+        from psynet.db import blocking_psycopg, install_gevent_wait_callback
+
+        result["installed_on_import"] = get_wait_callback() is not None
         result["installed_again"] = install_gevent_wait_callback()
+    if mode == "imported_before_patching":
+        print(json.dumps(result))
+        sys.exit()
 
     key = 815_100_001
     holder, waiter = psycopg2.connect(dsn), psycopg2.connect(dsn)
@@ -86,6 +95,11 @@ _SCRIPT = textwrap.dedent(
         gevent.joinall(greenlets, raise_error=True)
         result["restored_after_overlap"] = get_wait_callback() is not None
 
+        dallinger.db.engine.dispose()
+        with blocking_psycopg():
+            dallinger.db.engine.connect().close()
+            result["suspended_across_new_connection"] = get_wait_callback() is None
+
     print(json.dumps(result))
     """
 )
@@ -109,13 +123,22 @@ def test_lock_wait_freezes_a_gevent_process_without_the_callback():
 
 def test_wait_callback_lets_the_lock_holder_finish():
     result = _run("green")
-    assert result["installed"] is True
+    assert result["installed_on_import"] is True
     assert result["installed_again"] is False
     assert result["waited"] < 1.5
     assert result["copy_outside"] == "error"
     assert result["copy_inside"] == "1"
     assert result["suspended_during_overlap"] is True
     assert result["restored_after_overlap"] is True
+    assert result["suspended_across_new_connection"] is True
+
+
+def test_install_refuses_when_dallinger_was_imported_before_patching():
+    """Greenlets would share one session and deadlock on its connection."""
+    assert _run("imported_before_patching") == {
+        "installed_on_import": False,
+        "installed_again": False,
+    }
 
 
 def test_install_is_a_no_op_without_gevent_patching():

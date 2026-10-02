@@ -1,3 +1,4 @@
+import logging
 import threading
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -7,6 +8,8 @@ import dallinger.db
 import psycopg2
 import psycopg2.extensions
 from sqlalchemy import event, text
+
+logger = logging.getLogger(__name__)
 
 TRANSIENT_TRANSACTION_PGCODES = {"40001", "40P01", "55P03"}
 
@@ -40,41 +43,80 @@ def _gevent_wait_callback(conn, timeout=None):
             raise psycopg2.OperationalError(f"Bad psycopg2 poll state: {state!r}")
 
 
+_blocking_psycopg_lock = threading.Lock()
+_blocking_psycopg_depth = 0
+_suspended_wait_callback = None
+
+
+def _session_is_greenlet_local():
+    """Return whether each greenlet gets its own scoped ORM session."""
+    registry = getattr(dallinger.db.session.registry, "registry", None)
+    return type(registry).__module__.startswith("gevent")
+
+
+_warned_shared_session = False
+
+
 def install_gevent_wait_callback():
     """Make psycopg2 cooperative in a gevent-patched process.
 
-    Dallinger's web and RQ workers are gevent processes, but psycopg2 blocks
-    the whole process while it waits on PostgreSQL. One request waiting on a
-    lock then freezes every other request in that worker, including the one
-    holding the lock, until ``lock_timeout``. The wait callback lets other
-    greenlets run while a query waits.
+    Dallinger's web server, dev server, and RQ worker are gevent processes,
+    but psycopg2 blocks the whole process while it waits on PostgreSQL. One
+    request waiting on a lock then freezes every other request in that
+    process, including the one holding the lock, until ``lock_timeout``. The
+    wait callback lets other greenlets run while a query waits.
 
-    Does nothing outside gevent-patched processes or if a callback is already
-    installed. Returns whether this call installed it. COPY cannot run with
-    the callback installed; wrap it in :func:`blocking_psycopg`.
+    Runs automatically on import and whenever the engine opens a connection,
+    so gunicorn workers, the dev server, and the RQ worker are all covered.
+    Does nothing outside gevent-patched processes, inside
+    :func:`blocking_psycopg`, or if a callback is already installed. It also
+    refuses, with a warning, when Dallinger was imported before patching:
+    greenlets would then share one session and connection, and yielding
+    mid-query would deadlock. Returns whether this call installed the
+    callback.
     """
+    global _warned_shared_session
     try:
         from gevent import monkey
     except ImportError:
         return False
     if not monkey.is_module_patched("socket"):
         return False
-    if psycopg2.extensions.get_wait_callback() is not None:
-        return False
-    psycopg2.extensions.set_wait_callback(_gevent_wait_callback)
+    with _blocking_psycopg_lock:
+        if _blocking_psycopg_depth > 0:
+            return False
+        if psycopg2.extensions.get_wait_callback() is not None:
+            return False
+        if not _session_is_greenlet_local():
+            if not _warned_shared_session:
+                _warned_shared_session = True
+                logger.warning(
+                    "Not making psycopg2 cooperative: dallinger.db was imported "
+                    "before gevent monkey-patching, so greenlets share one "
+                    "database session."
+                )
+            return False
+        psycopg2.extensions.set_wait_callback(_gevent_wait_callback)
     return True
 
 
-_blocking_psycopg_lock = threading.Lock()
-_blocking_psycopg_depth = 0
-_suspended_wait_callback = None
+@event.listens_for(dallinger.db.engine, "connect")
+def _install_gevent_wait_callback_on_connect(dbapi_connection, connection_record):
+    install_gevent_wait_callback()
+
+
+# Also covers pooled connections opened before this module was imported,
+# since the callback is process-wide.
+install_gevent_wait_callback()
 
 
 @contextmanager
 def blocking_psycopg():
     """Suspend the psycopg2 wait callback, e.g. around ``copy_expert``.
 
-    The callback is process-wide, so overlapping suspensions from different
+    Experiment code must wrap any PostgreSQL ``COPY`` in this context manager,
+    because psycopg2 rejects ``COPY`` while the callback is installed. The
+    callback is process-wide, so overlapping suspensions from different
     greenlets or threads are counted and the callback returns only when the
     last one exits. Keep the block short: it blocks every greenlet in the
     process, and other queries in the process run without the callback.
