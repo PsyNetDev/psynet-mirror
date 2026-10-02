@@ -1,0 +1,1 @@
+Fixed stale browser tabs bypassing the "multiple browser tabs" check by submitting from an old timeline hold. A hold's page id is now accepted as a catch-up only until the participant moves on to an ordinary page.

@@ -123,13 +123,18 @@ T3 — Stale hold uuid after the cursor moved
 
 This waiter (or a later skip) already rotated ``participant.page_uuid``.
 The overlay still posts the old hold uuid. That POST is catch-up, not a
-multi-tab reject.
+multi-tab reject, while every page consumed since that hold, apart from
+the current one, was another hold. Each hold record stores
+``participant.page_count`` so this costs one count on the catch-up path.
+After the participant has been shown an ordinary page, the old uuid comes
+from a stale tab and is rejected.
 
 Witness:
 
 * Protocol (``tests/isolated/test_sync.py``):
   ``test_stale_hold_resume_approves_the_current_page_after_last_arrival``,
-  ``test_stale_hold_uuid_catches_up_onto_a_later_hold``.
+  ``test_stale_hold_uuid_catches_up_onto_a_later_hold``,
+  ``test_hold_uuid_is_not_catch_up_after_answering_a_later_page``.
 
 T4 — Timeout, fail, or redirect while last-arrival is in flight
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

@@ -3876,6 +3876,46 @@ def test_stale_wait_while_uuid_is_catch_up_after_get_skip(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
+def test_hold_uuid_is_not_catch_up_after_answering_a_later_page(
+    in_experiment_directory, db_session
+):
+    """An old hold uuid from a stale tab must still get the multi-tab reject."""
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    ready = {"stop": False}
+    exp.timeline = Timeline(
+        wait_while(lambda: not ready["stop"], expected_wait=1),
+        ModularPage("first", "First", time_estimate=1),
+        ModularPage("second", "Second", time_estimate=1),
+    )
+    try:
+        (first,) = _working_participants(exp, 1)
+        assert _json_timeline(exp, first).status_code == 200
+        first = Participant.query.get(first.id)
+        hold_uuid = first.page_uuid
+        ready["stop"] = True
+        assert _json_timeline(exp, first).status_code == 200
+        db.session.expire_all()
+        first = Participant.query.get(first.id)
+        answered = _process_response(exp, first, first.page_uuid)
+        assert answered.payload["submission"] == "approved"
+        db.session.commit()
+        first = Participant.query.get(first.id)
+        assert exp.timeline.get_current_elt(exp, first).label == "second"
+
+        stale = _process_response(exp, first, hold_uuid)
+        assert stale.payload["submission"] == "rejected"
+        stale_resume = _process_response(
+            exp, first, hold_uuid, timeline_hold_resume=True
+        )
+        assert stale_resume.payload["submission"] == "rejected"
+    finally:
+        exp.timeline = original_timeline
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
 def test_waiter_get_timeline_survives_stale_hold_after_own_advance(
     in_experiment_directory, db_session, monkeypatch
 ):
