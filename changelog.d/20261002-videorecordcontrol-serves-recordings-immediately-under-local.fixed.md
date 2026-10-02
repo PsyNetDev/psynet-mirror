@@ -1,0 +1,1 @@
+`VideoRecordControl` now deposits recordings synchronously under `LocalStorage`, matching `AudioRecordControl`, so a playback page that follows the recording no longer intermittently gets a 404 for the video. The audio demo also waits for the video recording to be deposited before playing it back, so it works with asynchronous storage such as S3.

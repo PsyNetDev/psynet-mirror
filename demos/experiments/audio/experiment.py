@@ -516,6 +516,11 @@ example_record_audio_video = join(
         ),
         time_estimate=5,
     ),
+    wait_while(
+        lambda participant: not participant.assets["video_record_page"].deposited,
+        expected_wait=5.0,
+        log_message="Waiting for the recording to finish uploading",
+    ),
     PageMaker(
         lambda participant: ModularPage(
             "playback",
