@@ -5827,6 +5827,51 @@ def test_group_barrier_timeout_between_barriers_kick_releases_waiters_after_diss
     assert set(released) == set(waiting_participants)
 
 
+@pytest.mark.parametrize("action", ["kick", "fail"])
+@pytest.mark.parametrize("min_group_size", [2, 3])
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_group_barrier_would_release_predicts_timeout_between_barriers(
+    in_experiment_directory, db_session, action, min_group_size
+):
+    """The release peek must see the late member the check will remove."""
+    exp = get_experiment()
+    barrier = GroupBarrier(
+        id_=f"would_release_between_{action}_{min_group_size}",
+        group_type="main",
+        timeout_between_barriers_time=5,
+        timeout_between_barriers_action=action,
+    )
+    participants = [new_participant(exp) for _ in range(3)]
+    for p in participants:
+        p.status = "working"
+    waiting_participants = participants[:2]
+    group = SimpleSyncGroup(
+        group_type="main",
+        initial_group_size=3,
+        max_group_size=3,
+        min_group_size=min_group_size,
+        n_active_participants=3,
+        accepts_top_ups=False,
+        fail_participants_below_min_size=False,
+    )
+    group.last_barrier_pass_time = timenow() - timedelta(seconds=10)
+    db_session.add(group)
+    for p in participants:
+        group.add_participant(p)
+    db_session.commit()
+
+    assert barrier.would_release(waiting_participants) is True
+    assert len(group.active_participants) == 3
+    assert not db_session.dirty
+
+    barrier.check_waiting_participants(waiting_participants)
+    assert set(barrier.choose_who_to_release(waiting_participants)) == set(
+        waiting_participants
+    )
+
+
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )

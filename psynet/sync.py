@@ -1450,17 +1450,29 @@ class GroupBarrier(Barrier):
         return participants_to_release
 
     def would_release(self, waiting_participants: List[Participant]) -> bool:
-        """Return whether this group visit would release, without mutating state."""
+        """Return whether this group visit would release, without mutating state.
+
+        Mirrors :meth:`check_waiting_participants` followed by
+        :meth:`choose_who_to_release`: late members that the between-barrier
+        timeout would kick or fail count as already gone, and group size is
+        recounted rather than read from ``n_active_participants``.
+        """
         waiting_ids = {participant.id for participant in waiting_participants}
         for group in self.get_waiting_groups(waiting_participants).values():
-            if group.n_active_participants < group.min_group_size:
+            late_ids = {
+                participant.id
+                for participant in self._late_between_barriers(group, waiting_ids)
+            }
+            members = [
+                participant
+                for participant in group.active_participants
+                if participant.id not in late_ids
+            ]
+            if len(members) < group.min_group_size:
                 if not group.accepts_top_ups:
                     return True
                 continue
-            if all(
-                participant.id in waiting_ids
-                for participant in group.active_participants
-            ):
+            if all(participant.id in waiting_ids for participant in members):
                 return True
         return any(
             self.group_type not in participant.active_sync_groups
@@ -1486,21 +1498,8 @@ class GroupBarrier(Barrier):
         self, group: "SyncGroup", waiting_participants: List[Participant]
     ):
         """Kick or fail group members who are late reaching this barrier."""
-        if (
-            self.timeout_between_barriers_time is None
-            or group.last_barrier_pass_time is None
-        ):
-            return
-
-        elapsed_seconds = (timenow() - group.last_barrier_pass_time).total_seconds()
-        if elapsed_seconds <= self.timeout_between_barriers_time:
-            return
-
         waiting_participant_ids = {p.id for p in waiting_participants}
-        missing = [
-            p for p in group.active_participants if p.id not in waiting_participant_ids
-        ]
-        for participant in missing:
+        for participant in self._late_between_barriers(group, waiting_participant_ids):
             if self.timeout_between_barriers_action == "kick":
                 logger.info(
                     "GroupBarrier '%s': kicking participant %s from group %s (timeout between barriers)",
@@ -1516,6 +1515,18 @@ class GroupBarrier(Barrier):
                     participant.id,
                 )
                 participant.fail("timeout between barriers")
+
+    def _late_between_barriers(self, group: "SyncGroup", waiting_ids) -> list:
+        """Return active members past the between-barrier timeout who are not waiting."""
+        if (
+            self.timeout_between_barriers_time is None
+            or group.last_barrier_pass_time is None
+        ):
+            return []
+        elapsed_seconds = (timenow() - group.last_barrier_pass_time).total_seconds()
+        if elapsed_seconds <= self.timeout_between_barriers_time:
+            return []
+        return [p for p in group.active_participants if p.id not in waiting_ids]
 
 
 class Grouper(Barrier):

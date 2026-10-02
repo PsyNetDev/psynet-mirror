@@ -1,0 +1,1 @@
+Fixed the last arrival at a `GroupBarrier` with `timeout_between_barriers_time` briefly seeing the waiting overlay when late members were about to be kicked or failed. The request now waits for the release instead of leaving it to the background poller.
