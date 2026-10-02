@@ -3,6 +3,8 @@ from contextvars import ContextVar
 from functools import wraps
 
 import dallinger.db
+import psycopg2
+import psycopg2.extensions
 from sqlalchemy import event, text
 
 TRANSIENT_TRANSACTION_PGCODES = {"40001", "40P01", "55P03"}
@@ -19,6 +21,73 @@ TERMINATE_OTHER_DATABASE_CLIENTS_SQL = text(
     "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
     f"WHERE {_OTHER_DATABASE_CLIENTS_WHERE}"
 )
+
+
+def _gevent_wait_callback(conn, timeout=None):
+    """Wait for psycopg2 I/O by yielding to other greenlets."""
+    from gevent.socket import wait_read, wait_write
+
+    while True:
+        state = conn.poll()
+        if state == psycopg2.extensions.POLL_OK:
+            return
+        if state == psycopg2.extensions.POLL_READ:
+            wait_read(conn.fileno(), timeout=timeout)
+        elif state == psycopg2.extensions.POLL_WRITE:
+            wait_write(conn.fileno(), timeout=timeout)
+        else:
+            raise psycopg2.OperationalError(f"Bad psycopg2 poll state: {state!r}")
+
+
+def install_gevent_wait_callback():
+    """Make psycopg2 cooperative in a gevent-patched process.
+
+    Dallinger's web and RQ workers are gevent processes, but psycopg2 blocks
+    the whole process while it waits on PostgreSQL. One request waiting on a
+    lock then freezes every other request in that worker, including the one
+    holding the lock, until ``lock_timeout``. The wait callback lets other
+    greenlets run while a query waits.
+
+    Does nothing outside gevent-patched processes or if a callback is already
+    installed. Returns whether this call installed it. COPY cannot run with
+    the callback installed; wrap it in :func:`blocking_psycopg`.
+    """
+    try:
+        from gevent import monkey
+    except ImportError:
+        return False
+    if not monkey.is_module_patched("socket"):
+        return False
+    if psycopg2.extensions.get_wait_callback() is not None:
+        return False
+    psycopg2.extensions.set_wait_callback(_gevent_wait_callback)
+    return True
+
+
+_blocking_psycopg_depth = 0
+_suspended_wait_callback = None
+
+
+@contextmanager
+def blocking_psycopg():
+    """Suspend the psycopg2 wait callback, e.g. around ``copy_expert``.
+
+    The callback is process-wide, so overlapping suspensions from different
+    greenlets are counted and the callback returns only when the last one
+    exits. Keep the block short: it blocks every greenlet in the process.
+    """
+    global _blocking_psycopg_depth, _suspended_wait_callback
+    if _blocking_psycopg_depth == 0:
+        _suspended_wait_callback = psycopg2.extensions.get_wait_callback()
+        psycopg2.extensions.set_wait_callback(None)
+    _blocking_psycopg_depth += 1
+    try:
+        yield
+    finally:
+        _blocking_psycopg_depth -= 1
+        if _blocking_psycopg_depth == 0:
+            psycopg2.extensions.set_wait_callback(_suspended_wait_callback)
+            _suspended_wait_callback = None
 
 
 def is_transient_transaction_error(error):

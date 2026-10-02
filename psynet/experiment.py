@@ -88,6 +88,8 @@ from .command_line import export_launch_data
 from .data import SQLBase, SQLMixin, ingest_zip, register_table
 from .db import (
     _set_transaction_lock_timeout,
+    blocking_psycopg,
+    install_gevent_wait_callback,
     is_transient_transaction_error,
     read_only_transaction,
     transaction,
@@ -411,6 +413,15 @@ class ExperimentStatus(SQLBase, SQLMixin):
 def _deployment_label_slug(label):
     """Turn an experiment label into the path-safe start of a deployment ID."""
     return re.sub(r"[\W_]+", "-", label.lower()).strip("-") or "experiment"
+
+
+def _is_replacement_gunicorn_worker(worker):
+    """Return whether gunicorn spawned this worker after the initial boot.
+
+    The arbiter numbers workers by spawn order (``worker.age``), so the first
+    ``cfg.workers`` spawns are the initial boot.
+    """
+    return worker.age > worker.cfg.workers
 
 
 class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
@@ -1085,6 +1096,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @staticmethod
     def gunicorn_post_worker_init(worker):
+        install_gevent_wait_callback()
+        if not _is_replacement_gunicorn_worker(worker):
+            return
         exp = get_experiment()
         exp.notifier.notify(
             f"A worker restarted (new pid: {worker.pid}). "
@@ -2352,7 +2366,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             pass
         with tempfile.TemporaryDirectory() as temp_dir:
             with working_directory(temp_dir):
-                with suppress_stdout():
+                with suppress_stdout(), blocking_psycopg():
                     dallinger.data.export("app", local=True, scrub_pii=False)
             shutil.copyfile(
                 os.path.join(temp_dir, "data", "app-data.zip"),

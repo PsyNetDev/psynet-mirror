@@ -23,7 +23,7 @@ from sqlalchemy.orm import deferred, relationship
 from tenacity import retry, retry_if_exception_type, stop_after_delay, wait_exponential
 
 from .data import SQLBase, SQLMixin, register_table
-from .db import with_transaction
+from .db import install_gevent_wait_callback, with_transaction
 from .field import PythonDict, PythonObject
 from .serialize import prepare_function_for_serialization
 from .utils import get_logger
@@ -342,6 +342,8 @@ class LocalAsyncProcess(AsyncProcess):
 
     @classmethod
     def call_function_with_logger(cls, process_id):
+        # PsyNet has no RQ worker start hook, so install on the first job.
+        install_gevent_wait_callback()
         cls.call_function(process_id)
 
         # log = io.StringIO()

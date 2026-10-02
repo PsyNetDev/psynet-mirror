@@ -1,0 +1,1 @@
+Fixed web and background workers freezing for up to 5 seconds when one request waited on a database lock. Group barriers and other timeline holds could return 503 errors when the participant holding the lock shared a worker with participants waiting for it. Database queries in Dallinger's gevent workers now let other requests run while they wait.
