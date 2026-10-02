@@ -128,18 +128,20 @@ def _psynet_install_command():
     return "uv pip install psynet"
 
 
-_install_command = _psynet_install_command()
+psynet_install_command = _psynet_install_command()
 
 
 def _pin_install_commands(app, docname, source):
     """Rewrite ``uv pip install psynet`` code lines to install this docs version."""
-    source[0] = _INSTALL_LINE_RE.sub(
-        lambda match: match.group(1) + _install_command, source[0]
-    )
+    command = app.config.psynet_install_command
+    source[0] = _INSTALL_LINE_RE.sub(lambda match: match.group(1) + command, source[0])
 
 
 def setup(app):
     app.connect("env-check-consistency", _check_redirects)
+    # Rebuild type "env" makes incremental builds reread every page when the
+    # command changes; otherwise cached pages keep the previous commit.
+    app.add_config_value("psynet_install_command", psynet_install_command, "env")
     app.connect("source-read", _pin_install_commands)
 
 
