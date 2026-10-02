@@ -503,6 +503,40 @@ def test_prolific_screen_out_timeline_confirms_after_listener_records_submission
     error_page.assert_not_called()
 
 
+def test_prolific_confirmation_reload_renders_in_the_read_only_phase(db_session):
+    """Reloading the screen-out confirmation must not commit payment state."""
+    from psynet.recruiters import PROLIFIC_UNSUCCESSFUL_CODE_TYPE, ProlificRecruiter
+
+    participant = _make_participant(
+        page_uuid="page-1",
+        status="screened_out",
+        failed=True,
+        issued_completion_code_type=PROLIFIC_UNSUCCESSFUL_CODE_TYPE,
+    )
+    participant_id = participant.id
+    db.session.commit()
+    experiment = get_experiment()
+    recruiter = object.__new__(ProlificRecruiter)
+
+    with (
+        Flask(__name__).test_request_context("/timeline"),
+        patch.object(Participant, "recruiter", recruiter),
+        patch.object(type(experiment), "recruiter", recruiter),
+        patch(
+            "psynet.recruiters.render_template_with_translations", return_value="sent"
+        ),
+    ):
+        response = Experiment._render_page_read_only(
+            page=RecordedSubmissionPage(),
+            experiment=experiment,
+            participant_id=participant_id,
+            page_uuid="page-1",
+            kind="full",
+        )
+
+    assert response.get_data(as_text=True) == "sent"
+
+
 def test_complete_timeline_visit_backstops_worker_complete(db_session):
     """Complete /timeline visits must stamp end_time before recruiter exit."""
     participant = _make_participant(complete=True, end_time=None, status="working")
