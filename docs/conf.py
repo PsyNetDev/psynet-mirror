@@ -20,6 +20,8 @@
 import json
 import os
 import posixpath
+import re
+import subprocess
 import sys
 from glob import glob
 from io import StringIO
@@ -88,8 +90,57 @@ def _check_redirects(app, env):
             logger.warning(f"redirects.json: {old!r} is still a page; remove it")
 
 
+_RELEASE_TAG_RE = re.compile(r"^v(\d+\.\d+\.\d+(?:(?:rc|a)\d+)?)$")
+_INSTALL_LINE_RE = re.compile(r"^(\s*)uv pip install psynet\s*$", re.MULTILINE)
+
+
+def _git(*args):
+    """Return the output of a Git command run in the PsyNet checkout, or None."""
+    try:
+        result = subprocess.run(
+            ["git", *args],
+            cwd=os.path.dirname(os.path.abspath(__file__)),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return result.stdout.strip() or None
+
+
+def _psynet_install_command():
+    """Return the install command for the PsyNet version these docs were built from.
+
+    A release tag installs that release from PyPI; any other commit installs
+    that commit from GitLab, so the docs stay valid as later versions appear.
+    """
+    for tag in (_git("tag", "--points-at", "HEAD") or "").split():
+        match = _RELEASE_TAG_RE.match(tag)
+        if match:
+            return f'uv pip install "psynet=={match.group(1)}"'
+    commit = _git("rev-parse", "HEAD")
+    if commit:
+        return (
+            'uv pip install "psynet @ '
+            f'git+https://gitlab.com/PsyNetDev/PsyNet@{commit}"'
+        )
+    return "uv pip install psynet"
+
+
+_install_command = _psynet_install_command()
+
+
+def _pin_install_commands(app, docname, source):
+    """Rewrite ``uv pip install psynet`` code lines to install this docs version."""
+    source[0] = _INSTALL_LINE_RE.sub(
+        lambda match: match.group(1) + _install_command, source[0]
+    )
+
+
 def setup(app):
     app.connect("env-check-consistency", _check_redirects)
+    app.connect("source-read", _pin_install_commands)
 
 
 copybutton_prompt_text = r">>> |\.\.\. |\$ |# "

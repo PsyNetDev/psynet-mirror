@@ -37,12 +37,6 @@ The tools in :doc:`/install` must be installed first.
 
    PsyNet supports Python 3.11 through 3.14 and recommends Python 3.13.
 
-   .. Remove this note together with the matching note in quickstart.rst.
-
-   If ``psynet setup`` is not a command, the install picked PsyNet 13 or
-   earlier; install PsyNet from ``master`` instead, as described in the note
-   in :doc:`/quickstart`.
-
 #. Start the local services and run the experiment:
 
    .. code-block:: bash
