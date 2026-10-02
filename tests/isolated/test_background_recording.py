@@ -26,6 +26,39 @@ def test_configuration_rejects_conflicts():
         VideoRecordConfig(source="video")
 
 
+@pytest.mark.parametrize(
+    "inplace,local,error", [(False, True, "in-place"), (True, False, "LocalStorage")]
+)
+def test_background_environment_is_checked_at_startup(
+    submission, monkeypatch, inplace, local, error
+):
+    from psynet.asset import LocalStorage, NoStorage
+
+    exp, _, _, _ = submission
+    monkeypatch.setattr(
+        exp,
+        "timeline",
+        Timeline(InfoPage("Capture", time_estimate=1, background_recording="camera")),
+    )
+    monkeypatch.setattr(exp, "asset_storage", LocalStorage() if local else NoStorage())
+    monkeypatch.setattr(
+        "psynet.utils.get_config", lambda: {"inplace_timeline_transitions": inplace}
+    )
+    with pytest.raises(ValueError, match=error):
+        exp._check_static_spa_contracts()
+
+
+def test_recording_labels_use_participant_translation(monkeypatch):
+    from psynet.background_recording import _recording_labels
+
+    monkeypatch.setattr(
+        "psynet.utils.get_translator", lambda: lambda text: "translated: " + text
+    )
+    assert all(
+        label.startswith("translated: ") for label in _recording_labels().values()
+    )
+
+
 @pytest.mark.parametrize("required", [False, True])
 @pytest.mark.parametrize("unavailable", [{}, {"camera": "permission_denied"}])
 def test_background_answer_and_expiry(
@@ -168,6 +201,7 @@ def test_rejected_background_answer_creates_no_assets(
     exp.timeline.advance_page(exp, participant)
     db.session.commit()
     original_page = participant.page_uuid
+    original_answer = participant.answer
     monkeypatch.setattr(page, "on_complete", lambda **kwargs: completions.append(True))
     validate = page.validate
     monkeypatch.setattr(page, "validate", lambda **kwargs: "Try again")
@@ -186,12 +220,13 @@ def test_rejected_background_answer_creates_no_assets(
         ).payload
 
     assert submit()["submission"] == "rejected"
-    assert completions == []
+    assert completions == ([] if required else [True])
+    assert participant.answer == (original_answer if required else "Yes")
     assert Recording.query.count() == 0
     assert participant.page_uuid == original_page
     monkeypatch.setattr(page, "validate", validate)
     assert len(submit()["recording_uploads"]) == 2
-    assert completions == [True]
+    assert completions == ([True] if required else [True, True])
     assert participant.answer == "Yes"
 
 

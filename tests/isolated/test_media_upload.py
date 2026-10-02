@@ -12,7 +12,7 @@ import pytest
 from dallinger import db
 from flask import Flask
 from sqlalchemy.orm import Session
-from werkzeug.exceptions import Forbidden, Gone, RequestEntityTooLarge
+from werkzeug.exceptions import BadRequest, Forbidden, Gone, RequestEntityTooLarge
 from werkzeug.serving import make_server
 
 from psynet.asset import LocalStorage
@@ -137,11 +137,14 @@ def test_reservation_fixes_size_based_or_explicit_deadline(
 def test_complete_receipt_is_unavailable_until_deposit(reservation, tmp_path):
     asset, receipt = reservation
     _receive_recording(
-        asset.id, receipt["token"], io.BytesIO(b"recording"), directory=tmp_path
+        asset.id,
+        receipt["token"],
+        io.BytesIO(b"\x1aE\xdf\xa3recording"),
+        directory=tmp_path,
     )
     db.session.refresh(asset)
     assert asset.upload_status == "received"
-    assert Path(asset.input_path).read_bytes() == b"recording"
+    assert Path(asset.input_path).read_bytes() == b"\x1aE\xdf\xa3recording"
     assert asset.upload_processing_deadline > asset.upload_received_at
     assert not asset.deposited
     with Flask(__name__).test_request_context():
@@ -189,13 +192,16 @@ def test_late_receipt_cannot_publish_bytes(reservation, tmp_path):
 def test_retry_after_lost_receipt_cannot_overwrite(reservation, tmp_path):
     asset, receipt = reservation
     _receive_recording(
-        asset.id, receipt["token"], io.BytesIO(b"original"), directory=tmp_path
+        asset.id,
+        receipt["token"],
+        io.BytesIO(b"\x1aE\xdf\xa3original"),
+        directory=tmp_path,
     )
     _receive_recording(
         asset.id, receipt["token"], io.BytesIO(b"replacement"), directory=tmp_path
     )
     db.session.refresh(asset)
-    assert Path(asset.input_path).read_bytes() == b"original"
+    assert Path(asset.input_path).read_bytes() == b"\x1aE\xdf\xa3original"
     assert len(list(tmp_path.glob("psynet-upload-*"))) == 1
 
 
@@ -219,7 +225,7 @@ def test_simultaneous_receipt_is_rejected_without_reading(reservation, tmp_path)
             _receive_recording,
             recording_id,
             receipt["token"],
-            Body(b"first"),
+            Body(b"\x1aE\xdf\xa3first"),
             directory=tmp_path,
         )
         try:
@@ -234,7 +240,7 @@ def test_simultaneous_receipt_is_rejected_without_reading(reservation, tmp_path)
             release.set()
         first.result(timeout=5)
     db.session.refresh(asset)
-    assert Path(asset.input_path).read_bytes() == b"first"
+    assert Path(asset.input_path).read_bytes() == b"\x1aE\xdf\xa3first"
 
 
 def test_rolled_back_response_leaves_no_recording_slot(reservation):
@@ -269,7 +275,7 @@ def test_streaming_holds_no_participant_or_asset_lock(reservation, tmp_path):
             return super().read(size)
 
     _receive_recording(
-        asset.id, receipt["token"], Body(b"recording"), directory=tmp_path
+        asset.id, receipt["token"], Body(b"\x1aE\xdf\xa3recording"), directory=tmp_path
     )
 
 
@@ -292,7 +298,10 @@ def test_expiry_during_stream_cannot_be_undone_by_receipt(
 
     with pytest.raises(Gone):
         _receive_recording(
-            asset.id, receipt["token"], Body(b"recording"), directory=tmp_path
+            asset.id,
+            receipt["token"],
+            Body(b"\x1aE\xdf\xa3recording"),
+            directory=tmp_path,
         )
     db.session.refresh(asset)
     assert asset.upload_status == "expired"
@@ -330,7 +339,7 @@ def test_route_accepts_raw_body_only_with_a_bounded_connection(
     with socket.socket() as connection, app.test_client() as client:
         response = client.post(
             f"/media-upload/{asset.id}",
-            data=b"recording",
+            data=b"\x1aE\xdf\xa3recording",
             headers={"Authorization": f"Bearer {receipt['token']}"},
             environ_overrides={"werkzeug.socket": connection}
             if supports_deadline
@@ -387,8 +396,8 @@ def received_video(reservation, tmp_path, monkeypatch, request):
         / "demos/experiments/imitation_chain_video/assets/example_recording.webm"
     )
     payload = (
-        b"not webm"
-        if getattr(request, "param", "webm") == "arbitrary"
+        b"\x1aE\xdf\xa3header only"
+        if getattr(request, "param", "webm") == "header_only"
         else path.read_bytes()
     )
     asset, receipt = reservation
@@ -404,7 +413,7 @@ def received_video(reservation, tmp_path, monkeypatch, request):
 
 @pytest.mark.parametrize(
     "received_video,optional",
-    [("webm", False), ("webm", True), ("arbitrary", False)],
+    [("webm", False), ("webm", True), ("header_only", False)],
     indirect=["received_video"],
 )
 def test_received_bytes_are_deposited_unchanged(received_video, monkeypatch, optional):
@@ -433,6 +442,32 @@ def test_received_bytes_are_deposited_unchanged(received_video, monkeypatch, opt
     assert asset.input_path is None
     assert asset.upload_failed_reason is None
     assert not asset.participant.failed
+
+
+@pytest.mark.parametrize("payload", [b"not media", b"\x1aE", b"\x1aE\xdf\xa3payload"])
+def test_receiver_checks_header_across_short_reads(reservation, tmp_path, payload):
+    class ShortReads(io.BytesIO):
+        def read(self, size):
+            return super().read(min(size, 1))
+
+    asset, receipt = reservation
+    if payload.startswith(b"\x1aE\xdf\xa3"):
+        _receive_recording(
+            asset.id, receipt["token"], ShortReads(payload), directory=tmp_path
+        )
+        db.session.refresh(asset)
+        assert asset.upload_status == "received"
+        assert Path(asset.input_path).read_bytes() == payload
+    else:
+        with pytest.raises(BadRequest, match="WebM/EBML"):
+            _receive_recording(
+                asset.id, receipt["token"], ShortReads(payload), directory=tmp_path
+            )
+        db.session.refresh(asset)
+        assert asset.upload_status == "pending"
+        assert asset.input_path is None
+        assert not list(tmp_path.glob("psynet-upload-*"))
+    assert not asset.deposited
 
 
 def test_missing_upload_expires_without_a_browser_request(reservation):
@@ -544,12 +579,15 @@ def test_receiver_crash_releases_ownership_and_cleans_partials(
     assert len(files) == 1 and files[0].stat().st_size == 65536
     if retry:
         _receive_recording(
-            asset_id, receipt["token"], io.BytesIO(b"retry"), directory=tmp_path
+            asset_id,
+            receipt["token"],
+            io.BytesIO(b"\x1aE\xdf\xa3retry"),
+            directory=tmp_path,
         )
         assert not files[0].exists()
         assert len(list(tmp_path.glob("psynet-upload-*"))) == 1
         db.session.refresh(asset)
-        assert Path(asset.input_path).read_bytes() == b"retry"
+        assert Path(asset.input_path).read_bytes() == b"\x1aE\xdf\xa3retry"
         return
     monkeypatch.setattr(
         media_upload, "_utcnow", lambda: deadline + timedelta(seconds=1)

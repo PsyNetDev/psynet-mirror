@@ -3276,7 +3276,8 @@
       );
     };
 
-    psynet.loadNextTimelinePageWithReload = function () {
+    psynet.loadNextTimelinePageWithReload = async function () {
+      await psynet.drainRecordingUploads();
       if (psynetTemplateData.flags.lucidRecruitment) {
         psynet.removeBeforeUnloadEventListener();
       }
@@ -3288,7 +3289,8 @@
     // Dallinger's window.location assignment) means Back from exit cannot
     // revive a finished session; the server also redirects finished
     // /timeline visits as a backstop.
-    psynet.finishAndGoToExit = function () {
+    psynet.finishAndGoToExit = async function () {
+      await psynet.drainRecordingUploads();
       const participantId = dallinger.identity.participantId;
       const exitRoute = "/recruiter-exit?participant_id=" + participantId;
       return dallinger
@@ -3321,8 +3323,9 @@
     // If the browser restores a timeline page from the back/forward cache
     // (for example after Back from exit), force a reload so the server can
     // redirect finished participants.
-    window.addEventListener("pageshow", function (event) {
+    window.addEventListener("pageshow", async function (event) {
       if (event.persisted) {
+        await psynet.drainRecordingUploads();
         window.location.reload();
       }
     });
@@ -3332,7 +3335,7 @@
 
       if (response.page?.attributes?.requires_full_page_reload && !psynet.isSameSessionPageUpdate(response)) {
         psynet.stopTimelineHold();
-        psynet.loadNextTimelinePageWithReload();
+        await psynet.loadNextTimelinePageWithReload();
         return true;
       }
 
@@ -3370,7 +3373,7 @@
 
       psynet.clearSubmissionControlState();
       if (psynet.requiresFullPageReloadTransition(response)) {
-        psynet.loadNextTimelinePageWithReload();
+        await psynet.loadNextTimelinePageWithReload();
         return true;
       }
 
@@ -3385,10 +3388,10 @@
           // The response write has already committed, so the preserved page
           // cannot safely resume. Reload the authoritative server page instead.
           psynet.log.error(error.stack || String(error));
-          psynet.loadNextTimelinePageWithReload();
+          await psynet.loadNextTimelinePageWithReload();
         }
       } else {
-        psynet.loadNextTimelinePageWithReload();
+        await psynet.loadNextTimelinePageWithReload();
       }
 
       return true;
@@ -3408,7 +3411,7 @@
         // reload the authoritative timeline instead of polling the overlay
         // with a rejected page_uuid.
         psynet.stopTimelineHold();
-        psynet.loadNextTimelinePageWithReload();
+        await psynet.loadNextTimelinePageWithReload();
       } else {
         psynet.alert(response.message);
         psynet.restoreSubmissionControlState();
@@ -3581,6 +3584,12 @@
       return recordingCapture;
     };
     let recordingUploadQueue;
+    psynet.drainRecordingUploads = async function () {
+      if (!recordingUploadQueue?.pendingBytes) return;
+      psynet.setTimelineTransitionBusy(true);
+      try { await recordingUploadQueue.drain(); }
+      finally { psynet.setTimelineTransitionBusy(false); }
+    };
     let backgroundRecorder;
     let backgroundUnavailable = false;
     async function recordingModule(path) {
@@ -4037,10 +4046,11 @@
     let noActivitySince = 0;
     let secondsLeft = psynetTemplateData.lucid.secondsLeft;
 
-    function terminateParticipant(reason) {
+    async function terminateParticipant(reason) {
       psynet.removeBeforeUnloadEventListener();
       clearInterval(checkTriedToLeaveIntervalID);
       clearInterval(clockIntervalID);
+      await psynet.drainRecordingUploads();
       return window.location.replace(
         `/terminate_participant?participant_id=${psynetTemplateData.participantId}&reason=${reason}`,
       );

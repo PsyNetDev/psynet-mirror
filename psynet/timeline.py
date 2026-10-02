@@ -1822,7 +1822,11 @@ class Page(Elt):
         participant.browser_platform = metadata.get(
             "platform", "Browser platform info could not be retrieved."
         )
-        resp._deferred_background_answer = self.background_recording is not None
+        # Required assets must exist before author completion hooks can finalize
+        # a trial. Optional capture preserves ordinary answer/hook semantics.
+        resp._deferred_background_answer = (
+            self.background_recording is not None and self.background_recording.required
+        )
         if (
             getattr(resp, "_deferred_video_answer", False) is not True
             and not resp._deferred_background_answer

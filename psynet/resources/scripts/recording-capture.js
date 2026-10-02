@@ -11,18 +11,26 @@ export class RecordingDevices {
   reusable(source, audio) {
     const stream = this.streams.get(source);
     return stream && stream.getVideoTracks().some(track => track.readyState === "live") &&
-      stream._psynetAudio === JSON.stringify(audio);
+      (!audio || (stream._psynetAudio === JSON.stringify(audio) &&
+        (source === "screen" || stream.getAudioTracks().some(track => track.readyState === "live"))));
   }
 
   async acquire(source, {audio = false, lowResolution = false} = {}) {
     let stream = this.streams.get(source);
     if (!this.reusable(source, audio)) {
-      this.release(source);
+      const keepVideo = source === "camera" && this.reusable(source, false);
       // No awaited work before acquisition: callers can invoke this directly
       // from a permission button and retain screen capture's user activation.
-      stream = await (source === "camera"
-        ? navigator.mediaDevices.getUserMedia({video:true, audio})
-        : navigator.mediaDevices.getDisplayMedia({video:true, audio}));
+      if (keepVideo) {
+        const microphone = await navigator.mediaDevices.getUserMedia({video:false, audio});
+        stream.getAudioTracks().forEach(track => { stream.removeTrack(track); track.stop(); });
+        microphone.getAudioTracks().forEach(track => stream.addTrack(track));
+      } else {
+        this.release(source);
+        stream = await (source === "camera"
+          ? navigator.mediaDevices.getUserMedia({video:true, audio})
+          : navigator.mediaDevices.getDisplayMedia({video:true, audio}));
+      }
       stream._psynetAudio = JSON.stringify(audio);
       this.streams.set(source, stream);
     }
@@ -36,7 +44,8 @@ export class RecordingDevices {
       this.release(source);
       throw error;
     }
-    return stream;
+    // Never include a cached microphone track in a clip that requested no audio.
+    return audio ? stream : new MediaStream(stream.getVideoTracks());
   }
 
   release(source) {
@@ -44,7 +53,7 @@ export class RecordingDevices {
     this.streams.delete(source);
   }
 
-  async acquireAnswer(source, audio = false) {
+  async acquireAnswer(source, audio = false, labels) {
     if (source === "camera" || this.reusable(source, audio)) {
       return this.acquire(source, {audio});
     }
@@ -53,10 +62,10 @@ export class RecordingDevices {
       const dialog = document.createElement("dialog");
       dialog.id = "answer-recording-permission";
       const message = document.createElement("p");
-      message.textContent = "Share your screen to record this answer.";
+      message.textContent = labels.answer;
       const button = document.createElement("button");
       button.type = "button";
-      button.textContent = "Share screen";
+      button.textContent = labels.screen;
       let finished = false;
       const finish = () => {
         if (finished) return false;
@@ -77,11 +86,10 @@ export class RecordingDevices {
       });
       const skip = document.createElement("button");
       skip.type = "button";
-      skip.textContent = "Continue without recording";
+      skip.textContent = labels.skip;
       skip.onclick = () => {
         if (finish()) reject(new Error("Screen recording declined."));
       };
-      message.textContent += " Continuing without recording may make this trial unsuccessful.";
       dialog.append(message, button, skip);
       document.body.append(dialog);
       dialog.showModal();

@@ -71,19 +71,53 @@ def _normalize_config(value, page, *, delegated=False):
     return config
 
 
+def _check_environment(page, experiment):
+    """Validate static pages at startup and generated pages before rendering."""
+    from .asset import LocalStorage
+    from .utils import get_config
+
+    if page.background_recording is None:
+        return
+    if not get_config().get("inplace_timeline_transitions"):
+        raise ValueError("Background recording requires in-place timeline transitions.")
+    if not isinstance(experiment.asset_storage, LocalStorage):
+        raise ValueError("Background recording requires LocalStorage.")
+
+
+def _recording_labels():
+    """Translate capture UI in the participant's current language."""
+    from .utils import get_translator
+
+    _ = get_translator()
+    return {
+        "optional": _(
+            "This page can record optional camera or screen video. You may continue without recording."
+        ),
+        "required": _(
+            "This trial needs camera or screen video. If you continue without recording, your answer is saved but the trial cannot be completed successfully."
+        ),
+        "answer": _(
+            "Share your screen to record this answer. Continuing without recording may make this trial unsuccessful."
+        ),
+        "camera": _("Enable camera"),
+        "screen": _("Share screen"),
+        "skip": _("Continue without recording"),
+        "recording": _("Recording"),
+        "stopped": _("Recording stopped"),
+    }
+
+
 def _browser_config(page, experiment, participant):
     """Require stored AV consent when the experiment uses a stock AV module."""
-    from .asset import LocalStorage
     from .bot import Bot
     from .consent import AudiovisualConsent, LabRecruiterAudiovisualConsent
 
     config = page.background_recording
+    _check_environment(page, experiment)
     if config is not None and config.required and participant.current_trial is None:
         raise ValueError("Required background recording needs a parent trial.")
     if config is None or isinstance(participant, Bot):
         return None
-    if not isinstance(experiment.asset_storage, LocalStorage):
-        raise ValueError("Background recording requires LocalStorage.")
     for module, key in (
         (AudiovisualConsent, "audiovisual_consent"),
         (LabRecruiterAudiovisualConsent, "lab-recruiter_audiovisual_consent"),
@@ -93,7 +127,7 @@ def _browser_config(page, experiment, participant):
                 raise ValueError(
                     "Background recording requires stored audiovisual consent."
                 )
-    return {**asdict(config), "sources": config.sources}
+    return {**asdict(config), "sources": config.sources, "labels": _recording_labels()}
 
 
 def _accept_background_recordings(page, response, participant, experiment, page_uuid):

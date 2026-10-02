@@ -28,7 +28,8 @@ export class BackgroundRecorder {
     }
     const needed = config.sources.filter(source => {
       if (this.devices.reusable(source, config.audio)) return false;
-      this.devices.release(source);
+      if (!this.devices.reusable(source, false)) this.devices.release(source);
+      if (config.required) this.decisions.delete(source);
       return !this.decisions.has(source);
     });
     if (needed.length) await this.askPermission(needed);
@@ -43,8 +44,7 @@ export class BackgroundRecorder {
     let slots = this.queue.availableSlots;
     let sourcesLeft = config.sources.length;
     for (const source of config.sources) {
-      const stream = this.streams.get(source);
-      if (!stream || !stream.getVideoTracks().some(track => track.readyState === "live")) {
+      if (!this.devices.reusable(source, config.audio)) {
         this.unavailable[source] = this.decisions.get(source) || "source_ended";
         continue;
       }
@@ -53,8 +53,8 @@ export class BackgroundRecorder {
       remaining -= limit;
       slots -= 1;
       try {
-        await this.devices.acquire(source, {audio:config.audio, lowResolution:true});
-        const clip = new RecordingClip(stream, {
+        const captureStream = await this.devices.acquire(source, {audio:config.audio, lowResolution:true});
+        const clip = new RecordingClip(captureStream, {
           maxBytes:limit, maxDuration:config.max_duration, lowBitrate:true,
           onChange: current => {
             if (current.error) this.unavailable[source] = current.error;
@@ -81,21 +81,21 @@ export class BackgroundRecorder {
       dialog.id = "background-recording-permission";
       const text = document.createElement("p");
       text.textContent = this.config.required
-        ? "This trial needs camera or screen video. If you continue without recording, your answer is saved but the trial cannot be completed successfully."
-        : "This page can record optional camera or screen video. You may continue without recording.";
+        ? this.config.labels.required : this.config.labels.optional;
       dialog.append(text);
       let finished = false;
+      const remaining = new Set(sources);
       const finish = () => {
         if (finished) return;
         finished = true;
-        for (const source of sources) if (!this.streams.has(source) && !this.decisions.has(source)) this.decisions.set(source,"skipped");
+        for (const source of remaining) this.decisions.set(source,"skipped");
         dialog.close(); dialog.remove(); resolve();
       };
       dialog.addEventListener("cancel", event => { event.preventDefault(); finish(); });
       for (const source of sources) {
         const button = document.createElement("button");
         button.type = "button";
-        button.textContent = source === "camera" ? "Enable camera" : "Share screen";
+        button.textContent = this.config.labels[source];
         button.onclick = async () => {
           button.disabled = true;
           try {
@@ -108,19 +108,20 @@ export class BackgroundRecorder {
             if (!finished) this.decisions.set(source,"permission_denied");
             console.warn("Background capture permission unavailable",source,error.name);
           }
-          if (sources.every(item => this.streams.has(item) || this.decisions.has(item))) finish();
+          remaining.delete(source);
+          if (!remaining.size) finish();
         };
         dialog.append(button);
       }
       const skip = document.createElement("button");
-      skip.type = "button"; skip.textContent = "Continue without recording";
+      skip.type = "button"; skip.textContent = this.config.labels.skip;
       skip.onclick = finish; dialog.append(skip);
       document.body.append(dialog); dialog.showModal();
     });
   }
 
   updateIndicator() {
-    if (this.indicator) this.indicator.textContent = Object.values(this.clips).some(clip => clip.getState() === "recording") ? "Recording" : "Recording stopped";
+    if (this.indicator) this.indicator.textContent = Object.values(this.clips).some(clip => clip.getState() === "recording") ? this.config.labels.recording : this.config.labels.stopped;
   }
 
   async finish() {

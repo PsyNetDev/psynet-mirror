@@ -341,6 +341,7 @@ def _receive_recording_body(
         ) as target:
             path = Path(target.name)
             total = 0
+            header = b""
             while True:
                 if _utcnow() >= deadline:
                     raise Gone("The recording upload deadline has passed.")
@@ -357,11 +358,14 @@ def _receive_recording_body(
                 if not chunk:
                     break
                 total += len(chunk)
+                header += chunk[: max(0, 4 - len(header))]
                 if total > max_bytes:
                     raise RequestEntityTooLarge()
                 target.write(chunk)
             if not total or (content_length is not None and total != content_length):
                 raise BadRequest("The recording body is empty or incomplete.")
+            if header != b"\x1a\x45\xdf\xa3":
+                raise BadRequest("The recording must have a WebM/EBML header.")
             target.flush()
             os.fsync(target.fileno())
 

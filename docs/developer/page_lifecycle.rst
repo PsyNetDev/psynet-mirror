@@ -264,8 +264,9 @@ its engine until ``trialStart``, so a task cannot run behind the permission dial
 
 The browser document owns capture streams and the upload queue. Normal page
 cleanup must not stop those streams or cancel accepted uploads. Each logical page
-has its own recorder and collected bytes. A full document replacement can abandon
-unfinished uploads; fully received files remain eligible for server processing.
+has its own recorder and collected bytes. PsyNet drains uploads before initiating
+a full-document transition or recruiter exit. Manual navigation warns while
+uploads remain pending; leaving anyway can abandon them.
 See :doc:`/tutorials/modular_page` for the public recording API and failure policy.
 
 JavaScript resource categories

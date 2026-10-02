@@ -1430,10 +1430,6 @@
     </div>
 
     <script>
-        let sharedCapture;
-        psynet.trial.onEvent("trialConstruct", async () => {
-            sharedCapture = await psynet.getRecordingCapture();
-        });
         let videoPreviewPlayer = document.getElementById('video-control');
         let screenVideo = document.getElementById('screen-recording');
 
@@ -1456,7 +1452,8 @@
 
             psynet.trial.onEvent("trialConstruct", async () => {
                 try {
-                    cameraStream = await sharedCapture.devices.acquireAnswer("camera", audioSettings);
+                    const capture = await psynet.getRecordingCapture();
+                    cameraStream = await capture.devices.acquireAnswer("camera", audioSettings, psynet.var.recordingLabels);
                 } catch (error) {
                     psynet.log.warn(`Camera recording unavailable: ${error.message}`);
                 }
@@ -1466,9 +1463,10 @@
                 await loadCameraPreview();
             })
 
-            psynet.trial.onEvent("trialPrepare", () => {
+            psynet.trial.onEvent("trialPrepare", async () => {
                 if (!recorderState.replayMode) {
-                    videoRecorder = new sharedCapture.RecordingClip(cameraStream);
+                    const capture = await psynet.getRecordingCapture();
+                    videoRecorder = new capture.RecordingClip(cameraStream);
                     videoRecorder.stream = cameraStream;
                 }
             });
@@ -1571,15 +1569,17 @@
         if (recordingScreen) {
             psynet.trial.onEvent("trialConstruct", async () => {
                 try {
-                    screenStream = await sharedCapture.devices.acquireAnswer("screen");
+                    const capture = await psynet.getRecordingCapture();
+                    screenStream = await capture.devices.acquireAnswer("screen", false, psynet.var.recordingLabels);
                 } catch (error) {
                     psynet.log.warn(`Screen recording unavailable: ${error.message}`);
                 }
             });
 
-            psynet.trial.onEvent("trialPrepare", () => {
+            psynet.trial.onEvent("trialPrepare", async () => {
                 if (!recorderState.replayMode) {
-                    screenRecorder = new sharedCapture.RecordingClip(screenStream);
+                    const capture = await psynet.getRecordingCapture();
+                    screenRecorder = new capture.RecordingClip(screenStream);
                     screenRecorder.stream = screenStream;
                 }
             });

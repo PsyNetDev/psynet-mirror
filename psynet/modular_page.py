@@ -3910,7 +3910,10 @@ class VideoRecordControl(RecordControl):
 
     def get_js_vars(self):
         """Provide defaults; rendering resolves the experiment storage backend."""
+        from .background_recording import _recording_labels
+
         return {
+            "recordingLabels": _recording_labels(),
             "asynchronousVideoUploadSources": self.recording_sources
             if self._async_upload
             else None,

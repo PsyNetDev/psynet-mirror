@@ -1,5 +1,10 @@
 const path = require("path");
 const { test, expect } = require("./fixtures");
+const captureLabels = {
+  optional:"Optional capture", required:"Required capture", answer:"Record this answer",
+  camera:"Enable camera", screen:"Share screen", skip:"Continue without recording",
+  recording:"Recording", stopped:"Recording stopped",
+};
 
 // Real MediaRecorder capture with fake Chrome devices; no experiment database.
 test.describe("Optional background capture lifecycle @both", () => {
@@ -9,12 +14,12 @@ test.describe("Optional background capture lifecycle @both", () => {
       await page.route(`https://capture.test/${module}.js`, route => route.fulfill({contentType:"text/javascript",path:path.resolve(`psynet/resources/scripts/${module}.js`)}));
     }
     await page.goto("https://capture.test/");
-    await page.evaluate(async () => {
+    await page.evaluate(async labels => {
       const {BackgroundRecorder} = await import("/background-recording.js");
       const {MediaUploadQueue} = await import("/media-upload.js");
       window.capture = new BackgroundRecorder(new MediaUploadQueue());
-      window.config = {sources:["camera"],audio:false,max_duration:1,max_bytes:1024*1024};
-    });
+      window.config = {sources:["camera"],audio:false,max_duration:1,max_bytes:1024*1024,labels};
+    }, captureLabels);
   });
 
   test("duration limit preserves a clip and rejected answers reuse it", async ({page}) => {
@@ -53,6 +58,32 @@ test.describe("Optional background capture lifecycle @both", () => {
     expect(await page.evaluate(async () => (await capture.finish()).unavailable)).toEqual({camera:"skipped"});
     await page.evaluate(() => capture.begin(config));
     await expect(page.locator("#background-recording-permission")).toHaveCount(0);
+    await page.evaluate(() => { window.started = capture.begin({...config,required:true}); });
+    await expect(page.locator("#background-recording-permission")).toBeVisible();
+    await page.getByRole("button",{name:"Enable camera",exact:true}).click();
+    await page.evaluate(() => started);
+    await page.evaluate(() => {
+      capture.streams.get("camera").getVideoTracks()[0].stop();
+      window.started = capture.begin({...config,required:true});
+    });
+    await expect(page.locator("#background-recording-permission")).toBeVisible();
+    await page.getByRole("button",{name:"Continue without recording",exact:true}).click();
+    await page.evaluate(() => started);
+  });
+
+  test("skipping a microphone upgrade preserves video without requesting audio again", async ({page}) => {
+    await page.evaluate(async () => {
+      await capture.devices.acquire("camera");
+      window.started = capture.begin({...config,audio:true,required:true});
+    });
+    await expect(page.locator("#background-recording-permission")).toBeVisible();
+    await page.getByRole("button",{name:"Continue without recording",exact:true}).click();
+    const result = await page.evaluate(async () => {
+      await started;
+      const result = await capture.finish();
+      return {unavailable:result.unavailable,videoLive:!!capture.devices.reusable("camera",false)};
+    });
+    expect(result).toEqual({unavailable:{camera:"skipped"},videoLive:true});
   });
 
   test("camera and screen produce separate clips without audio by default", async ({page}) => {
@@ -80,6 +111,35 @@ test.describe("Shared recording capture @both", () => {
       await page.route(`https://capture.test/${module}.js`, route => route.fulfill({contentType:"text/javascript",path:path.resolve(`psynet/resources/scripts/${module}.js`)}));
     }
     await page.goto("https://capture.test/");
+    await page.evaluate(labels => { window.captureLabels = labels; }, captureLabels);
+  });
+
+  test("camera video survives changes in microphone requirements", async ({page}) => {
+    const result = await page.evaluate(async () => {
+      const {RecordingDevices} = await import("/recording-capture.js");
+      const devices = new RecordingDevices();
+      const original = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+      const requests = [];
+      navigator.mediaDevices.getUserMedia = constraints => {
+        requests.push(constraints);
+        return original(constraints);
+      };
+      try {
+        const first = await devices.acquire("camera", {audio:true});
+        const silent = await devices.acquire("camera");
+        const changed = await devices.acquire("camera", {audio:{channelCount:1}});
+        return {
+          sameVideo: [silent, changed].every(stream => stream.getVideoTracks()[0] === first.getVideoTracks()[0]),
+          silent: silent.getAudioTracks().length === 0,
+          videoRequests: requests.filter(request => request.video).length,
+          microphoneRequests: requests.filter(request => request.video === false).length,
+        };
+      } finally {
+        navigator.mediaDevices.getUserMedia = original;
+        devices.release("camera");
+      }
+    });
+    expect(result).toEqual({sameVideo:true,silent:true,videoRequests:1,microphoneRequests:1});
   });
 
   for (const source of ["camera", "screen"]) {
@@ -88,7 +148,7 @@ test.describe("Shared recording capture @both", () => {
         const {BackgroundRecorder} = await import("/background-recording.js");
         const {MediaUploadQueue} = await import("/media-upload.js");
         window.capture = new BackgroundRecorder(new MediaUploadQueue());
-        window.started = capture.begin({sources:[source],audio:false,max_duration:1,max_bytes:1024*1024});
+        window.started = capture.begin({sources:[source],audio:false,max_duration:1,max_bytes:1024*1024,labels:captureLabels});
       }, source);
       await page.getByRole("button", {name:source === "camera" ? "Enable camera" : "Share screen",exact:true}).click();
       await page.evaluate(() => started);
@@ -101,7 +161,7 @@ test.describe("Shared recording capture @both", () => {
         window.captureSettings = settings;
         await capture.discard();
         const stream = await capture.devices.acquireAnswer(source, false);
-        window.reusedStream = stream === original;
+        window.reusedStream = stream.getVideoTracks()[0] === original.getVideoTracks()[0];
         window.answerClip = new RecordingClip(stream, {maxDuration:1});
         answerClip.startRecording();
       }, source);

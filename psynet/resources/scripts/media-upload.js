@@ -7,9 +7,10 @@
  * server deadline to performance.now(); queueing and retries never extend it.
  * Server-side expiry remains authoritative, including after document loss.
  *
- * A "received" result means complete server receipt, not validation/deposit.
+ * A "received" result means complete server receipt, not deposit.
  * Failures are returned to the caller; this module neither fails trials nor
- * recaptures media. It deliberately installs no unload handler or drain page.
+ * recaptures media. Pending jobs warn on manual unload; document navigation
+ * initiated by PsyNet drains the queue within the original upload deadlines.
  */
 export class MediaUploadQueue {
   constructor({
@@ -28,6 +29,13 @@ export class MediaUploadQueue {
     this._jobs = new Map();
     this._active = 0;
     this._pendingBytes = 0;
+    this._drains = [];
+    this._beforeUnload = event => { event.preventDefault(); event.returnValue = ""; };
+  }
+
+  /** Wait for receipt or terminal failure of all outstanding uploads. */
+  drain() {
+    return this._jobs.size ? new Promise(resolve => this._drains.push(resolve)) : Promise.resolve();
   }
 
   get pendingBytes() {
@@ -94,6 +102,7 @@ export class MediaUploadQueue {
     const job = { id, url: target.href, token, deadline, blob, attempts: 0, active: false, done: false };
     const result = new Promise((resolve) => { job.resolve = resolve; });
     this._jobs.set(id, job);
+    window.addEventListener("beforeunload", this._beforeUnload);
     this._pendingBytes += blob.size;
     job.deadlineTimer = setTimeout(() => {
       this._finish(job, { status: "failed", reason: "deadline" });
@@ -185,5 +194,9 @@ export class MediaUploadQueue {
     job.blob = null;
     job.token = null;
     job.resolve(result);
+    if (!this._jobs.size) {
+      window.removeEventListener("beforeunload", this._beforeUnload);
+      this._drains.splice(0).forEach(resolve => resolve());
+    }
   }
 }

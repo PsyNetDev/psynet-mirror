@@ -38,6 +38,8 @@ test.describe("Document-owned media upload queue @both", () => {
     await page.route("**/media-upload/first", (route) => { upload = route; });
     await page.evaluate(() => {
       enqueue("first");
+      window.drained = false;
+      queue.drain().then(() => { window.drained = true; });
       document.querySelector("main").textContent = "Next page";
     });
     await expect(page.locator("main")).toHaveText("Next page");
@@ -45,9 +47,13 @@ test.describe("Document-owned media upload queue @both", () => {
     expect(upload.request().postData()).toBe("recorded bytes");
     expect(upload.request().headers().authorization).toBe("Bearer write-capability");
     expect(await page.evaluate(() => results.first)).toBeUndefined();
+    expect(await page.evaluate(() => drained)).toBe(false);
+    expect(await page.evaluate(() => window.dispatchEvent(new Event("beforeunload", {cancelable:true})))).toBe(false);
     await upload.fulfill({ status: 204 });
     await expect.poll(() => page.evaluate(() => results.first)).toEqual({ status: "received" });
     expect(await page.evaluate(() => queue.pendingBytes)).toBe(0);
+    expect(await page.evaluate(() => drained)).toBe(true);
+    expect(await page.evaluate(() => window.dispatchEvent(new Event("beforeunload", {cancelable:true})))).toBe(true);
   });
 
   test("retries the same file after a temporary server error", async ({ page }) => {
@@ -153,11 +159,16 @@ test.describe("Document-owned media upload queue @both", () => {
     let started = false;
     await page.route("**/media-upload/stalled", () => { started = true; });
     await page.route("**/media-upload/next", (route) => route.fulfill({ status: 204 }));
-    await page.evaluate(() => { enqueue("stalled", 1000); enqueue("next"); });
+    await page.evaluate(() => {
+      enqueue("stalled", 1000); enqueue("next");
+      window.drained = false;
+      queue.drain().then(() => { window.drained = true; });
+    });
     await expect.poll(() => started).toBe(true);
     await page.clock.runFor(1001);
     await expect.poll(() => page.evaluate(() => results.next?.status)).toBe("received");
     expect(await page.evaluate(() => results.stalled)).toEqual({ status: "failed", reason: "deadline" });
+    await expect.poll(() => page.evaluate(() => drained)).toBe(true);
     expect(await page.evaluate(() => queue.pendingBytes)).toBe(0);
   });
 

@@ -188,8 +188,9 @@ WebM asset per page visit, including when labels repeat or a
 :class:`~psynet.timeline.PageMaker` generates the page.
 
 Capture requires accepted audiovisual consent and an explicit browser permission
-step before the task starts. Participants can continue without recording; skipped
-or denied sources are not requested again until a new document loads. Audio is
+step before the task starts. Participants can continue without recording; optional
+pages do not request skipped or denied sources again. Later required pages offer
+another permission decision when their source is unavailable. Audio is
 off by default. Screen audio availability depends on the browser and shared source.
 
 By default, capture stops after 120 seconds or at 16 MiB per source. Exceeding
@@ -197,13 +198,16 @@ the size limit discards that clip; reaching the duration limit retains the
 captured portion. Missing optional clips do not fail the trial or block analysis.
 See :class:`~psynet.modular_page.VideoRecordConfig` for configuration options.
 
-Background recordings require :class:`~psynet.asset.LocalStorage` and support
+Background recordings require :class:`~psynet.asset.LocalStorage` and in-place
+timeline transitions. These settings are checked at startup for static pages and
+when generated pages are rendered. Background recording supports
 ordinary pages, :class:`~psynet.page.JsPsychPage`, and browser-hosted
 :class:`~psynet.page.UnityPage`. Pages sharing a ``session_id`` each get their own clip.
 
 Consent pages and answer-recording controls cannot also record background video.
 Unity IDE debug mode and custom renderers that bypass the PsyNet page lifecycle
-are unsupported. Leaving or reloading the document can lose pending uploads.
+are unsupported. Manually leaving or reloading the document warns about pending
+uploads, which are lost if the participant chooses to leave.
 
 Requiring a background recording
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -230,6 +234,10 @@ recording retry. This includes denied or skipped capture. Existing performance
 and payment policies still apply. Required recording on a page without a parent
 trial raises an error.
 With ``source="both"``, both clips are required.
+
+Required background pages run ``on_complete`` after successful validation and
+asset reservation, so completion hooks see the pending requirement. Optional
+pages retain ordinary answer-saving and completion-hook behavior.
 
 Bots skip background capture and bypass the required-media condition for timeline
 testing. A passing bot run does not validate recording availability; use browser
@@ -303,9 +311,18 @@ Complete receipt starts a separate 20-second processing allowance. Retries do no
 extend either deadline.
 
 With ``inplace_timeline_transitions=false`` or other storage backends, answer video
-uploads still complete before navigation. Background uploads remain independent.
-Full-document navigation can abandon pending uploads; wait for required recordings
-before crossing such a boundary.
+uploads still complete before navigation. Background recording is unsupported
+with these settings. In-place experiments drain pending uploads before full-page
+transitions and recruiter exit; failures and the original deadlines bound this wait.
+
+Shared camera and screen tracks stay active across pages until the document closes.
+Clips with audio disabled exclude microphone tracks, even when the shared camera
+was previously used with audio. In the asynchronous path, denied capture saves the
+answer and fails its parent trial at the upload deadline instead of throwing a
+permission error. Legacy upload behavior is unchanged.
+
+Uploads must begin with the WebM/EBML header. This rejects obvious non-media input;
+it does not decode the file or guarantee that the recording is playable.
 
 The first answer screen recording displays a **Share screen** button before task
 startup. Compatible later pages reuse the stream; a full reload requires a new

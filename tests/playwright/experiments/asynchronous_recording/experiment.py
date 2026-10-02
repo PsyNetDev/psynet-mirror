@@ -1,4 +1,4 @@
-"""Recording transport fixture with forced legacy-mode loss coverage."""
+"""Recording transport fixture for in-place and document-boundary navigation."""
 
 import os
 
@@ -12,12 +12,6 @@ from psynet.modular_page import ModularPage, VideoPrompt, VideoRecordControl
 from psynet.page import InfoPage, wait_for_recording
 from psynet.timeline import PageMaker, Timeline, join
 from psynet.trial.record import Recording
-
-
-class AsyncVideoControl(VideoRecordControl):
-    def _uses_async_upload(self, experiment):
-        """Force transport on even in legacy-mode document-loss regression tests."""
-        return True
 
 
 def _playback(source, dual):
@@ -75,7 +69,7 @@ class Exp(psynet.experiment.Experiment):
         ModularPage(
             "recording",
             "Record a short clip.",
-            AsyncVideoControl(
+            VideoRecordControl(
                 duration=3,
                 record_audio=False,
                 controls=True,
@@ -85,7 +79,12 @@ class Exp(psynet.experiment.Experiment):
             time_estimate=3,
             save_answer="recorded_video",
         ),
-        InfoPage("Independent page reached.", time_estimate=1),
+        InfoPage(
+            "Independent page reached.",
+            time_estimate=1,
+            requires_full_page_reload=os.environ.get("PSYNET_TEST_RECORDING_RELOAD")
+            == "1",
+        ),
         None
         if os.environ.get("PSYNET_TEST_RECORDING_EXIT") == "1"
         else join(
