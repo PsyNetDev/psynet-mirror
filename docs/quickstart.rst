@@ -14,19 +14,6 @@ Each experiment lives in its own folder. The folder name must contain only
 letters, digits and underscores, must not start with a digit, and must not be
 the name of an existing Python module such as ``code`` or ``test``.
 
-.. note::
-
-   PsyNet 13 and earlier don't have ``psynet setup``. If
-   ``uv pip install psynet`` below installs one of these (check with
-   ``psynet --version``), replace it with:
-
-   .. code-block:: bash
-
-      uv pip install "psynet @ git+https://gitlab.com/PsyNetDev/PsyNet@master"
-
-   ``psynet setup`` then pins the experiment to that exact commit of
-   PsyNet, so the experiment keeps working as ``master`` moves on.
-
 .. code-block:: bash
 
    mkdir chords

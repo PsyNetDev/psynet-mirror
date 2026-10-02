@@ -20,6 +20,14 @@ delete a page, add an entry to ``docs/redirects.json`` mapping the old page
 path to its replacement (both without the ``.rst`` suffix). The docs build
 warns if a redirect target is missing or an old path still exists.
 
+Write the PsyNet install step as a line containing only
+``uv pip install psynet``. The build replaces each such line with a command
+that installs the PsyNet version the docs were built from:
+``uv pip install "psynet==X.Y.Z"`` when a release tag points at the built
+commit, otherwise an install of that exact commit from GitLab. Other install
+lines, such as ones with extras, are left unchanged. The replacement is
+``_pin_install_commands`` in ``docs/conf.py``.
+
 Once you have made changes to one or more `rst` files compile them into `html` files by executing:
 
 .. code-block:: console
