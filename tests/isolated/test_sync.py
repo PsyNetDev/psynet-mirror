@@ -3916,6 +3916,47 @@ def test_hold_uuid_is_not_catch_up_after_answering_a_later_page(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
+def test_failing_a_held_participant_wakes_their_overlay(
+    in_experiment_directory, db_session, monkeypatch
+):
+    """Admin or partner fails must not leave the overlay on its safety poll."""
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    exp.timeline = Timeline(
+        wait_while(lambda: True, expected_wait=1, max_wait_time=60),
+        InfoPage("done", time_estimate=1),
+    )
+    publications = []
+    try:
+        (first,) = _working_participants(exp, 1)
+        assert _json_timeline(exp, first).status_code == 200
+        first = Participant.query.get(first.id)
+        wake_token = first.timeline_holds[0].wake_token
+        monkeypatch.setattr(
+            db.redis_conn,
+            "publish",
+            lambda channel, data: publications.append((channel, json.loads(data))),
+        )
+
+        first.fail("manual")
+        db_session.commit()
+    finally:
+        exp.timeline = original_timeline
+
+    assert publications == [
+        (
+            _timeline_hold_channel(first.id),
+            {
+                "type": "timeline_hold_wake",
+                "targets": [{"wake_token": wake_token, "reason": "participant_failed"}],
+            },
+        )
+    ]
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
 def test_waiter_get_timeline_survives_stale_hold_after_own_advance(
     in_experiment_directory, db_session, monkeypatch
 ):

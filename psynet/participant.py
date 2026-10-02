@@ -1095,6 +1095,14 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
 
         super().fail(reason=reason)
 
+        from psynet.timeline_hold import _queue_timeline_hold_wake
+
+        # A failed participant can leave their hold, so wake an overlay
+        # failed from another request instead of waiting for its safety poll.
+        _queue_timeline_hold_wake(
+            self.id, page_uuid=self.page_uuid, reason="participant_failed"
+        )
+
         for group in list(self.active_sync_groups.values()):
             group.remove_participant(self)
 
