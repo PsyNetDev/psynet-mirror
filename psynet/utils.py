@@ -6,6 +6,7 @@ import importlib
 import inspect
 import logging
 import os
+import random
 import re
 import sys
 import time
@@ -1049,33 +1050,47 @@ def sample_from_surface_of_unit_sphere(n_dimensions):
     return res[:, 0].tolist()
 
 
-def shuffle_with_max_run(items, key, max_run, max_attempts=1000):
+def shuffle_with_max_run(items, key, max_run, max_attempts=100):
     """Return a shuffled copy of ``items`` with at most ``max_run`` consecutive items sharing a key.
 
     Useful for planned trial orders, for example
     ``node_order=lambda nodes: shuffle_with_max_run(nodes, key=lambda n: n.definition["condition"], max_run=2)``.
-    Raises ``ValueError`` if no such order is found within ``max_attempts`` shuffles.
+    ``key`` must return a hashable value. The order is built item by item,
+    choosing at random among the keys allowed next, weighted by how many
+    items each has left. Raises ``ValueError`` if no order is found within
+    ``max_attempts`` attempts, which in practice means none exists.
     """
-    import random
-
     if max_run < 1:
         raise ValueError(f"max_run must be at least 1; got {max_run}.")
-    items = list(items)
+    groups = {}
+    for item in items:
+        groups.setdefault(key(item), []).append(item)
+    n_items = sum(len(group) for group in groups.values())
     for _ in range(max_attempts):
-        random.shuffle(items)
-        run = 0
-        previous = object()
-        for item in items:
-            current = key(item)
-            run = run + 1 if current == previous else 1
-            previous = current
-            if run > max_run:
+        remaining = {k: random.sample(group, len(group)) for k, group in groups.items()}
+        result, last, run = [], None, 0
+        while len(result) < n_items:
+            allowed = [k for k in remaining if not (k == last and run >= max_run)]
+            if not allowed:
                 break
+            # A key with more items than the others can separate must go now.
+            biggest = max(remaining, key=lambda k: len(remaining[k]))
+            others = n_items - len(result) - len(remaining[biggest])
+            if biggest in allowed and len(remaining[biggest]) > others * max_run:
+                choice = biggest
+            else:
+                weights = [len(remaining[k]) for k in allowed]
+                choice = random.choices(allowed, weights)[0]
+            result.append(remaining[choice].pop())
+            if not remaining[choice]:
+                del remaining[choice]
+            run = run + 1 if choice == last else 1
+            last = choice
         else:
-            return items
+            return result
     raise ValueError(
-        f"Could not find an order of {len(items)} items with at most {max_run} "
-        f"consecutive items sharing a key after {max_attempts} shuffles. "
+        f"Could not find an order of {n_items} items with at most {max_run} "
+        f"consecutive items sharing a key after {max_attempts} attempts. "
         "Allow longer runs or balance the keys more evenly."
     )
 
