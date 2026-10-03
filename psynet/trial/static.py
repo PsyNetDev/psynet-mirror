@@ -142,7 +142,9 @@ class StaticTrialMaker(ChainTrialMaker):
     recruit_mode
         Selects a recruitment criterion for determining whether to recruit
         another participant. The built-in criteria are ``"n_participants"``
-        and ``"n_trials"``.
+        and ``"n_trials"``. Defaults to ``"n_participants"`` when
+        ``target_n_participants`` is given; otherwise ``None``, which leaves
+        recruitment to the rest of the experiment.
 
     target_n_participants
         Target number of participants to recruit for the experiment. All

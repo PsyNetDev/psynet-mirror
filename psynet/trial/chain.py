@@ -1423,7 +1423,9 @@ class ChainTrialMaker(NetworkTrialMaker):
     recruit_mode
         Selects a recruitment criterion for determining whether to recruit
         another participant. The built-in criteria are ``"n_participants"``
-        and ``"n_trials"``.
+        and ``"n_trials"``. Defaults to ``"n_participants"`` when
+        ``target_n_participants`` is given; otherwise ``None``, which leaves
+        recruitment to the rest of the experiment.
 
     target_n_participants
         Target number of participants to recruit for the experiment. All
@@ -1568,7 +1570,7 @@ class ChainTrialMaker(NetworkTrialMaker):
         balance_across_chains=None,
         check_performance_at_end: bool = False,
         check_performance_every_trial: bool = False,
-        recruit_mode: str = "n_participants",
+        recruit_mode: Optional[str] = None,
         fail_trials_on_premature_exit: bool = False,
         fail_trials_on_participant_performance_check: bool = False,
         propagate_failure: bool = True,
@@ -1614,6 +1616,9 @@ class ChainTrialMaker(NetworkTrialMaker):
                 "cannot exceed <chains_per_experiment> unless ``allow_revisiting_networks_in_across_chains`` "
                 "is ``True``."
             )
+
+        if recruit_mode is None and target_n_participants is not None:
+            recruit_mode = "n_participants"
 
         if chain_type == "within" and recruit_mode == "n_trials":
             raise ValueError(

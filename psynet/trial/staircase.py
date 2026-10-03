@@ -212,7 +212,7 @@ class GeometricStaircaseTrialMaker(ChainTrialMaker):
         expected_trials_per_participant: Optional[int | str] = None,
         max_trials_per_participant: Optional[int | str] = None,
         target_n_participants: Optional[int] = None,
-        recruit_mode: str = "n_participants",
+        recruit_mode: Optional[str] = None,
         assets=None,
         choose_participant_group: Optional[callable] = None,
         sync_group_type: Optional[str] = None,

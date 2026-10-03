@@ -137,9 +137,10 @@ Chain length and trials per node
 - ``max_nodes_per_chain``: the chain is full after this many nodes.
 - ``expected_trials_per_participant`` and ``max_trials_per_participant``: an
   integer, or ``"n_start_nodes"``.
-- ``recruit_mode`` (default ``"n_participants"``, with
-  ``target_n_participants``), or ``"n_trials"`` to recruit until every chain is
-  full.
+- ``target_n_participants``: recruit until this many participants finish.
+  Alternatively, pass ``recruit_mode="n_trials"`` to recruit until every chain
+  is full. Without either, the trial maker leaves recruitment to the rest of
+  the experiment.
 
 Built-in paradigms
 ------------------

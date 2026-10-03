@@ -185,6 +185,19 @@ def test_fail_trials_on_premature_exit_true_emits_deprecation_warning():
         assert Path(warning.filename).resolve() == Path(__file__).resolve()
 
 
+@pytest.mark.parametrize(
+    "target_n_participants, expected_mode", [(None, None), (5, "n_participants")]
+)
+def test_chain_recruit_mode_follows_target_n_participants(
+    target_n_participants, expected_mode
+):
+    trial_maker = make_trial_maker(
+        recruit_mode=None, target_n_participants=target_n_participants
+    )
+
+    assert trial_maker.recruit_mode == expected_mode
+
+
 def test_chain_node_accepts_empty_definition():
     assert CustomNode(definition={}).definition == {}
 
