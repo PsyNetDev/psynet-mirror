@@ -1,0 +1,1 @@
+The experiment status job, which runs every minute, now counts participant statuses in the database and loads only the fields it needs from complete participants, so it stays fast in large experiments.

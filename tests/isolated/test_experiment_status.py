@@ -1,7 +1,14 @@
+import datetime
+import uuid
 from contextlib import nullcontext
 from unittest.mock import Mock, patch
 
-from psynet.experiment import Experiment
+import pytest
+from dallinger import db
+
+from psynet.experiment import Experiment, get_experiment
+from psynet.participant import Participant
+from psynet.pytest_psynet import path_to_test_experiment
 
 
 def test_status_and_backups_skips_before_launch_finished():
@@ -40,3 +47,43 @@ def test_record_experiment_status_keeps_credentials_out_of_database():
         {**status, "isOffline": False},
         "deployment",
     )
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_participant_status_summarizes_statuses_cost_and_time(db_session):
+    start = datetime.datetime(2026, 1, 1)
+    for status, complete, minutes in [
+        ("working", False, None),
+        ("approved", True, 10),
+        ("approved", True, 30),
+        ("returned", False, None),
+    ]:
+        participant = Participant(
+            experiment=get_experiment(),
+            recruiter_id="hotair",
+            worker_id=str(uuid.uuid4()),
+            hit_id="hit",
+            assignment_id=str(uuid.uuid4()),
+            mode="debug",
+        )
+        participant.status = status
+        participant.complete = complete
+        participant.performance_reward = 1.0
+        participant.creation_time = start
+        if minutes is not None:
+            participant.end_time = start + datetime.timedelta(minutes=minutes)
+        db.session.add(participant)
+    db.session.flush()
+
+    status = Experiment.get_participant_status()
+
+    assert status["participant_statuses"] == {
+        "working": 1,
+        "approved": 2,
+        "returned": 1,
+    }
+    assert status["median_time_taken"] == 20 * 60
+    assert status["total_cost"] == 2.0

@@ -67,8 +67,8 @@ from flask import (
 from flask import g as flask_app_globals
 from flask_login import login_required
 from markupsafe import escape
-from sqlalchemy import Column, Float, ForeignKey, Integer, String, func
-from sqlalchemy.orm import lazyload
+from sqlalchemy import Column, Float, ForeignKey, Integer, String, func, select
+from sqlalchemy.orm import lazyload, load_only
 
 from psynet import __version__
 from psynet.artifact import LocalArtifactStorage
@@ -1345,29 +1345,36 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @classmethod
     def get_participant_status(cls):
-        participants = Participant.query.all()
-        complete_participants = [
-            participant for participant in participants if participant.complete
-        ]
-        time_taken = []
-        for participant in complete_participants:
-            try:
-                time_taken.append(
-                    (participant.end_time - participant.creation_time).total_seconds()
+        # Runs every minute, so it selects plain columns rather than hydrating
+        # every participant with their pickled state.
+        complete_participants = (
+            Participant.query.filter_by(complete=True)
+            .options(
+                load_only(
+                    Participant.creation_time,
+                    Participant.end_time,
+                    Participant.time_credit,
+                    Participant.performance_reward,
                 )
-            except TypeError:
-                # If the participant has no end time, just to be sure
-                pass
+            )
+            .all()
+        )
+        time_taken = [
+            (participant.end_time - participant.creation_time).total_seconds()
+            for participant in complete_participants
+            if participant.end_time is not None
+        ]
         median_time_taken = median(time_taken) if len(time_taken) > 0 else 0
         estimated_duration = cls.estimated_completion_time(
             None
         )  # wage_per_hour is not used
-        total_rewards = [
+        total_cost = sum(
             participant.calculate_reward() for participant in complete_participants
-        ]
-        total_cost = sum(total_rewards)
+        )
         participant_status_summary = dict(
-            Counter([participant.status for participant in participants])
+            db.session.execute(
+                select(Participant.status, func.count()).group_by(Participant.status)
+            ).all()
         )
         return {
             "total_cost": total_cost,
