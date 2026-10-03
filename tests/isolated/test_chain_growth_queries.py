@@ -738,3 +738,22 @@ def test_graph_growth_processes_ready_cycle_as_one_wave(db_session, participant)
         trial_maker.call_grow_network(network, check_readiness=False)
 
     assert {network.head.degree for network in networks} == {1}
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_graph_growth_stays_in_the_callers_transaction(db_session, participant):
+    trial_maker = graph_trial_maker()
+    trial_maker.create_networks_across(get_experiment())
+    network = GraphChainNetwork.query.filter_by(
+        trial_maker_id=trial_maker.id, vertex_id=1
+    ).one()
+    add_trial(GrowthQueryGraphTrial, network.head, participant, finalized=True)
+    db.session.commit()
+
+    trial_maker.call_grow_network(network, check_readiness=False)
+    db.session.rollback()
+
+    assert network.head.degree == 0

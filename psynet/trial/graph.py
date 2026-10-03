@@ -585,9 +585,7 @@ class GraphChainTrialMaker(ChainTrialMaker):
             )
             db.session.add(node)
             network.add_node(node)
-            db.session.commit()
             node.check_on_deploy()
-            db.session.commit()
             return True
         return False
 
