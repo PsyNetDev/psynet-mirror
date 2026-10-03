@@ -2779,7 +2779,6 @@ class NetworkTrialMaker(TrialMaker):
             )
 
         node = selection.value
-        self._on_node_claimed(node, participant)
         logger.info(
             "Selected node %i from network %i to give to participant %i.",
             node.id,
@@ -2791,6 +2790,7 @@ class NetworkTrialMaker(TrialMaker):
             participant=participant,
             experiment=experiment,
         )
+        self._on_node_claimed(node, participant)
         self.on_trial_created(
             trial=trial,
             experiment=experiment,
@@ -2865,7 +2865,7 @@ class NetworkTrialMaker(TrialMaker):
         return True
 
     def _on_node_claimed(self, node, participant):
-        """Apply participant state changes once the selected node is secured."""
+        """Apply participant state changes once a trial has been created on the node."""
         pass
 
     @staticmethod

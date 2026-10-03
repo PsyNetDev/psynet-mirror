@@ -1074,10 +1074,43 @@ def test_sequential_across_chains_need_revisiting():
 
 
 def test_shuffle_with_max_run_limits_runs():
-    items = ["a"] * 4 + ["b"] * 4
+    items = ["a"] * 50 + ["b"] * 50
     for _ in range(20):
         shuffled = shuffle_with_max_run(items, key=str, max_run=1)
         assert sorted(shuffled) == items
         assert all(x != y for x, y in zip(shuffled, shuffled[1:]))
     with pytest.raises(ValueError, match="at most 1 consecutive"):
         shuffle_with_max_run(["a", "a", "a", "b"], key=str, max_run=1, max_attempts=10)
+
+
+@pytest.mark.parametrize(
+    "block_order, expected",
+    [
+        ("listed", ["B", "A", "C"]),
+        (["C", "A"], ["C", "A"]),
+        (lambda blocks: blocks[::-1], ["C", "A", "B"]),
+    ],
+)
+def test_block_order_settings(block_order, expected):
+    trial_maker = make_trial_maker(block_order=block_order)
+    participant = DummyParticipant()
+
+    trial_maker.init_block_order(SimpleNamespace(), participant, ["B", "A", "C"])
+
+    assert participant.module_state.block_order == expected
+    assert participant.module_state.block == expected[0]
+
+
+@pytest.mark.parametrize("block_order", [["A", "Z"], ["A", "A"], []])
+def test_invalid_block_orders_are_rejected(block_order):
+    trial_maker = make_trial_maker(block_order=block_order)
+
+    with pytest.raises(ValueError, match="block order"):
+        trial_maker.init_block_order(SimpleNamespace(), DummyParticipant(), ["A", "B"])
+
+
+def test_order_dict_may_cover_more_blocks_than_one_participant_has():
+    trial_maker = make_trial_maker(chain_order={"A": "listed", "B": "random"})
+    trial_maker._check_order_setting_blocks({"A"})
+    with pytest.raises(ValueError, match="every block"):
+        trial_maker._check_order_setting_blocks({"C"})

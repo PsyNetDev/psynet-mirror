@@ -32,6 +32,7 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
     and_,
+    case,
     func,
     or_,
 )
@@ -159,10 +160,14 @@ def _validate_block_order(value):
     )
 
 
+def _order_setting_values(value):
+    """Return the orders in a node_order / chain_order setting, which may be a per-block dict."""
+    return list(value.values()) if isinstance(value, dict) else [value]
+
+
 def _validate_order_setting(value, argument_name):
     """Check a node_order / chain_order value, including every value of a dict."""
-    values = value.values() if isinstance(value, dict) else [value]
-    for item in values:
+    for item in _order_setting_values(value):
         if not (item in _DYNAMIC_ORDERS or item in _PLANNED_ORDERS or callable(item)):
             raise ValueError(
                 f"{argument_name} must be 'balanced', 'random', 'listed', a function, "
@@ -173,6 +178,11 @@ def _validate_order_setting(value, argument_name):
 
 def _is_planned_order(value):
     return value in _PLANNED_ORDERS or callable(value)
+
+
+def _uses_planned_order(setting):
+    """Whether a node_order / chain_order setting plans any block."""
+    return any(_is_planned_order(value) for value in _order_setting_values(setting))
 
 
 def _viable_trial_count_expression(node_id):
@@ -1777,12 +1787,7 @@ class ChainTrialMaker(NetworkTrialMaker):
 
     def check_initialization(self):
         super().check_initialization()
-        settings = (
-            self._order_setting.values()
-            if isinstance(self._order_setting, dict)
-            else [self._order_setting]
-        )
-        if any(_is_planned_order(value) for value in settings):
+        if _uses_planned_order(self._order_setting):
             ranking_hooks = [*self._list_selection_hooks, self._query_hooks[1]]
             overridden = [
                 name for name in ranking_hooks if self._hook_is_overridden(name)
@@ -1915,16 +1920,31 @@ class ChainTrialMaker(NetworkTrialMaker):
             )
         return list(self.block_order)
 
-    def _check_order_setting_blocks(self, blocks):
-        """Require a per-block order dict to name exactly the trial maker's blocks."""
-        if not isinstance(self._order_setting, dict):
-            return
-        if set(self._order_setting) != set(blocks):
-            raise ValueError(
-                f"{self._order_argument} must give an order for every block of trial "
-                f"maker {self.id!r} and no others. Blocks: {sorted(blocks)}; "
-                f"{self._order_argument} keys: {sorted(self._order_setting)}."
-            )
+    def _check_order_setting_blocks(self, blocks, *, all_blocks_known=False):
+        """Check per-block order settings against the trial maker's blocks.
+
+        A per-block order dict must name every block. When ``blocks`` are all
+        the trial maker's blocks (static node lists, at construction), it must
+        name no others, and a listed ``block_order`` may only name these
+        blocks. Otherwise ``blocks`` are one participant's blocks, which can
+        be a subset for within-participant chains.
+        """
+        blocks = set(blocks)
+        if isinstance(self._order_setting, dict):
+            keys = set(self._order_setting)
+            if not blocks <= keys or (all_blocks_known and keys != blocks):
+                raise ValueError(
+                    f"{self._order_argument} must give an order for every block of "
+                    f"trial maker {self.id!r} and no others. Blocks: {sorted(blocks)}; "
+                    f"{self._order_argument} keys: {sorted(keys)}."
+                )
+        if all_blocks_known and isinstance(self.block_order, list):
+            unknown = set(self.block_order) - blocks
+            if unknown:
+                raise ValueError(
+                    f"block_order names blocks that trial maker {self.id!r} does not "
+                    f"have: {sorted(unknown)}. Blocks: {sorted(blocks)}."
+                )
 
     def _order_for_block(self, block):
         if isinstance(self._order_setting, dict):
@@ -2143,6 +2163,9 @@ class ChainTrialMaker(NetworkTrialMaker):
         trial maker, or ``None`` to continue with selection. Use it for
         decisions that depend only on the participant, such as waiting until
         a partner has finished, so that selection can stay in the database.
+        It runs before PsyNet moves on from a finished block, so
+        ``participant.module_state.block`` may be the block the participant
+        is about to leave.
 
         Parameters
         ----------
@@ -2245,9 +2268,10 @@ class ChainTrialMaker(NetworkTrialMaker):
         """Decide between waiting and finishing the block when every candidate is busy.
 
         Candidates are busy when they await an asynchronous process or have
-        no trial capacity left for now. A participant committed to a chain
-        or a planned item always waits for it; otherwise
-        ``wait_for_networks`` decides.
+        no trial capacity left for now. A participant committed to one chain,
+        or to a planned node awaiting asynchronous processing, waits for it;
+        a planned node without capacity is left to ``_move_past_focus``.
+        Otherwise ``wait_for_networks`` decides.
         """
         state = participant.module_state
         if self._focus_network_id(state) is not None:
@@ -2280,6 +2304,8 @@ class ChainTrialMaker(NetworkTrialMaker):
     def _focus_network_id(self, state):
         """Return the network the participant is committed to in this block, if any."""
         if state.planned_network_ids is not None:
+            if self._plan_wraps:
+                return None
             if state.plan_position < len(state.planned_network_ids):
                 return state.planned_network_ids[state.plan_position]
             return None
@@ -2304,6 +2330,8 @@ class ChainTrialMaker(NetworkTrialMaker):
         focus = self._focus_network_id(module_state) if focused else None
         if focus is not None:
             query = query.filter(network.id == focus)
+        elif focused and self._rotating_plan(module_state) is not None:
+            query = query.filter(network.id.in_(module_state.planned_network_ids))
 
         if self.chain_type == "within":
             if self.sync_group_type is not None:
@@ -2358,6 +2386,15 @@ class ChainTrialMaker(NetworkTrialMaker):
 
     def _candidate_order(self, participant, experiment):
         """Return ORDER BY expressions: custom priority, then the block's order setting."""
+        plan = self._rotating_plan(participant.module_state)
+        if plan:
+            # Rank planned chains by how many turns away they are.
+            position = participant.module_state.plan_position
+            turns = {
+                network_id: (index - position) % len(plan)
+                for index, network_id in enumerate(plan)
+            }
+            return [case(turns, value=self.network_class.id)]
         priority = self._candidate_priority(participant, experiment)
         if not isinstance(priority, (list, tuple)):
             priority = [priority]
@@ -2481,15 +2518,19 @@ class ChainTrialMaker(NetworkTrialMaker):
             logger.info("before_selection returned %r.", outcome)
             return outcome
 
+        deferred = set()
         while True:
-            self._plan_block(participant, experiment)
             if self.should_finish_block(participant, state.block):
                 logger.info("Block %r is finished.", state.block)
             else:
+                self._plan_block(participant, experiment)
                 found = self._select_in_block(participant, experiment)
                 if found is not None:
                     return found
-                if self._move_past_focus(participant):
+                moved = self._move_past_focus(participant, experiment, deferred)
+                if moved == "wait":
+                    return "wait"
+                if moved:
                     continue
             if state.is_last_block:
                 return "exit"
@@ -2500,6 +2541,7 @@ class ChainTrialMaker(NetworkTrialMaker):
         state = participant.module_state
         if (
             state.planned_network_ids is not None
+            and not self._plan_wraps
             and self._focus_network_id(state) is None
         ):
             return None
@@ -2536,8 +2578,15 @@ class ChainTrialMaker(NetworkTrialMaker):
             raise RuntimeError(f"Selected chain {chain.id} has no head")
         return Selection(value=chain.head, context=selection.context)
 
-    def _move_past_focus(self, participant):
-        """Leave an exhausted chain or planned item; return ``False`` if there was none."""
+    def _move_past_focus(self, participant, experiment, deferred):
+        """Leave the current chain or planned item once it can give nothing more.
+
+        Returns ``False`` if the participant was not committed to anything,
+        ``"wait"`` to wait for it, and ``True`` after moving on. A planned
+        static node held by other participants' unfinished trials is retried
+        at the end of the plan; ``deferred`` collects the nodes already
+        retried in this request so that a fully held plan cannot loop.
+        """
         state = participant.module_state
         focus = self._focus_network_id(state)
         if focus is None:
@@ -2548,7 +2597,23 @@ class ChainTrialMaker(NetworkTrialMaker):
             return True
         plan = list(state.planned_network_ids)
         position = state.plan_position
-        if self._plan_entries_are_single_trials:
+        if not self._plan_entries_are_single_trials:
+            logger.info("Planned chain %i is finished for this participant.", focus)
+        elif self._focus_may_free_up(participant, experiment) and (
+            focus not in deferred
+        ):
+            logger.info(
+                "Planned node in network %i is held by unfinished trials; "
+                "trying it again at the end of the plan.",
+                focus,
+            )
+            deferred.add(focus)
+            plan.append(plan.pop(position))
+            self._update_group_states(participant, planned_network_ids=plan)
+            return True
+        elif focus in deferred and self.wait_for_networks:
+            return "wait"
+        else:
             logger.warning(
                 "Skipping planned %s in network %i for participant %i: it can no "
                 "longer take a trial (for example, it is full or failed).",
@@ -2556,18 +2621,24 @@ class ChainTrialMaker(NetworkTrialMaker):
                 focus,
                 participant.id,
             )
-        else:
-            logger.info("Planned chain %i is finished for this participant.", focus)
-        if self._plan_wraps:
-            del plan[position]
-            if position >= len(plan):
-                position = 0
-        else:
-            position += 1
-        self._update_group_states(
-            participant, planned_network_ids=plan, plan_position=position
-        )
+        self._update_group_states(participant, plan_position=position + 1)
         return True
+
+    def _focus_may_free_up(self, participant, experiment):
+        """Whether the focused node is unavailable only because of unfinished trials."""
+        query = self._candidate_query(participant, experiment)
+        if not self._node_capacity_is_unlimited:
+            query = query.filter(
+                self._completed_trial_count_for_node(self.node_class)
+                < self.trials_per_node
+            )
+        return db.session.query(query.exists()).scalar()
+
+    def _rotating_plan(self, state):
+        """Return the planned chains when they are taken in turn, else ``None``."""
+        if self._plan_wraps:
+            return state.planned_network_ids
+        return None
 
     @property
     def _plan_wraps(self):
@@ -2575,12 +2646,15 @@ class ChainTrialMaker(NetworkTrialMaker):
 
     def _on_node_claimed(self, node, participant):
         state = participant.module_state
-        if state.planned_network_ids is not None:
-            if self.interleave_chains:
-                position = state.plan_position + 1
-                if self._plan_wraps:
-                    position %= len(state.planned_network_ids)
+        plan = state.planned_network_ids
+        if plan is not None:
+            if self._plan_wraps:
+                position = (plan.index(node.network_id) + 1) % len(plan)
                 self._update_group_states(participant, plan_position=position)
+            elif self._plan_entries_are_single_trials:
+                self._update_group_states(
+                    participant, plan_position=state.plan_position + 1
+                )
         elif not self.interleave_chains:
             self._update_group_states(participant, current_chain_id=node.network_id)
 

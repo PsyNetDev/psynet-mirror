@@ -23,7 +23,7 @@ from sqlalchemy.orm import declared_attr, deferred
 
 from psynet.field import PythonObject
 from psynet.trial import ChainNode
-from psynet.trial.chain import ChainTrial, _is_planned_order, _trial_order_docs_url
+from psynet.trial.chain import ChainTrial, _trial_order_docs_url, _uses_planned_order
 from psynet.trial.main import TrialMaker
 from psynet.utils import get_logger
 
@@ -397,11 +397,7 @@ class CreateAndRateTrialMakerMixin(object):
     RATER_ROLE = "rater"
 
     def __init__(self, **kwargs):
-        chain_order = kwargs.get("chain_order", "random")
-        orders = (
-            chain_order.values() if isinstance(chain_order, dict) else [chain_order]
-        )
-        if any(_is_planned_order(order) for order in orders):
+        if _uses_planned_order(kwargs.get("chain_order", "random")):
             raise ValueError(
                 "Create-and-rate trial makers assign chains by their creation phase, "
                 "so chain_order must be 'balanced' or 'random'. "

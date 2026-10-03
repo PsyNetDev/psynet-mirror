@@ -396,7 +396,9 @@ class StaticTrialMaker(ChainTrialMaker):
         )
         self._node_capacity_is_unlimited = target_trials_per_node is None
         if isinstance(nodes, list):
-            self._check_order_setting_blocks({node.block for node in nodes})
+            self._check_order_setting_blocks(
+                {node.block for node in nodes}, all_blocks_known=True
+            )
 
     def _selection_hook_overrides(self):
         return [

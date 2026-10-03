@@ -1076,6 +1076,77 @@ def test_full_planned_node_is_skipped_with_a_warning(db_session, participant, ca
     "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
 )
 @pytest.mark.usefixtures("in_experiment_directory")
+def test_held_planned_node_is_retried_at_the_end(db_session, participant):
+    trial_maker = static_trial_maker(
+        target_trials_per_node=1,
+        max_trials_per_participant=None,
+        node_order="listed",
+    )
+    held, other = networks_in_blocks(
+        trial_maker, participant, ["default"] * 2, network_class=StaticNetwork
+    )
+    add_trial(GrowthQueryStaticTrial, held.head, new_participant(), finalized=False)
+
+    selection = trial_maker._select_trial_node(participant, get_experiment())
+
+    assert selection.value is other.head
+    assert participant.module_state.planned_network_ids == [other.id, held.id]
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_planned_chains_skip_a_busy_chain_when_interleaving(db_session, participant):
+    trial_maker = chain_trial_maker(
+        chains_per_experiment=2,
+        max_trials_per_participant=10,
+        chain_order="listed",
+    )
+    busy, free = networks_in_blocks(trial_maker, participant, ["default", "default"])
+    add_trial(GrowthQueryTrial, busy.head, new_participant(), finalized=False)
+
+    selection = trial_maker._select_trial_node(participant, get_experiment())
+
+    assert selection.value is free.head
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+@pytest.mark.parametrize("chain_order", ["random", "listed"])
+def test_without_interleaving_participant_moves_on_once_chain_is_full(
+    db_session, participant, chain_order
+):
+    trial_maker = chain_trial_maker(
+        chains_per_experiment=2,
+        max_trials_per_participant=10,
+        interleave_chains=False,
+        allow_revisiting_networks_in_across_chains=True,
+        chain_order=chain_order,
+        trials_per_node=10,
+    )
+    networks = networks_in_blocks(trial_maker, participant, ["default", "default"])
+    exp = get_experiment()
+
+    first = trial_maker._select_trial_node(participant, exp).value
+    trial_maker._on_node_claimed(first, participant)
+    assert trial_maker._select_trial_node(participant, exp).value is first
+
+    first.network.full = True
+    db.session.flush()
+    second = trial_maker._select_trial_node(participant, exp).value
+
+    assert {first, second} == {network.head for network in networks}
+    if chain_order == "listed":
+        assert first is networks[0].head
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
 def test_listed_chain_order_rotates_through_chains(db_session, participant):
     trial_maker = chain_trial_maker(
         chains_per_experiment=2,
