@@ -1845,8 +1845,8 @@ class ChainTrialMaker(NetworkTrialMaker):
             if self.chain_type == "within":
                 networks = self.create_networks_within(experiment, participant)
             else:
-                networks = self.networks
-                if len(self.networks) == 0:
+                networks = self.network_query.order_by(self.network_class.id).all()
+                if len(networks) == 0:
                     raise RuntimeError(
                         f"Couldn't find any networks for the trial maker '{participant.module_state.module_id}'. "
                         "A common reason for this is deploying your experiment using 'dallinger deploy' instead of "
@@ -1856,12 +1856,8 @@ class ChainTrialMaker(NetworkTrialMaker):
                     )
             self.check_participant_groups(networks)
 
-            blocks = list(
-                dict.fromkeys(
-                    network.block
-                    for network in sorted(networks, key=lambda network: network.id)
-                )
-            )
+            # Networks are in creation order, which "listed" block orders follow.
+            blocks = list(dict.fromkeys(network.block for network in networks))
             self.init_block_order(experiment, participant, blocks)
         else:
             participant.module_state.block_order = (
