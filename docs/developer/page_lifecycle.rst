@@ -382,11 +382,21 @@ loads a neutral fallback page and reconnects to the same durable hold record.
 
 Workers and barriers queue participant-targeted wake messages in the current
 database transaction. PsyNet publishes the messages on that participant's hold
-channel (``psynet_timeline_hold:<id>``) only after commit. Delivery is an
+channel (``psynet_timeline_hold_<id>``) only after commit. Delivery is an
 optimization rather than authority: the browser always submits an idempotent
 resume check, and the server re-evaluates the condition. ``check_interval``
 remains the bounded fallback for missed messages and arbitrary conditions
 without a framework event.
+
+Dallinger subscribes the server to Redis only after the WebSocket opens, so a
+wake published in that gap would be lost. Hold and arrival-update sockets
+therefore connect with ``confirmListening``: the browser publishes a probe on
+its own channel, repeating it each second until it echoes back, and ``onOpen``
+(with its resume check) runs only after that echo. Dallinger treats everything
+before the first colon of a browser-sent message as the channel name, so these
+channel names must not contain a colon. A hold whose barrier released it before
+the deadline does not time out, even if the participant's next check arrives
+after the deadline.
 
 When the last hold on a page ends, the browser closes the hold-channel
 WebSocket. The next hold reconnects. Partner-ready notices use the same
@@ -401,8 +411,13 @@ connect is still shown. Hold-resume POSTs set
 in-place update. A genuine reject, or a missing timeline fragment, still
 reloads ``/timeline`` instead of leaving the overlay in place.
 
-Holds emit ``timelineHoldStarted`` and ``timelineHoldEnded`` browser events.
-Their ``detail.holdId`` identifies the wait. Authors that deliberately want a
+Holds emit ``timelineHoldStarted`` and ``timelineHoldEnded`` browser events
+when the waiting overlay appears and disappears. Their ``detail.holdId``
+identifies the wait. When one hold leads straight into another, for example
+stacked group barriers, the overlay stays up and the browser emits
+``timelineHoldChanged`` instead, with ``detail.holdId`` and
+``detail.previousHoldId``. ``timelineHoldEnded`` then carries the last hold's
+id. Authors that deliberately want a
 separate waiting screen should use :class:`psynet.page.WaitPage` directly or
 pass it explicitly as ``wait_page``/``waiting_logic``.
 
@@ -472,8 +487,8 @@ Those routes do not share a lock protocol:
   means the pool is still busy: two waiters leaving together can overlap
   next-page ``render``. Do not subtract that wait from overlay linger.
   Overlay linger is last-wake→last-end wallclock; Playwright logs it and
-  fails only if it exceeds 30000ms. ``GET /timeline`` and load-participant
-  handler checks use 3000ms.
+  fails only if it exceeds the 30000ms hang cap, which also applies to
+  ``GET /timeline`` and load-participant.
   A short HTTP 503 on hold-resume is ``NOWAIT``
   overlap, not a missed wake.
 * After the arrival write commits, queued barrier checks run in short
@@ -502,10 +517,12 @@ Those routes do not share a lock protocol:
   arriver's GET expires its identity map, skips the hold it just
   cleared, and follows the live cursor. Last-arrival does not skip
   partner timeline cursors after the check commit; partners leave on
-  overlay wake. ``get_current_elt`` may return a new object for the same
-  barrier hold when a trial page maker reconstructs the wait. That is
-  still this wait, not a cursor move; comparing Python identity would
-  loop until the hold times out.
+  overlay wake. The skip walk reads the hold under this participant's row
+  lock, so no other session can move the cursor during the walk. A hold
+  that is not ready is returned as is, without comparing it with a fresh
+  ``get_current_elt``. Page makers can return a new object for the same
+  barrier hold, and consecutive ``wait_while`` holds share a ``hold_id``,
+  so neither object identity nor ``hold_id`` can identify a single visit.
 * ``GET /timeline`` then re-reads the live cursor. If a partner already
   advanced this waiter, GET prepares that live page. If the hold is ready,
   GET takes blocking ``FOR UPDATE`` only after ``is_ready_to_resume`` (timeout

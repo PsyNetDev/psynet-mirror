@@ -238,6 +238,13 @@ class LoggerNotifier(Notifier):
         code = self.LEVEL2CODE[level]
         logger.log(code, msg)
 
+    @classmethod
+    def format_credentials(cls, label, url, username, password):
+        """Format credentials for the server log, redacting the password."""
+        if password is not None:
+            password = "<redacted>"
+        return super().format_credentials(label, url, username, password)
+
     @staticmethod
     def bold(msg: str):
         """

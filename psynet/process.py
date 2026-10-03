@@ -75,11 +75,10 @@ class AsyncProcess(SQLBase, SQLMixin):
 
     errors = relationship("ErrorRecord")
 
-    launch_queue = []
-
     def add_to_launch_queue(self):
+        """Queue this process to launch once the creating session commits."""
         self.time_enqueued = datetime.datetime.now()
-        self.launch_queue.append(self.get_launch_spec())
+        _session_launch_queue(db.session()).append(self.get_launch_spec())
 
     def get_launch_spec(self) -> dict:
         db.session.flush([self])
@@ -90,9 +89,11 @@ class AsyncProcess(SQLBase, SQLMixin):
         }
 
     @classmethod
-    def launch_all(cls):
-        while cls.launch_queue:
-            process = cls.launch_queue.pop(0)
+    def launch_all(cls, session=None):
+        """Launch the processes queued by ``session`` (default: the current one)."""
+        queue = _session_launch_queue(db.session() if session is None else session)
+        while queue:
+            process = queue.pop(0)
             assert process["obj"].id is not None
             logger.info("Launching async process %s...", process["id"])
             process["class"].launch(process)
@@ -319,9 +320,58 @@ class AsyncProcess(SQLBase, SQLMixin):
         )
 
 
+_LAUNCH_QUEUE_KEY = "psynet_async_process_launch_queue"
+_NESTED_LAUNCH_SNAPSHOTS_KEY = "psynet_nested_async_process_launch_lengths"
+
+
+def _session_launch_queue(session):
+    # Per session, so another greenlet's commit cannot launch a process whose
+    # row this session has not committed yet.
+    return session.info.setdefault(_LAUNCH_QUEUE_KEY, [])
+
+
+@event.listens_for(db.session, "after_transaction_create")
+def _snapshot_launch_queue_for_nested(session, transaction):
+    """Remember the queue length so a SAVEPOINT rollback can drop only its own entries."""
+    if not transaction.nested:
+        return
+    queue = session.info.get(_LAUNCH_QUEUE_KEY) or []
+    session.info.setdefault(_NESTED_LAUNCH_SNAPSHOTS_KEY, []).append(len(queue))
+
+
 @event.listens_for(db.session, "after_commit")
 def receive_after_commit(session):
-    AsyncProcess.launch_all()
+    # Releasing a SAVEPOINT also fires after_commit; wait for the root commit.
+    if session.in_nested_transaction():
+        return
+    AsyncProcess.launch_all(session)
+
+
+@event.listens_for(db.session, "after_rollback")
+def _discard_launch_queue_on_rollback(session):
+    """Drop entries from a rolled-back SAVEPOINT, or the whole queue on root rollback.
+
+    Detect the SAVEPOINT via the snapshot stack. ``in_nested_transaction()``
+    may already be false when this handler runs.
+    """
+    stack = session.info.get(_NESTED_LAUNCH_SNAPSHOTS_KEY) or []
+    if stack:
+        queue = session.info.get(_LAUNCH_QUEUE_KEY)
+        if queue is not None:
+            del queue[stack[-1] :]
+        return
+    session.info.pop(_LAUNCH_QUEUE_KEY, None)
+
+
+@event.listens_for(db.session, "after_transaction_end")
+def _end_launch_queue_transaction(session, transaction):
+    if transaction.nested:
+        stack = session.info.get(_NESTED_LAUNCH_SNAPSHOTS_KEY)
+        if stack:
+            stack.pop()
+    elif transaction.parent is None:
+        # Session.close() ends the root transaction without after_rollback.
+        session.info.pop(_LAUNCH_QUEUE_KEY, None)
 
 
 class LocalAsyncProcess(AsyncProcess):

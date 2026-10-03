@@ -389,7 +389,15 @@ PrincetonCAPRecruiterConsent = PrincetonLabRecruiterConsent
 ########
 class MainConsent(Module):
     """
-    The main consent form.
+    The main consent form of the Max Planck Institute for Empirical Aesthetics.
+
+    .. warning::
+
+        The text says the study is run by the Max Planck Institute for
+        Empirical Aesthetics and names one of its researchers. Use it only
+        for studies covered by that institute's ethics approval; otherwise
+        write a consent page with your own approved text
+        (see :doc:`/code/participants/consent`).
 
     Parameters
     ----------

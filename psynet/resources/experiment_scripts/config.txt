@@ -5,9 +5,13 @@ contact_email_on_error = XXX@gmail.com
 organization_name = XXX
 
 recruiter = generic
+# Currency symbol shown to participants; wage_per_hour is in this currency.
+# Prolific normally pays in British pounds (currency = £).
 currency = $
 wage_per_hour = 12.0
 
+# The section headings below only group related settings. PsyNet reads every
+# key in this file whatever its section, so uncommented keys apply to every recruiter.
 [Prolific]
 # recruiter = prolific
 
@@ -15,10 +19,10 @@ wage_per_hour = 12.0
 # you'll instead control recruitment via the Prolific interface.
 auto_recruit = false
 
-# When recruiting with Prolific we typically set a small base payment which we then supplement
-# with bonus for time spent on the task.
+# Set base_payment close to the reward for completing the experiment and copy both values
+# from `psynet estimate`; PsyNet pays any extra reward as a Prolific bonus.
+# These example values are 2 minutes at 10 per hour (about 0.34); recompute them for wage_per_hour.
 prolific_estimated_completion_minutes = 2
-# 10 dollars an hour -> 16.666666667 cents per minutes
 base_payment = 0.34
 # Required when recruiter = prolific (caps automatic screen-out spend; see docs).
 # A common choice is 10x initial_recruitment_size.

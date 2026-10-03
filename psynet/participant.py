@@ -885,10 +885,6 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         )
 
     @property
-    def locale(self):
-        return self.var.get("locale", default=None)
-
-    @property
     def failure_cascade(self):
         """Return no owned objects. ``failed`` is not an ownership marker."""
         return []
@@ -1053,7 +1049,7 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         If that drops a ``SimpleSyncGroup`` below its minimum size, remaining
         members are failed immediately when
         ``fail_participants_below_min_size`` is True. See
-        :doc:`/tutorials/participant_and_trial_failure`.
+        :doc:`/code/trials/participant_and_trial_failure`.
 
         Parameters
         ----------
@@ -1098,6 +1094,20 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
             )
 
         super().fail(reason=reason)
+
+        from psynet.timeline_hold import _queue_timeline_hold_wake
+
+        # A failed participant can leave their hold, so wake an overlay
+        # failed from another request instead of waiting for its safety poll.
+        cached_hold = getattr(self, "_timeline_hold_record", None)
+        if cached_hold is not None and cached_hold.page_uuid != self.page_uuid:
+            cached_hold = None
+        _queue_timeline_hold_wake(
+            self.id,
+            page_uuid=self.page_uuid,
+            reason="participant_failed",
+            hold=cached_hold,
+        )
 
         for group in list(self.active_sync_groups.values()):
             group.remove_participant(self)
@@ -1241,16 +1251,23 @@ class ParticipantDriver:
         return self.status["status"] == "working"
 
     @property
+    def _current_page(self):
+        return (self.status or {}).get("page") or {}
+
+    @property
     def current_page_label(self):
-        return self.status["page"]["label"]
+        """Label of the current page, or ``None`` once the participant has left."""
+        return self._current_page.get("label")
 
     @property
     def current_page_text(self):
-        return self.status["page"]["text"]
+        """Text of the current page, or ``None`` once the participant has left."""
+        return self._current_page.get("text")
 
     @property
     def current_page_time_estimate(self):
-        return self.status["page"]["time_estimate"]
+        """Time estimate of the current page, or ``None`` once the participant has left."""
+        return self._current_page.get("time_estimate")
 
     @property
     def current_page_uuid(self):
@@ -1298,7 +1315,8 @@ class ParticipantDriver:
         time_factor : float, optional
             Factor to multiply the simulated page time by (default is 0.0).
         response : optional
-            If provided, the participant's raw_answer will be set to this value.
+            If provided, submitted as the page's final answer instead of the
+            page's bot response, without passing through ``format_answer``.
 
         Returns
         -------
@@ -1323,7 +1341,7 @@ class ParticipantDriver:
             # so last-arrival can skip this waiter.
             time.sleep(_TIMELINE_HOLD_POLL_SECONDS)
 
-        return True
+        return self.is_working
 
     def refresh_status(self):
         """Reload the cached page and response files from the experiment server."""

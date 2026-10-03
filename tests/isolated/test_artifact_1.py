@@ -15,6 +15,7 @@ import psynet.artifact as psynet_artifact
 import psynet.asset as psynet_asset
 from psynet.artifact import LocalArtifactStorage
 from psynet.pytest_psynet import mock_s3_root, path_to_demo_experiment
+from psynet.utils import get_authenticated_session
 
 
 def test_list_subfolders(artifact_storage, tmp_path):
@@ -120,7 +121,7 @@ class TestAPI:
         comment_text = "This is a test comment."
 
         # Write the comment
-        response = requests.post(
+        response = get_authenticated_session(base_url).post(
             f"{base_url}/dashboard/comment/set/{deployment_id}",
             data={"txt": comment_text},
         )

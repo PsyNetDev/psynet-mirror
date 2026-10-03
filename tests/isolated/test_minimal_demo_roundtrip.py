@@ -130,9 +130,7 @@ AUTHORED_TEST_EXPERIMENT_FILENAMES = {
     "shell.sh",
     "lucid_recruitment_config.json",
     "qualification_prolific_en.json",
-    "DEPLOYMENT_ID",
     "custom_synth.py",
-    "pre_deployed_assets.csv",
 }
 
 
@@ -586,7 +584,7 @@ def _test_local_after_policy_review(experiment_dir, env_updates=None):
     if first.returncode == 0:
         return first
     combined = first.stdout + first.stderr
-    assert "created a new deploy.toml" in combined, combined
+    assert "deploy.toml file for this experiment" in combined, combined
     return _run_command(command, experiment_dir, env_updates=env_updates)
 
 
@@ -618,7 +616,7 @@ def test_empty_directory_scaffold_git_init_and_test_local(tmp_path):
         env_updates={"SKIP_DEPENDENCY_CHECK": "1"},
     )
     assert first.returncode != 0, first.stdout + first.stderr
-    assert "created a new deploy.toml" in first.stdout + first.stderr
+    assert "deploy.toml file for this experiment" in first.stdout + first.stderr
 
     result = _run_command(
         ["psynet", "test", "local"],

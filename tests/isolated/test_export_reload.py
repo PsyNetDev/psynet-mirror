@@ -10,12 +10,19 @@ from live tables and, where it matters, loads the result straight back.
 import csv
 import uuid
 
+import psycopg2.extensions
+import psycopg2.extras
 import pytest
 from dallinger import db
 from sqlalchemy import Boolean, Column, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import UUID
 
-from psynet.data import SQLBase, ingest_to_model
+from psynet.data import (
+    SQLBase,
+    copy_db_table_to_csv,
+    ingest_to_model,
+    sql_base_classes,
+)
 from psynet.export.database import copy_database_to_csv_dir, write_identifier_sidecars
 from psynet.export.identifier_schema import UnsupportedIdentifierSchemaError
 from psynet.pytest_psynet import path_to_test_experiment
@@ -148,6 +155,37 @@ def test_exported_booleans_and_blank_strings_reload_unchanged(scratch_table, tmp
     assert reloaded[2].failed is True
     assert reloaded[2].optional_flag is None
     assert reloaded[2].note == ""
+
+
+@pytest.fixture
+def wait_callback():
+    """Install a psycopg2 wait callback, as gevent web and RQ workers do."""
+    psycopg2.extensions.set_wait_callback(psycopg2.extras.wait_select)
+    try:
+        yield
+    finally:
+        psycopg2.extensions.set_wait_callback(None)
+
+
+@in_consents_experiment
+def test_export_and_reload_copy_under_a_wait_callback(
+    recruiter_rows, wait_callback, tmp_path
+):
+    """psycopg2 rejects COPY while a wait callback is installed."""
+    tables = ["participant", "notification", "lucid_rid"]
+    copy_database_to_csv_dir(str(tmp_path), tables)
+    assert "lucid_entrant_identifiers" in write_identifier_sidecars(
+        str(tmp_path / "sidecars"), tables
+    )
+    copy_db_table_to_csv("participant", str(tmp_path / "dallinger_participant.csv"))
+    assert "worker-abc" in (tmp_path / "dallinger_participant.csv").read_text()
+
+    recruiter_rows.execute(text("DELETE FROM lucid_rid"))
+    recruiter_rows.commit()
+    with open(tmp_path / "lucid_rid.csv", encoding="utf8", newline="") as handle:
+        ingest_to_model(handle, sql_base_classes()["lucid_rid"], db.engine)
+    assert recruiter_rows.execute(text("SELECT count(*) FROM lucid_rid")).scalar() == 2
+    assert psycopg2.extensions.get_wait_callback() is psycopg2.extras.wait_select
 
 
 @in_consents_experiment

@@ -1,0 +1,1 @@
+Added a `timelineHoldChanged` browser event that fires when one timeline hold leads straight into another while the waiting overlay stays visible, for example at stacked group barriers. Its `detail` has `holdId` and `previousHoldId`, so scripts listening to `timelineHoldStarted` and `timelineHoldEnded` can follow which hold is active.

@@ -1,0 +1,1 @@
+Fixed page loads and responses slowing down over time, especially on Prolific studies. Checks such as `with_prolific_recruitment()` and `with_lucid_recruitment()` no longer build a new recruiter on every request, and page rendering no longer reads every config value. Templates still read any config value on demand.

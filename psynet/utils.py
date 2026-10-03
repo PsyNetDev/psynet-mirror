@@ -11,6 +11,7 @@ import sys
 import time
 from _hashlib import HASH as Hash
 from collections import OrderedDict
+from collections.abc import Mapping
 from datetime import datetime
 from functools import reduce, wraps
 from os.path import exists
@@ -46,6 +47,7 @@ from psynet.light_utils import (  # noqa: F401 – re-exported for backwards com
     git_repository_available,
     is_in_repo_experiment,
     md5_directory,
+    strip_url_credentials,
 )
 from psynet.translation.utils import load_po
 
@@ -69,6 +71,18 @@ def psynet_source_prefixes():
 
 
 def get_logger(name="psynet"):
+    """
+    Return a standard-library logger, by default the shared ``psynet`` logger.
+
+    Parameters
+    ----------
+    name : str
+        Logger name passed to :func:`logging.getLogger`.
+
+    Returns
+    -------
+    logging.Logger
+    """
     return logging.getLogger(name)
 
 
@@ -120,6 +134,9 @@ def call_function(function, *args, **kwargs):
 def find_git_repo():
     """
     Finds the origin of the git repository of the current directory.
+
+    Any credentials embedded in the remote URL are removed, because the
+    result is stored in deployment records and exports.
     """
     import subprocess
 
@@ -129,7 +146,7 @@ def find_git_repo():
             .strip()
             .decode("utf-8")
         )
-        return origin
+        return strip_url_credentials(origin)
     except subprocess.CalledProcessError:
         return None
 
@@ -213,6 +230,15 @@ config_defaults = {}
 
 
 def get_config():
+    """
+    Return the Dallinger configuration object, loading it first if needed.
+
+    Read values with ``get_config().get(key)``.
+
+    Returns
+    -------
+    dallinger.config.Configuration
+    """
     from dallinger.config import get_config as dallinger_get_config
 
     config = dallinger_get_config()
@@ -495,6 +521,30 @@ def json_to_data_frame(json_data):
 def wait_until(
     condition, max_wait, poll_interval=0.5, error_message=None, *args, **kwargs
 ):
+    """
+    Poll ``condition`` until it returns a truthy value.
+
+    Parameters
+    ----------
+    condition : callable
+        Called as ``condition(*args, **kwargs)``.
+    max_wait : float
+        Maximum time to wait, in seconds.
+    poll_interval : float
+        Time between checks, in seconds.
+    error_message : str, optional
+        Message for the error raised on timeout.
+
+    Returns
+    -------
+    bool
+        ``True`` once the condition is satisfied.
+
+    Raises
+    ------
+    RuntimeError
+        If the condition is not satisfied within ``max_wait`` seconds.
+    """
     if condition(*args, **kwargs):
         return True
     else:
@@ -620,6 +670,28 @@ def _cached_template_from_string(environment, template_string):
     return template
 
 
+class _TemplateConfig(Mapping):
+    """Read-only template view of ``config.as_dict()`` that reads keys on access.
+
+    ``as_dict()`` looks up every registered key, which is slow to repeat on each
+    render; templates read only a few. Sensitive and unset keys stay hidden.
+    """
+
+    def __init__(self, config):
+        self._config = config
+
+    def __getitem__(self, key):
+        if key not in self._config.types or key in self._config.sensitive:
+            raise KeyError(key)
+        return self._config.get(key)
+
+    def __iter__(self):
+        return iter(self._config.as_dict())
+
+    def __len__(self):
+        return len(self._config.as_dict())
+
+
 def _render_with_translations(
     locale, template_name=None, template_string=None, all_template_args=None
 ):
@@ -629,7 +701,7 @@ def _render_with_translations(
     if all_template_args is None:
         all_template_args = {}
 
-    all_template_args["config"] = dict(get_config().as_dict().items())
+    all_template_args["config"] = _TemplateConfig(get_config())
 
     assert [template_name, template_string].count(None) == 1, (
         "Only one of template_name or template_string should be provided."
@@ -1392,6 +1464,18 @@ def check_todos_before_deployment():
 
 
 def as_plain_text(html):
+    """
+    Convert HTML to readable text using ``html2text``, collapsing whitespace to single spaces.
+
+    Parameters
+    ----------
+    html : str or markupsafe.Markup
+        HTML to convert.
+
+    Returns
+    -------
+    str
+    """
     text = html2text.HTML2Text().handle(str(html))
     pattern = re.compile(r"\s+")
     text = re.sub(pattern, " ", text).strip()

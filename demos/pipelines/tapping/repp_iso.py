@@ -39,10 +39,10 @@ class TapTrialISO(TapTrial):
 
 
 def get_isochronous_stimulus(name, iois, bot_response=None):
-    assets = {"stimulus": asset(generate_basic_stimulus, cache=True, is_folder=True)}
+    assets = {"stimulus": asset(generate_basic_stimulus, is_folder=True)}
 
     if bot_response is not None:
-        assets["bot_response"] = asset(bot_response, cache=True)
+        assets["bot_response"] = asset(bot_response)
 
     return StaticNode(
         definition={

@@ -1,14 +1,24 @@
 ---
 name: implement-experiment
 description: A structured process for implementing PsyNet experiments, including planning, simulations, analysis, and reporting. Use when implementing a PsyNet experiment from a natural-language specification.
-compatibility: Requires editable PsyNet at ~/PsyNet, PostgreSQL, Redis, Heroku CLI, and matplotlib/jupyter for executed analysis notebooks.
+compatibility: Requires PsyNet installed in the experiment's .venv (from PyPI via psynet setup, or optionally an editable PsyNet checkout), PostgreSQL, Redis, the Heroku CLI, and Jupyter tooling listed in requirements.txt for executed analysis notebooks.
 ---
 
 # Implement PsyNet experiments
 
+## Read first
+
+Read these pages before acting. The "Documentation" section of the experiment's `AGENTS.md` explains how to find and search them.
+
+- `code/project/agentic_programming` — the coding-agent workflow for experiments
+- `code/project/creating_an_experiment` — starting from a demo or an existing experiment
+- `code/project/running_and_debugging` — running locally and inspecting the dashboard
+- `test/backend` — bots and `psynet test local`
+
 ## Prerequisites
 
-- Use the `explore-psynet-repository` skill before starting.
+- Use the `explore-psynet-repository` skill to find the closest demo and the
+  relevant documentation before starting.
 - Read `references/validation.md` before finalizing functional, interactive, or
   performance checks.
 - Read `simulate-participants/SKILL.md` before designing multi-profile,
@@ -22,8 +32,8 @@ review; do not invent workshop-only layouts in this skill.
 
 ## Preview links
 
-When a temporary public preview is needed, use `prepare-experiment-tunnel`
-(and `public-tunnel`).
+When a temporary public preview is needed, follow "Preview a running
+experiment" in `public-tunnel/SKILL.md`.
 
 ## Steps
 
@@ -95,19 +105,19 @@ boilerplate (`Dockerfile`, `test.py`, `.gitignore`, `deploy.toml`, managed
 skills) when setup/scaffold can produce it. Experiment-local `docker/` helper
 scripts are obsolete; use `psynet debug local --docker`.
 
-Canonical human docs: `~/PsyNet/docs/experiment_development/agentic_programming.rst`
-and `~/PsyNet/psynet/resources/experiment_scripts/AGENTS.md`.
+Canonical setup guidance: `code/project/agentic_programming` (see Read first)
+and the experiment's `AGENTS.md`, which `psynet setup` writes.
 
 **1. Choose a starting point**
 
-- Prefer copying an authored PsyNet demo (or a prior experiment) into a new
-  directory **outside** the PsyNet package tree (for example
-  `~/psynet-experiments/<name>/` or a challenge `code/<experiment_slug>/`).
-  Bundled demos ship authored files only (`experiment.py`, `requirements.txt`,
-  assets); boilerplate and `constraints.txt` are intentionally omitted.
-- Or start from an empty directory with a valid Python package name (not
-  `code`, not names that cannot be imported).
-- Use `explore-psynet-repository` to pick the closest demo before copying.
+- Start from an empty directory with a valid Python package name (not
+  `code`, not names that cannot be imported), for example
+  `~/psynet-experiments/<name>/`.
+- Or copy the authored files of the closest PsyNet demo (or a prior
+  experiment) into it. Demos ship authored files only (`experiment.py`,
+  `requirements.txt`, assets); boilerplate and `constraints.txt` are
+  intentionally omitted. `explore-psynet-repository` explains where to find
+  demo code when PsyNet was installed with pip.
 
 **2. Bootstrap, then run setup**
 
@@ -133,10 +143,12 @@ When splitting logic out of `experiment.py`, follow
 `develop-experiment-back-end/SKILL.md`: import sibling modules with
 `from . import my_module`.
 
-**3. Editable local PsyNet (agents / contributors)**
+**3. Optional: editable PsyNet checkout (contributors)**
 
-When developing against an editable `~/PsyNet` checkout, keep a **dedicated**
-experiment `.venv` (do not sync into `~/PsyNet/.venv`):
+Skip this step unless you are changing PsyNet itself alongside the
+experiment. When developing against an editable checkout (for example
+`~/PsyNet`), keep a **dedicated** experiment `.venv` (do not sync into the
+checkout's own `.venv`):
 
 ```bash
 uv pip install -e ~/PsyNet
@@ -158,6 +170,18 @@ PsyNet. Do not treat `scripts update` as a substitute for first-time setup.
   `psynet debug` / `psynet test local` ensure services).
 - Launch with `psynet debug local` or validate with `psynet test local`.
 
+**One local experiment at a time**
+
+Local PsyNet experiments share port 5000, the database, Redis and Dallinger's
+development folder, and starting one stops the other's workers. Before each
+`psynet debug local`, `psynet test local` or `psynet audit simulate`, check that
+nothing else is listening on port 5000 (`lsof -nP -iTCP:5000 -sTCP:LISTEN`).
+If another experiment is running, ask the user to stop it rather than stopping
+it yourself, and record the wait in the audit timeline. `psynet deploy`
+commands also clear the local database and Redis, so don't run them while a
+local experiment is running. If local data disappears unexpectedly, check
+`ps` for a `psynet deploy` in another session before debugging your code.
+
 #### Coding
 
 - Build a minimal runnable experiment first, then add complexity.
@@ -173,15 +197,30 @@ PsyNet. Do not treat `scripts update` as a substitute for first-time setup.
 - For websocket or other live multi-participant interactions within one trial,
   use the `realtime-synchronous-experiments` skill alongside this general
   implementation workflow.
+- Put pregenerated public media in `static/` and pass `/static/...` URLs to
+  prompts (`psynet.media.static_url_for`). Use PsyNet assets for recordings
+  and generated files.
+- Don't default to `MainConsent` or another built-in consent form: each names
+  the institution it was written for (`code/participants/consent`). Unless the
+  user names the form to use, write a custom consent page with clearly marked
+  placeholder text, and list "replace the placeholder consent with the
+  institution's ethics-approved text" as a pre-deployment item in
+  `audit/REPORT.md`.
+- Once the timeline's time estimates are set, run `psynet estimate` and set
+  the recruiter's listing in `config.txt` from it: for Prolific,
+  set `prolific_estimated_completion_minutes` to at least the estimate, and a
+  `base_payment` that alone meets Prolific's minimum hourly rate; the command
+  warns if either falls short (`code/participants/payment`). The scaffolded
+  values are placeholders.
 
 ### Run simulations
 
 Use `psynet audit simulate` to simulate participants and produce an example dataset.
 This dataset should contain a decent number of participants representative of a real study;
-adjust `Exp.test_n_bots` to ensure this. From the experiment root:
+set `Exp.test_n_bots`, or pass `--n-bots N` for one run. From the experiment root:
 
 ```bash
-psynet audit simulate
+psynet audit simulate --n-bots 40
 ```
 
 The command writes the only export to
@@ -199,12 +238,28 @@ The notebook should be self-contained for review, including all code, tables,
 and plots.
 If the implementation is inspired by a published paper, replicate the analyses reported in the paper as closely as possible.
 
-The analysis-notebook tooling is not part of the PsyNet editable install. Install
-it into the PsyNet virtualenv before executing the notebook, and execute it
-headlessly so its outputs are embedded for review:
+The analysis-notebook tooling is not part of `psynet[experiment]`. Add the
+packages the notebooks use to `requirements.txt` and rerun `psynet setup`,
+which relocks `constraints.txt` and installs them. Do not `uv pip install` them
+ad hoc: the next `psynet setup` synchronizes `.venv` with `constraints.txt` and
+removes unlisted packages (see `code/project/dependencies`). The same applies to
+statistics packages: `psynet[experiment]` doesn't include SciPy or statsmodels,
+so add `scipy` or `statsmodels` too if the analysis or design simulation needs
+them. Deployments install these packages too, which only makes the image larger.
+
+```text
+# requirements.txt, below the PsyNet pin
+plotly
+jupyter
+nbconvert
+nbformat
+ipykernel
+```
+
+Then execute the notebook headlessly so its outputs are embedded for review:
 
 ```bash
-uv pip install matplotlib plotly jupyter nbconvert nbformat ipykernel
+psynet setup
 # nbconvert uses the notebook directory as cwd; resolve data paths from the
 # experiment root (for example Path(__file__) is unavailable in notebooks—
 # walk parents until experiment.py is found, or pass an absolute data path).
@@ -212,20 +267,10 @@ uv pip install matplotlib plotly jupyter nbconvert nbformat ipykernel
 jupyter nbconvert --to notebook --execute --inplace audit/simulate/analysis/analysis.ipynb
 ```
 
-Prefer inline SVG outputs for plots. Configure the notebook’s plotting backend
-accordingly, and use `plt.show()` or an equivalent display call so the plots
-actually appear in the executed notebook. For matplotlib in Jupyter:
-
-```python
-%config InlineBackend.figure_formats = ["svg"]
-import matplotlib.pyplot as plt
-# ... plot ...
-plt.show()
-```
-
-Keep the executed notebook small (many review tools truncate large inline file
-content above ~100KB, which breaks notebook rendering). SVG plots stay sharp
-without large raster payloads; link out figures that would still bloat the file.
+Write, plot and check the notebook as described in
+`produce-experiment-audit/references/populating-an-audit.md` ("Writing
+notebooks for readers", "Analysis and reporting" and "Figure layout for
+rendered audits").
 
 ### Review
 
@@ -236,7 +281,7 @@ Return to previous steps if necessary to address these.
 
 Compile a final report of the experiment (`audit/REPORT.md`), summarizing the
 process taken and any findings that arose. This is the core audit report section.
-When a temporary public preview is needed, use `prepare-experiment-tunnel`.
+When a temporary public preview is needed, use `public-tunnel`.
 
 ### Completion gate
 

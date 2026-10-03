@@ -633,3 +633,60 @@ def test_timeline_hold_trace_witnesses_exist():
         "docs/developer/timeline_hold_traces.rst cites tests in the wrong file: "
         + "; ".join(mismatches)
     )
+
+
+def _docs_page_exists(root, page):
+    """Return whether ``page`` is a docs page, including generated skill pages."""
+    if (root / "docs" / f"{page}.rst").is_file():
+        return True
+    parts = page.split("/")
+    return (
+        len(parts) >= 2
+        and parts[0] == "skills"
+        and (root / ".cursor/skills/experiment" / parts[1] / "SKILL.md").is_file()
+    )
+
+
+def test_agents_md_documentation_map_points_at_existing_pages():
+    from psynet.utils import get_psynet_root
+
+    root = get_psynet_root()
+    agents = (root / "psynet/resources/experiment_scripts/AGENTS.md").read_text()
+    section = agents.split("## Documentation", 1)[1]
+    page_cells = [
+        line.rstrip(" |").rsplit("|", 1)[-1]
+        for line in section.splitlines()
+        if line.startswith("| ") and not line.startswith("| Topic")
+    ]
+    pages = set(re.findall(r"`([a-z_0-9/]+)`", "\n".join(page_cells)))
+    assert pages, "the documentation map lists no pages"
+    missing = sorted(page for page in pages if not _docs_page_exists(root, page))
+    assert not missing, f"AGENTS.md links to missing docs pages: {missing}"
+
+
+def test_agent_skills_page_lists_every_shipped_skill():
+    from psynet.utils import get_psynet_root
+
+    root = get_psynet_root()
+    page = (root / "docs/skills/index.rst").read_text()
+    skills = sorted(
+        p.parent.name for p in (root / ".cursor/skills/experiment").glob("*/SKILL.md")
+    )
+    missing = [skill for skill in skills if f":doc:`{skill}`" not in page]
+    assert not missing, f"docs/skills/index.rst does not list: {missing}"
+
+
+def test_skill_read_first_sections_point_at_existing_pages():
+    from psynet.utils import get_psynet_root
+
+    root = get_psynet_root()
+    missing = []
+    for skill in sorted((root / ".cursor/skills/experiment").glob("*/SKILL.md")):
+        text = skill.read_text()
+        if "## Read first" not in text:
+            continue
+        section = text.split("## Read first", 1)[1].split("\n## ", 1)[0]
+        for page in re.findall(r"^- `([a-z_0-9/]+)`", section, flags=re.M):
+            if not _docs_page_exists(root, page):
+                missing.append(f"{skill.parent.name}: {page}")
+    assert not missing, f"Read first sections link to missing docs pages: {missing}"

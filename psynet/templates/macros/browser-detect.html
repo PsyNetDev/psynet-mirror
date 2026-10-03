@@ -258,7 +258,7 @@
         function getPsyNetLogo(){
             var out = '<div class="row mb-3">';
             out += '<div class="col">';
-            out += $('#psynet_logo')[0].innerHTML;
+            out += {{ experiment.psynet_logo.html | tojson }};
             out += '</div>';
             out += '</div>';
             return out;

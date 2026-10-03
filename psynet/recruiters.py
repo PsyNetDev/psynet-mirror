@@ -108,7 +108,12 @@ from .timeline import (
     join,
     while_loop,
 )
-from .utils import get_logger, get_translator, render_template_with_translations
+from .utils import (
+    get_descendent_class_by_name,
+    get_logger,
+    get_translator,
+    render_template_with_translations,
+)
 
 logger = get_logger()
 
@@ -233,7 +238,63 @@ def _prolific_error_status(error: ProlificServiceException):
         return None
 
 
+def _recruiter_class_by_name(name):
+    try:
+        return get_descendent_class_by_name(dallinger.recruiters.Recruiter, name)
+    except AssertionError:
+        return None
+
+
+def configured_recruiter_class(config=None):
+    """Return the recruiter class that the configuration selects.
+
+    This mirrors :func:`dallinger.recruiters.from_config` without
+    instantiating the recruiter, which can be expensive (for example, building
+    a Prolific API client). Use it when only the recruiter type matters.
+
+    Parameters
+    ----------
+    config :
+        Dallinger configuration; defaults to the active configuration.
+
+    Returns
+    -------
+    class or None
+        The recruiter class, or ``None`` if the configured name is unknown
+        in debug mode (where ``from_config`` also returns ``None``).
+    """
+    config = config or get_config()
+    if config.get("replay"):
+        return dallinger.recruiters.HotAirRecruiter
+
+    name = config.get("recruiter", None)
+    recruiter_class = _recruiter_class_by_name(name) if name is not None else None
+    if recruiter_class is not None and issubclass(
+        recruiter_class,
+        (dallinger.recruiters.BotRecruiter, dallinger.recruiters.MultiRecruiter),
+    ):
+        return recruiter_class
+
+    if config.get("mode") == "debug":
+        if recruiter_class is not None:
+            if issubclass(recruiter_class, MockRecruiter):
+                return recruiter_class
+            if issubclass(recruiter_class, dallinger.recruiters.ProlificRecruiter):
+                return _recruiter_class_by_name("devprolific")
+        return _recruiter_class_by_name(
+            config.get("debug_recruiter", "HotAirRecruiter")
+        )
+
+    if recruiter_class is not None:
+        return recruiter_class
+    if name:
+        raise NotImplementedError("No such recruiter {}".format(name))
+    return dallinger.recruiters.MTurkRecruiter
+
+
 class PsyNetRecruiterMixin:
+    """PsyNet behavior shared by all recruiters, including payment and early exit."""
+
     show_early_exit_button = False
     # Deprecated aliases of ``show_early_exit_button``. Prefer the early-exit name
     # in new code; Lucid still sets the aliases so older templates keep working.
@@ -778,9 +839,29 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
         }
     )
 
+    _warned_missing_study_id = False
+
     def shows_error_recovery_page(self, plan: exit_domain.ExitPlan) -> bool:
         """Prolific recovery asks the participant to submit or return."""
         return plan.context is exit_domain.ExitContext.ERROR_RECOVERY
+
+    def verify_status_of(self, participants):
+        """Sync participant statuses with Prolific, or skip if no study is recorded.
+
+        No study ID is recorded when PsyNet did not open the study itself
+        (for example with ``auto_recruit = false``, including debug runs), so
+        there are no submissions to compare against. The clock runs this check
+        every few seconds, so the skip is logged only once per process.
+        """
+        if not self.current_study_id:
+            if not PsyNetProlificRecruiterMixin._warned_missing_study_id:
+                PsyNetProlificRecruiterMixin._warned_missing_study_id = True
+                logger.warning(
+                    "Skipping Prolific participant status checks: no Prolific "
+                    "study ID is recorded for this experiment."
+                )
+            return
+        super().verify_status_of(participants)
 
     @property
     def unsuccessful_base_payment(self):
@@ -1361,6 +1442,15 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
         """
         if hasattr(experiment, "recruiter_exit_info"):
             experiment.recruiter_exit_info(participant)
+        return self.render_submission_page(participant)
+
+    def render_submission_page(self, participant) -> str:
+        """Render the Submit/confirmation document without writing payment state.
+
+        ``RecordedSubmissionPage`` calls this from the read-only timeline
+        render, where the submission handler has already stamped the
+        completion code.
+        """
         recorded = self._submission_already_recorded(participant)
         heading, body = self._recorded_submission_copy()
         return render_template_with_translations(
@@ -1999,6 +2089,14 @@ class ProlificRecruiter(
 class DevProlificRecruiter(
     PsyNetProlificRecruiterMixin, dallinger.recruiters.DevProlificRecruiter
 ):
+    def open_recruitment(self, n: int = 1) -> dict:
+        """Open a simulated Prolific study, saying that nothing was created."""
+        response = super().open_recruitment(n=n)
+        response["message"] = (
+            "Prolific study simulated in debug mode; nothing was created on Prolific"
+        )
+        return response
+
     def _live_submission_status(self, assignment_id: str) -> str:
         """Dev mode has no live row; report ACTIVE so local submit exercises COMPLETE."""
         return "ACTIVE"
