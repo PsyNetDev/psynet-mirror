@@ -1858,15 +1858,13 @@ class ChainTrialMaker(NetworkTrialMaker):
                 "block_order. Use only the block_order argument."
             )
 
-    def check_participant_groups(self, networks):
-        for n in networks:
-            if (
-                n.participant_group != "default"
-                and self.choose_participant_group is None
-            ):
+    def check_participant_groups(self, participant_groups):
+        """Require ``choose_participant_group`` when networks use non-default groups."""
+        for group in participant_groups:
+            if group != "default" and self.choose_participant_group is None:
                 raise ValueError(
                     f"Since the Trial Maker's starting nodes contain a non-default participant_group "
-                    f"({n.participant_group}), you must provide a value for the choose_participant_groups "
+                    f"({group}), you must provide a value for the choose_participant_groups "
                     "argument. This should be a function that takes 'participant' as an argument and returns "
                     "the participant group chosen for that Trial Maker."
                 )
@@ -1889,9 +1887,18 @@ class ChainTrialMaker(NetworkTrialMaker):
         if not is_follower:
             if self.chain_type == "within":
                 networks = self.create_networks_within(experiment, participant)
+                rows = [(n.block, n.participant_group) for n in networks]
             else:
-                networks = self.network_query.order_by(self.network_class.id).all()
-                if len(networks) == 0:
+                network = self.network_class
+                rows = (
+                    self.network_query.with_entities(
+                        network.block, network.participant_group
+                    )
+                    .group_by(network.block, network.participant_group)
+                    .order_by(func.min(network.id))
+                    .all()
+                )
+                if not rows:
                     raise RuntimeError(
                         f"Couldn't find any networks for the trial maker '{participant.module_state.module_id}'. "
                         "A common reason for this is deploying your experiment using 'dallinger deploy' instead of "
@@ -1899,10 +1906,10 @@ class ChainTrialMaker(NetworkTrialMaker):
                         "Another common reason is reloading the experiment in debug mode after adding a new trial maker. "
                         "In the latter case you need to restart the debug session before continuing."
                     )
-            self.check_participant_groups(networks)
+            self.check_participant_groups({group for _, group in rows})
 
-            # Networks are in creation order, which "listed" block orders follow.
-            blocks = list(dict.fromkeys(network.block for network in networks))
+            # Blocks are in network creation order, which "listed" block orders follow.
+            blocks = list(dict.fromkeys(block for block, _ in rows))
             self.init_block_order(experiment, participant, blocks)
         else:
             participant.module_state.block_order = (
