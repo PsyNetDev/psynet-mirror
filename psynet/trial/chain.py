@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from typing import Any, Iterable, List, Literal, Optional, Type, Union
 
 from dallinger import db
-from dallinger.models import Vector
+from dallinger.models import Node, Vector
 from sqlalchemy import (
     Boolean,
     Column,
@@ -2166,6 +2166,20 @@ class ChainTrialMaker(NetworkTrialMaker):
 
         self._advance_to_selected_block(chain.block, participant)
         return Selection(value=chain.head, context=selection.context)
+
+    def _claim_node_capacity(self, node):
+        """Lock the node and recount its trials so concurrent participants cannot overfill it.
+
+        ``FOR NO KEY UPDATE`` serializes claims on the same node without
+        conflicting with the key-share locks taken when trials referencing it
+        are inserted. The lock is held until the caller's transaction ends.
+        """
+        if self._node_capacity_is_unlimited:
+            return True
+        db.session.execute(
+            select(Node.id).where(Node.id == node.id).with_for_update(key_share=True)
+        )
+        return count_viable_trials_for_node(node.id) < self.trials_per_node
 
     def select_chain(self, chains, participant, experiment):
         """Select from a nonempty list of eligible chains.

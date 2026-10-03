@@ -2746,17 +2746,32 @@ class NetworkTrialMaker(TrialMaker):
     def prepare_trial(self, experiment, participant: Participant):
         logger.info("Preparing trial for participant %i.", participant.id)
 
-        selection = self._select_trial_node(participant, experiment)
-        if isinstance(selection, str):
-            if selection not in ["wait", "exit"]:
-                raise ValueError(
+        full_node_ids = set()
+        while True:
+            selection = self._select_trial_node(participant, experiment)
+            if isinstance(selection, str):
+                if selection not in ["wait", "exit"]:
+                    raise ValueError(
+                        "_select_trial_node must return Selection, 'wait', or 'exit'"
+                    )
+                logger.info("Outcome of trial selection: %s", selection)
+                return None, selection
+            if not isinstance(selection, Selection):
+                raise TypeError(
                     "_select_trial_node must return Selection, 'wait', or 'exit'"
                 )
-            logger.info("Outcome of trial selection: %s", selection)
-            return None, selection
-        if not isinstance(selection, Selection):
-            raise TypeError(
-                "_select_trial_node must return Selection, 'wait', or 'exit'"
+            if self._claim_node_capacity(selection.value):
+                break
+            if selection.value.id in full_node_ids:
+                raise RuntimeError(
+                    f"Node {selection.value.id} was selected again after it was "
+                    "found to be full. Custom discovery hooks must not return "
+                    "nodes without remaining trial capacity."
+                )
+            full_node_ids.add(selection.value.id)
+            logger.info(
+                "Node %i filled up during selection; selecting again.",
+                selection.value.id,
             )
 
         node = selection.value
@@ -2839,6 +2854,10 @@ class NetworkTrialMaker(TrialMaker):
     def _select_trial_node(self, participant, experiment):
         """Return ``Selection(node)``, ``"wait"``, or ``"exit"``."""
         raise NotImplementedError
+
+    def _claim_node_capacity(self, node):
+        """Reserve capacity on the selected node, returning ``False`` if it is full."""
+        return True
 
     def _select_from_discovered(
         self, discovered, participant, experiment, select_hook, method_name

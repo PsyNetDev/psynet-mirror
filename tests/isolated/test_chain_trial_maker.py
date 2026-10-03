@@ -323,7 +323,9 @@ def test_static_selection_carries_context_to_on_trial_created(monkeypatch):
         def select_node(self, nodes, participant, experiment):
             return Selection(value=nodes[0], context=context)
 
-    trial_maker = make_static_trial_maker(AdaptiveStaticTrialMaker)
+    trial_maker = make_static_trial_maker(
+        AdaptiveStaticTrialMaker, target_trials_per_node=None
+    )
     participant = DummyParticipant()
     participant.module_state = DummyModuleState()
     network = SimpleNamespace(id=3, block="default")

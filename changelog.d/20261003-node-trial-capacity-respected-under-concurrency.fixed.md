@@ -1,0 +1,1 @@
+Fixed nodes receiving more than `target_trials_per_node` (static trial makers) or `trials_per_node` (chain and create-and-rate trial makers) trials when several participants were assigned trials at the same moment.

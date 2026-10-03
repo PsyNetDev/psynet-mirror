@@ -80,6 +80,10 @@ class CustomFinishPolicyTrialMaker(ChainTrialMaker):
 
 @pytest.fixture
 def participant(db_session):
+    return new_participant()
+
+
+def new_participant():
     exp = get_experiment()
     participant = Participant(
         experiment=exp,
@@ -128,8 +132,10 @@ def create_chain_network(
     return network
 
 
-def static_trial_maker(*, target_trials_per_node):
-    return StaticTrialMaker(
+def static_trial_maker(
+    *, target_trials_per_node, maker_class=StaticTrialMaker, **kwargs
+):
+    args = dict(
         id_="static_growth_query",
         trial_class=GrowthQueryStaticTrial,
         nodes=[StaticNode(definition={"x": 0})],
@@ -138,6 +144,7 @@ def static_trial_maker(*, target_trials_per_node):
         target_trials_per_node=target_trials_per_node,
         balance_across_nodes=False,
     )
+    return maker_class(**{**args, **kwargs})
 
 
 def initialize_trial_maker_state(trial_maker, participant):
@@ -337,6 +344,37 @@ def test_limited_static_nodes_batch_viable_trial_counts(
     assert len(calls) == 1
     assert set(calls[0]) == all_head_ids
     assert {node.id for node in eligible} == expected_node_ids
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_node_filled_after_selection_is_not_overfilled(db_session, participant):
+    class RacedStaticTrialMaker(StaticTrialMaker):
+        def select_node(self, nodes, participant, experiment):
+            if not raced:
+                raced.append(nodes[0])
+                add_trial(GrowthQueryStaticTrial, nodes[0], other_participant)
+            return nodes[0]
+
+    exp = get_experiment()
+    raced = []
+    other_participant = new_participant()
+    trial_maker = static_trial_maker(
+        target_trials_per_node=1, maker_class=RacedStaticTrialMaker
+    )
+    networks = [
+        create_chain_network(trial_maker, exp, network_class=StaticNetwork)
+        for _ in range(2)
+    ]
+    initialize_trial_maker_state(trial_maker, participant)
+
+    trial, status = trial_maker.prepare_trial(exp, participant)
+
+    assert status == "available"
+    assert trial.node is not raced[0]
+    assert {trial.node.id, raced[0].id} == {network.head.id for network in networks}
 
 
 @pytest.mark.parametrize(
