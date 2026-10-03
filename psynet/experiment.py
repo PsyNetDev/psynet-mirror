@@ -1109,8 +1109,13 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     def get_request_statistics(cls, lookback_s):
         now = datetime.now()
         lookback = now - timedelta(seconds=lookback_s)
-        all_requests = Request.query.filter(Request.creation_time > lookback).all()
-        durations = [req.duration for req in all_requests]
+        durations = (
+            db.session.execute(
+                select(Request.duration).where(Request.creation_time > lookback)
+            )
+            .scalars()
+            .all()
+        )
         return {
             "median_response_time": (
                 float(median(durations)) if len(durations) > 0 else 0

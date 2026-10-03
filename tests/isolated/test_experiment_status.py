@@ -6,7 +6,7 @@ from unittest.mock import Mock, patch
 import pytest
 from dallinger import db
 
-from psynet.experiment import Experiment, get_experiment
+from psynet.experiment import Experiment, Request, get_experiment
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
 
@@ -87,3 +87,26 @@ def test_participant_status_summarizes_statuses_cost_and_time(db_session):
     }
     assert status["median_time_taken"] == 20 * 60
     assert status["total_cost"] == 2.0
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_request_statistics_cover_only_the_lookback_window(db_session):
+    now = datetime.datetime.now()
+    for age_s, duration in [(10, 0.2), (20, 0.4), (600, 9.0)]:
+        db.session.add(
+            Request(
+                creation_time=now - datetime.timedelta(seconds=age_s),
+                duration=duration,
+                method="GET",
+                endpoint="/timeline",
+            )
+        )
+    db.session.flush()
+
+    assert Experiment.get_request_statistics(lookback_s=60) == {
+        "median_response_time": pytest.approx(0.3),
+        "requests_per_minute": 2,
+    }
