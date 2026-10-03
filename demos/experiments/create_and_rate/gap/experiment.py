@@ -77,7 +77,6 @@ class CreateTrial(CreateTrialMixin, AudioImitationChainTrial):
         if answer["decision_page"] == "My own recording is bad":
             # Fail current recording
             self.fail(reason="My own recording is bad")
-            db.session.commit()
         return answer
 
     def get_listen_page(self):

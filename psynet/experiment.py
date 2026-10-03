@@ -89,6 +89,7 @@ from .data import SQLBase, SQLMixin, ingest_zip, register_table
 from .db import (
     _set_transaction_lock_timeout,
     blocking_psycopg,
+    forbid_commits,
     is_transient_transaction_error,
     read_only_transaction,
     transaction,
@@ -3450,38 +3451,39 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     payload=self._approved_payload(participant, page),
                     page=page,
                 )
-            response = event.process_response(
-                raw_answer=raw_answer,
-                blobs=blobs,
-                metadata=metadata,
-                experiment=self,
-                participant=participant,
-                client_ip_address=client_ip_address,
-                answer=answer,
-            )
-            validation = event.validate(
-                response=response,
-                answer=response.answer,
-                raw_answer=raw_answer,
-                participant=participant,
-                experiment=self,
-                page=event,
-            )
-            if isinstance(validation, str):
-                validation = FailedValidation(message=validation)
-
-            response.successful_validation = not isinstance(
-                validation, FailedValidation
-            )
-            if not response.successful_validation:
-                return ResponseResult(
-                    payload={
-                        "submission": "rejected",
-                        "message": validation.message,
-                    }
+            with forbid_commits(f"Response processing for page {event.label!r}"):
+                response = event.process_response(
+                    raw_answer=raw_answer,
+                    blobs=blobs,
+                    metadata=metadata,
+                    experiment=self,
+                    participant=participant,
+                    client_ip_address=client_ip_address,
+                    answer=answer,
                 )
+                validation = event.validate(
+                    response=response,
+                    answer=response.answer,
+                    raw_answer=raw_answer,
+                    participant=participant,
+                    experiment=self,
+                    page=event,
+                )
+                if isinstance(validation, str):
+                    validation = FailedValidation(message=validation)
 
-            event._accept_response(response, self, participant)
+                response.successful_validation = not isinstance(
+                    validation, FailedValidation
+                )
+                if not response.successful_validation:
+                    return ResponseResult(
+                        payload={
+                            "submission": "rejected",
+                            "message": validation.message,
+                        }
+                    )
+
+                event._accept_response(response, self, participant)
             participant.inc_time_credit(event.time_estimate)
             participant.inc_progress(event.time_estimate)
 
@@ -5981,7 +5983,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             experiment.timeline.advance_page(experiment, participant)
 
         page = experiment.timeline.get_current_elt(experiment, participant)
-        page.pre_render()
+        with forbid_commits(f"{type(page).__name__}.pre_render"):
+            page.pre_render()
 
         return page
 
@@ -5990,7 +5993,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         """Run write-phase preparation for the page that will be rendered."""
         if page is None:
             return page
-        page.pre_render()
+        with forbid_commits(f"{type(page).__name__}.pre_render"):
+            page.pre_render()
         available = getattr(page, "early_exit_available", None)
         if callable(available) and available(experiment, participant):
             experiment.prepare_voluntary_exit_plan(participant)

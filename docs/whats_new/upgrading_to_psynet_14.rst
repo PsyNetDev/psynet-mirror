@@ -211,13 +211,6 @@ Search custom trial makers for ``find_networks``, ``find_node``,
   maker. Previously it was calculated within each concrete trial class. Trials
   constructed outside a trial-maker state may have ``position=None``; code that
   performs arithmetic with ``position`` should handle that case explicitly.
-* ``grow_network``, ``finalize_trial`` and code that runs while a trial is
-  prepared (selection hooks, ``on_trial_created`` and
-  ``Trial.finalize_definition``) run inside the participant's response
-  transaction and now raise
-  ``RuntimeError`` if they call ``db.session.commit()`` or
-  ``db.session.rollback()``. Search these overrides for ``commit(`` and
-  replace it with ``db.session.flush()`` where you need database IDs.
 
 PsyNet raises an actionable ``TypeError`` when a removed or wrong-paradigm
 hook is still overridden.
@@ -370,8 +363,18 @@ See :doc:`/code/trials/participant_and_trial_failure`.
 -------------------------------------
 
 Search for ``def process_response``, ``response_approved``,
-``render_partial_timeline_payload``, and code in ``render()`` or templates
-that changes the database.
+``render_partial_timeline_payload``, ``session.commit(``,
+``session.rollback(``, and code in ``render()`` or templates that changes the
+database.
+
+* Experiment code that runs while a participant moves through the timeline
+  must not call ``db.session.commit()`` or ``db.session.rollback()``; PsyNet
+  now raises ``RuntimeError`` if it does. This covers code blocks, page
+  makers, page methods (``format_answer``, ``validate``, ``on_complete``,
+  ``pre_render``), trial methods and trial maker hooks. Delete these calls:
+  PsyNet commits for you. Use ``db.session.flush()`` where you need a new
+  object's ``id``. Custom POST routes still commit themselves. See
+  :ref:`Saving changes <saving_changes>`.
 
 * Pages now render in a read-only transaction. Move database writes from
   ``render()`` or templates to ``pre_render()``.

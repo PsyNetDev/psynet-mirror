@@ -35,6 +35,7 @@ from sqlalchemy.orm.collections import attribute_mapped_collection
 
 from . import templates
 from .data import SQLBase, SQLMixin, register_table
+from .db import forbid_commits
 from .field import PythonObject
 from .serialize import is_lambda_function, prepare_function_for_serialization
 from .static_resources import version_static_urls
@@ -299,6 +300,13 @@ def get_template(name):
     path_template = path_all_templates.joinpath(name)
     with open(path_template, "r") as file:
         return file.read()
+
+
+def _timeline_step_name(elt):
+    """Name a timeline element for error messages, e.g. ``CodeBlock 'save'``."""
+    function = getattr(elt, "function", None)
+    detail = getattr(elt, "label", None) or getattr(function, "__qualname__", None)
+    return f"{type(elt).__name__} {detail!r}" if detail else type(elt).__name__
 
 
 class Elt:
@@ -2803,7 +2811,8 @@ class Timeline:
                     if index_max is not None and index > index_max:
                         raise IndexError
                     position = participant.elt_id[0:depth]
-                    selected = selected.resolve(experiment, participant, position)
+                    with forbid_commits(_timeline_step_name(selected)):
+                        selected = selected.resolve(experiment, participant, position)
                     if index_max is None:
                         participant.elt_id_max.append(len(selected) - 1)
                 except IndexError:
@@ -2840,7 +2849,8 @@ class Timeline:
                     participant.elt_id.append(-1)
                     continue
 
-                new_elt.consume(experiment, participant)
+                with forbid_commits(_timeline_step_name(new_elt)):
+                    new_elt.consume(experiment, participant)
 
                 if isinstance(new_elt, Page):
                     finished = True

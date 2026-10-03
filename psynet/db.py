@@ -193,11 +193,25 @@ def _prevent_render_commit(session):
         raise RuntimeError(_forbidden_commit_message(operation, "commit"))
 
 
+_SAVING_CHANGES_DOCS_PAGE = "code/project/classes_and_sqlalchemy"
+
+
 def _forbidden_commit_message(operation, action):
+    from psynet import __version__
+    from psynet.local_docs import published_docs_url
+
+    docs_url = (
+        f"{published_docs_url(__version__)}{_SAVING_CHANGES_DOCS_PAGE}.html"
+        "#saving-changes"
+    )
     return (
-        f"{operation} must not {action} the database transaction: it runs inside "
-        "a transaction owned by its caller (for example a participant response "
-        "that holds row locks). Use db.session.flush() if you need database IDs."
+        f"{operation} called db.session.{action}(). PsyNet runs this code inside "
+        "a database transaction that it commits itself once the step has "
+        "finished. Committing or rolling back early releases the participant's "
+        "lock and can save half-finished changes.\n"
+        "Remove the call: PsyNet saves your changes automatically. If you need "
+        "the ID of a new object straight away, call db.session.flush() instead.\n"
+        f"See {docs_url} (or run: psynet docs show {_SAVING_CHANGES_DOCS_PAGE})."
     )
 
 
@@ -205,10 +219,11 @@ def _forbidden_commit_message(operation, action):
 def forbid_commits(operation: str):
     """Fail if code inside this block commits or rolls back the caller's transaction.
 
-    Framework hooks such as network growth and trial selection run inside a
-    transaction that their caller commits. A commit inside the hook releases
-    the caller's row locks early and saves a partial unit of work. Savepoints
-    (``begin_nested``) remain allowed.
+    PsyNet runs experiment code (timeline logic, response processing, trial
+    maker hooks) inside a transaction that the framework commits. A commit
+    inside that code releases the caller's row locks early and saves a partial
+    unit of work. Savepoints (``begin_nested``) remain allowed. Guards nest;
+    the innermost ``operation`` names the code in the error message.
 
     Parameters
     ----------
@@ -223,7 +238,7 @@ def forbid_commits(operation: str):
     finally:
         _commit_forbidden_in.reset(token)
     if root is not None and session.get_transaction() is not root:
-        raise RuntimeError(_forbidden_commit_message(operation, "commit or roll back"))
+        raise RuntimeError(_forbidden_commit_message(operation, "rollback"))
 
 
 @event.listens_for(dallinger.db.session, "before_flush")

@@ -156,22 +156,15 @@ participants:
 Update objects
 --------------
 
-A change to an attribute reaches the database only when
-``db.session.commit()`` is called:
+Change an object by assigning to its attributes. PsyNet saves the change to
+the database when it commits the transaction (see `Saving changes`_):
 
 .. code-block:: python
 
-    from dallinger import db
     from psynet.participant import Participant
 
     participant = Participant.query.filter_by(id=1).one()
     participant.status = "approved"
-    db.session.commit()
-
-PsyNet commits automatically after most experiment code, such as code blocks,
-``show_trial``, and ``analyze_recording``. Code that PsyNet does not call
-itself, such as a custom route defined with ``@experiment_route``, should call
-``db.session.commit()``.
 
 SQLAlchemy does not track in-place changes to a ``PythonObject`` column's
 value, such as updating a dictionary or appending to a list. Mark the column
@@ -209,12 +202,49 @@ database session:
         is_repeat_trial=False,
     )
     db.session.add(trial)
-    db.session.commit()
+    db.session.flush()
 
 ``db.session.add`` registers the object with the database, and
-``db.session.commit`` saves it and gives it an ``id``. Trial makers and
+``db.session.flush`` sends it to the database so that it gets an ``id``.
+PsyNet saves it when it commits the transaction. Trial makers and
 :meth:`~psynet.trial.main.Trial.cue` normally create trials for you;
 creating trials directly is mainly needed for custom network architectures.
+
+.. _saving_changes:
+
+Saving changes
+--------------
+
+PsyNet runs experiment code inside a database transaction and commits it
+once the step has finished. This includes code blocks, page makers, page
+methods such as ``format_answer``, ``validate``, ``on_complete`` and
+``pre_render``, trial methods such as ``show_trial`` and
+``finalize_definition``, and trial maker hooks such as ``grow_network``,
+``finalize_trial`` and ``select_node``. While this code runs, the
+transaction holds a lock on the participant's database row.
+
+Do not call ``db.session.commit()`` or ``db.session.rollback()`` in this
+code. Committing early releases the participant's lock, so a second request
+from the same participant can interleave with this one, and it saves
+half-finished changes if a later step fails. PsyNet raises a
+``RuntimeError`` that names the offending code if it commits or rolls back.
+
+Call ``db.session.flush()`` when you need a new object's ``id`` straight
+away. Flushing sends pending changes to the database within the current
+transaction, without committing them:
+
+.. code-block:: python
+
+    def create_pet(participant):
+        pet = Dog(participant)
+        db.session.add(pet)
+        db.session.flush()
+        participant.var.current_pet = pet.id
+
+Code that does not run as part of a participant's progress through the
+timeline manages its own transaction. For example, POST routes defined with
+``@experiment_route`` must call ``db.session.commit()``; see
+:doc:`/code/pages/custom_routes`.
 
 Define a custom table
 ---------------------
@@ -246,7 +276,7 @@ cats in one ``pet`` table:
    :pyobject: Dog
 
 The demo's timeline creates a pet with ``db.session.add`` and
-``db.session.commit``, stores its ``id`` in a participant variable, and
+``db.session.flush``, stores its ``id`` in a participant variable, and
 queries it again with ``Pet.query.filter_by(id=...)`` on later pages.
 
 Find slow queries

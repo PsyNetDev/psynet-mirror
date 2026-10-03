@@ -175,8 +175,13 @@ def test_forbid_commits_rejects_commits_but_allows_savepoints(db_session):
         with forbid_commits("grow_network"):
             with db.session.begin_nested():
                 db.session.add(DummyTransactionModel(id="savepoint"))
-            with pytest.raises(RuntimeError, match="grow_network must not commit"):
+            with pytest.raises(RuntimeError) as error:
                 db.session.commit()
+
+    message = str(error.value)
+    assert message.startswith("grow_network called db.session.commit()")
+    assert "db.session.flush()" in message
+    assert "classes_and_sqlalchemy.html#saving-changes" in message
 
 
 @pytest.mark.parametrize(
