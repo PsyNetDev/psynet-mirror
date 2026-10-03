@@ -196,6 +196,7 @@ class GeometricStaircaseTrialMaker(ChainTrialMaker):
         block_order="random",
         chain_order="random",
         interleave_chains: bool = False,
+        balance_across_chains=None,
         min_passing_score: Optional[float] = None,
         max_passing_score: Optional[float] = None,
         expected_trials_per_participant: Optional[int | str] = None,
@@ -241,6 +242,7 @@ class GeometricStaircaseTrialMaker(ChainTrialMaker):
             block_order=block_order,
             chain_order=chain_order,
             interleave_chains=interleave_chains,
+            balance_across_chains=balance_across_chains,
         )
 
     # The current scoring method is to take the mean of the reversal scores.
