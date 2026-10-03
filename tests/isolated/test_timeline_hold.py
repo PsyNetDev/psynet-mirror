@@ -298,6 +298,25 @@ def test_timeout_wins_over_simultaneous_release():
     assert hold.timeout_applied
 
 
+def test_hold_released_before_deadline_does_not_time_out():
+    """A waiter that misses its release wake still resumes after the deadline."""
+    hold = _ConditionHoldPage(
+        condition=lambda: False,
+        hold_id="test",
+        expected_wait=1,
+        max_wait_time=2,
+        fix_time_credit=False,
+        check_interval=1,
+    )
+    deadline = datetime.now() - timedelta(seconds=1)
+    record = TimelineHoldRecord(page_uuid="hold", deadline_at=deadline)
+    participant = SimpleNamespace(page_uuid="hold", _timeline_hold_record=record)
+
+    assert hold.participant_timed_out(participant)
+    record.released_at = deadline - timedelta(seconds=5)
+    assert not hold.participant_timed_out(participant)
+
+
 def test_forced_resume_does_not_evaluate_author_condition():
     hold = _ConditionHoldPage(
         condition=lambda: pytest.fail("condition should not be evaluated"),

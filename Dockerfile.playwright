@@ -3,12 +3,18 @@
 # cache from the official Playwright Docker image instead of running
 # `npx playwright install` at test time.
 #
-# The Playwright image tag must match @playwright/test in package.json.
+# The Playwright image tag must match @playwright/test in package.json. Use the
+# jammy variant: the base image is Debian bookworm, whose glibc is older than
+# noble's, so noble browser builds may not run on it.
 ARG DOCKER_PLATFORM=linux/amd64
 ARG BASE_IMAGE=psynet-build
 
-FROM --platform=${DOCKER_PLATFORM} mcr.microsoft.com/playwright:v1.60.0-jammy AS playwright-browsers
+FROM --platform=${DOCKER_PLATFORM} mcr.microsoft.com/playwright:v1.63.0-jammy AS playwright-browsers
 
 FROM ${BASE_IMAGE}
+# The participant recording helper (record-participant-video skill) muxes
+# audio and video with the system ffmpeg and ffprobe.
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && \
+    rm -rf /var/lib/apt/lists/*
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 COPY --from=playwright-browsers /ms-playwright /ms-playwright

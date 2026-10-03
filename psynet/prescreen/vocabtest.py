@@ -13,7 +13,7 @@ import requests
 from markupsafe import Markup
 from yaspin import yaspin
 
-from psynet.asset import ExperimentAsset
+from psynet.asset import FileAsset
 from psynet.page import InfoPage
 from psynet.timeline import MediaSpec, Page, get_template, join
 from psynet.translation.keyboards import KeyboardPage
@@ -677,8 +677,8 @@ class VocabTest(StaticTrialMaker):
             return {}
         assets = {
             asset.local_key: asset
-            for asset in ExperimentAsset.query.filter(
-                ExperimentAsset.local_key.in_(selected_hashes)
+            for asset in FileAsset.query.filter(
+                FileAsset.local_key.in_(selected_hashes)
             ).all()
         }
 
@@ -706,7 +706,7 @@ class VocabTest(StaticTrialMaker):
                     font_size=self.font_size,
                     font_path=default_test_config["font_path"],
                 )
-                asset = ExperimentAsset(
+                asset = FileAsset(
                     local_key=hash_,
                     input_path=path,
                     extension=".png",
@@ -917,7 +917,7 @@ class WikiVocab(VocabTest):
     The WikiVocab test is a vocabulary test that checks the participant's knowledge of words in a given language.
     Make sure you set the `performance_threshold_per_trial` according to your requirements.
 
-    See `VocabTest` for more information.
+    See :class:`~psynet.prescreen.vocabtest.VocabTest` for the other arguments.
     """
 
     def __init__(
@@ -947,7 +947,7 @@ class BibleVocab(VocabTest):
     Since the quality of the vocabulary test items is less controlled than the WikiVocab test, one can use the
     "consistency" `performance_check_type` instead.
 
-    Make sure you set the `performance_threshold_per_trial` according to your requirements.
+    See :class:`~psynet.prescreen.vocabtest.VocabTest` for the other arguments.
     """
 
     def __init__(

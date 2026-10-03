@@ -1,7 +1,6 @@
 import logging
 import os
 import re
-import subprocess
 import sys
 import time
 import warnings
@@ -39,6 +38,7 @@ from .command_line import (
     clean_sys_modules,
     kill_chromedriver_processes,
     kill_psynet_chrome_processes,
+    kill_psynet_worker_processes,
     stop_local_debug_process,
 )
 from .experiment import get_experiment, import_local_experiment
@@ -479,14 +479,12 @@ def skip_constraints_check():
 
 @pytest.fixture(scope="class")
 def clear_workers():
+    """Stop leftover local servers that use this test run's database."""
+
     def _zap():
-        kills = [["pkill", "-f", "heroku"]]
-        for kill in kills:
-            try:
-                subprocess.check_call(kill)
-            except Exception as e:
-                if e.returncode != 1:
-                    raise
+        # Once a worker stops, heroku local's foreman exits, and then the
+        # Heroku CLI that started it.
+        kill_psynet_worker_processes()
 
     _zap()
     yield

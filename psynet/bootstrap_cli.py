@@ -2,7 +2,7 @@
 
 This module provides the ``psynet`` entry point.  It is intentionally slim so
 that running ``psynet setup``, ``psynet scripts …``, ``psynet services …``,
-and ``psynet generate-constraints`` works with only the minimal ``psynet``
+``psynet generate-constraints`` and ``psynet docs …`` works with only the minimal ``psynet``
 distribution (i.e. without the ``[experiment]`` extra installed).
 
 Dispatch strategy
@@ -10,7 +10,7 @@ Dispatch strategy
 The ``main()`` function inspects ``sys.argv`` to decide which CLI to run:
 
 - If the first user-visible argument is one of the *bootstrap commands*
-  (``setup``, ``scripts``, ``services``, ``generate-constraints``), or the
+  (``setup``, ``scripts``, ``services``, ``generate-constraints``, ``docs``), or the
   entire argument list is exactly a version flag (``psynet --version`` /
   ``psynet -V``), the lightweight bootstrap group is invoked directly without
   importing experiment-runtime code.
@@ -41,6 +41,7 @@ _BOOTSTRAP_COMMANDS = frozenset(
         "scripts",
         "services",
         "generate-constraints",
+        "docs",
     }
 )
 
@@ -98,7 +99,7 @@ def main() -> None:
     """Dispatcher: run bootstrap CLI or full experiment CLI.
 
     Bootstrap commands (``setup``, ``scripts``, ``services``,
-    ``generate-constraints``) and bare version invocations (``psynet
+    ``generate-constraints``, ``docs``) and bare version invocations (``psynet
     --version`` / ``psynet -V``) are handled without importing the experiment
     runtime.  Every other invocation delegates to the full
     ``psynet.command_line.psynet`` group, printing a helpful message if the
@@ -123,7 +124,7 @@ def main() -> None:
             click.echo(
                 "PsyNet bootstrap CLI "
                 f"(full runtime module {missing_module!r} is unavailable).\n\n"
-                "Available commands: setup, scripts, services, generate-constraints\n\n"
+                "Available commands: setup, scripts, services, generate-constraints, docs\n\n"
                 "To access full experiment commands:\n"
                 "  psynet setup          (installs psynet[experiment] via constraints)\n"
                 "  uv pip install 'psynet[experiment]'\n"

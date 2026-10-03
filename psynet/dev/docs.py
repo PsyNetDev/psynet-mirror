@@ -7,6 +7,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -27,6 +28,12 @@ LINKCHECK_READ_PROGRESS_RE = re.compile(
 )
 # Statuses that Sphinx counts as linkcheck failures.
 LINKCHECK_FAILURE_STATUSES = frozenset({"broken", "timeout"})
+# Demo files bundled for ``psynet docs demos``: authored text only. The size
+# cap leaves out vendored libraries such as jsPsych and Unity builds.
+DEMO_CODE_SUFFIXES = frozenset(
+    {".py", ".txt", ".toml", ".md", ".html", ".js", ".css", ".json", ".ini", ".cfg"}
+)
+DEMO_CODE_MAX_BYTES = 64 * 1024
 
 
 @dataclass(frozen=True)
@@ -85,6 +92,76 @@ def make_command(
         open_html_index(target, build_dir)
 
     return 0
+
+
+def bundle_command() -> Path:
+    """Build the plain-text docs that release wheels ship for ``psynet docs``."""
+    from psynet import __version__
+    from psynet.local_docs import BUNDLED_DOCS_DIR
+
+    docs_dir = assert_docs_available()
+    with tempfile.TemporaryDirectory() as tmp:
+        text_dir = Path(tmp) / "text"
+        command = [
+            sys.executable,
+            "-m",
+            "sphinx",
+            "-b",
+            "text",
+            "-q",
+            "-W",
+            "--keep-going",
+            "-d",
+            str(Path(tmp) / "doctrees"),
+            ".",
+            str(text_dir),
+        ]
+        try:
+            subprocess.run(command, cwd=docs_dir, check=True)
+        except subprocess.CalledProcessError as exc:
+            raise ValueError(
+                f"Text docs build failed with exit code {exc.returncode}: "
+                f"{shlex.join(command)}"
+            ) from exc
+
+        shutil.rmtree(BUNDLED_DOCS_DIR, ignore_errors=True)
+        for source in text_dir.rglob("*.txt"):
+            target = BUNDLED_DOCS_DIR / source.relative_to(text_dir)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, target)
+    _bundle_demo_code(docs_dir.parent, BUNDLED_DOCS_DIR / "demos")
+    commit = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=docs_dir,
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout.strip()
+    (BUNDLED_DOCS_DIR / "VERSION").write_text(f"{__version__}\n{commit}\n")
+    return BUNDLED_DOCS_DIR
+
+
+def _bundle_demo_code(source_root: Path, target_dir: Path) -> None:
+    """Copy the demos' tracked text files, without media or vendored libraries."""
+    tracked = subprocess.run(
+        ["git", "ls-files", "demos"],
+        cwd=source_root,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.splitlines()
+    for name in tracked:
+        source = source_root / name
+        if (
+            source.suffix not in DEMO_CODE_SUFFIXES
+            or source.name == "constraints.txt"
+            or not source.is_file()
+            or source.stat().st_size > DEMO_CODE_MAX_BYTES
+        ):
+            continue
+        target = target_dir / Path(name).relative_to("demos")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, target)
 
 
 def run_live_preview(

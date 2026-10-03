@@ -14,6 +14,15 @@ logger = get_logger()
 
 
 class Bot(Participant):
+    """
+    Simulated participant stored in the participant table, used for automated tests and simulations.
+
+    Creating a bot waits for the experiment launch to finish, calls
+    :meth:`~psynet.experiment.Experiment.initialize_bot`, and advances the bot to the first page.
+    Hooks such as :meth:`~psynet.experiment.Experiment.test_check_bot` receive ``Bot`` objects.
+    To drive a bot through pages over HTTP, use :class:`BotDriver`.
+    """
+
     def __init__(
         self,
         recruiter_id=None,
@@ -64,6 +73,9 @@ class Bot(Participant):
         self.experiment.timeline.advance_page(self.experiment, self)
 
     def initialize(self, experiment):
+        # Participant.__init__ has already added the bot to the session;
+        # flushing gives initialize_bot a valid bot.id.
+        db.session.flush()
         self.experiment.initialize_bot(bot=self)
         super().initialize(experiment)
 
@@ -189,6 +201,23 @@ class BotResponse:
 
 
 def advance_past_wait_pages(bots: List["BotDriver"], max_iterations=10):
+    """
+    Repeatedly take wait pages and timeline holds for a group of bots until none are waiting.
+
+    Useful in synchronous bot tests, where bots must pass barriers or wait pages together.
+
+    Parameters
+    ----------
+    bots : list of BotDriver
+        Bots to advance.
+    max_iterations : int
+        Maximum number of passes over ``bots``.
+
+    Raises
+    ------
+    RuntimeError
+        If some bots are still waiting after ``max_iterations`` passes.
+    """
     from .page import WaitPage
 
     iteration = 0
@@ -215,7 +244,7 @@ class BotDriver(ParticipantDriver):
     """
     Driver class for automating bot participants in an experiment.
 
-    The :class:`~psynet.participant.BotDriver` class is a convenience subclass of :class:`~psynet.participant.ParticipantDriver`
+    The :class:`~psynet.bot.BotDriver` class is a convenience subclass of :class:`~psynet.participant.ParticipantDriver`
     specifically focused on creating and controlling bot participants.
 
     If no ``id_`` is specified, a new :class:`~psynet.bot.Bot` instance is created automatically.

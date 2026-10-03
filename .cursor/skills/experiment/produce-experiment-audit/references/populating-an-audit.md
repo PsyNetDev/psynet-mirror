@@ -112,9 +112,10 @@ section. That warning is expected for retrospective audits.
    ```
 
    Add a manifest entry first when the artifact is not already declared.
-6. Record checks and blockers honestly in `audit.json`. A coherent packet may
-   still have blockers; validate success means structure is OK, not that the
-   experiment is ready.
+6. Record checks and blockers honestly in `audit.json` (fields, statuses and
+   severities: "Checks and blockers" in `test/audit_reference`). A coherent
+   packet may still have blockers; validate success means structure is OK, not
+   that the experiment is ready.
 7. Before handoff, run:
 
    ```bash
@@ -128,7 +129,8 @@ Choose evidence that matches the experiment. Common artifacts are:
 
 - `artifacts/participant.mp4`: concise participant walkthrough;
 - `artifacts/screenshots/*.png`: targeted participant-facing states;
-- `artifacts/screenshots/manifest.json`: optional screenshot captions;
+- `artifacts/screenshots/manifest.json`: optional screenshot captions, keyed by
+  paths relative to `artifacts/` (`"screenshots/01-consent.png"`);
 - `artifacts/performance.json`: sustained performance-test output;
 - `artifacts/monitor.html`: static monitor snapshot;
 - `artifacts/data.zip`: exported local or real-run data;
@@ -137,6 +139,8 @@ Choose evidence that matches the experiment. Common artifacts are:
 - `simulate/design/simulation.ipynb` and `simulate/design/run.json`: optional
   design simulation;
 - `logs/*.log`: concise logs that explain commands and failures.
+  `psynet debug local` prints the dashboard password; replace it (for example
+  with `<redacted>`) before saving that output.
 
 Use `record-participant-video` for screenshot and video production. Keep videos
 at most 3 minutes and 1280×720. Audit notebooks may be up to 10 MB, but avoid
@@ -147,9 +151,9 @@ test, design simulation, and analysis their own top-level sections, so each of
 those artifacts is reviewed on its own rather than inside one combined evidence
 panel.
 
-### Design simulation
+### Power analysis
 
-The optional `simulate/design/simulation.ipynb` contains a **Power analysis**
+The Power analysis section follows the Plan. The optional `simulate/design/simulation.ipynb` contains a **Power analysis**
 section and, for adaptive experiments, may contain an **Adaptive procedure**
 section. Follow `power-analysis/SKILL.md`, then mark `simulation_notebook`,
 `simulation_run`, and `simulation_results` present.
@@ -195,7 +199,7 @@ Run from the experiment root:
 psynet audit simulate
 ```
 
-The command writes the only copy to
+Add `--n-bots N` to override `Exp.test_n_bots` for this run. The command writes the only copy to
 `audit/simulate/analysis/simulated_export/` and marks `simulate_export`
 present.
 
@@ -248,12 +252,50 @@ Declare screenshots either as individual artifacts or in the `captions` map of
 the present `screenshots` manifest artifact. Rendering publishes safe image
 paths referenced by that manifest and builds the screenshot carousel.
 
+## Writing notebooks for readers
+
+The audit's notebooks (the analysis and the power analysis) are read by
+someone who knows the study but not the code or the statistics, such as the
+experimenter's supervisor. The audit collapses code behind a "Show code"
+toggle, so the reader sees prose, figures and tables.
+
+- **Answer first.** Start with a summary of what the notebook shows, then one
+  section per question, headed by the question in plain words ("How pleasant
+  is each chord?"). Put data checks, definitions and full tables last.
+- **Compute the summary.** Load the data and compute the headline numbers in
+  the first code cell, and write the summary from them with
+  `display(Markdown(f"..."))`. Numbers typed into Markdown go stale when the
+  data or simulation change. Later sections can then show the details of
+  loading and cleaning.
+
+  ```python
+  display(Markdown(f"""
+  **{n} participants passed the headphone check; {len(screened_out)} were screened out.**
+  Each chord's average is known to within ±{rms(half_width):.2f} points (95% confidence interval).
+  """))
+  ```
+
+- **Keep the numbers.** Plain words go with the values, not instead of them:
+  "noisier raters (SD 1.3)" rather than "noisier raters", in text, legends and
+  tables. Add the technical term in brackets after a plain description, such
+  as "known to within ±0.18 points (95% confidence interval)". Use readable
+  column names and round numbers in the text to two decimals.
+- **Execute before rendering.** The audit shows only the outputs saved in the
+  notebook, so run it after every change, for example with
+  `jupyter nbconvert --to notebook --execute --inplace analysis.ipynb`.
+  Neither `psynet audit validate` nor `mark-present` checks for saved outputs.
+- **Read it back.** Open the rendered section and read it as that reader
+  would. Check that every figure and table appears, that headings aren't
+  repeated, and that the summary matches the figures.
+
 ## Analysis and reporting
 
-The canonical analysis is `simulate/analysis/analysis.ipynb`. It should:
+The canonical analysis is `simulate/analysis/analysis.ipynb`. Follow "Writing
+notebooks for readers" above. It should:
 
 - read exported data directly;
-- show data loading and cleaning;
+- describe data loading and cleaning in a section after the main results
+  (the code itself runs in the first cell, behind the summary);
 - display useful summary tables or plots. Prefer Plotly with
   `pio.renderers.default = "plotly_mimetype"` for offline interactive figures
   and `pio.templates.default = "plotly_white"` for consistent presentation;
@@ -380,6 +422,10 @@ Use `AUDIT_FIGURE_LAYOUT` for the simpler case of a single encoding with a few
 short labels, where a legend row above the plot reads better than a side
 column.
 
+Both layouts contain a `title` key, so set the title text in the Plotly Express
+call, as above, or in a separate `fig.update_layout(title_text=...)` call.
+`fig.update_layout(title="...", **AUDIT_FIGURE_LAYOUT)` raises `TypeError`.
+
 ### Metric controls
 
 Use Plotly `updatemenus` buttons, not page-level or ipywidget tabs, when one
@@ -426,7 +472,10 @@ Array.from(document.querySelectorAll(".notebook-plotly-target")).flatMap((figure
 });
 ```
 
-An empty result is the standard to hold each figure to. Anything reported is a
+Open collapsed audit sections before running it: on a closed section the
+check returns an empty result without checking anything. Run it at full width
+and again in a window about 900 px wide, where legends start wrapping into
+titles. An empty result is the standard to hold each figure to. Anything reported is a
 layout bug to fix by shortening labels, adding margin, moving the legend, or
 increasing the figure height, not something to leave for the reviewer.
 

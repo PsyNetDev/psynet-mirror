@@ -1478,9 +1478,8 @@ class TrialMaker(Module):
         :meth:`~psynet.trial.main.TrialMaker.get_end_feedback_passed_page`.
 
     performance_threshold : float
-        Score threshold used by the default performance check method, defaults to 0.0.
-        By default, corresponds to the minimum proportion of non-failed trials that
-        the participant must achieve to pass the performance check.
+        Threshold for the default performance check, defaults to 0.0.
+        The participant passes when the sum of trial scores exceeds this value.
 
     end_performance_check_waits : bool
         If ``True`` (default), then the final performance check waits until all trials no
@@ -2582,9 +2581,9 @@ class NetworkTrialMaker(TrialMaker):
         longer have any pending asynchronous processes.
 
     performance_threshold : float (default = -1.0)
-        Score threshold used by the default performance check method.
-        By default, corresponds to the minimum proportion of non-failed trials that
-        the participant must achieve to pass the performance check.
+        Threshold for the built-in performance check chosen by ``performance_check_type``.
+        The participant passes when the score (the summed trial scores, the proportion
+        of non-failed trials, or the consistency) is at least this value.
         This is used in :meth:`~psynet.trial.main.NetworkTrialMaker.performance_check`.
     """
 

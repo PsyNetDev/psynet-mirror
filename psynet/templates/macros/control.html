@@ -126,7 +126,7 @@
             type="button"
             class="btn push-button btn-primary response {% if params.timed == true %} timed {% else %} submit {% endif %}"
             id="{{ params.id }}"
-            style="{{ params.style }}" ,
+            style="{{ params.style }}"
             disabled="true"
     >
         {% autoescape off %}
@@ -1880,6 +1880,30 @@
                 survey.onCompleting.add(handleSurveyCompletion);
             }
         }
+
+        // SurveyJS labels every rating radio with the question title, and Knockout
+        // keeps resetting aria-label, so name each option via aria-labelledby.
+        survey.onAfterRenderQuestion.add((sender, options) => {
+            const question = options.question;
+            const fieldset = options.htmlElement.querySelector("fieldset[role=radiogroup]");
+            if (question.getType() !== "rating" || !fieldset) {
+                return;
+            }
+            const anchors = fieldset.querySelectorAll(":scope > span");
+            const minText = question.hasMinLabel ? anchors[0] : null;
+            const maxText = question.hasMaxLabel ? anchors[anchors.length - 1] : null;
+            const inputs = fieldset.querySelectorAll("input[type=radio]");
+            inputs.forEach((input, index) => {
+                const parts = [input.nextElementSibling];
+                if (index === 0) parts.push(minText);
+                if (index === inputs.length - 1) parts.push(maxText);
+                const ids = parts.filter(Boolean).map((part, partIndex) => {
+                    part.id = part.id || `${input.id}-label-${partIndex}`;
+                    return part.id;
+                });
+                input.setAttribute("aria-labelledby", ids.join(" "));
+            });
+        });
 
         survey.onAfterRenderPage.add(() => {
             $(".sd-navigation__complete-btn").addClass("submit");

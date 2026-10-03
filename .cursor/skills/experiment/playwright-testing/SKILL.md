@@ -16,8 +16,100 @@ depends on npm packages. Assert enabled and disabled controls, trial
 transitions, validation or feedback, completion, and saved responses — not
 only that the runner can click Next.
 
-For constructing pages, use `develop-experiment-front-end/SKILL.md`. For
-ffmpeg participant recordings, use `record-participant-video/SKILL.md`.
+For constructing pages, use `develop-experiment-front-end/SKILL.md`. To record
+the walk as `participant.mp4` with audio, use `record-participant-video/SKILL.md`.
+
+## Read first
+
+Read these pages before acting. The "Documentation" section of the experiment's `AGENTS.md` explains how to find and search them.
+
+- `test/frontend` — Playwright walks and `psynetLayout.check()`
+- `test/backend` — what bots check and what they miss
+
+## Setup
+
+Install Playwright in the experiment directory and commit `package.json` and
+`package-lock.json`:
+
+```bash
+npm init -y
+npm install --save-dev @playwright/test
+npx playwright install chromium
+```
+
+Add `node_modules/` and `test-results/` to `.gitignore`. The stock `deploy.toml`
+already excludes `node_modules`; add `test-results` to its `[exclude].paths`.
+
+Set a short action timeout in `playwright.config.js`, so a click that can never
+succeed fails within seconds instead of looking like a hang until the test
+timeout:
+
+```js
+const { defineConfig } = require("@playwright/test");
+
+module.exports = defineConfig({
+  testDir: "tests",
+  use: { actionTimeout: 20000 },
+});
+```
+
+Start the experiment with `psynet debug local` in one terminal and wait for the
+ad URL in its log. From a non-interactive background shell, keep stdin open
+(`tail -f /dev/null | psynet debug local`), or the server can stop silently.
+Set `PSYNET_URL` to the ad URL's scheme, host and port, and run the walk from
+another terminal:
+
+```bash
+PSYNET_URL=http://127.0.0.1:5000 npx playwright test tests/participant-flow.spec.js
+```
+
+PsyNet's own Playwright tests import helpers from `tests/playwright/` in the
+PsyNet source repository. Those helpers are not installed with PsyNet, so an
+experiment's tests define the few they need, as below.
+
+## Walking the pages
+
+Enter the timeline through the ad and consent pages, then wait for the first
+timeline page:
+
+```js
+const { test, expect } = require("@playwright/test");
+
+const BASE = process.env.PSYNET_URL || "http://127.0.0.1:5000";
+
+async function startParticipant(page) {
+  await page.goto(`${BASE}/ad?generate_tokens=true&recruiter=hotair`);
+  await page.locator("#begin-button").click();
+  await page.locator("#consent").waitFor();
+  await clickAndWaitForNextPage(page, page.locator("#consent"));
+}
+```
+
+After a click that leaves the page, wait for the **next** page, not for a
+ready page. `#main-body[data-page-ready='true']` is still true on the old page
+until the server answers, so waiting for it alone returns immediately and the
+next check or screenshot runs one page behind. Every timeline page has its own
+`window.pageUuid`; wait until it changes and the new page is ready:
+
+```js
+async function clickAndWaitForNextPage(page, locator) {
+  const oldUuid = await page.evaluate(() => window.pageUuid ?? null);
+  await locator.click();
+  await page.waitForFunction(
+    (uuid) =>
+      window.pageUuid &&
+      window.pageUuid !== uuid &&
+      document.getElementById("main-body")?.dataset.pageReady === "true",
+    oldUuid,
+  );
+}
+
+await clickAndWaitForNextPage(page, page.locator("#next-button"));
+await expect(page.locator("#main-body")).toContainText("How pleasant");
+```
+
+A barrier or `wait_while` hold keeps the visible page and its
+`window.pageUuid` until the hold ends, so the helper also waits through holds.
 
 ## Layout checks
 
@@ -38,7 +130,7 @@ async function assertPageLayout(page, label) {
   expect(violations, label).toEqual([]);
 }
 
-await page.waitForSelector("#main-body[data-page-ready='true']");
+await clickAndWaitForNextPage(page, page.locator("#next-button"));
 await assertPageLayout(page, "radio page");
 ```
 
@@ -53,51 +145,9 @@ fold these checks into `psynet test local`.
 
 ## Stable waits
 
-Wait for the effect the last action was supposed to produce: a durable prompt,
-a control becoming enabled, or a URL change. Do not assert countdown text or
-short-lived status labels. When the contract is first paint — for example the
-last group member skipping a partner wait — assert the first `GET /timeline`
-HTML. An eventual prompt can arrive from the poller after a hold was already
-shown. `entry.timeline.durationMs` is that HTML 200 (or 503). Last-arrival
-grouping work is `lastArriverWorkRecord` (the 302, or the submit POST), not
-the follow-up body:
-
-```js
-const entry = await enterTimelineAfterGateway(page);
-expect(entry.paint.type).toBe("ModularPage");
-expect(entry.paint.showsHold).toBe(false);
-expect(entry.timeline.busy).toBe(false);
-expect(entry.timeline.durationMs).toBeLessThan(3000);
-expect(requestHandlerMs(lastArriverWorkRecord(entry))).toBeLessThan(3000);
-expect(entry.start.consentToTimelineMs).toBeLessThan(6000);
-```
-
-When a partner is already on a hold, use `stackedHoldHarness.js`:
-`enterWaitingHold` wraps the resume probe, silences the 2s safety poll, and
-arms `waitForHeldParticipantToResume` before the last arriver consents.
-`assertWaiterReleasedWithLastArriver` then checks that overlay leave
-(`resumedAtMs`) is timed from `lastArriverReleaseAtMs` (the grouping request
-finish, not the follow-up HTML 200), resume is `server notification` or
-`queued hold wake` (not `safety poll` or `hold timeout`), inplace mode issues no
-extra `GET /timeline`, and overlay linger (wake→end wallclock, including
-gunicorn listen-queue) is logged and fails only past 30000ms. A short HTTP 503
-may retry once; do not fold gunicorn `queue~` into linger. Print
-`queue~` in summaries so a long wait can be split into handler time versus
-pool occupancy:
-
-```js
-await enterWaitingHold(first, { holdText: "Waiting for your partner" });
-const lastEntry = await enterSkippingHold(last);
-await assertWaiterReleasedWithLastArriver(first, lastEntry);
-```
-
-Legacy reload mode may issue one follow-up timeline document.
-
-Concurrent late arrivals must wrap and arm at first paint, inside the same
-`Promise.all` as consent. If the hold chip is already gone, still assert the
-first-paint `wake_token`, a hold-resume POST, and no extra GET `/timeline` in
-inplace mode. Those late waiters may resume from `websocket connection` as well
-as `server notification`.
+Wait for the effect the last action was supposed to produce: the next page (as
+above), a durable prompt, a control becoming enabled, or a URL change. Do not
+assert countdown text or short-lived status labels.
 
 Gateway, consent, and timeline pages have different DOM. Do not assume
 `#main-body` exists on the ad page. If the timeline is known in advance, encode
@@ -107,3 +157,68 @@ actionability.
 
 For `AudioPrompt`, assert PsyNet sound-state or trial events, not a DOM
 `<audio>` element. For `VideoPrompt`, assert `video#prompt`.
+
+## Rating controls
+
+`RatingControl`, `MultiRatingControl` and `SurveyJSControl` are rendered by
+SurveyJS, which hides each radio input behind its label. `radio.check()` then
+retries until the action timeout ("label intercepts pointer events"). Click the
+label and assert the radio:
+
+```js
+const main = page.locator("#main-body");
+await main.locator("label.sd-rating__item").nth(rating - 1).click();
+await expect(main.locator("input[type=radio]").nth(rating - 1)).toBeChecked();
+```
+
+## Built-in prescreeners
+
+A headphone test can't be passed by listening in a headless browser. Built-in
+prescreeners store the answer as `correct_answer` in the trial definition, and
+PsyNet has no browser hook that exposes it, so read it from the experiment's
+local database with `psql`. Point `DATABASE_URL` at the local database of the
+experiment you are walking, never at a deployed experiment's database:
+
+```js
+const { execFileSync } = require("child_process");
+
+const DATABASE_URL =
+  process.env.DATABASE_URL || "postgresql://dallinger:dallinger@localhost/dallinger";
+
+async function currentTrialDefinition(page) {
+  const participantId = await page.evaluate(() => window.psynet.participantId);
+  const query =
+    `SELECT definition::text FROM trial WHERE participant_id = ${participantId} ` +
+    "ORDER BY id DESC LIMIT 1";
+  return JSON.parse(execFileSync("psql", [DATABASE_URL, "-At", "-c", query]).toString());
+}
+
+// Headphone tests show one button per answer, with the answer as its id.
+const { correct_answer } = await currentTrialDefinition(page);
+const answer = page.locator(`#main-body button[id="${correct_answer}"]`);
+await expect(answer).toBeEnabled({ timeout: 20000 });
+await clickAndWaitForNextPage(page, answer);
+```
+
+Test the failing path with bots rather than in the walk (see `test/backend`,
+"Bots that fail a prescreener").
+
+## Incognito mode
+
+With `force_incognito_mode = True`, PsyNet guesses incognito mode from the
+browser's storage quota, which headless Chromium reports inconsistently, so a
+walk can stop at "You need to use the incognito mode". Report an
+incognito-sized quota before any page loads:
+
+```js
+const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+await context.addInitScript(() => {
+  const quota = 100 * 1024 * 1024;
+  const storage = navigator.webkitTemporaryStorage;
+  if (storage) storage.queryUsageAndQuota = (callback) => callback(0, quota);
+  if (navigator.storage?.estimate) {
+    navigator.storage.estimate = async () => ({ usage: 0, quota });
+  }
+});
+const page = await context.newPage();
+```

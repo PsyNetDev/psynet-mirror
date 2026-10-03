@@ -3,18 +3,18 @@ Upgrading to PsyNet 14
 ======================
 
 This checklist migrates an existing experiment onto PsyNet 14: in-place
-timeline transitions, recruiter and leave APIs, and new participant-theme
-defaults. It is the single source of truth for **migration order and search
-targets**. Frontend patterns and full examples live in
-:doc:`/tutorials/writing_custom_frontends`.
+timeline transitions, recruiter and leave APIs, changed defaults, setup and
+deployment files, participant failure, groups, assets and exports. Work
+through the steps in order; each lists what to search for. Frontend patterns
+and full examples are in :doc:`/code/pages/custom_front_ends`.
 
 The Cursor skill ``/upgrade-to-psynet-14`` is a thin wrapper that points agents
-here. When PsyNet is not available as a source checkout (typical experiment
-venv), agents should fetch the published HTML version of this page rather than
-looking for ``docs/*.rst`` on disk.
+here. Agents read this page with
+``psynet docs show whats_new/upgrading_to_psynet_14``, which works without a
+PsyNet source checkout.
 
 Also see: :doc:`/whats_new/psynet_14`,
-:doc:`/experiment_development/configuration`.
+:doc:`/reference/configuration`.
 
 0. Orient
 ---------
@@ -26,10 +26,12 @@ Also see: :doc:`/whats_new/psynet_14`,
    only as a short-term experiment-wide opt-out, then keep migrating so you
    can remove it.
 4. Work page by page.
-5. Even with no custom frontend, continue through steps 10–13
-   (recruiter, leave/error APIs, changed defaults, and validate).
+5. Even with no custom frontend, continue through steps 10–20
+   (recruiters, Leave and error pages, changed defaults, setup, deployment
+   files, participant failure, responses, groups, assets, exports, and
+   validation).
 
-To surface SPA contract errors, run ``psynet debug local`` /
+To find pages that can't load in place, run ``psynet debug local`` /
 ``psynet test local`` and read the traceback. Incompatible pages raise one
 short message that lists **error codes** in parentheses; use the glossary
 below to map each code to a checklist step.
@@ -40,9 +42,23 @@ below to map each code to a checklist step.
 Search for ``template_path=``, ``template_str=``, and
 ``{% extends "timeline-page.html" %}``.
 
+A complete template extends ``timeline-page.html`` and overrides blocks such
+as ``main_body``:
+
+.. code-block:: html
+
+    {% extends "timeline-page.html" %}
+
+    {% block main_body %}
+        <p>Custom page content</p>
+    {% endblock %}
+
+This style works only with the legacy full-page reload path, where
+``inplace_timeline_transitions = false`` is set explicitly.
+
 Convert complete templates to fragments
 (``template_fragment_path`` / ``template_fragment_str``) and supply assets via
-page arguments. See :doc:`/tutorials/writing_custom_frontends`
+page arguments. See :doc:`/code/pages/custom_front_ends`
 (Custom page templates).
 
 2. Migrate CSS
@@ -67,13 +83,20 @@ before moving it (load-once library vs per-page behavior vs short inline).
 Converting the HTML template alone is not enough: leftover ``scripts=`` /
 ``js_links=`` still force a full-page reload and raise ``legacy_scripts`` /
 ``legacy_js_links`` unless you also pass ``requires_full_page_reload=True``.
+These deprecated arguments keep classic linked and inline script semantics,
+which is why they cannot use in-place transitions.
+
+Framework macros may still embed classic ``<script>`` tags, which PsyNet
+replays across in-place transitions (see :doc:`/developer/page_lifecycle`).
+Author-owned external templates should contain only markup. Embedded
+``<script type="module">`` tags are not supported.
 
 4. Migrate load-once libraries
 ------------------------------
 
 Move load-once classic libraries to ``js_dependencies`` /
 ``get_js_dependencies()``. Do not put per-page initialization there. See
-:doc:`/tutorials/writing_custom_frontends` (Managing JavaScript lifecycles).
+:doc:`/code/pages/custom_front_ends` (Managing JavaScript lifecycles).
 
 5. Migrate per-page behavior
 ----------------------------
@@ -82,7 +105,7 @@ Rewrite classic top-level scripts as ES modules that export ``activate``,
 wired with ``js_page_modules`` / ``get_js_page_modules()``. Short snippets may
 use ``js_page_code`` / ``get_js_page_code()`` instead.
 
-See :doc:`/tutorials/writing_custom_frontends` for ``activate(context)``
+See :doc:`/code/pages/custom_front_ends` for ``activate(context)``
 examples and cleanup guidance.
 
 6. Migrate page variables to ``psynet.var``
@@ -91,14 +114,35 @@ examples and cleanup guidance.
 Replace legacy ``window`` reads of ``js_vars`` keys with ``psynet.var``.
 Optionally set ``legacy_js_var_globals = error`` while testing.
 
+Earlier versions copied each ``js_vars`` key onto ``window``. This global
+access is deprecated because in-place timeline transitions reuse the same
+browser window across pages. ``legacy_js_var_globals`` controls the
+compatibility behavior:
+
+* ``warn`` (default) keeps legacy access working and warns once for each key.
+* ``error`` throws a ``ReferenceError`` that identifies the key and recommends
+  the corresponding ``psynet.var`` expression.
+* ``off`` does not install legacy global properties.
+
+In ``error`` mode the compatibility property remains present so that reads and
+writes can produce the informative error. Consequently, ``typeof legacy_name``
+also throws and ``"legacy_name" in window`` remains true. Test availability
+with ``"name" in psynet.var`` instead. In ``warn`` mode, assigning the legacy
+global changes only the mirrored value; it does not update ``psynet.var``.
+
+The compatibility accessors are installed only for keys on the active page,
+and PsyNet removes them on the next page. If another script replaces and locks
+a compatibility accessor, PsyNet leaves that property alone and continues the
+page transition.
+
 PsyNet does **not** install a legacy ``window.<key>`` accessor when that
 name already exists on ``window``. In the default ``warn`` mode a colliding
 key (for example ``name``, ``status``, ``event``, ``history``) silently
 keeps the browser's value; the page data is still available on
 ``psynet.var``. Page construction warns for these common collisions so they
 show up in ``psynet test local`` / ``psynet debug local``. See
-:doc:`/tutorials/writing_custom_frontends` and
-:doc:`/experiment_development/configuration`.
+:doc:`/code/pages/custom_front_ends` and
+:doc:`/reference/configuration`.
 
 7. Migrate JsPsych timelines
 ----------------------------
@@ -113,7 +157,7 @@ show up in ``psynet test local`` / ``psynet debug local``. See
 * Page setup → ``activate()`` / ``js_page_code`` (not ``DOMContentLoaded``)
 * Timing gates → ``pageReady`` / ``trialConstruct``
 
-Details: :doc:`/tutorials/writing_custom_frontends`.
+Details: :doc:`/code/pages/custom_front_ends`.
 
 9. Migrate trial-selection hooks
 --------------------------------
@@ -185,6 +229,21 @@ If the study currently runs on MTurk, move it to another platform before
 upgrading. Amazon is closing MTurk on September 30, 2026. See
 :doc:`/whats_new/psynet_14`.
 
+For Prolific, search for ``prolific_enable_screen_out`` and
+``prolific_screen_out_slots``:
+
+* Prolific now pays participants who fail or hit an error a fixed amount
+  (``prolific_unsuccessful_base_payment``, default 0.25) plus a bonus up to
+  their accumulated reward. This is on by default
+  (``prolific_pay_unsuccessful = true``).
+* While it is on, set ``prolific_screen_out_slots``, which caps how many
+  participants can be paid this way; deployment fails without it. See
+  :doc:`/deploy/recruiters/prolific`.
+* Set ``prolific_pay_unsuccessful = false`` to keep the old return-for-bonus
+  behaviour, for example if the Prolific workspace rejects the screen-out
+  completion code.
+* Remove ``prolific_enable_screen_out``; it is no longer a valid key.
+
 11. Leave, ads, and error recovery
 ----------------------------------
 
@@ -200,7 +259,7 @@ Search for ``show_abort_button``, ``show_termination_button``,
 * Participant field: ``Participant.early_exited``.
 * Remove ``Experiment.ad_requirements`` and
   ``Experiment.ad_payment_information``. Customize ``templates/ad.html``
-  instead; see :doc:`/tutorials/ad_page`.
+  instead; see :doc:`/deploy/reference/ad_page`.
 * Replace ``error_page_content`` with recruiter
   ``error_page_presentation``. A custom recruiter that shows recovery UI
   must also override ``shows_error_recovery_page``; a button in the
@@ -212,7 +271,7 @@ Search for ``show_abort_button``, ``show_termination_button``,
       def shows_error_recovery_page(self, plan):
           return plan.context is ExitContext.ERROR_RECOVERY
 
-  See :doc:`/experiment_development/configuration`.
+  See :doc:`/reference/configuration`.
 * Rename ``approve_assignment`` to ``submit_assignment`` and Prolific
   ``reject_assignment`` to ``request_return_for_bonus``.
 * ``ExecuteFrontEndJS`` no longer takes ``message``. It shows a spinner::
@@ -234,9 +293,154 @@ migration instructions in the error.
   ``show_reward = true`` to show it anyway where the recruiter allows.
 * Radio and checkbox options are full-width ``label.psynet-option`` rows.
   Restyle ``.psynet-option`` / ``.psynet-option-label`` instead of bare
-  ``label`` / ``input`` elements; see :doc:`/tutorials/theming`.
+  ``label`` / ``input`` elements; see :doc:`/code/pages/theming`.
+* The Next and Reset buttons sit in ``.psynet-actions``. Rules that selected
+  them as direct children of ``#trial-stage`` should target
+  ``.psynet-actions`` instead.
 
-13. Validate
+13. Set up the experiment environment
+-------------------------------------
+
+``pip install psynet`` now installs only a small command-line tool. In the
+experiment directory, run:
+
+.. code-block:: console
+
+    psynet setup
+
+It creates the experiment's ``.venv``, installs the full PsyNet runtime from
+``constraints.txt``, adds the boilerplate files, and starts a Git repository
+if the experiment lacks its own. PsyNet needs Python 3.11 or later.
+
+* ``psynet setup --docker`` is removed; run ``psynet setup``, then
+  ``psynet debug local --docker``.
+* ``psynet services ensure`` starts PostgreSQL and Redis in Docker.
+
+See :doc:`/install` and :doc:`/code/project/creating_an_experiment`.
+
+14. Deployment files
+--------------------
+
+Look for ``.dockerignore`` and a ``docker/`` folder of helper scripts in the
+experiment directory.
+
+``deploy.toml`` now decides which files are deployed; ``.gitignore`` and
+``.dockerignore`` no longer do, so Git-ignored files under ``static/`` are
+deployed. PsyNet creates ``deploy.toml`` when it is missing, and the first
+debug, test or deploy command afterwards stops so that you can review the
+file list.
+
+* Move any custom ``.dockerignore`` entries into ``deploy.toml``'s
+  ``[exclude]`` table, then delete ``.dockerignore``. PsyNet removes
+  generated copies itself.
+* Review the list with ``dallinger deployment-files list``.
+* Commit your changes before a remote deployment; PsyNet records the commit
+  instead of packaging the source code.
+
+See :doc:`upgrading_deployment_file_selection`.
+
+15. Failing participants and trial maker arguments
+--------------------------------------------------
+
+Search for ``def fail_participant``, ``data_check_failed``,
+``attention_check_failed`` and positional arguments to ``TrialMaker(`` or
+``NetworkTrialMaker(``.
+
+* Overriding ``Experiment.fail_participant`` raises an error. Call
+  ``participant.fail()``, or register a ``ParticipantFailRoutine`` for code
+  that must run when a participant fails.
+* Dallinger's ``data_check_failed`` and ``attention_check_failed`` only log
+  a warning; they no longer fail the participant.
+* ``TrialMaker`` and ``NetworkTrialMaker`` take keyword arguments only, like
+  the other trial makers.
+* The ``fail_trials_on_premature_exit`` argument is ignored: when a
+  participant leaves or fails, their unfinished trials always fail and their
+  submitted trials are kept.
+
+See :doc:`/code/trials/participant_and_trial_failure`.
+
+16. Response processing and rendering
+-------------------------------------
+
+Search for ``def process_response``, ``response_approved``,
+``render_partial_timeline_payload``, and code in ``render()`` or templates
+that changes the database.
+
+* Pages now render in a read-only transaction. Move database writes from
+  ``render()`` or templates to ``pre_render()``.
+* An override of ``Experiment.process_response`` must return a
+  ``ResponseResult`` (``from psynet.experiment import ResponseResult``) and
+  accept ``**kwargs``.
+* ``Experiment.response_approved`` is removed; customize approved responses
+  through ``process_response`` or the page-rendering hooks.
+
+17. Groups and barriers
+-----------------------
+
+Search for code that changes ``SyncGroup.participants``, custom ``Barrier``
+subclasses, ``get_waiting_participants(`` and ``SimpleGrouper(``.
+
+* Change group membership with ``SyncGroup.add_participant()`` and
+  ``SyncGroup.remove_participant()``. ``SyncGroup.participants`` is
+  read-only and lists only active members.
+* Custom barriers implement ``check_waiting_participants()`` and
+  ``choose_who_to_release()`` instead of overriding ``check()``. Barrier
+  state is saved as data, so custom release state must be JSON-compatible
+  values, importable classes or functions, or database objects.
+* ``Barrier.get_waiting_participants()`` takes the participant as its first
+  argument; pass ``for_update`` as a keyword.
+  ``get_waiting_participants_from_barrier_id`` is removed.
+* ``SimpleGrouper`` IDs now include the group size. Pass the same ``id_``
+  to two groupers that should share a waiting pool.
+
+See :doc:`/code/multiplayer/synchronization`.
+
+18. Assets and stimuli
+----------------------
+
+Search for ``ExperimentAsset``, ``CachedAsset``, ``CachedFunctionAsset``,
+``personal=``, ``cache=`` and ``compile_nodes_from_directory``.
+
+* Rename ``ExperimentAsset`` and ``CachedAsset`` to ``FileAsset``, and
+  ``CachedFunctionAsset`` to ``GeneratedAsset``. The old names still work
+  but warn, and ``asset(..., cache=...)`` no longer has an effect.
+* Remove ``personal=``; it now raises an error. Treat exported media as
+  potentially identifying.
+* ``compile_nodes_from_directory`` reads media from ``static/``: move the
+  files there from ``data/``, replace ``asset_label`` with ``url_key``, and
+  pass ``self.definition["url"]`` to prompts.
+* Ready-made stimuli can live in ``static/`` and be referenced with
+  ``psynet.media.static_url_for``; see :doc:`/code/using_stimuli`.
+
+19. Exports and analysis scripts
+--------------------------------
+
+Search scripts and notes for ``--assets all``, ``--legacy``,
+``--anonymize``, ``psynet.zip``, ``database.zip``, ``extra_var`` and
+``export_classes_to_skip``.
+
+* ``psynet export`` writes one archive to ``exports/latest/`` and keeps
+  earlier exports under ``exports/history/``. Table CSVs are in a flat
+  ``database/`` folder, with pseudonymous participant IDs; recruiter IDs are
+  in ``participant_identifiers.csv``.
+* ``--assets`` takes ``collected`` (the default: files created during the
+  study) or ``none``. ``--assets all``, ``--legacy`` and ``--anonymize`` are
+  removed, and stimuli declared in the timeline are not exported.
+* Empty tables have no CSV; check ``table_row_counts`` in
+  ``manifest.json`` before reading one.
+* Yes/no columns contain ``True`` and ``False`` rather than ``t`` and
+  ``f``, and the ``type`` column of ``assets/manifest.csv`` uses the new
+  asset class names.
+* ``extra_var`` is removed; read variables from the ``vars`` column with
+  ``psynet.export.unpack_json_column``.
+* Search experiment code for ``copy_expert``, ``copy_from``, ``copy_to`` and
+  ``COPY``. In a web request or background job, PostgreSQL ``COPY`` must run
+  inside :func:`psynet.db.blocking_psycopg`, or psycopg2 raises
+  ``ProgrammingError``.
+
+See :doc:`/data/what_an_export_contains`.
+
+20. Validate
 ------------
 
 From a complete experiment directory. At minimum you typically need:
@@ -246,28 +450,36 @@ From a complete experiment directory. At minimum you typically need:
 * ``.gitignore``, ``deploy.toml``, and ``.python-version``
 
 If you are scaffolding from scratch, see
-:doc:`/tutorials/creating_a_new_experiment` or run ``psynet update-scripts``
+:doc:`/code/project/creating_an_experiment` or run ``psynet scripts update``
 to generate the standard support files.
 
 .. code-block:: console
 
     psynet test local
 
-``psynet test local`` checks static timeline pages for SPA contract problems
-before bots run, so migration errors should appear directly in the pytest
-failure. PageMaker-created pages are still checked when first rendered.
+Before the bots run, ``psynet test local`` checks static timeline pages
+against the in-place page requirements, so migration errors appear directly
+in the test failure. Pages created by a ``PageMaker`` are checked when they
+are first rendered.
 
 Confirm the default in-place mode works (opt-out removed if possible), page
 modules activate without console errors, cleanup runs for persistent
 listeners, and ``config.txt`` no longer uses ``mturk``, ``bots``, or
 ``multi``.
 
-PsyNet-repository Playwright coverage is optional and harness-specific.
-
 Error codes
 -----------
 
-SPA incompatibility messages list codes such as
+With the default ``inplace_timeline_transitions = true``, PsyNet raises an
+error if a custom page uses a complete template or if author-provided template
+content includes patterns that are incompatible with the in-place lifecycle.
+With ``inplace_timeline_transitions = false``, PsyNet keeps legacy templates
+working but may warn about patterns that should be migrated. The check covers
+only author-provided template content, not PsyNet's own timeline shell or
+assets supplied through supported page arguments. A page that fails it may
+still work in legacy reload mode.
+
+The error message for a page that can't load in place lists codes such as
 ``(error codes: complete_template, style_tag)``. Use them to jump to the
 relevant step:
 
