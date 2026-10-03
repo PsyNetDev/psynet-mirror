@@ -1,11 +1,12 @@
-Introduction
+About PsyNet
 ============
 
 .. toctree::
    :maxdepth: 1
 
-   overview
    applications
-   history
+   what_its_like
+   software_stack
+   research
+   citing
    team
-   command_line

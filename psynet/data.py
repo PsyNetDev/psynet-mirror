@@ -46,6 +46,7 @@ from sqlalchemy.schema import (
 )
 
 from . import field
+from .db import blocking_psycopg
 from .field import PythonDict, is_basic_type
 from .utils import get_logger, organize_by_key
 
@@ -174,7 +175,8 @@ def _get_preferred_superclass_version(cls):
 
 def copy_db_table_to_csv(tablename, path):
     with tempfile.TemporaryDirectory() as tempdir:
-        dallinger.data.copy_db_to_csv(db.db_url, tempdir)
+        with blocking_psycopg():
+            dallinger.data.copy_db_to_csv(db.db_url, tempdir)
         temp_filename = f"{tablename}.csv"
         shutil.copyfile(os.path.join(tempdir, temp_filename), path)
 
@@ -203,8 +205,9 @@ def _class_identity(cls) -> tuple[str, str]:
 def _reuse_inherited_columns(cls):
     """Reuse an inherited table's column when a subclass redeclares its name.
 
-    Dallinger models such as ``Info`` use single-table inheritance, so every
-    ``Trial`` subclass contributes its columns to the shared ``info`` table.
+    PsyNet and Dallinger models use single-table inheritance, so, for
+    example, every ``Trial`` subclass contributes its columns to the shared
+    ``trial`` table.
     A plain ``Column`` in a subclass body therefore fails as soon as that name
     is already on the table. This happens for sibling classes, and also when
     PsyNet executes the same ``experiment.py`` more than once in one process,
@@ -989,7 +992,7 @@ def ingest_to_model(
         reader = csv.reader(file)
         columns = tuple('"{}"'.format(n) for n in next(reader))
 
-        with disable_foreign_key_constraints():
+        with disable_foreign_key_constraints(), blocking_psycopg():
             postgres_copy_from(
                 file, model, engine, columns=columns, format="csv", HEADER=False
             )
@@ -1139,18 +1142,20 @@ def export_assets(
     incremental SSH transport uses this so the server can describe the asset
     selection cheaply while the client fetches the bytes over rsync.
     """
-    from .asset import ExperimentAsset, OnDemandAsset
+    from .asset import ManagedAsset, OnDemandAsset
     from .export.path_safety import UnsafePathError, assert_semantic_asset_path
 
-    # ExperimentAsset covers deposits for this deployment. CachedAsset and
-    # ExternalAsset are omitted. OnDemandAsset subclasses ExperimentAsset
-    # but is generated live and is not written into the archive.
+    # Assets stored while the experiment was running are exported. Assets prepared
+    # before launch come from the experiment directory and code, and on-demand
+    # assets are never stored.
     assets_root = path
     os.makedirs(assets_root, exist_ok=True)
 
     assets = [
         asset
-        for asset in db.session.query(ExperimentAsset).order_by(ExperimentAsset.id)
+        for asset in db.session.query(ManagedAsset)
+        .filter(ManagedAsset.created_during_experiment.is_(True))
+        .order_by(ManagedAsset.id)
         if not isinstance(asset, OnDemandAsset)
     ]
 

@@ -986,6 +986,18 @@ def test_approve_hit_does_not_notify_when_submission_status_cannot_be_read():
     experiment.notifier.notify.assert_not_called()
 
 
+def test_dev_prolific_open_recruitment_says_study_is_simulated():
+    recruiter = object.__new__(DevProlificRecruiter)
+    created = {"items": ["https://example.com/ad"], "message": "Study created"}
+    with patch.object(
+        dallinger.recruiters.ProlificRecruiter, "open_recruitment", return_value=created
+    ):
+        response = recruiter.open_recruitment(n=1)
+    assert response["items"] == ["https://example.com/ad"]
+    assert "simulated" in response["message"]
+    assert "nothing was created" in response["message"]
+
+
 def test_dev_prolific_reports_active_without_reading_the_api():
     """Dev mode must report the status a local submit really sees.
 
@@ -3740,6 +3752,56 @@ def _resolve_show_reward(recruiter_cls, configured):
         return exp.show_reward
 
 
+@pytest.mark.parametrize(
+    "settings, expected, lucid, prolific",
+    [
+        ({"recruiter": "prolific", "mode": "live"}, "ProlificRecruiter", False, True),
+        (
+            {"recruiter": "prolific", "mode": "debug"},
+            "DevProlificRecruiter",
+            False,
+            True,
+        ),
+        (
+            {"recruiter": "lucid-recruiter", "mode": "live"},
+            "LucidRecruiter",
+            True,
+            False,
+        ),
+        (
+            {
+                "recruiter": "lucid-recruiter",
+                "mode": "debug",
+                "debug_recruiter": "DevLucidRecruiter",
+            },
+            "DevLucidRecruiter",
+            True,
+            False,
+        ),
+        ({"recruiter": "generic", "mode": "live"}, "GenericRecruiter", False, False),
+        ({"recruiter": "generic", "mode": "debug"}, "HotAirRecruiter", False, False),
+    ],
+)
+def test_recruitment_checks_do_not_build_a_recruiter(
+    settings, expected, lucid, prolific
+):
+    from psynet.experiment import Experiment
+    from psynet.recruiters import configured_recruiter_class
+
+    config = MagicMock()
+    config.get.side_effect = lambda key, default=None: settings.get(key, default)
+    exp = object.__new__(Experiment)
+    with (
+        patch("psynet.recruiters.get_config", return_value=config),
+        patch.object(
+            dallinger.recruiters.Recruiter, "__init__", side_effect=AssertionError
+        ),
+    ):
+        assert configured_recruiter_class().__name__ == expected
+        assert exp.with_lucid_recruitment() is lucid
+        assert exp.with_prolific_recruitment() is prolific
+
+
 def test_show_reward_defaults_to_the_recruiter():
     from psynet.recruiters import GenericRecruiter, HotAirRecruiter, ProlificRecruiter
 
@@ -4795,3 +4857,18 @@ def test_lucid_rejected_consent_uses_a_terminate_callback():
         participant=participant,
         allow_complete=False,
     )
+
+
+def test_status_check_without_study_id_warns_once_and_skips_api(caplog, monkeypatch):
+    monkeypatch.setattr(PsyNetProlificRecruiterMixin, "_warned_missing_study_id", False)
+    recruiter = object.__new__(DevProlificRecruiter)
+    recruiter.prolificservice = MagicMock()
+    with patch.object(
+        DevProlificRecruiter, "current_study_id", new_callable=PropertyMock
+    ) as study_id:
+        study_id.return_value = None
+        recruiter.verify_status_of([make_participant()])
+        recruiter.verify_status_of([make_participant()])
+    recruiter.prolificservice.get_assignments_for_study.assert_not_called()
+    warnings = [r for r in caplog.records if "no Prolific study ID" in r.getMessage()]
+    assert len(warnings) == 1

@@ -56,6 +56,7 @@ from .data import (
 from .experiment_scaffold import (
     _clear_deployment_policy_review_marker,
     _deployment_policy_needs_review,
+    _deployment_policy_review_is_migration,
     _remove_obsolete_generated_docker_scripts,
     _remove_obsolete_generated_dockerignore,
     _without_deployment_policy_review,
@@ -68,7 +69,7 @@ from .experiment_scaffold import (
 )
 from .log import bold
 from .lucid import get_lucid_service
-from .recruiters import BaseLucidRecruiter, HotAirRecruiter
+from .recruiters import BaseLucidRecruiter, GenericRecruiter, HotAirRecruiter
 from .redis import redis_vars
 from .serialize import serialize, unserialize
 from .utils import (
@@ -977,28 +978,92 @@ def _debug_docker(ctx, archive, no_browsers):
         reset_console()
 
 
+def launch_app_without_browsers(port, **kwargs):
+    """Launch the development app without opening browsers.
+
+    Stands in for Dallinger's ``launch_app_and_open_browser`` RQ job in
+    auto-reload ``--no-browsers`` runs. Dallinger's job discards the launch
+    response and logs into the dashboard through the browser it opens, so this
+    job prints the recruitment message and the dashboard credentials instead.
+    It must stay importable by module path because RQ workers resolve it that way.
+    """
+    from dallinger.command_line.develop import BASE_URL
+    from dallinger.deployment import handle_launch_data
+
+    launch_data = handle_launch_data(
+        BASE_URL.format(port) + "launch", error=log, delay=1.0, context="local"
+    )
+    if launch_data.get("recruitment_msg"):
+        log(launch_data["recruitment_msg"], chevrons=False)
+
+    config = get_config()
+    if not config.ready:
+        config.load()
+    log(f"Experiment dashboard: {BASE_URL.format(port)}dashboard")
+    log(
+        f"Dashboard user: {config.get('dashboard_user')} "
+        f"password: {config.get('dashboard_password')}",
+        chevrons=False,
+    )
+
+
+@contextmanager
+def _stop_child_processes_on_signal():
+    """Terminate descendant processes when this process is signalled.
+
+    Ctrl-C in a terminal reaches the whole foreground process group, but a
+    signal sent to the ``psynet`` PID alone would otherwise leave the
+    ``flask run`` server started by ``dallinger develop debug`` running.
+    Must be entered from the main thread.
+    """
+
+    def handler(signum, frame):
+        children = psutil.Process().children(recursive=True)
+        for child in children:
+            try:
+                child.terminate()
+            except psutil.NoSuchProcess:
+                pass
+        psutil.wait_procs(children, timeout=5)
+        if signum == signal.SIGINT:
+            raise KeyboardInterrupt
+        raise SystemExit(128 + signum)
+
+    signals = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
+    previous = {sig: signal.signal(sig, handler) for sig in signals}
+    try:
+        yield
+    finally:
+        for sig, previous_handler in previous.items():
+            signal.signal(sig, previous_handler)
+
+
 def _debug_auto_reload(ctx, archive, no_browsers):
-    if no_browsers:
-        raise click.UsageError(
-            "--no-browsers option is not supported in this debug mode."
-        )
-
-    run_pre_auto_reload_checks()
-
     from dallinger.command_line.develop import debug as dallinger_debug
     from dallinger.deployment import DevelopmentDeployment
 
-    DevelopmentDeployment.archive = archive
-    patch_dallinger_develop()
-
     develop_module = importlib.import_module("dallinger.command_line.develop")
-    develop_module.header = ""
+    launch_job = develop_module.launch_app_and_open_browser
+    debug_kwargs = {"skip_flask": False}
+    if no_browsers:
+        develop_module.launch_app_and_open_browser = launch_app_without_browsers
 
     try:
-        ctx.invoke(dallinger_debug, skip_flask=False)
+        run_pre_auto_reload_checks()
+
+        DevelopmentDeployment.archive = archive
+        patch_dallinger_develop()
+
+        develop_module.header = ""
+
+        try:
+            with _stop_child_processes_on_signal():
+                ctx.invoke(dallinger_debug, **debug_kwargs)
+        finally:
+            db.session.commit()
+            reset_console()
     finally:
-        db.session.commit()
-        reset_console()
+        develop_module.launch_app_and_open_browser = launch_job
 
 
 def _load_runtime_server_config(config=None, deployment_id=None):
@@ -1073,7 +1138,7 @@ def kill_psynet_worker_processes():
     logger.warning(
         "Stopping %s leftover local PsyNet worker process(es) (pids %s). "
         "Launch paths including remote deploy do this so a stale "
-        "dallinger_heroku_* backend cannot hold the shared Postgres database.",
+        "dallinger_heroku_* backend cannot hold this Postgres database.",
         len(processes),
         pid_list,
     )
@@ -1110,12 +1175,13 @@ def list_psynet_chrome_processes():
 
 
 def is_psynet_chrome_process(process):
+    """Return whether ``process`` is a Chrome window PsyNet opened for local debugging or tests."""
     try:
         if "chrome" in process.name().lower():
             for cmd in process.cmdline():
                 if "localhost:5000" in cmd:
                     return True
-                if "user-data-dir" in cmd:
+                if "--user-data-dir=" in cmd and "psynet-chrome-" in cmd:
                     return True
     except (psutil.NoSuchProcess, psutil.AccessDenied):
         pass
@@ -1123,20 +1189,51 @@ def is_psynet_chrome_process(process):
     return False
 
 
+def _current_database_url():
+    from dallinger.db import corrected_db_url, db_url_default
+
+    return corrected_db_url(os.environ.get("DATABASE_URL", db_url_default))
+
+
+def uses_current_database(process):
+    """
+    Return whether ``process`` was started with this shell's ``DATABASE_URL``.
+
+    Local servers inherit ``DATABASE_URL`` from the command that launched them,
+    so this distinguishes this experiment's leftovers from other local
+    experiments on the same machine. Processes whose environment can't be read
+    are treated as someone else's.
+    """
+    from dallinger.db import corrected_db_url, db_url_default
+
+    try:
+        url = process.environ().get("DATABASE_URL", db_url_default)
+    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+        return False
+    return corrected_db_url(url) == _current_database_url()
+
+
 def list_psynet_worker_processes():
-    return [p for p in psutil.process_iter() if is_psynet_worker_process(p)]
+    """List local ``dallinger_heroku_*`` workers that use this shell's database."""
+    return [
+        p
+        for p in psutil.process_iter()
+        if is_psynet_worker_process(p) and uses_current_database(p)
+    ]
 
 
 def is_psynet_worker_process(process):
+    """Return whether ``process`` is a local Dallinger web or worker process."""
     try:
         # This version catches processes in Linux
-        if "dallinger_herok" in process.name():
+        if process.name().startswith("dallinger_herok"):
             return True
         # This version catches process in MacOS
         if "python" in process.name().lower():
-            for cmd in process.cmdline():
-                if "dallinger_heroku_" in cmd:
-                    return True
+            return any(
+                Path(argument).name.startswith("dallinger_heroku_")
+                for argument in process.cmdline()[:2]
+            )
     except (psutil.NoSuchProcess, psutil.AccessDenied):
         pass
 
@@ -1148,10 +1245,13 @@ def list_chromedriver_processes():
 
 
 def is_chromedriver_process(process):
+    """Return whether ``process`` is a chromedriver that PsyNet's test driver started."""
     try:
-        return "chromedriver" in process.name().lower()
-    except psutil.NoSuchProcess:
-        pass
+        return "chromedriver" in process.name().lower() and any(
+            "psynet-chromedriver-" in part for part in process.cmdline()
+        )
+    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+        return False
 
 
 ###########
@@ -1213,7 +1313,7 @@ def run_pre_checks_deploy(local_, recruiter):
     check_psynet_requirement_is_unambiguous()
     check_core_dependency_versions_match_requirements()
 
-    if local_ and not isinstance(recruiter, HotAirRecruiter):
+    if local_ and not isinstance(recruiter, (GenericRecruiter, HotAirRecruiter)):
         raise click.UsageError(
             "``psynet deploy local`` currently only supports the 'generic' recruiter. "
             "Set recruiter = generic in your experiment config, or deploy to a remote server instead "
@@ -1795,6 +1895,7 @@ def _check_experiment_directory(mode, *, require_git_commit=False):
     # Runs after the Git checks so 'git check-ignore' can report which
     # deployment-selected files the old .gitignore used to keep local.
     if _deployment_policy_needs_review():
+        migrating = _deployment_policy_review_is_migration()
         ignored_paths = deployment_info._git_ignored_deployment_paths()
         ignored_summary = ""
         if ignored_paths:
@@ -1803,17 +1904,32 @@ def _check_experiment_directory(mode, *, require_git_commit=False):
             remaining = len(ignored_paths) - preview_limit
             if remaining > 0:
                 preview += f"\n  ... and {remaining} more"
-            ignored_summary = (
-                "\n\nYour existing .gitignore covered the following files, but "
-                "your new deploy.toml does not:\n" + preview
+            if migrating:
+                intro = (
+                    "Your existing .gitignore covered the following files, but "
+                    "your new deploy.toml does not:"
+                )
+            else:
+                intro = (
+                    "Your .gitignore covers the following files, but deploy.toml "
+                    "does not exclude them:"
+                )
+            ignored_summary = f"\n\n{intro}\n{preview}"
+        if migrating:
+            intro = (
+                "PsyNet now requires experiments to provide a deploy.toml file to "
+                "specify which files to include in the deployed experiment. "
+                "Previously .gitignore was used for this purpose.\n\nPsyNet "
+                "created a new deploy.toml file for this experiment."
+            )
+        else:
+            intro = (
+                "PsyNet created a deploy.toml file for this experiment. It "
+                "specifies which files are included when the experiment is deployed."
             )
         _clear_deployment_policy_review_marker()
         raise click.ClickException(
-            "PsyNet now requires experiments to provide a deploy.toml file to "
-            "specify which files to include in the deployed experiment. Previously "
-            ".gitignore was used for this purpose.\n\nPsyNet created a new "
-            "deploy.toml file for this experiment."
-            f"{ignored_summary}\n\nBefore continuing:\n"
+            f"{intro}{ignored_summary}\n\nBefore continuing:\n"
             "  1. Run 'dallinger deployment-files list'. This only prints the files "
             "that PsyNet would copy; it does not start or deploy the experiment.\n"
             "  2. Check the list for credentials, private data, large files, and "
@@ -1840,9 +1956,12 @@ def run_pre_checks(mode, local_, heroku=False, docker=False, app=None):
     # Directory readiness is checked earlier in ``_pre_launch`` (before Redis)
     # and directly from ``psynet test local``. Avoid duplicating that work here.
 
+    if not local_:
+        _check_constraints_before_remote_deploy()
+
     exp = get_experiment()
     exp.check_config()
-    exp.check_size()
+    exp.check_size(heroku=heroku)
     exp.check_consents()
     exp.check_python_dependencies()
 
@@ -1888,8 +2007,9 @@ def run_pre_checks(mode, local_, heroku=False, docker=False, app=None):
             if config.get("docker_image_base_name", None) is None:
                 raise click.UsageError(
                     "docker_image_base_name must be specified in config.txt or ~/.dallingerconfig before you can "
-                    "launch an experiment using Docker. For example, you might write the following: \n"
-                    "docker_image_base_name = registry.gitlab.developers.cam.ac.uk/mus/cms/psynet-experiment-images"
+                    "launch an experiment using Docker. Any image name works unless you push to a "
+                    "registry, for example: \n"
+                    "docker_image_base_name = my-psynet-experiments"
                 )
             _expected_docker_volumes = "${HOME}/psynet-data/assets:/psynet-data/assets"
             if _expected_docker_volumes not in config.get(
@@ -1930,6 +2050,18 @@ def run_pre_checks(mode, local_, heroku=False, docker=False, app=None):
             run_pre_checks_sandbox()
         elif mode == "live":
             run_pre_checks_deploy(local_, recruiter)
+
+
+def _check_constraints_before_remote_deploy():
+    """Stop a remote deploy of a standalone experiment with a stale ``constraints.txt``.
+
+    Docker deploys set ``SKIP_DEPENDENCY_CHECK`` for Dallinger later in
+    ``_pre_launch``, so without this check the image would be built from the
+    stale lockfile. In-repo demos use PsyNet's development environment instead.
+    """
+    if is_in_repo_experiment() or os.environ.get("SKIP_DEPENDENCY_CHECK"):
+        return
+    _check_constraints()
 
 
 def run_pre_checks_sandbox():
@@ -2333,6 +2465,51 @@ def _estimate(mode):
         log(
             f"Estimated time to complete experiment: {pretty_format_seconds(completion_time)}."
         )
+        if config.get("recruiter", None) == "prolific":
+            for warning in prolific_listing_warnings(
+                completion_time_s=completion_time,
+                listed_minutes=config.get(
+                    "prolific_estimated_completion_minutes", None
+                ),
+                base_payment=config.get("base_payment", None),
+                currency=config.currency,
+            ):
+                log(f"Warning: {warning}")
+
+
+# Prolific's published minimum hourly rates; update these if Prolific changes them.
+_PROLIFIC_MINIMUM_PER_HOUR = {"£": 6.0, "$": 8.0}
+
+
+def prolific_listing_warnings(
+    completion_time_s, listed_minutes, base_payment, currency
+):
+    """
+    Compare the Prolific listing in ``config.txt`` with PsyNet's estimates.
+
+    Prolific requires ``base_payment`` alone, without bonuses, to meet its
+    minimum hourly rate over participants' median completion time. The check
+    therefore uses the longer of the listed and estimated durations.
+    """
+    warnings = []
+    estimated_minutes = completion_time_s / 60
+    if listed_minutes and listed_minutes < estimated_minutes:
+        warnings.append(
+            f"prolific_estimated_completion_minutes ({listed_minutes}) is shorter "
+            f"than the estimated {estimated_minutes:.1f} minutes."
+        )
+    minimum = _PROLIFIC_MINIMUM_PER_HOUR.get(currency)
+    minutes = max(listed_minutes or 0, estimated_minutes)
+    if minimum and base_payment is not None and minutes:
+        rate = base_payment / (minutes / 60)
+        if rate < minimum:
+            warnings.append(
+                f"base_payment ({currency}{base_payment:.2f}) for {minutes:.1f} "
+                f"minutes is {currency}{rate:.2f}/hour, below Prolific's minimum "
+                f"of {currency}{minimum:.2f}/hour. Bonuses don't count towards "
+                "Prolific's minimum, so raise base_payment."
+            )
+    return warnings
 
 
 @psynet.command()
@@ -2474,8 +2651,17 @@ def _check_constraints(spinner=None):
             + generate_constraints_cmd
         )
 
-    from .constraints_compile import constraints_are_up_to_date
+    from .constraints_compile import (
+        constraints_are_hand_written,
+        constraints_are_up_to_date,
+    )
 
+    if constraints_are_hand_written(constraints_path):
+        click.echo(
+            "constraints.txt was written by hand, so it is not checked against "
+            "requirements.txt."
+        )
+        return
     if not constraints_are_up_to_date(
         requirements_path=requirements_path,
         constraints_path=constraints_path,
@@ -2555,9 +2741,10 @@ def _ambiguous_psynet_requirement_message(requirement: str | None) -> str:
         parts.append(f"\n\nYour current requirements.txt entry is:\n  {requirement}")
         if _is_local_psynet_requirement(requirement):
             parts.append(
-                "\n\nLocal path and editable installs cannot be resolved on a "
-                "remote deploy server. If you developed against a local PsyNet "
-                "checkout, re-run:\n"
+                "\n\nLocal path, wheel and editable installs cannot be resolved "
+                "on a remote deploy server. Replace this entry with a published "
+                "version or a pushed Git commit (see the examples below). If you "
+                "developed against a local PsyNet checkout, re-run:\n"
                 "  psynet setup --psynet-source commit\n"
                 "to pin a pushed Git commit before deploying."
             )
@@ -2636,9 +2823,9 @@ def export_arguments(func):
             default="collected",
             help=(
                 "Which assets to export; valid values are none and collected. "
-                "'collected' (the default) exports files uploaded or recorded "
-                "during this deployment (e.g. recordings), excluding cached "
-                "stimuli, external URLs, and on-demand generation. "
+                "'collected' (the default) exports assets created while the "
+                "experiment was running (e.g. recordings), excluding assets prepared before "
+                "launch, external URLs, and on-demand generation. "
                 "'none' omits the assets folder."
             ),
         ),
@@ -3924,13 +4111,21 @@ def _replace_directory(source: Path, destination: Path) -> None:
         shutil.rmtree(backup)
 
 
-def _run_simulate(ctx):
-    """Run experiment bots and export their data into the audit packet."""
+def _run_simulate(ctx, n_bots=None):
+    """Run experiment bots and export their data into the audit packet.
+
+    Parameters
+    ----------
+    ctx :
+        Click context used to invoke ``psynet test local`` and ``psynet export local``.
+    n_bots :
+        Number of bots; defaults to ``Experiment.test_n_bots``.
+    """
 
     from psynet.audit.content import artifact_path_is_ready
 
     export_path = resolve_audit_artifact_path(SIMULATED_EXPORT_PATH)
-    ctx.invoke(test__local)
+    ctx.invoke(test__local, n_bots=n_bots)
     staging = Path(
         tempfile.mkdtemp(prefix=".simulated_export.", dir=export_path.parent)
     )
@@ -4494,12 +4689,13 @@ def audit(ctx):
 
 
 @audit.command("simulate")
+@_test_options["n_bots"]
 @click.pass_context
 @require_exp_directory
-def audit_simulate(ctx):
+def audit_simulate(ctx, n_bots=None):
     """Run test bots and write the simulated export into the audit packet."""
 
-    _run_simulate(ctx)
+    _run_simulate(ctx, n_bots=n_bots)
 
 
 @audit.command("performance-test")

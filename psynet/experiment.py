@@ -2,6 +2,7 @@ import configparser
 import inspect
 import json
 import os
+import re
 import shutil
 import signal
 import sys
@@ -28,7 +29,6 @@ import dallinger.experiment
 import dallinger.models
 import flask
 import psutil
-import rpdb
 import sqlalchemy.orm.exc
 from dallinger import db
 from dallinger.config import get_config as dallinger_get_config
@@ -88,6 +88,7 @@ from .command_line import export_launch_data
 from .data import SQLBase, SQLMixin, ingest_zip, register_table
 from .db import (
     _set_transaction_lock_timeout,
+    blocking_psycopg,
     is_transient_transaction_error,
     read_only_transaction,
     transaction,
@@ -123,6 +124,7 @@ from .recruiters import (  # noqa: F401
     PsyNetProlificRecruiterMixin,
     StagingCapRecruiter,  # noqa: F401  # Backward compatibility alias
     StagingLabRecruiter,
+    configured_recruiter_class,
 )
 from .redis import redis_vars
 from .serialize import serialize, unserialize
@@ -218,6 +220,11 @@ def error_response(*args, **kwargs):
 
 
 def is_experiment_launched():
+    """
+    Return ``True`` once :meth:`Experiment.on_launch` has finished.
+
+    Useful as a guard in scheduled tasks that should not run before launch.
+    """
     return redis_vars.get("launch_finished", default=False)
 
 
@@ -402,6 +409,20 @@ class ExperimentStatus(SQLBase, SQLMixin):
         }
 
 
+def _deployment_label_slug(label):
+    """Turn an experiment label into the path-safe start of a deployment ID."""
+    return re.sub(r"[\W_]+", "-", label.lower()).strip("-") or "experiment"
+
+
+def _is_replacement_gunicorn_worker(worker):
+    """Return whether gunicorn spawned this worker after the initial boot.
+
+    The arbiter numbers workers by spawn order (``worker.age``), so the first
+    ``cfg.workers`` spawns are the initial boot.
+    """
+    return worker.age > worker.cfg.workers
+
+
 class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     # pylint: disable=abstract-method
     """
@@ -458,7 +479,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     Default experiment variables accessible through `psynet.experiment.Experiment.var` are:
 
     max_participant_payment : `float`
-        The maximum payment in US dollars a participant is allowed to get. Default: `25.0`.
+        The maximum payment a participant is allowed to get, in the currency set by
+        the ``currency`` configuration key. Default: `25.0`.
 
     soft_max_experiment_payment : `float`
         The recruiting process stops if ``amount_spent()`` (recorded
@@ -575,7 +597,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         Default: ``768``.
 
     supported_locales : ``list``
-        List of locales (i.e., ISO language codes) a user can pick from, e.g., ``'["en"]'``.
+        Locales (ISO language codes) that the experiment is translated into, e.g., ``'["de", "nl"]'``.
+        Each deployment runs in the single locale set by ``locale``.
         Default: ``'[]'``.
 
     force_google_chrome : ``bool``
@@ -1072,6 +1095,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @staticmethod
     def gunicorn_post_worker_init(worker):
+        if not _is_replacement_gunicorn_worker(worker):
+            return
         exp = get_experiment()
         exp.notifier.notify(
             f"A worker restarted (new pid: {worker.pid}). "
@@ -1363,7 +1388,15 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     def record_experiment_status(cls, online: bool = True):
         status = cls.get_status(lookback_s=60)  # since we poll every minute
         status["isOffline"] = not online
-        status_obj = ExperimentStatus(**status)
+        # Status rows are exported with the database, so they must not store the
+        # dashboard credentials. The artifact copy keeps them for the deployments
+        # dashboard.
+        row = {
+            key: value
+            for key, value in status.items()
+            if key not in ("basic_data_url", "secret")
+        }
+        status_obj = ExperimentStatus(**row)
         db.session.add(status_obj)
         if cls.automatic_backups:
             cls.artifact_storage.write_experiment_status(status, cls.deployment_id)
@@ -1396,35 +1429,39 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         context=None,
         **kwargs,
     ):
-        """
+        """Return the experiment's basic data, a summary for analysis defined by the experimenter.
+
         Parameters
         ----------
+        context : str, optional
+            Where the data is being requested:
 
-        context: str
-             Will receive a string that describes the context in which the function has been called.
-             Possibles include:
-             - "dashboard": The function is producing data to be displayed in the dashboard
-             - "export": The function is being called within psynet export
-             - "backup": The function is being called within PsyNet autobackups
-             The default implementation of get_basic_data ignores this context parameter and just returns the same data in all
-             contexts, but experimenters can optionally make their logical conditional on this variable.
+            - ``"monitor"``: the dashboard's Basic data tab;
+            - ``"route"``: the ``/basic_data`` HTTP endpoint;
+            - ``"export"``: ``psynet export``;
+            - ``"backup"``: automatic backups.
 
-        ** kwargs:
-            Dictionary of arbitrary URL GET parameters that can optionally be used by the get_basic_data implementation to
-            further customiser what data is provided.
+            The default implementation ignores it; an override can return
+            different data depending on the context.
+        **kwargs
+            Query parameters from the dashboard tab or the ``/basic_data``
+            endpoint, including ``dashboard_user`` and ``dashboard_password``
+            for the endpoint. Empty for exports and backups.
 
         Returns
         -------
         dict | None
-            A dictionary of data to be returned to the client. The keys of the dictionary should be strings, and the
-            values can be any JSON-serializable object. Return ``None`` if no basic data is provided.
+            A dictionary of JSON-serializable data, saved as ``basic_data.json``
+            in exports. When ``context`` is ``"export"``, the values may instead
+            be pandas data frames, each saved as a CSV file under
+            ``basic_data/``; the other contexts need JSON-serializable data.
+            Return ``None`` if the experiment defines no basic data. See
+            :doc:`/data/basic_data`.
 
         Raises
         ------
         DataError
-            A custom exception that can be raised if the data cannot be retrieved for some reason.
-
-        See `artifact_storage` for an example.
+            If the data cannot be retrieved.
         """
         return None
 
@@ -2317,7 +2354,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             )
 
     def pre_deploy(self, redeploying_from_archive=False, *, update=False):
-        """Prepare the experiment's files and database snapshot for deployment.
+        """Prepare the experiment for deployment, on the machine that launches it.
+
+        Assets deposited during this method count as prepared before launch, so they are
+        left out of ``psynet export``. Deposit assets from a ``PreDeployRoutine`` rather
+        than from an override of this method.
 
         Parameters
         ----------
@@ -2328,6 +2369,15 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             keeps its database and assets, so networks, pre-deploy routines,
             asset deposits and the snapshot are skipped.
         """
+        from .asset import _preparing_for_deployment
+
+        with _preparing_for_deployment():
+            self._pre_deploy(
+                redeploying_from_archive=redeploying_from_archive, update=update
+            )
+
+    def _pre_deploy(self, redeploying_from_archive=False, update=False):
+        """Run the deployment preparation steps; see :meth:`pre_deploy`."""
         self.update_deployment_id()
         if not update:
             self.setup_experiment_config()
@@ -2362,8 +2412,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     @classmethod
     def generate_deployment_id(cls):
         mode = deployment_info.read("mode")
-        id_ = f"{cls.label}"
-        id_ = id_.replace(" ", "-").lower()
+        id_ = _deployment_label_slug(cls.label)
         id_ += (
             "__mode="
             + mode
@@ -2381,7 +2430,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             pass
         with tempfile.TemporaryDirectory() as temp_dir:
             with working_directory(temp_dir):
-                with suppress_stdout():
+                with suppress_stdout(), blocking_psycopg():
                     dallinger.data.export("app", local=True, scrub_pii=False)
             shutil.copyfile(
                 os.path.join(temp_dir, "data", "app-data.zip"),
@@ -2389,20 +2438,19 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             )
 
     @classmethod
-    def check_size(cls):
+    def check_size(cls, *, heroku: bool = False):
         """Reject deployment plans that exceed the configured package limit."""
         from dallinger.utils import ExperimentFileSource
 
-        size_in_mb = ExperimentFileSource(os.getcwd()).size / (1024**2)
+        from .package_size import get_exp_max_size_mb, package_size_limit_error
+
+        # Megabytes of 10**6 bytes, matching Dallinger's own size check.
+        size_in_mb = ExperimentFileSource(os.getcwd()).size / (1000**2)
         logger.info("Experiment deployment size: %.3f MB.", size_in_mb)
-        max_size_in_mb = int(os.environ.get("EXP_MAX_SIZE_MB", "256"))
+        max_size_in_mb = get_exp_max_size_mb(heroku=heroku)
         if size_in_mb > max_size_in_mb:
             raise RuntimeError(
-                f"Your experiment deployment plan exceeds the {max_size_in_mb} MB "
-                "limit. Large packages make deployment slow. Exclude local files "
-                "in deploy.toml or use PsyNet's asset management system. Set "
-                "EXP_MAX_SIZE_MB to override this limit when the package size is "
-                "intentional."
+                package_size_limit_error(size_in_mb, max_size_in_mb, heroku=heroku)
             )
 
     @classmethod
@@ -2454,19 +2502,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         cls._warn_about_overridden_experiment_config(config)
 
     @staticmethod
-    def _configured_recruiter_class(name):
-        """Resolve a configured recruiter name to a class, if it is loaded."""
-        name = str(name or "").strip()
-        if not name:
-            return None
-        for candidate in (name, name.split(".")[-1]):
-            try:
-                return get_descendent_class_by_name(Recruiter, candidate)
-            except AssertionError:
-                continue
-        return None
-
-    @staticmethod
     def check_recruiter_support(config):
         """Reject recruitment platforms that PsyNet no longer supports."""
         configured_recruiters = (
@@ -2480,7 +2515,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 "recruiter such as Prolific, Lucid, or the Lab Recruiter."
             )
         recruiter_name = str(config.get("recruiter", "")).strip()
-        recruiter_class = Experiment._configured_recruiter_class(recruiter_name)
+        try:
+            recruiter_class = configured_recruiter_class(config)
+        except NotImplementedError:
+            recruiter_class = None
         unsupported = recruiter_class is not None and issubclass(
             recruiter_class, (BotRecruiter, MultiRecruiter)
         )
@@ -2781,7 +2819,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         """Fail a still-working participant after a recruiter exit event.
 
         Recruiter abandonment, return, and reassignment are premature exits.
-        See :doc:`/tutorials/participant_and_trial_failure`.
+        See :doc:`/code/trials/participant_and_trial_failure`.
         """
         if participant.complete:
             logger.info(
@@ -3325,13 +3363,32 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         explicit = get_config().get("show_reward", None)
         if explicit is not None:
             return explicit
-        return self.recruiter.shows_reward_by_default
+        return self.recruiter_class.shows_reward_by_default
+
+    @property
+    def recruiter_class(self):
+        """Return the recruiter's class without building a recruiter.
+
+        Dallinger routes create a new experiment object for every request, so
+        instantiating ``self.recruiter`` just to check its type is expensive.
+        """
+        if "recruiter" in self.__dict__:
+            return type(self.__dict__["recruiter"])
+        return configured_recruiter_class()
 
     def with_lucid_recruitment(self):
-        return issubclass(self.recruiter.__class__, BaseLucidRecruiter)
+        """Return whether participants are recruited through Lucid."""
+        recruiter_class = self.recruiter_class
+        return recruiter_class is not None and issubclass(
+            recruiter_class, BaseLucidRecruiter
+        )
 
     def with_prolific_recruitment(self):
-        return issubclass(self.recruiter.__class__, ProlificRecruiter)
+        """Return whether participants are recruited through Prolific."""
+        recruiter_class = self.recruiter_class
+        return recruiter_class is not None and issubclass(
+            recruiter_class, ProlificRecruiter
+        )
 
     def _approved_payload(self, participant, page):
         return {
@@ -3598,16 +3655,13 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         wait is marked silent so the overlay stays a spinner until partners
         catch up.
 
-        ``page`` can be a stale hold object from earlier in the request. If
-        that hold is not ready but the live cursor has already left it
-        (another session released and advanced this participant), follow
-        ``get_current_elt`` instead of first-painting the overlay.
-
-        Page makers reconstruct barrier holds on each ``get_current_elt``, so
-        a still-waiting visit is a new object with the same ``hold_id``. Treat
-        that as the same wait; identity ``is`` would loop until timeout.
-        After the last allowed skip, this walk observes the landing page so
-        settling on the cap still succeeds.
+        ``page`` must be ``get_current_elt`` read after taking that row lock.
+        Hold checks find their record through ``participant.page_uuid``, and
+        the lock stops other sessions from moving the cursor, so ``page`` is
+        still the live hold when it is not ready. Consecutive holds can share
+        a ``hold_id`` (every ``wait_while`` does), so an id is not a visit
+        identity. After the last allowed skip, this walk observes the landing
+        page so settling on the cap still succeeds.
         """
         from .sync import _MAX_BARRIER_WALK_PASSES, _barrier_walk_budget
         from .timeline_hold import holding_next_hold_catchup
@@ -3616,13 +3670,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             if not _is_timeline_hold(page):
                 return page
             if not page.prepare_resume_if_ready(self, participant):
-                live = self.timeline.get_current_elt(self, participant)
-                if self._is_same_timeline_hold(page, live):
-                    return live
-                if not can_work:
-                    break
-                page = live
-                continue
+                return page
             if not can_work:
                 break
             page.account_wait(participant, settle=True)
@@ -3633,17 +3681,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         raise RuntimeError(
             f"Timeline hold skip did not settle after {_MAX_BARRIER_WALK_PASSES} steps."
         )
-
-    @staticmethod
-    def _is_same_timeline_hold(page, live):
-        """Return whether ``live`` is still the hold represented by ``page``."""
-        if page is live:
-            return True
-        if not _is_timeline_hold(live):
-            return False
-        page_id = getattr(page, "hold_id", None)
-        live_id = getattr(live, "hold_id", None)
-        return isinstance(page_id, str) and page_id == live_id
 
     def response_rejected(self, message):
         logger.warning(
@@ -4201,12 +4238,14 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             return error_response("Failed to decode JSON file.")
 
     @dashboard.route("/status/get")
+    @login_required
     # Avoid overriding Experiment.get_status
     def get_experiment_status():  # noqa F811
         exp = get_experiment()
         return exp._parse_status(request.args)
 
     @dashboard.route("/archive/deployment")
+    @login_required
     def archive_deployment():  # noqa F811
         try:
             exp = get_experiment()
@@ -4219,6 +4258,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             return error_response(f"Failed to archive deployment: {str(e)}")
 
     @dashboard.route("/restore/deployment")
+    @login_required
     def restore_deployment():  # noqa F811
         try:
             exp = get_experiment()
@@ -4231,6 +4271,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             return error_response(f"Failed to restore deployment: {str(e)}")
 
     @dashboard.route("/update/recruitment")
+    @login_required
     def update_recruitment():  # noqa F811
         try:
             exp = get_experiment()
@@ -4279,6 +4320,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             )
 
     @dashboard.route("/comment/set/<deployment_id>", methods=["POST"])
+    @login_required
     @with_transaction
     def set_comment(deployment_id):  # noqa F811
         params = request.form
@@ -4293,6 +4335,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         return success_response()
 
     @dashboard.route("/comment/get/<deployment_id>", methods=["GET"])
+    @login_required
     def get_comment(deployment_id):  # noqa F811
         return get_experiment().artifact_storage.read_comment(deployment_id)
 
@@ -4907,6 +4950,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @dashboard.route("/export/trigger", methods=["GET"])
     @staticmethod
+    @login_required
     @with_transaction
     def trigger_export():
         """Build a complete export and store it, without sending it anywhere."""
@@ -5024,6 +5068,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @experiment_route("/module/progress_info", methods=["GET"])
     @classmethod
+    @login_required
     @with_transaction
     def get_progress_info(cls):
         exp = get_experiment()
@@ -5074,6 +5119,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @experiment_route("/module/update_spending_limits", methods=["POST"])
     @classmethod
+    @login_required
     @with_transaction
     def update_spending_limits(cls):
         hard_max_experiment_payment = request.values["hard_max_experiment_payment"]
@@ -5088,17 +5134,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             f"Experiment variable 'soft_max_experiment_payment set' set to {soft_max_experiment_payment}."
         )
         return success_response()
-
-    @experiment_route("/debugger/<password>", methods=["GET"])
-    @classmethod
-    @with_transaction
-    def route_debugger(cls, password):
-        exp = get_experiment()
-        if password == "my-secure-password-195762":
-            exp.new(db.session)
-            rpdb.set_trace()
-            return success_response()
-        return error_response()
 
     @experiment_route("/node/<int:node_id>/fail", methods=["GET", "POST"])
     @staticmethod
@@ -5213,6 +5248,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @experiment_route("/change_lucid_status", methods=["GET"])
     @classmethod
+    @login_required
     def change_lucid_status(cls):
         get_experiment().recruiter.change_lucid_status(request.values.get("status", ""))
         return success_response()
@@ -7059,6 +7095,7 @@ def get_experiment() -> Experiment:
 
 @cache
 def get_trial_maker(trial_maker_id) -> TrialMaker:
+    """Return the trial maker with the given ID from the experiment's timeline."""
     exp = get_experiment()
     return exp.timeline.get_trial_maker(trial_maker_id)
 

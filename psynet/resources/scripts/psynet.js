@@ -203,16 +203,6 @@
 
   syncJsVars();
 
-  $(document).on("change", "#iso-language", function () {
-    const locale = $(this).val();
-    $.get(
-      `${psynetTemplateData.routes.setLocaleParticipant}?locale=${locale}`,
-      function () {
-        location.reload();
-      },
-    );
-  });
-
   let beforeunloadFunction = function () {};
   var psynet = (function () {
     /**
@@ -988,6 +978,7 @@
         channel: config.channel,
         connection: PsyNetWebSocketChannel.connect({
           channel: config.channel,
+          confirmListening: true,
           onMessage: psynet.handleArrivalUpdateMessage,
           onOpen: psynet.fetchArrivalNotice,
         }),
@@ -1154,6 +1145,7 @@
     psynet._connectTimelineHoldSocket = function (controller) {
       controller.connection = PsyNetWebSocketChannel.connect({
         channel: controller.hold.channel,
+        confirmListening: true,
         onOpen() {
           if (!controller.stopped) {
             psynet.resumeTimelineHold("websocket connection");
@@ -1186,7 +1178,8 @@
       psynet.stopArrivalUpdates();
       let active = psynet.timelineHold;
       if (active && !active.stopped) {
-        let sameChannel = active.hold.channel === hold.channel;
+        let previous = active.hold;
+        let sameChannel = previous.channel === hold.channel;
         active.hold = hold;
         if (active.busyRetryTimer != null) {
           clearTimeout(active.busyRetryTimer);
@@ -1201,6 +1194,14 @@
             active.connection.close();
           }
           psynet._connectTimelineHoldSocket(active);
+        }
+        // A later hold reuses the overlay, so there is no Ended/Started pair.
+        if (previous.wake_token !== hold.wake_token) {
+          window.dispatchEvent(
+            new CustomEvent("timelineHoldChanged", {
+              detail: {holdId: hold.hold_id, previousHoldId: previous.hold_id},
+            }),
+          );
         }
         return;
       }

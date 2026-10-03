@@ -6,8 +6,8 @@ from pathlib import Path
 import pytest
 
 from psynet.asset import (
-    CachedFunctionAsset,
-    ExperimentAsset,
+    FileAsset,
+    GeneratedAsset,
     OnDemandAsset,
     _reject_obfuscate_arg,
 )
@@ -19,16 +19,23 @@ def _write_generated_asset(path, payload):
     Path(path).write_bytes(payload.encode())
 
 
+_GENERATOR_OUTPUT = {"text": "original"}
+
+
+def _write_current_generator_output(path):
+    Path(path).write_text(_GENERATOR_OUTPUT["text"])
+
+
 def test_reject_obfuscate_arg_raises():
     with pytest.raises(TypeError, match="obfuscate"):
         _reject_obfuscate_arg(1)
 
 
-def test_experiment_asset_rejects_obfuscate_kwarg(tmp_path):
+def test_file_asset_rejects_obfuscate_kwarg(tmp_path):
     path = tmp_path / "hello.txt"
     path.write_text("hello")
     with pytest.raises(TypeError, match="obfuscate"):
-        ExperimentAsset(input_path=str(path), obfuscate=0)
+        FileAsset(input_path=str(path), obfuscate=0)
 
 
 def test_on_demand_asset_rejects_secret_kwarg():
@@ -55,7 +62,7 @@ def test_managed_asset_uses_sha256_object_path_and_access_token(
     path.write_text("content-addressed")
     digest = sha256_file(path)
 
-    asset = ExperimentAsset(
+    asset = FileAsset(
         local_key="payload",
         input_path=str(path),
         extension=".txt",
@@ -74,9 +81,9 @@ def test_managed_asset_uses_sha256_object_path_and_access_token(
     "experiment_directory", [path_to_test_experiment("static")], indirect=True
 )
 @pytest.mark.usefixtures("launched_experiment")
-def test_cached_function_assets_hash_the_generated_bytes(launched_experiment):
+def test_generated_assets_hash_the_generated_bytes(launched_experiment):
     assets = [
-        CachedFunctionAsset(
+        GeneratedAsset(
             function=_write_generated_asset,
             arguments={"payload": payload},
             local_key=f"generated-{payload}",
@@ -98,3 +105,43 @@ def test_cached_function_assets_hash_the_generated_bytes(launched_experiment):
             asset.object_path
         )
         assert Path(stored).read_text() == payload
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("static")], indirect=True
+)
+@pytest.mark.usefixtures("launched_experiment")
+def test_generated_assets_rerun_the_function_on_every_deposit(
+    launched_experiment, monkeypatch
+):
+    def deposit(local_key):
+        asset = GeneratedAsset(
+            function=_write_current_generator_output,
+            local_key=local_key,
+            extension=".txt",
+        )
+        asset.deposit(launched_experiment.asset_storage)
+        stored = launched_experiment.asset_storage.get_file_system_path(
+            asset.object_path
+        )
+        return Path(stored).read_text()
+
+    assert deposit("before") == "original"
+    monkeypatch.setitem(_GENERATOR_OUTPUT, "text", "edited")
+    assert deposit("after") == "edited"
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("static")], indirect=True
+)
+@pytest.mark.usefixtures("launched_experiment")
+def test_generated_assets_remove_their_temporary_input(launched_experiment):
+    asset = GeneratedAsset(
+        function=_write_generated_asset,
+        arguments={"payload": "temporary"},
+        local_key="temporary",
+        extension=".txt",
+    )
+    asset.deposit(launched_experiment.asset_storage)
+
+    assert not Path(asset.input_path).exists()

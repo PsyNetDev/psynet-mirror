@@ -25,7 +25,8 @@ answers, but they never render a layout. Participant-flow Playwright is the
 Do not treat a green bot run as evidence that pages fit the window.
 
 `psynet audit simulate` writes `audit/simulate/analysis/simulated_export/` and marks
-`simulate_export` present.
+`simulate_export` present. Both commands accept `--n-bots N` to override
+`Exp.test_n_bots` for one run.
 
 ## Performance evidence
 

@@ -1,6 +1,8 @@
 from unittest.mock import MagicMock, patch
 
+from psynet.asset import _PREPARING_FOR_DEPLOYMENT
 from psynet.experiment import Experiment
+from psynet.timeline import PreDeployRoutine
 
 
 class MockExperiment(Experiment):
@@ -69,6 +71,29 @@ def test_pre_deploy_update_prepares_only_the_image():
     experiment.timeline.modules["module"].prepare_for_deployment.assert_not_called()
     experiment.assets.prepare_for_deployment.assert_not_called()
     snapshot.assert_not_called()
+
+
+def test_pre_deploy_marks_deposits_as_prepared_before_launch():
+    """Asset preparation and pre-deploy routines run with the preparation flag on."""
+    experiment = MockExperiment()
+    seen = []
+
+    def routine():
+        seen.append(_PREPARING_FOR_DEPLOYMENT.get())
+
+    experiment.pre_deploy_routines = [PreDeployRoutine("record_flag", routine)]
+    with (
+        patch.object(experiment, "update_deployment_id"),
+        patch.object(experiment, "setup_experiment_config"),
+        patch.object(experiment, "setup_experiment_variables"),
+        patch("psynet.experiment._write_pre_deploy_constant_registry"),
+        patch.object(experiment, "create_database_snapshot"),
+    ):
+        experiment.assets.prepare_for_deployment.side_effect = routine
+        experiment.pre_deploy()
+
+    assert seen == [True, True]
+    assert _PREPARING_FOR_DEPLOYMENT.get() is False
 
 
 def test_source_code_archive_functionality_is_removed():

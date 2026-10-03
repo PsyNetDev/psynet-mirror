@@ -44,7 +44,6 @@ from .utils import (
     call_function_with_context,
     format_datetime,
     get_args,
-    get_language_dict,
     get_locale,
     get_logger,
     log_time_taken,
@@ -1974,7 +1973,7 @@ class Page(Elt):
         if self.show_early_exit_button is not None:
             return bool(self.show_early_exit_button)
         return bool(
-            experiment.recruiter.show_early_exit_button
+            experiment.recruiter_class.show_early_exit_button
             or get_config().get("show_early_exit_button", False)
         )
 
@@ -1996,7 +1995,6 @@ class Page(Elt):
             "dynamicallyUpdateProgressBarAndReward": self.dynamically_update_progress_bar_and_reward,
         }
         locale = get_locale()
-        language_dict = get_language_dict(locale)
         config = get_config()
         # The SPA template contract applies to author-provided template source,
         # not to PsyNet's generated timeline shell or supported page assets.
@@ -2043,9 +2041,6 @@ class Page(Elt):
             "trial_progress_display_config": self.progress_display,
             "attributes": self.attributes,
             "contents": self.contents,
-            "supported_language_dict": {
-                iso: language_dict[iso] for iso in experiment.supported_locales
-            },
             "locale": locale,
             "partial_mode": partial_mode,
             "inplace_timeline_transitions": inplace_timeline_transitions,
@@ -4022,6 +4017,19 @@ class PreDeployRoutine(NullElt):
 
 
 class ParticipantFailRoutine(NullElt):
+    """
+    Runs a function whenever a participant is failed.
+
+    Place it in the timeline; it does not show anything to the participant.
+
+    Parameters
+    ----------
+    label
+        Label identifying the routine in the logs.
+    function
+        Function to run. It can take ``participant`` and ``experiment`` as arguments.
+    """
+
     def __init__(self, label, function):
         super().__init__()
         self.label = label
