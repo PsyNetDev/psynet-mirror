@@ -145,6 +145,7 @@ from .timeline import (
     Timeline,
     WebSocketElt,
     _is_timeline_hold,
+    _timeline_step_name,
     new_page_uuid,
 )
 from .translation.check import check_translations
@@ -3451,7 +3452,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     payload=self._approved_payload(participant, page),
                     page=page,
                 )
-            with forbid_commits(f"Response processing for page {event.label!r}"):
+            with forbid_commits(
+                f"Response processing for {_timeline_step_name(event)}"
+            ):
                 response = event.process_response(
                     raw_answer=raw_answer,
                     blobs=blobs,
