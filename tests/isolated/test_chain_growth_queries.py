@@ -2,7 +2,9 @@ import uuid
 
 import pytest
 from dallinger import db
-from sqlalchemy import inspect
+from dallinger.models import Node
+from sqlalchemy import inspect, select
+from sqlalchemy.exc import OperationalError
 
 from psynet.experiment import get_experiment
 from psynet.participant import Participant
@@ -375,6 +377,38 @@ def test_node_filled_after_selection_is_not_overfilled(db_session, participant):
     assert status == "available"
     assert trial.node is not raced[0]
     assert {trial.node.id, raced[0].id} == {network.head.id for network in networks}
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_only_successful_capacity_claims_keep_their_node_lock(db_session, participant):
+    exp = get_experiment()
+    trial_maker = static_trial_maker(target_trials_per_node=1)
+    full, free = [
+        create_chain_network(trial_maker, exp, network_class=StaticNetwork).head
+        for _ in range(2)
+    ]
+    add_trial(GrowthQueryStaticTrial, full, participant)
+    db.session.commit()
+
+    def locked_elsewhere(node):
+        with db.engine.connect() as other, other.begin():
+            try:
+                other.execute(
+                    select(Node.id)
+                    .where(Node.id == node.id)
+                    .with_for_update(key_share=True, nowait=True)
+                )
+            except OperationalError:
+                return True
+        return False
+
+    assert not trial_maker._claim_node_capacity(full)
+    assert not locked_elsewhere(full)
+    assert trial_maker._claim_node_capacity(free)
+    assert locked_elsewhere(free)
 
 
 @pytest.mark.parametrize(

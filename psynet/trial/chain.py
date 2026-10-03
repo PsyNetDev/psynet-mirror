@@ -2172,14 +2172,22 @@ class ChainTrialMaker(NetworkTrialMaker):
 
         ``FOR NO KEY UPDATE`` serializes claims on the same node without
         conflicting with the key-share locks taken when trials referencing it
-        are inserted. The lock is held until the caller's transaction ends.
+        are inserted. A successful claim holds the lock until the caller's
+        transaction ends. A failed claim rolls back its savepoint, which
+        releases the lock, so a request never holds a lock on a node it does
+        not use; otherwise two requests reselecting at once could deadlock.
         """
         if self._node_capacity_is_unlimited:
             return True
+        savepoint = db.session.begin_nested()
         db.session.execute(
             select(Node.id).where(Node.id == node.id).with_for_update(key_share=True)
         )
-        return count_viable_trials_for_node(node.id) < self.trials_per_node
+        if count_viable_trials_for_node(node.id) < self.trials_per_node:
+            savepoint.commit()
+            return True
+        savepoint.rollback()
+        return False
 
     def select_chain(self, chains, participant, experiment):
         """Select from a nonempty list of eligible chains.
