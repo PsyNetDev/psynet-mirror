@@ -194,10 +194,13 @@ at most two trials of the same condition in a row:
         ),
     )
 
-If a planned node can no longer take a trial, for example because it
-already has ``target_trials_per_node`` trials, PsyNet skips it and logs a
-warning. If it is waiting for asynchronous processing, the participant waits
-for it. A planned order already decides which node comes next, so it cannot
+If a planned node is waiting for asynchronous processing, the participant
+waits for it. If other participants' unfinished trials fill its
+``target_trials_per_node``, PsyNet moves it to the end of the plan and tries
+it again later; if every remaining planned node is held like this, PsyNet
+skips them. If it can no longer take a trial at all, for example because
+it already has ``target_trials_per_node`` finished trials, PsyNet skips it
+and logs a warning. A planned order already decides which node comes next, so it cannot
 be combined with ``select_node``, ``node_priority`` or ``find_nodes``; filter
 with ``filter_nodes_query`` or ``custom_node_filter`` instead. Repeat trials
 come after the last block and are not part of the plan.
