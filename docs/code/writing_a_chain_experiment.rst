@@ -86,8 +86,18 @@ Choosing the next chain
   within a block. They work like ``block_order`` and ``node_order`` in
   :ref:`trial_order`, except that ``chain_order`` defaults to ``"random"``,
   ``"balanced"`` favours the shortest chains and then the heads with the
-  fewest trials, and ``"listed"`` follows the order of the start nodes. With
-  a planned order, the participant takes the planned chains in turn, one
+  fewest trials, and ``"listed"`` follows the order of the start nodes. A
+  ``chain_order`` function takes any of ``participant``, ``experiment``,
+  ``block`` and ``chains``, by name. Each chain is a
+  :class:`~psynet.trial.chain.ChainNetwork` in start-node order; its start
+  node's ``context`` is ``chain.context`` and its current node is
+  ``chain.head``. For example, to run the hardest condition last:
+
+  .. code-block:: python
+
+      chain_order=lambda chains: sorted(chains, key=lambda chain: chain.context["difficulty"])
+
+  With a planned order, the participant takes the planned chains in turn, one
   trial each, skipping any that are busy, until none can give them another
   trial. Create-and-rate trial makers support only ``"balanced"`` and
   ``"random"``.

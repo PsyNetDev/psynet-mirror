@@ -179,6 +179,16 @@ class GeometricStaircaseChain(ChainNetwork):
 
 
 class GeometricStaircaseTrialMaker(ChainTrialMaker):
+    """Runs within-participant geometric staircases, one chain per staircase.
+
+    Takes the arguments of :class:`~psynet.trial.chain.ChainTrialMaker`,
+    except ``chain_type``, which is always ``"within"``. Unlike that class,
+    ``interleave_chains`` defaults to ``False``, so each participant finishes
+    one staircase before starting the next; ``chain_order`` (default
+    ``"random"``) chooses the order of the staircases. See
+    ``demos/experiments/staircase_pitch_discrimination``.
+    """
+
     @property
     def default_network_class(self):
         return GeometricStaircaseChain

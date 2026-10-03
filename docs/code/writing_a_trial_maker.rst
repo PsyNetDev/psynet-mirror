@@ -143,7 +143,8 @@ A participant works through their blocks one at a time, and PsyNet only
 considers nodes in the current block. The block ends when the participant
 reaches ``max_trials_per_block``, when
 :meth:`~psynet.trial.chain.ChainTrialMaker.should_finish_block` returns
-``True``, or when the block has nothing more to give them. PsyNet then moves
+``True`` (it receives ``participant`` and the block's name), or when the
+block has nothing more to give them. PsyNet then moves
 to the next block, or leaves the trial maker after the last one.
 
 ``block_order`` sets the order of the blocks:
@@ -153,7 +154,7 @@ to the next block, or leaves the trial maker after the last one.
 - A list of block names, used for every participant.
 - A function that takes any of ``participant``, ``experiment`` and
   ``blocks`` and returns a list of block names. It may leave blocks out to
-  give a participant only some of them.
+  give a participant only some of them, but must keep at least one.
 
 ``node_order`` sets the order of the nodes within a block. Dynamic orders
 are recomputed in the database for each trial:
@@ -173,9 +174,13 @@ Planned orders are fixed when the participant enters the block:
 
 - ``"listed"``: the order of ``nodes``.
 - A function that takes any of ``participant``, ``experiment``, ``block``
-  and ``nodes`` and returns the nodes in the order to present them.
-  Returning fewer nodes gives the participant only those. With
-  ``allow_repeated_nodes=True`` it may list a node more than once.
+  (the block's name) and ``nodes`` (the block's nodes in listed order), by
+  name, and returns the nodes in the order to present them. Returning fewer
+  nodes gives the participant only those; set
+  ``expected_trials_per_participant`` to match, as PsyNet uses it for
+  progress and payment estimates. With ``allow_repeated_nodes=True`` (which
+  also needs ``max_trials_per_participant`` or ``max_trials_per_block``) it
+  may list a node more than once.
 
 To use a different order in each block, pass a dict from block name to
 order; it must name every block. For example, to counterbalance the block
