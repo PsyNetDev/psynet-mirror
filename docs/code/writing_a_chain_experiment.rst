@@ -82,11 +82,25 @@ Choosing the next chain
 
 - ``allow_revisiting_networks_in_across_chains`` (default ``False``) lets
   participants return to a chain they have already contributed to.
-- ``balance_across_chains`` (default ``False``) sends new trials to the chains
-  with fewest responses.
-- ``wait_for_networks`` (default ``False``) makes participants wait when
-  chains exist but are waiting on asynchronous processing, instead of moving
-  on.
+- ``block_order`` and ``chain_order`` set the order of blocks and of chains
+  within a block. They work like ``block_order`` and ``node_order`` in
+  :ref:`trial_order`, except that ``chain_order`` defaults to ``"random"``,
+  ``"balanced"`` favours the chains with the fewest responses, and
+  ``"listed"`` follows the order of the start nodes. A planned order cycles
+  through its chains, one trial at a time, until each can give the
+  participant no more trials. Create-and-rate trial makers support only
+  ``"balanced"`` and ``"random"``.
+- ``interleave_chains`` (default ``True``; ``False`` for
+  :class:`~psynet.trial.staircase.GeometricStaircaseTrialMaker`). With
+  ``False``, the participant stays on one chain until it can give them no
+  more trials, waiting whenever it is busy, then moves to the next chain in
+  ``chain_order``. It needs ``chain_type="within"`` or
+  ``allow_revisiting_networks_in_across_chains=True``.
+- ``wait_for_networks`` (default ``False``) decides what happens when every
+  chain in the current block is busy, either waiting on asynchronous
+  processing or on other participants' unfinished trials. With ``True`` the
+  participant waits; with ``False`` they finish the block early and move to
+  the next one, or leave the trial maker after the last block.
 - Participant groups work as in :doc:`/code/writing_a_trial_maker`: set ``participant_group`` on
   the start nodes and pass ``choose_participant_group``.
 - To choose the chain yourself, override
