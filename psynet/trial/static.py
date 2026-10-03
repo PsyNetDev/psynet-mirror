@@ -87,11 +87,11 @@ class StaticTrialMaker(ChainTrialMaker):
         and returns the chosen participant group for that trial maker.
         For example, to randomly assign participants to one of two groups called g1 and g2, one could write::
 
-            choose_participant_group=lambda(participant): random.choice(["g1", "g2"])
+            choose_participant_group=lambda participant: random.choice(["g1", "g2"])
 
         Similarly, to alternate participants between two groups, one could write::
 
-            choose_participant_group=lambda(participant): ["g1", "g2"][participant.id % 2]
+            choose_participant_group=lambda participant: ["g1", "g2"][participant.id % 2]
 
     * :meth:`~psynet.trial.static.StaticTrialMaker.select_node`;
       selects one of the eligible nodes for the participant's next trial.
@@ -130,14 +130,14 @@ class StaticTrialMaker(ChainTrialMaker):
         Expected number of trials that each participant will complete.
         This is used for timeline/progress estimation purposes.
         This can either be an integer, or the string ``"n_nodes"``,
-        which will be read as referring to the number of nodes in ``start_nodes``.
+        which will be read as referring to the number of nodes in ``nodes``.
 
     max_trials_per_participant
         Maximum number of trials that each participant may complete (optional);
         once this number is reached, the participant will move on
         to the next stage in the timeline.
         This can either be an integer, or the string ``"n_nodes"``,
-        which will be read as referring to the number of nodes in ``start_nodes``.
+        which will be read as referring to the number of nodes in ``nodes``.
 
     recruit_mode
         Selects a recruitment criterion for determining whether to recruit
@@ -217,11 +217,11 @@ class StaticTrialMaker(ChainTrialMaker):
         and returns the chosen participant group for that trial maker.
         For example, to randomly assign participants to one of two groups called g1 and g2, one could write::
 
-            choose_participant_group=lambda(participant): random.choice(["g1", "g2"])
+            choose_participant_group=lambda participant: random.choice(["g1", "g2"])
 
         Similarly, to alternate participants between two groups, one could write::
 
-            choose_participant_group=lambda(participant): ["g1", "g2"][participant.id % 2]
+            choose_participant_group=lambda participant: ["g1", "g2"][participant.id % 2]
 
     sync_group_type
         Optional SyncGroup type to use for synchronizing participant allocation to nodes.
