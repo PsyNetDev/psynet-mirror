@@ -1,0 +1,1 @@
+New experiments no longer stop on their first debug or test run to review the generated `deploy.toml`. The one-time stop now happens only when an existing experiment moves to `deploy.toml` and its `.gitignore` kept files local that `deploy.toml` would deploy, and it lists exactly those files.

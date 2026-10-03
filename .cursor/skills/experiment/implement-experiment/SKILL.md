@@ -133,10 +133,11 @@ psynet setup                   # scaffolds files, pins, constraints, install
 `psynet setup` is the default path: it creates missing boilerplate (including
 `.cursor/skills/psynet/` when absent), pins PsyNet, ensures `constraints.txt`,
 installs the experiment runtime (`psynet[experiment]`), and initializes Git when
-needed. The first `psynet debug`, `psynet test`, or deploy command after setup
-stops once if PsyNet created `deploy.toml` and lists the files it selects;
-check them and rerun. Git-ignored files may still be
-deployed after that review. After setup, use `psynet debug local --docker`
+needed. `deploy.toml` decides which files are deployed; Git-ignored files are
+deployed unless it excludes them. When migrating an older experiment, the
+first `psynet debug`, `psynet test`, or deploy command may stop once to list
+files that `.gitignore` kept local; exclude any that should stay local and
+rerun. After setup, use `psynet debug local --docker`
 when the experiment should run in Docker mode.
 
 When splitting logic out of `experiment.py`, follow

@@ -572,22 +572,6 @@ def _run_command(args, cwd: Path, *, env_updates=None):
     )
 
 
-def _test_local_after_policy_review(experiment_dir, env_updates=None):
-    """Run ``psynet test local`` through the one-shot deploy.toml review pause.
-
-    Scaffolding an experiment leaves a policy-review marker, so the first launch
-    stops and asks the author to inspect the deployment plan. Automation reruns
-    the command, which is what an author does after reviewing.
-    """
-    command = ["psynet", "test", "local"]
-    first = _run_command(command, experiment_dir, env_updates=env_updates)
-    if first.returncode == 0:
-        return first
-    combined = first.stdout + first.stderr
-    assert "deploy.toml file for this experiment" in combined, combined
-    return _run_command(command, experiment_dir, env_updates=env_updates)
-
-
 def test_empty_directory_scaffold_git_init_and_test_local(tmp_path):
     """Standalone Workflow A: empty dir → scaffold → git init → test local."""
     experiment_dir = tmp_path / "my_experiment"
@@ -610,23 +594,13 @@ def test_empty_directory_scaffold_git_init_and_test_local(tmp_path):
     git_init = _run_command(["git", "init", "-q"], experiment_dir)
     assert git_init.returncode == 0, git_init.stderr
 
-    first = _run_command(
-        ["psynet", "test", "local"],
-        experiment_dir,
-        env_updates={"SKIP_DEPENDENCY_CHECK": "1"},
-    )
-    assert first.returncode != 0, first.stdout + first.stderr
-    assert "deploy.toml file for this experiment" in first.stdout + first.stderr
-
     result = _run_command(
         ["psynet", "test", "local"],
         experiment_dir,
         env_updates={"SKIP_DEPENDENCY_CHECK": "1"},
     )
     assert result.returncode == 0, (
-        "Empty-directory Workflow A failed on rerun after policy review\n"
-        f"FIRST STDOUT:\n{first.stdout}\n"
-        f"FIRST STDERR:\n{first.stderr}\n"
+        "Empty-directory Workflow A failed\n"
         f"STDOUT:\n{result.stdout}\n"
         f"STDERR:\n{result.stderr}"
     )
@@ -759,7 +733,7 @@ def test_demo_roundtrip_runs_local_test_command(label, demo_path, tmp_path):
     scaffold_result = _run_command(["psynet", "scripts", "scaffold"], temp_demo)
     assert scaffold_result.returncode == 0, scaffold_result.stderr
 
-    result = _test_local_after_policy_review(temp_demo)
+    result = _run_command(["psynet", "test", "local"], temp_demo)
 
     assert result.returncode == 0, (
         f"{label} failed after scaffold round-trip\n"

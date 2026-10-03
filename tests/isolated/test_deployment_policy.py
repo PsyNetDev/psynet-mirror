@@ -13,7 +13,6 @@ from psynet.experiment import Experiment
 from psynet.experiment_scaffold import (
     _DEPLOYMENT_POLICY_REVIEW_MARKER,
     _GENERATED_DOCKERIGNORE_VARIANTS,
-    _clear_deployment_policy_review_marker,
     _deployment_policy_needs_review,
     ensure_deployment_policy,
     scaffold_experiment_directory,
@@ -125,7 +124,7 @@ def test_scaffold_creates_stock_deployment_policy(tmp_path):
 
     with working_directory(tmp_path):
         scaffold_experiment_directory()
-        assert _deployment_policy_needs_review()
+        assert not _deployment_policy_needs_review()
 
     policy = parse_deployment_policy(tmp_path / "deploy.toml")
     assert policy.exclude_paths == EXPECTED_EXCLUDE_PATHS
@@ -134,13 +133,16 @@ def test_scaffold_creates_stock_deployment_policy(tmp_path):
     assert not (tmp_path / ".dockerignore").exists()
 
 
-def test_ensure_deployment_policy_uses_new_experiment_review_wording(tmp_path):
-    """Creating deploy.toml without an old .gitignore is not a migration."""
+def test_ensure_deployment_policy_marks_only_migrations_for_review(tmp_path):
+    """Only a deploy.toml that replaces an existing .gitignore selection is checked."""
     with working_directory(tmp_path):
         ensure_deployment_policy()
+        assert not _deployment_policy_needs_review()
 
-    marker = tmp_path / _DEPLOYMENT_POLICY_REVIEW_MARKER
-    assert marker.read_text().startswith("reason: new experiment\n")
+        Path("deploy.toml").unlink()
+        Path(".gitignore").write_text("secret.txt\n")
+        ensure_deployment_policy()
+        assert (tmp_path / _DEPLOYMENT_POLICY_REVIEW_MARKER).is_file()
 
 
 def test_scaffold_missing_files_does_not_leave_review_marker(tmp_path, monkeypatch):
@@ -306,18 +308,12 @@ def test_check_experiment_directory_stops_after_creating_missing_deploy_toml(
             _check_experiment_directory("debug")
 
         message = str(error.value)
-        assert "PsyNet now requires experiments to provide a deploy.toml" in message
-        assert (
-            "existing .gitignore covered the following files, but your new "
-            "deploy.toml does not"
-        ) in message
-        assert "for deployment:\n" in message
-        assert "  experiment.py\n" in message
-        assert "Check these files for credentials, private data, large files" in message
-        assert "secret.txt" in message
-        assert "dallinger deployment-files list" in message
+        assert "Your .gitignore kept these files local" in message
+        assert "  secret.txt\n" in message
+        assert "experiment.py" not in message
+        assert "[exclude]" in message
 
-        # The policy now exists, so the author can review it and rerun.
+        # The check runs once, so the author can edit deploy.toml and rerun.
         assert not _deployment_policy_needs_review()
         _check_experiment_directory("debug")
 
@@ -326,11 +322,29 @@ def test_check_experiment_directory_stops_after_creating_missing_deploy_toml(
     ).read_bytes()
 
 
-def test_check_experiment_directory_stops_after_setup_creates_deploy_toml(
+def test_check_experiment_directory_migration_without_newly_deployed_files_is_silent(
     tmp_path, monkeypatch
 ):
-    from click import ClickException
+    from psynet.command_line import _check_experiment_directory
 
+    monkeypatch.setattr("psynet.command_line.is_in_repo_experiment", lambda: False)
+    (tmp_path / "experiment.py").write_text("class Exp:\n    pass\n")
+    (tmp_path / "requirements.txt").write_text("psynet\n")
+
+    with working_directory(tmp_path):
+        scaffold_experiment_directory()
+        Path("deploy.toml").unlink()
+        subprocess.run(["git", "init", "-q"], check=True)
+        ensure_deployment_policy()
+        assert _deployment_policy_needs_review()
+
+        _check_experiment_directory("debug")
+        assert not _deployment_policy_needs_review()
+
+
+def test_check_experiment_directory_is_silent_for_new_experiments(
+    tmp_path, monkeypatch
+):
     from psynet.command_line import _check_experiment_directory
 
     monkeypatch.setattr("psynet.command_line.is_in_repo_experiment", lambda: False)
@@ -344,16 +358,7 @@ def test_check_experiment_directory_stops_after_setup_creates_deploy_toml(
         Path("secret.txt").write_text("API_KEY=private\n")
         subprocess.run(["git", "init", "-q"], check=True)
 
-        assert _deployment_policy_needs_review()
-        with pytest.raises(ClickException) as error:
-            _check_experiment_directory("debug")
-
-        message = str(error.value)
-        assert "PsyNet created a deploy.toml file for this experiment." in message
-        assert "Previously .gitignore" not in message
-        assert "secret.txt" in message
         assert not _deployment_policy_needs_review()
-
         _check_experiment_directory("debug")
 
 
@@ -391,7 +396,6 @@ def test_check_experiment_directory_rejects_ignored_parent_provenance(tmp_path):
 
     with working_directory(experiment):
         scaffold_experiment_directory()
-        _clear_deployment_policy_review_marker()
         with pytest.raises(
             ClickException,
             match="commit cannot identify the experiment's source state",
@@ -412,7 +416,6 @@ def test_check_experiment_directory_removes_generated_dockerignore(
 
     with working_directory(tmp_path):
         scaffold_experiment_directory()
-        _clear_deployment_policy_review_marker()
         dockerignore.write_text(
             "\n".join(max(_GENERATED_DOCKERIGNORE_VARIANTS, key=len)) + "\n"
         )
@@ -437,7 +440,6 @@ def test_check_experiment_directory_rejects_custom_dockerignore(
 
     with working_directory(tmp_path):
         scaffold_experiment_directory()
-        _clear_deployment_policy_review_marker()
         dockerignore.write_text("custom-local-file\n")
         capsys.readouterr()
         with pytest.raises(ClickException, match="no longer supported"):
@@ -459,7 +461,6 @@ def test_check_experiment_directory_removes_obsolete_docker_helpers(
 
     with working_directory(tmp_path):
         scaffold_experiment_directory()
-        _clear_deployment_policy_review_marker()
         _write_obsolete_docker_helpers(tmp_path)
         _check_experiment_directory("debug")
 

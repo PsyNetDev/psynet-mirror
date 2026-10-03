@@ -759,11 +759,6 @@ def _report_scaffold_result(written, *, overwrite):
     if summary:
         click.echo(f"Scaffolded experiment in {directory_name}")
         click.echo(f"  created: {summary}")
-        if _deployment_policy_needs_review():
-            click.echo(
-                "  The next debug, test, or deploy command pauses once to list "
-                "the files deploy.toml selects for deployment."
-            )
         return
 
     click.echo("Nothing to scaffold; experiment boilerplate is already present.")
@@ -773,7 +768,8 @@ def _copy_template_file(relative_path, overwrite, *, migrating=True):
     """Copy one scaffold-managed template file into the experiment directory.
 
     ``migrating`` records whether a newly created ``deploy.toml`` replaces the
-    older ``.gitignore``-based file selection of an existing experiment.
+    older ``.gitignore``-based file selection of an existing experiment; only
+    such migrations get a launch-time review.
     """
     destination = Path(relative_path)
     if relative_path in _PRESERVE_EXISTING_TEMPLATE_FILES:
@@ -786,8 +782,12 @@ def _copy_template_file(relative_path, overwrite, *, migrating=True):
     destination.parent.mkdir(parents=True, exist_ok=True)
     with resources.as_file(_experiment_script_resource(relative_path)) as path:
         shutil.copyfile(path, destination)
-    if relative_path == "deploy.toml" and not _suppress_policy_review_marker.get():
-        _mark_deployment_policy_for_review(migrating=migrating)
+    if (
+        relative_path == "deploy.toml"
+        and migrating
+        and not _suppress_policy_review_marker.get()
+    ):
+        _mark_deployment_policy_for_review()
     return True
 
 
@@ -797,32 +797,22 @@ _suppress_policy_review_marker: ContextVar[bool] = ContextVar(
 )
 
 
-_MIGRATION_REVIEW_LINE = "reason: migration from .gitignore-based selection"
-
-
-def _mark_deployment_policy_for_review(*, migrating: bool) -> None:
-    """Record that a newly created ``deploy.toml`` still needs a launch-time review."""
+def _mark_deployment_policy_for_review() -> None:
+    """Record that a migrated ``deploy.toml`` still needs a launch-time check."""
     marker = _DEPLOYMENT_POLICY_REVIEW_MARKER
     marker.parent.mkdir(parents=True, exist_ok=True)
-    reason = _MIGRATION_REVIEW_LINE if migrating else "reason: new experiment"
     marker.write_text(
-        f"{reason}\n"
-        "PsyNet created deploy.toml for this experiment. The next debug, test, "
-        "or deploy command stops once so you can inspect the deployment plan "
-        "with 'dallinger deployment-files list'. This file is local-only; "
-        "you can delete it after that review.\n"
+        "PsyNet created deploy.toml to replace this experiment's "
+        ".gitignore-based deployment selection. The next debug, test, or "
+        "deploy command checks once whether deploy.toml now deploys files "
+        "that .gitignore kept local. This file is local-only; you can "
+        "delete it.\n"
     )
 
 
 def _deployment_policy_needs_review() -> bool:
     """Return whether the current ``deploy.toml`` still has a one-shot review marker."""
     return _DEPLOYMENT_POLICY_REVIEW_MARKER.is_file()
-
-
-def _deployment_policy_review_is_migration() -> bool:
-    """Return whether the pending ``deploy.toml`` review follows a migration."""
-    lines = _DEPLOYMENT_POLICY_REVIEW_MARKER.read_text(encoding="utf-8").splitlines()
-    return bool(lines) and lines[0] == _MIGRATION_REVIEW_LINE
 
 
 def _clear_deployment_policy_review_marker() -> None:
@@ -849,10 +839,11 @@ def _without_deployment_policy_review():
 def ensure_deployment_policy() -> None:
     """Create ``deploy.toml`` from the PsyNet template when it is missing.
 
-    Existing files are never overwritten. A newly written file also gets a
-    local review marker so the next debug, test, or deploy command pauses
-    once before copying files, unless the copy happens inside a temporary
-    pytest scaffold or in-repo auto-prepare.
+    Existing files are never overwritten. When the experiment already has a
+    ``.gitignore``, a newly written file also gets a local review marker so
+    the next debug, test, or deploy command checks once whether deploy.toml
+    now deploys files that .gitignore kept local, unless the copy happens
+    inside a temporary pytest scaffold or in-repo auto-prepare.
     """
     _assert_managed_path_is_safe("deploy.toml")
     _copy_template_file(
