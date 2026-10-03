@@ -1789,6 +1789,14 @@ class Page(Elt):
             else:
                 trial.time_taken += resp.metadata["time_taken"]
 
+        participant.browser_platform = metadata.get(
+            "platform", "Browser platform info could not be retrieved."
+        )
+
+        return resp
+
+    def _accept_response(self, resp, experiment, participant):
+        """Save an answer that passed validation and run ``on_complete``."""
         if self.save_answer:
             if len(participant.answer_accumulators) > 0:
                 page_label = self.label
@@ -1804,13 +1812,7 @@ class Page(Elt):
         else:
             participant.answer_is_fresh = False
 
-        participant.browser_platform = metadata.get(
-            "platform", "Browser platform info could not be retrieved."
-        )
-
         self.on_complete(experiment=experiment, participant=participant)
-
-        return resp
 
     def _find_answer_label(self, page_label, accumulator):
         if page_label not in accumulator:

@@ -3481,6 +3481,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     }
                 )
 
+            event._accept_response(response, self, participant)
             participant.inc_time_credit(event.time_estimate)
             participant.inc_progress(event.time_estimate)
 
