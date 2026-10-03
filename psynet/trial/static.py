@@ -351,10 +351,12 @@ class StaticTrialMaker(ChainTrialMaker):
 
         chains_per_experiment = None
 
-        if allow_repeated_nodes:
-            assert (
-                max_trials_per_participant is not None
-                or max_trials_per_block is not None
+        if allow_repeated_nodes and (
+            max_trials_per_participant is None and max_trials_per_block is None
+        ):
+            raise ValueError(
+                "allow_repeated_nodes=True needs max_trials_per_participant or "
+                "max_trials_per_block, so that participants do not repeat nodes forever."
             )
 
         super().__init__(

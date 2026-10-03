@@ -1114,3 +1114,18 @@ def test_order_dict_may_cover_more_blocks_than_one_participant_has():
     trial_maker._check_order_setting_blocks({"A"})
     with pytest.raises(ValueError, match="every block"):
         trial_maker._check_order_setting_blocks({"C"})
+
+
+def test_order_function_arguments_are_checked_at_construction():
+    with pytest.raises(TypeError, match="takes items"):
+        make_static_trial_maker(node_order=lambda items: items)
+    with pytest.raises(TypeError, match="takes nodes"):
+        make_trial_maker(chain_order=lambda nodes: nodes)
+    make_static_trial_maker(node_order=lambda participant, block, nodes: nodes)
+
+
+def test_repeats_without_a_trial_limit_name_the_missing_argument():
+    with pytest.raises(ValueError, match="max_trials_per_block"):
+        make_static_trial_maker(
+            allow_repeated_nodes=True, max_trials_per_participant=None
+        )

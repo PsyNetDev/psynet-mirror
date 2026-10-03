@@ -176,6 +176,31 @@ def _validate_order_setting(value, argument_name):
     return value
 
 
+# Arguments that call_function_with_context can supply to any order function.
+_CONTEXT_ARGUMENTS = ("participant", "experiment", "assets", "trial_maker", "trial")
+
+
+def _check_order_function(function, argument_name, item_argument):
+    """Reject order functions with required arguments PsyNet cannot supply."""
+    allowed = (*_CONTEXT_ARGUMENTS, item_argument)
+    if argument_name != "block_order":
+        allowed += ("block",)
+    unknown = [
+        name
+        for name, parameter in inspect.signature(function).parameters.items()
+        if name not in allowed
+        and parameter.default is inspect.Parameter.empty
+        and parameter.kind
+        not in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
+    ]
+    if unknown:
+        raise TypeError(
+            f"The {argument_name} function takes {', '.join(unknown)}, which PsyNet "
+            f"cannot supply. It may take any of {', '.join(allowed)}, by name. "
+            f"See {_trial_order_docs_url()}."
+        )
+
+
 def _is_planned_order(value):
     return value in _PLANNED_ORDERS or callable(value)
 
@@ -1362,7 +1387,10 @@ class ChainTrialMaker(NetworkTrialMaker):
         ``"random"`` (the default), ``"balanced"`` (chains with the fewest
         trials first), ``"listed"`` (the order of ``start_nodes``), a function
         returning the planned chains, or a dict giving one of these values
-        for every block. See :ref:`trial_order`.
+        for every block. The function may take any of ``participant``,
+        ``experiment``, ``block`` and ``chains`` (the block's
+        :class:`~psynet.trial.chain.ChainNetwork` objects in start-node
+        order). See :ref:`trial_order`.
 
     interleave_chains
         If ``True`` (the default), consecutive trials may come from different
@@ -1600,10 +1628,13 @@ class ChainTrialMaker(NetworkTrialMaker):
                 or callable(start_nodes)
                 or is_list_of(start_nodes, ChainNode)
             )
-            if allow_revisiting_networks_in_across_chains:
-                assert (
-                    max_trials_per_participant is not None
-                    or max_trials_per_block is not None
+            if allow_revisiting_networks_in_across_chains and (
+                max_trials_per_participant is None and max_trials_per_block is None
+            ):
+                raise ValueError(
+                    "allow_revisiting_networks_in_across_chains=True needs "
+                    "max_trials_per_participant or max_trials_per_block, so that "
+                    "participants do not revisit chains forever."
                 )
         else:
             raise ValueError(f"Unrecognized chain type: {chain_type}")
@@ -1663,7 +1694,14 @@ class ChainTrialMaker(NetworkTrialMaker):
                 "allow_revisiting_networks_in_across_chains=True."
             )
         self.block_order = _validate_block_order(block_order)
+        if callable(block_order):
+            _check_order_function(block_order, "block_order", "blocks")
         self._order_setting = _validate_order_setting(chain_order, self._order_argument)
+        for order in _order_setting_values(chain_order):
+            if callable(order):
+                _check_order_function(
+                    order, self._order_argument, self._order_items_name
+                )
         self.interleave_chains = interleave_chains
 
         self.trial_class = trial_class
@@ -1797,8 +1835,9 @@ class ChainTrialMaker(NetworkTrialMaker):
                     f"{type(self).__name__} plans its {self._order_items_name} with "
                     f"{self._order_argument} but also overrides {', '.join(overridden)}. "
                     "A planned order already decides which item comes next; filter "
-                    f"with {self._query_hooks[0]} instead, or use a 'balanced' or "
-                    f"'random' {self._order_argument}. See {_trial_order_docs_url()}."
+                    f"with {self._query_hooks[0]} or {self._python_filter_hooks[0]} "
+                    f"instead, or use a 'balanced' or 'random' {self._order_argument}. "
+                    f"See {_trial_order_docs_url()}."
                 )
         if is_method_overridden(self, ChainTrialMaker, "should_finish_block"):
             parameters = inspect.signature(self.should_finish_block).parameters
