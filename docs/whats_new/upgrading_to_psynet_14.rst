@@ -211,6 +211,13 @@ Search custom trial makers for ``find_networks``, ``find_node``,
   maker. Previously it was calculated within each concrete trial class. Trials
   constructed outside a trial-maker state may have ``position=None``; code that
   performs arithmetic with ``position`` should handle that case explicitly.
+* ``grow_network``, ``finalize_trial`` and code that runs while a trial is
+  prepared (selection hooks, ``on_trial_created`` and
+  ``Trial.finalize_definition``) run inside the participant's response
+  transaction and now raise
+  ``RuntimeError`` if they call ``db.session.commit()`` or
+  ``db.session.rollback()``. Search these overrides for ``commit(`` and
+  replace it with ``db.session.flush()`` where you need database IDs.
 
 PsyNet raises an actionable ``TypeError`` when a removed or wrong-paradigm
 hook is still overridden.

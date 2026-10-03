@@ -42,6 +42,7 @@ from psynet import field
 
 from ..asset import Asset, AssetNetwork, AssetNode, AssetTrial
 from ..data import SQLBase, SQLMixin, SQLMixinDallinger, register_table
+from ..db import forbid_commits
 from ..error import (  # noqa  # Importing the error module is important to ensure sqlalchemy is happy
     ErrorRecord,
 )
@@ -1234,12 +1235,13 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             trial.complete = True
 
             if trial_maker:
-                trial_maker.finalize_trial(
-                    answer=trial.answer,
-                    trial=trial,
-                    experiment=experiment,
-                    participant=participant,
-                )
+                with forbid_commits(f"{type(trial_maker).__name__}.finalize_trial"):
+                    trial_maker.finalize_trial(
+                        answer=trial.answer,
+                        trial=trial,
+                        experiment=experiment,
+                        participant=participant,
+                    )
 
             trial.check_if_can_run_async_post_trial()
             trial.check_if_can_mark_as_finalized()
@@ -2228,6 +2230,10 @@ class TrialMaker(Module):
 
     @log_time_taken
     def _prepare_trial(self, experiment, participant, leader=None):
+        with forbid_commits(f"{type(self).__name__} trial preparation"):
+            return self._prepare_trial_uncommitted(experiment, participant, leader)
+
+    def _prepare_trial_uncommitted(self, experiment, participant, leader):
         # In synchronous trial makers, we only make sure that the participant is still in the sync group (and not e.g. kicked out) before delivering the next trial.
         if (
             self.sync_group_type is not None
@@ -2966,7 +2972,8 @@ class NetworkTrialMaker(TrialMaker):
         from psynet.experiment import get_experiment
 
         experiment = get_experiment()
-        grown = self.grow_network(network, experiment)
+        with forbid_commits(f"{type(self).__name__}.grow_network"):
+            grown = self.grow_network(network, experiment)
         assert isinstance(grown, bool)
         if grown:
             self._check_run_async_post_grow_network(network)

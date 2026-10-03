@@ -7,6 +7,7 @@ from sqlalchemy.orm import object_session
 from psynet.data import SQLBase
 from psynet.db import (
     _set_transaction_lock_timeout,
+    forbid_commits,
     read_only_transaction,
     transaction,
 )
@@ -162,6 +163,20 @@ def test_read_only_transaction_allows_no_op_assignment(db_session):
         with read_only_transaction():
             obj = DummyTransactionModel.query.get("unchanged")
             obj.id = "unchanged"
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_forbid_commits_rejects_commits_but_allows_savepoints(db_session):
+    DummyTransactionModel.__table__.create(bind=db_session.get_bind(), checkfirst=True)
+
+    with transaction(commit=False):
+        with forbid_commits("grow_network"):
+            with db.session.begin_nested():
+                db.session.add(DummyTransactionModel(id="savepoint"))
+            with pytest.raises(RuntimeError, match="grow_network must not commit"):
+                db.session.commit()
 
 
 @pytest.mark.parametrize(

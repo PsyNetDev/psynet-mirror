@@ -181,10 +181,49 @@ def _meaningfully_dirty(session):
     ]
 
 
+_commit_forbidden_in = ContextVar("psynet_commit_forbidden_in", default=None)
+
+
 @event.listens_for(dallinger.db.session, "before_commit")
 def _prevent_render_commit(session):
     if _read_only_render_depth.get() > 0:
         raise RuntimeError("Timeline rendering cannot commit database transactions.")
+    operation = _commit_forbidden_in.get()
+    if operation is not None and not session.in_nested_transaction():
+        raise RuntimeError(_forbidden_commit_message(operation, "commit"))
+
+
+def _forbidden_commit_message(operation, action):
+    return (
+        f"{operation} must not {action} the database transaction: it runs inside "
+        "a transaction owned by its caller (for example a participant response "
+        "that holds row locks). Use db.session.flush() if you need database IDs."
+    )
+
+
+@contextmanager
+def forbid_commits(operation: str):
+    """Fail if code inside this block commits or rolls back the caller's transaction.
+
+    Framework hooks such as network growth and trial selection run inside a
+    transaction that their caller commits. A commit inside the hook releases
+    the caller's row locks early and saves a partial unit of work. Savepoints
+    (``begin_nested``) remain allowed.
+
+    Parameters
+    ----------
+    operation :
+        Description of the guarded code, used in the error message.
+    """
+    session = dallinger.db.session()
+    root = session.get_transaction()
+    token = _commit_forbidden_in.set(operation)
+    try:
+        yield
+    finally:
+        _commit_forbidden_in.reset(token)
+    if root is not None and session.get_transaction() is not root:
+        raise RuntimeError(_forbidden_commit_message(operation, "commit or roll back"))
 
 
 @event.listens_for(dallinger.db.session, "before_flush")

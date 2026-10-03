@@ -30,6 +30,7 @@ from sqlalchemy.sql.expression import not_, select
 from tqdm import tqdm
 
 from ..data import SQLMixinDallinger
+from ..db import forbid_commits
 from ..field import PythonList, PythonObject, VarStore
 from ..page import wait_while
 from ..participant import Participant
@@ -2393,7 +2394,10 @@ class ChainTrialMaker(NetworkTrialMaker):
         from psynet.experiment import get_experiment
 
         experiment = get_experiment()
-        grown = self.grow_network(network, experiment, check_readiness=check_readiness)
+        with forbid_commits(f"{type(self).__name__}.grow_network"):
+            grown = self.grow_network(
+                network, experiment, check_readiness=check_readiness
+            )
         assert isinstance(grown, bool)
         if grown:
             self._check_run_async_post_grow_network(network)
