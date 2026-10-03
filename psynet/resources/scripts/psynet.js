@@ -1178,7 +1178,8 @@
       psynet.stopArrivalUpdates();
       let active = psynet.timelineHold;
       if (active && !active.stopped) {
-        let sameChannel = active.hold.channel === hold.channel;
+        let previous = active.hold;
+        let sameChannel = previous.channel === hold.channel;
         active.hold = hold;
         if (active.busyRetryTimer != null) {
           clearTimeout(active.busyRetryTimer);
@@ -1193,6 +1194,14 @@
             active.connection.close();
           }
           psynet._connectTimelineHoldSocket(active);
+        }
+        // A later hold reuses the overlay, so there is no Ended/Started pair.
+        if (previous.wake_token !== hold.wake_token) {
+          window.dispatchEvent(
+            new CustomEvent("timelineHoldChanged", {
+              detail: {holdId: hold.hold_id, previousHoldId: previous.hold_id},
+            }),
+          );
         }
         return;
       }
