@@ -23,6 +23,10 @@ the name of an existing Python module such as ``code`` or ``test``.
    uv pip install psynet
    psynet setup
 
+The ``uv pip install`` line installs the PsyNet version that this
+documentation was built from. To install a different version, see
+:ref:`choosing_a_psynet_version`.
+
 ``psynet setup`` installs the full PsyNet runtime into the folder's
 ``.venv``, sets up a Git repository, and creates a starter
 ``experiment.py`` along with the other files an experiment needs, including
