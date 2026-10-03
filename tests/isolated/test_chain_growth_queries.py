@@ -829,3 +829,24 @@ def test_graph_growth_stays_in_the_callers_transaction(db_session, participant):
     db.session.rollback()
 
     assert network.head.degree == 0
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_n_trials_still_required_counts_completed_trials_in_open_networks(
+    db_session, participant
+):
+    exp = get_experiment()
+    trial_maker = chain_trial_maker(chains_per_experiment=3, max_nodes_per_chain=3)
+    started, full, empty = [create_chain_network(trial_maker, exp) for _ in range(3)]
+    full.full = True
+    initialize_trial_maker_state(trial_maker, participant)
+    add_trial(GrowthQueryTrial, started.head, participant)
+    add_trial(GrowthQueryTrial, started.head, participant, failed=True)
+    add_trial(GrowthQueryTrial, started.head, participant, finalized=False)
+    add_trial(GrowthQueryTrial, full.head, participant)
+
+    with assert_query_count(max_queries=1):
+        assert trial_maker.n_trials_still_required == (3 - 1) + 3

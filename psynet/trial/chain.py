@@ -1853,17 +1853,30 @@ class ChainTrialMaker(NetworkTrialMaker):
     @property
     def n_trials_still_required(self):
         assert self.chain_type == "across"
-        networks = list(self.networks)
-        for network in networks:
-            assert network.target_n_trials is not None
-        incomplete = [network for network in networks if not network.full]
-        completed = count_completed_trials_for_networks(
-            network.id for network in incomplete
+        network = self.network_class
+        completed = (
+            select(Trial.network_id, func.count(Trial.id).label("n"))
+            .where(
+                Trial.trial_maker_id == self.id,
+                Trial.failed.is_(False),
+                Trial.complete.is_(True),
+                Trial.is_repeat_trial.is_(False),
+            )
+            .group_by(Trial.network_id)
+            .subquery()
         )
-        return sum(
-            network.target_n_trials - completed.get(network.id, 0)
-            for network in incomplete
-        )
+        n_without_target, still_required = db.session.execute(
+            select(
+                func.count(network.id).filter(network.target_n_trials.is_(None)),
+                func.sum(
+                    network.target_n_trials - func.coalesce(completed.c.n, 0)
+                ).filter(network.full.is_(False)),
+            )
+            .outerjoin(completed, completed.c.network_id == network.id)
+            .where(network.trial_maker_id == self.id)
+        ).one()
+        assert n_without_target == 0
+        return still_required or 0
 
     #########################
     # Participated networks #
