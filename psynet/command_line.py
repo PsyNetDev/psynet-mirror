@@ -1737,13 +1737,13 @@ def _check_experiment_directory(mode, *, require_git_commit=False):
             )
         _clear_deployment_policy_review_marker()
         raise click.ClickException(
-            f"{intro}{ignored_summary}\n\nBefore continuing:\n"
-            "  1. Run 'dallinger deployment-files list'. This only prints the files "
-            "that PsyNet would copy; it does not start or deploy the experiment.\n"
-            "  2. Check the list for credentials, private data, large files, and "
-            "generated files that should stay local.\n"
-            "  3. Add anything that should stay local to [exclude] in deploy.toml.\n"
-            "  4. Rerun this command."
+            f"{intro}{ignored_summary}{_deployment_selection_summary()}\n\n"
+            "Before continuing:\n"
+            "  1. Check these files for credentials, private data, large files, "
+            "and generated files that should stay local.\n"
+            "  2. Add anything that should stay local to [exclude] in deploy.toml.\n"
+            "  3. Rerun this command. This pause happens only once; "
+            "'dallinger deployment-files list' prints the selection again at any time."
         )
     if require_git_commit:
         from .light_utils import git_commit_available
@@ -1755,6 +1755,21 @@ def _check_experiment_directory(mode, *, require_git_commit=False):
                 "deployed. Review 'git status', commit the experiment files you "
                 "want to keep, then rerun this command."
             )
+
+
+def _deployment_selection_summary(preview_limit=30):
+    """List the files ``deploy.toml`` selects, for the one-shot review pause."""
+    plan = deployment_info._deployment_plan()
+    if plan is None:
+        return ""
+    paths = sorted(plan.destinations)
+    preview = "\n".join(f"  {path}" for path in paths[:preview_limit])
+    if len(paths) > preview_limit:
+        preview += f"\n  ... and {len(paths) - preview_limit} more"
+    return (
+        f"\n\nIt selects {len(paths)} files ({plan.total_size} bytes) "
+        f"for deployment:\n{preview}"
+    )
 
 
 def run_pre_checks(mode, local_, heroku=False, docker=False, app=None):

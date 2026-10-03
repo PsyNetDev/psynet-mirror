@@ -311,9 +311,9 @@ def test_check_experiment_directory_stops_after_creating_missing_deploy_toml(
             "existing .gitignore covered the following files, but your new "
             "deploy.toml does not"
         ) in message
-        assert "This only prints the files that PsyNet would copy" in message
-        assert "it does not start or deploy the experiment" in message
-        assert "Check the list for credentials, private data, large files" in message
+        assert "for deployment:\n" in message
+        assert "  experiment.py\n" in message
+        assert "Check these files for credentials, private data, large files" in message
         assert "secret.txt" in message
         assert "dallinger deployment-files list" in message
 
