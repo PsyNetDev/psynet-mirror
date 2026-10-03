@@ -17,6 +17,8 @@ from psynet.log import bold, error, success, warning
 
 logger = logging.getLogger(__name__)
 
+_SERVER_CHECK_INTERVAL_S = 5
+
 
 # ---------------------------------------------------------------------------
 # JSON serialization helpers
@@ -257,6 +259,8 @@ class PerformanceTester:
 
             result = self._test_performance(n_bots, bot_log_file=bot_log_file)
             all_results.append(result)
+            if result["server_stopped"]:
+                break
 
             if i < len(bot_counts):
                 logger.debug("")
@@ -317,15 +321,11 @@ class PerformanceTester:
         from psynet.participant import Participant
         from psynet.process import AsyncProcess
 
-        initial_stats = self.authenticated_session.get(
-            self.base_url + "/request_statistics"
-        ).json()
         max_request_id = db.session.query(func.max(Request.id)).scalar() or 0
         max_process_id = db.session.query(func.max(AsyncProcess.id)).scalar() or 0
         max_participant_id = db.session.query(func.max(Participant.id)).scalar() or 0
 
         return {
-            "initial_requests": initial_stats["total_requests"],
             "max_request_id": max_request_id,
             "max_process_id": max_process_id,
             "max_participant_id": max_participant_id,
@@ -347,6 +347,7 @@ class PerformanceTester:
             "bot_monitor_errors": {},
             "first_bot_initialized": False,
             "bots_to_launch": 0,
+            "server_stopped": False,
             "testing_stats": TestingStats(TESTING_STAT_DEFINITIONS),
             "last_status_update": time.time(),
             "status_line_length": 0,
@@ -473,10 +474,37 @@ class PerformanceTester:
             sys.stdout.write("\r" + " " * 150 + "\r")
             sys.stdout.flush()
 
+    def _server_is_reachable(self):
+        """Return whether the experiment server still accepts connections."""
+        import requests
+
+        try:
+            self.authenticated_session.head(self.base_url, timeout=10)
+        except requests.ConnectionError:
+            return False
+        return True
+
     def _run_monitoring_loop(self, n, bot_state, start_new_bot, start_time, end_time):
         """Main loop to monitor bot processes."""
+        next_server_check = start_time
         while time.time() < end_time or len(bot_state["processes"]) > 0:
             current_time = time.time()
+
+            if current_time < end_time and current_time >= next_server_check:
+                next_server_check = current_time + _SERVER_CHECK_INTERVAL_S
+                if not self._server_is_reachable():
+                    self._clear_realtime_status()
+                    logger.warning(
+                        warning(
+                            "The experiment server stopped during the test, so the "
+                            "test ends early. A local server stops once the "
+                            "experiment reports that it is complete; raise its "
+                            "participant target so that the test lasts the full "
+                            "duration."
+                        )
+                    )
+                    bot_state["server_stopped"] = True
+                    end_time = current_time
 
             # Show real-time status update
             self._show_realtime_status(bot_state, current_time, end_time)
@@ -686,13 +714,11 @@ class PerformanceTester:
         from psynet.experiment import Request
         from psynet.process import AsyncProcess
 
-        # Get final request state from DB
-        final_stats = self.authenticated_session.get(
-            self.base_url + "/request_statistics"
-        ).json()
-        final_requests = final_stats["total_requests"]
-
-        requests_during_test = final_requests - initial_state["initial_requests"]
+        requests_during_test = (
+            db.session.query(func.count(Request.id))
+            .filter(Request.id > initial_state["max_request_id"])
+            .scalar()
+        )
 
         key_endpoints = ["/timeline", "/response"]
 
@@ -919,6 +945,7 @@ class PerformanceTester:
             "n_bots": n,
             "duration_minutes": duration_minutes,
             "actual_duration": actual_duration,
+            "server_stopped": bot_state["server_stopped"],
             "total_bots_started": bot_state["total_bots_started"],
             "completed_during_test": bot_state["bots_completed_during_test"],
             "bots_succeeded": bots_succeeded,
