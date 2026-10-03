@@ -35,7 +35,10 @@ The tools in :doc:`/install` must be installed first.
       uv pip install psynet
       psynet setup
 
-   PsyNet supports Python 3.11 through 3.14 and recommends Python 3.13.
+   The ``uv pip install`` line installs the PsyNet version that this
+   documentation was built from. To install a different version, see
+   :ref:`choosing_a_psynet_version`. PsyNet supports Python 3.11 through 3.14
+   and recommends Python 3.13.
 
 #. Start the local services and run the experiment:
 
