@@ -568,74 +568,20 @@ def test_timeline_hold_payload_warns_when_the_record_is_missing(caplog):
     assert "barrier:missing" in caplog.text
 
 
-def test_advance_past_ready_holds_follows_live_page_when_hold_is_stale():
-    """A stale hold object must not first-paint after another session advanced us."""
+def test_advance_past_ready_holds_returns_a_waiting_hold_without_rereading():
+    """Consecutive holds can share a hold_id, so the walk must not compare ids."""
     hold = MagicMock()
     hold.is_timeline_hold = True
+    hold.hold_id = "wait_while"
     hold.prepare_resume_if_ready.return_value = False
-    nxt = MagicMock()
-    nxt.is_timeline_hold = False
     experiment = Experiment.__new__(Experiment)
     experiment.timeline = MagicMock()
-    experiment.timeline.get_current_elt.return_value = nxt
     participant = SimpleNamespace()
-    participant.inc_progress = MagicMock()
 
     page = experiment._advance_past_ready_holds(participant, hold)
 
-    assert page is nxt
-    hold.account_wait.assert_not_called()
-    experiment.timeline.advance_page.assert_not_called()
-
-
-def test_advance_past_ready_holds_stops_when_live_hold_is_reconstructed():
-    """Page makers reconstruct the hold on each read; that is still this wait."""
-    hold = MagicMock()
-    hold.is_timeline_hold = True
-    hold.hold_id = "barrier:wait_for_partner"
-    hold.prepare_resume_if_ready.return_value = False
-
-    def _reconstructed_hold(*_args, **_kwargs):
-        live = MagicMock()
-        live.is_timeline_hold = True
-        live.hold_id = "barrier:wait_for_partner"
-        live.prepare_resume_if_ready.return_value = False
-        return live
-
-    experiment = Experiment.__new__(Experiment)
-    experiment.timeline = MagicMock()
-    experiment.timeline.get_current_elt.side_effect = _reconstructed_hold
-    participant = SimpleNamespace()
-    participant.inc_progress = MagicMock()
-
-    page = experiment._advance_past_ready_holds(participant, hold)
-
-    assert page.hold_id == "barrier:wait_for_partner"
-    assert experiment.timeline.get_current_elt.call_count == 1
-    hold.account_wait.assert_not_called()
-    experiment.timeline.advance_page.assert_not_called()
-
-
-def test_advance_past_ready_holds_follows_a_later_hold():
-    """A different hold_id is a cursor move, not a reconstructed wait."""
-    hold = MagicMock()
-    hold.is_timeline_hold = True
-    hold.hold_id = "barrier:stack_init"
-    hold.prepare_resume_if_ready.return_value = False
-    nxt = MagicMock()
-    nxt.is_timeline_hold = True
-    nxt.hold_id = "barrier:stack_prepare"
-    nxt.prepare_resume_if_ready.return_value = False
-    experiment = Experiment.__new__(Experiment)
-    experiment.timeline = MagicMock()
-    experiment.timeline.get_current_elt.return_value = nxt
-    participant = SimpleNamespace()
-    participant.inc_progress = MagicMock()
-
-    page = experiment._advance_past_ready_holds(participant, hold)
-
-    assert page is nxt
-    assert experiment.timeline.get_current_elt.call_count == 2
+    assert page is hold
+    experiment.timeline.get_current_elt.assert_not_called()
     hold.account_wait.assert_not_called()
     experiment.timeline.advance_page.assert_not_called()
 
@@ -649,7 +595,8 @@ def test_advance_past_ready_holds_stops_after_max_skip_steps():
         hold = MagicMock()
         hold.is_timeline_hold = True
         hold.hold_id = f"barrier:{n['i']}"
-        hold.prepare_resume_if_ready.return_value = False
+        hold.prepare_resume_if_ready.return_value = True
+        hold.time_estimate = 1
         return hold
 
     from psynet.sync import _MAX_BARRIER_WALK_PASSES
@@ -662,9 +609,7 @@ def test_advance_past_ready_holds_stops_after_max_skip_steps():
     with pytest.raises(RuntimeError, match="did not settle"):
         experiment._advance_past_ready_holds(participant, _new_hold())
 
-    assert (
-        experiment.timeline.get_current_elt.call_count == _MAX_BARRIER_WALK_PASSES + 1
-    )
+    assert experiment.timeline.advance_page.call_count == _MAX_BARRIER_WALK_PASSES
 
 
 def test_advance_past_ready_holds_settles_on_the_last_allowed_skip(monkeypatch):

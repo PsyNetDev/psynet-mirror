@@ -411,8 +411,13 @@ connect is still shown. Hold-resume POSTs set
 in-place update. A genuine reject, or a missing timeline fragment, still
 reloads ``/timeline`` instead of leaving the overlay in place.
 
-Holds emit ``timelineHoldStarted`` and ``timelineHoldEnded`` browser events.
-Their ``detail.holdId`` identifies the wait. Authors that deliberately want a
+Holds emit ``timelineHoldStarted`` and ``timelineHoldEnded`` browser events
+when the waiting overlay appears and disappears. Their ``detail.holdId``
+identifies the wait. When one hold leads straight into another, for example
+stacked group barriers, the overlay stays up and the browser emits
+``timelineHoldChanged`` instead, with ``detail.holdId`` and
+``detail.previousHoldId``. ``timelineHoldEnded`` then carries the last hold's
+id. Authors that deliberately want a
 separate waiting screen should use :class:`psynet.page.WaitPage` directly or
 pass it explicitly as ``wait_page``/``waiting_logic``.
 
@@ -512,10 +517,12 @@ Those routes do not share a lock protocol:
   arriver's GET expires its identity map, skips the hold it just
   cleared, and follows the live cursor. Last-arrival does not skip
   partner timeline cursors after the check commit; partners leave on
-  overlay wake. ``get_current_elt`` may return a new object for the same
-  barrier hold when a trial page maker reconstructs the wait. That is
-  still this wait, not a cursor move; comparing Python identity would
-  loop until the hold times out.
+  overlay wake. The skip walk reads the hold under this participant's row
+  lock, so no other session can move the cursor during the walk. A hold
+  that is not ready is returned as is, without comparing it with a fresh
+  ``get_current_elt``. Page makers can return a new object for the same
+  barrier hold, and consecutive ``wait_while`` holds share a ``hold_id``,
+  so neither object identity nor ``hold_id`` can identify a single visit.
 * ``GET /timeline`` then re-reads the live cursor. If a partner already
   advanced this waiter, GET prepares that live page. If the hold is ready,
   GET takes blocking ``FOR UPDATE`` only after ``is_ready_to_resume`` (timeout

@@ -23,6 +23,7 @@ from psycopg2 import sql
 from sqlalchemy import Boolean
 from sqlalchemy import inspect as sa_inspect
 
+from psynet.db import blocking_psycopg
 from psynet.utils import get_logger, make_parents, sha256_file
 
 from .identifier_schema import validate_identifier_schema
@@ -155,7 +156,7 @@ def copy_database_to_csv_dir(
                 "COPY (SELECT {fields} FROM {table}) TO STDOUT WITH CSV HEADER"
             ).format(fields=fields, table=sql.Identifier(table))
             path = os.path.join(csv_dir, f"{table}.csv")
-            with open(path, "w", newline="") as handle:
+            with open(path, "w", newline="") as handle, blocking_psycopg():
                 cur.copy_expert(query, handle)
     finally:
         if _connection is None:
@@ -182,7 +183,7 @@ def write_identifier_sidecars(
         cur = conn.cursor()
         for key, (filename, query) in specs.items():
             path = os.path.join(export_path, filename)
-            with open(path, "w", newline="") as handle:
+            with open(path, "w", newline="") as handle, blocking_psycopg():
                 cur.copy_expert(query, handle)
             if key == "lucid_entrant_identifiers" and _count_csv_rows(path) == 0:
                 os.remove(path)

@@ -16,3 +16,5 @@ Data
         @register_table
         class Coin(SQLBase, SQLMixin):
             __tablename__ = "coin"
+
+.. autofunction:: psynet.db.blocking_psycopg

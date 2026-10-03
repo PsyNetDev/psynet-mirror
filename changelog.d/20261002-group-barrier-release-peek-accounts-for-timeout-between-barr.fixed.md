@@ -1,0 +1,1 @@
+Fixed `GroupBarrier` release checks with `timeout_between_barriers_time` ignoring late members who were about to be kicked or failed. When another request was checking the same barrier at the same time, the last arrival could briefly see the waiting overlay until the background poller released the group.

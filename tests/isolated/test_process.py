@@ -1,4 +1,5 @@
 import tempfile
+import threading
 import time
 
 import pytest
@@ -148,3 +149,75 @@ class TestProcesses2:
 
         with open(file, "w") as file_writer:
             file_writer.write(message)
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("static")], indirect=True
+)
+@pytest.mark.usefixtures("launched_experiment")
+def test_processes_launch_only_on_their_own_sessions_commit(monkeypatch):
+    """Another session's commit must not launch a process that is not committed yet."""
+    launched = []
+    monkeypatch.setattr(
+        LocalAsyncProcess,
+        "launch",
+        classmethod(lambda cls, p: launched.append(p["id"])),
+    )
+    queued, release = threading.Event(), threading.Event()
+    created = {}
+
+    def create_then_commit():
+        try:
+            created["id"] = LocalAsyncProcess(do_nothing).id
+            queued.set()
+            release.wait(timeout=10)
+            db.session.commit()
+        finally:
+            db.session.remove()
+
+    worker = threading.Thread(target=create_then_commit)
+    worker.start()
+    assert queued.wait(timeout=10)
+    db.session.commit()
+    assert launched == []
+
+    release.set()
+    worker.join(timeout=10)
+    assert launched == [created["id"]]
+
+    LocalAsyncProcess(do_nothing)
+    db.session.rollback()
+    db.session.commit()
+    assert launched == [created["id"]]
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("static")], indirect=True
+)
+@pytest.mark.usefixtures("launched_experiment")
+def test_launch_queue_follows_savepoints_and_close(monkeypatch):
+    """SAVEPOINTs and close() must not launch or lose processes early."""
+    launched = []
+    monkeypatch.setattr(
+        LocalAsyncProcess,
+        "launch",
+        classmethod(lambda cls, p: launched.append(p["id"])),
+    )
+
+    outer = LocalAsyncProcess(do_nothing).id
+    with db.session.begin_nested():
+        released = LocalAsyncProcess(do_nothing).id
+    assert launched == []
+    nested = db.session.begin_nested()
+    LocalAsyncProcess(do_nothing)
+    nested.rollback()
+    db.session.commit()
+    assert launched == [outer, released]
+
+    with db.session.begin_nested():
+        LocalAsyncProcess(do_nothing)
+    db.session.rollback()
+    LocalAsyncProcess(do_nothing)
+    db.session.close()
+    db.session.commit()
+    assert launched == [outer, released]

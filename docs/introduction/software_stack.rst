@@ -29,6 +29,13 @@ The web server
   `gevent <https://www.gevent.org/>`_ workers, so one server process can serve
   many participants at once, including over WebSockets
   (`Flask-Sock <https://flask-sock.readthedocs.io/>`_).
+
+  While one request waits on the database, the worker serves other requests,
+  and background jobs behave the same way. Module-level variables in
+  experiment code can therefore change during any database call. Keep
+  per-participant state in the database rather than in module-level caches or
+  counters. PostgreSQL ``COPY`` cannot run this way, so wrap it in
+  :func:`psynet.db.blocking_psycopg`.
 - `Jinja <https://jinja.palletsprojects.com/>`_ renders the page templates, and
   `dominate <https://github.com/Knio/dominate>`_ builds HTML from Python code,
   for example in prompts.

@@ -433,6 +433,10 @@ Search scripts and notes for ``--assets all``, ``--legacy``,
   asset class names.
 * ``extra_var`` is removed; read variables from the ``vars`` column with
   ``psynet.export.unpack_json_column``.
+* Search experiment code for ``copy_expert``, ``copy_from``, ``copy_to`` and
+  ``COPY``. In a web request or background job, PostgreSQL ``COPY`` must run
+  inside :func:`psynet.db.blocking_psycopg`, or psycopg2 raises
+  ``ProgrammingError``.
 
 See :doc:`/data/what_an_export_contains`.
 
