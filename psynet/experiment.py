@@ -1350,8 +1350,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @classmethod
     def get_participant_status(cls):
-        # Runs every minute, so it selects plain columns rather than hydrating
-        # every participant with their pickled state.
+        # Runs every minute, so it loads only the columns it needs rather than
+        # every participant's pickled state.
         complete_participants = (
             Participant.query.filter_by(complete=True)
             .options(

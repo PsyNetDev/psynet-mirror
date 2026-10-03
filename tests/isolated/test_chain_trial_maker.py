@@ -660,6 +660,8 @@ def test_selection_rejects_a_requery_with_the_same_id():
         ("find_nodes", "find_chains"),
         ("select_node", "select_chain"),
         ("custom_node_filter", "custom_chain_filter"),
+        ("filter_nodes_query", "filter_chains_query"),
+        ("node_priority", "chain_priority"),
     ],
 )
 def test_chain_rejects_removed_or_wrong_paradigm_hooks(method_name, replacement):
@@ -682,6 +684,8 @@ def test_chain_rejects_removed_or_wrong_paradigm_hooks(method_name, replacement)
         ("find_chains", "find_nodes"),
         ("select_chain", "select_node"),
         ("custom_chain_filter", "custom_node_filter"),
+        ("filter_chains_query", "filter_nodes_query"),
+        ("chain_priority", "node_priority"),
     ],
 )
 def test_static_rejects_removed_or_wrong_paradigm_hooks(method_name, replacement):

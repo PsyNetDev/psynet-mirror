@@ -2107,7 +2107,8 @@ class ChainTrialMaker(NetworkTrialMaker):
         """Return the eligible candidates in selection order, or ``"wait"`` / ``"exit"``.
 
         Built-in eligibility, capacity, and ordering are evaluated in one SQL
-        query, so only the candidates that are returned are loaded.
+        query. Unless a Python eligibility filter is overridden, only the
+        returned candidates are loaded.
         """
         logger.info(
             "Looking for eligible %ss for participant %i.",
