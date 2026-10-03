@@ -193,7 +193,9 @@ class GeometricStaircaseTrialMaker(ChainTrialMaker):
         start_nodes: Union[callable, list],
         max_nodes_per_chain: int,
         max_reversals_per_chain: Optional[int] = None,
-        balance_across_chains: bool = False,
+        block_order="random",
+        chain_order="random",
+        interleave_chains: bool = False,
         min_passing_score: Optional[float] = None,
         max_passing_score: Optional[float] = None,
         expected_trials_per_participant: Optional[int | str] = None,
@@ -236,7 +238,9 @@ class GeometricStaircaseTrialMaker(ChainTrialMaker):
             max_nodes_per_chain=max_nodes_per_chain,
             check_performance_at_end=True,
             check_performance_every_trial=False,
-            balance_across_chains=balance_across_chains,
+            block_order=block_order,
+            chain_order=chain_order,
+            interleave_chains=interleave_chains,
         )
 
     # The current scoring method is to take the mean of the reversal scores.

@@ -86,7 +86,6 @@ def make_graph_trial_maker(id_):
         max_trials_per_participant=1,
         chains_per_participant=None,
         trials_per_node=1,
-        balance_across_chains=False,
         check_performance_at_end=False,
         check_performance_every_trial=False,
         recruit_mode="n_trials",

@@ -63,16 +63,8 @@ def get_start_nodes(participant):
             # In a future PsyNet version, we would like the user instead to specify a list of chains here;
             # then we could get rid of the term 'context', as it would be clear that these parameters are scoped
             # to the chain, not to the node/trial.
-            block=str(i),
-            # Making each chain a separate block means that the participant will experience all trials from one
-            # chain before moving onto the next chain, as is normal in a staircase procedure.
-            # The chains themselves will be administered in a random order.
-            # The order of chains can be customized by overriding GeometricTrialMaker.choose_block_order.
-            #
-            # In a future PsyNet version, we would like to implement this via a TrialMaker argument called
-            # mix_chains, which could be set to False in this case.
         )
-        for i, chain_definition in enumerate(chain_definitions)
+        for chain_definition in chain_definitions
     ]
 
 
@@ -271,6 +263,10 @@ class Exp(psynet.experiment.Experiment):
             # max_trials_per_run, max_reversals_per_chain, etc. We are waiting on some other PsyNet changes before
             # we can do this though.
             start_nodes=get_start_nodes,
+            # Staircase trial makers default to interleave_chains=False, so the participant finishes
+            # one chain before starting the next, as is normal in a staircase procedure.
+            # chain_order="random" (the default) shuffles the chains; pass chain_order="listed"
+            # to follow the order of get_start_nodes instead.
             max_nodes_per_chain=chain_length,
             expected_trials_per_participant=n_chains * chain_length,
             # This parameter is used to determine when to stop automatic recruitment (if active).

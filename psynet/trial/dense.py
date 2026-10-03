@@ -38,10 +38,6 @@ class DenseTrialMaker(StaticTrialMaker):
 
     The user may also override the following methods, if desired:
 
-    * :meth:`~psynet.trial.dense.DenseTrialMaker.choose_block_order`;
-      chooses the order of blocks in the experiment.
-      By default the blocks are ordered randomly.
-
     * :meth:`~psynet.trial.dense.DenseTrialMaker.choose_participant_group`;
         only relevant if the trial maker uses nodes with non-default participant groups.
         In this case the experimenter is expected to supply a function that takes participant as an argument
@@ -106,10 +102,16 @@ class DenseTrialMaker(StaticTrialMaker):
         once this number is reached, the participant will move on
         to the next stage in the timeline.
 
-    balance_across_nodes
-        If ``True`` (default), active balancing across participants is enabled, meaning that
-        node selection favours nodes that have been presented fewest times to any participant
-        in the experiment, excluding failed trials.
+    block_order
+        Order in which each participant works through the blocks:
+        ``"random"`` (default), ``"listed"``, a list of block names, or a
+        function. See :ref:`trial_order`.
+
+    node_order
+        Order in which each participant receives conditions within a block.
+        ``"balanced"`` (default) favours conditions that have been presented
+        fewest times across participants; see :ref:`trial_order` for the
+        other options.
 
     check_performance_at_end
         If ``True``, the participant's performance
@@ -193,7 +195,8 @@ class DenseTrialMaker(StaticTrialMaker):
         recruit_mode: Optional[str] = None,
         target_n_participants: Optional[int] = None,
         target_trials_per_condition: Optional[int] = None,
-        balance_across_nodes: bool = True,
+        block_order="random",
+        node_order="balanced",
         check_performance_at_end: bool = False,
         check_performance_every_trial: bool = False,
         fail_trials_on_premature_exit: bool = False,
@@ -222,7 +225,8 @@ class DenseTrialMaker(StaticTrialMaker):
             fail_trials_on_premature_exit=fail_trials_on_premature_exit,
             fail_trials_on_participant_performance_check=fail_trials_on_participant_performance_check,
             n_repeat_trials=n_repeat_trials,
-            balance_across_nodes=balance_across_nodes,
+            block_order=block_order,
+            node_order=node_order,
             sync_group_type=sync_group_type,
             sync_group_max_wait_time=sync_group_max_wait_time,
             sync_group_max_wait_action=sync_group_max_wait_action,
@@ -253,7 +257,7 @@ class DenseNode(StaticNode):
     block
         The associated block.
         Defaults to a single block for all trials.
-        Use this in combination with :meth:`~psynet.trial.dense.DenseTrialMaker.choose_block_order`
+        Use this in combination with the trial maker's ``block_order``
         to manipulate the order in which conditions are presented to participants.
     """
 

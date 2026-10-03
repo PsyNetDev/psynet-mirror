@@ -2868,25 +2868,6 @@ class NetworkTrialMaker(TrialMaker):
         """Apply participant state changes once the selected node is secured."""
         pass
 
-    def _select_from_discovered(
-        self, discovered, participant, experiment, select_hook, method_name
-    ):
-        """Select from a discovered list, or pass through ``wait`` / ``exit``."""
-        if isinstance(discovered, str):
-            return discovered
-        if not isinstance(discovered, list):
-            raise TypeError(
-                "find_chains / find_nodes must return a list of eligible values, "
-                "'wait', or 'exit'; it must not return None"
-            )
-        if not discovered:
-            return "exit"
-        return self._coerce_selection(
-            select_hook(discovered, participant, experiment),
-            allowed_values=discovered,
-            method_name=method_name,
-        )
-
     @staticmethod
     def _coerce_selection(selection, allowed_values, method_name):
         """Normalize and validate a public selection-hook result.

@@ -14,6 +14,7 @@ from psynet.trial.chain import (
     ChainNode,
     ChainTrial,
     ChainTrialMaker,
+    _reject_removed_balance_argument,
 )
 
 from ..utils import get_logger, is_method_overridden
@@ -79,10 +80,6 @@ class StaticTrialMaker(ChainTrialMaker):
     for the experimental paradigm.
 
     The user may also override the following methods, if desired:
-
-    * :meth:`~psynet.trial.static.StaticTrialMaker.choose_block_order`;
-      chooses the order of blocks in the experiment. By default the blocks
-      are ordered randomly.
 
     * :meth:`~psynet.trial.static.StaticTrialMaker.choose_participant_group`;
         Only relevant if the trial maker uses nodes with non-default participant groups.
@@ -166,10 +163,22 @@ class StaticTrialMaker(ChainTrialMaker):
     allow_repeated_nodes
         Determines whether the participant can be administered the same node more than once.
 
-    balance_across_nodes
-        If ``True`` (default), active balancing across participants is enabled, meaning that
-        node selection favours nodes that have been presented fewest times to any participant
-        in the experiment, excluding failed trials.
+    block_order
+        The order in which the participant works through blocks: ``"random"``
+        (the default), ``"listed"`` (the order in which blocks first appear in
+        ``nodes``), a list of block names, or a function returning such a list.
+        The function may take any of ``participant``, ``experiment`` and
+        ``blocks``. See :ref:`trial_order`.
+
+    node_order
+        The order in which the participant receives nodes within a block:
+        ``"balanced"`` (the default; nodes with the fewest trials from any
+        participant first, excluding failed trials), ``"random"``,
+        ``"listed"`` (the order of ``nodes``), a function returning the
+        planned nodes, or a dict giving one of these values for every block.
+        A function may take any of ``participant``, ``experiment``, ``block``
+        and ``nodes``; returning fewer nodes than it was given also filters
+        them. See :ref:`trial_order`.
 
     check_performance_at_end
         If ``True``, the participant's performance
@@ -275,7 +284,9 @@ class StaticTrialMaker(ChainTrialMaker):
         target_trials_per_node: Optional[int] = None,
         max_trials_per_block: Optional[int] = None,
         allow_repeated_nodes: bool = False,
-        balance_across_nodes: bool = True,
+        block_order: Union[str, list, callable] = "random",
+        node_order: Union[str, callable, dict] = "balanced",
+        balance_across_nodes=None,
         check_performance_at_end: bool = False,
         check_performance_every_trial: bool = False,
         fail_trials_on_premature_exit: bool = False,
@@ -290,14 +301,9 @@ class StaticTrialMaker(ChainTrialMaker):
         sync_group_timeout_between_barriers_action: Literal["kick", "fail"] = "fail",
         sync_group_wait_content=None,
     ):
-        # balance_across_chains = (
-        #     active_balancing_across_participants or active_balancing_within_participants
-        # )
-        # balance_strategy = set()
-        # if active_balancing_within_participants:
-        #     balance_strategy.add("within")
-        # if active_balancing_across_participants:
-        #     balance_strategy.add("across")
+        _reject_removed_balance_argument(
+            "balance_across_nodes", balance_across_nodes, "node_order"
+        )
 
         assert isinstance(expected_trials_per_participant, (int, float, str))
         if isinstance(expected_trials_per_participant, str):
@@ -371,8 +377,8 @@ class StaticTrialMaker(ChainTrialMaker):
                 if target_trials_per_node is not None
                 else 1_000_000
             ),
-            balance_across_chains=balance_across_nodes,
-            # balance_strategy=balance_strategy,
+            block_order=block_order,
+            chain_order=node_order,
             allow_revisiting_networks_in_across_chains=allow_repeated_nodes,
             check_performance_at_end=check_performance_at_end,
             check_performance_every_trial=check_performance_every_trial,
@@ -389,6 +395,8 @@ class StaticTrialMaker(ChainTrialMaker):
             sync_group_wait_content=sync_group_wait_content,
         )
         self._node_capacity_is_unlimited = target_trials_per_node is None
+        if isinstance(nodes, list):
+            self._check_order_setting_blocks({node.block for node in nodes})
 
     def _selection_hook_overrides(self):
         return [
@@ -447,7 +455,9 @@ class StaticTrialMaker(ChainTrialMaker):
         outcomes. Overriding this method loads every eligible node on each
         trial; :meth:`~psynet.trial.chain.ChainTrialMaker.before_selection`
         and :meth:`~psynet.trial.static.StaticTrialMaker.filter_nodes_query`
-        keep selection in the database.
+        keep selection in the database. An empty list finishes the
+        participant's current block; ``"exit"`` leaves the trial maker,
+        skipping any remaining blocks.
         """
         return self._find_eligible_candidates(participant, experiment)
 
@@ -472,11 +482,13 @@ class StaticTrialMaker(ChainTrialMaker):
     def node_priority(self, participant, experiment):
         """Return SQL expressions that rank eligible nodes.
 
-        PsyNet orders candidates by block first, then by these expressions
-        (ascending; use ``.desc()`` to reverse), then by balancing when
-        ``balance_across_nodes`` is on, then randomly. The default
-        ``select_node`` takes the first node in that order. Expressions may
-        use columns of ``self.node_class`` and ``self.network_class``.
+        PsyNet only considers nodes in the participant's current block. It
+        orders them by these expressions (ascending; use ``.desc()`` to
+        reverse), then by balancing when ``node_order="balanced"`` (the
+        default), then randomly. The default ``select_node`` takes the first
+        node in that order. Expressions may use columns of ``self.node_class``
+        and ``self.network_class``. Planned node orders (``"listed"`` or a
+        function) cannot be combined with this hook.
         """
         return []
 
@@ -603,20 +615,17 @@ class StaticTrialMaker(ChainTrialMaker):
         """
         self._raise_unsupported_selection_hook("chain_priority")
 
-    def _select_trial_node(self, participant, experiment):
-        if self._uses_list_selection_hooks():
-            discovered = self.find_nodes(participant, experiment)
-        else:
-            discovered = self._find_eligible_candidates(
-                participant, experiment, limit=1
-            )
-        return self._select_from_discovered(
-            discovered,
-            participant,
-            experiment,
-            self.select_node,
-            "select_node",
-        )
+    _plan_entries_are_single_trials = True
+    _find_hook_name = "find_nodes"
+    _select_hook_name = "select_node"
+    _order_argument = "node_order"
+    _order_items_name = "nodes"
+
+    def _selection_to_node(self, selection):
+        return selection
+
+    def _candidate_network_id(self, value):
+        return value.network_id
 
     def _start_nodes_param_name(self) -> str:
         return "nodes"

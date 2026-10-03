@@ -62,24 +62,6 @@ class GrowthQueryGraphTrialMaker(GraphChainTrialMaker):
     pass
 
 
-class CustomFinishPolicyTrialMaker(ChainTrialMaker):
-    observed_counts = None
-
-    def should_finish_block(
-        self,
-        participant,
-        block,
-        block_position,
-        n_participant_trials_in_block,
-        n_participant_trials_in_trial_maker,
-    ):
-        self.observed_counts = (
-            n_participant_trials_in_block,
-            n_participant_trials_in_trial_maker,
-        )
-        return False
-
-
 @pytest.fixture
 def participant(db_session):
     return new_participant()
@@ -144,7 +126,7 @@ def static_trial_maker(
         expected_trials_per_participant=1,
         max_trials_per_participant=1,
         target_trials_per_node=target_trials_per_node,
-        balance_across_nodes=False,
+        node_order="random",
     )
     return maker_class(**{**args, **kwargs})
 
@@ -234,21 +216,35 @@ def test_find_nodes_is_one_query_that_skips_full_nodes(db_session, participant):
     "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
 )
 @pytest.mark.usefixtures("in_experiment_directory")
-def test_custom_finish_policy_keeps_receiving_real_trial_counts(
-    db_session, participant
-):
-    exp = get_experiment()
-    trial_maker = chain_trial_maker(
-        CustomFinishPolicyTrialMaker,
-        max_trials_per_block=None,
-        max_trials_per_participant=None,
-    )
-    network = create_chain_network(trial_maker, exp)
-    initialize_trial_maker_state(trial_maker, participant)
-    add_trial(GrowthQueryTrial, network.head, participant, finalized=True)
+def test_custom_finish_policy_ends_the_block(db_session, participant):
+    class OneTrialPerBlock(StaticTrialMaker):
+        def should_finish_block(self, participant, block):
+            return participant.module_state.n_participant_trials_in_block >= 1
 
-    assert trial_maker._should_finish_block(participant) is False
-    assert trial_maker.observed_counts == (1, 1)
+    exp = get_experiment()
+    trial_maker = static_trial_maker(
+        target_trials_per_node=None,
+        max_trials_per_participant=None,
+        maker_class=OneTrialPerBlock,
+    )
+    blocks = ["A", "A", "B"]
+    networks = [
+        create_chain_network(trial_maker, exp, network_class=StaticNetwork)
+        for _ in blocks
+    ]
+    for network, block in zip(networks, blocks):
+        network.block = network.head.block = block
+    initialize_trial_maker_state(trial_maker, participant)
+    participant.module_state.block_order = ["A", "B"]
+    participant.module_state.set_block_position(0)
+    db.session.flush()
+
+    first, _ = trial_maker.prepare_trial(exp, participant)
+    second = trial_maker._select_trial_node(participant, exp)
+
+    assert first.node.block == "A"
+    assert participant.module_state.block == "B"
+    assert second.value.block == "B"
 
 
 @pytest.mark.parametrize(
@@ -308,20 +304,14 @@ def test_node_filled_after_selection_is_not_overfilled(db_session, participant):
     trial_maker = static_trial_maker(
         target_trials_per_node=1, maker_class=RacedStaticTrialMaker
     )
-    for block in ["early", "late"]:
-        network = create_chain_network(trial_maker, exp, network_class=StaticNetwork)
-        network.block = network.head.block = block
+    for _ in range(2):
+        create_chain_network(trial_maker, exp, network_class=StaticNetwork)
     initialize_trial_maker_state(trial_maker, participant)
-    participant.module_state.block_order = ["early", "late"]
-    participant.module_state.set_block_position(0)
-    db.session.flush()
 
     trial, status = trial_maker.prepare_trial(exp, participant)
 
     assert status == "available"
-    assert raced[0].block == "late"
-    assert trial.node.block == "early"
-    assert participant.module_state.block == "early"
+    assert trial.node is not raced[0]
 
 
 @pytest.mark.parametrize(
@@ -634,7 +624,6 @@ def make_graph_trial_maker(network_structure):
         max_trials_per_participant=1,
         chains_per_participant=None,
         trials_per_node=1,
-        balance_across_chains=False,
         check_performance_at_end=False,
         check_performance_every_trial=False,
         recruit_mode="n_trials",
@@ -872,7 +861,7 @@ def test_database_and_python_filter_paths_agree(
     assert results[StaticTrialMaker] == (
         3,
         set(),
-        "wait" if wait_for_networks else "exit",
+        "wait" if wait_for_networks else [],
     )
 
 
@@ -964,3 +953,144 @@ def test_python_filters_warn_once_when_loading_many_candidates(
     assert len(warnings) == 1
     assert "custom_node_filter" in warnings[0].message
     assert "filter_nodes_query" in warnings[0].message
+
+
+def networks_in_blocks(trial_maker, participant, blocks, network_class=ChainNetwork):
+    """Create one network per entry of ``blocks`` and start the participant in the first block."""
+    exp = get_experiment()
+    networks = [
+        create_chain_network(trial_maker, exp, network_class=network_class)
+        for _ in blocks
+    ]
+    for network, block in zip(networks, blocks):
+        network.block = network.head.block = block
+    initialize_trial_maker_state(trial_maker, participant)
+    participant.module_state.block_order = list(dict.fromkeys(blocks))
+    participant.module_state.set_block_position(0)
+    db.session.flush()
+    return networks
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+@pytest.mark.parametrize("wait_for_networks", [True, False])
+def test_busy_block_waits_or_finishes_early(db_session, participant, wait_for_networks):
+    trial_maker = chain_trial_maker(
+        chains_per_experiment=2,
+        max_trials_per_participant=None,
+        wait_for_networks=wait_for_networks,
+    )
+    busy, free = networks_in_blocks(trial_maker, participant, ["A", "B"])
+    add_trial(GrowthQueryTrial, busy.head, new_participant(), finalized=False)
+
+    outcome = trial_maker._select_trial_node(participant, get_experiment())
+
+    if wait_for_networks:
+        assert outcome == "wait"
+        assert participant.module_state.block == "A"
+    else:
+        assert outcome.value is free.head
+        assert participant.module_state.block == "B"
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_without_interleaving_participant_waits_for_current_chain(
+    db_session, participant
+):
+    trial_maker = chain_trial_maker(
+        chains_per_experiment=2,
+        max_trials_per_participant=10,
+        interleave_chains=False,
+        allow_revisiting_networks_in_across_chains=True,
+    )
+    first, _ = networks_in_blocks(trial_maker, participant, ["default", "default"])
+    trial_maker._on_node_claimed(first.head, participant)
+    add_trial(GrowthQueryTrial, first.head, new_participant(), finalized=False)
+
+    assert trial_maker._select_trial_node(participant, get_experiment()) == "wait"
+
+
+def _reverse_and_drop_last(nodes):
+    return list(reversed(nodes))[:-1]
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+@pytest.mark.parametrize(
+    "node_order, expected_positions",
+    [("listed", [0, 1, 2]), (_reverse_and_drop_last, [2, 1])],
+)
+def test_planned_node_order_is_followed_then_exits(
+    db_session, participant, node_order, expected_positions
+):
+    trial_maker = static_trial_maker(
+        target_trials_per_node=None,
+        max_trials_per_participant=None,
+        node_order=node_order,
+    )
+    exp = get_experiment()
+    networks = networks_in_blocks(
+        trial_maker, participant, ["default"] * 3, network_class=StaticNetwork
+    )
+
+    received = []
+    while True:
+        trial, status = trial_maker.prepare_trial(exp, participant)
+        if trial is None:
+            break
+        received.append(trial.node)
+
+    assert status == "exit"
+    assert received == [networks[i].head for i in expected_positions]
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_full_planned_node_is_skipped_with_a_warning(db_session, participant, caplog):
+    trial_maker = static_trial_maker(
+        target_trials_per_node=1,
+        max_trials_per_participant=None,
+        node_order="listed",
+    )
+    full, other = networks_in_blocks(
+        trial_maker, participant, ["default"] * 2, network_class=StaticNetwork
+    )
+    add_trial(GrowthQueryStaticTrial, full.head, new_participant())
+
+    selection = trial_maker._select_trial_node(participant, get_experiment())
+
+    assert selection.value is other.head
+    assert any("Skipping planned node" in r.message for r in caplog.records)
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_listed_chain_order_rotates_through_chains(db_session, participant):
+    trial_maker = chain_trial_maker(
+        chains_per_experiment=2,
+        max_trials_per_participant=10,
+        chain_order="listed",
+        allow_revisiting_networks_in_across_chains=True,
+        trials_per_node=10,
+    )
+    first, second = networks_in_blocks(trial_maker, participant, ["default", "default"])
+    exp = get_experiment()
+
+    received = []
+    for _ in range(3):
+        selection = trial_maker._select_trial_node(participant, exp)
+        trial_maker._on_node_claimed(selection.value, participant)
+        received.append(selection.value)
+
+    assert received == [first.head, second.head, first.head]
