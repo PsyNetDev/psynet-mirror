@@ -35,6 +35,7 @@ from sqlalchemy import (
     case,
     func,
     or_,
+    true,
 )
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.ext.associationproxy import association_proxy
@@ -2634,44 +2635,92 @@ class ChainTrialMaker(NetworkTrialMaker):
             logger.info("Chain %i is finished for this participant.", focus)
             self._update_group_states(participant, current_chain_id=None)
             return True
-        plan = list(state.planned_network_ids)
-        position = state.plan_position
         if not self._plan_entries_are_single_trials:
             logger.info("Planned chain %i is finished for this participant.", focus)
-        elif self._focus_may_free_up(participant, experiment) and (
-            focus not in deferred
-        ):
-            logger.info(
-                "Planned node in network %i is held by unfinished trials; "
-                "trying it again at the end of the plan.",
-                focus,
+            self._update_group_states(
+                participant, plan_position=state.plan_position + 1
             )
-            deferred.add(focus)
-            plan.append(plan.pop(position))
-            self._update_group_states(participant, planned_network_ids=plan)
             return True
-        elif focus in deferred and self.wait_for_networks:
-            return "wait"
-        else:
+        return self._move_past_unavailable_planned_nodes(
+            participant, experiment, deferred
+        )
+
+    def _move_past_unavailable_planned_nodes(self, participant, experiment, deferred):
+        """Advance a static plan past its focus to the next node that may give a trial.
+
+        The focus has just failed selection. One query classifies the rest of
+        the plan, so that skipping many full nodes costs no more queries than
+        skipping one.
+        """
+        state = participant.module_state
+        plan = list(state.planned_network_ids)
+        position = state.plan_position
+        statuses = self._planned_node_statuses(
+            participant, experiment, set(plan[position:])
+        )
+        focus_position = position
+        outcome = True
+        while position < len(plan):
+            network_id = plan[position]
+            available, pending, may_free_up = statuses.get(
+                network_id, (False, False, False)
+            )
+            if position != focus_position and (available or pending):
+                break
+            if may_free_up and network_id not in deferred:
+                logger.info(
+                    "Planned node in network %i is held by unfinished trials; "
+                    "trying it again at the end of the plan.",
+                    network_id,
+                )
+                deferred.add(network_id)
+                plan.append(plan.pop(position))
+                focus_position = -1
+                continue
+            if network_id in deferred and self.wait_for_networks:
+                outcome = "wait"
+                break
             logger.warning(
                 "Skipping planned %s in network %i for participant %i: it can no "
                 "longer take a trial (for example, it is full or failed).",
                 self._candidate_label,
-                focus,
+                network_id,
                 participant.id,
             )
-        self._update_group_states(participant, plan_position=position + 1)
-        return True
+            position += 1
+        self._update_group_states(
+            participant, planned_network_ids=plan, plan_position=position
+        )
+        return outcome
 
-    def _focus_may_free_up(self, participant, experiment):
-        """Whether the focused node is unavailable only because of unfinished trials."""
-        query = self._candidate_query(participant, experiment)
-        if not self._node_capacity_is_unlimited:
-            query = query.filter(
+    def _planned_node_statuses(self, participant, experiment, network_ids):
+        """Return ``{network_id: (available, pending, may_free_up)}`` for planned nodes.
+
+        Nodes missing from the result can no longer give the participant a
+        trial. ``may_free_up`` means that the node lacks capacity only because
+        of other participants' unfinished trials.
+        """
+        if self._node_capacity_is_unlimited:
+            may_free_up = true()
+        else:
+            may_free_up = (
                 self._completed_trial_count_for_node(self.node_class)
                 < self.trials_per_node
             )
-        return db.session.query(query.exists()).scalar()
+        rows = (
+            self._candidate_query(participant, experiment, focused=False)
+            .filter(self.network_class.id.in_(network_ids))
+            .add_columns(
+                self._candidate_is_available().label("available"),
+                not_(self._candidate_is_not_pending()).label("pending"),
+                may_free_up.label("may_free_up"),
+            )
+            .all()
+        )
+        return {
+            network.id: (available, pending, may_free_up)
+            for network, available, pending, may_free_up in rows
+        }
 
     def _rotating_plan(self, state):
         """Return the planned chains when they are taken in turn, else ``None``."""

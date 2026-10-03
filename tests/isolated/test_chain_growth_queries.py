@@ -1061,12 +1061,17 @@ def test_full_planned_node_is_skipped_with_a_warning(db_session, participant, ca
         max_trials_per_participant=None,
         node_order="listed",
     )
-    full, other = networks_in_blocks(
-        trial_maker, participant, ["default"] * 2, network_class=StaticNetwork
+    *full, other = networks_in_blocks(
+        trial_maker, participant, ["default"] * 21, network_class=StaticNetwork
     )
-    add_trial(GrowthQueryStaticTrial, full.head, new_participant())
+    other_participant = new_participant()
+    for network in full:
+        add_trial(GrowthQueryStaticTrial, network.head, other_participant)
+    trial_maker._plan_block(participant, get_experiment())
 
-    selection = trial_maker._select_trial_node(participant, get_experiment())
+    # Skipping many full nodes costs no more queries than skipping one.
+    with assert_query_count(max_queries=8):
+        selection = trial_maker._select_trial_node(participant, get_experiment())
 
     assert selection.value is other.head
     assert any("Skipping planned node" in r.message for r in caplog.records)
