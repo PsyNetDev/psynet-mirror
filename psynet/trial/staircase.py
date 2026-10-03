@@ -116,8 +116,9 @@ class GeometricStaircaseNode(ChainNode):
                 )
 
     def make_next_definition(self, experiment, participant):
-        # To consider one day -- refactoring logic out of __init__ into make_next_definition
-        return {}
+        # The definition derives from ``parameter``, which ``__init__`` computes
+        # from the parent, so there is nothing to pass on here.
+        return None
 
     @property
     def definition(self):
