@@ -54,9 +54,60 @@ before_script:
     - if: $CI_COMMIT_TAG
       when: always
 
+# Docker pytest / Playwright jobs. MR pipelines skip these when the diff
+# cannot affect experiment runtime, tests, demos, or the CI image. Default
+# branch, tags, and branch pipelines without an MR still always run them.
+#
+# The `changes` list is an allowlist, so a path missing from it silently
+# skips the tests on MRs that touch only that path. When you add a top-level
+# file or directory that tests, the CI image, or packaging depend on, or a
+# test that reads a docs page, add it here. GitLab `changes` patterns cannot
+# exclude paths, so "everything except docs/" cannot be written instead.
+.docker_test_rules: &docker_test_rules
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes:
+        - .gitlab-ci.yml
+        - .cursor/skills/experiment/**/*
+        - Dockerfile
+        - Dockerfile.playwright
+        - MANIFEST.in
+        - benchmarks/**/*
+        - ci/**/*
+        - demos/**/*
+        - docs/scripts/**/*
+        # Docs pages whose content is checked by isolated tests.
+        - docs/dependencies/docker.rst
+        - docs/deploy/index.rst
+        - docs/developer/timeline_hold_traces.rst
+        - docs/experiment_development/experiment_directory.rst
+        - deployment-tests/**/*
+        - dev-requirements.in
+        - install-ci-dependencies.sh
+        - package-lock.json
+        - package.json
+        - playwright.config.js
+        - postgres_setup.sql
+        - psynet/**/*
+        - pyproject.toml
+        - pytest.ini
+        - run-ci-tests.sh
+        - scripts/**/*
+        - tests/**/*
+      when: always
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      when: never
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: always
+    - if: $CI_COMMIT_TAG
+      when: always
+    - if: $CI_COMMIT_BRANCH
+      when: always
+
 pre_commit:
   image: python:3.13
   <<: *default_rules
+  services: []
   before_script:
     - pip install pre-commit
   script:
@@ -65,6 +116,7 @@ pre_commit:
 validate_agent_skills:
   image: python:3.13
   <<: *default_rules
+  services: []
   before_script:
     - pip install pyyaml skills-ref
   script:
@@ -73,14 +125,24 @@ validate_agent_skills:
 changelog_check:
   image: python:3.13
   stage: test
+  services: []
+  # Importing ``psynet.dev.changelog`` from the checkout needs only ``click``
+  # (via ``psynet.version``); ``.[dev]`` would also pull Dallinger and Sphinx.
   before_script:
-    - python -m pip install -e '.[dev]'
+    - pip install -q click
   script:
     - |
       git fetch --unshallow origin || git fetch --depth=100 origin
       git fetch origin $CI_MERGE_REQUEST_TARGET_BRANCH_NAME
       MERGE_BASE=$(git merge-base origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME HEAD)
-      psynet dev changelog check-mr $MERGE_BASE HEAD
+      python - <<PY
+      from psynet.dev.changelog import check_mr_command
+      try:
+          raise SystemExit(check_mr_command("$MERGE_BASE", "HEAD"))
+      except ValueError as exc:
+          print(exc)
+          raise SystemExit(1)
+      PY
   rules:
     # Release branches regenerate CHANGELOG.md from fragments.
     - if: $CI_COMMIT_BRANCH =~ /^release-/ || $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^release-/
@@ -111,7 +173,7 @@ changelog_check:
 .test_suite:
   parallel: 10
   stage: test
-  <<: *default_rules
+  <<: *docker_test_rules
   variables:
     TEST_SCOPE: full
   script:
@@ -173,7 +235,7 @@ compatibility_tests:
 
 playwright_e2e_legacy:
   stage: test
-  <<: *default_rules
+  <<: *docker_test_rules
   script:
     - export PSYNET_WORKSPACE=/root/workspaces/PsyNet
     - mkdir -p public test-results
@@ -201,7 +263,7 @@ playwright_e2e_legacy:
 
 playwright_e2e_default:
   stage: test
-  <<: *default_rules
+  <<: *docker_test_rules
   script:
     - export PSYNET_WORKSPACE=/root/workspaces/PsyNet
     - mkdir -p public test-results
@@ -229,7 +291,9 @@ playwright_e2e_default:
 merge_test_results:
   image: python:3.13-alpine
   stage: test
-  <<: *default_rules
+  # Must match the jobs it needs, or skipped test jobs break pipeline creation.
+  <<: *docker_test_rules
+  services: []
   needs:
     - "tests_python_3_13"
     # tests_python_3_14 and compatibility_tests only exist on
@@ -364,7 +428,18 @@ asv_regression:
   rules:
     - if: $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "issues/9123-performance-benchmark-site"
       when: never
+    # Fast ASV only measures PsyNet hot paths and debug launch of
+    # tests/experiments/static_big. Skip the ~6 min job when the MR cannot
+    # change those results.
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes:
+        - psynet/**/*
+        - benchmarks/**/*
+        - tests/experiments/static_big/**/*
+        - asv.conf.json
+        - pyproject.toml
+        - Dockerfile
+        - .gitlab-ci.yml
       when: always
     - when: never
 
@@ -425,8 +500,6 @@ docs:
       - docs/_build/linkcheck/
     expire_in: 1 week
 
-# To do:
-# - Skip tests if the changes are only in the docs directory
 # Build and publish the multi-version docs site to GitLab Pages.
 # Build logic lives in docs/scripts/build_pages.sh; this job is a thin
 # wrapper that supplies the image, cache, artifacts, and rules.

@@ -137,6 +137,11 @@ async function probeTimelineHoldClientBehavior(page) {
       document.getElementById("psynet-arrival-notice") === null;
 
     psynet.arrivalUpdates = fakeArrival();
+    const hopChanges = [];
+    const hopChangedListener = (event) => {
+      hopChanges.push(event.detail);
+    };
+    window.addEventListener("timelineHoldChanged", hopChangedListener);
     const hold = { ...controller.hold };
     psynet.beginTimelineHold(hold);
     const closedOnBeginHold =
@@ -152,11 +157,17 @@ async function probeTimelineHoldClientBehavior(page) {
     window.addEventListener("timelineHoldEnded", hopEndedListener);
     psynet.beginTimelineHold({
       ...hold,
+      hold_id: "hop-hold-id",
       page_uuid: "hop-page-uuid",
       wake_token: "hop-wake-token",
       message: "Updated wait copy"
     });
     window.removeEventListener("timelineHoldEnded", hopEndedListener);
+    window.removeEventListener("timelineHoldChanged", hopChangedListener);
+    const hopChanged =
+      hopChanges.length === 1 &&
+      hopChanges[0].holdId === "hop-hold-id" &&
+      hopChanges[0].previousHoldId === hold.hold_id;
     const hopReusedChip =
       document.getElementById("psynet-timeline-hold-indicator") ===
       reusedIndicator;
@@ -290,6 +301,7 @@ async function probeTimelineHoldClientBehavior(page) {
       noticeClearedWithoutChannel,
       closedOnBeginHold,
       hopEnded,
+      hopChanged,
       hopReusedChip,
       hopKeptPageInert,
       hopPreservedCommentStash,
@@ -614,6 +626,7 @@ test("timeline hold client overlay and busy retry stay on a live hold", { tag: "
       noticeClearedWithoutChannel: true,
       closedOnBeginHold: true,
       hopEnded: 0,
+      hopChanged: true,
       hopReusedChip: true,
       hopKeptPageInert: true,
       hopPreservedCommentStash: true,
@@ -836,7 +849,12 @@ test("timeline hold client overlay and busy retry stay on a live hold", { tag: "
           message: "The experiment is temporarily busy. Please try again."
         })
       };
-      const effects = { queuedWakes: 0, scheduleCalls: 0 };
+      const effects = {
+        queuedWakes: 0,
+        scheduleCalls: 0,
+        externalWakes: [],
+        unexpectedWakes: []
+      };
       // Websocket onOpen from the client-behavior probe can leave a resume
       // in flight. Swallow new resumes, wait for that POST to settle, then
       // measure handleBusyResponse rather than the resumeInFlight
@@ -862,9 +880,24 @@ test("timeline hold client overlay and busy retry stay on a live hold", { tag: "
         psynet.scheduleTimelineHoldCheck = () => {
           effects.scheduleCalls += 1;
         };
+        // A websocket reconnect, server notification or timer during the
+        // probe would legitimately set resumeRequested and queue a wake, so
+        // swallow those and only count wakes queued by the busy path.
+        const outsideReasons = [
+          "websocket connection",
+          "server notification",
+          "safety poll",
+          "hold timeout"
+        ];
         psynet.resumeTimelineHold = async function (reason) {
+          if (outsideReasons.includes(reason)) {
+            effects.externalWakes.push(reason);
+            return false;
+          }
           if (reason === "queued hold wake") {
             effects.queuedWakes += 1;
+          } else {
+            effects.unexpectedWakes.push(reason);
           }
           return originalResume.apply(this, arguments);
         };
@@ -880,11 +913,18 @@ test("timeline hold client overlay and busy retry stay on a live hold", { tag: "
         };
         await originalResume.call(psynet, "busy livelock");
         await new Promise((resolve) => setTimeout(resolve, 0));
+        if (effects.externalWakes.length) {
+          console.log(
+            "busy livelock probe ignored wakes: " +
+              effects.externalWakes.join(", ")
+          );
+        }
         return {
           queuedWakes: effects.queuedWakes,
           scheduleCalls: effects.scheduleCalls,
           resumeRequested: Boolean(psynet.timelineHold?.resumeRequested),
-          busyRetryUsed: Boolean(psynet.timelineHold?.busyRetryUsed)
+          busyRetryUsed: Boolean(psynet.timelineHold?.busyRetryUsed),
+          unexpectedWakes: effects.unexpectedWakes
         };
       } finally {
         clearTimeout(controller.busyRetryTimer);
@@ -899,7 +939,8 @@ test("timeline hold client overlay and busy retry stay on a live hold", { tag: "
       queuedWakes: 0,
       scheduleCalls: 1,
       resumeRequested: false,
-      busyRetryUsed: true
+      busyRetryUsed: true,
+      unexpectedWakes: []
     });
 
     const pendingEffects = await experimentPage.evaluate(async () => {

@@ -1,0 +1,1 @@
+Added a Playwright 1.62+ helper to the `record-participant-video` Agent Skill that records headless participant walks as `participant.mp4` with audio on any OS, plus a sync probe that measures the audio latency correction; `psynet audit validate` now warns when a participant video's audio track is silent.

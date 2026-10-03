@@ -219,6 +219,7 @@ def test_check_psynet_requirement_is_unambiguous_name_based_with_spaces():
     [
         "psynet[experiment] @ file:///home/frank/projects/PsyNet",
         "-e file:///home/frank/projects/PsyNet#egg=psynet[experiment]",
+        "psynet[experiment] @ file:///tmp/psynet-14.0.0-py3-none-any.whl",
     ],
 )
 def test_check_psynet_requirement_is_unambiguous_local_path_suggests_commit_pin(

@@ -1,7 +1,7 @@
 # README
 
 Embeds a Unity WebGL mini-game in the timeline with `UnityPage`, assigning
-participants to rule groups that change scoring. Use it when part of the
+participants at random to gain conditions that change scoring. Use it when part of the
 experiment is an interactive Unity build rather than HTML-only pages.
 
 ## Usage

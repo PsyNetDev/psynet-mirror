@@ -74,7 +74,7 @@ nodes_iso = [
             "stim_name": name,
             "list_iois": iois,
         },
-        assets={"stimulus": asset(generate_basic_stimulus, cache=True, is_folder=True)},
+        assets={"stimulus": asset(generate_basic_stimulus, is_folder=True)},
     )
     for name, iois in zip(iso_stimulus_names, iso_stimulus_onsets)
 ]
@@ -105,7 +105,7 @@ nodes_music = [
             "onset_filename": os.path.join("music", onset_file),
         },
         assets={
-            "stimulus": asset(generate_music_stimulus, cache=True, is_folder=True),
+            "stimulus": asset(generate_music_stimulus, is_folder=True),
         },
     )
     for name, audio_file, onset_file in zip(

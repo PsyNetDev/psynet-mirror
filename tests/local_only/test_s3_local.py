@@ -4,7 +4,7 @@ import uuid
 
 import pytest
 
-from psynet.asset import ExperimentAsset, S3Storage
+from psynet.asset import FileAsset, S3Storage
 from psynet.pytest_psynet import path_to_test_experiment
 
 
@@ -80,7 +80,7 @@ class TestS3:
         assert storage.list_files_with_prefix("", use_cache=False) == []
 
     def test_s3_asset_file(self, s3_storage, text_file_1):
-        asset = ExperimentAsset(
+        asset = FileAsset(
             text_file_1,
             local_key="test_asset",
         )
@@ -95,7 +95,7 @@ class TestS3:
                 assert reader.read() == "Hello!"
 
     def test_s3_asset_folder(self, s3_storage, text_folder):
-        asset = ExperimentAsset(
+        asset = FileAsset(
             text_folder,
             local_key="test_folder_asset",
         )

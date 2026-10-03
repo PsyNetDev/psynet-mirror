@@ -1,0 +1,1 @@
+Prolific participant status checks no longer log a `ProlificServiceException` traceback every few seconds when no Prolific study is recorded for the experiment, for example in `psynet debug local` with `auto_recruit = false`. PsyNet now skips the check and logs a single warning.

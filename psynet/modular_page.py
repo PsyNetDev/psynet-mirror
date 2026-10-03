@@ -2274,6 +2274,25 @@ class ModularPage(Page):
 
 
 class AudioMeterControl(Control):
+    """
+    Shows a live microphone level meter, warning when the input is too loud or too quiet.
+
+    Useful for checking recording levels before recording trials. The bot response is ``None``.
+
+    Parameters
+    ----------
+    calibrate : bool
+        Show sliders for tuning the meter's decay, thresholds, and warning timings.
+    show_next_button : bool
+        Whether to show the Next button.
+    min_time : float
+        Seconds before the Next button is enabled.
+    bot_response
+        Optional bot response override.
+    **kwargs
+        Passed to :class:`Control`.
+    """
+
     macro = "audio_meter"
 
     def __init__(
@@ -2367,7 +2386,7 @@ class AudioMeterControl(Control):
                 ]
             )
         else:
-            self.slider = None
+            self.sliders = None
 
     display_range = {"min": -60, "max": 0}
 
@@ -2406,6 +2425,8 @@ class AudioMeterControl(Control):
 
 
 class TappingAudioMeterControl(AudioMeterControl):
+    """:class:`AudioMeterControl` tuned for tapping recordings: faster decay, no clipping warning."""
+
     decay = {"display": 0.01, "high": 0, "low": 0.01}
 
     threshold = {"high": -2, "low": -20}
@@ -3797,8 +3818,11 @@ class VideoRecordControl(RecordControl):
                     parent=parent,
                 )
 
+                # LocalStorage deposits are a quick file copy; keep them
+                # synchronous so the next page can serve the recording.
+                async_ = not isinstance(asset.default_storage, LocalStorage)
                 try:
-                    asset.deposit(async_=True, delete_input=True)
+                    asset.deposit(async_=async_, delete_input=True)
                 except Asset.InconsistentContentError:
                     raise ValueError(
                         f"This participant already has an asset with the label '{label}'. "
@@ -3884,6 +3908,34 @@ class VideoRecordControl(RecordControl):
 
 
 class FrameSliderControl(Control):
+    """
+    Slider that scrubs through the frames of a single video.
+
+    The answer is the slider position between 0 and 1, which maps to the
+    video's relative playback time.
+
+    Parameters
+    ----------
+    url : str
+        URL of the video.
+    file_type : str
+        Video file type, for example ``"mp4"``.
+    width, height : str
+        CSS size of the video, for example ``"400px"``.
+    starting_value : float
+        Initial slider position between 0 and 1.
+    minimal_time : float
+        Seconds before the Next button is enabled.
+    reverse_scale : bool
+        Flip the scale.
+    directional : bool
+        Show the slider in grey/blue (directional) or all grey (non-directional).
+    hide_slider : bool
+        Hide the slider bar.
+    bot_response
+        Optional bot response override; bots otherwise answer uniformly at random.
+    """
+
     macro = "frame_slider"
 
     def __init__(
@@ -4064,6 +4116,11 @@ class SurveyJSControl(Control):
             }
             .sd-root-modern {
                 --sjs-general-backcolor: transparent;
+            }
+            /* SurveyJS gives the page a fixed minimum width, which overflows
+            the PsyNet surface on phones. */
+            .sd-page {
+                min-width: 0 !important;
             }
             /* This removes the shadow from the survey elements. */
             .sd-element--with-frame:not(.sd-element--collapsed) {
@@ -4331,6 +4388,11 @@ class RatingScale:
         design["type"] = "rating"
         design["name"] = self.name
         design["isRequired"] = self.required
+        # SurveyJS's default "auto" mode swaps narrow scales for a dropdown
+        # that hides the min/max descriptions.
+        design["displayMode"] = "buttons"
+        # SurveyJS's default 300px minimum overflows the page card on phones.
+        design["minWidth"] = "0px"
 
         if self.min_description:
             design["minRateDescription"] = self.min_description
