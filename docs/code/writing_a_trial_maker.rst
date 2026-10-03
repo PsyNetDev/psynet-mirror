@@ -144,9 +144,11 @@ the equivalent hooks for chains; see :doc:`/code/writing_a_chain_experiment`.
 Keeping selection fast
 ~~~~~~~~~~~~~~~~~~~~~~
 
-PsyNet chooses each trial with one database query. It orders the eligible
-nodes by block, then by any custom priority, then by balancing (when it is
-on), then randomly, and loads only the first. Nodes are not eligible if they
+PsyNet finds each trial's node with one database query. It orders the
+eligible nodes by block, then by any custom priority, then by balancing (when
+it is on), then randomly, and loads only the first. It then locks that node
+and recounts its trials, a small fixed cost that stops simultaneous
+participants from overfilling it. Nodes are not eligible if they
 already have ``target_trials_per_node`` trials, if they are waiting for
 asynchronous processing, or if they are outside the participant's group or
 remaining blocks.
