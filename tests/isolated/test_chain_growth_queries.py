@@ -190,7 +190,7 @@ def add_trial(
     "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
 )
 @pytest.mark.usefixtures("in_experiment_directory")
-def test_find_chains_keeps_query_count_bounded(db_session, participant):
+def test_find_chains_is_one_query_that_skips_full_chains(db_session, participant):
     exp = get_experiment()
     trial_maker = chain_trial_maker(
         chains_per_experiment=20,
@@ -198,12 +198,36 @@ def test_find_chains_keeps_query_count_bounded(db_session, participant):
     )
     networks = [create_chain_network(trial_maker, exp) for _ in range(20)]
     initialize_trial_maker_state(trial_maker, participant)
+    add_trial(GrowthQueryTrial, networks[0].head, participant)
 
-    # The fourth query batches viable-trial counts for every candidate head.
-    with assert_query_count(min_queries=3, max_queries=4):
+    with assert_query_count(max_queries=1):
         eligible = trial_maker.find_chains(participant, exp)
 
-    assert {chain.id for chain in eligible} == {chain.id for chain in networks}
+    assert {chain.id for chain in eligible} == {chain.id for chain in networks[1:]}
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_find_nodes_is_one_query_that_skips_full_nodes(db_session, participant):
+    exp = get_experiment()
+    trial_maker = static_trial_maker(
+        target_trials_per_node=1, max_trials_per_participant=None
+    )
+    networks = [
+        create_chain_network(trial_maker, exp, network_class=StaticNetwork)
+        for _ in range(20)
+    ]
+    initialize_trial_maker_state(trial_maker, participant)
+    add_trial(GrowthQueryStaticTrial, networks[0].head, participant)
+
+    with assert_query_count(max_queries=1):
+        eligible = trial_maker.find_nodes(participant, exp)
+
+    assert {node.id for node in eligible} == {
+        network.head.id for network in networks[1:]
+    }
 
 
 @pytest.mark.parametrize(
@@ -225,39 +249,6 @@ def test_custom_finish_policy_keeps_receiving_real_trial_counts(
 
     assert trial_maker._should_finish_block(participant) is False
     assert trial_maker.observed_counts == (1, 1)
-
-
-@pytest.mark.parametrize(
-    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
-)
-@pytest.mark.usefixtures("in_experiment_directory")
-def test_find_chains_batches_viable_trial_counts(db_session, participant, monkeypatch):
-    import psynet.trial.chain as chain_module
-
-    exp = get_experiment()
-    trial_maker = chain_trial_maker(
-        chains_per_experiment=20,
-        max_trials_per_participant=None,
-    )
-    networks = [create_chain_network(trial_maker, exp) for _ in range(20)]
-    initialize_trial_maker_state(trial_maker, participant)
-    add_trial(GrowthQueryTrial, networks[0].head, participant)
-
-    original = chain_module._count_viable_trials_for_nodes
-    calls = []
-
-    def count_once(node_ids):
-        node_ids = list(node_ids)
-        calls.append(node_ids)
-        return original(node_ids)
-
-    monkeypatch.setattr(chain_module, "_count_viable_trials_for_nodes", count_once)
-
-    eligible = trial_maker.find_chains(participant, exp)
-
-    assert len(calls) == 1
-    assert set(calls[0]) == {network.head.id for network in networks}
-    assert networks[0] not in eligible
 
 
 @pytest.mark.parametrize(
@@ -296,56 +287,6 @@ def test_unlimited_static_nodes_skip_viable_trial_counts(
     assert StaticNode.query.filter(StaticNode.n_viable_trials == 0).count() == len(
         expected_node_ids
     )
-
-
-@pytest.mark.parametrize(
-    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
-)
-@pytest.mark.usefixtures("in_experiment_directory")
-def test_limited_static_nodes_batch_viable_trial_counts(
-    db_session, participant, monkeypatch
-):
-    import psynet.trial.chain as chain_module
-
-    exp = get_experiment()
-    trial_maker = StaticTrialMaker(
-        id_="static_growth_query",
-        trial_class=GrowthQueryStaticTrial,
-        nodes=[StaticNode(definition={"x": 0})],
-        expected_trials_per_participant=1,
-        max_trials_per_participant=None,
-        target_trials_per_node=1,
-    )
-    networks = [
-        create_chain_network(trial_maker, exp, network_class=StaticNetwork)
-        for _ in range(20)
-    ]
-    initialize_trial_maker_state(trial_maker, participant)
-    add_trial(GrowthQueryStaticTrial, networks[0].head, participant)
-
-    original = chain_module._count_viable_trials_for_nodes
-    calls = []
-
-    def count_once(node_ids):
-        node_ids = list(node_ids)
-        calls.append(node_ids)
-        return original(node_ids)
-
-    monkeypatch.setattr(chain_module, "_count_viable_trials_for_nodes", count_once)
-    participant_id = participant.id
-    all_head_ids = {network.head.id for network in networks}
-    expected_node_ids = {network.head.id for network in networks[1:]}
-    db.session.commit()
-    db.session.remove()
-    participant = db.session.get(Participant, participant_id)
-    participant.module_state
-
-    with assert_query_count(min_queries=2, max_queries=6):
-        eligible = trial_maker.find_nodes(participant, exp)
-
-    assert len(calls) == 1
-    assert set(calls[0]) == all_head_ids
-    assert {node.id for node in eligible} == expected_node_ids
 
 
 @pytest.mark.parametrize(
@@ -850,3 +791,156 @@ def test_n_trials_still_required_counts_completed_trials_in_open_networks(
 
     with assert_query_count(max_queries=1):
         assert trial_maker.n_trials_still_required == (3 - 1) + 3
+
+
+class PythonFilteredStaticTrialMaker(StaticTrialMaker):
+    def custom_node_filter(self, nodes, participant, experiment):
+        return nodes
+
+
+def static_selection_fixture(
+    participant, maker_class=StaticTrialMaker, wait_for_networks=False
+):
+    """Return a static trial maker and its nodes, the first three unavailable."""
+    exp = get_experiment()
+    trial_maker = static_trial_maker(
+        target_trials_per_node=1,
+        max_trials_per_participant=None,
+        maker_class=maker_class,
+    )
+    trial_maker.wait_for_networks = wait_for_networks
+    networks = [
+        create_chain_network(trial_maker, exp, network_class=StaticNetwork)
+        for _ in range(6)
+    ]
+    nodes = [network.head for network in networks]
+    initialize_trial_maker_state(trial_maker, participant)
+    add_trial(GrowthQueryStaticTrial, nodes[0], participant)
+    nodes[1].async_on_deploy_requested = True
+    networks[2].participant_group = "other"
+    db.session.flush()
+    return trial_maker, nodes
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+@pytest.mark.parametrize("wait_for_networks", [False, True])
+def test_database_and_python_filter_paths_agree(
+    db_session, participant, wait_for_networks
+):
+    exp = get_experiment()
+    results = {}
+    for maker_class in (StaticTrialMaker, PythonFilteredStaticTrialMaker):
+        trial_maker, nodes = static_selection_fixture(
+            participant, maker_class, wait_for_networks=wait_for_networks
+        )
+        eligible = trial_maker.find_nodes(participant, exp)
+        available = {node.id for node in eligible} - {node.id for node in nodes[3:]}
+        for node in nodes[3:]:
+            add_trial(GrowthQueryStaticTrial, node, participant)
+        results[maker_class] = (
+            len(eligible),
+            available,
+            trial_maker.find_nodes(participant, exp),
+        )
+        db.session.rollback()
+        participant = new_participant()
+
+    assert results[StaticTrialMaker] == results[PythonFilteredStaticTrialMaker]
+    assert results[StaticTrialMaker] == (
+        3,
+        set(),
+        "wait" if wait_for_networks else "exit",
+    )
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_query_hooks_filter_and_rank_nodes(db_session, participant):
+    class RankedTrialMaker(StaticTrialMaker):
+        def filter_nodes_query(self, query, participant, experiment):
+            return query.filter(self.node_class.id != highest_id)
+
+        def node_priority(self, participant, experiment):
+            return self.node_class.id.desc()
+
+    trial_maker, nodes = static_selection_fixture(participant, RankedTrialMaker)
+    highest_id = nodes[-1].id
+
+    selection = trial_maker._select_trial_node(participant, get_experiment())
+
+    assert selection.value is nodes[-2]
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_before_selection_can_wait_or_exit_before_discovery(db_session, participant):
+    class GatedTrialMaker(StaticTrialMaker):
+        def before_selection(self, participant, experiment):
+            return outcome
+
+    trial_maker, _ = static_selection_fixture(participant, GatedTrialMaker)
+    exp = get_experiment()
+
+    outcome = "wait"
+    with assert_query_count(max_queries=0):
+        assert trial_maker._select_trial_node(participant, exp) == "wait"
+
+    outcome = "later"
+    with pytest.raises(ValueError, match="before_selection must return"):
+        trial_maker._select_trial_node(participant, exp)
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+@pytest.mark.parametrize("filter_in_python", [False, True])
+def test_selection_pool_limits_candidates_to_available_ones(
+    db_session, participant, filter_in_python
+):
+    base = PythonFilteredStaticTrialMaker if filter_in_python else StaticTrialMaker
+
+    class PooledTrialMaker(base):
+        selection_pool_size = 2
+
+        def select_node(self, nodes, participant, experiment):
+            seen.append(nodes)
+            return nodes[0]
+
+    seen = []
+    trial_maker, nodes = static_selection_fixture(participant, PooledTrialMaker)
+
+    trial_maker._select_trial_node(participant, get_experiment())
+
+    (pool,) = seen
+    assert len(pool) == 2
+    assert {node.id for node in pool} <= {node.id for node in nodes[3:]}
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_python_filters_warn_once_when_loading_many_candidates(
+    db_session, participant, caplog
+):
+    trial_maker, _ = static_selection_fixture(
+        participant, PythonFilteredStaticTrialMaker
+    )
+    trial_maker._many_candidates_threshold = 3
+    exp = get_experiment()
+
+    trial_maker.find_nodes(participant, exp)
+    trial_maker.find_nodes(participant, exp)
+
+    warnings = [r for r in caplog.records if "selection_pool_size" in r.message]
+    assert len(warnings) == 1
+    assert "custom_node_filter" in warnings[0].message
+    assert "filter_nodes_query" in warnings[0].message

@@ -20,12 +20,14 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
     and_,
+    case,
     func,
     or_,
 )
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.ext.hybrid import hybrid_property
-from sqlalchemy.orm import relationship, subqueryload
+from sqlalchemy.orm import contains_eager, defer, relationship
 from sqlalchemy.sql.expression import not_, select
 from tqdm import tqdm
 
@@ -100,6 +102,16 @@ def count_viable_trials_for_nodes(node_ids: Iterable[int]) -> dict[int, int]:
     A viable trial is non-failed and not a repeat trial.
     """
     return _count_viable_trials_for_nodes(node_ids)
+
+
+def _trial_selection_docs_url():
+    from .. import __version__
+    from ..local_docs import published_docs_url
+
+    return (
+        f"{published_docs_url(__version__)}code/writing_a_trial_maker.html"
+        "#trial-selection-performance"
+    )
 
 
 def _viable_trial_count_expression(node_id):
@@ -1648,6 +1660,16 @@ class ChainTrialMaker(NetworkTrialMaker):
                 "custom_node_filter",
                 "Chain trial makers now use custom_chain_filter(chains, participant, experiment).",
             ),
+            (
+                ChainTrialMaker,
+                "filter_nodes_query",
+                "Chain trial makers use filter_chains_query(query, participant, experiment).",
+            ),
+            (
+                ChainTrialMaker,
+                "node_priority",
+                "Chain trial makers use chain_priority(participant, experiment).",
+            ),
         ]
 
     def _deprecated_selection_hooks(self):
@@ -1979,6 +2001,10 @@ class ChainTrialMaker(NetworkTrialMaker):
         To wait, exit, or drop candidates after those built-in checks, override
         this method, call ``super().find_chains``, then filter or return
         ``"wait"`` / ``"exit"``. ``select_chain`` cannot return those outcomes.
+        Overriding this method loads every eligible chain on each trial;
+        :meth:`~psynet.trial.chain.ChainTrialMaker.before_selection` and
+        :meth:`~psynet.trial.chain.ChainTrialMaker.filter_chains_query` keep
+        selection in the database.
 
         Parameters
         ----------
@@ -1994,14 +2020,98 @@ class ChainTrialMaker(NetworkTrialMaker):
         return self._find_eligible_candidates(participant, experiment)
 
     _candidate_label = "chain"
+    _list_selection_hooks = ("find_chains", "select_chain")
+    _python_filter_hooks = ("custom_chain_filter", "custom_network_filter")
+    _query_hooks = ("filter_chains_query", "chain_priority")
 
-    def _find_eligible_candidates(self, participant, experiment):
-        """Discover, filter, and order candidates for selection."""
-        candidate_plural = f"{self._candidate_label}s"
+    #: Maximum number of eligible candidates passed to Python selection hooks
+    #: such as ``select_chain``. ``None`` passes all of them. When set, PsyNet
+    #: passes only the highest-ranked candidates, using the order described in
+    #: :ref:`trial_selection_performance`.
+    selection_pool_size = None
 
+    _many_candidates_threshold = 1000
+
+    def before_selection(self, participant, experiment):
+        """Decide whether to look for a trial at all.
+
+        PsyNet calls this hook before it searches the database for candidates.
+        Return ``"wait"`` to show the waiting page, ``"exit"`` to leave the
+        trial maker, or ``None`` to continue with selection. Use it for
+        decisions that depend only on the participant, such as waiting until
+        a partner has finished, so that selection can stay in the database.
+
+        Parameters
+        ----------
+        participant
+            The participant receiving the next trial.
+        experiment
+            The current experiment.
+
+        Returns
+        -------
+        None, "wait", or "exit"
+        """
+        return None
+
+    def filter_chains_query(self, query, participant, experiment):
+        """Narrow the database query that finds candidate chains.
+
+        Override this to remove chains in SQL rather than in Python. ``query``
+        selects ``self.network_class`` joined to the chain's head node
+        (``self.node_class``) and already applies PsyNet's built-in checks.
+        Add conditions with ``query.filter(...)`` on columns of either class
+        and return the result. Unlike
+        :meth:`~psynet.trial.chain.ChainTrialMaker.custom_chain_filter`,
+        this keeps selection fast when there are many chains.
+        """
+        return query
+
+    def chain_priority(self, participant, experiment):
+        """Return SQL expressions that rank eligible chains.
+
+        PsyNet orders candidates by block first, then by these expressions
+        (ascending; use ``.desc()`` to reverse), then by balancing when
+        ``balance_across_chains`` is on, then randomly. The default
+        ``select_chain`` takes the first chain in that order. Expressions may
+        use columns of ``self.network_class`` and ``self.node_class``.
+        """
+        return []
+
+    def _filter_candidate_query(self, query, participant, experiment):
+        return self.filter_chains_query(query, participant, experiment)
+
+    def _candidate_priority(self, participant, experiment):
+        return self.chain_priority(participant, experiment)
+
+    def _candidate_value(self, network):
+        return network
+
+    def _hook_is_overridden(self, method_name):
+        return method_name in vars(self) or is_method_overridden(
+            self, ChainTrialMaker, method_name
+        )
+
+    def _filters_candidates_in_python(self):
+        return any(
+            self._hook_is_overridden(name)
+            for name in (*self._python_filter_hooks, "_filter_eligible_candidates")
+        )
+
+    def _uses_list_selection_hooks(self):
+        return self._filters_candidates_in_python() or any(
+            self._hook_is_overridden(name) for name in self._list_selection_hooks
+        )
+
+    def _find_eligible_candidates(self, participant, experiment, *, limit=None):
+        """Return the eligible candidates in selection order, or ``"wait"`` / ``"exit"``.
+
+        Built-in eligibility, capacity, and ordering are evaluated in one SQL
+        query, so only the candidates that are returned are loaded.
+        """
         logger.info(
-            "Looking for eligible %s for participant %i.",
-            candidate_plural,
+            "Looking for eligible %ss for participant %i.",
+            self._candidate_label,
             participant.id,
         )
 
@@ -2025,132 +2135,186 @@ class ChainTrialMaker(NetworkTrialMaker):
                 next_block = participant.module_state.block_order[next_block_position]
                 self.set_block_state(participant, next_block)
 
-        chain_query = self.network_class.query.filter_by(
-            trial_maker_id=self.id, full=False, failed=False
-        ).options(
-            subqueryload(self.network_class.head),
-        )
+        outcome = self.before_selection(participant, experiment)
+        if outcome is not None:
+            if outcome not in ("wait", "exit"):
+                raise ValueError(
+                    "before_selection must return None, 'wait', or 'exit'; "
+                    f"got {outcome!r}"
+                )
+            logger.info("before_selection returned %r.", outcome)
+            return outcome
+
+        query = self._candidate_query(participant, experiment)
+        available = self._candidate_is_available()
+        order_by = self._candidate_order(participant, experiment)
+
+        if self._filters_candidates_in_python():
+            return self._filter_candidates_in_python(
+                query, available, order_by, participant, experiment
+            )
+
+        limit = limit or self.selection_pool_size
+        networks = query.filter(available).order_by(*order_by).limit(limit).all()
+        if not networks:
+            # Everything matching the built-in filters is waiting for an
+            # asynchronous process or at capacity, either of which may change.
+            if self.wait_for_networks and db.session.query(query.exists()).scalar():
+                logger.info("Will wait for an eligible %s.", self._candidate_label)
+                return "wait"
+            return "exit"
+        if limit is None:
+            self._warn_if_many_candidates(len(networks))
+        return [self._candidate_value(network) for network in networks]
+
+    def _candidate_query(self, participant, experiment):
+        """Query the networks that pass the built-in checks, joined to their heads."""
+        network = self.network_class
+        module_state = participant.module_state
+        query = network.query.filter_by(
+            trial_maker_id=self.id,
+            full=False,
+            failed=False,
+            participant_group=module_state.participant_group,
+        ).filter(network.block.in_(module_state.remaining_blocks))
 
         if self.chain_type == "within":
             if self.sync_group_type is not None:
                 sync_group = participant.active_sync_groups[self.sync_group_type]
                 assert sync_group.id is not None
-                chain_query = chain_query.filter_by(sync_group_id=sync_group.id)
+                query = query.filter_by(sync_group_id=sync_group.id)
             else:
-                chain_query = self.filter_by_participant_id(chain_query, participant)
+                query = self.filter_by_participant_id(query, participant)
         elif (
             self.chain_type == "across"
             and not self.allow_revisiting_networks_in_across_chains
         ):
-            chain_query = self.exclude_participated(chain_query, participant)
+            query = self.exclude_participated(query, participant)
 
-        participant_group = participant.module_state.participant_group
-        chain_query = chain_query.filter_by(participant_group=participant_group)
+        query = query.join(
+            self.node_class, network.head_id == self.node_class.id
+        ).options(
+            contains_eager(network.head.of_type(self.node_class)),
+            # Dallinger's per-network count properties (such as n_alive_nodes)
+            # are correlated subqueries on the node table; with node joined
+            # they would correlate to the head instead. Selection does not
+            # need them, and they load on access if anything else does.
+            *(
+                defer(getattr(network, prop.key))
+                for prop in sa_inspect(network).column_attrs
+                if not isinstance(prop.expression, Column)
+            ),
+        )
+        return self._filter_candidate_query(query, participant, experiment)
 
-        discovered_chains = chain_query.all()
-        # Candidate records let the shared pipeline work with either chains or
-        # static nodes while retaining the network objects loaded by the query.
+    def _candidate_is_available(self):
+        """Return a SQL condition for candidates that can take a trial now."""
+        conditions = [
+            # The pending flags are nullable; NULL means not pending.
+            self.network_class.async_post_grow_network_pending.is_not(True),
+            self.node_class.async_on_deploy_pending.is_not(True),
+        ]
+        if not self._node_capacity_is_unlimited:
+            # Counting viable trials, not only finalized ones, includes the
+            # trial submitted in this same request.
+            conditions.append(
+                _viable_trial_count_expression(self.node_class.id)
+                < self.trials_per_node
+            )
+        return and_(*conditions)
+
+    def _candidate_order(self, participant, experiment):
+        """Return ORDER BY expressions: block, custom priority, balancing, random."""
+        order_by = []
+        remaining_blocks = participant.module_state.remaining_blocks
+        if len(remaining_blocks) > 1:
+            order_by.append(
+                case(
+                    {block: i for i, block in enumerate(remaining_blocks)},
+                    value=self.network_class.block,
+                )
+            )
+        priority = self._candidate_priority(participant, experiment)
+        if not isinstance(priority, (list, tuple)):
+            priority = [priority]
+        order_by.extend(priority)
+        if self.balance_across_chains:
+            order_by.extend(
+                [
+                    self.node_class.degree,
+                    _viable_trial_count_expression(self.node_class.id),
+                ]
+            )
+        order_by.append(func.random())
+        return order_by
+
+    def _filter_candidates_in_python(
+        self, query, available, order_by, participant, experiment
+    ):
+        """Load candidates for a Python eligibility filter.
+
+        The filter sees unavailable candidates too, so that the wait/exit
+        decision only considers candidates it accepts.
+        """
+        pool_size = self.selection_pool_size
+        if pool_size is not None:
+            order_by = [available.desc(), *order_by]
+        rows = (
+            query.add_columns(available.label("available"))
+            .order_by(*order_by)
+            .limit(pool_size)
+            .all()
+        )
+        if pool_size is None:
+            self._warn_if_many_candidates(len(rows))
+        is_available = {network.id: available for network, available in rows}
         candidates = self._build_candidates(
-            discovered_chains,
+            [network for network, _ in rows],
             participant=participant,
             experiment=experiment,
         )
-        logger.info(
-            "%i eligible %s remain after applying custom filters.",
-            len(candidates),
-            candidate_plural,
-        )
-
-        def has_pending_process(network):
-            return network.async_post_grow_network_pending or (
-                network.head and network.head.async_on_deploy_pending
-            )
-
-        available_candidates = [
-            candidate
+        selectable = [
+            candidate.value
             for candidate in candidates
-            if not has_pending_process(candidate.network)
+            if is_available[candidate.network.id]
         ]
-
         logger.info(
-            "%i out of %i eligible %s await asynchronous processing.",
-            len(candidates) - len(available_candidates),
+            "%i of %i %ss accepted by the custom filter can take a trial now.",
+            len(selectable),
             len(candidates),
-            candidate_plural,
+            self._candidate_label,
         )
-
-        if (
-            len(available_candidates) == 0
-            and len(candidates) > 0
-            and self.wait_for_networks
-        ):
+        if selectable:
+            return selectable
+        if candidates and self.wait_for_networks:
             logger.info("Will wait for an eligible %s.", self._candidate_label)
             return "wait"
+        return "exit"
 
-        # Discovery normally runs in the response that submits the previous trial.
-        # Counting all viable trials, rather than only finalized trials, includes
-        # that newly submitted trial and prevents over-allocation.
-        needs_viable_counts = (
-            not self._node_capacity_is_unlimited or self.balance_across_chains
-        )
-        viable_counts = (
-            _count_viable_trials_for_nodes(
-                candidate.network.head.id
-                for candidate in available_candidates
-                if candidate.network.head is not None
-            )
-            if needs_viable_counts
-            else {}
-        )
-        candidates_with_head_space = [
-            candidate
-            for candidate in available_candidates
-            if candidate.network.head
-            and (
-                self._node_capacity_is_unlimited
-                or viable_counts.get(candidate.network.head.id, 0)
-                < self.trials_per_node
-            )
+    def _warn_if_many_candidates(self, n_candidates):
+        if n_candidates < self._many_candidates_threshold or getattr(
+            self, "_warned_about_many_candidates", False
+        ):
+            return
+        self._warned_about_many_candidates = True
+        overridden = [
+            name
+            for name in (*self._python_filter_hooks, *self._list_selection_hooks)
+            if self._hook_is_overridden(name)
         ]
-
-        if len(available_candidates) > 0 and len(candidates_with_head_space) == 0:
-            logger.info(
-                "All eligible %s have exhausted their current trial capacity.",
-                candidate_plural,
-            )
-            if self.wait_for_networks:
-                return "wait"
-            else:
-                return "exit"
-
-        candidates = candidates_with_head_space
-        if len(candidates) == 0:
-            return "exit"
-
-        random.shuffle(candidates)
-
-        if self.balance_across_chains:
-            # We used to sort by n_completed_trials, but this is likely to be out of date
-            # because the completion of the latest trial might not have been committed yet.
-            candidates.sort(
-                key=lambda candidate: viable_counts.get(
-                    candidate.network.head.id,
-                    0,
-                )
-            )
-            candidates.sort(key=lambda candidate: candidate.network.head.degree)
-
-        remaining_blocks = participant.module_state.remaining_blocks
-        candidates = [
-            candidate
-            for candidate in candidates
-            if candidate.network.block in remaining_blocks
-        ]
-        candidates.sort(
-            key=lambda candidate: remaining_blocks.index(candidate.network.block)
+        logger.warning(
+            "Trial maker %r loaded %i %ss to choose each trial because it "
+            "overrides %s. Selection gets slower as the number of %ss grows. "
+            "Filter and rank in the database with %s and %s instead, or set "
+            "selection_pool_size to pass fewer candidates. See %s.",
+            self.id,
+            n_candidates,
+            self._candidate_label,
+            ", ".join(overridden),
+            self._candidate_label,
+            *self._query_hooks,
+            _trial_selection_docs_url(),
         )
-
-        return [candidate.value for candidate in candidates]
 
     def _build_candidates(self, discovered_chains, participant, experiment):
         """Build internal records for chain selection candidates."""
@@ -2163,8 +2327,14 @@ class ChainTrialMaker(NetworkTrialMaker):
         return [Candidate(value=chain, network=chain) for chain in chains]
 
     def _select_trial_node(self, participant, experiment):
+        if self._uses_list_selection_hooks():
+            discovered = self.find_chains(participant, experiment)
+        else:
+            discovered = self._find_eligible_candidates(
+                participant, experiment, limit=1
+            )
         selection = self._select_from_discovered(
-            self.find_chains(participant, experiment),
+            discovered,
             participant,
             experiment,
             self.select_chain,
@@ -2292,6 +2462,20 @@ class ChainTrialMaker(NetworkTrialMaker):
         :meta private:
         """
         self._raise_unsupported_selection_hook("custom_node_filter")
+
+    def filter_nodes_query(self, query, participant, experiment):
+        """Wrong-paradigm selection hook.
+
+        :meta private:
+        """
+        self._raise_unsupported_selection_hook("filter_nodes_query")
+
+    def node_priority(self, participant, experiment):
+        """Wrong-paradigm selection hook.
+
+        :meta private:
+        """
+        self._raise_unsupported_selection_hook("node_priority")
 
     @staticmethod
     def filter_by_participant_id(chains, participant):

@@ -62,10 +62,6 @@ def _loads_to_prepare_one_trial(n_nodes):
     "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
 )
 @pytest.mark.usefixtures("in_experiment_directory")
-@pytest.mark.xfail(
-    strict=True,
-    reason="Trial selection still loads every eligible network and node.",
-)
 def test_static_trial_selection_load_does_not_grow_with_node_count(db_session):
     small = _loads_to_prepare_one_trial(SMALL)
     large = _loads_to_prepare_one_trial(LARGE)

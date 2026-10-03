@@ -783,18 +783,6 @@ def test_custom_node_filter_rejects_duplicate_node():
         )
 
 
-def test_static_node_filter_ignores_headless_network(caplog):
-    trial_maker = make_static_trial_maker()
-    (headed,) = _headed_chains(1)
-
-    assert trial_maker._filter_eligible_candidates(
-        [SimpleNamespace(id=99, head=None), headed],
-        participant=SimpleNamespace(),
-        experiment=SimpleNamespace(),
-    ) == [headed.head]
-    assert "Ignoring StaticNetwork objects without head nodes" in caplog.text
-
-
 def test_custom_chain_filter_drops_chains():
     class SelectiveChainMaker(ChainTrialMaker):
         def custom_chain_filter(self, chains, participant, experiment):

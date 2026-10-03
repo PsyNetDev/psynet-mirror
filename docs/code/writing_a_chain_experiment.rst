@@ -95,7 +95,11 @@ Choosing the next chain
   :meth:`~psynet.trial.chain.ChainTrialMaker.select_chain`, which picks one of
   the rest. They follow the same rules as the static trial maker's node hooks
   (see :ref:`choosing nodes yourself <custom_node_selection>`); PsyNet then gives the participant the
-  selected chain's current node.
+  selected chain's current node. With many chains, filter and rank them in
+  the database with
+  :meth:`~psynet.trial.chain.ChainTrialMaker.filter_chains_query` and
+  :meth:`~psynet.trial.chain.ChainTrialMaker.chain_priority` instead (see
+  :ref:`trial_selection_performance`).
 
 Chain length and trials per node
 --------------------------------

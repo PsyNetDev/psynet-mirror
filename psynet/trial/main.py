@@ -3207,7 +3207,7 @@ class TrialNetwork(SQLMixinDallinger, Network, AssetParentMixin):
             self.id, self.type, len(self.alive_nodes)
         )
 
-    trial_maker_id = Column(String)
+    trial_maker_id = Column(String, index=True)
     module_id = Column(String)
     target_n_trials = Column(Integer)
     participant_group = Column(String)
