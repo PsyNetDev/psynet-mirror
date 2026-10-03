@@ -328,6 +328,22 @@ def test_node_filled_after_selection_is_not_overfilled(db_session, participant):
     "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
 )
 @pytest.mark.usefixtures("in_experiment_directory")
+def test_headless_chain_raises_instead_of_being_skipped(db_session, participant):
+    exp = get_experiment()
+    trial_maker = chain_trial_maker()
+    network = create_chain_network(trial_maker, exp)
+    initialize_trial_maker_state(trial_maker, participant)
+    network.head = None
+    db.session.flush()
+
+    with pytest.raises(RuntimeError, match="has no head"):
+        trial_maker._select_trial_node(participant, exp)
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
 def test_only_successful_capacity_claims_keep_their_node_lock(db_session, participant):
     exp = get_experiment()
     trial_maker = static_trial_maker(target_trials_per_node=1)

@@ -2169,7 +2169,7 @@ class ChainTrialMaker(NetworkTrialMaker):
         return [self._candidate_value(network) for network in networks]
 
     def _candidate_query(self, participant, experiment):
-        """Query the networks that pass the built-in checks, joined to their heads."""
+        """Query the networks that pass the built-in checks, outer-joined to their heads."""
         network = self.network_class
         module_state = participant.module_state
         query = network.query.filter_by(
@@ -2192,7 +2192,9 @@ class ChainTrialMaker(NetworkTrialMaker):
         ):
             query = self.exclude_participated(query, participant)
 
-        query = query.join(
+        # An outer join keeps headless networks, which are data errors, so
+        # that selection raises on them instead of silently skipping them.
+        query = query.outerjoin(
             self.node_class, network.head_id == self.node_class.id
         ).options(
             contains_eager(network.head.of_type(self.node_class)),
