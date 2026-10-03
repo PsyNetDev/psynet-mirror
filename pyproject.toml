@@ -2,6 +2,8 @@
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+# Hatchling rejects git/URL dependencies unless this is set. Keep it so
+# temporary Dallinger (or other) git pins can be published as local wheels.
 [tool.hatch.metadata]
 allow-direct-references = true
 
@@ -53,11 +55,7 @@ dependencies = [
 # this runtime.
 experiment = [
     "babel",
-    # TODO: Replace this Git pin with dallinger[docker]>=12.4.0,<13 once
-    # Dallinger 12.4.0 is available on PyPI.
-    # Pin Dallinger master after #9680 (deploy.toml) until a 12.4 release.
-    # Latest PyPI/tag is still 12.3.0, which does not include deploy.toml.
-    "dallinger[docker] @ git+https://github.com/Dallinger/Dallinger.git@42bd7e54fa75975660ca92b6d02ceaacc710f61f",
+    "dallinger[docker]>=12.4.0,<13",
     # Unpin dominate once a new version is released which includes the following
     # fix for the Python 3.12 event loop warning:
     # https://github.com/Knio/dominate/commit/bdbdb8e5ddcf3213518dba0c7d054f14933460bf
@@ -86,7 +84,6 @@ experiment = [
     "pillow",  # Used by VocabTest
     # Experiment audit render/validate (shipped with experiment runtime)
     "markdown-it-py>=3,<5",  # Dallinger 12.3 pins 4.x; keep an explicit compatible bound
-    "nh3>=0.3.6",
     "pygments>=2.20.0",
 ]
 # PsyNet source development and docs: runtime plus tooling.
@@ -95,7 +92,9 @@ dev = [
     "psynet[experiment]",
     "asv",
     "beautifulsoup4",
+    "citeproc-py",
     "google-cloud-translate",
+    "myst-parser",
     "openai",
     "pre-commit",
     "pydata-sphinx-theme",
@@ -105,7 +104,9 @@ dev = [
     "sphinx-autobuild",
     "sphinx-autodoc-typehints<3.0.0",
     "sphinx-copybutton",
+    "sphinx-design",
     "sphinx-inline-tabs",
+    "sphinx-reredirects",
     "virtualenv",
 ]
 slack = [
@@ -138,6 +139,11 @@ Documentation = "https://psynetdev.gitlab.io/PsyNet/"
 Homepage = "https://www.psynet.dev/"
 Issues = "https://gitlab.com/PsyNetDev/PsyNet/-/issues"
 Repository = "https://gitlab.com/PsyNetDev/PsyNet/"
+
+# Built by `psynet dev docs bundle` for `psynet docs`; gitignored, so it must
+# be listed as an artifact to reach the sdist and wheel.
+[tool.hatch.build]
+artifacts = ["/psynet/resources/docs_text"]
 
 [tool.hatch.build.targets.wheel]
 include = ["/psynet"]
@@ -179,8 +185,10 @@ extend-exclude = [
     "src",
     # Vendored copies of the shared IRB consent modules from
     # https://gitlab.com/computational-audition-lab/cococo-shared;
-    # kept byte-identical to upstream, so not linted/formatted here.
+    # kept byte-identical to each other (not linted/formatted here).
+    # They may diverge from upstream when PsyNet needs a local template fix.
     "tests/deployment/audio_gibbs/consents_cococo",
+    "tests/deployment/auto_recruit_prolific/consents_cococo",
     "tests/deployment/payment_flows_prolific/consents_cococo",
 ]
 

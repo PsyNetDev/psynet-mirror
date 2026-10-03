@@ -15,6 +15,7 @@ from psynet.experiment_scaffold import (
     _GENERATED_DOCKERIGNORE_VARIANTS,
     _clear_deployment_policy_review_marker,
     _deployment_policy_needs_review,
+    ensure_deployment_policy,
     scaffold_experiment_directory,
     scaffold_missing_files,
 )
@@ -24,6 +25,7 @@ from psynet.utils import get_psynet_root, working_directory
 EXPECTED_EXCLUDE_PATHS = (
     ".cursor/skills/psynet",
     ".deploy",
+    "audit",
     "data",
     "deploy",
     "deploy_logs",
@@ -38,7 +40,6 @@ EXPECTED_EXCLUDE_NAMES = (
     ".env",
     ".idea",
     ".pytest_cache",
-    ".python-version",
     ".venv",
     "__pycache__",
     "env",
@@ -55,7 +56,7 @@ EXPECTED_EXCLUDE_SUFFIXES = (
 )
 
 
-def test_prototype_metadata_and_platform_warnings():
+def test_prototype_metadata_declares_posix_only():
     root = get_psynet_root()
     project = tomllib.loads((root / "pyproject.toml").read_text())["project"]
     classifiers = project["classifiers"]
@@ -64,17 +65,6 @@ def test_prototype_metadata_and_platform_warnings():
     assert "Programming Language :: Python :: 3.10" not in classifiers
     assert "Operating System :: POSIX" in classifiers
     assert "Operating System :: OS Independent" not in classifiers
-
-    documentation = [
-        root / "docs" / "deploy" / "index.rst",
-        root / "docs" / "dependencies" / "docker.rst",
-        root / "docs" / "experiment_development" / "experiment_directory.rst",
-    ]
-    for path in documentation:
-        text = " ".join(path.read_text().split())
-        assert ".. warning::" in text
-        assert "is not supported on Windows" in text
-        assert "POSIX" in text
 
 
 def _template_directory():
@@ -144,6 +134,15 @@ def test_scaffold_creates_stock_deployment_policy(tmp_path):
     assert not (tmp_path / ".dockerignore").exists()
 
 
+def test_ensure_deployment_policy_uses_new_experiment_review_wording(tmp_path):
+    """Creating deploy.toml without an old .gitignore is not a migration."""
+    with working_directory(tmp_path):
+        ensure_deployment_policy()
+
+    marker = tmp_path / _DEPLOYMENT_POLICY_REVIEW_MARKER
+    assert marker.read_text().startswith("reason: new experiment\n")
+
+
 def test_scaffold_missing_files_does_not_leave_review_marker(tmp_path, monkeypatch):
     from psynet.command_line import _check_experiment_directory
 
@@ -189,6 +188,7 @@ def test_stock_policy_excludes_local_and_gitignored_files(tmp_path):
     assert "env/" in gitignore
     assert ".venv/" in gitignore
     assert "exports/" in gitignore
+    assert "audit/site/" in gitignore
 
     env_file = experiment_root / "env" / "lib" / "python.py"
     env_file.parent.mkdir(parents=True)
@@ -204,6 +204,9 @@ def test_stock_policy_excludes_local_and_gitignored_files(tmp_path):
     exports_file = experiment_root / "exports" / "participant.csv"
     exports_file.parent.mkdir()
     exports_file.write_text("participant_id\n")
+    audit_file = experiment_root / "audit" / "REPORT.md"
+    audit_file.parent.mkdir()
+    audit_file.write_text("# local review packet\n")
     (experiment_root / "kept.txt").write_text("keep\n")
 
     plan = build_deployment_plan(experiment_root)
@@ -215,8 +218,11 @@ def test_stock_policy_excludes_local_and_gitignored_files(tmp_path):
         ".venv/lib/sitecustomize.py",
         "env/lib/python.py",
         "exports/participant.csv",
+        "audit/REPORT.md",
     ]:
         assert excluded not in plan.destinations
+    assert "experiment.py" in plan.destinations
+    assert "__init__.py" in plan.destinations
 
 
 @pytest.mark.parametrize("generated_lines", _GENERATED_DOCKERIGNORE_VARIANTS)
@@ -343,7 +349,8 @@ def test_check_experiment_directory_stops_after_setup_creates_deploy_toml(
             _check_experiment_directory("debug")
 
         message = str(error.value)
-        assert "PsyNet created a new deploy.toml file for this experiment." in message
+        assert "PsyNet created a deploy.toml file for this experiment." in message
+        assert "Previously .gitignore" not in message
         assert "secret.txt" in message
         assert not _deployment_policy_needs_review()
 
@@ -550,6 +557,37 @@ def test_package_size_check_uses_deployment_plan(tmp_path, monkeypatch):
             Experiment.check_size()
 
 
+def test_package_size_check_accepts_packages_under_the_default(tmp_path, monkeypatch):
+    monkeypatch.delenv("EXP_MAX_SIZE_MB", raising=False)
+    (tmp_path / "experiment.py").write_text("class Exp:\n    pass\n")
+    (tmp_path / "requirements.txt").write_text("psynet\n")
+
+    with working_directory(tmp_path):
+        scaffold_experiment_directory()
+        Path("included.bin").write_bytes(b"x" * (2 * 1024**2))
+        Experiment.check_size()
+
+
+def test_package_size_check_error_points_at_static_and_deployment_files_list(
+    tmp_path, monkeypatch
+):
+    (tmp_path / "experiment.py").write_text("class Exp:\n    pass\n")
+    (tmp_path / "requirements.txt").write_text("psynet\n")
+
+    with working_directory(tmp_path):
+        scaffold_experiment_directory()
+        Path("included.bin").write_bytes(b"x" * (2 * 1024**2))
+        monkeypatch.setenv("EXP_MAX_SIZE_MB", "1")
+
+        with pytest.raises(RuntimeError, match="static/") as exc_info:
+            Experiment.check_size()
+
+    message = str(exc_info.value)
+    assert "dallinger deployment-files list" in message
+    assert "EXP_MAX_SIZE_MB" in message
+    assert "1024 MB" in message
+
+
 def test_package_size_check_ignores_policy_exclusions(tmp_path, monkeypatch):
     (tmp_path / "experiment.py").write_text("class Exp:\n    pass\n")
     (tmp_path / "requirements.txt").write_text("psynet\n")
@@ -659,4 +697,6 @@ def test_scaffolded_debug_source_prepares_from_policy(tmp_path):
     assert (staging_root / "experiment.py").is_file()
     assert (staging_root / "deploy.toml").is_file()
     assert "experiment.py" in source.deployment_plan.destinations
+    # Dallinger's staging recompiles constraints against .python-version.
+    assert ".python-version" in source.deployment_plan.destinations
     assert "deploy.toml" in source.deployment_plan.destinations

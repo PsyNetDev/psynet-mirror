@@ -14,7 +14,13 @@ logger = get_logger()
 
 
 class AudioRecordTrial(RecordTrial):
-    __extra_vars__ = {}
+    """
+    Mixin for trials that record audio and analyze the recording on the server.
+
+    List it before the trial class, for example
+    ``class SingingTrial(AudioRecordTrial, StaticTrial)``, and implement
+    ``analyze_recording``.
+    """
 
     def sanitize_recording(self, path):
         recode_wav(path)

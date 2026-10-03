@@ -1,6 +1,8 @@
 """Tests for psynet.field module."""
 
-from psynet.field import _PythonDict, _PythonList
+import pytest
+
+from psynet.field import _PythonDict, _PythonList, claim_var
 
 
 class TestSerialize:
@@ -15,3 +17,20 @@ class TestSerialize:
         """Test that _PythonDict.serialize works correctly as a classmethod."""
         result = _PythonDict.serialize({"a": 1, "b": 2})
         assert result == '{"a": 1, "b": 2}'
+
+
+def test_claim_var_rejects_legacy_extra_vars_dict():
+    with pytest.raises(TypeError, match="extra_vars"):
+        claim_var("analysis", {"analysis": {}})
+
+
+def test_claim_var_supports_use_default():
+    class Stub:
+        class _Var:
+            def __getattr__(self, name):
+                raise KeyError(name)
+
+        var = _Var()
+        value = claim_var("missing", use_default=True, default=lambda: "fallback")
+
+    assert Stub().value == "fallback"

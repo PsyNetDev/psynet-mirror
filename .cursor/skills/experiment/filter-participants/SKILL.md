@@ -5,14 +5,22 @@ description: Design, implement, and validate task-specific pre-screening for Psy
 
 # Implement task-specific pre-screening
 
+## Read first
+
+Read these pages before acting. The "Documentation" section of the experiment's `AGENTS.md` explains how to find and search them.
+
+- `code/participants/prescreening_and_questionnaires` — built-in prescreeners and questionnaires
+- `code/participants/creating_prescreening_tasks` — writing custom prescreening tasks
+- `reference/api/prescreen` — prescreener API
+- `code/trials/participant_and_trial_failure` — failing participants and performance checks
+
 ## Prerequisites
 
-- Inspect PsyNet's current prescreening docs and demos before custom code:
-  `~/PsyNet/docs/tutorials/prescreening_tasks.rst`,
-  `~/PsyNet/docs/api/prescreen.rst`, and relevant demos under
-  `~/PsyNet/demos/features/` and `~/PsyNet/demos/experiments/`.
+- Inspect relevant prescreening demos before custom code, under
+  `demos/features/` and `demos/experiments/` (`explore-psynet-repository`
+  explains how to read them without a PsyNet checkout).
 - Read `references/recruitment-platform-notes.md` when the prescreener affects
-  Prolific, Lucid/Cint, CloudResearch Connect, MTurk, or lab recruiter setup.
+  Prolific, Lucid/Cint, CloudResearch Connect, or lab recruiter setup.
 
 ## What pre-screening should entail
 
@@ -58,13 +66,19 @@ description: Design, implement, and validate task-specific pre-screening for Psy
 - For a scored battery, use `StaticTrialMaker` with
   `check_performance_at_end=True`, `performance_check_type = "score"`, unique
   `id_`/labels, and usually `fail_trials_on_premature_exit=False`.
-- Calibrate thresholds carefully. PsyNet's default score check is strict
-  `score > performance_threshold`; set thresholds and comments so the intended
-  minimum passing score is unambiguous.
+- Calibrate thresholds carefully. With a built-in `performance_check_type`
+  (`"score"`, `"performance"` or `"consistency"`, used by static and chain trial
+  makers and the scored built-in prescreeners), a participant passes when the
+  score is **at least** `performance_threshold`; `HugginsHeadphoneTest` passes
+  with at least 4 of 6 correct. Only a custom `TrialMaker` that keeps the base
+  `performance_check` uses strict `score > performance_threshold`. Write the
+  intended minimum passing score in a comment beside the threshold.
 - Implement bot paths for both pass and fail cases. `get_bot_response` or
   `bot_response` should produce the same formatted answer shape as a browser
   participant, and tests should assert failure status, module-state performance
-  checks, and absence of main-task trials for failed bots.
+  checks, and absence of main-task trials for failed bots. "Bots that fail a
+  prescreener" in `test/backend` shows how to make bots fail built-in and
+  custom prescreeners.
 - If the experiment may be translated, mark prescreener instructions, feedback,
   button labels, and failure messages for translation when you create them.
 

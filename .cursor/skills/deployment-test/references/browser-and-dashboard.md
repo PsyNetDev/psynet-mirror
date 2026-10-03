@@ -10,15 +10,38 @@ app name = test-v13-3-0rc0-prolific-1
 
 Use the app name to filter Dozzle containers and to identify related logs.
 
+## Credentials
+
+Look these up locally; ask the user only if the sources below are missing or
+login fails. Never print the values, put them in `analysis.md`, or commit them
+(presence-check with `set` / `MISSING` output only).
+
+- **Dashboard** (HTTP basic auth on `<experiment-url>/dashboard/`):
+  `dashboard_user` / `dashboard_password` from `~/.dallingerconfig`
+  (section `[Dashboard]`), falling back to `dallinger.config.get_config()`
+  after `config.load()`, or to the `psynet deploy ssh` output line
+  `You can now log in to the console at ... (user = ..., password = ...)`.
+- **Dozzle** (host-level at `https://logs.experiments1.cococo-lab.cornell.edu/`,
+  not in `~/.dallingerconfig`): read the deploy output line
+  `To view the logs for this experiment go to https://logs.... (user = ..., password = ...)`;
+  extract the pair in a script for `/api/token` or the login form without
+  echoing it. If no deploy terminal is available, SSH to the server and
+  inspect the Dozzle setup (compose or reverse-proxy auth).
+- **Recruiter tokens**: `prolific_api_token`, `lucid_api_key`, and
+  `lucid_sha1_hashing_key` in `~/.dallingerconfig`; presence-check as in
+  `references/deploy-from-test-branch.md`.
+
 ## Browser Workflow
 
 When using browser automation, launch a dedicated browser subagent for dashboard and Dozzle inspection when the task is more than a quick single-page lookup. First inspect current tabs, then navigate or reuse tabs.
 
 1. Open the experiment URL and follow the experimenter dashboard link, or navigate directly to `<experiment-url>/dashboard/`.
-2. Log into the PsyNet dashboard with the credentials provided by the user.
+2. Log into the PsyNet dashboard with the Dashboard credentials from
+   `~/.dallingerconfig` (see Credentials above).
 3. Verify the dashboard loads. Check the database pages, monitoring page, lifecycle/status pages, and any page the user reported as failing.
 4. Open Dozzle at `https://logs.experiments1.cococo-lab.cornell.edu/`.
-5. Log into Dozzle with the credentials provided by the user.
+5. Log into Dozzle with the host credentials from the deploy output
+   (see Credentials above).
 6. Search/filter containers by the inferred app name.
 7. Inspect all matching containers, especially:
    - `<app>-web-1`

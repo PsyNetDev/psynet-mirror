@@ -45,6 +45,7 @@ class ChatTrial(StaticTrial):
             GroupBarrier(
                 id_="wait_for_partner",
                 group_type=GROUP_TYPE,
+                content="Waiting for your partner",
             ),
             self.chat_page(topic=self.definition["topic"]),
         )
@@ -81,6 +82,7 @@ class Exp(psynet.experiment.Experiment):
         SimpleGrouper(
             group_type=GROUP_TYPE,
             initial_group_size=2,
+            content="Waiting for your partner",
         ),
         ChatTrialMaker(
             id_="chat",
@@ -95,6 +97,7 @@ class Exp(psynet.experiment.Experiment):
             expected_trials_per_participant=1,
             max_trials_per_participant=1,
             sync_group_type=GROUP_TYPE,
+            sync_group_wait_content="Waiting for your partner",
         ),
         InfoPage("That's the end of the experiment!", time_estimate=5),
     )

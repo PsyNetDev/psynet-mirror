@@ -1,59 +1,76 @@
 {% extends "psynet_layout.html" %}
 
+{% block title %}{{ pgettext("error", "An error occurred") }}{% endblock %}
+
 {% block body %}
-    <div class="main_div">
+    <div class="container my-5 psynet-surface">
         <div>
-            <div class="col-xs-2">
-              <img id="adlogo" src="/static/images/logo.png" alt="PsyNet logo" style="width: 150px; float: left;">
+            {# The placeholder stays hidden until theme.html swaps in the themed logos,
+               otherwise the browser paints the raw PNG first and then replaces it. #}
+            <div class="row overflow-hidden mb-3" style="height: 73px;">
+                <img id="adlogo" style="display: none" alt="Lab Logo" />
             </div>
-            <h1 id="header" style="clear: both;">{{ pgettext("error", "Error!") }}</h1>
+            <h1 id="header">{{ pgettext("error", "An error occurred") }}</h1>
             <hr>
             <div>
-                <p id="error-text"><em>{{ error_text }}</em></p>
-                {% if config.show_abort_button %}
-                    {% if compensate == True %}
-                        <p id="error-text-main">
-                            {{ pgettext("mturk_error", "You may be able to abort the experiment using the <strong>Abort experiment</strong> button <strong>on the MTurk ad page</strong>.") }}
-                            {{ pgettext("mturk_error", "Once aborted, there is no need to contact us to receive the compensation; this should be awarded to you automatically via MTurk a few minutes after.") }}
-                            {% set EMAIL = '<a href="mailto:' + contact_address + '">' + contact_address + '</a>' %}
-                            {% trans name="mturk_error" %}If this is not the case, please contact us at {{ EMAIL }} quoting the following information:{% endtrans %}
-                            <p>
-                                {{ gettext("Error type") }}: {{ error_type }}<br>
-                                {{ gettext("HIT ID") }}: {{ hit_id }}<br>
-                                {{ gettext("Assignment ID") }}: {{ assignment_id }}<br>
-                                {{ gettext("Worker ID") }}: {{ worker_id }}<br>
-                            </p>
-                            <div id="abort-button-location"></div>
-                        </p>
-                        <button type="button" id="abort-button" class="btn btn-danger btn-lg" style="display: none; float: right;">
-                        {{ gettext("Abort experiment") }}
-                        </button>
-                        <div id="abort-text" style="width: 200px; text-align: right; clear: both; float: right; margin-top: 7px; display: none;">
-                            <span class="alert-danger">{{ gettext("Click the above button to be compensated in case of an error.") }}</span>
+                {% if error_text %}
+                    <p id="error-text">{{ error_text }}</p>
+                {% endif %}
+                {% if error_page_presentation %}
+                    {# The explanation is already in this document. Show it
+                       immediately. Hide only the action until JS attaches
+                       handlers. The spinner is for the later Submit or
+                       redirect wait, not for first paint. #}
+                    <div id="automatic-early-exit"
+                         data-assignment-id="{{ assignment_id }}"
+                         data-offer-id="{{ automatic_exit_offer_id or '' }}"
+                         data-preparation-post-url="{{ error_page_presentation.preparation_post_url or '' }}"
+                         data-preparation-post-data='{{ error_page_presentation.preparation_post_data | tojson }}'
+                         data-action-post-url="{{ error_page_presentation.action_post_url or '' }}"
+                         data-action-post-data='{{ error_page_presentation.action_post_data | tojson }}'
+                         data-destination-url="{{ error_page_presentation.destination_url or '' }}"
+                         data-auto-redirect-delay-ms="{{ error_page_presentation.auto_redirect_delay_ms or '' }}"
+                         aria-live="polite">
+                        <div id="automatic-early-exit-ready">
+                            {% if error_page_presentation.message %}
+                                <p>{{ error_page_presentation.message }}</p>
+                            {% endif %}
+                            {% if error_page_presentation.action_instruction %}
+                                <p>{{ error_page_presentation.action_instruction }}</p>
+                            {% endif %}
                         </div>
-                        <script>
-                            function abortExperiment() {
-                                let windowFeatures = "menubar=no,location=no,resizable=no,scrollbars=no,status=no";
-                                let windowObjectReference = window.open("/abort/" + "{{assignment_id}}", "Abort window", windowFeatures);
-                            }
-
-                            function showAbortButton() {
-                                document.getElementById("abort-button").style.display = "block";
-                                document.getElementById("abort-text").style.display = "block";
-                            }
-
-                            document.getElementById("abort-button").onclick = abortExperiment;
-
-                            if (window.opener === null) {
-                                document.getElementById("abort-button-location").textContent = "below";
-                                showAbortButton();
-                            }
-                        </script>
+                        <div id="automatic-early-exit-pending" hidden role="status">
+                            <span class="spinner-border" aria-hidden="true"></span>
+                            <span>{{ pgettext("early_exit_error", "Please wait.") }}</span>
+                        </div>
+                        <p id="automatic-early-exit-failure" hidden>
+                            {{ error_page_presentation.failure_message or '' }}
+                        </p>
+                        <button type="button"
+                                id="automatic-early-exit-retry"
+                                class="btn btn-primary btn-lg"
+                                hidden>
+                            {{ pgettext("early_exit_error", "Try again") }}
+                        </button>
+                        {% if error_page_presentation.button_label %}
+                            <button type="button"
+                                    id="automatic-early-exit-continue"
+                                    class="btn btn-primary btn-lg"
+                                    hidden>
+                                {{ error_page_presentation.button_label }}
+                            </button>
+                        {% endif %}
+                    </div>
+                    <script>
+                        document.addEventListener("DOMContentLoaded", function () {
+                            window.psynetEarlyExit.init();
+                        });
+                    </script>
+                    {% if error_page_presentation.researcher_contact_message %}
+                        <p id="error-contact" class="mt-4">
+                            {{ error_page_presentation.researcher_contact_message }}
+                        </p>
                     {% endif %}
-                {% else %}
-                    <p id="error-text-main">
-                        {{ experiment.error_page_content(contact_address, error_type, hit_id, assignment_id, worker_id, external_submit_url) }}
-                    </p>
                 {% endif %}
             </div>
         </div>

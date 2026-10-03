@@ -67,7 +67,11 @@ class ColorSliderPage(ModularPage):
                     "hidden_inputs": hidden_inputs,
                 },
                 continuous_updates=False,
-                bot_response=lambda: random.randint(0, 255),
+                # Bots answer differently on every trial. A bot that happened to
+                # give the same answer to all its repeat trials would be failed by
+                # the trial maker's consistency check, just like a real participant
+                # who tried to cheat that way.
+                bot_response=lambda trial: trial.id % 256,
             ),
             time_estimate=time_estimate,
             css_links=["/static/color-slider.css"],

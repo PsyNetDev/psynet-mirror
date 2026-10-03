@@ -1,21 +1,29 @@
-"""Discover and publish static resources owned by installed Python packages.
+"""Discover, publish, and cache static resources.
 
 Packages register one static root through the ``psynet.static`` entry-point
 group. PsyNet publishes each root under a namespaced URL so dynamically created
 components can declare ordinary dependency and page-module URLs without asking
 experiment authors to copy package files into their experiment.
+
+Local static URLs receive a short content digest. Responses whose ``v`` query
+parameter matches that digest can then be cached immutably; unversioned and
+stale URLs keep Flask's normal conditional-revalidation behavior.
 """
 
+import hashlib
 import os
 import re
 import shutil
 import tempfile
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from functools import lru_cache
 from importlib import metadata, resources
 from pathlib import Path, PurePosixPath
 from types import ModuleType
-from urllib.parse import quote, urlsplit
+from urllib.parse import parse_qsl, quote, unquote, urlencode, urlsplit, urlunsplit
+
+from psynet.cache import IMMUTABLE_CACHE_MAX_AGE
 
 STATIC_ENTRY_POINT_GROUP = "psynet.static"
 _NAMESPACE_SEPARATOR = re.compile(r"[-_.]+")
@@ -75,6 +83,116 @@ def package_static_url(namespace, path):
 
     encoded_path = quote(resource_path.as_posix(), safe="/-._~")
     return f"/static/packages/{canonical_namespace}/{encoded_path}"
+
+
+@lru_cache(maxsize=1024)
+def _static_file_digest(path, modified_ns, size):
+    """Return a short content digest for one observed file revision."""
+    # mtime and size are intentionally unused values in the cache key.
+    del modified_ns, size
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()[:12]
+
+
+def _static_file_token(filename):
+    """Return the content token for a file in the active Flask static root."""
+    from flask import current_app
+    from werkzeug.security import safe_join
+
+    static_folder = current_app.static_folder
+    if not static_folder:
+        return None
+    path = safe_join(static_folder, filename)
+    if path is None:
+        return None
+    file_path = Path(path)
+    if not file_path.is_file():
+        return None
+    stat = file_path.stat()
+    return _static_file_digest(
+        os.fspath(file_path),
+        stat.st_mtime_ns,
+        stat.st_size,
+    )
+
+
+def cacheable_static_url(url):
+    """Add a content version to a local static URL.
+
+    Experiment authors may continue to provide paths such as
+    ``static/theme.css``. External URLs and missing files are returned
+    unchanged.
+    """
+    from flask import current_app
+
+    parsed = urlsplit(url)
+    if parsed.scheme or parsed.netloc:
+        return url
+
+    if not current_app.static_url_path:
+        return url
+    static_url_path = current_app.static_url_path.rstrip("/")
+    relative_prefix = static_url_path.lstrip("/") + "/"
+    if parsed.path.startswith(static_url_path + "/"):
+        filename = unquote(parsed.path[len(static_url_path) + 1 :])
+    elif parsed.path.startswith(relative_prefix):
+        filename = unquote(parsed.path[len(relative_prefix) :])
+    else:
+        return url
+
+    token = _static_file_token(filename)
+    if token is None:
+        return url
+
+    query = parse_qsl(parsed.query, keep_blank_values=True)
+    if not any(key == "v" for key, _ in query):
+        query.append(("v", token))
+    return urlunsplit(
+        (
+            parsed.scheme,
+            parsed.netloc,
+            f"{static_url_path}/{quote(filename, safe='/-._~')}",
+            urlencode(query),
+            parsed.fragment,
+        )
+    )
+
+
+def versioned_url_for(endpoint, **values):
+    """Build a Flask URL and content-version local static resources."""
+    from flask import url_for
+
+    url = url_for(endpoint, **values)
+    if endpoint == "static":
+        return cacheable_static_url(url)
+    return url
+
+
+def version_static_urls(urls):
+    """Content-version every local static URL in an iterable."""
+    return [cacheable_static_url(url) for url in urls]
+
+
+def apply_versioned_static_cache_headers(response):
+    """Cache a response immutably when its static content token is current."""
+    from flask import request
+
+    if request.endpoint != "static":
+        return response
+    filename = (request.view_args or {}).get("filename")
+    if not isinstance(filename, str):
+        return response
+    versions = request.args.getlist("v")
+    if len(versions) != 1:
+        return response
+    if versions[0] != _static_file_token(filename):
+        return response
+
+    response.cache_control.no_cache = None
+    response.cache_control.public = True
+    response.cache_control.max_age = IMMUTABLE_CACHE_MAX_AGE
+    response.cache_control.immutable = True
+    response.expires = datetime.now(UTC) + timedelta(seconds=IMMUTABLE_CACHE_MAX_AGE)
+    return response
 
 
 def psynet_static_root():
@@ -191,6 +309,7 @@ def get_static_packages():
 def clear_static_package_cache():
     """Clear discovery results and materialized temporary resource roots."""
     get_static_packages.cache_clear()
+    _static_file_digest.cache_clear()
     while _MATERIALIZED_STATIC_ROOTS:
         _MATERIALIZED_STATIC_ROOTS.pop().cleanup()
 

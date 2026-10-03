@@ -7,7 +7,6 @@ from psynet.data import SQLBase, SQLMixin, register_table
 @register_table
 class ErrorRecord(SQLBase, SQLMixin):
     __tablename__ = "error"
-    __extra_vars__ = {}
 
     # Remove default SQL columns
     failed = None
@@ -24,8 +23,6 @@ class ErrorRecord(SQLBase, SQLMixin):
         "psynet.participant.Participant", back_populates="errors"
     )
 
-    worker_id = Column(String)
-
     network_id = Column(Integer, ForeignKey("network.id"), index=True)
     network = relationship("TrialNetwork", back_populates="errors")
 
@@ -35,7 +32,7 @@ class ErrorRecord(SQLBase, SQLMixin):
     response_id = Column(Integer, ForeignKey("response.id"), index=True)
     response = relationship("psynet.timeline.Response", back_populates="errors")
 
-    trial_id = Column(Integer, ForeignKey("info.id"), index=True)
+    trial_id = Column(Integer, ForeignKey("trial.id"), index=True)
     trial = relationship("psynet.trial.main.Trial", back_populates="errors")
 
     asset_id = Column(Integer, ForeignKey("asset.id"), index=True)
@@ -48,9 +45,6 @@ class ErrorRecord(SQLBase, SQLMixin):
 
     def __init__(self, error, **kwargs):
         super().__init__(message=str(error), kind=type(error).__name__, **kwargs)
-
-        if self.participant:
-            self.worker_id = self.participant.worker_id
 
     @property
     def ids(self):

@@ -31,8 +31,8 @@ class TestExp(object):
 
         config = get_config()
         assert config.get("wage_per_hour") == 12.0
-        assert config.get("min_accumulated_reward_for_abort") == 0.15
-        assert config.get("show_abort_button") is True
+        assert config.get("min_reward_for_paid_early_exit") == 0.15
+        assert config.get("show_early_exit_button") is True
 
     def test_exp(self, bot_recruits, db_session):
         for i, bot in enumerate(bot_recruits):
@@ -49,6 +49,8 @@ class TestExp(object):
             next_page(driver, "consent")
 
             assert_text(driver, "main-body", "Welcome Welcome to the experiment! Next")
+            # Leave is offered while the timeline is still in progress.
+            assert driver.find_elements(By.ID, "early-exit-button")
             next_page(driver, "next-button")
 
             # Page 1
@@ -235,11 +237,15 @@ class TestExp(object):
                 driver,
                 "main-body",
                 (
-                    "That's the end of the experiment! You will receive a reward of $0.36 "
-                    "for the time you spent on the experiment. You have also been awarded a performance reward of $0.00! "
-                    'Thank you for taking part. Please click "Finish" to finalize the session. Finish'
+                    "That's the end! You will receive a reward of $0.36 "
+                    "for the time you spent. "
+                    "Thank you for taking part. Click Finish to finalize the session. Finish"
                 ),
             )
+            # Leaving here would only cost the participant the payment they have
+            # just earned, so neither the button nor its offer is rendered.
+            assert not driver.find_elements(By.ID, "early-exit-button")
+            assert not driver.find_elements(By.ID, "early-exit-modal")
 
             click_finish_button(driver)
 

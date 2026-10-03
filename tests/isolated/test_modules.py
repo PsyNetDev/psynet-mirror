@@ -72,14 +72,19 @@ def test_progress_info(in_experiment_directory, db_session):
 
     db.session.commit()
 
+    # Discard the first call. It pays one-off warm-up costs (notably reading
+    # the config) that dwarf the queries under test: locally the first call
+    # takes around 0.1 s while later calls take around 0.012 s. Timing the
+    # cold call measured warm-up rather than dashboard query cost, and tipped
+    # over the threshold on loaded CI runners.
+    exp._get_progress_info(module_ids)
+
     start_time = time.monotonic()
     progress_info = exp._get_progress_info(module_ids)
     end_time = time.monotonic()
 
     time_taken = end_time - start_time
 
-    # At the time of writing, this took about 0.1 s, but there was a big overhead from get_config.
-    # We should cache get_config and thereby get the response time down.
     assert time_taken < 0.5
 
     assert progress_info["main_consent"]["started_n_participants"] == 100

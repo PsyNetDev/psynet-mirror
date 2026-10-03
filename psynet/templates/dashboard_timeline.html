@@ -54,13 +54,18 @@
         <b>Hard maximum spending limit</b>
         <br>
         Guarantees that in an experiment no more is spent than the value assigned.
-        Bonuses are not paid from the point this value is reached and a record of the amount
-        of unpaid bonus is kept in the participant's <span style="font-family: monospace;">unpaid_bonus</span> variable.
+        A bonus that would exceed this value is clipped to remaining room
+        (or not paid if that remainder is below $0.01).
+        <span style="font-family: monospace;">planned_bonus</span> stays the
+        decided amount, with bonus status
+        <span style="font-family: monospace;">capped</span>.
       </div>
       <div id="soft-max-experiment-payment-tooltip" class="spending-limits-tooltip" style="z-index: 10; display: none; float: right;">
         <b>Soft maximum spending limit</b>
         <br>
-        The recruiting process stops if the amount of accumulated payments (incl. time and performance rewards) in US dollars exceedes this value.
+        The recruiting process stops if <span style="font-family: monospace;">amount_spent()</span>
+        (recorded base payment and delivered bonus, including in-progress
+        participants) exceeds this value.
       </div>
     </section>
     <section id="timeline-modules">

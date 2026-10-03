@@ -22,6 +22,8 @@ logger = get_logger()
 
 
 class BasicDemography(Module):
+    """Asks for gender, age, country of birth, country of residence, and formal education."""
+
     def __init__(
         self,
         label="basic_demography",
@@ -38,6 +40,8 @@ class BasicDemography(Module):
 
 
 class Language(Module):
+    """Asks for the mother tongue and, if the participant speaks several languages, ranks them by proficiency."""
+
     def __init__(
         self,
         label="language",
@@ -56,6 +60,8 @@ class Language(Module):
 
 
 class BasicMusic(Module):
+    """Asks for years of formal music training, daily listening hours, and whether the participant earns money from music."""
+
     def __init__(
         self,
         label="basic_music",
@@ -70,6 +76,8 @@ class BasicMusic(Module):
 
 
 class Dance(Module):
+    """Asks whether the participant dances socially or professionally and, if so, when they last danced."""
+
     def __init__(
         self,
         label="dance",
@@ -89,6 +97,8 @@ class Dance(Module):
 
 
 class SpeechDisorders(Module):
+    """Asks about speech-language therapy and a dyslexia diagnosis."""
+
     def __init__(
         self,
         label="speech_disorders",
@@ -102,6 +112,8 @@ class SpeechDisorders(Module):
 
 
 class Income(Module):
+    """Asks for yearly household income."""
+
     def __init__(
         self,
         label="income",
@@ -114,6 +126,8 @@ class Income(Module):
 
 
 class ExperimentFeedback(Module):
+    """Asks whether the participant liked the experiment, found it difficult, and hit technical problems."""
+
     def __init__(
         self,
         label="feedback",
@@ -129,6 +143,8 @@ class ExperimentFeedback(Module):
 
 # Basic demography #
 class Gender(ModularPage):
+    """Radio-button question on gender identity, with a free-text option; saves the answer as ``participant.var.<label>``."""
+
     def __init__(
         self,
         label="gender",
@@ -149,6 +165,7 @@ class Gender(ModularPage):
                 _p("gender", "I prefer not to answer"),
             ],
             name="gender",
+            arrange_vertically=False,
             show_free_text_option=True,
             placeholder_text_free_text=_p("gender", "Specify yourself"),
         )
@@ -162,6 +179,8 @@ class Gender(ModularPage):
 
 
 class Age(ModularPage):
+    """Numeric age question accepting integers from 1 to 119; saves the answer as ``participant.var.<label>``."""
+
     def __init__(
         self,
         label="age",
@@ -215,7 +234,7 @@ class CountryDropdown(ModularPage):
             self.get_prompt(),
             control=control,
             time_estimate=self.time_estimate,
-            save_answer="country",
+            save_answer=label,
         )
 
     def get_prompt(self):
@@ -766,6 +785,8 @@ class HouseholdIncomePerYear(ModularPage):
             control=control,
             time_estimate=self.time_estimate,
             save_answer=label,
+            # Twelve income brackets cannot fit a laptop window.
+            expect_scrolling=True,
         )
 
 

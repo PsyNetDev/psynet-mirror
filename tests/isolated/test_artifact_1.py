@@ -15,6 +15,7 @@ import psynet.artifact as psynet_artifact
 import psynet.asset as psynet_asset
 from psynet.artifact import LocalArtifactStorage
 from psynet.pytest_psynet import mock_s3_root, path_to_demo_experiment
+from psynet.utils import get_authenticated_session
 
 
 def test_list_subfolders(artifact_storage, tmp_path):
@@ -120,7 +121,7 @@ class TestAPI:
         comment_text = "This is a test comment."
 
         # Write the comment
-        response = requests.post(
+        response = get_authenticated_session(base_url).post(
             f"{base_url}/dashboard/comment/set/{deployment_id}",
             data={"txt": comment_text},
         )
@@ -140,19 +141,16 @@ class TestAPI:
             params={"type": "psynet", "assets": "none"},
         )
         assert response.status_code == 200
-        # Inspect it and check that it contains the ExperimentConfig.csv file
+        # Inspect it and check that it contains the canonical experiment table.
         with tempfile.TemporaryDirectory() as tempdir:
             zip_path = os.path.join(tempdir, "export.zip")
             with open(zip_path, "wb") as f:
                 f.write(response.content)
             with zipfile.ZipFile(zip_path, "r") as zip_ref:
                 zip_ref.extractall(tempdir)
-                found = False
-                for root, dirs, files in os.walk(tempdir):
-                    if "ExperimentConfig.csv" in files:
-                        found = True
-                        csv_path = os.path.join(root, "ExperimentConfig.csv")
-                        df = pd.read_csv(csv_path)
-                        assert len(df) >= 1
-                        break
-                assert found, "ExperimentConfig.csv not found in export."
+                csv_path = os.path.join(tempdir, "database", "experiment.csv")
+                assert os.path.exists(csv_path), (
+                    "database/experiment.csv not found in export."
+                )
+                df = pd.read_csv(csv_path)
+                assert len(df) >= 1

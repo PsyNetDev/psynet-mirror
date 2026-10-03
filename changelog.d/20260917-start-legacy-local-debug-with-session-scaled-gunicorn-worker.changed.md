@@ -1,0 +1,1 @@
+Started ``psynet debug --legacy`` with four gunicorn workers by default so last-arrival ``GET /timeline`` can overlap waiter hold-resume POSTs in a group of four. Playwright stacked-hold tests set ``PSYNET_LEGACY_DEBUG_GUNICORN_THREADS`` to the session count. GitLab Playwright jobs use that gunicorn path; the default vs legacy job split remains in-place vs full reload.

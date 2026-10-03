@@ -1,0 +1,1 @@
+Rejected unknown, negative, non-finite, boolean, and string payment amounts; preserved Lucid termination outcomes (including terminate callbacks at 100% progress) without reclassifying them as completes; and recomputed managed-asset digests when bytes change at an existing input path.

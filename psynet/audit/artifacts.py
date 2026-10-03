@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from psynet.audit.model import TEXT_AUDIT_EXTENSIONS
+from psynet.export.path_safety import contained_path as _contained_path
 
 HASHED_ARTIFACTS_DIR = "artifacts/blobs/sha256"
 MONITOR_STATIC_ARTIFACTS_DIR = "artifacts/monitor-static"
@@ -72,17 +73,7 @@ def monitor_static_root() -> Path:
 
 def contained_path(root: Path, relative: str) -> Path | None:
     """Resolve ``relative`` under ``root``, or return None if it escapes."""
-
-    if not relative or relative.startswith(("/", "\\")):
-        return None
-    rel = Path(relative)
-    if rel.is_absolute() or ".." in rel.parts:
-        return None
-    root = root.resolve()
-    candidate = (root / rel).resolve()
-    if not candidate.is_relative_to(root):
-        return None
-    return candidate
+    return _contained_path(root, relative)
 
 
 def normalized_hashed_artifact_url_prefix(base_url: str | None = None) -> str:

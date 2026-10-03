@@ -1,18 +1,5 @@
+/* Consent pages share the participant theme. Keep this file only for the
+   light layout tweak below; agree/decline actions live in document flow. */
 .main-div {
     margin: 0;
-}
-
-.consent-text {
-    font-size: smaller;
-}
-
-.consent-gradient {
-    z-index: 100;
-    bottom: 57px;
-    padding: 0% 10% 20px 10%;
-}
-
-.up-down-arrows {
-    font-size: 24px;
-    font-weight: bold;
 }

@@ -5,32 +5,52 @@ A full deployment test covers two experiments in `tests/deployment`:
 
 - `tests/deployment/payment_flows_prolific`: the basic Prolific recruiter test,
   exercising payment flows (base payment, screen-out compensation, and
-  performance rewards). Its default `experiment.py` uses HotAir; the paid
-  variant lives in `experiment.py.prolific` (with `config.txt.prolific`).
+  performance rewards). It has a single `experiment.py`; the recruiter is
+  selected via the config file. The default `config.txt` sets
+  `recruiter = devprolific` (a simulated Prolific API — requests are logged,
+  not sent), and the paid variant `config.txt.prolific` sets
+  `recruiter = prolific`.
 - `tests/deployment/audio_gibbs`: an audio Gibbs sampler experiment that
   additionally exercises audio synthesis (parselmouth), asset
   generation/storage, async worker processes, and a headphone prescreen.
-  Its default `experiment.py` also uses HotAir. Prolific and Lucid variants
-  (`experiment.py.prolific` and `experiment.py.lucid`, with matching config
-  files) are deployed from temporary worktrees.
+  Like `payment_flows_prolific`, it has a single `experiment.py` and selects
+  the Prolific recruiter via the config file (`config.txt` defaults to
+  `recruiter = devprolific`; `config.txt.prolific` sets
+  `recruiter = prolific`). The Lucid variant remains a separate
+  `experiment.py.lucid` (with `config.txt.lucid`) because its timeline and
+  Experiment class genuinely differ; the paid variants are deployed from
+  temporary worktrees.
 
-Both experiments default to HotAir so running a directory directly cannot
-accidentally start paid recruitment; every paid deployment swaps in an
-explicit recruiter variant first. All paid variants show the approved
-cultural-foundation consent (vendored `consents_cococo` package in each
-experiment directory): the Prolific variants use the `MAIN` consent and the
-Lucid variant uses the `CINT` consent.
+A third experiment, `tests/deployment/auto_recruit_prolific`, is **not part of
+a full deployment test**. Deploy it on demand when you specifically need to
+check sequential automatic recruitment: it opens a Prolific study with one
+place and tops up one place per completion until ten participants finish.
+It follows the same config-file recruiter pattern as the other two
+(`config.txt` defaults to `recruiter = devprolific`; `config.txt.prolific`
+sets `recruiter = prolific`) and needs no worktree, so the preparation steps
+below apply to it unchanged — just add it to the `for exp in ...` loops and
+give it its own app name.
+
+Every experiment above defaults to `recruiter = devprolific`, which simulates
+the Prolific API locally (requests are logged, not sent), so running a directory
+directly cannot accidentally start paid recruitment; every paid deployment
+swaps in an explicit recruiter variant first. Each `experiment.py` also aborts
+in `on_launch` unless the configured recruiter matches that file. All paid
+variants show the approved cultural-foundation consent (vendored
+`consents_cococo` package in each experiment directory): the Prolific variants
+use the `MAIN` consent and the Lucid variant uses the `CINT` consent.
 
 By default a full deployment test produces **three apps**: the two Prolific
-experiments plus the Lucid variant of `audio_gibbs`, all deployed **in
-parallel** to save wall-clock time (the paid `audio_gibbs` variants deploy
-from temporary git worktrees; see "Prepare The Recruiter Variants").
+experiments plus the Lucid variant of `audio_gibbs`. Overlap the long
+remote image builds to save wall-clock time, but **do not start all three
+`psynet deploy ssh` commands at once** (see "Stagger Local Prepare, Then
+Overlap Remote Builds"). The paid `audio_gibbs` variants deploy from
+temporary git worktrees; see "Prepare The Recruiter Variants".
 Deploy a subset only when the user explicitly asks for it.
 Prepare both experiment directories on a **single fresh deployment branch
-created for this deployment** (the preparation steps below are shared), then run the three
-`psynet deploy ssh` commands concurrently. Do not reuse or rebase a
-long-lived deployment branch; each deployment gets its own branch so its
-exact code is preserved for later auditing.
+created for this deployment** (the preparation steps below are shared).
+Do not reuse or rebase a long-lived deployment branch; each deployment
+gets its own branch so its exact code is preserved for later auditing.
 
 **Base the branch on the latest PsyNet release tag by default** (including
 release candidates, e.g. `v13.3.0rc0`), so the test exercises what users
@@ -46,13 +66,32 @@ release. For RC-based deployments, end each app's `analysis.md` with an
 explicit verdict line — either recommending promotion to the final release
 or recommending another RC, naming the blocking findings.
 
-Name the branch after the base, e.g. `deployment-tests/v13.3.0rc1`,
-appending `-2`, `-3`, ... for repeat deployments from the same base. For a
-master-based deployment, name it after `master` plus the short commit hash
-it was cut from, e.g. `deployment-tests/master-8ece25f0`, so master-based
-test deployments are clearly distinguishable from release-tag ones and
-from each other. (Older deployment branches carry a per-experiment suffix
-such as `-prolific`; new branches cover both experiments and drop it.)
+Name the branch after the **PsyNet version the base commit carries**,
+then the commit hash when the base is not that version's git tag.
+Read the version from that commit's `pyproject.toml` (this includes
+alpha versions such as `13.4.0a0`). Do **not** use
+`git describe --abbrev=0` — that returns the previous *released* tag
+(`v13.3.0`) and hides that the test ran on the current alpha.
+
+```bash
+PSYNET_VERSION=$(git show <base-commit>:pyproject.toml | python -c \
+  "import sys, tomllib; print(tomllib.loads(sys.stdin.read())['project']['version'])")
+PSYNET_TAG=v$PSYNET_VERSION
+SHORT_HASH=$(git rev-parse --short=9 <base-commit>)
+```
+
+- Base **is** the git tag `v$PSYNET_VERSION`: `deployment-tests/v13.3.0rc1`
+- Base is any other commit (master, a feature branch, a pin, including
+  unreleased alpha): `deployment-tests/v13.4.0a0-7e0c52c31`
+  (`<version-tag>-<short-hash>`)
+
+The version tag must come **before** the hash so a later reader can see
+which PsyNet version the test was run on (stable, RC, or alpha).
+Do not use `master-<hash>` or `issue-<n>-<hash>` as the version-bearing
+name. Append `-2`, `-3`, ... for repeat deployments from the same base.
+(Older branches used `master-<hash>`, `issue-1049-<hash>`,
+`v13.3.0-<hash>` on an alpha commit, or a per-experiment suffix such as
+`-prolific`; new branches cover both experiments and drop the suffix.)
 
 Before deploying:
 
@@ -105,9 +144,19 @@ PY
 ```bash
 cd <psynet-root>
 git fetch origin master --tags
-BASE_TAG=$(git tag --list 'v*' --sort=-v:refname | head -1)  # or the tag the user specifies
-echo "Base: $BASE_TAG"
-git switch -c deployment-tests/$BASE_TAG "$BASE_TAG"
+BASE_COMMIT=$(git tag --list 'v*' --sort=-v:refname | head -1)  # or the commit the user specifies
+PSYNET_VERSION=$(git show "$BASE_COMMIT:pyproject.toml" | python -c \
+  "import sys, tomllib; print(tomllib.loads(sys.stdin.read())['project']['version'])")
+PSYNET_TAG=v$PSYNET_VERSION
+SHORT_HASH=$(git rev-parse --short=9 "$BASE_COMMIT")
+if git rev-parse -q --verify "refs/tags/$PSYNET_TAG" >/dev/null \
+  && [ "$(git rev-parse "$BASE_COMMIT")" = "$(git rev-parse "$PSYNET_TAG")" ]; then
+  BASE_NAME=$PSYNET_TAG
+else
+  BASE_NAME=$PSYNET_TAG-$SHORT_HASH
+fi
+echo "Base: $BASE_NAME ($BASE_COMMIT)"
+git switch -c deployment-tests/$BASE_NAME "$BASE_COMMIT"
 git checkout <previous-deployment-branch> -- tests/deployment/payment_flows_prolific tests/deployment/audio_gibbs
 ```
 
@@ -118,14 +167,20 @@ git checkout <previous-deployment-branch> -- tests/deployment/payment_flows_prol
    Verify the imported experiment configuration includes the standing
    deployment settings:
 
-   - `payment_flows_prolific/experiment.py`: recruiter `hotair` (safe local
-     default).
-   - `payment_flows_prolific/experiment.py.prolific`:
+   - `payment_flows_prolific/config.txt`: `recruiter = devprolific` (safe
+     simulated default).
+   - `payment_flows_prolific/experiment.py` (shared by both recruiters):
      `prolific_is_custom_screening=False`, `auto_recruit=True`,
      `initial_recruitment_size=12`.
-   - `audio_gibbs/experiment.py`: recruiter `hotair` (safe local default).
-   - `audio_gibbs/experiment.py.prolific`: `auto_recruit=True`,
-     `initial_recruitment_size=3`, `target_n_participants=5`.
+   - `payment_flows_prolific/config.txt.prolific`: `recruiter = prolific`.
+   - `audio_gibbs/config.txt`: `recruiter = devprolific` (safe simulated
+     default).
+   - `audio_gibbs/experiment.py` (shared by both Prolific recruiters):
+     `auto_recruit=True`, `initial_recruitment_size=3`,
+     `target_n_participants=5`, `prolific_screen_out_slots` set.
+     `on_launch` aborts unless the recruiter is `prolific` or
+     `devprolific`.
+   - `audio_gibbs/config.txt.prolific`: `recruiter = prolific`.
    - `audio_gibbs/experiment.py.lucid`: `initial_recruitment_size=10` equal to
      `target_n_participants=10`, so the Lucid survey is created with its full
      quota (the marketplace UI shows the full expected completes and fields
@@ -147,18 +202,15 @@ git checkout <previous-deployment-branch> -- tests/deployment/payment_flows_prol
    - All `config.txt` files, including `config.txt.lucid`:
      `publish_experiment = true`.
 
-5. Match Dallinger to the PsyNet base. For a release-tag deployment, check out
-   the Dallinger version that the PsyNet tag pins in its `pyproject.toml`
-   (e.g. the `vX.Y.Z` Dallinger tag satisfying the pin). For a master-based
-   deployment, use the latest Dallinger `master`:
+5. Match Dallinger to the SHA or tag that the PsyNet base pins in
+   `pyproject.toml` (a git SHA for current master/alpha pins, or a
+   `vX.Y.Z` tag on a release). Do not assume a different Dallinger
+   `master` tip than that pin.
 
 ```bash
 cd <dallinger-root>
-git fetch origin master --tags
-# Release-tag deployment:
-git checkout <dallinger-tag-matching-psynet-pin>
-# Master-based deployment:
-# git switch master && git pull --ff-only origin master
+git fetch origin --tags
+git checkout <dallinger-sha-or-tag-from-psynet-pyproject>
 DALLINGER_SHA=$(git rev-parse HEAD)
 ```
 
@@ -207,9 +259,10 @@ git commit -m "Refresh experiment scripts via psynet scripts update"
      psynet @ git+https://gitlab.com/PsyNetDev/PsyNet.git@v13.3.0rc0
      ```
 
-   - **Master-based deployment**: pin both to the latest pushed `master`
-     commit hash. Never pin to a branch name; PsyNet's deploy pre-check
-     rejects branch-name requirements as ambiguous.
+   - **Master-based deployment**: pin PsyNet to the latest pushed `master`
+     commit hash, and Dallinger to the SHA that `pyproject.toml` declares.
+     Never pin to a branch name; PsyNet's deploy pre-check rejects
+     branch-name requirements as ambiguous.
 
    Commit the imported/updated experiment configuration and pins, push the
    deployment branch (for auditability), and record the base tag (or master
@@ -232,19 +285,20 @@ git commit -m "Generate constraints from pinned requirements"
 ```
 
 10. Ensure neither experiment enables `prolific_is_custom_screening`
-   (`payment_flows_prolific/experiment.py.prolific` sets it to `False`
+   (`payment_flows_prolific/experiment.py` sets it to `False`
    explicitly;
    `audio_gibbs` relies on the `False` default). Prolific no longer supports
    the older custom-screening study creation flow; a launch payload with
    `"is_custom_screening": true` fails with Prolific error `140003`.
 
-Deploy all three apps **in parallel**, each from its own directory with its
-own app name: `payment_flows_prolific` from the main checkout (after its
-Prolific-variant swap is committed on the deployment branch), and the two
-paid `audio_gibbs` variants from temporary worktrees (both swaps prepared
-as described in "Prepare The Recruiter Variants" below). Start each deploy
-as a background process (or in separate terminals) and monitor all launch
-outputs:
+Deploy all three apps from their own directories with their own app names:
+`payment_flows_prolific` from the main checkout (after its Prolific-variant
+swap is committed on the deployment branch), and the two paid `audio_gibbs`
+variants from temporary worktrees (both swaps prepared as described in
+"Prepare The Recruiter Variants" below). Start each deploy as a background
+process (or in a separate terminal) and monitor all launch outputs, but
+**stagger the starts** so only one deploy is in local prepare at a time
+(see the next section). Do not background all three in one shot.
 
 ```bash
 source <psynet-root>/<venv>/bin/activate
@@ -253,36 +307,90 @@ source <psynet-root>/<venv>/bin/activate
   --server <ssh-host> \
   --dns-host <dns-host> \
   --app <payment-flows-prolific-app-name>) &
+```
 
+Wait until that deploy prints `Attempting to build image on remote host`
+(fallback if that line is skipped: `Experiment UID:`). Then start the next:
+
+```bash
 (cd <prolific-worktree>/tests/deployment/audio_gibbs && psynet deploy ssh \
   --server <ssh-host> \
   --dns-host <dns-host> \
   --app <audio-gibbs-prolific-app-name>) &
+```
 
+Wait for the same marker, then start the third:
+
+```bash
 (cd <lucid-worktree>/tests/deployment/audio_gibbs && psynet deploy ssh \
   --server <ssh-host> \
   --dns-host <dns-host> \
   --app <audio-gibbs-lucid-app-name>) &
-
-wait
 ```
+
+After all three have passed the marker, the remote builds overlap.
 
 Do not let one deployment's failure silently abort the others: check each
 launch output separately, and report per-app success/failure.
 
-Name each app after the deployment branch, experiment, and recruiter:
-`test-<base-tag>-payment-flows-prolific` and
-`test-<base-tag>-audio-gibbs-prolific`, appending `-2`, `-3`, ... for repeat
-deployments. App names only allow `a-z`, `0-9`, and `-` (the deploy command
-rejects anything else), so replace the dots in the base tag with dashes,
-e.g. base tag `v13.3.0rc1` gives `test-v13-3-0rc1-payment-flows-prolific-1`
-and `test-v13-3-0rc1-audio-gibbs-prolific-1`. For a master-based
-deployment the same rule applied to the branch name gives e.g.
-`test-master-8ece25f0-payment-flows-prolific-1`. Because the
+Name each app after the same `<base-name>` as the deployment branch
+(tag, or `tag-hash`), then the experiment and recruiter:
+`test-<base-name>-payment-flows-prolific` and
+`test-<base-name>-audio-gibbs-prolific`, appending `-2`, `-3`, ... for
+repeat deployments. App names only allow `a-z`, `0-9`, and `-` (the deploy
+command rejects anything else), so replace the dots in the tag with dashes
+and keep the hash after the tag:
+
+- Tag base `v13.3.0rc1` → `test-v13-3-0rc1-payment-flows-prolific-1`
+- Alpha commit `13.4.0a0` + `7e0c52c31` →
+  `test-v13-4-0a0-7e0c52c31-payment-flows-prolific-1`
+
+Never put the hash before the tag, and never omit the tag on a
+commit-based app (`test-master-8ece25f0-...` and
+`test-issue-1049-7e0c52c31-...` are the old forms). Because the
 per-deployment folder under `deployment-tests/` is named after the app,
-this also keeps master-based audit folders clearly separate from
-release-tag ones. (Older deployments used the app names
-`test-<base-tag>-prolific` and `test-<base-tag>-audio-gibbs`, before the
+the archive path also shows the version. (Older deployments used
+`test-<base-tag>-prolific` and `test-<base-tag>-audio-gibbs` before the
 recruiter suffix became part of the convention.) After deployment, inspect
 each launch output for the experiment URL, dashboard URL, and Dozzle URL.
+For `audio_gibbs` variants, also run the post-launch container source check
+in `recruiter-variants.md` before calling the deploy a success. A matching
+   git branch is not enough: Dallinger can reuse a Docker image that still
+   contains the other variant's `experiment.py`.
+
+## Stagger Local Prepare, Then Overlap Remote Builds
+
+Every `psynet deploy ssh` uses the **developer's local Postgres** before it
+touches the remote host. `_pre_launch` calls `prepare`, which runs
+`db.init_db(drop_all=True)` and `experiment.pre_deploy()` against the shared
+`dallinger` database (schema create includes
+`CREATE TYPE participant_status AS ENUM ...`). After that local work
+finishes, the deploy no longer needs local Postgres: it builds the image
+and launches on the server.
+
+Starting two or more deploys at the same instant races that local
+`init_db`. The typical failure is **not** a remote crash-loop. It dies
+during local prepare with:
+
+```text
+IntegrityError / UniqueViolation
+Key (typname, typnamespace)=(participant_status, 2200) already exists
+CREATE TYPE participant_status AS ENUM (...)
+```
+
+`audio_gibbs` `pre_deploy` (assets / snapshot) can take longer than
+`payment_flows_prolific`, so a "start all three and hope" launch often
+fails the two `audio_gibbs` apps while the first one proceeds.
+
+**Rule:** only one deploy may be in local prepare at a time. Start the
+next only after the previous log shows
+`Attempting to build image on remote host` (fallback: `Experiment UID:`).
+From that point the expensive remote Docker builds and launches may
+overlap.
+
+If a deploy hits the `participant_status` UniqueViolation, treat it as
+this local race. Leave any deploy that already passed the marker running.
+Retry **only** the failed command, and only after every in-flight deploy
+has printed the marker (or finished). Do not restart the whole trio at
+once.
 

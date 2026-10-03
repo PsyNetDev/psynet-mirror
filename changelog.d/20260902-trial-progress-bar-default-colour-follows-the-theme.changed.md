@@ -1,0 +1,1 @@
+`ProgressStage`'s default colour is now `var(--psynet-accent)` rather than a hard-coded blue, so an unstyled trial progress bar matches the participant theme and adapts to dark mode. Stages that pass an explicit `color` are unaffected.

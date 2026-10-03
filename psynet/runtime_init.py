@@ -31,6 +31,8 @@ def ensure_runtime() -> None:
     - Patches ``dallinger.config.Configuration.load`` to register PsyNet's
       extra config keys when no experiment is on the path.
     - Sets ``GEVENT_SUPPORT=True`` in the process environment.
+    - Sets ``EXP_MAX_SIZE_MB`` to PsyNet's default package-size limit if it is unset,
+      so Dallinger's own size check uses the same limit.
     - Patches yaspin's Jupyter detection.
     - Imports ``psynet.recruiters`` (registers recruiter classes).
 
@@ -53,7 +55,10 @@ def _initialize_runtime() -> None:
     from dallinger.config import ConfigSource, Configuration, experiment_available
 
     import psynet.recruiters  # noqa: F401
-    from psynet.utils import patch_yaspin_jupyter_detection
+    from psynet.utils import (
+        loading_experiment_classes,
+        patch_yaspin_jupyter_detection,
+    )
 
     # Fix event loop deprecation warning from dominate.
     dominate.dom_tag.get_event_loop = asyncio.get_running_loop
@@ -85,12 +90,18 @@ def _initialize_runtime() -> None:
                 source=ConfigSource.EXPERIMENT_DEFAULTS,
             )
 
-        old_load(self, strict=strict)
+        # Dallinger's loader imports experiment.py to read its extra
+        # parameters, which redeclares the experiment's mapped classes.
+        with loading_experiment_classes():
+            old_load(self, strict=strict)
 
     Configuration.load = load
 
     import os
 
+    from psynet.package_size import apply_default_exp_max_size_mb
+
     os.environ["GEVENT_SUPPORT"] = "True"
+    apply_default_exp_max_size_mb()
 
     patch_yaspin_jupyter_detection()

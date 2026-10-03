@@ -6,6 +6,32 @@ Start by following `psynet/resources/experiment_scripts/AGENTS.md`.
 
 Then act on the following PsyNet developer instructions:
 
+## Source checkout setup
+
+Install PsyNet in editable mode with `uv pip install -e '.[dev,demos,slack]'`.
+
+Demo directories contain only the authored experiment files; their unpinned
+`requirements.txt` files and missing constraints are intentional. Running
+`psynet debug local` or `psynet test local` in a bundled demo generates the
+ignored boilerplate. Pytest scaffolds demos temporarily via the
+`in_experiment_directory` fixture, which on teardown removes only paths that
+were absent when it started.
+
+If a user asks for the X demo, list the child directories of
+`demos/experiments`, `demos/features` and `demos/pipelines` to see which they mean.
+
+## Agent Skills authoring
+
+The canonical skill format spec is `.cursor/skills/create-skill/SKILL.md`.
+Experiment skills live under `.cursor/skills/experiment/`; repo meta skills
+live under `.cursor/skills/`. After editing skills, run
+`python scripts/validate_agent_skills.py` and refresh experiment copies with
+`psynet scripts update`. Then reread the result using the "After writing"
+section of that skill.
+
+The PsyNetSkills workshop repository adds a thin `create-skill` addendum for
+challenge/attempt workflows and `psynetsk-validate`.
+
 ## Sandbox reminder
 
 When running PsyNet commands from Cursor, disable sandboxing by setting
@@ -168,7 +194,11 @@ When adding or updating Playwright E2E tests, follow these rules to reduce CI fl
     - After each action, wait for the exact intended effect (expected text, expected control state, expected URL/page transition).
     - Prefer short bounded waits on deterministic invariants over long generic polls.
 
-12. **Assert playback/recording via the actual implementation path**:
+12. **Do not assert performance budgets**:
+ - CI load routinely doubles request and page times, so per-request or per-page duration limits flake.
+ - Log timings in failure messages, assert behaviour structurally, and keep at most a generous hang cap (e.g. 30 s) that fails a deadlock before the step timeout.
+
+13. **Assert playback/recording via the actual implementation path**:
     - For `AudioPrompt`, verify PsyNet sound-state/event transitions instead of DOM `<audio>` elements.
     - For `VideoPrompt`, verify `video#prompt` playback behavior.
     - Align assertions with how that step is implemented in experiment/template code.
@@ -192,6 +222,9 @@ Write for experiment authors, not only for maintainers: prefer plain language
 over internal jargon, and include short code examples when the change affects
 a public API or migration.
 
+When running `/branch-review`, always update the merge request title and
+description so they match the committed branch diff.
+
 ## CLI development
 
 Use Click for new and refactored command-line interfaces, following the
@@ -204,6 +237,15 @@ whether package functionality or behavior can be simplified instead. Prefer
 solutions that avoid unnecessary code growth, remove obsolete code, or reuse
 existing abstractions, and call out promising refactoring opportunities to the
 user when they are relevant.
+
+## Framework improvements
+
+When developing or documenting a workflow, identify missing PsyNet abstractions
+that make experiment code override private methods, repeat framework
+bookkeeping, or use public hooks for unintended purposes. Propose a framework
+improvement alongside the experiment-level workflow and clearly distinguish it
+from APIs that already exist. If the user approves the proposal, implement it
+with focused tests and update the workflow to use the new public interface.
 
 ## Testing
 
@@ -221,6 +263,7 @@ observable behavior rather than internal implementation details.
 - Prefer marking module-internal helper functions with a leading underscore. Keep public-looking names for functions that are intended to be imported or called from outside the module.
 - When adding a feature that operates heavily within a module and that module lacks an explanatory module docstring, add one. The docstring should explain why the module exists, the important design constraints, and how maintainers should interact with it. When you add such a docstring, explicitly suggest that the user reviews it.
 - When adding or changing documentation, use Sphinx-native cross references for internal documentation and API links. Prefer roles such as `:doc:`, `:ref:`, `:class:`, `:func:`, and `:meth:` over raw relative `.html` links so links remain valid across builders and directory moves. If a URL must be ignored by linkcheck, keep the ignore pattern as narrow as possible and document why.
+- After editing a skill or a docs page, review it as described in `.cursor/skills/create-skill/SKILL.md` (section "After writing").
 
 ## Error handling policy
 
@@ -264,4 +307,13 @@ When you make changes to the PsyNet codebase:
 
    If pre-commit is not installed, install it first with `pip3 install pre-commit`.
 
-3. **Commit and push**: Commit all changes including changelog fragments (but not a regenerated `CHANGELOG.md`) and any pre-commit formatting fixes.
+3. **Do not update package catalogs**: Merge requests should not edit
+   `psynet/locales` (`.po` / `.pot` files). Refresh them on the release
+   branch with `psynet translate`, where `test_psynet_translations_up_to_date`
+   runs. Until then a missing PsyNet catalog entry falls back to English with
+   a warning during test runs; `psynet debug` and experiment-owned catalogs
+   still raise. Tests that pin translated PsyNet copy should use
+   `is_release_branch()` from `psynet.utils`, or `release_branch_only` from
+   `psynet.pytest_psynet`.
+
+4. **Commit and push**: Commit all changes including changelog fragments (but not a regenerated `CHANGELOG.md`) and any pre-commit formatting fixes.

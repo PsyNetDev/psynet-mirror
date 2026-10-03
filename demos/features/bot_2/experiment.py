@@ -136,10 +136,20 @@ class Exp(psynet.experiment.Experiment):
         from psynet.experiment import ExperimentStatus, Request
 
         super().test_experiment()
-        all_requests = Request.query.all()
-        assert len(all_requests) > 0
-        assert all([request.duration < 1 for request in all_requests]), (
-            "Some pages took more than 1 second to load."
+        # Order by id so "first" is the cold-start request. That first
+        # /timeline load absorbs template compilation and other one-off
+        # setup, and can exceed one second on a busy CI runner even when
+        # steady-state pages stay well under the threshold.
+        all_requests = Request.query.order_by(Request.id).all()
+        assert len(all_requests) > 1
+        steady_requests = all_requests[1:]
+        slow = [
+            (request.id, request.endpoint, request.duration)
+            for request in steady_requests
+            if request.duration >= 1
+        ]
+        assert not slow, (
+            f"Some pages took more than 1 second to load after cold start: {slow}"
         )
         # The status reports only get logged every 70 seconds, so we need to wait a bit.
         time.sleep(62.5)

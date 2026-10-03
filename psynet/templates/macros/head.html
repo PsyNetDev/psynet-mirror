@@ -1,0 +1,14 @@
+{#
+    Head elements that every participant page needs, regardless of which
+    Dallinger template it happens to extend.
+
+    Dallinger's base layout provides no viewport meta. Without one, phones lay
+    the page out at around 980px and scale the result down, so the text arrives
+    tiny and none of the theme's mobile rules apply. Timeline, ad, and consent
+    pages used to get a viewport meta from the browser-detect macro; pages that
+    do not run browser detection, such as the exit and abort pages, got none.
+#}
+
+{% macro viewport() %}
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+{% endmacro %}

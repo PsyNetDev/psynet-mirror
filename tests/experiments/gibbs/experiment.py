@@ -10,7 +10,7 @@ from sqlalchemy import Column, ForeignKey, Integer
 from sqlalchemy.orm import relationship
 
 import psynet.experiment
-from psynet.asset import ExperimentAsset
+from psynet.asset import FileAsset
 from psynet.bot import Bot
 from psynet.data import SQLBase, SQLMixin, register_table
 from psynet.demography.general import ExperimentFeedback
@@ -132,7 +132,7 @@ class CustomTrial(GibbsTrial):
         with tempfile.NamedTemporaryFile("w") as file:
             file.write(f"completed async_post_trial for trial {self.id}")
             file.flush()
-            asset = ExperimentAsset(
+            asset = FileAsset(
                 local_key="async_post_trial",
                 input_path=file.name,
                 extension=".txt",

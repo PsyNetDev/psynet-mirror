@@ -9,6 +9,13 @@ compatibility: Requires PsyNet with `psynet audit` CLI; ffprobe recommended for 
 A standalone audit is an `audit/` folder inside the experiment directory. Run
 the CLI from the experiment root.
 
+## Read first
+
+Read these pages before acting. The "Documentation" section of the experiment's `AGENTS.md` explains how to find and search them.
+
+- `test/audits` — what an audit contains and how to build it
+- `test/audit_reference` — `audit.json` fields and status conventions
+
 ## Prerequisites
 
 - Read `references/populating-an-audit.md`; it is the shared operational source
@@ -21,7 +28,7 @@ the CLI from the experiment root.
   no server ever ran).
 - If the experiment needs implementation changes, use
   `implement-experiment`.
-- For a live handoff, use `prepare-experiment-tunnel` (and `public-tunnel`) when
+- For a live handoff, use `public-tunnel` ("Preview a running experiment") when
   a temporary public preview is needed.
 
 ## Workflow
@@ -40,8 +47,9 @@ See `references/populating-an-audit.md` for the full pathway guidance.
    go (see `references/populating-an-audit.md`). Prefer overwriting interim
    canonical files rather than regenerating later.
 3. Keep evidence-generation scripts with the experiment source.
-4. Close the packet: `--audit` already marks `simulation_export` and
-   `performance_result` present; mark remaining artifacts, record blockers, then
+4. Close the packet: `psynet audit simulate` marks `simulate_export`, and
+   `psynet audit performance-test` marks `performance_result` present;
+   mark remaining artifacts, record blockers, then
    run `psynet audit validate` from the experiment root.
    A pass with blockers means the packet is coherent, not that the experiment is
    ready. Do not re-run expensive checks that already produced review-ready
@@ -65,8 +73,10 @@ experiment/
     TIMELINE.md
     REPORT.md
     artifacts/
-    analyses/
     logs/
+    simulate/
+      analysis/    # simulated export and analysis notebook
+      design/      # optional design simulation
     site/          # generated; normally not committed
 ```
 
@@ -77,5 +87,9 @@ experiment/
 - Do not present missing, blocked, skipped, or not-applicable artifacts as
   passing evidence.
 - Keep custom or production credentials out of audit artifacts and logs.
+- Stock ``deploy.toml`` excludes the whole ``audit/`` directory from deployment
+  and debug staging. Existing experiments keep their current ``deploy.toml``;
+  add ``audit`` to ``[exclude].paths`` if it is missing. Keep runtime helpers
+  beside ``experiment.py``, not only under ``audit/``.
 - Repository-specific wrapper skills may add conventions (for example extra
   metadata or review checklists); do not invent workshop layouts here.

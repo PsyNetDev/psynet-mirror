@@ -15,7 +15,6 @@ from psynet import deployment_info
 from psynet.data import SQLBase, SQLMixin, register_table
 from psynet.field import PythonObject
 from psynet.log import bold, error, success, warning
-from psynet.participant import Participant
 from psynet.utils import get_config, get_logger
 
 __module__ = "psynet.lucid"
@@ -267,9 +266,8 @@ class LucidService(object):
         ).seconds <= self.recruitment_config["termination_time_in_s"]:
             return False
 
-        n = Participant.query.filter_by(worker_id=lucid_rid.rid, progress=0).count()
-
-        return n > 0
+        participant = lucid_rid.resolve_participant()
+        return participant is not None and participant.progress == 0
 
     def time_until_termination_in_s(self, rid):
         lucid_rid = get_lucid_rid(rid)
@@ -818,6 +816,25 @@ class LucidService(object):
 
 
 def get_lucid_service(config=None, recruitment_config=None):
+    """
+    Create a :class:`LucidService` client for the Lucid (Cint) API.
+
+    Reads ``lucid_api_key`` and ``lucid_sha1_hashing_key`` from the experiment config
+    when run in an experiment directory (one with ``config.txt``), otherwise from
+    ``~/.dallingerconfig``.
+
+    Parameters
+    ----------
+    config : dallinger.config.Configuration, optional
+        Experiment config; loaded if omitted. Ignored outside an experiment directory.
+    recruitment_config : dict, optional
+        Lucid recruitment config, as returned by
+        :func:`psynet.lucid.qualifications.create_lucid_recruitment_config`.
+
+    Returns
+    -------
+    LucidService
+    """
     if os.path.exists("config.txt"):
         if config is None:
             config = get_config()

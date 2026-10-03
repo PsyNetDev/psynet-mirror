@@ -15,9 +15,10 @@ ask which applies.
 | Patch | Bug fixes on `release-MAJOR.MINOR` → `references/patch-release.md` |
 | RC (default for minor) | Pre-final validation → `references/release-candidates.md` |
 
-Both paths share `references/shared-steps.md` (changelog, version bump, tag,
-PyPI, GitLab release, Slack). See `references/version-reference.md` for
-version files, naming, and Dallinger upgrade notes.
+Both paths share `references/shared-steps.md` (changelog, version bump,
+translations, tag, PyPI, GitLab release, Slack). See
+`references/version-reference.md` for version files, naming, and Dallinger
+upgrade notes.
 
 ## Prerequisites
 

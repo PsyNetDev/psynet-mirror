@@ -8,20 +8,27 @@ description: Design and implement PsyNet synchronous experiments using cohort, g
 If participants exchange live actions or messages within a trial, also read
 `realtime-synchronous-experiments/SKILL.md`.
 
+## Read first
+
+Read these pages before acting. The "Documentation" section of the experiment's `AGENTS.md` explains how to find and search them.
+
+- `design/groups` — group design concepts
+- `code/multiplayer/synchronization` — grouping, barriers, waiting, and release callbacks
+- `reference/api/sync` — synchronization API
+
 ## Prerequisites
 
 - Read `implement-experiment/SKILL.md` for the general PsyNet
   implementation workflow and validation expectations.
 - Read `references/source-notes.md` for the source map, platform notes, and
   practical caveats behind this skill.
-- Inspect current PsyNet docs and demos before coding:
-  `~/PsyNet/docs/tutorials/synchronization.rst`,
-  `~/PsyNet/docs/api/sync.rst`,
-  `~/PsyNet/demos/experiments/simple_sync_group/`,
-  `~/PsyNet/demos/experiments/create_rate_sync/`,
-  `~/PsyNet/demos/experiments/rock_paper_scissors/`,
-  `~/PsyNet/demos/experiments/sync_quorum/`, and
-  `~/PsyNet/demos/experiments/gibbs_within_sync/`.
+- Read these demos before coding, found as described in
+  `explore-psynet-repository/SKILL.md` ("Finding demo code"):
+  `demos/experiments/simple_sync_group`,
+  `demos/experiments/create_rate_sync`,
+  `demos/experiments/rock_paper_scissors`,
+  `demos/experiments/sync_quorum`, and
+  `demos/experiments/gibbs_within_sync`.
 
 ## Choose the synchronization model
 
@@ -45,9 +52,20 @@ If participants exchange live actions or messages within a trial, also read
 - Prefer `TrialMaker`s for organizing rounds. For choosing `StaticTrialMaker`
   vs chain-based makers, read `develop-experiment-back-end/SKILL.md`.
 - Use `SimpleGrouper(group_type=..., initial_group_size=...)` to create cohorts
-  and `GroupBarrier(id_=..., group_type=...)` to release group members together.
+  and `GroupBarrier(id_=..., group_type=..., content=...)` to release group
+  members together. Pass `content` to customize the hold overlay; omit
+  `waiting_logic` unless you need a full wait page or filler task. Arrival
+  notices are on by default. The partner-ready pill sits on the progress
+  bar. Pair holds keep the title only; groups of three or more show
+  remaining-not-ready copy (`2 of 3 not ready yet`). Keep
+  `on_arrival_message` notice copy to one short sentence. Groupers form
+  groups when the last needed member arrives, without waiting for the
+  barrier poller.
 - Use `GroupBarrier(on_release=...)` for atomic shared updates such as role
-  assignment, scoring, aggregation, or recording round outcomes.
+  assignment, scoring, aggregation, or recording round outcomes. The
+  callback's `barrier` argument is the reconstructed registry object; read
+  `content` and timeouts from it. Wait pages stay on the live timeline
+  barrier (see "Release callbacks" in `code/multiplayer/synchronization`).
 - Sort `sync_group.participants` by participant ID before deterministic role
   assignment; PsyNet does not guarantee the stored order.
 - Use `sync_group_type` on trial makers when all group members should follow the
@@ -66,8 +84,11 @@ If participants exchange live actions or messages within a trial, also read
 - For chain or Gibbs designs, distinguish true co-presence from async
   across-participant chains. Use `wait_for_networks=True` when participants may
   otherwise exit while async network growth is still pending.
-- Use `ChatRoom(room_id=f"group_{participant.sync_group.id}")` only for
-  participant communication; keep phase advancement and scoring in barriers.
+- Use `ChatRoom` only for participant communication; keep phase advancement
+  and scoring in barriers. Inside a trial, scope the room with
+  `self.sync_group.id`. Elsewhere use
+  `participant.active_sync_groups[group_type].id`.
+  `participant.sync_group` raises if more than one group is active.
 - Prefer engaging waiting trials over passive wait screens when waits may be
   long. Participants may be distracted or running multiple experiments at once;
   useful filler tasks can improve retention and reduce idle no-shows.
@@ -81,7 +102,7 @@ If participants exchange live actions or messages within a trial, also read
 
 ## Recruitment and platform design
 
-- Treat Prolific, Connect, MTurk, Cint, or Lucid as recruitment layers. PsyNet
+- Treat Prolific, Connect, Cint, or Lucid as recruitment layers. PsyNet
   should still own the lobby, grouping, timeout, overflow, and completion logic.
 - Prefer Prolific or CloudResearch Connect for small scheduled cohorts because
   they support participant IDs, targeted recontact, messages, quotas, and manual

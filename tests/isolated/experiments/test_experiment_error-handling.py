@@ -4,7 +4,6 @@ import pytest
 import requests
 
 from psynet.error import ErrorRecord
-from psynet.participant import Participant
 from psynet.pytest_psynet import (
     assert_text,
     bot_class,
@@ -49,8 +48,6 @@ class TestExp(object):
                 driver=driver,
             )
 
-            participant = Participant.query.filter_by(id=bot.participant_id).one()
-
             assert_text(driver, "main-body", "Welcome to the experiment! Next")
 
             if bot.participant_id == 1:
@@ -63,12 +60,13 @@ class TestExp(object):
                 assert_text(
                     driver,
                     "error-text",
-                    "There has been an error and so you are unable to continue, sorry!",
+                    "Something went wrong, so the experiment cannot continue. "
+                    "We're sorry.",
                 )
 
                 with log_pexpect_errors(debug_server_process):
                     debug_server_process.expect_exact(
-                        f"'participant_id': 1, 'worker_id': '{participant.worker_id}'",
+                        "'participant_id': 1",
                         timeout=5,
                     )
                     debug_server_process.expect_exact(
@@ -97,12 +95,13 @@ class TestExp(object):
                 assert_text(
                     driver,
                     "error-text",
-                    "There has been an error and so you are unable to continue, sorry!",
+                    "Something went wrong, so the experiment cannot continue. "
+                    "We're sorry.",
                 )
 
                 with log_pexpect_errors(debug_server_process):
                     debug_server_process.expect_exact(
-                        f"'participant_id': 2, 'worker_id': '{participant.worker_id}'",
+                        "'participant_id': 2",
                         timeout=5,
                     )
                     debug_server_process.expect_exact(
@@ -128,7 +127,7 @@ class TestExp(object):
 
                 with log_pexpect_errors(debug_server_process):
                     debug_server_process.expect_exact(
-                        f"'participant_id': 3, 'worker_id': '{participant.worker_id}', 'process_id': ",
+                        "'participant_id': 3",
                         timeout=5,
                     )
                     debug_server_process.expect_exact(
@@ -155,7 +154,7 @@ class TestExp(object):
 
                 with log_pexpect_errors(debug_server_process):
                     debug_server_process.expect_exact(
-                        f"'participant_id': 4, 'worker_id': '{participant.worker_id}', 'process_id': ",
+                        "'participant_id': 4",
                         timeout=20,
                     )
                     debug_server_process.expect_exact(

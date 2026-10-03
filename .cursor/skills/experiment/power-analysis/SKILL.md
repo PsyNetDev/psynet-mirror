@@ -1,182 +1,100 @@
 ---
 name: power-analysis
-description: Plan and implement power analyses for PsyNet experiments. Use when choosing participant counts, stimuli, trials, or other design parameters before data collection.
+description: Plan, run and report a PsyNet design simulation that chooses participant, stimulus and trial counts before data collection, including costs and the audit artifacts. Use when sizing an experiment; it explains the method, selects the implementation (default precision-estimation), and owns the audit/simulate/design/ workflow and human review.
 ---
 
 # Power analysis
 
-It is good practice to conduct power analyses prior to conducting an experiment. We encourage power analysis as part of the standard experiment implementation workflow.
+A design simulation runs the planned experiment many times on simulated
+participants, analyzes each run with the planned analysis, and shows how
+precisely each candidate design would answer the research question and what it
+would cost. This skill covers the whole campaign: agreeing the question,
+setting up `audit/simulate/design/`, costing, the notebook, the audit
+artifacts, and the review with the user.
 
-There are many ways to conduct power analysis. Today's agents are familiar with most standard paradigms and can straightforwardly implement them for a given experiment. This document outlines PsyNet's expectations for how the power analysis code is structured, and provides some general methodological recommendations.
+The method step comes from another skill; unless the user asks for a different
+approach, use `precision-estimation`. Simulated responses come from the
+response model built with `participant-response-models`. For an adaptive
+design, also follow `make-experiment-adaptive`.
 
-In the absence of overruling instructions, PsyNet recommends a default precision-estimation approach to power analysis.
-This is detailed in the `precision-estimation` skill.
+This skill has two references:
 
-Most PsyNet experiments pay participants for the time they spend on the experiment. Some experiments additionally deliver bonuses for good performance. These financial considerations should form part of the power analysis;
-see `references/psynet-costing.md` for information.
+- [references/design-simulation-method.md](references/design-simulation-method.md):
+  the ideas (designs, assumptions and scenarios; response models; precision
+  versus power; what to simulate; adaptive stopping; costs; reporting) and the
+  review checklist.
+- [references/design-simulation-setup.md](references/design-simulation-setup.md):
+  the recommended files and code (`response_model/`, `config.toml`, `core.py`,
+  `results.csv`, `run.json`, costs, the notebook, and the audit commands).
 
-## Terminology
+## Read first
 
-| Term | Meaning |
-| --- | --- |
-| Design | Choices under the experimenter's control |
-| Assumptions | Values or processes outside the experimenter's control that are assumed for the analysis |
-| Scenario | One complete combination of a design and a set of assumptions |
-| Replicate | One synthetic experiment generated under a scenario |
-| Analysis target | One scientific quantity or question evaluated for each scenario |
-| Decision criterion | The rule used to decide whether a design is adequate |
+Read these pages before acting. The "Documentation" section of the experiment's `AGENTS.md` explains how to find and search them.
 
-Read [references/terminology.md](references/terminology.md) for fuller definitions and a worked example.
+- `test/audit_reference` — "Power analysis": the three audit artifacts and how the section renders
+- `test/audits` — where the design simulation sits in an audit
+- `test/backend` — bots and `psynet audit simulate`
+- `code/participants/payment` — wages and bonuses for costing
 
-## Response models
+## Workflow
 
-Power-analysis methods that simulate participant responses need a simulation
-response model. Follow `participant-response-models/SKILL.md` for this.
-Record the response-model parameter values or named parameter set in
-`power/config.toml`, and record a code hash or version in `power/run.json`.
+1. **Agree the question with the user.** List the primary analysis targets,
+   the candidate design factors and ranges, the assumption sets, and the
+   required precision (or, when the question is whether an effect exists,
+   the smallest effect and required power) and its rationale (see "Designs, assumptions and
+   scenarios", "Precision and power" and "Choosing the required precision" in
+   the method reference). State which parameter
+   values come from pilot data, the literature, or judgment. Keep sample sizes
+   in `audit/PLAN.md` provisional until the user has reviewed the results.
+2. **Build or reuse the response model** with `participant-response-models`.
+3. **Write `config.toml`** as in "Configuration" of the setup reference. Use
+   one replicate count for every scenario.
+4. **Implement the method in `core.py`** by following the method skill
+   (`precision-estimation` by default). Run a smoke configuration with
+   `n_jobs = 1` and few replicates before the full grid.
+5. **Cost the designs.** Run `psynet estimate --mode both` once for a
+   reference design and extrapolate, as in "Costs" of the setup reference.
+   Never call it inside the design loop. Do not invent bonuses, recruiter fees
+   or attrition rates; include them only when the user or the experiment
+   supplies them.
+6. **Run the full simulation** from the experiment root. Check that
+   `results.csv` has a row for every scenario and primary target, and that
+   `run.json` records seeds, hashes and the `psynet estimate` output.
+7. **Write and execute `simulation.ipynb`**, following the notebook rules
+   below.
+8. **Add it to the audit**: `psynet audit mark-present` for
+   `simulation_notebook`, `simulation_run` and `simulation_results`, then
+   `psynet audit serve --render` and inspect the section.
+9. **Hand back to the user**: the smallest designs that meet the criterion,
+   nearby alternatives, sensitivity to the assumption sets, costs and what
+   they exclude, and every judgment-based parameter value. Ask the user to go
+   through the review checklist in the method reference. Update
+   `audit/PLAN.md` only after the user picks a design.
 
-## Required files
+## Notebook rules
 
-Every power analysis should use the following layout in the experiment root:
-
-```text
-power/
-├── config.toml
-├── core.py
-├── results.csv
-├── run.json
-└── analysis.ipynb
-```
-All files are required, but contents can be customized as desired. Additional files are allowed when the method needs them.
-
-A typical data flow is `config.toml` → `core.py` → `results.csv` and `run.json` → `analysis.ipynb` → `audit/PLAN.md`.
-
-### `config.toml`
-
-This should outline key parameters for the power analysis; these will often be lists of parameters such as `n_participants` and `trials_per_participant` that will be explored in a grid search, as well as simulation parameters such as random seed and number of replicates. For example:
-
-```toml
-schema_version = "1.0"
-method = "precision-estimation"
-
-[decision]
-metric = "standardized_margin_of_error"
-confidence_level = 0.95
-threshold = 0.20
-
-[design]
-n_participants = [40, 60, 80, 100]
-trials_per_participant = [30, 60]
-
-[assumptions]
-trial_noise_sd = [0.8, 1.0, 1.2]
-
-[simulation]
-replicates = 1000
-base_seed = 20260824
-keep_replicates = false
-n_jobs = -2
-```
-
-### `core.py`
-
-This contains the executable implementation of the chosen method. A suggested
-pattern is to read `config.toml`, validate it, evaluate every requested scenario,
-and write `results.csv` and `run.json`. A `main()` entry point makes the analysis
-easy to run from the experiment root:
-
-```bash
-python -m power.core
-```
-
-The following pseudocode illustrates the intended orchestration:
-
-```python
-def main():
-    config = load_toml("power/config.toml")
-    rows = []
-
-    for design, assumptions in expand_scenarios(config):
-        scenario_id = stable_scenario_id(design, assumptions)
-        outcome = run_selected_method(config, design, assumptions)
-        for target in outcome.analysis_targets:
-            rows.append({
-                "result_id": stable_result_id(scenario_id, target.id),
-                "scenario_id": scenario_id,
-                "analysis_id": target.id,
-                "method": config["method"],
-                **design,
-                **assumptions,
-                **target.summary,
-            })
-
-    results = DataFrame(rows)
-    results.to_csv("power/results.csv", index=False)
-    run = {
-        "schema_version": "1.0",
-        "created_at": utc_now(),
-        "method": config["method"],
-        "command": "python -m power.core",
-        "source_sha256": hash_files("power/config.toml", "power/core.py"),
-        "results_sha256": hash_file("power/results.csv"),
-        "result_row_count": len(results),
-    }
-    Path("power/run.json").write_text(json.dumps(run, indent=2))
-```
-
-`run_selected_method(...)` and the result summaries are supplied by the chosen
-method.
-
-For stochastic methods, reproducibility from the same inputs and random seed is
-strongly recommended.
-
-### `results.csv`
-
-This is the tabular output consumed by the notebook and audit. It should be keyed
-by the following columns:
-
-- `result_id` - A stable identifier that uniquely identifies the row.
-- `scenario_id` - Identifies one combination of a candidate design and a complete
-  set of assumptions.
-- `analysis_id` - Identifies the analysis target evaluated within that scenario.
-- `parameter_id` - Optionally identifies a parameter or component when one
-  analysis target produces several result rows. Omit it when each target produces
-  exactly one row.
-
-Each `result_id` should be derived from `scenario_id` and `analysis_id`, plus
-`parameter_id` when present.
-
-Suggested common columns are:
-
-- `method` - Identifies the power-analysis method.
-- `decision_metric` - Names the quantity used to evaluate the design.
-- `decision_value` - Gives that metric's value for this row.
-- `decision_threshold` - Gives the threshold used to judge adequacy.
-- `meets_requirement` - Records whether the row meets the criterion.
-- `participant_payment` - Gives the estimated total participant payment for the
-  design.
-- `currency` - Identifies the currency used for participant payment.
-
-Methods should add their own descriptive and diagnostic columns. Use the same
-column names across runs so that notebooks can compare results directly.
-
-### `run.json`
-
-This records provenance for the run that produced `results.csv`. Suggested fields
-include the schema version, UTC timestamp, method, invocation, source and result
-hashes, Git commit and dirty state, Python and relevant package versions, and
-result row count. Include the random seed and replicate count when applicable. A
-representative subset is shown in the `core.py` pseudocode above.
-
-### `analysis.ipynb`
-
-This is the executed review document. It should normally read the saved inputs
-and outputs rather than rerunning `core.py` or silently altering the results. It
-explains the method and assumptions, shows the candidate-design comparison and
-participant costs, and states which designs satisfy the decision criterion. Save
-the notebook with its review-relevant tables and interactive figures embedded (prefer Plotly unless otherwise specified).
-
-## Related reading
-
-- `make-experiment-adaptive/SKILL.md` explains the implementation of adaptive
-  experiments.
+- Write for a reader who knows the study but not the statistics. Follow the
+  order in "Reporting the results" of the method reference: summary,
+  assumptions, what the results would look like, one subsection per question,
+  details for reviewers. Then follow "Writing notebooks for readers" in
+  `produce-experiment-audit/references/populating-an-audit.md`.
+- Use Plotly with the `plotly_mimetype` renderer. Put the primary metric in
+  its own always-visible figure. Use translucent Monte Carlo ribbons for dense
+  curves and error bars only for a few unrelated designs; keep exact bounds in
+  hover text.
+- Where the simulation allows, report precision at every budget rather than
+  only the candidate designs, and do not replot the same curve at only the
+  candidate points.
+- For an adaptive design, include the selection policy as a design factor in
+  this campaign rather than a separate one (see `make-experiment-adaptive`).
+  Show the fixed-budget curve with stopping disabled first, then the stopping
+  rule's savings next to its precision change, following "Adaptive stopping"
+  in the method reference. For adaptive estimate recovery, set
+  `[metrics] primary = "rmse"` with `report = ["rmse", "pearson_r", "mae",
+  "bias", "mean_posterior_sd", "coverage_95"]`, store metric curves in long
+  format, and average correlations on the Fisher-z scale.
+- A companion metric figure may use `updatemenus` buttons, built as in
+  "Notebook" of the setup reference.
+- Verify every figure at the rendered width with `psynet audit serve
+  --render`, including every button state and after a resize. Use the overlap
+  check in `produce-experiment-audit/references/populating-an-audit.md`.

@@ -57,6 +57,26 @@ participants after returns or time-outs. Continue observing until
 `study_status == "COMPLETED"`. Treat all other study states as not completed
 unless the user explicitly asks to stop watching.
 
+### Regular polls and chat news
+
+Silent background polling is not enough. The user should see progress without
+asking.
+
+- Poll all watched apps every **3 minutes** (dashboard participant counts,
+  Prolific study/submission counts, Lucid summary). Write each snapshot to a
+  temp file (e.g. `/tmp/<base-name>-observe.jsonl`) so a later turn can resume.
+- Post a short chat status at least every **10 minutes**, and **immediately**
+  when any of these change: study/survey status, places taken / available
+  places, submission-status counts, PsyNet approved/screened-out/complete
+  counts, Lucid `total_completes`, or a new error class in logs.
+- Each update is a few lines: app name, recruiter status, places or
+  completes vs target, PsyNet row counts, and one sentence on what changed
+  since the last post. Do not dump raw JSON or identifiers.
+- Keep polling after a no-change interval. A quiet 10-minute window still
+  gets a "no change" line so the user knows the watch is alive.
+- When several apps are in flight, one combined status block is fine; do
+  not skip an app because another did not move.
+
 Once the Prolific run reaches a terminal state, perform the post-completion
 Dozzle log download and review described below. Compare these logs against the
 initial deployment-time scan and call out errors that only appeared after
@@ -118,13 +138,14 @@ Collect the `local/` artifacts as follows:
 
 ```bash
 cd <psynet-root>/tests/deployment/<experiment>  # the app's experiment dir
-psynet export ssh --app <app-name> --server <ssh-host> --anonymize no \
+psynet export ssh --app <app-name> --server <ssh-host> \
   --path <psynet-root>/deployment-tests/<YYYYMMDD-HHMMSS>-<app-name>/local/export
 ```
 
-   This saves the database dump (`regular/database.zip`) and per-table CSVs
-   (`regular/data/`). Deployment provenance, including the Git commit and
-   working-tree state, is recorded in the exported experiment configuration.
+   This writes `export.zip` (or an extracted tree under `exports/latest/` when
+   using the default path) containing `database/*.csv`, identifier sidecars,
+   `manifest.json`, and optional `assets/`. Deployment provenance, including the
+   Git commit and working-tree state, is recorded in `manifest.json`.
 
 3. **Raw Prolific data**: save the full study object and all submissions as
    JSON (run the `prolific_service_from_config()` snippet above with
@@ -169,16 +190,17 @@ the PsyNet repository under `tests/deployment/`.
 Its structure groups deployments by the base they were cut from:
 
 ```text
-releases/<base-tag>/<YYYYMMDD-HHMMSS>-<app-name>/   # e.g. releases/v13.3.0rc0/...
-master/<short-hash>/<YYYYMMDD-HHMMSS>-<app-name>/   # master-based deployments
-practice/<...>/                                     # workflow shakedown runs
+releases/<base-name>/<YYYYMMDD-HHMMSS>-<app-name>/
+# tag base:    releases/v13.3.0rc0/...
+# commit base: releases/v13.4.0a0-7e0c52c31/...   (version tag before hash)
+practice/<...>/                                 # workflow shakedown runs
 ```
 
 Each archived folder keeps the layout described above (`analysis.md` plus
 `local/`). To archive, clone the repository (or pull an existing clone),
 copy the finished per-deployment folder(s) into the matching
-`releases/<base-tag>/` or `master/<short-hash>/` directory, and commit and
-push with a message naming the base and app(s). Ask the user before pushing.
+`releases/<base-name>/` directory, and commit and push with a message
+naming the base and app(s). Ask the user before pushing.
 The repository must stay private: exports contain participant data. Large
 raw archives (e.g. `data.zip`) may be pruned after the corresponding release
 has shipped and the analysis conclusions are settled.

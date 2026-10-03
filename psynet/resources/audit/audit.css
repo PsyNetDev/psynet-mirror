@@ -616,6 +616,16 @@ table td {
   overflow-x: auto;
 }
 
+.notebook-code > summary {
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.notebook-code[open] > summary {
+  margin-bottom: 0.5rem;
+}
+
 .notebook-code .highlight code {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -661,6 +671,19 @@ table td {
   display: block;
   height: auto;
   max-width: 100%;
+}
+
+.notebook-plotly {
+  min-height: 20rem;
+  width: 100%;
+}
+
+.notebook-plotly-target {
+  width: 100%;
+}
+
+.notebook-plotly-error {
+  color: var(--danger);
 }
 
 .notebook-error {

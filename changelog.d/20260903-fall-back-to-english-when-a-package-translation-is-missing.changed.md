@@ -1,0 +1,1 @@
+Missing package translations (such as PsyNet's own) no longer abort test runs outside release branches; the English source text is shown instead, and catalogs are refreshed on the release branch. Missing experiment translations still raise, as do all missing translations under `psynet debug`.

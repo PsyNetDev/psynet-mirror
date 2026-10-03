@@ -6,9 +6,9 @@ Example: releasing 13.2.0 from `master` while `master` is at `13.2.0a0`.
 **Default to a release candidate first.** For minor releases, cut an RC
 (e.g. `13.2.0rc1`) before the final version, unless the release manager
 explicitly instructs otherwise. After creating the release branch (step 1
-below), switch to the [release candidate flow](#release-candidates-minor-releases)
+below), switch to the [release candidate flow](release-candidates.md)
 instead of continuing with steps 2–7; return to the final-release steps via
-[Promote the final RC to the official release](#promote-the-final-rc-to-the-official-release)
+[Promote the final RC to the official release](release-candidates.md#promote-the-final-rc-to-the-official-release)
 once the RC has been validated.
 
 ### 1. Create the release branch
@@ -26,11 +26,12 @@ git checkout -b release-13.2
 
 Perform the shared steps, in this order:
 
-1. [Update the CHANGELOG](#update-the-changelog)
-2. [Bump the version](#bump-the-version) (from the alpha version, e.g.
+1. [Update the CHANGELOG](shared-steps.md#update-the-changelog)
+2. [Bump the version](shared-steps.md#bump-the-version) (from the alpha version, e.g.
    `13.2.0a0` → `13.2.0`)
-3. [Update What's new](#update-whats-new) when the release has
+3. [Update What's new](shared-steps.md#update-whats-new) when the release has
    experimenter-facing highlights or breaking changes
+4. [Update package translations](shared-steps.md#update-package-translations)
 
 ### 3. Push the release branch
 
@@ -66,12 +67,12 @@ may have gained additional changes after the release branch was created.
 
 Perform the shared steps, in this order:
 
-1. [Wait for CI to pass](#wait-for-ci-to-pass)
-2. [Tag the release](#tag-the-release)
-3. [Build and upload to PyPI](#build-and-upload-to-pypi)
-4. [Verify the documentation deployment](#verify-the-documentation-deployment)
-5. [Create the GitLab release](#create-the-gitlab-release)
-6. [Announce the release on Slack](#announce-the-release-on-slack)
+1. [Wait for CI to pass](shared-steps.md#wait-for-ci-to-pass)
+2. [Tag the release](shared-steps.md#tag-the-release)
+3. [Build and upload to PyPI](shared-steps.md#build-and-upload-to-pypi)
+4. [Verify the documentation deployment](shared-steps.md#verify-the-documentation-deployment)
+5. [Create the GitLab release](shared-steps.md#create-the-gitlab-release)
+6. [Announce the release on Slack](shared-steps.md#announce-the-release-on-slack)
 
 ### 6. Merge the release branch back into master
 

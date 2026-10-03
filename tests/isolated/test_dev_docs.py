@@ -1,5 +1,7 @@
+import json
 import re
 import subprocess
+import sys
 
 import pytest
 
@@ -11,7 +13,7 @@ from psynet.utils import working_directory
 def source_checkout(tmp_path, monkeypatch):
     docs_dir = tmp_path / "docs"
     docs_dir.mkdir()
-    (docs_dir / "Makefile").write_text("html:\n", encoding="utf-8")
+    (docs_dir / "conf.py").write_text("# test sphinx config\n", encoding="utf-8")
     monkeypatch.setattr(docs_module, "get_psynet_root", lambda: tmp_path)
     return tmp_path
 
@@ -43,9 +45,18 @@ def test_make_command_runs_docs_make_target_with_options(source_checkout, monkey
     assert calls == [
         (
             [
-                "make",
+                sys.executable,
+                "-m",
+                "sphinx",
+                "-M",
                 "dirhtml",
-                "SPHINXOPTS=--nitpicky -W --keep-going -j auto",
+                ".",
+                "_build",
+                "--nitpicky",
+                "-W",
+                "--keep-going",
+                "-j",
+                "auto",
             ],
             {
                 "cwd": source_checkout / "docs",
@@ -69,7 +80,17 @@ def test_make_command_defaults_to_html_with_serial_jobs(source_checkout, monkeyp
 
     assert calls == [
         (
-            ["make", "html", "SPHINXOPTS=-j 1"],
+            [
+                sys.executable,
+                "-m",
+                "sphinx",
+                "-M",
+                "html",
+                ".",
+                "_build",
+                "-j",
+                "1",
+            ],
             {
                 "cwd": source_checkout / "docs",
                 "check": True,
@@ -226,15 +247,41 @@ def test_make_command_reports_failed_make_command(source_checkout, monkeypatch):
 def test_linkcheck_command_prints_structured_summary(
     source_checkout, monkeypatch, capsys
 ):
-    output = (
-        "/tmp/project/docs/api/utils.rst:3: WARNING: broken link: "
-        "http://localhost:5000 (connection refused)\n"
-        "(deploy/ssh_server: line 205) broken "
-        "https://your-app-name.example.com - certificate mismatch\n"
+    linkcheck_dir = source_checkout / "docs" / "_build" / "linkcheck"
+    linkcheck_dir.mkdir(parents=True)
+    (linkcheck_dir / "output.json").write_text(
+        "\n".join(
+            json.dumps(entry)
+            for entry in [
+                {
+                    "filename": "api/graphics.rst",
+                    "lineno": 3,
+                    "status": "working",
+                    "uri": "https://www.w3.org/TR/SVG/",
+                    "info": "",
+                },
+                {
+                    "filename": "api/utils.rst",
+                    "lineno": 3,
+                    "status": "broken",
+                    "uri": "http://localhost:5000",
+                    "info": "connection refused",
+                },
+                {
+                    "filename": "deploy/ssh_server.rst",
+                    "lineno": 205,
+                    "status": "broken",
+                    "uri": "https://your-app-name.example.com",
+                    "info": "certificate mismatch",
+                },
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
     )
 
     def fake_run(command, **kwargs):
-        return subprocess.CompletedProcess(command, 1, stdout=output, stderr="")
+        return subprocess.CompletedProcess(command, 1, stdout="", stderr="")
 
     monkeypatch.setattr(docs_module.subprocess, "run", fake_run)
 
@@ -244,13 +291,14 @@ def test_linkcheck_command_prints_structured_summary(
 
     summary = capsys.readouterr().out
     assert "Linkcheck found 2 broken link(s):" in summary
+    assert "- api/utils.rst:3 [broken] http://localhost:5000" in summary
     assert (
-        "- /tmp/project/docs/api/utils.rst:3 [broken] http://localhost:5000" in summary
-    )
-    assert (
-        "- deploy/ssh_server:205 [broken] https://your-app-name.example.com" in summary
+        "- deploy/ssh_server.rst:205 [broken] https://your-app-name.example.com"
+        in summary
     )
     assert "certificate mismatch" in summary
+    # Working links are not reported.
+    assert "www.w3.org" not in summary
 
 
 def test_linkcheck_command_updates_progress(source_checkout, monkeypatch, capsys):
@@ -258,11 +306,30 @@ def test_linkcheck_command_updates_progress(source_checkout, monkeypatch, capsys
     postfixes = []
     spinner_texts = []
 
+    linkcheck_dir = source_checkout / "docs" / "_build" / "linkcheck"
+    linkcheck_dir.mkdir(parents=True)
+    (linkcheck_dir / "output.json").write_text(
+        json.dumps(
+            {
+                "filename": "api/utils.rst",
+                "lineno": 3,
+                "status": "broken",
+                "uri": "http://localhost:5000",
+                "info": "refused",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
     class FakeProcess:
+        # Sphinx colours these lines; the progress counter must still see them.
         stdout = [
             "reading sources... [ 42%] tutorials/assets\n",
-            "(api/graphics: line    3) ok        https://www.w3.org/TR/SVG/\n",
-            "(api/utils: line    3) broken    http://localhost:5000 - refused\n",
+            "(api/graphics: line    3) \x1b[32mok        \x1b[39;49;00m"
+            "https://www.w3.org/TR/SVG/\n",
+            "(api/utils: line    3) \x1b[31mbroken    \x1b[39;49;00m"
+            "http://localhost:5000 - refused\n",
         ]
 
         def wait(self):
@@ -338,13 +405,34 @@ def test_linkcheck_command_updates_progress(source_checkout, monkeypatch, capsys
     assert "http://localhost:5000" in capsys.readouterr().out
 
 
-def test_parse_linkcheck_warning_relativizes_docs_paths(source_checkout):
-    line = (
-        f"{source_checkout}/docs/api/utils.rst:3: WARNING: broken link: "
-        "http://localhost:5000 (connection refused)"
+def test_parse_linkcheck_issues_reads_sphinx_output_json(tmp_path):
+    linkcheck_dir = tmp_path / "linkcheck"
+    linkcheck_dir.mkdir()
+    (linkcheck_dir / "output.json").write_text(
+        "\n".join(
+            json.dumps(entry)
+            for entry in [
+                {
+                    "filename": "api/graphics.rst",
+                    "lineno": 3,
+                    "status": "ignored",
+                    "uri": "https://example.com",
+                    "info": "",
+                },
+                {
+                    "filename": "api/utils.rst",
+                    "lineno": 3,
+                    "status": "broken",
+                    "uri": "http://localhost:5000",
+                    "info": "connection refused",
+                },
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
     )
 
-    issues = docs_module.parse_linkcheck_issues(line, source_checkout / "docs")
+    issues = docs_module.parse_linkcheck_issues(tmp_path)
 
     assert issues == [
         docs_module.LinkcheckIssue(
@@ -424,6 +512,23 @@ def test_format_linkcheck_summary_groups_issues_by_category():
     )
 
 
+def test_format_linkcheck_summary_groups_timed_out_broken_links():
+    # linkcheck_report_timeouts_as_broken makes Sphinx label timeouts "broken",
+    # so the reason has to carry them into the Timeouts category.
+    issue = docs_module.LinkcheckIssue(
+        source="api/modular_page.rst",
+        line=10,
+        status="broken",
+        url="https://slow.example.com",
+        reason=(
+            "HTTPSConnectionPool(host='slow.example.com', port=443): "
+            "Read timed out. (read timeout=30)"
+        ),
+    )
+
+    assert "Timeouts (1):" in docs_module.format_linkcheck_summary([issue])
+
+
 def test_format_linkcheck_summary_keeps_unknown_categories(monkeypatch):
     issue = docs_module.LinkcheckIssue(
         source="api/utils",
@@ -470,3 +575,118 @@ def test_live_preview_requires_html_target(source_checkout, monkeypatch):
     with working_directory(source_checkout):
         with pytest.raises(ValueError, match="only supported for the html docs target"):
             docs_module.make_command(target="dirhtml", live_preview=True)
+
+
+def test_timeline_hold_trace_witnesses_exist():
+    """Every ``test_...`` named on the traces page must exist in the cited file."""
+    from psynet.light_utils import get_psynet_root
+
+    root = get_psynet_root()
+    traces = (root / "docs" / "developer" / "timeline_hold_traces.rst").read_text(
+        encoding="utf-8"
+    )
+    cited = set(re.findall(r"``(test_[a-z0-9_]+)``", traces))
+    assert cited, "timeline_hold_traces.rst must cite at least one test"
+
+    defined = {}
+    for path in (root / "tests").rglob("test_*.py"):
+        names = re.findall(
+            r"^def (test_[a-z0-9_]+)\(",
+            path.read_text(encoding="utf-8"),
+            re.M,
+        )
+        rel = path.relative_to(root).as_posix()
+        for name in names:
+            defined.setdefault(name, set()).add(rel)
+
+    missing = sorted(name for name in cited if name not in defined)
+    assert not missing, (
+        "docs/developer/timeline_hold_traces.rst cites tests that do not exist: "
+        + ", ".join(missing)
+    )
+
+    kind_re = re.compile(r"^\* (Protocol|Pin-lookup|Retry-unit|Unit|Lua) \(``([^`]+)``")
+    lines = traces.splitlines()
+    mismatches = []
+    i = 0
+    while i < len(lines):
+        match = kind_re.match(lines[i])
+        if match is None:
+            i += 1
+            continue
+        _kind, cited_file = match.groups()
+        block = [lines[i]]
+        i += 1
+        while i < len(lines) and (
+            lines[i].startswith("  ")
+            or (lines[i] == "" and i + 1 < len(lines) and lines[i + 1].startswith("  "))
+        ):
+            block.append(lines[i])
+            i += 1
+        for name in re.findall(r"``(test_[a-z0-9_]+)``", "\n".join(block)):
+            files = defined.get(name, set())
+            if cited_file not in files:
+                mismatches.append(
+                    f"{name} cited in {cited_file}, defined in {sorted(files)}"
+                )
+    assert not mismatches, (
+        "docs/developer/timeline_hold_traces.rst cites tests in the wrong file: "
+        + "; ".join(mismatches)
+    )
+
+
+def _docs_page_exists(root, page):
+    """Return whether ``page`` is a docs page, including generated skill pages."""
+    if (root / "docs" / f"{page}.rst").is_file():
+        return True
+    parts = page.split("/")
+    return (
+        len(parts) >= 2
+        and parts[0] == "skills"
+        and (root / ".cursor/skills/experiment" / parts[1] / "SKILL.md").is_file()
+    )
+
+
+def test_agents_md_documentation_map_points_at_existing_pages():
+    from psynet.utils import get_psynet_root
+
+    root = get_psynet_root()
+    agents = (root / "psynet/resources/experiment_scripts/AGENTS.md").read_text()
+    section = agents.split("## Documentation", 1)[1]
+    page_cells = [
+        line.rstrip(" |").rsplit("|", 1)[-1]
+        for line in section.splitlines()
+        if line.startswith("| ") and not line.startswith("| Topic")
+    ]
+    pages = set(re.findall(r"`([a-z_0-9/]+)`", "\n".join(page_cells)))
+    assert pages, "the documentation map lists no pages"
+    missing = sorted(page for page in pages if not _docs_page_exists(root, page))
+    assert not missing, f"AGENTS.md links to missing docs pages: {missing}"
+
+
+def test_agent_skills_page_lists_every_shipped_skill():
+    from psynet.utils import get_psynet_root
+
+    root = get_psynet_root()
+    page = (root / "docs/skills/index.rst").read_text()
+    skills = sorted(
+        p.parent.name for p in (root / ".cursor/skills/experiment").glob("*/SKILL.md")
+    )
+    missing = [skill for skill in skills if f":doc:`{skill}`" not in page]
+    assert not missing, f"docs/skills/index.rst does not list: {missing}"
+
+
+def test_skill_read_first_sections_point_at_existing_pages():
+    from psynet.utils import get_psynet_root
+
+    root = get_psynet_root()
+    missing = []
+    for skill in sorted((root / ".cursor/skills/experiment").glob("*/SKILL.md")):
+        text = skill.read_text()
+        if "## Read first" not in text:
+            continue
+        section = text.split("## Read first", 1)[1].split("\n## ", 1)[0]
+        for page in re.findall(r"^- `([a-z_0-9/]+)`", section, flags=re.M):
+            if not _docs_page_exists(root, page):
+                missing.append(f"{skill.parent.name}: {page}")
+    assert not missing, f"Read first sections link to missing docs pages: {missing}"

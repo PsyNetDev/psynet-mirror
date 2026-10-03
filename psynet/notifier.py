@@ -118,7 +118,7 @@ class Notifier:
     def export_url_message(self):
         return self.url(
             "Trigger export",
-            f"{self.exp.dashboard_url}/export/trigger?anonymize=both&assets=none&type=psynet",
+            f"{self.exp.dashboard_url}/export/trigger?assets=none",
         )
 
     def on_launch(self):
@@ -237,6 +237,13 @@ class LoggerNotifier(Notifier):
         assert level in self.LEVEL2CODE.keys()
         code = self.LEVEL2CODE[level]
         logger.log(code, msg)
+
+    @classmethod
+    def format_credentials(cls, label, url, username, password):
+        """Format credentials for the server log, redacting the password."""
+        if password is not None:
+            password = "<redacted>"
+        return super().format_credentials(label, url, username, password)
 
     @staticmethod
     def bold(msg: str):

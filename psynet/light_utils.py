@@ -29,27 +29,30 @@ import subprocess
 from pathlib import Path
 from typing import Union
 
+_URL_CREDENTIALS = re.compile(r"^([A-Za-z][A-Za-z0-9+.-]*://)[^/?#]*@")
+
 
 class ExperimentDirectoryNameError(ValueError):
     """Raised when an experiment directory name collides with a non-package module."""
 
 
 # ---------------------------------------------------------------------------
-# MD5 directory hashing
-# (copied from psynet.utils to avoid importing that module in bootstrap paths)
+# Content hashing
+# (kept here to avoid importing psynet.utils in bootstrap paths)
 # ---------------------------------------------------------------------------
 
 
-def _md5_update_from_file(filename: Union[str, Path], hash_obj) -> None:
+def _update_hash_from_file(filename: Union[str, Path], hash_obj):
     """Update *hash_obj* with the contents of *filename*."""
     if not Path(filename).is_file():
         raise FileNotFoundError(f"File not found: {filename}")
     with open(str(filename), "rb") as f:
         for chunk in iter(lambda: f.read(4096), b""):
             hash_obj.update(chunk)
+    return hash_obj
 
 
-def _md5_update_from_dir(directory: Union[str, Path], hash_obj) -> None:
+def _update_hash_from_dir(directory: Union[str, Path], hash_obj):
     """Recursively update *hash_obj* with all files under *directory*."""
     assert Path(directory).is_dir()
     for path in sorted(Path(directory).iterdir(), key=lambda p: str(p).lower()):
@@ -57,15 +60,21 @@ def _md5_update_from_dir(directory: Union[str, Path], hash_obj) -> None:
             continue
         hash_obj.update(path.name.encode())
         if path.is_file():
-            _md5_update_from_file(path, hash_obj)
+            _update_hash_from_file(path, hash_obj)
         elif path.is_dir():
-            _md5_update_from_dir(path, hash_obj)
+            _update_hash_from_dir(path, hash_obj)
+    return hash_obj
+
+
+# Backward-compatible aliases for callers that imported the old private names.
+_md5_update_from_file = _update_hash_from_file
+_md5_update_from_dir = _update_hash_from_dir
 
 
 def md5_directory(directory: Union[str, Path]) -> str:
     """Return the MD5 hex digest of all non-hidden files under *directory*."""
     h = hashlib.md5()
-    _md5_update_from_dir(directory, h)
+    _update_hash_from_dir(directory, h)
     return h.hexdigest()
 
 
@@ -93,6 +102,17 @@ def git_repository_available() -> bool:
         stderr=subprocess.PIPE,
     )
     return result.returncode == 0
+
+
+def strip_url_credentials(url: str) -> str:
+    """Return ``url`` without its ``user:password@`` part.
+
+    Only URL-style remotes (``https://user:token@host/path``) are changed.
+    scp-style remotes such as ``git@host:path`` and local paths are returned
+    unchanged. Malformed URLs are handled without raising, because Git
+    accepts any string as a remote URL.
+    """
+    return _URL_CREDENTIALS.sub(r"\1", url)
 
 
 def git_commit_available() -> bool:

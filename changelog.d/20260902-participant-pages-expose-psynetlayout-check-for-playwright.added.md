@@ -1,0 +1,1 @@
+Added `psynetLayout.check()` on every participant page so experiment Playwright tests can assert layout without copying PsyNet's test helpers. Pages that do not set `expect_scrolling=True` must fit the viewport; long pages that declare it may scroll as long as nothing is trapped behind the footer.

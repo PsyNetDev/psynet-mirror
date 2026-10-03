@@ -10,7 +10,7 @@ from dominate import tags
 from dominate.dom_tag import dom_tag
 from markupsafe import Markup
 
-from .asset import CachedAsset, ExternalAsset
+from .asset import ExternalAsset, FileAsset
 from .modular_page import AudioPrompt, ModularPage
 from .timeline import (
     CodeBlock,
@@ -20,11 +20,12 @@ from .timeline import (
     Page,
     PageMaker,
     _normalize_js_page_code,
+    conditional,
     get_template,
     join,
     while_loop,
 )
-from .utils import get_logger
+from .utils import call_function_with_context, get_logger, get_translator
 
 logger = get_logger()
 warnings.simplefilter("always", DeprecationWarning)
@@ -239,9 +240,11 @@ def wait_while(
     expected_wait: float,
     check_interval: float = 2.0,
     max_wait_time: float = 20.0,
-    wait_page=WaitPage,
+    wait_page=None,
     log_message: Optional[str] = None,
     fail_on_timeout=True,
+    fix_time_credit: Optional[bool] = None,
+    content: Optional[str] = None,
 ):
     """
     Displays the participant a waiting page while a given condition
@@ -260,25 +263,38 @@ def wait_while(
         argument list.
 
     expected_wait
-        How long the participant is likely to wait, in seconds.
+        How long the participant is likely to wait, in seconds. This controls
+        progress estimation and fixed time credit; actual visible waiting time
+        is credited when ``fix_time_credit`` is false.
 
     check_interval
-        How often should the browser check the condition, in seconds.
+        How often the browser should check the condition if no framework wake
+        notification arrives, in seconds.
 
     max_wait_time
         The participant's maximum waiting time in seconds. Default: 20.0.
 
     wait_page
         The wait page that should be displayed to the participant;
-        defaults to :class:`~psynet.page.WaitPage`.
+        by default the current page is preserved with a lightweight waiting
+        indicator. Pass :class:`~psynet.page.WaitPage` or another page factory
+        to opt into page-based waiting.
 
     log_message
         Optional message to display in the log.
 
     fail_on_timeout
-        Whether the participants should be failed when the ``max_loop_time`` is reached.
-        Setting this to ``False`` will not return the ``UnsuccessfulEndPage`` when maximum time has elapsed
-        but allow them to proceed to the next page.
+        Whether the participant should be failed when ``max_wait_time`` is reached.
+        Setting this to ``False`` allows them to proceed to the next page instead.
+
+    fix_time_credit
+        Whether to award the fixed ``expected_wait`` rather than actual visible
+        waiting time. Defaults to ``False`` for timeline holds and ``True`` for
+        explicit page-based waiting.
+
+    content
+        Message displayed by the timeline hold. Only used when ``wait_page`` is
+        omitted.
 
     Returns
     -------
@@ -288,19 +304,61 @@ def wait_while(
     """
     assert expected_wait >= 0
     assert check_interval > 0
-    expected_repetitions = ceil(expected_wait / check_interval)
-
-    _wait_page = wait_page(wait_time=check_interval)
+    label = "wait_while"
+    uses_timeline_hold = wait_page is None
+    if wait_page is not None and content is not None:
+        raise ValueError("content only applies when wait_page is omitted.")
+    if fix_time_credit is None:
+        fix_time_credit = not uses_timeline_hold
 
     def log(participant):
         logger.info(f"Participant {participant.id}: {log_message}")
 
+    if uses_timeline_hold:
+        from psynet.timeline_hold import _ConditionHoldPage
+
+        def entry_condition(participant, experiment):
+            result = call_function_with_context(
+                condition,
+                participant=participant,
+                experiment=experiment,
+            )
+            logger.info(
+                "Evaluating timeline hold (%s) condition: result = %s",
+                label,
+                result,
+            )
+            return result
+
+        hold = _ConditionHoldPage(
+            condition=condition,
+            hold_id=label,
+            expected_wait=expected_wait,
+            max_wait_time=max_wait_time,
+            fix_time_credit=fix_time_credit,
+            check_interval=check_interval,
+            content=content,
+            message_kind="generic" if content is None else None,
+            fail_on_timeout=fail_on_timeout,
+        )
+        hold_logic = hold if log_message is None else join(CodeBlock(log), hold)
+        return join(
+            conditional(
+                label,
+                entry_condition,
+                logic_if_true=hold_logic,
+                fix_time_credit=fix_time_credit,
+                log_chosen_branch=False,
+                time_estimate=expected_wait,
+            )
+        )
+
+    expected_repetitions = ceil(expected_wait / check_interval)
+    _wait_page = wait_page(wait_time=check_interval)
     if log_message is None:
         logic = _wait_page
     else:
         logic = join(CodeBlock(log), _wait_page)
-
-    label = "wait_while"
 
     return join(
         while_loop(
@@ -310,6 +368,7 @@ def wait_while(
             expected_repetitions=expected_repetitions,
             max_loop_time=max_wait_time,
             fail_on_timeout=fail_on_timeout,
+            fix_time_credit=fix_time_credit,
         ),
     )
 
@@ -395,6 +454,8 @@ class DebugResponsePage(PageMaker):
 
 
 class VolumeCalibration(Module):
+    """Module that loops a sound so the participant can set a comfortable volume."""
+
     def __init__(
         self,
         url=str(resources.files("psynet") / "resources/audio/brown_noise.wav"),
@@ -414,7 +475,7 @@ class VolumeCalibration(Module):
         if str(url).startswith("http"):
             return ExternalAsset(url=url)
         else:
-            return CachedAsset(input_path=url)
+            return FileAsset(input_path=url)
 
     def page(self, min_time, time_estimate, id_):
         return PageMaker(
@@ -545,11 +606,30 @@ class ExecuteFrontEndJS(InfoPage):
     # Skip beforeunload detection since this page is expected to navigate away
     skip_beforeunload = True
 
-    def __init__(self, js: str, message: str = ""):
+    def __init__(self, js: str):
         super().__init__(
-            content=message,
+            content=self._spinner(),
             time_estimate=0.0,
             js_vars={"execute_front_end_js": js},
             js_page_modules=["/static/scripts/execute-front-end-js.js"],
             show_next_button=False,
         )
+
+    @staticmethod
+    def _spinner():
+        """Render a spinner rather than prose.
+
+        These pages run some JavaScript and then navigate, normally within a
+        couple of hundred milliseconds. That is too brief to read a sentence,
+        but long enough that a blank surface looks broken, and it can stretch
+        out when the network is slow. The spinner reads the same either way.
+        The label is for screen readers, which have nothing else to announce.
+        """
+        _p = get_translator(context=True)
+
+        return Markup(
+            '<div class="psynet-activity" role="status">'
+            '<span class="spinner-border" aria-hidden="true"></span>'
+            '<span class="visually-hidden">{}</span>'
+            "</div>"
+        ).format(_p("status", "Working..."))

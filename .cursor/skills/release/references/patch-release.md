@@ -15,13 +15,15 @@ git log --oneline v13.1.0..HEAD   # confirm which fixes are included
 
 Perform the shared steps, in this order:
 
-1. [Update the CHANGELOG](#update-the-changelog) — cherry-picked fixes
+1. [Update the CHANGELOG](shared-steps.md#update-the-changelog) — cherry-picked fixes
    carry their `changelog.d/` fragments with them; fold them into the
    patch release section. Add fragments manually for any fix that is
    missing one.
-2. [Bump the version](#bump-the-version) (e.g. `13.1.0` → `13.1.1`)
-3. [Update What's new](#update-whats-new) only if the patch has something
+2. [Bump the version](shared-steps.md#bump-the-version) (e.g. `13.1.0` → `13.1.1`)
+3. [Update What's new](shared-steps.md#update-whats-new) only if the patch has something
    experimenter-facing worth calling out
+4. [Update package translations](shared-steps.md#update-package-translations) if this
+   patch changed translatable PsyNet strings
 
 ### 3. Push the release branch
 
@@ -36,13 +38,13 @@ git push origin release-13.1
 
 Perform the shared steps, in this order:
 
-1. [Tag the release](#tag-the-release)
-2. [Wait for CI to pass](#wait-for-ci-to-pass) (the tag pipeline runs
+1. [Tag the release](shared-steps.md#tag-the-release)
+2. [Wait for CI to pass](shared-steps.md#wait-for-ci-to-pass) (the tag pipeline runs
    tests against the tagged commit)
-3. [Build and upload to PyPI](#build-and-upload-to-pypi)
-4. [Verify the documentation deployment](#verify-the-documentation-deployment)
-5. [Create the GitLab release](#create-the-gitlab-release)
-6. [Announce the release on Slack](#announce-the-release-on-slack)
+3. [Build and upload to PyPI](shared-steps.md#build-and-upload-to-pypi)
+4. [Verify the documentation deployment](shared-steps.md#verify-the-documentation-deployment)
+5. [Create the GitLab release](shared-steps.md#create-the-gitlab-release)
+6. [Announce the release on Slack](shared-steps.md#announce-the-release-on-slack)
 
 ### 5. Merge back to master (if applicable)
 

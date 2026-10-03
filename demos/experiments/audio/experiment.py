@@ -60,10 +60,10 @@ def get_timeline():
 
 
 all_assets = {
-    "bier": asset("local_only/bier.wav", cache=True),
-    "file-concatenated": asset("local_only/file_concatenated.mp3", cache=True),
-    "funk-game-loop": asset("local_only/funk-game-loop.mp3", cache=True),
-    "train-1": asset("local_only/train1.wav", cache=True),
+    "bier": asset("local_only/bier.wav"),
+    "file-concatenated": asset("local_only/file_concatenated.mp3"),
+    "funk-game-loop": asset("local_only/funk-game-loop.mp3"),
+    "train-1": asset("local_only/train1.wav"),
 }
 
 example_js_synth_1 = ModularPage(
@@ -516,6 +516,11 @@ example_record_audio_video = join(
         ),
         time_estimate=5,
     ),
+    wait_while(
+        lambda participant: not participant.assets["video_record_page"].deposited,
+        expected_wait=5.0,
+        log_message="Waiting for the recording to finish uploading",
+    ),
     PageMaker(
         lambda participant: ModularPage(
             "playback",
@@ -532,16 +537,3 @@ example_record_audio_video = join(
 
 class Exp(psynet.experiment.Experiment):
     timeline = get_timeline()
-
-    @property
-    def ad_requirements(self):
-        return super().ad_requirements + [
-            'You must be wearing <span style="font-weight: bold;">headphones</span> and sitting in a quiet place.'
-        ]
-
-    @property
-    def ad_payment_information(self):
-        return (
-            super().ad_payment_information
-            + '<br>Send us your <span style="font-weight: bold;">bank account information</span> to receive refunds.'
-        )

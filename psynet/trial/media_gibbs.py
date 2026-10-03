@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from markupsafe import Markup, escape
 
-from ..asset import ExperimentAsset
+from ..asset import FileAsset
 from ..field import claim_var
 from ..media import make_batch_file
 from ..modular_page import (
@@ -289,8 +289,6 @@ class MediaGibbsNode(GibbsNode):
     The user should not have to modify this.
     """
 
-    __extra_vars__ = GibbsNode.__extra_vars__.copy()
-
     vector_length = 0
     vector_ranges = []
     granularity = 100
@@ -298,7 +296,7 @@ class MediaGibbsNode(GibbsNode):
     batch_synthesis = False
     batch_zipped = False
 
-    slider_stimuli = claim_var("slider_stimuli", __extra_vars__)
+    slider_stimuli = claim_var("slider_stimuli")
 
     def validate(self):
         if not (isinstance(self.vector_length, int) and self.vector_length > 0):
@@ -414,7 +412,7 @@ class MediaGibbsNode(GibbsNode):
                     )
                 batch_path = zipped_batch_path
 
-            asset = ExperimentAsset(
+            asset = FileAsset(
                 local_key="slider_stimulus",
                 input_path=batch_path,
                 parent=self,

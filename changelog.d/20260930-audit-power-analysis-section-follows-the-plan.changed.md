@@ -1,0 +1,1 @@
+The audit's design simulation section is now called "Power analysis" and comes straight after the Plan. Agent guidance asks for power analysis and analysis notebooks that open with a plain-language summary and assumptions, with the numbers given alongside the plain words.

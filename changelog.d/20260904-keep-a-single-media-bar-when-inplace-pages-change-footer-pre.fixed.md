@@ -1,0 +1,1 @@
+In-place timeline transitions keep a single media-download progress bar when consecutive pages disagree about whether they have a footer. Mixed pages (for example a Lucid screening question with no terminate button, then a later page with one) previously left either two rails or none, because the bar lives inside the footer on some pages and as a sibling on others.

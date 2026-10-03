@@ -87,6 +87,14 @@ def make_static_trial_maker(trial_maker_class=StaticTrialMaker, **kwargs):
     return trial_maker_class(**{**args, **kwargs})
 
 
+@pytest.mark.parametrize("target_trials_per_node", [0, -1])
+def test_static_trial_maker_rejects_non_positive_target_trials_per_node(
+    target_trials_per_node,
+):
+    with pytest.raises(ValueError, match="positive"):
+        make_static_trial_maker(target_trials_per_node=target_trials_per_node)
+
+
 def test_failure_policy_constructor_defaults():
     chain = inspect.signature(ChainTrialMaker.__init__).parameters
     static = inspect.signature(StaticTrialMaker.__init__).parameters
@@ -319,7 +327,7 @@ def test_static_selection_carries_context_to_on_trial_created(monkeypatch):
     participant = DummyParticipant()
     participant.module_state = DummyModuleState()
     network = SimpleNamespace(id=3, block="default")
-    node = SimpleNamespace(id=2, network=network, block="default")
+    node = SimpleNamespace(id=2, network=network, network_id=3, block="default")
     trial = SimpleNamespace()
     calls = []
 
@@ -836,6 +844,23 @@ def test_deprecated_network_filter_still_filters_static_networks():
     ) == [kept.head]
 
 
+def test_deprecated_static_network_filter_errors_name_that_method():
+    class LegacyStaticMaker(StaticTrialMaker):
+        def custom_network_filter(self, candidates, participant):
+            return [SimpleNamespace(id=99)]
+
+    with pytest.warns(DeprecationWarning, match="custom_node_filter"):
+        trial_maker = make_static_trial_maker(LegacyStaticMaker)
+    (chain,) = _headed_chains(1)
+
+    with pytest.raises(ValueError, match="custom_network_filter"):
+        trial_maker._filter_eligible_candidates(
+            [chain],
+            participant=SimpleNamespace(),
+            experiment=SimpleNamespace(),
+        )
+
+
 def test_custom_chain_filter_takes_precedence_over_deprecated_network_filter():
     class BothFilters(ChainTrialMaker):
         def custom_chain_filter(self, chains, participant, experiment):
@@ -889,6 +914,30 @@ def test_create_trial_rejects_none_trial_class():
         )
 
 
+def test_sync_trial_maker_wait_content_is_used_by_internal_barriers():
+    trial_maker = make_trial_maker(
+        sync_group_type="main",
+        sync_group_wait_content="Waiting for your partner",
+    )
+    holds = [
+        elt
+        for elt in trial_maker.elts
+        if getattr(elt, "barrier_id", None)
+        in {
+            trial_maker.with_namespace("init_participant"),
+            trial_maker.with_namespace("prepare_trial"),
+        }
+    ]
+    assert {hold.barrier_id for hold in holds} == {
+        trial_maker.with_namespace("init_participant"),
+        trial_maker.with_namespace("prepare_trial"),
+    }
+    assert all(hold.content == "Waiting for your partner" for hold in holds)
+    assert all(
+        hold.translated_content() == "Waiting for your partner" for hold in holds
+    )
+
+
 def test_sync_trial_maker_prepare_barrier_kick_exits_cleanly(monkeypatch):
     trial_maker = make_trial_maker(
         sync_group_type="main",
@@ -914,3 +963,46 @@ def test_sync_trial_maker_prepare_barrier_kick_exits_cleanly(monkeypatch):
     assert participant.current_trial is None
     assert participant.trial_status == "exit"
     assert prepare_trial_calls == []
+
+
+def _check_consistency(repeat_answers, parent_answers):
+    class ConsistencyTrialMaker(ChainTrialMaker):
+        performance_check_type = "consistency"
+
+    trials = [
+        SimpleNamespace(
+            is_repeat_trial=True,
+            answer=repeat_answer,
+            parent_trial=SimpleNamespace(is_repeat_trial=False, answer=parent_answer),
+        )
+        for repeat_answer, parent_answer in zip(repeat_answers, parent_answers)
+    ]
+
+    return make_trial_maker(ConsistencyTrialMaker).performance_check(
+        experiment=None,
+        participant=DummyParticipant(),
+        participant_trials=trials,
+    )
+
+
+@pytest.mark.parametrize(
+    "repeat_answers, parent_answers",
+    [
+        ([1.0, 1.0, 1.0], [3.0, 5.0, 8.0]),
+        ([3.0, 5.0, 8.0], [1.0, 1.0, 1.0]),
+    ],
+)
+def test_always_giving_the_same_answer_fails_the_consistency_check(
+    repeat_answers, parent_answers
+):
+    assert _check_consistency(repeat_answers, parent_answers) == {
+        "score": None,
+        "passed": False,
+    }
+
+
+def test_varying_answers_are_scored_by_their_correlation():
+    assert _check_consistency([1.0, 2.0, 3.0], [7.0, 8.0, 9.0]) == {
+        "score": 1.0,
+        "passed": True,
+    }

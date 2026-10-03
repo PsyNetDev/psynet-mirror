@@ -1,0 +1,1 @@
+Prolific submission reads now go through Dallinger's ``get_participant_submission(..., translate=False)`` instead of a raw HTTP GET, so the dashboard and unpaid-base retry use the same mocked path in ``devprolific``.

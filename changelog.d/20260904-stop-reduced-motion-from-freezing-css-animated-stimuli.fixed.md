@@ -1,0 +1,1 @@
+`prefers-reduced-motion` no longer freezes every CSS animation on the page. The wait-page splash still swaps to a solid accent fill, but CSS-animated stimuli keep running instead of being stopped by a document-wide `!important` rule.

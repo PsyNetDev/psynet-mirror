@@ -16,8 +16,8 @@ class Exp(psynet.experiment.Experiment):
     label = "Timeline with error experiment"
 
     config = {
-        "min_accumulated_reward_for_abort": 0.10,
-        "show_abort_button": True,
+        "min_reward_for_paid_early_exit": 0.10,
+        "show_early_exit_button": True,
     }
 
     @experiment_route("/custom_route", methods=["POST", "GET"])

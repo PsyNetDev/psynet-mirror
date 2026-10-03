@@ -95,7 +95,7 @@ class CustomNetwork(GibbsNetwork):
         logger.info(
             "Running custom async_post_grow_network function (network id = %i)", self.id
         )
-        if self.n_alive_nodes > 1:
+        if len(self.alive_nodes) > 1:
             if self.head.id % 3 == 0:
                 assert False, "Intentional failure in async_post_grow_network"
             elif self.head.id % 4 == 0:

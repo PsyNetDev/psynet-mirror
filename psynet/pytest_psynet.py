@@ -1,7 +1,6 @@
 import logging
 import os
 import re
-import subprocess
 import sys
 import time
 import warnings
@@ -13,6 +12,7 @@ import dallinger.pytest_dallinger
 import pexpect
 import pexpect.exceptions
 import pytest
+import requests
 import sqlalchemy.exc
 from dallinger import db, pytest_dallinger
 from dallinger.bots import BotBase
@@ -38,8 +38,8 @@ from .command_line import (
     clean_sys_modules,
     kill_chromedriver_processes,
     kill_psynet_chrome_processes,
+    kill_psynet_worker_processes,
     stop_local_debug_process,
-    working_directory,
 )
 from .experiment import get_experiment, import_local_experiment
 from .experiment_scaffold import (
@@ -54,7 +54,13 @@ from .test_helpers.mock_s3 import (
 from .testing.chrome_driver import create_psynet_chrome_driver
 from .trial.main import TrialNetwork
 from .trial.static import StaticNode, StaticTrial, StaticTrialMaker
-from .utils import clear_all_caches, is_in_repo_experiment, wait_until
+from .utils import (
+    clear_all_caches,
+    is_in_repo_experiment,
+    is_release_branch,
+    wait_until,
+    working_directory,
+)
 
 logger = logging.getLogger(__file__)
 warnings.filterwarnings("ignore", category=sqlalchemy.exc.SAWarning)
@@ -63,8 +69,17 @@ ci_only = pytest.mark.skipif(
     os.environ.get("CI") is None, reason="This test only runs in CI environment"
 )
 
+# Bound the bot's final worker-status request so a wedged server surfaces as a
+# clear teardown error well before pytest-timeout kills the whole test.
+WORKER_STATUS_TIMEOUT_SEC = 30
+
 local_only = pytest.mark.skipif(
     os.environ.get("CI") is not None, reason="This test only runs in local environment"
+)
+
+release_branch_only = pytest.mark.skipif(
+    not is_release_branch(),
+    reason="This test only runs on release branches",
 )
 
 
@@ -134,7 +149,7 @@ def bot_class(headless=None):
 
     class PYTEST_BOT_CLASS(BotBase):
         def sign_up(self):
-            """Accept HIT, give consent and start experiment.
+            """Accept the assignment, give consent, and start the experiment.
 
             This uses Selenium to click through buttons on the ad,
             consent, and instruction pages.
@@ -230,6 +245,42 @@ def bot_class(headless=None):
                 logger.error("Error during experiment sign off.")
                 return False
 
+        def complete_experiment(self, status):
+            """Finalize the session over HTTP rather than in the browser.
+
+            Dallinger navigates the browser to ``/worker_complete``. PsyNet's
+            exit flow already calls that route from the participant page, so by
+            the time the bot fixture runs this step the browser is displaying
+            the recruiter exit page and the navigation only repeats an
+            idempotent request. A browser that is still settling that exit
+            redirect can leave the navigation unfinished, which also blocks the
+            ``driver.quit()`` that follows until the whole test times out.
+            """
+            if not self.participant_id:
+                raise ValueError(
+                    "bot.participant_id is not set. Cannot complete experiment."
+                )
+            parts = parse.urlparse(self.URL)
+            url = f"{parts.scheme}://{parts.netloc}/{status}"
+            # /worker_complete accepts POST, matching psynet.js; /worker_failed
+            # is registered for GET only.
+            method = "POST" if status == "worker_complete" else "GET"
+            response = requests.request(
+                method,
+                url,
+                params={"participant_id": self.participant_id},
+                timeout=WORKER_STATUS_TIMEOUT_SEC,
+            )
+            if not response.ok:
+                logger.error(
+                    "Bot %s %s for participant %s returned HTTP %s.",
+                    method,
+                    url,
+                    self.participant_id,
+                    response.status_code,
+                )
+            return response
+
         @cached_property
         def driver(self):
             return create_psynet_chrome_driver(headless=headless)
@@ -298,7 +349,26 @@ def next_page(driver, button_identifier, by=By.ID, finished=False, max_wait=10.0
     )
 
     old_uuid = get_uuid()
-    find_button().click()
+    button = find_button()
+    # In-flow footers sit after the page content. Scrolling to the document
+    # bottom can cover the target with the footer; bring the control itself
+    # into view instead.
+    driver.execute_script(
+        """
+        const el = arguments[0];
+        el.scrollIntoView({block: 'center', inline: 'nearest'});
+        const y = el.getBoundingClientRect().top + window.pageYOffset
+            - (window.innerHeight / 2);
+        window.scrollTo(0, Math.max(0, y));
+        document.documentElement.scrollTop = Math.max(0, y);
+        document.body.scrollTop = Math.max(0, y);
+        """,
+        button,
+    )
+    try:
+        button.click()
+    except ElementClickInterceptedException:
+        driver.execute_script("arguments[0].click();", button)
     if finished:
         wait_until(
             lambda: "recruiter-exit" in driver.current_url,
@@ -306,7 +376,7 @@ def next_page(driver, button_identifier, by=By.ID, finished=False, max_wait=10.0
             error_message="Never reached the recruiter-exit route, seems like the experiment never finished.",
         )
     else:
-        if driver.current_url == "http://localhost:5000/error-page":
+        if parse.urlparse(driver.current_url).path == "/error-page":
             raise RuntimeError(
                 "Unexpectedly hit an error page, check the server logs for details."
             )
@@ -409,14 +479,12 @@ def skip_constraints_check():
 
 @pytest.fixture(scope="class")
 def clear_workers():
+    """Stop leftover local servers that use this test run's database."""
+
     def _zap():
-        kills = [["pkill", "-f", "heroku"]]
-        for kill in kills:
-            try:
-                subprocess.check_call(kill)
-            except Exception as e:
-                if e.returncode != 1:
-                    raise
+        # Once a worker stops, heroku local's foreman exits, and then the
+        # Heroku CLI that started it.
+        kill_psynet_worker_processes()
 
     _zap()
     yield
@@ -502,7 +570,7 @@ def debug_experiment(
         # next test class resets the database; a short Ctrl-C + log flush is
         # not enough and can leave backends holding locks during drop_all.
         try:
-            _stop_debug_experiment_process(p)
+            stop_debug_experiment_process(p)
         finally:
             kill_psynet_chrome_processes()
             kill_chromedriver_processes()
@@ -512,18 +580,21 @@ def debug_experiment(
 dallinger.pytest_dallinger.debug_experiment = debug_experiment
 
 
-def _stop_debug_experiment_process(process):
+def stop_debug_experiment_process(process):
     """Flush logs best-effort, then always stop the debug process and workers."""
+    if getattr(process, "closed", False):
+        return
+
     try:
         flush_output(process, timeout=0.1)
-    except (OSError, pexpect.exceptions.EOF) as err:
+    except (OSError, ValueError, pexpect.exceptions.EOF) as err:
         logger.warning("Error while flushing debug experiment output: %s", err)
     except Exception:
         logger.exception("Unexpected error while flushing debug experiment output")
 
     try:
         stop_local_debug_process(process)
-    except (OSError, pexpect.exceptions.EOF) as err:
+    except (OSError, ValueError, pexpect.exceptions.EOF) as err:
         logger.warning("Error while stopping the debug experiment process: %s", err)
     except Exception:
         logger.exception("Unexpected error while stopping the debug experiment process")
@@ -559,20 +630,14 @@ def terminate_other_postgres_connections():
     still be terminated, so this must only run when no other component holds
     a database connection (as is the case at the test-setup call sites).
     """
-    from sqlalchemy import text
-    from sqlalchemy.orm.session import close_all_sessions
+    from .db import (
+        TERMINATE_OTHER_DATABASE_CLIENTS_SQL,
+        release_local_database_connections,
+    )
 
-    close_all_sessions()
-    db.engine.dispose()
-
+    release_local_database_connections()
     with db.engine.connect() as con:
-        con.execute(
-            text(
-                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-                "WHERE datname = current_database() AND pid <> pg_backend_pid() "
-                "AND usename = current_user"
-            )
-        )
+        con.execute(TERMINATE_OTHER_DATABASE_CLIENTS_SQL)
 
 
 # Postgres SQLSTATE code for "deadlock detected"; matching on the code rather

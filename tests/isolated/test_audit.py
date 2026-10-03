@@ -1,4 +1,5 @@
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -11,7 +12,9 @@ from psynet.audit.cli import (
     starter_audit_manifest,
     validate_audit,
 )
+from psynet.audit.site import experiment_git_commit
 from psynet.command_line import psynet
+from psynet.version import psynet_version
 
 LFS_VIDEO_POINTER = (
     b"version https://git-lfs.github.com/spec/v1\noid sha256:abc\nsize 1\n"
@@ -108,7 +111,7 @@ def audit_manifest() -> dict[str, object]:
             {
                 "id": "analysis_notebook",
                 "kind": "notebook",
-                "path": "analyses/analysis.ipynb",
+                "path": "simulate/analysis/analysis.ipynb",
                 "title": "Analysis notebook",
                 "description": "Executed analysis notebook.",
                 "required": True,
@@ -129,7 +132,7 @@ def audit_manifest() -> dict[str, object]:
                 "artifact_id": "analysis_notebook",
                 "severity": "warning",
                 "reason": "No simulated export has been produced yet.",
-                "next_step": "Run psynet simulate and execute the notebook.",
+                "next_step": "Run psynet audit simulate and execute the notebook.",
             },
         ],
     }
@@ -140,7 +143,9 @@ def write_core_section_files(audit_dir: Path) -> None:
     write(audit_dir / "REPORT.md", "# Report\n\nReady for review.\n")
 
 
-def test_render_audit_site_publishes_sanitized_artifacts(tmp_path: Path) -> None:
+def test_render_audit_site_publishes_trusted_notebooks_and_escaped_markdown(
+    tmp_path: Path,
+) -> None:
     audit_dir = tmp_path / "pitch-discrimination-demo" / "audit"
     manifest = audit_manifest()
     write(audit_dir / "audit.json", json.dumps(manifest) + "\n")
@@ -148,6 +153,7 @@ def test_render_audit_site_publishes_sanitized_artifacts(tmp_path: Path) -> None
         audit_dir / "REPORT.md",
         "# Report\n\n"
         "Experiment **behaves** as expected.\n\n"
+        "The response probability is $P(Y = 1) = \\operatorname{logit}^{-1}(a(\\theta-b))$.\n\n"
         "- Functional check passed\n\n"
         "<script>bad()</script>\n",
     )
@@ -167,7 +173,17 @@ def test_render_audit_site_publishes_sanitized_artifacts(tmp_path: Path) -> None
     site_dir = render_audit_site(audit_dir)
 
     index = (site_dir / "index.html").read_text(encoding="utf-8")
+    css = (site_dir / "static" / "css" / "audit.css").read_text(encoding="utf-8")
+    assert "max-width: 1180px" in css
     assert '<link rel="stylesheet" href="static/css/audit.css">' in index
+    assert '<script src="static/js/audit.js"></script>' in index
+    # The report contains equations but no figure, so only MathJax is shipped.
+    assert '<script src="static/js/mathjax-tex-svg.min.js"></script>' in index
+    assert "plotly.min.js" not in index
+    assert index.index('src="static/js/audit.js"') < index.index(
+        'src="static/js/mathjax-tex-svg.min.js"'
+    )
+    assert "Content-Security-Policy" not in index
     assert '<body class="attempt-page">' in index
     assert 'class="attempt-layout"' in index
     assert "Pitch Discrimination Demo" in index
@@ -175,6 +191,7 @@ def test_render_audit_site_publishes_sanitized_artifacts(tmp_path: Path) -> None
     assert "Readiness" in index
     assert "<h1>Report</h1>" not in index
     assert "Experiment <strong>behaves</strong> as expected." in index
+    assert "$P(Y = 1) = \\operatorname{logit}^{-1}(a(\\theta-b))$" in index
     assert "<li>Functional check passed</li>" in index
     assert "<script>bad()</script>" not in index
     assert '<details id="plan" class="attempt-panel plan-panel">' in index
@@ -208,6 +225,70 @@ def test_render_audit_site_publishes_sanitized_artifacts(tmp_path: Path) -> None
         site_dir / "static/artifacts/monitor-static/vis@4.17.0/dist/vis.min.js"
     ).exists()
     assert (site_dir / "static/css/audit.css").exists()
+    audit_js = (site_dir / "static/js/audit.js").read_text(encoding="utf-8")
+    assert "window.MathJax" in audit_js
+    assert '["$", "$"]' in audit_js
+    assert '["\\\\(", "\\\\)"]' in audit_js
+    assert not (site_dir / "static/js/plotly.min.js").exists()
+    assert (site_dir / "static/js/mathjax-tex-svg.min.js").stat().st_size > 1_000_000
+
+
+def plotly_notebook_json() -> str:
+    """Return an executed notebook whose only output is a Plotly figure."""
+
+    return json.dumps(
+        {
+            "cells": [
+                {
+                    "cell_type": "code",
+                    "source": ["figure.show()"],
+                    "outputs": [
+                        {
+                            "output_type": "display_data",
+                            "data": {
+                                "application/vnd.plotly.v1+json": {
+                                    "data": [{"x": [1, 2], "y": [3, 4]}],
+                                    "layout": {"title": "Precision"},
+                                },
+                            },
+                        },
+                    ],
+                },
+            ],
+        },
+    )
+
+
+@pytest.mark.parametrize(
+    ("notebook", "expects_plotly"),
+    [
+        (json.dumps({"cells": []}), False),
+        (plotly_notebook_json(), True),
+    ],
+)
+def test_render_audit_site_ships_only_the_runtimes_it_needs(
+    tmp_path: Path,
+    notebook: str,
+    expects_plotly: bool,
+) -> None:
+    audit_dir = tmp_path / "pitch-discrimination-demo" / "audit"
+    manifest = audit_manifest()
+    notebook_artifact = manifest["artifacts"][2]
+    assert notebook_artifact["id"] == "analysis_notebook"
+    notebook_artifact["status"] = "present"
+    write(audit_dir / "audit.json", json.dumps(manifest) + "\n")
+    write_core_section_files(audit_dir)
+    write(audit_dir / "simulate/analysis/analysis.ipynb", notebook)
+
+    site_dir = render_audit_site(audit_dir, allow_invalid=True)
+
+    index = (site_dir / "index.html").read_text(encoding="utf-8")
+    assert '<script src="static/js/audit.js"></script>' in index
+    assert ("plotly.min.js" in index) is expects_plotly
+    assert (site_dir / "static/js/plotly.min.js").exists() is expects_plotly
+    # Neither the sections nor the notebook contain equations.
+    assert "mathjax" not in index
+    assert not (site_dir / "static/js/mathjax-tex-svg.min.js").exists()
 
 
 def test_render_audit_site_renders_evidence_view(tmp_path: Path) -> None:
@@ -281,10 +362,10 @@ def test_render_audit_site_renders_evidence_view(tmp_path: Path) -> None:
                 "created_by": "agent",
             },
             {
-                "id": "simulation_export",
+                "id": "simulate_export",
                 "kind": "data_export",
-                "path": "artifacts/simulated_data.zip",
-                "title": "Simulated data",
+                "path": "simulate/analysis/simulated_export",
+                "title": "Simulated export",
                 "description": "Simulated export.",
                 "required": True,
                 "status": "present",
@@ -345,13 +426,23 @@ def test_render_audit_site_renders_evidence_view(tmp_path: Path) -> None:
         ),
     )
     write_bytes(audit_dir / "artifacts/data.zip", b"data")
-    write_bytes(audit_dir / "artifacts/simulated_data.zip", b"simulated")
+    write(
+        audit_dir / "simulate/analysis/simulated_export/trials.csv",
+        "id\n1\n",
+    )
     write(audit_dir / "artifacts/source/experiment.py", "print('hello')\n")
-    write(audit_dir / "analyses/analysis.ipynb", json.dumps({"cells": []}))
+    write(
+        audit_dir / "simulate/analysis/analysis.ipynb",
+        json.dumps({"cells": []}),
+    )
 
     site_dir = render_audit_site(audit_dir, allow_invalid=True)
 
     index = (site_dir / "index.html").read_text(encoding="utf-8")
+    required_count = sum(
+        artifact.get("required") is True for artifact in manifest["artifacts"]
+    )
+    assert f"{required_count}/{required_count} required present" in index
     assert "<video" in index
     assert "Screenshot walkthrough" in index
     assert "Intro screen" in index
@@ -361,7 +452,7 @@ def test_render_audit_site_renders_evidence_view(tmp_path: Path) -> None:
     assert "<td>4</td>" in index
     assert "<td>3</td>" in index
     assert "Download data export" in index
-    assert "Download simulated data" in index
+    assert "simulate/analysis/simulated_export/trials.csv" in index
     assert "<h3><code>artifacts/data.zip</code></h3>" not in index
     assert "<h3><code>artifacts/source/experiment.py</code></h3>" in index
     assert '<div class="file-preview code-preview">' in index
@@ -421,7 +512,8 @@ def test_render_audit_site_polishes_core_section_layout(tmp_path: Path) -> None:
     audit_dir = tmp_path / "audit"
     init_audit(audit_dir)
     manifest = json.loads((audit_dir / "audit.json").read_text(encoding="utf-8"))
-    manifest["sections"][2]["kind"] = "markdown"  # Legacy packets used this kind.
+    timeline = next(s for s in manifest["sections"] if s["id"] == "timeline")
+    timeline["kind"] = "markdown"  # Legacy packets used this kind.
     write(audit_dir / "audit.json", json.dumps(manifest) + "\n")
     write(audit_dir / "PLAN.md", "# Plan\n\nBuild a small experiment.\n")
     write(audit_dir / "REPORT.md", "# Report\n\nThe experiment works.\n")
@@ -464,7 +556,7 @@ def test_render_audit_site_orders_performance_before_analysis(tmp_path: Path) ->
         json.dumps({"results": [{"n_bots": 1, "bots_succeeded": 1}]}),
     )
     write(
-        audit_dir / "analyses/analysis.ipynb",
+        audit_dir / "simulate/analysis/analysis.ipynb",
         json.dumps(
             {
                 "nbformat": 4,
@@ -592,6 +684,89 @@ def test_render_audit_site_inlines_experiment_entry_point(
     assert index.index('<details id="source"') < index.index('<details id="blockers"')
 
 
+@pytest.mark.parametrize("anchor", ["plan", "prompt"])
+def test_render_backfills_design_simulation_section(
+    tmp_path: Path, anchor: str
+) -> None:
+    audit_dir = tmp_path / "audit"
+    init_audit(audit_dir)
+    manifest = json.loads((audit_dir / "audit.json").read_text(encoding="utf-8"))
+    removed = (
+        {"design_simulation"} if anchor == "plan" else {"design_simulation", "plan"}
+    )
+    manifest["sections"] = [
+        section
+        for section in manifest["sections"]
+        if section.get("id") not in removed and section.get("kind") != "simulation"
+    ]
+    for artifact in manifest["artifacts"]:
+        if artifact.get("id") == "simulation_notebook":
+            artifact["status"] = "present"
+    write(audit_dir / "audit.json", json.dumps(manifest) + "\n")
+    write(
+        audit_dir / "simulate/design/simulation.ipynb",
+        json.dumps(
+            {
+                "nbformat": 4,
+                "nbformat_minor": 5,
+                "metadata": {},
+                "cells": [
+                    {
+                        "cell_type": "markdown",
+                        "metadata": {},
+                        "source": ["# Design simulation notebook\n"],
+                    }
+                ],
+            }
+        ),
+    )
+
+    index = (render_audit_site(audit_dir) / "index.html").read_text(encoding="utf-8")
+
+    assert index.index(f'<details id="{anchor}"') < index.index(
+        '<details id="design_simulation"'
+    )
+    assert "Design simulation notebook" in index
+
+
+def test_render_does_not_show_a_hidden_simulation_section(tmp_path: Path) -> None:
+    audit_dir = tmp_path / "audit"
+    init_audit(audit_dir)
+    manifest = json.loads((audit_dir / "audit.json").read_text(encoding="utf-8"))
+    for section in manifest["sections"]:
+        if (
+            section.get("id") == "design_simulation"
+            or section.get("kind") == "simulation"
+        ):
+            section["display"] = False
+    for artifact in manifest["artifacts"]:
+        if artifact.get("id") == "simulation_notebook":
+            artifact["status"] = "present"
+    write(audit_dir / "audit.json", json.dumps(manifest) + "\n")
+    write(
+        audit_dir / "simulate/design/simulation.ipynb",
+        json.dumps(
+            {
+                "nbformat": 4,
+                "nbformat_minor": 5,
+                "metadata": {},
+                "cells": [
+                    {
+                        "cell_type": "markdown",
+                        "metadata": {},
+                        "source": ["# Hidden simulation notebook\n"],
+                    }
+                ],
+            }
+        ),
+    )
+
+    index = (render_audit_site(audit_dir) / "index.html").read_text(encoding="utf-8")
+
+    assert 'id="design_simulation"' not in index
+    assert "Hidden simulation notebook" not in index
+
+
 def test_render_audit_site_elevates_evidence_subsections(tmp_path: Path) -> None:
     audit_dir = tmp_path / "audit"
     init_audit(audit_dir)
@@ -609,13 +784,16 @@ def test_render_audit_site_elevates_evidence_subsections(tmp_path: Path) -> None
     write(
         audit_dir / "artifacts/monitor.html", "<html><head></head><body></body></html>"
     )
-    write_bytes(audit_dir / "artifacts/simulated_data.zip", b"zip bytes")
+    write(
+        audit_dir / "simulate/analysis/simulated_export/trials.csv",
+        "id\n1\n",
+    )
     write(
         audit_dir / "artifacts/performance.json",
         json.dumps({"results": [{"n_bots": 2, "bots_succeeded": 2}]}),
     )
     write(
-        audit_dir / "analyses/analysis.ipynb",
+        audit_dir / "simulate/analysis/analysis.ipynb",
         json.dumps(
             {
                 "nbformat": 4,
@@ -654,6 +832,47 @@ def test_render_audit_site_elevates_evidence_subsections(tmp_path: Path) -> None
     assert "Intro screen" in index
     assert "Open monitor snapshot" in index
     assert "Raw JSON" in index
+
+
+def test_render_shows_supporting_analysis_files_in_analysis_panel(
+    tmp_path: Path,
+) -> None:
+    audit_dir = tmp_path / "audit"
+    init_audit(audit_dir)
+    write(
+        audit_dir / "simulate/analysis/analysis.ipynb",
+        json.dumps(
+            {
+                "nbformat": 4,
+                "nbformat_minor": 5,
+                "metadata": {},
+                "cells": [
+                    {
+                        "cell_type": "markdown",
+                        "metadata": {},
+                        "source": ["Analysis body"],
+                    }
+                ],
+            }
+        ),
+    )
+    write(audit_dir / "simulate/analysis/summary.csv", "metric,value\nrmse,0.2\n")
+    write(audit_dir / "simulate/analysis/simulated_export/trials.csv", "id\n1\n")
+    manifest = json.loads((audit_dir / "audit.json").read_text(encoding="utf-8"))
+    for artifact in manifest["artifacts"]:
+        if artifact["id"] in {"analysis_notebook", "simulate_export"}:
+            artifact["status"] = "present"
+    write(audit_dir / "audit.json", json.dumps(manifest) + "\n")
+
+    index = (render_audit_site(audit_dir, allow_invalid=True) / "index.html").read_text(
+        encoding="utf-8"
+    )
+
+    analysis = index[index.index('id="analysis"') : index.index('id="files"')]
+    additional = index[index.index('id="files"') :]
+    assert "summary.csv" in analysis
+    assert "summary.csv" not in additional
+    assert "simulated_export/trials.csv" in analysis
 
 
 def test_render_audit_site_keeps_blockers_collapsed_and_explained(
@@ -747,8 +966,44 @@ def test_validate_audit_fails_when_present_artifact_file_is_missing(
     problems = validate_audit(audit_dir)
 
     assert any(
-        "artifact marked present but file is missing" in problem for problem in problems
+        "artifact marked present but path is missing" in problem for problem in problems
     )
+
+
+def test_validate_audit_rejects_present_empty_directory(tmp_path: Path) -> None:
+    audit_dir = tmp_path / "audit"
+    init_audit(audit_dir)
+    manifest = json.loads((audit_dir / "audit.json").read_text(encoding="utf-8"))
+    artifact = next(
+        item for item in manifest["artifacts"] if item["id"] == "simulate_export"
+    )
+    artifact["status"] = "present"
+    write(audit_dir / "audit.json", json.dumps(manifest) + "\n")
+
+    problems = validate_audit(audit_dir)
+
+    assert any(
+        "artifact marked present but path is missing or empty" in problem
+        for problem in problems
+    )
+
+
+def test_validate_audit_rejects_present_video_directory(tmp_path: Path) -> None:
+    audit_dir = tmp_path / "audit"
+    init_audit(audit_dir)
+    video_dir = audit_dir / "artifacts/participant.mp4"
+    video_dir.mkdir(parents=True)
+    write(video_dir / "note.txt", "not a video\n")
+    manifest = json.loads((audit_dir / "audit.json").read_text(encoding="utf-8"))
+    artifact = next(
+        item for item in manifest["artifacts"] if item["id"] == "participant_video"
+    )
+    artifact["status"] = "present"
+    write(audit_dir / "audit.json", json.dumps(manifest) + "\n")
+
+    problems = validate_audit(audit_dir)
+
+    assert any("must be a file, not a directory" in problem for problem in problems)
 
 
 def test_validate_audit_fails_when_required_artifact_lacks_blocker(
@@ -812,6 +1067,28 @@ def test_collect_audit_warnings_when_plan_section_missing(tmp_path: Path) -> Non
     warnings = collect_audit_warnings(audit_dir)
 
     assert any("no plan section" in warning for warning in warnings)
+
+
+def test_collect_audit_warnings_for_unexecuted_notebook(tmp_path: Path) -> None:
+    from psynet.audit.cli import collect_audit_warnings
+
+    audit_dir = tmp_path / "audit"
+    init_audit(audit_dir)
+    manifest = json.loads((audit_dir / "audit.json").read_text(encoding="utf-8"))
+    for artifact in manifest["artifacts"]:
+        if artifact["id"] == "analysis_notebook":
+            artifact["status"] = "present"
+    write(audit_dir / "audit.json", json.dumps(manifest) + "\n")
+    cell = {"cell_type": "code", "metadata": {}, "source": ["print(1)"], "outputs": []}
+    notebook = audit_dir / "simulate/analysis/analysis.ipynb"
+
+    def warnings_for(cell):
+        write(notebook, json.dumps({"nbformat": 4, "metadata": {}, "cells": [cell]}))
+        return [w for w in collect_audit_warnings(audit_dir) if "saved outputs" in w]
+
+    assert warnings_for(cell)
+    executed = dict(cell, outputs=[{"output_type": "stream", "text": "1\n"}])
+    assert not warnings_for(executed)
 
 
 def test_unparsed_timeline_entry_lines_skips_headings_and_examples() -> None:
@@ -967,9 +1244,22 @@ def test_mark_artifact_present_rejects_invalid_notebook(tmp_path: Path) -> None:
 
     audit_dir = tmp_path / "audit"
     init_audit(audit_dir)
-    write(audit_dir / "analyses/analysis.ipynb", "{not json")
+    write(audit_dir / "simulate/analysis/analysis.ipynb", "{not json")
 
     with pytest.raises(ValueError, match="invalid notebook JSON"):
+        mark_artifact_present(audit_dir, "analysis_notebook")
+
+
+def test_mark_artifact_present_rejects_notebook_directory(tmp_path: Path) -> None:
+    from psynet.audit.cli import mark_artifact_present
+
+    audit_dir = tmp_path / "audit"
+    init_audit(audit_dir)
+    notebook_dir = audit_dir / "simulate/analysis/analysis.ipynb"
+    notebook_dir.mkdir(parents=True)
+    write(notebook_dir / "note.txt", "not a notebook\n")
+
+    with pytest.raises(ValueError, match="must be a file, not a directory"):
         mark_artifact_present(audit_dir, "analysis_notebook")
 
 
@@ -1027,7 +1317,10 @@ def test_mark_artifact_present_accepts_notebook_larger_than_preview(
         ],
         "embedded_output": "x" * (MAX_AUDIT_TEXT_BYTES + 1),
     }
-    write(audit_dir / "analyses/analysis.ipynb", json.dumps(notebook))
+    write(
+        audit_dir / "simulate/analysis/analysis.ipynb",
+        json.dumps(notebook),
+    )
 
     mark_artifact_present(audit_dir, "analysis_notebook")
     site_dir = render_audit_site(audit_dir)
@@ -1277,7 +1570,7 @@ def test_validate_audit_fails_for_invalid_notebook_json(tmp_path: Path) -> None:
     write(
         audit_dir / "artifacts/monitor.html", "<html><head></head><body></body></html>"
     )
-    write(audit_dir / "analyses/analysis.ipynb", "{not json")
+    write(audit_dir / "simulate/analysis/analysis.ipynb", "{not json")
 
     problems = validate_audit(audit_dir)
 
@@ -1310,17 +1603,20 @@ def test_init_audit_creates_starter_structure_and_manifest(tmp_path: Path) -> No
     assert (audit_dir / "PLAN.md").exists()
     assert (audit_dir / "TIMELINE.md").exists()
     assert (audit_dir / "artifacts/screenshots").is_dir()
-    assert (audit_dir / "analyses").is_dir()
     assert (audit_dir / "logs").is_dir()
+    assert (audit_dir / "simulate/analysis").is_dir()
+    assert (audit_dir / "simulate/design").is_dir()
     manifest = json.loads((audit_dir / "audit.json").read_text(encoding="utf-8"))
     assert "title" not in manifest["experiment"]
     assert "source_base" not in manifest["experiment"]
     assert "source_path" not in manifest["experiment"]
+    assert manifest["experiment"]["psynet_version"] == psynet_version
     assert manifest["profile"] == "psynet.core"
     assert manifest["extensions"] == []
     assert [section["id"] for section in manifest["sections"]] == [
         "prompt",
         "plan",
+        "design_simulation",
         "timeline",
         "report",
         "source",
@@ -1341,7 +1637,7 @@ def test_init_audit_creates_starter_structure_and_manifest(tmp_path: Path) -> No
         "participant_video",
         "performance_result",
         "monitor_snapshot",
-        "simulation_export",
+        "simulate_export",
         "analysis_notebook",
     }
     assert validate_audit(audit_dir) == []
@@ -1562,7 +1858,7 @@ def test_validate_rejects_escaping_render_site_path(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    "site_path", [".", "artifacts/site", "analyses/site", "logs/site"]
+    "site_path", [".", "artifacts/site", "logs/site", "simulate/site"]
 )
 def test_validate_rejects_render_site_path_overlapping_packet_content(
     tmp_path: Path,
@@ -1687,3 +1983,88 @@ def test_audit_serve_cli_render_then_serve(tmp_path: Path, monkeypatch) -> None:
     assert result.exit_code == 0, result.output
     assert "Rendered experiment audit site" in result.output
     assert calls == [(audit_dir / "site", "127.0.0.1", 9123)]
+
+
+def test_rendered_header_shows_experiment_git_commit(tmp_path, monkeypatch):
+    def git(*args):
+        return subprocess.run(
+            ["git", "-c", "user.name=t", "-c", "user.email=t@t", *args],
+            cwd=tmp_path,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+
+    git("init", "-q")
+    (tmp_path / "experiment.py").write_text("x = 1\n", encoding="utf-8")
+    git("add", "experiment.py")
+    git("commit", "-qm", "init")
+    sha = git("rev-parse", "--short", "HEAD")
+    init_audit(tmp_path / "audit")
+    monkeypatch.chdir(tmp_path)
+
+    site_dir = render_audit_site(tmp_path / "audit", allow_invalid=True)
+    index = (site_dir / "index.html").read_text(encoding="utf-8")
+    assert f"<code>{sha}</code>" in index
+
+    (tmp_path / "experiment.py").write_text("x = 2\n", encoding="utf-8")
+    assert experiment_git_commit() == f"{sha}-dirty"
+
+
+@pytest.mark.parametrize("has_deploy_toml", [True, False])
+def test_source_section_shows_deployed_experiment_modules(
+    tmp_path: Path, has_deploy_toml: bool
+) -> None:
+    from psynet.audit.site import render_source_section
+
+    if has_deploy_toml:
+        (tmp_path / "deploy.toml").write_text(
+            'version = 1\n[exclude]\npaths = ["local_only"]\nnames = ["env"]\n'
+        )
+    for relative in [
+        "experiment.py",
+        "personality.py",
+        "response_model/core.py",
+        "test.py",
+        "tests/test_flow.py",
+        "local_only/scratch.py",
+        ".venv/lib/site.py",
+        "env/lib/python3.12/site-packages/pkg.py",
+        "custom_environment/pyvenv.cfg",
+        "custom_environment/bin/activate_this.py",
+        "audit/simulate/design/core.py",
+    ]:
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"# {relative}\n")
+    (tmp_path / "response_model" / "__init__.py").write_text("")
+
+    rendered = render_source_section(tmp_path / "audit", {"experiment": {}})
+
+    for shown in ["experiment.py", "personality.py", "response_model/core.py"]:
+        assert f"# {shown}" in rendered
+    for hidden in [
+        "test.py",
+        "tests/test_flow.py",
+        "local_only/",
+        ".venv/lib/site.py",
+        "env/lib/",
+        "custom_environment/",
+        "audit/",
+    ]:
+        assert f"# {hidden}" not in rendered
+    assert rendered.index("# experiment.py") < rendered.index("# personality.py")
+
+
+def test_source_section_notes_omitted_modules(tmp_path: Path) -> None:
+    from psynet.audit.site import render_source_section
+
+    for index in range(33):
+        (tmp_path / f"module_{index:02}.py").write_text(f"# module {index}\n")
+    (tmp_path / "experiment.py").write_text("# experiment\n")
+
+    rendered = render_source_section(tmp_path / "audit", {"experiment": {}})
+
+    assert "# module 29" in rendered
+    assert "# module 30" not in rendered
+    assert "3 more Python modules omitted" in rendered

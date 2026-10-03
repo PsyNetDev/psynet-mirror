@@ -1,0 +1,1 @@
+Fatal experiment errors now fail the participant as ``error_recovery`` when a recovery plan is stored, while the exception type remains on ``failure_tags``. Error pages reuse an already executed voluntary leave plan instead of treating a known participant as an unidentified session.

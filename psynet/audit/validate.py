@@ -28,6 +28,8 @@ from psynet.audit.constants import (
     format_allowed,
 )
 from psynet.audit.content import (
+    artifact_allows_directory,
+    artifact_path_is_ready,
     section_text,
     validate_present_artifact_file,
 )
@@ -45,7 +47,11 @@ from psynet.audit.timeline import (
     ALLOWED_TIMELINE_ACTORS,
     unparsed_timeline_entry_lines,
 )
-from psynet.audit.video import is_git_lfs_pointer, probe_video_metadata
+from psynet.audit.video import (
+    is_git_lfs_pointer,
+    probe_video_metadata,
+    silent_audio_warning,
+)
 
 
 def validate_audit_blockers(
@@ -254,21 +260,34 @@ def validate_audit_artifacts(
             continue
 
         if status == "present":
-            if not artifact_path.is_file():
+            allow_directory = artifact_allows_directory(artifact_id)
+            if artifact_path.is_dir() and not allow_directory:
                 problems.append(
-                    f"{label}: artifact marked present but file is missing: "
+                    f"{label}: artifact must be a file, not a directory: "
+                    f"{artifact_path}",
+                )
+                continue
+            if not artifact_path_is_ready(
+                artifact_path, allow_directory=allow_directory
+            ):
+                problems.append(
+                    f"{label}: artifact marked present but path is missing or empty: "
                     f"{artifact_path}",
                 )
                 continue
             problems.extend(
-                validate_present_artifact_file(
-                    artifact_path,
-                    artifact_kind=(
-                        str(artifact.get("kind"))
-                        if isinstance(artifact.get("kind"), str)
-                        else None
-                    ),
-                    require_video_probe=False,
+                (
+                    validate_present_artifact_file(
+                        artifact_path,
+                        artifact_kind=(
+                            str(artifact.get("kind"))
+                            if isinstance(artifact.get("kind"), str)
+                            else None
+                        ),
+                        require_video_probe=False,
+                    )
+                    if artifact_path.is_file()
+                    else []
                 ),
             )
 
@@ -314,7 +333,7 @@ def collect_media_validation_warnings(
     audit_dir: Path,
     manifest: dict[str, Any],
 ) -> list[str]:
-    """Return warnings when present video artifacts could not be probed."""
+    """Return warnings for present videos that could not be probed or are silent."""
 
     artifacts = manifest.get("artifacts")
     if not isinstance(artifacts, list):
@@ -344,6 +363,52 @@ def collect_media_validation_warnings(
                 "video limits were not checked",
             )
             break
+        if probe.metadata is not None:
+            silent_warning = silent_audio_warning(artifact_path, probe.metadata)
+            if silent_warning:
+                warnings.append(silent_warning)
+    return warnings
+
+
+def collect_unexecuted_notebook_warnings(
+    audit_dir: Path,
+    manifest: dict[str, Any],
+) -> list[str]:
+    """Warn about present notebooks whose code cells have no saved outputs."""
+
+    artifacts = manifest.get("artifacts")
+    if not isinstance(artifacts, list):
+        return []
+    warnings: list[str] = []
+    for artifact in artifacts:
+        if not isinstance(artifact, dict) or artifact.get("status") != "present":
+            continue
+        artifact_path, path_problems = relative_audit_path(
+            audit_dir, artifact.get("path"), f"artifact {artifact.get('id')!r}"
+        )
+        if (
+            path_problems
+            or artifact_path is None
+            or artifact_path.suffix != ".ipynb"
+            or not artifact_path.is_file()
+        ):
+            continue
+        try:
+            cells = json.loads(artifact_path.read_text(encoding="utf-8")).get("cells")
+        except (OSError, ValueError, AttributeError):
+            continue
+        code_cells = [
+            cell
+            for cell in cells or []
+            if isinstance(cell, dict)
+            and cell.get("cell_type") == "code"
+            and "".join(cell.get("source") or "").strip()
+        ]
+        if code_cells and not any(cell.get("outputs") for cell in code_cells):
+            warnings.append(
+                f"{artifact_path}: no code cell has saved outputs; the audit shows "
+                "saved outputs only, so execute the notebook before rendering",
+            )
     return warnings
 
 
@@ -416,6 +481,7 @@ def collect_audit_warnings(
                     "agent-led implementation audits (optional for retrospective audits)",
                 )
     warnings.extend(collect_media_validation_warnings(audit_dir, manifest))
+    warnings.extend(collect_unexecuted_notebook_warnings(audit_dir, manifest))
     implementation = manifest.get("implementation")
     if isinstance(implementation, dict):
         summary = implementation.get("summary")

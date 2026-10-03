@@ -23,6 +23,9 @@ static/assets
 # Local data exports
 exports/
 
+# Generated audit HTML preview (the rest of audit/ may still be tracked)
+audit/site/
+
 # Legacy experiment source snapshot (no longer generated)
 source_code.zip
 

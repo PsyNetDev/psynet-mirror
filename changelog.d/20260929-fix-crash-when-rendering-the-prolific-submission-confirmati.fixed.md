@@ -1,0 +1,1 @@
+Fixed a crash when rendering the "Your submission has been sent to Prolific" confirmation after a participant who left early clicks Submit. Participants previously saw a generic error page in place of the confirmation; the error page that offers the Submit button is unchanged.

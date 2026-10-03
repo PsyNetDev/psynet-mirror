@@ -97,7 +97,7 @@ TEST_EXPERIMENT_TREE_PREFIXES = (
 )
 
 # Custom config.txt files that remain tracked under test experiment trees.
-# Stock configs are gitignored; add new customs with ``git add -f``.
+# Stock configs and READMEs are gitignored; add new customs with ``git add -f``.
 TEST_EXPERIMENT_CUSTOM_CONFIGS = {
     "tests/experiments/async_processes/config.txt",
     "tests/playwright/experiments/adversarial_lifecycle/config.txt",
@@ -108,22 +108,29 @@ TEST_EXPERIMENT_CUSTOM_CONFIGS = {
     "tests/playwright/experiments/legacy_page_javascript/config.txt",
     "tests/playwright/experiments/media_download_progress/config.txt",
     "tests/playwright/experiments/same_session_page_update/config.txt",
+    "tests/playwright/experiments/timeline_hold/config.txt",
+    "tests/playwright/experiments/timeline_hold_feedback/config.txt",
+    "tests/playwright/experiments/timeline_hold_reload/config.txt",
+    "tests/playwright/experiments/timeline_hold_same_session/config.txt",
+    "tests/playwright/experiments/timeline_hold_timeout/config.txt",
+    "tests/playwright/experiments/timeline_hold_client/config.txt",
+    "tests/playwright/experiments/stacked_group_holds/config.txt",
     "tests/deployment/payment_flows_prolific/config.txt",
     "tests/deployment/audio_gibbs/config.txt",
+    "tests/deployment/auto_recruit_prolific/config.txt",
 }
 
 AUTHORED_TEST_EXPERIMENT_FILENAMES = {
     "experiment.py",
     "requirements.txt",
     "utils.py",
+    "local_helper.py",
     "test_imports.py",
     "debug.sh",
     "shell.sh",
     "lucid_recruitment_config.json",
     "qualification_prolific_en.json",
-    "DEPLOYMENT_ID",
     "custom_synth.py",
-    "pre_deployed_assets.csv",
 }
 
 
@@ -197,14 +204,17 @@ def test_test_experiment_sources_contain_only_authored_files():
 
 
 def test_test_experiment_stock_config_is_gitignored():
-    """Stock config.txt under test trees is ignored; tracked customs stay tracked."""
+    """Stock config.txt and README.md under test trees are ignored; tracked customs stay tracked."""
     psynet_root = get_psynet_root()
-    stock_configs = [
+    stock_scaffold_files = [
         "tests/experiments/static/config.txt",
+        "tests/experiments/static/README.md",
         "tests/playwright/experiments/static/config.txt",
+        "tests/playwright/experiments/timeline_hold/README.md",
         "tests/deployment/example/config.txt",
+        "tests/deployment/example/README.md",
     ]
-    for relative_path in stock_configs:
+    for relative_path in stock_scaffold_files:
         result = subprocess.run(
             ["git", "check-ignore", "--no-index", "-q", relative_path],
             cwd=psynet_root,
@@ -222,16 +232,19 @@ def test_test_experiment_stock_config_is_gitignored():
 
 
 def test_vendored_consent_package_init_is_not_gitignored():
-    """Deployment consent packages stay addable despite scaffold ``__init__.py`` ignores."""
+    """Deployment consent packages stay addable despite scaffold ignore rules."""
     psynet_root = get_psynet_root()
-    relative_path = "tests/deployment/audio_gibbs/consents_cococo/__init__.py"
-    result = subprocess.run(
-        ["git", "check-ignore", "--no-index", "-q", relative_path],
-        cwd=psynet_root,
-    )
-    assert result.returncode == 1, (
-        f"{relative_path} should not match scaffold ignore rules"
-    )
+    for relative_path in (
+        "tests/deployment/audio_gibbs/consents_cococo/__init__.py",
+        "tests/deployment/audio_gibbs/consents_cococo/README.md",
+    ):
+        result = subprocess.run(
+            ["git", "check-ignore", "--no-index", "-q", relative_path],
+            cwd=psynet_root,
+        )
+        assert result.returncode == 1, (
+            f"{relative_path} should not match scaffold ignore rules"
+        )
 
 
 def test_skipped_dependency_check_does_not_require_constraints(monkeypatch):
@@ -571,7 +584,7 @@ def _test_local_after_policy_review(experiment_dir, env_updates=None):
     if first.returncode == 0:
         return first
     combined = first.stdout + first.stderr
-    assert "created a new deploy.toml" in combined, combined
+    assert "deploy.toml file for this experiment" in combined, combined
     return _run_command(command, experiment_dir, env_updates=env_updates)
 
 
@@ -603,7 +616,7 @@ def test_empty_directory_scaffold_git_init_and_test_local(tmp_path):
         env_updates={"SKIP_DEPENDENCY_CHECK": "1"},
     )
     assert first.returncode != 0, first.stdout + first.stderr
-    assert "created a new deploy.toml" in first.stdout + first.stderr
+    assert "deploy.toml file for this experiment" in first.stdout + first.stderr
 
     result = _run_command(
         ["psynet", "test", "local"],

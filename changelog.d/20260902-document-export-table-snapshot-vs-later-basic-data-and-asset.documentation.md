@@ -1,0 +1,1 @@
+Document that table CSVs and identifier sidecars are one repeatable-read snapshot, while basic data and assets are built afterwards from live state. Document that read-only asset-cache hits are trusted without re-hashing.

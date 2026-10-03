@@ -692,11 +692,10 @@
                 return formatDuration(diff) + " ago"
             }
 
-            if (experiment.psynet_export_url) {
-                shortcuts += makeIcon("database-fill-down", experiment.psynet_export_url, "PsyNet export (" + lastExport(experiment.psynet_export_timestamp) + ")")
-            }
-            if (experiment.database_export_url) {
-                shortcuts += makeIcon("database-down", experiment.database_export_url, "Database export (" + lastExport(experiment.database_export_timestamp) + ")")
+            if (experiment.export_url || experiment.psynet_export_url) {
+                const url = experiment.export_url || experiment.psynet_export_url;
+                const ts = experiment.export_timestamp || experiment.psynet_export_timestamp;
+                shortcuts += makeIcon("database-fill-down", url, "Export (" + lastExport(ts) + ")")
             }
 
             if (experiment.is_ssh_deployment) {

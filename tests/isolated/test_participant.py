@@ -89,6 +89,15 @@ class TestParticipantFailure:
         assert not trial.finalized
         assert not trial.failed
 
+    def test_fail_can_leave_terminal_navigation_to_exit_recovery(
+        self, participant, trial
+    ):
+        participant.fail("error_recovery", redirect_to_end=False)
+
+        assert participant.failed
+        assert trial.failed
+        assert participant.pending_redirect is None
+
     def test_incomplete_cue_trial_fails_without_trial_maker(
         self, participant, trial_class, launched_experiment
     ):
@@ -359,3 +368,18 @@ class TestParticipantFailure:
         assert "sync group below minimum size" in partner.failure_tags
         assert group.n_active_participants == 0
         assert partner not in group.active_participants
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("static")], indirect=True
+)
+def test_initialize_bot_sees_bot_id(launched_experiment, monkeypatch):
+    seen = []
+    monkeypatch.setattr(
+        type(launched_experiment),
+        "initialize_bot",
+        lambda self, bot: seen.append(bot.id),
+    )
+    bot = Bot()
+    assert bot.id is not None
+    assert seen == [bot.id]

@@ -28,14 +28,12 @@ class DenseTrialMaker(StaticTrialMaker):
     :class:`~psynet.trial.dense.SameDifferentTrial` for same-different paradigms and
     :class:`~psynet.trial.dense.AXBTrial` for AXB paradigms.
 
-    The user must also specify a
-    :class:`~psynet.trial.dense.ConditionList`, which contains a list of
-    :class:`~psynet.trial.dense.DenseNode` objects.
-    These different :class:`~psynet.trial.dense.DenseNode` objects are used for specifying the different
-    classes of stimuli seen by the participant.
-    A given participant will typically receive trials from a variety of Conditions over the course of the trial maker.
-    By default, the different Conditions will be randomly interspersed with one another;
-    however, it is also possible to assign different Conditions to different blocks,
+    The user must also pass a list of
+    :class:`~psynet.trial.dense.DenseNode` objects as ``conditions``.
+    Each of these nodes defines one condition, that is, one class of stimuli seen by the participant.
+    A given participant will typically receive trials from a variety of conditions over the course of the trial maker.
+    By default, the different conditions will be randomly interspersed with one another;
+    however, it is also possible to assign different conditions to different blocks,
     so as to constrain the order of their presentation to the participant.
 
     The user may also override the following methods, if desired:
@@ -183,9 +181,9 @@ class DenseTrialMaker(StaticTrialMaker):
         Returns the networks owned by the trial maker.
 
     performance_threshold : float
-        Score threshold used by the default performance check method, defaults to 0.0.
-        By default, corresponds to the minimum proportion of non-failed trials that
-        the participant must achieve to pass the performance check.
+        Threshold for the built-in performance check chosen by ``performance_check_type``,
+        defaults to -1.0. The participant passes when the score (the summed trial scores,
+        the proportion of non-failed trials, or the consistency) is at least this value.
         Override this to change the behavior.
 
     end_performance_check_waits : bool
@@ -217,6 +215,7 @@ class DenseTrialMaker(StaticTrialMaker):
         sync_group_max_wait_action: Literal["fail", "kick"] = "fail",
         sync_group_timeout_between_barriers_time: Optional[float] = None,
         sync_group_timeout_between_barriers_action: Literal["kick", "fail"] = "fail",
+        sync_group_wait_content=None,
     ):
         super().__init__(
             id_=id_,
@@ -241,6 +240,7 @@ class DenseTrialMaker(StaticTrialMaker):
             sync_group_max_wait_action=sync_group_max_wait_action,
             sync_group_timeout_between_barriers_time=sync_group_timeout_between_barriers_time,
             sync_group_timeout_between_barriers_action=sync_group_timeout_between_barriers_action,
+            sync_group_wait_content=sync_group_wait_content,
         )
 
 
@@ -266,7 +266,7 @@ class DenseNode(StaticNode):
         The associated block.
         Defaults to a single block for all trials.
         Use this in combination with :meth:`~psynet.trial.dense.DenseTrialMaker.choose_block_order`
-        to manipulate the order in which Conditions are presented to participants.
+        to manipulate the order in which conditions are presented to participants.
     """
 
     def __init__(

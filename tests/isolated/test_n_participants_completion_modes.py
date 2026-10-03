@@ -73,10 +73,10 @@ class TestNParticipantsCompletionModes:
         trial_maker.start(failed_after_finish)
         trial_maker.end(failed_after_finish)
 
-        aborted_inside = _make_participant(experiment)
-        trial_maker.start(aborted_inside)
-        aborted_inside.aborted = True
-        aborted_inside.module_state.abort()
+        early_exited_inside = _make_participant(experiment)
+        trial_maker.start(early_exited_inside)
+        early_exited_inside.early_exited = True
+        early_exited_inside.module_state.mark_early_exited()
 
         not_yet_started = _make_participant(experiment)
         assert "quota" not in not_yet_started.module_states

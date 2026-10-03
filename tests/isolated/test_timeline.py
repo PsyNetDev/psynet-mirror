@@ -1,4 +1,6 @@
+import re
 import warnings
+from importlib import resources
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -6,17 +8,32 @@ from unittest.mock import MagicMock, patch
 import pytest
 from markupsafe import Markup
 
-from psynet.end import UnsuccessfulEndLogic
+from psynet.end import (
+    RejectedConsentLogic,
+    SuccessfulEndLogic,
+    UnsuccessfulEndLogic,
+)
+from psynet.exit import (
+    EarlyExitConfirmation,
+    ExitContext,
+    ExitPath,
+    ExitPlan,
+    PaymentDecision,
+    PaymentState,
+)
 from psynet.experiment import Experiment
 from psynet.page import InfoPage, SuccessfulEndPage, UnsuccessfulEndPage
+from psynet.participant import Participant
 from psynet.timeline import (
     AsyncCodeBlock,
     CodeBlock,
     CreditEstimate,
     Elt,
+    Event,
     MediaSpec,
     Page,
     PageMaker,
+    ProgressStage,
     Timeline,
     join,
     switch,
@@ -133,6 +150,124 @@ def test_embedded_module_is_rejected(html):
         Page._check_embedded_script_contract(html)
 
 
+def test_partial_render_skips_beautifulsoup_for_fragment_roots(monkeypatch):
+    """In-place fragments must not BeautifulSoup the timeline shell unless needed."""
+    import psynet.timeline as timeline_mod
+
+    calls = {"n": 0}
+    real_init = timeline_mod.BeautifulSoup.__init__
+
+    def tracking_init(self, *args, **kwargs):
+        calls["n"] += 1
+        return real_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(timeline_mod.BeautifulSoup, "__init__", tracking_init)
+    html = """
+    <div id="psynet-timeline-fragment">
+      <div id="main-body"><p>Hello</p><div>nested</div></div>
+      <script>var x = 1;</script>
+      <script type="application/json">{"html": "</div>"}</script>
+    </div>
+    """
+    rendered = Page._extract_partial_render(html)
+    assert calls["n"] == 0
+    assert "main-body" in rendered
+    assert "nested" in rendered
+    assert 'type="text/psynet-script"' in rendered
+    assert '{"html": "</div>"}' in rendered
+
+
+def test_partial_render_does_not_rewrite_script_tags_inside_json():
+    html = """
+    <div id="psynet-timeline-fragment">
+      <script id="psynet-template-data" type="application/json">{"prompt": "<script src=x>"}</script>
+      <script>var x = 1;</script>
+    </div>
+    """
+    rendered = Page._extract_partial_render(html)
+    assert '{"prompt": "<script src=x>"}' in rendered
+    assert rendered.count('type="text/psynet-script"') == 1
+    assert "var x = 1;" in rendered
+
+
+def test_template_string_for_render_rewrites_timeline_page_parent():
+    child = '{% extends "timeline-page.html" %}\n{% block main_body %}Hi{% endblock %}'
+    rewritten = Page._template_string_for_render(child, partial_mode=True)
+    assert '{% extends "timeline-fragment.html" %}' in rewritten
+    assert '{% extends "timeline-page.html" %}' not in rewritten
+    assert Page._template_string_for_render(child, partial_mode=False) == child
+    custom = "{% extends 'macros.html' %}<p>custom</p>"
+    assert Page._template_string_for_render(custom, partial_mode=True) == custom
+
+
+def test_rewritten_wait_page_compiles_against_the_fragment_parent():
+    from importlib import resources
+
+    from jinja2 import Environment, FileSystemLoader
+
+    templates = resources.files("psynet") / "templates"
+    env = Environment(loader=FileSystemLoader(str(templates)), autoescape=True)
+    env.get_template("timeline-fragment.html")
+    source = (templates / "wait-page.html").read_text(encoding="utf-8")
+    rewritten = Page._template_string_for_render(source, partial_mode=True)
+    assert '{% extends "timeline-fragment.html" %}' in rewritten
+    env.from_string(rewritten)
+
+
+def test_spa_markup_skips_beautifulsoup_without_html_tags(monkeypatch):
+    import psynet.timeline as timeline_mod
+
+    calls = {"n": 0}
+    real_init = timeline_mod.BeautifulSoup.__init__
+
+    def tracking_init(self, *args, **kwargs):
+        calls["n"] += 1
+        return real_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(timeline_mod.BeautifulSoup, "__init__", tracking_init)
+    codes = Page._collect_spa_markup_contract_codes(
+        '<p><span style="font-weight: bold;">Hello</span></p>'
+    )
+    assert calls["n"] == 0
+    assert codes == []
+
+
+def test_spa_markup_still_parses_style_tags(monkeypatch):
+    import psynet.timeline as timeline_mod
+
+    calls = {"n": 0}
+    real_init = timeline_mod.BeautifulSoup.__init__
+
+    def tracking_init(self, *args, **kwargs):
+        calls["n"] += 1
+        return real_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(timeline_mod.BeautifulSoup, "__init__", tracking_init)
+    codes = Page._collect_spa_markup_contract_codes(
+        "<p>Hello</p><style>.x { color: red; }</style>"
+    )
+    assert calls["n"] == 1
+    assert "style_tag" in codes
+
+
+def test_embedded_script_contract_skips_parsing_pages_without_modules(monkeypatch):
+    """Full-page render must not BeautifulSoup the timeline shell unless needed."""
+    import psynet.timeline as timeline_mod
+
+    calls = {"n": 0}
+    real_init = timeline_mod.BeautifulSoup.__init__
+
+    def tracking_init(self, *args, **kwargs):
+        calls["n"] += 1
+        return real_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(timeline_mod.BeautifulSoup, "__init__", tracking_init)
+    Page._check_embedded_script_contract(
+        "<script>var x = 1;</script><script type='text/javascript'>ok()</script>"
+    )
+    assert calls["n"] == 0
+
+
 def test_partial_body_extraction_uses_named_fragment_wrapper():
     html = """
     <html>
@@ -180,28 +315,856 @@ def test_partial_body_extraction_uses_named_fragment_wrapper():
     assert "spinner" not in fragment
 
 
+def test_timeline_fragment_ignores_commented_div_close():
+    """A commented-out ``</div>`` must not truncate the in-place fragment."""
+    html = """
+    <div id="psynet-timeline-fragment">
+      <div id="main-body">
+        <!-- </div> -->
+        <p id="after-comment">still inside</p>
+      </div>
+    </div>
+    """
+    inner = Page._timeline_fragment_inner_html(html)
+    assert inner is not None
+    assert "still inside" in inner
+    fragment = Page._extract_partial_body(html)
+    assert "after-comment" in fragment
+    assert "still inside" in fragment
+
+
+def test_new_page_uuid_does_not_follow_seeded_random():
+    import random
+
+    from psynet.timeline import new_page_uuid
+
+    random.seed(0)
+    first = new_page_uuid()
+    random.seed(0)
+    second = new_page_uuid()
+    assert first != second
+
+
 def test_partial_body_extraction_requires_named_fragment_wrapper():
     with pytest.raises(ValueError, match="could not find fragment root"):
         Page._extract_partial_body("<div id='main-body'></div>")
 
 
-def test_partial_fragment_rendering_calls_pre_render_before_render():
-    # The inplace /response path must run pre_render() before rendering, mirroring
-    # the full /timeline path (get_current_page). Otherwise prompt/control
-    # pre_render() hooks are skipped when a page is reached via an inplace
-    # transition, which is now the default behavior.
+def test_prepared_partial_fragment_rendering_does_not_repeat_pre_render():
+    # /response runs pre_render() before committing its write phase. The
+    # read-only render helper must not execute author preparation twice.
     calls = []
     page = MagicMock()
     page.pre_render.side_effect = lambda: calls.append("pre_render")
     page.render.side_effect = lambda *args, **kwargs: calls.append("render") or "<html>"
     participant = SimpleNamespace(page_uuid="uuid-123")
-
-    payload = Experiment.render_partial_timeline_payload(
-        page, experiment=MagicMock(), participant=participant
+    experiment = MagicMock()
+    experiment.prepare_voluntary_exit_plan.side_effect = lambda *args: calls.append(
+        "prepare_exit"
     )
 
-    assert calls == ["pre_render", "render"]
+    payload = Experiment._render_prepared_partial_timeline_payload(
+        page, experiment=experiment, participant=participant
+    )
+
+    assert calls == ["render"]
+    experiment.prepare_voluntary_exit_plan.assert_not_called()
     assert payload == {"html": "<html>", "page_uuid": "uuid-123"}
+
+
+def test_same_session_page_payload_uses_pre_render_contents():
+    page = SimpleNamespace(contents="before")
+    page.pre_render = lambda: setattr(page, "contents", "after")
+    page.early_exit_available = lambda experiment, participant: False
+    page.__json__ = lambda participant: {"contents": page.contents}
+    payload = {"submission": "approved", "page": {"contents": "before"}}
+    participant = SimpleNamespace(page_uuid="uuid-after")
+
+    page_uuid = Experiment._prepare_approved_inplace_page(
+        MagicMock(), participant, page, payload
+    )
+
+    assert page_uuid == "uuid-after"
+    assert payload["page"]["contents"] == "after"
+
+
+def test_advance_past_ready_holds_skips_a_cleared_hold():
+    hold = MagicMock()
+    hold.is_timeline_hold = True
+    hold.prepare_resume_if_ready.return_value = True
+    hold.time_estimate = 1.5
+    nxt = MagicMock()
+    nxt.is_timeline_hold = False
+    experiment = Experiment.__new__(Experiment)
+    experiment.timeline = MagicMock()
+    experiment.timeline.get_current_elt.return_value = nxt
+    participant = SimpleNamespace()
+    participant.inc_progress = MagicMock()
+
+    page = experiment._advance_past_ready_holds(participant, hold)
+
+    assert page is nxt
+    hold.account_wait.assert_called_once_with(participant, settle=True)
+    participant.inc_progress.assert_called_once_with(1.5)
+    experiment.timeline.advance_page.assert_called_once_with(experiment, participant)
+
+
+def test_advance_past_ready_holds_clears_catchup_mark_if_advance_raises():
+    """A skip that raises must not leave silent=True for later holds."""
+    from psynet.timeline_hold import _consume_next_hold_catchup
+
+    hold = MagicMock()
+    hold.is_timeline_hold = True
+    hold.prepare_resume_if_ready.return_value = True
+    hold.time_estimate = 1
+    experiment = Experiment.__new__(Experiment)
+    experiment.timeline = MagicMock()
+    experiment.timeline.advance_page.side_effect = RuntimeError("boom")
+    participant = SimpleNamespace()
+    participant.inc_progress = MagicMock()
+
+    with pytest.raises(RuntimeError, match="boom"):
+        experiment._advance_past_ready_holds(participant, hold)
+
+    assert _consume_next_hold_catchup() is False
+
+
+def test_finalize_barrier_arrivals_stops_after_max_passes(monkeypatch):
+    """A timeline that mints a new visit each skip must not occupy a worker."""
+    participant = SimpleNamespace(id=1)
+    hold = SimpleNamespace(is_timeline_hold=True)
+
+    monkeypatch.setattr("psynet.sync._MAX_BARRIER_WALK_PASSES", 3)
+    monkeypatch.setattr(
+        "psynet.experiment._set_transaction_lock_timeout", lambda seconds: None
+    )
+    monkeypatch.setattr(
+        Experiment, "_run_queued_barrier_checks", classmethod(lambda *a, **k: True)
+    )
+    monkeypatch.setattr(
+        Experiment,
+        "_relock_arriver_after_barrier_check",
+        classmethod(lambda *a, **k: (participant, hold)),
+    )
+    monkeypatch.setattr(
+        Experiment,
+        "_next_stacked_barrier_checks",
+        staticmethod(lambda *a, **k: ["next-id"]),
+    )
+    monkeypatch.setattr(
+        "psynet.sync._pending_checks_should_wait_for_claim", lambda ids: False
+    )
+
+    with pytest.raises(RuntimeError, match="did not settle"):
+        Experiment._finalize_barrier_arrivals(
+            experiment=SimpleNamespace(),
+            participant_id=1,
+            checks=["first-id"],
+            result=SimpleNamespace(page=None, payload={}),
+        )
+
+
+def test_finalize_barrier_arrivals_settles_on_the_last_allowed_pass(monkeypatch):
+    """Emptying the queue on the cap pass must not raise."""
+    participant = SimpleNamespace(id=1)
+    hold = SimpleNamespace(is_timeline_hold=True)
+    n = {"i": 0}
+
+    def _next(*_a, **_k):
+        n["i"] += 1
+        return [] if n["i"] >= 3 else ["next-id"]
+
+    monkeypatch.setattr("psynet.sync._MAX_BARRIER_WALK_PASSES", 3)
+    monkeypatch.setattr(
+        "psynet.experiment._set_transaction_lock_timeout", lambda seconds: None
+    )
+    monkeypatch.setattr(
+        Experiment, "_run_queued_barrier_checks", classmethod(lambda *a, **k: True)
+    )
+    monkeypatch.setattr(
+        Experiment,
+        "_relock_arriver_after_barrier_check",
+        classmethod(lambda *a, **k: (participant, hold)),
+    )
+    monkeypatch.setattr(Experiment, "_next_stacked_barrier_checks", staticmethod(_next))
+    monkeypatch.setattr(
+        "psynet.sync._pending_checks_should_wait_for_claim", lambda ids: False
+    )
+
+    Experiment._finalize_barrier_arrivals(
+        experiment=SimpleNamespace(),
+        participant_id=1,
+        checks=["first-id"],
+        result=SimpleNamespace(page=None, payload={}),
+    )
+    assert n["i"] == 3
+
+
+def test_barrier_walk_budget_observes_once_after_the_last_work_unit(monkeypatch):
+    """The shared cap is N work units plus one terminal observation."""
+    from psynet.sync import _barrier_walk_budget
+
+    monkeypatch.setattr("psynet.sync._MAX_BARRIER_WALK_PASSES", 3)
+    assert list(_barrier_walk_budget()) == [True, True, True, False]
+
+
+def test_check_barriers_stops_after_max_passes(monkeypatch):
+    """A sweep that mints a new visit each pass must not occupy the poller."""
+    from psynet.sync import check_barriers
+
+    n = {"i": 0}
+
+    def _waiting():
+        n["i"] += 1
+        return [f"inst-{n['i']}"]
+
+    monkeypatch.setattr("psynet.sync._MAX_BARRIER_WALK_PASSES", 3)
+    monkeypatch.setattr("psynet.sync._waiting_barrier_instance_ids", _waiting)
+    monkeypatch.setattr("psynet.sync._process_barrier_instance", lambda *a, **k: False)
+
+    with pytest.raises(RuntimeError, match="poller sweep did not settle"):
+        check_barriers()
+
+    assert n["i"] == 4
+
+
+def test_check_barriers_settles_on_the_last_allowed_pass(monkeypatch):
+    """A sweep that empties on the cap pass must not raise."""
+    from psynet.sync import check_barriers
+
+    n = {"i": 0}
+
+    def _waiting():
+        n["i"] += 1
+        if n["i"] <= 3:
+            return [f"inst-{n['i']}"]
+        return []
+
+    monkeypatch.setattr("psynet.sync._MAX_BARRIER_WALK_PASSES", 3)
+    monkeypatch.setattr("psynet.sync._waiting_barrier_instance_ids", _waiting)
+    monkeypatch.setattr("psynet.sync._process_barrier_instance", lambda *a, **k: False)
+
+    check_barriers()
+    assert n["i"] == 4
+
+
+def test_timeline_hold_payload_warns_when_the_record_is_missing(caplog):
+    """A hold page without a durable record must not fail silently."""
+    from psynet.timeline_hold import _TimelineHoldPage
+
+    page = _TimelineHoldPage(
+        hold_id="barrier:missing",
+        expected_wait=1,
+        max_wait_time=None,
+        fix_time_credit=False,
+        check_interval=2,
+    )
+    page.get_hold_record = lambda _participant: None
+    participant = SimpleNamespace(id=7, page_uuid="gone")
+
+    with caplog.at_level("WARNING"):
+        assert page.timeline_hold_payload(participant) is None
+    assert "no durable record" in caplog.text
+    assert "barrier:missing" in caplog.text
+
+
+def test_advance_past_ready_holds_returns_a_waiting_hold_without_rereading():
+    """Consecutive holds can share a hold_id, so the walk must not compare ids."""
+    hold = MagicMock()
+    hold.is_timeline_hold = True
+    hold.hold_id = "wait_while"
+    hold.prepare_resume_if_ready.return_value = False
+    experiment = Experiment.__new__(Experiment)
+    experiment.timeline = MagicMock()
+    participant = SimpleNamespace()
+
+    page = experiment._advance_past_ready_holds(participant, hold)
+
+    assert page is hold
+    experiment.timeline.get_current_elt.assert_not_called()
+    hold.account_wait.assert_not_called()
+    experiment.timeline.advance_page.assert_not_called()
+
+
+def test_advance_past_ready_holds_stops_after_max_skip_steps():
+    """A cursor that never settles must not loop until the hold times out."""
+    n = {"i": 0}
+
+    def _new_hold(*_args, **_kwargs):
+        n["i"] += 1
+        hold = MagicMock()
+        hold.is_timeline_hold = True
+        hold.hold_id = f"barrier:{n['i']}"
+        hold.prepare_resume_if_ready.return_value = True
+        hold.time_estimate = 1
+        return hold
+
+    from psynet.sync import _MAX_BARRIER_WALK_PASSES
+
+    experiment = Experiment.__new__(Experiment)
+    experiment.timeline = MagicMock()
+    experiment.timeline.get_current_elt.side_effect = _new_hold
+    participant = SimpleNamespace(inc_progress=MagicMock())
+
+    with pytest.raises(RuntimeError, match="did not settle"):
+        experiment._advance_past_ready_holds(participant, _new_hold())
+
+    assert experiment.timeline.advance_page.call_count == _MAX_BARRIER_WALK_PASSES
+
+
+def test_advance_past_ready_holds_settles_on_the_last_allowed_skip(monkeypatch):
+    """Skipping exactly the cap number of ready holds must return the landing page."""
+    monkeypatch.setattr("psynet.sync._MAX_BARRIER_WALK_PASSES", 3)
+    landing = MagicMock()
+    landing.is_timeline_hold = False
+    n = {"i": 0}
+
+    def _next_page(*_args, **_kwargs):
+        n["i"] += 1
+        if n["i"] < 3:
+            hold = MagicMock()
+            hold.is_timeline_hold = True
+            hold.prepare_resume_if_ready.return_value = True
+            hold.time_estimate = 1
+            return hold
+        return landing
+
+    first = MagicMock()
+    first.is_timeline_hold = True
+    first.prepare_resume_if_ready.return_value = True
+    first.time_estimate = 1
+    experiment = Experiment.__new__(Experiment)
+    experiment.timeline = MagicMock()
+    experiment.timeline.get_current_elt.side_effect = _next_page
+    participant = SimpleNamespace(inc_progress=MagicMock())
+
+    page = experiment._advance_past_ready_holds(participant, first)
+
+    assert page is landing
+    assert experiment.timeline.advance_page.call_count == 3
+
+
+def test_advance_past_ready_holds_settles_on_a_wait_after_the_last_skip(monkeypatch):
+    """Landing on a still-waiting hold after the last skip must not raise."""
+    monkeypatch.setattr("psynet.sync._MAX_BARRIER_WALK_PASSES", 3)
+    waiting = MagicMock()
+    waiting.is_timeline_hold = True
+    waiting.hold_id = "barrier:catchup"
+    waiting.prepare_resume_if_ready.return_value = False
+    n = {"i": 0}
+
+    def _next_page(*_args, **_kwargs):
+        n["i"] += 1
+        if n["i"] < 3:
+            hold = MagicMock()
+            hold.is_timeline_hold = True
+            hold.prepare_resume_if_ready.return_value = True
+            hold.time_estimate = 1
+            return hold
+        return waiting
+
+    first = MagicMock()
+    first.is_timeline_hold = True
+    first.prepare_resume_if_ready.return_value = True
+    first.time_estimate = 1
+    experiment = Experiment.__new__(Experiment)
+    experiment.timeline = MagicMock()
+    experiment.timeline.get_current_elt.side_effect = _next_page
+    participant = SimpleNamespace(inc_progress=MagicMock())
+
+    page = experiment._advance_past_ready_holds(participant, first)
+
+    assert page is waiting
+    assert experiment.timeline.advance_page.call_count == 3
+
+
+def test_finalize_pending_hold_without_checks_relocks_the_participant(monkeypatch):
+    """A ready hold on GET /timeline must not advance without FOR UPDATE."""
+    participant = SimpleNamespace(id=42)
+    hold = SimpleNamespace(
+        is_timeline_hold=True,
+        is_ready_to_resume=lambda *_args: True,
+        prepare_resume_if_ready=lambda *_args: True,
+        pre_render=lambda: None,
+        early_exit_available=lambda *_args: False,
+    )
+    query = MagicMock()
+    query.with_for_update.return_value.populate_existing.return_value.get.return_value = participant
+    experiment = Experiment.__new__(Experiment)
+    experiment._participant_request_query = MagicMock(return_value=query)
+    experiment.timeline = MagicMock()
+    experiment.timeline.get_current_elt.return_value = hold
+    experiment._advance_past_ready_holds = MagicMock(return_value=hold)
+    monkeypatch.setattr("psynet.sync._take_pending_barrier_checks", lambda: [])
+    monkeypatch.setattr(
+        "psynet.experiment._set_transaction_lock_timeout",
+        lambda *_args: None,
+    )
+    monkeypatch.setattr(
+        "psynet.experiment.get_config",
+        lambda: SimpleNamespace(get=lambda _key: 5),
+    )
+    monkeypatch.setattr("psynet.experiment.db.session.commit", lambda: None)
+    query.get.return_value = participant
+
+    def boom(*_args, **_kwargs):
+        raise AssertionError("unreleased holds must not re-run barrier checks")
+
+    monkeypatch.setattr(Experiment, "_finalize_barrier_arrivals", boom)
+
+    returned_participant, returned_page = (
+        Experiment._finalize_pending_timeline_barriers(experiment, participant, hold)
+    )
+
+    query.with_for_update.assert_called_once_with(of=Participant)
+    experiment._advance_past_ready_holds.assert_called_once_with(participant, hold)
+    assert returned_participant is participant
+    assert returned_page is hold
+
+
+def test_finalize_pending_ready_hold_does_not_prepare_before_relock(monkeypatch):
+    """Timeout side effects must not run until GET /timeline holds FOR UPDATE."""
+    order = []
+    hold = SimpleNamespace(
+        is_timeline_hold=True,
+        is_ready_to_resume=lambda *_args: order.append("ready") or True,
+        prepare_resume_if_ready=lambda *_args: (
+            order.append("prepare")
+            or (_ for _ in ()).throw(
+                AssertionError("prepare_resume_if_ready must wait for FOR UPDATE")
+            )
+        ),
+        pre_render=lambda: None,
+        early_exit_available=lambda *_args: False,
+    )
+    participant = SimpleNamespace(id=42)
+    query = MagicMock()
+
+    def _for_update(**_kwargs):
+        order.append("lock")
+        return query.with_for_update.return_value
+
+    query.with_for_update.side_effect = _for_update
+    query.with_for_update.return_value.populate_existing.return_value.get.return_value = participant
+    experiment = Experiment.__new__(Experiment)
+    experiment._participant_request_query = MagicMock(return_value=query)
+    experiment.timeline = MagicMock()
+    experiment.timeline.get_current_elt.return_value = hold
+    experiment._advance_past_ready_holds = MagicMock(
+        side_effect=lambda *_args: order.append("advance") or hold
+    )
+    monkeypatch.setattr("psynet.sync._take_pending_barrier_checks", lambda: [])
+    monkeypatch.setattr(
+        "psynet.experiment._set_transaction_lock_timeout",
+        lambda *_args: order.append("timeout"),
+    )
+    monkeypatch.setattr(
+        "psynet.experiment.get_config",
+        lambda: SimpleNamespace(get=lambda _key: 5),
+    )
+    hold.pre_render = lambda: order.append("prepare")
+    monkeypatch.setattr(
+        "psynet.experiment.db.session.commit", lambda: order.append("commit")
+    )
+    query.get.return_value = participant
+
+    Experiment._finalize_pending_timeline_barriers(experiment, participant, hold)
+
+    assert order == [
+        "ready",
+        "timeout",
+        "lock",
+        "advance",
+        "commit",
+        "timeout",
+        "prepare",
+    ]
+    query.with_for_update.assert_called_once_with(of=Participant)
+
+
+def test_finalize_pending_skips_relock_when_the_page_is_not_a_hold(monkeypatch):
+    """A GET /timeline page that is not a hold must not take the fallback lock."""
+    page = SimpleNamespace(is_timeline_hold=False)
+    experiment = Experiment.__new__(Experiment)
+    experiment._participant_request_query = MagicMock()
+    monkeypatch.setattr("psynet.sync._take_pending_barrier_checks", lambda: [])
+
+    returned_participant, returned_page = (
+        Experiment._finalize_pending_timeline_barriers(
+            experiment, SimpleNamespace(id=1), page
+        )
+    )
+
+    experiment._participant_request_query.assert_not_called()
+    assert returned_page is page
+    assert returned_participant.id == 1
+
+
+def test_finalize_pending_unreleased_hold_rechecks_without_relock(monkeypatch):
+    """Dropped last-arrival checks may rerun, but not while this waiter holds FOR UPDATE."""
+    hold = SimpleNamespace(
+        is_timeline_hold=True,
+        is_ready_to_resume=lambda *_args: False,
+        prepare_resume_if_ready=lambda *_args: False,
+        barrier_id="main",
+        pre_render=lambda: None,
+        early_exit_available=lambda *_args: False,
+    )
+    participant = SimpleNamespace(id=1)
+    experiment = Experiment.__new__(Experiment)
+    experiment.timeline = MagicMock()
+    experiment.timeline.get_current_elt.return_value = hold
+    experiment._participant_request_query = MagicMock()
+    monkeypatch.setattr("psynet.sync._take_pending_barrier_checks", lambda: [])
+    monkeypatch.setattr(
+        "psynet.sync._hold_instance_id_for_page", lambda *_args: "instance-1"
+    )
+    monkeypatch.setattr(
+        "psynet.experiment._set_transaction_lock_timeout",
+        lambda *_args: None,
+    )
+    monkeypatch.setattr(
+        "psynet.experiment.get_config",
+        lambda: SimpleNamespace(get=lambda _key: 5),
+    )
+    captured = {}
+
+    def fake_finalize(cls, _experiment, participant_id, checks, result, **_kwargs):
+        captured["checks"] = checks
+        captured["participant_id"] = participant_id
+        result.page = hold
+        return participant
+
+    monkeypatch.setattr(
+        Experiment, "_finalize_barrier_arrivals", classmethod(fake_finalize)
+    )
+
+    returned_participant, returned_page = (
+        Experiment._finalize_pending_timeline_barriers(experiment, participant, hold)
+    )
+
+    experiment._participant_request_query.assert_not_called()
+    assert captured["checks"] == ["instance-1"]
+    assert captured["participant_id"] == 1
+    assert returned_page is hold
+    assert returned_participant is participant
+
+
+def test_finalize_pending_hold_without_is_ready_does_not_prepare(monkeypatch):
+    """GET must not run timeout/fail before lock when is_ready_to_resume is missing."""
+    prepared = []
+    hold = SimpleNamespace(
+        is_timeline_hold=True,
+        prepare_resume_if_ready=lambda *_args: prepared.append("prepare") or True,
+        barrier_id="main",
+        pre_render=lambda: None,
+        early_exit_available=lambda *_args: False,
+    )
+    participant = SimpleNamespace(id=1)
+    experiment = Experiment.__new__(Experiment)
+    experiment.timeline = MagicMock()
+    experiment.timeline.get_current_elt.return_value = hold
+    experiment._participant_request_query = MagicMock()
+    monkeypatch.setattr("psynet.sync._take_pending_barrier_checks", lambda: [])
+    monkeypatch.setattr(
+        "psynet.sync._hold_instance_id_for_page", lambda *_args: "instance-1"
+    )
+    monkeypatch.setattr(
+        "psynet.experiment._set_transaction_lock_timeout",
+        lambda *_args: None,
+    )
+    monkeypatch.setattr(
+        "psynet.experiment.get_config",
+        lambda: SimpleNamespace(get=lambda _key: 5),
+    )
+    captured = {}
+
+    def fake_finalize(cls, _experiment, participant_id, checks, result, **_kwargs):
+        captured["checks"] = checks
+        result.page = hold
+        return participant
+
+    monkeypatch.setattr(
+        Experiment, "_finalize_barrier_arrivals", classmethod(fake_finalize)
+    )
+
+    Experiment._finalize_pending_timeline_barriers(experiment, participant, hold)
+
+    assert prepared == []
+    experiment._participant_request_query.assert_not_called()
+    assert captured["checks"] == ["instance-1"]
+
+
+def test_finalize_pending_prepares_the_page_after_skipping_a_ready_hold(monkeypatch):
+    """GET /timeline must pre_render the page that will be shown after a skip."""
+    participant = SimpleNamespace(id=42)
+    nxt = SimpleNamespace(
+        is_timeline_hold=False,
+        pre_render=MagicMock(),
+        early_exit_available=lambda *_args: False,
+    )
+    hold = SimpleNamespace(
+        is_timeline_hold=True,
+        is_ready_to_resume=lambda *_args: True,
+        prepare_resume_if_ready=lambda *_args: True,
+    )
+    query = MagicMock()
+    query.with_for_update.return_value.populate_existing.return_value.get.return_value = participant
+    query.get.return_value = participant
+    experiment = Experiment.__new__(Experiment)
+    experiment._participant_request_query = MagicMock(return_value=query)
+    experiment.timeline = MagicMock()
+    experiment.timeline.get_current_elt.side_effect = [hold, hold, nxt]
+    experiment._advance_past_ready_holds = MagicMock(return_value=nxt)
+    monkeypatch.setattr("psynet.sync._take_pending_barrier_checks", lambda: [])
+    monkeypatch.setattr(
+        "psynet.experiment._set_transaction_lock_timeout",
+        lambda *_args: None,
+    )
+    monkeypatch.setattr(
+        "psynet.experiment.get_config",
+        lambda: SimpleNamespace(get=lambda _key: 5),
+    )
+    order = []
+    nxt.pre_render = MagicMock(side_effect=lambda: order.append("prepare"))
+    monkeypatch.setattr(
+        "psynet.experiment.db.session.commit", lambda: order.append("commit")
+    )
+    monkeypatch.setattr(
+        "psynet.experiment._set_transaction_lock_timeout",
+        lambda *_args: order.append("timeout"),
+    )
+
+    returned_participant, returned_page = (
+        Experiment._finalize_pending_timeline_barriers(experiment, participant, hold)
+    )
+
+    nxt.pre_render.assert_called_once()
+    assert order == ["timeout", "commit", "timeout", "prepare"]
+    assert returned_page is nxt
+    assert returned_participant is participant
+
+
+def test_finalize_pending_stale_hold_uses_the_live_cursor(monkeypatch):
+    """GET /timeline must not resume a hold after a partner already advanced it."""
+    nxt = SimpleNamespace(
+        is_timeline_hold=False,
+        pre_render=MagicMock(),
+        early_exit_available=lambda *_args: False,
+    )
+    hold = SimpleNamespace(
+        is_timeline_hold=True,
+        prepare_resume_if_ready=lambda *_args: (_ for _ in ()).throw(
+            AssertionError("stale hold must not be rechecked")
+        ),
+    )
+    participant = SimpleNamespace(id=1)
+    experiment = Experiment.__new__(Experiment)
+    experiment.timeline = MagicMock()
+    experiment.timeline.get_current_elt.return_value = nxt
+    experiment._participant_request_query = MagicMock()
+    timeouts = []
+    monkeypatch.setattr("psynet.sync._take_pending_barrier_checks", lambda: [])
+    monkeypatch.setattr(
+        "psynet.experiment._set_transaction_lock_timeout",
+        lambda *_args: timeouts.append("timeout"),
+    )
+    monkeypatch.setattr(
+        "psynet.experiment.get_config",
+        lambda: SimpleNamespace(get=lambda _key: 5),
+    )
+
+    returned_participant, returned_page = (
+        Experiment._finalize_pending_timeline_barriers(experiment, participant, hold)
+    )
+
+    experiment._participant_request_query.assert_not_called()
+    nxt.pre_render.assert_called_once()
+    assert timeouts == ["timeout"]
+    assert returned_page is nxt
+    assert returned_participant is participant
+
+
+def test_finalize_pending_ready_hold_commits_before_arrival_checks(monkeypatch):
+    """Skipping a ready hold must drop FOR UPDATE before stacked last-arrival checks."""
+    take_calls = []
+
+    def take():
+        take_calls.append(1)
+        return [] if len(take_calls) == 1 else ["instance-1"]
+
+    commits = []
+    nxt = SimpleNamespace(
+        is_timeline_hold=False,
+        pre_render=MagicMock(),
+        early_exit_available=lambda *_args: False,
+    )
+    hold = SimpleNamespace(
+        is_timeline_hold=True,
+        is_ready_to_resume=lambda *_args: True,
+        prepare_resume_if_ready=lambda *_args: True,
+    )
+    participant = SimpleNamespace(id=42)
+    query = MagicMock()
+    query.with_for_update.return_value.populate_existing.return_value.get.return_value = participant
+    query.get.return_value = participant
+    experiment = Experiment.__new__(Experiment)
+    experiment._participant_request_query = MagicMock(return_value=query)
+    experiment.timeline = MagicMock()
+    experiment.timeline.get_current_elt.side_effect = [hold, hold, nxt]
+    experiment._advance_past_ready_holds = MagicMock(return_value=nxt)
+    monkeypatch.setattr("psynet.sync._take_pending_barrier_checks", take)
+    timeouts = []
+    monkeypatch.setattr(
+        "psynet.experiment._set_transaction_lock_timeout",
+        lambda *_args: timeouts.append("timeout"),
+    )
+    monkeypatch.setattr(
+        "psynet.experiment.get_config",
+        lambda: SimpleNamespace(get=lambda _key: 5),
+    )
+    monkeypatch.setattr(
+        "psynet.experiment.db.session.commit", lambda: commits.append("commit")
+    )
+    captured = {}
+
+    def fake_finalize(cls, _experiment, participant_id, checks, result, **_kwargs):
+        captured["checks"] = list(checks)
+        captured["commits_before"] = list(commits)
+        captured["timeouts_before"] = list(timeouts)
+        captured["pre_render_before"] = nxt.pre_render.call_count
+        result.page = nxt
+        return participant
+
+    monkeypatch.setattr(
+        Experiment, "_finalize_barrier_arrivals", classmethod(fake_finalize)
+    )
+
+    Experiment._finalize_pending_timeline_barriers(experiment, participant, hold)
+
+    query.with_for_update.assert_called_once_with(of=Participant)
+    assert captured["checks"] == ["instance-1"]
+    assert captured["commits_before"] == ["commit"]
+    assert captured["pre_render_before"] == 0
+    nxt.pre_render.assert_called_once()
+    assert timeouts[-1] == "timeout"
+    assert len(timeouts) > len(captured["timeouts_before"])
+
+
+def test_process_response_unready_hold_resume_does_not_lock_or_recheck(monkeypatch):
+    """A still-waiting overlay check must not take FOR UPDATE or settle the hold."""
+    from flask import Flask
+
+    hold = MagicMock()
+    hold.is_timeline_hold = True
+    hold.is_ready_to_resume.return_value = False
+    hold.participant_timed_out.return_value = False
+    hold.time_estimate = 1.5
+    participant = SimpleNamespace(
+        id=1,
+        page_uuid="hold-uuid",
+        client_ip_address=None,
+        current_trial=None,
+        pending_redirect=None,
+        failed=False,
+    )
+    query = MagicMock()
+    query.populate_existing.return_value.get.return_value = participant
+    experiment = Experiment.__new__(Experiment)
+    experiment._participant_request_query = MagicMock(return_value=query)
+    experiment.timeline = MagicMock()
+    experiment.timeline.get_current_elt.return_value = hold
+    experiment._advance_past_ready_holds = MagicMock()
+    experiment._approved_payload = lambda _participant, page: {
+        "submission": "approved",
+        "page": page,
+    }
+    monkeypatch.setattr(
+        Experiment,
+        "_skipped_error_recovery_should_render_error_page",
+        classmethod(lambda *_args, **_kwargs: False),
+    )
+
+    with Flask(__name__).test_request_context("/response"):
+        result = experiment.process_response(
+            1,
+            None,
+            {},
+            {},
+            "hold-uuid",
+            "127.0.0.1",
+            timeline_hold_resume=True,
+        )
+
+    query.with_for_update.assert_not_called()
+    hold.is_ready_to_resume.assert_called_once_with(experiment, participant)
+    hold.prepare_resume_if_ready.assert_not_called()
+    hold.account_wait.assert_not_called()
+    experiment._advance_past_ready_holds.assert_not_called()
+    assert participant.client_ip_address is None
+    assert result.page is hold
+    assert result.skip_write is True
+
+
+def test_process_response_ready_hold_resume_locks_with_nowait(monkeypatch):
+    """A hold that can resume must still take ``FOR UPDATE NOWAIT`` and settle."""
+    from flask import Flask
+
+    hold = MagicMock()
+    hold.is_timeline_hold = True
+    hold.is_ready_to_resume.return_value = True
+    hold.participant_timed_out.return_value = False
+    hold.prepare_resume_if_ready.return_value = True
+    hold.time_estimate = 1.5
+    next_page = MagicMock()
+    next_page.is_timeline_hold = False
+    participant = SimpleNamespace(
+        id=1,
+        page_uuid="hold-uuid",
+        client_ip_address=None,
+        current_trial=None,
+        inc_progress=MagicMock(),
+        pending_redirect=None,
+        failed=False,
+    )
+    query = MagicMock()
+    query.populate_existing.return_value.get.return_value = participant
+    query.with_for_update.return_value.populate_existing.return_value.get.return_value = participant
+    experiment = Experiment.__new__(Experiment)
+    experiment._participant_request_query = MagicMock(return_value=query)
+    experiment.timeline = MagicMock()
+    experiment.timeline.get_current_elt.return_value = hold
+    experiment._advance_past_ready_holds = MagicMock(return_value=next_page)
+    experiment._approved_payload = lambda _participant, page: {
+        "submission": "approved",
+        "page": page,
+    }
+    monkeypatch.setattr(
+        Experiment,
+        "_skipped_error_recovery_should_render_error_page",
+        classmethod(lambda *_args, **_kwargs: False),
+    )
+
+    with Flask(__name__).test_request_context("/response"):
+        result = experiment.process_response(
+            1,
+            None,
+            {},
+            {},
+            "hold-uuid",
+            "127.0.0.1",
+            timeline_hold_resume=True,
+        )
+
+    query.with_for_update.assert_called_once_with(of=Participant, nowait=True)
+    hold.prepare_resume_if_ready.assert_called_once_with(experiment, participant)
+    hold.account_wait.assert_called_once_with(participant, settle=True)
+    participant.inc_progress.assert_called_once_with(1.5)
+    experiment.timeline.advance_page.assert_called_once_with(experiment, participant)
+    experiment._advance_past_ready_holds.assert_called_once()
+    assert participant.client_ip_address == "127.0.0.1"
+    assert result.page is next_page
+    assert result.skip_write is False
 
 
 def test_template_fragment_input_wraps_main_body_content():
@@ -232,6 +1195,56 @@ def test_requires_full_page_reload_skips_spa_contract_error():
     assert page.requires_full_page_reload
     assert page._spa_contract_opt_out
     page._check_spa_template_contract(inplace_timeline_transitions=True)
+
+
+def test_expect_scrolling_constructor_overrides_class_default():
+    assert InfoPage("short", time_estimate=1).expect_scrolling is False
+    assert InfoPage("long", time_estimate=1, expect_scrolling=True).expect_scrolling
+
+    class LongPage(InfoPage):
+        expect_scrolling = True
+
+    assert LongPage("long", time_estimate=1).expect_scrolling is True
+    assert (
+        LongPage("short", time_estimate=1, expect_scrolling=False).expect_scrolling
+        is False
+    )
+
+
+def test_named_progress_colours_follow_the_theme():
+    assert ProgressStage(1, "x", "red")["color"] == "var(--psynet-danger)"
+    assert ProgressStage(1, "x", "Green")["color"] == "var(--psynet-success)"
+    assert ProgressStage(1, "x", "blue")["color"] == "var(--psynet-accent)"
+    assert ProgressStage(1, "x", "orange")["color"] == "var(--psynet-warning)"
+    assert ProgressStage(1, "x", "grey")["color"] == "var(--psynet-text-muted)"
+    assert ProgressStage(1, "x", "gray")["color"] == "var(--psynet-text-muted)"
+    assert ProgressStage(1, "x", "black")["color"] == "var(--psynet-text)"
+    assert ProgressStage(1, "x", "white")["color"] == "white"
+    assert ProgressStage(1, "x", "#ff00aa")["color"] == "#ff00aa"
+    assert (
+        ProgressStage(1, "x", "var(--psynet-accent)")["color"] == "var(--psynet-accent)"
+    )
+
+
+def test_named_event_message_colours_follow_the_theme():
+    event = Event(is_triggered_by="trialStart", message="Hi", message_color="red")
+    assert event["message_color"] == "var(--psynet-danger)"
+    default = Event(is_triggered_by="trialStart", message="Hi")
+    assert default["message_color"] == "var(--psynet-text)"
+    white = Event(is_triggered_by="trialStart", message="Hi", message_color="white")
+    assert white["message_color"] == "white"
+
+
+def test_named_participant_colours_match_javascript():
+    from psynet.timeline import _PARTICIPANT_NAMED_COLORS
+
+    js = (resources.files("psynet") / "resources/scripts/psynet.js").read_text(
+        encoding="utf-8"
+    )
+    block = re.search(r"namedColors:\s*\{([^}]+)\}", js, re.S).group(1)
+    js_colors = dict(re.findall(r'(\w+):\s*"([^"]+)"', block))
+    assert js_colors == _PARTICIPANT_NAMED_COLORS
+    assert "white" not in js_colors
 
 
 def test_js_vars_window_collisions_warn_at_construction():
@@ -543,6 +1556,21 @@ def test_get_trial_maker():
     assert timeline.get_trial_maker("tm-1") == tm_1
     assert timeline.get_trial_maker("tm-2") == tm_2
     assert tm_1 != tm_2
+
+
+def test_two_sync_trial_makers_keep_distinct_barrier_ids():
+    tm_1 = new_trial_maker(id_="tm-1", sync_group_type="main")
+    tm_2 = new_trial_maker(id_="tm-2", sync_group_type="main")
+    timeline = Timeline(tm_1, tm_2)
+    ids = {
+        elt.links["barrier"].id
+        for elt in timeline.all_elts
+        if elt.links.get("barrier") is not None
+    }
+    assert tm_1.with_namespace("init_participant") in ids
+    assert tm_2.with_namespace("init_participant") in ids
+    assert tm_1.with_namespace("prepare_trial") in ids
+    assert tm_2.with_namespace("prepare_trial") in ids
 
 
 def test_estimate_credit__simple():
@@ -979,3 +2007,170 @@ def test_async_code_block_initiate__clears_stale_finished_or_failed_process(
     assert any("stale reference" in record.message for record in caplog.records), (
         f"Expected a stale-reference warning, got: {[r.message for r in caplog.records]}"
     )
+
+
+def test_page_show_abort_button_is_a_deprecated_alias():
+    with pytest.warns(FutureWarning, match="show_early_exit_button"):
+        page = InfoPage("Hello", time_estimate=1, show_abort_button=True)
+    assert page.show_early_exit_button is True
+    assert page.show_abort_button is True
+
+
+def test_page_show_termination_button_is_a_deprecated_alias():
+    with pytest.warns(FutureWarning, match="show_early_exit_button"):
+        page = InfoPage("Hello", time_estimate=1, show_termination_button=True)
+    assert page.show_early_exit_button is True
+    assert page.show_termination_button is True
+
+
+def test_page_rejects_conflicting_abort_and_termination_flags():
+    with pytest.warns(FutureWarning, match="show_early_exit_button"):
+        with pytest.raises(ValueError, match="disagree"):
+            InfoPage(
+                "Hello",
+                time_estimate=1,
+                show_early_exit_button=True,
+                show_termination_button=False,
+            )
+
+
+def test_experiment_reuses_a_voluntary_exit_plan_for_one_page():
+    experiment = object.__new__(Experiment)
+    experiment.recruiter = MagicMock()
+    first = ExitPlan.create(
+        context=ExitContext.VOLUNTARY,
+        path=ExitPath.END_SESSION,
+        payment=None,
+        payment_state=PaymentState.NOT_APPLICABLE,
+        confirmation=EarlyExitConfirmation("Leave?", "Saved.", "Leave", "Cancel"),
+    )
+    second = ExitPlan.create(
+        context=ExitContext.VOLUNTARY,
+        path=ExitPath.END_SESSION,
+        payment=None,
+        payment_state=PaymentState.NOT_APPLICABLE,
+        confirmation=EarlyExitConfirmation("Leave?", "Saved.", "Leave", "Cancel"),
+    )
+    experiment.recruiter.plan_exit.side_effect = [first, second]
+    participant = SimpleNamespace(exit_plan=None, page_uuid="page-1")
+
+    first_prepared = experiment.prepare_voluntary_exit_plan(participant)
+    same_page = experiment.prepare_voluntary_exit_plan(participant)
+    participant.page_uuid = "page-2"
+    next_page = experiment.prepare_voluntary_exit_plan(participant)
+
+    assert same_page == first_prepared
+    assert first_prepared.source_page_uuid == "page-1"
+    assert next_page.source_page_uuid == "page-2"
+    assert first_prepared.plan_id != next_page.plan_id
+    assert experiment.recruiter.plan_exit.call_count == 2
+    experiment.recruiter.plan_exit.assert_called_with(
+        experiment,
+        participant,
+        ExitContext.VOLUNTARY,
+    )
+
+
+def test_prepared_voluntary_exit_plan_is_a_read_only_lookup():
+    experiment = object.__new__(Experiment)
+    plan = ExitPlan.create(
+        context=ExitContext.VOLUNTARY,
+        path=ExitPath.END_SESSION,
+        payment=None,
+        payment_state=PaymentState.NOT_APPLICABLE,
+        confirmation=EarlyExitConfirmation("Leave?", "Saved.", "Leave", "Cancel"),
+        source_page_uuid="page-1",
+    )
+    participant = SimpleNamespace(exit_plan=plan.to_dict(), page_uuid="page-1")
+
+    assert experiment.prepared_voluntary_exit_plan(participant) == plan
+    assert participant.exit_plan == plan.to_dict()
+
+
+@pytest.mark.parametrize(
+    "logic,context",
+    [
+        (SuccessfulEndLogic(), ExitContext.SUCCESSFUL),
+        (UnsuccessfulEndLogic(), ExitContext.UNSUCCESSFUL),
+        (RejectedConsentLogic(), ExitContext.REJECTED_CONSENT),
+    ],
+)
+def test_end_logic_stores_a_committed_exit_plan(logic, context):
+    participant = SimpleNamespace(exit_plan=None)
+    experiment = MagicMock()
+    plan = ExitPlan.create(
+        context=context,
+        path=ExitPath.END_SESSION,
+        payment=PaymentDecision(
+            status="approved",
+            platform_base=1.0,
+            bonus=0.5,
+        ),
+        currency="$",
+    )
+    experiment.plan_exit.return_value = plan
+
+    logic.prepare_exit(experiment, participant)
+
+    experiment.plan_exit.assert_called_once_with(
+        participant,
+        context,
+    )
+    assert ExitPlan.from_dict(participant.exit_plan) == plan.mark_committed()
+
+
+def test_page_show_early_exit_button_does_not_warn():
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", FutureWarning)
+        page = InfoPage("Hello", time_estimate=1, show_early_exit_button=False)
+    assert page.show_early_exit_button is False
+    assert page.show_termination_button is False
+
+
+def test_consent_pages_hide_footer_exit_by_default():
+    from psynet.consent import MainConsent
+
+    page = MainConsent.MainConsentPage(time_estimate=1)
+    assert page.show_early_exit_button is False
+
+
+def _experiment_offering_early_exit(in_end_logic):
+    experiment = MagicMock()
+    experiment.recruiter_class.show_early_exit_button = True
+    experiment.timeline.participant_is_in_end_logic.return_value = in_end_logic
+    return experiment
+
+
+@pytest.mark.parametrize(
+    "in_end_logic,complete,early_exited,expected",
+    [
+        (False, False, False, True),
+        (True, False, False, False),
+        (False, True, False, False),
+        (False, False, True, False),
+    ],
+)
+def test_early_exit_is_not_offered_once_the_participant_is_finishing(
+    in_end_logic, complete, early_exited, expected
+):
+    page = InfoPage("Hello", time_estimate=1)
+    participant = MagicMock(complete=complete, early_exited=early_exited)
+
+    assert (
+        page.early_exit_available(
+            _experiment_offering_early_exit(in_end_logic), participant
+        )
+        is expected
+    )
+
+
+def test_page_level_early_exit_setting_overrides_the_recruiter_and_config():
+    participant = MagicMock(complete=False, early_exited=False)
+    experiment = _experiment_offering_early_exit(in_end_logic=False)
+
+    hidden = InfoPage("Hello", time_estimate=1, show_early_exit_button=False)
+    assert hidden.early_exit_available(experiment, participant) is False
+
+    experiment.recruiter_class.show_early_exit_button = False
+    shown = InfoPage("Hello", time_estimate=1, show_early_exit_button=True)
+    assert shown.early_exit_available(experiment, participant) is True

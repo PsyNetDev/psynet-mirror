@@ -1,4 +1,3 @@
-.. _developer:
 .. highlight:: shell
 
 =============
@@ -12,7 +11,18 @@ they complete in the correct state.
 Whenever you push a contribution to a branch of the PsyNet repository,
 these automated tests will be automatically queued. They normally take 10-15 minutes
 to complete. Keep an eye on the GitLab interface to see if any errors have occurred.
-Errors should be resolved before merging branches into ``dev`` or ``master``.
+Resolve any errors before merging into ``master``.
+
+Merge requests that change only documentation, changelog fragments, ``AGENTS.md``,
+or non-experiment Cursor skills skip the Docker pytest and Playwright jobs.
+The ``.docker_test_rules`` block in ``.gitlab-ci.yml`` lists the paths that
+still trigger them, including the few docs pages whose content tests check.
+Default-branch, tag, and non-MR branch pipelines always run the full suite.
+
+That list is an allowlist: a path missing from it skips the tests on merge
+requests that change only that path. If you add a top-level file or directory
+that tests or the CI image depend on, or a test that reads a docs page, add
+its path to ``.docker_test_rules``.
 
 Test parallelization
 --------------------
@@ -105,7 +115,9 @@ using Playwright's UI mode during development:
     HEADLESS=false npx playwright test --ui
 
 These tests launch demo experiments locally, so you still need PostgreSQL and
-Redis running (same as for the pytest-driven e2e tests).
+Redis running (same as for the pytest-driven e2e tests). They need Node 20 or
+later, and ``participant_recording.spec.js`` also needs ``ffmpeg`` and
+``ffprobe`` on ``PATH``.
 
 Mode tags
 ^^^^^^^^^
@@ -134,6 +146,82 @@ Example:
     test("my lifecycle case", { tag: "@inplace-only" }, async ({ page, context }) => {
       // ...
     });
+
+Hold-resume probes
+^^^^^^^^^^^^^^^^^^
+
+Hold specs use the helpers in ``tests/playwright/psynetHarness.js`` and
+``tests/playwright/stackedHoldHarness.js``; experiments cannot import them.
+When the contract is first paint, for example the last group member skipping
+a partner wait, ``enterTimelineAfterGateway`` returns the first
+``GET /timeline`` HTML (``entry.timeline.durationMs``), and
+``lastArriverWorkRecord`` returns the last arriver's grouping request (the
+302 or the submit POST), whose handler time ``requestHandlerMs`` reads. An
+eventual prompt can arrive from the poller after a hold was already shown,
+so do not assert it instead. When a partner is already on a hold,
+``enterWaitingHold`` wraps the resume probe, silences the 2s safety poll, and
+arms ``waitForHeldParticipantToResume`` before the last arriver consents;
+``assertWaiterReleasedWithLastArriver`` then checks the release against
+``enterSkippingHold``'s entry. Concurrent late arrivals must wrap and arm at
+first paint, inside the same ``Promise.all`` as consent.
+
+Legacy hold resumes reload the document, which destroys Playwright's execution
+context. ``wrapTimelineHoldResumeProbe`` retries ``page.evaluate`` after that
+navigation. ``waitForHeldParticipantToResume`` treats the same navigation as a
+retry, including Playwright ``toHaveCount`` failures that report
+``Received: undefined`` instead of ``Execution context was destroyed``. If a
+stacked last-arrival hold clears while the test is arming the probe, treat the
+page as a cleared hold (wake token and hold-resume POST) instead of failing on
+the destroyed context.
+
+Overlay linger after a published wake is last-wake→last-end wallclock,
+including gunicorn listen-queue. Summaries log that interval. Stacked-hold
+tests have no performance budgets, because CI load routinely doubles request
+times; the only time limit is a 30000ms hang cap (fail-fast versus the 120s
+step timeout) on requests, signups and overlays. A slow approved POST is not a missed wake; still assert
+that the resume reason is not ``safety poll`` or ``hold timeout``. If a
+legacy reload drops in-page wake clocks, a published wake token plus an
+approved hold-resume POST still counts as a server wake.
+Hold-release summaries print ``Server-Timing`` ``app`` versus browser wall
+time (``queue~``) for the last arriver's request and the waiter's hold-resume
+POST so a long linger can be split into handler time versus pool occupancy.
+Do not subtract ``queue~`` from overlay linger.
+``GET /timeline`` also prints ``lock``, ``page``, ``barriers``, and
+``render``. Blocking-request checks use ``app`` when that header is present, so
+worker-pool queueing is not treated as a slow handler. They cover
+``GET /timeline`` and ``POST /load-participant``, not ``POST /participant``:
+Dallinger ``@db.serialized`` retries concurrent signups with
+``expovariate(0.5)`` sleep (mean 2s). GitLab Playwright jobs always set
+``PSYNET_USE_LEGACY_DEBUG=1``, so they
+run ``psynet debug --legacy`` (gunicorn). The default single-process Flask
+reloader (``psynet debug local`` without ``--legacy``) is not exercised in
+CI; run that locally when debugging reloader-only issues. Playwright hold
+tests set the worker
+count to the session count plus two spares so concurrent last-arrival work can
+overlap every waiter hold-resume POST without starving a waiter Redis subscribe.
+A short HTTP 503 on hold-resume is the
+``NOWAIT`` busy retry when those requests hit the same participant row;
+the in-request retry waits 250ms; if that is still busy, one delayed
+``queued hold wake`` runs. The suite still fails a busy retry that lasts
+500ms or more. A ``wait_while`` test that asserts ``timelineHoldWakeReceived``
+must silence that 1s safety poll after the hold chip appears. Otherwise an
+in-place hold-resume POST can stop the controller before the websocket
+message dispatches the event, and a counter installed only with
+``page.addInitScript`` after consent is already loaded never attaches.
+Concurrent last arrivals may post a fourth hold-resume when the
+poller and ``GET /timeline`` both publish, a stacked-hold reload posts
+again once its websocket confirms it is listening, and a still-on-hold server notification posts
+once more before ``ModularPage``; sequential last arrivals stay at two. Both Playwright
+CI jobs use gunicorn; the default vs legacy job is in-place vs full reload.
+Worker-pool ``queue~`` is therefore not reload-specific.
+
+Last-arrival ``GET /timeline`` can 302 when ``page_uuid`` advances during
+read-only render. First-paint assertions wait for the following 200 HTML
+document. Waiter release clocks are compared with the last arriver's grouping
+request (the first GET or the choice POST), not with how long that browser
+took to paint after a legacy reload. ``waitForHeldParticipantToResume`` keeps
+the previous ``holdEndedAtMs`` across a later ``timelineHoldStarted`` and
+falls back to the context ``resumeLog``.
 
 Faster local iteration for Playwright tests
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -170,11 +258,24 @@ Playwright harness startup options
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 The Playwright harness launches experiments with ``psynet debug local`` by default
-and does not force legacy mode.
+and does not force legacy mode. That Flask reloader is one process; use
+``PSYNET_USE_LEGACY_DEBUG=1`` (or ``psynet debug local --legacy``) for gunicorn
+workers. GitLab Playwright jobs set
+``PSYNET_USE_LEGACY_DEBUG=1`` so those runs use gunicorn. CI therefore never
+exercises the default single-process Flask debug server. ``psynet debug local
+--legacy`` starts four gunicorn workers by default. Playwright stacked-hold
+tests set ``PSYNET_LEGACY_DEBUG_GUNICORN_THREADS`` to the session count plus
+two spares so concurrent last-arrival ``GET /timeline`` can overlap every waiter
+hold-resume POST without starving a waiter Redis subscribe. The
+default vs legacy *job* split is still in-place vs full reload
+(``inplace_timeline_transitions``), not Flask vs gunicorn.
 
 Optional environment variables:
 
 - ``PSYNET_USE_LEGACY_DEBUG=1``: add ``--legacy`` to the debug command.
+- ``PSYNET_LEGACY_DEBUG_GUNICORN_THREADS``: gunicorn worker processes for
+  ``psynet debug local --legacy`` (default ``4``). Stacked-hold tests set this to
+  the session count plus two spares.
 - ``PSYNET_DEBUG_EXTRA_FLAGS="..."``: append extra flags to the debug command
   (for local troubleshooting).
 - ``PSYNET_USE_UV_RUN=1``: launch via ``uv run`` instead of invoking ``psynet``

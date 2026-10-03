@@ -1,22 +1,31 @@
-"""Shared HTML rendering for experiment audit evidence."""
+"""HTML rendering for experiment audit evidence.
+
+The rendered site is author documentation, not a sandbox. Experiment notebooks,
+Markdown reports, and the PsyNet audit templates are trusted. Notebook HTML and
+SVG outputs are included as produced, including any scripts they contain, so
+viewing an audit in a browser runs that content with the viewer's privileges.
+Markdown files are still parsed as Markdown (raw HTML in ``.md`` is not
+interpreted). Plotly figures use the notebook MIME bundle plus the vendored
+Plotly runtime so interactive plots work offline without depending on a CDN.
+"""
 
 from __future__ import annotations
 
 import base64
 import binascii
 import html
+import json
 import logging
 from collections.abc import Callable, Iterable, Mapping
 
-import nh3
 from markdown_it import MarkdownIt
 from pygments import highlight
 from pygments.formatters import HtmlFormatter
 from pygments.lexers import TextLexer, get_lexer_by_name
 from pygments.util import ClassNotFound
 
+from psynet.audit.constants import MAX_AUDIT_NOTEBOOK_BYTES
 from psynet.audit.model import (
-    MAX_AUDIT_TEXT_BYTES,
     AuditEvidenceView,
     AuditFile,
     CompletenessItem,
@@ -24,99 +33,14 @@ from psynet.audit.model import (
 )
 
 UrlTransform = Callable[[str], str]
-SAFE_HTML_TAGS = {
-    "a",
-    "b",
-    "blockquote",
-    "br",
-    "code",
-    "dd",
-    "div",
-    "dl",
-    "dt",
-    "em",
-    "h1",
-    "h2",
-    "h3",
-    "h4",
-    "h5",
-    "h6",
-    "hr",
-    "i",
-    "li",
-    "ol",
-    "p",
-    "pre",
-    "s",
-    "span",
-    "strong",
-    "table",
-    "tbody",
-    "td",
-    "th",
-    "thead",
-    "tr",
-    "ul",
-}
-SAFE_SVG_TAGS = {
-    "circle",
-    "ellipse",
-    "g",
-    "line",
-    "path",
-    "polygon",
-    "polyline",
-    "rect",
-    "svg",
-    "text",
-    "title",
-}
-SAFE_ATTRS = {
-    "align",
-    "aria-label",
-    "class",
-    "colspan",
-    "height",
-    "id",
-    "role",
-    "rowspan",
-    "scope",
-    "title",
-    "width",
-}
-SAFE_HTML_ATTRS = {
-    "*": SAFE_ATTRS,
-    "a": SAFE_ATTRS | {"href"},
-}
-SAFE_SVG_ATTRS = {
-    "cx",
-    "cy",
-    "d",
-    "fill",
-    "height",
-    "points",
-    "r",
-    "rx",
-    "ry",
-    "stroke",
-    "stroke-width",
-    "viewBox",
-    "viewbox",
-    "width",
-    "x",
-    "x1",
-    "x2",
-    "xmlns",
-    "y",
-    "y1",
-    "y2",
-}
-SAFE_SVG_ATTRS_BY_TAG = {
-    "*": SAFE_ATTRS | SAFE_SVG_ATTRS,
-    "svg": SAFE_ATTRS | SAFE_SVG_ATTRS | {"viewBox"},
-}
-URL_SCHEMES = {"http", "https", "mailto"}
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+# Rendered notebook cells are larger than their source because syntax
+# highlighting and Plotly MIME bundles expand them. Keep notebook previews
+# bounded, but do not apply the smaller plain-text artifact limit to them.
+_MAX_NOTEBOOK_PREVIEW_BYTES = MAX_AUDIT_NOTEBOOK_BYTES
+# Guards against a figure whose authored height would push the rest of the audit
+# off the page; taller figures fall back to responsive height.
+MAX_PLOTLY_FIGURE_HEIGHT_PX = 4000
 MARKDOWN = MarkdownIt(
     "commonmark",
     {
@@ -157,32 +81,6 @@ def escape_url(url: str, url_transform: UrlTransform = identity_url) -> str:
     return html.escape(url_transform(url), quote=True)
 
 
-def sanitize_html_fragment(source: str) -> str:
-    """Render a safe subset of an HTML fragment."""
-
-    return nh3.clean(
-        source,
-        tags=SAFE_HTML_TAGS,
-        attributes=SAFE_HTML_ATTRS,
-        clean_content_tags={"script", "style"},
-        link_rel=None,
-        url_schemes=URL_SCHEMES,
-    )
-
-
-def sanitize_svg_fragment(source: str) -> str:
-    """Render a safe subset of an SVG fragment."""
-
-    return nh3.clean(
-        source,
-        tags=SAFE_SVG_TAGS,
-        attributes=SAFE_SVG_ATTRS_BY_TAG,
-        clean_content_tags={"script", "style"},
-        link_rel=None,
-        url_schemes=URL_SCHEMES,
-    )
-
-
 def render_code_block(code: str, language: str = "") -> str:
     """Render a highlighted code block."""
 
@@ -203,9 +101,9 @@ def pygments_css() -> str:
 
 
 def render_markdown_document(source: str) -> str:
-    """Render Markdown to sanitized HTML for reports and notebook cells."""
+    """Render Markdown to HTML for reports and notebook cells."""
 
-    return sanitize_html_fragment(MARKDOWN.render(source))
+    return MARKDOWN.render(source)
 
 
 def render_markdown_block(source: str, class_name: str = "attempt-markdown") -> str:
@@ -503,12 +401,6 @@ def render_evidence_actions(
         evidence_action_item(
             "Data export", evidence.data_file, "Download data export", url_transform
         ),
-        evidence_action_item(
-            "Simulated data export",
-            evidence.simulated_data_file,
-            "Download simulated data",
-            url_transform,
-        ),
         analysis_action_item(evidence, analysis_file, url_transform),
     ]
     return '<ul class="evidence-actions">' + "\n".join(items) + "</ul>"
@@ -519,19 +411,15 @@ def render_data_exports(
     *,
     url_transform: UrlTransform = identity_url,
 ) -> str:
-    """Render download links for real and simulated data exports."""
+    """Render the real-data export download link."""
 
+    if evidence.data_file is None:
+        return '<p class="missing-artifact">No real data yet.</p>'
     items = [
         evidence_action_item(
             "Data export",
             evidence.data_file,
             "Download data export",
-            url_transform,
-        ),
-        evidence_action_item(
-            "Simulated data export",
-            evidence.simulated_data_file,
-            "Download simulated data",
             url_transform,
         ),
     ]
@@ -580,21 +468,16 @@ def analysis_action_item(
     return '<li><span class="missing-artifact">Analysis summary missing</span></li>'
 
 
-def render_analysis_notebook(
-    evidence: AuditEvidenceView,
+def render_notebook_panel(
+    notebook_file: AuditFile,
+    notebook: dict[str, object],
     *,
-    standalone: bool = False,
+    section_id: str,
+    heading: str,
+    standalone: bool,
     url_transform: UrlTransform = identity_url,
 ) -> str:
-    """Render a small safe preview of an analysis notebook.
-
-    Set ``standalone`` when the notebook is its own top-level audit section.
-    """
-
-    notebook_file = evidence.analysis_notebook_file
-    notebook = evidence.analysis_notebook
-    if notebook_file is None:
-        return "<p>No analysis notebook was found.</p>" if standalone else ""
+    """Render a bounded preview of one executed notebook."""
 
     cells = notebook.get("cells") if notebook else []
     if not isinstance(cells, list):
@@ -607,7 +490,7 @@ def render_analysis_notebook(
             continue
         html_cell = render_notebook_cell(cell)
         extra = len(html_cell.encode("utf-8"))
-        if rendered_cells and preview_bytes + extra > MAX_AUDIT_TEXT_BYTES:
+        if rendered_cells and preview_bytes + extra > _MAX_NOTEBOOK_PREVIEW_BYTES:
             truncated_preview = True
             break
         rendered_cells.append(html_cell)
@@ -615,7 +498,7 @@ def render_analysis_notebook(
     section_class = "analysis-notebook-panel evidence-subsection"
     if standalone:
         section_class += " section-standalone"
-    heading = "" if standalone else "<h3>Analysis notebook</h3>"
+    heading_html = "" if standalone else f"<h3>{html.escape(heading)}</h3>"
     truncation_note = (
         '<p class="artifact-note">Notebook preview is truncated; open the raw notebook for the full file.</p>'
         if truncated_preview
@@ -627,9 +510,9 @@ def render_analysis_notebook(
         else "<p>Notebook preview could not be parsed.</p>"
     )
     return (
-        f'<section id="analysis-notebook" class="{section_class}">'
+        f'<section id="{html.escape(section_id, quote=True)}" class="{section_class}">'
         '<div class="section-heading">'
-        f"{heading}"
+        f"{heading_html}"
         f'<a href="{escape_url(notebook_file.url, url_transform)}">Open raw notebook</a>'
         "</div>"
         f'<p class="artifact-note">Rendered from <code>{html.escape(notebook_file.path)}</code>.</p>'
@@ -638,8 +521,131 @@ def render_analysis_notebook(
     )
 
 
+def render_analysis_notebook(
+    evidence: AuditEvidenceView,
+    *,
+    standalone: bool = False,
+    url_transform: UrlTransform = identity_url,
+) -> str:
+    """Render an analysis notebook.
+
+    Set ``standalone`` when the notebook is its own top-level audit section.
+    """
+
+    notebook_file = evidence.analysis_notebook_file
+    notebook_html = (
+        render_notebook_panel(
+            notebook_file,
+            evidence.analysis_notebook,
+            section_id="analysis-notebook",
+            heading="Analysis notebook",
+            standalone=standalone,
+            url_transform=url_transform,
+        )
+        if notebook_file is not None
+        else ("<p>No analysis notebook was found.</p>" if standalone else "")
+    )
+    supporting = [
+        file
+        for file in evidence.analysis_files
+        if file is not evidence.analysis_notebook_file
+    ]
+    supporting_html = (
+        render_file_grid(
+            supporting,
+            empty_message="No supporting analysis files.",
+            url_transform=url_transform,
+        )
+        if supporting
+        else ""
+    )
+    export_html = render_file_grid(
+        evidence.simulated_export_files,
+        empty_message="No simulated export was found.",
+        url_transform=url_transform,
+    )
+    return f"{notebook_html}{supporting_html}{export_html}"
+
+
+def render_design_simulation(
+    evidence: AuditEvidenceView,
+    *,
+    standalone: bool = True,
+    url_transform: UrlTransform = identity_url,
+) -> str:
+    """Render the optional design-simulation panel.
+
+    A design simulation may contain power analysis and an optional adaptive
+    procedure analysis in one executed notebook.
+    """
+
+    if not evidence.has_design_simulation:
+        return (
+            '<p class="missing">No design simulation was included in this audit.</p>'
+            if standalone
+            else ""
+        )
+
+    run_summary = render_simulation_run_summary(evidence.simulation_run)
+    notebook_file = evidence.simulation_notebook_file
+    if notebook_file is None:
+        notebook_html = (
+            '<p class="missing">No executed design-simulation notebook was found.</p>'
+        )
+    else:
+        notebook_html = render_notebook_panel(
+            notebook_file,
+            evidence.simulation_notebook,
+            section_id="simulation-notebook",
+            heading="Power analysis notebook",
+            standalone=standalone,
+            url_transform=url_transform,
+        )
+    supporting = [
+        file
+        for file in evidence.simulation_files
+        if file is not evidence.simulation_notebook_file
+    ]
+    files_html = (
+        render_file_grid(
+            supporting,
+            empty_message="No supporting design-simulation files.",
+            url_transform=url_transform,
+        )
+        if supporting
+        else ""
+    )
+    return f"{run_summary}{notebook_html}{files_html}"
+
+
+def render_simulation_run_summary(run: dict[str, object]) -> str:
+    """Render key provenance fields from a design-simulation run record."""
+
+    fields = [
+        ("Method", run.get("method")),
+        ("Command", run.get("command")),
+        ("Replicates", run.get("replicates")),
+        ("Result rows", run.get("result_row_count")),
+        ("Created at", run.get("created_at")),
+    ]
+    rows = "".join(
+        f"<div><dt>{html.escape(label)}</dt><dd>{html.escape(str(value))}</dd></div>"
+        for label, value in fields
+        if value not in (None, "")
+    )
+    if not rows:
+        return ""
+    note = run.get("note")
+    note_html = (
+        f'<p class="artifact-note">{html.escape(str(note))}</p>'
+        if isinstance(note, str) and note
+        else ""
+    )
+    return f'<dl class="metadata-grid attempt-summary">{rows}</dl>{note_html}'
+
+
 def render_notebook_cell(cell: dict[str, object]) -> str:
-    """Render one notebook cell with safe source and outputs."""
+    """Render one notebook cell with source and outputs."""
 
     cell_type = str(cell.get("cell_type") or "raw")
     safe_type = html.escape(cell_type)
@@ -649,12 +655,14 @@ def render_notebook_cell(cell: dict[str, object]) -> str:
         if cell_type == "markdown":
             return render_markdown_block(source)
         if cell_type == "code":
-            return (
-                '<div class="notebook-code">'
+            code = (
+                '<details class="notebook-code"><summary>Show code</summary>'
                 f"{render_code_block(source, 'python')}"
-                "</div>"
-                f"{render_notebook_outputs(cell.get('outputs'))}"
+                "</details>"
+                if source.strip()
+                else ""
             )
+            return f"{code}{render_notebook_outputs(cell.get('outputs'))}"
         return f"<pre><code>{html.escape(source)}</code></pre>"
 
     body = safe_section_html(f"notebook-cell-{cell_type}", render_body)
@@ -687,7 +695,7 @@ def normalized_png_base64(value: object) -> str:
 
 
 def render_notebook_outputs(outputs: object) -> str:
-    """Render safe text, HTML, or SVG outputs from a notebook code cell."""
+    """Render text, HTML, or SVG outputs from a notebook code cell."""
 
     if not isinstance(outputs, list) or not outputs:
         return ""
@@ -725,9 +733,17 @@ def render_notebook_output(output: dict[str, object]) -> str:
     data = output.get("data")
     if not isinstance(data, dict):
         return ""
+    plotly = data.get("application/vnd.plotly.v1+json")
+    if isinstance(plotly, str):
+        try:
+            plotly = json.loads(plotly)
+        except json.JSONDecodeError:
+            plotly = None
+    if isinstance(plotly, dict):
+        return render_plotly_output(plotly)
     svg = notebook_text(data.get("image/svg+xml"))
     if svg:
-        return f'<div class="notebook-svg">{sanitize_svg_fragment(svg)}</div>'
+        return f'<div class="notebook-svg">{svg}</div>'
     png_b64 = normalized_png_base64(data.get("image/png"))
     if png_b64:
         return (
@@ -737,11 +753,73 @@ def render_notebook_output(output: dict[str, object]) -> str:
         )
     html_output = notebook_text(data.get("text/html"))
     if html_output:
-        return f'<div class="notebook-html">{sanitize_html_fragment(html_output)}</div>'
+        return f'<div class="notebook-html">{html_output}</div>'
+    markdown_output = notebook_text(data.get("text/markdown"))
+    if markdown_output:
+        return (
+            '<div class="notebook-markdown">'
+            f"{render_markdown_block(markdown_output)}"
+            "</div>"
+        )
     plain = notebook_text(data.get("text/plain"))
     if plain:
         return f"<pre><code>{html.escape(plain)}</code></pre>"
     return ""
+
+
+def render_plotly_output(specification: dict[str, object]) -> str:
+    """Render an interactive Plotly notebook MIME bundle.
+
+    Figure JSON is stored as a JSON script and drawn by the vendored Plotly
+    runtime. HTML-significant characters are escaped so labels cannot close the
+    script element.
+
+    Responsive mode keeps figures as wide as the audit column, but it recomputes
+    height from the container as well, which collapses a tall figure to the
+    container's minimum height on the first window resize and jams its labels
+    together. Pin the container to the authored height so only width responds.
+    """
+
+    data = specification.get("data")
+    layout = specification.get("layout")
+    if not isinstance(data, list) or not isinstance(layout, dict):
+        return '<p class="notebook-error">Invalid Plotly figure output.</p>'
+
+    payload = {
+        "data": data,
+        "layout": layout,
+        "config": {
+            "displaylogo": False,
+            "responsive": True,
+        },
+    }
+    serialized = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
+    serialized = (
+        serialized.replace("&", "\\u0026")
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+    )
+    authored_height = plotly_layout_height(layout)
+    height_style = f' style="height:{authored_height}px"' if authored_height else ""
+    return (
+        '<div class="notebook-plotly">'
+        f'<script type="application/json" data-plotly-spec>{serialized}</script>'
+        f'<div class="notebook-plotly-target" data-plotly-target{height_style}></div>'
+        '<p class="notebook-plotly-error" data-plotly-error hidden>'
+        "Interactive plot could not be rendered."
+        "</p></div>"
+    )
+
+
+def plotly_layout_height(layout: Mapping[str, object]) -> int | None:
+    """Return a figure's authored pixel height, when it declares a usable one."""
+
+    height = layout.get("height")
+    if isinstance(height, bool) or not isinstance(height, int | float):
+        return None
+    if not 0 < height <= MAX_PLOTLY_FIGURE_HEIGHT_PX:
+        return None
+    return round(height)
 
 
 def render_performance_result(

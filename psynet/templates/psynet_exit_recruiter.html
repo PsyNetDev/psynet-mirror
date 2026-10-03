@@ -1,0 +1,50 @@
+{#
+    Final page for recruiters that have no exit page of their own: generic and
+    local recruitment, and the lab recruiters. Prolific and Lucid use their
+    own templates.
+
+    Dallinger's exit_recruiter.html cannot be overridden by name, because its
+    extra_files mechanism does not replace templates Dallinger already ships,
+    so PsyNet renders this one instead from
+    PsyNetExitPageMixin.exit_response.
+
+    Deliberately says nothing about payment. The participant has already been
+    told what they earned on the debrief page, which respects show_reward;
+    repeating it here would restate it in a page that cannot know whether the
+    payment has gone through.
+#}
+{% extends "psynet_layout.html" %}
+
+{% block title %}{% if left_early %}{{ pgettext("exit", "You chose to leave.") }}{% else %}{{ gettext("Thank you for taking part.") }}{% endif %}{% endblock %}
+
+{% block body %}
+    <div class="container my-5 psynet-surface">
+        <h1 id="header">{% if left_early %}{{ pgettext("exit", "You chose to leave.") }}{% else %}{{ gettext("Thank you for taking part.") }}{% endif %}</h1>
+        <hr>
+        <p id="exit-text">
+            {% if left_early %}
+                {{ pgettext("exit", "You may close this page.") }}
+            {% else %}
+                {{ pgettext("exit", "Your responses have been saved. You may close this page.") }}
+            {% endif %}
+        </p>
+        {% if participant_reference %}
+            <p id="participant-reference" class="text-body-secondary">
+                {{ pgettext("exit", "Reference code") }}: <code>{{ participant_reference }}</code>
+            </p>
+        {% endif %}
+    </div>
+{% endblock %}
+
+{% block scripts %}
+    {{ super() }}
+    <script>
+        // Keep Back on this thank-you page. Exit is reached via location.replace,
+        // so the previous history entry is an earlier setup page (often /start)
+        // that cannot usefully resume a finished assignment.
+        history.pushState(null, "", location.href);
+        window.addEventListener("popstate", function () {
+            history.pushState(null, "", location.href);
+        });
+    </script>
+{% endblock %}

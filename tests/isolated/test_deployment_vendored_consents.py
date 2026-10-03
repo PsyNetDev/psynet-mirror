@@ -7,12 +7,14 @@ deployment packages only the experiment directory. This test fails loudly if
 someone updates one copy but not the other.
 """
 
+import sys
 from pathlib import Path
 
 from psynet.utils import get_psynet_root
 
 VENDORED_DIRS = [
     Path("tests/deployment/audio_gibbs/consents_cococo"),
+    Path("tests/deployment/auto_recruit_prolific/consents_cococo"),
     Path("tests/deployment/payment_flows_prolific/consents_cococo"),
 ]
 
@@ -24,6 +26,20 @@ def _vendored_files(directory: Path) -> dict:
         for path in sorted(directory.rglob("*"))
         if path.is_file() and "__pycache__" not in path.parts
     }
+
+
+def test_cultural_foundation_consent_opts_out_of_spa_contract():
+    """The paid consent page must not raise under in-place timeline transitions."""
+    exp_dir = get_psynet_root() / "tests/deployment/payment_flows_prolific"
+    sys.path.insert(0, str(exp_dir))
+    try:
+        from consents_cococo.consent_cultural_foundation import _make_consent_page
+
+        page = _make_consent_page("cf_main_consent", "<p>ok</p>", time_estimate=60)
+        assert page.requires_full_page_reload
+        page._check_spa_template_contract(inplace_timeline_transitions=True)
+    finally:
+        sys.path.remove(str(exp_dir))
 
 
 def test_vendored_consents_copies_are_identical():

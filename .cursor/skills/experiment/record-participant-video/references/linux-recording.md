@@ -81,9 +81,9 @@ ffmpeg -y \
   audit/artifacts/participant_raw.mp4
 ```
 
-4. Before publishing the participant recording, run a short sync probe in the
-   same browser/display/sink that flashes the screen and plays a beep from the
-   same JavaScript callback.
+4. Before publishing the participant recording, open `scripts/sync-probe.html`
+   from this skill in the same browser/display/sink. It flashes the screen and
+   plays a beep from the same JavaScript callback once per second.
 5. Measure the flash/beep offset from the resulting MP4. If audio is early or
    late, post-process the participant recording using the measured offset, for
    example:

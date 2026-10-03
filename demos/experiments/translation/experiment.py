@@ -20,6 +20,9 @@ class Exp(psynet.experiment.Experiment):
     config = {
         "locale": "de",
         "supported_locales": ["en", "de", "nl"],
+        # Asserted by the end-to-end tests; generic recruitment now hides
+        # rewards unless the experiment opts in.
+        "show_reward": True,
     }
     timeline = Timeline(
         NoConsent(),

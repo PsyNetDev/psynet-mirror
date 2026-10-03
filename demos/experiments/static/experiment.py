@@ -160,6 +160,8 @@ class Exp(psynet.experiment.Experiment):
             }
             for participant in Participant.query.all()
         ]
+        if context != "export":
+            return {"trial": trials, "participant": participants}
         return {
             "trial": pd.DataFrame.from_records(trials),
             "participant": pd.DataFrame.from_records(participants),
