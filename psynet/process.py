@@ -7,6 +7,7 @@ from dallinger import db
 from dallinger.db import redis_conn
 from dallinger.utils import classproperty
 from rq import Queue
+from rq.exceptions import NoSuchJobError
 from rq.job import Job
 from sqlalchemy import (
     Boolean,
@@ -420,8 +421,11 @@ class LocalAsyncProcess(AsyncProcess):
     #     cls.log_to_redis(msg)
 
 
+def _rq_job_id(process_id):
+    return f"psynet_async_process_{process_id}"
+
+
 class WorkerAsyncProcess(AsyncProcess):
-    redis_job_id = Column(String)
     timeout = Column(Float)  # note -- currently only applies to non-local proceses
     timeout_scheduled_for = Column(DateTime)
     cancelled = Column(Boolean, default=False)
@@ -464,13 +468,12 @@ class WorkerAsyncProcess(AsyncProcess):
 
     @classmethod
     def launch(cls, process: dict):
-        # Previously we took the id of the enqueue_call and saved that in Process.redis_job_id,
-        # but this is not possible now that the Process object is not accessible.
         cls.redis_queue.enqueue_call(
             func=cls.call_function_with_logger,
             args=(),
             kwargs=dict(process_id=process["id"]),
             timeout=process["timeout"],
+            job_id=_rq_job_id(process["id"]),
         )
 
     @classmethod
@@ -495,6 +498,10 @@ class WorkerAsyncProcess(AsyncProcess):
             db.session.commit()
 
     @property
+    def redis_job_id(self):
+        return _rq_job_id(self.id)
+
+    @property
     def redis_job(self):
         return Job.fetch(self.redis_job_id, connection=redis_conn)
 
@@ -502,7 +509,14 @@ class WorkerAsyncProcess(AsyncProcess):
         self.cancelled = True
         self.pending = False
         self.fail("Cancelled asynchronous process")
-        self.redis_job.cancel()
+        try:
+            self.redis_job.cancel()
+        except NoSuchJobError:
+            logger.info(
+                "No queued job to cancel for async process %s; it already finished "
+                "or expired.",
+                self.id,
+            )
         if self.participant_id is not None:
             from psynet.timeline_hold import _queue_timeline_hold_wake
 

@@ -4,9 +4,11 @@ import time
 
 import pytest
 from dallinger import db
+from dallinger.db import redis_conn
+from rq import Queue
 
 import psynet.experiment  # noqa -- to ensure that all SQLAlchemy classes are registered
-from psynet.process import LocalAsyncProcess
+from psynet.process import LocalAsyncProcess, WorkerAsyncProcess
 from psynet.pytest_psynet import path_to_test_experiment
 
 
@@ -221,3 +223,18 @@ def test_launch_queue_follows_savepoints_and_close(monkeypatch):
     db.session.close()
     db.session.commit()
     assert launched == [outer, released]
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("static")], indirect=True
+)
+@pytest.mark.usefixtures("launched_experiment")
+def test_cancel_cancels_the_queued_worker_job(monkeypatch):
+    unworked_queue = Queue("psynet_test_unworked", connection=redis_conn)
+    monkeypatch.setattr(WorkerAsyncProcess, "redis_queue", unworked_queue)
+
+    process = WorkerAsyncProcess(do_nothing)
+    db.session.commit()
+    process.cancel()
+
+    assert process.redis_job.get_status() == "canceled"
