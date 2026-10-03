@@ -853,8 +853,8 @@ class ChainNode(TrialNode):
 
         # This is the legacy interface -- if we are using the new interface (make_next_definition),
         # then definition will have been provided.
-        if not definition and not self.definition:
-            if not seed:
+        if definition is None and self.definition is None:
+            if seed is None:
                 if degree == 0:
                     seed = self.create_initial_seed(experiment, participant)
                 else:
@@ -862,7 +862,7 @@ class ChainNode(TrialNode):
                     seed = parent.create_seed(experiment, participant)
             definition = self.create_definition_from_seed(seed, experiment, participant)
 
-        if definition:
+        if definition is not None:
             self.definition = definition
 
         self.assets = assets
@@ -913,7 +913,12 @@ class ChainNode(TrialNode):
         self.target_n_trials = network.trials_per_node
 
     def create_initial_seed(self, experiment, participant):
-        raise NotImplementedError
+        """Return the seed of a chain's first node when no definition was given."""
+        raise NotImplementedError(
+            f"{type(self).__name__} was created without a definition. Pass "
+            "definition=... (for example definition={}) when creating start "
+            "nodes, or implement create_initial_seed."
+        )
 
     def stage_assets(self, experiment):
         # self.assets = {}

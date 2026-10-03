@@ -185,6 +185,13 @@ def test_fail_trials_on_premature_exit_true_emits_deprecation_warning():
         assert Path(warning.filename).resolve() == Path(__file__).resolve()
 
 
+def test_chain_node_accepts_empty_definition():
+    assert CustomNode(definition={}).definition == {}
+
+    with pytest.raises(NotImplementedError, match="without a definition"):
+        CustomNode()
+
+
 def test_chain_trial_maker_rejects_mismatched_start_nodes():
     start_nodes = [ChainNode(definition={"seed": "x"})]
 
