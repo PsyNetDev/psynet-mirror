@@ -35,7 +35,6 @@ from sqlalchemy import (
     case,
     func,
     or_,
-    true,
 )
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.ext.associationproxy import association_proxy
@@ -608,7 +607,9 @@ class ChainNetwork(TrialNetwork):
         if self.full:
             return 0
         else:
-            return self.target_n_trials - count_completed_trials_for_network(self.id)
+            return max(
+                0, self.target_n_trials - count_completed_trials_for_network(self.id)
+            )
 
     @hybrid_property
     def ready_to_spawn(self):
@@ -1723,7 +1724,6 @@ class ChainTrialMaker(NetworkTrialMaker):
         self.chains_per_experiment = chains_per_experiment
         self.max_nodes_per_chain = max_nodes_per_chain
         self.trials_per_node = trials_per_node
-        self._node_capacity_is_unlimited = False
         self.check_performance_at_end = check_performance_at_end
         self.check_performance_every_trial = check_performance_every_trial
         self.propagate_failure = propagate_failure
@@ -2068,8 +2068,12 @@ class ChainTrialMaker(NetworkTrialMaker):
         n_without_target, still_required = db.session.execute(
             select(
                 func.count(network.id).filter(network.target_n_trials.is_(None)),
+                # Static nodes can exceed their target; surplus trials on one
+                # node must not offset a shortfall on another.
                 func.sum(
-                    network.target_n_trials - func.coalesce(completed.c.n, 0)
+                    func.greatest(
+                        network.target_n_trials - func.coalesce(completed.c.n, 0), 0
+                    )
                 ).filter(network.full.is_(False)),
             )
             .outerjoin(completed, completed.c.network_id == network.id)
@@ -2288,13 +2292,16 @@ class ChainTrialMaker(NetworkTrialMaker):
             self._hook_is_overridden(name) for name in self._list_selection_hooks
         )
 
-    def _find_eligible_candidates(self, participant, experiment, *, limit=None):
+    def _find_eligible_candidates(
+        self, participant, experiment, *, limit=None, for_selection=False
+    ):
         """Return the current block's eligible candidates in selection order, or ``"wait"``.
 
         Built-in eligibility, capacity, and ordering are evaluated in one SQL
         query. Unless a Python eligibility filter is overridden, only the
         returned candidates are loaded. An empty list means that the block
-        has nothing more to give the participant.
+        has nothing more to give the participant. ``for_selection`` marks the
+        query whose first result is given to the participant.
         """
         logger.info(
             "Looking for eligible %ss for participant %i in block %r.",
@@ -2312,11 +2319,24 @@ class ChainTrialMaker(NetworkTrialMaker):
             )
 
         limit = limit or self.selection_pool_size
+        spread = for_selection and self._spreads_concurrent_selections(participant)
+        if spread:
+            networks = self._select_unclaimed_candidate(
+                participant, experiment, available, order_by
+            )
+            if networks:
+                return [self._candidate_value(network) for network in networks]
         networks = query.filter(available).order_by(*order_by).limit(limit).all()
         if not networks:
             if db.session.query(query.exists()).scalar():
                 return self._when_candidates_are_busy(participant, experiment)
             return []
+        if spread:
+            logger.info(
+                "Every available %s is being given to another participant; "
+                "sharing one.",
+                self._candidate_label,
+            )
         if limit is None:
             self._warn_if_many_candidates(len(networks))
         return [self._candidate_value(network) for network in networks]
@@ -2324,20 +2344,13 @@ class ChainTrialMaker(NetworkTrialMaker):
     def _when_candidates_are_busy(self, participant, experiment):
         """Decide between waiting and finishing the block when every candidate is busy.
 
-        Candidates are busy when they await an asynchronous process or have
-        no trial capacity left for now. A participant committed to one chain,
-        or to a planned node awaiting asynchronous processing, waits for it;
-        a planned node without capacity is left to ``_move_past_focus``.
-        Otherwise ``wait_for_networks`` decides.
+        Candidates are busy when they await an asynchronous process or, in
+        chains, have no trial capacity left for now. A participant committed
+        to one chain or planned node waits for it; otherwise
+        ``wait_for_networks`` decides.
         """
         state = participant.module_state
         if self._focus_network_id(state) is not None:
-            if (
-                self._plan_entries_are_single_trials
-                and state.planned_network_ids is not None
-                and not self._focus_is_pending(participant, experiment)
-            ):
-                return []
             logger.info("Will wait for the current %s.", self._candidate_label)
             return "wait"
         if self.wait_for_networks:
@@ -2351,13 +2364,6 @@ class ChainTrialMaker(NetworkTrialMaker):
         )
         return []
 
-    def _focus_is_pending(self, participant, experiment):
-        """Whether the focused candidate awaits an asynchronous process."""
-        query = self._candidate_query(participant, experiment)
-        return db.session.query(
-            query.filter(not_(self._candidate_is_not_pending())).exists()
-        ).scalar()
-
     def _focus_network_id(self, state):
         """Return the network the participant is committed to in this block, if any."""
         if state.planned_network_ids is not None:
@@ -2368,11 +2374,14 @@ class ChainTrialMaker(NetworkTrialMaker):
             return None
         return state.current_chain_id
 
-    def _candidate_query(self, participant, experiment, *, focused=True):
+    def _candidate_query(
+        self, participant, experiment, *, focused=True, require_head=False
+    ):
         """Query the current block's networks that pass the built-in checks.
 
-        Networks are outer-joined to their heads. With ``focused``, the query
-        is narrowed to the chain or planned item the participant is
+        Networks are outer-joined to their heads, or inner-joined with
+        ``require_head``, which row locks on the head need. With ``focused``,
+        the query is narrowed to the chain or planned item the participant is
         committed to, if any.
         """
         network = self.network_class
@@ -2405,9 +2414,8 @@ class ChainTrialMaker(NetworkTrialMaker):
 
         # An outer join keeps headless networks, which are data errors, so
         # that selection raises on them instead of silently skipping them.
-        query = query.outerjoin(
-            self.node_class, network.head_id == self.node_class.id
-        ).options(
+        join = query.join if require_head else query.outerjoin
+        query = join(self.node_class, network.head_id == self.node_class.id).options(
             contains_eager(network.head.of_type(self.node_class)),
             # Dallinger's per-network count properties (such as n_alive_nodes)
             # are correlated subqueries on the node table; with node joined
@@ -2432,7 +2440,7 @@ class ChainTrialMaker(NetworkTrialMaker):
     def _candidate_is_available(self):
         """Return a SQL condition for candidates that can take a trial now."""
         conditions = [self._candidate_is_not_pending()]
-        if not self._node_capacity_is_unlimited:
+        if self._enforces_node_capacity:
             # Counting viable trials, not only finalized ones, includes the
             # trial submitted in this same request.
             conditions.append(
@@ -2465,6 +2473,36 @@ class ChainTrialMaker(NetworkTrialMaker):
             )
         order_by.append(func.random())
         return order_by
+
+    def _spreads_concurrent_selections(self, participant):
+        """Whether simultaneous requests should be given different nodes.
+
+        Only uncapped balanced orders need this: chains already lock and
+        recount the chosen node, and random or planned orders take no account
+        of what other participants receive.
+        """
+        return (
+            not self._enforces_node_capacity
+            and self._order_for_block(participant.module_state.block) == "balanced"
+        )
+
+    def _select_unclaimed_candidate(self, participant, experiment, available, order_by):
+        """Select and row-lock the best candidate that no concurrent request has locked.
+
+        ``SKIP LOCKED`` passes over nodes that simultaneous requests are giving
+        out, so they receive the next least-used node instead. The lock lasts
+        until the trial is committed, by which time it counts towards balance.
+        ``FOR NO KEY UPDATE`` does not conflict with the key-share locks taken
+        when trials referencing the node are inserted.
+        """
+        return (
+            self._candidate_query(participant, experiment, require_head=True)
+            .filter(available)
+            .order_by(*order_by)
+            .limit(1)
+            .with_for_update(of=self.node_class, key_share=True, skip_locked=True)
+            .all()
+        )
 
     def _filter_candidates_in_python(
         self, query, available, order_by, participant, experiment
@@ -2546,6 +2584,9 @@ class ChainTrialMaker(NetworkTrialMaker):
     #: Whether each planned item gives the participant exactly one trial.
     #: True for static nodes; chains give trials until they are exhausted.
     _plan_entries_are_single_trials = False
+    #: Whether a node stops taking trials once it has ``trials_per_node``.
+    #: Chains need this to grow correctly; static targets only drive recruitment.
+    _enforces_node_capacity = True
     _find_hook_name = "find_chains"
     _select_hook_name = "select_chain"
     _order_argument = "chain_order"
@@ -2575,7 +2616,6 @@ class ChainTrialMaker(NetworkTrialMaker):
             logger.info("before_selection returned %r.", outcome)
             return outcome
 
-        deferred = set()
         while True:
             if self.should_finish_block(participant, state.block):
                 logger.info("Block %r is finished.", state.block)
@@ -2584,10 +2624,7 @@ class ChainTrialMaker(NetworkTrialMaker):
                 found = self._select_in_block(participant, experiment)
                 if found is not None:
                     return found
-                moved = self._move_past_focus(participant, experiment, deferred)
-                if moved == "wait":
-                    return "wait"
-                if moved:
+                if self._move_past_focus(participant):
                     continue
             if state.is_last_block:
                 return "exit"
@@ -2606,7 +2643,7 @@ class ChainTrialMaker(NetworkTrialMaker):
             discovered = getattr(self, self._find_hook_name)(participant, experiment)
         else:
             discovered = self._find_eligible_candidates(
-                participant, experiment, limit=1
+                participant, experiment, limit=1, for_selection=True
             )
         if isinstance(discovered, str):
             if discovered not in ("wait", "exit"):
@@ -2635,14 +2672,11 @@ class ChainTrialMaker(NetworkTrialMaker):
             raise RuntimeError(f"Selected chain {chain.id} has no head")
         return Selection(value=chain.head, context=selection.context)
 
-    def _move_past_focus(self, participant, experiment, deferred):
+    def _move_past_focus(self, participant):
         """Leave the current chain or planned item once it can give nothing more.
 
         Returns ``False`` if the participant was not committed to anything,
-        ``"wait"`` to wait for it, and ``True`` after moving on. A planned
-        static node held by other participants' unfinished trials is retried
-        at the end of the plan; ``deferred`` collects the nodes already
-        retried in this request so that a fully held plan cannot loop.
+        and ``True`` after moving on.
         """
         state = participant.module_state
         focus = self._focus_network_id(state)
@@ -2652,92 +2686,17 @@ class ChainTrialMaker(NetworkTrialMaker):
             logger.info("Chain %i is finished for this participant.", focus)
             self._update_group_states(participant, current_chain_id=None)
             return True
-        if not self._plan_entries_are_single_trials:
-            logger.info("Planned chain %i is finished for this participant.", focus)
-            self._update_group_states(
-                participant, plan_position=state.plan_position + 1
-            )
-            return True
-        return self._move_past_unavailable_planned_nodes(
-            participant, experiment, deferred
-        )
-
-    def _move_past_unavailable_planned_nodes(self, participant, experiment, deferred):
-        """Advance a static plan past its focus to the next node that may give a trial.
-
-        The focus has just failed selection. One query classifies the rest of
-        the plan, so that skipping many full nodes costs no more queries than
-        skipping one.
-        """
-        state = participant.module_state
-        plan = list(state.planned_network_ids)
-        position = state.plan_position
-        statuses = self._planned_node_statuses(
-            participant, experiment, set(plan[position:])
-        )
-        focus_position = position
-        outcome = True
-        while position < len(plan):
-            network_id = plan[position]
-            available, pending, may_free_up = statuses.get(
-                network_id, (False, False, False)
-            )
-            if position != focus_position and (available or pending):
-                break
-            if may_free_up and network_id not in deferred:
-                logger.info(
-                    "Planned node in network %i is held by unfinished trials; "
-                    "trying it again at the end of the plan.",
-                    network_id,
-                )
-                deferred.add(network_id)
-                plan.append(plan.pop(position))
-                focus_position = -1
-                continue
-            if network_id in deferred and self.wait_for_networks:
-                outcome = "wait"
-                break
+        if self._plan_entries_are_single_trials:
             logger.warning(
-                "Skipping planned %s in network %i for participant %i: it can no "
-                "longer take a trial (for example, it is full or failed).",
-                self._candidate_label,
-                network_id,
+                "Skipping planned node in network %i for participant %i: it "
+                "failed or no longer passes the eligibility checks.",
+                focus,
                 participant.id,
             )
-            position += 1
-        self._update_group_states(
-            participant, planned_network_ids=plan, plan_position=position
-        )
-        return outcome
-
-    def _planned_node_statuses(self, participant, experiment, network_ids):
-        """Return ``{network_id: (available, pending, may_free_up)}`` for planned nodes.
-
-        Nodes missing from the result can no longer give the participant a
-        trial. ``may_free_up`` means that the node lacks capacity only because
-        of other participants' unfinished trials.
-        """
-        if self._node_capacity_is_unlimited:
-            may_free_up = true()
         else:
-            may_free_up = (
-                self._completed_trial_count_for_node(self.node_class)
-                < self.trials_per_node
-            )
-        rows = (
-            self._candidate_query(participant, experiment, focused=False)
-            .filter(self.network_class.id.in_(network_ids))
-            .add_columns(
-                self._candidate_is_available().label("available"),
-                not_(self._candidate_is_not_pending()).label("pending"),
-                may_free_up.label("may_free_up"),
-            )
-            .all()
-        )
-        return {
-            network.id: (available, pending, may_free_up)
-            for network, available, pending, may_free_up in rows
-        }
+            logger.info("Planned chain %i is finished for this participant.", focus)
+        self._update_group_states(participant, plan_position=state.plan_position + 1)
+        return True
 
     def _rotating_plan(self, state):
         """Return the planned chains when they are taken in turn, else ``None``."""
@@ -2891,7 +2850,7 @@ class ChainTrialMaker(NetworkTrialMaker):
         releases the lock, so a request never holds a lock on a node it does
         not use; otherwise two requests reselecting at once could deadlock.
         """
-        if self._node_capacity_is_unlimited:
+        if not self._enforces_node_capacity:
             return True
         savepoint = db.session.begin_nested()
         db.session.execute(

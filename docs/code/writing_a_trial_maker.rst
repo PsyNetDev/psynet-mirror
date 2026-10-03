@@ -159,8 +159,9 @@ to the next block, or leaves the trial maker after the last one.
 ``node_order`` sets the order of the nodes within a block. Dynamic orders
 are recomputed in the database for each trial:
 
-- ``"balanced"`` (default): nodes with the fewest trials first, ties broken
-  at random.
+- ``"balanced"`` (default): nodes with the fewest trials first, counting
+  trials in progress, with ties broken at random. Participants requesting
+  a trial at the same moment are given different nodes where possible.
 - ``"random"``: a fresh random draw for each trial. Without
   ``allow_repeated_nodes`` this gives each participant the block's nodes in
   a random order; with it, a node can come up again before others have been
@@ -199,13 +200,10 @@ at most two trials of the same condition in a row:
         ),
     )
 
-If a planned node is waiting for asynchronous processing, the participant
-waits for it. If other participants' unfinished trials fill its
-``target_trials_per_node``, PsyNet moves it to the end of the plan and tries
-it again later; if every remaining planned node is held like this, PsyNet
-skips them. If it can no longer take a trial at all, for example because
-it already has ``target_trials_per_node`` finished trials, PsyNet skips it
-and logs a warning. A planned order already decides which node comes next, so it cannot
+A planned order gives the participant exactly the nodes it lists, however
+many trials those nodes already have. If a planned node is waiting for
+asynchronous processing, the participant waits for it; if it has failed,
+PsyNet skips it and logs a warning. A planned order already decides which node comes next, so it cannot
 be combined with ``select_node``, ``node_priority`` or ``find_nodes``; filter
 with ``filter_nodes_query`` or ``custom_node_filter`` instead. Repeat trials
 come after the last block and are not part of the plan.
@@ -220,12 +218,14 @@ Keeping selection fast
 
 PsyNet finds each trial's node with one database query. It orders the
 eligible nodes by any custom priority, then by balancing (with
-``node_order="balanced"``), then randomly, and loads only the first. It then
-locks that node and recounts its trials, a small fixed cost that stops
-simultaneous participants from overfilling it. Nodes are not eligible if they
-already have ``target_trials_per_node`` trials, if they are waiting for
-asynchronous processing, or if they are outside the participant's group or
-current block. Planned orders (see :ref:`trial_order`) load the block's nodes
+``node_order="balanced"``), then randomly, and loads only the first. With
+``"balanced"``, the query locks that node until the trial is saved and skips
+nodes that simultaneous requests have locked, so participants arriving
+together are spread across nodes. Nodes are not eligible if they are waiting
+for asynchronous processing, or if they are outside the participant's group
+or current block. ``target_trials_per_node`` only decides when
+``recruit_mode="n_trials"`` stops recruiting; it never makes a node
+ineligible. Planned orders (see :ref:`trial_order`) load the block's nodes
 once, when the participant enters the block.
 
 ``custom_node_filter``, ``select_node`` and ``find_nodes`` run in Python, so

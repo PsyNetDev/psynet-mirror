@@ -156,7 +156,9 @@ class StaticTrialMaker(ChainTrialMaker):
         Target number of trials to recruit for each node. ``None`` (the
         default) means unlimited. When set, it must be a positive number;
         ``0`` is rejected. This target is only relevant if
-        ``recruit_mode="n_trials"``.
+        ``recruit_mode="n_trials"``. It does not cap selection: a node can
+        receive more trials than its target, for example when participants
+        recruited together finish at the same time.
 
     max_trials_per_block
         Determines the maximum number of trials that a participant will be allowed to experience in each block,
@@ -398,7 +400,6 @@ class StaticTrialMaker(ChainTrialMaker):
             sync_group_timeout_between_barriers_action=sync_group_timeout_between_barriers_action,
             sync_group_wait_content=sync_group_wait_content,
         )
-        self._node_capacity_is_unlimited = target_trials_per_node is None
         if isinstance(nodes, list):
             self._check_order_setting_blocks(
                 {node.block for node in nodes}, all_blocks_known=True
@@ -622,6 +623,7 @@ class StaticTrialMaker(ChainTrialMaker):
         self._raise_unsupported_selection_hook("chain_priority")
 
     _plan_entries_are_single_trials = True
+    _enforces_node_capacity = False
     _find_hook_name = "find_nodes"
     _select_hook_name = "select_node"
     _order_argument = "node_order"

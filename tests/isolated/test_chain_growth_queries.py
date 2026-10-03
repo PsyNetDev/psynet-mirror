@@ -192,7 +192,7 @@ def test_find_chains_is_one_query_that_skips_full_chains(db_session, participant
     "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
 )
 @pytest.mark.usefixtures("in_experiment_directory")
-def test_find_nodes_is_one_query_that_skips_full_nodes(db_session, participant):
+def test_static_trial_targets_do_not_cap_selection(db_session, participant):
     exp = get_experiment()
     trial_maker = static_trial_maker(
         target_trials_per_node=1, max_trials_per_participant=None
@@ -202,14 +202,13 @@ def test_find_nodes_is_one_query_that_skips_full_nodes(db_session, participant):
         for _ in range(20)
     ]
     initialize_trial_maker_state(trial_maker, participant)
-    add_trial(GrowthQueryStaticTrial, networks[0].head, participant)
+    add_trial(GrowthQueryStaticTrial, networks[0].head, new_participant())
 
     with assert_query_count(max_queries=1):
         eligible = trial_maker.find_nodes(participant, exp)
 
-    assert {node.id for node in eligible} == {
-        network.head.id for network in networks[1:]
-    }
+    assert {node.id for node in eligible} == {network.head.id for network in networks}
+    assert trial_maker._claim_node_capacity(networks[0].head)
 
 
 @pytest.mark.parametrize(
@@ -289,23 +288,23 @@ def test_unlimited_static_nodes_skip_viable_trial_counts(
     "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
 )
 @pytest.mark.usefixtures("in_experiment_directory")
-def test_node_filled_after_selection_is_not_overfilled(db_session, participant):
-    class RacedStaticTrialMaker(StaticTrialMaker):
-        def select_node(self, nodes, participant, experiment):
-            node = nodes[-1]
+def test_chain_node_filled_after_selection_is_not_overfilled(db_session, participant):
+    class RacedChainTrialMaker(ChainTrialMaker):
+        def select_chain(self, chains, participant, experiment):
+            chain = chains[-1]
             if not raced:
-                raced.append(node)
-                add_trial(GrowthQueryStaticTrial, node, other_participant)
-            return node
+                raced.append(chain.head)
+                add_trial(GrowthQueryTrial, chain.head, other_participant)
+            return chain
 
     exp = get_experiment()
     raced = []
     other_participant = new_participant()
-    trial_maker = static_trial_maker(
-        target_trials_per_node=1, maker_class=RacedStaticTrialMaker
+    trial_maker = chain_trial_maker(
+        chains_per_experiment=2, maker_class=RacedChainTrialMaker
     )
     for _ in range(2):
-        create_chain_network(trial_maker, exp, network_class=StaticNetwork)
+        create_chain_network(trial_maker, exp)
     initialize_trial_maker_state(trial_maker, participant)
 
     trial, status = trial_maker.prepare_trial(exp, participant)
@@ -336,30 +335,71 @@ def test_headless_chain_raises_instead_of_being_skipped(db_session, participant)
 @pytest.mark.usefixtures("in_experiment_directory")
 def test_only_successful_capacity_claims_keep_their_node_lock(db_session, participant):
     exp = get_experiment()
-    trial_maker = static_trial_maker(target_trials_per_node=1)
-    full, free = [
-        create_chain_network(trial_maker, exp, network_class=StaticNetwork).head
-        for _ in range(2)
-    ]
-    add_trial(GrowthQueryStaticTrial, full, participant)
+    trial_maker = chain_trial_maker(chains_per_experiment=2)
+    full, free = [create_chain_network(trial_maker, exp).head for _ in range(2)]
+    add_trial(GrowthQueryTrial, full, participant)
     db.session.commit()
 
-    def locked_elsewhere(node):
-        with db.engine.connect() as other, other.begin():
-            try:
-                other.execute(
-                    select(Node.id)
-                    .where(Node.id == node.id)
-                    .with_for_update(key_share=True, nowait=True)
-                )
-            except OperationalError:
-                return True
-        return False
-
     assert not trial_maker._claim_node_capacity(full)
-    assert not locked_elsewhere(full)
+    assert not _locked_elsewhere(full)
     assert trial_maker._claim_node_capacity(free)
-    assert locked_elsewhere(free)
+    assert _locked_elsewhere(free)
+
+
+def _locked_elsewhere(node):
+    """Whether another connection would fail to lock the node's row right now."""
+    with db.engine.connect() as other, other.begin():
+        try:
+            other.execute(
+                select(Node.id)
+                .where(Node.id == node.id)
+                .with_for_update(key_share=True, nowait=True)
+            )
+        except OperationalError:
+            return True
+    return False
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_balanced_selection_skips_nodes_being_given_out_concurrently(
+    db_session, participant
+):
+    exp = get_experiment()
+    trial_maker = static_trial_maker(
+        target_trials_per_node=None,
+        max_trials_per_participant=None,
+        node_order="balanced",
+    )
+    networks = networks_in_blocks(
+        trial_maker, participant, ["default"] * 2, network_class=StaticNetwork
+    )
+    least_used, other = (network.head for network in networks)
+    add_trial(GrowthQueryStaticTrial, other, new_participant())
+    db.session.commit()
+
+    with db.engine.connect() as concurrent, concurrent.begin():
+        concurrent.execute(
+            select(Node.id)
+            .where(Node.id == least_used.id)
+            .with_for_update(key_share=True)
+        )
+        selection = trial_maker._select_trial_node(participant, exp)
+        assert selection.value.id == other.id
+        db.session.rollback()
+
+        concurrent.execute(
+            select(Node.id).where(Node.id == other.id).with_for_update(key_share=True)
+        )
+        selection = trial_maker._select_trial_node(participant, exp)
+        assert selection.value.id == least_used.id
+        db.session.rollback()
+
+    selection = trial_maker._select_trial_node(participant, exp)
+    assert selection.value.id == least_used.id
+    assert _locked_elsewhere(least_used)
 
 
 @pytest.mark.parametrize(
@@ -802,6 +842,26 @@ def test_n_trials_still_required_counts_completed_trials_in_open_networks(
         assert trial_maker.n_trials_still_required == (3 - 1) + 3
 
 
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_static_surplus_trials_do_not_offset_other_nodes_shortfall(
+    db_session, participant
+):
+    exp = get_experiment()
+    trial_maker = static_trial_maker(target_trials_per_node=1)
+    surplus, empty = [
+        create_chain_network(trial_maker, exp, network_class=StaticNetwork)
+        for _ in range(2)
+    ]
+    for _ in range(3):
+        add_trial(GrowthQueryStaticTrial, surplus.head, new_participant())
+
+    assert trial_maker.n_trials_still_required == 1
+    assert surplus.n_trials_still_required == 0
+
+
 class PythonFilteredStaticTrialMaker(StaticTrialMaker):
     def custom_node_filter(self, nodes, participant, experiment):
         return nodes
@@ -824,7 +884,7 @@ def static_selection_fixture(
     ]
     nodes = [network.head for network in networks]
     initialize_trial_maker_state(trial_maker, participant)
-    add_trial(GrowthQueryStaticTrial, nodes[0], participant)
+    participant.module_state.participated_networks = [networks[0].id]
     nodes[1].async_on_deploy_requested = True
     networks[2].participant_group = "other"
     db.session.flush()
@@ -848,7 +908,8 @@ def test_database_and_python_filter_paths_agree(
         eligible = trial_maker.find_nodes(participant, exp)
         available = {node.id for node in eligible} - {node.id for node in nodes[3:]}
         for node in nodes[3:]:
-            add_trial(GrowthQueryStaticTrial, node, participant)
+            node.async_on_deploy_requested = True
+        db.session.flush()
         results[maker_class] = (
             len(eligible),
             available,
@@ -1055,47 +1116,60 @@ def test_planned_node_order_is_followed_then_exits(
     "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
 )
 @pytest.mark.usefixtures("in_experiment_directory")
-def test_full_planned_node_is_skipped_with_a_warning(db_session, participant, caplog):
+def test_planned_node_order_ignores_trial_targets(db_session, participant):
     trial_maker = static_trial_maker(
         target_trials_per_node=1,
         max_trials_per_participant=None,
         node_order="listed",
     )
-    *full, other = networks_in_blocks(
-        trial_maker, participant, ["default"] * 21, network_class=StaticNetwork
+    finished, in_progress = networks_in_blocks(
+        trial_maker, participant, ["default"] * 2, network_class=StaticNetwork
     )
     other_participant = new_participant()
-    for network in full:
-        add_trial(GrowthQueryStaticTrial, network.head, other_participant)
-    trial_maker._plan_block(participant, get_experiment())
+    add_trial(GrowthQueryStaticTrial, finished.head, other_participant)
+    add_trial(
+        GrowthQueryStaticTrial, in_progress.head, other_participant, finalized=False
+    )
+    exp = get_experiment()
 
-    # Skipping many full nodes costs no more queries than skipping one.
-    with assert_query_count(max_queries=8):
-        selection = trial_maker._select_trial_node(participant, get_experiment())
+    received = []
+    while True:
+        trial, status = trial_maker.prepare_trial(exp, participant)
+        if trial is None:
+            break
+        received.append(trial.node)
 
-    assert selection.value is other.head
-    assert any("Skipping planned node" in r.message for r in caplog.records)
+    assert status == "exit"
+    assert received == [finished.head, in_progress.head]
 
 
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
 )
 @pytest.mark.usefixtures("in_experiment_directory")
-def test_held_planned_node_is_retried_at_the_end(db_session, participant):
+def test_planned_node_waits_while_pending_and_is_skipped_once_failed(
+    db_session, participant, caplog
+):
     trial_maker = static_trial_maker(
-        target_trials_per_node=1,
+        target_trials_per_node=None,
         max_trials_per_participant=None,
         node_order="listed",
     )
-    held, other = networks_in_blocks(
+    first, second = networks_in_blocks(
         trial_maker, participant, ["default"] * 2, network_class=StaticNetwork
     )
-    add_trial(GrowthQueryStaticTrial, held.head, new_participant(), finalized=False)
+    trial_maker._plan_block(participant, get_experiment())
+    first.head.async_on_deploy_requested = True
+    db.session.flush()
 
+    assert trial_maker._select_trial_node(participant, get_experiment()) == "wait"
+
+    first.failed = True
+    db.session.flush()
     selection = trial_maker._select_trial_node(participant, get_experiment())
 
-    assert selection.value is other.head
-    assert participant.module_state.planned_network_ids == [other.id, held.id]
+    assert selection.value is second.head
+    assert any("Skipping planned node" in r.message for r in caplog.records)
 
 
 @pytest.mark.parametrize(

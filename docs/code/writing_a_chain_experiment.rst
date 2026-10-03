@@ -133,7 +133,9 @@ Chain length and trials per node
 --------------------------------
 
 - ``trials_per_node`` (default ``1``): responses a node needs before the next
-  node is made.
+  node is made. Unlike a static ``target_trials_per_node``, this is a hard
+  limit: once a node's trials, including those in progress, reach it, no
+  other participant is given that node, even if they ask at the same moment.
 - ``max_nodes_per_chain``: the chain is full after this many nodes.
 - ``expected_trials_per_participant`` and ``max_trials_per_participant``: an
   integer, or ``"n_start_nodes"``.

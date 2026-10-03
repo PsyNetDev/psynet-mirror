@@ -240,6 +240,15 @@ Search custom trial makers for ``find_networks``, ``find_node``,
   ``interleave_chains=False`` instead of giving each chain its own block.
   :class:`~psynet.trial.staircase.GeometricStaircaseTrialMaker` now does this
   by default.
+* ``target_trials_per_node`` (and the dense trial maker's
+  ``target_trials_per_condition``) only drives ``recruit_mode="n_trials"``.
+  Static nodes no longer stop being selected once they reach it, so a node
+  can end up with a few more trials than its target. ``node_order="balanced"``
+  still spreads trials evenly and gives participants who ask at the same
+  moment different nodes. To stop offering nodes once they have enough
+  trials, filter them by trial count in ``filter_nodes_query``; simultaneous
+  requests can still go slightly over. Chain
+  ``trials_per_node`` is still a hard limit.
 
 PsyNet raises an actionable ``TypeError`` when a removed or wrong-paradigm
 hook is still overridden.
