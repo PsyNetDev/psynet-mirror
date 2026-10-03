@@ -1078,6 +1078,12 @@ def test_old_should_finish_block_signature_is_rejected():
     with pytest.raises(TypeError, match=r"\(participant, block\)"):
         make_trial_maker(OldFinishMaker)
 
+    class FlexibleFinishMaker(ChainTrialMaker):
+        def should_finish_block(self, participant, block, **kwargs):
+            return False
+
+    make_trial_maker(FlexibleFinishMaker)
+
 
 def test_choose_block_order_override_conflicts_with_block_order():
     class OrderedMaker(ChainTrialMaker):
@@ -1109,10 +1115,12 @@ def test_shuffle_with_max_run_limits_runs():
         ("listed", ["B", "A", "C"]),
         (["C", "A"], ["C", "A"]),
         (lambda blocks: blocks[::-1], ["C", "A", "B"]),
+        (lambda trial_maker: [trial_maker.id], ["B"]),
     ],
 )
 def test_block_order_settings(block_order, expected):
     trial_maker = make_trial_maker(block_order=block_order)
+    trial_maker.id = "B"
     participant = DummyParticipant()
 
     trial_maker.init_block_order(SimpleNamespace(), participant, ["B", "A", "C"])
@@ -1121,8 +1129,10 @@ def test_block_order_settings(block_order, expected):
     assert participant.module_state.block == expected[0]
 
 
-@pytest.mark.parametrize("block_order", [["A", "Z"], ["A", "A"], []])
+@pytest.mark.parametrize("block_order", [["A", "Z"], ["A", "A"], lambda: []])
 def test_invalid_block_orders_are_rejected(block_order):
+    with pytest.raises(ValueError, match="non-empty list"):
+        make_trial_maker(block_order=[])
     trial_maker = make_trial_maker(block_order=block_order)
 
     with pytest.raises(ValueError, match="block order"):

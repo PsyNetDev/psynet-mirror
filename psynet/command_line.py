@@ -52,6 +52,7 @@ from .data import (
     populate_db_from_zip_file,
 )
 from .experiment_scaffold import (
+    _DEPLOYMENT_POLICY_REVIEW_MARKER,
     _clear_deployment_policy_review_marker,
     _deployment_policy_needs_review,
     _remove_obsolete_generated_docker_scripts,
@@ -1702,8 +1703,26 @@ def _check_experiment_directory(mode, *, require_git_commit=False):
     # Runs after the Git checks so 'git check-ignore' can report which
     # deployment-selected files the old .gitignore used to keep local.
     if _deployment_policy_needs_review():
-        ignored_paths = deployment_info._git_ignored_deployment_paths()
+        ignored_paths = deployment_info._git_ignored_deployment_paths(
+            extra_excludes_file=_DEPLOYMENT_POLICY_REVIEW_MARKER
+        )
         _clear_deployment_policy_review_marker()
+        intro = (
+            "PsyNet now uses deploy.toml instead of .gitignore to choose "
+            "which files are deployed, and created one for this experiment."
+        )
+        advice = (
+            "Add any that should stay local (credentials, private data, "
+            "large or generated files) to [exclude] in deploy.toml, then "
+            "rerun this command. This check runs only once; "
+            "'dallinger deployment-files list' shows the full selection."
+        )
+        if ignored_paths is None:
+            raise click.ClickException(
+                f"{intro} PsyNet could not check which of the files it selects "
+                "your .gitignore kept local, so review the selection with "
+                f"'dallinger deployment-files list'.\n\n{advice}"
+            )
         if ignored_paths:
             preview_limit = 10
             preview = "\n".join(f"  {path}" for path in ignored_paths[:preview_limit])
@@ -1711,14 +1730,8 @@ def _check_experiment_directory(mode, *, require_git_commit=False):
             if remaining > 0:
                 preview += f"\n  ... and {remaining} more"
             raise click.ClickException(
-                "PsyNet now uses deploy.toml instead of .gitignore to choose "
-                "which files are deployed, and created one for this experiment. "
-                "Your .gitignore kept these files local, but deploy.toml would "
-                f"deploy them:\n{preview}\n\n"
-                "Add any that should stay local (credentials, private data, "
-                "large or generated files) to [exclude] in deploy.toml, then "
-                "rerun this command. This check runs only once; "
-                "'dallinger deployment-files list' shows the full selection."
+                f"{intro} Your .gitignore kept these files local, but "
+                f"deploy.toml would deploy them:\n{preview}\n\n{advice}"
             )
     if require_git_commit:
         from .light_utils import git_commit_available

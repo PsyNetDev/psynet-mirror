@@ -152,10 +152,14 @@ def _reject_removed_balance_argument(name, value, replacement):
 def _validate_block_order(value):
     if value in ("random", "listed") or callable(value):
         return value
-    if isinstance(value, (list, tuple)) and all(isinstance(b, str) for b in value):
+    if (
+        isinstance(value, (list, tuple))
+        and value
+        and all(isinstance(b, str) for b in value)
+    ):
         return list(value)
     raise ValueError(
-        "block_order must be 'random', 'listed', a list of block names, or a "
+        "block_order must be 'random', 'listed', a non-empty list of block names, or a "
         f"function returning one; got {value!r}."
     )
 
@@ -177,7 +181,7 @@ def _validate_order_setting(value, argument_name):
 
 
 # Arguments that call_function_with_context can supply to any order function.
-_CONTEXT_ARGUMENTS = ("participant", "experiment", "assets", "trial_maker", "trial")
+_CONTEXT_ARGUMENTS = ("participant", "experiment", "assets", "trial_maker")
 
 
 def _check_order_function(function, argument_name, item_argument):
@@ -1851,8 +1855,15 @@ class ChainTrialMaker(NetworkTrialMaker):
                     f"See {_trial_order_docs_url()}."
                 )
         if is_method_overridden(self, ChainTrialMaker, "should_finish_block"):
-            parameters = inspect.signature(self.should_finish_block).parameters
-            if "block_position" in parameters or len(parameters) != 2:
+            signature = inspect.signature(self.should_finish_block)
+            try:
+                signature.bind(None, None)
+                takes_participant_and_block = "block_position" not in (
+                    signature.parameters
+                )
+            except TypeError:
+                takes_participant_and_block = False
+            if not takes_participant_and_block:
                 raise TypeError(
                     f"{type(self).__name__}.should_finish_block must now take "
                     "(participant, block). Read trial counts from "
@@ -1973,6 +1984,7 @@ class ChainTrialMaker(NetworkTrialMaker):
                 self.block_order,
                 experiment=experiment,
                 participant=participant,
+                trial_maker=self,
                 blocks=list(blocks),
             )
         return list(self.block_order)
@@ -2333,8 +2345,8 @@ class ChainTrialMaker(NetworkTrialMaker):
             return []
         if spread:
             logger.info(
-                "Every available %s is being given to another participant; "
-                "sharing one.",
+                "No unlocked %s is available, probably because the others are "
+                "being given to other participants; sharing one.",
                 self._candidate_label,
             )
         if limit is None:
@@ -2749,6 +2761,7 @@ class ChainTrialMaker(NetworkTrialMaker):
                 order,
                 experiment=experiment,
                 participant=participant,
+                trial_maker=self,
                 block=state.block,
                 **{self._order_items_name: candidates},
             )

@@ -151,7 +151,8 @@ to the next block, or leaves the trial maker after the last one.
 
 - ``"random"`` (default): a new random order for each participant.
 - ``"listed"``: the order in which the blocks first appear in ``nodes``.
-- A list of block names, used for every participant.
+- A list of block names, used for every participant. It may name only some
+  of the blocks.
 - A function that takes any of ``participant``, ``experiment`` and
   ``blocks`` and returns a list of block names. It may leave blocks out to
   give a participant only some of them, but must keep at least one.
@@ -161,7 +162,8 @@ are recomputed in the database for each trial:
 
 - ``"balanced"`` (default): nodes with the fewest trials first, counting
   trials in progress, with ties broken at random. Participants requesting
-  a trial at the same moment are given different nodes where possible.
+  a trial at the same moment are given different nodes where possible,
+  unless node selection runs in Python (see :ref:`trial_selection_performance`).
 - ``"random"``: a fresh random draw for each trial. Without
   ``allow_repeated_nodes`` this gives each participant the block's nodes in
   a random order; with it, a node can come up again before others have been
@@ -219,7 +221,7 @@ Keeping selection fast
 PsyNet finds each trial's node with one database query. It orders the
 eligible nodes by any custom priority, then by balancing (with
 ``node_order="balanced"``), then randomly, and loads only the first. With
-``"balanced"``, the query locks that node until the trial is saved and skips
+``"balanced"`` and no Python selection hooks, the query locks that node until the trial is saved and skips
 nodes that simultaneous requests have locked, so participants arriving
 together are spread across nodes. Nodes are not eligible if they are waiting
 for asynchronous processing, or if they are outside the participant's group

@@ -322,6 +322,51 @@ def test_check_experiment_directory_stops_after_creating_missing_deploy_toml(
     ).read_bytes()
 
 
+def _old_experiment_with_ignored_secret(root):
+    """Lay out a pre-deploy.toml experiment whose .gitignore keeps a secret local."""
+    (root / "experiment.py").write_text("class Exp:\n    pass\n")
+    (root / "requirements.txt").write_text("psynet\n")
+    (root / ".gitignore").write_text("secret.txt\n")
+    (root / "secret.txt").write_text("API_KEY=private\n")
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+
+
+def test_scripts_update_keeps_old_gitignore_rules_for_migration_check(
+    tmp_path, monkeypatch
+):
+    """``psynet scripts update`` replaces .gitignore before the check runs."""
+    from click import ClickException
+
+    from psynet.command_line import _check_experiment_directory
+
+    monkeypatch.setattr("psynet.command_line.is_in_repo_experiment", lambda: False)
+    _old_experiment_with_ignored_secret(tmp_path)
+
+    with working_directory(tmp_path):
+        scaffold_experiment_directory(overwrite=True)
+        assert "secret.txt" not in Path(".gitignore").read_text()
+
+        with pytest.raises(ClickException, match="  secret.txt\n"):
+            _check_experiment_directory("debug")
+
+
+def test_migration_check_stops_when_git_cannot_answer(tmp_path, monkeypatch):
+    from click import ClickException
+
+    from psynet.command_line import _check_experiment_directory
+
+    monkeypatch.setattr("psynet.command_line.is_in_repo_experiment", lambda: False)
+    monkeypatch.setattr("psynet.command_line.git_repository_available", lambda: True)
+    _old_experiment_with_ignored_secret(tmp_path)
+
+    with working_directory(tmp_path):
+        scaffold_experiment_directory()
+        monkeypatch.setenv("GIT_DIR", str(tmp_path / "missing"))
+        with pytest.raises(ClickException, match="could not check"):
+            _check_experiment_directory("debug")
+        assert not _deployment_policy_needs_review()
+
+
 def test_check_experiment_directory_migration_without_newly_deployed_files_is_silent(
     tmp_path, monkeypatch
 ):

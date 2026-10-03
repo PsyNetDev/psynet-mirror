@@ -91,11 +91,13 @@ Choosing the next chain
   ``block`` and ``chains``, by name. Each chain is a
   :class:`~psynet.trial.chain.ChainNetwork` in start-node order; its start
   node's ``context`` is ``chain.context`` and its current node is
-  ``chain.head``. For example, to run the hardest condition last:
+  ``chain.head``. For example, to run each chain to the end, easiest first
+  (see ``interleave_chains`` below):
 
   .. code-block:: python
 
-      chain_order=lambda chains: sorted(chains, key=lambda chain: chain.context["difficulty"])
+      chain_order=lambda chains: sorted(chains, key=lambda chain: chain.context["difficulty"]),
+      interleave_chains=False,
 
   With a planned order, the participant takes the planned chains in turn, one
   trial each, skipping any that are busy, until none can give them another

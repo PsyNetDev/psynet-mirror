@@ -764,12 +764,13 @@ def _report_scaffold_result(written, *, overwrite):
     click.echo("Nothing to scaffold; experiment boilerplate is already present.")
 
 
-def _copy_template_file(relative_path, overwrite, *, migrating=True):
+def _copy_template_file(relative_path, overwrite, *, previous_gitignore=None):
     """Copy one scaffold-managed template file into the experiment directory.
 
-    ``migrating`` records whether a newly created ``deploy.toml`` replaces the
-    older ``.gitignore``-based file selection of an existing experiment; only
-    such migrations get a launch-time review.
+    ``previous_gitignore`` is the experiment's ``.gitignore`` from before this
+    scaffold run, or ``None`` for a new experiment. A newly created
+    ``deploy.toml`` that replaces such ``.gitignore``-based file selection gets
+    a launch-time review against those rules.
     """
     destination = Path(relative_path)
     if relative_path in _PRESERVE_EXISTING_TEMPLATE_FILES:
@@ -784,10 +785,10 @@ def _copy_template_file(relative_path, overwrite, *, migrating=True):
         shutil.copyfile(path, destination)
     if (
         relative_path == "deploy.toml"
-        and migrating
+        and previous_gitignore is not None
         and not _suppress_policy_review_marker.get()
     ):
-        _mark_deployment_policy_for_review()
+        _mark_deployment_policy_for_review(previous_gitignore)
     return True
 
 
@@ -797,16 +798,29 @@ _suppress_policy_review_marker: ContextVar[bool] = ContextVar(
 )
 
 
-def _mark_deployment_policy_for_review() -> None:
-    """Record that a migrated ``deploy.toml`` still needs a launch-time check."""
+def _read_gitignore():
+    """Return the experiment's ``.gitignore`` text, or ``None`` if it has none."""
+    path = Path(".gitignore")
+    return path.read_text(encoding="utf-8") if path.is_file() else None
+
+
+def _mark_deployment_policy_for_review(previous_gitignore: str) -> None:
+    """Record that a migrated ``deploy.toml`` still needs a launch-time check.
+
+    The marker is itself a gitignore file holding the experiment's original
+    rules, because ``psynet scripts update`` may replace ``.gitignore`` before
+    the check runs.
+    """
     marker = _DEPLOYMENT_POLICY_REVIEW_MARKER
     marker.parent.mkdir(parents=True, exist_ok=True)
     marker.write_text(
-        "PsyNet created deploy.toml to replace this experiment's "
-        ".gitignore-based deployment selection. The next debug, test, or "
-        "deploy command checks once whether deploy.toml now deploys files "
-        "that .gitignore kept local. This file is local-only; you can "
-        "delete it.\n"
+        "# PsyNet created deploy.toml to replace this experiment's\n"
+        "# .gitignore-based deployment selection. The next debug, test, or\n"
+        "# deploy command checks once whether deploy.toml now deploys files\n"
+        "# that the .gitignore rules below kept local. This file is\n"
+        "# local-only; you can delete it.\n"
+        f"{previous_gitignore}\n",
+        encoding="utf-8",
     )
 
 
@@ -849,7 +863,7 @@ def ensure_deployment_policy() -> None:
     _copy_template_file(
         "deploy.toml",
         overwrite=False,
-        migrating=Path(".gitignore").exists(),
+        previous_gitignore=_read_gitignore(),
     )
 
 
@@ -1106,7 +1120,7 @@ def scaffold_experiment_directory(
 
     written = []
     skipped = []
-    migrating = Path(".gitignore").exists()
+    previous_gitignore = _read_gitignore()
 
     try:
         bootstrap_written, bootstrap_skipped = _bootstrap_authored_files(skip_files)
@@ -1120,7 +1134,9 @@ def scaffold_experiment_directory(
             skipped.append(relative_path)
             continue
 
-        if _copy_template_file(relative_path, overwrite, migrating=migrating):
+        if _copy_template_file(
+            relative_path, overwrite, previous_gitignore=previous_gitignore
+        ):
             written.append(relative_path)
         else:
             skipped.append(relative_path)

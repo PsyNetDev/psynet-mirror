@@ -20,7 +20,9 @@ from tenacity import (
     wait_fixed,
 )
 
-from .utils import find_git_repo
+from .utils import find_git_repo, get_logger
+
+logger = get_logger()
 
 path = ".deploy/deployment_info.json"
 
@@ -98,24 +100,39 @@ def _deployment_plan():
     return build_deployment_plan(Path.cwd())
 
 
-def _git_ignored_deployment_paths():
-    """Return deployment-selected paths currently ignored by Git."""
+def _git_ignored_deployment_paths(extra_excludes_file=None):
+    """Return deployment-selected paths ignored by Git, or ``None`` if Git cannot tell.
+
+    ``extra_excludes_file`` adds the rules of another gitignore-format file,
+    matched relative to the repository root.
+    """
     plan = _deployment_plan()
-    if plan is None or not plan.destinations:
+    if plan is None:
+        return None
+    if not plan.destinations:
         return ()
 
+    command = ["git"]
+    if extra_excludes_file is not None:
+        command += ["-c", f"core.excludesFile={Path(extra_excludes_file).resolve()}"]
+    command += ["check-ignore", "--stdin", "-z"]
     try:
         result = subprocess.run(
-            ["git", "check-ignore", "--stdin", "-z"],
+            command,
             input="\0".join(sorted(plan.destinations)) + "\0",
             capture_output=True,
             text=True,
             check=False,
         )
     except FileNotFoundError:
-        return ()
+        logger.warning("Could not run git to list Git-ignored deployment files.")
+        return None
     if result.returncode not in {0, 1}:
-        return ()
+        logger.warning(
+            "git check-ignore failed while listing Git-ignored deployment files: %s",
+            result.stderr.strip(),
+        )
+        return None
     return tuple(path for path in result.stdout.split("\0") if path)
 
 
