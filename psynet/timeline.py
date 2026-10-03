@@ -1806,12 +1806,10 @@ class Page(Elt):
     def _accept_response(self, resp, experiment, participant):
         """Save an answer that passed validation and run ``on_complete``."""
         if self.save_answer:
-            if len(participant.answer_accumulators) > 0:
-                page_label = self.label
-                accumulator = participant.answer_accumulators[-1]
-                answer_label = self._find_answer_label(page_label, accumulator)
-                accumulator[answer_label] = resp.answer
-                flag_modified(participant, "answer_accumulators")
+            if participant.answer_accumulation_depth:
+                answers = participant.answer
+                answers[self._find_answer_label(self.label, answers)] = resp.answer
+                flag_modified(participant, "answer")
             else:
                 participant.answer = resp.answer
             participant.answer_is_fresh = True
@@ -2481,6 +2479,13 @@ class PageMaker(Elt):
         ``time_estimate`` values, then these ``time_estimate`` values will be imputed by dividing
         the parent :class:`psynet.timeline.PageMaker`'s ``time_estimate``
         by the number of produced elements.
+
+    accumulate_answers:
+        If ``True``, ``participant.answer`` becomes a dict when the page maker
+        starts, and each page saves its answer under its label as soon as it
+        is submitted, so later pages can read earlier answers. A repeated
+        label is saved as ``label_1``, ``label_2`` and so on. Answers from
+        nested accumulating page makers or trials go into the same dict.
     """
 
     returns_time_credit = True
@@ -3964,14 +3969,23 @@ class EndModule(NullElt):
 
 
 class StartAccumulateAnswers(NullElt):
+    """Start collecting page answers into the dict ``participant.answer``.
+
+    Nested blocks share the outermost block's dict, so their answers are
+    flattened into it.
+    """
+
     def consume(self, experiment, participant):
-        participant.answer_accumulators = participant.answer_accumulators + [{}]
+        if not participant.answer_accumulation_depth:
+            participant.answer = {}
+        participant.answer_accumulation_depth = (
+            participant.answer_accumulation_depth or 0
+        ) + 1
 
 
 class EndAccumulateAnswers(NullElt):
     def consume(self, experiment, participant):
-        participant.answer = participant.answer_accumulators[-1]
-        participant.answer_accumulators = participant.answer_accumulators[:-1]
+        participant.answer_accumulation_depth -= 1
 
 
 class DatabaseCheck(NullElt):

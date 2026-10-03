@@ -364,8 +364,15 @@ See :doc:`/code/trials/participant_and_trial_failure`.
 
 Search for ``def process_response``, ``response_approved``,
 ``render_partial_timeline_payload``, ``session.commit(``,
-``session.rollback(``, and code in ``render()`` or templates that changes the
-database.
+``session.rollback(``, ``accumulate_answers``, and code in ``render()`` or
+templates that changes the database.
+
+* With ``accumulate_answers=True``, ``participant.answer`` is now a dict from
+  the start of the page maker or trial, and each page adds its answer when it
+  is submitted. Code that reads ``participant.answer`` during such a trial
+  now gets the current trial's answers so far, not the previous trial's
+  answer. Answers from nested accumulating page makers now go into the same
+  dict instead of being lost.
 
 * Experiment code that runs while a participant moves through the timeline
   must not call ``db.session.commit()`` or ``db.session.rollback()``; PsyNet

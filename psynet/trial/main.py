@@ -254,8 +254,10 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
 
     accumulate_answers : bool
         Set this class attribute to ``True`` if the trial contains multiple pages and you want
-        the answers to all of these pages to be stored as a dict in ``participant.answer``.
-        Otherwise, the default behaviour is to only store the answer from the final page.
+        the answers to all of these pages to be stored as a dict in ``participant.answer``,
+        keyed by page label. The dict fills up as each page is submitted, so later pages
+        can read earlier answers. Otherwise, the default behaviour is to only store the
+        answer from the final page.
 
     time_credit_before_trial: float
         Reports the amount of time credit that the participant had before they started the trial (in seconds).

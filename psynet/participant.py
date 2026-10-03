@@ -455,7 +455,7 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
     complete = Column(Boolean)
     pending_redirect = Column(String)
     answer = Column(PythonObject)
-    answer_accumulators = Column(PythonList)
+    answer_accumulation_depth = Column(Integer)
     sequences = Column(PythonList)
     branch_log = Column(PythonObject)
     for_loops = Column(PythonObject)
@@ -805,7 +805,7 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         self.progress_fixes = []
         self.elt_id = ["main", -1]
         self.elt_id_max = []
-        self.answer_accumulators = []
+        self.answer_accumulation_depth = 0
         self.for_loops = {}
         self.failure_tags = []
         self.sequences = []
