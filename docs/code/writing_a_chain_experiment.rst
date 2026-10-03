@@ -85,7 +85,8 @@ Choosing the next chain
 - ``block_order`` and ``chain_order`` set the order of blocks and of chains
   within a block. They work like ``block_order`` and ``node_order`` in
   :ref:`trial_order`, except that ``chain_order`` defaults to ``"random"``,
-  ``"balanced"`` favours the chains with the fewest responses, and
+  ``"balanced"`` favours the shortest chains and then the heads with the
+  fewest trials, and
   ``"listed"`` follows the order of the start nodes. A planned order cycles
   through its chains, one trial at a time, until each can give the
   participant no more trials. Create-and-rate trial makers support only

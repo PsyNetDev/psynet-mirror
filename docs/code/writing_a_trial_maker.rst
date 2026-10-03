@@ -160,7 +160,14 @@ are recomputed in the database for each trial:
 
 - ``"balanced"`` (default): nodes with the fewest trials first, ties broken
   at random.
-- ``"random"``.
+- ``"random"``: a fresh random draw for each trial. Without
+  ``allow_repeated_nodes`` this gives each participant the block's nodes in
+  a random order; with it, a node can come up again before others have been
+  seen. For a shuffle without such repeats, use a function such as
+  ``lambda nodes: random.sample(nodes, len(nodes))``.
+
+A custom :meth:`~psynet.trial.static.StaticTrialMaker.node_priority` sorts
+first; a dynamic order only breaks ties among the nodes it ranks equally.
 
 Planned orders are fixed when the participant enters the block:
 
