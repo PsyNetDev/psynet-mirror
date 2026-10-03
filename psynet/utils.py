@@ -1049,6 +1049,37 @@ def sample_from_surface_of_unit_sphere(n_dimensions):
     return res[:, 0].tolist()
 
 
+def shuffle_with_max_run(items, key, max_run, max_attempts=1000):
+    """Return a shuffled copy of ``items`` with at most ``max_run`` consecutive items sharing a key.
+
+    Useful for planned trial orders, for example
+    ``node_order=lambda nodes: shuffle_with_max_run(nodes, key=lambda n: n.definition["condition"], max_run=2)``.
+    Raises ``ValueError`` if no such order is found within ``max_attempts`` shuffles.
+    """
+    import random
+
+    if max_run < 1:
+        raise ValueError(f"max_run must be at least 1; got {max_run}.")
+    items = list(items)
+    for _ in range(max_attempts):
+        random.shuffle(items)
+        run = 0
+        previous = object()
+        for item in items:
+            current = key(item)
+            run = run + 1 if current == previous else 1
+            previous = current
+            if run > max_run:
+                break
+        else:
+            return items
+    raise ValueError(
+        f"Could not find an order of {len(items)} items with at most {max_run} "
+        f"consecutive items sharing a key after {max_attempts} shuffles. "
+        "Allow longer runs or balance the keys more evenly."
+    )
+
+
 def run_subprocess_with_live_output(command, timeout=None, cwd=None):
     _command = command.replace('"', '\\"').replace("'", "\\'")
     p = pexpect.spawn(f'bash -c "{_command}"', timeout=timeout, cwd=cwd)
