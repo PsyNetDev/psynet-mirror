@@ -1368,6 +1368,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             (participant.end_time - participant.creation_time).total_seconds()
             for participant in complete_participants
             if participant.end_time is not None
+            and participant.creation_time is not None
         ]
         median_time_taken = median(time_taken) if len(time_taken) > 0 else 0
         estimated_duration = cls.estimated_completion_time(

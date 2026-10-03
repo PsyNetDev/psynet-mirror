@@ -3978,6 +3978,7 @@ class StartAccumulateAnswers(NullElt):
     def consume(self, experiment, participant):
         if not participant.answer_accumulation_depth:
             participant.answer = {}
+            participant.answer_is_fresh = False
         participant.answer_accumulation_depth = (
             participant.answer_accumulation_depth or 0
         ) + 1
