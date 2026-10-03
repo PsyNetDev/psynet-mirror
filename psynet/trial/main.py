@@ -1959,7 +1959,9 @@ class TrialMaker(Module):
             self.trial_class.query.filter_by(complete=False, failed=False)
             .filter(self.trial_class.creation_time < time_threshold)
             .order_by(self.trial_class.id)
-            .with_for_update(of=self.trial_class)
+            # A locked trial belongs to an in-flight request that may complete
+            # it; the next check retries it if not.
+            .with_for_update(of=self.trial_class, skip_locked=True)
             .populate_existing()
             .all()
         )
