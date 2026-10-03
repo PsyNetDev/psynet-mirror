@@ -100,6 +100,40 @@ To let the trial maker decide when recruitment stops, pass
 ``recruit_mode="n_participants"`` with ``target_n_participants``, or
 ``recruit_mode="n_trials"`` with ``target_trials_per_node``.
 
+.. _custom_node_selection:
+
+To choose the node yourself, for example in an adaptive design, override two
+hooks. :meth:`~psynet.trial.static.StaticTrialMaker.custom_node_filter`
+removes nodes the participant must not receive, and
+:meth:`~psynet.trial.static.StaticTrialMaker.select_node` picks one of the
+rest; blocks, repeat rules, performance checks and trial-based recruitment
+keep working. The nodes arrive in selection order (see
+:ref:`trial_selection_performance`), and the default ``select_node`` takes
+the first. ``select_node`` must return one of the objects it was given, not a
+re-queried copy, either directly or wrapped in a
+:class:`~psynet.trial.main.Selection` with a ``context``. Returning ``None``
+raises ``TypeError``. PsyNet passes the context to
+:meth:`~psynet.trial.main.NetworkTrialMaker.on_trial_created` as
+``selection_context``:
+
+.. code-block:: python
+
+    class AdaptiveTrialMaker(StaticTrialMaker):
+        def select_node(self, nodes, participant, experiment):
+            scores = [score_item(node.definition) for node in nodes]
+            best = max(range(len(nodes)), key=scores.__getitem__)
+            return Selection(value=nodes[best], context={"score": scores[best]})
+
+        def on_trial_created(self, trial, experiment, participant, selection_context=None):
+            record = SelectionRecord(participant_id=participant.id, details=selection_context)
+            record.trial = trial
+            db.session.add(record)
+
+``on_trial_created`` runs in the same database transaction as trial creation,
+once per selection, for primary trials only: not for repeat trials or for the
+copies given to other members of a synchronized group. Chain trial makers have
+the equivalent hooks for chains; see :doc:`/code/writing_a_chain_experiment`.
+
 .. _trial_order:
 
 Trial order
@@ -121,15 +155,14 @@ to the next block, or leaves the trial maker after the last one.
   ``blocks`` and returns a list of block names. It may leave blocks out to
   give a participant only some of them.
 
-``node_order`` sets the order of the nodes within a block. PsyNet decides
-two orders afresh in the database for every trial:
+``node_order`` sets the order of the nodes within a block. Dynamic orders
+are recomputed in the database for each trial:
 
 - ``"balanced"`` (default): nodes with the fewest trials first, ties broken
   at random.
 - ``"random"``.
 
-It plans two orders once, when the participant enters the block, and then
-follows the plan:
+Planned orders are fixed when the participant enters the block:
 
 - ``"listed"``: the order of ``nodes``.
 - A function that takes any of ``participant``, ``experiment``, ``block``
@@ -164,40 +197,6 @@ come after the last block and are not part of the plan.
 
 Chain trial makers take ``block_order`` too, and ``chain_order`` in place of
 ``node_order``; see :doc:`/code/writing_a_chain_experiment`.
-
-.. _custom_node_selection:
-
-To choose the node yourself, for example in an adaptive design, override two
-hooks. :meth:`~psynet.trial.static.StaticTrialMaker.custom_node_filter`
-removes nodes the participant must not receive, and
-:meth:`~psynet.trial.static.StaticTrialMaker.select_node` picks one of the
-rest; blocks, repeat rules, performance checks and trial-based recruitment
-keep working. The nodes arrive in selection order (see
-:ref:`trial_selection_performance`), and the default ``select_node`` takes
-the first. ``select_node`` must return one of the objects it was given, not a
-re-queried copy, either directly or wrapped in a
-:class:`~psynet.trial.main.Selection` with a ``context``. Returning ``None``
-raises ``TypeError``. PsyNet passes the context to
-:meth:`~psynet.trial.main.NetworkTrialMaker.on_trial_created` as
-``selection_context``:
-
-.. code-block:: python
-
-    class AdaptiveTrialMaker(StaticTrialMaker):
-        def select_node(self, nodes, participant, experiment):
-            scores = [score_item(node.definition) for node in nodes]
-            best = max(range(len(nodes)), key=scores.__getitem__)
-            return Selection(value=nodes[best], context={"score": scores[best]})
-
-        def on_trial_created(self, trial, experiment, participant, selection_context=None):
-            record = SelectionRecord(participant_id=participant.id, details=selection_context)
-            record.trial = trial
-            db.session.add(record)
-
-``on_trial_created`` runs in the same database transaction as trial creation,
-once per selection, for primary trials only: not for repeat trials or for the
-copies given to other members of a synchronized group. Chain trial makers have
-the equivalent hooks for chains; see :doc:`/code/writing_a_chain_experiment`.
 
 .. _trial_selection_performance:
 
