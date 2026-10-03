@@ -17,7 +17,6 @@ from psynet.trial.chain import (
 )
 
 from ..utils import get_logger, is_method_overridden
-from .main import Selection
 
 logger = get_logger()
 
@@ -611,18 +610,13 @@ class StaticTrialMaker(ChainTrialMaker):
             discovered = self._find_eligible_candidates(
                 participant, experiment, limit=1
             )
-        selection = self._select_from_discovered(
+        return self._select_from_discovered(
             discovered,
             participant,
             experiment,
             self.select_node,
             "select_node",
         )
-        if not isinstance(selection, Selection):
-            return selection
-
-        self._advance_to_selected_block(selection.value.block, participant)
-        return selection
 
     def _start_nodes_param_name(self) -> str:
         return "nodes"

@@ -439,13 +439,14 @@ def test_discovery_rejects_non_list_results(
         trial_maker._select_trial_node(DummyParticipant(), SimpleNamespace())
 
 
-def test_chain_selection_resolves_head_and_advances_block(monkeypatch):
+def test_chain_selection_resolves_head_and_advances_block_once_claimed(monkeypatch):
     trial_maker = make_trial_maker()
     participant = DummyParticipant()
     participant.module_state = DummyModuleState()
     participant.module_state.block_order = ["default", "next"]
-    head = SimpleNamespace(id=2)
-    chain = SimpleNamespace(id=1, head=head, block="next")
+    chain = SimpleNamespace(id=1, block="next")
+    head = SimpleNamespace(id=2, network=chain)
+    chain.head = head
     context = {"reason": "highest utility"}
 
     monkeypatch.setattr(
@@ -465,6 +466,8 @@ def test_chain_selection_resolves_head_and_advances_block(monkeypatch):
     selection = trial_maker._select_trial_node(participant, SimpleNamespace())
 
     assert selection == Selection(value=head, context=context)
+    assert participant.module_state.block == "default"
+    trial_maker._on_node_claimed(head, participant)
     assert participant.module_state.block == "next"
 
 

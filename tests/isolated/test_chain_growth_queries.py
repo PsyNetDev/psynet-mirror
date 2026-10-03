@@ -296,10 +296,11 @@ def test_unlimited_static_nodes_skip_viable_trial_counts(
 def test_node_filled_after_selection_is_not_overfilled(db_session, participant):
     class RacedStaticTrialMaker(StaticTrialMaker):
         def select_node(self, nodes, participant, experiment):
+            node = nodes[-1]
             if not raced:
-                raced.append(nodes[0])
-                add_trial(GrowthQueryStaticTrial, nodes[0], other_participant)
-            return nodes[0]
+                raced.append(node)
+                add_trial(GrowthQueryStaticTrial, node, other_participant)
+            return node
 
     exp = get_experiment()
     raced = []
@@ -307,17 +308,20 @@ def test_node_filled_after_selection_is_not_overfilled(db_session, participant):
     trial_maker = static_trial_maker(
         target_trials_per_node=1, maker_class=RacedStaticTrialMaker
     )
-    networks = [
-        create_chain_network(trial_maker, exp, network_class=StaticNetwork)
-        for _ in range(2)
-    ]
+    for block in ["early", "late"]:
+        network = create_chain_network(trial_maker, exp, network_class=StaticNetwork)
+        network.block = network.head.block = block
     initialize_trial_maker_state(trial_maker, participant)
+    participant.module_state.block_order = ["early", "late"]
+    participant.module_state.set_block_position(0)
+    db.session.flush()
 
     trial, status = trial_maker.prepare_trial(exp, participant)
 
     assert status == "available"
-    assert trial.node is not raced[0]
-    assert {trial.node.id, raced[0].id} == {network.head.id for network in networks}
+    assert raced[0].block == "late"
+    assert trial.node.block == "early"
+    assert participant.module_state.block == "early"
 
 
 @pytest.mark.parametrize(

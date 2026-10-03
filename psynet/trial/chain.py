@@ -2347,9 +2347,12 @@ class ChainTrialMaker(NetworkTrialMaker):
         chain = selection.value
         if chain.head is None:
             raise RuntimeError(f"Selected chain {chain.id} has no head")
-
-        self._advance_to_selected_block(chain.block, participant)
         return Selection(value=chain.head, context=selection.context)
+
+    def _on_node_claimed(self, node, participant):
+        # Advancing only after the claim keeps earlier blocks selectable if
+        # the chosen node fills up and selection runs again.
+        self._advance_to_selected_block(node.network.block, participant)
 
     def _claim_node_capacity(self, node):
         """Lock the node and recount its trials so concurrent participants cannot overfill it.

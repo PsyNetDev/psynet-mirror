@@ -2779,6 +2779,7 @@ class NetworkTrialMaker(TrialMaker):
             )
 
         node = selection.value
+        self._on_node_claimed(node, participant)
         logger.info(
             "Selected node %i from network %i to give to participant %i.",
             node.id,
@@ -2862,6 +2863,10 @@ class NetworkTrialMaker(TrialMaker):
     def _claim_node_capacity(self, node):
         """Reserve capacity on the selected node, returning ``False`` if it is full."""
         return True
+
+    def _on_node_claimed(self, node, participant):
+        """Apply participant state changes once the selected node is secured."""
+        pass
 
     def _select_from_discovered(
         self, discovered, participant, experiment, select_hook, method_name
