@@ -1531,12 +1531,28 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         }
 
     def _nodes_on_deploy(self):
+        """Mark nodes as deployed, queueing ``async_on_deploy`` where required.
+
+        Nodes without ``async_on_deploy`` are marked in one statement, so that
+        experiments with many nodes don't load every node at launch.
+        """
         from .trial.main import TrialNode
 
         db.session.commit()
 
+        if not in_deployment_package():
+            return
+
+        pending = TrialNode.on_deploy_complete.isnot(True)
+        TrialNode.query.filter(
+            pending, TrialNode.async_on_deploy_required.isnot(True)
+        ).update({TrialNode.on_deploy_complete: True}, synchronize_session=False)
+
         for node in (
-            TrialNode.query.with_for_update(of=TrialNode).populate_existing().all()
+            TrialNode.query.filter(pending)
+            .with_for_update(of=TrialNode)
+            .populate_existing()
+            .all()
         ):
             node.check_on_deploy()
 

@@ -23,6 +23,7 @@ from psynet.trial.graph import (
     GraphChainTrialMaker,
     GraphChainVertex,
 )
+from psynet.trial.main import TrialNode
 from psynet.trial.static import StaticNetwork, StaticNode, StaticTrial, StaticTrialMaker
 
 
@@ -993,3 +994,36 @@ def test_python_filters_warn_once_when_loading_many_candidates(
     assert len(warnings) == 1
     assert "custom_node_filter" in warnings[0].message
     assert "filter_nodes_query" in warnings[0].message
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_nodes_on_deploy_marks_nodes_and_queues_only_pending_async_work(
+    db_session, monkeypatch
+):
+    exp = get_experiment()
+    trial_maker = chain_trial_maker()
+    plain, needs_async, already_requested = [
+        create_chain_network(trial_maker, exp).head for _ in range(3)
+    ]
+    needs_async.async_on_deploy_required = True
+    already_requested.async_on_deploy_required = True
+    already_requested.async_on_deploy_requested = True
+    ids = [plain.id, needs_async.id, already_requested.id]
+    queued = []
+    monkeypatch.setattr(
+        TrialNode, "queue_async_on_deploy", lambda node: queued.append(node.id)
+    )
+    monkeypatch.setattr("psynet.experiment.in_deployment_package", lambda: True)
+
+    exp._nodes_on_deploy()
+
+    assert queued == [ids[1]]
+    complete = dict(
+        db.session.query(TrialNode.id, TrialNode.on_deploy_complete).filter(
+            TrialNode.id.in_(ids)
+        )
+    )
+    assert complete == {node_id: True for node_id in ids}
