@@ -50,6 +50,24 @@ function installTimelineHoldWakeCounter() {
   });
 }
 
+function installSettleTimelineHoldResume() {
+  // Callers must swallow psynet.resumeTimelineHold first: a resume that
+  // settles with resumeRequested set queues a 0ms "queued hold wake", and the
+  // drain below lets it reach the stub instead of the probe.
+  window.__settleTimelineHoldResume = async (probeName) => {
+    const controller = psynet.timelineHold;
+    const deadline = Date.now() + 5000;
+    while (controller.resumeInFlight && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    if (controller.resumeInFlight) {
+      throw new Error(`hold resume still in flight before the ${probeName}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    controller.resumeRequested = false;
+  };
+}
+
 async function startBackgroundHold(page, { trackLucidUnload = false } = {}) {
   await completeInitialGateway(page);
   await expect(page.locator("#main-body")).toContainText(
@@ -700,6 +718,7 @@ test("timeline hold client overlay and busy retry stay on a live hold", { tag: "
       reloads: 1
     });
 
+    await experimentPage.evaluate(installSettleTimelineHoldResume);
     const busyHoldEffects = await experimentPage.evaluate(async () => {
       const originalAlert = psynet.alert;
       const originalResponseEnable = psynet.response.enable;
@@ -720,14 +739,7 @@ test("timeline hold client overlay and busy retry stay on a live hold", { tag: "
       psynet.resumeTimelineHold = async () => false;
       try {
         if (controller) {
-          const deadline = Date.now() + 5000;
-          while (controller.resumeInFlight && Date.now() < deadline) {
-            await new Promise((resolve) => setTimeout(resolve, 25));
-          }
-          if (controller.resumeInFlight) {
-            throw new Error("hold resume still in flight before the busy probe");
-          }
-          controller.resumeRequested = false;
+          await window.__settleTimelineHoldResume("busy probe");
           clearTimeout(controller.busyRetryTimer);
           controller.busyRetryTimer = null;
         }
@@ -862,16 +874,7 @@ test("timeline hold client overlay and busy retry stay on a live hold", { tag: "
       const pendingBefore = psynet.nextPagePending;
       psynet.resumeTimelineHold = async () => false;
       try {
-        const deadline = Date.now() + 5000;
-        while (controller.resumeInFlight && Date.now() < deadline) {
-          await new Promise((resolve) => setTimeout(resolve, 25));
-        }
-        if (controller.resumeInFlight) {
-          throw new Error(
-            "hold resume still in flight before the busy livelock probe"
-          );
-        }
-        controller.resumeRequested = false;
+        await window.__settleTimelineHoldResume("busy livelock probe");
         clearTimeout(controller.safetyTimer);
         controller.busyRetryUsed = true;
         clearTimeout(controller.busyRetryTimer);
@@ -947,18 +950,24 @@ test("timeline hold client overlay and busy retry stay on a live hold", { tag: "
       const controller = psynet.timelineHold;
       const originalNextPage = psynet.nextPage;
       const originalSchedule = psynet.scheduleTimelineHoldCheck;
+      const originalResume = psynet.resumeTimelineHold;
       const effects = { nextPageCalls: 0, scheduleCalls: 0 };
-      clearTimeout(controller.safetyTimer);
-      psynet.nextPage = () => {
-        effects.nextPageCalls += 1;
-      };
-      psynet.scheduleTimelineHoldCheck = () => {
-        effects.scheduleCalls += 1;
-      };
       try {
+        // An in-flight resume would make the probe return before scheduling.
+        psynet.resumeTimelineHold = async () => false;
+        await window.__settleTimelineHoldResume("pending request probe");
+        psynet.resumeTimelineHold = originalResume;
+        clearTimeout(controller.safetyTimer);
+        psynet.nextPage = () => {
+          effects.nextPageCalls += 1;
+        };
+        psynet.scheduleTimelineHoldCheck = () => {
+          effects.scheduleCalls += 1;
+        };
         psynet.nextPagePending = true;
         effects.result = await psynet.resumeTimelineHold("test pending request");
       } finally {
+        psynet.resumeTimelineHold = originalResume;
         psynet.nextPagePending = false;
         psynet.nextPage = originalNextPage;
         psynet.scheduleTimelineHoldCheck = originalSchedule;
