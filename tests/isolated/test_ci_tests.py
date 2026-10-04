@@ -73,6 +73,25 @@ def test_crashed_item_counts_as_failure(tmp_path, monkeypatch):
     assert "scaffold vanished" in results[0].output
 
 
+def test_shard_fails_when_an_item_has_no_result(tmp_path, monkeypatch):
+    items = [SuiteItem("lost", "isolated", estimate=1)]
+    monkeypatch.setattr(ci_tests, "collect_items", lambda scope, durations: items)
+    monkeypatch.setattr(ci_tests, "run_items", lambda *args: [])
+
+    code = ci_tests.run_tests_command(
+        "isolated", 1, 1, 1, 60, None, "3.13", None, tmp_path
+    )
+
+    assert code == 1
+
+
+def test_slot_ports_are_offset_from_the_callers():
+    environ = {"base_port": "5010", "REDIS_URL": "redis://localhost:6380"}
+
+    assert ci_tests._slot_ports(environ, 1) == (5020, 6480)
+    assert ci_tests._slot_ports({}, 2) == (5020, 6579)
+
+
 def _hold_lock(directory, held, release):
     with experiment_directory_lock(directory):
         held.set()

@@ -160,10 +160,13 @@ class _Slot:
         database_url = os.environ.get(
             "DATABASE_URL", "postgresql://dallinger:dallinger@localhost/dallinger"
         )
+        base_port, redis_port = _slot_ports(os.environ, index)
         self.env["DATABASE_URL"] = _create_slot_database(database_url, index)
-        self.env["REDIS_URL"] = self._start_redis(6390 + index, workspace)
-        self.env["base_port"] = str(5000 + 10 * index)
-        self.env["dallinger_develop_directory"] = f"/tmp/dallinger_develop_slot{index}"
+        self.env["REDIS_URL"] = self._start_redis(redis_port, workspace)
+        self.env["base_port"] = str(base_port)
+        self.env["dallinger_develop_directory"] = (
+            f"/tmp/dallinger_develop_{base_port}_slot{index}"
+        )
 
     def _start_redis(self, port, workspace):
         if shutil.which("redis-server") is None:
@@ -184,14 +187,28 @@ class _Slot:
             if probe.stdout.strip() == "PONG":
                 return f"redis://localhost:{port}"
             time.sleep(0.2)
+        self.close()
         raise click.ClickException(f"Redis for slot {self.index} did not start.")
 
     def close(self):
         if self._redis is not None:
             self._redis.terminate()
-            self._redis.wait(timeout=10)
+            try:
+                self._redis.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                self._redis.kill()
+                self._redis.wait()
+            self._redis = None
         if self._redis_log is not None:
             self._redis_log.close()
+            self._redis_log = None
+
+
+def _slot_ports(environ, index):
+    """Return ``(base_port, redis_port)`` for slot ``index``, offset from the caller's."""
+    base_port = int(environ.get("base_port", 5000)) + 10 * index
+    redis_port = (urlsplit(environ.get("REDIS_URL", "")).port or 6379) + 100 * index
+    return base_port, redis_port
 
 
 def _create_slot_database(database_url, index):
@@ -297,10 +314,11 @@ def run_items(items, n_slots, timeout, junit_dir, python_version, log_dir):
             result = ItemResult(
                 item, slot.index, code, time.monotonic() - start, output
             )
+            with print_lock:
+                results.append(result)
             log_name = item.path.replace("/", "__") + ".log"
             (log_dir / log_name).write_text(output)
             with print_lock:
-                results.append(result)
                 status = "PASSED" if code == 0 else "FAILED"
                 print(
                     f"[slot {slot.index}] {status} {result.duration:6.1f}s "
@@ -360,6 +378,9 @@ def run_tests_command(
     )
     for result in failed:
         print(f"  FAILED {result.item.path}")
+    missing = {i.path for i in items} - {r.item.path for r in results}
+    for path in sorted(missing):
+        print(f"  NOT RUN {path}")
 
     if durations_output:
         Path(durations_output).parent.mkdir(parents=True, exist_ok=True)
@@ -374,7 +395,7 @@ def run_tests_command(
                 sort_keys=True,
             )
         )
-    return 1 if failed else 0
+    return 1 if failed or missing else 0
 
 
 def _playwright_key(spec, mode):
