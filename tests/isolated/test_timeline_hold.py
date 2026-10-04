@@ -5,6 +5,7 @@ import pytest
 from markupsafe import Markup, escape
 
 from psynet.page import WaitPage, wait_while
+from psynet.sync import _BarrierHoldPage
 from psynet.timeline import (
     AsyncCodeBlock,
     StartFixProgress,
@@ -333,7 +334,10 @@ def test_forced_resume_does_not_evaluate_author_condition():
 
 @pytest.mark.parametrize("in_end_logic", [False, True])
 def test_failed_participant_leaves_holds_only_outside_end_logic(in_end_logic):
-    """Failed participants reach end-logic holds after failing, so those still wait."""
+    """Failed participants reach end-logic holds after failing, so those still wait.
+
+    Barriers never release failed participants, so barrier holds let them go anywhere.
+    """
     hold = ResumeTestHold(can_resume=False, timed_out=False)
     participant = SimpleNamespace(pending_redirect=None, failed=True)
     experiment = SimpleNamespace(
@@ -343,6 +347,7 @@ def test_failed_participant_leaves_holds_only_outside_end_logic(in_end_logic):
     assert hold.is_ready_to_resume(experiment, participant) is not in_end_logic
     assert hold.prepare_resume_if_ready(experiment, participant) is not in_end_logic
     assert hold.prepared is not in_end_logic
+    assert _BarrierHoldPage.failure_releases_hold(experiment, participant)
 
 
 def test_uncleared_timed_out_hold_applies_timeout():
@@ -371,6 +376,7 @@ def test_timed_out_hold_does_not_evaluate_condition():
 def test_hold_timeout_fails_participant_with_hold_tags():
     tags = []
     participant = SimpleNamespace(
+        failed=False,
         append_failure_tags=lambda *values: tags.extend(values),
         fail=lambda: tags.append("failed"),
     )

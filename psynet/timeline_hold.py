@@ -555,7 +555,7 @@ class _TimelineHoldPage(Page):
         return timenow() >= deadline
 
     @staticmethod
-    def _failure_releases_hold(experiment, participant):
+    def failure_releases_hold(experiment, participant):
         """Return whether failing lets the participant leave this hold.
 
         A participant failed while waiting leaves for the unsuccessful end.
@@ -574,7 +574,7 @@ class _TimelineHoldPage(Page):
         ``FOR UPDATE`` can stall a worker or fail a waiter a partner already
         advanced.
         """
-        if participant.pending_redirect is not None or self._failure_releases_hold(
+        if participant.pending_redirect is not None or self.failure_releases_hold(
             experiment, participant
         ):
             return True
@@ -587,7 +587,7 @@ class _TimelineHoldPage(Page):
 
     def prepare_resume_if_ready(self, experiment, participant):
         """Prepare a cleared or timed-out hold and return whether it can resume."""
-        if participant.pending_redirect is not None or self._failure_releases_hold(
+        if participant.pending_redirect is not None or self.failure_releases_hold(
             experiment, participant
         ):
             self.prepare_to_resume(participant)
@@ -616,7 +616,7 @@ class _TimelineHoldPage(Page):
         """Run timeout side effects and optionally fail the participant."""
         if self.on_timeout is not None:
             call_function_with_context(self.on_timeout, participant=participant)
-        if self.fail_on_timeout:
+        if self.fail_on_timeout and not participant.failed:
             participant.append_failure_tags(
                 f"timeline_hold:{self.hold_id}",
                 "fail_on_timeout",

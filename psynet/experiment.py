@@ -3530,9 +3530,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 ),
             )
 
-    @staticmethod
-    def _hold_resume_must_settle(participant, event):
-        """Return whether fail, redirect, or timeout must take the locked path.
+    def _hold_resume_must_settle(self, participant, event):
+        """Return whether a release by failure, redirect, or timeout must take the locked path.
 
         Missing ``pending_redirect`` / ``failed`` attributes are treated as
         not set. Only an exact ``True`` timeout settles, so a dummy hold
@@ -3540,7 +3539,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         """
         if getattr(participant, "pending_redirect", None) is not None:
             return True
-        if getattr(participant, "failed", False):
+        if getattr(participant, "failed", False) and event.failure_releases_hold(
+            self, participant
+        ):
             return True
         timed_out = getattr(event, "participant_timed_out", None)
         return callable(timed_out) and timed_out(participant) is True

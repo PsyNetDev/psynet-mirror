@@ -1097,7 +1097,7 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
 
         from psynet.timeline_hold import _queue_timeline_hold_wake
 
-        # A failed participant can leave their hold, so wake an overlay
+        # A failed participant can leave a hold outside end logic, so wake an overlay
         # failed from another request instead of waiting for its safety poll.
         cached_hold = getattr(self, "_timeline_hold_record", None)
         if cached_hold is not None and cached_hold.page_uuid != self.page_uuid:

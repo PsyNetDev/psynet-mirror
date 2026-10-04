@@ -638,6 +638,11 @@ class _BarrierHoldPage(_TimelineHoldPage):
     def fail_on_timeout(self):
         return self.barrier.max_wait_action == "fail"
 
+    @staticmethod
+    def failure_releases_hold(experiment, participant):
+        """Release failed participants anywhere, because barriers never release them."""
+        return participant.failed
+
     def participant_can_resume(self, experiment, participant):
         """Return whether the barrier released this participant.
 
