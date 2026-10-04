@@ -1,24 +1,4 @@
 {
-    "fast.debug_launch.StaticFilesDebugLaunch.track_launch_time_s": {
-        "code": "class StaticFilesDebugLaunch:\n    def track_launch_time_s(self, results, profile):\n        \"\"\"Return launch time for one static-file profile.\"\"\"\n        return results[profile]\n\n    def setup_cache(self):\n        \"\"\"Launch the static_big experiment once for each file profile.\"\"\"\n        from psynet.command_line import (\n            _start_local_server_and_wait_for_ready,\n            _stop_server,\n        )\n    \n        repo_root = Path(__file__).parents[2]\n        demo_dir = repo_root / \"tests/experiments/static_big\"\n        original_directory = Path.cwd()\n        results = {}\n    \n        try:\n            with _prepared_benchmark_experiment(demo_dir, repo_root):\n                os.chdir(demo_dir)\n                for profile, (count, file_size) in _STATIC_FILE_PROFILES.items():\n                    server_info = None\n                    with _temporary_static_payload(demo_dir, count, file_size):\n                        started_at = time.perf_counter()\n                        try:\n                            server_info = _start_local_server_and_wait_for_ready(\n                                [\"debug\", \"local\"]\n                            )\n                            results[profile] = time.perf_counter() - started_at\n                        finally:\n                            if server_info is not None:\n                                _stop_server(server_info)\n        finally:\n            os.chdir(original_directory)\n    \n        return results",
-        "name": "fast.debug_launch.StaticFilesDebugLaunch.track_launch_time_s",
-        "param_names": [
-            "profile"
-        ],
-        "params": [
-            [
-                "'baseline'",
-                "'many_small_files'",
-                "'few_large_files'"
-            ]
-        ],
-        "pretty_name": "Static files debug launch time",
-        "setup_cache_key": "fast.debug_launch:148",
-        "timeout": 180,
-        "type": "track",
-        "unit": "s",
-        "version": "2"
-    },
     "fast.function_benchmarks.SerializeRoundtrip.time_serialize": {
         "code": "class SerializeRoundtrip:\n    def time_serialize(self, cache):\n        serialize(cache[\"obj\"])\n\n    def setup_cache(self):\n        obj = _make_payload()\n        return {\"obj\": obj, \"encoded\": serialize(obj)}",
         "min_run_count": 2,
@@ -63,6 +43,26 @@
         "type": "track",
         "unit": "bytes",
         "version": "1"
+    },
+    "slow.debug_launch.StaticFilesDebugLaunch.track_launch_time_s": {
+        "code": "class StaticFilesDebugLaunch:\n    def track_launch_time_s(self, results, profile):\n        \"\"\"Return launch time for one static-file profile.\"\"\"\n        return results[profile]\n\n    def setup_cache(self):\n        \"\"\"Time the fastest of several static_big launches per file profile.\"\"\"\n        from psynet.command_line import (\n            _start_local_server_and_wait_for_ready,\n            _stop_server,\n        )\n    \n        repo_root = Path(__file__).parents[2]\n        demo_dir = repo_root / \"tests/experiments/static_big\"\n        original_directory = Path.cwd()\n        results = {}\n    \n        try:\n            with _prepared_benchmark_experiment(demo_dir, repo_root):\n                os.chdir(demo_dir)\n                for profile, (count, file_size) in _STATIC_FILE_PROFILES.items():\n                    with _temporary_static_payload(demo_dir, count, file_size):\n                        results[profile] = _fastest_launch_s(\n                            lambda: _start_local_server_and_wait_for_ready(\n                                [\"debug\", \"local\"]\n                            ),\n                            _stop_server,\n                        )\n        finally:\n            os.chdir(original_directory)\n    \n        return results",
+        "name": "slow.debug_launch.StaticFilesDebugLaunch.track_launch_time_s",
+        "param_names": [
+            "profile"
+        ],
+        "params": [
+            [
+                "'baseline'",
+                "'many_small_files'",
+                "'few_large_files'"
+            ]
+        ],
+        "pretty_name": "Static files debug launch time",
+        "setup_cache_key": "slow.debug_launch:169",
+        "timeout": 600,
+        "type": "track",
+        "unit": "s",
+        "version": "3"
     },
     "slow.experiment_performance.AsyncProcesses.track_median_queue_delay_ms": {
         "code": "class AsyncProcesses:\n    def track_median_queue_delay_ms(self, data, *param_values):\n        value = self._result_for(data, *param_values)[\"q_delay_median\"]\n        if value is None:\n            raise RuntimeError(\"performance test recorded no async process queue delay\")\n        return value * 1000.0\n\n    def setup_cache(self):\n        return super().setup_cache()",
