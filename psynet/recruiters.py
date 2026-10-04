@@ -99,7 +99,6 @@ from .participant import (
     stop_platform_base_retries,
 )
 from .timeline import (
-    AsyncCodeBlock,
     CodeBlock,
     PageMaker,
     Response,
@@ -1867,12 +1866,9 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
                 "wait_for_assignment_return",
                 condition=lambda participant: not participant.var.assignment_returned,
                 logic=join(
-                    AsyncCodeBlock(
-                        self.check_assignment_return_status,
-                        wait=True,
-                        expected_wait=5.0,
-                        check_interval=1.0,
-                    ),
+                    # Participants here have usually failed, and failed
+                    # participants skip AsyncCodeBlock waits.
+                    CodeBlock(self.check_assignment_return_status),
                     conditional(
                         label="assignment_return_result",
                         condition=lambda participant: (
