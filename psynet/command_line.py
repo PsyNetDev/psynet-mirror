@@ -1010,7 +1010,10 @@ def _debug_auto_reload(ctx, archive, no_browsers):
 
     develop_module = importlib.import_module("dallinger.command_line.develop")
     launch_job = develop_module.launch_app_and_open_browser
-    debug_kwargs = {"skip_flask": False}
+    port = _local_base_port()
+    # Dallinger's development server runs `flask run`, which reads this variable.
+    os.environ["FLASK_RUN_PORT"] = str(port)
+    debug_kwargs = {"skip_flask": False, "port": port}
     if no_browsers:
         develop_module.launch_app_and_open_browser = launch_app_without_browsers
 

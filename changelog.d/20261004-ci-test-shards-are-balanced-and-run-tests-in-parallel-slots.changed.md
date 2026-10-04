@@ -1,0 +1,1 @@
+CI test shards are now balanced using recorded test durations (`ci/test_durations.json`) and can run several tests at once, each in its own database, Redis server and port, via `psynet dev ci run-tests`.
