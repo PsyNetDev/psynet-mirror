@@ -745,6 +745,32 @@ def test_handled_error_page_delegates_lucid_recovery():
     error_page.assert_called_once_with(participant=participant, recruiter=recruiter)
 
 
+def test_report_error_records_the_log_line_of_the_error(tmp_path, monkeypatch):
+    import logging
+
+    from dallinger.utils import attach_json_logger
+
+    monkeypatch.chdir(tmp_path)
+    root = logging.getLogger()
+    attach_json_logger(root)
+    handler = root.handlers[-1]
+    logging.getLogger("psynet").error("an earlier log line")
+    log_to_db = MagicMock()
+    try:
+        with (
+            patch.object(Experiment, "log_to_db", log_to_db),
+            patch.object(Experiment, "log_to_notifier"),
+        ):
+            Experiment.report_error(ValueError("failed"))
+    finally:
+        root.removeHandler(handler)
+        handler.close()
+
+    token, log_line_number = log_to_db.call_args.args[1:3]
+    assert log_line_number == 2
+    assert token in (tmp_path / "logs.jsonl").read_text().splitlines()[1]
+
+
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("static")], indirect=True
 )

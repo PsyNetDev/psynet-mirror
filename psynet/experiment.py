@@ -68,8 +68,8 @@ from flask import g as flask_app_globals
 from flask_login import login_required
 from markupsafe import escape
 from sqlalchemy import Column, Float, ForeignKey, Integer, String, func, select
-from sqlalchemy.orm import lazyload, load_only
 from sqlalchemy import inspect as sqlalchemy_inspect
+from sqlalchemy.orm import lazyload, load_only
 
 from psynet import __version__
 from psynet.artifact import LocalArtifactStorage
@@ -5908,12 +5908,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         """
         token = cls.generate_error_token()
 
+        cls.log_to_stdout(error, token, **kwargs)
         try:
             log_line_number = find_log_line_number(token)
         except FileNotFoundError:
             log_line_number = None
-
-        cls.log_to_stdout(error, token, **kwargs)
         cls.log_to_db(error, token, log_line_number, **kwargs)
         cls.log_to_notifier(token, log_line_number, **kwargs)
 
