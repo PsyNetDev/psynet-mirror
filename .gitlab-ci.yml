@@ -48,7 +48,7 @@ before_script:
   - export REDIS_IP=$(getent ahostsv4 redis | awk '{ print $1 }' | tail -n 1)
   - echo $POSTGRES_IP
   - echo $REDIS_IP
-  - docker build --build-arg PYTHON_VERSION=$PYTHON_VERSION --tag $DOCKER_LOCAL_TAG .
+  - sh ci/ci-image.sh base
 
 .default_rules: &default_rules
   rules:
@@ -108,6 +108,23 @@ before_script:
       when: always
     - if: $CI_COMMIT_BRANCH
       when: always
+
+# Builds the Python 3.13 test images once per pipeline (or reuses today's
+# image for unchanged inputs) and pushes them to the container registry, so
+# test jobs pull instead of each spending ~2 min rebuilding. Also runs the
+# translation extraction once, so a bad msgid fails here instead of in every
+# shard. See ci/ci-image.sh.
+build_image:
+  stage: test
+  <<: *docker_test_rules
+  services:
+    - docker:26.1.1-dind
+  before_script: []
+  script:
+    - sh ci/ci-image.sh publish
+  artifacts:
+    reports:
+      dotenv: ci-image.env
 
 pre_commit:
   image: python:3.13
@@ -179,6 +196,8 @@ changelog_check:
   parallel: 10
   stage: test
   <<: *docker_test_rules
+  needs:
+    - build_image
   variables:
     TEST_SCOPE: full
   script:
@@ -220,6 +239,8 @@ tests_python_3_13:
 tests_python_3_14:
   extends: .test_suite
   <<: *release_branch_only
+  # Builds its own image: the shared one is Python 3.13.
+  needs: []
   variables:
     PYTHON_VERSION: "3.14"
     SKIP_PYTHON_VERSION_CHECK: "1"
@@ -229,6 +250,7 @@ tests_python_3_14:
 compatibility_tests:
   extends: .test_suite
   <<: *release_branch_only
+  needs: []
   parallel:
     matrix:
       - PYTHON_VERSION: ["3.11", "3.12"]
@@ -241,10 +263,15 @@ compatibility_tests:
 playwright_e2e_legacy:
   stage: test
   <<: *docker_test_rules
+  needs:
+    - build_image
+  before_script:
+    - export POSTGRES_IP=$(getent ahostsv4 postgres | awk '{ print $1 }' | tail -n 1)
+    - export REDIS_IP=$(getent ahostsv4 redis | awk '{ print $1 }' | tail -n 1)
+    - sh ci/ci-image.sh playwright
   script:
     - export PSYNET_WORKSPACE=/root/workspaces/PsyNet
     - mkdir -p public test-results
-    - docker build --build-arg BASE_IMAGE=$DOCKER_LOCAL_TAG --tag $DOCKER_LOCAL_TAG-playwright -f Dockerfile.playwright .
     - docker run
       --add-host=postgres:$POSTGRES_IP
       --add-host=redis:$REDIS_IP
@@ -269,10 +296,15 @@ playwright_e2e_legacy:
 playwright_e2e_default:
   stage: test
   <<: *docker_test_rules
+  needs:
+    - build_image
+  before_script:
+    - export POSTGRES_IP=$(getent ahostsv4 postgres | awk '{ print $1 }' | tail -n 1)
+    - export REDIS_IP=$(getent ahostsv4 redis | awk '{ print $1 }' | tail -n 1)
+    - sh ci/ci-image.sh playwright
   script:
     - export PSYNET_WORKSPACE=/root/workspaces/PsyNet
     - mkdir -p public test-results
-    - docker build --build-arg BASE_IMAGE=$DOCKER_LOCAL_TAG --tag $DOCKER_LOCAL_TAG-playwright -f Dockerfile.playwright .
     - docker run
       --add-host=postgres:$POSTGRES_IP
       --add-host=redis:$REDIS_IP
@@ -326,6 +358,9 @@ merge_test_results:
 asv_benchmarks:
   stage: test
   allow_failure: true
+  needs:
+    - job: build_image
+      optional: true
   resource_group: benchmark-results
   variables:
     # Full clone: the previous default-branch commit may be unreachable in the
@@ -392,6 +427,9 @@ asv_benchmarks:
 # benchmark-results branch; this job is a gate only.
 asv_regression:
   stage: test
+  needs:
+    - job: build_image
+      optional: true
   # Still allows for a cold .asv/env cache and Docker startup, but the selected
   # benchmark set should remain small enough for normal MR iteration.
   timeout: 45m
@@ -453,6 +491,9 @@ asv_regression:
 # manual job.
 benchmark_load_sweep:
   stage: test
+  needs:
+    - job: build_image
+      optional: true
   resource_group: benchmark-results
   timeout: 90m
   script:

@@ -1,0 +1,1 @@
+CI now builds the test images once per pipeline (reusing the same day's image when the Dockerfiles and dependency inputs are unchanged) and shares them through the container registry, and checks translation extraction once before the test shards start.
