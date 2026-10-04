@@ -1141,7 +1141,6 @@ def test_shuffle_with_max_run_limits_runs():
     [
         ("listed", ["B", "A", "C"]),
         (["C", "A"], ["C", "A"]),
-        (["C", "Z", "A"], ["C", "A"]),
         (lambda blocks: blocks[::-1], ["C", "A", "B"]),
         (lambda trial_maker: [trial_maker.id], ["B"]),
     ],
@@ -1157,7 +1156,7 @@ def test_block_order_settings(block_order, expected):
     assert participant.module_state.block == expected[0]
 
 
-@pytest.mark.parametrize("block_order", [["Z"], ["A", "A"], lambda: []])
+@pytest.mark.parametrize("block_order", [["A", "Z"], ["A", "A"], lambda: []])
 def test_invalid_block_orders_are_rejected(block_order):
     with pytest.raises(ValueError, match="non-empty list"):
         make_trial_maker(block_order=[])
@@ -1167,6 +1166,21 @@ def test_invalid_block_orders_are_rejected(block_order):
 
     with pytest.raises(ValueError, match="block order"):
         trial_maker.init_block_order(SimpleNamespace(), DummyParticipant(), ["A", "B"])
+
+
+def test_within_chains_skip_listed_blocks_the_participant_lacks():
+    trial_maker = make_trial_maker(
+        chain_type="within",
+        chains_per_experiment=None,
+        chains_per_participant=1,
+        recruit_mode=None,
+        block_order=["C", "Z", "A"],
+    )
+    participant = DummyParticipant()
+
+    trial_maker.init_block_order(SimpleNamespace(), participant, ["A", "C"])
+
+    assert participant.module_state.block_order == ["C", "A"]
 
 
 def test_order_dict_may_cover_more_blocks_than_one_participant_has():

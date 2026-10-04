@@ -86,7 +86,9 @@ Choosing the next chain
   within a block. They work like ``block_order`` and ``node_order`` in
   :ref:`trial_order`, except that ``chain_order`` defaults to ``"random"``,
   ``"balanced"`` favours the shortest chains and then the heads with the
-  fewest trials, and ``"listed"`` follows the order of the start nodes. A
+  fewest trials, and ``"listed"`` follows the order of the start nodes. In
+  within-participant chains, where participants can have different blocks, a
+  ``block_order`` list skips blocks the participant does not have. A
   ``chain_order`` function takes any of ``participant``, ``experiment``,
   ``block`` and ``chains``, by name. Each chain is a
   :class:`~psynet.trial.chain.ChainNetwork` in start-node order; its start

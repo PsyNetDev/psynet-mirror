@@ -8,6 +8,7 @@ experiment directory so nested repositories compare cleanly.
 """
 
 import os
+import re
 import subprocess
 import tempfile
 import uuid
@@ -105,14 +106,28 @@ def _anchor_gitignore_rules(text, prefix):
     """Rewrite gitignore rules written for directory ``prefix`` to match from the repository root."""
     if not prefix:
         return text
+    escaped_prefix = re.sub(r"([\\\[\]*?])", r"\\\1", prefix)
     lines = []
     for line in text.splitlines():
         negation = "!" if line.startswith("!") else ""
         pattern = line[len(negation) :]
-        if pattern.strip() and not line.startswith("#") and "/" in pattern.rstrip("/"):
-            line = negation + prefix + pattern.lstrip("/")
+        # Git ignores unescaped trailing spaces when deciding whether a rule
+        # is anchored, i.e. contains a slash other than a trailing one.
+        significant = re.sub(r"(?<!\\) +$", "", pattern)
+        if significant and not line.startswith("#") and "/" in significant.rstrip("/"):
+            line = negation + escaped_prefix + pattern.lstrip("/")
         lines.append(line)
     return "\n".join(lines) + "\n"
+
+
+def _global_gitignore_rules():
+    """Return the rules of the user's global Git excludes file, if any."""
+    path = _git_output("config", "--path", "core.excludesFile")
+    if not path:
+        config_home = os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config"
+        path = Path(config_home) / "git" / "ignore"
+    path = Path(path).expanduser()
+    return path.read_text(encoding="utf-8") if path.is_file() else ""
 
 
 def _git_ignored_deployment_paths(extra_excludes_file=None):
@@ -137,8 +152,15 @@ def _git_ignored_deployment_paths(extra_excludes_file=None):
                 )
                 return None
             excludes = Path(tmp) / "excludes"
+            # core.excludesFile replaces the user's global excludes file, so
+            # keep its rules too.
             excludes.write_text(
-                _anchor_gitignore_rules(Path(extra_excludes_file).read_text(), prefix)
+                _global_gitignore_rules()
+                + "\n"
+                + _anchor_gitignore_rules(
+                    Path(extra_excludes_file).read_text(encoding="utf-8"), prefix
+                ),
+                encoding="utf-8",
             )
             command += ["-c", f"core.excludesFile={excludes}"]
         command += ["check-ignore", "--stdin", "-z"]

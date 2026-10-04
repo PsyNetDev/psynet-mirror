@@ -356,6 +356,28 @@ def test_scripts_update_keeps_old_gitignore_rules_for_migration_check(
             _check_experiment_directory("debug")
 
 
+@pytest.mark.parametrize(
+    "rule, anchored",
+    [
+        ("/secret.txt", "exp[1]/secret.txt"),
+        ("static/key.txt", "exp[1]/static/key.txt"),
+        ("!/keep.txt", "!exp[1]/keep.txt"),
+        ("**/cache", "exp[1]/**/cache"),
+        ("secret.txt", "secret.txt"),
+        ("build/", "build/"),
+        ("build/  ", "build/  "),
+        ("# a/comment", "# a/comment"),
+    ],
+)
+def test_saved_gitignore_rules_are_anchored_to_the_experiment(rule, anchored):
+    from psynet.deployment_info import _anchor_gitignore_rules
+
+    assert (
+        _anchor_gitignore_rules(rule, "exp[1]/")
+        == anchored.replace("exp[1]", "exp\\[1\\]") + "\n"
+    )
+
+
 def test_migration_check_stops_when_git_cannot_answer(tmp_path, monkeypatch):
     from click import ClickException
 

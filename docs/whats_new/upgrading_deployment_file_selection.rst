@@ -18,7 +18,10 @@ Run ``psynet setup`` or ``psynet scripts scaffold`` to create the stock
 ``.gitignore`` ignores files that the new ``deploy.toml`` does not exclude,
 the next debug, test, or deployment command stops once before copying files
 and lists them, because they would now be deployed. Add any that should not
-be deployed to ``[exclude]`` and rerun.
+be deployed to ``[exclude]`` and rerun. This check only runs if the
+experiment directory has its own ``.gitignore``; if your experiment lives
+inside a larger repository and relied on that repository's ``.gitignore``,
+review the preview below yourself.
 
 Preview the complete deployment plan:
 
