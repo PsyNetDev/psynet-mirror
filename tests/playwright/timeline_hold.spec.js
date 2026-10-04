@@ -871,6 +871,9 @@ test("timeline hold client overlay and busy retry stay on a live hold", { tag: "
             "hold resume still in flight before the busy livelock probe"
           );
         }
+        // A resume that settled just before the probe can leave a 0ms
+        // queued hold wake behind; let it reach the swallowing stub.
+        await new Promise((resolve) => setTimeout(resolve, 0));
         controller.resumeRequested = false;
         clearTimeout(controller.safetyTimer);
         controller.busyRetryUsed = true;
