@@ -175,7 +175,9 @@ class _Slot:
             )
         self._redis_log = open(workspace / f"redis_slot{self.index}.log", "w")
         self._redis = subprocess.Popen(
-            ["redis-server", "--port", str(port), "--save", "", "--appendonly", "no"],
+            ["redis-server", "--bind", "127.0.0.1", "--port", str(port)]
+            + ["--dir", str(workspace), "--dbfilename", f"redis_slot{self.index}.rdb"]
+            + ["--save", "", "--appendonly", "no"],
             stdout=self._redis_log,
             stderr=subprocess.STDOUT,
         )
@@ -185,7 +187,7 @@ class _Slot:
                 ["redis-cli", "-p", str(port), "ping"], capture_output=True, text=True
             )
             if probe.stdout.strip() == "PONG":
-                return f"redis://localhost:{port}"
+                return f"redis://127.0.0.1:{port}"
             time.sleep(0.2)
         self.close()
         raise click.ClickException(f"Redis for slot {self.index} did not start.")
@@ -221,10 +223,15 @@ def _create_slot_database(database_url, index):
     connection = psycopg2.connect(database_url)
     connection.autocommit = True
     with connection.cursor() as cursor:
+        # DROP DATABASE ... WITH (FORCE) needs PostgreSQL 13, but
+        # `psynet services ensure` starts PostgreSQL 12.
         cursor.execute(
-            sql.SQL("DROP DATABASE IF EXISTS {} WITH (FORCE)").format(
-                sql.Identifier(name)
-            )
+            "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+            "WHERE datname = %s AND pid <> pg_backend_pid()",
+            (name,),
+        )
+        cursor.execute(
+            sql.SQL("DROP DATABASE IF EXISTS {}").format(sql.Identifier(name))
         )
         cursor.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name)))
     connection.close()
@@ -329,6 +336,7 @@ def run_items(items, n_slots, timeout, junit_dir, python_version, log_dir):
                     print(f"----- output of {item.path} -----\n{output}", flush=True)
 
     slots = []
+    threads = []
     try:
         for index in range(n_slots):
             slots.append(_Slot(index, log_dir))
@@ -337,6 +345,14 @@ def run_items(items, n_slots, timeout, junit_dir, python_version, log_dir):
             thread.start()
         for thread in threads:
             thread.join()
+    except BaseException:
+        # On Ctrl+C the terminal also interrupts the running pytest processes;
+        # emptying the queue stops workers from starting new ones.
+        with lock:
+            queue.clear()
+        for thread in threads:
+            thread.join()
+        raise
     finally:
         for slot in slots:
             slot.close()
