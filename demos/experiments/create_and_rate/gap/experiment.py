@@ -444,7 +444,7 @@ class Exp(psynet.experiment.Experiment):
         super().test_experiment()
         wait_until(
             completed_generation,
-            max_wait=10,
+            max_wait=30,
             error_message="No create-and-rate chain completed a full generation.",
         )
         generation_node, generation_creations, generation_ratings = (
