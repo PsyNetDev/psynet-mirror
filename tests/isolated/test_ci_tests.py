@@ -6,6 +6,7 @@ import time
 from click.testing import CliRunner
 
 from psynet.command_line import psynet
+from psynet.dev import ci_tests
 from psynet.dev.ci_tests import SuiteItem, assign_shard
 from psynet.testing.locks import experiment_directory_lock
 from psynet.utils import get_psynet_root
@@ -26,8 +27,8 @@ def test_assign_shard_balances_and_covers_every_item():
 
 
 def test_playwright_durations_feed_balanced_spec_shards(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    (tmp_path / "ci").mkdir()
+    durations_path = tmp_path / "test_durations.json"
+    monkeypatch.setattr(ci_tests, "DURATIONS_PATH", durations_path)
     report = tmp_path / "playwright-legacy-1-junit.xml"
     report.write_text(
         "<testsuites><testsuite>"
@@ -41,7 +42,7 @@ def test_playwright_durations_feed_balanced_spec_shards(tmp_path, monkeypatch):
 
     result = runner.invoke(psynet, ["dev", "ci", "update-test-durations", str(report)])
     assert result.exit_code == 0, result.output
-    durations = json.loads((tmp_path / "ci/test_durations.json").read_text())
+    durations = json.loads(durations_path.read_text())
     assert durations["tests/playwright/timeline_hold.spec.js::legacy"] == 1000.0
 
     shards = [
@@ -55,6 +56,21 @@ def test_playwright_durations_feed_balanced_spec_shards(tmp_path, monkeypatch):
     assert shards[0] == ["tests/playwright/timeline_hold.spec.js"]
     specs = (get_psynet_root() / "tests/playwright").rglob("*.spec.js")
     assert len(shards[1]) == len(list(specs)) - 1
+
+
+def test_crashed_item_counts_as_failure(tmp_path, monkeypatch):
+    def run_item(item, *args):
+        if item.path == "crashes":
+            raise OSError("scaffold vanished")
+        return 0, "ok"
+
+    monkeypatch.setattr(ci_tests, "_run_item", run_item)
+    items = [SuiteItem("crashes", "demo"), SuiteItem("passes", "isolated")]
+
+    results = ci_tests.run_items(items, 1, 60, None, "3.13", tmp_path)
+
+    assert {r.item.path: r.returncode for r in results} == {"crashes": 1, "passes": 0}
+    assert "scaffold vanished" in results[0].output
 
 
 def _hold_lock(directory, held, release):

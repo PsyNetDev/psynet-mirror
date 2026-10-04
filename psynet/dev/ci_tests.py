@@ -40,6 +40,7 @@ import statistics
 import subprocess
 import threading
 import time
+import traceback
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
@@ -133,8 +134,13 @@ def assign_shard(items, node_total, node_index):
     return assigned[node_index - 1]
 
 
-def load_durations(path=DURATIONS_PATH):
-    path = Path(path)
+def _durations_path():
+    return get_psynet_root() / DURATIONS_PATH
+
+
+def load_durations():
+    """Return the recorded durations in :data:`DURATIONS_PATH`, keyed by item."""
+    path = _durations_path()
     if not path.exists():
         return {}
     return json.loads(path.read_text())
@@ -282,7 +288,12 @@ def run_items(items, n_slots, timeout, junit_dir, python_version, log_dir):
                     return
                 item = queue.pop(0)
             start = time.monotonic()
-            code, output = _run_item(item, slot, timeout, junit_dir, python_version)
+            try:
+                code, output = _run_item(item, slot, timeout, junit_dir, python_version)
+            except Exception:
+                # A dead worker would drop its remaining items from the shard
+                # without failing it, so record the crash as a failure instead.
+                code, output = 1, traceback.format_exc()
             result = ItemResult(
                 item, slot.index, code, time.monotonic() - start, output
             )
@@ -420,7 +431,7 @@ def update_test_durations_command(paths):
         if (root / name.split("::")[0]).exists()
     }
     merged.update({name: round(statistics.median(v), 1) for name, v in samples.items()})
-    DURATIONS_PATH.write_text(json.dumps(merged, indent=1, sort_keys=True) + "\n")
+    _durations_path().write_text(json.dumps(merged, indent=1, sort_keys=True) + "\n")
     click.echo(
         f"Updated {len(samples)} of {len(merged)} durations in {DURATIONS_PATH}."
     )
