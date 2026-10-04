@@ -97,6 +97,23 @@ def make_static_trial_maker(trial_maker_class=StaticTrialMaker, **kwargs):
     return trial_maker_class(**{**args, **kwargs})
 
 
+@pytest.mark.parametrize(
+    "expected, n_planned, warns", [("n_nodes", 3, False), (3, 3, False), (3, 2, True)]
+)
+def test_plan_length_warning_excludes_repeat_trials(caplog, expected, n_planned, warns):
+    trial_maker = make_static_trial_maker(
+        nodes=[StaticNode(definition={"x": x}) for x in range(3)],
+        expected_trials_per_participant=expected,
+        max_trials_per_participant=None,
+        n_repeat_trials=2,
+        node_order="listed",
+    )
+    trial_maker._warn_if_plan_length_is_unexpected(
+        n_planned, SimpleNamespace(n_blocks=1)
+    )
+    assert ("planned" in caplog.text) == warns
+
+
 @pytest.mark.parametrize("target_trials_per_node", [0, -1])
 def test_static_trial_maker_rejects_non_positive_target_trials_per_node(
     target_trials_per_node,

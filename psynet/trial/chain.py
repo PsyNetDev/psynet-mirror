@@ -1695,9 +1695,6 @@ class ChainTrialMaker(NetworkTrialMaker):
                 )
             self.n_start_nodes = chains_per_participant
 
-        self._expected_trials_exclude_repeats = (
-            expected_trials_per_participant == "n_start_nodes"
-        )
         if expected_trials_per_participant == "n_start_nodes":
             expected_trials_per_participant = self.n_start_nodes
 
@@ -2521,7 +2518,11 @@ class ChainTrialMaker(NetworkTrialMaker):
         until the trial is committed, by which time it counts towards balance.
         ``FOR NO KEY UPDATE`` does not conflict with the key-share locks taken
         when trials referencing the node are inserted. Returns an empty list
-        if every ranked candidate is locked.
+        if every ranked candidate is locked, or if the chosen one stopped
+        being available in between; its lock then lasts until the request
+        commits, which only delays other requests from receiving that node.
+        Headless networks, which are data errors, sort last and are only
+        reported if they are among the ranked candidates.
         """
         network, node = self.network_class, self.node_class
         ranked = (
@@ -2537,7 +2538,9 @@ class ChainTrialMaker(NetworkTrialMaker):
         else:
             if not ranked:
                 return []
-            rank = {head_id: index for index, (_, head_id) in enumerate(ranked)}
+            rank = {}
+            for index, (_, head_id) in enumerate(ranked):
+                rank.setdefault(head_id, index)
             locked_id = (
                 db.session.query(node.id)
                 .filter(node.id.in_(rank))
@@ -2549,7 +2552,7 @@ class ChainTrialMaker(NetworkTrialMaker):
             if locked_id is None:
                 return []
             chosen = ranked[rank[locked_id]][0]
-        return query.filter(network.id == chosen).all()
+        return query.filter(network.id == chosen, available).all()
 
     def _filter_candidates_in_python(
         self, query, available, order_by, participant, experiment
@@ -2844,9 +2847,7 @@ class ChainTrialMaker(NetworkTrialMaker):
         """Warn once when a single-block static plan cannot match the expected trial count."""
         if not self._plan_entries_are_single_trials or state.n_blocks != 1:
             return
-        expected = self.expected_trials_per_participant
-        if not self._expected_trials_exclude_repeats:
-            expected -= self.n_repeat_trials
+        expected = self.expected_trials_per_participant - self.n_repeat_trials
         for cap in (self.max_trials_per_participant, self.max_trials_per_block):
             if cap is not None:
                 n_planned = min(n_planned, cap)

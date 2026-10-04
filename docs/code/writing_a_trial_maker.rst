@@ -219,7 +219,8 @@ Chain trial makers take ``block_order`` too, and ``chain_order`` in place of
 Keeping selection fast
 ~~~~~~~~~~~~~~~~~~~~~~
 
-PsyNet finds each trial's node with one database query. It orders the
+PsyNet finds each trial's node in the database, without loading the other
+candidates. It orders the
 eligible nodes by any custom priority, then by balancing (with
 ``node_order="balanced"``), then randomly, and loads only the first. With
 ``"balanced"`` and no Python selection hooks, PsyNet locks that node until

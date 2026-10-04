@@ -7,7 +7,11 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-from dallinger.deployment_plan import build_deployment_plan, parse_deployment_policy
+from dallinger.deployment_plan import (
+    DeploymentPolicyError,
+    build_deployment_plan,
+    parse_deployment_policy,
+)
 from dallinger.utils import ExperimentFileSource
 
 from psynet.experiment import Experiment
@@ -418,6 +422,26 @@ def test_migration_check_stops_once_when_global_excludes_are_unreadable(
         with pytest.raises(ClickException, match="could not check"):
             _check_experiment_directory("debug")
         assert not _deployment_policy_needs_review()
+
+
+def test_migration_check_survives_a_malformed_deploy_toml(tmp_path, monkeypatch):
+    from click import ClickException
+
+    from psynet.command_line import _check_experiment_directory
+
+    monkeypatch.setattr("psynet.command_line.is_in_repo_experiment", lambda: False)
+    monkeypatch.setattr("psynet.command_line.git_repository_available", lambda: True)
+    _old_experiment_with_ignored_secret(tmp_path)
+
+    with working_directory(tmp_path):
+        scaffold_experiment_directory()
+        policy = Path("deploy.toml").read_text()
+        Path("deploy.toml").write_text(policy + "\n[exclude\n")
+        with pytest.raises(DeploymentPolicyError):
+            _check_experiment_directory("debug")
+        Path("deploy.toml").write_text(policy)
+        with pytest.raises(ClickException, match="secret.txt"):
+            _check_experiment_directory("debug")
 
 
 def test_check_experiment_directory_migration_without_newly_deployed_files_is_silent(
