@@ -339,9 +339,9 @@ asv_benchmarks:
     # Full clone: the previous default-branch commit may be unreachable in the
     # default shallow clone, but we need it as the regression baseline.
     GIT_DEPTH: "0"
-    # Slow experiment load-test medians commonly swing ~1.2-1.3x on GitLab
-    # runners without a code change, so this job uses 2 rather than the fast
-    # merge-request gate's 1.5.
+    # Slow experiment load-test medians are noisier than the fast suite (they
+    # commonly swing ~1.2-1.3x on GitLab runners without a code change), so
+    # this job leaves more headroom than the merge-request gate's 1.5.
     ASV_REGRESSION_FACTOR: "2"
     ASV_BASE_AGE: "24 hours ago"
   cache:

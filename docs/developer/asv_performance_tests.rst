@@ -70,9 +70,9 @@ schedule, add a pipeline schedule for ``master`` under *Build > Pipeline
 schedules* in GitLab, for example with the cron expression ``0 2 * * *``, and
 give it the variable ``NIGHTLY_BENCHMARKS`` with value ``1``. Other schedules
 run the usual pipeline jobs. The
-comparison uses ``--factor 2`` because the slow
-``psynet performance-test`` medians commonly move by 1.2–1.3× on GitLab
-runners without a code change. ``asv continuous`` applies one factor to
+comparison uses ``--factor 2``, more headroom than the merge-request gate,
+because the slow ``psynet performance-test`` medians are noisier than the fast
+suite and commonly move by 1.2–1.3× on GitLab runners without a code change. ``asv continuous`` applies one factor to
 every benchmark it runs, so the default-branch job is also looser on the
 fast suite; merge requests still gate the fast suite at ``--factor 1.5``.
 The job is currently allowed to fail while the benchmark suite is being
