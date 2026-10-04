@@ -185,8 +185,12 @@ def write_all(content: dict):
     encoded = jsonpickle.encode(content, indent=4, keys=True)
 
     def f():
-        with open(path, "w") as file:
+        # Replacing the file atomically gives it a new inode, so readers in other
+        # processes never see a partial write or reuse a stale cache entry.
+        tmp_path = f"{path}.{os.getpid()}.tmp"
+        with open(tmp_path, "w") as file:
             file.write(encoded)
+        os.replace(tmp_path, path)
 
     _clear_cache()
     try:
@@ -252,6 +256,7 @@ def _clear_cache():
 
 
 def read(key):
+    """Return a copy of one deployment-info value."""
     return copy.deepcopy(_cached_content()[key])
 
 

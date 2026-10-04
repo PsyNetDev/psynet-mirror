@@ -1,3 +1,4 @@
+import os
 import subprocess
 import tempfile
 from pathlib import Path
@@ -35,10 +36,10 @@ def test_deployment_info_reads_see_external_writes_and_return_copies(tmp_path):
         deployment_info.read_all()["x"].append(2)
         assert deployment_info.read("x") == [1]
 
-        Path(deployment_info.path).write_text(
-            jsonpickle.encode({"x": [1, 2, 3]}, keys=True)
-        )
-        assert deployment_info.read("x") == [1, 2, 3]
+        external_write = Path(deployment_info.path).with_suffix(".external")
+        external_write.write_text(jsonpickle.encode({"x": [2]}, keys=True))
+        os.replace(external_write, deployment_info.path)
+        assert deployment_info.read("x") == [2]
 
 
 def _git(*args):
