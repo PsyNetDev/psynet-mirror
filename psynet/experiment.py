@@ -2869,7 +2869,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         )
 
     def commit_payment_state(self):
-        """Persist claimed payment fields so a crash cannot replay a POST."""
+        """Persist claimed payment fields so a crash cannot replay a POST.
+
+        Recruiters call this just before posting a payment; it may commit
+        inside timeline steps, where other commits raise.
+        """
         _commit_external_call_state()
 
     def _lock_participant_for_payment(self, participant):

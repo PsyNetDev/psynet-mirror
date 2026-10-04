@@ -244,6 +244,9 @@ def test_cancel_cancels_the_queued_worker_job(monkeypatch):
 
     assert process.redis_job.get_status() == "canceled"
     assert process.cancelled and not process.pending
+    process_id = process.id
+    WorkerAsyncProcess.call_function(process_id)
+    assert not WorkerAsyncProcess.query.get(process_id).finished
 
     cancelled_before_launch = WorkerAsyncProcess(do_nothing)
     cancelled_before_launch.cancel()
