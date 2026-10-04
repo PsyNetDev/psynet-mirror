@@ -28,7 +28,7 @@ Test parallelization
 --------------------
 
 The automated test suite is slow because it has to run more than 70 demo experiments
-and more than 200 isolated test files, each in its own pytest process.
+and more than 170 isolated test files, each in its own pytest process.
 GitLab therefore splits these tests across several shard jobs, and each job
 runs several tests at once in *slots*. Running the full test
 suite locally will ordinarily take a very long time. It's better instead to
