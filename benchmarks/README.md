@@ -11,5 +11,5 @@ PsyNet splits ASV benchmarks into two CI tiers by directory:
 
 Default-branch CI runs the full ASV suite with `asv continuous --factor 2`, so
 both tiers contribute to regression checks on `master`. The factor is looser
-than the merge-request gate (`1.25`) because the slow load-test medians are
+than the merge-request gate (`1.5`) because the slow load-test medians are
 noisier than the fast suite.

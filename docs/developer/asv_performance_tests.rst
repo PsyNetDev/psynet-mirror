@@ -40,8 +40,10 @@ package code, the fast debug-launch experiment (``tests/experiments/static_big``
 benchmark files, or the ASV/CI configuration those jobs use. The job uses
 ``asv continuous`` with ``--bench "^fast\\."`` to benchmark the merge-request
 base and head commits back-to-back on the same GitLab runner. The job exits
-non-zero when ASV detects a regression larger than ``--factor 1.25``. Docs,
-changelog, and skill-only merge requests skip this job.
+non-zero when ASV detects a regression larger than ``--factor 1.5``. A
+tighter factor failed at random, because debug-launch times move by up to
+about 1.3× between runs even when a change does not touch the launch path.
+Docs, changelog, and skill-only merge requests skip this job.
 
 Export performance is not included in the ASV suite. End-to-end exports depend
 on mutable database fixtures, filesystem caches, and subprocess startup, which
@@ -72,7 +74,7 @@ comparison uses ``--factor 2`` because the slow
 ``psynet performance-test`` medians commonly move by 1.2–1.3× on GitLab
 runners without a code change. ``asv continuous`` applies one factor to
 every benchmark it runs, so the default-branch job is also looser on the
-fast suite; merge requests still gate the fast suite at ``--factor 1.25``.
+fast suite; merge requests still gate the fast suite at ``--factor 1.5``.
 The job is currently allowed to fail while the benchmark suite is being
 tuned, but it still preserves the data needed for the published
 benchmark history.
@@ -102,7 +104,7 @@ Run a same-runner comparison locally:
 
 .. code-block:: shell
 
-    asv continuous --factor 1.25 --split --show-stderr --bench '^fast\.' BASE HEAD
+    asv continuous --factor 1.5 --split --show-stderr --bench '^fast\.' BASE HEAD
 
 Preview published benchmark results locally:
 

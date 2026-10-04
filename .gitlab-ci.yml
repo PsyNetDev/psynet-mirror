@@ -341,7 +341,7 @@ asv_benchmarks:
     GIT_DEPTH: "0"
     # Slow experiment load-test medians commonly swing ~1.2-1.3x on GitLab
     # runners without a code change, so this job uses 2 rather than the fast
-    # merge-request gate's 1.25.
+    # merge-request gate's 1.5.
     ASV_REGRESSION_FACTOR: "2"
     ASV_BASE_AGE: "24 hours ago"
   cache:
@@ -450,7 +450,7 @@ asv_regression:
       -e ASV_MACHINE_NAME=gitlab-ci
       -v "$PWD:$PSYNET_WORKSPACE"
       -w $PSYNET_WORKSPACE
-      $DOCKER_LOCAL_TAG bash -c "uv pip install --no-cache --system --no-deps -e \"$PSYNET_WORKSPACE\" && uv pip install --no-cache --system asv virtualenv && asv machine --yes --machine gitlab-ci && asv continuous --factor 1.25 --split --show-stderr --bench \"$ASV_FAST_BENCHMARKS\" $ASV_BASE $ASV_HEAD"
+      $DOCKER_LOCAL_TAG bash -c "uv pip install --no-cache --system --no-deps -e \"$PSYNET_WORKSPACE\" && uv pip install --no-cache --system asv virtualenv && asv machine --yes --machine gitlab-ci && asv continuous --factor 1.5 --split --show-stderr --bench \"$ASV_FAST_BENCHMARKS\" $ASV_BASE $ASV_HEAD"
   rules:
     - if: $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "issues/9123-performance-benchmark-site"
       when: never
