@@ -100,10 +100,21 @@ def run_tests(**kwargs):
     raise SystemExit(ci_tests.run_tests_command(**kwargs))
 
 
+@ci.command("playwright-files")
+@click.option("--mode", type=click.Choice(["default", "legacy"]), required=True)
+@click.option("--node-total", type=int, default=1, show_default=True)
+@click.option("--node-index", type=int, default=1, show_default=True)
+def playwright_files(mode, node_total, node_index):
+    """Print the Playwright spec files for one duration-balanced CI shard."""
+    from psynet.dev import ci_tests
+
+    ci_tests.playwright_files_command(mode, node_total, node_index)
+
+
 @ci.command("update-test-durations")
 @click.argument("paths", nargs=-1, required=True, type=click.Path(exists=True))
 def update_test_durations(paths):
-    """Refresh ci/test_durations.json from run-tests duration files."""
+    """Refresh ci/test_durations.json from run-tests and Playwright JUnit files."""
     from psynet.dev import ci_tests
 
     ci_tests.update_test_durations_command(paths)

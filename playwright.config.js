@@ -9,6 +9,8 @@ const config = {
   //   @legacy-only  — requires inplace_timeline_transitions=false
   // CI: playwright_e2e_default uses --grep '@both|@inplace-only'
   //     playwright_e2e_legacy uses --grep '@both|@legacy-only'
+  // Each CI job runs in two shards whose spec files come from
+  // `psynet dev ci playwright-files` (balanced by recorded duration).
   testDir: "tests/playwright",
   workers: 1,
   timeout,

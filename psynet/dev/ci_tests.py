@@ -20,14 +20,21 @@ Two things make this faster than running items one after another:
 Items that share an experiment directory are serialized by
 :func:`psynet.testing.locks.experiment_directory_lock`.
 
+The Playwright jobs reuse the same balancing: ``playwright-files`` prints the
+spec files for one shard, because Playwright's own ``--shard`` splits by test
+count, and a single spec of 40 sub-second layout tests then fills a shard.
+Playwright durations are keyed ``<spec>::<mode>`` since the default and
+legacy jobs select different tests from the same files.
+
 Refresh the durations after the suite changes noticeably with
-``psynet dev ci update-test-durations public/ci_durations_*.json``, using the
-``ci_durations_*.json`` artifacts written by ``run-tests``.
+``psynet dev ci update-test-durations``, passing the ``ci_durations_*.json``
+artifacts written by ``run-tests`` and the ``playwright-*-junit.xml`` reports.
 """
 
 import heapq
 import json
 import os
+import re
 import shutil
 import statistics
 import subprocess
@@ -43,6 +50,7 @@ from psynet.testing.locks import HELD_LOCK_ENV_VAR, experiment_directory_lock
 from psynet.utils import get_psynet_root, list_experiment_dirs, list_isolated_tests
 
 DURATIONS_PATH = Path("ci/test_durations.json")
+PLAYWRIGHT_DIR = Path("tests/playwright")
 
 _COMMON_PYTEST_ARGS = [
     "-Werror",
@@ -97,14 +105,16 @@ def collect_items(scope, durations):
         for path in sorted(list_isolated_tests())
     ]
     for kind in {item.kind for item in items}:
-        known = [
-            durations[i.path] for i in items if i.kind == kind and i.path in durations
-        ]
-        default = statistics.median(known) if known else 30.0
-        for item in items:
-            if item.kind == kind:
-                item.estimate = durations.get(item.path, default)
+        _apply_estimates([i for i in items if i.kind == kind], durations)
     return items
+
+
+def _apply_estimates(items, durations, key=lambda item: item.path):
+    """Set estimates from ``durations``, using the median for unknown items."""
+    known = [durations[key(i)] for i in items if key(i) in durations]
+    default = statistics.median(known) if known else 30.0
+    for item in items:
+        item.estimate = durations.get(key(item), default)
 
 
 def assign_shard(items, node_total, node_index):
@@ -356,12 +366,61 @@ def run_tests_command(
     return 1 if failed else 0
 
 
+def _playwright_key(spec, mode):
+    return f"{spec}::{mode}"
+
+
+def playwright_files_command(mode, node_total, node_index):
+    """Print the Playwright spec files for one shard of the ``mode`` CI job."""
+    root = get_psynet_root()
+    items = [
+        SuiteItem(path.relative_to(root).as_posix(), "playwright")
+        for path in sorted((root / PLAYWRIGHT_DIR).rglob("*.spec.js"))
+    ]
+    _apply_estimates(
+        items, load_durations(), key=lambda i: _playwright_key(i.path, mode)
+    )
+    click.echo(" ".join(i.path for i in assign_shard(items, node_total, node_index)))
+
+
+def _playwright_junit_durations(path):
+    """Sum test times per spec file in a ``playwright-<mode>-<shard>-junit.xml`` report."""
+    import xml.etree.ElementTree as ET
+
+    match = re.search(r"(default|legacy)", Path(path).name)
+    if match is None:
+        raise click.ClickException(f"Cannot tell the Playwright mode of {path}.")
+    mode = match.group(1)
+    durations = {}
+    for case in ET.parse(path).getroot().iter("testcase"):
+        key = _playwright_key(f"{PLAYWRIGHT_DIR}/{case.get('classname')}", mode)
+        durations[key] = durations.get(key, 0.0) + float(case.get("time") or 0)
+    return durations
+
+
 def update_test_durations_command(paths):
-    """Merge ``run-tests`` duration artifacts into :data:`DURATIONS_PATH`."""
+    """Merge duration artifacts into :data:`DURATIONS_PATH`.
+
+    Accepts the JSON files written by ``run-tests`` and the
+    ``playwright-<mode>-<shard>-junit.xml`` reports of the Playwright jobs. Entries
+    for paths that no longer exist are dropped.
+    """
     samples = {}
     for path in paths:
-        for name, duration in json.loads(Path(path).read_text())["durations"].items():
+        if str(path).endswith(".xml"):
+            durations = _playwright_junit_durations(path)
+        else:
+            durations = json.loads(Path(path).read_text())["durations"]
+        for name, duration in durations.items():
             samples.setdefault(name, []).append(duration)
-    merged = {name: round(statistics.median(v), 1) for name, v in samples.items()}
+    root = get_psynet_root()
+    merged = {
+        name: duration
+        for name, duration in load_durations().items()
+        if (root / name.split("::")[0]).exists()
+    }
+    merged.update({name: round(statistics.median(v), 1) for name, v in samples.items()})
     DURATIONS_PATH.write_text(json.dumps(merged, indent=1, sort_keys=True) + "\n")
-    click.echo(f"Wrote {len(merged)} durations to {DURATIONS_PATH}.")
+    click.echo(
+        f"Updated {len(samples)} of {len(merged)} durations in {DURATIONS_PATH}."
+    )
