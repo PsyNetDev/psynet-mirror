@@ -69,6 +69,7 @@ from flask_login import login_required
 from markupsafe import escape
 from sqlalchemy import Column, Float, ForeignKey, Integer, String, func, select
 from sqlalchemy.orm import lazyload, load_only
+from sqlalchemy import inspect as sqlalchemy_inspect
 
 from psynet import __version__
 from psynet.artifact import LocalArtifactStorage
@@ -87,8 +88,8 @@ from .bot import Bot, BotDriver, BotResponse
 from .command_line import export_launch_data
 from .data import SQLBase, SQLMixin, ingest_zip, register_table
 from .db import (
-    _allow_framework_commits,
     _commit_external_call_state,
+    _in_read_only_render,
     _set_transaction_lock_timeout,
     blocking_psycopg,
     forbid_commits,
@@ -5799,7 +5800,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         session, so ``refetch`` must return a fresh ORM instance (or ``None``).
         ``fail`` receives that instance and marks it failed. The fail is
         committed immediately so a later ``handle_error`` in the same batch
-        cannot undo it (same mid-batch commit pattern as ErrorRecord logging).
+        cannot undo it, just as ``handle_error`` commits the error record.
         """
         if not isinstance(error, cls.HandledError):
             cls.handle_error(error, **error_parents)
@@ -5812,19 +5813,42 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @classmethod
     def handle_error(cls, error, **kwargs):
-        parents = cls._compile_error_parents(**kwargs)
+        """Roll back the failed work, then report the error and save its record.
+
+        ``kwargs`` are the ORM objects the error concerns (``participant``,
+        ``trial``, ``process``, ...). They and their parents are recorded by ID.
+        """
+        identities = cls._identify_error_parents(**kwargs)
         db.session.rollback()
+        parents = cls._compile_error_parents(identities)
         cls.report_error(error, **parents)
+        db.session.commit()
         return cls.HandledError(**parents)
 
     @staticmethod
-    def _compile_error_parents(**kwargs):
-        # We merge to prevent sqlalchemy.orm.exc.DetachedInstanceError
-        parents = {
-            key: db.session.merge(value)
-            for key, value in kwargs.items()
-            if value is not None
-        }
+    def _identify_error_parents(**kwargs):
+        """Return the identity of each persisted object, without loading it.
+
+        After a failed flush the objects' attributes can no longer be loaded,
+        and after the rollback, objects created in the failed transaction
+        no longer exist; so we record identities before rolling back and
+        reload the objects afterwards.
+        """
+        identities = {}
+        for key, value in kwargs.items():
+            state = sqlalchemy_inspect(value, raiseerr=False)
+            if state is not None and state.identity is not None:
+                identities[key] = (state.mapper.class_, state.identity)
+        return identities
+
+    @staticmethod
+    def _compile_error_parents(identities):
+        """Reload the error's objects and return their and their parents' IDs."""
+        parents = {}
+        for key, (model, identity) in identities.items():
+            value = db.session.get(model, identity)
+            if value is not None:
+                parents[key] = value
         types = [
             "process",
             "asset",
@@ -5877,6 +5901,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         error,
         **kwargs,
     ):
+        """Log the error, add its record to the current transaction, and notify.
+
+        The caller's transaction decides whether the record is saved;
+        :meth:`handle_error` commits it after rolling back the failed work.
+        """
         token = cls.generate_error_token()
 
         try:
@@ -5907,6 +5936,13 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @classmethod
     def log_to_db(cls, error, token, log_line_number, **kwargs):
+        """Add an :class:`~psynet.error.ErrorRecord` to the current transaction.
+
+        Rendering runs in a read-only transaction, so errors reported while
+        rendering are only logged and notified.
+        """
+        if _in_read_only_render():
+            return
         # We considered running this function within its own database session,
         # but this proved incompatible with passing pre-existing SQLAlchemy objects
         # to the ErrorRecord constructor.
@@ -5919,10 +5955,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             **kwargs,
         )
         db.session.add(record)
-        # We don't normally write session.commit() within inner code,
-        # but we do here, because we really want to make sure error reporting works.
-        with _allow_framework_commits():
-            db.session.commit()
 
     @classmethod
     def log_to_notifier(cls, token, line_number, **kwargs):

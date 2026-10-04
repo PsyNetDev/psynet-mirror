@@ -41,7 +41,7 @@ COMMIT_SITES = {
     "experiment.py::Experiment._ensure_worker_complete": _OWNS_REQUEST,
     "experiment.py::Experiment._route_timeline": _OWNS_REQUEST,
     "experiment.py::Experiment.isolate_batch_item_failure": _OWNS_JOB,
-    "experiment.py::Experiment.log_to_db": "error records must survive a failing request",
+    "experiment.py::Experiment.handle_error": "rolls back the failed work, so it owns the error record's transaction",
     "experiment.py::Experiment._reapply_lock_timeout_and_prepare": _OWNS_REQUEST,
     "experiment.py::Experiment._skip_ready_hold_on_get": _OWNS_REQUEST,
     "experiment.py::Experiment._relock_arriver_after_barrier_check": _OWNS_REQUEST,

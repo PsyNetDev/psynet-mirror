@@ -13,11 +13,13 @@ from psynet.db import (
     read_only_transaction,
     transaction,
 )
+from psynet.error import ErrorRecord
 from psynet.experiment import Experiment, get_experiment
 from psynet.page import InfoPage
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.timeline import Page, Response, Timeline
+from psynet.utils import check_translation_is_available
 
 
 class DummyTransactionModel(SQLBase):
@@ -229,6 +231,63 @@ def test_lucid_rejected_consent_terminates_inside_guarded_steps(
         with pytest.raises(RuntimeError, match="prepare_debrief' called"):
             with forbid_commits("CodeBlock 'EndLogic.prepare_debrief'"):
                 RejectedConsentLogic().prepare_debrief(experiment, participant)
+
+
+def _skip_error_notifications(monkeypatch):
+    monkeypatch.setattr(Experiment, "log_to_notifier", MagicMock())
+
+
+def _translate_missing_string_live(monkeypatch):
+    _skip_error_notifications(monkeypatch)
+    monkeypatch.setattr("psynet.experiment.in_deployment_package", lambda: True)
+    monkeypatch.setattr("psynet.deployment_info.read", lambda key: "live")
+    monkeypatch.setattr(
+        "psynet.utils.REGISTERED_TRANSLATIONS", {"experiment": {"de": []}}
+    )
+    check_translation_is_available("Not in the catalog", None, "de", "experiment")
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_live_missing_translation_is_reported_without_committing(
+    db_session, monkeypatch
+):
+    """Rendering keeps working, and a step's half-finished work stays unsaved."""
+    DummyTransactionModel.__table__.create(bind=db_session.get_bind(), checkfirst=True)
+
+    with transaction():
+        db.session.commit()
+        with read_only_transaction():
+            _translate_missing_string_live(monkeypatch)
+
+    with transaction(commit=False):
+        with forbid_commits("CodeBlock 'translate'"):
+            db.session.add(DummyTransactionModel(id="half-finished"))
+            _translate_missing_string_live(monkeypatch)
+        db.session.rollback()
+
+    assert DummyTransactionModel.query.get("half-finished") is None
+    assert ErrorRecord.query.count() == 0
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_handle_error_after_failed_flush_records_parent_ids(db_session, monkeypatch):
+    _skip_error_notifications(monkeypatch)
+    DummyTransactionModel.__table__.create(bind=db_session.get_bind(), checkfirst=True)
+    participant = new_participant()
+    db.session.add(DummyTransactionModel(id="duplicate"))
+    db.session.commit()
+    participant_id = participant.id
+
+    db.session.add(DummyTransactionModel(id="duplicate"))
+    with pytest.raises(sqlalchemy.exc.IntegrityError) as error:
+        db.session.flush()
+    get_experiment().handle_error(error.value, participant=participant)
+
+    assert ErrorRecord.query.one().participant_id == participant_id
 
 
 @pytest.mark.parametrize(
