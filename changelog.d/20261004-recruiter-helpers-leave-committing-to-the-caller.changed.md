@@ -1,1 +1,1 @@
-Recruiter helpers, such as the duration-exceeded notifications, recruiter status checks and graph network creation, no longer commit their caller's transaction. Commits that save state around a payment or Lucid API call remain, and now also work inside timeline steps.
+Recruiter and Lucid helpers, such as recruiter status checks and saving a Lucid respondent's termination details, no longer commit their caller's transaction. Commits that save state around a payment or Lucid API call remain, and now also work inside timeline steps.

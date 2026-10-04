@@ -447,8 +447,8 @@ def _cancel_rq_job(process_id):
         Job.fetch(_rq_job_id(process_id), connection=redis_conn).cancel()
     except (NoSuchJobError, InvalidJobOperation):
         logger.info(
-            "No queued job to cancel for async process %s; it already finished, "
-            "expired, was cancelled, or was never launched.",
+            "No job to cancel for async process %s; it expired, was already "
+            "cancelled, or was never launched.",
             process_id,
         )
 

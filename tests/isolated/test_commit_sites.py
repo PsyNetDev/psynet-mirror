@@ -1,4 +1,7 @@
-"""Every ``.commit()`` in PsyNet, with the reason it may commit.
+"""Every function in PsyNet that calls ``.commit()`` directly, with its reason.
+
+Commits made indirectly, through ``transaction()``, ``with_transaction`` or
+``sessions_scope(commit=True)``, are not listed.
 
 Only the code that owns a transaction commits it (see the ``psynet.db`` module
 docstring). When this test fails, either leave committing to the transaction's
@@ -48,6 +51,9 @@ COMMIT_SITES = {
     "process.py::LocalAsyncProcess.thread_function": _OWNS_JOB,
     "process.py::WorkerAsyncProcess.check_timeouts": _OWNS_JOB,
     "pytest_psynet.py::trial": "pytest fixture",
+    "recruiters.py::_abandon_overdue_participants": (
+        "Dallinger's clock calls it in a sessions_scope() that does not commit"
+    ),
     "sync.py::_advance_released_hold_waiters_after_commit": _OWNS_JOB,
     "sync.py::_evaluate_held_instance": _OWNS_JOB,
     "sync.py::check_sync_groups": _OWNS_JOB,

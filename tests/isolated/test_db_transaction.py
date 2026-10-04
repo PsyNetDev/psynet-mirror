@@ -232,6 +232,29 @@ def test_lucid_rejected_consent_terminates_inside_guarded_steps(
 
 
 @pytest.mark.parametrize(
+    "recruiter_class", ["BaseLabRecruiter", "BaseLucidRecruiter", "GenericRecruiter"]
+)
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_duration_exceeded_saves_abandonment_under_the_clock(
+    db_session, recruiter_class
+):
+    """Dallinger's clock does not commit its session, so the recruiter must."""
+    from psynet import recruiters
+
+    participant = new_participant()
+    db.session.commit()
+    participant_id = participant.id
+    recruiter = object.__new__(getattr(recruiters, recruiter_class))
+    with db.sessions_scope():
+        participant = Participant.query.get(participant_id)
+        recruiter.notify_duration_exceeded([participant], reference_time=None)
+
+    assert Participant.query.get(participant_id).status == "abandoned"
+
+
+@pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
 def test_commit_guard_ignores_transactions_of_other_sessions(db_session):

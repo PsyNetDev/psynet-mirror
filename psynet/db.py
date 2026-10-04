@@ -14,8 +14,9 @@ external call that cannot be undone or should not be repeated, such as a
 payment, a panel provider's API or a rate-limited request. It must do so
 through :func:`_commit_external_call_state`, so that the call works inside
 timeline steps and the exceptions stay easy to find.
-``tests/isolated/test_commit_sites.py`` lists every commit in the package with
-its reason; adding a commit means adding it there.
+``tests/isolated/test_commit_sites.py`` lists every function in the package
+that calls ``.commit()`` directly, with its reason; adding one means adding it
+there.
 """
 
 import logging

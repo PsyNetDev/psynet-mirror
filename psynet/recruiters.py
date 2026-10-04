@@ -292,6 +292,17 @@ def configured_recruiter_class(config=None):
     return dallinger.recruiters.MTurkRecruiter
 
 
+def _abandon_overdue_participants(participants):
+    """Mark participants abandoned from Dallinger's clock and commit.
+
+    The clock's ``sessions_scope()`` does not commit, so the recruiter's
+    ``notify_duration_exceeded`` must, as Dallinger's own recruiters do.
+    """
+    for participant in participants:
+        participant.status = "abandoned"
+    db.session.commit()
+
+
 class PsyNetRecruiterMixin:
     """PsyNet behavior shared by all recruiters, including payment and early exit."""
 
@@ -2158,8 +2169,7 @@ class BaseLabRecruiter(
         The participant has been working longer than the time defined in
         the "duration" config value.
         """
-        for participant in participants:
-            participant.status = "abandoned"
+        _abandon_overdue_participants(participants)
 
     def _authorization_header(self):
         """Return a DRF Token header built from the configured auth token."""
@@ -2725,8 +2735,7 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
         The participant has been working longer than the time defined in
         the "duration" config value.
         """
-        for participant in participants:
-            participant.status = "abandoned"
+        _abandon_overdue_participants(participants)
 
     def run_checks(self):
         logger.info("Polling Lucid API to count entry_df")
@@ -3700,5 +3709,4 @@ class GenericRecruiter(
         The participant has been working longer than the time defined in
         the "duration" config value.
         """
-        for participant in participants:
-            participant.status = "abandoned"
+        _abandon_overdue_participants(participants)
