@@ -52,8 +52,9 @@ Default-branch checks and publishing
 ====================================
 
 A nightly GitLab pipeline schedule on ``master`` runs the ``asv_benchmarks``
-CI job. Scheduled pipelines run only this job and ``pages``, which republishes
-the benchmark site. The full suite takes about 35 minutes, which is too long to
+CI job. The schedule sets the variable ``NIGHTLY_BENCHMARKS`` to ``1``, and its
+pipelines run only this job and ``pages``, which republishes the benchmark
+site. The full suite takes about 35 minutes, which is too long to
 run on every merge, so ``master`` push pipelines only offer the job as a manual
 action.
 
@@ -64,7 +65,9 @@ runner, and exits early if nothing has been merged since then. It writes the
 generated result files, commits those results to the ``benchmark-results``
 branch, pushes them, and then propagates the ASV exit status. To set up the
 schedule, add a pipeline schedule for ``master`` under *Build > Pipeline
-schedules* in GitLab, for example with the cron expression ``0 2 * * *``. The
+schedules* in GitLab, for example with the cron expression ``0 2 * * *``, and
+give it the variable ``NIGHTLY_BENCHMARKS`` with value ``1``. Other schedules
+run the usual pipeline jobs. The
 comparison uses ``--factor 2`` because the slow
 ``psynet performance-test`` medians commonly move by 1.2–1.3× on GitLab
 runners without a code change. ``asv continuous`` applies one factor to

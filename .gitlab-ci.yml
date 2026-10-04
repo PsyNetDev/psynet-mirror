@@ -45,11 +45,12 @@ before_script:
   - echo $REDIS_IP
   - docker build --build-arg PYTHON_VERSION=$PYTHON_VERSION --tag $DOCKER_LOCAL_TAG .
 
-# Scheduled pipelines only run the nightly benchmarks (and `pages`, which
-# republishes their results), so every other job opts out of them.
+# The nightly benchmark schedule sets NIGHTLY_BENCHMARKS=1. Its pipelines only
+# run `asv_benchmarks` (and `pages`, which republishes the results), so every
+# other job opts out of them. Other schedules run the usual jobs.
 .default_rules: &default_rules
   rules:
-    - if: $CI_PIPELINE_SOURCE == "schedule"
+    - if: $NIGHTLY_BENCHMARKS == "1"
       when: never
     - if: $CI_MERGE_REQUEST_ID
       when: always
@@ -69,7 +70,7 @@ before_script:
 # exclude paths, so "everything except docs/" cannot be written instead.
 .docker_test_rules: &docker_test_rules
   rules:
-    - if: $CI_PIPELINE_SOURCE == "schedule"
+    - if: $NIGHTLY_BENCHMARKS == "1"
       when: never
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
       changes:
@@ -330,6 +331,9 @@ merge_test_results:
 asv_benchmarks:
   stage: test
   allow_failure: true
+  # A later master push must not cancel the nightly run: the push pipeline
+  # only offers this job manually.
+  interruptible: false
   resource_group: benchmark-results
   variables:
     # Full clone: the previous default-branch commit may be unreachable in the
@@ -356,7 +360,11 @@ asv_benchmarks:
     - git branch -f "$CI_COMMIT_REF_NAME" HEAD
     - 'sed -i "s|\"branches\": \[[^]]*\]|\"branches\": [\"$CI_COMMIT_REF_NAME\"]|" asv.conf.json'
     - export ASV_BASE="$(git rev-list -1 --first-parent --before="$ASV_BASE_AGE" HEAD)"
-    - export ASV_BASE="${ASV_BASE:-$(git rev-parse HEAD^1)}"
+    - |
+      if [ -z "$ASV_BASE" ]; then
+        echo "No default-branch commit is older than $ASV_BASE_AGE; is the clone shallow?"
+        exit 1
+      fi
     - export ASV_HEAD="$CI_COMMIT_SHA"
     - |
       if [ "$ASV_BASE" = "$ASV_HEAD" ]; then
@@ -387,7 +395,7 @@ asv_benchmarks:
     paths:
       - .asv/results/
   rules:
-    - if: $CI_PIPELINE_SOURCE == "schedule" && $CI_COMMIT_REF_NAME == $CI_DEFAULT_BRANCH
+    - if: $NIGHTLY_BENCHMARKS == "1" && $CI_COMMIT_REF_NAME == $CI_DEFAULT_BRANCH
       when: always
     - if: $CI_COMMIT_REF_NAME == $CI_DEFAULT_BRANCH
       when: manual
@@ -488,6 +496,8 @@ benchmark_load_sweep:
       - public/sweep-*.json
       - public/sweep-report.md
   rules:
+    - if: $NIGHTLY_BENCHMARKS == "1"
+      when: never
     - when: manual
       allow_failure: true
 
