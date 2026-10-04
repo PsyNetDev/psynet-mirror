@@ -153,8 +153,7 @@ to the next block, or leaves the trial maker after the last one.
 - ``"random"`` (default): a new random order for each participant.
 - ``"listed"``: the order in which the blocks first appear in ``nodes``.
 - A list of block names, used for every participant. It may name only some
-  of the blocks. Within-participant chains can give participants different
-  blocks; each participant skips listed blocks they do not have.
+  of the blocks.
 - A function that takes any of ``participant``, ``experiment`` and
   ``blocks`` and returns a list of block names. It may leave blocks out to
   give a participant only some of them, but must keep at least one.
@@ -241,26 +240,34 @@ PsyNet logs a warning. There are three ways to keep it fast:
   :meth:`~psynet.trial.static.StaticTrialMaker.filter_nodes_query` receives
   the query and returns it with extra conditions.
   :meth:`~psynet.trial.static.StaticTrialMaker.node_priority` returns SQL
-  expressions to sort by. Both can use columns of ``self.node_class`` and
-  ``self.network_class``, including columns you add to your own node class.
+  expressions to sort by. Both can use columns of ``self.network_class`` and
+  of your node class, including columns you add to it. Refer to those columns
+  through your own class (``ColorNode.difficulty`` in the example), because a
+  static trial maker's ``self.node_class`` is always ``StaticNode``.
 - Decide whether the participant should get a trial at all in
   :meth:`~psynet.trial.chain.ChainTrialMaker.before_selection`. It runs before
   PsyNet looks for nodes and returns ``"wait"``, ``"exit"`` or ``None`` (go
   ahead).
 - Set ``selection_pool_size`` to pass only the best-ranked eligible nodes to
-  the Python hooks. Nodes outside the pool are ignored for that trial.
+  the Python hooks. Nodes outside the pool are ignored for that trial, unless
+  ``custom_node_filter`` rejects every available node in the pool; PsyNet then
+  loads them all.
 
 .. code-block:: python
+
+    from sqlalchemy import Column, Integer
+
+    class ColorNode(StaticNode):
+        difficulty = Column(Integer)
 
     class ColorTrialMaker(StaticTrialMaker):
         selection_pool_size = 50
 
         def filter_nodes_query(self, query, participant, experiment):
-            # Hypothetical column added to the node class.
-            return query.filter(self.node_class.difficulty <= participant.var.level)
+            return query.filter(ColorNode.difficulty <= participant.var.level)
 
         def node_priority(self, participant, experiment):
-            return [self.node_class.difficulty.desc()]
+            return [ColorNode.difficulty.desc()]
 
         def select_node(self, nodes, participant, experiment):
             return max(nodes, key=lambda node: score_item(node.definition))

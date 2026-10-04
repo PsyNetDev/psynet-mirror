@@ -1976,10 +1976,10 @@ class ChainTrialMaker(NetworkTrialMaker):
         Pass ``block_order`` to the constructor rather than overriding this
         method. The default applies that argument: ``"random"`` shuffles the
         blocks, ``"listed"`` keeps the order in which they first appear among
-        the start nodes, a list is used in its order but skips blocks this
-        participant does not have (within-participant chains can give
-        participants different blocks), and a function is called with any of
-        ``participant``, ``experiment`` and ``blocks``.
+        the start nodes, a list is used as given, and a function is called
+        with any of ``participant``, ``experiment`` and ``blocks``. In
+        within-participant chains, which can give participants different
+        blocks, a list skips blocks this participant does not have.
         """
         if self.block_order == "random":
             return random.sample(list(blocks), len(blocks))
@@ -1993,7 +1993,9 @@ class ChainTrialMaker(NetworkTrialMaker):
                 trial_maker=self,
                 blocks=list(blocks),
             )
-        return [block for block in self.block_order if block in blocks]
+        if self.chain_type == "within":
+            return [block for block in self.block_order if block in blocks]
+        return list(self.block_order)
 
     def _check_order_setting_blocks(self, blocks, *, all_blocks_known=False):
         """Check per-block order settings against the trial maker's blocks.
@@ -2099,7 +2101,7 @@ class ChainTrialMaker(NetworkTrialMaker):
             .where(network.trial_maker_id == self.id)
         ).one()
         assert n_without_target == 0
-        return still_required or 0
+        return int(still_required or 0)
 
     #########################
     # Participated networks #
@@ -2296,6 +2298,7 @@ class ChainTrialMaker(NetworkTrialMaker):
         return network
 
     def _hook_is_overridden(self, method_name):
+        """Return whether this trial maker or its class overrides ``method_name``."""
         return method_name in vars(self) or is_method_overridden(
             self, ChainTrialMaker, method_name
         )
@@ -2307,6 +2310,7 @@ class ChainTrialMaker(NetworkTrialMaker):
         )
 
     def _uses_list_selection_hooks(self):
+        """Return whether selection must load candidates for Python hooks."""
         return self._filters_candidates_in_python() or any(
             self._hook_is_overridden(name) for name in self._list_selection_hooks
         )
@@ -2529,7 +2533,9 @@ class ChainTrialMaker(NetworkTrialMaker):
         """Load candidates for a Python eligibility filter.
 
         The filter sees unavailable candidates too, so that the wait decision
-        only considers candidates it accepts.
+        only considers candidates it accepts. ``selection_pool_size`` is
+        applied before the filter; if the filter accepts no available
+        candidate from a full pool, every candidate is loaded instead.
         """
         pool_size = self.selection_pool_size
         if pool_size is not None:
@@ -2542,6 +2548,29 @@ class ChainTrialMaker(NetworkTrialMaker):
         )
         if pool_size is None:
             self._warn_if_many_candidates(len(rows))
+        selected = self._filter_rows_in_python(rows, participant, experiment)
+        if (
+            not (isinstance(selected, list) and selected)
+            and pool_size is not None
+            and len(rows) == pool_size
+        ):
+            logger.info(
+                "The custom filter accepted no available %s among the first %i; "
+                "loading every candidate.",
+                self._candidate_label,
+                pool_size,
+            )
+            rows = (
+                query.add_columns(available.label("available"))
+                .order_by(*order_by)
+                .all()
+            )
+            self._warn_if_many_candidates(len(rows))
+            selected = self._filter_rows_in_python(rows, participant, experiment)
+        return selected
+
+    def _filter_rows_in_python(self, rows, participant, experiment):
+        """Apply the Python eligibility filter to ``(network, available)`` rows."""
         is_available = {network.id: available for network, available in rows}
         candidates = self._build_candidates(
             [network for network, _ in rows],

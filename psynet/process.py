@@ -422,6 +422,7 @@ class LocalAsyncProcess(AsyncProcess):
 
 
 def _rq_job_id(process_id):
+    """Return the RQ job ID for an async process, so it can be found to cancel."""
     return f"psynet_async_process_{process_id}"
 
 

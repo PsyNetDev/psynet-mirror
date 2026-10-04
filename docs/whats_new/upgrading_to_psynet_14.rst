@@ -435,6 +435,11 @@ templates that changes the database.
   object's ``id``. Custom POST routes still commit themselves. See
   :ref:`Saving changes <saving_changes>`.
 
+* ``participant.answer``, ``save_answer`` variables and ``on_complete`` are
+  now updated only after ``validate`` accepts the response. A custom
+  ``format_answer``, ``validate`` or ``process_response`` that reads
+  ``participant.answer`` now sees the previous answer; use the ``answer``
+  argument instead.
 * Pages now render in a read-only transaction. Move database writes from
   ``render()`` or templates to ``pre_render()``.
 * An override of ``Experiment.process_response`` must return a

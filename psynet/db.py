@@ -181,6 +181,15 @@ def _meaningfully_dirty(session):
     ]
 
 
+class _CommitGuard:
+    """The innermost :func:`forbid_commits` block and the transaction it protects."""
+
+    def __init__(self, operation, root, parent):
+        self.operation = operation
+        self.root = root
+        self.parent = parent
+
+
 _commit_forbidden_in = ContextVar("psynet_commit_forbidden_in", default=None)
 
 
@@ -188,9 +197,9 @@ _commit_forbidden_in = ContextVar("psynet_commit_forbidden_in", default=None)
 def _prevent_render_commit(session):
     if _read_only_render_depth.get() > 0:
         raise RuntimeError("Timeline rendering cannot commit database transactions.")
-    operation = _commit_forbidden_in.get()
-    if operation is not None and not session.in_nested_transaction():
-        raise RuntimeError(_forbidden_commit_message(operation, "commit"))
+    guard = _commit_forbidden_in.get()
+    if guard is not None and not session.in_nested_transaction():
+        raise RuntimeError(_forbidden_commit_message(guard.operation, "commit"))
 
 
 _SAVING_CHANGES_DOCS_PAGE = "code/project/classes_and_sqlalchemy"
@@ -231,14 +240,37 @@ def forbid_commits(operation: str):
         Description of the guarded code, used in the error message.
     """
     session = dallinger.db.session()
-    root = session.get_transaction()
-    token = _commit_forbidden_in.set(operation)
+    guard = _CommitGuard(
+        operation, session.get_transaction(), _commit_forbidden_in.get()
+    )
+    token = _commit_forbidden_in.set(guard)
     try:
         yield
     finally:
         _commit_forbidden_in.reset(token)
-    if root is not None and session.get_transaction() is not root:
+    if guard.root is not None and session.get_transaction() is not guard.root:
         raise RuntimeError(_forbidden_commit_message(operation, "rollback"))
+
+
+@contextmanager
+def _allow_framework_commits():
+    """Let PsyNet's own code commit inside a :func:`forbid_commits` block.
+
+    Only for framework commits that must happen before an external side
+    effect, such as saving payment state before posting it to a recruiter, or
+    that must survive a failing request, such as error records. Experiment
+    code should never use this.
+    """
+    guard = _commit_forbidden_in.get()
+    token = _commit_forbidden_in.set(None)
+    try:
+        yield
+    finally:
+        _commit_forbidden_in.reset(token)
+        root = dallinger.db.session().get_transaction()
+        while guard is not None:
+            guard.root = root
+            guard = guard.parent
 
 
 @event.listens_for(dallinger.db.session, "before_flush")

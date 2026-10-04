@@ -1,3 +1,5 @@
+from unittest.mock import MagicMock
+
 import pytest
 import sqlalchemy
 from dallinger import db
@@ -182,6 +184,35 @@ def test_forbid_commits_rejects_commits_but_allows_savepoints(db_session):
     assert message.startswith("grow_network called db.session.commit()")
     assert "db.session.flush()" in message
     assert "classes_and_sqlalchemy.html#saving-changes" in message
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_end_logic_lets_recruiters_commit_inside_guarded_steps(db_session, monkeypatch):
+    """Recruiters commit payment state before reporting it, e.g. on rejected consent."""
+    from psynet.end import RejectedConsentLogic
+
+    DummyTransactionModel.__table__.create(bind=db_session.get_bind(), checkfirst=True)
+    monkeypatch.setattr(RejectedConsentLogic, "prepare_exit", lambda *args: None)
+
+    def commit_payment_state(experiment, participant):
+        db.session.add(DummyTransactionModel(id="payment"))
+        db.session.commit()
+
+    experiment = MagicMock()
+    experiment.with_lucid_recruitment.return_value = False
+    participant = MagicMock()
+    participant.recruiter.after_rejected_consent = commit_payment_state
+
+    with transaction(commit=False):
+        with forbid_commits("Timeline.advance_page"):
+            with forbid_commits("CodeBlock 'EndLogic.prepare_debrief'"):
+                RejectedConsentLogic().prepare_debrief(experiment, participant)
+            with pytest.raises(RuntimeError, match="advance_page called"):
+                db.session.commit()
+
+    assert db.session.get(DummyTransactionModel, "payment") is not None
 
 
 @pytest.mark.parametrize(
