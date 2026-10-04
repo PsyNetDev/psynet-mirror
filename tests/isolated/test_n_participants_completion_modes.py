@@ -80,17 +80,39 @@ class TestNParticipantsCompletionModes:
 
         not_yet_started = _make_participant(experiment)
         assert "quota" not in not_yet_started.module_states
+
+        _make_participant(experiment, complete=True, status="approved")
+
+        early_exited_after_finish = _make_participant(experiment)
+        trial_maker.start(early_exited_after_finish)
+        trial_maker.end(early_exited_after_finish)
+        early_exited_after_finish.early_exited = True
+
+        other_trial_maker = StaticTrialMaker(
+            id_="other",
+            trial_class=DummyTrial,
+            nodes=[StaticNode(definition={"x": 2})],
+            expected_trials_per_participant=1,
+            target_n_participants=1,
+            recruit_mode="n_participants",
+            n_participants_completion="trial_maker",
+        )
+        finished_other_only = _make_participant(experiment)
+        other_trial_maker.start(finished_other_only)
+        other_trial_maker.end(finished_other_only)
         db.session.commit()
 
         trial_maker.n_participants_completion = "experiment"
-        assert trial_maker.n_complete_participants == 0
-        assert trial_maker.n_working_participants == 4
+        assert trial_maker.n_complete_participants == 1
+        assert trial_maker.n_working_participants == 6
         assert not trial_maker.n_participants_criterion(experiment)
 
         trial_maker.n_participants_completion = "trial_maker"
-        assert trial_maker.n_complete_participants == 3
-        assert trial_maker.n_working_participants == 2
-        assert not trial_maker.n_participants_criterion(experiment)
+        assert trial_maker.n_complete_participants == 4
+        assert trial_maker.n_working_participants == 3
+        assert other_trial_maker.n_complete_participants == 1
 
-        trial_maker.target_n_participants = 6
+        trial_maker.target_n_participants = 7
+        assert not trial_maker.n_participants_criterion(experiment)
+        trial_maker.target_n_participants = 8
         assert trial_maker.n_participants_criterion(experiment)
