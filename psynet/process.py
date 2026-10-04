@@ -96,6 +96,8 @@ class AsyncProcess(SQLBase, SQLMixin):
         while queue:
             process = queue.pop(0)
             assert process["obj"].id is not None
+            if getattr(process["obj"], "cancelled", False):
+                continue
             logger.info("Launching async process %s...", process["id"])
             process["class"].launch(process)
 
@@ -507,6 +509,9 @@ class WorkerAsyncProcess(AsyncProcess):
         return Job.fetch(self.redis_job_id, connection=redis_conn)
 
     def cancel(self):
+        """Cancel the process; the caller's transaction saves the change."""
+        if self.cancelled:
+            return
         self.cancelled = True
         self.pending = False
         self.fail("Cancelled asynchronous process")
@@ -514,8 +519,8 @@ class WorkerAsyncProcess(AsyncProcess):
             self.redis_job.cancel()
         except NoSuchJobError:
             logger.info(
-                "No queued job to cancel for async process %s; it already finished "
-                "or expired.",
+                "No queued job to cancel for async process %s; it already finished, "
+                "expired, or has not been launched yet.",
                 self.id,
             )
         if self.participant_id is not None:
@@ -525,7 +530,6 @@ class WorkerAsyncProcess(AsyncProcess):
                 self.participant_id,
                 reason="async_process_cancelled",
             )
-        db.session.commit()
 
     # @classmethod
     # def log(cls, msg):

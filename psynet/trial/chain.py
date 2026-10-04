@@ -2535,7 +2535,8 @@ class ChainTrialMaker(NetworkTrialMaker):
         The filter sees unavailable candidates too, so that the wait decision
         only considers candidates it accepts. ``selection_pool_size`` is
         applied before the filter; if the filter accepts no available
-        candidate from a full pool, every candidate is loaded instead.
+        candidate from a full pool, every candidate is loaded and filtered
+        again, so filters must be free of side effects.
         """
         pool_size = self.selection_pool_size
         if pool_size is not None:

@@ -206,11 +206,13 @@ def test_end_logic_lets_recruiters_commit_inside_guarded_steps(db_session, monke
     participant.recruiter.after_rejected_consent = commit_payment_state
 
     with transaction(commit=False):
-        with forbid_commits("Timeline.advance_page"):
-            with forbid_commits("CodeBlock 'EndLogic.prepare_debrief'"):
-                RejectedConsentLogic().prepare_debrief(experiment, participant)
-            with pytest.raises(RuntimeError, match="advance_page called"):
-                db.session.commit()
+        with pytest.raises(RuntimeError, match=r"advance_page called .*rollback"):
+            with forbid_commits("Timeline.advance_page"):
+                with forbid_commits("CodeBlock 'EndLogic.prepare_debrief'"):
+                    RejectedConsentLogic().prepare_debrief(experiment, participant)
+                with pytest.raises(RuntimeError, match="advance_page called"):
+                    db.session.commit()
+                db.session.rollback()
 
     assert db.session.get(DummyTransactionModel, "payment") is not None
 

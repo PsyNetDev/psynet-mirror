@@ -1,1 +1,1 @@
-`WorkerAsyncProcess.cancel()` now cancels the queued background job instead of raising an error, because the job is enqueued under an id derived from the process id.
+`WorkerAsyncProcess.cancel()` now cancels the queued background job instead of raising an error. It no longer commits, so it can be called from code blocks and trial hooks, and the change is saved with the surrounding step. Cancelling twice is harmless, and a process cancelled before its transaction commits is never launched.

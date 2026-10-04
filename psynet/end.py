@@ -51,14 +51,9 @@ class EndLogic(ExitLogic):
         )
 
     def prepare_debrief(self, experiment, participant) -> None:
-        """Apply outcome state, then store its recruiter exit decision.
-
-        Recruiters may commit here, for example to save payment state before
-        reporting it to the panel.
-        """
-        with _allow_framework_commits():
-            self.before_debrief(experiment, participant)
-            self.prepare_exit(experiment, participant)
+        """Apply outcome state, then store its recruiter exit decision."""
+        self.before_debrief(experiment, participant)
+        self.prepare_exit(experiment, participant)
 
     def before_debrief(self, experiment, participant) -> None:
         pass
@@ -334,13 +329,15 @@ class RejectedConsentLogic(UnsuccessfulEndLogic):
 
         # For Lucid recruitment, terminate the participant on Lucid's side
         # before showing the page, since the auto-redirect bypasses the normal
-        # release_participant flow (user won't click Finish)
-        if experiment.with_lucid_recruitment():
-            experiment.recruiter.terminate_participant(
-                participant=participant, reason="consent-rejected"
-            )
+        # release_participant flow (user won't click Finish).
+        # Recruiters commit here, e.g. to save payment state before reporting it.
+        with _allow_framework_commits():
+            if experiment.with_lucid_recruitment():
+                experiment.recruiter.terminate_participant(
+                    participant=participant, reason="consent-rejected"
+                )
 
-        participant.recruiter.after_rejected_consent(experiment, participant)
+            participant.recruiter.after_rejected_consent(experiment, participant)
 
     def debrief_participant(self, experiment, participant) -> TimelineLogic:
         _ = get_translator()

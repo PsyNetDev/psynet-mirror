@@ -6,8 +6,10 @@ import pytest
 from dallinger import db
 from dallinger.db import redis_conn
 from rq import Queue
+from rq.exceptions import NoSuchJobError
 
 import psynet.experiment  # noqa -- to ensure that all SQLAlchemy classes are registered
+from psynet.db import forbid_commits
 from psynet.process import LocalAsyncProcess, WorkerAsyncProcess
 from psynet.pytest_psynet import path_to_test_experiment
 
@@ -235,6 +237,16 @@ def test_cancel_cancels_the_queued_worker_job(monkeypatch):
 
     process = WorkerAsyncProcess(do_nothing)
     db.session.commit()
-    process.cancel()
+    with forbid_commits("CodeBlock 'cancel_analysis'"):
+        process.cancel()
+        process.cancel()
+    db.session.commit()
 
     assert process.redis_job.get_status() == "canceled"
+    assert process.cancelled and not process.pending
+
+    cancelled_before_launch = WorkerAsyncProcess(do_nothing)
+    cancelled_before_launch.cancel()
+    db.session.commit()
+    with pytest.raises(NoSuchJobError):
+        cancelled_before_launch.redis_job

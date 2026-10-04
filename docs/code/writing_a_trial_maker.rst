@@ -251,7 +251,8 @@ PsyNet logs a warning. There are three ways to keep it fast:
 - Set ``selection_pool_size`` to pass only the best-ranked eligible nodes to
   the Python hooks. Nodes outside the pool are ignored for that trial, unless
   ``custom_node_filter`` rejects every available node in the pool; PsyNet then
-  loads them all.
+  loads them all and filters again, so the filter may see the same node twice
+  in one selection. Keep filters free of side effects.
 
 .. code-block:: python
 
