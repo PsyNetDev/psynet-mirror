@@ -39,7 +39,8 @@ diag_pinned:
   variables:
     DIAG_ENV: pinned
 
-diag_unpinned:
+diag_asv:
   extends: .diag
   variables:
-    DIAG_ENV: unpinned
+    DIAG_ENV: asv
+    GIT_DEPTH: "10"
