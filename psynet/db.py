@@ -9,11 +9,14 @@ included, leaves committing to the owner, and uses ``db.session.flush()`` when
 it needs database-generated values. Timeline steps enforce this with
 :func:`forbid_commits`.
 
-A helper may commit early only to keep local records consistent with an
-external call that cannot be undone or should not be repeated, such as a
-payment, a panel provider's API or a rate-limited request. It must do so
-through :func:`_commit_external_call_state`, so that the call works inside
-timeline steps and the exceptions stay easy to find.
+A helper may commit early to keep local records consistent with an external
+call that cannot be undone or should not be repeated, such as a payment, a
+panel provider's API or a rate-limited request. It must do so through
+:func:`_commit_external_call_state`, so that the call works inside timeline
+steps and the exceptions stay easy to find. The other exceptions are error
+records, which must survive a failing request, and recruiter hooks that some
+Dallinger callers (the clock, ``/participant`` and ``/load-participant``) run
+without committing.
 ``tests/isolated/test_commit_sites.py`` lists every function in the package
 that calls ``.commit()`` directly, with its reason; adding one means adding it
 there.
@@ -277,10 +280,9 @@ def forbid_commits(operation: str):
 def _allow_framework_commits():
     """Let PsyNet's own code commit inside a :func:`forbid_commits` block.
 
-    Only for framework commits that must happen before an external side
-    effect, such as saving payment state before posting it to a recruiter, or
-    that must survive a failing request, such as error records. Experiment
-    code should never use this.
+    Use it through :func:`_commit_external_call_state`, or for error records
+    that must survive a failing request. Experiment code should never use
+    this.
     """
     guard = _commit_forbidden_in.get()
     token = _commit_forbidden_in.set(None)

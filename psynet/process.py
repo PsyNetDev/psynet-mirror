@@ -6,6 +6,7 @@ import dallinger.db
 from dallinger import db
 from dallinger.db import redis_conn
 from dallinger.utils import classproperty
+from redis.exceptions import RedisError
 from rq import Queue
 from rq.exceptions import InvalidJobOperation, NoSuchJobError
 from rq.job import Job
@@ -450,6 +451,13 @@ def _cancel_rq_job(process_id):
             "No job to cancel for async process %s; it expired, was already "
             "cancelled, or was never launched.",
             process_id,
+        )
+    except RedisError:
+        logger.warning(
+            "Could not cancel the RQ job of async process %s; the worker will "
+            "skip it because the process is marked cancelled.",
+            process_id,
+            exc_info=True,
         )
 
 

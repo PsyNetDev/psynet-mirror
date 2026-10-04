@@ -51,6 +51,9 @@ COMMIT_SITES = {
     "process.py::LocalAsyncProcess.thread_function": _OWNS_JOB,
     "process.py::WorkerAsyncProcess.check_timeouts": _OWNS_JOB,
     "pytest_psynet.py::trial": "pytest fixture",
+    "recruiters.py::BaseLucidRecruiter.normalize_entry_information": (
+        "Dallinger's /participant and /load-participant routes do not commit"
+    ),
     "recruiters.py::_abandon_overdue_participants": (
         "Dallinger's clock calls it in a sessions_scope() that does not commit"
     ),

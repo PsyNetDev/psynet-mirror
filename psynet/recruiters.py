@@ -3015,14 +3015,15 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
         if rid is None:
             rid = hit_id
 
-        # Save RID info into the database
+        # Dallinger's /participant and /load-participant routes call this
+        # without committing, so the new RID must be committed here.
         try:
             lucid_rid = LucidRID.query.filter_by(rid=rid).one()
         except NoResultFound:
             self.lucidservice.log(f"Saving RID '{rid}' into the database.")
             lucid_rid = LucidRID(rid=rid)
             db.session.add(lucid_rid)
-            db.session.flush()
+            db.session.commit()
         except MultipleResultsFound:
             raise MultipleResultsFound(
                 f"Multiple rows for Lucid RID '{rid}' found. This should never happen."
@@ -3206,7 +3207,11 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
         commit_participant,
         raise_on_error,
     ):
-        """Implement Lucid termination with internal transaction controls."""
+        """Implement Lucid termination with internal transaction controls.
+
+        ``commit_participant`` only controls the commit before the API call;
+        :meth:`LucidService.terminate_respondent` always commits after it.
+        """
         assert participant or assignment_id
         assert not (participant and assignment_id)
 

@@ -257,6 +257,21 @@ def test_duration_exceeded_saves_abandonment_under_the_clock(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
+def test_lucid_entry_saves_new_rid_before_dallinger_discards_the_session(db_session):
+    """Dallinger's POST /participant removes the session before creating the participant."""
+    from psynet.recruiters import BaseLucidRecruiter, LucidRID
+
+    recruiter = object.__new__(BaseLucidRecruiter)
+    recruiter.lucidservice = MagicMock()
+    recruiter.normalize_entry_information({"RID": "NEW_RID"})
+    db.session.remove()
+
+    assert LucidRID.query.filter_by(rid="NEW_RID").count() == 1
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
 def test_commit_guard_ignores_transactions_of_other_sessions(db_session):
     db.session.commit()
     other = db.session_factory()
