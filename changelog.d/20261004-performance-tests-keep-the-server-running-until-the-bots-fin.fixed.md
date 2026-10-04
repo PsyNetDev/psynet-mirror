@@ -1,0 +1,1 @@
+Fixed `psynet performance-test local` stopping its server partway through a run. The local debug server shuts down when the experiment reports completion, which could happen whenever no bot happened to be mid-participant, so experiments without trial makers often failed with a connection error on `/request_statistics`.

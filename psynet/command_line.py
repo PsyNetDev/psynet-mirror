@@ -4105,6 +4105,7 @@ def _start_local_server_and_wait_for_ready(
     debug=False,
     max_wait=60,
     ready_phrase="Experiment launch complete!",
+    extra_env=None,
 ):
     """Spawn ``psynet <command_args>`` and wait for launch completion.
 
@@ -4114,6 +4115,8 @@ def _start_local_server_and_wait_for_ready(
         Arguments passed to the ``psynet`` executable, for example
         ``["debug", "local", "--legacy", "--no-browsers"]`` or
         ``["debug", "local"]``.
+    extra_env : dict[str, str], optional
+        Environment variables to set for the server process.
     """
     print("▶ Starting experiment server...")
 
@@ -4129,6 +4132,7 @@ def _start_local_server_and_wait_for_ready(
     env = os.environ.copy()
     env.setdefault("SKIP_DEPENDENCY_CHECK", "1")
     env.setdefault("BROWSER", "true")
+    env.update(extra_env or {})
 
     try:
         process = pexpect.spawn(
@@ -4275,6 +4279,7 @@ def _run_performance_test_with_new_server(
     server_info = _start_local_server_and_wait_for_ready(
         ["debug", "local", "--legacy", "--no-browsers"],
         debug=debug,
+        extra_env={"PSYNET_PERFORMANCE_TEST": "1"},
     )
 
     try:
