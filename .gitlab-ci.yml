@@ -10,8 +10,9 @@ workflow:
       when: never
     # Deployment-test branches add deployment prep (recruiter configs,
     # generated constraints) on top of an already-tested tag or branch, which
-    # the repository-state tests reject by design.
-    - if: $CI_COMMIT_BRANCH =~ /^deployment-tests\//
+    # the repository-state tests reject by design. This also blocks manual
+    # pipelines and merge request pipelines from those branches.
+    - if: $CI_COMMIT_REF_NAME =~ /^deployment-tests\// || $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^deployment-tests\//
       when: never
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
