@@ -8,6 +8,12 @@ workflow:
     # MR pipeline (not the branch pipeline) for pushes to that branch.
     - if: $CI_PIPELINE_SOURCE == "push" && $CI_OPEN_MERGE_REQUESTS && $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH
       when: never
+    # Deployment-test branches add deployment prep (recruiter configs,
+    # generated constraints) on top of an already-tested tag or branch, which
+    # the repository-state tests reject by design. This also blocks manual
+    # pipelines and merge request pipelines from those branches.
+    - if: $CI_COMMIT_REF_NAME =~ /^deployment-tests\// || $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^deployment-tests\//
+      when: never
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
     - if: $CI_COMMIT_TAG
@@ -428,14 +434,12 @@ asv_regression:
   rules:
     - if: $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "issues/9123-performance-benchmark-site"
       when: never
-    # Fast ASV only measures PsyNet hot paths and debug launch of
-    # tests/experiments/static_big. Skip the ~6 min job when the MR cannot
-    # change those results.
+    # Fast ASV only measures PsyNet hot paths. Skip the job when the MR
+    # cannot change those results.
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
       changes:
         - psynet/**/*
         - benchmarks/**/*
-        - tests/experiments/static_big/**/*
         - asv.conf.json
         - pyproject.toml
         - Dockerfile
