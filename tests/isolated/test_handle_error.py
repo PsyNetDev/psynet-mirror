@@ -1,9 +1,11 @@
+import logging
 import time
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
 from dallinger import db
+from dallinger.utils import attach_json_logger
 
 from psynet.error import ErrorRecord
 from psynet.exit import (
@@ -746,10 +748,6 @@ def test_handled_error_page_delegates_lucid_recovery():
 
 
 def test_report_error_records_the_log_line_of_the_error(tmp_path, monkeypatch):
-    import logging
-
-    from dallinger.utils import attach_json_logger
-
     monkeypatch.chdir(tmp_path)
     root = logging.getLogger()
     attach_json_logger(root)
