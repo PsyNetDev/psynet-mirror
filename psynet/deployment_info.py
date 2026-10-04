@@ -152,16 +152,17 @@ def _git_ignored_deployment_paths(extra_excludes_file=None):
                 )
                 return None
             excludes = Path(tmp) / "excludes"
-            # core.excludesFile replaces the user's global excludes file, so
-            # keep its rules too.
-            excludes.write_text(
-                _global_gitignore_rules()
-                + "\n"
-                + _anchor_gitignore_rules(
+            try:
+                # core.excludesFile replaces the user's global excludes file,
+                # so keep its rules too.
+                rules = _global_gitignore_rules() + "\n"
+                rules += _anchor_gitignore_rules(
                     Path(extra_excludes_file).read_text(encoding="utf-8"), prefix
-                ),
-                encoding="utf-8",
-            )
+                )
+            except (OSError, UnicodeDecodeError) as error:
+                logger.warning("Could not read gitignore rules: %s", error)
+                return None
+            excludes.write_text(rules, encoding="utf-8")
             command += ["-c", f"core.excludesFile={excludes}"]
         command += ["check-ignore", "--stdin", "-z"]
         try:

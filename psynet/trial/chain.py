@@ -128,6 +128,8 @@ def _trial_selection_docs_url():
 
 _DYNAMIC_ORDERS = ("balanced", "random")
 _PLANNED_ORDERS = ("listed",)
+# Simultaneous balanced selections beyond this many share a node.
+_UNCLAIMED_POOL_SIZE = 20
 
 
 def _trial_order_docs_url():
@@ -1693,6 +1695,9 @@ class ChainTrialMaker(NetworkTrialMaker):
                 )
             self.n_start_nodes = chains_per_participant
 
+        self._expected_trials_exclude_repeats = (
+            expected_trials_per_participant == "n_start_nodes"
+        )
         if expected_trials_per_participant == "n_start_nodes":
             expected_trials_per_participant = self.n_start_nodes
 
@@ -2344,9 +2349,7 @@ class ChainTrialMaker(NetworkTrialMaker):
         limit = limit or self.selection_pool_size
         spread = for_selection and self._spreads_concurrent_selections(participant)
         if spread:
-            networks = self._select_unclaimed_candidate(
-                participant, experiment, available, order_by
-            )
+            networks = self._select_unclaimed_candidate(query, available, order_by)
             if networks:
                 return [self._candidate_value(network) for network in networks]
         networks = query.filter(available).order_by(*order_by).limit(limit).all()
@@ -2397,14 +2400,11 @@ class ChainTrialMaker(NetworkTrialMaker):
             return None
         return state.current_chain_id
 
-    def _candidate_query(
-        self, participant, experiment, *, focused=True, require_head=False
-    ):
+    def _candidate_query(self, participant, experiment, *, focused=True):
         """Query the current block's networks that pass the built-in checks.
 
-        Networks are outer-joined to their heads, or inner-joined with
-        ``require_head``, which row locks on the head need. With ``focused``,
-        the query is narrowed to the chain or planned item the participant is
+        Networks are outer-joined to their heads. With ``focused``, the query
+        is narrowed to the chain or planned item the participant is
         committed to, if any.
         """
         network = self.network_class
@@ -2437,8 +2437,9 @@ class ChainTrialMaker(NetworkTrialMaker):
 
         # An outer join keeps headless networks, which are data errors, so
         # that selection raises on them instead of silently skipping them.
-        join = query.join if require_head else query.outerjoin
-        query = join(self.node_class, network.head_id == self.node_class.id).options(
+        query = query.outerjoin(
+            self.node_class, network.head_id == self.node_class.id
+        ).options(
             contains_eager(network.head.of_type(self.node_class)),
             # Dallinger's per-network count properties (such as n_alive_nodes)
             # are correlated subqueries on the node table; with node joined
@@ -2509,23 +2510,46 @@ class ChainTrialMaker(NetworkTrialMaker):
             and self._order_for_block(participant.module_state.block) == "balanced"
         )
 
-    def _select_unclaimed_candidate(self, participant, experiment, available, order_by):
+    def _select_unclaimed_candidate(self, query, available, order_by):
         """Select and row-lock the best candidate that no concurrent request has locked.
 
-        ``SKIP LOCKED`` passes over nodes that simultaneous requests are giving
-        out, so they receive the next least-used node instead. The lock lasts
+        The best ``_UNCLAIMED_POOL_SIZE`` candidates are ranked without locks,
+        then their heads are locked with ``SKIP LOCKED`` in a separate query on
+        the node table, which works whatever ``filter_nodes_query`` adds. Nodes
+        that simultaneous requests are giving out are passed over, so those
+        participants receive the next least-used node instead. The lock lasts
         until the trial is committed, by which time it counts towards balance.
         ``FOR NO KEY UPDATE`` does not conflict with the key-share locks taken
-        when trials referencing the node are inserted.
+        when trials referencing the node are inserted. Returns an empty list
+        if every ranked candidate is locked.
         """
-        return (
-            self._candidate_query(participant, experiment, require_head=True)
-            .filter(available)
+        network, node = self.network_class, self.node_class
+        ranked = (
+            query.filter(available)
             .order_by(*order_by)
-            .limit(1)
-            .with_for_update(of=self.node_class, key_share=True, skip_locked=True)
+            .limit(_UNCLAIMED_POOL_SIZE)
+            .with_entities(network.id, node.id)
             .all()
         )
+        headless = [network_id for network_id, head_id in ranked if head_id is None]
+        if headless:
+            chosen = headless[0]
+        else:
+            if not ranked:
+                return []
+            rank = {head_id: index for index, (_, head_id) in enumerate(ranked)}
+            locked_id = (
+                db.session.query(node.id)
+                .filter(node.id.in_(rank))
+                .order_by(case(rank, value=node.id))
+                .limit(1)
+                .with_for_update(key_share=True, skip_locked=True)
+                .scalar()
+            )
+            if locked_id is None:
+                return []
+            chosen = ranked[rank[locked_id]][0]
+        return query.filter(network.id == chosen).all()
 
     def _filter_candidates_in_python(
         self, query, available, order_by, participant, experiment
@@ -2820,7 +2844,9 @@ class ChainTrialMaker(NetworkTrialMaker):
         """Warn once when a single-block static plan cannot match the expected trial count."""
         if not self._plan_entries_are_single_trials or state.n_blocks != 1:
             return
-        expected = self.expected_trials_per_participant - self.n_repeat_trials
+        expected = self.expected_trials_per_participant
+        if not self._expected_trials_exclude_repeats:
+            expected -= self.n_repeat_trials
         for cap in (self.max_trials_per_participant, self.max_trials_per_block):
             if cap is not None:
                 n_planned = min(n_planned, cap)

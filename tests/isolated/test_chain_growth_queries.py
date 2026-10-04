@@ -324,8 +324,14 @@ def test_headless_chain_raises_instead_of_being_skipped(
 ):
     exp = get_experiment()
     if static:
-        trial_maker = static_trial_maker(target_trials_per_node=None)
-        network = create_chain_network(trial_maker, exp, network_class=StaticNetwork)
+        trial_maker = static_trial_maker(
+            target_trials_per_node=None, node_order="balanced"
+        )
+        network, healthy = (
+            create_chain_network(trial_maker, exp, network_class=StaticNetwork)
+            for _ in range(2)
+        )
+        add_trial(GrowthQueryStaticTrial, healthy.head, new_participant())
     else:
         trial_maker = chain_trial_maker()
         network = create_chain_network(trial_maker, exp)
@@ -371,9 +377,10 @@ def _locked_elsewhere(node):
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
 )
+@pytest.mark.parametrize("distinct", [False, True])
 @pytest.mark.usefixtures("in_experiment_directory")
 def test_balanced_selection_skips_nodes_being_given_out_concurrently(
-    db_session, participant
+    db_session, participant, distinct
 ):
     exp = get_experiment()
     trial_maker = static_trial_maker(
@@ -381,6 +388,9 @@ def test_balanced_selection_skips_nodes_being_given_out_concurrently(
         max_trials_per_participant=None,
         node_order="balanced",
     )
+    if distinct:
+        # Postgres cannot row-lock a DISTINCT query directly.
+        trial_maker.filter_nodes_query = lambda query, *args: query.distinct()
     networks = networks_in_blocks(
         trial_maker, participant, ["default"] * 2, network_class=StaticNetwork
     )
@@ -408,6 +418,7 @@ def test_balanced_selection_skips_nodes_being_given_out_concurrently(
     selection = trial_maker._select_trial_node(participant, exp)
     assert selection.value.id == least_used.id
     assert _locked_elsewhere(least_used)
+    assert not _locked_elsewhere(other)
 
 
 @pytest.mark.parametrize(

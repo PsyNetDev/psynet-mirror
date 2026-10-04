@@ -1703,10 +1703,12 @@ def _check_experiment_directory(mode, *, require_git_commit=False):
     # Runs after the Git checks so 'git check-ignore' can report which
     # deployment-selected files the old .gitignore ignores.
     if _deployment_policy_needs_review():
-        ignored_paths = deployment_info._git_ignored_deployment_paths(
-            extra_excludes_file=_DEPLOYMENT_POLICY_REVIEW_MARKER
-        )
-        _clear_deployment_policy_review_marker()
+        try:
+            ignored_paths = deployment_info._git_ignored_deployment_paths(
+                extra_excludes_file=_DEPLOYMENT_POLICY_REVIEW_MARKER
+            )
+        finally:
+            _clear_deployment_policy_review_marker()
         intro = (
             "PsyNet now uses deploy.toml instead of .gitignore to choose "
             "which files are deployed, and created one for this experiment."

@@ -103,7 +103,8 @@ Choosing the next chain
 
   With a planned order, the participant takes the planned chains in turn, one
   trial each, skipping any that are busy, until none can give them another
-  trial. Create-and-rate trial makers support only ``"balanced"`` and
+  trial. If every remaining planned chain is busy at once, the participant
+  waits with ``wait_for_networks=True``; otherwise the block ends. Create-and-rate trial makers support only ``"balanced"`` and
   ``"random"``.
 - ``interleave_chains`` (default ``True``; ``False`` for
   :class:`~psynet.trial.staircase.GeometricStaircaseTrialMaker`). With

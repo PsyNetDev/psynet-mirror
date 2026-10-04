@@ -1,3 +1,4 @@
+import os
 import shutil
 import subprocess
 import tomllib
@@ -390,6 +391,30 @@ def test_migration_check_stops_when_git_cannot_answer(tmp_path, monkeypatch):
     with working_directory(tmp_path):
         scaffold_experiment_directory()
         monkeypatch.setenv("GIT_DIR", str(tmp_path / "missing"))
+        with pytest.raises(ClickException, match="could not check"):
+            _check_experiment_directory("debug")
+        assert not _deployment_policy_needs_review()
+
+
+def test_migration_check_stops_once_when_global_excludes_are_unreadable(
+    tmp_path, monkeypatch
+):
+    from click import ClickException
+
+    from psynet.command_line import _check_experiment_directory
+
+    monkeypatch.setattr("psynet.command_line.is_in_repo_experiment", lambda: False)
+    monkeypatch.setattr("psynet.command_line.git_repository_available", lambda: True)
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    (tmp_path / "config" / "git").mkdir(parents=True)
+    (tmp_path / "config" / "git" / "ignore").write_bytes(b"\xff\xfe\n")
+    experiment = tmp_path / "experiment"
+    experiment.mkdir()
+    _old_experiment_with_ignored_secret(experiment)
+
+    with working_directory(experiment):
+        scaffold_experiment_directory()
         with pytest.raises(ClickException, match="could not check"):
             _check_experiment_directory("debug")
         assert not _deployment_policy_needs_review()
