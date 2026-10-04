@@ -1,8 +1,8 @@
 Replaced Git and `.dockerignore` deployment file selection with explicit
 `deploy.toml` policies as a breaking PsyNet cutover. PsyNet scaffolds
 `deploy.toml` (and creates it automatically when missing without overwriting
-an existing file). When an existing experiment's `.gitignore` kept files local
-that the new policy would deploy, the next debug, test, or deploy stops once
+an existing file). When an existing experiment's `.gitignore` ignores files
+that the new policy does not exclude, the next debug, test, or deploy stops once
 and lists them; otherwise the switch is silent. Git-ignored files are deployed
 unless `deploy.toml` excludes them. Leftover generated `.dockerignore` files are removed on
 debug, deploy, scaffold, and prune; custom copies are preserved by scaffold

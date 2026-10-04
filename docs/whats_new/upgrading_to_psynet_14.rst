@@ -366,8 +366,8 @@ experiment directory.
 ``deploy.toml`` now decides which files are deployed; ``.gitignore`` and
 ``.dockerignore`` no longer do, so Git-ignored files under ``static/`` are
 deployed. PsyNet creates ``deploy.toml`` when it is missing. If your
-``.gitignore`` kept files local that it would deploy, the next debug, test or
-deploy command stops once and lists them.
+``.gitignore`` ignores files that ``deploy.toml`` does not exclude, the next
+debug, test or deploy command stops once and lists them.
 
 * Move any custom ``.dockerignore`` entries into ``deploy.toml``'s
   ``[exclude]`` table, then delete ``.dockerignore``. PsyNet removes

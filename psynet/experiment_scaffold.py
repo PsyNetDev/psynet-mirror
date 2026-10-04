@@ -817,7 +817,7 @@ def _mark_deployment_policy_for_review(previous_gitignore: str) -> None:
         "# PsyNet created deploy.toml to replace this experiment's\n"
         "# .gitignore-based deployment selection. The next debug, test, or\n"
         "# deploy command checks once whether deploy.toml now deploys files\n"
-        "# that the .gitignore rules below kept local. This file is\n"
+        "# that the .gitignore rules below ignore. This file is\n"
         "# local-only; you can delete it.\n"
         f"{previous_gitignore}\n",
         encoding="utf-8",
@@ -856,7 +856,7 @@ def ensure_deployment_policy() -> None:
     Existing files are never overwritten. When the experiment already has a
     ``.gitignore``, a newly written file also gets a local review marker so
     the next debug, test, or deploy command checks once whether deploy.toml
-    now deploys files that .gitignore kept local, unless the copy happens
+    now deploys files that .gitignore ignores, unless the copy happens
     inside a temporary pytest scaffold or in-repo auto-prepare.
     """
     _assert_managed_path_is_safe("deploy.toml")

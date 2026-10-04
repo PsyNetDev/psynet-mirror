@@ -1646,7 +1646,7 @@ def _check_experiment_directory(mode, *, require_git_commit=False):
     PsyNet template and never overwritten. When that file replaces an existing
     experiment's ``.gitignore``-based selection, a local review marker makes
     the next debug, test, or deploy command check once, after the Git checks,
-    whether deploy.toml now deploys files that ``.gitignore`` kept local; it
+    whether ``.gitignore`` ignores files that deploy.toml does not exclude; it
     stops and lists them only if there are any. New experiments, temporary
     pytest scaffolds and in-repo auto-prepare skip the check. Remote deployments additionally
     require a Git commit for provenance; local debug and test runs may use a
@@ -1701,7 +1701,7 @@ def _check_experiment_directory(mode, *, require_git_commit=False):
         )
 
     # Runs after the Git checks so 'git check-ignore' can report which
-    # deployment-selected files the old .gitignore used to keep local.
+    # deployment-selected files the old .gitignore ignores.
     if _deployment_policy_needs_review():
         ignored_paths = deployment_info._git_ignored_deployment_paths(
             extra_excludes_file=_DEPLOYMENT_POLICY_REVIEW_MARKER
@@ -1712,15 +1712,16 @@ def _check_experiment_directory(mode, *, require_git_commit=False):
             "which files are deployed, and created one for this experiment."
         )
         advice = (
-            "Add any that should stay local (credentials, private data, "
+            "Add any that should not be deployed (credentials, private data, "
             "large or generated files) to [exclude] in deploy.toml, then "
             "rerun this command. This check runs only once; "
             "'dallinger deployment-files list' shows the full selection."
         )
         if ignored_paths is None:
             raise click.ClickException(
-                f"{intro} PsyNet could not check which of the files it selects "
-                "your .gitignore kept local, so review the selection with "
+                f"{intro} PsyNet could not check whether your .gitignore "
+                "ignores files that deploy.toml does not exclude, so review "
+                "the selection with "
                 f"'dallinger deployment-files list'.\n\n{advice}"
             )
         if ignored_paths:
@@ -1730,8 +1731,8 @@ def _check_experiment_directory(mode, *, require_git_commit=False):
             if remaining > 0:
                 preview += f"\n  ... and {remaining} more"
             raise click.ClickException(
-                f"{intro} Your .gitignore kept these files local, but "
-                f"deploy.toml would deploy them:\n{preview}\n\n{advice}"
+                f"{intro} Your .gitignore ignores these files, but deploy.toml "
+                f"does not exclude them, so they would be deployed:\n{preview}\n\n{advice}"
             )
     if require_git_commit:
         from .light_utils import git_commit_available

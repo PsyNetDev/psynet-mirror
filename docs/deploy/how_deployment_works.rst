@@ -35,10 +35,11 @@ filename endings such as ``.db``. The stock file excludes, among others,
 ``.env``. Dallinger's
 `deploy.toml guide <https://github.com/Dallinger/Dallinger/blob/master/docs/source/deploy_toml.rst>`_
 describes the full format. PsyNet creates the file when it is missing and
-never overwrites it. When it replaces an existing experiment's
-``.gitignore``-based selection and would deploy files that ``.gitignore`` kept
-local, the next debug, test or deploy command stops once and lists them, so
-that you can exclude any that should stay local before rerunning. Experiments that still have a
+never overwrites it. When PsyNet creates it for an existing experiment whose
+``.gitignore`` ignores files that ``deploy.toml`` does not exclude, the next
+debug, test or deploy command stops once and lists those files, because they
+would now be deployed. Add any that should not be deployed to ``[exclude]``
+and rerun. Experiments that still have a
 ``.dockerignore`` or ``docker/`` helper scripts need migrating first; see
 :doc:`/whats_new/upgrading_deployment_file_selection`.
 

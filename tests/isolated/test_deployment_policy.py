@@ -308,7 +308,10 @@ def test_check_experiment_directory_stops_after_creating_missing_deploy_toml(
             _check_experiment_directory("debug")
 
         message = str(error.value)
-        assert "Your .gitignore kept these files local" in message
+        assert (
+            "Your .gitignore ignores these files, but deploy.toml does not exclude them"
+            in message
+        )
         assert "  secret.txt\n" in message
         assert "experiment.py" not in message
         assert "[exclude]" in message
