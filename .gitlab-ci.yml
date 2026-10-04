@@ -273,7 +273,7 @@ compatibility_tests:
       -e inplace_timeline_transitions
       -v "$PWD:$PSYNET_WORKSPACE"
       -w $PSYNET_WORKSPACE
-      $DOCKER_LOCAL_TAG-playwright bash -c "uv pip install --no-cache --system --no-deps -e \"$PSYNET_WORKSPACE\" && npm ci && node tests/playwright/check-mode-tags.js && npx playwright test \$(psynet dev ci playwright-files --mode $PLAYWRIGHT_MODE --node-total $CI_NODE_TOTAL --node-index $CI_NODE_INDEX) --grep '$PLAYWRIGHT_GREP' --pass-with-no-tests --reporter=line,junit,html"
+      $DOCKER_LOCAL_TAG-playwright bash -c "uv pip install --no-cache --system --no-deps -e \"$PSYNET_WORKSPACE\" && npm ci && node tests/playwright/check-mode-tags.js && files=\$(psynet dev ci playwright-files --mode $PLAYWRIGHT_MODE --node-total $CI_NODE_TOTAL --node-index $CI_NODE_INDEX) && test -n \"\$files\" && npx playwright test \$files --grep '$PLAYWRIGHT_GREP' --pass-with-no-tests --reporter=line,junit,html"
   artifacts:
     when: always
     paths:
