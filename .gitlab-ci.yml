@@ -45,8 +45,12 @@ before_script:
   - echo $REDIS_IP
   - docker build --build-arg PYTHON_VERSION=$PYTHON_VERSION --tag $DOCKER_LOCAL_TAG .
 
+# Scheduled pipelines only run the nightly benchmarks (and `pages`, which
+# republishes their results), so every other job opts out of them.
 .default_rules: &default_rules
   rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+      when: never
     - if: $CI_MERGE_REQUEST_ID
       when: always
     - if: $CI_COMMIT_BRANCH
@@ -65,6 +69,8 @@ before_script:
 # exclude paths, so "everything except docs/" cannot be written instead.
 .docker_test_rules: &docker_test_rules
   rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+      when: never
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
       changes:
         - .gitlab-ci.yml
@@ -314,10 +320,13 @@ merge_test_results:
     reports:
       junit: junit.xml
 
-# Full ASV suite for default-branch result publishing and regression checking.
-# Runs `asv continuous` so the previous and current default-branch commits are
-# benchmarked back-to-back on the same runner. Result files are still pushed to
-# the benchmark-results branch before the job propagates any regression failure.
+# Nightly full ASV suite for default-branch result publishing and regression
+# checking. Runs `asv continuous` so the default branch as of ASV_BASE_AGE and
+# its current tip are benchmarked back-to-back on the same runner. Result files
+# are still pushed to the benchmark-results branch before the job propagates
+# any regression failure. The suite takes ~35 min, so it runs from a pipeline
+# schedule rather than on every merge; default-branch pipelines offer it as a
+# manual job.
 asv_benchmarks:
   stage: test
   allow_failure: true
@@ -330,6 +339,7 @@ asv_benchmarks:
     # runners without a code change, so this job uses 2 rather than the fast
     # merge-request gate's 1.25.
     ASV_REGRESSION_FACTOR: "2"
+    ASV_BASE_AGE: "24 hours ago"
   cache:
     key:
       files:
@@ -345,8 +355,14 @@ asv_benchmarks:
     - git config user.name "PsyNet CI"
     - git branch -f "$CI_COMMIT_REF_NAME" HEAD
     - 'sed -i "s|\"branches\": \[[^]]*\]|\"branches\": [\"$CI_COMMIT_REF_NAME\"]|" asv.conf.json'
-    - export ASV_BASE="$(git rev-parse HEAD^1)"
+    - export ASV_BASE="$(git rev-list -1 --first-parent --before="$ASV_BASE_AGE" HEAD)"
+    - export ASV_BASE="${ASV_BASE:-$(git rev-parse HEAD^1)}"
     - export ASV_HEAD="$CI_COMMIT_SHA"
+    - |
+      if [ "$ASV_BASE" = "$ASV_HEAD" ]; then
+        echo "No default-branch commits since $ASV_BASE_AGE; nothing to benchmark."
+        exit 0
+      fi
     - echo "Comparing full ASV benchmark suite $ASV_BASE -> $ASV_HEAD"
     - rm -f .asv/asv-benchmarks-status
     - |
@@ -371,8 +387,10 @@ asv_benchmarks:
     paths:
       - .asv/results/
   rules:
-    - if: $CI_COMMIT_REF_NAME == $CI_DEFAULT_BRANCH
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $CI_COMMIT_REF_NAME == $CI_DEFAULT_BRANCH
       when: always
+    - if: $CI_COMMIT_REF_NAME == $CI_DEFAULT_BRANCH
+      when: manual
     - when: never
 
 # Gate merge requests on fast benchmark regressions. Runs `asv continuous`,
