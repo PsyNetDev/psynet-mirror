@@ -250,6 +250,18 @@ Search custom trial makers for ``find_networks``, ``find_node``,
   trials, filter them by trial count in ``filter_nodes_query``; simultaneous
   requests can still go slightly over. Chain
   ``trials_per_node`` is still a hard limit.
+* Pass ``recruit_mode`` explicitly whenever you set a recruitment target.
+  ``target_n_participants`` needs ``recruit_mode="n_participants"``, and
+  ``target_trials_per_node`` / ``target_trials_per_condition`` need
+  ``recruit_mode="n_trials"``; any other combination raises ``ValueError``:
+
+  .. code-block:: python
+
+      StaticTrialMaker(
+          ...,
+          recruit_mode="n_participants",
+          target_n_participants=30,
+      )
 
 PsyNet raises an actionable ``TypeError`` when a removed or wrong-paradigm
 hook is still overridden.

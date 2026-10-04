@@ -126,6 +126,7 @@ def static_trial_maker(
         expected_trials_per_participant=1,
         max_trials_per_participant=1,
         target_trials_per_node=target_trials_per_node,
+        recruit_mode=None if target_trials_per_node is None else "n_trials",
         node_order="random",
     )
     return maker_class(**{**args, **kwargs})

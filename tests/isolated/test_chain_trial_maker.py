@@ -186,16 +186,38 @@ def test_fail_trials_on_premature_exit_true_emits_deprecation_warning():
 
 
 @pytest.mark.parametrize(
-    "target_n_participants, expected_mode", [(None, None), (5, "n_participants")]
+    "make, kwargs, message",
+    [
+        (
+            make_trial_maker,
+            dict(recruit_mode=None, target_n_participants=5),
+            "only takes effect",
+        ),
+        (
+            make_trial_maker,
+            dict(recruit_mode="n_participants"),
+            "needs target_n_participants",
+        ),
+        (make_static_trial_maker, dict(target_n_participants=5), "only takes effect"),
+        (
+            make_static_trial_maker,
+            dict(target_trials_per_node=None),
+            "needs target_trials_per_node",
+        ),
+        (
+            make_static_trial_maker,
+            dict(recruit_mode=None),
+            "target_trials_per_node only",
+        ),
+    ],
 )
-def test_chain_recruit_mode_follows_target_n_participants(
-    target_n_participants, expected_mode
-):
-    trial_maker = make_trial_maker(
-        recruit_mode=None, target_n_participants=target_n_participants
-    )
+def test_recruitment_targets_need_the_matching_recruit_mode(make, kwargs, message):
+    with pytest.raises(ValueError, match=message):
+        make(**kwargs)
 
-    assert trial_maker.recruit_mode == expected_mode
+
+def test_custom_recruit_modes_are_allowed():
+    assert make_trial_maker(recruit_mode="custom").recruit_mode == "custom"
 
 
 def test_chain_node_accepts_empty_definition():
@@ -354,7 +376,7 @@ def test_static_selection_carries_context_to_on_trial_created(monkeypatch):
             return Selection(value=nodes[0], context=context)
 
     trial_maker = make_static_trial_maker(
-        AdaptiveStaticTrialMaker, target_trials_per_node=None
+        AdaptiveStaticTrialMaker, recruit_mode=None, target_trials_per_node=None
     )
     participant = DummyParticipant()
     participant.module_state = DummyModuleState()

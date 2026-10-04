@@ -79,9 +79,11 @@ class DenseTrialMaker(StaticTrialMaker):
     recruit_mode
         Selects a recruitment criterion for determining whether to recruit
         another participant. The built-in criteria are ``"n_participants"``
-        and ``"n_trials"``. Defaults to ``"n_participants"`` when
-        ``target_n_participants`` is given; otherwise ``None``, which leaves
-        recruitment to the rest of the experiment.
+        and ``"n_trials"``. ``"n_participants"`` needs
+        ``target_n_participants``, and ``"n_trials"`` needs
+        ``target_trials_per_condition``; giving a target without its mode raises
+        an error. Defaults to ``None``, which leaves recruitment to the rest of
+        the experiment, for example for a practice trial maker.
 
     target_n_participants
         Target number of participants to recruit for the experiment. All
@@ -184,6 +186,8 @@ class DenseTrialMaker(StaticTrialMaker):
         If ``True`` (default), then the final performance check waits until all trials no
         longer have any pending asynchronous processes.
     """
+
+    _target_trials_argument = "target_trials_per_condition"
 
     def __init__(
         self,

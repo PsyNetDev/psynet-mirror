@@ -97,8 +97,9 @@ participant groups:
     )
 
 To let the trial maker decide when recruitment stops, pass
-``target_n_participants``, or ``recruit_mode="n_trials"`` with
-``target_trials_per_node``.
+``recruit_mode="n_participants"`` with ``target_n_participants``, or
+``recruit_mode="n_trials"`` with ``target_trials_per_node``. A target without
+its matching ``recruit_mode`` raises an error.
 
 .. _custom_node_selection:
 

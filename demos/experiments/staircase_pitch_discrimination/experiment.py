@@ -269,7 +269,8 @@ class Exp(psynet.experiment.Experiment):
             # to follow the order of get_start_nodes instead.
             max_nodes_per_chain=chain_length,
             expected_trials_per_participant=n_chains * chain_length,
-            # This parameter is used to determine when to stop automatic recruitment (if active).
+            # These parameters determine when to stop automatic recruitment (if active).
+            recruit_mode="n_participants",
             target_n_participants=1,
         ),
     )

@@ -1,1 +1,0 @@
-Changed chain-based trial makers to default `recruit_mode` to `"n_participants"` only when `target_n_participants` is given; without either, the trial maker leaves recruitment to the rest of the experiment, as `StaticTrialMaker` already did. Fixed `GraphChainTrialMaker` using a type annotation as the default `target_n_participants`.

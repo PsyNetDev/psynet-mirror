@@ -1438,12 +1438,14 @@ class TrialMaker(Module):
         another participant. The built-in criteria are ``"n_participants"``
         and ``"n_trials"``, though the latter requires overriding of
         :attr:`~psynet.trial.main.TrialMaker.n_trials_still_required`.
+        Custom criteria can be added to ``recruit_criteria``.
+        ``None`` leaves recruitment to the rest of the experiment.
 
     target_n_participants
         Target number of participants to recruit for the experiment. All
         participants must successfully finish the experiment to count
-        towards this quota. This target is only relevant if
-        ``recruit_mode="n_participants"``.
+        towards this quota. Requires ``recruit_mode="n_participants"``;
+        passing it with ``None`` or ``"n_trials"`` raises an error.
 
     n_repeat_trials
         Number of repeat trials to present to the participant. These trials
@@ -1546,12 +1548,16 @@ class TrialMaker(Module):
     ):
         if recruit_mode == "n_participants" and target_n_participants is None:
             raise ValueError(
-                "If <recruit_mode> == 'n_participants', then <target_n_participants> must be provided."
+                "recruit_mode='n_participants' needs target_n_participants, "
+                "the number of participants to recruit."
             )
 
-        if recruit_mode == "n_trials" and target_n_participants is not None:
+        if recruit_mode in (None, "n_trials") and target_n_participants is not None:
             raise ValueError(
-                "If <recruit_mode> == 'n_trials', then <target_n_participants> must be None."
+                f"target_n_participants only takes effect with "
+                f"recruit_mode='n_participants', but recruit_mode is {recruit_mode!r}. "
+                "Pass recruit_mode='n_participants' to recruit until this many "
+                "participants finish, or remove target_n_participants."
             )
 
         if hasattr(self, "performance_check_threshold"):
@@ -2507,12 +2513,14 @@ class NetworkTrialMaker(TrialMaker):
         another participant. The built-in criteria are ``"n_participants"``
         and ``"n_trials"``, though the latter requires overriding of
         :attr:`~psynet.trial.main.TrialMaker.n_trials_still_required`.
+        Custom criteria can be added to ``recruit_criteria``.
+        ``None`` leaves recruitment to the rest of the experiment.
 
     target_n_participants
         Target number of participants to recruit for the experiment. All
         participants must successfully finish the experiment to count
-        towards this quota. This target is only relevant if
-        ``recruit_mode="n_participants"``.
+        towards this quota. Requires ``recruit_mode="n_participants"``;
+        passing it with ``None`` or ``"n_trials"`` raises an error.
 
     n_repeat_trials
         Number of repeat trials to present to the participant. These trials

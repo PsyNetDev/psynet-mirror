@@ -142,9 +142,11 @@ class StaticTrialMaker(ChainTrialMaker):
     recruit_mode
         Selects a recruitment criterion for determining whether to recruit
         another participant. The built-in criteria are ``"n_participants"``
-        and ``"n_trials"``. Defaults to ``"n_participants"`` when
-        ``target_n_participants`` is given; otherwise ``None``, which leaves
-        recruitment to the rest of the experiment.
+        and ``"n_trials"``. ``"n_participants"`` needs
+        ``target_n_participants``, and ``"n_trials"`` needs
+        ``target_trials_per_node``; giving a target without its mode raises an
+        error. Defaults to ``None``, which leaves recruitment to the rest of the
+        experiment, for example for a practice trial maker.
 
     target_n_participants
         Target number of participants to recruit for the experiment. All
@@ -351,6 +353,19 @@ class StaticTrialMaker(ChainTrialMaker):
         if target_trials_per_node is not None and target_trials_per_node <= 0:
             raise ValueError(
                 "target_trials_per_node must be a positive number, or None for unlimited."
+            )
+        target_argument = self._target_trials_argument
+        if recruit_mode == "n_trials" and target_trials_per_node is None:
+            raise ValueError(
+                f"recruit_mode='n_trials' needs {target_argument}, the number "
+                "of trials to recruit for each node."
+            )
+        if recruit_mode in (None, "n_participants") and target_trials_per_node:
+            raise ValueError(
+                f"{target_argument} only takes effect with "
+                f"recruit_mode='n_trials', but recruit_mode is {recruit_mode!r}. "
+                "Pass recruit_mode='n_trials' to recruit until every node has this "
+                f"many trials, or remove {target_argument}."
             )
 
         chains_per_experiment = None
@@ -624,6 +639,7 @@ class StaticTrialMaker(ChainTrialMaker):
 
     _plan_entries_are_single_trials = True
     _enforces_node_capacity = False
+    _target_trials_argument = "target_trials_per_node"
     _find_hook_name = "find_nodes"
     _select_hook_name = "select_node"
     _order_argument = "node_order"
