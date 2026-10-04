@@ -1,5 +1,3 @@
-import time
-
 from benchmarks.slow.debug_launch import (
     _LEGACY_LOCAL_RUN_SCAFFOLD_PATHS,
     StaticFilesDebugLaunch,
@@ -125,13 +123,22 @@ def test_static_files_debug_launch_tracks_each_profile():
 
 
 def test_fastest_launch_ignores_slow_launches_and_stops_each_server():
-    delays = iter([0.3, 0.05, 0.3])
+    now = 0.0
     stopped = []
 
+    def clock():
+        return now
+
     def start():
-        delay = next(delays)
-        time.sleep(delay)
+        nonlocal now
+        delay = [3.0, 0.5, 2.0][len(stopped)]
+        now += delay
         return delay
 
-    assert _fastest_launch_s(start, stopped.append) < 0.25
-    assert stopped == [0.3, 0.05, 0.3]
+    def stop(server):
+        nonlocal now
+        stopped.append(server)
+        now += 10.0
+
+    assert _fastest_launch_s(start, stop, clock=clock) == 0.5
+    assert stopped == [3.0, 0.5, 2.0]

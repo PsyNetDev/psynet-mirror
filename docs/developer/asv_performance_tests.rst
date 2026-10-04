@@ -31,7 +31,9 @@ Benchmarks are split by directory:
   merge-request gate, because wall-clock launches and load tests vary by more
   than its 1.25× threshold between runs, but they do run on ``master``. The
   debug-launch benchmark records the fastest of three launches per profile to
-  damp that noise. The slow ASV history focuses on median request latency and
+  damp that noise. Because the ``master`` job is allowed to fail (see
+  below), slow-tier results, including debug-launch time, are tracked in the
+  published history rather than gating merges. The slow ASV history focuses on median request latency and
   median async-process queue delay; participant failures and incomplete bots are
   left in the performance-test output instead of being tracked as ASV metrics.
 

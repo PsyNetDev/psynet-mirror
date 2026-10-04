@@ -142,16 +142,18 @@ def _restore_benchmark_experiment(created_paths: list[Path]) -> None:
 _LAUNCHES_PER_PROFILE = 3
 
 
-def _fastest_launch_s(start, stop, n_launches=_LAUNCHES_PER_PROFILE):
+def _fastest_launch_s(
+    start, stop, n_launches=_LAUNCHES_PER_PROFILE, clock=time.perf_counter
+):
     """Return the shortest ``start()`` time in seconds over ``n_launches`` runs.
 
     ``stop`` receives each ``start()`` result and is excluded from the timing.
     """
     durations = []
     for _ in range(n_launches):
-        started_at = time.perf_counter()
+        started_at = clock()
         server = start()
-        durations.append(time.perf_counter() - started_at)
+        durations.append(clock() - started_at)
         stop(server)
     return min(durations)
 
