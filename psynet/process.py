@@ -7,7 +7,7 @@ from dallinger import db
 from dallinger.db import redis_conn
 from dallinger.utils import classproperty
 from rq import Queue
-from rq.exceptions import NoSuchJobError
+from rq.exceptions import InvalidJobOperation, NoSuchJobError
 from rq.job import Job
 from sqlalchemy import (
     Boolean,
@@ -92,11 +92,18 @@ class AsyncProcess(SQLBase, SQLMixin):
 
     @classmethod
     def launch_all(cls, session=None):
-        """Launch the processes queued by ``session`` (default: the current one)."""
+        """Launch the processes queued by ``session`` (default: the current one).
+
+        The queue also holds cancellations, so a queued job is cancelled only
+        once the cancellation itself is committed.
+        """
         queue = _session_launch_queue(db.session() if session is None else session)
         while queue:
             process = queue.pop(0)
             assert process["id"] is not None
+            if process.get("cancel"):
+                _cancel_rq_job(process["id"])
+                continue
             # No SQL can run in after_commit, so read only already-loaded state;
             # an expired object here means a rolled-back change, so launch it.
             if inspect(process["obj"]).dict.get("cancelled", False):
@@ -251,6 +258,9 @@ class AsyncProcess(SQLBase, SQLMixin):
             experiment = get_experiment()
 
             process = cls.get_process(process_id)
+            if getattr(process, "cancelled", False):
+                logger.info("Async process %s was cancelled; skipping.", process_id)
+                return
             function = process.function
 
             arguments = cls.preprocess_args(process.arguments)
@@ -431,6 +441,18 @@ def _rq_job_id(process_id):
     return f"psynet_async_process_{process_id}"
 
 
+def _cancel_rq_job(process_id):
+    """Cancel an async process's RQ job if it is still queued."""
+    try:
+        Job.fetch(_rq_job_id(process_id), connection=redis_conn).cancel()
+    except (NoSuchJobError, InvalidJobOperation):
+        logger.info(
+            "No queued job to cancel for async process %s; it already finished, "
+            "expired, was cancelled, or was never launched.",
+            process_id,
+        )
+
+
 class WorkerAsyncProcess(AsyncProcess):
     timeout = Column(Float)  # note -- currently only applies to non-local proceses
     timeout_scheduled_for = Column(DateTime)
@@ -512,20 +534,19 @@ class WorkerAsyncProcess(AsyncProcess):
         return Job.fetch(self.redis_job_id, connection=redis_conn)
 
     def cancel(self):
-        """Cancel the process; the caller's transaction saves the change."""
+        """Cancel the process.
+
+        The caller's transaction saves the change; the queued job is cancelled
+        once that transaction commits, and not at all if it rolls back.
+        """
         if self.cancelled:
             return
         self.cancelled = True
         self.pending = False
         self.fail("Cancelled asynchronous process")
-        try:
-            self.redis_job.cancel()
-        except NoSuchJobError:
-            logger.info(
-                "No queued job to cancel for async process %s; it already finished, "
-                "expired, or has not been launched yet.",
-                self.id,
-            )
+        _session_launch_queue(db.session()).append(
+            {**self.get_launch_spec(), "cancel": True}
+        )
         if self.participant_id is not None:
             from psynet.timeline_hold import _queue_timeline_hold_wake
 

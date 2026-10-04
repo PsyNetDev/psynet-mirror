@@ -257,3 +257,8 @@ def test_cancel_cancels_the_queued_worker_job(monkeypatch):
     savepoint.rollback()
     db.session.commit()
     assert cancel_rolled_back.redis_job.get_status() == "queued"
+
+    cancel_rolled_back.cancel()
+    db.session.rollback()
+    assert cancel_rolled_back.redis_job.get_status() == "queued"
+    assert cancel_rolled_back.pending and not cancel_rolled_back.cancelled
