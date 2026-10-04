@@ -87,6 +87,7 @@ from .bot import Bot, BotDriver, BotResponse
 from .command_line import export_launch_data
 from .data import SQLBase, SQLMixin, ingest_zip, register_table
 from .db import (
+    _allow_framework_commits,
     _set_transaction_lock_timeout,
     blocking_psycopg,
     forbid_commits,
@@ -2868,7 +2869,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     def commit_payment_state(self):
         """Persist claimed payment fields so a crash cannot replay a POST."""
-        db.session.commit()
+        with _allow_framework_commits():
+            db.session.commit()
 
     def _lock_participant_for_payment(self, participant):
         """Reload the participant row with ``FOR UPDATE`` for the pay claim.
@@ -5915,7 +5917,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         db.session.add(record)
         # We don't normally write session.commit() within inner code,
         # but we do here, because we really want to make sure error reporting works.
-        db.session.commit()
+        with _allow_framework_commits():
+            db.session.commit()
 
     @classmethod
     def log_to_notifier(cls, token, line_number, **kwargs):

@@ -462,8 +462,9 @@ class StaticTrialMaker(ChainTrialMaker):
         Override this to remove nodes in SQL rather than in Python. ``query``
         selects each node's ``self.network_class`` joined to the node
         (``self.node_class``) and already applies PsyNet's built-in checks.
-        Add conditions with ``query.filter(...)``, typically on columns of
-        ``self.node_class``, and return the result. Unlike
+        Add conditions with ``query.filter(...)``, typically on columns of your
+        node class (``self.node_class`` is always ``StaticNode``, so use your
+        own subclass, e.g. ``ColorNode.difficulty``), and return the result. Unlike
         :meth:`~psynet.trial.static.StaticTrialMaker.custom_node_filter`,
         this keeps selection fast when there are many nodes.
         """
@@ -476,7 +477,8 @@ class StaticTrialMaker(ChainTrialMaker):
         (ascending; use ``.desc()`` to reverse), then by balancing when
         ``balance_across_nodes`` is on, then randomly. The default
         ``select_node`` takes the first node in that order. Expressions may
-        use columns of ``self.node_class`` and ``self.network_class``.
+        use columns of your node class (e.g. ``ColorNode.difficulty``) and
+        ``self.network_class``.
         """
         return []
 
@@ -487,16 +489,19 @@ class StaticTrialMaker(ChainTrialMaker):
         return self.node_priority(participant, experiment)
 
     def _candidate_value(self, network):
+        if network.head is None:
+            raise RuntimeError(f"Static network {network.id} has no head node.")
         return network.head
 
     def _hook_is_overridden(self, method_name):
+        """Return whether this trial maker or its class overrides ``method_name``."""
         return method_name in vars(self) or is_method_overridden(
             self, StaticTrialMaker, method_name
         )
 
     def _filter_eligible_candidates(self, chains, participant, experiment):
         """Apply node eligibility before wait/exit checks."""
-        nodes = [chain.head for chain in chains if chain.head is not None]
+        nodes = [self._candidate_value(chain) for chain in chains]
         if not is_method_overridden(
             self,
             StaticTrialMaker,

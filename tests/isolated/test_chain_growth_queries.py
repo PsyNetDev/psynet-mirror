@@ -327,11 +327,18 @@ def test_node_filled_after_selection_is_not_overfilled(db_session, participant):
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
 )
+@pytest.mark.parametrize("static", [False, True])
 @pytest.mark.usefixtures("in_experiment_directory")
-def test_headless_chain_raises_instead_of_being_skipped(db_session, participant):
+def test_headless_chain_raises_instead_of_being_skipped(
+    db_session, participant, static
+):
     exp = get_experiment()
-    trial_maker = chain_trial_maker()
-    network = create_chain_network(trial_maker, exp)
+    if static:
+        trial_maker = static_trial_maker(target_trials_per_node=None)
+        network = create_chain_network(trial_maker, exp, network_class=StaticNetwork)
+    else:
+        trial_maker = chain_trial_maker()
+        network = create_chain_network(trial_maker, exp)
     initialize_trial_maker_state(trial_maker, participant)
     network.head = None
     db.session.flush()
@@ -942,6 +949,28 @@ def test_selection_pool_limits_candidates_to_available_ones(
     (pool,) = seen
     assert len(pool) == 2
     assert {node.id for node in pool} <= {node.id for node in nodes[3:]}
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_selection_pool_falls_back_when_the_filter_rejects_it(db_session, participant):
+    class PooledTrialMaker(StaticTrialMaker):
+        selection_pool_size = 2
+
+        def node_priority(self, participant, experiment):
+            return self.node_class.id
+
+        def custom_node_filter(self, candidates, participant, experiment):
+            return [node for node in candidates if node.id == accepted_id]
+
+    trial_maker, nodes = static_selection_fixture(participant, PooledTrialMaker)
+    accepted_id = nodes[-1].id
+
+    selection = trial_maker._select_trial_node(participant, get_experiment())
+
+    assert selection.value.id == accepted_id
 
 
 @pytest.mark.parametrize(

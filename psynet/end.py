@@ -4,6 +4,7 @@ import dominate
 from dominate import tags
 
 from psynet import exit as exit_domain
+from psynet.db import _allow_framework_commits
 from psynet.modular_page import NullControl
 from psynet.timeline import (
     CodeBlock,
@@ -21,9 +22,14 @@ class ExitLogic(EltCollection):
     """Shared recruiter release behavior for terminal timeline branches."""
 
     def release_participant(self, experiment, participant) -> TimelineLogic:
-        """Return the recruiter-specific participant handoff."""
+        """Return the recruiter-specific participant handoff.
+
+        Recruiters may commit here, for example to save payment state before
+        reporting it to the panel.
+        """
         try:
-            return experiment.recruiter.release_participant(experiment, participant)
+            with _allow_framework_commits():
+                return experiment.recruiter.release_participant(experiment, participant)
         except AttributeError:
             raise ValueError(
                 f"The selected recruiter ({experiment.recruiter}) is not fully implemented in PsyNet. "
@@ -45,9 +51,14 @@ class EndLogic(ExitLogic):
         )
 
     def prepare_debrief(self, experiment, participant) -> None:
-        """Apply outcome state, then store its recruiter exit decision."""
-        self.before_debrief(experiment, participant)
-        self.prepare_exit(experiment, participant)
+        """Apply outcome state, then store its recruiter exit decision.
+
+        Recruiters may commit here, for example to save payment state before
+        reporting it to the panel.
+        """
+        with _allow_framework_commits():
+            self.before_debrief(experiment, participant)
+            self.prepare_exit(experiment, participant)
 
     def before_debrief(self, experiment, participant) -> None:
         pass
