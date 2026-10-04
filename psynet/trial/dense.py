@@ -88,8 +88,8 @@ class DenseTrialMaker(StaticTrialMaker):
     target_n_participants
         Target number of participants to recruit for the experiment. All
         participants must successfully finish the experiment to count
-        towards this quota. This target is only relevant if
-        ``recruit_mode="n_participants"``.
+        towards this quota. Requires ``recruit_mode="n_participants"``;
+        passing it with ``None`` or ``"n_trials"`` raises an error.
 
     max_trials_per_block
         Determines the maximum number of trials that a participant will be allowed to experience in each block,

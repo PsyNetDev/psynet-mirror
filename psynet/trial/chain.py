@@ -1431,8 +1431,8 @@ class ChainTrialMaker(NetworkTrialMaker):
         Selects a recruitment criterion for determining whether to recruit
         another participant. The built-in criteria are ``"n_participants"``
         and ``"n_trials"``. ``"n_participants"`` needs
-        ``target_n_participants``, which raises an error with ``None`` or
-        ``"n_trials"``;
+        ``target_n_participants``, and giving ``target_n_participants`` with
+        any other mode raises an error;
         ``"n_trials"`` recruits until every chain is full. Defaults to ``None``,
         which leaves recruitment to the rest of the experiment, for example for
         a practice trial maker.
@@ -1440,8 +1440,8 @@ class ChainTrialMaker(NetworkTrialMaker):
     target_n_participants
         Target number of participants to recruit for the experiment. All
         participants must successfully finish the experiment to count
-        towards this quota. This target is only relevant if
-        ``recruit_mode="n_participants"``.
+        towards this quota. Requires ``recruit_mode="n_participants"``;
+        passing it with ``None`` or ``"n_trials"`` raises an error.
 
     fail_trials_on_premature_exit
         See :class:`~psynet.trial.main.TrialMaker`.

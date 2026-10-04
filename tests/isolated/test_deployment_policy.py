@@ -7,11 +7,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-from dallinger.deployment_plan import (
-    DeploymentPolicyError,
-    build_deployment_plan,
-    parse_deployment_policy,
-)
+from dallinger.deployment_plan import build_deployment_plan, parse_deployment_policy
 from dallinger.utils import ExperimentFileSource
 
 from psynet.experiment import Experiment
@@ -437,7 +433,7 @@ def test_migration_check_survives_a_malformed_deploy_toml(tmp_path, monkeypatch)
         scaffold_experiment_directory()
         policy = Path("deploy.toml").read_text()
         Path("deploy.toml").write_text(policy + "\n[exclude\n")
-        with pytest.raises(DeploymentPolicyError):
+        with pytest.raises(ClickException, match="deploy.toml is invalid"):
             _check_experiment_directory("debug")
         Path("deploy.toml").write_text(policy)
         with pytest.raises(ClickException, match="secret.txt"):

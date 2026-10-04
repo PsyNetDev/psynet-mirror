@@ -28,6 +28,7 @@ from dallinger.command_line.docker_ssh import (
 )
 from dallinger.command_line.utils import verify_id as dallinger_verify_id
 from dallinger.config import experiment_available, get_config
+from dallinger.deployment_plan import DeploymentPolicyError
 from dallinger.heroku.tools import HerokuApp
 from dallinger.recruiters import ProlificRecruiter
 from dallinger.version import __version__ as dallinger_version
@@ -1705,9 +1706,12 @@ def _check_experiment_directory(mode, *, require_git_commit=False):
     if _deployment_policy_needs_review():
         # Unexpected errors, such as a malformed deploy.toml, keep the marker
         # so that the check runs again once they are fixed.
-        ignored_paths = deployment_info._git_ignored_deployment_paths(
-            extra_excludes_file=_DEPLOYMENT_POLICY_REVIEW_MARKER
-        )
+        try:
+            ignored_paths = deployment_info._git_ignored_deployment_paths(
+                extra_excludes_file=_DEPLOYMENT_POLICY_REVIEW_MARKER
+            )
+        except DeploymentPolicyError as error:
+            raise click.ClickException(f"deploy.toml is invalid: {error}") from error
         _clear_deployment_policy_review_marker()
         intro = (
             "PsyNet now uses deploy.toml instead of .gitignore to choose "

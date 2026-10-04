@@ -151,14 +151,14 @@ class StaticTrialMaker(ChainTrialMaker):
     target_n_participants
         Target number of participants to recruit for the experiment. All
         participants must successfully finish the experiment to count
-        towards this quota. This target is only relevant if
-        ``recruit_mode="n_participants"``.
+        towards this quota. Requires ``recruit_mode="n_participants"``;
+        passing it with ``None`` or ``"n_trials"`` raises an error.
 
     target_trials_per_node
         Target number of trials to recruit for each node. ``None`` (the
         default) means unlimited. When set, it must be a positive number;
-        ``0`` is rejected. This target is only relevant if
-        ``recruit_mode="n_trials"``. It does not cap selection: a node can
+        ``0`` is rejected. Requires ``recruit_mode="n_trials"``; passing it
+        with any other mode raises an error. It does not cap selection: a node can
         receive more trials than its target, for example when participants
         recruited together finish at the same time.
 
