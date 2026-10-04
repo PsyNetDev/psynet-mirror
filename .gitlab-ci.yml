@@ -54,7 +54,7 @@ before_script:
   - export REDIS_IP=$(getent ahostsv4 redis | awk '{ print $1 }' | tail -n 1)
   - echo $POSTGRES_IP
   - echo $REDIS_IP
-  - sh ci/ci-image.sh "${CI_IMAGE_KIND:-base}"
+  - docker build --build-arg PYTHON_VERSION=$PYTHON_VERSION --tag $DOCKER_LOCAL_TAG .
 
 .default_rules: &default_rules
   rules:
@@ -258,11 +258,10 @@ compatibility_tests:
   stage: test
   parallel: 3
   <<: [*docker_test_rules, *test_services]
-  variables:
-    CI_IMAGE_KIND: playwright
   script:
     - export PSYNET_WORKSPACE=/root/workspaces/PsyNet
     - mkdir -p public test-results
+    - docker build --build-arg BASE_IMAGE=$DOCKER_LOCAL_TAG --tag $DOCKER_LOCAL_TAG-playwright -f Dockerfile.playwright .
     - docker run
       --add-host=postgres:$POSTGRES_IP
       --add-host=redis:$REDIS_IP

@@ -24,22 +24,6 @@ requests that change only that path. If you add a top-level file or directory
 that tests or the CI image depend on, or a test that reads a docs page, add
 its path to ``.docker_test_rules``.
 
-Each Docker job gets its test image from ``ci/ci-image.sh``. The script pulls
-a shared image from the project's container registry, tagged with a hash of
-``Dockerfile``, ``Dockerfile.playwright``, ``pyproject.toml`` and
-``ci/dallinger-dev-requirements.txt`` plus the ISO week. If no such image
-exists, the job builds one locally. Only protected-branch pipelines push new
-images, so each week's first ``master`` pipeline builds and publishes it.
-Merge requests that change those files build their own image in every job, as
-they did before. Weekly tags let dependency resolution pick up new upstream
-releases.
-
-The project's container registry cleanup policy (*Settings > Packages and
-registries > Cleanup policies*) deletes old CI images. It runs daily and
-removes tags matching ``py\d+\.\d+-.*`` that are older than 14 days, keeping
-the 10 most recent. Release images such as ``v13.0.5`` and ``master`` do not
-match that pattern.
-
 Test parallelization
 --------------------
 
