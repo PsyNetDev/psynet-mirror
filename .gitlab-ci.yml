@@ -184,11 +184,10 @@ changelog_check:
 #
 # Each job runs TEST_SLOTS tests at once (see psynet/dev/ci_tests.py). On the
 # 2-vCPU runners, 2 slots keep the CPU about 80% busy and slow each test by
-# about 1.15x; 3 slots saturate the CPU and slow tests by about 1.5x. Eight
-# 2-slot shards finish in about 10 minutes, as fast as ten 1-slot shards
-# finished in 17-20 minutes before shards were balanced.
+# about 1.15x; 3 slots saturate the CPU and slow tests by about 1.5x. Ten
+# 2-slot shards keep pytest level with the Playwright shards below.
 .test_suite:
-  parallel: 8
+  parallel: 10
   stage: test
   <<: [*docker_test_rules, *test_services]
   variables:
@@ -251,12 +250,12 @@ compatibility_tests:
     SKIP_PYTHON_VERSION_CHECK: "1"
     TEST_SCOPE: isolated
 
-# Each Playwright mode runs in two shards. `psynet dev ci playwright-files`
+# Each Playwright mode runs in three shards. `psynet dev ci playwright-files`
 # picks this shard's spec files by recorded duration, because Playwright's own
 # --shard splits by test count and leaves one shard with most of the work.
 .playwright_e2e:
   stage: test
-  parallel: 2
+  parallel: 3
   <<: [*docker_test_rules, *test_services]
   variables:
     CI_IMAGE_KIND: playwright

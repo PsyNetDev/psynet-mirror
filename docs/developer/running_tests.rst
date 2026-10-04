@@ -160,7 +160,7 @@ GitLab CI selects suites with ``--grep`` instead of hardcoding file paths:
 * ``playwright_e2e_default`` runs ``@both|@inplace-only``
 * ``playwright_e2e_legacy`` runs ``@both|@legacy-only``
 
-Each job runs in two shards. ``psynet dev ci playwright-files`` chooses each
+Each job runs in three shards. ``psynet dev ci playwright-files`` chooses each
 shard's spec files using the durations in ``ci/test_durations.json``, so a new
 spec file needs no CI changes.
 
@@ -324,7 +324,7 @@ Finding Playwright CI artifacts in GitLab
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Playwright artifacts are uploaded by the ``playwright_e2e_default`` and
-``playwright_e2e_legacy`` jobs. Each has two shards (``1/2`` and ``2/2``),
+``playwright_e2e_legacy`` jobs. Each has three shards (``1/3`` to ``3/3``),
 and each shard uploads the artifacts of its own spec files.
 
 To view them in GitLab:
