@@ -608,7 +608,7 @@ class ChainNetwork(TrialNetwork):
     @property
     def n_trials_still_required(self):
         assert self.target_n_trials is not None
-        if self.full:
+        if self.full or self.failed:
             return 0
         else:
             return max(
@@ -2081,12 +2081,13 @@ class ChainTrialMaker(NetworkTrialMaker):
             select(
                 func.count(network.id).filter(network.target_n_trials.is_(None)),
                 # Static nodes can exceed their target; surplus trials on one
-                # node must not offset a shortfall on another.
+                # node must not offset a shortfall on another. Failed networks
+                # are never offered again, so their shortfall cannot be filled.
                 func.sum(
                     func.greatest(
                         network.target_n_trials - func.coalesce(completed.c.n, 0), 0
                     )
-                ).filter(network.full.is_(False)),
+                ).filter(network.full.is_(False), network.failed.is_(False)),
             )
             .outerjoin(completed, completed.c.network_id == network.id)
             .where(network.trial_maker_id == self.id)

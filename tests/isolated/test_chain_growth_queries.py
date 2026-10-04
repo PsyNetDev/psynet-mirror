@@ -851,15 +851,17 @@ def test_static_surplus_trials_do_not_offset_other_nodes_shortfall(
 ):
     exp = get_experiment()
     trial_maker = static_trial_maker(target_trials_per_node=1)
-    surplus, empty = [
+    surplus, empty, failed = [
         create_chain_network(trial_maker, exp, network_class=StaticNetwork)
-        for _ in range(2)
+        for _ in range(3)
     ]
     for _ in range(3):
         add_trial(GrowthQueryStaticTrial, surplus.head, new_participant())
+    failed.head.fail(reason="stimulus generation failed")
 
     assert trial_maker.n_trials_still_required == 1
     assert surplus.n_trials_still_required == 0
+    assert failed.n_trials_still_required == 0
 
 
 class PythonFilteredStaticTrialMaker(StaticTrialMaker):
