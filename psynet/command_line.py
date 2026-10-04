@@ -1151,12 +1151,12 @@ def is_psynet_chrome_process(process):
     whose profile carries this run's :func:`psynet_browser_prefix`, so cleanup
     leaves browsers belonging to other local experiments alone.
     """
-    local_url = f"localhost:{_local_base_port()}"
+    local_url = re.compile(rf"(localhost|127\.0\.0\.1):{_local_base_port()}(?!\d)")
     profile_prefix = psynet_browser_prefix("chrome")
     try:
         if "chrome" in process.name().lower():
             for cmd in process.cmdline():
-                if local_url in cmd:
+                if local_url.search(cmd):
                     return True
                 if "--user-data-dir=" in cmd and profile_prefix in cmd:
                     return True
