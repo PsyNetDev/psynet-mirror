@@ -5813,16 +5813,21 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @classmethod
     def handle_error(cls, error, **kwargs):
-        """Roll back the failed work, then report the error and save its record.
+        """Roll back the failed work, save the error's record, then notify.
 
         ``kwargs`` are the ORM objects the error concerns (``participant``,
-        ``trial``, ``process``, ...). They and their parents are recorded by ID.
+        ``trial``, ``process``, ...). They and their parents are recorded by
+        ID; objects that were never saved, and values that are not ORM
+        objects, are ignored. Because this rolls back and commits the
+        session, call it from code that owns the transaction, not from
+        inside a timeline step.
         """
         identities = cls._identify_error_parents(**kwargs)
         db.session.rollback()
         parents = cls._compile_error_parents(identities)
-        cls.report_error(error, **parents)
+        token, log_line_number = cls._record_error(error, **parents)
         db.session.commit()
+        cls.log_to_notifier(token, log_line_number, **parents)
         return cls.HandledError(**parents)
 
     @staticmethod
@@ -5837,7 +5842,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         identities = {}
         for key, value in kwargs.items():
             state = sqlalchemy_inspect(value, raiseerr=False)
-            if state is not None and state.identity is not None:
+            if getattr(state, "identity", None) is not None:
                 identities[key] = (state.mapper.class_, state.identity)
         return identities
 
@@ -5906,15 +5911,20 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         The caller's transaction decides whether the record is saved;
         :meth:`handle_error` commits it after rolling back the failed work.
         """
-        token = cls.generate_error_token()
+        token, log_line_number = cls._record_error(error, **kwargs)
+        cls.log_to_notifier(token, log_line_number, **kwargs)
 
+    @classmethod
+    def _record_error(cls, error, **kwargs):
+        """Log the error and add its record; return its token and log line."""
+        token = cls.generate_error_token()
         cls.log_to_stdout(error, token, **kwargs)
         try:
-            log_line_number = find_log_line_number(token)
+            log_line_number = find_log_line_number(f"err-{token}")
         except FileNotFoundError:
             log_line_number = None
         cls.log_to_db(error, token, log_line_number, **kwargs)
-        cls.log_to_notifier(token, log_line_number, **kwargs)
+        return token, log_line_number
 
     @classmethod
     def generate_error_token(cls):

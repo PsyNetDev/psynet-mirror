@@ -291,6 +291,23 @@ def test_handle_error_after_failed_flush_records_parent_ids(db_session, monkeypa
 
 
 @pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_handle_error_saves_the_record_before_notifying(db_session, monkeypatch):
+    monkeypatch.setattr(
+        Experiment, "log_to_notifier", MagicMock(side_effect=ConnectionError)
+    )
+    participant = new_participant()
+    db.session.commit()
+
+    with pytest.raises(ConnectionError):
+        get_experiment().handle_error(ValueError("failed"), participant=participant)
+    db.session.rollback()
+
+    assert ErrorRecord.query.count() == 1
+
+
+@pytest.mark.parametrize(
     "recruiter_class", ["BaseLabRecruiter", "BaseLucidRecruiter", "GenericRecruiter"]
 )
 @pytest.mark.parametrize(
