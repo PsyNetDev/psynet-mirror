@@ -4299,6 +4299,9 @@ def test_experiment_never_completes_during_performance_test(monkeypatch):
     monkeypatch.delenv("PSYNET_PERFORMANCE_TEST", raising=False)
     assert Experiment.is_complete(idle) is True
 
+    monkeypatch.setenv("PSYNET_PERFORMANCE_TEST", "0")
+    assert Experiment.is_complete(idle) is True
+
     monkeypatch.setenv("PSYNET_PERFORMANCE_TEST", "1")
     assert Experiment.is_complete(idle) is False
 
