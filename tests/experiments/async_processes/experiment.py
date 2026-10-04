@@ -2,7 +2,7 @@ import time
 
 import psynet.experiment
 from psynet.modular_page import ModularPage, PushButtonControl
-from psynet.timeline import AsyncCodeBlock, Timeline
+from psynet.timeline import AsyncCodeBlock, RecruitmentCriterion, Timeline
 
 
 def async_work(participant):
@@ -16,6 +16,11 @@ class Exp(psynet.experiment.Experiment):
     test_n_bots = 2
 
     timeline = Timeline(
+        # Bots finish in about a second, so without an open recruitment
+        # criterion the local debug server sees a moment with no working
+        # participants, declares the experiment complete, and shuts down
+        # mid-way through `psynet performance-test local`.
+        RecruitmentCriterion("keep_recruiting", lambda: True),
         ModularPage(
             "start",
             "Ready to run async work?",

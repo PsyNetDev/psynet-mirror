@@ -1,0 +1,1 @@
+Fixed the ``async_processes`` ASV benchmark, whose local server shut down partway through ``psynet performance-test local`` because the test experiment stopped recruiting after its first participant finished.
