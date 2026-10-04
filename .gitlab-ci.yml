@@ -202,42 +202,87 @@ changelog_check:
     paths:
       - public/
 
-# Scratch experiment: compare shard/slot layouts. Not for merging.
-exp_b10x1:
+# Scratch experiment round 2. Not for merging.
+exp2_b8x2:
   extends: .test_suite
-  parallel: 10
-  variables:
-    PYTHON_VERSION: "3.13"
-    TEST_SLOTS: "1"
-
-exp_b5x2:
-  extends: .test_suite
-  parallel: 5
-  variables:
-    PYTHON_VERSION: "3.13"
-    TEST_SLOTS: "2"
-
-exp_b4x3:
-  extends: .test_suite
-  parallel: 4
-  variables:
-    PYTHON_VERSION: "3.13"
-    TEST_SLOTS: "3"
-
-exp_b5x2_notr:
-  extends: .test_suite
-  parallel: 5
+  parallel: 8
   variables:
     PYTHON_VERSION: "3.13"
     TEST_SLOTS: "2"
     CI_SKIP_NULL_TRANSLATION: "1"
 
-exp_m3x4:
+exp2_b6x2:
   extends: .test_suite
-  parallel: 3
+  parallel: 6
+  variables:
+    PYTHON_VERSION: "3.13"
+    TEST_SLOTS: "2"
+    CI_SKIP_NULL_TRANSLATION: "1"
+
+exp2_m4x4:
+  extends: .test_suite
+  parallel: 4
   tags:
     - saas-linux-medium-amd64
   variables:
     PYTHON_VERSION: "3.13"
     TEST_SLOTS: "4"
+    CI_SKIP_NULL_TRANSLATION: "1"
+
+exp2_pw_default_x2:
+  stage: test
+  parallel: 2
+  <<: *docker_test_rules
+  script:
+    - export PSYNET_WORKSPACE=/root/workspaces/PsyNet
+    - mkdir -p public test-results
+    - docker build --build-arg BASE_IMAGE=$DOCKER_LOCAL_TAG --tag $DOCKER_LOCAL_TAG-playwright -f Dockerfile.playwright .
+    - docker run
+      --add-host=postgres:$POSTGRES_IP
+      --add-host=redis:$REDIS_IP
+      -e HEADLESS=TRUE -e REDIS_URL -e DATABASE_URL -e POSTGRES_DB -e POSTGRES_USER -e POSTGRES_PASSWORD
+      -e AWS_ACCESS_KEY_ID -e AWS_DEFAULT_REGION -e AWS_SECRET_ACCESS_KEY
+      -e PLAYWRIGHT_JUNIT_OUTPUT_NAME=public/playwright-junit-default.xml
+      -e PSYNET_WORKSPACE
+      -e PSYNET_USE_LEGACY_DEBUG=1
+      -v "$PWD:$PSYNET_WORKSPACE"
+      -w $PSYNET_WORKSPACE
+      $DOCKER_LOCAL_TAG-playwright bash -c "uv pip install --no-cache --system --no-deps -e \"$PSYNET_WORKSPACE\" && npm ci && node tests/playwright/check-mode-tags.js && npx playwright test --shard=$CI_NODE_INDEX/$CI_NODE_TOTAL --grep '@both|@inplace-only' --reporter=line,junit,html"
+  artifacts:
+    when: always
+    paths:
+      - public/
+      - test-results/
+      - playwright-report/
+    reports:
+      junit: public/playwright-junit-default.xml
+
+exp2_pw_legacy_x2:
+  stage: test
+  parallel: 2
+  <<: *docker_test_rules
+  script:
+    - export PSYNET_WORKSPACE=/root/workspaces/PsyNet
+    - mkdir -p public test-results
+    - docker build --build-arg BASE_IMAGE=$DOCKER_LOCAL_TAG --tag $DOCKER_LOCAL_TAG-playwright -f Dockerfile.playwright .
+    - docker run
+      --add-host=postgres:$POSTGRES_IP
+      --add-host=redis:$REDIS_IP
+      -e HEADLESS=TRUE -e REDIS_URL -e DATABASE_URL -e POSTGRES_DB -e POSTGRES_USER -e POSTGRES_PASSWORD
+      -e AWS_ACCESS_KEY_ID -e AWS_DEFAULT_REGION -e AWS_SECRET_ACCESS_KEY
+      -e PLAYWRIGHT_JUNIT_OUTPUT_NAME=public/playwright-junit-legacy.xml
+      -e PSYNET_WORKSPACE
+      -e PSYNET_USE_LEGACY_DEBUG=1
+      -e inplace_timeline_transitions=false
+      -v "$PWD:$PSYNET_WORKSPACE"
+      -w $PSYNET_WORKSPACE
+      $DOCKER_LOCAL_TAG-playwright bash -c "uv pip install --no-cache --system --no-deps -e \"$PSYNET_WORKSPACE\" && npm ci && node tests/playwright/check-mode-tags.js && npx playwright test --shard=$CI_NODE_INDEX/$CI_NODE_TOTAL --grep '@both|@legacy-only' --reporter=line,junit,html"
+  artifacts:
+    when: always
+    paths:
+      - public/
+      - test-results/
+      - playwright-report/
+    reports:
+      junit: public/playwright-junit-legacy.xml
 
