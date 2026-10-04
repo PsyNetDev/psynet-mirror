@@ -1,1 +1,1 @@
-Fixed the "View in logs" link for errors on the dashboard's Errors tab and in error notifications, which never found the error's log line.
+Fixed the dashboard's Errors tab, which failed to load once an error had been recorded, and made its "View in logs" links and error notifications point to the error's line in the log.
