@@ -241,6 +241,11 @@ transaction, without committing them:
         db.session.flush()
         participant.var.current_pet = pet.id
 
+The same applies to helper code called from these places, including custom
+recruiter methods such as ``release_participant`` and
+``after_rejected_consent``. A helper should leave committing to the code that
+started the transaction, and flush if it needs database-generated values.
+
 Code that does not run as part of a participant's progress through the
 timeline manages its own transaction. For example, POST routes defined with
 ``@experiment_route`` must call ``db.session.commit()``; see

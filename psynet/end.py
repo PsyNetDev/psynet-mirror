@@ -4,7 +4,6 @@ import dominate
 from dominate import tags
 
 from psynet import exit as exit_domain
-from psynet.db import _allow_framework_commits
 from psynet.modular_page import NullControl
 from psynet.timeline import (
     CodeBlock,
@@ -22,19 +21,13 @@ class ExitLogic(EltCollection):
     """Shared recruiter release behavior for terminal timeline branches."""
 
     def release_participant(self, experiment, participant) -> TimelineLogic:
-        """Return the recruiter-specific participant handoff.
-
-        Recruiters may commit here, for example to save payment state before
-        reporting it to the panel.
-        """
-        try:
-            with _allow_framework_commits():
-                return experiment.recruiter.release_participant(experiment, participant)
-        except AttributeError:
+        """Return the recruiter-specific participant handoff."""
+        if not hasattr(experiment.recruiter, "release_participant"):
             raise ValueError(
                 f"The selected recruiter ({experiment.recruiter}) is not fully implemented in PsyNet. "
                 "No release_participant method was found."
             )
+        return experiment.recruiter.release_participant(experiment, participant)
 
 
 class EndLogic(ExitLogic):
@@ -330,14 +323,12 @@ class RejectedConsentLogic(UnsuccessfulEndLogic):
         # For Lucid recruitment, terminate the participant on Lucid's side
         # before showing the page, since the auto-redirect bypasses the normal
         # release_participant flow (user won't click Finish).
-        # Recruiters commit here, e.g. to save payment state before reporting it.
-        with _allow_framework_commits():
-            if experiment.with_lucid_recruitment():
-                experiment.recruiter.terminate_participant(
-                    participant=participant, reason="consent-rejected"
-                )
+        if experiment.with_lucid_recruitment():
+            experiment.recruiter.terminate_participant(
+                participant=participant, reason="consent-rejected"
+            )
 
-            participant.recruiter.after_rejected_consent(experiment, participant)
+        participant.recruiter.after_rejected_consent(experiment, participant)
 
     def debrief_participant(self, experiment, participant) -> TimelineLogic:
         _ = get_translator()

@@ -1,3 +1,23 @@
+"""Database sessions, transactions and who may commit them.
+
+PsyNet runs each unit of work (an HTTP request, a scheduled task, a worker
+job, a CLI command, a deploy step) in one transaction that the code starting
+that unit commits. That code is the transaction's owner: route decorators
+such as ``with_transaction``, :func:`transaction`, scheduled-task wrappers,
+worker entry points and CLI commands. Everything they call, framework helpers
+included, leaves committing to the owner, and uses ``db.session.flush()`` when
+it needs database-generated values. Timeline steps enforce this with
+:func:`forbid_commits`.
+
+A helper may commit early only to keep local records consistent with an
+external call that cannot be undone or should not be repeated, such as a
+payment, a panel provider's API or a rate-limited request. It must do so
+through :func:`_commit_external_call_state`, so that the call works inside
+timeline steps and the exceptions stay easy to find.
+``tests/isolated/test_commit_sites.py`` lists every commit in the package with
+its reason; adding a commit means adding it there.
+"""
+
 import logging
 import threading
 from contextlib import contextmanager
@@ -271,6 +291,19 @@ def _allow_framework_commits():
         while guard is not None:
             guard.root = root
             guard = guard.parent
+
+
+def _commit_external_call_state():
+    """Commit now so local records match an external call that cannot be repeated.
+
+    Use it just before an external call, so a crash after the call cannot
+    lose the state the call reports, or just after it, so a later failure in
+    the same unit of work cannot lose the record that the call happened. It
+    also commits inside timeline steps. Everything else should leave
+    committing to the transaction's owner.
+    """
+    with _allow_framework_commits():
+        dallinger.db.session.commit()
 
 
 @event.listens_for(dallinger.db.session, "after_transaction_create")

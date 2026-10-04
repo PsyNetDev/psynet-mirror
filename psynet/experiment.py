@@ -88,6 +88,7 @@ from .command_line import export_launch_data
 from .data import SQLBase, SQLMixin, ingest_zip, register_table
 from .db import (
     _allow_framework_commits,
+    _commit_external_call_state,
     _set_transaction_lock_timeout,
     blocking_psycopg,
     forbid_commits,
@@ -2869,8 +2870,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     def commit_payment_state(self):
         """Persist claimed payment fields so a crash cannot replay a POST."""
-        with _allow_framework_commits():
-            db.session.commit()
+        _commit_external_call_state()
 
     def _lock_participant_for_payment(self, participant):
         """Reload the participant row with ``FOR UPDATE`` for the pay claim.

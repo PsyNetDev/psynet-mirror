@@ -62,7 +62,6 @@ import pandas as pd
 import requests
 from dallinger import db
 from dallinger.config import get_config
-from dallinger.db import session
 from dallinger.notifications import admin_notifier, get_mailer
 from dallinger.prolific import ProlificServiceException
 from dallinger.recruiters import (
@@ -82,6 +81,7 @@ from sqlalchemy.sql import func
 from . import exit as exit_domain
 from .consent import AudiovisualConsent, LucidConsent, OpenScienceConsent
 from .data import SQLBase, SQLMixin, register_table
+from .db import _commit_external_call_state
 from .lucid import LucidService, get_lucid_service
 from .page import InfoPage
 from .participant import (
@@ -2160,8 +2160,6 @@ class BaseLabRecruiter(
         """
         for participant in participants:
             participant.status = "abandoned"
-            # We preserve this commit just in case Dallinger removes the external commit in the future
-            session.commit()
 
     def _authorization_header(self):
         """Return a DRF Token header built from the configured auth token."""
@@ -2729,8 +2727,6 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
         """
         for participant in participants:
             participant.status = "abandoned"
-            # We preserve this commit just in case Dallinger removes the external commit in the future
-            session.commit()
 
     def run_checks(self):
         logger.info("Polling Lucid API to count entry_df")
@@ -2815,7 +2811,6 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
             },
         )
         db.session.add(status_entry)
-        db.session.commit()
 
         unfailed_entrants = LucidRID.query.filter_by(
             terminated_at=None, completed_at=None
@@ -3018,7 +3013,7 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
             self.lucidservice.log(f"Saving RID '{rid}' into the database.")
             lucid_rid = LucidRID(rid=rid)
             db.session.add(lucid_rid)
-            db.session.commit()
+            db.session.flush()
         except MultipleResultsFound:
             raise MultipleResultsFound(
                 f"Multiple rows for Lucid RID '{rid}' found. This should never happen."
@@ -3217,7 +3212,7 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
             participant.failed_reason = reason
             participant.status = "returned"
             if commit_participant:
-                db.session.commit()
+                _commit_external_call_state()
         try:
             logger.info(
                 f"Terminating respondent with RID '{assignment_id}'. Reason: '{reason}'"
@@ -3451,7 +3446,7 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
         service = get_lucid_service()
         service.change_status(survey_number, status)
         LucidStatus.query.order_by(LucidStatus.id.desc()).first().status = status
-        db.session.commit()
+        _commit_external_call_state()
 
 
 class DevLucidRecruiter(DevRecruiter, BaseLucidRecruiter):
@@ -3707,5 +3702,3 @@ class GenericRecruiter(
         """
         for participant in participants:
             participant.status = "abandoned"
-            # We preserve this commit just in case Dallinger removes the external commit in the future
-            session.commit()

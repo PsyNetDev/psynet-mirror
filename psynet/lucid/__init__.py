@@ -13,6 +13,7 @@ from sqlalchemy.orm.exc import MultipleResultsFound, NoResultFound
 
 from psynet import deployment_info
 from psynet.data import SQLBase, SQLMixin, register_table
+from psynet.db import _commit_external_call_state
 from psynet.field import PythonObject
 from psynet.log import bold, error, success, warning
 from psynet.utils import get_config, get_logger
@@ -317,7 +318,7 @@ class LucidService(object):
             response = self.send_complete_request(rid)
             if response.ok:
                 lucid_rid.completed_at = datetime.now()
-                session.commit()
+                _commit_external_call_state()
                 self.log("Respondent completed successfully.")
             else:
                 if response.status_code == 403:
@@ -327,7 +328,7 @@ class LucidService(object):
                         "Marking as completed locally."
                     )
                     lucid_rid.completed_at = datetime.now()
-                    session.commit()
+                    _commit_external_call_state()
                 else:
                     self.log(
                         f"Error completing respondent (RID '{rid}'): "
@@ -343,7 +344,6 @@ class LucidService(object):
         lucid_rid.terminated_at = datetime.now()
         lucid_rid.termination_reason = reason
         lucid_rid.termination_details = details
-        session.commit()
 
     def terminate_respondent(self, rid, reason, details=None):
         lucid_rid = get_lucid_rid(rid)
@@ -352,7 +352,7 @@ class LucidService(object):
             response = self.send_terminate_request(rid)
             if response.ok:
                 self.set_termination_details(rid, reason, details)
-                session.commit()
+                _commit_external_call_state()
                 self.log("Respondent terminated successfully.")
             else:
                 if response.status_code == 403:
@@ -362,6 +362,7 @@ class LucidService(object):
                         "(e.g., mobile/browser detection). Marking as terminated locally."
                     )
                     self.set_termination_details(rid, reason, details)
+                    _commit_external_call_state()
                 elif response.status_code == 400:
                     self.log(
                         f"Termination returned status code 400 for RID '{rid}'. "
@@ -369,6 +370,7 @@ class LucidService(object):
                         "Marking as terminated locally."
                     )
                     self.set_termination_details(rid, reason, details)
+                    _commit_external_call_state()
                 else:
                     self.log(
                         f"Error terminating respondent (RID '{rid}'): "
@@ -447,7 +449,7 @@ class LucidService(object):
         if response.ok:
             submissions = LucidSubmissions(response=response.json()["sessions"])
             db.session.add(submissions)
-            db.session.commit()
+            _commit_external_call_state()
             return submissions.get()
         if response.status_code == 429:
             if last_rate_limit is None:
