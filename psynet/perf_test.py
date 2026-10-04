@@ -480,11 +480,12 @@ class PerformanceTester:
 
         try:
             self.authenticated_session.head(self.base_url, timeout=10)
+        except requests.Timeout:
+            # Includes ConnectTimeout: a full connection backlog under load
+            # still means the server is up.
+            return True
         except requests.ConnectionError:
             return False
-        except requests.Timeout:
-            # A slow reply under load still means the server is up.
-            return True
         return True
 
     def _run_monitoring_loop(self, n, bot_state, start_new_bot, start_time, end_time):

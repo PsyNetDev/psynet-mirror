@@ -1687,7 +1687,6 @@ class ExternalAsset(Asset):
     ::
 
         participant.assets["stimulus"] = my_asset
-        db.session.commit()
     """
 
     def __init__(
