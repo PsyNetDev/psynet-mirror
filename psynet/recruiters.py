@@ -1879,7 +1879,12 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
                             participant.var.assignment_returned
                         ),
                         logic_if_true=join(
-                            CodeBlock(self.reward_and_set_bonus),
+                            AsyncCodeBlock(
+                                self.reward_and_set_bonus,
+                                wait=True,
+                                expected_wait=5.0,
+                                check_interval=1.0,
+                            ),
                             conditional(
                                 "return_for_bonus_credited",
                                 condition=self._return_for_bonus_credited,
