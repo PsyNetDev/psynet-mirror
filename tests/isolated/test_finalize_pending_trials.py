@@ -246,7 +246,7 @@ class ExplodingFinalizeTrial(FinalizeBackstopTrial):
 def test_finalize_pending_trials_isolates_per_trial_errors(
     db_session, participant, monkeypatch
 ):
-    # handle_error -> report_error -> notifier needs a base URL; skip notifier I/O.
+    # handle_error -> log_to_notifier needs a base URL; skip notifier I/O.
     monkeypatch.setattr(
         type(get_experiment()),
         "log_to_notifier",

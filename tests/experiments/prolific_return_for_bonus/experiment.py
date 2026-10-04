@@ -38,6 +38,7 @@ class Exp(psynet.experiment.Experiment):
         super().__init__(*args, **kwargs)
         from dallinger.config import get_config
 
+        # The generated config.txt sets the recruiter, so it can't go in ``config``.
         get_config().set("recruiter", "devprolific")
 
     timeline = Timeline(

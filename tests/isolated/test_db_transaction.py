@@ -270,6 +270,11 @@ def test_live_missing_translation_is_reported_without_committing(
     assert DummyTransactionModel.query.get("half-finished") is None
     assert ErrorRecord.query.count() == 0
 
+    with transaction():
+        with forbid_commits("CodeBlock 'translate'"):
+            _translate_missing_string_live(monkeypatch)
+    assert ErrorRecord.query.count() == 1
+
 
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
