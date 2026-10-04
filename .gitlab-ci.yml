@@ -21,6 +21,17 @@ services:
   - postgres:16.2-bookworm
   - redis:latest
 
+# Test jobs run Postgres without durability: their databases are thrown away,
+# and database-heavy tests run about twice as fast. Benchmark jobs keep the
+# default services so their results stay comparable over time.
+.test_services: &test_services
+  services:
+    - docker:26.1.1-dind
+    - name: postgres:16.2-bookworm
+      alias: postgres
+      command: ["postgres", "-c", "fsync=off", "-c", "synchronous_commit=off", "-c", "full_page_writes=off"]
+    - redis:latest
+
 variables:
   AWS_ACCESS_KEY_ID: $AWS_ACCESS_KEY_ID
   AWS_DEFAULT_REGION: $AWS_DEFAULT_REGION
@@ -179,7 +190,7 @@ changelog_check:
 .test_suite:
   parallel: 8
   stage: test
-  <<: *docker_test_rules
+  <<: [*docker_test_rules, *test_services]
   variables:
     TEST_SCOPE: full
     TEST_SLOTS: "2"
@@ -246,7 +257,7 @@ compatibility_tests:
 .playwright_e2e:
   stage: test
   parallel: 2
-  <<: *docker_test_rules
+  <<: [*docker_test_rules, *test_services]
   script:
     - export PSYNET_WORKSPACE=/root/workspaces/PsyNet
     - mkdir -p public test-results
