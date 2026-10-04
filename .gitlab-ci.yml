@@ -184,10 +184,11 @@ changelog_check:
 #
 # Each job runs TEST_SLOTS tests at once (see psynet/dev/ci_tests.py). On the
 # 2-vCPU runners, 2 slots keep the CPU about 80% busy and slow each test by
-# about 1.15x; 3 slots saturate the CPU and slow tests by about 1.5x. Ten
-# 2-slot shards keep pytest level with the Playwright shards below.
+# about 1.15x; 3 slots saturate the CPU and slow tests by about 1.5x. Twelve
+# 2-slot shards keep pytest level with the Playwright shards below, at about
+# 6.5 minutes per job.
 .test_suite:
-  parallel: 10
+  parallel: 12
   stage: test
   <<: [*docker_test_rules, *test_services]
   variables:
