@@ -1850,9 +1850,9 @@ class AssetStorage:
         host_path: str,
         delete_input: bool,  # , db_commit: bool = False
     ):
-        # Threaded dispatching passes an asset from another session, so it must be
-        # merged into this one. Synchronous deposits skip the merge because it
-        # autoflushes, which costs one flush per asset when preparing many assets.
+        # Assets from outside this session (e.g. detached objects) must be merged
+        # first. Skip the merge otherwise, because it autoflushes, which costs one
+        # flush per asset when preparing many assets.
         if asset not in db.session:
             asset = db.session.merge(asset)
         self._receive_deposit(asset, host_path)

@@ -1005,14 +1005,22 @@ def test_nodes_on_deploy_marks_nodes_and_queues_only_pending_async_work(
 ):
     exp = get_experiment()
     trial_maker = chain_trial_maker()
-    plain, needs_async, already_requested = [
-        create_chain_network(trial_maker, exp).head for _ in range(3)
+    plain, unset, needs_async, already_requested = [
+        create_chain_network(trial_maker, exp).head for _ in range(4)
     ]
+    unset.on_deploy_complete = None
+    unset.async_on_deploy_required = None
     needs_async.async_on_deploy_required = True
     already_requested.async_on_deploy_required = True
     already_requested.async_on_deploy_requested = True
-    ids = [plain.id, needs_async.id, already_requested.id]
-    queued = []
+    ids = [plain.id, unset.id, needs_async.id, already_requested.id]
+    checked, queued = [], []
+    check_on_deploy = TrialNode.check_on_deploy
+    monkeypatch.setattr(
+        TrialNode,
+        "check_on_deploy",
+        lambda node: checked.append(node.id) or check_on_deploy(node),
+    )
     monkeypatch.setattr(
         TrialNode, "queue_async_on_deploy", lambda node: queued.append(node.id)
     )
@@ -1020,7 +1028,8 @@ def test_nodes_on_deploy_marks_nodes_and_queues_only_pending_async_work(
 
     exp._nodes_on_deploy()
 
-    assert queued == [ids[1]]
+    assert sorted(checked) == sorted(ids[2:])
+    assert queued == [ids[2]]
     complete = dict(
         db.session.query(TrialNode.id, TrialNode.on_deploy_complete).filter(
             TrialNode.id.in_(ids)

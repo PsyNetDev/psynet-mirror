@@ -207,8 +207,8 @@ def read_all():
 
     Asset deposits read several keys per asset, so re-decoding the file on
     every call slowed deployment preparation for large asset sets. The cache
-    is keyed on the file's absolute path, modification time and size, so writes
-    from other processes are still picked up.
+    is keyed on the file's path, inode, modification and change times, and
+    size, so writes from other processes are still picked up.
     """
     return copy.deepcopy(_cached_content())
 
@@ -220,10 +220,20 @@ def read_all():
     reraise=True,
 )
 def _cached_content():
+    """Return the decoded deployment info, shared between callers; do not mutate.
+
+    Retries cover reading a file that another process is still writing.
+    """
     global _cache
 
     stat = os.stat(path)
-    key = (os.path.abspath(path), stat.st_mtime_ns, stat.st_size)
+    key = (
+        os.path.abspath(path),
+        stat.st_ino,
+        stat.st_mtime_ns,
+        stat.st_ctime_ns,
+        stat.st_size,
+    )
     cache = _cache
     if cache is not None and cache[0] == key:
         return cache[1]
@@ -236,6 +246,7 @@ def _cached_content():
 
 
 def _clear_cache():
+    """Forget the decoded deployment info after this process changes the file."""
     global _cache
     _cache = None
 
