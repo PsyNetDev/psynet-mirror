@@ -18,6 +18,7 @@ from sqlalchemy import (
     Integer,
     String,
     event,
+    inspect,
 )
 from sqlalchemy.exc import NoResultFound
 from sqlalchemy.orm import deferred, relationship
@@ -95,8 +96,10 @@ class AsyncProcess(SQLBase, SQLMixin):
         queue = _session_launch_queue(db.session() if session is None else session)
         while queue:
             process = queue.pop(0)
-            assert process["obj"].id is not None
-            if getattr(process["obj"], "cancelled", False):
+            assert process["id"] is not None
+            # No SQL can run in after_commit, so read only already-loaded state;
+            # an expired object here means a rolled-back change, so launch it.
+            if inspect(process["obj"]).dict.get("cancelled", False):
                 continue
             logger.info("Launching async process %s...", process["id"])
             process["class"].launch(process)

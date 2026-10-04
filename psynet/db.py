@@ -280,7 +280,8 @@ def _guard_transactions_begun_inside_forbid_commits(session, transaction):
     A guard has no root when it starts outside a transaction or after a
     framework commit; without this, a later rollback would go unnoticed.
     """
-    if transaction.parent is not None:
+    scoped = dallinger.db.session.registry
+    if transaction.parent is not None or not scoped.has() or session is not scoped():
         return
     guard = _commit_forbidden_in.get()
     while guard is not None and guard.root is None:

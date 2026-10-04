@@ -220,6 +220,20 @@ def test_end_logic_lets_recruiters_commit_inside_guarded_steps(db_session, monke
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
+def test_commit_guard_ignores_transactions_of_other_sessions(db_session):
+    db.session.commit()
+    other = db.session_factory()
+    try:
+        with forbid_commits("CodeBlock 'other_session'"):
+            other.execute(text("SELECT 1"))
+            db.session.execute(text("SELECT 1"))
+    finally:
+        other.close()
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
 def test_transaction_lock_timeout_is_scoped_locally(db_session):
     default = db.session.execute(text("SHOW lock_timeout")).scalar()
     with transaction():
