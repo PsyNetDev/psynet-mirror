@@ -32,7 +32,13 @@ exists, the job builds one locally. Only protected-branch pipelines push new
 images, so each week's first ``master`` pipeline builds and publishes it.
 Merge requests that change those files build their own image in every job, as
 they did before. Weekly tags let dependency resolution pick up new upstream
-releases; a registry cleanup policy should delete old tags.
+releases.
+
+The project's container registry cleanup policy (*Settings > Packages and
+registries > Cleanup policies*) deletes old CI images. It runs daily and
+removes tags matching ``py\d+\.\d+-.*`` that are older than 14 days, keeping
+the 10 most recent. Release images such as ``v13.0.5`` and ``master`` do not
+match that pattern.
 
 Test parallelization
 --------------------
