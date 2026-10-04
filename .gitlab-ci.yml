@@ -395,9 +395,9 @@ asv_benchmarks:
     paths:
       - .asv/results/
   rules:
-    - if: $NIGHTLY_BENCHMARKS == "1" && $CI_COMMIT_REF_NAME == $CI_DEFAULT_BRANCH
+    - if: $NIGHTLY_BENCHMARKS == "1" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
       when: always
-    - if: $CI_COMMIT_REF_NAME == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
       when: manual
     - when: never
 
@@ -570,6 +570,10 @@ pages:
     paths:
     - public
   rules:
+    # Publish the nightly benchmark results even if master moves meanwhile.
+    - if: $NIGHTLY_BENCHMARKS == "1" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: always
+      interruptible: false
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
       when: always
     - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+((rc|a)\d+)?$/
