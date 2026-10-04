@@ -63,10 +63,10 @@ recent default-branch pipeline and run::
 
     psynet dev ci update-test-durations ci_durations_*.json playwright-*-junit.xml
 
-You can reproduce one CI shard locally, for example shard 4 of 6 with two
+You can reproduce one CI shard locally, for example shard 4 of 12 with two
 slots::
 
-    psynet dev ci run-tests --node-total 6 --node-index 4 --slots 2
+    psynet dev ci run-tests --node-total 12 --node-index 4 --slots 2
 
 Identifying which test failed
 -----------------------------
