@@ -34,7 +34,11 @@ one test per value and prints a summary comparing them:
     psynet performance-test local --n-bots "5,10,20,40"
 
 To use a server that is already running (for example from ``psynet debug
-local``), add ``--existing``.
+local``), add ``--existing``. A local debug server stops itself once the
+experiment reports that it is complete, which can happen between bots when
+recruitment has closed. Start it with ``PSYNET_PERFORMANCE_TEST=1 psynet debug
+local`` to keep it running; ``psynet performance-test local`` does this for the
+server it starts.
 
 Controlling the load
 --------------------
