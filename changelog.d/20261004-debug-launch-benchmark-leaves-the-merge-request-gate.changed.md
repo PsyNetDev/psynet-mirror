@@ -1,1 +1,0 @@
-Moved the debug-launch ASV benchmark out of the merge-request regression gate into the slow tier that runs on `master`, and made it record the fastest of three launches per profile, so single-launch timing noise no longer fails merge requests.

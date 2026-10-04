@@ -203,10 +203,12 @@ A short HTTP 503 on hold-resume is the
 ``NOWAIT`` busy retry when those requests hit the same participant row;
 the in-request retry waits 250ms; if that is still busy, one delayed
 ``queued hold wake`` runs. The suite still fails a busy retry that lasts
-500ms or more. An in-page probe that counts hold wakes must wait for
-``resumeInFlight`` to clear and then yield one ``setTimeout(0)`` before
-installing its counters: a resume that settles with ``resumeRequested`` set
-queues a 0ms ``queued hold wake``, which would otherwise land in the probe.
+500ms or more. An in-page probe that counts hold wakes or schedule calls must
+swallow ``psynet.resumeTimelineHold`` and call
+``window.__settleTimelineHoldResume`` before installing its counters. The helper
+waits for ``resumeInFlight`` to clear and then yields one ``setTimeout(0)``: a
+resume that settles with ``resumeRequested`` set queues a 0ms
+``queued hold wake``, which would otherwise land in the probe.
 A ``wait_while`` test that asserts ``timelineHoldWakeReceived``
 must silence that 1s safety poll after the hold chip appears. Otherwise an
 in-place hold-resume POST can stop the controller before the websocket
