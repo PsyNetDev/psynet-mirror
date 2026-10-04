@@ -2738,6 +2738,14 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             )
 
     def is_complete(self):
+        """Report whether the experiment has finished, as shown by ``/summary``.
+
+        Local debug servers stop themselves once this returns ``True``.
+        Performance tests set ``PSYNET_PERFORMANCE_TEST`` to keep the server
+        alive between bots, which arrive outside recruitment.
+        """
+        if os.environ.get("PSYNET_PERFORMANCE_TEST"):
+            return False
         return (not self.need_more_participants) and self.num_working_participants == 0
 
     def assignment_abandoned(self, participant):
