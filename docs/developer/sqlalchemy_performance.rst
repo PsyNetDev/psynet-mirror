@@ -5,9 +5,10 @@ SQLAlchemy performance investigation notes
 ==========================================
 
 This page records lessons from profiling PsyNet's participant-navigation and
-trial-assignment paths. It is a decision record rather than a list of permanent
-prohibitions: rejected approaches can be reconsidered when new measurements or
-APIs change their trade-offs.
+trial-assignment paths, and from preparing large experiments for deployment
+(:ref:`deployment-preparation-at-scale`). It is a decision record rather than a
+list of permanent prohibitions: rejected approaches can be reconsidered when
+new measurements or APIs change their trade-offs.
 
 The investigation deliberately excluded data export, whose implementation was
 under active development.
@@ -241,6 +242,110 @@ Checklist for future investigations
    manipulation.
 #. Record why an attractive approach was rejected and what evidence would
    justify revisiting it.
+
+.. _deployment-preparation-at-scale:
+
+Deployment preparation at scale
+===============================
+
+``psynet prepare`` builds the database that every launch restores, so large
+static experiments pay for it on every deployment. These local measurements
+used a static trial maker with one network per node and local asset storage:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Step
+     - Before
+     - After
+   * - ``prepare`` with 100,000 nodes and no assets
+     - 77 s
+     - unchanged
+   * - ``prepare`` with 10,000 nodes, each with a new file asset
+     - 39 s
+     - 19 s
+   * - Launch-time node pass (``_nodes_on_deploy``), 100,000 nodes
+     - 25 s
+     - 3 s
+
+The retained changes are small:
+
+* Launch marks nodes without ``async_on_deploy`` as deployed in one ``UPDATE``
+  and loads only the nodes that still need work.
+* A synchronous asset deposit skips ``session.merge`` when the asset is already
+  in the session. ``merge`` autoflushes, which issued two single-row
+  ``UPDATE`` statements per asset; the changes now reach the database in one
+  batch at commit.
+* ``deployment_info.read`` decodes ``.deploy/deployment_info.json`` only when
+  the file changes, instead of several times per asset.
+
+Network creation
+----------------
+
+Network creation is the remaining cost. At 100,000 nodes, SQL takes 18 s of
+the 77 s, even though SQLAlchemy already sends each table as one multi-row
+``INSERT``. Most of the rest is ORM work: constructing instrumented objects,
+cascading them into the session, and tracking their changes during the flush.
+The ``network.head_id`` column also costs 8 s, because the network and its head
+node reference each other, so SQLAlchemy inserts both and then issues one
+``UPDATE`` per network.
+
+A scratch prototype wrote the same rows without the unit of work. It reserved
+identifiers with ``nextval``, inserted networks and then nodes, and filled
+``head_id`` with a single set-based ``UPDATE``:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Approach at 100,000 nodes
+     - Network creation
+   * - ORM (current)
+     - 77 s
+   * - Construct ``StaticNetwork`` objects, write rows with Core
+     - 27 s
+   * - Build row dictionaries directly, write rows with Core
+     - 17 s
+   * - ``COPY`` of the node rows alone
+     - 0.07 s
+
+SQLAlchemy 1.4, which Dallinger pins, processes Core ``executemany``
+parameters in Python, so ``COPY`` is the fast route. PsyNet already uses
+``COPY`` for export and for restoring the launch snapshot
+(:func:`psynet.data.ingest_to_model`). A ``COPY`` path for static networks
+would need to:
+
+* reserve identifiers from the table sequences, not compute them from the
+  current maximum;
+* write every column value that the network and node constructors compute,
+  including the polymorphic ``type`` and the defaults that SQLAlchemy would
+  otherwise supply;
+* serialize ``PythonObject`` columns with the column type, and distinguish
+  NULL from the empty string as the export code does;
+* fall back to the ORM path whenever an experiment overrides network
+  construction hooks such as ``make_definition``, ``validate``, or ``add_node``.
+  Static trial makers always use ``StaticNetwork``, so they are the natural
+  first scope;
+* create asset rows and node-to-asset link rows in bulk. Nodes written with
+  ``COPY`` are not in the session, so ``ChainNode.stage_assets`` cannot run on
+  them as it does today.
+
+A small helper that turns model rows into ``COPY`` CSV from the table metadata
+would serve that path. It could also serve a more radical alternative in which
+``prepare`` writes the static network and node tables straight into the launch
+snapshot instead of inserting and then exporting them.
+
+Other costs
+-----------
+
+* Each asset deposit calls ``import_local_experiment`` twice through
+  ``Asset.registry``, about 4 s per 10,000 assets under the profiler. Caching
+  it needs care because tests reload experiments and change directory.
+* Constructing 100,000 ``StaticNode`` objects at import takes about 5 s and
+  0.5 GB in every process. Passing a callable as ``nodes`` already avoids this
+  at runtime; avoiding it during ``prepare`` would need an API that accepts
+  plain node descriptions.
+* Remote asset storage such as S3 is limited by upload time, which none of the
+  database changes affect.
 
 .. _barrier-arrival-sql-budgets:
 
