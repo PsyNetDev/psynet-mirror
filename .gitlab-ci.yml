@@ -198,6 +198,7 @@ changelog_check:
       -w $PSYNET_WORKSPACE
       $DOCKER_LOCAL_TAG bash -c "bash run-ci-tests.sh"
   artifacts:
+    when: always
     paths:
       - public/
 
