@@ -97,7 +97,9 @@ def collect_items(scope, durations):
         for path in sorted(list_isolated_tests())
     ]
     for kind in {item.kind for item in items}:
-        known = [durations[i.path] for i in items if i.kind == kind and i.path in durations]
+        known = [
+            durations[i.path] for i in items if i.kind == kind and i.path in durations
+        ]
         default = statistics.median(known) if known else 30.0
         for item in items:
             if item.kind == kind:
@@ -145,9 +147,7 @@ class _Slot:
         self.env["DATABASE_URL"] = _create_slot_database(database_url, index)
         self.env["REDIS_URL"] = self._start_redis(6390 + index, workspace)
         self.env["base_port"] = str(5000 + 10 * index)
-        self.env["dallinger_develop_directory"] = (
-            f"/tmp/dallinger_develop_slot{index}"
-        )
+        self.env["dallinger_develop_directory"] = f"/tmp/dallinger_develop_slot{index}"
 
     def _start_redis(self, port, workspace):
         if shutil.which("redis-server") is None:
@@ -211,7 +211,12 @@ def _junit_args(item, junit_dir, python_version):
 
 def _run(cmd, env, cwd=None):
     completed = subprocess.run(
-        cmd, env=env, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+        cmd,
+        env=env,
+        cwd=cwd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
     )
     return completed.returncode, completed.stdout
 
@@ -268,7 +273,9 @@ def run_items(items, n_slots, timeout, junit_dir, python_version, log_dir):
                 item = queue.pop(0)
             start = time.monotonic()
             code, output = _run_item(item, slot, timeout, junit_dir, python_version)
-            result = ItemResult(item, slot.index, code, time.monotonic() - start, output)
+            result = ItemResult(
+                item, slot.index, code, time.monotonic() - start, output
+            )
             log_name = item.path.replace("/", "__") + ".log"
             (log_dir / log_name).write_text(output)
             with print_lock:
