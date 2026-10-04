@@ -7,6 +7,7 @@ excluded files as deployment changes. Git path output is normalized to the
 experiment directory so nested repositories compare cleanly.
 """
 
+import copy
 import os
 import subprocess
 import uuid
@@ -23,6 +24,10 @@ from tenacity import (
 from .utils import find_git_repo
 
 path = ".deploy/deployment_info.json"
+
+# ``(cache_key, content)``, replaced in a single assignment so threads never
+# observe a partially updated cache.
+_cache = None
 
 
 def _git_output(*args):
@@ -183,6 +188,7 @@ def write_all(content: dict):
         with open(path, "w") as file:
             file.write(encoded)
 
+    _clear_cache()
     try:
         f()
     except FileNotFoundError:
@@ -196,24 +202,48 @@ def write(**kwargs):
     write_all(content)
 
 
+def read_all():
+    """Return the deployment info, decoding the file only when it has changed.
+
+    Asset deposits read several keys per asset, so re-decoding the file on
+    every call slowed deployment preparation for large asset sets. The cache
+    is keyed on the file's absolute path, modification time and size, so writes
+    from other processes are still picked up.
+    """
+    return copy.deepcopy(_cached_content())
+
+
 @retry(
     retry=retry_if_not_exception_type(FileNotFoundError),
     stop=stop_after_attempt(5),
     wait=wait_fixed(1),
     reraise=True,
 )
-def read_all():
+def _cached_content():
+    global _cache
+
+    stat = os.stat(path)
+    key = (os.path.abspath(path), stat.st_mtime_ns, stat.st_size)
+    cache = _cache
+    if cache is not None and cache[0] == key:
+        return cache[1]
     with open(path, "r") as file:
         txt = file.read()
     content = jsonpickle.decode(txt, keys=True)
     assert isinstance(content, dict)
+    _cache = (key, content)
     return content
 
 
+def _clear_cache():
+    global _cache
+    _cache = None
+
+
 def read(key):
-    content = read_all()
-    return content[key]
+    return copy.deepcopy(_cached_content()[key])
 
 
 def delete():
+    _clear_cache()
     os.remove(path)

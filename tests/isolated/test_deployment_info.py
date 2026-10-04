@@ -2,6 +2,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+import jsonpickle
 import pytest
 
 from psynet import deployment_info
@@ -23,6 +24,21 @@ def test_deployment_info():
 
             with pytest.raises(KeyError):
                 deployment_info.read("x")
+
+
+def test_deployment_info_reads_see_external_writes_and_return_copies(tmp_path):
+    with working_directory(tmp_path):
+        deployment_info.reset()
+        deployment_info.write(x=[1])
+
+        deployment_info.read("x").append(2)
+        deployment_info.read_all()["x"].append(2)
+        assert deployment_info.read("x") == [1]
+
+        Path(deployment_info.path).write_text(
+            jsonpickle.encode({"x": [1, 2, 3]}, keys=True)
+        )
+        assert deployment_info.read("x") == [1, 2, 3]
 
 
 def _git(*args):
