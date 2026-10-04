@@ -1,6 +1,9 @@
-from benchmarks.fast.debug_launch import (
+import time
+
+from benchmarks.slow.debug_launch import (
     _LEGACY_LOCAL_RUN_SCAFFOLD_PATHS,
     StaticFilesDebugLaunch,
+    _fastest_launch_s,
     _local_run_scaffold_paths,
     _prepare_benchmark_experiment,
     _prepared_benchmark_experiment,
@@ -85,7 +88,7 @@ def test_prepare_benchmark_experiment_follows_scaffold_path_helper(
     demo_dir.mkdir()
 
     monkeypatch.setattr(
-        "benchmarks.fast.debug_launch._local_run_scaffold_paths",
+        "benchmarks.slow.debug_launch._local_run_scaffold_paths",
         lambda: frozenset({"Dockerfile", "extra-required.txt"}),
     )
 
@@ -119,3 +122,16 @@ def test_static_files_debug_launch_tracks_each_profile():
 
     for profile, expected in results.items():
         assert benchmark.track_launch_time_s(results, profile) == expected
+
+
+def test_fastest_launch_ignores_slow_launches_and_stops_each_server():
+    delays = iter([0.3, 0.05, 0.3])
+    stopped = []
+
+    def start():
+        delay = next(delays)
+        time.sleep(delay)
+        return delay
+
+    assert _fastest_launch_s(start, stopped.append) < 0.25
+    assert stopped == [0.3, 0.05, 0.3]

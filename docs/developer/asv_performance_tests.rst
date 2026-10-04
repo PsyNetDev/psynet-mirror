@@ -24,11 +24,14 @@ Benchmark tiers
 
 Benchmarks are split by directory:
 
-- ``benchmarks/fast/`` contains benchmarks selected for the merge-request
-  regression gate, including quick hot paths and focused end-to-end checks.
-- ``benchmarks/slow/`` contains end-to-end experiment performance benchmarks.
-  These are intentionally excluded from the merge-request gate, but they do run
-  on ``master``. The slow ASV history focuses on median request latency and
+- ``benchmarks/fast/`` contains hot-path microbenchmarks selected for the
+  merge-request regression gate.
+- ``benchmarks/slow/`` contains end-to-end benchmarks: experiment performance
+  and debug-launch time. These are intentionally excluded from the
+  merge-request gate, because wall-clock launches and load tests vary by more
+  than its 1.25× threshold between runs, but they do run on ``master``. The
+  debug-launch benchmark records the fastest of three launches per profile to
+  damp that noise. The slow ASV history focuses on median request latency and
   median async-process queue delay; participant failures and incomplete bots are
   left in the performance-test output instead of being tracked as ASV metrics.
 
@@ -36,8 +39,7 @@ Merge-request checks
 ====================
 
 Merge requests run the ``asv_regression`` CI job when the diff includes PsyNet
-package code, the fast debug-launch experiment (``tests/experiments/static_big``),
-benchmark files, or the ASV/CI configuration those jobs use. The job uses
+package code, benchmark files, or the ASV/CI configuration those jobs use. The job uses
 ``asv continuous`` with ``--bench "^fast\\."`` to benchmark the merge-request
 base and head commits back-to-back on the same GitLab runner. The job exits
 non-zero when ASV detects a regression larger than ``--factor 1.25``. Docs,

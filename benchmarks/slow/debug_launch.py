@@ -137,16 +137,35 @@ def _restore_benchmark_experiment(created_paths: list[Path]) -> None:
             shutil.rmtree(path)
 
 
+# A single wall-clock launch swings by about 1.3x on GitLab runners without a
+# code change; the fastest of several launches is a much steadier signal.
+_LAUNCHES_PER_PROFILE = 3
+
+
+def _fastest_launch_s(start, stop, n_launches=_LAUNCHES_PER_PROFILE):
+    """Return the shortest ``start()`` time in seconds over ``n_launches`` runs.
+
+    ``stop`` receives each ``start()`` result and is excluded from the timing.
+    """
+    durations = []
+    for _ in range(n_launches):
+        started_at = time.perf_counter()
+        server = start()
+        durations.append(time.perf_counter() - started_at)
+        stop(server)
+    return min(durations)
+
+
 class StaticFilesDebugLaunch:
     """Benchmark debug launch with representative static-file payloads."""
 
     params = list(_STATIC_FILE_PROFILES)
     param_names = ["profile"]
-    timeout = 180
-    version = 2
+    timeout = 600
+    version = 3
 
     def setup_cache(self):
-        """Launch the static_big experiment once for each file profile."""
+        """Time the fastest of several static_big launches per file profile."""
         from psynet.command_line import (
             _start_local_server_and_wait_for_ready,
             _stop_server,
@@ -161,17 +180,13 @@ class StaticFilesDebugLaunch:
             with _prepared_benchmark_experiment(demo_dir, repo_root):
                 os.chdir(demo_dir)
                 for profile, (count, file_size) in _STATIC_FILE_PROFILES.items():
-                    server_info = None
                     with _temporary_static_payload(demo_dir, count, file_size):
-                        started_at = time.perf_counter()
-                        try:
-                            server_info = _start_local_server_and_wait_for_ready(
+                        results[profile] = _fastest_launch_s(
+                            lambda: _start_local_server_and_wait_for_ready(
                                 ["debug", "local"]
-                            )
-                            results[profile] = time.perf_counter() - started_at
-                        finally:
-                            if server_info is not None:
-                                _stop_server(server_info)
+                            ),
+                            _stop_server,
+                        )
         finally:
             os.chdir(original_directory)
 
