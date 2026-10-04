@@ -52,6 +52,7 @@ from .test_helpers.mock_s3 import (
     get_mock_s3_resource,
 )
 from .testing.chrome_driver import create_psynet_chrome_driver
+from .testing.locks import experiment_directory_lock
 from .trial.main import TrialNetwork
 from .trial.static import StaticNode, StaticTrial, StaticTrialMaker
 from .utils import (
@@ -436,7 +437,10 @@ def in_experiment_directory(experiment_directory):
     loaded_experiment_directory = experiment_directory
     redis_vars.clear()
     cleanup_error = None
-    with working_directory(experiment_directory):
+    with (
+        experiment_directory_lock(experiment_directory),
+        working_directory(experiment_directory),
+    ):
         try:
             with scaffold_missing_files():
                 # In-repo demos/tests use PsyNet's shared development .venv, so

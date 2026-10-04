@@ -1,5 +1,6 @@
 import datetime
 import functools
+import hashlib
 import importlib
 import json
 import os
@@ -1140,18 +1141,46 @@ def list_psynet_chrome_processes():
 
 
 def is_psynet_chrome_process(process):
-    """Return whether ``process`` is a Chrome window PsyNet opened for local debugging or tests."""
+    """
+    Return whether ``process`` is a Chrome window this shell's local run opened.
+
+    Matches debug windows pointed at this run's port and test-driver browsers
+    whose profile carries this run's :func:`psynet_browser_prefix`, so cleanup
+    leaves browsers belonging to other local experiments alone.
+    """
+    local_url = f"localhost:{_local_base_port()}"
+    profile_prefix = psynet_browser_prefix("chrome")
     try:
         if "chrome" in process.name().lower():
             for cmd in process.cmdline():
-                if "localhost:5000" in cmd:
+                if local_url in cmd:
                     return True
-                if "--user-data-dir=" in cmd and "psynet-chrome-" in cmd:
+                if "--user-data-dir=" in cmd and profile_prefix in cmd:
                     return True
-    except (psutil.NoSuchProcess, psutil.AccessDenied):
+    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
         pass
 
     return False
+
+
+def _local_base_port():
+    """Return the port of this shell's local server (Dallinger's ``base_port``)."""
+    config = get_config()
+    if config.ready:
+        return config.get("base_port")
+    return int(os.environ.get("base_port", 5000))
+
+
+def psynet_browser_prefix(kind):
+    """
+    Return the temporary-file prefix for browsers started by this shell's tests.
+
+    ``kind`` is ``"chrome"`` (profile directory) or ``"chromedriver"`` (log file).
+    The prefix includes a hash of ``DATABASE_URL``, which identifies a local
+    run in the same way as :func:`uses_current_database`.
+    """
+    tag = hashlib.sha1(_current_database_url().encode()).hexdigest()[:8]
+    return f"psynet-{kind}-{tag}-"
 
 
 def _current_database_url():
@@ -1210,10 +1239,11 @@ def list_chromedriver_processes():
 
 
 def is_chromedriver_process(process):
-    """Return whether ``process`` is a chromedriver that PsyNet's test driver started."""
+    """Return whether ``process`` is a chromedriver started by this shell's tests."""
+    prefix = psynet_browser_prefix("chromedriver")
     try:
         return "chromedriver" in process.name().lower() and any(
-            "psynet-chromedriver-" in part for part in process.cmdline()
+            prefix in part for part in process.cmdline()
         )
     except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
         return False
