@@ -952,18 +952,18 @@ test("timeline hold client overlay and busy retry stay on a live hold", { tag: "
       const originalSchedule = psynet.scheduleTimelineHoldCheck;
       const originalResume = psynet.resumeTimelineHold;
       const effects = { nextPageCalls: 0, scheduleCalls: 0 };
-      clearTimeout(controller.safetyTimer);
-      psynet.nextPage = () => {
-        effects.nextPageCalls += 1;
-      };
-      psynet.scheduleTimelineHoldCheck = () => {
-        effects.scheduleCalls += 1;
-      };
       try {
         // An in-flight resume would make the probe return before scheduling.
         psynet.resumeTimelineHold = async () => false;
         await window.__settleTimelineHoldResume("pending request probe");
         psynet.resumeTimelineHold = originalResume;
+        clearTimeout(controller.safetyTimer);
+        psynet.nextPage = () => {
+          effects.nextPageCalls += 1;
+        };
+        psynet.scheduleTimelineHoldCheck = () => {
+          effects.scheduleCalls += 1;
+        };
         psynet.nextPagePending = true;
         effects.result = await psynet.resumeTimelineHold("test pending request");
       } finally {
