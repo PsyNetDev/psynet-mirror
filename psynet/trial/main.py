@@ -1546,6 +1546,11 @@ class TrialMaker(Module):
         sync_group_timeout_between_barriers_action: Literal["kick", "fail"] = "fail",
         sync_group_wait_content=None,
     ):
+        if recruit_mode not in self.recruit_criteria:
+            raise ValueError(
+                f"Unknown recruit_mode {recruit_mode!r}. Valid options: "
+                f"{sorted(map(repr, self.recruit_criteria))}."
+            )
         if recruit_mode == "n_participants" and target_n_participants is None:
             raise ValueError(
                 "recruit_mode='n_participants' needs target_n_participants, "

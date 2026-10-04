@@ -209,6 +209,7 @@ def test_fail_trials_on_premature_exit_true_emits_deprecation_warning():
             dict(recruit_mode=None),
             "target_trials_per_node only",
         ),
+        (make_trial_maker, dict(recruit_mode="n_trial"), "Unknown recruit_mode"),
     ],
 )
 def test_recruitment_targets_need_the_matching_recruit_mode(make, kwargs, message):
@@ -217,7 +218,11 @@ def test_recruitment_targets_need_the_matching_recruit_mode(make, kwargs, messag
 
 
 def test_custom_recruit_modes_are_allowed():
-    assert make_trial_maker(recruit_mode="custom").recruit_mode == "custom"
+    class CustomRecruitMaker(ChainTrialMaker):
+        recruit_criteria = {**ChainTrialMaker.recruit_criteria, "custom": None}
+
+    trial_maker = make_trial_maker(CustomRecruitMaker, recruit_mode="custom")
+    assert trial_maker.recruit_mode == "custom"
 
 
 def test_chain_node_accepts_empty_definition():
@@ -1136,6 +1141,7 @@ def test_shuffle_with_max_run_limits_runs():
     [
         ("listed", ["B", "A", "C"]),
         (["C", "A"], ["C", "A"]),
+        (["C", "Z", "A"], ["C", "A"]),
         (lambda blocks: blocks[::-1], ["C", "A", "B"]),
         (lambda trial_maker: [trial_maker.id], ["B"]),
     ],
@@ -1151,10 +1157,12 @@ def test_block_order_settings(block_order, expected):
     assert participant.module_state.block == expected[0]
 
 
-@pytest.mark.parametrize("block_order", [["A", "Z"], ["A", "A"], lambda: []])
+@pytest.mark.parametrize("block_order", [["Z"], ["A", "A"], lambda: []])
 def test_invalid_block_orders_are_rejected(block_order):
     with pytest.raises(ValueError, match="non-empty list"):
         make_trial_maker(block_order=[])
+    with pytest.raises(ValueError, match="does not have: \\['Z'\\]"):
+        make_static_trial_maker(block_order=["default", "Z"])
     trial_maker = make_trial_maker(block_order=block_order)
 
     with pytest.raises(ValueError, match="block order"):

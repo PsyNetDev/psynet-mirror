@@ -253,7 +253,8 @@ Search custom trial makers for ``find_networks``, ``find_node``,
 * Pass ``recruit_mode`` explicitly whenever you set a recruitment target.
   ``target_n_participants`` needs ``recruit_mode="n_participants"``, and
   ``target_trials_per_node`` / ``target_trials_per_condition`` need
-  ``recruit_mode="n_trials"``; any other combination raises ``ValueError``:
+  ``recruit_mode="n_trials"``. A target with ``None`` or the other built-in
+  mode raises ``ValueError``, as does a misspelt mode:
 
   .. code-block:: python
 

@@ -308,7 +308,7 @@ class CustomTrialMaker(GraphChainTrialMaker):
         check_performance_at_end: bool,
         check_performance_every_trial: bool,
         recruit_mode: str,
-        target_n_participants=Optional[int],
+        target_n_participants: Optional[int] = None,
         max_nodes_per_chain: Optional[int] = None,
         fail_trials_on_participant_performance_check: bool = False,
         propagate_failure: bool = True,

@@ -9,6 +9,7 @@ experiment directory so nested repositories compare cleanly.
 
 import os
 import subprocess
+import tempfile
 import uuid
 from pathlib import Path
 
@@ -100,11 +101,25 @@ def _deployment_plan():
     return build_deployment_plan(Path.cwd())
 
 
+def _anchor_gitignore_rules(text, prefix):
+    """Rewrite gitignore rules written for directory ``prefix`` to match from the repository root."""
+    if not prefix:
+        return text
+    lines = []
+    for line in text.splitlines():
+        negation = "!" if line.startswith("!") else ""
+        pattern = line[len(negation) :]
+        if pattern.strip() and not line.startswith("#") and "/" in pattern.rstrip("/"):
+            line = negation + prefix + pattern.lstrip("/")
+        lines.append(line)
+    return "\n".join(lines) + "\n"
+
+
 def _git_ignored_deployment_paths(extra_excludes_file=None):
     """Return deployment-selected paths ignored by Git, or ``None`` if Git cannot tell.
 
     ``extra_excludes_file`` adds the rules of another gitignore-format file,
-    matched relative to the repository root.
+    matched as if it were a ``.gitignore`` in the current directory.
     """
     plan = _deployment_plan()
     if plan is None:
@@ -112,21 +127,32 @@ def _git_ignored_deployment_paths(extra_excludes_file=None):
     if not plan.destinations:
         return ()
 
-    command = ["git"]
-    if extra_excludes_file is not None:
-        command += ["-c", f"core.excludesFile={Path(extra_excludes_file).resolve()}"]
-    command += ["check-ignore", "--stdin", "-z"]
-    try:
-        result = subprocess.run(
-            command,
-            input="\0".join(sorted(plan.destinations)) + "\0",
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-    except FileNotFoundError:
-        logger.warning("Could not run git to list Git-ignored deployment files.")
-        return None
+    with tempfile.TemporaryDirectory() as tmp:
+        command = ["git"]
+        if extra_excludes_file is not None:
+            prefix = _git_output("rev-parse", "--show-prefix")
+            if prefix is None:
+                logger.warning(
+                    "Could not locate the experiment within its Git repository."
+                )
+                return None
+            excludes = Path(tmp) / "excludes"
+            excludes.write_text(
+                _anchor_gitignore_rules(Path(extra_excludes_file).read_text(), prefix)
+            )
+            command += ["-c", f"core.excludesFile={excludes}"]
+        command += ["check-ignore", "--stdin", "-z"]
+        try:
+            result = subprocess.run(
+                command,
+                input="\0".join(sorted(plan.destinations)) + "\0",
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except FileNotFoundError:
+            logger.warning("Could not run git to list Git-ignored deployment files.")
+            return None
     if result.returncode not in {0, 1}:
         logger.warning(
             "git check-ignore failed while listing Git-ignored deployment files: %s",

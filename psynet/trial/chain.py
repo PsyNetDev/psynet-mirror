@@ -1429,7 +1429,8 @@ class ChainTrialMaker(NetworkTrialMaker):
         Selects a recruitment criterion for determining whether to recruit
         another participant. The built-in criteria are ``"n_participants"``
         and ``"n_trials"``. ``"n_participants"`` needs
-        ``target_n_participants``, which raises an error with any other mode;
+        ``target_n_participants``, which raises an error with ``None`` or
+        ``"n_trials"``;
         ``"n_trials"`` recruits until every chain is full. Defaults to ``None``,
         which leaves recruitment to the rest of the experiment, for example for
         a practice trial maker.
@@ -1759,6 +1760,10 @@ class ChainTrialMaker(NetworkTrialMaker):
             sync_group_wait_content=sync_group_wait_content,
         )
 
+        if isinstance(start_nodes, list) and None not in start_nodes:
+            self._check_order_setting_blocks(
+                {node.block for node in start_nodes}, all_blocks_known=True
+            )
         self.check_initialization()
 
     def count_start_nodes(self):
@@ -1971,8 +1976,10 @@ class ChainTrialMaker(NetworkTrialMaker):
         Pass ``block_order`` to the constructor rather than overriding this
         method. The default applies that argument: ``"random"`` shuffles the
         blocks, ``"listed"`` keeps the order in which they first appear among
-        the start nodes, a list is used as given, and a function is called
-        with any of ``participant``, ``experiment`` and ``blocks``.
+        the start nodes, a list is used in its order but skips blocks this
+        participant does not have (within-participant chains can give
+        participants different blocks), and a function is called with any of
+        ``participant``, ``experiment`` and ``blocks``.
         """
         if self.block_order == "random":
             return random.sample(list(blocks), len(blocks))
@@ -1986,13 +1993,13 @@ class ChainTrialMaker(NetworkTrialMaker):
                 trial_maker=self,
                 blocks=list(blocks),
             )
-        return list(self.block_order)
+        return [block for block in self.block_order if block in blocks]
 
     def _check_order_setting_blocks(self, blocks, *, all_blocks_known=False):
         """Check per-block order settings against the trial maker's blocks.
 
         A per-block order dict must name every block. When ``blocks`` are all
-        the trial maker's blocks (static node lists, at construction), it must
+        the trial maker's blocks (start node lists, at construction), it must
         name no others, and a listed ``block_order`` may only name these
         blocks. Otherwise ``blocks`` are one participant's blocks, which can
         be a subset for within-participant chains.

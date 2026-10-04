@@ -153,7 +153,8 @@ to the next block, or leaves the trial maker after the last one.
 - ``"random"`` (default): a new random order for each participant.
 - ``"listed"``: the order in which the blocks first appear in ``nodes``.
 - A list of block names, used for every participant. It may name only some
-  of the blocks.
+  of the blocks. Within-participant chains can give participants different
+  blocks; each participant skips listed blocks they do not have.
 - A function that takes any of ``participant``, ``experiment`` and
   ``blocks`` and returns a list of block names. It may leave blocks out to
   give a participant only some of them, but must keep at least one.

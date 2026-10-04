@@ -325,17 +325,19 @@ def test_check_experiment_directory_stops_after_creating_missing_deploy_toml(
     ).read_bytes()
 
 
-def _old_experiment_with_ignored_secret(root):
+def _old_experiment_with_ignored_secret(root, rule="secret.txt", git_root=None):
     """Lay out a pre-deploy.toml experiment whose .gitignore keeps a secret local."""
+    root.mkdir(parents=True, exist_ok=True)
     (root / "experiment.py").write_text("class Exp:\n    pass\n")
     (root / "requirements.txt").write_text("psynet\n")
-    (root / ".gitignore").write_text("secret.txt\n")
+    (root / ".gitignore").write_text(f"{rule}\n")
     (root / "secret.txt").write_text("API_KEY=private\n")
-    subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+    subprocess.run(["git", "init", "-q"], cwd=git_root or root, check=True)
 
 
+@pytest.mark.parametrize("subdirectory", ["", "studies/pilot"])
 def test_scripts_update_keeps_old_gitignore_rules_for_migration_check(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, subdirectory
 ):
     """``psynet scripts update`` replaces .gitignore before the check runs."""
     from click import ClickException
@@ -343,9 +345,10 @@ def test_scripts_update_keeps_old_gitignore_rules_for_migration_check(
     from psynet.command_line import _check_experiment_directory
 
     monkeypatch.setattr("psynet.command_line.is_in_repo_experiment", lambda: False)
-    _old_experiment_with_ignored_secret(tmp_path)
+    experiment = tmp_path / subdirectory
+    _old_experiment_with_ignored_secret(experiment, "/secret.txt", git_root=tmp_path)
 
-    with working_directory(tmp_path):
+    with working_directory(experiment):
         scaffold_experiment_directory(overwrite=True)
         assert "secret.txt" not in Path(".gitignore").read_text()
 

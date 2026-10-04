@@ -415,10 +415,6 @@ class StaticTrialMaker(ChainTrialMaker):
             sync_group_timeout_between_barriers_action=sync_group_timeout_between_barriers_action,
             sync_group_wait_content=sync_group_wait_content,
         )
-        if isinstance(nodes, list):
-            self._check_order_setting_blocks(
-                {node.block for node in nodes}, all_blocks_known=True
-            )
 
     def _selection_hook_overrides(self):
         return [
