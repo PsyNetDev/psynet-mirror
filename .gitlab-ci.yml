@@ -1,46 +1,21 @@
-# Scratch: diagnose the AsyncProcesses benchmark failure (not for merging).
+# Scratch: seed the shared CI image cache for MR !1279 measurements (not for merging).
 image: docker:26.1.1
 
 services:
   - docker:26.1.1-dind
-  - postgres:16.2-bookworm
-  - redis:latest
 
 variables:
-  POSTGRES_DB: dallinger
-  POSTGRES_USER: dallinger
-  POSTGRES_PASSWORD: ""
-  POSTGRES_HOST_AUTH_METHOD: trust
-  DATABASE_URL: postgresql://dallinger@postgres:5432/dallinger
-  REDIS_URL: redis://redis:6379
-  HEADLESS: "TRUE"
   DOCKER_LOCAL_TAG: psynet-build
   PYTHON_VERSION: "3.13"
   DOCKER_HOST: tcp://docker:2375
   DOCKER_DRIVER: overlay2
   DOCKER_TLS_CERTDIR: ""
+  CI_COMMIT_REF_PROTECTED: "true"
 
-before_script:
-  - export POSTGRES_IP=$(getent ahostsv4 postgres | awk '{ print $1 }' | tail -n 1)
-  - export REDIS_IP=$(getent ahostsv4 redis | awk '{ print $1 }' | tail -n 1)
-  - docker build --build-arg PYTHON_VERSION=$PYTHON_VERSION --tag $DOCKER_LOCAL_TAG .
-
-.diag:
+seed_base:
   script:
-    - export PSYNET_WORKSPACE=/root/workspaces/PsyNet
-    - docker run
-      --add-host=postgres:$POSTGRES_IP --add-host=redis:$REDIS_IP
-      -e HEADLESS=TRUE -e REDIS_URL -e DATABASE_URL -e CI -e DIAG_ENV
-      -v "$PWD:$PSYNET_WORKSPACE" -w $PSYNET_WORKSPACE
-      $DOCKER_LOCAL_TAG bash ci_diag.sh
+    - sh ci/ci-image.sh base
 
-diag_pinned:
-  extends: .diag
-  variables:
-    DIAG_ENV: pinned
-
-diag_asv:
-  extends: .diag
-  variables:
-    DIAG_ENV: asv
-    GIT_DEPTH: "10"
+seed_playwright:
+  script:
+    - sh ci/ci-image.sh playwright
