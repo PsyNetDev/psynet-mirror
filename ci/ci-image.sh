@@ -36,7 +36,7 @@ _pull_as() {
 _push_as() {
   # Usage: _push_as <local tag> <remote image>
   if $logged_in && [ "${CI_COMMIT_REF_PROTECTED:-}" = "true" ] \
-    && [ "${CI_NODE_INDEX:-1}" = "1" ]; then
+    && [ "${SHARD_INDEX:-${CI_NODE_INDEX:-1}}" = "1" ]; then
     docker tag "$1" "$2"
     docker push --quiet "$2" || echo "Warning: could not push $2" >&2
   fi
