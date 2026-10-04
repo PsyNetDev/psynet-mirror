@@ -186,6 +186,7 @@ changelog_check:
     TEST_SCOPE: full
     TEST_SLOTS: "2"
   script:
+    - docker run --add-host=postgres:$POSTGRES_IP $DOCKER_LOCAL_TAG python -c "import psycopg2; c = psycopg2.connect('$DATABASE_URL').cursor(); c.execute('show fsync'); print('POSTGRES FSYNC =', c.fetchone()[0])"
     - export PSYNET_WORKSPACE=/root/workspaces/PsyNet
     - docker run
       --add-host=postgres:$POSTGRES_IP
