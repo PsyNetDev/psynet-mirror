@@ -250,3 +250,10 @@ def test_cancel_cancels_the_queued_worker_job(monkeypatch):
     db.session.commit()
     with pytest.raises(NoSuchJobError):
         cancelled_before_launch.redis_job
+
+    cancel_rolled_back = WorkerAsyncProcess(do_nothing)
+    savepoint = db.session.begin_nested()
+    cancel_rolled_back.cancel()
+    savepoint.rollback()
+    db.session.commit()
+    assert cancel_rolled_back.redis_job.get_status() == "queued"
