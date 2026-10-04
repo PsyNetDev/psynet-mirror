@@ -535,8 +535,6 @@ def debug_experiment(
     # db_session already reset the database for this test class. Brief pause so
     # any lingering teardown from the previous class can finish before launch.
     time.sleep(0.5)
-    kill_psynet_chrome_processes()
-    kill_chromedriver_processes()
 
     timeout = 60
 
@@ -545,6 +543,10 @@ def debug_experiment(
     config = get_config()
     if not config.ready:
         config.load()
+
+    # Browser cleanup matches this run's base_port, so config must be loaded.
+    kill_psynet_chrome_processes()
+    kill_chromedriver_processes()
 
     p = pexpect.spawn(
         "psynet",

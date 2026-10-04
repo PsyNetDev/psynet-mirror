@@ -160,7 +160,9 @@ class _Slot:
         database_url = os.environ.get(
             "DATABASE_URL", "postgresql://dallinger:dallinger@localhost/dallinger"
         )
-        base_port, redis_port = _slot_ports(os.environ, index)
+        base_port, redis_port = _slot_ports(
+            _caller_base_port(), os.environ.get("REDIS_URL", ""), index
+        )
         self.env["DATABASE_URL"] = _create_slot_database(database_url, index)
         self.env["REDIS_URL"] = self._start_redis(redis_port, workspace)
         self.env["base_port"] = str(base_port)
@@ -206,11 +208,22 @@ class _Slot:
             self._redis_log = None
 
 
-def _slot_ports(environ, index):
+def _caller_base_port():
+    """Return the caller's ``base_port``, from the environment or Dallinger's config files."""
+    if "base_port" in os.environ:
+        return int(os.environ["base_port"])
+    from dallinger.config import get_config
+
+    config = get_config()
+    if not config.ready:
+        config.load()
+    return config.get("base_port")
+
+
+def _slot_ports(base_port, redis_url, index):
     """Return ``(base_port, redis_port)`` for slot ``index``, offset from the caller's."""
-    base_port = int(environ.get("base_port", 5000)) + 10 * index
-    redis_port = (urlsplit(environ.get("REDIS_URL", "")).port or 6379) + 100 * index
-    return base_port, redis_port
+    redis_port = (urlsplit(redis_url).port or 6379) + 100 * index
+    return base_port + 10 * index, redis_port
 
 
 def _create_slot_database(database_url, index):

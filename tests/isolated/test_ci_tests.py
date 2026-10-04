@@ -85,11 +85,12 @@ def test_shard_fails_when_an_item_has_no_result(tmp_path, monkeypatch):
     assert code == 1
 
 
-def test_slot_ports_are_offset_from_the_callers():
-    environ = {"base_port": "5010", "REDIS_URL": "redis://localhost:6380"}
+def test_slot_ports_are_offset_from_the_callers(monkeypatch):
+    monkeypatch.setenv("base_port", "5010")
 
-    assert ci_tests._slot_ports(environ, 1) == (5020, 6480)
-    assert ci_tests._slot_ports({}, 2) == (5020, 6579)
+    assert ci_tests._caller_base_port() == 5010
+    assert ci_tests._slot_ports(5010, "redis://localhost:6380", 1) == (5020, 6480)
+    assert ci_tests._slot_ports(5000, "", 2) == (5020, 6579)
 
 
 def _hold_lock(directory, held, release):
