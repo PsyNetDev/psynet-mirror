@@ -105,6 +105,13 @@ To let the trial maker decide when recruitment stops, pass
 ``recruit_mode="n_participants"`` with ``target_n_participants``, or
 ``recruit_mode="n_trials"`` with ``target_trials_per_node``.
 
+With ``"n_participants"``, ``n_participants_completion`` decides who fills the
+quota. ``"experiment"`` (the default) counts participants who finish the
+whole experiment. ``"trial_maker"`` counts participants who finish this trial
+maker, even if they leave before the end page. In both cases, people still
+working in the experiment hold a slot so PsyNet does not recruit a
+replacement straight away.
+
 .. _custom_node_selection:
 
 To choose the node yourself, for example in an adaptive design, override two

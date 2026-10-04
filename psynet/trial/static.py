@@ -149,10 +149,20 @@ class StaticTrialMaker(ChainTrialMaker):
         and ``"n_trials"``.
 
     target_n_participants
-        Target number of participants to recruit for the experiment. All
-        participants must successfully finish the experiment to count
-        towards this quota. This target is only relevant if
-        ``recruit_mode="n_participants"``.
+        Target number of participants to recruit for the experiment.
+        This target is only relevant if ``recruit_mode="n_participants"``.
+        Which completions fill the quota is controlled by
+        ``n_participants_completion``.
+
+    n_participants_completion
+        Which kind of completion counts toward ``target_n_participants``.
+        ``"experiment"`` (default) counts participants who successfully
+        finish the whole experiment. ``"trial_maker"`` counts participants
+        who finish this TrialMaker, even if they later leave before the
+        experiment end page. In-progress participants still occupy a slot
+        in both cases, including people who have not yet reached this
+        TrialMaker, so PsyNet does not immediately recruit a replacement.
+        This setting is only relevant if ``recruit_mode="n_participants"``.
 
     target_trials_per_node
         Target number of trials to recruit for each node. ``None`` (the
@@ -273,6 +283,7 @@ class StaticTrialMaker(ChainTrialMaker):
         max_trials_per_participant: Optional[int | str] = None,
         recruit_mode: Optional[str] = None,
         target_n_participants: Optional[int] = None,
+        n_participants_completion: Literal["experiment", "trial_maker"] = "experiment",
         target_trials_per_node: Optional[int] = None,
         max_trials_per_block: Optional[int] = None,
         allow_repeated_nodes: bool = False,
@@ -360,6 +371,7 @@ class StaticTrialMaker(ChainTrialMaker):
             node_class=StaticNode,
             recruit_mode=recruit_mode,
             target_n_participants=target_n_participants,
+            n_participants_completion=n_participants_completion,
             expected_trials_per_participant=expected_trials_per_participant,
             max_trials_per_participant=max_trials_per_participant,
             max_trials_per_block=max_trials_per_block,

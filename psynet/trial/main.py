@@ -24,6 +24,8 @@ from sqlalchemy import (
     Integer,
     String,
     and_,
+    distinct,
+    exists,
     func,
     inspect,
     not_,
@@ -77,6 +79,8 @@ from ..utils import (
 )
 
 logger = get_logger()
+
+N_PARTICIPANTS_COMPLETION_MODES = ("experiment", "trial_maker")
 
 
 def _warn_ignored_fail_trials_on_premature_exit(trial_maker_id):
@@ -1436,10 +1440,20 @@ class TrialMaker(Module):
         :attr:`~psynet.trial.main.TrialMaker.n_trials_still_required`.
 
     target_n_participants
-        Target number of participants to recruit for the experiment. All
-        participants must successfully finish the experiment to count
-        towards this quota. This target is only relevant if
-        ``recruit_mode="n_participants"``.
+        Target number of participants to recruit for the experiment.
+        This target is only relevant if ``recruit_mode="n_participants"``.
+        Which completions fill the quota is controlled by
+        ``n_participants_completion``.
+
+    n_participants_completion
+        Which kind of completion counts toward ``target_n_participants``.
+        ``"experiment"`` (default) counts participants who successfully
+        finish the whole experiment. ``"trial_maker"`` counts participants
+        who finish this TrialMaker, even if they later leave before the
+        experiment end page. In-progress participants still occupy a slot
+        in both cases, including people who have not yet reached this
+        TrialMaker, so PsyNet does not immediately recruit a replacement.
+        This setting is only relevant if ``recruit_mode="n_participants"``.
 
     n_repeat_trials
         Number of repeat trials to present to the participant. These trials
@@ -1539,6 +1553,7 @@ class TrialMaker(Module):
         sync_group_timeout_between_barriers_time: Optional[float] = None,
         sync_group_timeout_between_barriers_action: Literal["kick", "fail"] = "fail",
         sync_group_wait_content=None,
+        n_participants_completion: Literal["experiment", "trial_maker"] = "experiment",
     ):
         if recruit_mode == "n_participants" and target_n_participants is None:
             raise ValueError(
@@ -1573,6 +1588,12 @@ class TrialMaker(Module):
         self.propagate_failure = propagate_failure
         self.recruit_mode = recruit_mode
         self.target_n_participants = target_n_participants
+        if n_participants_completion not in N_PARTICIPANTS_COMPLETION_MODES:
+            raise ValueError(
+                "n_participants_completion must be 'experiment' or 'trial_maker', "
+                f"got {n_participants_completion!r}."
+            )
+        self.n_participants_completion = n_participants_completion
         self.n_repeat_trials = n_repeat_trials
         self.sync_group_type = sync_group_type
         self.sync_group_max_wait_time = sync_group_max_wait_time
@@ -1711,11 +1732,50 @@ class TrialMaker(Module):
 
     @property
     def n_complete_participants(self):
+        """Number of participants who count as complete for this TrialMaker's quota."""
+        if self.n_participants_completion == "trial_maker":
+            return self._n_trial_maker_complete_participants
         return Participant.query.filter_by(complete=True).count()
 
     @property
     def n_working_participants(self):
+        """Number of in-progress participants occupying a slot in this TrialMaker's quota."""
+        if self.n_participants_completion == "trial_maker":
+            return self._n_trial_maker_working_participants
         return Participant.query.filter_by(status="working", failed=False).count()
+
+    @property
+    def _n_trial_maker_complete_participants(self):
+        """Count distinct participants who have finished this TrialMaker."""
+        n = (
+            db.session.query(func.count(distinct(ModuleState.participant_id)))
+            .filter(
+                ModuleState.module_id == self.id,
+                ModuleState.finished.is_(True),
+            )
+            .scalar()
+        )
+        return n or 0
+
+    @property
+    def _n_trial_maker_working_participants(self):
+        """Count working non-failed participants who have not finished this TrialMaker."""
+        finished_this_module = exists().where(
+            ModuleState.participant_id == Participant.id,
+            ModuleState.module_id == self.id,
+            ModuleState.finished.is_(True),
+        )
+        n = (
+            db.session.query(func.count(distinct(Participant.id)))
+            .filter(
+                Participant.status == "working",
+                Participant.failed.is_(False),
+                Participant.early_exited.is_(False),
+                ~finished_this_module,
+            )
+            .scalar()
+        )
+        return n or 0
 
     @property
     def n_viable_participants(self):
@@ -1810,8 +1870,9 @@ class TrialMaker(Module):
 
     def n_participants_criterion(self, experiment):
         logger.info(
-            "Target number of participants = %i, number of completed participants = %i, number of working participants = %i.",
+            "Target number of participants = %i, completion counted at %s, number of completed participants = %i, number of working participants = %i.",
             self.target_n_participants,
+            self.n_participants_completion,
             self.n_complete_participants,
             self.n_working_participants,
         )
@@ -1897,6 +1958,13 @@ class TrialMaker(Module):
                     )
                 if hasattr(self, "recruit_mode") and self.recruit_mode is not None:
                     tags.li(f"Recruitment mode: {self.recruit_mode}")
+                if (
+                    getattr(self, "recruit_mode", None) == "n_participants"
+                    and getattr(self, "n_participants_completion", None) is not None
+                ):
+                    tags.li(
+                        f"Participants counted when: {self.n_participants_completion} complete"
+                    )
 
         return rendered_div + div.render()
 
@@ -2499,10 +2567,20 @@ class NetworkTrialMaker(TrialMaker):
         :attr:`~psynet.trial.main.TrialMaker.n_trials_still_required`.
 
     target_n_participants
-        Target number of participants to recruit for the experiment. All
-        participants must successfully finish the experiment to count
-        towards this quota. This target is only relevant if
-        ``recruit_mode="n_participants"``.
+        Target number of participants to recruit for the experiment.
+        This target is only relevant if ``recruit_mode="n_participants"``.
+        Which completions fill the quota is controlled by
+        ``n_participants_completion``.
+
+    n_participants_completion
+        Which kind of completion counts toward ``target_n_participants``.
+        ``"experiment"`` (default) counts participants who successfully
+        finish the whole experiment. ``"trial_maker"`` counts participants
+        who finish this TrialMaker, even if they later leave before the
+        experiment end page. In-progress participants still occupy a slot
+        in both cases, including people who have not yet reached this
+        TrialMaker, so PsyNet does not immediately recruit a replacement.
+        This setting is only relevant if ``recruit_mode="n_participants"``.
 
     n_repeat_trials
         Number of repeat trials to present to the participant. These trials
@@ -2613,6 +2691,7 @@ class NetworkTrialMaker(TrialMaker):
         sync_group_timeout_between_barriers_time: Optional[float] = None,
         sync_group_timeout_between_barriers_action: Literal["kick", "fail"] = "fail",
         sync_group_wait_content=None,
+        n_participants_completion: Literal["experiment", "trial_maker"] = "experiment",
     ):
         performance_check_is_enabled = (
             check_performance_at_end or check_performance_every_trial
@@ -2655,6 +2734,7 @@ class NetworkTrialMaker(TrialMaker):
             sync_group_timeout_between_barriers_time=sync_group_timeout_between_barriers_time,
             sync_group_timeout_between_barriers_action=sync_group_timeout_between_barriers_action,
             sync_group_wait_content=sync_group_wait_content,
+            n_participants_completion=n_participants_completion,
         )
         self.network_class = network_class
         self.wait_for_networks = wait_for_networks
