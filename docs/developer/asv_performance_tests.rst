@@ -24,26 +24,28 @@ Benchmark tiers
 
 Benchmarks are split by directory:
 
-- ``benchmarks/fast/`` contains benchmarks selected for the merge-request
-  regression gate, including quick hot paths and focused end-to-end checks.
-- ``benchmarks/slow/`` contains end-to-end experiment performance benchmarks.
-  These are intentionally excluded from the merge-request gate, but they do run
-  nightly on ``master``. The slow ASV history focuses on median request latency and
-  median async-process queue delay; participant failures and incomplete bots are
-  left in the performance-test output instead of being tracked as ASV metrics.
+- ``benchmarks/fast/`` contains hot-path microbenchmarks selected for the
+  merge-request regression gate.
+- ``benchmarks/slow/`` contains end-to-end benchmarks: experiment performance
+  and debug-launch time. These are intentionally excluded from the
+  merge-request gate, because wall-clock launches and load tests vary by more
+  than its 1.25× threshold between runs, but they do run nightly on ``master``. The
+  debug-launch benchmark records the fastest of three launches per profile to
+  damp that noise. Because the ``master`` job is allowed to fail (see below),
+  slow-tier results are tracked in the published history rather than gating
+  merges. The slow ASV history focuses on median request latency and median
+  async-process queue delay; participant failures and incomplete bots are left
+  in the performance-test output instead of being tracked as ASV metrics.
 
 Merge-request checks
 ====================
 
 Merge requests run the ``asv_regression`` CI job when the diff includes PsyNet
-package code, the fast debug-launch experiment (``tests/experiments/static_big``),
-benchmark files, or the ASV/CI configuration those jobs use. The job uses
+package code, benchmark files, or the ASV/CI configuration those jobs use. The job uses
 ``asv continuous`` with ``--bench "^fast\\."`` to benchmark the merge-request
 base and head commits back-to-back on the same GitLab runner. The job exits
-non-zero when ASV detects a regression larger than ``--factor 1.5``. A
-tighter factor failed at random, because debug-launch times move by up to
-about 1.3× between runs even when a change does not touch the launch path.
-Docs, changelog, and skill-only merge requests skip this job.
+non-zero when ASV detects a regression larger than ``--factor 1.25``. Docs,
+changelog, and skill-only merge requests skip this job.
 
 Export performance is not included in the ASV suite. End-to-end exports depend
 on mutable database fixtures, filesystem caches, and subprocess startup, which
@@ -69,12 +71,13 @@ branch, pushes them, and then propagates the ASV exit status. To set up the
 schedule, add a pipeline schedule for ``master`` under *Build > Pipeline
 schedules* in GitLab, for example with the cron expression ``0 2 * * *``, and
 give it the variable ``NIGHTLY_BENCHMARKS`` with value ``1``. Other schedules
-run the usual pipeline jobs. The
-comparison uses ``--factor 2``, more headroom than the merge-request gate,
-because the slow ``psynet performance-test`` medians are noisier than the fast
-suite and commonly move by 1.2–1.3× on GitLab runners without a code change. ``asv continuous`` applies one factor to
+run the usual pipeline jobs.
+
+The comparison uses ``--factor 2`` because the slow
+``psynet performance-test`` medians commonly move by 1.2–1.3× on GitLab
+runners without a code change. ``asv continuous`` applies one factor to
 every benchmark it runs, so the default-branch job is also looser on the
-fast suite; merge requests still gate the fast suite at ``--factor 1.5``.
+fast suite; merge requests still gate the fast suite at ``--factor 1.25``.
 The job is currently allowed to fail while the benchmark suite is being
 tuned, but it still preserves the data needed for the published
 benchmark history.
@@ -104,7 +107,7 @@ Run a same-runner comparison locally:
 
 .. code-block:: shell
 
-    asv continuous --factor 1.5 --split --show-stderr --bench '^fast\.' BASE HEAD
+    asv continuous --factor 1.25 --split --show-stderr --bench '^fast\.' BASE HEAD
 
 Preview published benchmark results locally:
 
