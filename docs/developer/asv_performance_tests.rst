@@ -29,7 +29,7 @@ Benchmarks are split by directory:
 - ``benchmarks/slow/`` contains end-to-end benchmarks: experiment performance
   and debug-launch time. These are intentionally excluded from the
   merge-request gate, because wall-clock launches and load tests vary by more
-  than its 1.25× threshold between runs, but they do run on ``master``. The
+  than its 1.25× threshold between runs, but they do run nightly on ``master``. The
   debug-launch benchmark records the fastest of three launches per profile to
   damp that noise. Because the ``master`` job is allowed to fail (see below),
   slow-tier results are tracked in the published history rather than gating
@@ -55,12 +55,25 @@ regression threshold. Export correctness remains covered by functional tests.
 Default-branch checks and publishing
 ====================================
 
-Commits to ``master`` run the ``asv_benchmarks`` CI job. This job uses
-``asv continuous`` without a ``--bench`` filter, so it runs both the fast and
-slow benchmark tiers. It compares the previous ``master`` commit with the new
-commit on the same runner, writes the generated result files, commits those
-results to the ``benchmark-results`` branch, pushes them, and then propagates
-the ASV exit status. The comparison uses ``--factor 2`` because the slow
+A nightly GitLab pipeline schedule on ``master`` runs the ``asv_benchmarks``
+CI job. The schedule sets the variable ``NIGHTLY_BENCHMARKS`` to ``1``, and its
+pipelines run only this job and ``pages``, which republishes the benchmark
+site. The full suite takes about 35 minutes, which is too long to
+run on every merge, so ``master`` push pipelines only offer the job as a manual
+action.
+
+The job uses ``asv continuous`` without a ``--bench`` filter, so it runs both
+the fast and slow benchmark tiers. It compares ``master`` as it was 24 hours
+earlier (``ASV_BASE_AGE``) with the current ``master`` commit on the same
+runner, and exits early if nothing has been merged since then. It writes the
+generated result files, commits those results to the ``benchmark-results``
+branch, pushes them, and then propagates the ASV exit status. To set up the
+schedule, add a pipeline schedule for ``master`` under *Build > Pipeline
+schedules* in GitLab, for example with the cron expression ``0 2 * * *``, and
+give it the variable ``NIGHTLY_BENCHMARKS`` with value ``1``. Other schedules
+run the usual pipeline jobs.
+
+The comparison uses ``--factor 2`` because the slow
 ``psynet performance-test`` medians commonly move by 1.2–1.3× on GitLab
 runners without a code change. ``asv continuous`` applies one factor to
 every benchmark it runs, so the default-branch job is also looser on the
