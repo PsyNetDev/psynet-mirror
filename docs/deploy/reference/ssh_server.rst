@@ -194,9 +194,58 @@ while the app stays reachable. To sleep or wake an app by hand::
     psynet hibernate ssh --app your-app-name
     psynet awaken ssh --app your-app-name
 
-Hibernate only apps that are not recruiting or serving participants. A
-visitor to a sleeping app sees "Getting ready, please wait..." while it
-wakes. ``GET /health`` probes do not wake it. ``psynet export ssh`` awakens a
+A visitor to a sleeping app sees "Getting ready, please wait..." while it
+wakes. ``GET /health`` probes do not wake it.
+
+To sleep apps automatically after a quiet period, set in ``config.txt``::
+
+    docker_ssh_idle_hibernate = true
+    docker_ssh_idle_hibernate_minutes = 60
+
+``/health`` probes do not reset the idle timer. While idle sleep is on,
+PsyNet pages ping the server every few minutes while a participant is using
+them: they interacted within the idle window, or an audible ``<audio>`` or
+``<video>`` element is playing. Sound played through Web Audio, as
+``AudioPrompt`` does, does not count, so a participant who listens for
+longer than the idle window without interacting may wait for the app to
+wake afterwards. The app therefore does not sleep under a participant, even on a
+quiet or WebSocket-only page, while an abandoned tab stops pinging. Pages
+that poll the server themselves, such as pages waiting for other
+participants or pages that update progress live, keep the app awake for as
+long as they stay open. If a participant submits while the app is asleep or
+waking, PsyNet shows "Getting ready, please wait..." and retries the
+submission for up to five minutes instead of showing the error page.
+
+.. warning::
+
+   Do not enable idle hibernation for experiments that replace failed
+   participants or otherwise recruit reactively throughout their lifetime.
+   This includes experiments that use ``auto_recruit`` to keep recruiting
+   until they reach their target.
+
+   While the app sleeps, the clock process and recruiter callbacks are
+   suspended. For rolling-recruitment experiments, the quiet gaps *between*
+   participants are when the system does critical work: detecting timeouts,
+   triggering replacements, and preparing for the next arrival. Sleeping
+   during those gaps means that work never happens.
+
+   This restriction applies for the **entire lifetime** of a
+   rolling-recruitment experiment, not only during active recruitment waves.
+
+Idle sleep suits experiments with a clearly bounded recruitment window:
+recruit N participants, run the session, recruitment ends. Once the session
+is complete the app can safely sleep until you export the data. Leave it off
+for first canary deploys too.
+
+As a backstop, the app stays awake while ``auto_recruit`` is on, including
+after you switch it on from the dashboard, and while any participant is
+still working, until the clock times out abandoned participants. The app's
+logs say why it stayed awake. An experiment that recruits in other ways can
+add conditions by overriding ``reason_to_stay_awake`` on its ``Experiment``
+class. Idle sleep needs the matching Dallinger release.
+
+Hibernate by hand only apps that are not recruiting or serving participants.
+``psynet export ssh`` awakens a
 sleeping app before reading its database. If the app crashes while awake, it
 returns HTTP 503 until Docker restarts it.
 
