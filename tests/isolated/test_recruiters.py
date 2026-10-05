@@ -2332,7 +2332,7 @@ def test_lucid_early_exit_terminates_the_panel_session():
     assert recruiter.decide_payment(
         participant, experiment=MagicMock()
     ) == PaymentDecision(status="returned", platform_base=0.0, bonus=0.0)
-    assert recruiter.reward_bonus(participant, 0.0, "settlement") is True
+    assert recruiter.report_submission_outcome(participant, 0.0, "settlement") is True
     recruiter.lucidservice.terminate_respondent.assert_called_once()
     # Lucid exits fail incomplete trials like every other recruiter's exit.
     participant.fail.assert_called_once_with("early_exit", redirect_to_end=False)
@@ -4443,7 +4443,7 @@ def test_hotair_reward_bonus_returns_true():
     assert recruiter.reward_bonus(MagicMock(assignment_id="a"), 1.0, "thanks") is True
 
 
-def test_lucid_reward_bonus_terminates_when_responses_empty():
+def test_lucid_report_submission_outcome_terminates_when_responses_empty():
     from psynet.recruiters import BaseLucidRecruiter
 
     recruiter = object.__new__(BaseLucidRecruiter)
@@ -4453,12 +4453,47 @@ def test_lucid_reward_bonus_terminates_when_responses_empty():
 
     with patch("psynet.recruiters.Response") as response_cls:
         response_cls.query.filter_by.return_value.order_by.return_value.all.return_value = []
-        assert recruiter.reward_bonus(participant, 0.0, "thanks") is True
+        assert recruiter.report_submission_outcome(participant, 0.0, "thanks") is True
 
     recruiter.complete_participant.assert_not_called()
     recruiter.terminate_participant.assert_called_once_with(
         participant=participant, reason="participant-did-not-complete"
     )
+
+
+def test_lucid_reward_bonus_raises():
+    from psynet.recruiters import BaseLucidRecruiter
+
+    recruiter = object.__new__(BaseLucidRecruiter)
+    participant = MagicMock(progress=1, id=1)
+
+    with pytest.raises(RuntimeError, match="report_submission_outcome"):
+        recruiter.reward_bonus(participant, 0.0, "thanks")
+
+
+def test_lucid_submission_reports_complete_to_lucid_without_a_bonus():
+    """Lucid pays no PsyNet bonus, but the server-side complete must still run."""
+    recruiter = _lucid_recruiter_with_service()
+    participant = MagicMock(
+        id=7,
+        assignment_id="rid-1",
+        status="submitted",
+        failed=False,
+        complete=True,
+        progress=1,
+        exit_plan=None,
+        recruiter=recruiter,
+        bonus=None,
+        bonus_status=BONUS_STATUS_NOT_DUE_YET,
+        planned_bonus=0.0,
+        end_time=None,
+    )
+
+    PaymentHarness().on_recruiter_submission_complete(participant, event=None)
+
+    recruiter.lucidservice.complete_respondent.assert_called_once_with("rid-1")
+    assert participant.status == "approved"
+    assert participant.bonus_status == BONUS_STATUS_SUCCESS
 
 
 def test_experiment_bonus_raises():
