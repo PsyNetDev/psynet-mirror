@@ -578,6 +578,130 @@ def test_finalized_trial_fails_child_node(db_session, participant):
     assert not network.failed
 
 
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+@pytest.mark.parametrize("chain_type", ["within", "across"])
+def test_missing_recording_fails_only_its_trial_and_cannot_seed_growth(
+    db_session, participant, tmp_path, chain_type
+):
+    from datetime import timedelta
+
+    from psynet.asset import LocalStorage
+    from psynet.media_upload import _expire_recordings, _reserve_recording, _utcnow
+    from psynet.timeline import Response
+
+    exp = get_experiment()
+    maker = chain_trial_maker(
+        chain_type=chain_type,
+        chains_per_participant=1 if chain_type == "within" else None,
+        chains_per_experiment=None if chain_type == "within" else 1,
+        recruit_mode="n_participants",
+        target_n_participants=1,
+    )
+    network = create_chain_network(
+        maker, exp, participant=participant if chain_type == "within" else None
+    )
+    earlier = add_trial(
+        GrowthQueryTrial,
+        network.head,
+        participant,
+        finalized=True,
+        answer="saved answer",
+    )
+    assert maker.grow_network(network, exp)
+    affected = add_trial(
+        GrowthQueryTrial,
+        network.head,
+        participant,
+        finalized=False,
+        propagate_failure=True,
+    )
+    affected.complete = True
+    response = Response(participant=participant, label="video", page_type="ModularPage")
+    response.successful_validation = True
+    asset, _ = _reserve_recording(
+        response=response,
+        parent=affected,
+        page_uuid="missing-video",
+        source="camera",
+        local_key="video",
+        storage=LocalStorage(str(tmp_path)),
+    )
+    asset.upload_deadline = _utcnow() - timedelta(seconds=1)
+    affected_id, earlier_id, network_id, participant_id = (
+        affected.id,
+        earlier.id,
+        network.id,
+        participant.id,
+    )
+    db.session.commit()
+    _expire_recordings()
+    affected = db.session.get(GrowthQueryTrial, affected_id)
+    earlier = db.session.get(GrowthQueryTrial, earlier_id)
+    network = db.session.get(ChainNetwork, network_id)
+    assert affected.failed and not affected.finalized
+    assert affected.failed_reason == "recording_upload_timeout"
+    assert earlier.finalized and not earlier.failed
+    assert earlier.answer == "saved answer"
+    assert not db.session.get(Participant, participant_id).failed
+    assert not network.failed
+    assert not maker.grow_network(network, exp)
+    died_at = affected.time_of_death
+    _expire_recordings()
+    assert db.session.get(GrowthQueryTrial, affected_id).time_of_death == died_at
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+@pytest.mark.parametrize("chain_type", ["within", "across"])
+@pytest.mark.parametrize("reason", ["recording_upload_timeout", "analysis"])
+def test_recording_failure_prevents_same_participant_reassignment(
+    db_session, participant, chain_type, reason
+):
+    exp = get_experiment()
+    maker = chain_trial_maker(
+        chain_type=chain_type,
+        chains_per_participant=1 if chain_type == "within" else None,
+        chains_per_experiment=None if chain_type == "within" else 1,
+        recruit_mode="n_participants",
+        target_n_participants=1,
+        max_trials_per_participant=10,
+        allow_revisiting_networks_in_across_chains=True,
+    )
+    network = create_chain_network(
+        maker, exp, participant=participant if chain_type == "within" else None
+    )
+    initialize_trial_maker_state(maker, participant)
+    trial = add_trial(GrowthQueryTrial, network.head, participant, finalized=False)
+    trial.complete = True
+    trial.fail(reason=reason)
+    db.session.flush()
+
+    eligible = maker.find_chains(participant, exp)
+    if reason == "recording_upload_timeout":
+        assert eligible == "exit"
+    else:
+        assert [chain.id for chain in eligible] == [network.id]
+
+    if chain_type == "across":
+        other = Participant(
+            experiment=exp,
+            recruiter_id="hotair",
+            worker_id=str(uuid.uuid4()),
+            hit_id=str(uuid.uuid4()),
+            assignment_id=str(uuid.uuid4()),
+            mode="debug",
+        )
+        db.session.add(other)
+        db.session.flush()
+        initialize_trial_maker_state(maker, other)
+        assert [chain.id for chain in maker.find_chains(other, exp)] == [network.id]
+
+
 def graph_trial_maker():
     return make_graph_trial_maker(
         {

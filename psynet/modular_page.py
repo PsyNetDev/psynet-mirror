@@ -1,3 +1,14 @@
+"""Compose experiment pages from prompts, response controls, and layouts.
+
+Components declare their media, events, JavaScript variables, and rendering;
+ModularPage combines these declarations and delegates answer formatting and
+validation to its control unless the author supplies page-level validation.
+
+The asynchronous video path stages metadata during formatting and reserves
+recordings only after validation succeeds. Final references must be saved before
+completion hooks or navigation run; rejected answers must not create upload slots.
+"""
+
 import json
 import random
 import shutil
@@ -3707,10 +3718,30 @@ class AudioRecordControl(RecordControl):
         )
 
 
+def _recording_labels():
+    """Translate answer capture and upload UI in the participant's language."""
+    _ = get_translator()
+    return {
+        "answer": _(
+            "Share your screen to record this answer. Continuing without recording may make this trial unsuccessful."
+        ),
+        "screen": _("Share screen"),
+        "skip": _("Continue without recording"),
+        "uploading": _("Uploading your recording, please keep this page open."),
+    }
+
+
 class VideoRecordControl(RecordControl):
     """
     Records a video either by using the camera or by capturing from the screen. Output format
     for both screen and camera recording is ``.webm``.
+
+    In-place experiments using :class:`~psynet.asset.LocalStorage` accept answers
+    before uploading video. Missing media fails its parent trial at the upload
+    deadline, without recapturing. For playback outside a trial, use
+    :func:`~psynet.page.wait_for_recording` and provide an unavailable-media fallback.
+    Legacy navigation, other storage backends, and bots retain their existing
+    answer-upload path.
 
     Parameters
     ----------
@@ -3746,6 +3777,11 @@ class VideoRecordControl(RecordControl):
 
     macro = "video_record"
     file_extension = ".webm"
+    # In-place LocalStorage experiments use acceptance-bound uploads; bots,
+    # legacy navigation, and other storage retain their existing deposit path.
+    # Kept private for transport regression fixtures.
+    _async_upload = True
+    _async_upload_max_bytes = 128 * 1024 * 1024
 
     def __init__(
         self,
@@ -3786,7 +3822,69 @@ class VideoRecordControl(RecordControl):
             self.recording_source
         ]
 
+    def _uses_async_upload(self, experiment):
+        """Use independent delivery for the supported shared LocalStorage backend."""
+        from .utils import get_config
+
+        return (
+            self._async_upload
+            and isinstance(experiment.asset_storage, LocalStorage)
+            and get_config().get("inplace_timeline_transitions")
+        )
+
     def format_answer(self, raw_answer, **kwargs):
+        from .bot import Bot
+
+        if self._uses_async_upload(kwargs["experiment"]) and not isinstance(
+            kwargs["participant"], Bot
+        ):
+            sizes = kwargs["metadata"].get("recording_uploads")
+            if not isinstance(sizes, dict) or set(sizes) != set(self.recording_sources):
+                raise ValueError(
+                    "Upload sizes must identify every expected recording source."
+                )
+            if any(
+                type(size) is not int or not 0 <= size <= 2**53 - 1
+                for size in sizes.values()
+            ):
+                raise ValueError("Recording sizes must be nonnegative safe integers.")
+            if kwargs["blobs"]:
+                raise ValueError(
+                    "Asynchronous video answers must not include recording bytes."
+                )
+            unavailable = kwargs["metadata"].get("recording_upload_unavailable", {})
+            if (
+                not isinstance(unavailable, dict)
+                or not set(unavailable).issubset(sizes)
+                or any(
+                    not isinstance(reason, str)
+                    or reason
+                    not in {
+                        "missing_recording",
+                        "size_limit",
+                        "queue_full",
+                        "transport_unavailable",
+                    }
+                    for reason in unavailable.values()
+                )
+            ):
+                raise ValueError("Invalid recording unavailability manifest.")
+            unavailable = dict(unavailable)
+            for source, size in sizes.items():
+                if size == 0:
+                    unavailable[source] = "missing_recording"
+                elif size > self._async_upload_max_bytes:
+                    unavailable[source] = "size_limit"
+            response = kwargs["response"]
+            response._recording_unavailable = unavailable
+            response._deferred_video_answer = True
+            response._recording_sizes = dict(sizes)
+            summary = self._answer_metadata()
+            for source in self.recording_sources:
+                summary[f"{source}_id"] = None
+                summary[f"{source}_url"] = None
+            return summary
+
         blobs = kwargs["blobs"]
         trial = kwargs["trial"]
         participant = kwargs["participant"]
@@ -3829,41 +3927,102 @@ class VideoRecordControl(RecordControl):
                 summary[source + "_id"] = asset.id
                 summary[source + "_url"] = asset.url
 
-        summary.update(
-            {
-                "duration_sec": self.duration,
-                "origin": "VideoRecordControl",
-                "supports_record_trial": True,
-                "recording_source": self.recording_source,
-                "record_audio": self.record_audio,
-                "mirrored": self.mirrored,
-            }
-        )
-
+        summary.update(self._answer_metadata())
         return summary
 
+    def _answer_metadata(self):
+        """Keep the answer shape common to synchronous and deferred uploads."""
+        return {
+            "duration_sec": self.duration,
+            "origin": "VideoRecordControl",
+            "supports_record_trial": True,
+            "recording_source": self.recording_source,
+            "record_audio": self.record_audio,
+            "mirrored": self.mirrored,
+        }
+
+    def get_js_vars(self):
+        """Provide defaults; rendering resolves the experiment storage backend."""
+        return {
+            "recordingLabels": _recording_labels(),
+            "asynchronousVideoUploadSources": self.recording_sources
+            if self._async_upload
+            else None,
+            "asynchronousVideoUploadMaxBytes": self._async_upload_max_bytes,
+        }
+
+    def _accept_recordings(self, response, participant, page_uuid):
+        """Install final read references and capabilities only after acceptance."""
+        from .media_upload import _reserve_recording, _upload_timeout
+        from .trial.record import Recording
+
+        sizes = response._recording_sizes
+        timeout = _upload_timeout(max(1, sum(sizes.values())))
+        parent = participant.current_trial or participant
+        summary = dict(response.answer)
+        uploads = []
+        for source in self.recording_sources:
+            label = self.page.label
+            if len(self.recording_sources) > 1:
+                label += "_" + source
+            asset, receipt = _reserve_recording(
+                response=response,
+                parent=parent,
+                page_uuid=page_uuid,
+                source=source,
+                local_key=label,
+                storage=Recording.default_storage,
+                upload_timeout=timeout,
+                upload_size_bytes=min(sizes[source], self._async_upload_max_bytes)
+                or None,
+                max_bytes=self._async_upload_max_bytes,
+            )
+            reason = response._recording_unavailable.get(source)
+            asset.upload_context = {
+                **asset.upload_context,
+                "captured_size_bytes": sizes[source],
+                "unavailable_reason": reason,
+            }
+            if reason:
+                # Keep the normal deadline and trial policy, without granting a
+                # write capability for bytes the browser cannot retain/upload.
+                asset.upload_token_hash = None
+            summary[f"{source}_id"] = asset.id
+            summary[f"{source}_url"] = asset.url
+            if not reason:
+                uploads.append({**receipt, "source": source})
+        response.answer = summary
+        return uploads
+
     def visualize_response(self, answer, response, trial):
+        """Show available clips and explicit outcomes instead of broken players."""
+        from .trial.record import Recording
+
         if answer is None:
             return tags.p("No video recorded yet.").render()
-        else:
-            html = tags.div()
-            if answer["camera_url"]:
-                html += tags.h5("Camera recording")
+        html = tags.div()
+        for source in ("camera", "screen"):
+            if f"{source}_id" not in answer:
+                continue
+            html += tags.h5(f"{source.capitalize()} recording")
+            recording = Recording.query.filter_by(
+                id=answer[f"{source}_id"]
+            ).one_or_none()
+            if recording is None or not recording.deposited:
+                status = (
+                    recording.recording_summary["recording_status"]
+                    if recording
+                    else "unavailable"
+                )
+                html += tags.p(f"Recording {status}.")
+            else:
                 html += tags.video(
-                    tags.source(src=answer["camera_url"]),
-                    id="visualize-camera-video-response",
+                    tags.source(src=recording.url),
+                    id=f"visualize-{source}-video-response",
                     controls=True,
                     style="max-width: 640px;",
                 )
-            if answer["screen_url"]:
-                html += tags.h5("Screen recording")
-                html += tags.video(
-                    tags.source(src=answer["screen_url"]),
-                    id="visualize-screen-video-response",
-                    controls=True,
-                    style="max-width: 640px;",
-                )
-            return html.render()
+        return html.render()
 
     def update_events(self, events):
         super().update_events(events)

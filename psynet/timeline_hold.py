@@ -472,10 +472,16 @@ class _TimelineHoldPage(Page):
     def consume(self, experiment, participant):
         super().consume(experiment, participant)
         now = timenow()
+        # Resolve a participant-specific budget once; polls use the saved deadline.
+        max_wait_time = (
+            call_function_with_context(
+                self.max_wait_time, participant=participant, experiment=experiment
+            )
+            if callable(self.max_wait_time)
+            else self.max_wait_time
+        )
         deadline_at = (
-            None
-            if self.max_wait_time is None
-            else now + timedelta(seconds=self.max_wait_time)
+            None if max_wait_time is None else now + timedelta(seconds=max_wait_time)
         )
         record = TimelineHoldRecord(
             participant=participant,
@@ -485,7 +491,7 @@ class _TimelineHoldPage(Page):
             started_at=now,
             deadline_at=deadline_at,
             expected_wait=self.expected_wait,
-            max_wait_time=self.max_wait_time,
+            max_wait_time=max_wait_time,
             fix_time_credit=self.fix_time_credit,
             actual_wait_seconds=0.0,
             credited_wait_seconds=0.0,
@@ -687,6 +693,31 @@ class _ConditionHoldPage(_TimelineHoldPage):
     def __init__(self, *, condition, **kwargs):
         self.condition = condition
         super().__init__(**kwargs)
+
+    def is_ready_to_resume(self, experiment, participant):
+        """Request a locked check when media expires, without writing on a poll."""
+        from .media_upload import _due_recordings
+
+        if _due_recordings(participant.id).first() is not None:
+            return True
+        return super().is_ready_to_resume(experiment, participant)
+
+    def prepare_resume_if_ready(self, experiment, participant):
+        """Do not fail a resumed tab for work that finished while it was inactive."""
+        if participant.failed or participant.pending_redirect is not None:
+            return super().prepare_resume_if_ready(experiment, participant)
+        from .media_upload import _expire_participant_recordings
+
+        _expire_participant_recordings(participant.id)
+        if (
+            not participant.failed
+            and participant.pending_redirect is None
+            and self.participant_timed_out(participant)
+            and self.participant_can_resume(experiment, participant)
+        ):
+            self.prepare_to_resume(participant)
+            return True
+        return super().prepare_resume_if_ready(experiment, participant)
 
     def participant_can_resume(self, experiment, participant):
         return not call_function_with_context(

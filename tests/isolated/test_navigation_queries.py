@@ -284,8 +284,8 @@ def test_response_handler_skips_unused_participant_relationships(
     db.session.remove()
 
     with _response_request(payload):
-        # One extra statement is the memoized arrival-websocket membership EXISTS.
-        with assert_query_count(max_queries=13) as profiler:
+        # Includes arrival-websocket membership and expired-recording checks.
+        with assert_query_count(max_queries=14) as profiler:
             result = experiment.route_response()
     assert result.status_code == 200
     body = json.loads(result.get_data())

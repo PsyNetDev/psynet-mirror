@@ -190,6 +190,7 @@ class ResponseResult:
     page: Optional[Any] = None
     flask_response: Optional[Any] = None
     skip_write: bool = False
+    recording_response_id: Optional[int] = None
 
 
 @dataclass
@@ -1895,6 +1896,17 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
             logger.info("Finished growing networks.")
 
+    @scheduled_task("interval", seconds=2, max_instances=1)
+    @staticmethod
+    def _check_recording_uploads():
+        """Resolve received and missing recordings without relying on the browser."""
+        if not is_experiment_launched():
+            return
+        from .media_upload import _expire_recordings, _queue_received_recordings
+
+        _expire_recordings()
+        _queue_received_recordings()
+
     @scheduled_task("interval", seconds=5, max_instances=1)
     @log_time_taken
     @staticmethod
@@ -3371,6 +3383,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             )
 
         try:
+            metadata = dict(metadata or {})
+            recovery_secret = metadata.pop("recording_recovery_secret", None)
             # Use Experiment. so mocked experiment instances still run this
             # guard. Skip-page recovery leaves the trial cursor in place, so
             # a second tab must not keep advancing after the plan is committed.
@@ -3396,8 +3410,30 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     .populate_existing()
                     .get(participant_id)
                 )
+            from .media_upload import _expire_participant_recordings
+
+            _expire_participant_recordings(participant.id)
             if not isinstance(participant, Bot):
                 participant.client_ip_address = client_ip_address
+            if recovery_secret is not None and not timeline_hold_resume:
+                from .media_upload import _recover_recording_receipt
+
+                recovered = _recover_recording_receipt(
+                    participant, page_uuid, recovery_secret
+                )
+                if recovered is False:
+                    return ResponseResult(
+                        payload={
+                            "submission": "rejected",
+                            "message": "This recording submission has already been accepted. Please reload the page.",
+                        }
+                    )
+                if recovered is not None:
+                    page = self.timeline.get_current_elt(self, participant)
+                    # Render the current successor through the normal read-only
+                    # phase, without processing or advancing the answer again.
+                    recovered["page"] = page.__json__(participant)
+                    return ResponseResult(payload=recovered, page=page)
             event = self.timeline.get_current_elt(self, participant)
             if page_uuid != participant.page_uuid:
                 page = self._page_for_stale_hold_resume(
@@ -3469,6 +3505,14 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     }
                 )
 
+            recording_uploads = []
+            if getattr(response, "_deferred_video_answer", False) is True:
+                recording_uploads = event.control._accept_recordings(
+                    response, participant, page_uuid
+                )
+                event._store_response_answer(response, participant)
+                event.on_complete(experiment=self, participant=participant)
+
             participant.inc_time_credit(event.time_estimate)
             participant.inc_progress(event.time_estimate)
 
@@ -3476,9 +3520,24 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             page = self._advance_past_ready_holds(
                 participant, self.timeline.get_current_elt(self, participant)
             )
+            payload = self._approved_payload(participant, page)
+            recording_response_id = None
+            if getattr(response, "_deferred_video_answer", False) is True:
+                from .media_upload import _utcnow
+
+                payload["recording_uploads"] = recording_uploads
+                payload["recording_upload_server_time"] = _utcnow().isoformat() + "Z"
+                if recovery_secret is not None:
+                    from .media_upload import _save_recording_receipt
+
+                    _save_recording_receipt(
+                        response, participant, page_uuid, recovery_secret, payload
+                    )
+                    recording_response_id = response.id
             return ResponseResult(
-                payload=self._approved_payload(participant, page),
+                payload=payload,
                 page=page,
+                recording_response_id=recording_response_id,
             )
         except Exception as err:
             if os.getenv("PASSTHROUGH_ERRORS"):
@@ -3819,6 +3878,15 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 (
                     resources.files("psynet") / "resources/scripts/psynet.js",
                     "/static/scripts/psynet.js",
+                ),
+                (
+                    resources.files("psynet")
+                    / "resources/scripts/recording-capture.js",
+                    "/static/scripts/recording-capture.js",
+                ),
+                (
+                    resources.files("psynet") / "resources/scripts/media-upload.js",
+                    "/static/scripts/media-upload.js",
                 ),
                 (
                     resources.files("psynet")
@@ -4925,6 +4993,29 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             f"Returning from /get_participant_info_for_debug_mode: {json_data}"
         )
         return json.dumps(json_data, default=serialise)
+
+    @experiment_route("/media-upload/<int:recording_id>", methods=["POST"])
+    @staticmethod
+    def receive_media_upload(recording_id):
+        """Receive reserved media independently of the participant transaction."""
+        from .media_upload import _receive_recording
+
+        authorization = flask.request.headers.get("Authorization", "")
+        if not authorization.startswith("Bearer "):
+            flask.abort(403)
+        connection = flask.request.environ.get(
+            "gunicorn.socket"
+        ) or flask.request.environ.get("werkzeug.socket")
+        if connection is None:
+            flask.abort(503, "This server does not support bounded recording uploads.")
+        _receive_recording(
+            recording_id,
+            authorization.removeprefix("Bearer "),
+            flask.request.stream,
+            content_length=flask.request.content_length,
+            connection=connection,
+        )
+        return "", 204
 
     @experiment_route("/asset/<access_token>", methods=["GET"])
     @experiment_route("/asset/<access_token>/<path:subpath>", methods=["GET"])
@@ -6644,6 +6735,14 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                         page_uuid_after_response = cls._prepare_approved_inplace_page(
                             exp, participant, page, payload
                         )
+            if result.recording_response_id is not None:
+                from .media_upload import _refresh_recording_receipt
+
+                if participant is None:
+                    participant = cls._participant_request_query().get(participant_id)
+                _refresh_recording_receipt(
+                    result.recording_response_id, participant, payload
+                )
             db.session.commit()
             write_committed = True
         except Exception as err:
