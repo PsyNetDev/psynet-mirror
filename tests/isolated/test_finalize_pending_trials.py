@@ -265,7 +265,7 @@ def test_recording_failure_exits_feedback_wait(
 ):
     from timeline_hold_helpers import _process_response
 
-    from psynet.asset import ExperimentAsset
+    from psynet.asset import FileAsset
     from psynet.page import InfoPage
     from psynet.timeline import Timeline
     from psynet.timeline_hold import _ConditionHoldPage
@@ -273,7 +273,7 @@ def test_recording_failure_exits_feedback_wait(
     exp = get_experiment()
     network = _create_network(_chain_trial_maker(), exp)
     trial = _add_complete_unfinalized_trial(network.head, participant)
-    asset = ExperimentAsset(
+    asset = FileAsset(
         local_key="pending",
         input_path=None,
         is_folder=False,
@@ -326,7 +326,7 @@ def test_failed_recording_releases_end_wait_without_bypassing_performance_check(
 ):
     from timeline_hold_helpers import _process_response
 
-    from psynet.asset import ExperimentAsset
+    from psynet.asset import FileAsset
     from psynet.page import InfoPage
     from psynet.timeline import Timeline
     from psynet.timeline_hold import _ConditionHoldPage
@@ -340,7 +340,7 @@ def test_failed_recording_releases_end_wait_without_bypassing_performance_check(
     participant.module_state = maker.state_class(maker, participant)
     network = _create_network(maker, exp)
     trial = _add_complete_unfinalized_trial(network.head, participant)
-    asset = ExperimentAsset(
+    asset = FileAsset(
         local_key="pending",
         input_path=None,
         is_folder=False,
