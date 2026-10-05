@@ -163,6 +163,13 @@ exclude = [
     "/tests",
 ]
 
+[tool.pytest.ini_options]
+norecursedirs = [
+    "tests/experiments",
+    "tests/isolated",
+    "tests/template_experiment_tests",
+]
+
 [tool.ruff]
 line-length = 88
 target-version = "py311"
