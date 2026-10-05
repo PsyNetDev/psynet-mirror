@@ -602,9 +602,12 @@ def _call_deposit_callbacks(recording_id):
                 .one()
             )
         asset = Recording.query.filter_by(id=recording_id).populate_existing().one()
+        # Background clips never feed analysis; a required one only gates
+        # finalization, which the re-check after the callbacks performs.
         if (
             asset.deposited
             and asset.required_for_trial
+            and asset.recording_role != "background"
             and (trial is None or not trial.failed)
         ):
             asset.after_deposit()

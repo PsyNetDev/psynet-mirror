@@ -74,7 +74,14 @@
           alert(message);
         });
       };
-      document.body.appendChild(script);
+      // Start the engine only after the owning document has resolved capture
+      // permission. Loading scripts must not start a task behind the dialog.
+      let unityStarted = false;
+      psynet.trial.onEvent("trialStart", () => {
+        if (unityStarted) return;
+        unityStarted = true;
+        document.body.appendChild(script);
+      });
     </script>
 {% endblock %}
 
