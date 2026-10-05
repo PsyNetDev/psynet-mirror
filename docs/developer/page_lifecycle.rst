@@ -253,8 +253,14 @@ Manual-start pages require both ``pageReady`` and ``trialManualRequest`` before
 ``trialPrepare``. This prevents trial-start, response-enable, submit-enable, and
 auto-advance behavior from running while navigation is still blocked.
 
-Recording uploads and navigation
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Background capture and task startup
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Background recording resolves its permission decision before ``trialConstruct``.
+Page modules can register task handlers during activation, but must start the task
+from ``trialStart`` rather than executing it inside ``activate()``. The built-in
+jsPsych integration follows this boundary. The Unity template also defers loading
+its engine until ``trialStart``, so a task cannot run behind the permission dialog.
 
 The browser document owns capture streams and the upload queue. Normal page
 cleanup must not stop those streams or cancel accepted uploads. Each logical page
