@@ -99,16 +99,21 @@ def prolific_error(status):
     )
 
 
-@pytest.mark.parametrize("status", [408, 429, 500, 502, 503, 504])
+@pytest.mark.parametrize(
+    "error",
+    [prolific_error(status) for status in (408, 429, 500, 502, 503, 504)]
+    + [
+        requests.Timeout("slow"),
+        ProlificServiceException('{"URL": "/submissions/1/", "error": "Timeout()"}'),
+    ],
+)
 def test_check_assignment_return_status_handles_retriable_prolific_lookup_failure(
-    status,
+    error,
     caplog,
 ):
     participant = make_participant()
     experiment = MagicMock()
-    experiment.recruiter.prolificservice.get_participant_submission.side_effect = (
-        prolific_error(status)
-    )
+    experiment.recruiter.prolificservice.get_participant_submission.side_effect = error
 
     with patch("psynet.experiment.get_experiment", return_value=experiment):
         result = PsyNetProlificRecruiterMixin.check_assignment_return_status(

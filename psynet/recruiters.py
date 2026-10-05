@@ -238,6 +238,24 @@ def _prolific_error_status(error: ProlificServiceException):
         return None
 
 
+def _prolific_lookup_error_is_retriable(error: Exception) -> bool:
+    """Return whether a failed Prolific lookup is worth retrying.
+
+    Connection errors and timeouts reach PsyNet as ``requests`` exceptions
+    from older Dallinger versions, and as a ``ProlificServiceException``
+    whose payload has an ``error`` but no ``response`` from newer ones.
+    """
+    if isinstance(error, requests.RequestException):
+        return True
+    try:
+        payload = json.loads(str(error))
+    except json.JSONDecodeError:
+        return False
+    if isinstance(payload, dict) and "error" in payload and "response" not in payload:
+        return True
+    return _prolific_error_status(error) in RETRIABLE_PROLIFIC_RETURN_LOOKUP_STATUSES
+
+
 def _recruiter_class_by_name(name):
     try:
         return get_descendent_class_by_name(dallinger.recruiters.Recruiter, name)
@@ -1970,15 +1988,14 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
             submission = recruiter.prolificservice.get_participant_submission(
                 participant.assignment_id
             )
-        except ProlificServiceException as error:
-            status = _prolific_error_status(error)
-            if status not in RETRIABLE_PROLIFIC_RETURN_LOOKUP_STATUSES:
+        except (ProlificServiceException, requests.RequestException) as error:
+            if not _prolific_lookup_error_is_retriable(error):
                 logger.error(
                     "Could not check Prolific submission status for assignment %s "
                     "because Prolific returned a non-retriable lookup error "
                     "with status %s.",
                     participant.assignment_id,
-                    status,
+                    _prolific_error_status(error),
                     exc_info=True,
                 )
                 raise
