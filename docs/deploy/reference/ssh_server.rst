@@ -142,7 +142,8 @@ All classic apps share these services, defined in ``~/dallinger/docker-compose.y
 
 Cloudflare-ingress apps instead run their own Postgres in the Compose project
 and reach the internet through ``cloudflared``. They do not publish ports
-80/443.
+80/443. Every app also has an unprivileged front-door Caddy and a private
+hibernation controller.
 
 Every service has the restart policy ``unless-stopped``, so Docker restarts
 the apps when the server reboots.
@@ -183,6 +184,21 @@ An update rebuilds only the image. It doesn't deposit new assets, set up
 networks, or run pre-deploy routines again, so a new stimulus set needs a fresh
 deploy. Participants' progress is a position in the timeline: don't change the
 page sequence, module IDs or trial makers while anyone is still taking part.
+
+Hibernation
+-----------
+
+Each docker-ssh app has a front door that can stop its expensive containers
+while the app stays reachable. To sleep or wake an app by hand::
+
+    psynet hibernate ssh --app your-app-name
+    psynet awaken ssh --app your-app-name
+
+Hibernate only apps that are not recruiting or serving participants. A
+visitor to a sleeping app sees "Getting ready, please wait..." while it
+wakes. ``GET /health`` probes do not wake it. ``psynet export ssh`` awakens a
+sleeping app before reading its database. If the app crashes while awake, it
+returns HTTP 503 until Docker restarts it.
 
 .. _ssh_server_working_over_ssh:
 
