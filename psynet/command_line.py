@@ -4,6 +4,7 @@ import importlib
 import json
 import os
 import re
+import shlex
 import shutil
 import signal
 import subprocess
@@ -13,6 +14,7 @@ import threading
 import zipfile
 from contextlib import contextmanager, nullcontext
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import click
 import click.shell_completion
@@ -91,6 +93,19 @@ from .utils import (
 ensure_runtime()
 
 logger = get_logger()
+
+
+def _use_local_dallinger_option(func):
+    return click.option(
+        "--use-local-dallinger",
+        is_flag=True,
+        default=False,
+        help=(
+            "Bake the locally imported Dallinger source into the experiment "
+            "image instead of the Git pin. Required for canary deploys of "
+            "unreleased docker-ssh features."
+        ),
+    )(func)
 
 
 def verify_id(ctx, param, app):
@@ -1362,8 +1377,10 @@ def _pre_launch(
 
     run_pre_checks(mode, local_, heroku, docker, app)
 
-    # Always use the Dallinger version in requirements.txt, not the local editable one
-    os.environ["DALLINGER_NO_EGG_BUILD"] = "1"
+    if os.environ.get("DALLINGER_SOURCE"):
+        os.environ.pop("DALLINGER_NO_EGG_BUILD", None)
+    else:
+        os.environ["DALLINGER_NO_EGG_BUILD"] = "1"
 
     if is_in_repo_experiment():
         # In-repo demos/tests use PsyNet's shared development .venv; do not let
@@ -1504,15 +1521,14 @@ def _deploy__docker_heroku(ctx, app, archive):
     "--dns-host",
     help="DNS name to use. Must resolve all its subdomains to the IP address specified as ssh host",
 )
+@_use_local_dallinger_option
 @click.pass_context
-def deploy__docker_ssh(ctx, app, archive, dns_host, server):
+def deploy__docker_ssh(ctx, app, archive, dns_host, server, use_local_dallinger=False):
     """
     Deploy the experiment to a remote server via Docker and SSH.
     """
     try:
-        # Ensures that the experiment is deployed with the Dallinger version specified in requirements.txt,
-        # irrespective of whether a different version is installed locally.
-        os.environ["DALLINGER_NO_EGG_BUILD"] = "1"
+        _configure_dallinger_image_source(use_local_dallinger=use_local_dallinger)
 
         _pre_launch(
             ctx,
@@ -1530,21 +1546,62 @@ def deploy__docker_ssh(ctx, app, archive, dns_host, server):
         )
 
         # Note: PsyNet bypasses Dallinger's deploy-from-archive system and uses its own, so we set archive_path=None.
-        # Explicitly pass update=False to avoid Click converting the default to the string 'False'
-        result = ctx.invoke(
+        # Pass a real bool. Click stringifies an omitted default as 'False'.
+        result = _invoke_docker_ssh_deploy(
+            ctx,
             dallinger_docker_ssh_deploy,
             server=server,
             dns_host=dns_host,
-            app_name=app,
-            config_options={},
-            archive_path=None,
-            update=False,
+            app=app,
         )
 
         _post_deploy(result)
     finally:
         _cleanup_exp_directory()
         reset_console()
+
+
+def _invoke_docker_ssh_deploy(ctx, command, *, server, dns_host, app):
+    """Invoke Dallinger docker-ssh deploy/sandbox for a fresh app."""
+    return ctx.invoke(
+        command,
+        server=server,
+        dns_host=dns_host,
+        app_name=app,
+        config_options={},
+        archive_path=None,
+        update=False,
+    )
+
+
+def _configure_dallinger_image_source(use_local_dallinger=False):
+    """Choose the Dallinger tree that docker-ssh bakes into the experiment image."""
+    if not use_local_dallinger:
+        os.environ["DALLINGER_NO_EGG_BUILD"] = "1"
+        # Dallinger bakes DALLINGER_SOURCE whenever it is set.
+        if os.environ.pop("DALLINGER_SOURCE", None):
+            click.echo(
+                "Ignoring DALLINGER_SOURCE; pass --use-local-dallinger to bake it."
+            )
+        return
+    os.environ.pop("DALLINGER_NO_EGG_BUILD", None)
+    source = os.environ.get("DALLINGER_SOURCE", "").strip()
+    if not source:
+        from dallinger.utils import get_editable_dallinger_path
+
+        source = get_editable_dallinger_path() or ""
+    if not source:
+        import dallinger as dallinger_pkg
+
+        root = Path(dallinger_pkg.__file__).resolve().parent.parent
+        if (root / "pyproject.toml").is_file():
+            source = str(root)
+    if not source:
+        raise click.UsageError(
+            "--use-local-dallinger needs an editable Dallinger checkout or DALLINGER_SOURCE."
+        )
+    os.environ["DALLINGER_SOURCE"] = source
+    click.echo(f"Baking local Dallinger from {source} into the experiment image.")
 
 
 def _post_deploy(result):
@@ -1934,15 +1991,16 @@ def debug__docker_heroku(ctx, app, archive):
     "--dns-host",
     help="DNS name to use. Must resolve all its subdomains to the IP address specified as ssh host",
 )
+@_use_local_dallinger_option
 @click.pass_context
-def debug__docker_ssh(ctx, app, archive, server, dns_host):
+def debug__docker_ssh(ctx, app, archive, server, dns_host, use_local_dallinger=False):
     """
     Debug the experiment on a remote server via SSH.
     """
     try:
         from dallinger.command_line.docker_ssh import sandbox
 
-        os.environ["DALLINGER_NO_EGG_BUILD"] = "1"
+        _configure_dallinger_image_source(use_local_dallinger=use_local_dallinger)
 
         _pre_launch(
             ctx,
@@ -1957,14 +2015,12 @@ def debug__docker_ssh(ctx, app, archive, server, dns_host):
 
         # Note: PsyNet bypasses Dallinger's deploy-from-archive system and uses its own, so we set archive_path=None.
         # Explicitly pass update=False to avoid Click converting the default to the string 'False'
-        result = ctx.invoke(
+        result = _invoke_docker_ssh_deploy(
+            ctx,
             sandbox,
             server=server,
             dns_host=dns_host,
-            app_name=app,
-            config_options={},
-            archive_path=None,
-            update=False,
+            app=app,
         )
 
         _post_deploy(result)
@@ -2883,6 +2939,101 @@ def _build_local_export(export_path, assets):
     build_export_tree(export_path, assets=assets, local=True)
 
 
+def _normalize_public_origin(value):
+    """Return an origin with no path, query, or fragment.
+
+    Parameters
+    ----------
+    value : str or None
+        Candidate public origin.
+
+    Returns
+    -------
+    str or None
+        The origin, or ``None`` when ``value`` is not an HTTP(S) origin.
+    """
+    if not isinstance(value, str):
+        return None
+    parsed = urlsplit(value.strip())
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return None
+    if parsed.path not in {"", "/"} or parsed.query or parsed.fragment:
+        return None
+    return f"{parsed.scheme}://{parsed.netloc}"
+
+
+def _latest_launch_record(app, server):
+    """Return the newest local launch note for this app on this server."""
+    root = Path("~/psynet-data/launch-data").expanduser()
+    if not root.is_dir():
+        return None
+    chosen = None
+    chosen_mtime = -1
+    for path in root.glob("*/launch-info.json"):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            mtime = path.stat().st_mtime
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            continue
+        if payload.get("app") != app or payload.get("server") != server:
+            continue
+        if mtime >= chosen_mtime:
+            chosen = payload
+            chosen_mtime = mtime
+    return chosen
+
+
+def _remote_public_origin(app, server):
+    """Read ``public_origin`` from the server's deployment manifest."""
+    if not isinstance(app, str) or not re.fullmatch(
+        r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", app
+    ):
+        return None
+    from dallinger.command_line.docker_ssh import ExecuteException
+
+    from .export.client import SshSession
+
+    command = f'cat "$HOME/dallinger/{shlex.quote(app)}/deployment.json"'
+    try:
+        with SshSession(server) as session:
+            raw = session.executor.run(command, raise_=False)
+    except (ExecuteException, OSError, KeyError) as exc:
+        log(f"Could not read the remote deployment manifest: {exc}")
+        return None
+    try:
+        payload = json.loads(raw or "")
+    except json.JSONDecodeError:
+        return None
+    return _normalize_public_origin(payload.get("public_origin"))
+
+
+def _ssh_dashboard_endpoint(app, server, config):
+    """Dashboard address and credentials for an SSH deployment.
+
+    Cloudflare apps are not served at ``https://<app>.<ssh-host>``. The
+    deploy records the public origin locally; the server manifest is the
+    fallback when that note is missing.
+    """
+    from .export.client import DashboardEndpoint
+
+    record = _latest_launch_record(app, server)
+    origin = None
+    user = config.get("dashboard_user")
+    password = config.get("dashboard_password")
+    if record:
+        origin = _normalize_public_origin(record.get("public_origin"))
+        record_user = record.get("dashboard_user")
+        record_password = record.get("dashboard_password")
+        if record_user and record_password:
+            user = record_user
+            password = record_password
+    if origin is None:
+        origin = _remote_public_origin(app, server)
+    if origin is None:
+        origin = get_experiment_url(app, server)
+    return DashboardEndpoint(base_url=origin, auth=(user, password))
+
+
 def _fetch_remote_export(
     experiment_class,
     export_path,
@@ -2920,10 +3071,13 @@ def _fetch_remote_export(
         local_project_identity,
     )
 
-    endpoint = DashboardEndpoint(
-        base_url=get_experiment_url(app, server),
-        auth=(config.get("dashboard_user"), config.get("dashboard_password")),
-    )
+    if docker_ssh and server:
+        endpoint = _ssh_dashboard_endpoint(app, server, config)
+    else:
+        endpoint = DashboardEndpoint(
+            base_url=get_experiment_url(app, server),
+            auth=(config.get("dashboard_user"), config.get("dashboard_password")),
+        )
     local_identity = local_project_identity(experiment_class)
 
     def check_identity(remote):

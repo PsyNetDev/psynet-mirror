@@ -83,6 +83,22 @@ What a deployment does
 5. It adds the app's address to Caddy and calls the experiment's ``/launch``
    route, which opens recruitment.
 
+Experiment containers run as the SSH user rather than root. Deploy chowns
+``~/psynet-data/assets`` (and other writable ``docker_volumes`` bind mounts
+under the home directory) so files left as root by older deploys stay
+writable, retrying with a root Alpine container if needed.
+``psynet export ssh`` reaches a deployment at the public origin recorded in
+its deployment manifest.
+
+To deploy with an unreleased Dallinger checkout, bake it into the image::
+
+    psynet deploy ssh --app your-app-name --use-local-dallinger
+
+PYTHONPATH is not enough: the image still pip-installs the Dallinger version
+pinned in ``pyproject.toml``. ``--use-local-dallinger`` builds a wheel from
+the editable checkout (or ``DALLINGER_SOURCE``), and the image build installs
+it after ``COPY .``.
+
 Services
 ^^^^^^^^
 

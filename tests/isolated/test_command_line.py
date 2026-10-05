@@ -76,6 +76,47 @@ class TestCommandLine(object):
         assert b"Options:" in output
         assert b"Commands:" in output
 
+    def test_deploy_ssh_accepts_use_local_dallinger(self):
+        from psynet.command_line import deploy__docker_ssh
+
+        names = [param.name for param in deploy__docker_ssh.params]
+        assert "use_local_dallinger" in names
+
+    def test_configure_dallinger_image_source_sets_source(self, monkeypatch, tmp_path):
+        from psynet.command_line import _configure_dallinger_image_source
+
+        src = tmp_path / "Dallinger"
+        src.mkdir()
+        (src / "pyproject.toml").write_text("[project]\nname='dallinger'\n")
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("DALLINGER_SOURCE", str(src))
+        monkeypatch.setenv("DALLINGER_NO_EGG_BUILD", "1")
+        _configure_dallinger_image_source(use_local_dallinger=True)
+        assert os.environ["DALLINGER_SOURCE"] == str(src)
+        assert "DALLINGER_NO_EGG_BUILD" not in os.environ
+
+    def test_configure_dallinger_image_source_ignores_a_stale_export(self, monkeypatch):
+        from psynet.command_line import _configure_dallinger_image_source
+
+        monkeypatch.setenv("DALLINGER_SOURCE", "/somewhere/Dallinger")
+        _configure_dallinger_image_source(use_local_dallinger=False)
+        assert "DALLINGER_SOURCE" not in os.environ
+        assert os.environ["DALLINGER_NO_EGG_BUILD"] == "1"
+
+    def test_export_launch_info_records_public_origin(self, tmp_path):
+        from psynet.command_line import _export_launch_info
+
+        _export_launch_info(
+            tmp_path,
+            dashboard_user="admin",
+            dashboard_password="secret",
+            public_origin="https://consonance.science-of-music.org",
+            ingress="cloudflare",
+        )
+        payload = json.loads((tmp_path / "launch-info.json").read_text())
+        assert payload["public_origin"] == "https://consonance.science-of-music.org"
+        assert payload["ingress"] == "cloudflare"
+
     def test_dev_changelog_dispatches_to_builder(self, monkeypatch, tmp_path):
         from psynet.command_line import psynet
         from psynet.dev import changelog as changelog_module
