@@ -58,20 +58,39 @@ Default-branch checks and publishing
 A nightly GitLab pipeline schedule on ``master`` runs the ``asv_benchmarks``
 CI job. The schedule sets the variable ``NIGHTLY_BENCHMARKS`` to ``1``, and its
 pipelines run only this job and ``pages``, which republishes the benchmark
-site. The full suite takes about 35 minutes, which is too long to
-run on every merge, so ``master`` push pipelines only offer the job as a manual
-action.
+site. The full suite takes about 35 minutes, which is too long to run on every
+merge, so ``master`` push pipelines only offer the job as a manual action.
+Other schedules run the usual pipeline jobs.
 
 The job uses ``asv continuous`` without a ``--bench`` filter, so it runs both
 the fast and slow benchmark tiers. It compares ``master`` as it was 24 hours
 earlier (``ASV_BASE_AGE``) with the current ``master`` commit on the same
 runner, and exits early if nothing has been merged since then. It writes the
 generated result files, commits those results to the ``benchmark-results``
-branch, pushes them, and then propagates the ASV exit status. To set up the
-schedule, add a pipeline schedule for ``master`` under *Build > Pipeline
-schedules* in GitLab, for example with the cron expression ``0 2 * * *``, and
-give it the variable ``NIGHTLY_BENCHMARKS`` with value ``1``. Other schedules
-run the usual pipeline jobs.
+branch, pushes them, and then propagates the ASV exit status.
+``asv continuous`` exits with status 1 on a regression. If a benchmark errors
+or either commit fails to build, it exits with status 2 without comparing the
+commits; the job log shows the failure, and the results for both commits are
+still published.
+
+The PsyNet project already has this schedule, "Nightly ASV benchmarks", which
+runs at 02:00 Europe/London time; see *Build > Pipeline schedules* in GitLab.
+Don't add a second one. Scheduled pipelines run as the schedule's owner, and
+the owner needs the Maintainer role to run pipelines on the protected
+``master`` branch. If the owner leaves the project or loses that role, another maintainer
+should use *Take ownership* to keep it running.
+
+A fork or new project needs its own setup:
+
+- A pipeline schedule for ``master``, for example with the cron expression
+  ``0 2 * * *``, with the variable ``NIGHTLY_BENCHMARKS`` set to ``1``.
+- A project access token (*Settings > Access tokens*) with the Developer role
+  and the ``write_repository`` scope, stored as the masked CI/CD variable
+  ``BENCHMARK_RESULTS_TOKEN`` (*Settings > CI/CD > Variables*).
+
+``asv_benchmarks`` uses the token to push the ``benchmark-results`` branch, and
+``pages`` uses it to fetch that branch. When the token expires, the push fails
+and the published benchmarks stop updating, so renew it before then.
 
 The comparison uses ``--factor 2`` because the slow
 ``psynet performance-test`` medians commonly move by 1.2–1.3× on GitLab
@@ -79,8 +98,7 @@ runners without a code change. ``asv continuous`` applies one factor to
 every benchmark it runs, so the default-branch job is also looser on the
 fast suite; merge requests still gate the fast suite at ``--factor 1.25``.
 The job is currently allowed to fail while the benchmark suite is being
-tuned, but it still preserves the data needed for the published
-benchmark history.
+tuned.
 
 ASV command modes
 =================
