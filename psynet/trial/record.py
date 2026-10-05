@@ -78,7 +78,9 @@ class RecordTrial:
     @property
     def recording(self):
         recordings = [
-            asset for asset in self.assets.values() if isinstance(asset, Recording)
+            asset
+            for asset in self.assets.values()
+            if isinstance(asset, Recording) and asset.recording_role != "background"
         ]
         if len(recordings) == 0:
             return None

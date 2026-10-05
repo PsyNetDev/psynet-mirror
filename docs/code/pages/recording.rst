@@ -1,8 +1,110 @@
 Recording video and handling uploads
 ====================================
 
-Answer recordings upload independently of page navigation. Wait for deposit and
-provide a fallback when a later page needs the recording.
+Record answer or background video while allowing independent pages to advance.
+Use the waiting and fallback pattern below when a later page needs the recording.
+
+Optional background video
+-------------------------
+
+Set ``background_recording`` on a :class:`~psynet.timeline.Page` to capture video
+alongside its ordinary answer. A button page can save the choice immediately
+while its camera clip uploads in the background:
+
+.. code-block:: python
+
+    from psynet.consent import AudiovisualConsent
+    from psynet.modular_page import ModularPage, PushButtonControl, VideoRecordConfig
+    from psynet.timeline import Timeline
+
+    timeline = Timeline(
+        AudiovisualConsent(time_estimate=5),
+        ModularPage(
+            "judgment",
+            "Did the two sounds match?",
+            PushButtonControl(["Yes", "No"]),
+            time_estimate=10,
+            background_recording=VideoRecordConfig(
+                source="camera", audio=False, max_duration=120,
+            ),
+        ),
+    )
+
+The shorthand ``background_recording="camera"`` uses the same defaults.
+``"screen"`` and ``"both"`` are also supported. Each source produces a separate
+WebM asset per page visit, including when labels repeat or a
+:class:`~psynet.timeline.PageMaker` generates the page.
+
+Capture requires accepted audiovisual consent and an explicit browser permission
+step before the task starts. Participants can continue without recording; optional
+pages do not request skipped or denied sources again. Later required pages offer
+another permission decision when their source is unavailable. Audio is
+off by default. Screen audio availability depends on the browser and shared source.
+
+By default, capture stops after 120 seconds or at 16 MiB per source. Exceeding
+the size limit discards that clip; reaching the duration limit retains the
+captured portion. Missing optional clips do not fail the trial or block analysis.
+See :class:`~psynet.modular_page.VideoRecordConfig` for configuration options.
+
+Background recordings require :class:`~psynet.asset.LocalStorage` and in-place
+timeline transitions. These settings are checked at startup for static pages and
+when generated pages are rendered. Background recording supports
+ordinary pages, :class:`~psynet.page.JsPsychPage`, and browser-hosted
+:class:`~psynet.page.UnityPage`. Pages sharing a ``session_id`` each get their own clip.
+
+Consent pages and answer-recording controls cannot also record background video.
+Unity IDE debug mode and custom renderers that bypass the PsyNet page lifecycle
+are unsupported. Manually leaving or reloading the document warns about pending
+uploads, which are lost if the participant chooses to leave.
+
+Requiring a background recording
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Use ``VideoRecordConfig(required=True)`` when a background clip is necessary for
+a trial to count as valid. Set this on a page returned by the trial's
+:meth:`~psynet.trial.main.Trial.show_trial`, for example:
+
+.. code-block:: python
+
+    def show_trial(self, experiment, participant):
+        return ModularPage(
+            "judgment", "Did the two sounds match?",
+            PushButtonControl(["Yes", "No"]),
+            time_estimate=10,
+            background_recording=VideoRecordConfig(source="camera", required=True),
+        )
+
+The answer is saved immediately and its analysis can proceed, but the trial cannot
+finalize until all required clips are deposited. Independent pages can advance.
+
+Missing clips fail only their parent trial at the upload deadline, with no
+recording retry. This includes denied or skipped capture. Existing performance
+and payment policies still apply. Required recording on a page without a parent
+trial raises an error.
+With ``source="both"``, both clips are required.
+
+Required background pages run ``on_complete`` after successful validation and
+asset reservation, so completion hooks see the pending requirement. Optional
+pages retain ordinary answer-saving and completion-hook behavior.
+
+Bots skip background capture and bypass the required-media condition for timeline
+testing. A passing bot run does not validate recording availability; use browser
+tests or manual capture to check the required policy.
+
+Try the demo
+~~~~~~~~~~~~
+
+For a runnable example, use ``demos/features/background_recording``:
+
+.. code-block:: shell
+
+    cd demos/features/background_recording
+    psynet debug local
+
+Compare optional and required trials with camera permission enabled and denied.
+Answers should advance in both cases; a missing required clip fails its trial at
+the deadline. Inspect the results under **Monitor → Recordings**.
+
 
 Waiting for a recording before playback
 ---------------------------------------
@@ -57,8 +159,8 @@ Complete receipt starts a separate 20-second processing allowance. Retries do no
 extend either deadline.
 
 With ``inplace_timeline_transitions=false`` or other storage backends, answer video
-uploads still complete before navigation. In-place experiments drain pending
-uploads before full-page
+uploads still complete before navigation. Background recording is unsupported
+with these settings. In-place experiments drain pending uploads before full-page
 transitions and recruiter exit, displaying an upload message; failures and the
 original deadlines bound this wait. Deliberate early-exit and error redirects
 can abandon pending uploads without an additional browser warning.
@@ -79,7 +181,7 @@ permission decision. Skipping capture follows the missing-upload policy above.
 Inspecting recording outcomes
 -----------------------------
 
-Inspect ``assets/manifest.csv`` for each recording's source, capture outcome,
-upload status, and failure reason. Unavailable recordings remain listed without
-download
+Open **Monitor → Recordings** for each clip's source, required/optional policy,
+capture outcome, upload status, and failure reason. These fields also appear in
+``assets/manifest.csv``. Unavailable recordings remain listed without download
 links; partial clips are identified by their capture outcome.

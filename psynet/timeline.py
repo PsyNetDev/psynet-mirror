@@ -1147,6 +1147,13 @@ class Page(Elt):
     time_estimate:
         Time estimated for the page.
 
+    background_recording:
+        Optional background video alongside the ordinary answer: ``"camera"``,
+        ``"screen"``, ``"both"``, or a
+        :class:`~psynet.background_recording.VideoRecordConfig`. Clips are optional
+        by default; ``required=True`` holds finalization and fails the parent trial
+        if its recording is missing. See :doc:`/code/pages/recording`.
+
     template_path:
         Path to the jinja2 template to use for the page.
 
@@ -1387,9 +1394,17 @@ class Page(Elt):
         requires_full_page_reload: bool = False,
         expect_scrolling: Optional[bool] = None,
         delegated_render: bool = False,
+        background_recording=None,
     ):
         super().__init__()
 
+        from .background_recording import _normalize_config
+
+        self.background_recording = _normalize_config(
+            background_recording,
+            self,
+            delegated=delegated_render,
+        )
         legacy_js_links = _normalize_javascript_urls(js_links, "js_links")
         legacy_scripts = _normalize_js_page_code(scripts, "scripts")
         if legacy_js_links:
@@ -1690,6 +1705,9 @@ class Page(Elt):
         """
         from psynet.page import UnityPage
 
+        from .background_recording import _browser_config
+        from .experiment import get_experiment
+
         attributes = {
             "session_id": self.session_id,
             "type": type(self).__name__,
@@ -1698,6 +1716,11 @@ class Page(Elt):
             "is_unity_page": isinstance(self, UnityPage),
             "requires_full_page_reload": self.requires_full_page_reload,
             "expect_scrolling": self.expect_scrolling,
+            "background_recording": (
+                _browser_config(self, get_experiment(), participant)
+                if self.background_recording is not None
+                else None
+            ),
         }
         arrival_updates = _arrival_updates_for(self, participant)
         if arrival_updates is not None:
@@ -1749,6 +1772,11 @@ class Page(Elt):
         if metadata is None:
             metadata = {}
 
+        if self.background_recording is not None:
+            from .background_recording import _browser_config
+
+            _browser_config(self, experiment, participant)
+
         resp = Response(
             participant=participant,
             label=self.label,
@@ -1757,6 +1785,7 @@ class Page(Elt):
         db.session.add(resp)
 
         trial = participant.current_trial
+        resp._background_parent = trial or participant
 
         if answer == NoArgumentProvided:
             answer = self.format_answer(
@@ -1792,7 +1821,15 @@ class Page(Elt):
         participant.browser_platform = metadata.get(
             "platform", "Browser platform info could not be retrieved."
         )
-        if getattr(resp, "_deferred_video_answer", False) is not True:
+        # Required assets must exist before author completion hooks can finalize
+        # a trial. Optional capture preserves ordinary answer/hook semantics.
+        resp._deferred_background_answer = (
+            self.background_recording is not None and self.background_recording.required
+        )
+        if (
+            getattr(resp, "_deferred_video_answer", False) is not True
+            and not resp._deferred_background_answer
+        ):
             self._store_response_answer(resp, participant)
             self.on_complete(experiment=experiment, participant=participant)
         return resp
@@ -1991,9 +2028,11 @@ class Page(Elt):
         # `partial_mode` is an internal render shape used for inplace
         # transitions. The public timeline route now serves full pages (plus
         # mode=json), while /response embeds this fragment payload directly.
+        from .background_recording import _browser_config
         from .modular_page import VideoRecordControl
 
         internal_js_vars = {
+            "backgroundRecording": _browser_config(self, experiment, participant),
             "uniqueId": participant.unique_id,
             "pageUuid": participant.page_uuid,
             "dynamicallyUpdateProgressBarAndReward": self.dynamically_update_progress_bar_and_reward,

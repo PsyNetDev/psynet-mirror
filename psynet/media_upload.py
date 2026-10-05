@@ -511,7 +511,11 @@ def _resolve_recording(recording_id, *, output=None, error=None):
         asset.upload_status = "deposited"
         asset.deposited = True
         if asset.required_for_trial and (trial is None or not trial.failed):
-            asset.after_deposit()
+            if asset.recording_role == "background":
+                if trial is not None:
+                    trial.check_if_can_mark_as_finalized()
+            else:
+                asset.after_deposit()
     asset.input_path = None
     return input_path
 

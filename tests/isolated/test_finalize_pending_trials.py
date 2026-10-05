@@ -10,13 +10,13 @@ from psynet.trial.chain import ChainNetwork, ChainNode, ChainTrial, ChainTrialMa
 from psynet.trial.main import Trial
 
 
-def _reserve_trial_recording(trial, directory, *, required=True):
+def _reserve_trial_recording(trial, directory, *, background=False, required=True):
     """Reserve a camera clip for an accepted trial response."""
     from psynet.asset import LocalStorage
     from psynet.media_upload import _reserve_recording
     from psynet.timeline import Response
 
-    label = "video"
+    label = "choice" if background else "video"
     response = Response(
         participant=trial.participant, label=label, page_type="ModularPage"
     )
@@ -26,9 +26,9 @@ def _reserve_trial_recording(trial, directory, *, required=True):
         parent=trial,
         page_uuid=label,
         source="camera",
-        local_key="video",
+        local_key="background_choice_camera" if background else "video",
         storage=LocalStorage(str(directory)),
-        role="answer",
+        role="background" if background else "answer",
         required_for_trial=required,
         upload_timeout=60,
     )
@@ -511,6 +511,40 @@ def test_finalize_pending_trials_skips_asset_deposit_pending(
     "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
 )
 @pytest.mark.usefixtures("in_experiment_directory")
+def test_optional_recording_can_expire_after_trial_finalization(
+    db_session, participant, tmp_path, monkeypatch
+):
+    from datetime import timedelta
+
+    from psynet import media_upload
+    from psynet.trial.record import Recording
+
+    exp = get_experiment()
+    network = _create_network(_chain_trial_maker(), exp)
+    trial = _add_complete_unfinalized_trial(network.head, participant)
+    asset, _ = _reserve_trial_recording(
+        trial, tmp_path, background=True, required=False
+    )
+    trial_id, asset_id, answer = trial.id, asset.id, trial.answer
+    deadline = asset.upload_deadline
+    db.session.commit()
+    assert media_upload._recording_wait_timeout(participant.id, trial_id=trial_id) == 20
+    assert Trial.finalize_pending_trials() == 1
+    assert db.session.get(Trial, trial_id).finalized
+    monkeypatch.setattr(
+        media_upload, "_utcnow", lambda: deadline + timedelta(seconds=1)
+    )
+    media_upload._expire_recordings()
+    trial = db.session.get(Trial, trial_id)
+    assert trial.finalized and not trial.failed
+    assert trial.answer == answer
+    assert db.session.get(Recording, asset_id).upload_status == "expired"
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
 def test_failed_async_blocks_finalization_even_if_not_pending(db_session, participant):
     """Failed async is not 'pending' but must still block finalize."""
     exp = get_experiment()
@@ -677,3 +711,69 @@ def test_finalize_pending_trials_commits_each_failed_trial(
     assert second_bad.failed is True
     assert Trial.get_trials_ready_to_finalize() == []
     assert Trial.finalize_pending_trials() == 0
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_required_background_deposit_releases_finalization(
+    db_session, participant, tmp_path, monkeypatch
+):
+    import io
+    from pathlib import Path
+
+    from psynet import media_upload
+    from psynet.asset import LocalStorage
+    from psynet.trial.record import Recording, RecordTrial
+
+    exp = get_experiment()
+    monkeypatch.setattr(
+        "psynet.deployment_info.read_all",
+        lambda: {
+            "deployment_id": "test-deployment",
+            "is_local_deployment": True,
+            "is_ssh_deployment": False,
+        },
+    )
+    network = _create_network(_chain_trial_maker(), exp)
+    trial = _add_complete_unfinalized_trial(network.head, participant)
+    asset, receipt = _reserve_trial_recording(trial, tmp_path, background=True)
+    trial_id, asset_id, answer = trial.id, asset.id, trial.answer
+    db.session.commit()
+    assert Trial.finalize_pending_trials() == 0
+    assert not trial.finalized
+    assert RecordTrial.recording.fget(trial) is None
+
+    # Background evidence does not gate analysis of the independent button answer.
+    queued = []
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            FinalizeBackstopTrial, "async_post_trial", lambda self, **kwargs: None
+        )
+        patch.setattr(
+            FinalizeBackstopTrial,
+            "queue_async_post_trial",
+            lambda self: queued.append(self.id),
+        )
+        trial.run_async_post_trial = True
+        trial.check_if_can_run_async_post_trial()
+    assert queued == [trial_id]
+
+    def unexpected_analysis(self):
+        raise AssertionError("Background deposit must not invoke answer analysis")
+
+    monkeypatch.setattr(Recording, "after_deposit", unexpected_analysis)
+    monkeypatch.setattr(LocalStorage, "on_deployed_server", lambda self: True)
+    path = (
+        Path(__file__).resolve().parents[2]
+        / "demos/experiments/imitation_chain_video/assets/example_recording.webm"
+    )
+    media_upload._receive_recording(
+        asset_id, receipt["token"], io.BytesIO(path.read_bytes()), directory=tmp_path
+    )
+    media_upload._process_recording(asset_id)
+    trial = db.session.get(Trial, trial_id)
+    assert db.session.get(Recording, asset_id).deposited
+    assert trial.finalized and not trial.failed
+    assert trial.answer == answer

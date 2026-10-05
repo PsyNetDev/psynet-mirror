@@ -1017,7 +1017,9 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             return
 
         if any(
-            not asset.deposited and asset.required_for_trial is not False
+            not asset.deposited
+            and asset.required_for_trial is not False
+            and getattr(asset, "recording_role", None) != "background"
             for asset in self.assets.values()
         ):
             logger.debug("%sawaiting an answer asset deposit, so we have to wait.", msg)

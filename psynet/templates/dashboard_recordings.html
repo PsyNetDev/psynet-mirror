@@ -1,0 +1,36 @@
+{% extends "psynet_dashboard.html" %}
+{% block body %}
+<h1>Recordings</h1>
+<p>Answer and background recordings, including missing uploads. Only deposited
+recordings have download links. Times are UTC. Exported outcomes are included in
+<code>assets/manifest.csv</code>.</p>
+<div class="table-responsive">
+<table class="table table-striped">
+  <thead><tr>
+    <th>ID</th><th>Participant / trial</th><th>Page / source</th><th>Role</th>
+    <th>Required for trial</th><th>Status</th><th>Capture outcome / failure reason</th>
+    <th>Upload deadline</th><th>Received</th><th>Processing deadline</th><th>File</th>
+  </tr></thead>
+  <tbody>
+  {% for row in rows %}
+    <tr>
+      <td>{{ row.id }}</td>
+      <td>{{ row.participant_id }} / {{ row.trial_id if row.trial_id is not none else '—' }}</td>
+      <td>{{ row.page_label or '—' }} / {{ row.recording_source or '—' }}<br><small>{{ row.page_uuid or '' }}</small></td>
+      <td>{{ row.recording_role }}</td>
+      <td>{{ 'Yes' if row.required_for_trial else 'No' }}</td>
+      <td>{{ row.recording_status }}</td>
+      <td>{{ row.capture_outcome or '—' }} / {{ row.recording_failure_reason or '—' }}</td>
+      <td>{{ row.upload_deadline or '—' }}</td>
+      <td>{{ row.upload_received_at or '—' }}</td>
+      <td>{{ row.upload_processing_deadline or '—' }}</td>
+      <td>{% if row.url %}<a href="{{ row.url }}">Download</a>{% else %}Unavailable{% endif %}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="11">No recordings yet.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% if next_before %}<a href="?before={{ next_before }}">Older recordings</a>{% endif %}
+{% endblock %}

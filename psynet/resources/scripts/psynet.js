@@ -3096,6 +3096,7 @@
 
       if (correctBrowser) {
         await new Promise((resolve) => setTimeout(resolve, 25));
+        await psynet.prepareBackgroundRecording();
         await psynet.trial.init();
       }
     };
@@ -3360,6 +3361,8 @@
         psynet.var.pageUuid = response.page.attributes.page_uuid;
         window.pageUuid = psynet.var.pageUuid;
         psynet.pageLoadTime = new Date();
+        psynet.var.backgroundRecording = response.page.attributes.background_recording;
+        await psynet.prepareBackgroundRecording();
         await psynet.trial.registerEvent("pageUpdated");
         psynet.nextPagePending = false;
         psynet.restoreSubmissionControlState();
@@ -3593,6 +3596,8 @@
       try { await recordingUploadQueue.drain(); }
       finally { psynet.setTimelineTransitionBusy(false); }
     };
+    let backgroundRecorder;
+    let backgroundUnavailable = false;
     async function recordingModule(path) {
       let timer;
       try {
@@ -3602,13 +3607,28 @@
       } finally { clearTimeout(timer); }
     }
     async function getRecordingQueue(maxBytes = 128 * 1024 * 1024) {
-      recordingUploadMessage = psynet.var.recordingLabels?.uploading || recordingUploadMessage;
+      recordingUploadMessage = (psynet.var.recordingLabels || psynet.var.backgroundRecording?.labels)?.uploading || recordingUploadMessage;
       if (!recordingUploadQueue) {
         const {MediaUploadQueue} = await recordingModule("/static/scripts/media-upload.js");
         recordingUploadQueue = new MediaUploadQueue({maxBytes:2 * maxBytes});
       }
       return recordingUploadQueue;
     }
+    psynet.prepareBackgroundRecording = async function () {
+      await backgroundRecorder?.discard();
+      backgroundUnavailable = false;
+      const config = psynet.var.backgroundRecording;
+      if (!config) return;
+      try {
+        const queue = await getRecordingQueue();
+        const {BackgroundRecorder} = await recordingModule("/static/scripts/background-recording.js");
+        backgroundRecorder ||= new BackgroundRecorder(queue, (await psynet.getRecordingCapture()).devices);
+        await backgroundRecorder.begin(config);
+      } catch (error) {
+        psynet.log.warn(`Background recording unavailable: ${error.message}`);
+        backgroundUnavailable = true;
+      }
+    };
 
     let submitGenericResponse = async function (
       rawAnswer,
@@ -3630,8 +3650,20 @@
       $(" .response, .submit ").prop("disabled", true);
 
       let capturedRecordings = {};
-      const sources = options.timelineHoldResume ? null : psynet.var.asynchronousVideoUploadSources;
-      if (Array.isArray(sources)) {
+      const background = options.timelineHoldResume ? null : psynet.var.backgroundRecording;
+      const sources = options.timelineHoldResume ? null : (background ? background.sources : psynet.var.asynchronousVideoUploadSources);
+      if (background) {
+        let capture;
+        try {
+          if (backgroundUnavailable) throw new Error("Background capture could not initialize.");
+          capture = await backgroundRecorder.finish();
+        } catch (error) {
+          psynet.log.warn(`Background recording unavailable: ${error.message}`);
+          capture = {recordings:{},sizes:{},unavailable:Object.fromEntries(sources.map(source => [source,"capture_error"]))};
+        }
+        capturedRecordings = capture.recordings;
+        metadata = {...metadata,background_recording:{sizes:capture.sizes,unavailable:capture.unavailable,outcomes:capture.outcomes}};
+      } else if (Array.isArray(sources)) {
         const sizes = {};
         for (const source of sources) {
           const blob = blobs?.[`${source}Recording`];

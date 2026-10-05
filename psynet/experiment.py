@@ -828,6 +828,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             "dashboard.dashboard_monitoring",
             "dashboard.dashboard_timeline",
             "dashboard.dashboard_resources",
+            "dashboard.dashboard_recordings",
             "dashboard.dashboard_sync_groups",
             "dashboard.dashboard_participants",
             "dashboard.dashboard_logger",
@@ -1577,6 +1578,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         PageMakers are skipped here because their pages do not exist until
         runtime; bots still surface those via richer HTTP 500 details.
         """
+        from .background_recording import _check_environment
         from .timeline import Page
         from .utils import get_config
 
@@ -1586,6 +1588,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             if not isinstance(elt, Page):
                 continue
             elt._check_spa_template_contract(inplace_timeline_transitions=inplace)
+            _check_environment(elt, self)
 
     # This is how many seconds to wait between invoking parallel bots
     test_parallel_stagger_interval_s = 0.1
@@ -3525,6 +3528,16 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 event._store_response_answer(response, participant)
                 event.on_complete(experiment=self, participant=participant)
 
+            if event.background_recording is not None:
+                from .background_recording import _accept_background_recordings
+
+                recording_uploads = _accept_background_recordings(
+                    event, response, participant, self, page_uuid
+                )
+                if getattr(response, "_deferred_background_answer", False) is True:
+                    event._store_response_answer(response, participant)
+                    event.on_complete(experiment=self, participant=participant)
+
             participant.inc_time_credit(event.time_estimate)
             participant.inc_progress(event.time_estimate)
 
@@ -3534,7 +3547,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             )
             payload = self._approved_payload(participant, page)
             recording_response_id = None
-            if getattr(response, "_deferred_video_answer", False) is True:
+            if (
+                getattr(response, "_deferred_video_answer", False) is True
+                or event.background_recording is not None
+            ):
                 from .media_upload import _utcnow
 
                 payload["recording_uploads"] = recording_uploads
@@ -3870,6 +3886,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 (
                     resources.files("psynet") / "resources/scripts/psynet.js",
                     "/static/scripts/psynet.js",
+                ),
+                (
+                    resources.files("psynet")
+                    / "resources/scripts/background-recording.js",
+                    "/static/scripts/background-recording.js",
                 ),
                 (
                     resources.files("psynet")
@@ -4399,6 +4420,14 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             timeline_modules=json.dumps(module_info, default=serialise),
             currency=get_config().currency,
         )
+
+    @dashboard_tab("Recordings")
+    @classmethod
+    def dashboard_recordings(cls):
+        """Show deposited, pending, and unavailable answer/background recordings."""
+        from .dashboard.recordings import report_recordings
+
+        return report_recordings()
 
     @dashboard_tab("Resources")
     @classmethod

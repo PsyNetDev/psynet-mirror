@@ -412,14 +412,24 @@ def received_video(reservation, tmp_path, monkeypatch, request):
 
 
 @pytest.mark.parametrize(
-    "received_video",
-    ["webm", "header_only"],
+    "received_video,optional",
+    [("webm", False), ("webm", True), ("header_only", False)],
     indirect=["received_video"],
 )
-def test_received_bytes_are_deposited_unchanged(received_video):
+def test_received_bytes_are_deposited_unchanged(received_video, monkeypatch, optional):
     import hashlib
 
     recording_id, payload = received_video
+    if optional:
+        asset = db.session.get(Recording, recording_id)
+        asset.required_for_trial = False
+        asset.recording_role = "background"
+        db.session.commit()
+
+        def unexpected_analysis(self):
+            raise AssertionError("Optional clips must not trigger answer analysis")
+
+        monkeypatch.setattr(Recording, "after_deposit", unexpected_analysis)
     _process_recording(recording_id)
     asset = db.session.get(Recording, recording_id)
     assert asset.upload_status == "deposited"

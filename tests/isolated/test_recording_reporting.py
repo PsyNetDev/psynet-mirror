@@ -36,6 +36,21 @@ def test_unavailable_recording_is_exported_as_metadata(
     assert plan.digests == []
 
 
+def test_report_preserves_capture_outcome_after_deposit(reservation):
+    asset, _ = reservation
+    asset.recording_role = "background"
+    asset.required_for_trial = False
+    asset.upload_status = "deposited"
+    asset.deposited = True
+    asset.upload_context = {**asset.upload_context, "capture_outcome": "source_ended"}
+    summary = asset.recording_summary
+    assert summary["recording_status"] == "deposited"
+    assert summary["capture_outcome"] == "source_ended"
+    assert summary["recording_role"] == "background"
+    assert summary["required_for_trial"] is False
+    assert summary["recording_failure_reason"] is None
+
+
 def test_pending_video_visualization_has_no_broken_player(reservation):
     from psynet.modular_page import VideoRecordControl
 
