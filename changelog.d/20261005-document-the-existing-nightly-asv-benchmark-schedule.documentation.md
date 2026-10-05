@@ -1,1 +1,1 @@
-Documented PsyNet's nightly ASV benchmark pipeline schedule and how to keep it running when its owner changes.
+Documented PsyNet's nightly ASV benchmark pipeline schedule, the `BENCHMARK_RESULTS_TOKEN` variable a fork needs to run it, how to keep it running when its owner changes, and why the nightly job can fail without a comparison.

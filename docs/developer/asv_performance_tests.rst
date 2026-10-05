@@ -58,7 +58,7 @@ Default-branch checks and publishing
 A nightly GitLab pipeline schedule on ``master`` runs the ``asv_benchmarks``
 CI job. The schedule sets the variable ``NIGHTLY_BENCHMARKS`` to ``1``, and its
 pipelines run only this job and ``pages``, which republishes the benchmark
-site. The full suite takes about 35 minutes, which is too long to
+site. Other schedules run the usual pipeline jobs. The full suite takes about 35 minutes, which is too long to
 run on every merge, so ``master`` push pipelines only offer the job as a manual
 action.
 
@@ -67,16 +67,24 @@ the fast and slow benchmark tiers. It compares ``master`` as it was 24 hours
 earlier (``ASV_BASE_AGE``) with the current ``master`` commit on the same
 runner, and exits early if nothing has been merged since then. It writes the
 generated result files, commits those results to the ``benchmark-results``
-branch, pushes them, and then propagates the ASV exit status.
+branch, pushes them, and then propagates the ASV exit status. If any benchmark
+errors on either commit, ``asv continuous`` exits with status 2 without
+comparing the two; the job log shows which benchmark failed, and the results
+for both commits are still published.
 
 The PsyNet project already has this schedule, "Nightly ASV benchmarks", which
 runs at 02:00 Europe/London time; see *Build > Pipeline schedules* in GitLab.
-Don't add a second one. A fork or new project needs its own: add a pipeline
-schedule for ``master``, for example with the cron expression ``0 2 * * *``,
-and give it the variable ``NIGHTLY_BENCHMARKS`` with value ``1``. Other
-schedules run the usual pipeline jobs. Scheduled pipelines run as the
-schedule's owner, so if the owner leaves the project, a maintainer should use
-*Take ownership* to keep it running.
+Don't add a second one. Scheduled pipelines run as the schedule's owner, so if
+the owner leaves the project, a maintainer should use *Take ownership* to keep
+it running.
+
+A fork or new project needs its own setup:
+
+- a pipeline schedule for ``master``, for example with the cron expression
+  ``0 2 * * *``, with the variable ``NIGHTLY_BENCHMARKS`` set to ``1``;
+- a CI/CD variable ``BENCHMARK_RESULTS_TOKEN`` holding a project access token
+  with the ``write_repository`` scope. ``asv_benchmarks`` uses it to push the
+  ``benchmark-results`` branch, and ``pages`` uses it to fetch that branch.
 
 The comparison uses ``--factor 2`` because the slow
 ``psynet performance-test`` medians commonly move by 1.2–1.3× on GitLab
