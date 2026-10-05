@@ -1,7 +1,7 @@
 # pylint: disable=unused-import,abstract-method,unused-argument
 
 import random
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 import numpy as np
 from markupsafe import Markup
@@ -309,7 +309,7 @@ class CustomTrialMaker(GraphChainTrialMaker):
         check_performance_every_trial: bool,
         recruit_mode: str,
         target_n_participants: Optional[int] = None,
-        n_participants_completion: str = "experiment",
+        n_participants_completion: Literal["experiment", "trial_maker"] = "experiment",
         max_nodes_per_chain: Optional[int] = None,
         fail_trials_on_participant_performance_check: bool = False,
         propagate_failure: bool = True,
