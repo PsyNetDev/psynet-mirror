@@ -3726,6 +3726,7 @@ def test_start_local_server_uses_debug_local_subprocess():
             command_args,
             debug=False,
             max_wait=5,
+            extra_env={"PSYNET_PERFORMANCE_TEST": "1"},
         )
 
     assert server_info["process"] is process
@@ -3734,6 +3735,7 @@ def test_start_local_server_uses_debug_local_subprocess():
     assert kwargs["encoding"] == "utf-8"
     assert kwargs["env"]["SKIP_DEPENDENCY_CHECK"] == "1"
     assert kwargs["env"]["BROWSER"] == "true"
+    assert kwargs["env"]["PSYNET_PERFORMANCE_TEST"] == "1"
     _stop_server(server_info)
 
 
@@ -4285,8 +4287,23 @@ def test_run_performance_test_with_new_server_loads_runtime_server_config():
     start_server.assert_called_once_with(
         ["debug", "local", "--legacy", "--no-browsers"],
         debug=False,
+        extra_env={"PSYNET_PERFORMANCE_TEST": "1"},
     )
     load_runtime_config.assert_called_once_with()
+
+
+def test_experiment_never_completes_during_performance_test(monkeypatch):
+    from psynet.experiment import Experiment
+
+    idle = Mock(need_more_participants=False, num_working_participants=0)
+    monkeypatch.delenv("PSYNET_PERFORMANCE_TEST", raising=False)
+    assert Experiment.is_complete(idle) is True
+
+    monkeypatch.setenv("PSYNET_PERFORMANCE_TEST", "0")
+    assert Experiment.is_complete(idle) is True
+
+    monkeypatch.setenv("PSYNET_PERFORMANCE_TEST", "1")
+    assert Experiment.is_complete(idle) is False
 
 
 def test_performance_test_preserves_explicit_zero_options():
