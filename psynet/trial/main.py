@@ -1,5 +1,3 @@
-# pylint: disable=unused-argument
-
 import datetime
 import random
 import sys
@@ -294,7 +292,6 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         Equals ``None`` if no such object has been created yet.
     """
 
-    # pylint: disable=unused-argument
     __tablename__ = "trial"
 
     # Unused SharedMixin columns inherited via SQLMixin.
@@ -1852,7 +1849,6 @@ class TrialMaker(Module):
         return DatabaseCheck(self.with_namespace("check_timeout"), self.check_timeout)
 
     def check_timeout(self):
-        # pylint: disable=no-member
         self.check_old_trials()
         WorkerAsyncProcess.check_timeouts()
 
@@ -2034,7 +2030,6 @@ class TrialMaker(Module):
             trial.fail(reason="response_timeout")
 
     def init_participant(self, experiment, participant):
-        # pylint: disable=unused-argument
         """
         Initializes the participant at the beginning of the sequence of trials.
         If you override this, make sure you call ``super().init_particiant(...)``
@@ -2099,7 +2094,6 @@ class TrialMaker(Module):
         """
 
     def finalize_trial(self, answer, trial, experiment, participant):
-        # pylint: disable=unused-argument,no-self-use
         """
         This function is run after the participant completes the trial.
         It can be optionally customised, for example to add some more postprocessing.
@@ -2127,7 +2121,6 @@ class TrialMaker(Module):
         participant.module_state.n_completed_trials += 1
 
     def performance_check(self, experiment, participant, participant_trials):
-        # pylint: disable=unused-argument
         """
         Defines an automated check for evaluating the participant's
         current performance. The default behaviour is to take the sum of
@@ -3042,7 +3035,6 @@ class NetworkTrialMaker(TrialMaker):
         trial._initial_assets = dict(trial.assets)
 
     def call_grow_network(self, network):
-        # pylint: disable=no-member
         from psynet.experiment import get_experiment
 
         experiment = get_experiment()
@@ -3389,7 +3381,6 @@ class TrialNetwork(SQLMixinDallinger, Network, AssetParentMixin):
         sync_group_type: Optional[str] = None,
         sync_group: Optional[SyncGroup] = None,
     ):
-        # pylint: disable=unused-argument
         self.trial_maker_id = trial_maker_id
         self.assets = {}
 

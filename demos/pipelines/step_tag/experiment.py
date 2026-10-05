@@ -1,7 +1,6 @@
 """
 In this experiment participants collaborate to write and rate word tags for a given stimulus.
 """
-# pylint: disable=missing-class-docstring,missing-function-docstring
 
 from pathlib import Path
 

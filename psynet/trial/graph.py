@@ -1,5 +1,3 @@
-# pylint: disable=unused-argument,abstract-method
-
 from typing import Literal, Optional, Type
 
 from dallinger import db
@@ -217,7 +215,6 @@ class GraphChainNode(ChainNode):
         participant_group=None,
         block=None,
     ):
-        # pylint: disable=unused-argument
         self.vertex_id = vertex_id
         super().__init__(
             seed=seed,

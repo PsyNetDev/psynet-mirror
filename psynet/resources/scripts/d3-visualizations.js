@@ -1,7 +1,4 @@
 "use strict";
-/*jslint node: true */
-
-/*jshint esversion: 6 */
 
 function toTwoDecimals(float_or_string) {
     if (typeof float_or_string !== 'string') {

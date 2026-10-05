@@ -40,24 +40,19 @@ visit the GitLab error logs to see which particular test failed.
 You're looking for a test script with a name like ``test_assets.py``,
 and a test function within that, for example ``test_assets_upload_correctly()``.
 
-The umbrella test scripts ``test_run_all_demos.py`` and ``test_run_isolated_tests.py``
-iterate through many subsidiary test scripts.
-If you see a failure there, inspect the logs to see exactly which
-subsidiary test script failed.
-
 Debugging tests locally
 -----------------------
 
 It is often faster to debug test failures on your local computer rather than
 on GitLab. The first step is to identify which test failed, following
 the instructions above. Let's suppose that the test is located in
-``tests/test_assets.py``.
+``tests/isolated/test_assets.py``.
 The next step is to reproduce this failure on your local computer.
 You can do this by running the following in your terminal:
 
 .. code-block:: python
 
-    pytest tests/test_assets.py --chrome -s
+    pytest tests/isolated/test_assets.py --chrome -s
 
 
 The ``--chrome`` argument is only needed for tests that invoke an automated

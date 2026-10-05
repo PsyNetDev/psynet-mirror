@@ -1,5 +1,3 @@
-# pylint: disable=missing-class-docstring,missing-function-docstring
-
 import random
 
 import psynet.experiment

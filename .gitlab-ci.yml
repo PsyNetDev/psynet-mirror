@@ -84,7 +84,6 @@ before_script:
         - .cursor/skills/experiment/**/*
         - Dockerfile
         - Dockerfile.playwright
-        - MANIFEST.in
         - benchmarks/**/*
         - ci/**/*
         - demos/**/*
@@ -94,8 +93,6 @@ before_script:
         - docs/deploy/index.rst
         - docs/developer/timeline_hold_traces.rst
         - docs/experiment_development/experiment_directory.rst
-        - deployment-tests/**/*
-        - dev-requirements.in
         - install-ci-dependencies.sh
         - package-lock.json
         - package.json
@@ -103,7 +100,6 @@ before_script:
         - postgres_setup.sql
         - psynet/**/*
         - pyproject.toml
-        - pytest.ini
         - run-ci-tests.sh
         - scripts/**/*
         - tests/**/*

@@ -1,5 +1,3 @@
-# pylint: disable=abstract-method
-
 from typing import TYPE_CHECKING, Type
 
 if TYPE_CHECKING:
@@ -318,7 +316,6 @@ class Elt:
         raise NotImplementedError
 
     def multiply_expected_repetitions(self, factor):
-        # pylint: disable=unused-argument
         if self.expected_repetitions is not None:
             self.expected_repetitions *= factor
 
@@ -688,7 +685,6 @@ class GoTo(Elt):
         self.target = target
 
     def get_target(self, experiment, participant):
-        # pylint: disable=unused-argument
         return self.target
 
     def consume(self, experiment, participant):
@@ -711,7 +707,6 @@ class ReactiveGoTo(GoTo):
         function,  # function taking experiment, participant and returning a key
         targets,  # dict of possible target elements
     ):
-        # pylint: disable=super-init-not-called
         super().__init__(target=None)
         self.function = function
         self.targets = targets
@@ -1896,11 +1891,9 @@ class Page(Elt):
             The formatted answer, suitable for serialisation to JSON
             and storage in the database.
         """
-        # pylint: disable=unused-argument
         return raw_answer
 
     def validate(self, response, **kwargs):
-        # pylint: disable=unused-argument
         """
         Takes the :class:`psynet.timeline.Response` object
         created by the page and runs a validation check
