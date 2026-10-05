@@ -1115,7 +1115,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             logger.debug("%sno need, as no async_post_trial method is defined.", msg)
             return
 
-        if self.asset_deposit_pending:
+        if self._analysis_deposit_pending:
             logger.debug("%sawaiting an asset deposit, so we have to wait.", msg)
             return
 
@@ -1424,6 +1424,20 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             ),
             fix_time_credit=False,
             log_chosen_branch=False,
+        )
+
+    @property
+    def _analysis_deposit_pending(self):
+        """Whether an asset that analysis depends on is still being deposited.
+
+        Background clips never feed analysis, so only finalization waits for
+        required ones (see ``asset_deposit_pending``).
+        """
+        return any(
+            not asset.deposited
+            and asset.required_for_trial is not False
+            and getattr(asset, "recording_role", None) != "background"
+            for asset in self.assets.values()
         )
 
     @hybrid_property
