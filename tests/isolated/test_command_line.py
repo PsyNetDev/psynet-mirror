@@ -76,10 +76,14 @@ class TestCommandLine(object):
         assert b"Options:" in output
         assert b"Commands:" in output
 
-    def test_deploy_ssh_accepts_use_local_dallinger(self):
+    def test_deploy_ssh_exposes_ingress_when_dallinger_supports_it(self):
         from psynet.command_line import deploy__docker_ssh
 
+        # ``dallinger.command_line.docker_ssh`` as an attribute is the click group.
+        dssh = importlib.import_module("dallinger.command_line.docker_ssh")
         names = [param.name for param in deploy__docker_ssh.params]
+        if hasattr(dssh, "option_ingress"):
+            assert "ingress" in names
         assert "use_local_dallinger" in names
 
     def test_configure_dallinger_image_source_sets_source(self, monkeypatch, tmp_path):
@@ -102,6 +106,44 @@ class TestCommandLine(object):
         _configure_dallinger_image_source(use_local_dallinger=False)
         assert "DALLINGER_SOURCE" not in os.environ
         assert os.environ["DALLINGER_NO_EGG_BUILD"] == "1"
+
+    def test_invoke_docker_ssh_deploy_forwards_ingress(self):
+        from psynet.command_line import _invoke_docker_ssh_deploy
+
+        command = Mock()
+        ingress_param = Mock()
+        ingress_param.name = "ingress"
+        command.params = [ingress_param]
+        ctx = Mock()
+        ctx.invoke.return_value = {"dashboard_user": "admin"}
+        _invoke_docker_ssh_deploy(
+            ctx,
+            command,
+            server="musix",
+            dns_host=None,
+            app="consonance",
+            ingress="cloudflare",
+        )
+        kwargs = ctx.invoke.call_args.kwargs
+        assert kwargs["ingress"] == "cloudflare"
+        assert kwargs["app_name"] == "consonance"
+        assert kwargs["update"] is False
+
+    def test_invoke_docker_ssh_deploy_forwards_update(self):
+        from psynet.command_line import _invoke_docker_ssh_deploy
+
+        command = Mock()
+        command.params = []
+        ctx = Mock()
+        _invoke_docker_ssh_deploy(
+            ctx,
+            command,
+            server="musix",
+            dns_host=None,
+            app="consonance",
+            update=True,
+        )
+        assert ctx.invoke.call_args.kwargs["update"] is True
 
     def test_export_launch_info_records_public_origin(self, tmp_path):
         from psynet.command_line import _export_launch_info
@@ -1237,6 +1279,63 @@ def test_heroku_pre_checks_do_not_prompt_to_unignore_deploy(tmp_path, monkeypatc
 
     assert experiment.check_config.called
     assert not any(".deploy" in message for message in prompts)
+
+
+def test_ssh_update_keeps_the_running_identity(tmp_path, monkeypatch):
+    from psynet import deployment_info
+    from psynet.command_line import _check_ssh_update
+    from psynet.experiment import Experiment
+
+    monkeypatch.chdir(tmp_path)
+    deployment_info.write_all({"mode": "live", "secret": "new"})
+    running = {"deployment_id": "exp__launch=1", "secret": "old", "mode": "live"}
+    monkeypatch.setattr(
+        "psynet.command_line._read_running_deployment_info", lambda *a: running
+    )
+    monkeypatch.setattr("psynet.command_line.user_confirms", lambda *a, **k: True)
+    _check_ssh_update("musix", "consonance", "live")
+    Experiment.update_deployment_id()
+    assert deployment_info.read("deployment_id") == "exp__launch=1"
+    assert deployment_info.read("secret") == "old"
+
+
+@pytest.mark.parametrize(
+    "running, confirmed, error, message",
+    [
+        (
+            {"deployment_id": "d", "secret": "s", "mode": "sandbox"},
+            True,
+            click.UsageError,
+            "psynet debug ssh",
+        ),
+        (
+            OSError("unreachable"),
+            True,
+            click.ClickException,
+            "deployment ID and secret",
+        ),
+        (
+            {"deployment_id": "d", "secret": "s", "mode": "live"},
+            False,
+            click.exceptions.Abort,
+            None,
+        ),
+    ],
+)
+def test_ssh_update_refuses_unsafe_updates(
+    monkeypatch, running, confirmed, error, message
+):
+    from psynet.command_line import _check_ssh_update
+
+    def read(*args):
+        if isinstance(running, Exception):
+            raise running
+        return running
+
+    monkeypatch.setattr("psynet.command_line._read_running_deployment_info", read)
+    monkeypatch.setattr("psynet.command_line.user_confirms", lambda *a, **k: confirmed)
+    with pytest.raises(error, match=message):
+        _check_ssh_update("musix", "consonance", "live")
 
 
 def test_scripts_update_installs_managed_skills_and_preserves_user_skills():
@@ -3569,6 +3668,26 @@ def test_abort_if_app_exists():
     assert mock_echo.call_count == 1
 
 
+def test_update_keeps_an_existing_ssh_app():
+    from psynet.command_line import _abort_if_app_exists
+
+    with patch("dallinger.command_line.docker_ssh.get_apps") as get_apps:
+        _abort_if_app_exists(server="test-server", app="test-app", update=True)
+
+    get_apps.assert_not_called()
+
+
+def test_validate_ssh_deploy_update():
+    from psynet.command_line import _validate_ssh_deploy_update
+
+    _validate_ssh_deploy_update("test-app", None, False)
+    _validate_ssh_deploy_update("test-app", None, True)
+    with pytest.raises(click.UsageError, match="requires --app"):
+        _validate_ssh_deploy_update(None, None, True)
+    with pytest.raises(click.UsageError, match="cannot be used together"):
+        _validate_ssh_deploy_update("test-app", "archive.zip", True)
+
+
 def test_abort_if_app_exists_skips_missing_app():
     from psynet.command_line import _abort_if_app_exists
 
@@ -4050,7 +4169,7 @@ def test_pre_launch_stops_workers_before_prepare(monkeypatch):
     monkeypatch.setattr("psynet.command_line.get_config", lambda: config)
     monkeypatch.setattr(
         "psynet.command_line._prepare_after_stopping_local_workers",
-        lambda ctx, archive: calls.append(("prepare", archive)),
+        lambda ctx, archive, update=False: calls.append(("prepare", archive)),
     )
     monkeypatch.setattr(
         "psynet.command_line._forget_tables_defined_in_experiment_directory",

@@ -2352,26 +2352,39 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 experiment=self,
             )
 
-    def pre_deploy(self, redeploying_from_archive=False):
-        """
-        Prepare the experiment for deployment, on the machine that launches it.
+    def pre_deploy(self, redeploying_from_archive=False, *, update=False):
+        """Prepare the experiment for deployment, on the machine that launches it.
 
         Assets deposited during this method count as prepared before launch, so they are
         left out of ``psynet export``. Deposit assets from a ``PreDeployRoutine`` rather
         than from an override of this method.
+
+        Parameters
+        ----------
+        redeploying_from_archive : bool
+            Skip asset deposits and the database snapshot.
+        update : bool
+            Prepare only the image for an in-place SSH update. The running app
+            keeps its database and assets, so networks, pre-deploy routines,
+            asset deposits and the snapshot are skipped.
         """
         from .asset import _preparing_for_deployment
 
         with _preparing_for_deployment():
-            self._pre_deploy(redeploying_from_archive=redeploying_from_archive)
+            self._pre_deploy(
+                redeploying_from_archive=redeploying_from_archive, update=update
+            )
 
-    def _pre_deploy(self, redeploying_from_archive=False):
+    def _pre_deploy(self, redeploying_from_archive=False, update=False):
         """Run the deployment preparation steps; see :meth:`pre_deploy`."""
         self.update_deployment_id()
-        self.setup_experiment_config()
-        self.setup_experiment_variables()
+        if not update:
+            self.setup_experiment_config()
+            self.setup_experiment_variables()
 
         _write_pre_deploy_constant_registry()
+        if update:
+            return
 
         for module in self.timeline.modules.values():
             module.prepare_for_deployment(experiment=self)
@@ -2389,6 +2402,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @classmethod
     def update_deployment_id(cls):
+        """Record a new deployment ID, unless ``--update`` is keeping the running one."""
+        if deployment_info.read_all().get("keep_deployment_id"):
+            return
         deployment_id = cls.generate_deployment_id()
         deployment_info.write(deployment_id=deployment_id)
 

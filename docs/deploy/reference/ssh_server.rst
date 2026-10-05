@@ -50,6 +50,28 @@ the ``--dns-host`` name itself rather than a subdomain, and its logs at
 ``https://<dns-host>/logs``. Such a deployment needs a server with no other
 apps: Dallinger offers to destroy any it finds first.
 
+Cloudflare tunnels (optional)
+-----------------------------
+
+Classic docker-ssh deployments go through the host Caddy reverse proxy on
+ports 80/443. You can instead deploy with a per-app Cloudflare tunnel so the
+experiment is reachable at a first-level hostname such as
+``https://consonance.science-of-music.org`` without opening those ports::
+
+    psynet deploy ssh --app consonance --ingress cloudflare
+
+Classic ``--dns-host`` is only for host Caddy. Cloudflare hostnames use
+``cloudflare_dns_zone`` from Dallinger config (for example
+``science-of-music.org``).
+
+Set the non-secret ``cloudflare_account_id``, ``cloudflare_zone_id``, and
+``cloudflare_dns_zone`` in ``~/.dallingerconfig``. The API token is read from
+``CLOUDFLARE_API_TOKEN``, then ``~/.dallingerconfig``, then the macOS
+Keychain item ``dallinger-cloudflare-api-token``. It is never stored in host
+records. Until a server default is changed, omitting ``--ingress`` keeps
+classic Caddy. ``psynet export ssh`` reaches a Cloudflare app at its public
+name rather than ``https://<app>.<ssh-host>``.
+
 .. _ssh_server_launch_info:
 
 Launch information
@@ -111,12 +133,16 @@ Each app runs these Docker Compose services:
 - ``redis``, which holds the app's cache and task queue;
 - ``pgbouncer``, which pools the app's database connections.
 
-All apps share these services, defined in ``~/dallinger/docker-compose.yml``:
+All classic apps share these services, defined in ``~/dallinger/docker-compose.yml``:
 
 - ``postgresql``, which holds one database for each app;
 - ``httpserver``, a `Caddy <https://caddyserver.com/>`_ server that routes
   each address to its app and obtains HTTPS certificates;
 - ``dozzle``, the log viewer at ``https://logs.<dns-host>``.
+
+Cloudflare-ingress apps instead run their own Postgres in the Compose project
+and reach the internet through ``cloudflared``. They do not publish ports
+80/443.
 
 Every service has the restart policy ``unless-stopped``, so Docker restarts
 the apps when the server reboots.
@@ -139,6 +165,24 @@ Files on the server
 ``~/dallinger/<app>/``, its Caddy configuration, and its image if no other app
 uses it. The app's database stays in PostgreSQL until an app with the same
 name is deployed, which replaces it.
+
+Updating a running app
+----------------------
+
+To ship a fix to an app that is already running, add ``--update`` to the
+command that created it: ``psynet deploy ssh --update`` for a live app, or
+``psynet debug ssh --update`` for a debug app. Repeat the ``--ingress`` the app
+was deployed with. PsyNet asks you to confirm, then rebuilds the image and
+restarts the app. The update keeps:
+
+- the app's database and the participants in it;
+- its deployment ID and secret, so exports and dashboard records stay together;
+- participants' sessions.
+
+An update rebuilds only the image. It doesn't deposit new assets, set up
+networks, or run pre-deploy routines again, so a new stimulus set needs a fresh
+deploy. Participants' progress is a position in the timeline: don't change the
+page sequence, module IDs or trial makers while anyone is still taking part.
 
 .. _ssh_server_working_over_ssh:
 
