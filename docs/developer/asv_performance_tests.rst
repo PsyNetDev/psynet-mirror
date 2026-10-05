@@ -67,15 +67,16 @@ the fast and slow benchmark tiers. It compares ``master`` as it was 24 hours
 earlier (``ASV_BASE_AGE``) with the current ``master`` commit on the same
 runner, and exits early if nothing has been merged since then. It writes the
 generated result files, commits those results to the ``benchmark-results``
-branch, pushes them, and then propagates the ASV exit status. A regression
-exits with status 1. If a benchmark errors or either commit fails to build,
-``asv continuous`` exits with status 2 without comparing the commits; the job
-log shows the failure, and the results for both commits are still published.
+branch, pushes them, and then propagates the ASV exit status.
+``asv continuous`` exits with status 1 on a regression. If a benchmark errors
+or either commit fails to build, it exits with status 2 without comparing the
+commits; the job log shows the failure, and the results for both commits are
+still published.
 
 The PsyNet project already has this schedule, "Nightly ASV benchmarks", which
 runs at 02:00 Europe/London time; see *Build > Pipeline schedules* in GitLab.
-Don't add a second one. Scheduled pipelines run as the schedule's owner, and the
-owner needs the Maintainer role to run pipelines on the protected ``master``
+Don't add a second one. Scheduled pipelines run as the schedule's owner, and
+the owner needs the Maintainer role to run pipelines on the protected ``master``
 branch. If the owner leaves the project or loses that role, another maintainer
 should use *Take ownership* to keep it running.
 
@@ -88,8 +89,8 @@ A fork or new project needs its own setup:
   ``BENCHMARK_RESULTS_TOKEN`` (*Settings > CI/CD > Variables*).
 
 ``asv_benchmarks`` uses the token to push the ``benchmark-results`` branch, and
-``pages`` uses it to fetch that branch. When the token expires the push fails,
-so renew it before then.
+``pages`` uses it to fetch that branch. When the token expires, the push fails
+and the published benchmarks stop updating, so renew it before then.
 
 The comparison uses ``--factor 2`` because the slow
 ``psynet performance-test`` medians commonly move by 1.2–1.3× on GitLab
