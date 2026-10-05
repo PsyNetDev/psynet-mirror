@@ -2069,11 +2069,20 @@ class Page(Elt):
         # `partial_mode` is an internal render shape used for inplace
         # transitions. The public timeline route now serves full pages (plus
         # mode=json), while /response embeds this fragment payload directly.
+        from .modular_page import VideoRecordControl
+
         internal_js_vars = {
             "uniqueId": participant.unique_id,
             "pageUuid": participant.page_uuid,
             "dynamicallyUpdateProgressBarAndReward": self.dynamically_update_progress_bar_and_reward,
         }
+        control = getattr(self, "control", None)
+        if isinstance(control, VideoRecordControl):
+            internal_js_vars["asynchronousVideoUploadSources"] = (
+                control.recording_sources
+                if control._uses_async_upload(experiment)
+                else None
+            )
         locale = get_locale()
         config = get_config()
         # The SPA template contract applies to author-provided template source,
@@ -3074,6 +3083,8 @@ class Response(_Response):
     answer = Column(PythonObject)
     page_type = Column(String)
     successful_validation = Column(Boolean)
+    recording_receipt_hash = Column(String, index=True)
+    recording_receipt = Column(PythonObject)
 
     # metadata is a protected attribute in SQLAlchemy, hence the underscore
     # and the functional setter/getter.
@@ -3204,7 +3215,7 @@ def while_loop(
     condition: Callable,
     logic,
     expected_repetitions: int,
-    max_loop_time: float = None,
+    max_loop_time: Optional[Union[float, Callable]] = None,
     fix_time_credit=True,
     fail_on_timeout=True,
     on_timeout: Optional[Callable] = None,
@@ -3233,8 +3244,12 @@ def while_loop(
         of the total experiment.
 
     max_loop_time:
-        The maximum time in seconds for staying in the loop. Once exceeded, the participant is
-        is presented the ``UnsuccessfulEndPage``. Default: None.
+        The maximum time in seconds for staying in an active loop. Once exceeded,
+        the participant is presented the ``UnsuccessfulEndPage`` unless
+        ``fail_on_timeout`` is False. Default: None (unlimited).
+        May also be a callable accepting ``participant`` and/or ``experiment``
+        and returning seconds or None. It is evaluated once on entering the loop;
+        polling does not restart or recalculate the budget.
 
     fix_time_credit:
         Whether participants should receive the same time credit irrespective of whether
@@ -3269,17 +3284,27 @@ def while_loop(
         logger.info(f"Evaluating while_loop ({label}) condition: result = {result}")
         return result
 
-    conditional_logic = join(logic, GoTo(start_while))
+    def start_loop(participant, experiment):
+        """Snapshot the loop's start and runtime budget once per entry."""
+        participant.var.set(
+            _while_loop_state_key(label, "loop_start_time"), serialise(datetime.now())
+        )
+        if callable(max_loop_time):
+            participant.var.set(
+                _while_loop_state_key(label, "loop_max_time"),
+                call_function_with_context(
+                    max_loop_time, participant=participant, experiment=experiment
+                ),
+            )
 
-    if max_loop_time is not None:
-
-        def max_loop_time_condition(participant, experiment):
-            return _while_loop_timed_out(participant, label, max_loop_time)
-
-    else:
-
-        def max_loop_time_condition(participant, experiment):
-            return False
+    def max_loop_time_condition(participant, experiment):
+        """Check elapsed time against the budget saved on entry."""
+        limit = (
+            participant.var.get(_while_loop_state_key(label, "loop_max_time"))
+            if callable(max_loop_time)
+            else max_loop_time
+        )
+        return _while_loop_timed_out(participant, label, limit)
 
     from .page import UnsuccessfulEndPage
 
@@ -3305,14 +3330,9 @@ def while_loop(
 
     time_estimate = CreditEstimate(logic).get_max("time")
 
-    elts = join(
-        CodeBlock(
-            lambda participant: participant.var.set(
-                _while_loop_state_key(label, "loop_start_time"),
-                serialise(datetime.now()),
-            )
-        ),
-        start_while,
+    # A resolved condition exits before checking timeouts. For example, returning
+    # to an inactive browser tab must not time out work that has already finished.
+    conditional_logic = join(
         conditional(
             "max_loop_time_condition",
             lambda participant, experiment: call_function_with_context(
@@ -3327,6 +3347,13 @@ def while_loop(
             log_chosen_branch=False,
             time_estimate=0.0,
         ),
+        logic,
+        GoTo(start_while),
+    )
+
+    elts = join(
+        CodeBlock(start_loop),
+        start_while,
         conditional(
             label,
             condition_wrapped,

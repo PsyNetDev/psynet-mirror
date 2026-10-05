@@ -30,6 +30,9 @@ Step summary:
 4. Remaining chain progression:
    participant advances through later chain nodes and reaches completion.
 
+The recording-sizes attachment measures browser-generated fake-device files;
+it is diagnostic evidence for upload budgeting, not a real-camera size guarantee.
+
 Intentionally not covered:
 - Node/chain statistical properties across many participants.
 - Detailed gesture/video-content correctness beyond recording existence and timing.
@@ -194,6 +197,10 @@ test("imitation_chain_video demo", { tag: "@both" }, async ({ page, context }) =
       const nonSeedStagedRecording = await getStagedCameraRecordingInfo(experimentPage);
       expect(nonSeedStagedRecording.exists).toBe(true);
       expect(nonSeedStagedRecording.size).toBeGreaterThan(0);
+      await test.info().attach("recording-sizes", {
+        body: JSON.stringify({ seed: stagedRecording, imitation: nonSeedStagedRecording }),
+        contentType: "application/json"
+      });
       if (nonSeedStagedRecording.type) {
         expect(nonSeedStagedRecording.type).toContain("video");
       }

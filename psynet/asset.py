@@ -320,6 +320,7 @@ class Asset(AssetSpecification, SQLBase, SQLMixin):
     created_during_experiment = Column(Boolean, default=True)
     deployment_id = Column(String)
     deposited = Column(Boolean)
+    required_for_trial = Column(Boolean, nullable=False, default=True)
     module_id = Column(String, index=True)
     local_key = Column(String)
     key_within_module = Column(String, index=True)

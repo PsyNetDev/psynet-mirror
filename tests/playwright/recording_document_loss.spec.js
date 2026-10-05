@@ -1,0 +1,118 @@
+const path = require("path");
+const { test, expect } = require("./fixtures");
+const {
+  withExperiment, submitRecordingFixture, prepareRecordingFixture,
+  waitForNextEnabled,
+} = require("./psynetHarness");
+
+for (const receiveBeforeClosing of [false, true]) {
+  test(`recording resolves after reload and close (server received: ${receiveBeforeClosing}) @inplace-only`, async ({page, context}) => {
+    test.setTimeout(120000);
+    let held;
+    let received = false;
+    await context.route("**/media-upload/*", async route => {
+      held = route;
+      if (receiveBeforeClosing) {
+        const response = await route.fetch();
+        expect(response.status()).toBe(204);
+        received = true;
+      }
+      // Keep the browser request pending in both cases; only one sends bytes.
+    });
+    await withExperiment(page, context, path.resolve("tests/playwright/experiments/asynchronous_recording"), async p => {
+      const {accepted} = await submitRecordingFixture(p);
+      expect(accepted.recording_uploads).toHaveLength(1);
+      const id = accepted.recording_uploads[0].id;
+      const stateUrl = new URL(`/test-recording-state/${id}`, p.url()).href;
+      const readState = async () => {
+        const response = await context.request.get(stateUrl);
+        expect(response.ok()).toBe(true);
+        return response.json();
+      };
+      await expect.poll(() => Boolean(held)).toBe(true);
+      if (receiveBeforeClosing) await expect.poll(() => received).toBe(true);
+      const initial = await readState();
+      expect(initial.received).toBe(receiveBeforeClosing);
+      expect(initial.trial_id).toBeNull();
+      const dialogs = [];
+      p.on("dialog", async dialog => { dialogs.push(dialog.type()); await dialog.accept(); });
+      await p.reload({timeout:10000});
+      await expect(p.locator("#main-body")).toContainText("Independent page reached.");
+      expect(dialogs).toEqual(["beforeunload"]);
+      await p.close();
+      await expect.poll(async () => (await readState()).status, {timeout:90000, intervals:[500,1000,2000]}).toBe(receiveBeforeClosing ? "deposited" : "expired");
+      const final = await readState();
+      expect(final.deadline).toBe(initial.deadline);
+      expect(final.deposited).toBe(receiveBeforeClosing);
+      expect(final.participant_failed).toBe(false);
+    });
+  });
+}
+
+test("Finish drains recordings before recruiter exit @inplace-only", async ({page, context}) => {
+  test.setTimeout(60000);
+  let held;
+  await context.route("**/media-upload/*", route => { held = route; });
+  const previous = process.env.PSYNET_TEST_RECORDING_EXIT;
+  process.env.PSYNET_TEST_RECORDING_EXIT = "1";
+  try {
+    await withExperiment(page, context, path.resolve("tests/playwright/experiments/asynchronous_recording"), async p => {
+      const {accepted} = await submitRecordingFixture(p);
+      await expect.poll(() => Boolean(held)).toBe(true);
+      await waitForNextEnabled(p,30000);
+      await p.locator("#next-button").click();
+      await expect(p.locator("#Finish")).toBeVisible();
+      await observeDrain(p);
+      await p.locator("#Finish").click();
+      await p.waitForFunction(() => window.drainStarted);
+      expect(p.url()).not.toContain("recruiter-exit");
+      await expect(p.locator("#psynet-timeline-hold-indicator")).toContainText("Uploading your recording, please keep this page open.");
+      await held.continue();
+      await expect(p).toHaveURL(/recruiter-exit/, {timeout:10000});
+      const state = await (await context.request.get(new URL(`/test-recording-state/${accepted.recording_uploads[0].id}`, p.url()).href)).json();
+      expect(state.received).toBe(true);
+    });
+  } finally {
+    if (previous === undefined) delete process.env.PSYNET_TEST_RECORDING_EXIT;
+    else process.env.PSYNET_TEST_RECORDING_EXIT = previous;
+  }
+});
+
+async function observeDrain(page) {
+  await page.evaluate(() => {
+    const drain = psynet.drainRecordingUploads;
+    psynet.drainRecordingUploads = async () => {
+      window.drainStarted = true;
+      return drain();
+    };
+  });
+}
+
+test("full-document transition waits for received recording bytes @inplace-only", async ({page, context}) => {
+  test.setTimeout(120000);
+  let held;
+  await context.route("**/media-upload/*", route => { held = route; });
+  const previous = process.env.PSYNET_TEST_RECORDING_RELOAD;
+  process.env.PSYNET_TEST_RECORDING_RELOAD = "1";
+  try {
+    await withExperiment(page, context, path.resolve("tests/playwright/experiments/asynchronous_recording"), async p => {
+      await prepareRecordingFixture(p);
+      await observeDrain(p);
+      const response = p.waitForResponse(r => new URL(r.url()).pathname === "/response" && r.request().method() === "POST");
+      await p.locator("#next-button").click();
+      const accepted = await (await response).json();
+      await expect.poll(() => Boolean(held)).toBe(true);
+      await p.waitForFunction(() => window.drainStarted);
+      await expect(p.locator("#main-body")).toContainText("Record a short clip.");
+      await expect(p.locator("#psynet-timeline-hold-indicator")).toContainText("Uploading your recording, please keep this page open.");
+      await held.continue();
+      await expect(p.locator("#main-body")).toContainText("Independent page reached.");
+      expect(await p.evaluate(() => window.drainStarted)).toBeUndefined();
+      const state = await (await context.request.get(new URL(`/test-recording-state/${accepted.recording_uploads[0].id}`, p.url()).href)).json();
+      expect(state.received).toBe(true);
+    });
+  } finally {
+    if (previous === undefined) delete process.env.PSYNET_TEST_RECORDING_RELOAD;
+    else process.env.PSYNET_TEST_RECORDING_RELOAD = previous;
+  }
+});

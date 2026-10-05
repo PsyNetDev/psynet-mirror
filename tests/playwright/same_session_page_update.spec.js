@@ -49,7 +49,6 @@ test("same-session timeline update preserves page fragment and emits pageUpdated
         { timeout: STEP_TIMEOUT_MS }
       )
       .toMatchObject({
-        pageUuid: initialState.pageUuid,
         pageStep: 2,
         messageCount: 1,
         markerText: "First same-session page",
@@ -61,6 +60,15 @@ test("same-session timeline update preserves page fragment and emits pageUpdated
     );
     expect(updatePayload.contents).toMatchObject({ step: 2, label: "second" });
     expect(updatePayload.attributes.session_id).toBe("shared-session");
+    expect(updatePayload.attributes.page_uuid).not.toBe(initialState.pageUuid);
+    const currentIdentity = await experimentPage.evaluate(() => ({
+      global: window.pageUuid,
+      submission: window.psynet.var.pageUuid,
+    }));
+    expect(currentIdentity).toEqual({
+      global: updatePayload.attributes.page_uuid,
+      submission: updatePayload.attributes.page_uuid,
+    });
 
     // The DOM still shows the first page because same-session updates are for
     // long-lived Unity sessions that consume updated psynet.page metadata.
@@ -68,6 +76,12 @@ test("same-session timeline update preserves page fragment and emits pageUpdated
       "First same-session page"
     );
     await waitForTimelinePageReady(experimentPage, STEP_TIMEOUT_MS);
+    // A second answer must use the new logical page identity even though the
+    // document and task instance survived the first transition.
+    await experimentPage.evaluate(() => window.psynet.nextPage("second answer"));
+    await waitForMainBodyContains(
+      experimentPage, "Different-session finish page", STEP_TIMEOUT_MS
+    );
   });
 });
 

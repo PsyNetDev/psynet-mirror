@@ -12,6 +12,7 @@ const {
   waitForMainBodyContains,
   waitForTrialEvents,
   waitForVideoRecordingReady,
+  acceptAnswerScreenPermission,
   withExperiment
 } = require("../psynetHarness");
 
@@ -32,6 +33,9 @@ Step summary:
    participant records with simultaneous camera and screen capture, replays, and submits.
 6. Final playback and finish:
    participant reaches playback/closing pages and finishes the experiment.
+
+The recording-sizes attachment measures fake-device files for upload budgeting;
+it does not set a fixed size expectation for real cameras or shared screens.
 
 Intentionally not covered:
 - Exact audiovisual synchronization at sub-frame precision.
@@ -233,6 +237,8 @@ test("video feature demo", { tag: "@both" }, async ({ page, context }) => {
         "simultaneous screen recording",
         PROMPT_TIMEOUT_MS
       );
+      // Screen acquisition needs an explicit gesture before task startup.
+      await acceptAnswerScreenPermission(experimentPage);
       const dualRecordButton = experimentPage.locator("#btn-record-record");
       await expect(dualRecordButton).toBeVisible();
       await expect(dualRecordButton).toBeEnabled();
@@ -255,6 +261,10 @@ test("video feature demo", { tag: "@both" }, async ({ page, context }) => {
         baselineIndex: dualVideoEventBaseline
       });
       const dualRecording = await getStagedVideoRecordingInfo(experimentPage);
+      await test.info().attach("recording-sizes", {
+        body: JSON.stringify({ camera: singleVideoRecording, cameraAndScreen: dualRecording }),
+        contentType: "application/json"
+      });
       expect(dualRecording.cameraExists).toBe(true);
       expect(dualRecording.cameraSize).toBeGreaterThan(0);
       expect(dualRecording.screenExists).toBe(true);

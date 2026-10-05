@@ -56,7 +56,7 @@ def test_experiment_passes_client_ip_to_legacy_page_response_override(monkeypatc
             assert client_ip_address == "203.0.113.5"
             raise ResponseReached
 
-    participant = SimpleNamespace(page_uuid="page-1", client_ip_address=None)
+    participant = SimpleNamespace(id=1, page_uuid="page-1", client_ip_address=None)
     query = Mock()
     query.with_for_update.return_value.populate_existing.return_value.get.return_value = participant
     experiment = object.__new__(Experiment)
@@ -66,6 +66,7 @@ def test_experiment_passes_client_ip_to_legacy_page_response_override(monkeypatc
 
     with (
         patch.object(Experiment, "_participant_request_query", return_value=query),
+        patch("psynet.media_upload._expire_participant_recordings"),
         patch("psynet.experiment.get_translator", return_value=lambda *args: args[-1]),
         pytest.raises(ResponseReached),
     ):

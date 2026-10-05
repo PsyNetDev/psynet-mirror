@@ -206,15 +206,10 @@ async function waitForSliderInteractionReady(page, timeoutMs = STEP_TIMEOUT_MS) 
   await expect(page.locator("#sliderpage_slider")).toBeEnabled({ timeout: timeoutMs });
 }
 
-async function completeRecordedPlaybackCheckpoint(
-  page,
-  checkpointEventBaseline = 0
-) {
+async function completeRecordedPlaybackCheckpoint(page) {
   await expectMainBodyContains(page, "Here's the recording you just made.");
-  await waitForTrialEvents(page, ["promptStart", "promptEnd", "trialFinish"], {
-    timeoutMs: STEP_TIMEOUT_MS,
-    baselineIndex: checkpointEventBaseline
-  });
+  // This new page has its own event log. Its Next button becomes enabled after
+  // playback; an event index from the recording page can skip those events.
   await expect(page.locator("#next-button")).toBeEnabled({ timeout: STEP_TIMEOUT_MS });
   await expect(page.locator("#btn-record-record")).toHaveCount(0);
   await expect(page.locator("#btn-record-play-recording")).toHaveCount(0);
@@ -365,9 +360,6 @@ test("audio demo", { tag: "@both" }, async ({ page, context }) => {
       await experimentPage.evaluate(() => psynet.page.control.playRecording());
     }
     await waitForSoundActiveState(experimentPage, "recording", true, 10000);
-    const firstCheckpointEventBaseline = await captureTrialEventBaseline(
-      experimentPage
-    );
     await clickNextAndWait(experimentPage, STEP_TIMEOUT_MS);
     await waitForResponseSubmitIncrement(
       submitTracker,
@@ -377,10 +369,7 @@ test("audio demo", { tag: "@both" }, async ({ page, context }) => {
     );
 
     // Section 14: validate playback checkpoint page and continue deterministically.
-    await completeRecordedPlaybackCheckpoint(
-      experimentPage,
-      firstCheckpointEventBaseline
-    );
+    await completeRecordedPlaybackCheckpoint(experimentPage);
 
     // Section 15: validate delayed-record flow captions, timing, and playback availability.
     await expectPromptContains(experimentPage, "activate the recorder 3 seconds afterwards");
@@ -425,19 +414,13 @@ test("audio demo", { tag: "@both" }, async ({ page, context }) => {
     const videoRecordButton = experimentPage.locator("#btn-record-record");
     await expect(videoRecordButton).toBeVisible();
     await expect(videoRecordButton).toBeEnabled();
-    const secondCheckpointEventBaseline = await captureTrialEventBaseline(
-      experimentPage
-    );
     await videoRecordButton.click();
     await expectMainBodyContains(
       experimentPage,
       "Here's the recording you just made.",
       STEP_TIMEOUT_MS
     );
-    await completeRecordedPlaybackCheckpoint(
-      experimentPage,
-      secondCheckpointEventBaseline
-    );
+    await completeRecordedPlaybackCheckpoint(experimentPage);
 
     // Section 17: validate calibrated meter variants expose expected slider controls.
     await expectPromptContains(

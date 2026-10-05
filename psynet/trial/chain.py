@@ -2518,6 +2518,21 @@ class ChainTrialMaker(NetworkTrialMaker):
         ):
             query = self.exclude_participated(query, participant)
 
+        # A failed recording must not silently turn into another capture of the
+        # same answer. Exclude only this participant's failed head, leaving it
+        # available to other participants and preserving other retry policies.
+        failed_recording_answer = (
+            db.session.query(Trial.id)
+            .filter(
+                Trial.node_id == network.head_id,
+                Trial.participant_id == participant.id,
+                Trial.failed,
+                Trial.failed_reason.startswith("recording_", autoescape=True),
+            )
+            .exists()
+        )
+        query = query.filter(~failed_recording_answer)
+
         # An outer join keeps headless networks, which are data errors, so
         # that selection raises on them instead of silently skipping them.
         query = query.outerjoin(

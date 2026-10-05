@@ -29,6 +29,7 @@ has written, checking it, and changing it yourself.
 
    writing_pages
    pages/control_gallery
+   pages/recording
    pages/event_management
    pages/theming
    pages/graphics
