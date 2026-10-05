@@ -305,6 +305,10 @@ Stimuli, media and recording
     ``VideoPrompt`` and ``VideoRecordControl``: clipped playback, separate
     soundtracks, and recording from the camera and screen.
 
+`features/background_recording <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/background_recording>`__
+    Camera recording alongside ordinary button answers, comparing optional
+    clips with required trial recordings.
+
 `features/assets <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/assets>`__
     ``asset`` declaring remote files, local files, folders and generated
     files, and saving participant input as a new asset.
