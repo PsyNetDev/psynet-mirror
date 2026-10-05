@@ -4365,32 +4365,21 @@ def _build_ssh_performance_test_cmd(n_bots, stagger, time_factor, duration_minut
 
 @psynet.command(name="list-experiment-dirs")
 @click.option("--for-ci-tests", is_flag=True)
-@click.option("--ci-node-total", default=None, type=int)
-@click.option("--ci-node-index", default=None, type=int)
-def _list_experiment_dirs(for_ci_tests=False, ci_node_total=None, ci_node_index=None):
+def _list_experiment_dirs(for_ci_tests=False):
     """
     Lists the directories of all the experiments that are available under the 'demos' directory,
     plus those inside the 'tests/experiments' directory.
     """
-    for directory in list_experiment_dirs(
-        for_ci_tests=for_ci_tests,
-        ci_node_total=ci_node_total,
-        ci_node_index=ci_node_index,
-    ):
+    for directory in list_experiment_dirs(for_ci_tests=for_ci_tests):
         print(directory)
 
 
 @psynet.command(name="list-isolated-tests")
-@click.option("--ci-node-total", default=None, type=int)
-@click.option("--ci-node-index", default=None, type=int)
-def _list_isolated_tests(ci_node_total=None, ci_node_index=None):
+def _list_isolated_tests():
     """
     Lists the directories of all the demo experiments that are available.
     """
-    for test_ in list_isolated_tests(
-        ci_node_total=ci_node_total,
-        ci_node_index=ci_node_index,
-    ):
+    for test_ in list_isolated_tests():
         print(test_)
 
 
