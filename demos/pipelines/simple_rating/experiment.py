@@ -1,7 +1,6 @@
 """
 This is a simple experiment where participants rate sounds on a scale from 1 to 5.
 """
-# pylint: disable=missing-class-docstring,missing-function-docstring
 
 from pathlib import Path
 

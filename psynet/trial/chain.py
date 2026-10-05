@@ -278,7 +278,6 @@ class ChainNetwork(TrialNetwork):
         Set by default in the ``__init__`` function.
     """
 
-    # pylint: disable=abstract-method
     nodes_can_spawn = True
 
     chain_type = Column(String)
@@ -1086,8 +1085,6 @@ class ChainTrial(Trial):
 
     """
 
-    # pylint: disable=abstract-method
-
     participant_group = association_proxy("node", "participant_group")
     degree = association_proxy("node", "degree")
     context = association_proxy("node", "context")
@@ -1737,7 +1734,6 @@ class ChainTrialMaker(NetworkTrialMaker):
         participant.module_state.set_block_position(0)
 
     def choose_block_order(self, experiment, participant, blocks):
-        # pylint: disable=unused-argument
         """
         Determines the order of blocks for the current participant.
         By default this function shuffles the blocks randomly for each participant.

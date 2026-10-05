@@ -2,8 +2,6 @@
 In this experiment participants will listen to pairs of sounds and rate their similarity on a scale of 1 to 5.
 """
 
-# pylint: disable=missing-class-docstring,missing-function-docstring
-
 from math import comb
 from pathlib import Path
 

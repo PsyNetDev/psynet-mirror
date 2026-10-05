@@ -1,5 +1,3 @@
-# pylint: disable=unused-argument,abstract-method
-
 from ..utils import get_logger
 from .record import (
     MediaImitationChainNetwork,

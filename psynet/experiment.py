@@ -424,7 +424,6 @@ def _is_replacement_gunicorn_worker(worker):
 
 
 class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
-    # pylint: disable=abstract-method
     """
     The main experiment class from which to inherit when building experiments.
 

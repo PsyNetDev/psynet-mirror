@@ -1,5 +1,3 @@
-# pylint: disable=unused-import,abstract-method,unused-argument
-
 # This is a clone of the imitation_chain demo,
 # but with automatic bots that contribute data to the experiment.
 
