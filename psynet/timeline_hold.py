@@ -329,11 +329,13 @@ def _discard_timeline_hold_wakes(session):
 
 @event.listens_for(db.session, "after_transaction_end")
 def _pop_nested_wake_snapshot(session, transaction):
-    if not transaction.nested:
-        return
-    stack = session.info.get(_NESTED_WAKE_SNAPSHOTS_KEY)
-    if stack:
-        stack.pop()
+    if transaction.nested:
+        stack = session.info.get(_NESTED_WAKE_SNAPSHOTS_KEY)
+        if stack:
+            stack.pop()
+    elif transaction.parent is None:
+        # Session.close() ends the root transaction without after_rollback.
+        session.info.pop(_PENDING_WAKE_KEY, None)
 
 
 @register_table
@@ -351,6 +353,7 @@ class TimelineHoldRecord(SQLBase, SQLMixin):
         String, unique=True, index=True, default=lambda: str(uuid.uuid4())
     )
     hold_id = Column(String, index=True)
+    page_count = Column(Integer)
     started_at = Column(DateTime)
     deadline_at = Column(DateTime)
     released_at = Column(DateTime)
@@ -417,15 +420,30 @@ class TimelineHoldRecord(SQLBase, SQLMixin):
     def for_stale_hold_resume(cls, participant, submitted_page_uuid):
         """Return the submitted hold when it is still a catch-up from a wait page.
 
-        One indexed lookup. Last-arrival can already have advanced this waiter
-        onto a later hold or off the stack; the client's POST still sends the
-        old uuid. A matching record is catch-up for both ordinary submits and
-        hold-resume overlays.
+        Last-arrival can already have advanced this waiter onto a later hold
+        or off the stack; the client's POST still sends the old uuid. That is
+        catch-up for both ordinary submits and hold-resume overlays, but only
+        while every page consumed since this hold, apart from the current
+        one, was another hold. Once the participant has been shown an
+        ordinary page, the old uuid comes from a stale tab.
         """
-        return cls.query.filter_by(
+        record = cls.query.filter_by(
             participant_id=participant.id,
             page_uuid=submitted_page_uuid,
         ).one_or_none()
+        if record is None or record.page_count is None:
+            return None
+        skipped_pages = (participant.page_count or 0) - record.page_count - 1
+        if skipped_pages < 0:
+            return None
+        if skipped_pages == 0:
+            return record
+        skipped_holds = cls.query.filter(
+            cls.participant_id == participant.id,
+            cls.page_count > record.page_count,
+            cls.page_count < participant.page_count,
+        ).count()
+        return record if skipped_holds == skipped_pages else None
 
     @property
     def deadline(self):
@@ -488,6 +506,7 @@ class _TimelineHoldPage(Page):
             page_uuid=participant.page_uuid,
             wake_token=str(uuid.uuid4()),
             hold_id=self.hold_id,
+            page_count=participant.page_count,
             started_at=now,
             deadline_at=deadline_at,
             expected_wait=self.expected_wait,

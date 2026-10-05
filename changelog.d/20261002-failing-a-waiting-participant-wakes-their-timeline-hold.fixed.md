@@ -1,0 +1,1 @@
+Fixed participants failed from the dashboard, by a partner leaving their group, or by a background job staying on their timeline hold overlay until its next safety check. Failing a participant now wakes their hold immediately.

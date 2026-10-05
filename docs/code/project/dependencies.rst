@@ -47,6 +47,41 @@ files.
 To regenerate ``constraints.txt`` without installing anything, run
 ``psynet generate-constraints``.
 
+.. _choosing_a_psynet_version:
+
+Choose a PsyNet version
+-----------------------
+
+PsyNet comes in three kinds of version:
+
+Releases
+   Numbered versions such as ``14.0.0``, published on PyPI and listed in the
+   `changelog <https://gitlab.com/PsyNetDev/PsyNet/-/blob/master/CHANGELOG.md>`_.
+   Use a release for any study you run with real participants.
+   ``uv pip install psynet`` installs the latest one.
+
+Release candidates
+   Versions such as ``14.0.0rc1``, published on PyPI shortly before a release
+   so that people can try it. They are installed only when named exactly:
+   ``uv pip install "psynet==14.0.0rc1"``.
+
+Development versions
+   Commits on the ``master`` branch that are not released yet. They have the
+   newest features and fixes, but they can change or break without notice,
+   and a later release may still change the features they add. Install the
+   current one with
+   ``uv pip install "psynet @ git+https://gitlab.com/PsyNetDev/PsyNet@master"``.
+
+The version switcher at the top of these pages shows which version they
+describe and lets you switch: a plain number is a release, a name ending in
+``rc`` and a number is a release candidate, and a name ending in ``alpha`` is
+the development version. If you follow pages for a version you haven't
+installed, some commands or options may not exist yet.
+
+Whichever version you install, ``psynet setup`` writes it to
+``requirements.txt``. A development version is recorded as the exact commit,
+so the experiment doesn't change when ``master`` moves on.
+
 .. _dependencies_updating_psynet:
 
 Update PsyNet
@@ -69,8 +104,7 @@ with a Git URL:
 Older experiments often use this form with a release tag such as
 ``v10.1.0``.
 
-The latest release is shown in the top-left corner of this documentation,
-and the `changelog <https://gitlab.com/PsyNetDev/PsyNet/-/blob/master/CHANGELOG.md>`_
+The `changelog <https://gitlab.com/PsyNetDev/PsyNet/-/blob/master/CHANGELOG.md>`_
 lists the changes in each version. Only major versions, where the first
 number increases (for example from 10.3.1 to 11.0.0), should require changes
 to the experiment. For PsyNet 14, follow

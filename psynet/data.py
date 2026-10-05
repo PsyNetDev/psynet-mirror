@@ -46,6 +46,7 @@ from sqlalchemy.schema import (
 )
 
 from . import field
+from .db import blocking_psycopg
 from .field import PythonDict, is_basic_type
 from .utils import get_logger, organize_by_key
 
@@ -174,7 +175,8 @@ def _get_preferred_superclass_version(cls):
 
 def copy_db_table_to_csv(tablename, path):
     with tempfile.TemporaryDirectory() as tempdir:
-        dallinger.data.copy_db_to_csv(db.db_url, tempdir)
+        with blocking_psycopg():
+            dallinger.data.copy_db_to_csv(db.db_url, tempdir)
         temp_filename = f"{tablename}.csv"
         shutil.copyfile(os.path.join(tempdir, temp_filename), path)
 
@@ -990,7 +992,7 @@ def ingest_to_model(
         reader = csv.reader(file)
         columns = tuple('"{}"'.format(n) for n in next(reader))
 
-        with disable_foreign_key_constraints():
+        with disable_foreign_key_constraints(), blocking_psycopg():
             postgres_copy_from(
                 file, model, engine, columns=columns, format="csv", HEADER=False
             )

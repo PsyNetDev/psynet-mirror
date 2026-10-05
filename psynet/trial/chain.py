@@ -1292,10 +1292,20 @@ class ChainTrialMaker(NetworkTrialMaker):
         and ``"n_trials"``.
 
     target_n_participants
-        Target number of participants to recruit for the experiment. All
-        participants must successfully finish the experiment to count
-        towards this quota. This target is only relevant if
-        ``recruit_mode="n_participants"``.
+        Target number of participants to recruit for the experiment.
+        This target is only relevant if ``recruit_mode="n_participants"``.
+        Which completions fill the quota is controlled by
+        ``n_participants_completion``.
+
+    n_participants_completion
+        Which kind of completion counts toward ``target_n_participants``.
+        ``"experiment"`` (default) counts participants who successfully
+        finish the whole experiment. ``"trial_maker"`` counts participants
+        who finish this TrialMaker, even if they later leave before the
+        experiment end page. In-progress participants still occupy a slot
+        in both cases, including people who have not yet reached this
+        TrialMaker, so PsyNet does not immediately recruit a replacement.
+        This setting is only relevant if ``recruit_mode="n_participants"``.
 
     fail_trials_on_premature_exit
         See :class:`~psynet.trial.main.TrialMaker`.
@@ -1427,6 +1437,7 @@ class ChainTrialMaker(NetworkTrialMaker):
         trials_per_node: int = 1,
         n_repeat_trials: int = 0,
         target_n_participants: Optional[int] = None,
+        n_participants_completion: Literal["experiment", "trial_maker"] = "experiment",
         balance_across_chains: bool = False,
         start_nodes: Optional[Union[callable, List[ChainNode]]] = None,
         # balance_strategy: Set[str] = {"within", "across"},
@@ -1591,6 +1602,7 @@ class ChainTrialMaker(NetworkTrialMaker):
             sync_group_timeout_between_barriers_time=sync_group_timeout_between_barriers_time,
             sync_group_timeout_between_barriers_action=sync_group_timeout_between_barriers_action,
             sync_group_wait_content=sync_group_wait_content,
+            n_participants_completion=n_participants_completion,
         )
 
         self.check_initialization()

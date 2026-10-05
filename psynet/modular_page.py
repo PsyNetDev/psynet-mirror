@@ -3916,8 +3916,11 @@ class VideoRecordControl(RecordControl):
                     parent=parent,
                 )
 
+                # LocalStorage deposits are a quick file copy; keep them
+                # synchronous so the next page can serve the recording.
+                async_ = not isinstance(asset.default_storage, LocalStorage)
                 try:
-                    asset.deposit(async_=True, delete_input=True)
+                    asset.deposit(async_=async_, delete_input=True)
                 except Asset.InconsistentContentError:
                     raise ValueError(
                         f"This participant already has an asset with the label '{label}'. "
