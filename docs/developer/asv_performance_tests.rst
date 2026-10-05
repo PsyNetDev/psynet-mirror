@@ -67,11 +67,16 @@ the fast and slow benchmark tiers. It compares ``master`` as it was 24 hours
 earlier (``ASV_BASE_AGE``) with the current ``master`` commit on the same
 runner, and exits early if nothing has been merged since then. It writes the
 generated result files, commits those results to the ``benchmark-results``
-branch, pushes them, and then propagates the ASV exit status. To set up the
-schedule, add a pipeline schedule for ``master`` under *Build > Pipeline
-schedules* in GitLab, for example with the cron expression ``0 2 * * *``, and
-give it the variable ``NIGHTLY_BENCHMARKS`` with value ``1``. Other schedules
-run the usual pipeline jobs.
+branch, pushes them, and then propagates the ASV exit status.
+
+The PsyNet project already has this schedule, "Nightly ASV benchmarks", which
+runs at 02:00 Europe/London time; see *Build > Pipeline schedules* in GitLab.
+Don't add a second one. A fork or new project needs its own: add a pipeline
+schedule for ``master``, for example with the cron expression ``0 2 * * *``,
+and give it the variable ``NIGHTLY_BENCHMARKS`` with value ``1``. Other
+schedules run the usual pipeline jobs. Scheduled pipelines run as the
+schedule's owner, so if the owner leaves the project, a maintainer should use
+*Take ownership* to keep it running.
 
 The comparison uses ``--factor 2`` because the slow
 ``psynet performance-test`` medians commonly move by 1.2–1.3× on GitLab
