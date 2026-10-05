@@ -45,13 +45,32 @@ run individual tests locally and only run the full test suite on GitLab.
 - Tests that use the same demo directory never run at the same time, because
   the ``in_experiment_directory`` fixture holds a lock on the directory.
 
-Each shard job publishes per-test logs in ``public/test-logs`` and its measured
-durations in ``public/ci_durations_<python>_<shard>.json``. To refresh the
-estimates after tests have been added or have changed speed, download those
-JSON files and the Playwright jobs' ``playwright-*-junit.xml`` reports from a
-recent default-branch pipeline and run::
+.. _refresh_test_durations:
 
-    psynet dev ci update-test-durations ci_durations_*.json playwright-*-junit.xml
+Each shard job publishes per-test logs in ``public/test-logs`` and its measured
+durations in ``public/ci_durations_<python>_<shard>.json``; each Playwright
+shard publishes ``public/playwright-<mode>-<shard>-junit.xml``. Stale estimates
+only make shards less even, so the release process refreshes them once per
+minor release. To refresh them from the latest passing ``master`` push pipeline
+(the artifacts are public, so no token is needed; requires ``jq``), run this
+from the PsyNet checkout:
+
+.. code-block:: bash
+
+    P=https://gitlab.com/api/v4/projects/PsyNetDev%2FPsyNet
+    PIPELINE=$(curl -s "$P/pipelines?ref=master&source=push&status=success&per_page=1" | jq '.[0].id')
+    DIR=$(mktemp -d)
+    curl -s "$P/pipelines/$PIPELINE/jobs?per_page=100" \
+      | jq -r '.[] | select(.name | test("^(tests_python_3_13|playwright_e2e_)")) | "\(.id) \(.name)"' \
+      | while read -r id name shard; do
+          i=${shard%/*}
+          case $name in
+            tests_*) f=ci_durations_3.13_$i.json ;;
+            *) f=playwright-${name#playwright_e2e_}-$i-junit.xml ;;
+          esac
+          curl -sfL -o "$DIR/$f" "$P/jobs/$id/artifacts/public/$f" || echo "missing $f"
+        done
+    psynet dev ci update-test-durations "$DIR"/*
 
 You can reproduce one CI shard locally, for example shard 4 of 12 with two
 slots::
