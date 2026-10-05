@@ -76,8 +76,8 @@ still published.
 The PsyNet project already has this schedule, "Nightly ASV benchmarks", which
 runs at 02:00 Europe/London time; see *Build > Pipeline schedules* in GitLab.
 Don't add a second one. Scheduled pipelines run as the schedule's owner, and
-the owner needs the Maintainer role to run pipelines on the protected ``master``
-branch. If the owner leaves the project or loses that role, another maintainer
+the owner needs the Maintainer role to run pipelines on the protected
+``master`` branch. If the owner leaves the project or loses that role, another maintainer
 should use *Take ownership* to keep it running.
 
 A fork or new project needs its own setup:
