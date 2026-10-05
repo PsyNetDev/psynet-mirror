@@ -154,9 +154,8 @@ include = ["/psynet"]
 [tool.hatch.build.targets.sdist]
 exclude = [
     "/.gitlab",
-    "/.postgres_setup.sql",
-    "/.run-ci-tests-locally-v2.sh",
-    "/.run-ci-tests-locally.sh",
+    "/postgres_setup.sql",
+    "/run-ci-tests-locally-v2.sh",
     "/.venv*",
     "/ci",
     "/demos",
