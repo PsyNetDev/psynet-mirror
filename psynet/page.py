@@ -300,7 +300,7 @@ def wait_while(
     on_timeout
         Optional function called with ``participant=...`` when
         ``max_wait_time`` is reached, before the participant is failed or
-        moves on.
+        moves on. It must not commit the database session.
 
     Returns
     -------

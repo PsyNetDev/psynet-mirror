@@ -5788,7 +5788,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         Used by pollers that process many candidates in one transaction
         (network growth, finalize backstop). If ``function`` raises, only its
         own changes are rolled back; the error is recorded in the batch's
-        transaction and ``fail()`` marks the item failed. A lock timeout or
+        transaction and ``fail()`` marks the item failed. A lock conflict or
         deadlock is only logged, so the next poll retries the item. The
         poller's transaction owner commits the batch as usual.
 
@@ -5805,7 +5805,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         except Exception as error:
             if is_transient_transaction_error(error):
                 logger.warning(
-                    "Poller item %s hit a lock timeout or deadlock; retrying "
+                    "Poller item %s hit a lock conflict or deadlock; retrying "
                     "on the next poll.",
                     error_parents,
                     exc_info=True,

@@ -493,7 +493,8 @@ class AsyncCodeBlock(EltCollection):
     on_timeout:
         Only relevant if ``wait=True``; a function called with
         ``participant=...`` when ``max_wait_time`` is reached. The function
-        keeps running in the background.
+        keeps running in the background. ``on_timeout`` must not commit the
+        database session.
 
     content:
         Only relevant if ``wait=True``; overlay message while waiting.
