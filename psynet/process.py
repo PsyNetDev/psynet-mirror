@@ -41,8 +41,9 @@ _running_async_process = ContextVar("psynet_running_async_process", default=Fals
 def _in_async_process():
     """Whether the current code runs inside an async process's function.
 
-    Trials touched there are finalized by :meth:`Trial.recheck_finalization`
-    after the process commits, which locks the participant before the trial.
+    The process's own trial is finalized by :meth:`Trial.recheck_finalization`
+    after the process commits, which locks the participant before the trial;
+    other trials touched there are left to :meth:`Trial.finalize_pending_trials`.
     Finalizing inside the process would lock the trial first, and a request
     holding the participant could then deadlock with it.
     """

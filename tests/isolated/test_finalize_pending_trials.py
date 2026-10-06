@@ -527,6 +527,10 @@ def test_finalize_skips_or_waits_for_a_locked_participant(db_session, participan
                 {"id": participant_id},
             )
             assert Trial.get_trials_ready_to_finalize() == []
+            request.execute(
+                text("SELECT id FROM trial WHERE id = :id FOR UPDATE NOWAIT"),
+                {"id": trial_id},
+            )
             db.session.rollback()
 
             db.session.execute(text("SET LOCAL lock_timeout = '200ms'"))

@@ -921,14 +921,13 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         """Lock the trial rows selected by ``id_select`` and load fresh trials.
 
         Finalizing writes rows that the participant's requests also write
-        (the participant's reward, the node's status), and requests lock the
-        participant before its trials. Holding a trial lock while waiting for
-        those rows can therefore deadlock with ``participant.fail()``. With
-        ``skip_locked``, the participant rows are locked in the same statement
-        and trials whose participant is busy are skipped (PostgreSQL may keep
-        such a trial locked until the poller's transaction ends, which delays
-        the request but cannot deadlock). Otherwise the participants are
-        locked before the trials.
+        (the participant's reward and, for chains, network growth), and
+        requests lock the participant before its trials. Holding a trial lock
+        while waiting for those rows can therefore deadlock with
+        ``participant.fail()``, so the participants are locked first, in a
+        separate statement, and only trials of locked participants are then
+        locked. With ``skip_locked``, busy participants and trials are
+        skipped and no lock is taken on a skipped trial.
 
         Locks IDs first, then loads full polymorphic ``Trial`` objects by
         those IDs: loading polymorphic rows in the locked query can introduce
@@ -936,22 +935,21 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         """
         from psynet.participant import Participant
 
-        if skip_locked:
-            locked_select = id_select.join(
-                Participant, Participant.id == cls.participant_id
-            ).with_for_update(of=[cls, Participant], skip_locked=True)
-        else:
-            db.session.execute(
-                select(Participant.id)
-                .where(
-                    Participant.id.in_(
-                        select(cls.participant_id).where(cls.id.in_(id_select))
-                    )
+        participant_rows = db.session.execute(
+            select(Participant.id)
+            .where(
+                Participant.id.in_(
+                    select(cls.participant_id).where(cls.id.in_(id_select))
                 )
-                .order_by(Participant.id)
-                .with_for_update(of=Participant)
             )
-            locked_select = id_select.with_for_update(of=cls)
+            .order_by(Participant.id)
+            .with_for_update(of=Participant, skip_locked=skip_locked)
+        ).all()
+        if skip_locked:
+            id_select = id_select.where(
+                cls.participant_id.in_([row[0] for row in participant_rows])
+            )
+        locked_select = id_select.with_for_update(of=cls, skip_locked=skip_locked)
         id_rows = db.session.execute(locked_select).all()
         trial_ids = [row[0] for row in id_rows]
         if not trial_ids:
@@ -994,6 +992,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             )
             if trial.finalized and not was_finalized:
                 finalized_count += 1
+                trial._wake_participant_after_finalizing()
 
         if finalized_count:
             logger.info(
@@ -1021,7 +1020,22 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         committing to the caller.
         """
         for trial in cls._lock_and_load(select(cls.id).where(cls.id == trial_id)):
+            was_finalized = trial.finalized
             trial.check_if_can_mark_as_finalized()
+            if trial.finalized and not was_finalized:
+                trial._wake_participant_after_finalizing()
+
+    def _wake_participant_after_finalizing(self):
+        """Wake the participant's held page, which may be waiting on this trial's score.
+
+        Finalizing outside the participant's request happens after the
+        asset-deposit and async-process wakes were sent, so without this
+        wake a page held for the score waits for its next poll.
+        """
+        if self.participant_id is not None:
+            from psynet.timeline_hold import _queue_timeline_hold_wake
+
+            _queue_timeline_hold_wake(self.participant_id, reason="trial_finalized")
 
     def check_if_can_run_async_post_trial(self):
         msg = f"Checking if we should run async_post_trial for trial {self.id}... "
