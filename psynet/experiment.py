@@ -5795,8 +5795,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         (network growth, finalize backstop). If ``function`` raises, only its
         own changes are rolled back; the error is recorded in the batch's
         transaction, ``fail()`` marks the item failed, and the researcher is
-        notified once the batch commits. A lock conflict or
-        deadlock is only logged, so the next poll retries the item. The
+        notified once the batch commits. If ``fail()`` itself raises, the
+        ``error_parents`` objects are marked failed directly, without their
+        failure cascades, so the item is not picked up again. A lock conflict
+        or deadlock is only logged, so the next poll retries the item. The
         poller's transaction owner commits the batch as usual.
 
         ``function`` must not commit, roll back, call :meth:`handle_error`
@@ -5834,12 +5836,27 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             try:
                 with db.session.begin_nested():
                     fail()
-            except Exception:
+            except Exception as fail_error:
+                if is_transient_transaction_error(fail_error):
+                    logger.warning(
+                        "Could not mark poller item %s as failed because of a "
+                        "lock conflict; retrying on the next poll.",
+                        error_parents,
+                        exc_info=True,
+                    )
+                    return None
                 logger.exception(
-                    "Could not mark poller item %s as failed; it will be "
-                    "retried on the next poll.",
+                    "fail() raised for poller item %s; marking the item "
+                    "failed without its failure cascade.",
                     error_parents,
                 )
+                # Otherwise the item stays ready and fails again on every poll.
+                with db.session.begin_nested():
+                    for obj in error_parents.values():
+                        if not obj.failed:
+                            obj.failed = True
+                            obj.failed_reason = "poller_fail_callback_error"
+                            obj.time_of_death = datetime.now()
             return None
 
     @classmethod

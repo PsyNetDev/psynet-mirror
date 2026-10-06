@@ -262,24 +262,35 @@ def test_batch_item_that_commits_fails_alone(db_session, monkeypatch, rollback_f
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
-def test_batch_item_whose_fail_callback_raises_keeps_the_batch(db_session, monkeypatch):
+def test_batch_item_whose_fail_callback_raises_is_still_marked_failed(
+    db_session, monkeypatch
+):
+    """Otherwise the item would fail, and notify, again on every poll."""
     DummyTransactionModel.__table__.create(bind=db_session.get_bind(), checkfirst=True)
     _skip_error_notifications(monkeypatch)
 
     def fail():
         db.session.add(DummyTransactionModel(id="half-failed"))
         db.session.flush()
-        raise ValueError("cannot fail")
+        raise AttributeError("already failed")
 
     with transaction():
+        participant = new_participant()
         db.session.add(DummyTransactionModel(id="earlier"))
+        db.session.flush()
+        participant_id = participant.id
         Experiment._run_batch_item(
-            MagicMock(side_effect=ValueError("item error")), fail=fail
+            MagicMock(side_effect=ValueError("item error")),
+            fail=fail,
+            participant=participant,
         )
 
     with transaction():
         assert [model.id for model in DummyTransactionModel.query.all()] == ["earlier"]
         assert len(ErrorRecord.query.all()) == 1
+        participant = Participant.query.get(participant_id)
+        assert participant.failed
+        assert participant.failed_reason == "poller_fail_callback_error"
 
 
 @pytest.mark.parametrize(
