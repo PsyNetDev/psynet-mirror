@@ -1,5 +1,3 @@
-# pylint: disable=unused-argument,abstract-method
-
 from ..media import recode_wav
 from ..utils import get_logger
 from .record import (

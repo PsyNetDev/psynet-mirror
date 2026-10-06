@@ -1,5 +1,3 @@
-# pylint: disable=unused-import,abstract-method,unused-argument,no-member
-
 from typing import List
 
 from markupsafe import Markup

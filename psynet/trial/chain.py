@@ -278,7 +278,6 @@ class ChainNetwork(TrialNetwork):
         Set by default in the ``__init__`` function.
     """
 
-    # pylint: disable=abstract-method
     nodes_can_spawn = True
 
     chain_type = Column(String)
@@ -1086,8 +1085,6 @@ class ChainTrial(Trial):
 
     """
 
-    # pylint: disable=abstract-method
-
     participant_group = association_proxy("node", "participant_group")
     degree = association_proxy("node", "degree")
     context = association_proxy("node", "context")
@@ -1292,10 +1289,20 @@ class ChainTrialMaker(NetworkTrialMaker):
         and ``"n_trials"``.
 
     target_n_participants
-        Target number of participants to recruit for the experiment. All
-        participants must successfully finish the experiment to count
-        towards this quota. This target is only relevant if
-        ``recruit_mode="n_participants"``.
+        Target number of participants to recruit for the experiment.
+        This target is only relevant if ``recruit_mode="n_participants"``.
+        Which completions fill the quota is controlled by
+        ``n_participants_completion``.
+
+    n_participants_completion
+        Which kind of completion counts toward ``target_n_participants``.
+        ``"experiment"`` (default) counts participants who successfully
+        finish the whole experiment. ``"trial_maker"`` counts participants
+        who finish this TrialMaker, even if they later leave before the
+        experiment end page. In-progress participants still occupy a slot
+        in both cases, including people who have not yet reached this
+        TrialMaker, so PsyNet does not immediately recruit a replacement.
+        This setting is only relevant if ``recruit_mode="n_participants"``.
 
     fail_trials_on_premature_exit
         See :class:`~psynet.trial.main.TrialMaker`.
@@ -1405,7 +1412,8 @@ class ChainTrialMaker(NetworkTrialMaker):
 
     end_performance_check_waits : bool
         If ``True`` (default), then the final performance check waits until all trials no
-        longer have any pending asynchronous processes.
+        longer have any pending asynchronous processes, and until trials that are ready
+        to finalize have been finalized (so their scores are set).
     """
 
     state_class = ChainTrialMakerState
@@ -1427,6 +1435,7 @@ class ChainTrialMaker(NetworkTrialMaker):
         trials_per_node: int = 1,
         n_repeat_trials: int = 0,
         target_n_participants: Optional[int] = None,
+        n_participants_completion: Literal["experiment", "trial_maker"] = "experiment",
         balance_across_chains: bool = False,
         start_nodes: Optional[Union[callable, List[ChainNode]]] = None,
         # balance_strategy: Set[str] = {"within", "across"},
@@ -1591,6 +1600,7 @@ class ChainTrialMaker(NetworkTrialMaker):
             sync_group_timeout_between_barriers_time=sync_group_timeout_between_barriers_time,
             sync_group_timeout_between_barriers_action=sync_group_timeout_between_barriers_action,
             sync_group_wait_content=sync_group_wait_content,
+            n_participants_completion=n_participants_completion,
         )
 
         self.check_initialization()
@@ -1725,7 +1735,6 @@ class ChainTrialMaker(NetworkTrialMaker):
         participant.module_state.set_block_position(0)
 
     def choose_block_order(self, experiment, participant, blocks):
-        # pylint: disable=unused-argument
         """
         Determines the order of blocks for the current participant.
         By default this function shuffles the blocks randomly for each participant.
