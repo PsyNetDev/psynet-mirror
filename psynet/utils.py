@@ -1291,7 +1291,8 @@ def is_method_overridden(obj, ancestor: Type, method: str):
 
 
 @contextlib.contextmanager
-def time_logger(label, threshold=0.01):
+def time_logger(label, threshold=0.1):
+    """Log the time taken by the enclosed block if it exceeds ``threshold`` seconds."""
     log = {
         "time_started": time.monotonic(),
         "time_finished": None,
