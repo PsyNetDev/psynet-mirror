@@ -220,6 +220,10 @@ class _CommitGuard:
         self.parent = parent
         self.savepoint = savepoint
 
+    def savepoint_closed(self):
+        """Return whether guarded code ended the savepoint the guard started in."""
+        return self.savepoint is not None and not self.savepoint.is_active
+
 
 _commit_forbidden_in = ContextVar("psynet_commit_forbidden_in", default=None)
 
@@ -231,8 +235,11 @@ def _prevent_render_commit(session):
     guard = _commit_forbidden_in.get()
     # Only savepoints opened inside the guarded code may be released; in
     # SQLAlchemy 1.4's legacy mode, commit() inside an enclosing savepoint
-    # would release that one instead.
-    if guard is not None and session.get_nested_transaction() is guard.savepoint:
+    # would release that one instead, and after a rollback() of that
+    # savepoint it would commit the outer transaction.
+    if guard is not None and (
+        session.get_nested_transaction() is guard.savepoint or guard.savepoint_closed()
+    ):
         raise RuntimeError(_forbidden_commit_message(guard.operation, "commit"))
 
 
@@ -285,7 +292,9 @@ def forbid_commits(operation: str):
         yield
     finally:
         _commit_forbidden_in.reset(token)
-    if guard.root is not None and session.get_transaction() is not guard.root:
+    if guard.savepoint_closed() or (
+        guard.root is not None and session.get_transaction() is not guard.root
+    ):
         raise RuntimeError(_forbidden_commit_message(operation, "rollback"))
 
 
