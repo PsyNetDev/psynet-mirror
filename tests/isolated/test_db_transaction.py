@@ -298,17 +298,17 @@ def test_batch_item_whose_fail_callback_raises_is_still_marked_failed(
 )
 def test_after_commit_callbacks_wait_for_the_root_commit(db_session):
     calls = []
-    with pytest.raises(RuntimeError, match="inside a savepoint"):
-        with db.session.begin_nested():
-            _call_after_commit(lambda: calls.append("nested"))
-    _call_after_commit(lambda: calls.append("root"))
+    savepoint = db.session.begin_nested()
+    _call_after_commit(lambda: calls.append("rolled back"))
+    savepoint.rollback()
     with db.session.begin_nested():
-        pass
+        _call_after_commit(lambda: calls.append("released"))
+    _call_after_commit(lambda: calls.append("root"))
     assert calls == []
 
     db.session.commit()
 
-    assert calls == ["root"]
+    assert calls == ["released", "root"]
 
 
 @pytest.mark.parametrize(

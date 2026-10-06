@@ -352,41 +352,68 @@ def _check_external_call_allowed():
 
 
 _AFTER_COMMIT_CALLBACKS_KEY = "psynet_after_commit_callbacks"
+_SAVEPOINT_CALLBACK_COUNTS_KEY = "psynet_savepoint_after_commit_counts"
 
 
 def _call_after_commit(callback):
     """Run ``callback`` once the current root transaction commits; drop it if it rolls back.
 
-    For side effects, such as notifications, that should only happen if the
-    transaction's changes are saved. ``callback`` runs inside SQLAlchemy's
-    ``after_commit`` event, so it must not use the database. It raises inside
-    a savepoint, whose rollback would not drop the callback.
+    For side effects, such as notifications and launching worker jobs, that
+    should only happen once the transaction's changes are saved. Callbacks
+    queued inside a savepoint are dropped if that savepoint rolls back.
+    Callbacks run in the order they were queued, inside SQLAlchemy's
+    ``after_commit`` event, so they must not use the database. Each session
+    has its own queue, so another session's commit cannot run them.
     """
     session = dallinger.db.session()
-    if session.in_nested_transaction():
-        raise RuntimeError(
-            "Cannot queue an after-commit callback inside a savepoint "
-            "(db.session.begin_nested())."
-        )
     if session.get_transaction() is None:
         session.begin()
     session.info.setdefault(_AFTER_COMMIT_CALLBACKS_KEY, []).append(callback)
 
 
+@event.listens_for(dallinger.db.session, "after_transaction_create")
+def _remember_callbacks_before_savepoint(session, transaction):
+    if transaction.nested:
+        queued = len(session.info.get(_AFTER_COMMIT_CALLBACKS_KEY) or [])
+        session.info.setdefault(_SAVEPOINT_CALLBACK_COUNTS_KEY, []).append(queued)
+
+
 @event.listens_for(dallinger.db.session, "after_commit")
 def _run_after_commit_callbacks(session):
+    # Releasing a savepoint also fires after_commit; wait for the root commit.
     if session.in_nested_transaction():
         return
     for callback in session.info.pop(_AFTER_COMMIT_CALLBACKS_KEY, []):
         try:
             callback()
         except Exception:
-            logger.warning("After-commit callback %r failed.", callback, exc_info=True)
+            logger.exception("After-commit callback %r failed.", callback)
+
+
+@event.listens_for(dallinger.db.session, "after_rollback")
+def _drop_rolled_back_callbacks(session):
+    """Drop the callbacks of a rolled-back savepoint, or all of them on a root rollback.
+
+    Detect the savepoint via the count stack, because
+    ``in_nested_transaction()`` may already be false when this runs.
+    """
+    counts = session.info.get(_SAVEPOINT_CALLBACK_COUNTS_KEY) or []
+    if counts:
+        queue = session.info.get(_AFTER_COMMIT_CALLBACKS_KEY)
+        if queue is not None:
+            del queue[counts[-1] :]
+        return
+    session.info.pop(_AFTER_COMMIT_CALLBACKS_KEY, None)
 
 
 @event.listens_for(dallinger.db.session, "after_transaction_end")
-def _drop_after_commit_callbacks(session, transaction):
-    if transaction.parent is None:
+def _end_after_commit_transaction(session, transaction):
+    if transaction.nested:
+        counts = session.info.get(_SAVEPOINT_CALLBACK_COUNTS_KEY)
+        if counts:
+            counts.pop()
+    elif transaction.parent is None:
+        # Session.close() ends the root transaction without after_rollback.
         session.info.pop(_AFTER_COMMIT_CALLBACKS_KEY, None)
 
 
