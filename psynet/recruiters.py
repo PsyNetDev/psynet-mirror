@@ -28,8 +28,9 @@ Key design constraints for maintainers:
   writes those fields onto the participant; ``report_submission_outcome``
   reports the terminal outcome and delegates real bonus transfers to
   ``reward_bonus`` by default. Recruiters with ``reports_zero_outcomes``
-  (Lab Recruiter) also report zero bonuses through that hook. ``False``
-  means the platform rejected the report or transfer.
+  (Lab Recruiter, Lucid) also report zero bonuses through that hook, and
+  implement the outcome there. Calling ``reward_bonus`` on those recruiters
+  raises. ``False`` means the platform rejected the report or transfer.
   ``Experiment.on_recruiter_submission_complete`` owns this sequence,
   always re-recording status and platform base, and uses ``bonus_status``
   to skip a repeat transfer. PsyNet posts a bonus automatically at most
@@ -2498,6 +2499,7 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
     supports_delayed_publishing = True
     # Lucid forbids showing rewards inside the survey.
     shows_reward_by_default = False
+    reports_zero_outcomes = True
     MARKETPLACE_CODE = "Marketplace codes"
     IN_SURVEY = "Currently in Client Survey or Drop"
     COMPLETED = "Returned as Complete"
@@ -3079,10 +3081,17 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
         )
 
     def reward_bonus(self, participant, amount, reason):
-        """
-        Set `completed_at` timestamp on participant's LucidRID entry.
+        """Lucid does not transfer bonuses through ``reward_bonus``."""
+        raise RuntimeError(
+            "Lucid reports terminal outcomes via "
+            "report_submission_outcome, including a zero bonus. "
+            "Do not call reward_bonus."
+        )
 
-        Returns False if the Lucid complete/terminate call raises.
+    def report_submission_outcome(self, participant, amount, reason):
+        """Complete or terminate the respondent on Lucid, even with a zero bonus.
+
+        Returns False if the Lucid complete or terminate call raises.
         """
         try:
             if self._committed_panel_termination(participant) is not None:
@@ -3104,7 +3113,7 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
                 self.terminate_participant(participant=participant, reason=reason)
         except Exception as ex:
             logger.exception(
-                "Lucid reward_bonus failed for participant %s.",
+                "Lucid outcome report failed for participant %s.",
                 getattr(participant, "id", None),
             )
             record_bonus_attempt_detail(participant, str(ex))

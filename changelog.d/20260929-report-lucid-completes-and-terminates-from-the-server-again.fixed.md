@@ -1,0 +1,1 @@
+Fixed Lucid submissions not sending PsyNet's server-side complete or terminate call, so Lucid only recorded a complete when the participant's browser made it back to the panel. Calling ``reward_bonus`` on the Lucid recruiter raises; the complete or terminate is sent from ``report_submission_outcome``.
