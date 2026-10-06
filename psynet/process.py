@@ -27,13 +27,15 @@ from sqlalchemy.orm import deferred, relationship
 from tenacity import retry, retry_if_exception_type, stop_after_delay, wait_exponential
 
 from .data import SQLBase, SQLMixin, register_table
-from .db import _call_after_commit, with_transaction
+from .db import _call_after_commit, _set_transaction_lock_timeout, with_transaction
 from .field import PythonDict, PythonObject
 from .notifier import _send_alert
 from .serialize import prepare_function_for_serialization
 from .utils import get_logger
 
 logger = get_logger()
+
+_RECHECK_LOCK_TIMEOUT_SECONDS = 5
 
 _running_async_process = ContextVar("psynet_running_async_process", default=False)
 
@@ -310,6 +312,9 @@ class AsyncProcess(SQLBase, SQLMixin):
             from psynet.trial.main import Trial
 
             try:
+                # A busy participant should not tie up the worker; the
+                # finalize backstop picks the trial up if this times out.
+                _set_transaction_lock_timeout(_RECHECK_LOCK_TIMEOUT_SECONDS)
                 Trial.recheck_finalization(trial_id)
                 db.session.commit()
             except Exception:

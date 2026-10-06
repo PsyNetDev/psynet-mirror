@@ -910,8 +910,9 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         Known blockers (undeposited assets, pending async post-trial) are
         excluded in SQL so the steady-state result is empty.
 
-        Uses ``FOR UPDATE SKIP LOCKED`` so the poller does not block when
-        participant requests or async workers already hold a lock on the
+        Locks participants ``FOR NO KEY UPDATE`` and then trials
+        ``FOR UPDATE``, both ``SKIP LOCKED``, so the poller does not block
+        when participant requests or async workers already hold a lock on the
         trial or its participant.
         """
         return cls._lock_and_load(cls.ready_to_finalize_id_select(), skip_locked=True)
