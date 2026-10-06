@@ -2975,7 +2975,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         finishes as ``capped`` even when a remainder was sent.
 
         Does not re-apply caps or send emails when already settled. Raises
-        inside timeline steps, even when there is nothing to pay.
+        wherever ``_check_external_call_allowed`` does (timeline steps,
+        savepoints, rendering), even when there is nothing to pay.
         """
         _check_external_call_allowed()
         participant = self._lock_participant_for_payment(participant)

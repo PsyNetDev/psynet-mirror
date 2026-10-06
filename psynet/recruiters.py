@@ -356,7 +356,8 @@ class PsyNetRecruiterMixin:
         Most recruiters have no separate outcome callback, so sub-cent
         amounts are a no-op and real bonuses use ``reward_bonus``. Recruiters
         whose bonus endpoint is also their terminal outcome callback can
-        override this method to report every amount, including zero.
+        override this method to report every amount, including zero. Raises
+        inside timeline steps, even for sub-cent amounts.
         """
         _check_external_call_allowed()
         if amount < 0.01:

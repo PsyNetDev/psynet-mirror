@@ -2386,6 +2386,7 @@ def test_lucid_prepares_error_recovery_without_an_external_termination_request()
         "prolific_reward_bonus",
         "lab_outcome",
         "hotair_reward_bonus",
+        "zero_outcome",
         "experiment_pay",
         "lucid_service_complete",
         "lucid_service_terminate",
@@ -2417,6 +2418,9 @@ def test_payment_and_panel_calls_raise_inside_a_timeline_step_before_any_request
         "hotair_reward_bonus": lambda: object.__new__(HotAirRecruiter).reward_bonus(
             participant, 1.0, "bonus"
         ),
+        "zero_outcome": lambda: object.__new__(
+            HotAirRecruiter
+        ).report_submission_outcome(participant, 0.0, "bonus"),
         "experiment_pay": lambda: object.__new__(Experiment).pay_decided_bonus(
             participant, MagicMock()
         ),

@@ -324,7 +324,9 @@ def _check_external_call_allowed():
     half-finished changes, and inside a savepoint ``commit()`` would only
     release the savepoint, so a later rollback would still lose the record.
     Call it before an external call whose result is committed afterwards, so
-    the call is never made without its record.
+    the call is never made without its record. Payment and panel entry
+    points call it first, so a misplaced call fails even when nothing would
+    be sent.
     """
     if _in_read_only_render():
         raise RuntimeError(
@@ -345,8 +347,8 @@ def _check_external_call_allowed():
         )
     if dallinger.db.session().in_nested_transaction():
         raise RuntimeError(
-            "Cannot commit external-call state inside a savepoint "
-            "(db.session.begin_nested()); make the external call outside it."
+            "Payment and recruitment-platform calls cannot run inside a "
+            "savepoint (db.session.begin_nested()); make the call outside it."
         )
 
 

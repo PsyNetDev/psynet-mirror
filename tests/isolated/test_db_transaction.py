@@ -208,7 +208,7 @@ def test_external_call_state_cannot_be_committed_inside_a_savepoint(db_session):
     """Inside a savepoint, a commit would only release it, so the record could be lost."""
     with transaction(commit=False):
         with db.session.begin_nested():
-            with pytest.raises(RuntimeError, match="inside a savepoint"):
+            with pytest.raises(RuntimeError, match="cannot run inside a savepoint"):
                 _commit_external_call_state()
 
 
