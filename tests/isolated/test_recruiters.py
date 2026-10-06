@@ -1,5 +1,6 @@
 import json
 from contextlib import contextmanager
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import MagicMock, PropertyMock, patch
 
@@ -2255,6 +2256,45 @@ def test_lucid_run_checks_reevaluates_recruitment_while_entry_is_paused():
             recruiter.close_recruitment()
         recruiter.run_checks()
     experiment.recruit.assert_called_once_with()
+
+
+def test_lucid_clock_times_out_working_participants_who_closed_the_tab():
+    """Only the browser enforces the overall limit, so a closed tab stays working."""
+    recruiter = _lucid_recruiter_with_service()
+    recruiter.config = FakeConfig(
+        lucid_recruitment_config=json.dumps({"termination_time_in_s": 600})
+    )
+    now = datetime(2026, 9, 30, 12, 0)
+    entrant = SimpleNamespace(registered_at=now - timedelta(minutes=12))
+    working = SimpleNamespace(id=19, status="working")
+    approved = SimpleNamespace(id=20, status="approved")
+
+    with patch("psynet.recruiters.Response") as response:
+        response.query.filter_by.return_value.first.return_value = object()
+        reason = recruiter._clock_termination_reason
+        assert reason(entrant, working, now) == "overall-timeout-600s"
+        assert reason(entrant, working, now - timedelta(minutes=2)) is None
+        assert reason(entrant, approved, now) is None
+
+        response.query.filter_by.return_value.first.return_value = None
+        assert reason(entrant, working, now) == "first-response-timeout"
+
+    entrant.lucid_status = recruiter.IN_SURVEY
+    assert reason(entrant, None, now) == "never-entered-experiment"
+    entrant.lucid_status = recruiter.MARKETPLACE_CODE
+    assert reason(entrant, None, now) is None
+
+
+def test_lucid_clock_skips_overall_timeout_without_a_limit():
+    recruiter = _lucid_recruiter_with_service()
+    recruiter.config = FakeConfig(lucid_recruitment_config=json.dumps({}))
+    now = datetime(2026, 9, 30, 12, 0)
+    entrant = SimpleNamespace(registered_at=now - timedelta(days=2))
+    working = SimpleNamespace(id=19, status="working")
+
+    with patch("psynet.recruiters.Response") as response:
+        response.query.filter_by.return_value.first.return_value = object()
+        assert recruiter._clock_termination_reason(entrant, working, now) is None
 
 
 def _lucid_submit_url(ris, rid):
