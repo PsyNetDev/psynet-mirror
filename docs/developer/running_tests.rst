@@ -40,24 +40,19 @@ visit the GitLab error logs to see which particular test failed.
 You're looking for a test script with a name like ``test_assets.py``,
 and a test function within that, for example ``test_assets_upload_correctly()``.
 
-The umbrella test scripts ``test_run_all_demos.py`` and ``test_run_isolated_tests.py``
-iterate through many subsidiary test scripts.
-If you see a failure there, inspect the logs to see exactly which
-subsidiary test script failed.
-
 Debugging tests locally
 -----------------------
 
 It is often faster to debug test failures on your local computer rather than
 on GitLab. The first step is to identify which test failed, following
 the instructions above. Let's suppose that the test is located in
-``tests/test_assets.py``.
+``tests/isolated/test_assets.py``.
 The next step is to reproduce this failure on your local computer.
 You can do this by running the following in your terminal:
 
 .. code-block:: python
 
-    pytest tests/test_assets.py --chrome -s
+    pytest tests/isolated/test_assets.py --chrome -s
 
 
 The ``--chrome`` argument is only needed for tests that invoke an automated
@@ -203,7 +198,13 @@ A short HTTP 503 on hold-resume is the
 ``NOWAIT`` busy retry when those requests hit the same participant row;
 the in-request retry waits 250ms; if that is still busy, one delayed
 ``queued hold wake`` runs. The suite still fails a busy retry that lasts
-500ms or more. A ``wait_while`` test that asserts ``timelineHoldWakeReceived``
+500ms or more. An in-page probe that counts hold wakes or schedule calls must
+swallow ``psynet.resumeTimelineHold`` and call
+``window.__settleTimelineHoldResume`` before installing its counters. The helper
+waits for ``resumeInFlight`` to clear and then yields one ``setTimeout(0)``: a
+resume that settles with ``resumeRequested`` set queues a 0ms
+``queued hold wake``, which would otherwise land in the probe.
+A ``wait_while`` test that asserts ``timelineHoldWakeReceived``
 must silence that 1s safety poll after the hold chip appears. Otherwise an
 in-place hold-resume POST can stop the controller before the websocket
 message dispatches the event, and a counter installed only with

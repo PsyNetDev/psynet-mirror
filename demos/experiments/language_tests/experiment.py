@@ -1,5 +1,3 @@
-# pylint: disable=unused-import,abstract-method,unused-argument,no-member
-
 import psynet.experiment
 from psynet.page import InfoPage
 from psynet.prescreen import LanguageVocabularyTest, LexTaleTest

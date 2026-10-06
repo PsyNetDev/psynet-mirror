@@ -2,8 +2,6 @@
 This is a simple experiment that allows participants to rate sounds on a scale of 1 to 5.
 """
 
-# pylint: disable=missing-class-docstring,missing-function-docstring
-
 from pathlib import Path
 
 import psynet.experiment

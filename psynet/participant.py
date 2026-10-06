@@ -1,5 +1,3 @@
-# pylint: disable=attribute-defined-outside-init
-
 import io
 import json
 import os
@@ -300,8 +298,6 @@ def _raise_for_status_with_server_details(response):
 if TYPE_CHECKING:
     from .sync import SyncGroup
     from .timeline import Module
-
-# pylint: disable=unused-import
 
 UniqueConstraint(dallinger.models.Participant.unique_id)
 

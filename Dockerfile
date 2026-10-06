@@ -12,6 +12,9 @@ ARG PYTHON_VERSION
 ARG CHROME_VERSION=149.0.7827.54
 
 RUN pip install uv
+# Every CI job builds this image, so a brief PyPI outage fails them all at
+# once; uv's default 3 retries give up within seconds.
+ENV UV_HTTP_RETRIES=8
 
 # TODO: delete some of these if we can
 # fonts-liberation gives browser tests an Arial-metric font, which is what the
