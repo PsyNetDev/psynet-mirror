@@ -191,7 +191,7 @@ class _BarrierAuthorHookError(Exception):
 # restores them, so a later instance's waiter ``NOWAIT`` miss does not wipe
 # stacked checks queued by an earlier skip in the same sweep.
 _pending_barrier_checks = _SessionQueue("pending_barrier_checks", set)
-_released_hold_waiter_ids = _SessionQueue("released_hold_waiter_ids", list)
+_released_hold_waiter_ids = _SessionQueue("released_hold_waiter_ids", set)
 
 
 def _queue_barrier_check(barrier_instance_id):
@@ -206,14 +206,14 @@ def _take_pending_barrier_checks():
 
 def _queue_released_hold_waiters(participants):
     """Remember released waiters so the poller can skip them after its own check."""
-    _released_hold_waiter_ids.get().extend(
+    _released_hold_waiter_ids.get().update(
         participant.id for participant in participants
     )
 
 
 def _take_released_hold_waiter_ids():
     """Take waiter ids queued by the barrier check that just ran."""
-    return sorted(set(_released_hold_waiter_ids.take()))
+    return sorted(_released_hold_waiter_ids.take())
 
 
 def _rollback_preserving_barrier_queues():

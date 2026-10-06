@@ -326,11 +326,26 @@ def test_session_queue_without_on_commit_waits_to_be_taken(db_session):
         db.session.commit()
         assert queue.take() == ["kept"]
 
+        db.session.begin()
         queue.get().append("rolled back")
         db.session.rollback()
         assert queue.take() == []
     finally:
         _session_queues.remove(queue)
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_savepoint_rollback_restores_an_overwritten_hold_wake(db_session):
+    from psynet.timeline_hold import _pending_wakes, _queue_arrival_update
+
+    _queue_arrival_update(1, notice="before")
+    savepoint = db.session.begin_nested()
+    _queue_arrival_update(1, notice="inside")
+    savepoint.rollback()
+
+    assert _pending_wakes.peek()["arrival:1"]["notice"] == "before"
 
 
 @pytest.mark.parametrize(

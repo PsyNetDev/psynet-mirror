@@ -378,12 +378,17 @@ class _SessionQueue:
     def get(self):
         """Return the current session's queue for adding to, creating it if needed.
 
-        Begins a transaction if none is open, so the additions belong to one.
+        With ``on_commit``, begins a transaction if none is open, so the
+        additions wait for a commit rather than for whichever transaction
+        happens to come next.
         """
         session = dallinger.db.session()
-        if session.get_transaction() is None:
+        if self.on_commit is not None and session.get_transaction() is None:
             session.begin()
-        return session.info.setdefault(self.key, self.factory())
+        value = session.info.get(self.key)
+        if value is None:
+            value = session.info[self.key] = self.factory()
+        return value
 
     def peek(self):
         """Return a copy of the current session's queue, leaving it in place."""
