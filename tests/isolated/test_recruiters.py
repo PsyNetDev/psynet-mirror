@@ -2440,7 +2440,7 @@ def test_lucid_prepares_error_recovery_without_an_external_termination_request()
     "call",
     [
         "lucid_terminate",
-        "lucid_reward_bonus",
+        "lucid_outcome",
         "lucid_status",
         "prolific_reward_bonus",
         "lab_outcome",
@@ -2468,7 +2468,9 @@ def test_payment_and_panel_calls_raise_inside_a_timeline_step_before_any_request
         "lucid_terminate": lambda: lucid.terminate_participant(
             participant=participant, reason="timeout"
         ),
-        "lucid_reward_bonus": lambda: lucid.reward_bonus(participant, 1.0, "bonus"),
+        "lucid_outcome": lambda: lucid.report_submission_outcome(
+            participant, 0.0, "bonus"
+        ),
         "lucid_status": lambda: lucid.change_lucid_status("live"),
         "prolific_reward_bonus": lambda: prolific.reward_bonus(
             participant, 1.0, "bonus"
