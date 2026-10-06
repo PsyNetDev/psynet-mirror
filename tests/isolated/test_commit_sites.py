@@ -63,7 +63,9 @@ COMMIT_SITES = {
     "timeline.py::Module.nodes_register_in_db": _OWNS_DEPLOY,
     "timeline.py::Module.nodes_stage_assets": _OWNS_DEPLOY,
     "trial/chain.py::ChainTrialMaker._claim_node_capacity": "savepoint commit",
-    "trial/main.py::Trial.call_async_post_trial": _OWNS_JOB,
+    "trial/main.py::Trial.call_async_post_trial": (
+        "worker job: saves the failure flag after rolling back a failed analysis"
+    ),
     "trial/main.py::TrialNode.call_async_on_deploy": _OWNS_JOB,
 }
 
