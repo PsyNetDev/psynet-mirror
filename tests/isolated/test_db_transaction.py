@@ -191,15 +191,12 @@ def test_forbid_commits_rejects_commits_but_allows_savepoints(db_session):
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
-def test_lucid_rejected_consent_terminates_inside_guarded_steps(
-    db_session, monkeypatch
-):
-    """Lucid saves its termination around the API call, even inside a timeline step."""
+def test_lucid_rejected_consent_termination_survives_a_later_rollback(db_session):
+    """Lucid saves its termination right after the API call."""
     from psynet.end import RejectedConsentLogic
     from psynet.lucid import LucidService
     from psynet.recruiters import BaseLucidRecruiter, LucidRID
 
-    monkeypatch.setattr(RejectedConsentLogic, "prepare_exit", lambda *args: None)
     db.session.add(LucidRID(rid="RID1"))
     db.session.commit()
 
@@ -211,26 +208,13 @@ def test_lucid_rejected_consent_terminates_inside_guarded_steps(
     participant = MagicMock(assignment_id="RID1", module_state=None)
     participant.recruiter = recruiter
 
-    with transaction(commit=False):
-        with pytest.raises(RuntimeError, match=r"advance_page called .*rollback"):
-            with forbid_commits("Timeline.advance_page"):
-                with forbid_commits("CodeBlock 'EndLogic.prepare_debrief'"):
-                    RejectedConsentLogic().prepare_debrief(experiment, participant)
-                db.session.add(LucidRID(rid="RID2"))
-                db.session.flush()
-                db.session.rollback()
+    RejectedConsentLogic.report_rejected_consent(experiment, participant)
+    db.session.add(LucidRID(rid="RID2"))
+    db.session.flush()
+    db.session.rollback()
 
     assert LucidRID.query.filter_by(rid="RID1").one().terminated_at is not None
-
-    def commit_directly(experiment, participant):
-        db.session.commit()
-
-    recruiter.after_rejected_consent = commit_directly
-    experiment.with_lucid_recruitment.return_value = False
-    with transaction(commit=False):
-        with pytest.raises(RuntimeError, match="prepare_debrief' called"):
-            with forbid_commits("CodeBlock 'EndLogic.prepare_debrief'"):
-                RejectedConsentLogic().prepare_debrief(experiment, participant)
+    assert LucidRID.query.filter_by(rid="RID2").one_or_none() is None
 
 
 def _skip_error_notifications(monkeypatch):

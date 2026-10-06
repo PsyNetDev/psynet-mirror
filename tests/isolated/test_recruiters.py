@@ -4843,7 +4843,7 @@ def test_lab_recruiter_consent_rejection_failure_stays_unconfirmed():
     assert not experiment.notify_calls
 
 
-def test_rejected_consent_dispatches_recruiter_hook():
+def test_rejected_consent_calls_recruiter_hook_in_async_code_block():
     from psynet.end import RejectedConsentLogic
 
     recruiter = make_lab_recruiter()
@@ -4853,10 +4853,16 @@ def test_rejected_consent_dispatches_recruiter_hook():
     experiment.with_lucid_recruitment.return_value = False
     participant = MagicMock()
     participant.recruiter = recruiter
+    logic = RejectedConsentLogic()
 
-    RejectedConsentLogic().before_debrief(experiment, participant)
+    logic.before_debrief(experiment, participant)
 
     participant.fail.assert_called_once_with()
+    recruiter.after_rejected_consent.assert_not_called()
+
+    block = logic.before_debrief_logic()
+    assert block.wait
+    block.function(experiment=experiment, participant=participant)
     recruiter.after_rejected_consent.assert_called_once_with(experiment, participant)
 
 

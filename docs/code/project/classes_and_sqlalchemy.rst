@@ -242,9 +242,9 @@ transaction, without committing them:
         participant.var.current_pet = pet.id
 
 The same applies to helper code called from these places, including custom
-recruiter methods such as ``release_participant`` and
-``after_rejected_consent``. A helper should leave committing to the code that
-started the transaction, and flush if it needs database-generated values. The
+recruiter methods such as ``release_participant``. A helper should leave
+committing to the code that started the transaction, and flush if it needs
+database-generated values. The
 exception is saving payment state just before a recruiter posts a payment, so
 a crash cannot repeat the payment: call ``experiment.commit_payment_state()``,
 which is allowed in these places.

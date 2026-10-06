@@ -362,7 +362,11 @@ class PsyNetRecruiterMixin:
         return self.reward_bonus(participant, amount, reason)
 
     def after_rejected_consent(self, experiment, participant):
-        """Hook run when the participant rejects consent and never reaches submission."""
+        """Hook run when the participant rejects consent and never reaches submission.
+
+        PsyNet runs it in a worker process while the participant waits, so it
+        may call the recruitment platform.
+        """
 
     def terminate_participant(
         self, participant=None, assignment_id=None, reason=None, details=None

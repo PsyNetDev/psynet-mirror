@@ -1,0 +1,1 @@
+When a participant rejects consent, the recruiter's platform calls (Lucid termination and the recruiter's `after_rejected_consent` hook, which reports the outcome for Lab Recruiter) now run in a background worker while the participant sees a short wait, instead of inside the participant's web request. `after_rejected_consent` therefore no longer runs as a timeline step.
