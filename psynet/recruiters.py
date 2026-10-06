@@ -3249,7 +3249,9 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
                     reason = "consent-rejected"
                 else:
                     reason = "participant-did-not-complete"
-                self.terminate_participant(participant=participant, reason=reason)
+                self.terminate_participant(
+                    participant=participant, reason=reason, raise_on_error=True
+                )
         except Exception as ex:
             logger.exception(
                 "Lucid outcome report failed for participant %s.",

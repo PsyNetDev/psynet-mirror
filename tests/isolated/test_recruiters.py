@@ -4630,8 +4630,27 @@ def test_lucid_report_submission_outcome_terminates_when_responses_empty():
 
     recruiter.complete_participant.assert_not_called()
     recruiter.terminate_participant.assert_called_once_with(
-        participant=participant, reason="participant-did-not-complete"
+        participant=participant,
+        reason="participant-did-not-complete",
+        raise_on_error=True,
     )
+
+
+def test_lucid_report_submission_outcome_returns_false_when_terminate_fails():
+    recruiter = _lucid_recruiter_with_service()
+    recruiter.lucidservice.terminate_respondent.side_effect = RuntimeError(
+        "Lucid timeout"
+    )
+    participant = MagicMock(assignment_id="rid-1", progress=0.5, id=1, exit_plan=None)
+
+    with (
+        patch("psynet.recruiters.Response") as response_cls,
+        patch("psynet.recruiters.record_bonus_attempt_detail") as record_detail,
+    ):
+        response_cls.query.filter_by.return_value.order_by.return_value.all.return_value = []
+        assert recruiter.report_submission_outcome(participant, 0.0, "bonus") is False
+
+    record_detail.assert_called_once_with(participant, "Lucid timeout")
 
 
 def test_lucid_reward_bonus_raises():
