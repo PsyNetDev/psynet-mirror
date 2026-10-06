@@ -878,7 +878,8 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
                 )
             return
         self.finalized = True
-        self.on_finalized()
+        with forbid_commits(f"{type(self).__name__}.on_finalized"):
+            self.on_finalized()
 
     @classmethod
     def _ready_to_finalize_condition(cls):
@@ -989,12 +990,10 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         miss the other's change. Async workers call this in a fresh
         transaction after committing, so the last committer finalizes the
         trial without waiting for :meth:`finalize_pending_trials`. Leaves
-        committing to the caller; ``on_finalized`` hooks run under
-        :func:`~psynet.db.forbid_commits`, as in the backstop.
+        committing to the caller.
         """
-        with forbid_commits("Trial finalization"):
-            for trial in cls._lock_and_load(select(cls.id).where(cls.id == trial_id)):
-                trial.check_if_can_mark_as_finalized()
+        for trial in cls._lock_and_load(select(cls.id).where(cls.id == trial_id)):
+            trial.check_if_can_mark_as_finalized()
 
     def check_if_can_run_async_post_trial(self):
         msg = f"Checking if we should run async_post_trial for trial {self.id}... "
