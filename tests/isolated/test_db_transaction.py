@@ -8,6 +8,7 @@ from sqlalchemy.orm import object_session
 
 from psynet.data import SQLBase
 from psynet.db import (
+    _commit_external_call_state,
     _set_transaction_lock_timeout,
     forbid_commits,
     read_only_transaction,
@@ -186,6 +187,17 @@ def test_forbid_commits_rejects_commits_but_allows_savepoints(db_session):
     assert message.startswith("grow_network called db.session.commit()")
     assert "db.session.flush()" in message
     assert "classes_and_sqlalchemy.html#saving-changes" in message
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_external_call_state_cannot_be_committed_inside_a_savepoint(db_session):
+    """Inside a savepoint, a commit would only release it, so the record could be lost."""
+    with transaction(commit=False):
+        with db.session.begin_nested():
+            with pytest.raises(RuntimeError, match="inside a savepoint"):
+                _commit_external_call_state()
 
 
 @pytest.mark.parametrize(

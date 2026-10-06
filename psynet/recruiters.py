@@ -3239,38 +3239,15 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
         assignment_id=None,
         reason=None,
         details=None,
-    ):
-        """Terminate a Lucid participant, committing the change immediately.
-
-        Lucid API failures are logged rather than raised, because most callers
-        are timeout handlers that must still send the participant back to the
-        panel. Subclasses that customise termination should override
-        :meth:`_terminate_participant`, which the early-exit path calls with
-        its own transaction settings.
-        """
-        return self._terminate_participant(
-            participant=participant,
-            assignment_id=assignment_id,
-            reason=reason,
-            details=details,
-            commit_participant=True,
-            raise_on_error=False,
-        )
-
-    def _terminate_participant(
-        self,
-        participant=None,
-        assignment_id=None,
-        reason=None,
-        details=None,
         *,
-        commit_participant,
-        raise_on_error,
+        raise_on_error=False,
     ):
-        """Implement Lucid termination with internal transaction controls.
+        """Terminate a Lucid participant and return their terminate URL.
 
-        ``commit_participant`` only controls the commit before the API call;
-        :meth:`LucidService.terminate_respondent` always commits after it.
+        :meth:`LucidService.terminate_respondent` commits as soon as Lucid
+        confirms. Lucid API failures are logged rather than raised unless
+        ``raise_on_error`` is set, because most callers are timeout handlers
+        that must still send the participant back to the panel.
         """
         assert participant or assignment_id
         assert not (participant and assignment_id)
@@ -3285,8 +3262,6 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
             participant.failed = True
             participant.failed_reason = reason
             participant.status = "returned"
-            if commit_participant:
-                _commit_external_call_state()
         try:
             logger.info(
                 f"Terminating respondent with RID '{assignment_id}'. Reason: '{reason}'"
@@ -3316,10 +3291,9 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
             # The error route has already recorded termination details. The
             # browser's terminate URL remains the sole external handoff.
             return
-        self._terminate_participant(
+        self.terminate_participant(
             participant=participant,
             reason="early_exit",
-            commit_participant=False,
             raise_on_error=True,
         )
 

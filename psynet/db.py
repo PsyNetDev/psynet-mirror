@@ -282,25 +282,6 @@ def forbid_commits(operation: str):
         raise RuntimeError(_forbidden_commit_message(operation, "rollback"))
 
 
-@contextmanager
-def _allow_framework_commits():
-    """Let PsyNet's own code commit inside a :func:`forbid_commits` block.
-
-    Use it through :func:`_commit_external_call_state`. Experiment code
-    should never use this.
-    """
-    guard = _commit_forbidden_in.get()
-    token = _commit_forbidden_in.set(None)
-    try:
-        yield
-    finally:
-        _commit_forbidden_in.reset(token)
-        root = dallinger.db.session().get_transaction()
-        while guard is not None:
-            guard.root = root
-            guard = guard.parent
-
-
 def _commit_external_call_state():
     """Commit now so local records match an external call that cannot be repeated.
 
@@ -309,9 +290,26 @@ def _commit_external_call_state():
     the same unit of work cannot lose the record that the call happened. It
     also commits inside timeline steps. Everything else should leave
     committing to the transaction's owner.
+
+    It raises inside a savepoint, where ``commit()`` would only release the
+    savepoint and a later rollback would still lose the record.
     """
-    with _allow_framework_commits():
-        dallinger.db.session.commit()
+    session = dallinger.db.session()
+    if session.in_nested_transaction():
+        raise RuntimeError(
+            "Cannot commit external-call state inside a savepoint "
+            "(db.session.begin_nested()); make the external call outside it."
+        )
+    guard = _commit_forbidden_in.get()
+    token = _commit_forbidden_in.set(None)
+    try:
+        session.commit()
+    finally:
+        _commit_forbidden_in.reset(token)
+        root = session.get_transaction()
+        while guard is not None:
+            guard.root = root
+            guard = guard.parent
 
 
 @event.listens_for(dallinger.db.session, "after_transaction_create")
