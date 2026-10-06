@@ -904,17 +904,21 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         Known blockers (undeposited assets, pending async post-trial) are
         excluded in SQL so the steady-state result is empty.
 
-        We use a two-step query on purpose: lock candidate IDs first with
-        ``FOR UPDATE SKIP LOCKED``, then load full polymorphic ``Trial``
-        objects by those IDs. Loading polymorphic rows in the locked query
-        can introduce ``DISTINCT``, which PostgreSQL rejects with
-        ``FOR UPDATE``. ``skip_locked`` keeps the poller non-blocking when
-        participant requests or async workers already hold a row lock.
+        ``skip_locked`` keeps the poller non-blocking when participant
+        requests or async workers already hold a row lock.
         """
-        # Lock IDs first; polymorphic Trial loads may add DISTINCT, which
-        # PostgreSQL does not allow with FOR UPDATE.
+        return cls._lock_and_load(cls.ready_to_finalize_id_select(), skip_locked=True)
+
+    @classmethod
+    def _lock_and_load(cls, id_select, skip_locked=False):
+        """Lock the trial rows selected by ``id_select`` and load fresh trials.
+
+        Locks IDs first, then loads full polymorphic ``Trial`` objects by
+        those IDs: loading polymorphic rows in the locked query can introduce
+        ``DISTINCT``, which PostgreSQL rejects with ``FOR UPDATE``.
+        """
         id_rows = db.session.execute(
-            cls.ready_to_finalize_id_select().with_for_update(of=cls, skip_locked=True)
+            id_select.with_for_update(of=cls, skip_locked=skip_locked)
         ).all()
         trial_ids = [row[0] for row in id_rows]
         if not trial_ids:
@@ -997,13 +1001,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         back and leaves the trial to the backstop.
         """
         try:
-            # Lock by ID first; polymorphic Trial loads may add DISTINCT,
-            # which PostgreSQL does not allow with FOR UPDATE.
-            db.session.execute(
-                select(cls.id).where(cls.id == trial_id).with_for_update(of=cls)
-            )
-            trial = cls.query.filter_by(id=trial_id).populate_existing().one_or_none()
-            if trial is not None:
+            for trial in cls._lock_and_load(select(cls.id).where(cls.id == trial_id)):
                 trial.check_if_can_mark_as_finalized()
             db.session.commit()
         except Exception:
