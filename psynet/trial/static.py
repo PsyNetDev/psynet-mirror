@@ -149,10 +149,20 @@ class StaticTrialMaker(ChainTrialMaker):
         experiment, for example for a practice trial maker.
 
     target_n_participants
-        Target number of participants to recruit for the experiment. All
-        participants must successfully finish the experiment to count
-        towards this quota. Requires ``recruit_mode="n_participants"``;
-        passing it with ``None`` or ``"n_trials"`` raises an error.
+        Target number of participants to recruit for the experiment. Requires
+        ``recruit_mode="n_participants"``; passing it with ``None`` or
+        ``"n_trials"`` raises an error. Which completions fill the quota is
+        controlled by ``n_participants_completion``.
+
+    n_participants_completion
+        Which kind of completion counts toward ``target_n_participants``.
+        ``"experiment"`` (default) counts participants who successfully
+        finish the whole experiment. ``"trial_maker"`` counts participants
+        who finish this TrialMaker, even if they later leave before the
+        experiment end page. In-progress participants still occupy a slot
+        in both cases, including people who have not yet reached this
+        TrialMaker, so PsyNet does not immediately recruit a replacement.
+        ``"trial_maker"`` requires ``recruit_mode="n_participants"``.
 
     target_trials_per_node
         Target number of trials to recruit for each node. ``None`` (the
@@ -274,7 +284,8 @@ class StaticTrialMaker(ChainTrialMaker):
 
     end_performance_check_waits : bool
         If ``True`` (default), then the final performance check waits until all trials no
-        longer have any pending asynchronous processes.
+        longer have any pending asynchronous processes, and until trials that are ready
+        to finalize have been finalized (so their scores are set).
     """
 
     def __init__(
@@ -287,6 +298,7 @@ class StaticTrialMaker(ChainTrialMaker):
         max_trials_per_participant: Optional[int | str] = None,
         recruit_mode: Optional[str] = None,
         target_n_participants: Optional[int] = None,
+        n_participants_completion: Literal["experiment", "trial_maker"] = "experiment",
         target_trials_per_node: Optional[int] = None,
         max_trials_per_block: Optional[int] = None,
         allow_repeated_nodes: bool = False,
@@ -386,6 +398,7 @@ class StaticTrialMaker(ChainTrialMaker):
             node_class=StaticNode,
             recruit_mode=recruit_mode,
             target_n_participants=target_n_participants,
+            n_participants_completion=n_participants_completion,
             expected_trials_per_participant=expected_trials_per_participant,
             max_trials_per_participant=max_trials_per_participant,
             max_trials_per_block=max_trials_per_block,

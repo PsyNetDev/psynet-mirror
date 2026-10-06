@@ -92,16 +92,18 @@ pinned like this:
 
 ::
 
-    psynet==13.3.0
+    psynet[experiment]==13.3.0
 
 An unreleased commit, tag or branch, including a branch on a fork, is pinned
 with a Git URL:
 
 ::
 
-    psynet@git+https://gitlab.com/PsyNetDev/PsyNet@<tag-branch-or-sha>#egg=psynet
+    psynet[experiment]@git+https://gitlab.com/PsyNetDev/PsyNet@<tag-branch-or-sha>#egg=psynet
 
-Older experiments often use this form with a release tag such as
+The ``[experiment]`` extra installs the experiment runtime, including Dallinger.
+A pin without it installs only the command-line tools, and deploying refuses it.
+Older experiments often use the Git URL form with a release tag such as
 ``v10.1.0``.
 
 The `changelog <https://gitlab.com/PsyNetDev/PsyNet/-/blob/master/CHANGELOG.md>`_

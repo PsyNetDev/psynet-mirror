@@ -149,7 +149,6 @@ def get_s3_resource():
 
 
 def get_s3_bucket(bucket_name: str):
-    # pylint: disable=no-member
     resource = get_s3_resource()
     return resource.Bucket(bucket_name)
 

@@ -1,5 +1,3 @@
-# pylint: disable=unused-argument,abstract-method
-
 from typing import Literal, Optional, Type
 
 from dallinger import db
@@ -217,7 +215,6 @@ class GraphChainNode(ChainNode):
         participant_group=None,
         block=None,
     ):
-        # pylint: disable=unused-argument
         self.vertex_id = vertex_id
         super().__init__(
             seed=seed,
@@ -386,6 +383,7 @@ class GraphChainTrialMaker(ChainTrialMaker):
         check_performance_every_trial: bool,
         recruit_mode: Optional[str] = None,
         target_n_participants: Optional[int] = None,
+        n_participants_completion: Literal["experiment", "trial_maker"] = "experiment",
         max_nodes_per_chain: Optional[int] = None,
         max_trials_per_block: Optional[int] = None,
         block_order="random",
@@ -428,6 +426,7 @@ class GraphChainTrialMaker(ChainTrialMaker):
             check_performance_every_trial=check_performance_every_trial,
             recruit_mode=recruit_mode,
             target_n_participants=target_n_participants,
+            n_participants_completion=n_participants_completion,
             max_nodes_per_chain=max_nodes_per_chain,
             max_trials_per_block=max_trials_per_block,
             fail_trials_on_premature_exit=fail_trials_on_premature_exit,
@@ -504,7 +503,7 @@ class GraphChainTrialMaker(ChainTrialMaker):
             id_within_participant=id_within_participant,
         )
         db.session.add(network)
-        db.session.commit()
+        db.session.flush()
         return network
 
     def create_graph_topology(self, network_structure, blocks, groups):

@@ -1,5 +1,3 @@
-# pylint: disable=unused-import,abstract-method,unused-argument,no-member
-
 # This is a version of the Gibbs demo that introduces failing of asynchronous
 # processes on various nodes and trials. It is intended to demonstrate the
 # pruning processes by which PsyNet copes with these failures. Try taking the experiment

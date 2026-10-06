@@ -1,0 +1,1 @@
+Fixed a trial staying pending forever, which also stopped a chain from growing, when the async process that deposits one of its assets fails, for example because `on_finalized` raised or the storage upload failed. The trial is now marked failed, unless it was already finalized.

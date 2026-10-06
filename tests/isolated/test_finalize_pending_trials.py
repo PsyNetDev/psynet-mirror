@@ -3,6 +3,7 @@ import uuid
 import pytest
 from dallinger import db
 
+from psynet.error import ErrorRecord
 from psynet.experiment import get_experiment
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
@@ -234,6 +235,127 @@ def test_call_async_post_trial_failure_fails_trial(db_session, participant):
     assert Trial.get_trials_ready_to_finalize() == []
 
 
+class ConcurrentResponseAsyncTrial(FinalizeBackstopTrial):
+    run_async_post_trial = True
+
+    def async_post_trial(self):
+        # Simulate the participant's response committing from another process
+        # while the worker still holds a cached ``complete=False``.
+        table = Trial.__table__
+        with db.engine.begin() as connection:
+            connection.execute(
+                table.update().where(table.c.id == self.id).values(complete=True)
+            )
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_async_post_trial_finalizes_trial_completed_concurrently(
+    db_session, participant, monkeypatch
+):
+    from psynet.process import AsyncProcess, WorkerAsyncProcess
+
+    monkeypatch.setattr(AsyncProcess, "add_to_launch_queue", lambda self: None)
+    exp = get_experiment()
+    network = _create_network(_chain_trial_maker(), exp)
+    trial = ConcurrentResponseAsyncTrial(
+        experiment=exp,
+        node=network.head,
+        participant=participant,
+        propagate_failure=False,
+        is_repeat_trial=False,
+    )
+    trial.answer = 1
+    trial.async_post_trial_requested = True
+    db.session.add(trial)
+    db.session.flush()
+    process = WorkerAsyncProcess(trial.call_async_post_trial, trial=trial)
+    db.session.flush()
+    process_id, trial_id = process.id, trial.id
+    db.session.commit()
+
+    WorkerAsyncProcess.call_function(process_id)
+
+    trial = db.session.get(Trial, trial_id, populate_existing=True)
+    assert trial.complete is True
+    assert trial.async_post_trial_complete is True
+    assert trial.finalized is True
+
+
+class CommittingFinalizeTrial(FinalizeBackstopTrial):
+    def on_finalized(self):
+        db.session.commit()
+
+
+class CommittingFinalizeAsyncTrial(CommittingFinalizeTrial):
+    run_async_post_trial = True
+
+    def async_post_trial(self):
+        pass
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.parametrize("path", ["async_post_trial", "asset_deposit"])
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_worker_finalize_forbids_commits_in_on_finalized_and_fails_the_trial(
+    db_session, participant, monkeypatch, tmp_path, path
+):
+    from psynet.asset import FileAsset
+    from psynet.process import AsyncProcess, LocalAsyncProcess, WorkerAsyncProcess
+
+    monkeypatch.setattr(AsyncProcess, "add_to_launch_queue", lambda self: None)
+    exp = get_experiment()
+    monkeypatch.setattr(
+        type(exp),
+        "log_to_notifier",
+        classmethod(lambda cls, *args, **kwargs: None),
+    )
+    network = _create_network(_chain_trial_maker(), exp)
+    trial_class = (
+        CommittingFinalizeAsyncTrial
+        if path == "async_post_trial"
+        else CommittingFinalizeTrial
+    )
+    trial = trial_class(
+        experiment=exp,
+        node=network.head,
+        participant=participant,
+        propagate_failure=False,
+        is_repeat_trial=False,
+    )
+    trial.answer = 1
+    trial.complete = True
+    db.session.add(trial)
+    db.session.flush()
+    if path == "async_post_trial":
+        trial.async_post_trial_requested = True
+        process = WorkerAsyncProcess(trial.call_async_post_trial, trial=trial)
+    else:
+        asset_path = tmp_path / "recording.txt"
+        asset_path.write_text("recording")
+        asset = FileAsset(
+            local_key="recording", input_path=str(asset_path), parent=trial
+        )
+        db.session.add(asset)
+        trial.assets["recording"] = asset
+        asset.deposited = True
+        process = LocalAsyncProcess(asset.after_deposit, asset=asset)
+    db.session.flush()
+    process_id, trial_id = process.id, trial.id
+    db.session.commit()
+
+    type(process).call_function(process_id)
+
+    trial = db.session.get(Trial, trial_id, populate_existing=True)
+    assert trial.finalized is False
+    assert trial.failed is True
+    assert "on_finalized" in ErrorRecord.query.one().message
+
+
 class ExplodingFinalizeTrial(FinalizeBackstopTrial):
     def on_finalized(self):
         raise RuntimeError("intentional finalize backstop failure")
@@ -246,7 +368,7 @@ class ExplodingFinalizeTrial(FinalizeBackstopTrial):
 def test_finalize_pending_trials_isolates_per_trial_errors(
     db_session, participant, monkeypatch
 ):
-    # handle_error -> report_error -> notifier needs a base URL; skip notifier I/O.
+    # Error notifications need a dashboard URL; skip notifier I/O.
     monkeypatch.setattr(
         type(get_experiment()),
         "log_to_notifier",
@@ -272,27 +394,22 @@ def test_finalize_pending_trials_isolates_per_trial_errors(
     db.session.add(bad_trial)
     db.session.commit()
 
-    Trial.finalize_pending_trials()
+    assert Trial.finalize_pending_trials() == 1
     db.session.commit()
 
     db.session.refresh(good_trial)
     db.session.refresh(bad_trial)
     assert bad_trial.failed is True
     assert "finalize_backstop_error" in (bad_trial.failed_reason or "")
-    # handle_error rolls back uncommitted successes, so the good trial is
-    # retried next poll.
-    assert good_trial.finalized is False
-    assert Trial.finalize_pending_trials() == 1
-    db.session.commit()
-    db.session.refresh(good_trial)
     assert good_trial.finalized is True
+    assert [record.trial_id for record in ErrorRecord.query.all()] == [bad_trial.id]
 
 
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
 )
 @pytest.mark.usefixtures("in_experiment_directory")
-def test_finalize_pending_trials_commits_each_failed_trial(
+def test_finalize_pending_trials_fails_every_bad_trial(
     db_session, participant, monkeypatch
 ):
     """Two bad trials in one poll must both stay failed (not O(k) retries)."""
@@ -339,3 +456,41 @@ def test_finalize_pending_trials_commits_each_failed_trial(
     assert second_bad.failed is True
     assert Trial.get_trials_ready_to_finalize() == []
     assert Trial.finalize_pending_trials() == 0
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_recheck_finalization_leaves_failing_trial_to_backstop(
+    db_session, participant, monkeypatch
+):
+    from psynet.process import AsyncProcess, WorkerAsyncProcess
+
+    monkeypatch.setattr(AsyncProcess, "add_to_launch_queue", lambda self: None)
+    exp = get_experiment()
+    network = _create_network(_chain_trial_maker(), exp)
+    trial = ExplodingFinalizeTrial(
+        experiment=exp,
+        node=network.head,
+        participant=participant,
+        propagate_failure=False,
+        is_repeat_trial=False,
+    )
+    trial.answer = 1
+    trial.complete = True
+    trial.finalized = False
+    db.session.add(trial)
+    db.session.flush()
+    process = WorkerAsyncProcess(_do_nothing, trial=trial)
+    db.session.flush()
+    process_id, trial_id = process.id, trial.id
+    db.session.commit()
+
+    WorkerAsyncProcess.call_function(process_id)
+
+    assert [t.id for t in Trial.get_trials_ready_to_finalize()] == [trial_id]
+
+
+def _do_nothing():
+    pass

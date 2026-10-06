@@ -92,7 +92,7 @@ def test_fatal_response_prepares_recovery_in_the_same_request(db_session):
             ),
         ),
         patch.object(experiment.timeline, "get_current_elt", return_value=event),
-        patch.object(Experiment, "report_error"),
+        patch.object(Experiment, "log_to_notifier"),
         patch(
             "psynet.experiment.error_response", return_value="json error"
         ) as error_response,

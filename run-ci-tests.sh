@@ -94,8 +94,6 @@ done
 #  --test-group-random-seed=12345 \
 #  --ignore=tests/local_only \
 #  --ignore=tests/isolated \
-#  --ignore=tests/test_run_all_demos.py \
-#  --ignore=tests/test_run_isolated_tests.py \
 #  --chrome \
 #  tests \
 #  || exit 1

@@ -50,6 +50,28 @@ the ``--dns-host`` name itself rather than a subdomain, and its logs at
 ``https://<dns-host>/logs``. Such a deployment needs a server with no other
 apps: Dallinger offers to destroy any it finds first.
 
+Cloudflare tunnels (optional)
+-----------------------------
+
+Classic docker-ssh deployments go through the host Caddy reverse proxy on
+ports 80/443. You can instead deploy with a per-app Cloudflare tunnel so the
+experiment is reachable at a first-level hostname such as
+``https://consonance.science-of-music.org`` without opening those ports::
+
+    psynet deploy ssh --app consonance --ingress cloudflare
+
+Classic ``--dns-host`` is only for host Caddy. Cloudflare hostnames use
+``cloudflare_dns_zone`` from Dallinger config (for example
+``science-of-music.org``).
+
+Set the non-secret ``cloudflare_account_id``, ``cloudflare_zone_id``, and
+``cloudflare_dns_zone`` in ``~/.dallingerconfig``. The API token is read from
+``CLOUDFLARE_API_TOKEN``, then ``~/.dallingerconfig``, then the macOS
+Keychain item ``dallinger-cloudflare-api-token``. It is never stored in host
+records. Until a server default is changed, omitting ``--ingress`` keeps
+classic Caddy. ``psynet export ssh`` reaches a Cloudflare app at its public
+name rather than ``https://<app>.<ssh-host>``.
+
 .. _ssh_server_launch_info:
 
 Launch information
@@ -83,6 +105,22 @@ What a deployment does
 5. It adds the app's address to Caddy and calls the experiment's ``/launch``
    route, which opens recruitment.
 
+Experiment containers run as the SSH user rather than root. Deploy chowns
+``~/psynet-data/assets`` (and other writable ``docker_volumes`` bind mounts
+under the home directory) so files left as root by older deploys stay
+writable, retrying with a root Alpine container if needed.
+``psynet export ssh`` reaches a deployment at the public origin recorded in
+its deployment manifest.
+
+To deploy with an unreleased Dallinger checkout, bake it into the image::
+
+    psynet deploy ssh --app your-app-name --use-local-dallinger
+
+PYTHONPATH is not enough: the image still pip-installs the Dallinger version
+pinned in ``pyproject.toml``. ``--use-local-dallinger`` builds a wheel from
+the editable checkout (or ``DALLINGER_SOURCE``), and the image build installs
+it after ``COPY .``.
+
 Services
 ^^^^^^^^
 
@@ -95,12 +133,17 @@ Each app runs these Docker Compose services:
 - ``redis``, which holds the app's cache and task queue;
 - ``pgbouncer``, which pools the app's database connections.
 
-All apps share these services, defined in ``~/dallinger/docker-compose.yml``:
+All classic apps share these services, defined in ``~/dallinger/docker-compose.yml``:
 
 - ``postgresql``, which holds one database for each app;
 - ``httpserver``, a `Caddy <https://caddyserver.com/>`_ server that routes
   each address to its app and obtains HTTPS certificates;
 - ``dozzle``, the log viewer at ``https://logs.<dns-host>``.
+
+Cloudflare-ingress apps instead run their own Postgres in the Compose project
+and reach the internet through ``cloudflared``. They do not publish ports
+80/443. Every app also has an unprivileged front-door Caddy and a private
+hibernation controller.
 
 Every service has the restart policy ``unless-stopped``, so Docker restarts
 the apps when the server reboots.
@@ -123,6 +166,88 @@ Files on the server
 ``~/dallinger/<app>/``, its Caddy configuration, and its image if no other app
 uses it. The app's database stays in PostgreSQL until an app with the same
 name is deployed, which replaces it.
+
+Updating a running app
+----------------------
+
+To ship a fix to an app that is already running, add ``--update`` to the
+command that created it: ``psynet deploy ssh --update`` for a live app, or
+``psynet debug ssh --update`` for a debug app. Repeat the ``--ingress`` the app
+was deployed with. PsyNet asks you to confirm, then rebuilds the image and
+restarts the app. The update keeps:
+
+- the app's database and the participants in it;
+- its deployment ID and secret, so exports and dashboard records stay together;
+- participants' sessions.
+
+An update rebuilds only the image. It doesn't deposit new assets, set up
+networks, or run pre-deploy routines again, so a new stimulus set needs a fresh
+deploy. Participants' progress is a position in the timeline: don't change the
+page sequence, module IDs or trial makers while anyone is still taking part.
+
+Hibernation
+-----------
+
+Each docker-ssh app has a front door that can stop its expensive containers
+while the app stays reachable. To sleep or wake an app by hand::
+
+    psynet hibernate ssh --app your-app-name
+    psynet awaken ssh --app your-app-name
+
+A visitor to a sleeping app sees "Getting ready, please wait..." while it
+wakes. ``GET /health`` probes do not wake it.
+
+To sleep apps automatically after a quiet period, set in ``config.txt``::
+
+    docker_ssh_idle_hibernate = true
+    docker_ssh_idle_hibernate_minutes = 60
+
+``/health`` probes do not reset the idle timer. While idle sleep is on,
+PsyNet pages ping the server every few minutes while a participant is using
+them: they interacted within the idle window, or an audible ``<audio>`` or
+``<video>`` element is playing. Sound played through Web Audio, as
+``AudioPrompt`` does, does not count, so a participant who listens for
+longer than the idle window without interacting may wait for the app to
+wake afterwards. The app therefore does not sleep under a participant, even on a
+quiet or WebSocket-only page, while an abandoned tab stops pinging. Pages
+that poll the server themselves, such as pages waiting for other
+participants or pages that update progress live, keep the app awake for as
+long as they stay open. If a participant submits while the app is asleep or
+waking, PsyNet shows "Getting ready, please wait..." and retries the
+submission for up to five minutes instead of showing the error page.
+
+.. warning::
+
+   Do not enable idle hibernation for experiments that replace failed
+   participants or otherwise recruit reactively throughout their lifetime.
+   This includes experiments that use ``auto_recruit`` to keep recruiting
+   until they reach their target.
+
+   While the app sleeps, the clock process and recruiter callbacks are
+   suspended. For rolling-recruitment experiments, the quiet gaps *between*
+   participants are when the system does critical work: detecting timeouts,
+   triggering replacements, and preparing for the next arrival. Sleeping
+   during those gaps means that work never happens.
+
+   This restriction applies for the **entire lifetime** of a
+   rolling-recruitment experiment, not only during active recruitment waves.
+
+Idle sleep suits experiments with a clearly bounded recruitment window:
+recruit N participants, run the session, recruitment ends. Once the session
+is complete the app can safely sleep until you export the data. Leave it off
+for first canary deploys too.
+
+As a backstop, the app stays awake while ``auto_recruit`` is on, including
+after you switch it on from the dashboard, and while any participant is
+still working, until the clock times out abandoned participants. The app's
+logs say why it stayed awake. An experiment that recruits in other ways can
+add conditions by overriding ``reason_to_stay_awake`` on its ``Experiment``
+class. Idle sleep needs the matching Dallinger release.
+
+Hibernate by hand only apps that are not recruiting or serving participants.
+``psynet export ssh`` awakens a
+sleeping app before reading its database. If the app crashes while awake, it
+returns HTTP 503 until Docker restarts it.
 
 .. _ssh_server_working_over_ssh:
 

@@ -1,4 +1,3 @@
-# pylint: disable=unused-import,abstract-method
 import random
 
 from markupsafe import Markup

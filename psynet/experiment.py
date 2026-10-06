@@ -14,7 +14,7 @@ import zipfile
 from collections import Counter, OrderedDict
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from functools import cache, cached_property
+from functools import cache, cached_property, partial
 from importlib import resources
 from os.path import abspath, dirname, exists
 from os.path import join as join_path
@@ -67,7 +67,8 @@ from flask import (
 from flask import g as flask_app_globals
 from flask_login import login_required
 from markupsafe import escape
-from sqlalchemy import Column, Float, ForeignKey, Integer, String, func, select
+from sqlalchemy import Column, Float, ForeignKey, Integer, String, func, select, text
+from sqlalchemy import inspect as sqlalchemy_inspect
 from sqlalchemy.orm import lazyload, load_only
 
 from psynet import __version__
@@ -87,7 +88,10 @@ from .bot import Bot, BotDriver, BotResponse
 from .command_line import export_launch_data
 from .data import SQLBase, SQLMixin, ingest_zip, register_table
 from .db import (
-    _allow_framework_commits,
+    _call_after_commit,
+    _check_external_call_allowed,
+    _commit_external_call_state,
+    _in_read_only_render,
     _set_transaction_lock_timeout,
     blocking_psycopg,
     forbid_commits,
@@ -427,7 +431,6 @@ def _is_replacement_gunicorn_worker(worker):
 
 
 class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
-    # pylint: disable=abstract-method
     """
     The main experiment class from which to inherit when building experiments.
 
@@ -1498,6 +1501,46 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             and config.get("dashboard_password") == password
         )
 
+    @experiment_route("/health", methods=["GET"])
+    @nocache
+    @staticmethod
+    def health():
+        """Report availability and a small public-safe snapshot of the experiment.
+
+        This endpoint is unauthenticated. It never includes participant counts,
+        errors, dashboard URLs, or other internal details.
+        """
+        try:
+            with db.engine.connect() as connection:
+                connection.execute(text("SELECT 1"))
+            if not db.redis_conn.ping():
+                raise RuntimeError("Redis ping failed")
+        except Exception:
+            logger.exception("Experiment health check failed")
+            return jsonify({"status": "unavailable"}), 503
+
+        payload = {"status": "ok"}
+        try:
+            config = get_config()
+            lookback = datetime.now() - timedelta(hours=1)
+            payload.update(
+                {
+                    "title": config.get("title", default=None) or None,
+                    "label": config.get("label", default=None) or None,
+                    "experimenter_name": config.get("experimenter_name", default=None)
+                    or None,
+                    "recruitment_status": redis_vars.get(
+                        "recruitment_study_status", default=None
+                    ),
+                    "requests_last_hour": Request.query.filter(
+                        Request.creation_time > lookback
+                    ).count(),
+                }
+            )
+        except Exception:
+            logger.exception("Failed to collect public health metadata")
+        return jsonify(payload), 200
+
     @experiment_route("/basic_data", methods=["GET"])
     @nocache
     @staticmethod
@@ -1901,29 +1944,20 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         if len(networks) > 0:
             logger.info("Growing %i networks...", len(networks))
-            # Iterate by ID so a mid-batch handle_error rollback cannot leave us
-            # holding detached ORM instances for later networks.
-            for network_id in [network.id for network in networks]:
-                network = db.session.get(TrialNetwork, network_id)
-                if network is None:
-                    continue
-                try:
-                    network.trial_maker.call_grow_network(
-                        network, check_readiness=False
-                    )
-                except Exception as err:
-                    # Re-fetch after handle_error rollback; commit the fail so a
-                    # later error in this batch cannot undo it.
-                    exp.isolate_batch_item_failure(
-                        err,
-                        refetch=lambda: db.session.get(TrialNetwork, network_id),
-                        fail=Experiment._fail_grown_network,
-                        network=network,
-                    )
+            for network in networks:
+                exp._run_batch_item(
+                    partial(
+                        network.trial_maker.call_grow_network,
+                        network,
+                        check_readiness=False,
+                    ),
+                    fail=partial(Experiment._fail_grown_network, network),
+                    network=network,
+                )
 
             logger.info("Finished growing networks.")
 
-    @scheduled_task("interval", seconds=5, max_instances=1)
+    @scheduled_task("interval", seconds=0.5, max_instances=1)
     @log_time_taken
     @staticmethod
     @with_transaction
@@ -2077,9 +2111,17 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @classmethod
     def get_username(cls):
+        """Return the account that launched this process.
+
+        ``os.getlogin`` reports the login that started the Docker daemon.
+        Inside a container that name is root even when the process uid is
+        the SSH user, so the account database and ``USER`` are used instead.
+        """
+        import getpass
+
         try:
-            return os.getlogin()
-        except OSError:
+            return getpass.getuser()
+        except (KeyError, OSError):
             return "unknown"
 
     @classmethod
@@ -2101,6 +2143,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             "default_translator": "chat_gpt",
             "disable_browser_autotranslate": True,
             "disable_when_duration_exceeded": False,
+            "docker_ssh_monitoring_kind": "psynet",
+            "docker_ssh_monitoring_path": "/health",
             "docker_volumes": "${HOME}/psynet-data/assets:/psynet-data/assets",
             "duration": 100000000.0,
             "experimenter_name": cls.get_username(),
@@ -2319,26 +2363,39 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 experiment=self,
             )
 
-    def pre_deploy(self, redeploying_from_archive=False):
-        """
-        Prepare the experiment for deployment, on the machine that launches it.
+    def pre_deploy(self, redeploying_from_archive=False, *, update=False):
+        """Prepare the experiment for deployment, on the machine that launches it.
 
         Assets deposited during this method count as prepared before launch, so they are
         left out of ``psynet export``. Deposit assets from a ``PreDeployRoutine`` rather
         than from an override of this method.
+
+        Parameters
+        ----------
+        redeploying_from_archive : bool
+            Skip asset deposits and the database snapshot.
+        update : bool
+            Prepare only the image for an in-place SSH update. The running app
+            keeps its database and assets, so networks, pre-deploy routines,
+            asset deposits and the snapshot are skipped.
         """
         from .asset import _preparing_for_deployment
 
         with _preparing_for_deployment():
-            self._pre_deploy(redeploying_from_archive=redeploying_from_archive)
+            self._pre_deploy(
+                redeploying_from_archive=redeploying_from_archive, update=update
+            )
 
-    def _pre_deploy(self, redeploying_from_archive=False):
+    def _pre_deploy(self, redeploying_from_archive=False, update=False):
         """Run the deployment preparation steps; see :meth:`pre_deploy`."""
         self.update_deployment_id()
-        self.setup_experiment_config()
-        self.setup_experiment_variables()
+        if not update:
+            self.setup_experiment_config()
+            self.setup_experiment_variables()
 
         _write_pre_deploy_constant_registry()
+        if update:
+            return
 
         for module in self.timeline.modules.values():
             module.prepare_for_deployment(experiment=self)
@@ -2356,6 +2413,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @classmethod
     def update_deployment_id(cls):
+        """Record a new deployment ID, unless ``--update`` is keeping the running one."""
+        if deployment_info.read_all().get("keep_deployment_id"):
+            return
         deployment_id = cls.generate_deployment_id()
         deployment_info.write(deployment_id=deployment_id)
 
@@ -2762,6 +2822,14 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             )
 
     def is_complete(self):
+        """Report whether the experiment has finished, as shown by ``/summary``.
+
+        ``psynet debug local --legacy`` stops itself once this returns
+        ``True``. Performance tests set ``PSYNET_PERFORMANCE_TEST=1`` to keep
+        the server alive between bots, which arrive outside recruitment.
+        """
+        if os.environ.get("PSYNET_PERFORMANCE_TEST") == "1":
+            return False
         return (not self.need_more_participants) and self.num_working_participants == 0
 
     def assignment_abandoned(self, participant):
@@ -2876,9 +2944,13 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         )
 
     def commit_payment_state(self):
-        """Persist claimed payment fields so a crash cannot replay a POST."""
-        with _allow_framework_commits():
-            db.session.commit()
+        """Persist claimed payment fields so a crash cannot replay a POST.
+
+        Recruiters call this just before posting a payment. Like any commit,
+        it raises inside timeline steps, so payments made from experiment
+        code belong in an ``AsyncCodeBlock``.
+        """
+        _commit_external_call_state()
 
     def _lock_participant_for_payment(self, participant):
         """Reload the participant row with ``FOR UPDATE`` for the pay claim.
@@ -2983,8 +3055,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         A hard-cap clip keeps ``planned_bonus`` as the decided amount and
         finishes as ``capped`` even when a remainder was sent.
 
-        Does not re-apply caps or send emails when already settled.
+        Does not re-apply caps or send emails when already settled. Raises
+        wherever ``_check_external_call_allowed`` does (timeline steps,
+        savepoints, rendering), even when there is nothing to pay.
         """
+        _check_external_call_allowed()
         participant = self._lock_participant_for_payment(participant)
         if bonus_is_settled(participant):
             logger.info(
@@ -3533,9 +3608,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 ),
             )
 
-    @staticmethod
-    def _hold_resume_must_settle(participant, event):
-        """Return whether fail, redirect, or timeout must take the locked path.
+    def _hold_resume_must_settle(self, participant, event):
+        """Return whether a release by failure, redirect, or timeout must take the locked path.
 
         Missing ``pending_redirect`` / ``failed`` attributes are treated as
         not set. Only an exact ``True`` timeout settles, so a dummy hold
@@ -3543,7 +3617,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         """
         if getattr(participant, "pending_redirect", None) is not None:
             return True
-        if getattr(participant, "failed", False):
+        if getattr(participant, "failed", False) and event.failure_releases_hold(
+            self, participant
+        ):
             return True
         timed_out = getattr(event, "participant_timed_out", None)
         return callable(timed_out) and timed_out(participant) is True
@@ -4044,6 +4120,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         config.register("lab_recruiter_auth_token", str, sensitive=True)
         config.register("lab_recruiter_external_submission_url", str)
         config.register("check_dallinger_version", bool)
+        if "docker_ssh_monitoring_kind" not in config.types:
+            config.register("docker_ssh_monitoring_kind", str)
+        if "docker_ssh_monitoring_path" not in config.types:
+            config.register("docker_ssh_monitoring_path", str)
         config.register("check_participant_opened_devtools", bool)
         config.register("currency", str)
         config.register("default_translator", str)
@@ -5131,7 +5211,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     @with_transaction
     def grow_network(cls, network_id):
         exp = get_experiment()
-        from .trial.main import TrialNetwork
 
         network = (
             TrialNetwork.query.with_for_update(of=[TrialNetwork])
@@ -5149,7 +5228,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     @staticmethod
     @with_transaction
     def call_async_post_grow_network(network_id):
-        from .trial.main import NetworkTrialMaker, TrialNetwork
+        from .trial.main import NetworkTrialMaker
 
         network = (
             TrialNetwork.query.with_for_update(of=TrialNetwork)
@@ -5794,41 +5873,127 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         return rendered
 
     @classmethod
-    def isolate_batch_item_failure(cls, error, *, refetch, fail, **error_parents):
-        """
-        Report a per-item batch failure, mark the item failed, and commit.
+    def _run_batch_item(cls, function, *, fail, **error_parents):
+        """Run one item of a poller batch in a savepoint.
 
         Used by pollers that process many candidates in one transaction
-        (network growth, finalize backstop). ``handle_error`` rolls back the
-        session, so ``refetch`` must return a fresh ORM instance (or ``None``).
-        ``fail`` receives that instance and marks it failed. The fail is
-        committed immediately so a later ``handle_error`` in the same batch
-        cannot undo it (same mid-batch commit pattern as ErrorRecord logging).
+        (network growth, finalize backstop). If ``function`` raises, only its
+        own changes are rolled back; the error is recorded in the batch's
+        transaction, ``fail()`` marks the item failed, and the researcher is
+        notified once the batch commits. If ``fail()`` itself raises, the
+        ``error_parents`` objects are marked failed directly, without their
+        failure cascades, so the item is not picked up again. A lock conflict
+        or deadlock is only logged, so the next poll retries the item. The
+        poller's transaction owner commits the batch as usual.
+
+        ``function`` must not commit, roll back, call :meth:`handle_error`
+        or commit external-call state; commits raise, and a savepoint could
+        not make external-call state durable.
+
+        Returns ``function()``'s result, or ``None`` if it raised.
         """
-        if not isinstance(error, cls.HandledError):
-            cls.handle_error(error, **error_parents)
-        entity = refetch()
-        if entity is None:
+        try:
+            with db.session.begin_nested():
+                with forbid_commits("A background poller item"):
+                    return function()
+        except Exception as error:
+            if is_transient_transaction_error(error):
+                logger.warning(
+                    "Poller item %s hit a lock conflict or deadlock; retrying "
+                    "on the next poll.",
+                    error_parents,
+                    exc_info=True,
+                )
+                return None
+            parents = cls._compile_error_parents(
+                cls._identify_error_parents(**error_parents)
+            )
+            token, log_line_number = cls._record_error(error, **parents)
+            _call_after_commit(
+                partial(
+                    cls.log_to_notifier,
+                    token,
+                    log_line_number,
+                    formatted_traceback=traceback.format_exc(),
+                    **parents,
+                )
+            )
+            try:
+                with db.session.begin_nested():
+                    fail()
+            except Exception as fail_error:
+                if is_transient_transaction_error(fail_error):
+                    logger.warning(
+                        "Could not mark poller item %s as failed because of a "
+                        "lock conflict; retrying on the next poll.",
+                        error_parents,
+                        exc_info=True,
+                    )
+                    return None
+                logger.exception(
+                    "fail() raised for poller item %s; marking the item "
+                    "failed without its failure cascade.",
+                    error_parents,
+                )
+                # Otherwise the item stays ready and fails again on every poll.
+                try:
+                    with db.session.begin_nested():
+                        for obj in error_parents.values():
+                            if not obj.failed:
+                                obj.failed = True
+                                obj.failed_reason = "poller_fail_callback_error"
+                                obj.time_of_death = datetime.now()
+                except Exception:
+                    logger.exception(
+                        "Could not mark poller item %s as failed; retrying on "
+                        "the next poll.",
+                        error_parents,
+                    )
             return None
-        fail(entity)
-        db.session.commit()
-        return entity
 
     @classmethod
     def handle_error(cls, error, **kwargs):
-        parents = cls._compile_error_parents(**kwargs)
+        """Roll back the failed work, save the error's record, then notify.
+
+        ``kwargs`` are the ORM objects the error concerns (``participant``,
+        ``trial``, ``process``, ...). They and their parents are recorded by
+        ID; objects that were never saved, and values that are not ORM
+        objects, are ignored. Because this rolls back and commits the
+        session, call it from code that owns the transaction, not from
+        inside a timeline step.
+        """
+        identities = cls._identify_error_parents(**kwargs)
         db.session.rollback()
-        cls.report_error(error, **parents)
+        parents = cls._compile_error_parents(identities)
+        token, log_line_number = cls._record_error(error, **parents)
+        db.session.commit()
+        cls.log_to_notifier(token, log_line_number, **parents)
         return cls.HandledError(**parents)
 
     @staticmethod
-    def _compile_error_parents(**kwargs):
-        # We merge to prevent sqlalchemy.orm.exc.DetachedInstanceError
-        parents = {
-            key: db.session.merge(value)
-            for key, value in kwargs.items()
-            if value is not None
-        }
+    def _identify_error_parents(**kwargs):
+        """Return the identity of each persisted object, without loading it.
+
+        After a failed flush the objects' attributes can no longer be loaded,
+        and after the rollback, objects created in the failed transaction
+        no longer exist; so we record identities before rolling back and
+        reload the objects afterwards.
+        """
+        identities = {}
+        for key, value in kwargs.items():
+            state = sqlalchemy_inspect(value, raiseerr=False)
+            if getattr(state, "identity", None) is not None:
+                identities[key] = (state.mapper.class_, state.identity)
+        return identities
+
+    @staticmethod
+    def _compile_error_parents(identities):
+        """Reload the error's objects and return their and their parents' IDs."""
+        parents = {}
+        for key, (model, identity) in identities.items():
+            value = db.session.get(model, identity)
+            if value is not None:
+                parents[key] = value
         types = [
             "process",
             "asset",
@@ -5881,16 +6046,25 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         error,
         **kwargs,
     ):
-        token = cls.generate_error_token()
+        """Log the error, add its record to the current transaction, and notify.
 
+        The caller's transaction decides whether the record is saved;
+        :meth:`handle_error` commits it after rolling back the failed work.
+        """
+        token, log_line_number = cls._record_error(error, **kwargs)
+        cls.log_to_notifier(token, log_line_number, **kwargs)
+
+    @classmethod
+    def _record_error(cls, error, **kwargs):
+        """Log the error and add its record; return its token and log line."""
+        token = cls.generate_error_token()
+        cls.log_to_stdout(error, token, **kwargs)
         try:
-            log_line_number = find_log_line_number(token)
+            log_line_number = find_log_line_number(f"err-{token}")
         except FileNotFoundError:
             log_line_number = None
-
-        cls.log_to_stdout(error, token, **kwargs)
         cls.log_to_db(error, token, log_line_number, **kwargs)
-        cls.log_to_notifier(token, log_line_number, **kwargs)
+        return token, log_line_number
 
     @classmethod
     def generate_error_token(cls):
@@ -5911,6 +6085,13 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @classmethod
     def log_to_db(cls, error, token, log_line_number, **kwargs):
+        """Add an :class:`~psynet.error.ErrorRecord` to the current transaction.
+
+        Rendering runs in a read-only transaction, so errors reported while
+        rendering are only logged and notified.
+        """
+        if _in_read_only_render():
+            return
         # We considered running this function within its own database session,
         # but this proved incompatible with passing pre-existing SQLAlchemy objects
         # to the ErrorRecord constructor.
@@ -5923,13 +6104,16 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             **kwargs,
         )
         db.session.add(record)
-        # We don't normally write session.commit() within inner code,
-        # but we do here, because we really want to make sure error reporting works.
-        with _allow_framework_commits():
-            db.session.commit()
 
     @classmethod
-    def log_to_notifier(cls, token, line_number, **kwargs):
+    def log_to_notifier(cls, token, line_number, formatted_traceback=None, **kwargs):
+        """Notify the researcher of an error, with the traceback being handled.
+
+        Pass ``formatted_traceback`` when calling this outside the ``except``
+        block, where :func:`traceback.format_exc` no longer sees the error.
+        """
+        if formatted_traceback is None:
+            formatted_traceback = traceback.format_exc()
         url = cls.dashboard_url + "/logger"
 
         if line_number is not None:
@@ -5940,7 +6124,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         error_txt = f"error (`{token}`)"
         text = f"An {cls.notifier.url(error_txt, url)} occurred:"
-        text += "\n```" + traceback.format_exc() + "```"
+        text += "\n```" + formatted_traceback + "```"
         cls.notifier.notify(text)
 
     # @classmethod

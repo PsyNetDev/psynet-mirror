@@ -75,6 +75,128 @@ class TestCommandLine(object):
         assert b"Options:" in output
         assert b"Commands:" in output
 
+    def test_hibernate_and_awaken_ssh_help(self):
+        runner = CliRunner()
+        hibernate = runner.invoke(psynet, ["hibernate", "ssh", "--help"])
+        awaken = runner.invoke(psynet, ["awaken", "ssh", "--help"])
+        assert hibernate.exit_code == 0
+        assert awaken.exit_code == 0
+        assert "--app" in hibernate.output
+        assert "--server" in awaken.output
+
+    def test_deploy_ssh_exposes_ingress_when_dallinger_supports_it(self):
+        from psynet.command_line import deploy__docker_ssh
+
+        # ``dallinger.command_line.docker_ssh`` as an attribute is the click group.
+        dssh = importlib.import_module("dallinger.command_line.docker_ssh")
+        names = [param.name for param in deploy__docker_ssh.params]
+        if hasattr(dssh, "option_ingress"):
+            assert "ingress" in names
+        assert "use_local_dallinger" in names
+
+    def test_awaken_ssh_app_does_not_require_a_front_door(self):
+        from psynet.command_line import _awaken_ssh_app
+
+        dssh = importlib.import_module("dallinger.command_line.docker_ssh")
+        if not hasattr(dssh, "awaken_app"):
+            pytest.skip("installed Dallinger has no docker-ssh hibernation")
+        with patch.object(dssh, "awaken_app", return_value=False) as awaken_app:
+            _awaken_ssh_app("musix", "consonance")
+        awaken_app.assert_called_once_with("musix", "consonance", required=False)
+
+    def test_awaken_ssh_app_reraises_real_failures(self):
+        from psynet.command_line import _awaken_ssh_app
+
+        dssh = importlib.import_module("dallinger.command_line.docker_ssh")
+        if not hasattr(dssh, "awaken_app"):
+            pytest.skip("installed Dallinger has no docker-ssh hibernation")
+        with patch.object(
+            dssh, "awaken_app", side_effect=RuntimeError("controller failed")
+        ):
+            with pytest.raises(RuntimeError, match="controller failed"):
+                _awaken_ssh_app("musix", "consonance")
+
+    def test_hibernate_ssh_needs_a_dallinger_with_hibernation(self):
+        from psynet.command_line import _dallinger_hibernation_command
+
+        dssh = importlib.import_module("dallinger.command_line.docker_ssh")
+        with patch.object(dssh, "hibernate", None, create=True):
+            with pytest.raises(click.UsageError, match="does not support"):
+                _dallinger_hibernation_command("hibernate")
+
+    def test_configure_dallinger_image_source_sets_source(self, monkeypatch, tmp_path):
+        from psynet.command_line import _configure_dallinger_image_source
+
+        src = tmp_path / "Dallinger"
+        src.mkdir()
+        (src / "pyproject.toml").write_text("[project]\nname='dallinger'\n")
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("DALLINGER_SOURCE", str(src))
+        monkeypatch.setenv("DALLINGER_NO_EGG_BUILD", "1")
+        _configure_dallinger_image_source(use_local_dallinger=True)
+        assert os.environ["DALLINGER_SOURCE"] == str(src)
+        assert "DALLINGER_NO_EGG_BUILD" not in os.environ
+
+    def test_configure_dallinger_image_source_ignores_a_stale_export(self, monkeypatch):
+        from psynet.command_line import _configure_dallinger_image_source
+
+        monkeypatch.setenv("DALLINGER_SOURCE", "/somewhere/Dallinger")
+        _configure_dallinger_image_source(use_local_dallinger=False)
+        assert "DALLINGER_SOURCE" not in os.environ
+        assert os.environ["DALLINGER_NO_EGG_BUILD"] == "1"
+
+    def test_invoke_docker_ssh_deploy_forwards_ingress(self):
+        from psynet.command_line import _invoke_docker_ssh_deploy
+
+        command = Mock()
+        ingress_param = Mock()
+        ingress_param.name = "ingress"
+        command.params = [ingress_param]
+        ctx = Mock()
+        ctx.invoke.return_value = {"dashboard_user": "admin"}
+        _invoke_docker_ssh_deploy(
+            ctx,
+            command,
+            server="musix",
+            dns_host=None,
+            app="consonance",
+            ingress="cloudflare",
+        )
+        kwargs = ctx.invoke.call_args.kwargs
+        assert kwargs["ingress"] == "cloudflare"
+        assert kwargs["app_name"] == "consonance"
+        assert kwargs["update"] is False
+
+    def test_invoke_docker_ssh_deploy_forwards_update(self):
+        from psynet.command_line import _invoke_docker_ssh_deploy
+
+        command = Mock()
+        command.params = []
+        ctx = Mock()
+        _invoke_docker_ssh_deploy(
+            ctx,
+            command,
+            server="musix",
+            dns_host=None,
+            app="consonance",
+            update=True,
+        )
+        assert ctx.invoke.call_args.kwargs["update"] is True
+
+    def test_export_launch_info_records_public_origin(self, tmp_path):
+        from psynet.command_line import _export_launch_info
+
+        _export_launch_info(
+            tmp_path,
+            dashboard_user="admin",
+            dashboard_password="secret",
+            public_origin="https://consonance.science-of-music.org",
+            ingress="cloudflare",
+        )
+        payload = json.loads((tmp_path / "launch-info.json").read_text())
+        assert payload["public_origin"] == "https://consonance.science-of-music.org"
+        assert payload["ingress"] == "cloudflare"
+
     def test_dev_changelog_dispatches_to_builder(self, monkeypatch, tmp_path):
         from psynet.command_line import psynet
         from psynet.dev import changelog as changelog_module
@@ -1195,6 +1317,63 @@ def test_heroku_pre_checks_do_not_prompt_to_unignore_deploy(tmp_path, monkeypatc
 
     assert experiment.check_config.called
     assert not any(".deploy" in message for message in prompts)
+
+
+def test_ssh_update_keeps_the_running_identity(tmp_path, monkeypatch):
+    from psynet import deployment_info
+    from psynet.command_line import _check_ssh_update
+    from psynet.experiment import Experiment
+
+    monkeypatch.chdir(tmp_path)
+    deployment_info.write_all({"mode": "live", "secret": "new"})
+    running = {"deployment_id": "exp__launch=1", "secret": "old", "mode": "live"}
+    monkeypatch.setattr(
+        "psynet.command_line._read_running_deployment_info", lambda *a: running
+    )
+    monkeypatch.setattr("psynet.command_line.user_confirms", lambda *a, **k: True)
+    _check_ssh_update("musix", "consonance", "live")
+    Experiment.update_deployment_id()
+    assert deployment_info.read("deployment_id") == "exp__launch=1"
+    assert deployment_info.read("secret") == "old"
+
+
+@pytest.mark.parametrize(
+    "running, confirmed, error, message",
+    [
+        (
+            {"deployment_id": "d", "secret": "s", "mode": "sandbox"},
+            True,
+            click.UsageError,
+            "psynet debug ssh",
+        ),
+        (
+            OSError("unreachable"),
+            True,
+            click.ClickException,
+            "deployment ID and secret",
+        ),
+        (
+            {"deployment_id": "d", "secret": "s", "mode": "live"},
+            False,
+            click.exceptions.Abort,
+            None,
+        ),
+    ],
+)
+def test_ssh_update_refuses_unsafe_updates(
+    monkeypatch, running, confirmed, error, message
+):
+    from psynet.command_line import _check_ssh_update
+
+    def read(*args):
+        if isinstance(running, Exception):
+            raise running
+        return running
+
+    monkeypatch.setattr("psynet.command_line._read_running_deployment_info", read)
+    monkeypatch.setattr("psynet.command_line.user_confirms", lambda *a, **k: confirmed)
+    with pytest.raises(error, match=message):
+        _check_ssh_update("musix", "consonance", "live")
 
 
 def test_scripts_update_installs_managed_skills_and_preserves_user_skills():
@@ -3524,6 +3703,26 @@ def test_abort_if_app_exists():
     assert mock_echo.call_count == 1
 
 
+def test_update_keeps_an_existing_ssh_app():
+    from psynet.command_line import _abort_if_app_exists
+
+    with patch("dallinger.command_line.docker_ssh.get_apps") as get_apps:
+        _abort_if_app_exists(server="test-server", app="test-app", update=True)
+
+    get_apps.assert_not_called()
+
+
+def test_validate_ssh_deploy_update():
+    from psynet.command_line import _validate_ssh_deploy_update
+
+    _validate_ssh_deploy_update("test-app", None, False)
+    _validate_ssh_deploy_update("test-app", None, True)
+    with pytest.raises(click.UsageError, match="requires --app"):
+        _validate_ssh_deploy_update(None, None, True)
+    with pytest.raises(click.UsageError, match="cannot be used together"):
+        _validate_ssh_deploy_update("test-app", "archive.zip", True)
+
+
 def test_abort_if_app_exists_skips_missing_app():
     from psynet.command_line import _abort_if_app_exists
 
@@ -3722,6 +3921,7 @@ def test_start_local_server_uses_debug_local_subprocess():
             command_args,
             debug=False,
             max_wait=5,
+            extra_env={"PSYNET_PERFORMANCE_TEST": "1"},
         )
 
     assert server_info["process"] is process
@@ -3730,6 +3930,7 @@ def test_start_local_server_uses_debug_local_subprocess():
     assert kwargs["encoding"] == "utf-8"
     assert kwargs["env"]["SKIP_DEPENDENCY_CHECK"] == "1"
     assert kwargs["env"]["BROWSER"] == "true"
+    assert kwargs["env"]["PSYNET_PERFORMANCE_TEST"] == "1"
     _stop_server(server_info)
 
 
@@ -4003,7 +4204,7 @@ def test_pre_launch_stops_workers_before_prepare(monkeypatch):
     monkeypatch.setattr("psynet.command_line.get_config", lambda: config)
     monkeypatch.setattr(
         "psynet.command_line._prepare_after_stopping_local_workers",
-        lambda ctx, archive: calls.append(("prepare", archive)),
+        lambda ctx, archive, update=False: calls.append(("prepare", archive)),
     )
     monkeypatch.setattr(
         "psynet.command_line._forget_tables_defined_in_experiment_directory",
@@ -4281,8 +4482,23 @@ def test_run_performance_test_with_new_server_loads_runtime_server_config():
     start_server.assert_called_once_with(
         ["debug", "local", "--legacy", "--no-browsers"],
         debug=False,
+        extra_env={"PSYNET_PERFORMANCE_TEST": "1"},
     )
     load_runtime_config.assert_called_once_with()
+
+
+def test_experiment_never_completes_during_performance_test(monkeypatch):
+    from psynet.experiment import Experiment
+
+    idle = Mock(need_more_participants=False, num_working_participants=0)
+    monkeypatch.delenv("PSYNET_PERFORMANCE_TEST", raising=False)
+    assert Experiment.is_complete(idle) is True
+
+    monkeypatch.setenv("PSYNET_PERFORMANCE_TEST", "0")
+    assert Experiment.is_complete(idle) is True
+
+    monkeypatch.setenv("PSYNET_PERFORMANCE_TEST", "1")
+    assert Experiment.is_complete(idle) is False
 
 
 def test_performance_test_preserves_explicit_zero_options():

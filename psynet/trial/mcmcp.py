@@ -1,5 +1,3 @@
-# pylint: disable=unused-argument,abstract-method
-
 import random
 from collections import Counter
 
@@ -170,7 +168,6 @@ class MCMCPTrialMaker(ChainTrialMaker):
         * The role of the chosen stimulus (``"current_state"`` or ``"proposal"``);
         * The value of the parameters underlying the chosen stimulus.
         """
-        # pylint: disable=unused-argument,no-self-use
         position = int(answer)
         answer = {
             "position": position,

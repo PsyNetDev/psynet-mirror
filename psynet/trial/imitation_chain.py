@@ -1,5 +1,3 @@
-# pylint: disable=unused-argument,abstract-method
-
 from .chain import ChainNetwork, ChainNode, ChainTrial, ChainTrialMaker
 
 

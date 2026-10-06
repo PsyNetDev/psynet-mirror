@@ -1,5 +1,3 @@
-# pylint: disable=unused-import,abstract-method
-
 import psynet.experiment
 from psynet.prescreen import AttentionTest
 from psynet.timeline import Timeline

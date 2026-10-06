@@ -4,15 +4,16 @@ import dominate
 from dominate import tags
 
 from psynet import exit as exit_domain
-from psynet.db import _allow_framework_commits
 from psynet.modular_page import NullControl
 from psynet.timeline import (
+    AsyncCodeBlock,
     CodeBlock,
     Elt,
     EltCollection,
     Page,
     PageMaker,
     TimelineLogic,
+    conditional,
     join,
 )
 from psynet.utils import get_translator
@@ -22,19 +23,13 @@ class ExitLogic(EltCollection):
     """Shared recruiter release behavior for terminal timeline branches."""
 
     def release_participant(self, experiment, participant) -> TimelineLogic:
-        """Return the recruiter-specific participant handoff.
-
-        Recruiters may commit here, for example to save payment state before
-        reporting it to the panel.
-        """
-        try:
-            with _allow_framework_commits():
-                return experiment.recruiter.release_participant(experiment, participant)
-        except AttributeError:
+        """Return the recruiter-specific participant handoff."""
+        if not hasattr(experiment.recruiter, "release_participant"):
             raise ValueError(
                 f"The selected recruiter ({experiment.recruiter}) is not fully implemented in PsyNet. "
                 "No release_participant method was found."
             )
+        return experiment.recruiter.release_participant(experiment, participant)
 
 
 class EndLogic(ExitLogic):
@@ -45,6 +40,7 @@ class EndLogic(ExitLogic):
     def resolve(self) -> Union[Elt, List[Elt]]:
         return join(
             CodeBlock(self.prepare_debrief),
+            self.before_debrief_logic(),
             PageMaker(self.debrief_participant, time_estimate=0.0),
             CodeBlock(self.after_debrief),
             PageMaker(self.release_participant, time_estimate=0.0),
@@ -57,6 +53,10 @@ class EndLogic(ExitLogic):
 
     def before_debrief(self, experiment, participant) -> None:
         pass
+
+    def before_debrief_logic(self) -> Optional[TimelineLogic]:
+        """Return timeline logic to run after ``before_debrief``, such as an ``AsyncCodeBlock``."""
+        return None
 
     def debrief_participant(self, experiment, participant) -> TimelineLogic:
         raise NotImplementedError
@@ -324,20 +324,40 @@ class UnsuccessfulEndLogic(EndLogic):
 class RejectedConsentLogic(UnsuccessfulEndLogic):
     exit_context = exit_domain.ExitContext.REJECTED_CONSENT
 
-    def before_debrief(self, experiment, participant) -> None:
-        super().before_debrief(experiment, participant)
+    def before_debrief_logic(self) -> TimelineLogic:
+        return conditional(
+            "report_rejected_consent",
+            self.has_rejected_consent_to_report,
+            AsyncCodeBlock(self.report_rejected_consent, wait=False),
+            log_chosen_branch=False,
+        )
 
-        # For Lucid recruitment, terminate the participant on Lucid's side
-        # before showing the page, since the auto-redirect bypasses the normal
-        # release_participant flow (user won't click Finish).
-        # Recruiters commit here, e.g. to save payment state before reporting it.
-        with _allow_framework_commits():
-            if experiment.with_lucid_recruitment():
-                experiment.recruiter.terminate_participant(
-                    participant=participant, reason="consent-rejected"
-                )
+    @staticmethod
+    def has_rejected_consent_to_report(experiment, participant) -> bool:
+        """Whether the recruiter needs to hear about the rejection, so a worker job is worth queuing."""
+        from psynet.recruiters import PsyNetRecruiterMixin
 
-            participant.recruiter.after_rejected_consent(experiment, participant)
+        hook = getattr(type(participant.recruiter), "after_rejected_consent", None)
+        return experiment.with_lucid_recruitment() or (
+            hook is not None and hook is not PsyNetRecruiterMixin.after_rejected_consent
+        )
+
+    @staticmethod
+    def report_rejected_consent(experiment, participant) -> None:
+        """Tell the recruiter that the participant rejected consent.
+
+        Runs in a worker process because recruiters call their platform here;
+        the participant does not wait for it. For Lucid it is queued before
+        the debrief page, because its auto-redirect bypasses
+        ``release_participant``. The redirect and this call send Lucid the
+        same terminate callback, so either may arrive first.
+        """
+        if experiment.with_lucid_recruitment():
+            experiment.recruiter.terminate_participant(
+                participant=participant, reason="consent-rejected"
+            )
+
+        participant.recruiter.after_rejected_consent(experiment, participant)
 
     def debrief_participant(self, experiment, participant) -> TimelineLogic:
         _ = get_translator()

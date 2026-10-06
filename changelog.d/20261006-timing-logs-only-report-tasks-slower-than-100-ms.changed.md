@@ -1,0 +1,1 @@
+Reduced log noise from timing messages (`Task '...' took ... s`): timed participant-request steps and scheduled tasks are now only logged when they take longer than 100 ms, instead of 10 ms. This is the new default `threshold` of `psynet.utils.time_logger`.

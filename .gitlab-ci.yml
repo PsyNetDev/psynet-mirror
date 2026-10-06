@@ -8,6 +8,12 @@ workflow:
     # MR pipeline (not the branch pipeline) for pushes to that branch.
     - if: $CI_PIPELINE_SOURCE == "push" && $CI_OPEN_MERGE_REQUESTS && $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH
       when: never
+    # Deployment-test branches add deployment prep (recruiter configs,
+    # generated constraints) on top of an already-tested tag or branch, which
+    # the repository-state tests reject by design. This also blocks manual
+    # pipelines and merge request pipelines from those branches.
+    - if: $CI_COMMIT_REF_NAME =~ /^deployment-tests\// || $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^deployment-tests\//
+      when: never
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
     - if: $CI_COMMIT_TAG
@@ -45,8 +51,13 @@ before_script:
   - echo $REDIS_IP
   - docker build --build-arg PYTHON_VERSION=$PYTHON_VERSION --tag $DOCKER_LOCAL_TAG .
 
+# The nightly benchmark schedule sets NIGHTLY_BENCHMARKS=1. Its pipelines only
+# run `asv_benchmarks` (and `pages`, which republishes the results), so every
+# other job opts out of them. Other schedules run the usual jobs.
 .default_rules: &default_rules
   rules:
+    - if: $NIGHTLY_BENCHMARKS == "1"
+      when: never
     - if: $CI_MERGE_REQUEST_ID
       when: always
     - if: $CI_COMMIT_BRANCH
@@ -65,13 +76,14 @@ before_script:
 # exclude paths, so "everything except docs/" cannot be written instead.
 .docker_test_rules: &docker_test_rules
   rules:
+    - if: $NIGHTLY_BENCHMARKS == "1"
+      when: never
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
       changes:
         - .gitlab-ci.yml
         - .cursor/skills/experiment/**/*
         - Dockerfile
         - Dockerfile.playwright
-        - MANIFEST.in
         - benchmarks/**/*
         - ci/**/*
         - demos/**/*
@@ -81,8 +93,6 @@ before_script:
         - docs/deploy/index.rst
         - docs/developer/timeline_hold_traces.rst
         - docs/experiment_development/experiment_directory.rst
-        - deployment-tests/**/*
-        - dev-requirements.in
         - install-ci-dependencies.sh
         - package-lock.json
         - package.json
@@ -90,7 +100,6 @@ before_script:
         - postgres_setup.sql
         - psynet/**/*
         - pyproject.toml
-        - pytest.ini
         - run-ci-tests.sh
         - scripts/**/*
         - tests/**/*
@@ -314,13 +323,19 @@ merge_test_results:
     reports:
       junit: junit.xml
 
-# Full ASV suite for default-branch result publishing and regression checking.
-# Runs `asv continuous` so the previous and current default-branch commits are
-# benchmarked back-to-back on the same runner. Result files are still pushed to
-# the benchmark-results branch before the job propagates any regression failure.
+# Nightly full ASV suite for default-branch result publishing and regression
+# checking. Runs `asv continuous` so the default branch as of ASV_BASE_AGE and
+# its current tip are benchmarked back-to-back on the same runner. Result files
+# are still pushed to the benchmark-results branch before the job propagates
+# any regression failure. The suite takes ~35 min, so it runs from a pipeline
+# schedule rather than on every merge; default-branch pipelines offer it as a
+# manual job.
 asv_benchmarks:
   stage: test
   allow_failure: true
+  # A later master push must not cancel the nightly run: the push pipeline
+  # only offers this job manually.
+  interruptible: false
   resource_group: benchmark-results
   variables:
     # Full clone: the previous default-branch commit may be unreachable in the
@@ -330,6 +345,7 @@ asv_benchmarks:
     # runners without a code change, so this job uses 2 rather than the fast
     # merge-request gate's 1.25.
     ASV_REGRESSION_FACTOR: "2"
+    ASV_BASE_AGE: "24 hours ago"
   cache:
     key:
       files:
@@ -345,8 +361,18 @@ asv_benchmarks:
     - git config user.name "PsyNet CI"
     - git branch -f "$CI_COMMIT_REF_NAME" HEAD
     - 'sed -i "s|\"branches\": \[[^]]*\]|\"branches\": [\"$CI_COMMIT_REF_NAME\"]|" asv.conf.json'
-    - export ASV_BASE="$(git rev-parse HEAD^1)"
+    - export ASV_BASE="$(git rev-list -1 --first-parent --before="$ASV_BASE_AGE" HEAD)"
+    - |
+      if [ -z "$ASV_BASE" ]; then
+        echo "No default-branch commit is older than $ASV_BASE_AGE; is the clone shallow?"
+        exit 1
+      fi
     - export ASV_HEAD="$CI_COMMIT_SHA"
+    - |
+      if [ "$ASV_BASE" = "$ASV_HEAD" ]; then
+        echo "No default-branch commits since $ASV_BASE_AGE; nothing to benchmark."
+        exit 0
+      fi
     - echo "Comparing full ASV benchmark suite $ASV_BASE -> $ASV_HEAD"
     - rm -f .asv/asv-benchmarks-status
     - |
@@ -371,8 +397,10 @@ asv_benchmarks:
     paths:
       - .asv/results/
   rules:
-    - if: $CI_COMMIT_REF_NAME == $CI_DEFAULT_BRANCH
+    - if: $NIGHTLY_BENCHMARKS == "1" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
       when: always
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: manual
     - when: never
 
 # Gate merge requests on fast benchmark regressions. Runs `asv continuous`,
@@ -428,14 +456,12 @@ asv_regression:
   rules:
     - if: $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "issues/9123-performance-benchmark-site"
       when: never
-    # Fast ASV only measures PsyNet hot paths and debug launch of
-    # tests/experiments/static_big. Skip the ~6 min job when the MR cannot
-    # change those results.
+    # Fast ASV only measures PsyNet hot paths. Skip the job when the MR
+    # cannot change those results.
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
       changes:
         - psynet/**/*
         - benchmarks/**/*
-        - tests/experiments/static_big/**/*
         - asv.conf.json
         - pyproject.toml
         - Dockerfile
@@ -470,6 +496,8 @@ benchmark_load_sweep:
       - public/sweep-*.json
       - public/sweep-report.md
   rules:
+    - if: $NIGHTLY_BENCHMARKS == "1"
+      when: never
     - when: manual
       allow_failure: true
 
@@ -542,6 +570,10 @@ pages:
     paths:
     - public
   rules:
+    # Publish the nightly benchmark results even if master moves meanwhile.
+    - if: $NIGHTLY_BENCHMARKS == "1" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: always
+      interruptible: false
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
       when: always
     - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+((rc|a)\d+)?$/

@@ -1,5 +1,3 @@
-# pylint: disable=attribute-defined-outside-init
-
 import io
 import json
 import os
@@ -300,8 +298,6 @@ def _raise_for_status_with_server_details(response):
 if TYPE_CHECKING:
     from .sync import SyncGroup
     from .timeline import Module
-
-# pylint: disable=unused-import
 
 UniqueConstraint(dallinger.models.Participant.unique_id)
 
@@ -1097,7 +1093,7 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
 
         from psynet.timeline_hold import _queue_timeline_hold_wake
 
-        # A failed participant can leave their hold, so wake an overlay
+        # A failed participant can leave a hold outside end logic, so wake an overlay
         # failed from another request instead of waiting for its safety poll.
         cached_hold = getattr(self, "_timeline_hold_record", None)
         if cached_hold is not None and cached_hold.page_uuid != self.page_uuid:

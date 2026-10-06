@@ -1,5 +1,3 @@
-# pylint: disable=unused-import,abstract-method,unused-argument
-
 import random
 import re
 from statistics import mean
