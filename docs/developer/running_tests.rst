@@ -106,6 +106,16 @@ See ``run-ci-tests.sh`` for exactly how CI runs both lists. On release
 branches, the ``compatibility_tests`` jobs split the isolated tests into five
 shards instead, so use ``--ci-node-total 5`` there.
 
+Tests that use S3 run against a filesystem mock by default. The ``boto3``
+tests in ``tests/isolated/test_s3.py`` can also run against the real
+``psynet-tests`` bucket, with the AWS credentials from your Dallinger config.
+Run them before changing PsyNet's S3 code, or when the mock may have drifted
+from real S3:
+
+.. code-block:: shell
+
+    PSYNET_TEST_REAL_S3=1 pytest tests/isolated/test_s3.py -k real
+
 Playwright UI tests
 -------------------
 
