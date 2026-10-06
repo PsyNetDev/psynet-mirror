@@ -539,3 +539,9 @@ def test_finalize_skips_or_waits_for_a_locked_participant(db_session, participan
             db.session.rollback()
 
     assert [t.id for t in Trial.get_trials_ready_to_finalize()] == [trial_id]
+    with db.engine.connect() as worker, worker.begin():
+        # Inserting a row that references the participant takes this lock.
+        worker.execute(
+            text("SELECT id FROM participant WHERE id = :id FOR KEY SHARE NOWAIT"),
+            {"id": participant_id},
+        )

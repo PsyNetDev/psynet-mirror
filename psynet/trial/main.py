@@ -927,7 +927,12 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         ``participant.fail()``, so the participants are locked first, in a
         separate statement, and only trials of locked participants are then
         locked. With ``skip_locked``, busy participants and trials are
-        skipped and no lock is taken on a skipped trial.
+        skipped and no lock is taken on a skipped trial (its participant
+        stays locked if it was free), and trials without a participant are
+        never returned. The participant lock is ``FOR NO KEY UPDATE``: it
+        still excludes requests, but lets other transactions insert rows
+        that reference the participant (async processes, assets), which
+        would otherwise wait on it while holding the trial.
 
         Locks IDs first, then loads full polymorphic ``Trial`` objects by
         those IDs: loading polymorphic rows in the locked query can introduce
@@ -943,9 +948,11 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
                 )
             )
             .order_by(Participant.id)
-            .with_for_update(of=Participant, skip_locked=skip_locked)
+            .with_for_update(of=Participant, key_share=True, skip_locked=skip_locked)
         ).all()
         if skip_locked:
+            if not participant_rows:
+                return []
             id_select = id_select.where(
                 cls.participant_id.in_([row[0] for row in participant_rows])
             )
