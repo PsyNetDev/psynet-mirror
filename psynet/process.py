@@ -329,7 +329,8 @@ def _launch_unless_cancelled(process):
     except Exception:
         logger.exception("Could not launch async process %s.", process["id"])
         _send_alert(
-            f"Async process {process['id']} was saved but could not be launched, "
+            f"Async process {process['id']} ({process['class'].__name__}) was "
+            "saved but could not be launched, "
             "so it stays pending until its timeout, if any."
         )
 
