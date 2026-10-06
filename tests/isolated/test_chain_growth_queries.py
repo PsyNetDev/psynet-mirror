@@ -545,6 +545,23 @@ def test_grow_network_uses_live_readiness_not_cached_flag(db_session, participan
     "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
 )
 @pytest.mark.usefixtures("in_experiment_directory")
+def test_node_grown_from_an_expired_network_uses_its_seed(db_session):
+    """Refreshing the network autoflushes the new node, which fills in the
+    column default ``definition={}``; that must not count as a definition."""
+    exp = get_experiment()
+    network = create_chain_network(chain_trial_maker(), exp)
+    head = network.head
+    db.session.commit()
+
+    node = GrowthQueryNode(seed={"x": 5}, parent=head, network=network, experiment=exp)
+
+    assert node.definition == {"x": 5}
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
 def test_ready_to_spawn_access_has_migration_error(db_session):
     exp = get_experiment()
     trial_maker = chain_trial_maker()

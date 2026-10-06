@@ -818,6 +818,9 @@ class ChainNode(TrialNode):
         participant=None,
         propagate_failure=False,
     ):
+        # Read before super().__init__ adds the node to the session: a later
+        # autoflush applies the column default, so self.definition becomes {}.
+        preset_definition = self.definition
         super().__init__(network=network, participant=participant)
 
         assert not (definition and seed)
@@ -859,7 +862,7 @@ class ChainNode(TrialNode):
 
         # This is the legacy interface -- if we are using the new interface (make_next_definition),
         # then definition will have been provided.
-        if definition is None and self.definition is None:
+        if definition is None and preset_definition is None:
             if seed is None:
                 if degree == 0:
                     seed = self.create_initial_seed(experiment, participant)
