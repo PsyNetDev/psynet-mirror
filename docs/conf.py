@@ -195,7 +195,8 @@ linkcheck_ignore = [
     # running during linkcheck.
     r"https?://localhost(:\d+)?(/.*)?$",
     r"https?://127\.0\.0\.1(:\d+)?(/.*)?$",
-    # Stable reference page that aggressively rate-limits automated checks.
+    # Stable gettext pages; gnu.org rate-limits or drops automated checks.
+    r"https://www\.gnu\.org/software/gettext/?$",
     r"https://www\.gnu\.org/software/gettext/manual/html_node/Usual-Language-Codes\.html",
     # ColorBlindnessTest media prefix. Listing the prefix is forbidden;
     # the plate files under it (e.g. ishihara-1.jpg) are public.
