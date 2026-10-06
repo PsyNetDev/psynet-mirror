@@ -369,7 +369,13 @@ class PsyNetRecruiterMixin:
         """
 
     def terminate_participant(
-        self, participant=None, assignment_id=None, reason=None, details=None
+        self,
+        participant=None,
+        assignment_id=None,
+        reason=None,
+        details=None,
+        *,
+        raise_on_error=False,
     ):
         raise NotImplementedError
 

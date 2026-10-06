@@ -49,6 +49,8 @@ class LucidService(object):
     """Facade for Lucid Marketplace services provided via its HTTP API."""
 
     RATE_LIMIT_KEY = "last_rate_limit"
+    #: Connect and read timeouts in seconds for Lucid complete/terminate requests.
+    EXIT_REQUEST_TIMEOUT = (10, 30)
 
     def __init__(
         self,
@@ -309,7 +311,7 @@ class LucidService(object):
         self.log(
             f"Sending exit request for respondent with RID '{rid}' using redirect URL '{redirect_url}'."
         )
-        return requests.get(redirect_url)
+        return requests.get(redirect_url, timeout=self.EXIT_REQUEST_TIMEOUT)
 
     def complete_respondent(self, rid):
         lucid_rid = get_lucid_rid(rid)
