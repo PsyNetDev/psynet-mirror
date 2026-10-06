@@ -652,6 +652,8 @@ class _TimelineHoldPage(Page):
                 "timeline_hold",
                 "Please wait, the experiment should continue shortly...",
             )
+        if callable(self.content):
+            return self.content()
         return self.content
 
     def overlay_html(self, participant=None):

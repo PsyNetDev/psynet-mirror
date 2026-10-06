@@ -1,0 +1,1 @@
+The `content` argument of `wait_while` and `AsyncCodeBlock` now also accepts a function with no arguments, which is called each time the wait is shown; use it, for example, to translate the message at that point rather than when the timeline is built.

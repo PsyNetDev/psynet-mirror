@@ -83,6 +83,7 @@ from .consent import AudiovisualConsent, LucidConsent, OpenScienceConsent
 from .data import SQLBase, SQLMixin, register_table
 from .db import _commit_external_call_state
 from .lucid import LucidService, get_lucid_service
+from .notifier import _alert_researcher
 from .page import InfoPage
 from .participant import (
     BONUS_STATUS_CAPPED,
@@ -2058,9 +2059,7 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
     @staticmethod
     def _notify_return_for_bonus_payment_timeout(participant):
         """Tell the researcher that a return-for-bonus payment has not finished."""
-        from psynet.experiment import get_experiment
-
-        message = (
+        _alert_researcher(
             f"The return-for-bonus payment for participant {participant.id} "
             f"(assignment {participant.assignment_id}, worker "
             f"{participant.worker_id}) did not finish within "
@@ -2070,15 +2069,6 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
             "check the participant on the Participants dashboard, and pay "
             "them through Prolific if no payment is recorded."
         )
-        logger.error(message)
-        try:
-            get_experiment().notifier.notify(message)
-        except Exception:
-            logger.exception(
-                "Failed to notify the researcher about a stalled "
-                "return-for-bonus payment for participant %s.",
-                participant.id,
-            )
 
     def check_for_returned_assignment(self, participant) -> bool:
         """Check if the participant has returned the assignment."""

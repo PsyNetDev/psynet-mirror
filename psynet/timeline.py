@@ -497,8 +497,9 @@ class AsyncCodeBlock(EltCollection):
         database session.
 
     content:
-        Only relevant if ``wait=True``; overlay message while waiting.
-        Markup is allowed. Omit to keep the stock wait copy.
+        Only relevant if ``wait=True``; overlay message while waiting, or a
+        function with no arguments that returns it each time the wait is
+        shown. Markup is allowed. Omit to keep the stock wait copy.
     """
 
     def __init__(
@@ -507,7 +508,7 @@ class AsyncCodeBlock(EltCollection):
         wait: bool = True,
         expected_wait: Optional[float] = None,
         check_interval: float = 2.0,
-        content: Optional[str] = None,
+        content: Optional[Union[str, Callable[[], str]]] = None,
         max_wait_time: float = 20.0,
         on_timeout: Optional[Callable] = None,
     ):

@@ -13,6 +13,21 @@ from .utils import format_bytes, format_timedelta, get_config, get_logger
 logger = get_logger()
 
 
+def _alert_researcher(message: str):
+    """Log ``message`` as an error and send it through the experiment's notifier.
+
+    A failing notifier is logged rather than raised, so callers such as
+    timeline-hold ``on_timeout`` callbacks still let the participant move on.
+    """
+    from .experiment import get_experiment
+
+    logger.error(message)
+    try:
+        get_experiment().notifier.notify(message)
+    except Exception:
+        logger.exception("Failed to notify the researcher: %s", message)
+
+
 class Notifier:
     """
     Notifier class to handle notifications.

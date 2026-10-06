@@ -4866,6 +4866,27 @@ def test_rejected_consent_calls_recruiter_hook_in_async_code_block():
     recruiter.after_rejected_consent.assert_called_once_with(experiment, participant)
 
 
+def test_rejected_consent_wait_timeout_notifies_the_researcher():
+    from psynet.end import RejectedConsentLogic
+
+    hold = next(
+        elt
+        for elt in RejectedConsentLogic().before_debrief_logic().resolve()
+        if getattr(elt, "is_timeline_hold", False)
+    )
+    participant = SimpleNamespace(
+        id=7, assignment_id="A7", worker_id="W7", failed=True, module_state=None
+    )
+    experiment = MagicMock()
+
+    with patch("psynet.experiment.get_experiment", return_value=experiment):
+        hold.apply_timeout(participant)
+
+    assert "record your choice" in hold.overlay_html()
+    (message,), _ = experiment.notifier.notify.call_args
+    assert "participant 7" in message and "rejected consent" in message
+
+
 def test_lucid_rejected_consent_uses_a_terminate_callback():
     from psynet.end import RejectedConsentLogic
 

@@ -244,7 +244,7 @@ def wait_while(
     log_message: Optional[str] = None,
     fail_on_timeout=True,
     fix_time_credit: Optional[bool] = None,
-    content: Optional[str] = None,
+    content: Optional[Union[str, Callable[[], str]]] = None,
     on_timeout: Optional[Callable] = None,
 ):
     """
@@ -294,8 +294,9 @@ def wait_while(
         explicit page-based waiting.
 
     content
-        Message displayed by the timeline hold. Only used when ``wait_page`` is
-        omitted.
+        Message displayed by the timeline hold, or a function with no
+        arguments that returns it each time the hold is shown (for example,
+        to translate it then). Only used when ``wait_page`` is omitted.
 
     on_timeout
         Optional function called with ``participant=...`` when
