@@ -4948,10 +4948,32 @@ def test_rejected_consent_calls_recruiter_hook_in_async_code_block():
     participant.fail.assert_called_once_with()
     recruiter.after_rejected_consent.assert_not_called()
 
-    block = logic.before_debrief_logic()
-    assert not block.wait
-    block.function(experiment=experiment, participant=participant)
+    logic.report_rejected_consent(experiment=experiment, participant=participant)
     recruiter.after_rejected_consent.assert_called_once_with(experiment, participant)
+
+
+@pytest.mark.parametrize(
+    "recruiter_class, lucid, expected",
+    [
+        (BaseLabRecruiter, False, True),
+        (DevProlificRecruiter, False, False),
+        (DevProlificRecruiter, True, True),
+    ],
+)
+def test_rejected_consent_is_reported_only_when_the_recruiter_needs_it(
+    recruiter_class, lucid, expected
+):
+    from psynet.end import RejectedConsentLogic
+
+    experiment = MagicMock()
+    experiment.with_lucid_recruitment.return_value = lucid
+    participant = MagicMock()
+    participant.recruiter = object.__new__(recruiter_class)
+
+    assert (
+        RejectedConsentLogic.has_rejected_consent_to_report(experiment, participant)
+        is expected
+    )
 
 
 def test_lucid_rejected_consent_uses_a_terminate_callback():

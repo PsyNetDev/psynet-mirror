@@ -13,6 +13,7 @@ from psynet.timeline import (
     Page,
     PageMaker,
     TimelineLogic,
+    conditional,
     join,
 )
 from psynet.utils import get_translator
@@ -324,7 +325,22 @@ class RejectedConsentLogic(UnsuccessfulEndLogic):
     exit_context = exit_domain.ExitContext.REJECTED_CONSENT
 
     def before_debrief_logic(self) -> TimelineLogic:
-        return AsyncCodeBlock(self.report_rejected_consent, wait=False)
+        return conditional(
+            "report_rejected_consent",
+            self.has_rejected_consent_to_report,
+            AsyncCodeBlock(self.report_rejected_consent, wait=False),
+            log_chosen_branch=False,
+        )
+
+    @staticmethod
+    def has_rejected_consent_to_report(experiment, participant) -> bool:
+        """Whether the recruiter needs to hear about the rejection, so a worker job is worth queuing."""
+        from psynet.recruiters import PsyNetRecruiterMixin
+
+        hook = getattr(type(participant.recruiter), "after_rejected_consent", None)
+        return experiment.with_lucid_recruitment() or (
+            hook is not None and hook is not PsyNetRecruiterMixin.after_rejected_consent
+        )
 
     @staticmethod
     def report_rejected_consent(experiment, participant) -> None:
