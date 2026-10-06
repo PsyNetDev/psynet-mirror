@@ -242,8 +242,8 @@ def _prolific_lookup_error_is_retriable(error: Exception) -> bool:
     """Return whether a failed Prolific lookup is worth retrying.
 
     Connection errors and timeouts reach PsyNet as ``requests`` exceptions
-    from Dallinger releases without Dallinger PR #10001
-    (https://github.com/Dallinger/Dallinger/pull/10001), and as a
+    from Dallinger releases without Dallinger PR #10008
+    (https://github.com/Dallinger/Dallinger/pull/10008), and as a
     ``ProlificServiceException`` whose payload has an ``error`` but no
     ``response`` from releases with it. Once PsyNet's minimum Dallinger
     version includes that PR, drop the ``requests.RequestException``
