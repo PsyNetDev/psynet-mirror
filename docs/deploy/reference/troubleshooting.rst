@@ -111,6 +111,10 @@ Common causes are:
 
 - a different PsyNet version (for example branch or commit) locally than in
   ``requirements.txt``;
+- a PsyNet pin that omits the ``[experiment]`` extra, for example
+  ``psynet==14.0.0`` instead of ``psynet[experiment]==14.0.0``. Deploying
+  refuses that pin: the image would install only the command-line tools, and
+  the clock process would fail to start;
 - an invalid server name or incorrect recruiter settings;
 - with ``--dns-host nip.io``, no HTTPS certificate being available for the
   nip.io name.
