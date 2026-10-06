@@ -284,24 +284,28 @@ def test_async_post_trial_finalizes_trial_completed_concurrently(
     assert trial.finalized is True
 
 
-class CommittingFinalizeAsyncTrial(FinalizeBackstopTrial):
+class CommittingFinalizeTrial(FinalizeBackstopTrial):
+    def on_finalized(self):
+        db.session.commit()
+
+
+class CommittingFinalizeAsyncTrial(CommittingFinalizeTrial):
     run_async_post_trial = True
 
     def async_post_trial(self):
         pass
 
-    def on_finalized(self):
-        db.session.commit()
-
 
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
 )
+@pytest.mark.parametrize("path", ["async_post_trial", "asset_deposit"])
 @pytest.mark.usefixtures("in_experiment_directory")
-def test_async_post_trial_forbids_commits_in_on_finalized(
-    db_session, participant, monkeypatch
+def test_worker_finalize_forbids_commits_in_on_finalized_and_fails_the_trial(
+    db_session, participant, monkeypatch, tmp_path, path
 ):
-    from psynet.process import AsyncProcess, WorkerAsyncProcess
+    from psynet.asset import FileAsset
+    from psynet.process import AsyncProcess, LocalAsyncProcess, WorkerAsyncProcess
 
     monkeypatch.setattr(AsyncProcess, "add_to_launch_queue", lambda self: None)
     exp = get_experiment()
@@ -311,7 +315,12 @@ def test_async_post_trial_forbids_commits_in_on_finalized(
         classmethod(lambda cls, *args, **kwargs: None),
     )
     network = _create_network(_chain_trial_maker(), exp)
-    trial = CommittingFinalizeAsyncTrial(
+    trial_class = (
+        CommittingFinalizeAsyncTrial
+        if path == "async_post_trial"
+        else CommittingFinalizeTrial
+    )
+    trial = trial_class(
         experiment=exp,
         node=network.head,
         participant=participant,
@@ -320,19 +329,31 @@ def test_async_post_trial_forbids_commits_in_on_finalized(
     )
     trial.answer = 1
     trial.complete = True
-    trial.async_post_trial_requested = True
     db.session.add(trial)
     db.session.flush()
-    process = WorkerAsyncProcess(trial.call_async_post_trial, trial=trial)
+    if path == "async_post_trial":
+        trial.async_post_trial_requested = True
+        process = WorkerAsyncProcess(trial.call_async_post_trial, trial=trial)
+    else:
+        asset_path = tmp_path / "recording.txt"
+        asset_path.write_text("recording")
+        asset = FileAsset(
+            local_key="recording", input_path=str(asset_path), parent=trial
+        )
+        db.session.add(asset)
+        trial.assets["recording"] = asset
+        asset.deposited = True
+        process = LocalAsyncProcess(asset.after_deposit, asset=asset)
     db.session.flush()
     process_id, trial_id = process.id, trial.id
     db.session.commit()
 
-    WorkerAsyncProcess.call_function(process_id)
+    type(process).call_function(process_id)
 
-    assert db.session.get(Trial, trial_id, populate_existing=True).finalized is False
-    error = db.session.query(ErrorRecord).filter_by(trial_id=trial_id).one()
-    assert "on_finalized" in error.message
+    trial = db.session.get(Trial, trial_id, populate_existing=True)
+    assert trial.finalized is False
+    assert trial.failed is True
+    assert "on_finalized" in ErrorRecord.query.one().message
 
 
 class ExplodingFinalizeTrial(FinalizeBackstopTrial):
