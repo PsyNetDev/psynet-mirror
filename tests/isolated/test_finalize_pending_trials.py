@@ -388,3 +388,29 @@ def test_finalize_pending_trials_commits_each_failed_trial(
     assert second_bad.failed is True
     assert Trial.get_trials_ready_to_finalize() == []
     assert Trial.finalize_pending_trials() == 0
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_recheck_finalization_leaves_failing_trial_to_backstop(db_session, participant):
+    exp = get_experiment()
+    network = _create_network(_chain_trial_maker(), exp)
+    trial = ExplodingFinalizeTrial(
+        experiment=exp,
+        node=network.head,
+        participant=participant,
+        propagate_failure=False,
+        is_repeat_trial=False,
+    )
+    trial.answer = 1
+    trial.complete = True
+    trial.finalized = False
+    db.session.add(trial)
+    db.session.commit()
+    trial_id = trial.id
+
+    Trial.recheck_finalization(trial_id)
+
+    assert [t.id for t in Trial.get_trials_ready_to_finalize()] == [trial_id]

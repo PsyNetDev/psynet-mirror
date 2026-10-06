@@ -904,13 +904,13 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         Known blockers (undeposited assets, pending async post-trial) are
         excluded in SQL so the steady-state result is empty.
 
-        ``skip_locked`` keeps the poller non-blocking when participant
-        requests or async workers already hold a row lock.
+        Uses ``FOR UPDATE SKIP LOCKED`` so the poller does not block when
+        participant requests or async workers already hold a row lock.
         """
         return cls._lock_and_load(cls.ready_to_finalize_id_select(), skip_locked=True)
 
     @classmethod
-    def _lock_and_load(cls, id_select, skip_locked=False):
+    def _lock_and_load(cls, id_select, *, skip_locked=False):
         """Lock the trial rows selected by ``id_select`` and load fresh trials.
 
         Locks IDs first, then loads full polymorphic ``Trial`` objects by
