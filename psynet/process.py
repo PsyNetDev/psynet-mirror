@@ -1,6 +1,7 @@
 import datetime
 import threading
 import time
+from contextvars import ContextVar
 from functools import partial
 
 import dallinger.db
@@ -33,6 +34,19 @@ from .serialize import prepare_function_for_serialization
 from .utils import get_logger
 
 logger = get_logger()
+
+_running_async_process = ContextVar("psynet_running_async_process", default=False)
+
+
+def _in_async_process():
+    """Whether the current code runs inside an async process's function.
+
+    Trials touched there are finalized by :meth:`Trial.recheck_finalization`
+    after the process commits, which locks the participant before the trial.
+    Finalizing inside the process would lock the trial first, and a request
+    holding the participant could then deadlock with it.
+    """
+    return _running_async_process.get()
 
 
 @register_table
@@ -259,7 +273,11 @@ class AsyncProcess(SQLBase, SQLMixin):
                 ).total_seconds()
             db.session.commit()
 
-            function(**arguments)
+            token = _running_async_process.set(True)
+            try:
+                function(**arguments)
+            finally:
+                _running_async_process.reset(token)
 
             process.time_finished = datetime.datetime.now()
             process.time_taken = time.monotonic() - timer

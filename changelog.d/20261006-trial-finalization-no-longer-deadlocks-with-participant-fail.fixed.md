@@ -1,1 +1,1 @@
-Fixed a database deadlock between finalizing a trial (in the background finalization check or after an asynchronous process) and a request that fails the same participant: finalization now locks the participant before the trial.
+Fixed a database deadlock between finalizing a trial in the background and a request that fails the same participant. The background finalization check skips trials whose participant is busy, and async post-trial analyses and asset deposits now finalize their trial after the worker commits, locking the participant before the trial.

@@ -301,9 +301,11 @@ class CommittingFinalizeAsyncTrial(CommittingFinalizeTrial):
 )
 @pytest.mark.parametrize("path", ["async_post_trial", "asset_deposit"])
 @pytest.mark.usefixtures("in_experiment_directory")
-def test_worker_finalize_forbids_commits_in_on_finalized_and_fails_the_trial(
+def test_on_finalized_commit_after_a_worker_is_forbidden_and_fails_the_trial(
     db_session, participant, monkeypatch, tmp_path, path
 ):
+    """Workers leave finalization to the post-commit re-check, whose failure
+    leaves the trial to the backstop, which fails it."""
     from psynet.asset import FileAsset
     from psynet.process import AsyncProcess, LocalAsyncProcess, WorkerAsyncProcess
 
@@ -349,6 +351,12 @@ def test_worker_finalize_forbids_commits_in_on_finalized_and_fails_the_trial(
     db.session.commit()
 
     type(process).call_function(process_id)
+
+    trial = db.session.get(Trial, trial_id, populate_existing=True)
+    assert (trial.finalized, trial.failed) == (False, False)
+
+    Trial.finalize_pending_trials()
+    db.session.commit()
 
     trial = db.session.get(Trial, trial_id, populate_existing=True)
     assert trial.finalized is False
@@ -500,10 +508,10 @@ def _do_nothing():
     "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
 )
 @pytest.mark.usefixtures("in_experiment_directory")
-def test_finalize_locks_respect_participant_then_trial_order(db_session, participant):
-    """Finalizing updates the participant, so it must not hold the trial while
-    waiting for a participant that a request (e.g. ``participant.fail()``)
-    has locked."""
+def test_finalize_skips_or_waits_for_a_locked_participant(db_session, participant):
+    """While a request (e.g. ``participant.fail()``) holds the participant, the
+    poller skips the trial and the post-commit re-check waits for the
+    participant."""
     from sqlalchemy import text
     from sqlalchemy.exc import OperationalError
 

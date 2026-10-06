@@ -817,8 +817,9 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             self.fail(reason="async_post_trial_failed")
             db.session.commit()
             raise
+        # The worker re-checks finalization after committing (see
+        # psynet.process._in_async_process).
         self.async_post_trial_complete = True
-        self.check_if_can_mark_as_finalized()
 
     def fail_async_processes(self, reason):
         for process in list(self.async_processes):
@@ -919,12 +920,15 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     def _lock_and_load(cls, id_select, *, skip_locked=False):
         """Lock the trial rows selected by ``id_select`` and load fresh trials.
 
-        Finalizing updates the participant (performance reward), and request
-        handlers lock the participant before its trials. Holding a trial lock
-        while waiting for its participant can therefore deadlock with
-        ``participant.fail()``. With ``skip_locked``, the participant rows are
-        locked in the same statement and trials whose participant is busy are
-        skipped; otherwise the participants are locked before the trials.
+        Finalizing writes rows that the participant's requests also write
+        (the participant's reward, the node's status), and requests lock the
+        participant before its trials. Holding a trial lock while waiting for
+        those rows can therefore deadlock with ``participant.fail()``. With
+        ``skip_locked``, the participant rows are locked in the same statement
+        and trials whose participant is busy are skipped (PostgreSQL may keep
+        such a trial locked until the poller's transaction ends, which delays
+        the request but cannot deadlock). Otherwise the participants are
+        locked before the trials.
 
         Locks IDs first, then loads full polymorphic ``Trial`` objects by
         those IDs: loading polymorphic rows in the locked query can introduce
