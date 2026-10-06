@@ -779,18 +779,21 @@ test("timeline hold client overlay and busy retry stay on a live hold", { tag: "
         await psynet.handleBusyResponse(request, { timelineHoldResume: true });
         const secondBusyRetryArmed = psynet.timelineHold?.busyRetryTimer != null;
         const resumeRequested = Boolean(psynet.timelineHold?.resumeRequested);
-        const handlerScheduleCalls = effects.scheduleCalls;
 
-        // A real resume that gets a busy 503 must schedule one check and
-        // queue no immediate wake. Timers are recorded, not run, so wakes
-        // left over from earlier probes cannot reach the counts.
+        // A real resume that gets a busy 503 must reach nextPage, then
+        // schedule one check and queue no immediate wake. Timers are counted
+        // but never run, so the probe arms nothing that outlives it.
+        const resumeEffects = { nextPageCalls: 0, scheduleCalls: 0, timers: 0 };
         psynet.nextPage = async (_button, _answer, _metadata, _blobs, options) => {
+          resumeEffects.nextPageCalls += 1;
           await psynet.handleBusyResponse(request, options);
           return false;
         };
-        let resumeTimers = 0;
+        psynet.scheduleTimelineHoldCheck = () => {
+          resumeEffects.scheduleCalls += 1;
+        };
         window.setTimeout = () => {
-          resumeTimers += 1;
+          resumeEffects.timers += 1;
           return 0;
         };
         try {
@@ -805,9 +808,7 @@ test("timeline hold client overlay and busy retry stay on a live hold", { tag: "
           secondBusyRetryArmed,
           delayedWakeMs,
           ...effects,
-          scheduleCalls: handlerScheduleCalls,
-          resumeTimers,
-          resumeScheduleCalls: effects.scheduleCalls - handlerScheduleCalls
+          resume: resumeEffects
         };
       } finally {
         psynet.nextPage = originalNextPage;
@@ -826,8 +827,7 @@ test("timeline hold client overlay and busy retry stay on a live hold", { tag: "
       secondBusyRetryArmed: false,
       delayedWakeMs: 250,
       scheduleCalls: 0,
-      resumeTimers: 0,
-      resumeScheduleCalls: 1,
+      resume: { nextPageCalls: 1, scheduleCalls: 1, timers: 0 },
       alerts: 0,
       responseEnables: 0,
       submitEnables: 0
