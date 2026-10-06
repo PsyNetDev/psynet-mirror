@@ -2390,6 +2390,8 @@ def test_lucid_prepares_error_recovery_without_an_external_termination_request()
         "experiment_pay",
         "lucid_service_complete",
         "lucid_service_terminate",
+        "lucid_service_submissions",
+        "prolific_approve",
     ],
 )
 def test_payment_and_panel_calls_raise_inside_a_timeline_step_before_any_request(
@@ -2430,6 +2432,10 @@ def test_payment_and_panel_calls_raise_inside_a_timeline_step_before_any_request
         "lucid_service_terminate": lambda: object.__new__(
             LucidService
         ).terminate_respondent("rid-1", "timeout"),
+        "lucid_service_submissions": lambda: object.__new__(
+            LucidService
+        ).get_submissions(1),
+        "prolific_approve": lambda: prolific.approve_hit("rid-1"),
     }
 
     with (

@@ -5831,7 +5831,15 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     **parents,
                 )
             )
-            fail()
+            try:
+                with db.session.begin_nested():
+                    fail()
+            except Exception:
+                logger.exception(
+                    "Could not mark poller item %s as failed; it will be "
+                    "retried on the next poll.",
+                    error_parents,
+                )
             return None
 
     @classmethod

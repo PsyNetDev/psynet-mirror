@@ -416,6 +416,7 @@ class LucidService(object):
 
     def get_submissions(self, survey_number, days_lookback=90):
         assert days_lookback <= 90
+        _check_external_call_allowed()
         from datetime import datetime, timedelta
 
         from dallinger.db import redis_conn
@@ -449,7 +450,6 @@ class LucidService(object):
 
         entry_date_after = self._lookback_timestamp(days_lookback)
         url = f"{self.request_base_url_v2_beta}/sessions?survey_id={survey_number}&entry_date_after={entry_date_after}"
-        _check_external_call_allowed()
         response = requests.get(url, headers=self.headers)
         if response.ok:
             submissions = LucidSubmissions(response=response.json()["sessions"])

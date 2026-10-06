@@ -1602,6 +1602,7 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
 
     def approve_hit(self, assignment_id: str):
         """COMPLETE an ACTIVE/TIMED-OUT row, or Approve one already AWAITING REVIEW."""
+        _check_external_call_allowed()
         participant = latest_participant_for_assignment(assignment_id)
         if (
             participant is None

@@ -262,6 +262,29 @@ def test_batch_item_that_commits_fails_alone(db_session, monkeypatch, rollback_f
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
+def test_batch_item_whose_fail_callback_raises_keeps_the_batch(db_session, monkeypatch):
+    DummyTransactionModel.__table__.create(bind=db_session.get_bind(), checkfirst=True)
+    _skip_error_notifications(monkeypatch)
+
+    def fail():
+        db.session.add(DummyTransactionModel(id="half-failed"))
+        db.session.flush()
+        raise ValueError("cannot fail")
+
+    with transaction():
+        db.session.add(DummyTransactionModel(id="earlier"))
+        Experiment._run_batch_item(
+            MagicMock(side_effect=ValueError("item error")), fail=fail
+        )
+
+    with transaction():
+        assert [model.id for model in DummyTransactionModel.query.all()] == ["earlier"]
+        assert len(ErrorRecord.query.all()) == 1
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
 def test_after_commit_callbacks_wait_for_the_root_commit(db_session):
     calls = []
     with pytest.raises(RuntimeError, match="inside a savepoint"):

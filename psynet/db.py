@@ -14,12 +14,11 @@ call that cannot be undone or should not be repeated, such as a payment, a
 panel provider's API or a rate-limited request. It must do so through
 :func:`_commit_external_call_state`, which keeps the exceptions easy to find
 and refuses to run inside timeline steps, whose work the commit would save
-half-finished; such calls belong in an ``AsyncCodeBlock``. The other
-exceptions are
-``Experiment.handle_error``, which rolls back the failed work and commits the
-error record in its place, and recruiter hooks that some Dallinger callers
-(the clock, ``/participant`` and ``/load-participant``) run without
-committing.
+half-finished, inside savepoints and during rendering; such calls belong in
+an ``AsyncCodeBlock``. The other exceptions are ``Experiment.handle_error``,
+which rolls back the failed work and commits the error record in its place,
+and recruiter hooks that some Dallinger callers (the clock, ``/participant``
+and ``/load-participant``) run without committing.
 ``tests/isolated/test_commit_sites.py`` lists every function in the package
 that calls ``.commit()`` directly, with its reason; adding one means adding it
 there.
