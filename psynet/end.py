@@ -5,7 +5,6 @@ from dominate import tags
 
 from psynet import exit as exit_domain
 from psynet.modular_page import NullControl
-from psynet.notifier import _alert_researcher
 from psynet.timeline import (
     AsyncCodeBlock,
     CodeBlock,
@@ -17,8 +16,6 @@ from psynet.timeline import (
     join,
 )
 from psynet.utils import get_translator
-
-REJECTED_CONSENT_REPORT_MAX_WAIT = 60.0
 
 
 class ExitLogic(EltCollection):
@@ -327,48 +324,17 @@ class RejectedConsentLogic(UnsuccessfulEndLogic):
     exit_context = exit_domain.ExitContext.REJECTED_CONSENT
 
     def before_debrief_logic(self) -> TimelineLogic:
-        return AsyncCodeBlock(
-            self.report_rejected_consent,
-            wait=True,
-            expected_wait=1.0,
-            check_interval=1.0,
-            max_wait_time=REJECTED_CONSENT_REPORT_MAX_WAIT,
-            content=self._report_wait_message,
-            on_timeout=self._notify_rejected_consent_report_timeout,
-        )
-
-    @staticmethod
-    def _report_wait_message():
-        """Return the wait copy, translated when shown because the default timeline is built at import."""
-        _p = get_translator(context=True)
-        return _p(
-            "final_page_rejected_consent", "Please wait while we record your choice..."
-        )
-
-    @staticmethod
-    def _notify_rejected_consent_report_timeout(participant):
-        """Tell the researcher that the recruiter has not been told about a rejected consent.
-
-        Holds time out when the participant's page checks in, so a participant
-        who has closed the page triggers no alert.
-        """
-        _alert_researcher(
-            f"Reporting the rejected consent of participant {participant.id} "
-            f"(assignment {participant.assignment_id}, worker "
-            f"{participant.worker_id}) to the recruiter did not finish within "
-            f"{REJECTED_CONSENT_REPORT_MAX_WAIT:.0f} seconds, so the worker "
-            "queue may be stalled. The participant is now shown the debrief "
-            "page. PsyNet still reports it if the queued job runs; otherwise "
-            "update the participant's status on the recruitment platform yourself."
-        )
+        return AsyncCodeBlock(self.report_rejected_consent, wait=False)
 
     @staticmethod
     def report_rejected_consent(experiment, participant) -> None:
         """Tell the recruiter that the participant rejected consent.
 
-        Runs in a worker process because recruiters call their platform here.
-        For Lucid the participant is terminated before the debrief page,
-        because its auto-redirect bypasses ``release_participant``.
+        Runs in a worker process because recruiters call their platform here;
+        the participant does not wait for it. For Lucid it is queued before
+        the debrief page, because its auto-redirect bypasses
+        ``release_participant``. The redirect and this call send Lucid the
+        same terminate callback, so either may arrive first.
         """
         if experiment.with_lucid_recruitment():
             experiment.recruiter.terminate_participant(

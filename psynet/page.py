@@ -294,9 +294,8 @@ def wait_while(
         explicit page-based waiting.
 
     content
-        Message displayed by the timeline hold, or a function with no
-        arguments that returns it each time the hold is shown (for example,
-        to translate it then). Only used when ``wait_page`` is omitted.
+        Message displayed by the timeline hold. Only used when ``wait_page`` is
+        omitted.
 
     on_timeout
         Optional function called with ``participant=...`` when

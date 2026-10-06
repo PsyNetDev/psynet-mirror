@@ -498,9 +498,8 @@ class AsyncCodeBlock(EltCollection):
         must not commit the database session.
 
     content:
-        Only relevant if ``wait=True``; overlay message while waiting, or a
-        function with no arguments that returns it each time the wait is
-        shown. Markup is allowed. Omit to keep the stock wait copy.
+        Only relevant if ``wait=True``; overlay message while waiting.
+        Markup is allowed. Omit to keep the stock wait copy.
     """
 
     def __init__(
