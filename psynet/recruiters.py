@@ -2631,7 +2631,8 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
         self.store = kwargs.get("store", RedisStore())
 
     def recruit(self, n=1):
-        """Incremental recruitment isn't implemented for now, so we return an empty list."""
+        """Reopen entry if ``close_recruitment`` paused it; Lucid sends the entrants."""
+        self._resume_entry()
         return []
 
     def get_status(self, submissions=None) -> LucidRecruitmentStatus:
@@ -2735,6 +2736,7 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
             session.commit()
 
     def run_checks(self):
+        self._recheck_paused_entry()
         logger.info("Polling Lucid API to count entry_df")
 
         survey_number = self.current_survey_number()
@@ -2980,11 +2982,79 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
         }
 
     def close_recruitment(self):
+        """Stop new entrants, and complete the survey once nobody is still working.
+
+        PsyNet calls this as soon as finished plus working participants cover
+        the target. Lucid records anyone who returns after the survey leaves
+        ``live`` as Survey Closed (code 136) rather than as a complete, so while
+        participants are still working the survey stays ``live`` and entry is
+        paused by lowering its total quota to the completes Lucid already has.
+        ``run_checks`` re-evaluates recruitment every minute while entry is
+        paused, which completes the survey once the last working participant
+        has finished or timed out, or reopens entry if more are needed.
         """
-        Lucid automatically ends recruitment when the number of completes has reached the
-        target.
-        """
-        self.lucidservice.log("Recruitment is automatically handled by Lucid.")
+        survey_number = self.current_survey_number()
+        if survey_number is None:
+            return
+        try:
+            if self.lucidservice.get_survey_status(survey_number) != "live":
+                return
+            if self._n_working_participants() == 0:
+                self.lucidservice.change_status(survey_number, "complete")
+                self.store.set(self._paused_quantity_key, "")
+            elif not self._paused_quantity():
+                quantity, completes = (
+                    self.lucidservice.get_survey_quantity_and_completes(survey_number)
+                )
+                self.lucidservice.set_survey_quantity(survey_number, completes)
+                self.store.set(self._paused_quantity_key, quantity)
+                self.lucidservice.log(
+                    f"Paused entry to survey {survey_number} while participants finish."
+                )
+        except Exception:
+            logger.warning(
+                "Failed to close Lucid survey %s; it may keep fielding.",
+                survey_number,
+                exc_info=True,
+            )
+
+    def _resume_entry(self):
+        """Restore the total quota that ``close_recruitment`` lowered, if any."""
+        quantity = self._paused_quantity()
+        if not quantity:
+            return
+        survey_number = self.current_survey_number()
+        try:
+            self.lucidservice.set_survey_quantity(survey_number, quantity)
+            self.store.set(self._paused_quantity_key, "")
+            self.lucidservice.log(f"Reopened entry to survey {survey_number}.")
+        except Exception:
+            logger.warning(
+                "Failed to reopen entry to Lucid survey %s.",
+                survey_number,
+                exc_info=True,
+            )
+
+    def _recheck_paused_entry(self):
+        """Let the experiment complete or reopen a survey whose entry is paused."""
+        if not self._paused_quantity():
+            return
+        from .experiment import get_experiment
+
+        get_experiment().recruit()
+
+    @property
+    def _paused_quantity_key(self):
+        return self.get_survey_storage_key("paused_quantity")
+
+    def _paused_quantity(self):
+        """Return the total quota to restore when entry is paused, else ``None``."""
+        value = self.store.get(self._paused_quantity_key)
+        return int(value) if value else None
+
+    @staticmethod
+    def _n_working_participants():
+        return Participant.query.filter_by(status="working", failed=False).count()
 
     def normalize_entry_information(self, entry_information):
         """Accepts data from the recruited user and returns data needed to validate,
