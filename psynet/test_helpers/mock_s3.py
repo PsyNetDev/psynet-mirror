@@ -183,6 +183,8 @@ class MockS3Client:
         def paginate(
             Bucket: str, Prefix: str = "", Delimiter: str | None = None, **_kwargs
         ):
+            if not self._has_bucket(Bucket):
+                raise _client_error("NoSuchBucket", "ListObjects")
             yield {
                 "Contents": self._list_objects(
                     bucket_name=Bucket,

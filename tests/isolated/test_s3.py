@@ -95,6 +95,11 @@ def test_s3_storage_boto3(mock_s3_root):
     run_test(storage)
 
 
+def test_list_files_in_missing_bucket_returns_empty_list(mock_s3_root):
+    storage = S3Storage("psynet-missing-bucket", "s3-tests")
+    assert storage.list_files_with_prefix("", use_cache=False) == []
+
+
 def test_s3_deposit_sets_immutable_cache_control_for_files_and_folders(
     mock_s3_root, tmp_path
 ):

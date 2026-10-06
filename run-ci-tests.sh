@@ -92,7 +92,6 @@ done
 #  --test-group-count=$CI_NODE_TOTAL \
 #  --test-group=$CI_NODE_INDEX \
 #  --test-group-random-seed=12345 \
-#  --ignore=tests/local_only \
 #  --ignore=tests/isolated \
 #  --chrome \
 #  tests \

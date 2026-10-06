@@ -28,7 +28,7 @@ docker run \
   -e DATABASE_URL=postgresql://dallinger:dallinger@dallinger_postgres/dallinger \
   --network dallinger \
   $DOCKER_IMAGE bash -c \
-  "pytest --ignore=tests/local_only --ignore=tests/isolated --chrome --exitfirst tests"
+  "pytest --ignore=tests/isolated --chrome --exitfirst tests"
 
 # --existfirst flag stops tests on first error
 

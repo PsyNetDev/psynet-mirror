@@ -340,6 +340,8 @@ def test_isolated_tests():
     # Shared helper modules would fail CI, which runs each listed file as its
     # own pytest process and treats "no tests collected" as an error.
     assert all(Path(test).name.startswith("test_") for test in tests)
+    # CI shards this list by position, so local and CI shards must match.
+    assert tests == sorted(tests)
 
 
 def test_check_todos_before_deployment_raise():

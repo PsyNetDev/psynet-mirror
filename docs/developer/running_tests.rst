@@ -82,20 +82,29 @@ Now you can right click on a particular test file or test function within PyChar
 and run the test by clicking 'Run pytest in ...', or alternatively
 'Debug pytest in ...'. The latter mode is slower but supports breakpoints.
 
-In rare cases, tests only fail when several tests are run in a particular sequence.
-This is usually due to some kind of caching issue.
-To reproduce such errors locally, look at the Jobs list in GitLab and work out
-(a) how many parallel test groups there are (at the time of writing there are 10)
-and (b) what's the number of the test group  you want to reproduce locally
-(e.g. Job 4/10 is number 4).
-Install the ``pytest-test-groups`` in your local Python environment if you don't have it already
-(``pip3 install pytest-test-groups``), then run a command like the following:
+CI runs each test file in its own pytest process, so tests in different files
+do not share Python state. To reproduce a CI failure, first run the whole
+failing file as shown above rather than a single test function, because tests
+in the same file share one process and can depend on the order they run in.
 
-::
+Files in the same CI job still run one after another against the same
+PostgreSQL database, Redis and disk, so in rare cases a failure depends on an
+earlier file in that job. Each ``tests_python_3_13 N/10`` job runs every
+tenth isolated test file. To rerun the files of job 4 out of 10 in the same
+order, run:
 
-    pytest --test-group-count 10 --test-group=4 --test-group-random-seed=12345 --ignore=tests/local_only --ignore=tests/isolated --chrome tests
+.. code-block:: shell
 
-setting the values of ``--test-group-count`` and ``--test-group`` as appropriate.
+    for f in $(psynet list-isolated-tests --ci-node-total 10 --ci-node-index 4); do
+      pytest "$f" --chrome -s || break
+    done
+
+Before the isolated tests, the ``tests_python_3_13`` jobs also run their share
+of the demo and test experiments, listed by
+``psynet list-experiment-dirs --for-ci-tests --ci-node-total 10 --ci-node-index 4``.
+See ``run-ci-tests.sh`` for exactly how CI runs both lists. On release
+branches, the ``compatibility_tests`` jobs split the isolated tests into five
+shards instead, so use ``--ci-node-total 5`` there.
 
 Playwright UI tests
 -------------------

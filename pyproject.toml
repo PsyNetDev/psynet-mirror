@@ -98,7 +98,6 @@ dev = [
     "openai",
     "pre-commit",
     "pydata-sphinx-theme",
-    "pytest-test-groups",
     "ruff",
     "sphinx",
     "sphinx-autobuild",
