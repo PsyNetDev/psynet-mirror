@@ -508,7 +508,7 @@ class AsyncCodeBlock(EltCollection):
         wait: bool = True,
         expected_wait: Optional[float] = None,
         check_interval: float = 2.0,
-        content: Optional[Union[str, Callable[[], str]]] = None,
+        content: Optional[str] = None,
         max_wait_time: float = 20.0,
         on_timeout: Optional[Callable] = None,
     ):

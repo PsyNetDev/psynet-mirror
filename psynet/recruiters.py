@@ -365,8 +365,9 @@ class PsyNetRecruiterMixin:
     def after_rejected_consent(self, experiment, participant):
         """Hook run when the participant rejects consent and never reaches submission.
 
-        PsyNet runs it in a worker process while the participant waits, so it
-        may call the recruitment platform.
+        PsyNet runs it in a worker process after the participant's request
+        commits, without making them wait, so it may call the recruitment
+        platform. It has no Flask request context.
         """
 
     def terminate_participant(

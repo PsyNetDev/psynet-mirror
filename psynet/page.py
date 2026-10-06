@@ -244,7 +244,7 @@ def wait_while(
     log_message: Optional[str] = None,
     fail_on_timeout=True,
     fix_time_credit: Optional[bool] = None,
-    content: Optional[Union[str, Callable[[], str]]] = None,
+    content: Optional[str] = None,
     on_timeout: Optional[Callable] = None,
 ):
     """
