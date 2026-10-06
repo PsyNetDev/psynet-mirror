@@ -39,6 +39,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import relationship
 
 from psynet.data import SQLBase, SQLMixin, register_table
+from psynet.db import forbid_commits
 from psynet.timeline import Page, get_template
 from psynet.utils import call_function_with_context, get_logger, get_translator
 
@@ -615,7 +616,8 @@ class _TimelineHoldPage(Page):
     def apply_timeout(self, participant):
         """Run timeout side effects and optionally fail the participant."""
         if self.on_timeout is not None:
-            call_function_with_context(self.on_timeout, participant=participant)
+            with forbid_commits(f"on_timeout of timeline hold {self.hold_id!r}"):
+                call_function_with_context(self.on_timeout, participant=participant)
         if self.fail_on_timeout and not participant.failed:
             participant.append_failure_tags(
                 f"timeline_hold:{self.hold_id}",
