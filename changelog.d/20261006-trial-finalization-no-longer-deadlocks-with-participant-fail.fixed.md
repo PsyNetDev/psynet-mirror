@@ -1,0 +1,1 @@
+Fixed a database deadlock between finalizing a trial (in the background finalization check or after an asynchronous process) and a request that fails the same participant: finalization now locks the participant before the trial.

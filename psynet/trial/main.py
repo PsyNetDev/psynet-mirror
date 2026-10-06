@@ -910,7 +910,8 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         excluded in SQL so the steady-state result is empty.
 
         Uses ``FOR UPDATE SKIP LOCKED`` so the poller does not block when
-        participant requests or async workers already hold a row lock.
+        participant requests or async workers already hold a lock on the
+        trial or its participant.
         """
         return cls._lock_and_load(cls.ready_to_finalize_id_select(), skip_locked=True)
 
@@ -918,13 +919,36 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     def _lock_and_load(cls, id_select, *, skip_locked=False):
         """Lock the trial rows selected by ``id_select`` and load fresh trials.
 
+        Finalizing updates the participant (performance reward), and request
+        handlers lock the participant before its trials. Holding a trial lock
+        while waiting for its participant can therefore deadlock with
+        ``participant.fail()``. With ``skip_locked``, the participant rows are
+        locked in the same statement and trials whose participant is busy are
+        skipped; otherwise the participants are locked before the trials.
+
         Locks IDs first, then loads full polymorphic ``Trial`` objects by
         those IDs: loading polymorphic rows in the locked query can introduce
         ``DISTINCT``, which PostgreSQL rejects with ``FOR UPDATE``.
         """
-        id_rows = db.session.execute(
-            id_select.with_for_update(of=cls, skip_locked=skip_locked)
-        ).all()
+        from psynet.participant import Participant
+
+        if skip_locked:
+            locked_select = id_select.join(
+                Participant, Participant.id == cls.participant_id
+            ).with_for_update(of=[cls, Participant], skip_locked=True)
+        else:
+            db.session.execute(
+                select(Participant.id)
+                .where(
+                    Participant.id.in_(
+                        select(cls.participant_id).where(cls.id.in_(id_select))
+                    )
+                )
+                .order_by(Participant.id)
+                .with_for_update(of=Participant)
+            )
+            locked_select = id_select.with_for_update(of=cls)
+        id_rows = db.session.execute(locked_select).all()
         trial_ids = [row[0] for row in id_rows]
         if not trial_ids:
             return []

@@ -494,3 +494,36 @@ def test_recheck_finalization_leaves_failing_trial_to_backstop(
 
 def _do_nothing():
     pass
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_finalize_locks_respect_participant_then_trial_order(db_session, participant):
+    """Finalizing updates the participant, so it must not hold the trial while
+    waiting for a participant that a request (e.g. ``participant.fail()``)
+    has locked."""
+    from sqlalchemy import text
+    from sqlalchemy.exc import OperationalError
+
+    network = _create_network(_chain_trial_maker(), get_experiment())
+    trial = _add_complete_unfinalized_trial(network.head, participant)
+    trial_id, participant_id = trial.id, participant.id
+    db.session.commit()
+
+    with db.engine.connect() as request:
+        with request.begin():
+            request.execute(
+                text("SELECT id FROM participant WHERE id = :id FOR UPDATE"),
+                {"id": participant_id},
+            )
+            assert Trial.get_trials_ready_to_finalize() == []
+            db.session.rollback()
+
+            db.session.execute(text("SET LOCAL lock_timeout = '200ms'"))
+            with pytest.raises(OperationalError, match="lock timeout"):
+                Trial.recheck_finalization(trial_id)
+            db.session.rollback()
+
+    assert [t.id for t in Trial.get_trials_ready_to_finalize()] == [trial_id]
