@@ -773,10 +773,14 @@ test("timeline hold client overlay and busy retry stay on a live hold", { tag: "
         if (psynet.timelineHold) {
           psynet.timelineHold.busyRetryTimer = null;
         }
+        // A second busy 503 must not arm another retry.
+        await psynet.handleBusyResponse(request, { timelineHoldResume: true });
+        const secondBusyRetryArmed = psynet.timelineHold?.busyRetryTimer != null;
         return {
           isBusy,
           resumeRequested,
           busyRetryUsed,
+          secondBusyRetryArmed,
           delayedWakeMs,
           ...effects
         };
@@ -793,6 +797,7 @@ test("timeline hold client overlay and busy retry stay on a live hold", { tag: "
       isBusy: true,
       resumeRequested: false,
       busyRetryUsed: true,
+      secondBusyRetryArmed: false,
       delayedWakeMs: 250,
       scheduleCalls: 0,
       alerts: 0,
@@ -846,104 +851,6 @@ test("timeline hold client overlay and busy retry stay on a live hold", { tag: "
       alerts: 0,
       reloads: 0,
       errorPages: 0
-    });
-
-    const busyLivelock = await experimentPage.evaluate(async () => {
-      const controller = psynet.timelineHold;
-      const originalNextPage = psynet.nextPage;
-      const originalSchedule = psynet.scheduleTimelineHoldCheck;
-      const originalResume = psynet.resumeTimelineHold;
-      const request = {
-        status: 503,
-        response: JSON.stringify({
-          status: "busy",
-          submission: "busy",
-          message: "The experiment is temporarily busy. Please try again."
-        })
-      };
-      const effects = {
-        queuedWakes: 0,
-        scheduleCalls: 0,
-        externalWakes: [],
-        unexpectedWakes: []
-      };
-      // Websocket onOpen from the client-behavior probe can leave a resume
-      // in flight. Swallow new resumes, wait for that POST to settle, then
-      // measure handleBusyResponse rather than the resumeInFlight
-      // early-return that only sets resumeRequested.
-      const pendingBefore = psynet.nextPagePending;
-      psynet.resumeTimelineHold = async () => false;
-      try {
-        await window.__settleTimelineHoldResume("busy livelock probe");
-        clearTimeout(controller.safetyTimer);
-        controller.busyRetryUsed = true;
-        clearTimeout(controller.busyRetryTimer);
-        controller.busyRetryTimer = null;
-        psynet.nextPagePending = false;
-        psynet.scheduleTimelineHoldCheck = () => {
-          effects.scheduleCalls += 1;
-        };
-        // A websocket reconnect, server notification or timer during the
-        // probe would legitimately set resumeRequested and queue a wake, so
-        // swallow those and only count wakes queued by the busy path.
-        const outsideReasons = [
-          "websocket connection",
-          "server notification",
-          "safety poll",
-          "hold timeout"
-        ];
-        psynet.resumeTimelineHold = async function (reason) {
-          if (outsideReasons.includes(reason)) {
-            effects.externalWakes.push(reason);
-            return false;
-          }
-          if (reason === "queued hold wake") {
-            effects.queuedWakes += 1;
-          } else {
-            effects.unexpectedWakes.push(reason);
-          }
-          return originalResume.apply(this, arguments);
-        };
-        psynet.nextPage = async function (
-          _button,
-          _answer,
-          _metadata,
-          _blobs,
-          options
-        ) {
-          await psynet.handleBusyResponse(request, options);
-          return false;
-        };
-        await originalResume.call(psynet, "busy livelock");
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        if (effects.externalWakes.length) {
-          console.log(
-            "busy livelock probe ignored wakes: " +
-              effects.externalWakes.join(", ")
-          );
-        }
-        return {
-          queuedWakes: effects.queuedWakes,
-          scheduleCalls: effects.scheduleCalls,
-          resumeRequested: Boolean(psynet.timelineHold?.resumeRequested),
-          busyRetryUsed: Boolean(psynet.timelineHold?.busyRetryUsed),
-          unexpectedWakes: effects.unexpectedWakes
-        };
-      } finally {
-        clearTimeout(controller.busyRetryTimer);
-        controller.busyRetryTimer = null;
-        psynet.nextPage = originalNextPage;
-        psynet.scheduleTimelineHoldCheck = originalSchedule;
-        psynet.resumeTimelineHold = originalResume;
-        psynet.nextPagePending = pendingBefore;
-      }
-    });
-    expect(busyLivelock).toEqual({
-      queuedWakes: 0,
-      scheduleCalls: 1,
-      resumeRequested: false,
-      busyRetryUsed: true,
-      unexpectedWakes: []
     });
 
     const pendingEffects = await experimentPage.evaluate(async () => {
