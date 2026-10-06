@@ -8,6 +8,7 @@ from sqlalchemy.orm import object_session
 
 from psynet.data import SQLBase
 from psynet.db import (
+    _call_after_commit,
     _commit_external_call_state,
     _set_transaction_lock_timeout,
     forbid_commits,
@@ -226,6 +227,24 @@ def test_batch_item_that_commits_fails_alone(db_session, monkeypatch, rollback_f
     assert failed == [True]
     assert len(messages) == 1 and "called db.session.commit()" in messages[0]
     assert DummyTransactionModel.query.all() == []
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_after_commit_callbacks_wait_for_the_root_commit(db_session):
+    calls = []
+    with pytest.raises(RuntimeError, match="inside a savepoint"):
+        with db.session.begin_nested():
+            _call_after_commit(lambda: calls.append("nested"))
+    _call_after_commit(lambda: calls.append("root"))
+    with db.session.begin_nested():
+        pass
+    assert calls == []
+
+    db.session.commit()
+
+    assert calls == ["root"]
 
 
 @pytest.mark.parametrize(

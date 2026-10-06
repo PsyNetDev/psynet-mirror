@@ -1,6 +1,7 @@
 import logging
 import secrets
 from datetime import datetime, timedelta
+from functools import partial
 from typing import List, Tuple, Union
 
 import psutil
@@ -14,14 +15,21 @@ logger = get_logger()
 
 
 def _alert_researcher(message: str):
-    """Log ``message`` as an error and send it through the experiment's notifier.
+    """Log ``message`` as an error now and notify the researcher once the transaction commits.
 
-    A failing notifier is logged rather than raised, so callers such as
-    timeline-hold ``on_timeout`` callbacks still let the participant move on.
+    Waiting for the commit keeps slow notifiers from holding the caller's row
+    locks and stops a rolled-back request that is retried from alerting twice.
     """
-    from .experiment import get_experiment
+    from .db import _call_after_commit
 
     logger.error(message)
+    _call_after_commit(partial(_send_alert, message))
+
+
+def _send_alert(message: str):
+    """Send ``message`` through the experiment's notifier, logging any failure."""
+    from .experiment import get_experiment
+
     try:
         get_experiment().notifier.notify(message)
     except Exception:

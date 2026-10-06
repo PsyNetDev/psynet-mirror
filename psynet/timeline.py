@@ -492,9 +492,9 @@ class AsyncCodeBlock(EltCollection):
 
     on_timeout:
         Only relevant if ``wait=True``; a function called with
-        ``participant=...`` when ``max_wait_time`` is reached. The function
-        keeps running in the background. ``on_timeout`` must not commit the
-        database session.
+        ``participant=...`` when ``max_wait_time`` is reached, unless the
+        function has finished by then. The function keeps running in the
+        background. ``on_timeout`` must not commit the database session.
 
     content:
         Only relevant if ``wait=True``; overlay message while waiting, or a
@@ -616,10 +616,19 @@ class AsyncCodeBlock(EltCollection):
                 max_wait_time=self.max_wait_time,
                 log_message="Waiting for async code block to finish.",
                 content=self.content,
-                on_timeout=self.on_timeout,
+                on_timeout=None
+                if self.on_timeout is None
+                else self._call_on_timeout_unless_finished,
             ),
             CodeBlock(lambda: logger.info("Finished waiting for async code block.")),
         )
+
+    def _call_on_timeout_unless_finished(self, participant):
+        """Call ``on_timeout`` unless the function finished before a late check-in noticed the timeout."""
+        process = participant.awaited_async_code_block_process
+        if process is not None and process.finished:
+            return
+        call_function_with_context(self.on_timeout, participant=participant)
 
     def process_is_finished(self, participant):
         process = participant.awaited_async_code_block_process

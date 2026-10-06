@@ -336,10 +336,17 @@ def _call_after_commit(callback):
 
     For side effects, such as notifications, that should only happen if the
     transaction's changes are saved. ``callback`` runs inside SQLAlchemy's
-    ``after_commit`` event, so it must not use the database. Queue it outside
-    savepoints: rolling back only a savepoint does not drop it.
+    ``after_commit`` event, so it must not use the database. It raises inside
+    a savepoint, whose rollback would not drop the callback.
     """
     session = dallinger.db.session()
+    if session.in_nested_transaction():
+        raise RuntimeError(
+            "Cannot queue an after-commit callback inside a savepoint "
+            "(db.session.begin_nested())."
+        )
+    if session.get_transaction() is None:
+        session.begin()
     session.info.setdefault(_AFTER_COMMIT_CALLBACKS_KEY, []).append(callback)
 
 

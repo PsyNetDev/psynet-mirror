@@ -3,6 +3,7 @@ from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import MagicMock, PropertyMock, patch
 
+import dallinger.db
 import dallinger.experiment
 import dallinger.recruiters
 import pytest
@@ -3043,12 +3044,19 @@ def test_return_for_bonus_payment_wait_timeout_notifies_the_researcher():
         if getattr(elt, "is_timeline_hold", False) and elt.on_timeout is not None
     )
     participant = SimpleNamespace(
-        id=7, assignment_id="A7", worker_id="W7", failed=True, module_state=None
+        id=7,
+        assignment_id="A7",
+        worker_id="W7",
+        failed=True,
+        module_state=None,
+        awaited_async_code_block_process=MagicMock(finished=False),
     )
     experiment = MagicMock()
 
     with patch("psynet.experiment.get_experiment", return_value=experiment):
         payment_hold.apply_timeout(participant)
+        experiment.notifier.notify.assert_not_called()
+        dallinger.db.session.commit()
 
     (message,), _ = experiment.notifier.notify.call_args
     assert "participant 7" in message and "stalled" in message
@@ -4875,12 +4883,18 @@ def test_rejected_consent_wait_timeout_notifies_the_researcher():
         if getattr(elt, "is_timeline_hold", False)
     )
     participant = SimpleNamespace(
-        id=7, assignment_id="A7", worker_id="W7", failed=True, module_state=None
+        id=7,
+        assignment_id="A7",
+        worker_id="W7",
+        failed=True,
+        module_state=None,
+        awaited_async_code_block_process=MagicMock(finished=False),
     )
     experiment = MagicMock()
 
     with patch("psynet.experiment.get_experiment", return_value=experiment):
         hold.apply_timeout(participant)
+        dallinger.db.session.commit()
 
     assert "record your choice" in hold.overlay_html()
     (message,), _ = experiment.notifier.notify.call_args

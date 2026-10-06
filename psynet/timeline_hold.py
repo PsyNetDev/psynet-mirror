@@ -484,7 +484,6 @@ class _TimelineHoldPage(Page):
             time_estimate=expected_wait,
             save_answer=False,
             template_str=get_template("timeline-hold-page.html"),
-            template_arg={"content": content},
             framework_owned_template=True,
         )
 

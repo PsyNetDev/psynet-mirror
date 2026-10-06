@@ -347,14 +347,18 @@ class RejectedConsentLogic(UnsuccessfulEndLogic):
 
     @staticmethod
     def _notify_rejected_consent_report_timeout(participant):
-        """Tell the researcher that the recruiter has not been told about a rejected consent."""
+        """Tell the researcher that the recruiter has not been told about a rejected consent.
+
+        Holds time out when the participant's page checks in, so a participant
+        who has closed the page triggers no alert.
+        """
         _alert_researcher(
             f"Reporting the rejected consent of participant {participant.id} "
             f"(assignment {participant.assignment_id}, worker "
             f"{participant.worker_id}) to the recruiter did not finish within "
             f"{REJECTED_CONSENT_REPORT_MAX_WAIT:.0f} seconds, so the worker "
-            "queue may be stalled. The participant was shown the debrief page "
-            "anyway. PsyNet still reports it if the queued job runs; otherwise "
+            "queue may be stalled. The participant is now shown the debrief "
+            "page. PsyNet still reports it if the queued job runs; otherwise "
             "update the participant's status on the recruitment platform yourself."
         )
 

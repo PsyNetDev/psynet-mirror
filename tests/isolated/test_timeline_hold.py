@@ -217,7 +217,8 @@ def test_async_code_block_passes_content_to_hold():
     assert hold.content == "Working…"
 
 
-def test_async_code_block_calls_on_timeout_when_its_wait_times_out():
+@pytest.mark.parametrize("finished", [False, True])
+def test_async_code_block_calls_on_timeout_unless_its_function_finished(finished):
     timed_out = []
     block = AsyncCodeBlock(
         _async_placeholder,
@@ -228,11 +229,15 @@ def test_async_code_block_calls_on_timeout_when_its_wait_times_out():
     hold = next(
         elt for elt in block.resolve() if getattr(elt, "is_timeline_hold", False)
     )
-    participant = SimpleNamespace(failed=True, module_state=None)
+    participant = SimpleNamespace(
+        failed=True,
+        module_state=None,
+        awaited_async_code_block_process=SimpleNamespace(finished=finished),
+    )
 
     hold.apply_timeout(participant)
 
-    assert timed_out == [participant]
+    assert timed_out == ([] if finished else [participant])
 
 
 def test_hold_overlay_html_matches_markup_and_plain_text():
