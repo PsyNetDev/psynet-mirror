@@ -2864,8 +2864,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     def commit_payment_state(self):
         """Persist claimed payment fields so a crash cannot replay a POST.
 
-        Recruiters call this just before posting a payment; it may commit
-        inside timeline steps, where other commits raise.
+        Recruiters call this just before posting a payment. Like any commit,
+        it raises inside timeline steps, so payments made from experiment
+        code belong in an ``AsyncCodeBlock``.
         """
         _commit_external_call_state()
 

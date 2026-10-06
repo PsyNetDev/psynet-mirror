@@ -12,8 +12,10 @@ it needs database-generated values. Timeline steps enforce this with
 A helper may commit early to keep local records consistent with an external
 call that cannot be undone or should not be repeated, such as a payment, a
 panel provider's API or a rate-limited request. It must do so through
-:func:`_commit_external_call_state`, so that the call works inside timeline
-steps and the exceptions stay easy to find. The other exceptions are
+:func:`_commit_external_call_state`, which keeps the exceptions easy to find
+and refuses to run inside timeline steps, whose work the commit would save
+half-finished; such calls belong in an ``AsyncCodeBlock``. The other
+exceptions are
 ``Experiment.handle_error``, which rolls back the failed work and commits the
 error record in its place, and recruiter hooks that some Dallinger callers
 (the clock, ``/participant`` and ``/load-participant``) run without
@@ -303,29 +305,44 @@ def _commit_external_call_state():
 
     Use it just before an external call, so a crash after the call cannot
     lose the state the call reports, or just after it, so a later failure in
-    the same unit of work cannot lose the record that the call happened. It
-    also commits inside timeline steps. Everything else should leave
-    committing to the transaction's owner.
+    the same unit of work cannot lose the record that the call happened. The
+    commit saves the whole unit of work so far, so only code whose
+    transaction's owner expects it may make such calls: routes, worker jobs
+    (including ``AsyncCodeBlock``), scheduled tasks and CLI commands.
 
-    It raises inside a savepoint, where ``commit()`` would only release the
-    savepoint and a later rollback would still lose the record.
+    It raises where :func:`_check_external_call_allowed` does; call that
+    first when the commit comes after the call.
     """
-    session = dallinger.db.session()
-    if session.in_nested_transaction():
+    _check_external_call_allowed()
+    dallinger.db.session.commit()
+
+
+def _check_external_call_allowed():
+    """Raise unless :func:`_commit_external_call_state` may commit here.
+
+    Inside :func:`forbid_commits` the commit would save a timeline step's
+    half-finished changes, and inside a savepoint ``commit()`` would only
+    release the savepoint, so a later rollback would still lose the record.
+    Call it before an external call whose result is committed afterwards, so
+    the call is never made without its record.
+    """
+    if _in_read_only_render():
+        raise RuntimeError("Timeline rendering cannot make external calls.")
+    guard = _commit_forbidden_in.get()
+    if guard is not None:
+        raise RuntimeError(
+            f"{guard.operation} made an external call, such as a payment or a "
+            "recruitment-platform request, that must commit the database. "
+            "PsyNet commits this code's changes only once it has finished, so "
+            "committing here would save half-finished changes.\n"
+            "Make the call from an AsyncCodeBlock instead, which runs in its "
+            "own transaction after this one commits."
+        )
+    if dallinger.db.session().in_nested_transaction():
         raise RuntimeError(
             "Cannot commit external-call state inside a savepoint "
             "(db.session.begin_nested()); make the external call outside it."
         )
-    guard = _commit_forbidden_in.get()
-    token = _commit_forbidden_in.set(None)
-    try:
-        session.commit()
-    finally:
-        _commit_forbidden_in.reset(token)
-        root = session.get_transaction()
-        while guard is not None:
-            guard.root = root
-            guard = guard.parent
 
 
 _AFTER_COMMIT_CALLBACKS_KEY = "psynet_after_commit_callbacks"
@@ -371,8 +388,8 @@ def _drop_after_commit_callbacks(session, transaction):
 def _guard_transactions_begun_inside_forbid_commits(session, transaction):
     """Let guards with no transaction yet protect the next one the session begins.
 
-    A guard has no root when it starts outside a transaction or after a
-    framework commit; without this, a later rollback would go unnoticed.
+    A guard has no root when it starts outside a transaction; without this,
+    a later rollback would go unnoticed.
     """
     scoped = dallinger.db.session.registry
     if transaction.parent is not None or not scoped.has() or session is not scoped():

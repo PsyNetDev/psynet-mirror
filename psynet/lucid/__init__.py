@@ -13,7 +13,7 @@ from sqlalchemy.orm.exc import MultipleResultsFound, NoResultFound
 
 from psynet import deployment_info
 from psynet.data import SQLBase, SQLMixin, register_table
-from psynet.db import _commit_external_call_state
+from psynet.db import _check_external_call_allowed, _commit_external_call_state
 from psynet.field import PythonObject
 from psynet.log import bold, error, success, warning
 from psynet.utils import get_config, get_logger
@@ -317,6 +317,7 @@ class LucidService(object):
         lucid_rid = get_lucid_rid(rid)
 
         if lucid_rid.completed_at is None and lucid_rid.terminated_at is None:
+            _check_external_call_allowed()
             response = self.send_complete_request(rid)
             if response.ok:
                 lucid_rid.completed_at = datetime.now()
@@ -351,6 +352,7 @@ class LucidService(object):
         lucid_rid = get_lucid_rid(rid)
 
         if lucid_rid.completed_at is None and lucid_rid.terminated_at is None:
+            _check_external_call_allowed()
             response = self.send_terminate_request(rid)
             if response.ok:
                 self.set_termination_details(rid, reason, details)
@@ -447,6 +449,7 @@ class LucidService(object):
 
         entry_date_after = self._lookback_timestamp(days_lookback)
         url = f"{self.request_base_url_v2_beta}/sessions?survey_id={survey_number}&entry_date_after={entry_date_after}"
+        _check_external_call_allowed()
         response = requests.get(url, headers=self.headers)
         if response.ok:
             submissions = LucidSubmissions(response=response.json()["sessions"])

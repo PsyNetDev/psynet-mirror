@@ -10,6 +10,7 @@ import pytest
 import requests
 from dallinger.prolific import ProlificServiceException
 
+from psynet.db import forbid_commits
 from psynet.exit import (
     EarlyExitConfirmation,
     ErrorRecoveryPresentation,
@@ -2373,6 +2374,20 @@ def test_lucid_prepares_error_recovery_without_an_external_termination_request()
         "rid-1", "error-page_route"
     )
     recruiter.lucidservice.terminate_respondent.assert_not_called()
+
+
+def test_lucid_termination_inside_a_timeline_step_raises_before_calling_lucid():
+    recruiter = _lucid_recruiter_with_service()
+    participant = MagicMock(assignment_id="rid-1", module_state=None, failed=False)
+
+    with (
+        forbid_commits("CodeBlock 'terminate'"),
+        pytest.raises(RuntimeError, match="from an AsyncCodeBlock"),
+    ):
+        recruiter.terminate_participant(participant=participant, reason="timeout")
+
+    recruiter.lucidservice.terminate_respondent.assert_not_called()
+    assert participant.failed is False
 
 
 def test_lucid_plan_execution_propagates_termination_failure_without_commit():

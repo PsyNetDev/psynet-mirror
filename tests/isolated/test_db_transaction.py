@@ -204,6 +204,25 @@ def test_external_call_state_cannot_be_committed_inside_a_savepoint(db_session):
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
+def test_external_call_state_cannot_be_committed_inside_a_timeline_step(db_session):
+    """An external call's commit would also save the step's half-finished work."""
+    DummyTransactionModel.__table__.create(bind=db_session.get_bind(), checkfirst=True)
+
+    with transaction(commit=False):
+        with forbid_commits("CodeBlock 'pay'"):
+            db.session.add(DummyTransactionModel(id="half-finished"))
+            with pytest.raises(RuntimeError) as error:
+                _commit_external_call_state()
+
+    assert str(error.value).startswith("CodeBlock 'pay' made an external call")
+    assert "AsyncCodeBlock" in str(error.value)
+    with transaction():
+        assert DummyTransactionModel.query.get("half-finished") is None
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
 @pytest.mark.parametrize("rollback_first", [False, True])
 def test_batch_item_that_commits_fails_alone(db_session, monkeypatch, rollback_first):
     """A poller item's savepoint must not let it commit its half-finished work."""

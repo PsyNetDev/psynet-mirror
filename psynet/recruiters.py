@@ -81,7 +81,7 @@ from sqlalchemy.sql import func
 from . import exit as exit_domain
 from .consent import AudiovisualConsent, LucidConsent, OpenScienceConsent
 from .data import SQLBase, SQLMixin, register_table
-from .db import _commit_external_call_state
+from .db import _check_external_call_allowed, _commit_external_call_state
 from .lucid import LucidService, get_lucid_service
 from .notifier import _alert_researcher
 from .page import InfoPage
@@ -3242,12 +3242,14 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
         """Terminate a Lucid participant and return their terminate URL.
 
         :meth:`LucidService.terminate_respondent` commits as soon as Lucid
-        confirms. Lucid API failures are logged rather than raised unless
+        confirms, so this raises inside timeline steps; call it from an
+        ``AsyncCodeBlock`` there. Lucid API failures are logged rather than raised unless
         ``raise_on_error`` is set, because most callers are timeout handlers
         that must still send the participant back to the panel.
         """
         assert participant or assignment_id
         assert not (participant and assignment_id)
+        _check_external_call_allowed()
 
         if participant:
             assignment_id = participant.assignment_id
@@ -3487,6 +3489,7 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
         return self.get_config_entry("initial_response_within_s")
 
     def change_lucid_status(self, status):
+        _check_external_call_allowed()
         survey_number = self.current_survey_number()
         service = get_lucid_service()
         service.change_status(survey_number, status)
