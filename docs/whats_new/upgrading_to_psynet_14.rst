@@ -236,6 +236,12 @@ Search custom trial makers for ``find_networks``, ``find_node``,
   ``participant.module_state.n_participant_trials_in_trial_maker``.
 * ``module_state.block`` is now derived from ``block_order`` and
   ``block_position`` and cannot be set; ``set_block_state`` has been removed.
+  ``ChainTrialMakerState.remaining_blocks`` and ``go_to_next_block`` have also
+  been removed: read ``block_order[block_position:]`` for the remaining
+  blocks, and end a block with ``should_finish_block`` instead of advancing
+  it yourself.
+* ``ChainTrialMaker.check_participant_groups`` now receives the participant
+  group names of the start nodes instead of a list of networks.
 * To keep a participant on one chain until it is finished, pass
   ``interleave_chains=False`` instead of giving each chain its own block.
   :class:`~psynet.trial.staircase.GeometricStaircaseTrialMaker` now does this
@@ -254,7 +260,11 @@ Search custom trial makers for ``find_networks``, ``find_node``,
   ``target_n_participants`` needs ``recruit_mode="n_participants"``, and
   ``target_trials_per_node`` / ``target_trials_per_condition`` need
   ``recruit_mode="n_trials"``. A target with ``None`` or the other built-in
-  mode raises ``ValueError``, as does a misspelt mode:
+  mode raises ``ValueError``, as does a misspelt mode. Chain-based trial
+  makers, including staircase and graph trial makers, used to default to
+  ``"n_participants"`` and now default to ``None`` like static trial makers.
+  ``n_participants_completion="trial_maker"`` likewise needs
+  ``recruit_mode="n_participants"``:
 
   .. code-block:: python
 

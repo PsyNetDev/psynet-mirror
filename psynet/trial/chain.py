@@ -1451,7 +1451,7 @@ class ChainTrialMaker(NetworkTrialMaker):
         experiment end page. In-progress participants still occupy a slot
         in both cases, including people who have not yet reached this
         TrialMaker, so PsyNet does not immediately recruit a replacement.
-        ``"trial_maker"`` requires ``recruit_mode="n_participants"``.
+        ``"trial_maker"`` raises an error with ``recruit_mode=None`` or ``"n_trials"``.
 
     fail_trials_on_premature_exit
         See :class:`~psynet.trial.main.TrialMaker`.

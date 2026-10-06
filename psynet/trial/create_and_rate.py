@@ -570,6 +570,13 @@ class CreateAndRateTrialMakerMixin(object):
         return self._role_for_phase(phase) == role
 
     def _defer_assignment(self):
+        """Wait or exit when a selected head's phase no longer fits the participant.
+
+        ``find_chains`` already turns heads waiting for creators into a
+        wait or a finished block. This fallback only runs when the phase
+        changes after selection, once block handling is over, so without
+        ``wait_for_networks`` it leaves the trial maker.
+        """
         raise CreateAndRateAssignmentPending(
             "wait" if self.wait_for_networks else "exit"
         )

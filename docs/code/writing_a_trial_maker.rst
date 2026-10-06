@@ -106,8 +106,8 @@ quota. ``"experiment"`` (the default) counts participants who finish the
 whole experiment. ``"trial_maker"`` counts participants who finish this trial
 maker, even if they leave before the end page. In both cases, people still
 working in the experiment hold a slot so PsyNet does not recruit a
-replacement straight away. Passing ``"trial_maker"`` with any other
-``recruit_mode`` raises an error.
+replacement straight away. Passing ``"trial_maker"`` with
+``recruit_mode=None`` or ``"n_trials"`` raises an error.
 
 .. _custom_node_selection:
 

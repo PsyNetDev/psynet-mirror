@@ -1464,7 +1464,7 @@ class TrialMaker(Module):
         experiment end page. In-progress participants still occupy a slot
         in both cases, including people who have not yet reached this
         TrialMaker, so PsyNet does not immediately recruit a replacement.
-        ``"trial_maker"`` requires ``recruit_mode="n_participants"``.
+        ``"trial_maker"`` raises an error with ``recruit_mode=None`` or ``"n_trials"``.
 
     n_repeat_trials
         Number of repeat trials to present to the participant. These trials
@@ -1614,9 +1614,9 @@ class TrialMaker(Module):
                 "n_participants_completion must be 'experiment' or 'trial_maker', "
                 f"got {n_participants_completion!r}."
             )
-        if (
-            n_participants_completion != "experiment"
-            and recruit_mode != "n_participants"
+        if n_participants_completion != "experiment" and recruit_mode in (
+            None,
+            "n_trials",
         ):
             raise ValueError(
                 f"n_participants_completion only takes effect with "
@@ -2618,7 +2618,7 @@ class NetworkTrialMaker(TrialMaker):
         experiment end page. In-progress participants still occupy a slot
         in both cases, including people who have not yet reached this
         TrialMaker, so PsyNet does not immediately recruit a replacement.
-        ``"trial_maker"`` requires ``recruit_mode="n_participants"``.
+        ``"trial_maker"`` raises an error with ``recruit_mode=None`` or ``"n_trials"``.
 
     n_repeat_trials
         Number of repeat trials to present to the participant. These trials

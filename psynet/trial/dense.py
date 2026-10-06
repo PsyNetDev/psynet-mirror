@@ -99,7 +99,7 @@ class DenseTrialMaker(StaticTrialMaker):
         experiment end page. In-progress participants still occupy a slot
         in both cases, including people who have not yet reached this
         TrialMaker, so PsyNet does not immediately recruit a replacement.
-        ``"trial_maker"`` requires ``recruit_mode="n_participants"``.
+        ``"trial_maker"`` raises an error with ``recruit_mode=None`` or ``"n_trials"``.
 
     max_trials_per_block
         Determines the maximum number of trials that a participant will be allowed to experience in each block,

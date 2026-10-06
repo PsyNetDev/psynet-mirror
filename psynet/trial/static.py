@@ -162,7 +162,7 @@ class StaticTrialMaker(ChainTrialMaker):
         experiment end page. In-progress participants still occupy a slot
         in both cases, including people who have not yet reached this
         TrialMaker, so PsyNet does not immediately recruit a replacement.
-        ``"trial_maker"`` requires ``recruit_mode="n_participants"``.
+        ``"trial_maker"`` raises an error with ``recruit_mode=None`` or ``"n_trials"``.
 
     target_trials_per_node
         Target number of trials to recruit for each node. ``None`` (the
