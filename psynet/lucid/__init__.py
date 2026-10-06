@@ -263,7 +263,7 @@ class LucidService(object):
     def can_be_terminated(self, lucid_rid):
         if (
             datetime.now() - lucid_rid.registered_at
-        ).seconds <= self.recruitment_config["termination_time_in_s"]:
+        ).total_seconds() <= self.recruitment_config["termination_time_in_s"]:
             return False
 
         participant = lucid_rid.resolve_participant()
@@ -280,9 +280,8 @@ class LucidService(object):
         if self.can_be_terminated(lucid_rid):
             return 0
         else:
-            time_until_termination_in_s = (
-                termination_time_in_s
-                - (datetime.now() - lucid_rid.registered_at).seconds
+            time_until_termination_in_s = termination_time_in_s - int(
+                (datetime.now() - lucid_rid.registered_at).total_seconds()
             )
             return time_until_termination_in_s
 
@@ -437,7 +436,7 @@ class LucidService(object):
         last_rate_limit = redis_conn.get(self.RATE_LIMIT_KEY)
         if len(cached_submissions) > 0 and last_rate_limit is not None:
             last_rate_limit = datetime.fromisoformat(last_rate_limit.decode("utf-8"))
-            if (datetime.now() - last_rate_limit).seconds > n_minutes * 60:
+            if (datetime.now() - last_rate_limit).total_seconds() > n_minutes * 60:
                 self.log("Using cached submissions")
                 return cached_submissions[0].get()
 
