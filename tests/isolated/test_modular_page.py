@@ -10,6 +10,7 @@ from psynet.modular_page import (  # AudioPrompt,; VideoSliderControl,
     Prompt,
     PushButtonControl,
     RatingScale,
+    SurveyJSControl,
 )
 
 # from importlib import resources
@@ -394,6 +395,19 @@ def test_music_notation_prompt_uses_managed_javascript():
         "/static/packages/psynet/scripts/music-notation-prompt.js"
     ]
     assert page.js_vars["music_notation_prompt"] == {"content": "C D E F"}
+
+
+def test_only_survey_js_pages_load_survey_js():
+    survey_page = ModularPage(
+        "test",
+        Prompt("Survey"),
+        SurveyJSControl({"elements": [{"type": "text", "name": "q1"}]}),
+    )
+    button_page = ModularPage("test", Prompt("Buttons"), PushButtonControl(["A"]))
+
+    survey_js = "/static/scripts/survey-jquery/survey-jquery.js"
+    assert survey_page.js_dependencies == [survey_js]
+    assert survey_js not in button_page.js_dependencies
 
 
 def test_modular_page_text():
