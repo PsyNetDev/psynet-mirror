@@ -89,6 +89,7 @@ from .command_line import export_launch_data
 from .data import SQLBase, SQLMixin, ingest_zip, register_table
 from .db import (
     _call_after_commit,
+    _check_external_call_allowed,
     _commit_external_call_state,
     _in_read_only_render,
     _set_transaction_lock_timeout,
@@ -2973,8 +2974,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         A hard-cap clip keeps ``planned_bonus`` as the decided amount and
         finishes as ``capped`` even when a remainder was sent.
 
-        Does not re-apply caps or send emails when already settled.
+        Does not re-apply caps or send emails when already settled. Raises
+        inside timeline steps, even when there is nothing to pay.
         """
+        _check_external_call_allowed()
         participant = self._lock_participant_for_payment(participant)
         if bonus_is_settled(participant):
             logger.info(

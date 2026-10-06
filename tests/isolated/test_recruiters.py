@@ -20,6 +20,7 @@ from psynet.exit import (
     PaymentDecision,
     PaymentState,
 )
+from psynet.lucid import LucidService
 from psynet.participant import (
     BONUS_PAY_IN_PROGRESS,
     BONUS_STATUS_CAPPED,
@@ -2385,11 +2386,16 @@ def test_lucid_prepares_error_recovery_without_an_external_termination_request()
         "prolific_reward_bonus",
         "lab_outcome",
         "hotair_reward_bonus",
+        "experiment_pay",
+        "lucid_service_complete",
+        "lucid_service_terminate",
     ],
 )
 def test_payment_and_panel_calls_raise_inside_a_timeline_step_before_any_request(
     call,
 ):
+    from psynet.experiment import Experiment
+
     participant = MagicMock(
         assignment_id="rid-1", module_state=None, failed=False, progress=1
     )
@@ -2411,6 +2417,15 @@ def test_payment_and_panel_calls_raise_inside_a_timeline_step_before_any_request
         "hotair_reward_bonus": lambda: object.__new__(HotAirRecruiter).reward_bonus(
             participant, 1.0, "bonus"
         ),
+        "experiment_pay": lambda: object.__new__(Experiment).pay_decided_bonus(
+            participant, MagicMock()
+        ),
+        "lucid_service_complete": lambda: object.__new__(
+            LucidService
+        ).complete_respondent("rid-1"),
+        "lucid_service_terminate": lambda: object.__new__(
+            LucidService
+        ).terminate_respondent("rid-1", "timeout"),
     }
 
     with (

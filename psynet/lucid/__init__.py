@@ -314,10 +314,10 @@ class LucidService(object):
         return requests.get(redirect_url, timeout=self.EXIT_REQUEST_TIMEOUT)
 
     def complete_respondent(self, rid):
+        _check_external_call_allowed()
         lucid_rid = get_lucid_rid(rid)
 
         if lucid_rid.completed_at is None and lucid_rid.terminated_at is None:
-            _check_external_call_allowed()
             response = self.send_complete_request(rid)
             if response.ok:
                 lucid_rid.completed_at = datetime.now()
@@ -349,10 +349,10 @@ class LucidService(object):
         lucid_rid.termination_details = details
 
     def terminate_respondent(self, rid, reason, details=None):
+        _check_external_call_allowed()
         lucid_rid = get_lucid_rid(rid)
 
         if lucid_rid.completed_at is None and lucid_rid.terminated_at is None:
-            _check_external_call_allowed()
             response = self.send_terminate_request(rid)
             if response.ok:
                 self.set_termination_details(rid, reason, details)

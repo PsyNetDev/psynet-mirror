@@ -358,6 +358,7 @@ class PsyNetRecruiterMixin:
         whose bonus endpoint is also their terminal outcome callback can
         override this method to report every amount, including zero.
         """
+        _check_external_call_allowed()
         if amount < 0.01:
             return True
         return self.reward_bonus(participant, amount, reason)

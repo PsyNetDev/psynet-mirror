@@ -327,12 +327,16 @@ def _check_external_call_allowed():
     the call is never made without its record.
     """
     if _in_read_only_render():
-        raise RuntimeError("Timeline rendering cannot make external calls.")
+        raise RuntimeError(
+            "Timeline rendering cannot make external calls; make them from an "
+            "AsyncCodeBlock."
+        )
     guard = _commit_forbidden_in.get()
     if guard is not None:
         raise RuntimeError(
-            f"{guard.operation} made an external call, such as a payment or a "
-            "recruitment-platform request, that must commit the database. "
+            f"{guard.operation} tried to make an external call, such as a "
+            "payment or a recruitment-platform request, that must commit the "
+            "database. "
             "PsyNet commits this code's changes only once it has finished, so "
             "committing here would save half-finished changes.\n"
             "Make the call from an AsyncCodeBlock instead (or, outside the "

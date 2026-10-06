@@ -225,7 +225,7 @@ def test_external_call_state_cannot_be_committed_inside_a_timeline_step(db_sessi
             with pytest.raises(RuntimeError) as error:
                 _commit_external_call_state()
 
-    assert str(error.value).startswith("CodeBlock 'pay' made an external call")
+    assert str(error.value).startswith("CodeBlock 'pay' tried to make an external call")
     assert "AsyncCodeBlock" in str(error.value)
     with transaction():
         assert DummyTransactionModel.query.get("half-finished") is None
