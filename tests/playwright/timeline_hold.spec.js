@@ -766,16 +766,17 @@ test("timeline hold client overlay and busy retry stay on a live hold", { tag: "
         };
         const isBusy = psynet.isBusyResponse(request);
         await psynet.handleBusyResponse(request, { timelineHoldResume: true });
-        const resumeRequested = Boolean(psynet.timelineHold?.resumeRequested);
         const busyRetryUsed = Boolean(psynet.timelineHold?.busyRetryUsed);
         const delayedWakeMs = psynet.timelineHoldBusyRetryMs;
         clearTimeout(psynet.timelineHold?.busyRetryTimer);
         if (psynet.timelineHold) {
           psynet.timelineHold.busyRetryTimer = null;
         }
-        // A second busy 503 must not arm another retry.
+        // A second busy 503 must not arm another retry. Neither busy 503 may
+        // set resumeRequested, or the resume's finally would wake at once.
         await psynet.handleBusyResponse(request, { timelineHoldResume: true });
         const secondBusyRetryArmed = psynet.timelineHold?.busyRetryTimer != null;
+        const resumeRequested = Boolean(psynet.timelineHold?.resumeRequested);
         return {
           isBusy,
           resumeRequested,
