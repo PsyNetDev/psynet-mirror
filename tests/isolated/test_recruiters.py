@@ -3049,7 +3049,7 @@ def test_return_for_bonus_payment_wait_timeout_notifies_the_researcher():
         worker_id="W7",
         failed=True,
         module_state=None,
-        awaited_async_code_block_process=MagicMock(finished=False),
+        awaited_async_code_block_process=MagicMock(finished=False, failed=False),
     )
     experiment = MagicMock()
 
@@ -4888,12 +4888,13 @@ def test_rejected_consent_wait_timeout_notifies_the_researcher():
         worker_id="W7",
         failed=True,
         module_state=None,
-        awaited_async_code_block_process=MagicMock(finished=False),
+        awaited_async_code_block_process=MagicMock(finished=False, failed=False),
     )
     experiment = MagicMock()
 
     with patch("psynet.experiment.get_experiment", return_value=experiment):
         hold.apply_timeout(participant)
+        experiment.notifier.notify.assert_not_called()
         dallinger.db.session.commit()
 
     assert "record your choice" in hold.overlay_html()
