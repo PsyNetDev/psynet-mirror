@@ -14,7 +14,7 @@ import zipfile
 from collections import Counter, OrderedDict
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from functools import cache, cached_property
+from functools import cache, cached_property, partial
 from importlib import resources
 from os.path import abspath, dirname, exists
 from os.path import join as join_path
@@ -1903,25 +1903,16 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         if len(networks) > 0:
             logger.info("Growing %i networks...", len(networks))
-            # Iterate by ID so a mid-batch handle_error rollback cannot leave us
-            # holding detached ORM instances for later networks.
-            for network_id in [network.id for network in networks]:
-                network = db.session.get(TrialNetwork, network_id)
-                if network is None:
-                    continue
-                try:
-                    network.trial_maker.call_grow_network(
-                        network, check_readiness=False
-                    )
-                except Exception as err:
-                    # Re-fetch after handle_error rollback; commit the fail so a
-                    # later error in this batch cannot undo it.
-                    exp.isolate_batch_item_failure(
-                        err,
-                        refetch=lambda: db.session.get(TrialNetwork, network_id),
-                        fail=Experiment._fail_grown_network,
-                        network=network,
-                    )
+            for network in networks:
+                exp.run_batch_item(
+                    partial(
+                        network.trial_maker.call_grow_network,
+                        network,
+                        check_readiness=False,
+                    ),
+                    fail=partial(Experiment._fail_grown_network, network),
+                    network=network,
+                )
 
             logger.info("Finished growing networks.")
 
@@ -5792,25 +5783,37 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         return rendered
 
     @classmethod
-    def isolate_batch_item_failure(cls, error, *, refetch, fail, **error_parents):
-        """
-        Report a per-item batch failure, mark the item failed, and commit.
+    def run_batch_item(cls, function, *, fail, **error_parents):
+        """Run one item of a poller batch in a savepoint.
 
         Used by pollers that process many candidates in one transaction
-        (network growth, finalize backstop). ``handle_error`` rolls back the
-        session, so ``refetch`` must return a fresh ORM instance (or ``None``).
-        ``fail`` receives that instance and marks it failed. The fail is
-        committed immediately so a later ``handle_error`` in the same batch
-        cannot undo it, just as ``handle_error`` commits the error record.
+        (network growth, finalize backstop). If ``function`` raises, only its
+        own changes are rolled back; the error is recorded in the batch's
+        transaction and ``fail()`` marks the item failed. The poller's
+        transaction owner commits the batch as usual. ``function`` must not
+        commit external-call state, because a savepoint cannot make it durable.
+
+        Returns ``function()``'s result, or ``None`` if it raised.
         """
-        if not isinstance(error, cls.HandledError):
-            cls.handle_error(error, **error_parents)
-        entity = refetch()
-        if entity is None:
+        try:
+            with db.session.begin_nested():
+                return function()
+        except Exception as error:
+            if not isinstance(error, cls.HandledError):
+                parents = cls._compile_error_parents(
+                    cls._identify_error_parents(**error_parents)
+                )
+                token, log_line_number = cls._record_error(error, **parents)
+                try:
+                    cls.log_to_notifier(token, log_line_number, **parents)
+                except Exception:
+                    logger.warning(
+                        "Could not send the notification for batch error %s.",
+                        token,
+                        exc_info=True,
+                    )
+            fail()
             return None
-        fail(entity)
-        db.session.commit()
-        return entity
 
     @classmethod
     def handle_error(cls, error, **kwargs):

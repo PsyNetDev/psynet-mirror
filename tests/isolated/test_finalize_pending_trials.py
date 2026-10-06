@@ -3,6 +3,7 @@ import uuid
 import pytest
 from dallinger import db
 
+from psynet.error import ErrorRecord
 from psynet.experiment import get_experiment
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
@@ -246,7 +247,7 @@ class ExplodingFinalizeTrial(FinalizeBackstopTrial):
 def test_finalize_pending_trials_isolates_per_trial_errors(
     db_session, participant, monkeypatch
 ):
-    # handle_error -> log_to_notifier needs a base URL; skip notifier I/O.
+    # Error notifications need a dashboard URL; skip notifier I/O.
     monkeypatch.setattr(
         type(get_experiment()),
         "log_to_notifier",
@@ -272,27 +273,22 @@ def test_finalize_pending_trials_isolates_per_trial_errors(
     db.session.add(bad_trial)
     db.session.commit()
 
-    Trial.finalize_pending_trials()
+    assert Trial.finalize_pending_trials() == 1
     db.session.commit()
 
     db.session.refresh(good_trial)
     db.session.refresh(bad_trial)
     assert bad_trial.failed is True
     assert "finalize_backstop_error" in (bad_trial.failed_reason or "")
-    # handle_error rolls back uncommitted successes, so the good trial is
-    # retried next poll.
-    assert good_trial.finalized is False
-    assert Trial.finalize_pending_trials() == 1
-    db.session.commit()
-    db.session.refresh(good_trial)
     assert good_trial.finalized is True
+    assert [record.trial_id for record in ErrorRecord.query.all()] == [bad_trial.id]
 
 
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
 )
 @pytest.mark.usefixtures("in_experiment_directory")
-def test_finalize_pending_trials_commits_each_failed_trial(
+def test_finalize_pending_trials_fails_every_bad_trial(
     db_session, participant, monkeypatch
 ):
     """Two bad trials in one poll must both stay failed (not O(k) retries)."""

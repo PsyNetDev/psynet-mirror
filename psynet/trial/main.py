@@ -5,6 +5,7 @@ import random
 import sys
 import warnings
 from dataclasses import dataclass
+from functools import partial
 from math import isnan
 from typing import Any, List, Literal, Optional, Union
 
@@ -939,11 +940,8 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
 
         Failures are isolated per trial (same idea as network growth): one
         bad ``on_finalized`` must not leave the whole candidate set retrying
-        forever. ``handle_error`` rolls back the current session, so
-        uncommitted successes since the last commit are undone and retried
-        on the next poll. The failing trial is marked failed and committed
-        immediately so a later ``handle_error`` in the same batch cannot
-        undo that fail.
+        forever. Each trial runs in a savepoint, so a failure undoes only
+        that trial's work, and the trial is marked failed.
         """
         from psynet.experiment import get_experiment
 
@@ -953,31 +951,15 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
 
         exp = get_experiment()
         finalized_count = 0
-        # Iterate by ID so a mid-batch handle_error rollback cannot leave us
-        # holding detached ORM instances for later trials.
-        for trial_id in [trial.id for trial in trials]:
-            trial = db.session.get(cls, trial_id)
-            if trial is None:
-                continue
-            try:
-                was_finalized = trial.finalized
-                trial.check_if_can_mark_as_finalized()
-                if trial.finalized and not was_finalized:
-                    finalized_count += 1
-            except Exception as err:
-                # Rollback undid uncommitted successes since the last commit;
-                # they will be picked up again on the next poll.
-                finalized_count = 0
-                exp.isolate_batch_item_failure(
-                    err,
-                    refetch=lambda: db.session.get(cls, trial_id),
-                    fail=lambda t: (
-                        t.fail(reason="finalize_backstop_error")
-                        if not t.failed
-                        else None
-                    ),
-                    trial=trial,
-                )
+        for trial in trials:
+            was_finalized = trial.finalized
+            exp.run_batch_item(
+                trial.check_if_can_mark_as_finalized,
+                fail=partial(cls._fail_after_finalize_error, trial),
+                trial=trial,
+            )
+            if trial.finalized and not was_finalized:
+                finalized_count += 1
 
         if finalized_count:
             logger.info(
@@ -985,6 +967,12 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
                 finalized_count,
             )
         return finalized_count
+
+    @staticmethod
+    def _fail_after_finalize_error(trial):
+        """Fail a trial whose finalization raised in the backstop."""
+        if not trial.failed:
+            trial.fail(reason="finalize_backstop_error")
 
     def check_if_can_run_async_post_trial(self):
         msg = f"Checking if we should run async_post_trial for trial {self.id}... "
