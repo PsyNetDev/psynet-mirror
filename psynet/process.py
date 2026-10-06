@@ -189,9 +189,11 @@ class AsyncProcess(SQLBase, SQLMixin):
         add more objects to this list, for example participants, assets, and networks,
         but currently we're not confident that PsyNet supports failing those objects in that kind of way.
         An asset's process (e.g. an async deposit) fails the asset's trial, which could otherwise
-        never be finalized.
+        never be finalized; a trial that is already finalized is left alone.
         """
-        trial = self.trial or (self.asset.trial if self.asset else None)
+        trial = self.trial
+        if trial is None and self.asset and self.asset.trial:
+            trial = None if self.asset.trial.finalized else self.asset.trial
         candidates = [trial, self.node]
         return [lambda obj=obj: [obj] for obj in candidates if obj is not None]
 
