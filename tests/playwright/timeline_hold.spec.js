@@ -53,7 +53,8 @@ function installTimelineHoldWakeCounter() {
 function installQuietTimelineHold() {
   // Disables outside wakes (websocket, timers) by swallowing
   // psynet.resumeTimelineHold, waits for an in-flight resume to settle and
-  // drains its 0ms "queued hold wake", then clears pending hold timers.
+  // drains its 0ms "queued hold wake", then clears the safety-poll and
+  // busy-retry timers.
   // Returns the real resumeTimelineHold; the probe must restore it.
   window.__quietTimelineHold = async (probeName) => {
     const controller = psynet.timelineHold;
@@ -742,8 +743,8 @@ test("timeline hold client overlay and busy retry stay on a live hold", { tag: "
       };
       // The client-behavior probe reconnects the hold websocket, so its
       // onOpen resume may still be in flight.
-      const pendingBefore = psynet.nextPagePending;
       const originalResume = await window.__quietTimelineHold("busy probe");
+      const pendingBefore = psynet.nextPagePending;
       try {
         psynet.nextPagePending = false;
         psynet.alert = () => {
