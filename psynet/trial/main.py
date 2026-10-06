@@ -1525,7 +1525,8 @@ class TrialMaker(Module):
 
     end_performance_check_waits : bool
         If ``True`` (default), then the final performance check waits until all trials no
-        longer have any pending asynchronous processes.
+        longer have any pending asynchronous processes, and until trials that are ready
+        to finalize have been finalized (so their scores are set).
 
     sync_group_type
         Optional SyncGroup type to use for synchronizing participant allocation to nodes.
@@ -2265,7 +2266,11 @@ class TrialMaker(Module):
                     db.session.query(func.count(Trial.id))
                     .filter(
                         Trial.participant_id == participant.id,
-                        Trial.async_post_trial_pending | Trial.asset_deposit_pending,
+                        Trial.async_post_trial_pending
+                        | Trial.asset_deposit_pending
+                        # Scores are set on finalization, which can lag behind
+                        # the last blocker clearing.
+                        | Trial._ready_to_finalize_condition(),
                     )
                     .scalar()
                 ) > 0
@@ -2680,7 +2685,8 @@ class NetworkTrialMaker(TrialMaker):
 
     end_performance_check_waits : bool
         If ``True`` (default), then the final performance check waits until all trials no
-        longer have any pending asynchronous processes.
+        longer have any pending asynchronous processes, and until trials that are ready
+        to finalize have been finalized (so their scores are set).
 
     performance_threshold : float (default = -1.0)
         Threshold for the built-in performance check chosen by ``performance_check_type``.
