@@ -217,6 +217,24 @@ def test_async_code_block_passes_content_to_hold():
     assert hold.content == "Working…"
 
 
+def test_async_code_block_calls_on_timeout_when_its_wait_times_out():
+    timed_out = []
+    block = AsyncCodeBlock(
+        _async_placeholder,
+        wait=True,
+        expected_wait=1,
+        on_timeout=lambda participant: timed_out.append(participant),
+    )
+    hold = next(
+        elt for elt in block.resolve() if getattr(elt, "is_timeline_hold", False)
+    )
+    participant = SimpleNamespace(failed=True, module_state=None)
+
+    hold.apply_timeout(participant)
+
+    assert timed_out == [participant]
+
+
 def test_hold_overlay_html_matches_markup_and_plain_text():
     plain = next(
         elt

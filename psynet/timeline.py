@@ -490,6 +490,11 @@ class AsyncCodeBlock(EltCollection):
         Only relevant if ``wait=True``; the participant is failed if the
         function has not finished after this many seconds. Default: 20.0 seconds.
 
+    on_timeout:
+        Only relevant if ``wait=True``; a function called with
+        ``participant=...`` when ``max_wait_time`` is reached. The function
+        keeps running in the background.
+
     content:
         Only relevant if ``wait=True``; overlay message while waiting.
         Markup is allowed. Omit to keep the stock wait copy.
@@ -503,6 +508,7 @@ class AsyncCodeBlock(EltCollection):
         check_interval: float = 2.0,
         content: Optional[str] = None,
         max_wait_time: float = 20.0,
+        on_timeout: Optional[Callable] = None,
     ):
         if is_lambda_function(function):
             raise ValueError(
@@ -526,6 +532,7 @@ class AsyncCodeBlock(EltCollection):
         self.check_interval = check_interval
         self.content = content
         self.max_wait_time = max_wait_time
+        self.on_timeout = on_timeout
 
     def resolve(self):
         return join(
@@ -607,6 +614,7 @@ class AsyncCodeBlock(EltCollection):
                 max_wait_time=self.max_wait_time,
                 log_message="Waiting for async code block to finish.",
                 content=self.content,
+                on_timeout=self.on_timeout,
             ),
             CodeBlock(lambda: logger.info("Finished waiting for async code block.")),
         )

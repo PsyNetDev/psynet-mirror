@@ -124,6 +124,7 @@ PROLIFIC_MESSAGE_FIELD_ALIASES = {
 
 
 RETRIABLE_PROLIFIC_RETURN_LOOKUP_STATUSES = {408, 429, 500, 502, 503, 504}
+RETURN_FOR_BONUS_PAYMENT_MAX_WAIT = 60.0
 
 # Prolific completion-code type used for participants who fail or error out of
 # the experiment. See ``PsyNetProlificRecruiterMixin.completion_codes_and_actions``.
@@ -1907,7 +1908,8 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
                                 wait=True,
                                 expected_wait=5.0,
                                 check_interval=1.0,
-                                max_wait_time=60.0,
+                                max_wait_time=RETURN_FOR_BONUS_PAYMENT_MAX_WAIT,
+                                on_timeout=self._notify_return_for_bonus_payment_timeout,
                             ),
                             conditional(
                                 "return_for_bonus_credited",
@@ -2042,6 +2044,31 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
             decision,
             reason="Partial payment for incomplete participation",
         )
+
+    @staticmethod
+    def _notify_return_for_bonus_payment_timeout(participant):
+        """Tell the researcher that a return-for-bonus payment has not finished."""
+        from psynet.experiment import get_experiment
+
+        message = (
+            f"The return-for-bonus payment for participant {participant.id} "
+            f"(assignment {participant.assignment_id}, worker "
+            f"{participant.worker_id}) did not finish within "
+            f"{RETURN_FOR_BONUS_PAYMENT_MAX_WAIT:.0f} seconds, so the worker "
+            "queue may be stalled. The participant was told that you will "
+            "arrange payment. PsyNet still pays them if the queued job runs; "
+            "check the participant on the Participants dashboard, and pay "
+            "them through Prolific if no payment is recorded."
+        )
+        logger.error(message)
+        try:
+            get_experiment().notifier.notify(message)
+        except Exception:
+            logger.exception(
+                "Failed to notify the researcher about a stalled "
+                "return-for-bonus payment for participant %s.",
+                participant.id,
+            )
 
     def check_for_returned_assignment(self, participant) -> bool:
         """Check if the participant has returned the assignment."""

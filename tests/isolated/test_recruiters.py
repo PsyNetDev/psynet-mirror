@@ -3035,6 +3035,25 @@ def test_reward_and_set_bonus_leaves_unsettled_when_transfer_fails():
     assert PsyNetProlificRecruiterMixin._return_for_bonus_credited(participant) is False
 
 
+def test_return_for_bonus_payment_wait_timeout_notifies_the_researcher():
+    recruiter = object.__new__(PsyNetProlificRecruiterMixin)
+    payment_hold = next(
+        elt
+        for elt in recruiter.assignment_returned_logic()
+        if getattr(elt, "is_timeline_hold", False) and elt.on_timeout is not None
+    )
+    participant = SimpleNamespace(
+        id=7, assignment_id="A7", worker_id="W7", failed=True, module_state=None
+    )
+    experiment = MagicMock()
+
+    with patch("psynet.experiment.get_experiment", return_value=experiment):
+        payment_hold.apply_timeout(participant)
+
+    (message,), _ = experiment.notifier.notify.call_args
+    assert "participant 7" in message and "stalled" in message
+
+
 def test_return_for_bonus_credited_when_hard_cap_paid_a_remainder():
     participant = SimpleNamespace(bonus_status=BONUS_STATUS_CAPPED, bonus=0.50)
     assert PsyNetProlificRecruiterMixin._return_for_bonus_credited(participant) is True
