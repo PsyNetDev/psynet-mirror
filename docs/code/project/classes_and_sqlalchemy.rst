@@ -246,9 +246,12 @@ recruiter methods such as ``release_participant``. A helper should leave
 committing to the code that started the transaction, and flush if it needs
 database-generated values.
 
-Recruiter calls that pay participants or contact the recruitment platform,
-such as Lucid's ``terminate_participant``, commit so that local records match
-what the platform was told. They raise in these places too. Make them from an
+Recruiter calls that pay participants or end their panel session must save a
+record alongside the call, so that a crash cannot repeat or lose it. These
+are ``experiment.pay_decided_bonus``, ``recruiter.reward_bonus``,
+``recruiter.report_submission_outcome``, and Lucid's
+``terminate_participant`` and ``complete_participant``. They raise in these
+places too, before contacting the platform. Make them from an
 :class:`~psynet.timeline.AsyncCodeBlock`, which runs in a worker after the
 step has committed. A custom recruiter that posts a payment should call
 ``experiment.commit_payment_state()`` just before the post, so that a crash

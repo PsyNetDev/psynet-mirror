@@ -793,6 +793,7 @@ class PsyNetRecruiterMixin:
         Dallinger helpers often return ``None`` on success. ``None`` or any
         value other than ``False`` is treated as success.
         """
+        _check_external_call_allowed()
         result = super().reward_bonus(participant, amount, reason)
         if result is False:
             record_bonus_attempt_detail(
@@ -1795,6 +1796,7 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
 
     def reward_bonus(self, participant, amount, reason):
         """Pay a Prolific bonus. Return False if Prolific rejected the transfer."""
+        _check_external_call_allowed()
         try:
             self.prolificservice.pay_session_bonus(
                 study_id=self.current_study_id,
@@ -2262,6 +2264,7 @@ class BaseLabRecruiter(
 
     def report_submission_outcome(self, participant, amount, reason):
         """Report a terminal Lab Recruiter outcome, including a zero bonus."""
+        _check_external_call_allowed()
         authorization = self._authorization_header()
         if not authorization:
             if (self.config.get("mode") or "") == "debug":
@@ -3146,6 +3149,7 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
 
         Returns False if the Lucid complete/terminate call raises.
         """
+        _check_external_call_allowed()
         try:
             if self._committed_panel_termination(participant) is not None:
                 # The exit flow already terminated the panel session; a second
@@ -3242,10 +3246,11 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
         """Terminate a Lucid participant and return their terminate URL.
 
         :meth:`LucidService.terminate_respondent` commits as soon as Lucid
-        confirms, so this raises inside timeline steps; call it from an
-        ``AsyncCodeBlock`` there. Lucid API failures are logged rather than raised unless
-        ``raise_on_error`` is set, because most callers are timeout handlers
-        that must still send the participant back to the panel.
+        confirms, so this always raises inside timeline steps; call it from
+        an ``AsyncCodeBlock`` there. Lucid API failures are logged rather
+        than raised unless ``raise_on_error`` is set, because most callers
+        are timeout handlers that must still send the participant back to
+        the panel.
         """
         assert participant or assignment_id
         assert not (participant and assignment_id)

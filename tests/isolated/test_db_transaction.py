@@ -160,6 +160,17 @@ def test_read_only_transaction_rejects_nested_commit(db_session):
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
+def test_read_only_transaction_rejects_external_calls(db_session):
+    with transaction():
+        db.session.commit()
+        with read_only_transaction():
+            with pytest.raises(RuntimeError, match="cannot make external calls"):
+                _commit_external_call_state()
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
 def test_read_only_transaction_allows_no_op_assignment(db_session):
     DummyTransactionModel.__table__.create(bind=db_session.get_bind(), checkfirst=True)
 

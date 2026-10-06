@@ -2376,17 +2376,57 @@ def test_lucid_prepares_error_recovery_without_an_external_termination_request()
     recruiter.lucidservice.terminate_respondent.assert_not_called()
 
 
-def test_lucid_termination_inside_a_timeline_step_raises_before_calling_lucid():
-    recruiter = _lucid_recruiter_with_service()
-    participant = MagicMock(assignment_id="rid-1", module_state=None, failed=False)
+@pytest.mark.parametrize(
+    "call",
+    [
+        "lucid_terminate",
+        "lucid_reward_bonus",
+        "lucid_status",
+        "prolific_reward_bonus",
+        "lab_outcome",
+        "hotair_reward_bonus",
+    ],
+)
+def test_payment_and_panel_calls_raise_inside_a_timeline_step_before_any_request(
+    call,
+):
+    participant = MagicMock(
+        assignment_id="rid-1", module_state=None, failed=False, progress=1
+    )
+    lucid = _lucid_recruiter_with_service()
+    prolific = object.__new__(ProlificRecruiter)
+    prolific.prolificservice = MagicMock()
+    calls = {
+        "lucid_terminate": lambda: lucid.terminate_participant(
+            participant=participant, reason="timeout"
+        ),
+        "lucid_reward_bonus": lambda: lucid.reward_bonus(participant, 1.0, "bonus"),
+        "lucid_status": lambda: lucid.change_lucid_status("live"),
+        "prolific_reward_bonus": lambda: prolific.reward_bonus(
+            participant, 1.0, "bonus"
+        ),
+        "lab_outcome": lambda: object.__new__(
+            BaseLabRecruiter
+        ).report_submission_outcome(participant, 1.0, "bonus"),
+        "hotair_reward_bonus": lambda: object.__new__(HotAirRecruiter).reward_bonus(
+            participant, 1.0, "bonus"
+        ),
+    }
 
     with (
-        forbid_commits("CodeBlock 'terminate'"),
+        patch("psynet.recruiters.get_lucid_service") as lucid_service,
+        patch("psynet.recruiters.requests.post") as post,
+        patch.object(dallinger.recruiters.HotAirRecruiter, "reward_bonus") as hotair,
+        forbid_commits("CodeBlock 'pay'"),
         pytest.raises(RuntimeError, match="from an AsyncCodeBlock"),
     ):
-        recruiter.terminate_participant(participant=participant, reason="timeout")
+        calls[call]()
 
-    recruiter.lucidservice.terminate_respondent.assert_not_called()
+    assert not lucid.lucidservice.method_calls
+    assert not lucid_service.called
+    assert not prolific.prolificservice.method_calls
+    assert not post.called
+    assert not hotair.called
     assert participant.failed is False
 
 

@@ -335,8 +335,9 @@ def _check_external_call_allowed():
             "recruitment-platform request, that must commit the database. "
             "PsyNet commits this code's changes only once it has finished, so "
             "committing here would save half-finished changes.\n"
-            "Make the call from an AsyncCodeBlock instead, which runs in its "
-            "own transaction after this one commits."
+            "Make the call from an AsyncCodeBlock instead (or, outside the "
+            "timeline, a WorkerAsyncProcess), which runs in its own "
+            "transaction after this one commits."
         )
     if dallinger.db.session().in_nested_transaction():
         raise RuntimeError(
