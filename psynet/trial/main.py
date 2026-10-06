@@ -984,6 +984,37 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             )
         return finalized_count
 
+    @classmethod
+    def recheck_finalization(cls, trial_id):
+        """Lock a trial, reload it, and finalize it if it is now ready.
+
+        Finalize checks inside a transaction read attributes cached when the
+        trial was loaded, so two transactions that each clear one blocker
+        (e.g. the participant response and ``async_post_trial``) can both
+        miss the other's change. Async workers call this after committing so
+        the last committer finalizes the trial without waiting for
+        :meth:`finalize_pending_trials`. Commits on success; on error, rolls
+        back and leaves the trial to the backstop.
+        """
+        try:
+            # Lock by ID first; polymorphic Trial loads may add DISTINCT,
+            # which PostgreSQL does not allow with FOR UPDATE.
+            db.session.execute(
+                select(cls.id).where(cls.id == trial_id).with_for_update(of=cls)
+            )
+            trial = cls.query.filter_by(id=trial_id).populate_existing().one_or_none()
+            if trial is not None:
+                trial.check_if_can_mark_as_finalized()
+            db.session.commit()
+        except Exception:
+            logger.warning(
+                "Post-commit finalize re-check failed for trial %s; "
+                "leaving it to the finalize backstop.",
+                trial_id,
+                exc_info=True,
+            )
+            db.session.rollback()
+
     def check_if_can_run_async_post_trial(self):
         msg = f"Checking if we should run async_post_trial for trial {self.id}... "
         if self.async_post_trial_requested:

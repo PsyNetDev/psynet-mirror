@@ -234,6 +234,55 @@ def test_call_async_post_trial_failure_fails_trial(db_session, participant):
     assert Trial.get_trials_ready_to_finalize() == []
 
 
+class ConcurrentResponseAsyncTrial(FinalizeBackstopTrial):
+    run_async_post_trial = True
+
+    def async_post_trial(self):
+        # Simulate the participant's response committing from another process
+        # while the worker still holds a cached ``complete=False``.
+        table = Trial.__table__
+        with db.engine.begin() as connection:
+            connection.execute(
+                table.update().where(table.c.id == self.id).values(complete=True)
+            )
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_async_post_trial_finalizes_trial_completed_concurrently(
+    db_session, participant, monkeypatch
+):
+    from psynet.process import AsyncProcess, WorkerAsyncProcess
+
+    monkeypatch.setattr(AsyncProcess, "add_to_launch_queue", lambda self: None)
+    exp = get_experiment()
+    network = _create_network(_chain_trial_maker(), exp)
+    trial = ConcurrentResponseAsyncTrial(
+        experiment=exp,
+        node=network.head,
+        participant=participant,
+        propagate_failure=False,
+        is_repeat_trial=False,
+    )
+    trial.answer = 1
+    trial.async_post_trial_requested = True
+    db.session.add(trial)
+    db.session.flush()
+    process = WorkerAsyncProcess(trial.call_async_post_trial, trial=trial)
+    db.session.flush()
+    process_id, trial_id = process.id, trial.id
+    db.session.commit()
+
+    WorkerAsyncProcess.call_function(process_id)
+
+    trial = db.session.get(Trial, trial_id, populate_existing=True)
+    assert trial.complete is True
+    assert trial.async_post_trial_complete is True
+    assert trial.finalized is True
+
+
 class ExplodingFinalizeTrial(FinalizeBackstopTrial):
     def on_finalized(self):
         raise RuntimeError("intentional finalize backstop failure")
