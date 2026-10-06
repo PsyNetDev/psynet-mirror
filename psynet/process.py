@@ -28,6 +28,7 @@ from tenacity import retry, retry_if_exception_type, stop_after_delay, wait_expo
 from .data import SQLBase, SQLMixin, register_table
 from .db import _call_after_commit, with_transaction
 from .field import PythonDict, PythonObject
+from .notifier import _send_alert
 from .serialize import prepare_function_for_serialization
 from .utils import get_logger
 
@@ -323,7 +324,14 @@ def _launch_unless_cancelled(process):
     if inspect(process["obj"]).dict.get("cancelled", False):
         return
     logger.info("Launching async process %s...", process["id"])
-    process["class"].launch(process)
+    try:
+        process["class"].launch(process)
+    except Exception:
+        logger.exception("Could not launch async process %s.", process["id"])
+        _send_alert(
+            f"Async process {process['id']} was saved but could not be launched, "
+            "so it stays pending until its timeout, if any."
+        )
 
 
 class LocalAsyncProcess(AsyncProcess):

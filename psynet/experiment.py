@@ -5851,12 +5851,19 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     error_parents,
                 )
                 # Otherwise the item stays ready and fails again on every poll.
-                with db.session.begin_nested():
-                    for obj in error_parents.values():
-                        if not obj.failed:
-                            obj.failed = True
-                            obj.failed_reason = "poller_fail_callback_error"
-                            obj.time_of_death = datetime.now()
+                try:
+                    with db.session.begin_nested():
+                        for obj in error_parents.values():
+                            if not obj.failed:
+                                obj.failed = True
+                                obj.failed_reason = "poller_fail_callback_error"
+                                obj.time_of_death = datetime.now()
+                except Exception:
+                    logger.exception(
+                        "Could not mark poller item %s as failed; retrying on "
+                        "the next poll.",
+                        error_parents,
+                    )
             return None
 
     @classmethod

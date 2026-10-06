@@ -1,0 +1,1 @@
+Removed `AsyncProcess.launch_all`. Async processes still launch automatically once the transaction that created them commits. If a launch fails, for example because Redis is unavailable, the error is now logged and the researcher is notified, instead of being raised from `db.session.commit()`, and the other processes saved in that commit still launch.

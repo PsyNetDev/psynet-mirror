@@ -362,7 +362,8 @@ def _call_after_commit(callback):
     should only happen once the transaction's changes are saved. Callbacks
     queued inside a savepoint are dropped if that savepoint rolls back.
     Callbacks run in the order they were queued, inside SQLAlchemy's
-    ``after_commit`` event, so they must not use the database. Each session
+    ``after_commit`` event, so they must not use the database or queue
+    further callbacks, which would be dropped. Each session
     has its own queue, so another session's commit cannot run them.
     """
     session = dallinger.db.session()
