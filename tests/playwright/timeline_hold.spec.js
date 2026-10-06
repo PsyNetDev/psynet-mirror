@@ -724,6 +724,8 @@ test("timeline hold client overlay and busy retry stay on a live hold", { tag: "
       const originalResponseEnable = psynet.response.enable;
       const originalSubmitEnable = psynet.submit.enable;
       const originalSchedule = psynet.scheduleTimelineHoldCheck;
+      const originalNextPage = psynet.nextPage;
+      const originalSetTimeout = window.setTimeout;
       const effects = {
         alerts: 0,
         responseEnables: 0,
@@ -777,15 +779,38 @@ test("timeline hold client overlay and busy retry stay on a live hold", { tag: "
         await psynet.handleBusyResponse(request, { timelineHoldResume: true });
         const secondBusyRetryArmed = psynet.timelineHold?.busyRetryTimer != null;
         const resumeRequested = Boolean(psynet.timelineHold?.resumeRequested);
+        const handlerScheduleCalls = effects.scheduleCalls;
+
+        // A real resume that gets a busy 503 must schedule one check and
+        // queue no immediate wake. Timers are recorded, not run, so wakes
+        // left over from earlier probes cannot reach the counts.
+        psynet.nextPage = async (_button, _answer, _metadata, _blobs, options) => {
+          await psynet.handleBusyResponse(request, options);
+          return false;
+        };
+        let resumeTimers = 0;
+        window.setTimeout = () => {
+          resumeTimers += 1;
+          return 0;
+        };
+        try {
+          await originalResume.call(psynet, "busy probe");
+        } finally {
+          window.setTimeout = originalSetTimeout;
+        }
         return {
           isBusy,
           resumeRequested,
           busyRetryUsed,
           secondBusyRetryArmed,
           delayedWakeMs,
-          ...effects
+          ...effects,
+          scheduleCalls: handlerScheduleCalls,
+          resumeTimers,
+          resumeScheduleCalls: effects.scheduleCalls - handlerScheduleCalls
         };
       } finally {
+        psynet.nextPage = originalNextPage;
         psynet.alert = originalAlert;
         psynet.response.enable = originalResponseEnable;
         psynet.submit.enable = originalSubmitEnable;
@@ -801,6 +826,8 @@ test("timeline hold client overlay and busy retry stay on a live hold", { tag: "
       secondBusyRetryArmed: false,
       delayedWakeMs: 250,
       scheduleCalls: 0,
+      resumeTimers: 0,
+      resumeScheduleCalls: 1,
       alerts: 0,
       responseEnables: 0,
       submitEnables: 0

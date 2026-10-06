@@ -1,1 +1,1 @@
-Fixed an intermittent failure in the timeline hold client Playwright test by replacing its timing-sensitive busy livelock probe with a direct check that a second busy response does not schedule another retry.
+Fixed an intermittent failure in the timeline hold client Playwright test. Its busy livelock check no longer waits for timers to fire, so wakes left over from earlier steps cannot affect the result.
