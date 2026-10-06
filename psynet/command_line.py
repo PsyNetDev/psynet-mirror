@@ -66,6 +66,7 @@ from .experiment_scaffold import (
     get_psynet_requirement,
     is_unambiguous_psynet_requirement,
     missing_scaffold_paths_required_for_local_run,
+    requirement_includes_experiment_extra,
     scaffold_experiment_directory,
 )
 from .log import bold
@@ -1344,6 +1345,7 @@ def run_bot(ctx, time_factor=0.0, dashboard_user=None, dashboard_password=None):
 ##############
 def run_pre_checks_deploy(local_, recruiter):
     check_psynet_requirement_is_unambiguous()
+    check_psynet_requirement_includes_experiment_extra()
     check_core_dependency_versions_match_requirements()
 
     if local_ and not isinstance(recruiter, (GenericRecruiter, HotAirRecruiter)):
@@ -2108,6 +2110,7 @@ def _check_constraints_before_remote_deploy():
 
 def run_pre_checks_sandbox():
     check_psynet_requirement_is_unambiguous()
+    check_psynet_requirement_includes_experiment_extra()
     check_core_dependency_versions_match_requirements()
 
 
@@ -2755,6 +2758,75 @@ def check_psynet_requirement_is_unambiguous():
             raise ValueError(_ambiguous_psynet_requirement_message(requirement))
 
 
+def check_psynet_requirement_includes_experiment_extra():
+    """Require the PsyNet pin to install the experiment runtime.
+
+    A pin of plain ``psynet`` installs only the command-line tools. The
+    deployment image then has no Dallinger, and the clock process fails to
+    start. A missing pin is left to
+    :func:`check_psynet_requirement_is_unambiguous`, which runs first.
+
+    Raises
+    ------
+    ValueError
+        If the PsyNet requirement omits the ``[experiment]`` extra.
+    """
+    environment_variable = "SKIP_CHECK_PSYNET_EXPERIMENT_EXTRA"
+    if os.environ.get(environment_variable):
+        print(
+            "Skipping the PsyNet [experiment] extra check because "
+            f"{environment_variable} was non-empty."
+        )
+        return
+
+    with yaspin(
+        text="Verifying that requirements.txt installs psynet[experiment]...",
+        color="green",
+    ) as spinner:
+        requirement = get_psynet_requirement()
+        if requirement is None or requirement_includes_experiment_extra(requirement):
+            spinner.ok("✔")
+            return
+        spinner.color = "red"
+        spinner.fail("✗")
+
+    suggested = _requirement_with_experiment_extra(requirement)
+    raise ValueError(
+        "The PsyNet requirement in requirements.txt must include the "
+        "[experiment] extra.\n\n"
+        "Without it, the deployment installs only the PsyNet command-line "
+        "tools. The experiment image then has no Dallinger, and the clock "
+        "process fails to start.\n\n"
+        f"Your current requirements.txt entry is:\n  {requirement}\n\n"
+        f"Change it to:\n  {suggested}\n\n"
+        "You can skip this check by writing "
+        f"`export {environment_variable}=1` (without quotes) in your terminal."
+    )
+
+
+def _requirement_with_experiment_extra(requirement: str) -> str:
+    """Return ``requirement`` with ``experiment`` added to its PsyNet extras.
+
+    Existing extras are kept. Extras are joined without spaces because
+    ``#egg=`` fragments do not allow whitespace.
+    """
+
+    def add_extra(match):
+        extras = [
+            extra.strip()
+            for extra in (match.group(2) or "").split(",")
+            if extra.strip()
+        ]
+        return f"{match.group(1)}psynet[{','.join([*extras, 'experiment'])}]"
+
+    return re.sub(
+        r"(?i)(^\s*|#egg=)psynet(?:\[([^]]*)\])?",
+        add_extra,
+        requirement,
+        count=1,
+    )
+
+
 def _is_local_psynet_requirement(requirement: str) -> bool:
     """Return whether a PsyNet requirement points at a local filesystem path."""
     compact = requirement.lower().replace(" ", "")
@@ -2768,11 +2840,11 @@ def _ambiguous_psynet_requirement_message(requirement: str | None) -> str:
         "specify a particular version or a commit hash."
     )
     examples = [
-        "* psynet==10.1.1",
-        "* psynet@git+https://gitlab.com/PsyNetDev/PsyNet@v10.1.1#egg=psynet",
-        "* psynet@git+https://gitlab.com/PsyNetDev/PsyNet@45f317688af59350f9a6f3052fd73076318f2775#egg=psynet",
-        "* psynet@git+https://gitlab.com/alice/PsyNet@45f317688af59350f9a6f3052fd73076318f2775#egg=psynet",
-        "* psynet@git+https://gitlab.com/PsyNetDev/PsyNet@45f31768#egg=psynet",
+        "* psynet[experiment]==10.1.1",
+        "* psynet[experiment]@git+https://gitlab.com/PsyNetDev/PsyNet@v10.1.1#egg=psynet",
+        "* psynet[experiment]@git+https://gitlab.com/PsyNetDev/PsyNet@45f317688af59350f9a6f3052fd73076318f2775#egg=psynet",
+        "* psynet[experiment]@git+https://gitlab.com/alice/PsyNet@45f317688af59350f9a6f3052fd73076318f2775#egg=psynet",
+        "* psynet[experiment]@git+https://gitlab.com/PsyNetDev/PsyNet@45f31768#egg=psynet",
     ]
 
     parts = [
