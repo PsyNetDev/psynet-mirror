@@ -2316,6 +2316,37 @@ def test_lucid_time_limit_does_not_reset_after_a_day():
         assert service.time_until_termination_in_s("rid") < 0
 
 
+def test_lucid_uses_cached_submissions_only_shortly_after_a_rate_limit():
+    service = object.__new__(LucidService)
+    service.headers = {}
+    cached = MagicMock()
+    cached.get.return_value = "cached"
+    experiment = MagicMock()
+    experiment.get_last_n_from_class.return_value = [cached]
+    redis_conn = MagicMock()
+
+    def rate_limited(minutes_ago):
+        timestamp = datetime.now() - timedelta(minutes=minutes_ago)
+        redis_conn.get.return_value = timestamp.isoformat().encode()
+
+    with (
+        patch("psynet.lucid.session") as session,
+        patch("dallinger.db.redis_conn", redis_conn),
+        patch("psynet.experiment.get_experiment", return_value=experiment),
+        patch("psynet.lucid.requests.get") as api_get,
+    ):
+        session.query.return_value.filter.return_value.order_by.return_value.all.return_value = []
+        api_get.return_value = SimpleNamespace(ok=False, status_code=500)
+
+        rate_limited(minutes_ago=1)
+        assert service.get_submissions(1) == "cached"
+        api_get.assert_not_called()
+
+        rate_limited(minutes_ago=10)
+        assert service.get_submissions(1) is None
+        api_get.assert_called_once()
+
+
 def _lucid_submit_url(ris, rid):
     return f"https://lucid.test/callback?RIS={ris}&RID={rid}"
 
