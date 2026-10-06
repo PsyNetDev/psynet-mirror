@@ -328,6 +328,38 @@ def _commit_external_call_state():
             guard = guard.parent
 
 
+_AFTER_COMMIT_CALLBACKS_KEY = "psynet_after_commit_callbacks"
+
+
+def _call_after_commit(callback):
+    """Run ``callback`` once the current root transaction commits; drop it if it rolls back.
+
+    For side effects, such as notifications, that should only happen if the
+    transaction's changes are saved. ``callback`` runs inside SQLAlchemy's
+    ``after_commit`` event, so it must not use the database. Queue it outside
+    savepoints: rolling back only a savepoint does not drop it.
+    """
+    session = dallinger.db.session()
+    session.info.setdefault(_AFTER_COMMIT_CALLBACKS_KEY, []).append(callback)
+
+
+@event.listens_for(dallinger.db.session, "after_commit")
+def _run_after_commit_callbacks(session):
+    if session.in_nested_transaction():
+        return
+    for callback in session.info.pop(_AFTER_COMMIT_CALLBACKS_KEY, []):
+        try:
+            callback()
+        except Exception:
+            logger.warning("After-commit callback %r failed.", callback, exc_info=True)
+
+
+@event.listens_for(dallinger.db.session, "after_transaction_end")
+def _drop_after_commit_callbacks(session, transaction):
+    if transaction.parent is None:
+        session.info.pop(_AFTER_COMMIT_CALLBACKS_KEY, None)
+
+
 @event.listens_for(dallinger.db.session, "after_transaction_create")
 def _guard_transactions_begun_inside_forbid_commits(session, transaction):
     """Let guards with no transaction yet protect the next one the session begins.

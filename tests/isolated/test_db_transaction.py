@@ -231,6 +231,32 @@ def test_batch_item_that_commits_fails_alone(db_session, monkeypatch, rollback_f
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
+@pytest.mark.parametrize("commit", [True, False])
+def test_batch_item_error_is_notified_only_once_the_batch_commits(
+    db_session, monkeypatch, commit
+):
+    notify = MagicMock()
+    monkeypatch.setattr(Experiment, "log_to_notifier", notify)
+
+    def explodes():
+        raise ValueError("bad item")
+
+    with transaction(commit=commit):
+        Experiment._run_batch_item(explodes, fail=lambda: None)
+        Experiment._run_batch_item(explodes, fail=lambda: None)
+        notify.assert_not_called()
+
+    if commit:
+        assert notify.call_count == 2
+        assert "ValueError: bad item" in notify.call_args.kwargs["formatted_traceback"]
+    else:
+        db.session.commit()
+        notify.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
 def test_lucid_rejected_consent_termination_survives_a_later_rollback(db_session):
     """Lucid saves its termination right after the API call."""
     from psynet.end import RejectedConsentLogic

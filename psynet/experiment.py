@@ -88,6 +88,7 @@ from .bot import Bot, BotDriver, BotResponse
 from .command_line import export_launch_data
 from .data import SQLBase, SQLMixin, ingest_zip, register_table
 from .db import (
+    _call_after_commit,
     _commit_external_call_state,
     _in_read_only_render,
     _set_transaction_lock_timeout,
@@ -5788,7 +5789,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         Used by pollers that process many candidates in one transaction
         (network growth, finalize backstop). If ``function`` raises, only its
         own changes are rolled back; the error is recorded in the batch's
-        transaction and ``fail()`` marks the item failed. A lock conflict or
+        transaction, ``fail()`` marks the item failed, and the researcher is
+        notified once the batch commits. A lock conflict or
         deadlock is only logged, so the next poll retries the item. The
         poller's transaction owner commits the batch as usual.
 
@@ -5815,14 +5817,15 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 cls._identify_error_parents(**error_parents)
             )
             token, log_line_number = cls._record_error(error, **parents)
-            try:
-                cls.log_to_notifier(token, log_line_number, **parents)
-            except Exception:
-                logger.warning(
-                    "Could not send the notification for batch error %s.",
+            _call_after_commit(
+                partial(
+                    cls.log_to_notifier,
                     token,
-                    exc_info=True,
+                    log_line_number,
+                    formatted_traceback=traceback.format_exc(),
+                    **parents,
                 )
+            )
             fail()
             return None
 
@@ -5981,7 +5984,14 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         db.session.add(record)
 
     @classmethod
-    def log_to_notifier(cls, token, line_number, **kwargs):
+    def log_to_notifier(cls, token, line_number, formatted_traceback=None, **kwargs):
+        """Notify the researcher of an error, with the traceback being handled.
+
+        Pass ``formatted_traceback`` when calling this outside the ``except``
+        block, where :func:`traceback.format_exc` no longer sees the error.
+        """
+        if formatted_traceback is None:
+            formatted_traceback = traceback.format_exc()
         url = cls.dashboard_url + "/logger"
 
         if line_number is not None:
@@ -5992,7 +6002,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         error_txt = f"error (`{token}`)"
         text = f"An {cls.notifier.url(error_txt, url)} occurred:"
-        text += "\n```" + traceback.format_exc() + "```"
+        text += "\n```" + formatted_traceback + "```"
         cls.notifier.notify(text)
 
     # @classmethod
