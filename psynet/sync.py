@@ -102,7 +102,6 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
-    event,
     text,
 )
 from sqlalchemy import inspect as sa_inspect
@@ -127,6 +126,7 @@ from psynet.barrier_spec import (
 )
 from psynet.data import SQLBase, SQLMixin, register_table
 from psynet.db import (
+    _SessionQueue,
     _set_transaction_lock_timeout,
     is_transient_transaction_error,
 )
@@ -147,9 +147,6 @@ from psynet.utils import call_function_with_context, get_config, get_logger
 
 logger = get_logger()
 
-_PENDING_BARRIER_CHECKS_KEY = "psynet_pending_barrier_checks"
-_RELEASED_HOLD_WAITER_IDS_KEY = "psynet_released_hold_waiter_ids"
-_NESTED_BARRIER_QUEUE_SNAPSHOTS_KEY = "psynet_nested_barrier_queue_snapshots"
 _BARRIER_FROM_SPEC_CACHE_KEY = "psynet_barrier_from_spec"
 
 
@@ -190,29 +187,33 @@ class _BarrierAuthorHookError(Exception):
     """Author ``on_release`` failed; last-arrival keeps the group waiting."""
 
 
+# Read by the request after its transaction commits. A savepoint rollback
+# restores them, so a later instance's waiter ``NOWAIT`` miss does not wipe
+# stacked checks queued by an earlier skip in the same sweep.
+_pending_barrier_checks = _SessionQueue("pending_barrier_checks", set)
+_released_hold_waiter_ids = _SessionQueue("released_hold_waiter_ids", list)
+
+
 def _queue_barrier_check(barrier_instance_id):
     """Queue one instance for checking after the arrival transaction commits."""
-    db.session.info.setdefault(_PENDING_BARRIER_CHECKS_KEY, set()).add(
-        barrier_instance_id
-    )
+    _pending_barrier_checks.get().add(barrier_instance_id)
 
 
 def _take_pending_barrier_checks():
     """Take the barrier checks queued by the preceding successful transaction."""
-    return sorted(db.session.info.pop(_PENDING_BARRIER_CHECKS_KEY, set()))
+    return sorted(_pending_barrier_checks.take())
 
 
 def _queue_released_hold_waiters(participants):
     """Remember released waiters so the poller can skip them after its own check."""
-    db.session.info.setdefault(_RELEASED_HOLD_WAITER_IDS_KEY, []).extend(
+    _released_hold_waiter_ids.get().extend(
         participant.id for participant in participants
     )
 
 
 def _take_released_hold_waiter_ids():
     """Take waiter ids queued by the barrier check that just ran."""
-    ids = db.session.info.pop(_RELEASED_HOLD_WAITER_IDS_KEY, [])
-    return sorted(set(ids))
+    return sorted(set(_released_hold_waiter_ids.take()))
 
 
 def _rollback_preserving_barrier_queues():
@@ -223,13 +224,11 @@ def _rollback_preserving_barrier_queues():
     roll back before the next waiter. ``after_rollback`` would otherwise
     discard stacked checks queued by a waiter this loop already skipped.
     """
-    pending = set(db.session.info.get(_PENDING_BARRIER_CHECKS_KEY, set()))
-    released = list(db.session.info.get(_RELEASED_HOLD_WAITER_IDS_KEY, []))
+    pending = _pending_barrier_checks.peek()
+    released = _released_hold_waiter_ids.peek()
     db.session.rollback()
-    if pending:
-        db.session.info[_PENDING_BARRIER_CHECKS_KEY] = pending
-    if released:
-        db.session.info[_RELEASED_HOLD_WAITER_IDS_KEY] = released
+    _pending_barrier_checks.replace(pending)
+    _released_hold_waiter_ids.replace(released)
 
 
 def _hold_instance_id_for_page(participant, page):
@@ -303,52 +302,6 @@ def _pending_checks_should_wait_for_claim(instance_ids):
     request. ``GET /timeline`` and ``POST /response`` both use this peek.
     """
     return any(_visit_check_would_release(instance_id) for instance_id in instance_ids)
-
-
-@event.listens_for(db.session, "after_transaction_create")
-def _snapshot_pending_barrier_queues_for_nested(session, transaction):
-    """Remember queued checks so a SAVEPOINT rollback can restore them."""
-    if not transaction.nested:
-        return
-    pending = set(session.info.get(_PENDING_BARRIER_CHECKS_KEY, set()))
-    released = list(session.info.get(_RELEASED_HOLD_WAITER_IDS_KEY, []))
-    session.info.setdefault(_NESTED_BARRIER_QUEUE_SNAPSHOTS_KEY, []).append(
-        (pending, released)
-    )
-
-
-@event.listens_for(db.session, "after_rollback")
-def _discard_pending_barrier_checks(session):
-    """Restore pre-savepoint queues on nested rollback; drop them on root rollback.
-
-    Detect the SAVEPOINT via the snapshot stack. ``in_nested_transaction()``
-    may already be false when this handler runs. A later instance's waiter
-    ``NOWAIT`` miss must not wipe stacked checks queued by an earlier skip
-    in the same ``_run_pending_barrier_checks`` sweep.
-    """
-    stack = session.info.get(_NESTED_BARRIER_QUEUE_SNAPSHOTS_KEY) or []
-    if stack:
-        pending, released = stack[-1]
-        if pending:
-            session.info[_PENDING_BARRIER_CHECKS_KEY] = set(pending)
-        else:
-            session.info.pop(_PENDING_BARRIER_CHECKS_KEY, None)
-        if released:
-            session.info[_RELEASED_HOLD_WAITER_IDS_KEY] = list(released)
-        else:
-            session.info.pop(_RELEASED_HOLD_WAITER_IDS_KEY, None)
-        return
-    session.info.pop(_PENDING_BARRIER_CHECKS_KEY, None)
-    session.info.pop(_RELEASED_HOLD_WAITER_IDS_KEY, None)
-
-
-@event.listens_for(db.session, "after_transaction_end")
-def _pop_nested_barrier_queue_snapshot(session, transaction):
-    if not transaction.nested:
-        return
-    stack = session.info.get(_NESTED_BARRIER_QUEUE_SNAPSHOTS_KEY)
-    if stack:
-        stack.pop()
 
 
 def _execute_advisory_xact_lock(bind, instance_id, *, wait):

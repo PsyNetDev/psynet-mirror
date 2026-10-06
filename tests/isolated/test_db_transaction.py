@@ -10,6 +10,8 @@ from psynet.data import SQLBase
 from psynet.db import (
     _call_after_commit,
     _commit_external_call_state,
+    _session_queues,
+    _SessionQueue,
     _set_transaction_lock_timeout,
     forbid_commits,
     read_only_transaction,
@@ -309,6 +311,26 @@ def test_after_commit_callbacks_wait_for_the_root_commit(db_session):
     db.session.commit()
 
     assert calls == ["released", "root"]
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_session_queue_without_on_commit_waits_to_be_taken(db_session):
+    queue = _SessionQueue("test_queue", list)
+    try:
+        queue.get().append("kept")
+        savepoint = db.session.begin_nested()
+        queue.get().append("rolled back")
+        savepoint.rollback()
+        db.session.commit()
+        assert queue.take() == ["kept"]
+
+        queue.get().append("rolled back")
+        db.session.rollback()
+        assert queue.take() == []
+    finally:
+        _session_queues.remove(queue)
 
 
 @pytest.mark.parametrize(

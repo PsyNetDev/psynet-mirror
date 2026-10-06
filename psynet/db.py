@@ -24,6 +24,7 @@ that calls ``.commit()`` directly, with its reason; adding one means adding it
 there.
 """
 
+import copy
 import logging
 import threading
 from contextlib import contextmanager
@@ -351,8 +352,126 @@ def _check_external_call_allowed():
         )
 
 
-_AFTER_COMMIT_CALLBACKS_KEY = "psynet_after_commit_callbacks"
-_SAVEPOINT_CALLBACK_COUNTS_KEY = "psynet_savepoint_after_commit_counts"
+_SAVEPOINT_SNAPSHOTS_KEY = "psynet_session_queue_savepoint_snapshots"
+_session_queues = []
+
+
+class _SessionQueue:
+    """Per-session work queued during a transaction for use once it commits.
+
+    A savepoint rollback restores the queue to what it held when the
+    savepoint began, and a root rollback empties it. With ``on_commit``, the
+    root commit takes the queue and passes it to ``on_commit``, which runs
+    inside SQLAlchemy's ``after_commit`` event and so must not use the
+    database; closing the session also empties such a queue. Without
+    ``on_commit``, the queue survives the commit until the caller takes it.
+    Each session has its own queue, so another session's commit or rollback
+    cannot affect it.
+    """
+
+    def __init__(self, name, factory, on_commit=None):
+        self.key = f"psynet_{name}"
+        self.factory = factory
+        self.on_commit = on_commit
+        _session_queues.append(self)
+
+    def get(self):
+        """Return the current session's queue for adding to, creating it if needed.
+
+        Begins a transaction if none is open, so the additions belong to one.
+        """
+        session = dallinger.db.session()
+        if session.get_transaction() is None:
+            session.begin()
+        return session.info.setdefault(self.key, self.factory())
+
+    def peek(self):
+        """Return a copy of the current session's queue, leaving it in place."""
+        value = dallinger.db.session().info.get(self.key)
+        return self.factory() if value is None else copy.copy(value)
+
+    def take(self):
+        """Remove and return the current session's queue."""
+        value = dallinger.db.session().info.pop(self.key, None)
+        return self.factory() if value is None else value
+
+    def replace(self, value):
+        """Set the current session's queue to ``value``."""
+        info = dallinger.db.session().info
+        if value:
+            info[self.key] = value
+        else:
+            info.pop(self.key, None)
+
+
+@event.listens_for(dallinger.db.session, "after_transaction_create")
+def _snapshot_session_queues(session, transaction):
+    if transaction.nested:
+        snapshot = {
+            queue.key: copy.copy(session.info[queue.key])
+            for queue in _session_queues
+            if queue.key in session.info
+        }
+        session.info.setdefault(_SAVEPOINT_SNAPSHOTS_KEY, []).append(snapshot)
+
+
+@event.listens_for(dallinger.db.session, "after_commit")
+def _hand_over_session_queues(session):
+    # Releasing a savepoint also fires after_commit; wait for the root commit.
+    if session.in_nested_transaction():
+        return
+    for queue in _session_queues:
+        if queue.on_commit is None:
+            continue
+        value = session.info.pop(queue.key, None)
+        if value:
+            try:
+                queue.on_commit(value)
+            except Exception:
+                logger.exception("Handling %s after the commit failed.", queue.key)
+
+
+@event.listens_for(dallinger.db.session, "after_rollback")
+def _restore_session_queues(session):
+    """Restore the queues of a rolled-back savepoint, or empty them on a root rollback.
+
+    Detect the savepoint via the snapshot stack, because
+    ``in_nested_transaction()`` may already be false when this runs.
+    """
+    snapshots = session.info.get(_SAVEPOINT_SNAPSHOTS_KEY)
+    restored = snapshots[-1] if snapshots else {}
+    for queue in _session_queues:
+        if queue.key in restored:
+            session.info[queue.key] = copy.copy(restored[queue.key])
+        else:
+            session.info.pop(queue.key, None)
+
+
+@event.listens_for(dallinger.db.session, "after_transaction_end")
+def _end_session_queue_transaction(session, transaction):
+    if transaction.nested:
+        snapshots = session.info.get(_SAVEPOINT_SNAPSHOTS_KEY)
+        if snapshots:
+            snapshots.pop()
+    elif transaction.parent is None:
+        session.info.pop(_SAVEPOINT_SNAPSHOTS_KEY, None)
+        # Session.close() ends the root transaction without after_rollback.
+        for queue in _session_queues:
+            if queue.on_commit is not None:
+                session.info.pop(queue.key, None)
+
+
+def _run_callbacks(callbacks):
+    for callback in callbacks:
+        try:
+            callback()
+        except Exception:
+            logger.exception("After-commit callback %r failed.", callback)
+
+
+_after_commit_callbacks = _SessionQueue(
+    "after_commit_callbacks", list, on_commit=_run_callbacks
+)
 
 
 def _call_after_commit(callback):
@@ -366,56 +485,7 @@ def _call_after_commit(callback):
     further callbacks, which would be dropped. Each session
     has its own queue, so another session's commit cannot run them.
     """
-    session = dallinger.db.session()
-    if session.get_transaction() is None:
-        session.begin()
-    session.info.setdefault(_AFTER_COMMIT_CALLBACKS_KEY, []).append(callback)
-
-
-@event.listens_for(dallinger.db.session, "after_transaction_create")
-def _remember_callbacks_before_savepoint(session, transaction):
-    if transaction.nested:
-        queued = len(session.info.get(_AFTER_COMMIT_CALLBACKS_KEY) or [])
-        session.info.setdefault(_SAVEPOINT_CALLBACK_COUNTS_KEY, []).append(queued)
-
-
-@event.listens_for(dallinger.db.session, "after_commit")
-def _run_after_commit_callbacks(session):
-    # Releasing a savepoint also fires after_commit; wait for the root commit.
-    if session.in_nested_transaction():
-        return
-    for callback in session.info.pop(_AFTER_COMMIT_CALLBACKS_KEY, []):
-        try:
-            callback()
-        except Exception:
-            logger.exception("After-commit callback %r failed.", callback)
-
-
-@event.listens_for(dallinger.db.session, "after_rollback")
-def _drop_rolled_back_callbacks(session):
-    """Drop the callbacks of a rolled-back savepoint, or all of them on a root rollback.
-
-    Detect the savepoint via the count stack, because
-    ``in_nested_transaction()`` may already be false when this runs.
-    """
-    counts = session.info.get(_SAVEPOINT_CALLBACK_COUNTS_KEY) or []
-    if counts:
-        queue = session.info.get(_AFTER_COMMIT_CALLBACKS_KEY)
-        if queue is not None:
-            del queue[counts[-1] :]
-        return
-    session.info.pop(_AFTER_COMMIT_CALLBACKS_KEY, None)
-
-
-@event.listens_for(dallinger.db.session, "after_transaction_end")
-def _end_after_commit_transaction(session, transaction):
-    if transaction.nested:
-        counts = session.info.get(_SAVEPOINT_CALLBACK_COUNTS_KEY)
-        if counts:
-            counts.pop()
-    elif transaction.parent is None:
-        # Session.close() ends the root transaction without after_rollback.
-        session.info.pop(_AFTER_COMMIT_CALLBACKS_KEY, None)
+    _after_commit_callbacks.get().append(callback)
 
 
 @event.listens_for(dallinger.db.session, "after_transaction_create")
