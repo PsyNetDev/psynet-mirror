@@ -324,8 +324,11 @@ def is_rater(participant):
         node = CreateAndRateNode.query.filter_by(
             network_id=network.id, degree=network.degree
         ).one()
+        # Count complete rather than finalized creations: finalization waits
+        # for the recording analysis, and counting only finalized creations
+        # would assign too many participants as creators in the meantime.
         n_creations = CreateTrial.query.filter_by(
-            network_id=network.id, node_id=node.id, failed=False, finalized=True
+            network_id=network.id, node_id=node.id, failed=False, complete=True
         ).count()
         if n_creations < N_CREATORS:
             counts["create"] += 1

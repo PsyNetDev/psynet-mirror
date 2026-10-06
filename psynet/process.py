@@ -264,11 +264,6 @@ class AsyncProcess(SQLBase, SQLMixin):
             process.pending = False
             process.finished = True
 
-            from psynet.trial.main import Trial
-
-            if "self" in arguments and isinstance(arguments["self"], Trial):
-                arguments["self"].check_if_can_mark_as_finalized()
-
         except Exception as err:
             if not isinstance(err, experiment.HandledError):
                 experiment.handle_error(err, process=process)
@@ -287,7 +282,24 @@ class AsyncProcess(SQLBase, SQLMixin):
                     process.participant_id,
                     reason="async_process_finished",
                 )
+            trial_id = cls._get_trial_id(process)
             db.session.commit()
+
+        if trial_id is not None:
+            from psynet.trial.main import Trial
+
+            Trial.recheck_finalization(trial_id)
+
+    @staticmethod
+    def _get_trial_id(process):
+        """Return the ID of the trial this process works on, if any."""
+        if process is None:
+            return None
+        if process.trial_id is not None:
+            return process.trial_id
+        if process.asset is not None:
+            return process.asset.trial_id
+        return None
 
     @classmethod
     def preprocess_args(cls, arguments):

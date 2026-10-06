@@ -904,17 +904,21 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         Known blockers (undeposited assets, pending async post-trial) are
         excluded in SQL so the steady-state result is empty.
 
-        We use a two-step query on purpose: lock candidate IDs first with
-        ``FOR UPDATE SKIP LOCKED``, then load full polymorphic ``Trial``
-        objects by those IDs. Loading polymorphic rows in the locked query
-        can introduce ``DISTINCT``, which PostgreSQL rejects with
-        ``FOR UPDATE``. ``skip_locked`` keeps the poller non-blocking when
+        Uses ``FOR UPDATE SKIP LOCKED`` so the poller does not block when
         participant requests or async workers already hold a row lock.
         """
-        # Lock IDs first; polymorphic Trial loads may add DISTINCT, which
-        # PostgreSQL does not allow with FOR UPDATE.
+        return cls._lock_and_load(cls.ready_to_finalize_id_select(), skip_locked=True)
+
+    @classmethod
+    def _lock_and_load(cls, id_select, *, skip_locked=False):
+        """Lock the trial rows selected by ``id_select`` and load fresh trials.
+
+        Locks IDs first, then loads full polymorphic ``Trial`` objects by
+        those IDs: loading polymorphic rows in the locked query can introduce
+        ``DISTINCT``, which PostgreSQL rejects with ``FOR UPDATE``.
+        """
         id_rows = db.session.execute(
-            cls.ready_to_finalize_id_select().with_for_update(of=cls, skip_locked=True)
+            id_select.with_for_update(of=cls, skip_locked=skip_locked)
         ).all()
         trial_ids = [row[0] for row in id_rows]
         if not trial_ids:
@@ -983,6 +987,31 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
                 finalized_count,
             )
         return finalized_count
+
+    @classmethod
+    def recheck_finalization(cls, trial_id):
+        """Lock a trial, reload it, and finalize it if it is now ready.
+
+        Finalize checks inside a transaction read attributes cached when the
+        trial was loaded, so two transactions that each clear one blocker
+        (e.g. the participant response and ``async_post_trial``) can both
+        miss the other's change. Async workers call this after committing so
+        the last committer finalizes the trial without waiting for
+        :meth:`finalize_pending_trials`. Commits on success; on error, rolls
+        back and leaves the trial to the backstop.
+        """
+        try:
+            for trial in cls._lock_and_load(select(cls.id).where(cls.id == trial_id)):
+                trial.check_if_can_mark_as_finalized()
+            db.session.commit()
+        except Exception:
+            logger.warning(
+                "Post-commit finalize re-check failed for trial %s; "
+                "leaving it to the finalize backstop.",
+                trial_id,
+                exc_info=True,
+            )
+            db.session.rollback()
 
     def check_if_can_run_async_post_trial(self):
         msg = f"Checking if we should run async_post_trial for trial {self.id}... "
@@ -1494,7 +1523,8 @@ class TrialMaker(Module):
 
     end_performance_check_waits : bool
         If ``True`` (default), then the final performance check waits until all trials no
-        longer have any pending asynchronous processes.
+        longer have any pending asynchronous processes, and until trials that are ready
+        to finalize have been finalized (so their scores are set).
 
     sync_group_type
         Optional SyncGroup type to use for synchronizing participant allocation to nodes.
@@ -2234,7 +2264,11 @@ class TrialMaker(Module):
                     db.session.query(func.count(Trial.id))
                     .filter(
                         Trial.participant_id == participant.id,
-                        Trial.async_post_trial_pending | Trial.asset_deposit_pending,
+                        Trial.async_post_trial_pending
+                        | Trial.asset_deposit_pending
+                        # Scores are set on finalization, which can lag behind
+                        # the last blocker clearing.
+                        | Trial._ready_to_finalize_condition(),
                     )
                     .scalar()
                 ) > 0
@@ -2649,7 +2683,8 @@ class NetworkTrialMaker(TrialMaker):
 
     end_performance_check_waits : bool
         If ``True`` (default), then the final performance check waits until all trials no
-        longer have any pending asynchronous processes.
+        longer have any pending asynchronous processes, and until trials that are ready
+        to finalize have been finalized (so their scores are set).
 
     performance_threshold : float (default = -1.0)
         Threshold for the built-in performance check chosen by ``performance_check_type``.

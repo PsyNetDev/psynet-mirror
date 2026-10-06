@@ -1946,7 +1946,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
             logger.info("Finished growing networks.")
 
-    @scheduled_task("interval", seconds=5, max_instances=1)
+    @scheduled_task("interval", seconds=0.5, max_instances=1)
     @log_time_taken
     @staticmethod
     @with_transaction
