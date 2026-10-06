@@ -1904,7 +1904,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         if len(networks) > 0:
             logger.info("Growing %i networks...", len(networks))
             for network in networks:
-                exp.run_batch_item(
+                exp._run_batch_item(
                     partial(
                         network.trial_maker.call_grow_network,
                         network,
@@ -5782,35 +5782,47 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         return rendered
 
     @classmethod
-    def run_batch_item(cls, function, *, fail, **error_parents):
+    def _run_batch_item(cls, function, *, fail, **error_parents):
         """Run one item of a poller batch in a savepoint.
 
         Used by pollers that process many candidates in one transaction
         (network growth, finalize backstop). If ``function`` raises, only its
         own changes are rolled back; the error is recorded in the batch's
-        transaction and ``fail()`` marks the item failed. The poller's
-        transaction owner commits the batch as usual. ``function`` must not
-        commit external-call state, because a savepoint cannot make it durable.
+        transaction and ``fail()`` marks the item failed. A lock timeout or
+        deadlock is only logged, so the next poll retries the item. The
+        poller's transaction owner commits the batch as usual.
+
+        ``function`` must not commit, roll back, call :meth:`handle_error`
+        or commit external-call state; commits raise, and a savepoint could
+        not make external-call state durable.
 
         Returns ``function()``'s result, or ``None`` if it raised.
         """
         try:
             with db.session.begin_nested():
-                return function()
+                with forbid_commits("A background poller item"):
+                    return function()
         except Exception as error:
-            if not isinstance(error, cls.HandledError):
-                parents = cls._compile_error_parents(
-                    cls._identify_error_parents(**error_parents)
+            if is_transient_transaction_error(error):
+                logger.warning(
+                    "Poller item %s hit a lock timeout or deadlock; retrying "
+                    "on the next poll.",
+                    error_parents,
+                    exc_info=True,
                 )
-                token, log_line_number = cls._record_error(error, **parents)
-                try:
-                    cls.log_to_notifier(token, log_line_number, **parents)
-                except Exception:
-                    logger.warning(
-                        "Could not send the notification for batch error %s.",
-                        token,
-                        exc_info=True,
-                    )
+                return None
+            parents = cls._compile_error_parents(
+                cls._identify_error_parents(**error_parents)
+            )
+            token, log_line_number = cls._record_error(error, **parents)
+            try:
+                cls.log_to_notifier(token, log_line_number, **parents)
+            except Exception:
+                logger.warning(
+                    "Could not send the notification for batch error %s.",
+                    token,
+                    exc_info=True,
+                )
             fail()
             return None
 

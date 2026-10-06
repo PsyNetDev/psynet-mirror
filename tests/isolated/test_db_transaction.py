@@ -203,6 +203,30 @@ def test_external_call_state_cannot_be_committed_inside_a_savepoint(db_session):
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
+def test_batch_item_that_commits_fails_alone(db_session, monkeypatch):
+    """A poller item's savepoint must not let it commit its half-finished work."""
+    DummyTransactionModel.__table__.create(bind=db_session.get_bind(), checkfirst=True)
+    _skip_error_notifications(monkeypatch)
+    failed = []
+
+    def commits_midway():
+        db.session.add(DummyTransactionModel(id="partial"))
+        db.session.commit()
+
+    with transaction(commit=False):
+        db.session.add(DummyTransactionModel(id="earlier"))
+        Experiment._run_batch_item(commits_midway, fail=lambda: failed.append(True))
+        saved = [model.id for model in DummyTransactionModel.query.all()]
+        messages = [record.message for record in ErrorRecord.query.all()]
+
+    assert saved == ["earlier"]
+    assert failed == [True]
+    assert len(messages) == 1 and "called db.session.commit()" in messages[0]
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
 def test_lucid_rejected_consent_termination_survives_a_later_rollback(db_session):
     """Lucid saves its termination right after the API call."""
     from psynet.end import RejectedConsentLogic

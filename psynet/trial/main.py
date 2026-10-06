@@ -953,7 +953,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         finalized_count = 0
         for trial in trials:
             was_finalized = trial.finalized
-            exp.run_batch_item(
+            exp._run_batch_item(
                 trial.check_if_can_mark_as_finalized,
                 fail=partial(cls._fail_after_finalize_error, trial),
                 trial=trial,

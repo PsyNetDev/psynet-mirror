@@ -214,10 +214,11 @@ def _meaningfully_dirty(session):
 class _CommitGuard:
     """The innermost :func:`forbid_commits` block and the transaction it protects."""
 
-    def __init__(self, operation, root, parent):
+    def __init__(self, operation, root, parent, savepoint):
         self.operation = operation
         self.root = root
         self.parent = parent
+        self.savepoint = savepoint
 
 
 _commit_forbidden_in = ContextVar("psynet_commit_forbidden_in", default=None)
@@ -228,7 +229,10 @@ def _prevent_render_commit(session):
     if _read_only_render_depth.get() > 0:
         raise RuntimeError("Timeline rendering cannot commit database transactions.")
     guard = _commit_forbidden_in.get()
-    if guard is not None and not session.in_nested_transaction():
+    # Only savepoints opened inside the guarded code may be released; in
+    # SQLAlchemy 1.4's legacy mode, commit() inside an enclosing savepoint
+    # would release that one instead.
+    if guard is not None and session.get_nested_transaction() is guard.savepoint:
         raise RuntimeError(_forbidden_commit_message(guard.operation, "commit"))
 
 
@@ -271,7 +275,10 @@ def forbid_commits(operation: str):
     """
     session = dallinger.db.session()
     guard = _CommitGuard(
-        operation, session.get_transaction(), _commit_forbidden_in.get()
+        operation,
+        session.get_transaction(),
+        _commit_forbidden_in.get(),
+        session.get_nested_transaction(),
     )
     token = _commit_forbidden_in.set(guard)
     try:
