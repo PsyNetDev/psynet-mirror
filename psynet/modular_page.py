@@ -798,11 +798,9 @@ class Control(JavaScriptContributor):
             The formatted answer, suitable for serialisation to JSON
             and storage in the database.
         """
-        # pylint: disable=unused-argument
         return raw_answer
 
     def validate(self, response, **kwargs):
-        # pylint: disable=unused-argument
         """
         Takes the :class:`psynet.timeline.Response` object
         created by the page and runs a validation check

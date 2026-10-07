@@ -1,5 +1,3 @@
-# pylint: disable=unused-import,abstract-method,unused-argument,no-member
-
 # This is a version of the Gibbs demo that introduces failing of asynchronous
 # processes on various nodes and trials. It is intended to demonstrate the
 # pruning processes by which PsyNet copes with these failures. Try taking the experiment
@@ -196,7 +194,7 @@ trial_maker = CustomTrialMaker(
     chains_per_participant=None,  # set to None if chain_type="across"
     chains_per_experiment=4,  # set to None if chain_type="within"
     trials_per_node=1,
-    balance_across_chains=True,
+    chain_order="balanced",
     check_performance_at_end=True,
     check_performance_every_trial=False,
     propagate_failure=False,

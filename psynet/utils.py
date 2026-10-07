@@ -6,6 +6,7 @@ import importlib
 import inspect
 import logging
 import os
+import random
 import re
 import sys
 import time
@@ -1049,6 +1050,51 @@ def sample_from_surface_of_unit_sphere(n_dimensions):
     return res[:, 0].tolist()
 
 
+def shuffle_with_max_run(items, key, max_run, max_attempts=100):
+    """Return a shuffled copy of ``items`` with at most ``max_run`` consecutive items sharing a key.
+
+    Useful for planned trial orders, for example
+    ``node_order=lambda nodes: shuffle_with_max_run(nodes, key=lambda n: n.definition["condition"], max_run=2)``.
+    ``key`` must return a hashable value. The order is built item by item,
+    choosing at random among the keys allowed next, weighted by how many
+    items each has left. Raises ``ValueError`` if no order is found within
+    ``max_attempts`` attempts, which in practice means none exists.
+    """
+    if max_run < 1:
+        raise ValueError(f"max_run must be at least 1; got {max_run}.")
+    groups = {}
+    for item in items:
+        groups.setdefault(key(item), []).append(item)
+    n_items = sum(len(group) for group in groups.values())
+    for _ in range(max_attempts):
+        remaining = {k: random.sample(group, len(group)) for k, group in groups.items()}
+        result, last, run = [], None, 0
+        while len(result) < n_items:
+            allowed = [k for k in remaining if not (k == last and run >= max_run)]
+            if not allowed:
+                break
+            # A key with more items than the others can separate must go now.
+            biggest = max(remaining, key=lambda k: len(remaining[k]))
+            others = n_items - len(result) - len(remaining[biggest])
+            if biggest in allowed and len(remaining[biggest]) > others * max_run:
+                choice = biggest
+            else:
+                weights = [len(remaining[k]) for k in allowed]
+                choice = random.choices(allowed, weights)[0]
+            result.append(remaining[choice].pop())
+            if not remaining[choice]:
+                del remaining[choice]
+            run = run + 1 if choice == last else 1
+            last = choice
+        else:
+            return result
+    raise ValueError(
+        f"Could not find an order of {n_items} items with at most {max_run} "
+        f"consecutive items sharing a key after {max_attempts} attempts. "
+        "Allow longer runs or balance the keys more evenly."
+    )
+
+
 def run_subprocess_with_live_output(command, timeout=None, cwd=None):
     _command = command.replace('"', '\\"').replace("'", "\\'")
     p = pexpect.spawn(f'bash -c "{_command}"', timeout=timeout, cwd=cwd)
@@ -1291,7 +1337,8 @@ def is_method_overridden(obj, ancestor: Type, method: str):
 
 
 @contextlib.contextmanager
-def time_logger(label, threshold=0.01):
+def time_logger(label, threshold=0.1):
+    """Log the time taken by the enclosed block if it exceeds ``threshold`` seconds."""
     log = {
         "time_started": time.monotonic(),
         "time_finished": None,
@@ -1336,7 +1383,7 @@ def _excluded_from_ci_experiment_dirs(dir_path: str) -> bool:
     )
 
 
-def list_experiment_dirs(for_ci_tests=False, ci_node_total=None, ci_node_index=None):
+def list_experiment_dirs(for_ci_tests=False):
     """List in-repo experiment directories under :data:`_IN_REPO_EXPERIMENT_ROOTS`.
 
     Skips hidden directories while walking so leftover virtualenvs under a demo
@@ -1356,21 +1403,10 @@ def list_experiment_dirs(for_ci_tests=False, ci_node_total=None, ci_node_index=N
             if for_ci_tests and _excluded_from_ci_experiment_dirs(dir_):
                 continue
             dirs.append(dir_)
-    dirs = sorted(dirs)
-
-    if ci_node_total is not None and ci_node_index is not None:
-        dirs = with_parallel_ci(dirs, ci_node_total, ci_node_index)
-
-    return dirs
+    return sorted(dirs)
 
 
-def with_parallel_ci(paths, ci_node_total, ci_node_index):
-    index = ci_node_index - 1  # 1-indexed to 0-indexed
-    assert 0 <= index < ci_node_total
-    return [paths[i] for i in range(len(paths)) if i % ci_node_total == index]
-
-
-def list_isolated_tests(ci_node_total=None, ci_node_index=None):
+def list_isolated_tests():
     isolated_tests_root = get_psynet_root() / "tests" / "isolated"
     isolated_tests_demos = isolated_tests_root / "demos"
     isolated_tests_experiments = isolated_tests_root / "experiments"
@@ -1388,9 +1424,6 @@ def list_isolated_tests(ci_node_total=None, ci_node_index=None):
         # Only pytest-discoverable modules; shared helper modules live
         # alongside the tests and must not be run as empty test files.
         tests.extend(glob.glob(str(directory / "test_*.py")))
-
-    if ci_node_total is not None and ci_node_index is not None:
-        tests = with_parallel_ci(tests, ci_node_total, ci_node_index)
 
     return tests
 

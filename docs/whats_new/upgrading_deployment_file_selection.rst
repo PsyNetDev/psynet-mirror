@@ -14,11 +14,14 @@ Create and review the policy
 ----------------------------
 
 Run ``psynet setup`` or ``psynet scripts scaffold`` to create the stock
-``deploy.toml`` without overwriting an existing policy. The first debug, test,
-or deployment command after that auto-created file stops before copying files,
-whether the file was created by setup or by the launch command itself.
-The message lists files covered by ``.gitignore`` but not by the new policy.
-Git-ignored files may still be deployed after that one-time review.
+``deploy.toml`` without overwriting an existing policy. If the experiment's
+``.gitignore`` ignores files that the new ``deploy.toml`` does not exclude,
+the next debug, test, or deployment command stops once before copying files
+and lists them, because they would now be deployed. Add any that should not
+be deployed to ``[exclude]`` and rerun. This check only runs if the
+experiment directory has its own ``.gitignore``; if your experiment lives
+inside a larger repository and relied on that repository's ``.gitignore``,
+review the preview below yourself.
 
 Preview the complete deployment plan:
 

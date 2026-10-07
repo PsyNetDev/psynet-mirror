@@ -82,11 +82,44 @@ Choosing the next chain
 
 - ``allow_revisiting_networks_in_across_chains`` (default ``False``) lets
   participants return to a chain they have already contributed to.
-- ``balance_across_chains`` (default ``False``) sends new trials to the chains
-  with fewest responses.
-- ``wait_for_networks`` (default ``False``) makes participants wait when
-  chains exist but are waiting on asynchronous processing, instead of moving
-  on.
+- ``block_order`` and ``chain_order`` set the order of blocks and of chains
+  within a block. They work like ``block_order`` and ``node_order`` in
+  :ref:`trial_order`, except that ``chain_order`` defaults to ``"random"``,
+  ``"balanced"`` favours the shortest chains and then the heads with the
+  fewest trials, and ``"listed"`` follows the order of the start nodes. In
+  within-participant chains, where participants can have different blocks, a
+  ``block_order`` list skips blocks the participant does not have. A
+  ``chain_order`` function takes any of ``participant``, ``experiment``,
+  ``block`` and ``chains``, by name. Each chain is a
+  :class:`~psynet.trial.chain.ChainNetwork` in start-node order; its start
+  node's ``context`` is ``chain.context`` and its current node is
+  ``chain.head``. For example, to run each chain to the end, easiest first
+  (see ``interleave_chains`` below):
+
+  .. code-block:: python
+
+      chain_order=lambda chains: sorted(chains, key=lambda chain: chain.context["difficulty"]),
+      interleave_chains=False,
+
+  With a planned order, the participant takes the planned chains in turn, one
+  trial each, skipping any that are busy, until none can give them another
+  trial. If every remaining planned chain is busy at once, the participant
+  waits with ``wait_for_networks=True``; otherwise the block ends. Create-and-rate trial makers support only ``"balanced"`` and
+  ``"random"``.
+- ``interleave_chains`` (default ``True``; ``False`` for
+  :class:`~psynet.trial.staircase.GeometricStaircaseTrialMaker`). With
+  ``False``, the participant stays on one chain until it can give them no
+  more trials, then moves to the next chain in ``chain_order``. While their
+  chain is busy they wait, and like any wait for a trial this fails them
+  after ``max_time_waiting_for_trial`` seconds (default 60). It needs
+  ``chain_type="within"`` or
+  ``allow_revisiting_networks_in_across_chains=True``.
+- ``wait_for_networks`` (default ``False``) decides what happens when every
+  chain the participant could take in the current block is busy, either
+  waiting on asynchronous processing or on other participants' unfinished
+  trials. With ``True`` the participant waits; with ``False`` they finish
+  the block early and move to the next one, or leave the trial maker after
+  the last block.
 - Participant groups work as in :doc:`/code/writing_a_trial_maker`: set ``participant_group`` on
   the start nodes and pass ``choose_participant_group``.
 - To choose the chain yourself, override
@@ -105,13 +138,16 @@ Chain length and trials per node
 --------------------------------
 
 - ``trials_per_node`` (default ``1``): responses a node needs before the next
-  node is made.
+  node is made. Unlike a static ``target_trials_per_node``, this is a hard
+  limit: once a node's trials, including those in progress, reach it, no
+  other participant is given that node, even if they ask at the same moment.
 - ``max_nodes_per_chain``: the chain is full after this many nodes.
 - ``expected_trials_per_participant`` and ``max_trials_per_participant``: an
   integer, or ``"n_start_nodes"``.
-- ``recruit_mode`` (default ``"n_participants"``, with
-  ``target_n_participants``), or ``"n_trials"`` to recruit until every chain is
-  full.
+- ``recruit_mode``: ``"n_participants"`` with ``target_n_participants``
+  recruits until that many participants finish; ``"n_trials"`` recruits until
+  every chain is full. The default, ``None``, leaves recruitment to the rest
+  of the experiment.
 
 Built-in paradigms
 ------------------

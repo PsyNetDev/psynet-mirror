@@ -206,6 +206,17 @@ def test_no_override_warning_when_values_match(in_experiment_directory, caplog):
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
 )
+def test_missing_title_says_where_to_set_it(in_experiment_directory):
+    exp = get_experiment()
+
+    with get_config().override({"title": ""}):
+        with pytest.raises(RuntimeError, match="Set it in config.txt"):
+            exp.check_config()
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
 def test_experiment_config_reaches_processes_that_change_directory(
     in_experiment_directory, tmp_path, monkeypatch
 ):

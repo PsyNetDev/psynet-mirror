@@ -1,5 +1,3 @@
-# pylint: disable=abstract-method
-
 from typing import TYPE_CHECKING, Type
 
 if TYPE_CHECKING:
@@ -326,7 +324,6 @@ class Elt:
         raise NotImplementedError
 
     def multiply_expected_repetitions(self, factor):
-        # pylint: disable=unused-argument
         if self.expected_repetitions is not None:
             self.expected_repetitions *= factor
 
@@ -486,6 +483,17 @@ class AsyncCodeBlock(EltCollection):
         Only relevant if ``wait=True``; corresponds to the fallback interval
         between checks when no completion wake arrives. Default: 2.0 seconds.
 
+    max_wait_time:
+        Only relevant if ``wait=True``; the participant is failed if the
+        function has not finished after this many seconds. Default: 20.0 seconds.
+
+    on_timeout:
+        Only relevant if ``wait=True``; a function called with
+        ``participant=...`` when the participant's page next checks in after
+        ``max_wait_time``, unless the function has finished or failed by
+        then. The function keeps running in the background. ``on_timeout``
+        must not commit the database session.
+
     content:
         Only relevant if ``wait=True``; overlay message while waiting.
         Markup is allowed. Omit to keep the stock wait copy.
@@ -498,6 +506,8 @@ class AsyncCodeBlock(EltCollection):
         expected_wait: Optional[float] = None,
         check_interval: float = 2.0,
         content: Optional[str] = None,
+        max_wait_time: float = 20.0,
+        on_timeout: Optional[Callable] = None,
     ):
         if is_lambda_function(function):
             raise ValueError(
@@ -520,6 +530,8 @@ class AsyncCodeBlock(EltCollection):
         self.expected_wait = expected_wait
         self.check_interval = check_interval
         self.content = content
+        self.max_wait_time = max_wait_time
+        self.on_timeout = on_timeout
 
     def resolve(self):
         return join(
@@ -598,11 +610,25 @@ class AsyncCodeBlock(EltCollection):
                 condition=lambda participant: not self.process_is_finished(participant),
                 expected_wait=self.expected_wait,
                 check_interval=self.check_interval,
+                max_wait_time=self.max_wait_time,
                 log_message="Waiting for async code block to finish.",
                 content=self.content,
+                on_timeout=None
+                if self.on_timeout is None
+                else self._call_on_timeout_unless_finished,
             ),
             CodeBlock(lambda: logger.info("Finished waiting for async code block.")),
         )
+
+    def _call_on_timeout_unless_finished(self, participant):
+        """Call ``on_timeout`` unless the function finished or failed before the timeout was noticed.
+
+        A failed function has already been reported through ``handle_error``.
+        """
+        process = participant.awaited_async_code_block_process
+        if process is not None and (process.finished or process.failed):
+            return
+        call_function_with_context(self.on_timeout, participant=participant)
 
     def process_is_finished(self, participant):
         process = participant.awaited_async_code_block_process
@@ -696,7 +722,6 @@ class GoTo(Elt):
         self.target = target
 
     def get_target(self, experiment, participant):
-        # pylint: disable=unused-argument
         return self.target
 
     def consume(self, experiment, participant):
@@ -719,7 +744,6 @@ class ReactiveGoTo(GoTo):
         function,  # function taking experiment, participant and returning a key
         targets,  # dict of possible target elements
     ):
-        # pylint: disable=super-init-not-called
         super().__init__(target=None)
         self.function = function
         self.targets = targets
@@ -1904,11 +1928,9 @@ class Page(Elt):
             The formatted answer, suitable for serialisation to JSON
             and storage in the database.
         """
-        # pylint: disable=unused-argument
         return raw_answer
 
     def validate(self, response, **kwargs):
-        # pylint: disable=unused-argument
         """
         Takes the :class:`psynet.timeline.Response` object
         created by the page and runs a validation check

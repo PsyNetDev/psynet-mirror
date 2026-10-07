@@ -5,6 +5,7 @@ import pytest
 from markupsafe import Markup, escape
 
 from psynet.page import WaitPage, wait_while
+from psynet.sync import _BarrierHoldPage
 from psynet.timeline import (
     AsyncCodeBlock,
     StartFixProgress,
@@ -216,6 +217,35 @@ def test_async_code_block_passes_content_to_hold():
     assert hold.content == "Working…"
 
 
+@pytest.mark.parametrize(
+    "finished, failed", [(False, False), (True, False), (False, True)]
+)
+def test_async_code_block_calls_on_timeout_unless_its_function_finished(
+    finished, failed
+):
+    timed_out = []
+    block = AsyncCodeBlock(
+        _async_placeholder,
+        wait=True,
+        expected_wait=1,
+        on_timeout=lambda participant: timed_out.append(participant),
+    )
+    hold = next(
+        elt for elt in block.resolve() if getattr(elt, "is_timeline_hold", False)
+    )
+    participant = SimpleNamespace(
+        failed=True,
+        module_state=None,
+        awaited_async_code_block_process=SimpleNamespace(
+            finished=finished, failed=failed
+        ),
+    )
+
+    hold.apply_timeout(participant)
+
+    assert timed_out == ([] if finished or failed else [participant])
+
+
 def test_hold_overlay_html_matches_markup_and_plain_text():
     plain = next(
         elt
@@ -331,6 +361,24 @@ def test_forced_resume_does_not_evaluate_author_condition():
     assert hold.prepare_resume_if_ready(object(), participant)
 
 
+@pytest.mark.parametrize("in_end_logic", [False, True])
+def test_failed_participant_leaves_holds_only_outside_end_logic(in_end_logic):
+    """Failed participants reach end-logic holds after failing, so those still wait.
+
+    Barriers never release failed participants, so barrier holds let them go anywhere.
+    """
+    hold = ResumeTestHold(can_resume=False, timed_out=False)
+    participant = SimpleNamespace(pending_redirect=None, failed=True)
+    experiment = SimpleNamespace(
+        timeline=SimpleNamespace(participant_is_in_end_logic=lambda p: in_end_logic)
+    )
+
+    assert hold.is_ready_to_resume(experiment, participant) is not in_end_logic
+    assert hold.prepare_resume_if_ready(experiment, participant) is not in_end_logic
+    assert hold.prepared is not in_end_logic
+    assert _BarrierHoldPage.failure_releases_hold(experiment, participant)
+
+
 def test_uncleared_timed_out_hold_applies_timeout():
     hold = ResumeTestHold(can_resume=False, timed_out=True)
     participant = SimpleNamespace(pending_redirect=None, failed=False)
@@ -357,6 +405,7 @@ def test_timed_out_hold_does_not_evaluate_condition():
 def test_hold_timeout_fails_participant_with_hold_tags():
     tags = []
     participant = SimpleNamespace(
+        failed=False,
         append_failure_tags=lambda *values: tags.extend(values),
         fail=lambda: tags.append("failed"),
     )

@@ -21,8 +21,9 @@ Files you edit
 
 ``config.txt``
     Configuration for local runs and deployment (see
-    :doc:`/reference/configuration`). It must exist but may be empty. An
-    existing file is never overwritten. When upgrading an older experiment
+    :doc:`/reference/configuration`). It must exist, and it or
+    ``Experiment.config`` must set ``title``; local runs need nothing else.
+    An existing file is never overwritten. When upgrading an older experiment
     that keeps its settings in ``Experiment.config``, create an empty file
     with ``touch config.txt`` rather than scaffolding the template.
 

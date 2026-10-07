@@ -1,9 +1,11 @@
 import datetime
 import functools
+import hashlib
 import importlib
 import json
 import os
 import re
+import shlex
 import shutil
 import signal
 import subprocess
@@ -13,6 +15,7 @@ import threading
 import zipfile
 from contextlib import contextmanager, nullcontext
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import click
 import click.shell_completion
@@ -28,6 +31,7 @@ from dallinger.command_line.docker_ssh import (
 )
 from dallinger.command_line.utils import verify_id as dallinger_verify_id
 from dallinger.config import experiment_available, get_config
+from dallinger.deployment_plan import DeploymentPolicyError
 from dallinger.heroku.tools import HerokuApp
 from dallinger.recruiters import ProlificRecruiter
 from dallinger.version import __version__ as dallinger_version
@@ -52,9 +56,9 @@ from .data import (
     populate_db_from_zip_file,
 )
 from .experiment_scaffold import (
+    _DEPLOYMENT_POLICY_REVIEW_MARKER,
     _clear_deployment_policy_review_marker,
     _deployment_policy_needs_review,
-    _deployment_policy_review_is_migration,
     _remove_obsolete_generated_docker_scripts,
     _remove_obsolete_generated_dockerignore,
     _without_deployment_policy_review,
@@ -63,6 +67,7 @@ from .experiment_scaffold import (
     get_psynet_requirement,
     is_unambiguous_psynet_requirement,
     missing_scaffold_paths_required_for_local_run,
+    requirement_includes_experiment_extra,
     scaffold_experiment_directory,
 )
 from .log import bold
@@ -91,6 +96,26 @@ from .utils import (
 ensure_runtime()
 
 logger = get_logger()
+
+try:
+    from dallinger.command_line.docker_ssh import option_ingress
+except ImportError:  # pragma: no cover - older Dallinger without Cloudflare ingress
+
+    def option_ingress(func):
+        return func
+
+
+def _use_local_dallinger_option(func):
+    return click.option(
+        "--use-local-dallinger",
+        is_flag=True,
+        default=False,
+        help=(
+            "Bake the locally imported Dallinger source into the experiment "
+            "image instead of the Git pin. Required for canary deploys of "
+            "unreleased docker-ssh features."
+        ),
+    )(func)
 
 
 def verify_id(ctx, param, app):
@@ -783,16 +808,29 @@ def run_prepare_in_subprocess():
     run_subprocess_with_live_output(prepare_cmd)
 
 
-def _prepare_after_stopping_local_workers(ctx, archive):
+def _prepare_after_stopping_local_workers(ctx, archive, update=False):
     """Stop leftover local debug workers, then reset the local database.
 
     Every launch path runs ``prepare`` against this machine's Postgres, so
     leftover ``dallinger_heroku_*`` backends must be gone first. Chrome
     windows are left alone here so a remote deploy does not close the
-    author's browser.
+    author's browser. An ``--update`` prepares only the image.
     """
     kill_psynet_worker_processes()
-    ctx.invoke(prepare, archive=archive)
+    if update:
+        _prepare_image_for_update()
+    else:
+        ctx.invoke(prepare, archive=archive)
+
+
+def _prepare_image_for_update():
+    """Prepare the image for ``--update``; the running app keeps its database."""
+    from .experiment import get_experiment
+
+    redis_vars.clear()
+    get_experiment().pre_deploy(update=True)
+    clean_sys_modules()
+    update_docker_tag()
 
 
 def _stop_leftover_debug_processes():
@@ -1009,7 +1047,10 @@ def _debug_auto_reload(ctx, archive, no_browsers):
 
     develop_module = importlib.import_module("dallinger.command_line.develop")
     launch_job = develop_module.launch_app_and_open_browser
-    debug_kwargs = {"skip_flask": False}
+    port = _local_base_port()
+    # Dallinger's development server runs `flask run`, which reads this variable.
+    os.environ["FLASK_RUN_PORT"] = str(port)
+    debug_kwargs = {"skip_flask": False, "port": port}
     if no_browsers:
         develop_module.launch_app_and_open_browser = launch_app_without_browsers
 
@@ -1140,18 +1181,46 @@ def list_psynet_chrome_processes():
 
 
 def is_psynet_chrome_process(process):
-    """Return whether ``process`` is a Chrome window PsyNet opened for local debugging or tests."""
+    """
+    Return whether ``process`` is a Chrome window this shell's local run opened.
+
+    Matches debug windows pointed at this run's port and test-driver browsers
+    whose profile carries this run's :func:`psynet_browser_prefix`, so cleanup
+    leaves browsers belonging to other local experiments alone.
+    """
+    local_url = re.compile(rf"(localhost|127\.0\.0\.1):{_local_base_port()}(?!\d)")
+    profile_prefix = psynet_browser_prefix("chrome")
     try:
         if "chrome" in process.name().lower():
             for cmd in process.cmdline():
-                if "localhost:5000" in cmd:
+                if local_url.search(cmd):
                     return True
-                if "--user-data-dir=" in cmd and "psynet-chrome-" in cmd:
+                if "--user-data-dir=" in cmd and profile_prefix in cmd:
                     return True
-    except (psutil.NoSuchProcess, psutil.AccessDenied):
+    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
         pass
 
     return False
+
+
+def _local_base_port():
+    """Return the port of this shell's local server (Dallinger's ``base_port``)."""
+    config = get_config()
+    if config.ready:
+        return config.get("base_port")
+    return int(os.environ.get("base_port", 5000))
+
+
+def psynet_browser_prefix(kind):
+    """
+    Return the temporary-file prefix for browsers started by this shell's tests.
+
+    ``kind`` is ``"chrome"`` (profile directory) or ``"chromedriver"`` (log file).
+    The prefix includes a hash of ``DATABASE_URL``, which identifies a local
+    run in the same way as :func:`uses_current_database`.
+    """
+    tag = hashlib.sha1(_current_database_url().encode()).hexdigest()[:8]
+    return f"psynet-{kind}-{tag}-"
 
 
 def _current_database_url():
@@ -1210,10 +1279,11 @@ def list_chromedriver_processes():
 
 
 def is_chromedriver_process(process):
-    """Return whether ``process`` is a chromedriver that PsyNet's test driver started."""
+    """Return whether ``process`` is a chromedriver started by this shell's tests."""
+    prefix = psynet_browser_prefix("chromedriver")
     try:
         return "chromedriver" in process.name().lower() and any(
-            "psynet-chromedriver-" in part for part in process.cmdline()
+            prefix in part for part in process.cmdline()
         )
     except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
         return False
@@ -1276,6 +1346,7 @@ def run_bot(ctx, time_factor=0.0, dashboard_user=None, dashboard_password=None):
 ##############
 def run_pre_checks_deploy(local_, recruiter):
     check_psynet_requirement_is_unambiguous()
+    check_psynet_requirement_includes_experiment_extra()
     check_core_dependency_versions_match_requirements()
 
     if local_ and not isinstance(recruiter, (GenericRecruiter, HotAirRecruiter)):
@@ -1286,8 +1357,19 @@ def run_pre_checks_deploy(local_, recruiter):
         )
 
 
-def _abort_if_app_exists(server, app):
-    if not app:
+def _abort_if_app_exists(server, app, *, update=False):
+    """Refuse to create an app that is already on the server.
+
+    Parameters
+    ----------
+    server : str
+        SSH server name.
+    app : str or None
+        Experiment app name.
+    update : bool
+        When true, an existing app is the one being replaced.
+    """
+    if update or not app:
         return
 
     from dallinger.command_line.docker_ssh import get_apps
@@ -1306,6 +1388,77 @@ def _abort_if_app_exists(server, app):
         raise click.Abort
 
 
+_option_ssh_update = click.option(
+    "--update",
+    is_flag=True,
+    help="Rebuild a running app in place, keeping its database and skipping launch.",
+)
+
+
+_SSH_COMMAND_FOR_MODE = {"sandbox": "psynet debug ssh", "live": "psynet deploy ssh"}
+
+
+def _read_running_deployment_info(server, app):
+    """Return the ``deployment_info`` baked into a running SSH app's image.
+
+    A stopped ``web``, as in a hibernated app, is read from a one-off container.
+    """
+    from dallinger.command_line.docker_ssh import Executor
+
+    server_info = CONFIGURED_HOSTS[server]
+    executor = Executor(server_info["host"], user=server_info.get("user"), app=app)
+    compose = f"docker compose -f ~/dallinger/{app}/docker-compose.yml"
+    path = f"/experiment/{deployment_info.path}"
+    output = executor.run(
+        f"{compose} exec -T web cat {path} 2>/dev/null "
+        f"|| {compose} run --rm --no-deps -T web cat {path}",
+        raise_=False,
+    )
+    text = output or ""
+    return deployment_info.loads(text[text.find("{") : text.rfind("}") + 1])
+
+
+def _check_ssh_update(server, app, mode):
+    """Check and confirm an in-place SSH update, keeping the app's identity.
+
+    Parameters
+    ----------
+    server : str
+        SSH server name.
+    app : str
+        Experiment app name.
+    mode : str
+        ``"sandbox"`` for ``debug ssh`` or ``"live"`` for ``deploy ssh``.
+    """
+    try:
+        running = _read_running_deployment_info(server, app)
+        identity = {key: running[key] for key in ("deployment_id", "secret", "mode")}
+    except Exception as err:
+        raise click.ClickException(
+            f"Could not read the deployment ID and secret of {app} on {server} "
+            f"({err!r}). --update needs them to keep the app's records together."
+        )
+    if identity["mode"] != mode:
+        original = _SSH_COMMAND_FOR_MODE.get(identity["mode"], identity["mode"])
+        raise click.UsageError(
+            f"{app} was created with `{original}`. Update it with "
+            f"`{original} --app {app} --update`."
+        )
+    if not user_confirms(
+        f"This rebuilds and restarts {app} on {server}, keeping its database. "
+        "Participants may see a short interruption. New assets are not deposited, "
+        "and networks and pre-deploy routines are not run again. Don't change the "
+        "timeline while participants are still taking part. Continue?",
+        default=mode != "live",
+    ):
+        raise click.Abort
+    deployment_info.write(
+        deployment_id=identity["deployment_id"],
+        secret=identity["secret"],
+        keep_deployment_id=True,
+    )
+
+
 ##########
 # deploy #
 ##########
@@ -1322,6 +1475,7 @@ def _pre_launch(
     heroku=False,
     server=None,
     app=None,
+    update=False,
 ):
     from .experiment import get_experiment
 
@@ -1358,12 +1512,16 @@ def _pre_launch(
         from dallinger.command_line.docker_ssh import ensure_remote_host_in_known_hosts
 
         ensure_remote_host_in_known_hosts(ssh_host, ssh_user)
-        _abort_if_app_exists(server, app)
+        _abort_if_app_exists(server, app, update=update)
+        if update:
+            _check_ssh_update(server, app, mode)
 
     run_pre_checks(mode, local_, heroku, docker, app)
 
-    # Always use the Dallinger version in requirements.txt, not the local editable one
-    os.environ["DALLINGER_NO_EGG_BUILD"] = "1"
+    if os.environ.get("DALLINGER_SOURCE"):
+        os.environ.pop("DALLINGER_NO_EGG_BUILD", None)
+    else:
+        os.environ["DALLINGER_NO_EGG_BUILD"] = "1"
 
     if is_in_repo_experiment():
         # In-repo demos/tests use PsyNet's shared development .venv; do not let
@@ -1383,7 +1541,7 @@ def _pre_launch(
     if config.get("check_dallinger_version"):
         check_installed_dallinger_version_is_recommended()
 
-    _prepare_after_stopping_local_workers(ctx, archive)
+    _prepare_after_stopping_local_workers(ctx, archive, update=update)
 
     _forget_tables_defined_in_experiment_directory()
 
@@ -1504,15 +1662,26 @@ def _deploy__docker_heroku(ctx, app, archive):
     "--dns-host",
     help="DNS name to use. Must resolve all its subdomains to the IP address specified as ssh host",
 )
+@option_ingress
+@_use_local_dallinger_option
+@_option_ssh_update
 @click.pass_context
-def deploy__docker_ssh(ctx, app, archive, dns_host, server):
+def deploy__docker_ssh(
+    ctx,
+    app,
+    archive,
+    dns_host,
+    server,
+    ingress=None,
+    use_local_dallinger=False,
+    update=False,
+):
     """
     Deploy the experiment to a remote server via Docker and SSH.
     """
     try:
-        # Ensures that the experiment is deployed with the Dallinger version specified in requirements.txt,
-        # irrespective of whether a different version is installed locally.
-        os.environ["DALLINGER_NO_EGG_BUILD"] = "1"
+        _validate_ssh_deploy_update(app, archive, update)
+        _configure_dallinger_image_source(use_local_dallinger=use_local_dallinger)
 
         _pre_launch(
             ctx,
@@ -1523,6 +1692,7 @@ def deploy__docker_ssh(ctx, app, archive, dns_host, server):
             docker=True,
             server=server,
             app=app,
+            update=update,
         )
 
         from dallinger.command_line.docker_ssh import (
@@ -1530,21 +1700,88 @@ def deploy__docker_ssh(ctx, app, archive, dns_host, server):
         )
 
         # Note: PsyNet bypasses Dallinger's deploy-from-archive system and uses its own, so we set archive_path=None.
-        # Explicitly pass update=False to avoid Click converting the default to the string 'False'
-        result = ctx.invoke(
+        # Pass a real bool. Click stringifies an omitted default as 'False'.
+        result = _invoke_docker_ssh_deploy(
+            ctx,
             dallinger_docker_ssh_deploy,
             server=server,
             dns_host=dns_host,
-            app_name=app,
-            config_options={},
-            archive_path=None,
-            update=False,
+            app=app,
+            ingress=ingress,
+            update=update,
         )
 
         _post_deploy(result)
     finally:
         _cleanup_exp_directory()
         reset_console()
+
+
+def _validate_ssh_deploy_update(app, archive, update):
+    """Reject an in-place SSH update that cannot keep an existing app."""
+    if not update:
+        return
+    if not app:
+        raise click.UsageError("Updating an SSH app requires --app.")
+    if archive is not None:
+        raise click.UsageError("--archive and --update cannot be used together.")
+
+
+def _invoke_docker_ssh_deploy(
+    ctx, command, *, server, dns_host, app, ingress=None, update=False
+):
+    """Invoke Dallinger docker-ssh deploy/sandbox, forwarding ingress when supported."""
+    kwargs = {
+        "server": server,
+        "dns_host": dns_host,
+        "app_name": app,
+        "config_options": {},
+        "archive_path": None,
+        "update": bool(update),
+    }
+    params = getattr(command, "params", ())
+    if any(getattr(param, "name", None) == "ingress" for param in params):
+        kwargs["ingress"] = ingress
+    return ctx.invoke(command, **kwargs)
+
+
+def _configure_dallinger_image_source(use_local_dallinger=False):
+    """Choose the Dallinger tree that docker-ssh bakes into the experiment image."""
+    if not use_local_dallinger:
+        os.environ["DALLINGER_NO_EGG_BUILD"] = "1"
+        # Dallinger bakes DALLINGER_SOURCE whenever it is set.
+        if os.environ.pop("DALLINGER_SOURCE", None):
+            click.echo(
+                "Ignoring DALLINGER_SOURCE; pass --use-local-dallinger to bake it."
+            )
+        return
+    os.environ.pop("DALLINGER_NO_EGG_BUILD", None)
+    source = os.environ.get("DALLINGER_SOURCE", "").strip()
+    if not source:
+        from dallinger.utils import get_editable_dallinger_path
+
+        source = get_editable_dallinger_path() or ""
+    if not source:
+        import dallinger as dallinger_pkg
+
+        root = Path(dallinger_pkg.__file__).resolve().parent.parent
+        if (root / "pyproject.toml").is_file():
+            source = str(root)
+    if not source:
+        raise click.UsageError(
+            "--use-local-dallinger needs an editable Dallinger checkout or DALLINGER_SOURCE."
+        )
+    os.environ["DALLINGER_SOURCE"] = source
+    click.echo(f"Baking local Dallinger from {source} into the experiment image.")
+
+
+def _awaken_ssh_app(server, app):
+    """Wake a sleeping docker-ssh app before export or other database access."""
+    try:
+        from dallinger.command_line.docker_ssh import awaken_app
+    except ImportError:
+        return
+    awaken_app(server, app, required=False)
 
 
 def _post_deploy(result):
@@ -1643,12 +1880,12 @@ def _check_experiment_directory(mode, *, require_git_commit=False):
 
     In-repo experiments are auto-scaffolded first so their missing-boilerplate
     check does not falsely fail. A missing ``deploy.toml`` is created from the
-    PsyNet template and never overwritten. Auto-created policies leave a local
-    review marker so the next debug, test, or deploy command stops once when
-    setup or scaffold wrote the file on an author machine; that pause runs
-    after the Git checks so the message can list Git-ignored selected files.
-    Temporary pytest scaffolds and in-repo auto-prepare skip the pause so first
-    launch can run. Remote deployments additionally
+    PsyNet template and never overwritten. When that file replaces an existing
+    experiment's ``.gitignore``-based selection, a local review marker makes
+    the next debug, test, or deploy command check once, after the Git checks,
+    whether ``.gitignore`` ignores files that deploy.toml does not exclude; it
+    stops and lists them only if there are any. New experiments, temporary
+    pytest scaffolds and in-repo auto-prepare skip the check. Remote deployments additionally
     require a Git commit for provenance; local debug and test runs may use a
     repository with no commits. Leftover generated ``.dockerignore`` files and
     ``docker/`` helper scripts are removed (custom copies are preserved with a
@@ -1701,50 +1938,44 @@ def _check_experiment_directory(mode, *, require_git_commit=False):
         )
 
     # Runs after the Git checks so 'git check-ignore' can report which
-    # deployment-selected files the old .gitignore used to keep local.
+    # deployment-selected files the old .gitignore ignores.
     if _deployment_policy_needs_review():
-        migrating = _deployment_policy_review_is_migration()
-        ignored_paths = deployment_info._git_ignored_deployment_paths()
-        ignored_summary = ""
+        # Unexpected errors, such as a malformed deploy.toml, keep the marker
+        # so that the check runs again once they are fixed.
+        try:
+            ignored_paths = deployment_info._git_ignored_deployment_paths(
+                extra_excludes_file=_DEPLOYMENT_POLICY_REVIEW_MARKER
+            )
+        except DeploymentPolicyError as error:
+            raise click.ClickException(f"deploy.toml is invalid: {error}") from error
+        _clear_deployment_policy_review_marker()
+        intro = (
+            "PsyNet now uses deploy.toml instead of .gitignore to choose "
+            "which files are deployed, and created one for this experiment."
+        )
+        advice = (
+            "Add any that should not be deployed (credentials, private data, "
+            "large or generated files) to [exclude] in deploy.toml, then "
+            "rerun this command. This check runs only once; "
+            "'dallinger deployment-files list' shows the full selection."
+        )
+        if ignored_paths is None:
+            raise click.ClickException(
+                f"{intro} PsyNet could not check whether your .gitignore "
+                "ignores files that deploy.toml does not exclude, so review "
+                "the selection with "
+                f"'dallinger deployment-files list'.\n\n{advice}"
+            )
         if ignored_paths:
             preview_limit = 10
             preview = "\n".join(f"  {path}" for path in ignored_paths[:preview_limit])
             remaining = len(ignored_paths) - preview_limit
             if remaining > 0:
                 preview += f"\n  ... and {remaining} more"
-            if migrating:
-                intro = (
-                    "Your existing .gitignore covered the following files, but "
-                    "your new deploy.toml does not:"
-                )
-            else:
-                intro = (
-                    "Your .gitignore covers the following files, but deploy.toml "
-                    "does not exclude them:"
-                )
-            ignored_summary = f"\n\n{intro}\n{preview}"
-        if migrating:
-            intro = (
-                "PsyNet now requires experiments to provide a deploy.toml file to "
-                "specify which files to include in the deployed experiment. "
-                "Previously .gitignore was used for this purpose.\n\nPsyNet "
-                "created a new deploy.toml file for this experiment."
+            raise click.ClickException(
+                f"{intro} Your .gitignore ignores these files, but deploy.toml "
+                f"does not exclude them, so they would be deployed:\n{preview}\n\n{advice}"
             )
-        else:
-            intro = (
-                "PsyNet created a deploy.toml file for this experiment. It "
-                "specifies which files are included when the experiment is deployed."
-            )
-        _clear_deployment_policy_review_marker()
-        raise click.ClickException(
-            f"{intro}{ignored_summary}\n\nBefore continuing:\n"
-            "  1. Run 'dallinger deployment-files list'. This only prints the files "
-            "that PsyNet would copy; it does not start or deploy the experiment.\n"
-            "  2. Check the list for credentials, private data, large files, and "
-            "generated files that should stay local.\n"
-            "  3. Add anything that should stay local to [exclude] in deploy.toml.\n"
-            "  4. Rerun this command."
-        )
     if require_git_commit:
         from .light_utils import git_commit_available
 
@@ -1874,6 +2105,7 @@ def _check_constraints_before_remote_deploy():
 
 def run_pre_checks_sandbox():
     check_psynet_requirement_is_unambiguous()
+    check_psynet_requirement_includes_experiment_extra()
     check_core_dependency_versions_match_requirements()
 
 
@@ -1934,15 +2166,28 @@ def debug__docker_heroku(ctx, app, archive):
     "--dns-host",
     help="DNS name to use. Must resolve all its subdomains to the IP address specified as ssh host",
 )
+@option_ingress
+@_use_local_dallinger_option
+@_option_ssh_update
 @click.pass_context
-def debug__docker_ssh(ctx, app, archive, server, dns_host):
+def debug__docker_ssh(
+    ctx,
+    app,
+    archive,
+    server,
+    dns_host,
+    ingress=None,
+    use_local_dallinger=False,
+    update=False,
+):
     """
     Debug the experiment on a remote server via SSH.
     """
     try:
         from dallinger.command_line.docker_ssh import sandbox
 
-        os.environ["DALLINGER_NO_EGG_BUILD"] = "1"
+        _validate_ssh_deploy_update(app, archive, update)
+        _configure_dallinger_image_source(use_local_dallinger=use_local_dallinger)
 
         _pre_launch(
             ctx,
@@ -1953,18 +2198,18 @@ def debug__docker_ssh(ctx, app, archive, server, dns_host):
             docker=True,
             server=server,
             app=app,
+            update=update,
         )
 
         # Note: PsyNet bypasses Dallinger's deploy-from-archive system and uses its own, so we set archive_path=None.
-        # Explicitly pass update=False to avoid Click converting the default to the string 'False'
-        result = ctx.invoke(
+        result = _invoke_docker_ssh_deploy(
+            ctx,
             sandbox,
             server=server,
             dns_host=dns_host,
-            app_name=app,
-            config_options={},
-            archive_path=None,
-            update=False,
+            app=app,
+            ingress=ingress,
+            update=update,
         )
 
         _post_deploy(result)
@@ -2508,6 +2753,75 @@ def check_psynet_requirement_is_unambiguous():
             raise ValueError(_ambiguous_psynet_requirement_message(requirement))
 
 
+def check_psynet_requirement_includes_experiment_extra():
+    """Require the PsyNet pin to install the experiment runtime.
+
+    A pin of plain ``psynet`` installs only the command-line tools. The
+    deployment image then has no Dallinger, and the clock process fails to
+    start. A missing pin is left to
+    :func:`check_psynet_requirement_is_unambiguous`, which runs first.
+
+    Raises
+    ------
+    ValueError
+        If the PsyNet requirement omits the ``[experiment]`` extra.
+    """
+    environment_variable = "SKIP_CHECK_PSYNET_EXPERIMENT_EXTRA"
+    if os.environ.get(environment_variable):
+        print(
+            "Skipping the PsyNet [experiment] extra check because "
+            f"{environment_variable} was non-empty."
+        )
+        return
+
+    with yaspin(
+        text="Verifying that requirements.txt installs psynet[experiment]...",
+        color="green",
+    ) as spinner:
+        requirement = get_psynet_requirement()
+        if requirement is None or requirement_includes_experiment_extra(requirement):
+            spinner.ok("✔")
+            return
+        spinner.color = "red"
+        spinner.fail("✗")
+
+    suggested = _requirement_with_experiment_extra(requirement)
+    raise ValueError(
+        "The PsyNet requirement in requirements.txt must include the "
+        "[experiment] extra.\n\n"
+        "Without it, the deployment installs only the PsyNet command-line "
+        "tools. The experiment image then has no Dallinger, and the clock "
+        "process fails to start.\n\n"
+        f"Your current requirements.txt entry is:\n  {requirement}\n\n"
+        f"Change it to:\n  {suggested}\n\n"
+        "You can skip this check by writing "
+        f"`export {environment_variable}=1` (without quotes) in your terminal."
+    )
+
+
+def _requirement_with_experiment_extra(requirement: str) -> str:
+    """Return ``requirement`` with ``experiment`` added to its PsyNet extras.
+
+    Existing extras are kept. Extras are joined without spaces because
+    ``#egg=`` fragments do not allow whitespace.
+    """
+
+    def add_extra(match):
+        extras = [
+            extra.strip()
+            for extra in (match.group(2) or "").split(",")
+            if extra.strip()
+        ]
+        return f"{match.group(1)}psynet[{','.join([*extras, 'experiment'])}]"
+
+    return re.sub(
+        r"(?i)(^\s*|#egg=)psynet(?:\[([^]]*)\])?",
+        add_extra,
+        requirement,
+        count=1,
+    )
+
+
 def _is_local_psynet_requirement(requirement: str) -> bool:
     """Return whether a PsyNet requirement points at a local filesystem path."""
     compact = requirement.lower().replace(" ", "")
@@ -2521,11 +2835,11 @@ def _ambiguous_psynet_requirement_message(requirement: str | None) -> str:
         "specify a particular version or a commit hash."
     )
     examples = [
-        "* psynet==10.1.1",
-        "* psynet@git+https://gitlab.com/PsyNetDev/PsyNet@v10.1.1#egg=psynet",
-        "* psynet@git+https://gitlab.com/PsyNetDev/PsyNet@45f317688af59350f9a6f3052fd73076318f2775#egg=psynet",
-        "* psynet@git+https://gitlab.com/alice/PsyNet@45f317688af59350f9a6f3052fd73076318f2775#egg=psynet",
-        "* psynet@git+https://gitlab.com/PsyNetDev/PsyNet@45f31768#egg=psynet",
+        "* psynet[experiment]==10.1.1",
+        "* psynet[experiment]@git+https://gitlab.com/PsyNetDev/PsyNet@v10.1.1#egg=psynet",
+        "* psynet[experiment]@git+https://gitlab.com/PsyNetDev/PsyNet@45f317688af59350f9a6f3052fd73076318f2775#egg=psynet",
+        "* psynet[experiment]@git+https://gitlab.com/alice/PsyNet@45f317688af59350f9a6f3052fd73076318f2775#egg=psynet",
+        "* psynet[experiment]@git+https://gitlab.com/PsyNetDev/PsyNet@45f31768#egg=psynet",
     ]
 
     parts = [
@@ -2736,6 +3050,7 @@ def export__docker_ssh(ctx, app, server, **kwargs):
     Export the experiment from a remote server via Docker and SSH.
     """
     app = _resolve_ssh_app(ctx, app, server)
+    _awaken_ssh_app(server, app)
     export_(
         ctx,
         get_exp_variables=lambda: _read_experiment_variables(
@@ -2883,6 +3198,101 @@ def _build_local_export(export_path, assets):
     build_export_tree(export_path, assets=assets, local=True)
 
 
+def _normalize_public_origin(value):
+    """Return an origin with no path, query, or fragment.
+
+    Parameters
+    ----------
+    value : str or None
+        Candidate public origin.
+
+    Returns
+    -------
+    str or None
+        The origin, or ``None`` when ``value`` is not an HTTP(S) origin.
+    """
+    if not isinstance(value, str):
+        return None
+    parsed = urlsplit(value.strip())
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return None
+    if parsed.path not in {"", "/"} or parsed.query or parsed.fragment:
+        return None
+    return f"{parsed.scheme}://{parsed.netloc}"
+
+
+def _latest_launch_record(app, server):
+    """Return the newest local launch note for this app on this server."""
+    root = Path("~/psynet-data/launch-data").expanduser()
+    if not root.is_dir():
+        return None
+    chosen = None
+    chosen_mtime = -1
+    for path in root.glob("*/launch-info.json"):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            mtime = path.stat().st_mtime
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            continue
+        if payload.get("app") != app or payload.get("server") != server:
+            continue
+        if mtime >= chosen_mtime:
+            chosen = payload
+            chosen_mtime = mtime
+    return chosen
+
+
+def _remote_public_origin(app, server):
+    """Read ``public_origin`` from the server's deployment manifest."""
+    if not isinstance(app, str) or not re.fullmatch(
+        r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", app
+    ):
+        return None
+    from dallinger.command_line.docker_ssh import ExecuteException
+
+    from .export.client import SshSession
+
+    command = f'cat "$HOME/dallinger/{shlex.quote(app)}/deployment.json"'
+    try:
+        with SshSession(server) as session:
+            raw = session.executor.run(command, raise_=False)
+    except (ExecuteException, OSError, KeyError) as exc:
+        log(f"Could not read the remote deployment manifest: {exc}")
+        return None
+    try:
+        payload = json.loads(raw or "")
+    except json.JSONDecodeError:
+        return None
+    return _normalize_public_origin(payload.get("public_origin"))
+
+
+def _ssh_dashboard_endpoint(app, server, config):
+    """Dashboard address and credentials for an SSH deployment.
+
+    Cloudflare apps are not served at ``https://<app>.<ssh-host>``. The
+    deploy records the public origin locally; the server manifest is the
+    fallback when that note is missing.
+    """
+    from .export.client import DashboardEndpoint
+
+    record = _latest_launch_record(app, server)
+    origin = None
+    user = config.get("dashboard_user")
+    password = config.get("dashboard_password")
+    if record:
+        origin = _normalize_public_origin(record.get("public_origin"))
+        record_user = record.get("dashboard_user")
+        record_password = record.get("dashboard_password")
+        if record_user and record_password:
+            user = record_user
+            password = record_password
+    if origin is None:
+        origin = _remote_public_origin(app, server)
+    if origin is None:
+        origin = get_experiment_url(app, server)
+    return DashboardEndpoint(base_url=origin, auth=(user, password))
+
+
 def _fetch_remote_export(
     experiment_class,
     export_path,
@@ -2920,10 +3330,13 @@ def _fetch_remote_export(
         local_project_identity,
     )
 
-    endpoint = DashboardEndpoint(
-        base_url=get_experiment_url(app, server),
-        auth=(config.get("dashboard_user"), config.get("dashboard_password")),
-    )
+    if docker_ssh and server:
+        endpoint = _ssh_dashboard_endpoint(app, server, config)
+    else:
+        endpoint = DashboardEndpoint(
+            base_url=get_experiment_url(app, server),
+            auth=(config.get("dashboard_user"), config.get("dashboard_password")),
+        )
     local_identity = local_project_identity(experiment_class)
 
     def check_identity(remote):
@@ -3330,6 +3743,55 @@ def _destroy(
                 raise
         return True
     return False
+
+
+@psynet.group("hibernate")
+def hibernate():
+    """
+    Hibernate a deployed experiment.
+    """
+    pass
+
+
+@hibernate.command("ssh")
+@click.option("--app", required=True, callback=verify_id, help="Experiment id")
+@option_server
+@click.pass_context
+def hibernate__ssh(ctx, app, server):
+    """
+    Hibernate the experiment on a remote server via SSH.
+    """
+    ctx.invoke(_dallinger_hibernation_command("hibernate"), server=server, app=app)
+
+
+@psynet.group("awaken")
+def awaken():
+    """
+    Awaken a hibernated experiment.
+    """
+    pass
+
+
+@awaken.command("ssh")
+@click.option("--app", required=True, callback=verify_id, help="Experiment id")
+@option_server
+@click.pass_context
+def awaken__ssh(ctx, app, server):
+    """
+    Awaken the experiment on a remote server via SSH.
+    """
+    ctx.invoke(_dallinger_hibernation_command("awaken"), server=server, app=app)
+
+
+def _dallinger_hibernation_command(name):
+    """Return Dallinger's docker-ssh ``hibernate`` or ``awaken`` command."""
+    docker_ssh = importlib.import_module("dallinger.command_line.docker_ssh")
+    command = getattr(docker_ssh, name, None)
+    if command is None:
+        raise click.UsageError(
+            "The installed Dallinger does not support docker-ssh hibernation."
+        )
+    return command
 
 
 @destroy.command("ssh")
@@ -4072,6 +4534,7 @@ def _start_local_server_and_wait_for_ready(
     debug=False,
     max_wait=60,
     ready_phrase="Experiment launch complete!",
+    extra_env=None,
 ):
     """Spawn ``psynet <command_args>`` and wait for launch completion.
 
@@ -4081,6 +4544,8 @@ def _start_local_server_and_wait_for_ready(
         Arguments passed to the ``psynet`` executable, for example
         ``["debug", "local", "--legacy", "--no-browsers"]`` or
         ``["debug", "local"]``.
+    extra_env : dict[str, str], optional
+        Environment variables to set for the server process.
     """
     print("▶ Starting experiment server...")
 
@@ -4096,6 +4561,7 @@ def _start_local_server_and_wait_for_ready(
     env = os.environ.copy()
     env.setdefault("SKIP_DEPENDENCY_CHECK", "1")
     env.setdefault("BROWSER", "true")
+    env.update(extra_env or {})
 
     try:
         process = pexpect.spawn(
@@ -4242,6 +4708,7 @@ def _run_performance_test_with_new_server(
     server_info = _start_local_server_and_wait_for_ready(
         ["debug", "local", "--legacy", "--no-browsers"],
         debug=debug,
+        extra_env={"PSYNET_PERFORMANCE_TEST": "1"},
     )
 
     try:
@@ -4332,32 +4799,21 @@ def _build_ssh_performance_test_cmd(n_bots, stagger, time_factor, duration_minut
 
 @psynet.command(name="list-experiment-dirs")
 @click.option("--for-ci-tests", is_flag=True)
-@click.option("--ci-node-total", default=None, type=int)
-@click.option("--ci-node-index", default=None, type=int)
-def _list_experiment_dirs(for_ci_tests=False, ci_node_total=None, ci_node_index=None):
+def _list_experiment_dirs(for_ci_tests=False):
     """
     Lists the directories of all the experiments that are available under the 'demos' directory,
     plus those inside the 'tests/experiments' directory.
     """
-    for directory in list_experiment_dirs(
-        for_ci_tests=for_ci_tests,
-        ci_node_total=ci_node_total,
-        ci_node_index=ci_node_index,
-    ):
+    for directory in list_experiment_dirs(for_ci_tests=for_ci_tests):
         print(directory)
 
 
 @psynet.command(name="list-isolated-tests")
-@click.option("--ci-node-total", default=None, type=int)
-@click.option("--ci-node-index", default=None, type=int)
-def _list_isolated_tests(ci_node_total=None, ci_node_index=None):
+def _list_isolated_tests():
     """
     Lists the directories of all the demo experiments that are available.
     """
-    for test_ in list_isolated_tests(
-        ci_node_total=ci_node_total,
-        ci_node_index=ci_node_index,
-    ):
+    for test_ in list_isolated_tests():
         print(test_)
 
 

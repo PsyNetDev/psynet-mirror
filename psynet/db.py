@@ -1,3 +1,30 @@
+"""Database sessions, transactions and who may commit them.
+
+PsyNet runs each unit of work (an HTTP request, a scheduled task, a worker
+job, a CLI command, a deploy step) in one transaction that the code starting
+that unit commits. That code is the transaction's owner: route decorators
+such as ``with_transaction``, :func:`transaction`, scheduled-task wrappers,
+worker entry points and CLI commands. Everything they call, framework helpers
+included, leaves committing to the owner, and uses ``db.session.flush()`` when
+it needs database-generated values. Timeline steps enforce this with
+:func:`forbid_commits`.
+
+A helper may commit early to keep local records consistent with an external
+call that cannot be undone or should not be repeated, such as a payment, a
+panel provider's API or a rate-limited request. It must do so through
+:func:`_commit_external_call_state`, which keeps the exceptions easy to find
+and refuses to run inside timeline steps, whose work the commit would save
+half-finished, inside savepoints and during rendering; such calls belong in
+an ``AsyncCodeBlock``. The other exceptions are ``Experiment.handle_error``,
+which rolls back the failed work and commits the error record in its place,
+and recruiter hooks that some Dallinger callers (the clock, ``/participant``
+and ``/load-participant``) run without committing.
+``tests/isolated/test_commit_sites.py`` lists every function in the package
+that calls ``.commit()`` directly, with its reason; adding one means adding it
+there.
+"""
+
+import copy
 import logging
 import threading
 from contextlib import contextmanager
@@ -173,6 +200,11 @@ _transaction_depth = ContextVar("psynet_transaction_depth", default=0)
 _read_only_render_depth = ContextVar("psynet_read_only_render_depth", default=0)
 
 
+def _in_read_only_render():
+    """True inside :func:`read_only_transaction`, where ORM writes raise."""
+    return _read_only_render_depth.get() > 0
+
+
 def _meaningfully_dirty(session):
     return [
         obj
@@ -184,10 +216,15 @@ def _meaningfully_dirty(session):
 class _CommitGuard:
     """The innermost :func:`forbid_commits` block and the transaction it protects."""
 
-    def __init__(self, operation, root, parent):
+    def __init__(self, operation, root, parent, savepoint):
         self.operation = operation
         self.root = root
         self.parent = parent
+        self.savepoint = savepoint
+
+    def savepoint_closed(self):
+        """Return whether guarded code ended the savepoint the guard started in."""
+        return self.savepoint is not None and not self.savepoint.is_active
 
 
 _commit_forbidden_in = ContextVar("psynet_commit_forbidden_in", default=None)
@@ -198,7 +235,13 @@ def _prevent_render_commit(session):
     if _read_only_render_depth.get() > 0:
         raise RuntimeError("Timeline rendering cannot commit database transactions.")
     guard = _commit_forbidden_in.get()
-    if guard is not None and not session.in_nested_transaction():
+    # Only savepoints opened inside the guarded code may be released; in
+    # SQLAlchemy 1.4's legacy mode, commit() inside an enclosing savepoint
+    # would release that one instead, and after a rollback() of that
+    # savepoint it would commit the outer transaction.
+    if guard is not None and (
+        session.get_nested_transaction() is guard.savepoint or guard.savepoint_closed()
+    ):
         raise RuntimeError(_forbidden_commit_message(guard.operation, "commit"))
 
 
@@ -241,44 +284,221 @@ def forbid_commits(operation: str):
     """
     session = dallinger.db.session()
     guard = _CommitGuard(
-        operation, session.get_transaction(), _commit_forbidden_in.get()
+        operation,
+        session.get_transaction(),
+        _commit_forbidden_in.get(),
+        session.get_nested_transaction(),
     )
     token = _commit_forbidden_in.set(guard)
     try:
         yield
     finally:
         _commit_forbidden_in.reset(token)
-    if guard.root is not None and session.get_transaction() is not guard.root:
+    if guard.savepoint_closed() or (
+        guard.root is not None and session.get_transaction() is not guard.root
+    ):
         raise RuntimeError(_forbidden_commit_message(operation, "rollback"))
 
 
-@contextmanager
-def _allow_framework_commits():
-    """Let PsyNet's own code commit inside a :func:`forbid_commits` block.
+def _commit_external_call_state():
+    """Commit now so local records match an external call that cannot be repeated.
 
-    Only for framework commits that must happen before an external side
-    effect, such as saving payment state before posting it to a recruiter, or
-    that must survive a failing request, such as error records. Experiment
-    code should never use this.
+    Use it just before an external call, so a crash after the call cannot
+    lose the state the call reports, or just after it, so a later failure in
+    the same unit of work cannot lose the record that the call happened. The
+    commit saves the whole unit of work so far, so only code whose
+    transaction's owner expects it may make such calls: routes, worker jobs
+    (including ``AsyncCodeBlock``), scheduled tasks and CLI commands.
+
+    It raises where :func:`_check_external_call_allowed` does; call that
+    first when the commit comes after the call.
     """
+    _check_external_call_allowed()
+    dallinger.db.session.commit()
+
+
+def _check_external_call_allowed():
+    """Raise unless :func:`_commit_external_call_state` may commit here.
+
+    Inside :func:`forbid_commits` the commit would save a timeline step's
+    half-finished changes, and inside a savepoint ``commit()`` would only
+    release the savepoint, so a later rollback would still lose the record.
+    Call it before an external call whose result is committed afterwards, so
+    the call is never made without its record. Payment and panel entry
+    points call it first, so a misplaced call fails even when nothing would
+    be sent.
+    """
+    if _in_read_only_render():
+        raise RuntimeError(
+            "Timeline rendering cannot make external calls; make them from an "
+            "AsyncCodeBlock."
+        )
     guard = _commit_forbidden_in.get()
-    token = _commit_forbidden_in.set(None)
-    try:
-        yield
-    finally:
-        _commit_forbidden_in.reset(token)
-        root = dallinger.db.session().get_transaction()
-        while guard is not None:
-            guard.root = root
-            guard = guard.parent
+    if guard is not None:
+        raise RuntimeError(
+            f"{guard.operation} tried to make an external call, such as a "
+            "payment or a recruitment-platform request, that must commit the "
+            "database. "
+            "PsyNet commits this code's changes only once it has finished, so "
+            "committing here would save half-finished changes.\n"
+            "Make the call from an AsyncCodeBlock instead (or, outside the "
+            "timeline, a WorkerAsyncProcess), which runs in its own "
+            "transaction after this one commits."
+        )
+    if dallinger.db.session().in_nested_transaction():
+        raise RuntimeError(
+            "Payment and recruitment-platform calls cannot run inside a "
+            "savepoint (db.session.begin_nested()); make the call outside it."
+        )
+
+
+_SAVEPOINT_SNAPSHOTS_KEY = "psynet_session_queue_savepoint_snapshots"
+_session_queues = []
+
+
+class _SessionQueue:
+    """Per-session work queued during a transaction for use once it commits.
+
+    A savepoint rollback restores the queue to what it held when the
+    savepoint began, and a root rollback empties it. With ``on_commit``, the
+    root commit takes the queue and passes it to ``on_commit``, which runs
+    inside SQLAlchemy's ``after_commit`` event and so must not use the
+    database; closing the session also empties such a queue. Without
+    ``on_commit``, the queue survives the commit until the caller takes it.
+    Each session has its own queue, so another session's commit or rollback
+    cannot affect it.
+    """
+
+    def __init__(self, name, factory, on_commit=None):
+        self.key = f"psynet_{name}"
+        self.factory = factory
+        self.on_commit = on_commit
+        _session_queues.append(self)
+
+    def get(self):
+        """Return the current session's queue for adding to, creating it if needed.
+
+        With ``on_commit``, begins a transaction if none is open, so the
+        additions wait for a commit rather than for whichever transaction
+        happens to come next.
+        """
+        session = dallinger.db.session()
+        if self.on_commit is not None and session.get_transaction() is None:
+            session.begin()
+        value = session.info.get(self.key)
+        if value is None:
+            value = session.info[self.key] = self.factory()
+        return value
+
+    def peek(self):
+        """Return a copy of the current session's queue, leaving it in place."""
+        value = dallinger.db.session().info.get(self.key)
+        return self.factory() if value is None else copy.copy(value)
+
+    def take(self):
+        """Remove and return the current session's queue."""
+        value = dallinger.db.session().info.pop(self.key, None)
+        return self.factory() if value is None else value
+
+    def replace(self, value):
+        """Set the current session's queue to ``value``."""
+        info = dallinger.db.session().info
+        if value:
+            info[self.key] = value
+        else:
+            info.pop(self.key, None)
+
+
+@event.listens_for(dallinger.db.session, "after_transaction_create")
+def _snapshot_session_queues(session, transaction):
+    if transaction.nested:
+        snapshot = {
+            queue.key: copy.copy(session.info[queue.key])
+            for queue in _session_queues
+            if queue.key in session.info
+        }
+        session.info.setdefault(_SAVEPOINT_SNAPSHOTS_KEY, []).append(snapshot)
+
+
+@event.listens_for(dallinger.db.session, "after_commit")
+def _hand_over_session_queues(session):
+    # Releasing a savepoint also fires after_commit; wait for the root commit.
+    if session.in_nested_transaction():
+        return
+    for queue in _session_queues:
+        if queue.on_commit is None:
+            continue
+        value = session.info.pop(queue.key, None)
+        if value:
+            try:
+                queue.on_commit(value)
+            except Exception:
+                logger.exception("Handling %s after the commit failed.", queue.key)
+
+
+@event.listens_for(dallinger.db.session, "after_rollback")
+def _restore_session_queues(session):
+    """Restore the queues of a rolled-back savepoint, or empty them on a root rollback.
+
+    Detect the savepoint via the snapshot stack, because
+    ``in_nested_transaction()`` may already be false when this runs.
+    """
+    snapshots = session.info.get(_SAVEPOINT_SNAPSHOTS_KEY)
+    restored = snapshots[-1] if snapshots else {}
+    for queue in _session_queues:
+        if queue.key in restored:
+            session.info[queue.key] = copy.copy(restored[queue.key])
+        else:
+            session.info.pop(queue.key, None)
+
+
+@event.listens_for(dallinger.db.session, "after_transaction_end")
+def _end_session_queue_transaction(session, transaction):
+    if transaction.nested:
+        snapshots = session.info.get(_SAVEPOINT_SNAPSHOTS_KEY)
+        if snapshots:
+            snapshots.pop()
+    elif transaction.parent is None:
+        session.info.pop(_SAVEPOINT_SNAPSHOTS_KEY, None)
+        # Session.close() ends the root transaction without after_rollback.
+        for queue in _session_queues:
+            if queue.on_commit is not None:
+                session.info.pop(queue.key, None)
+
+
+def _run_callbacks(callbacks):
+    for callback in callbacks:
+        try:
+            callback()
+        except Exception:
+            logger.exception("After-commit callback %r failed.", callback)
+
+
+_after_commit_callbacks = _SessionQueue(
+    "after_commit_callbacks", list, on_commit=_run_callbacks
+)
+
+
+def _call_after_commit(callback):
+    """Run ``callback`` once the current root transaction commits; drop it if it rolls back.
+
+    For side effects, such as notifications and launching worker jobs, that
+    should only happen once the transaction's changes are saved. Callbacks
+    queued inside a savepoint are dropped if that savepoint rolls back.
+    Callbacks run in the order they were queued, inside SQLAlchemy's
+    ``after_commit`` event, so they must not use the database or queue
+    further callbacks, which would be dropped. Each session
+    has its own queue, so another session's commit cannot run them.
+    """
+    _after_commit_callbacks.get().append(callback)
 
 
 @event.listens_for(dallinger.db.session, "after_transaction_create")
 def _guard_transactions_begun_inside_forbid_commits(session, transaction):
     """Let guards with no transaction yet protect the next one the session begins.
 
-    A guard has no root when it starts outside a transaction or after a
-    framework commit; without this, a later rollback would go unnoticed.
+    A guard has no root when it starts outside a transaction; without this,
+    a later rollback would go unnoticed.
     """
     scoped = dallinger.db.session.registry
     if transaction.parent is not None or not scoped.has() or session is not scoped():

@@ -1,4 +1,3 @@
-# pylint: disable=unused-import,abstract-method
 import psynet.experiment
 from psynet.modular_page import ModularPage, MusicNotationPrompt
 from psynet.timeline import Timeline

@@ -1,0 +1,1 @@
+SSH deployments record the account that launched the experiment. ``os.getlogin`` had reported the Docker daemon, so ``/health`` showed ``experimenter_name`` as ``root``. The experiment image also lets that account create ``server.log`` and the ``static/assets`` link without making the shipped source writable.

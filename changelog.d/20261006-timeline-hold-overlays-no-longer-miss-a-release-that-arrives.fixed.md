@@ -1,0 +1,1 @@
+Fixed waiting participants occasionally staying on a group barrier until the safety poll or hold timeout when the next stacked barrier was released while their previous release check was still loading.

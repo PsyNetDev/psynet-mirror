@@ -1,0 +1,1 @@
+Fixed deployments that omit the ``[experiment]`` extra from the PsyNet pin. The image installed only the command-line tools, so the clock process failed to start. Deploy now refuses that pin and shows the corrected line.

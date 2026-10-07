@@ -1,0 +1,1 @@
+Fixed Prolific return-for-bonus for failed participants, who were told their return had not worked and were never paid the bonus. The return check and bonus payment run in background workers while the participant waits; the payment may take up to 60 seconds.

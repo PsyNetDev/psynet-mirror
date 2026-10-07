@@ -3195,10 +3195,15 @@ def _assert_still_on_hold(exp, participant_ids):
 
 
 def _advisory_lock_count():
-    """Return how many advisory locks the database currently holds."""
+    """Return how many advisory locks the test database currently holds."""
+    # pg_locks spans the whole server, which parallel CI slots share.
     with db.engine.connect() as conn:
         return conn.execute(
-            text("SELECT count(*) FROM pg_locks WHERE locktype = 'advisory'")
+            text(
+                "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' "
+                "AND database = (SELECT oid FROM pg_database "
+                "WHERE datname = current_database())"
+            )
         ).scalar()
 
 
@@ -5838,10 +5843,6 @@ def test_async_process_events_wake_timeline_holds(
     monkeypatch.setattr(
         "psynet.timeline_hold._queue_timeline_hold_wake",
         lambda participant_id, reason=None, **kwargs: wakes.append(reason),
-    )
-    monkeypatch.setattr(
-        "psynet.process.Job.fetch",
-        lambda *args, **kwargs: SimpleNamespace(cancel=lambda: None),
     )
 
     participant = new_participant(get_experiment())

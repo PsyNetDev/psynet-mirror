@@ -1,4 +1,3 @@
-# pylint: disable=unused-import,abstract-method,unused-argument
 import json
 import math
 import random
@@ -207,6 +206,12 @@ class VerticalProcessingTrial(StaticTrial):
     should_display_trial_position_alert = None
 
     def show_feedback(self, experiment, participant):
+        if self.failed:
+            return InfoPage(
+                "Sorry, we couldn't analyze your singing on this trial.",
+                time_estimate=0,
+            )
+
         score = self.score
         assert isinstance(score, (float, int))
 
@@ -557,7 +562,7 @@ def practice():
             max_trials_per_participant=2,
             allow_repeated_nodes=False,
             n_repeat_trials=0,
-            balance_across_nodes=False,
+            node_order="random",
         ),
     )
 
@@ -592,7 +597,7 @@ def main():
             recruit_mode="n_participants",
             allow_repeated_nodes=False,
             n_repeat_trials=0,
-            balance_across_nodes=False,
+            node_order="random",
             target_n_participants=50,
             check_performance_at_end=True,
         ),

@@ -116,8 +116,9 @@ class GeometricStaircaseNode(ChainNode):
                 )
 
     def make_next_definition(self, experiment, participant):
-        # To consider one day -- refactoring logic out of __init__ into make_next_definition
-        return {}
+        # The definition derives from ``parameter``, which ``__init__`` computes
+        # from the parent, so there is nothing to pass on here.
+        return None
 
     @property
     def definition(self):
@@ -179,6 +180,16 @@ class GeometricStaircaseChain(ChainNetwork):
 
 
 class GeometricStaircaseTrialMaker(ChainTrialMaker):
+    """Runs within-participant geometric staircases, one chain per staircase.
+
+    Takes the arguments of :class:`~psynet.trial.chain.ChainTrialMaker`,
+    except ``chain_type``, which is always ``"within"``. Unlike that class,
+    ``interleave_chains`` defaults to ``False``, so each participant finishes
+    one staircase before starting the next; ``chain_order`` (default
+    ``"random"``) chooses the order of the staircases. See
+    ``demos/experiments/staircase_pitch_discrimination``.
+    """
+
     @property
     def default_network_class(self):
         return GeometricStaircaseChain
@@ -193,13 +204,17 @@ class GeometricStaircaseTrialMaker(ChainTrialMaker):
         start_nodes: Union[callable, list],
         max_nodes_per_chain: int,
         max_reversals_per_chain: Optional[int] = None,
-        balance_across_chains: bool = False,
+        block_order="random",
+        chain_order="random",
+        interleave_chains: bool = False,
+        balance_across_chains=None,
         min_passing_score: Optional[float] = None,
         max_passing_score: Optional[float] = None,
         expected_trials_per_participant: Optional[int | str] = None,
         max_trials_per_participant: Optional[int | str] = None,
         target_n_participants: Optional[int] = None,
-        recruit_mode: str = "n_participants",
+        n_participants_completion: Literal["experiment", "trial_maker"] = "experiment",
+        recruit_mode: Optional[str] = None,
         assets=None,
         choose_participant_group: Optional[callable] = None,
         sync_group_type: Optional[str] = None,
@@ -220,6 +235,7 @@ class GeometricStaircaseTrialMaker(ChainTrialMaker):
             network_class=network_class,
             chain_type="within",
             target_n_participants=target_n_participants,
+            n_participants_completion=n_participants_completion,
             recruit_mode=recruit_mode,
             start_nodes=start_nodes,
             trials_per_node=1,
@@ -236,6 +252,9 @@ class GeometricStaircaseTrialMaker(ChainTrialMaker):
             max_nodes_per_chain=max_nodes_per_chain,
             check_performance_at_end=True,
             check_performance_every_trial=False,
+            block_order=block_order,
+            chain_order=chain_order,
+            interleave_chains=interleave_chains,
             balance_across_chains=balance_across_chains,
         )
 

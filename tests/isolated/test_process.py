@@ -231,6 +231,31 @@ def test_launch_queue_follows_savepoints_and_close(monkeypatch):
     "experiment_directory", [path_to_test_experiment("static")], indirect=True
 )
 @pytest.mark.usefixtures("launched_experiment")
+def test_failed_launch_alerts_and_later_launches_still_run(monkeypatch):
+    launched = []
+
+    def launch(cls, process):
+        if not launched:
+            launched.append(None)
+            raise ConnectionError("Redis is down")
+        launched.append(process["id"])
+
+    alerts = []
+    monkeypatch.setattr(LocalAsyncProcess, "launch", classmethod(launch))
+    monkeypatch.setattr("psynet.process._send_alert", alerts.append)
+
+    failed = LocalAsyncProcess(do_nothing).id
+    later = LocalAsyncProcess(do_nothing).id
+    db.session.commit()
+
+    assert launched == [None, later]
+    assert len(alerts) == 1 and f"Async process {failed}" in alerts[0]
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("static")], indirect=True
+)
+@pytest.mark.usefixtures("launched_experiment")
 def test_cancel_cancels_the_queued_worker_job(monkeypatch):
     unworked_queue = Queue("psynet_test_unworked", connection=redis_conn)
     monkeypatch.setattr(WorkerAsyncProcess, "redis_queue", unworked_queue)
@@ -244,6 +269,9 @@ def test_cancel_cancels_the_queued_worker_job(monkeypatch):
 
     assert process.redis_job.get_status() == "canceled"
     assert process.cancelled and not process.pending
+    process_id = process.id
+    WorkerAsyncProcess.call_function(process_id)
+    assert not WorkerAsyncProcess.query.get(process_id).finished
 
     cancelled_before_launch = WorkerAsyncProcess(do_nothing)
     cancelled_before_launch.cancel()
@@ -257,3 +285,8 @@ def test_cancel_cancels_the_queued_worker_job(monkeypatch):
     savepoint.rollback()
     db.session.commit()
     assert cancel_rolled_back.redis_job.get_status() == "queued"
+
+    cancel_rolled_back.cancel()
+    db.session.rollback()
+    assert cancel_rolled_back.redis_job.get_status() == "queued"
+    assert cancel_rolled_back.pending and not cancel_rolled_back.cancelled

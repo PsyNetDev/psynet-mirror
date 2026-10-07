@@ -109,3 +109,31 @@ If the experiment is **not running**, you can:
 
 - **Archive the experiment**: Click to move the experiment to the archive. This is recommended for test runs or experiments that collected no data. Archived experiments can be accessed and restored via the "Show Archived Experiments" button in the top left corner.
 - **Refresh recruiter metrics**: If participants are compensated after the experiment has ended (e.g., due to time estimation errors), recruiter metrics may become outdated. Use this action to refresh the metrics and update the experiment's total cost accordingly.
+
+External availability checks
+----------------------------
+
+Every PsyNet experiment exposes an unauthenticated ``GET /health`` endpoint for
+external availability monitors. It returns ``200`` when the web process can
+reach PostgreSQL and Redis:
+
+.. code-block:: json
+
+    {
+      "status": "ok",
+      "title": "Melody Origin Classification",
+      "label": "melody-origin",
+      "experimenter_name": "David Whyatt",
+      "recruitment_status": "recruiting",
+      "requests_last_hour": 17
+    }
+
+``requests_last_hour`` counts participant-facing page requests already stored
+by PsyNet, not status-page probes of ``/health``. If PostgreSQL or Redis is
+unavailable, the endpoint returns ``503`` with ``{"status": "unavailable"}``
+and no extra fields. Docker-ssh hibernation treats ``/health`` as idle: a
+sleeping app stays asleep, and probes do not reset the idle timer.
+
+The response never includes participant counts, costs, errors, dashboard URLs,
+or exception details. Metadata collection is best-effort: a failure there still
+leaves ``{"status": "ok"}`` if the required services are reachable.

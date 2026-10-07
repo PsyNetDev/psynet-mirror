@@ -8,16 +8,22 @@ from sqlalchemy.orm import object_session
 
 from psynet.data import SQLBase
 from psynet.db import (
+    _call_after_commit,
+    _commit_external_call_state,
+    _session_queues,
+    _SessionQueue,
     _set_transaction_lock_timeout,
     forbid_commits,
     read_only_transaction,
     transaction,
 )
+from psynet.error import ErrorRecord
 from psynet.experiment import Experiment, get_experiment
 from psynet.page import InfoPage
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.timeline import Page, Response, Timeline
+from psynet.utils import check_translation_is_available
 
 
 class DummyTransactionModel(SQLBase):
@@ -156,6 +162,17 @@ def test_read_only_transaction_rejects_nested_commit(db_session):
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
+def test_read_only_transaction_rejects_external_calls(db_session):
+    with transaction():
+        db.session.commit()
+        with read_only_transaction():
+            with pytest.raises(RuntimeError, match="cannot make external calls"):
+                _commit_external_call_state()
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
 def test_read_only_transaction_allows_no_op_assignment(db_session):
     DummyTransactionModel.__table__.create(bind=db_session.get_bind(), checkfirst=True)
 
@@ -189,32 +206,318 @@ def test_forbid_commits_rejects_commits_but_allows_savepoints(db_session):
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
-def test_end_logic_lets_recruiters_commit_inside_guarded_steps(db_session, monkeypatch):
-    """Recruiters commit payment state before reporting it, e.g. on rejected consent."""
-    from psynet.end import RejectedConsentLogic
+def test_external_call_state_cannot_be_committed_inside_a_savepoint(db_session):
+    """Inside a savepoint, a commit would only release it, so the record could be lost."""
+    with transaction(commit=False):
+        with db.session.begin_nested():
+            with pytest.raises(RuntimeError, match="cannot run inside a savepoint"):
+                _commit_external_call_state()
 
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_external_call_state_cannot_be_committed_inside_a_timeline_step(db_session):
+    """An external call's commit would also save the step's half-finished work."""
     DummyTransactionModel.__table__.create(bind=db_session.get_bind(), checkfirst=True)
-    monkeypatch.setattr(RejectedConsentLogic, "prepare_exit", lambda *args: None)
-
-    def commit_payment_state(experiment, participant):
-        db.session.add(DummyTransactionModel(id="payment"))
-        db.session.commit()
-
-    experiment = MagicMock()
-    experiment.with_lucid_recruitment.return_value = False
-    participant = MagicMock()
-    participant.recruiter.after_rejected_consent = commit_payment_state
 
     with transaction(commit=False):
-        with pytest.raises(RuntimeError, match=r"advance_page called .*rollback"):
-            with forbid_commits("Timeline.advance_page"):
-                with forbid_commits("CodeBlock 'EndLogic.prepare_debrief'"):
-                    RejectedConsentLogic().prepare_debrief(experiment, participant)
-                with pytest.raises(RuntimeError, match="advance_page called"):
-                    db.session.commit()
-                db.session.rollback()
+        with forbid_commits("CodeBlock 'pay'"):
+            db.session.add(DummyTransactionModel(id="half-finished"))
+            with pytest.raises(RuntimeError) as error:
+                _commit_external_call_state()
 
-    assert db.session.get(DummyTransactionModel, "payment") is not None
+    assert str(error.value).startswith("CodeBlock 'pay' tried to make an external call")
+    assert "AsyncCodeBlock" in str(error.value)
+    with transaction():
+        assert DummyTransactionModel.query.get("half-finished") is None
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+@pytest.mark.parametrize("rollback_first", [False, True])
+def test_batch_item_that_commits_fails_alone(db_session, monkeypatch, rollback_first):
+    """A poller item's savepoint must not let it commit its half-finished work."""
+    DummyTransactionModel.__table__.create(bind=db_session.get_bind(), checkfirst=True)
+    _skip_error_notifications(monkeypatch)
+    failed = []
+
+    def commits_midway():
+        db.session.add(DummyTransactionModel(id="partial"))
+        if rollback_first:
+            db.session.rollback()
+        db.session.commit()
+
+    with transaction(commit=False):
+        db.session.add(DummyTransactionModel(id="earlier"))
+        Experiment._run_batch_item(commits_midway, fail=lambda: failed.append(True))
+        saved = [model.id for model in DummyTransactionModel.query.all()]
+        messages = [record.message for record in ErrorRecord.query.all()]
+
+    assert saved == ["earlier"]
+    assert failed == [True]
+    assert len(messages) == 1 and "called db.session.commit()" in messages[0]
+    assert DummyTransactionModel.query.all() == []
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_batch_item_whose_fail_callback_raises_is_still_marked_failed(
+    db_session, monkeypatch
+):
+    """Otherwise the item would fail, and notify, again on every poll."""
+    DummyTransactionModel.__table__.create(bind=db_session.get_bind(), checkfirst=True)
+    _skip_error_notifications(monkeypatch)
+
+    def fail():
+        db.session.add(DummyTransactionModel(id="half-failed"))
+        db.session.flush()
+        raise AttributeError("already failed")
+
+    with transaction():
+        participant = new_participant()
+        db.session.add(DummyTransactionModel(id="earlier"))
+        db.session.flush()
+        participant_id = participant.id
+        Experiment._run_batch_item(
+            MagicMock(side_effect=ValueError("item error")),
+            fail=fail,
+            participant=participant,
+        )
+
+    with transaction():
+        assert [model.id for model in DummyTransactionModel.query.all()] == ["earlier"]
+        assert len(ErrorRecord.query.all()) == 1
+        participant = Participant.query.get(participant_id)
+        assert participant.failed
+        assert participant.failed_reason == "poller_fail_callback_error"
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_after_commit_callbacks_wait_for_the_root_commit(db_session):
+    calls = []
+    savepoint = db.session.begin_nested()
+    _call_after_commit(lambda: calls.append("rolled back"))
+    savepoint.rollback()
+    with db.session.begin_nested():
+        _call_after_commit(lambda: calls.append("released"))
+    _call_after_commit(lambda: calls.append("root"))
+    assert calls == []
+
+    db.session.commit()
+
+    assert calls == ["released", "root"]
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_session_queue_without_on_commit_waits_to_be_taken(db_session):
+    queue = _SessionQueue("test_queue", list)
+    try:
+        queue.get().append("kept")
+        savepoint = db.session.begin_nested()
+        queue.get().append("rolled back")
+        savepoint.rollback()
+        db.session.commit()
+        assert queue.take() == ["kept"]
+
+        db.session.begin()
+        queue.get().append("rolled back")
+        db.session.rollback()
+        assert queue.take() == []
+    finally:
+        _session_queues.remove(queue)
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_savepoint_rollback_restores_an_overwritten_hold_wake(db_session):
+    from psynet.timeline_hold import _pending_wakes, _queue_arrival_update
+
+    _queue_arrival_update(1, notice="before")
+    savepoint = db.session.begin_nested()
+    _queue_arrival_update(1, notice="inside")
+    savepoint.rollback()
+
+    assert _pending_wakes.peek()["arrival:1"]["notice"] == "before"
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+@pytest.mark.parametrize("commit", [True, False])
+def test_batch_item_error_is_notified_only_once_the_batch_commits(
+    db_session, monkeypatch, commit
+):
+    notify = MagicMock()
+    monkeypatch.setattr(Experiment, "log_to_notifier", notify)
+
+    def explodes():
+        raise ValueError("bad item")
+
+    with transaction(commit=commit):
+        Experiment._run_batch_item(explodes, fail=lambda: None)
+        Experiment._run_batch_item(explodes, fail=lambda: None)
+        notify.assert_not_called()
+
+    if commit:
+        assert notify.call_count == 2
+        assert "ValueError: bad item" in notify.call_args.kwargs["formatted_traceback"]
+    else:
+        db.session.commit()
+        notify.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_lucid_rejected_consent_termination_survives_a_later_rollback(db_session):
+    """Lucid saves its termination right after the API call."""
+    from psynet.end import RejectedConsentLogic
+    from psynet.lucid import LucidService
+    from psynet.recruiters import BaseLucidRecruiter, LucidRID
+
+    db.session.add(LucidRID(rid="RID1"))
+    db.session.commit()
+
+    recruiter = object.__new__(BaseLucidRecruiter)
+    recruiter.lucidservice = object.__new__(LucidService)
+    recruiter.lucidservice.send_terminate_request = lambda rid: MagicMock(ok=True)
+    recruiter.external_submit_url = lambda assignment_id: "https://lucid.example"
+    experiment = MagicMock(recruiter=recruiter)
+    participant = MagicMock(assignment_id="RID1", module_state=None)
+    participant.recruiter = recruiter
+
+    RejectedConsentLogic.report_rejected_consent(experiment, participant)
+    db.session.add(LucidRID(rid="RID2"))
+    db.session.flush()
+    db.session.rollback()
+
+    assert LucidRID.query.filter_by(rid="RID1").one().terminated_at is not None
+    assert LucidRID.query.filter_by(rid="RID2").one_or_none() is None
+
+
+def _skip_error_notifications(monkeypatch):
+    monkeypatch.setattr(Experiment, "log_to_notifier", MagicMock())
+
+
+def _translate_missing_string_live(monkeypatch):
+    _skip_error_notifications(monkeypatch)
+    monkeypatch.setattr("psynet.experiment.in_deployment_package", lambda: True)
+    monkeypatch.setattr("psynet.deployment_info.read", lambda key: "live")
+    monkeypatch.setattr(
+        "psynet.utils.REGISTERED_TRANSLATIONS", {"experiment": {"de": []}}
+    )
+    check_translation_is_available("Not in the catalog", None, "de", "experiment")
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_live_missing_translation_is_reported_without_committing(
+    db_session, monkeypatch
+):
+    """Rendering keeps working, and a step's half-finished work stays unsaved."""
+    DummyTransactionModel.__table__.create(bind=db_session.get_bind(), checkfirst=True)
+
+    with transaction():
+        db.session.commit()
+        with read_only_transaction():
+            _translate_missing_string_live(monkeypatch)
+
+    with transaction(commit=False):
+        with forbid_commits("CodeBlock 'translate'"):
+            db.session.add(DummyTransactionModel(id="half-finished"))
+            _translate_missing_string_live(monkeypatch)
+        db.session.rollback()
+
+    assert DummyTransactionModel.query.get("half-finished") is None
+    assert ErrorRecord.query.count() == 0
+
+    with transaction():
+        with forbid_commits("CodeBlock 'translate'"):
+            _translate_missing_string_live(monkeypatch)
+    assert ErrorRecord.query.count() == 1
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_handle_error_after_failed_flush_records_parent_ids(db_session, monkeypatch):
+    _skip_error_notifications(monkeypatch)
+    DummyTransactionModel.__table__.create(bind=db_session.get_bind(), checkfirst=True)
+    participant = new_participant()
+    db.session.add(DummyTransactionModel(id="duplicate"))
+    db.session.commit()
+    participant_id = participant.id
+
+    db.session.add(DummyTransactionModel(id="duplicate"))
+    with pytest.raises(sqlalchemy.exc.IntegrityError) as error:
+        db.session.flush()
+    get_experiment().handle_error(error.value, participant=participant)
+
+    assert ErrorRecord.query.one().participant_id == participant_id
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_handle_error_saves_the_record_before_notifying(db_session, monkeypatch):
+    monkeypatch.setattr(
+        Experiment, "log_to_notifier", MagicMock(side_effect=ConnectionError)
+    )
+    participant = new_participant()
+    db.session.commit()
+
+    with pytest.raises(ConnectionError):
+        get_experiment().handle_error(ValueError("failed"), participant=participant)
+    db.session.rollback()
+
+    assert ErrorRecord.query.count() == 1
+
+
+@pytest.mark.parametrize(
+    "recruiter_class", ["BaseLabRecruiter", "BaseLucidRecruiter", "GenericRecruiter"]
+)
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_duration_exceeded_saves_abandonment_under_the_clock(
+    db_session, recruiter_class
+):
+    """Dallinger's clock does not commit its session, so the recruiter must."""
+    from psynet import recruiters
+
+    participant = new_participant()
+    db.session.commit()
+    participant_id = participant.id
+    recruiter = object.__new__(getattr(recruiters, recruiter_class))
+    with db.sessions_scope():
+        participant = Participant.query.get(participant_id)
+        recruiter.notify_duration_exceeded([participant], reference_time=None)
+
+    assert Participant.query.get(participant_id).status == "abandoned"
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_lucid_entry_saves_new_rid_before_dallinger_discards_the_session(db_session):
+    """Dallinger's POST /participant removes the session before creating the participant."""
+    from psynet.recruiters import BaseLucidRecruiter, LucidRID
+
+    recruiter = object.__new__(BaseLucidRecruiter)
+    recruiter.lucidservice = MagicMock()
+    recruiter.normalize_entry_information({"RID": "NEW_RID"})
+    db.session.remove()
+
+    assert LucidRID.query.filter_by(rid="NEW_RID").count() == 1
 
 
 @pytest.mark.parametrize(

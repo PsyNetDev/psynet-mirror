@@ -134,9 +134,9 @@ class Exp(psynet.experiment.Experiment):
 _REQUIREMENTS_TXT_COMMENTS = """\
 
 # Alternatively, you can use one of the following syntaxes to specify a custom PsyNet version
-# psynet@git+https://gitlab.com/PsyNetDev/PsyNet@v10.4.0#egg=psynet
-# psynet@git+https://gitlab.com/PsyNetDev/PsyNet@45f317688af59350f9a6f3052fd73076318f2775#egg=psynet
-# psynet@git+https://gitlab.com/PsyNetDev/PsyNet@45f31768#egg=psynet
+# psynet[experiment]@git+https://gitlab.com/PsyNetDev/PsyNet@v10.4.0#egg=psynet
+# psynet[experiment]@git+https://gitlab.com/PsyNetDev/PsyNet@45f317688af59350f9a6f3052fd73076318f2775#egg=psynet
+# psynet[experiment]@git+https://gitlab.com/PsyNetDev/PsyNet@45f31768#egg=psynet
 """
 
 
@@ -591,6 +591,22 @@ def _is_psynet_requirement_line(line: str) -> bool:
     )
 
 
+def requirement_includes_experiment_extra(requirement: str) -> bool:
+    """Return whether a PsyNet requirement installs the experiment runtime.
+
+    The extra may be written on the package name (``psynet[experiment]``) or,
+    for an editable install, on the egg fragment (``#egg=psynet[experiment]``).
+    """
+    match = re.search(
+        r"(?i)(?:^|\s|#egg=)psynet\[([^]]*)\]",
+        requirement.strip(),
+    )
+    if match is None:
+        return False
+    extras = [part.strip().lower() for part in match.group(1).split(",")]
+    return "experiment" in extras
+
+
 def is_unambiguous_psynet_requirement(requirement: str) -> bool:
     """Return whether a PsyNet requirement pins a version or commit.
 
@@ -764,11 +780,13 @@ def _report_scaffold_result(written, *, overwrite):
     click.echo("Nothing to scaffold; experiment boilerplate is already present.")
 
 
-def _copy_template_file(relative_path, overwrite, *, migrating=True):
+def _copy_template_file(relative_path, overwrite, *, previous_gitignore=None):
     """Copy one scaffold-managed template file into the experiment directory.
 
-    ``migrating`` records whether a newly created ``deploy.toml`` replaces the
-    older ``.gitignore``-based file selection of an existing experiment.
+    ``previous_gitignore`` is the experiment's ``.gitignore`` from before this
+    scaffold run, or ``None`` for a new experiment. A newly created
+    ``deploy.toml`` that replaces such ``.gitignore``-based file selection gets
+    a launch-time review against those rules.
     """
     destination = Path(relative_path)
     if relative_path in _PRESERVE_EXISTING_TEMPLATE_FILES:
@@ -781,8 +799,12 @@ def _copy_template_file(relative_path, overwrite, *, migrating=True):
     destination.parent.mkdir(parents=True, exist_ok=True)
     with resources.as_file(_experiment_script_resource(relative_path)) as path:
         shutil.copyfile(path, destination)
-    if relative_path == "deploy.toml" and not _suppress_policy_review_marker.get():
-        _mark_deployment_policy_for_review(migrating=migrating)
+    if (
+        relative_path == "deploy.toml"
+        and previous_gitignore is not None
+        and not _suppress_policy_review_marker.get()
+    ):
+        _mark_deployment_policy_for_review(previous_gitignore)
     return True
 
 
@@ -792,32 +814,35 @@ _suppress_policy_review_marker: ContextVar[bool] = ContextVar(
 )
 
 
-_MIGRATION_REVIEW_LINE = "reason: migration from .gitignore-based selection"
+def _read_gitignore():
+    """Return the experiment's ``.gitignore`` text, or ``None`` if it has none."""
+    path = Path(".gitignore")
+    return path.read_text(encoding="utf-8") if path.is_file() else None
 
 
-def _mark_deployment_policy_for_review(*, migrating: bool) -> None:
-    """Record that a newly created ``deploy.toml`` still needs a launch-time review."""
+def _mark_deployment_policy_for_review(previous_gitignore: str) -> None:
+    """Record that a migrated ``deploy.toml`` still needs a launch-time check.
+
+    The marker is itself a gitignore file holding the experiment's original
+    rules, because ``psynet scripts update`` may replace ``.gitignore`` before
+    the check runs.
+    """
     marker = _DEPLOYMENT_POLICY_REVIEW_MARKER
     marker.parent.mkdir(parents=True, exist_ok=True)
-    reason = _MIGRATION_REVIEW_LINE if migrating else "reason: new experiment"
     marker.write_text(
-        f"{reason}\n"
-        "PsyNet created deploy.toml for this experiment. The next debug, test, "
-        "or deploy command stops once so you can inspect the deployment plan "
-        "with 'dallinger deployment-files list'. This file is local-only; "
-        "you can delete it after that review.\n"
+        "# PsyNet created deploy.toml to replace this experiment's\n"
+        "# .gitignore-based deployment selection. The next debug, test, or\n"
+        "# deploy command checks once whether deploy.toml now deploys files\n"
+        "# that the .gitignore rules below ignore. This file is\n"
+        "# local-only; you can delete it.\n"
+        f"{previous_gitignore}\n",
+        encoding="utf-8",
     )
 
 
 def _deployment_policy_needs_review() -> bool:
     """Return whether the current ``deploy.toml`` still has a one-shot review marker."""
     return _DEPLOYMENT_POLICY_REVIEW_MARKER.is_file()
-
-
-def _deployment_policy_review_is_migration() -> bool:
-    """Return whether the pending ``deploy.toml`` review follows a migration."""
-    lines = _DEPLOYMENT_POLICY_REVIEW_MARKER.read_text(encoding="utf-8").splitlines()
-    return bool(lines) and lines[0] == _MIGRATION_REVIEW_LINE
 
 
 def _clear_deployment_policy_review_marker() -> None:
@@ -844,16 +869,17 @@ def _without_deployment_policy_review():
 def ensure_deployment_policy() -> None:
     """Create ``deploy.toml`` from the PsyNet template when it is missing.
 
-    Existing files are never overwritten. A newly written file also gets a
-    local review marker so the next debug, test, or deploy command pauses
-    once before copying files, unless the copy happens inside a temporary
-    pytest scaffold or in-repo auto-prepare.
+    Existing files are never overwritten. When the experiment already has a
+    ``.gitignore``, a newly written file also gets a local review marker so
+    the next debug, test, or deploy command checks once whether deploy.toml
+    now deploys files that .gitignore ignores, unless the copy happens
+    inside a temporary pytest scaffold or in-repo auto-prepare.
     """
     _assert_managed_path_is_safe("deploy.toml")
     _copy_template_file(
         "deploy.toml",
         overwrite=False,
-        migrating=Path(".gitignore").exists(),
+        previous_gitignore=_read_gitignore(),
     )
 
 
@@ -1110,7 +1136,7 @@ def scaffold_experiment_directory(
 
     written = []
     skipped = []
-    migrating = Path(".gitignore").exists()
+    previous_gitignore = _read_gitignore()
 
     try:
         bootstrap_written, bootstrap_skipped = _bootstrap_authored_files(skip_files)
@@ -1124,7 +1150,9 @@ def scaffold_experiment_directory(
             skipped.append(relative_path)
             continue
 
-        if _copy_template_file(relative_path, overwrite, migrating=migrating):
+        if _copy_template_file(
+            relative_path, overwrite, previous_gitignore=previous_gitignore
+        ):
             written.append(relative_path)
         else:
             skipped.append(relative_path)
