@@ -60,6 +60,66 @@ def update_dallinger_constraints(skip_compile_check):
     ci_module.update_dallinger_constraints_command(check_compile=not skip_compile_check)
 
 
+@ci.command("run-tests")
+@click.option(
+    "--scope",
+    type=click.Choice(["full", "isolated"]),
+    default="full",
+    show_default=True,
+    help="'full' runs demo directories and isolated tests; 'isolated' only the latter.",
+)
+@click.option("--node-total", type=int, default=1, show_default=True)
+@click.option("--node-index", type=int, default=1, show_default=True)
+@click.option(
+    "--slots",
+    type=click.IntRange(min=1),
+    default=1,
+    show_default=True,
+    help="Items to run at once, each with its own database, Redis and port.",
+)
+@click.option("--timeout", type=int, default=300, show_default=True)
+@click.option(
+    "--junit-dir", default=None, help="Write one JUnit XML file per item here."
+)
+@click.option("--python-version", default="3.13", show_default=True)
+@click.option(
+    "--durations-output",
+    default=None,
+    help="Write measured item durations here (input for update-test-durations).",
+)
+@click.option(
+    "--log-dir",
+    default="ci-test-logs",
+    show_default=True,
+    help="Directory for per-item pytest output.",
+)
+def run_tests(**kwargs):
+    """Run one shard of the CI test suite, optionally on parallel slots."""
+    from psynet.dev import ci_tests
+
+    raise SystemExit(ci_tests.run_tests_command(**kwargs))
+
+
+@ci.command("playwright-files")
+@click.option("--mode", type=click.Choice(["default", "legacy"]), required=True)
+@click.option("--node-total", type=int, default=1, show_default=True)
+@click.option("--node-index", type=int, default=1, show_default=True)
+def playwright_files(mode, node_total, node_index):
+    """Print the Playwright spec files for one duration-balanced CI shard."""
+    from psynet.dev import ci_tests
+
+    ci_tests.playwright_files_command(mode, node_total, node_index)
+
+
+@ci.command("update-test-durations")
+@click.argument("paths", nargs=-1, required=True, type=click.Path(exists=True))
+def update_test_durations(paths):
+    """Refresh ci/test_durations.json from run-tests and Playwright JUnit files."""
+    from psynet.dev import ci_tests
+
+    ci_tests.update_test_durations_command(paths)
+
+
 @dev.group("experiments")
 def experiments():
     """Manage canonical experiment templates from a PsyNet source checkout."""

@@ -136,18 +136,19 @@ class Exp(psynet.experiment.Experiment):
         super().test_experiment()
         # Order by id so "first" is the cold-start request. That first
         # /timeline load absorbs template compilation and other one-off
-        # setup, and can exceed one second on a busy CI runner even when
-        # steady-state pages stay well under the threshold.
+        # setup. The threshold is a hang cap rather than a performance
+        # budget: CI runs several tests at once on each runner, which can
+        # make steady-state pages take a few seconds.
         all_requests = Request.query.order_by(Request.id).all()
         assert len(all_requests) > 1
         steady_requests = all_requests[1:]
         slow = [
             (request.id, request.endpoint, request.duration)
             for request in steady_requests
-            if request.duration >= 1
+            if request.duration >= 5
         ]
         assert not slow, (
-            f"Some pages took more than 1 second to load after cold start: {slow}"
+            f"Some pages took more than 5 seconds to load after cold start: {slow}"
         )
         # The status reports only get logged every 70 seconds, so we need to wait a bit.
         time.sleep(62.5)

@@ -27,11 +27,55 @@ its path to ``.docker_test_rules``.
 Test parallelization
 --------------------
 
-The automated test suite is slow because it has to run more than 70 demo experiments.
-GitLab therefore runs these tests in parallel to save time. This is not
-really practical on most local machines, so be warned that running the full test
+The automated test suite is slow because it has to run more than 70 demo experiments
+and more than 170 isolated test files, each in its own pytest process.
+GitLab therefore splits these tests across several shard jobs, and each job
+runs several tests at once in *slots*. Running the full test
 suite locally will ordinarily take a very long time. It's better instead to
 run individual tests locally and only run the full test suite on GitLab.
+
+``run-ci-tests.sh`` calls ``psynet dev ci run-tests``, which works as follows:
+
+- Tests are assigned to shards so that each shard's estimated duration is
+  about the same. Estimates come from ``ci/test_durations.json``; tests that
+  are missing from that file get the median duration for their kind.
+- Within a shard, ``TEST_SLOTS`` tests run concurrently. Slot 0 uses the job's
+  database and Redis server; every other slot gets its own database, its own
+  Redis server and its own port (see :ref:`running_several_local_experiments`).
+- Tests that use the same demo directory never run at the same time, because
+  the ``in_experiment_directory`` fixture holds a lock on the directory.
+
+.. _refresh_test_durations:
+
+Each shard job publishes per-test logs in ``public/test-logs`` and its measured
+durations in ``public/ci_durations_<python>_<shard>.json``; each Playwright
+shard publishes ``public/playwright-<mode>-<shard>-junit.xml``. Stale estimates
+only make shards less even, so the release process refreshes them once per
+minor release. To refresh them from the latest passing ``master`` push pipeline
+(the artifacts are public, so no token is needed; requires ``jq``), run this
+from the PsyNet checkout:
+
+.. code-block:: bash
+
+    P=https://gitlab.com/api/v4/projects/PsyNetDev%2FPsyNet
+    PIPELINE=$(curl -s "$P/pipelines?ref=master&source=push&status=success&per_page=1" | jq '.[0].id')
+    DIR=$(mktemp -d)
+    curl -s "$P/pipelines/$PIPELINE/jobs?per_page=100" \
+      | jq -r '.[] | select(.name | test("^(tests_python_3_13|playwright_e2e_)")) | "\(.id) \(.name)"' \
+      | while read -r id name shard; do
+          i=${shard%/*}
+          case $name in
+            tests_*) f=ci_durations_3.13_$i.json ;;
+            *) f=playwright-${name#playwright_e2e_}-$i-junit.xml ;;
+          esac
+          curl -sfL -o "$DIR/$f" "$P/jobs/$id/artifacts/public/$f" || echo "missing $f"
+        done
+    psynet dev ci update-test-durations "$DIR"/*
+
+You can reproduce one CI shard locally, for example shard 4 of 12 with two
+slots::
+
+    psynet dev ci run-tests --node-total 12 --node-index 4 --slots 2
 
 Identifying which test failed
 -----------------------------
@@ -39,6 +83,10 @@ If you see that the automatic tests have failed,
 visit the GitLab error logs to see which particular test failed.
 You're looking for a test script with a name like ``test_assets.py``,
 and a test function within that, for example ``test_assets_upload_correctly()``.
+
+Each shard job prints one ``PASSED`` or ``FAILED`` line per test file, followed by
+the full output of any failed test and a summary of all failures.
+The output of every test is also saved in the job's ``public/test-logs`` artifact.
 
 Debugging tests locally
 -----------------------
@@ -84,18 +132,10 @@ and run the test by clicking 'Run pytest in ...', or alternatively
 
 In rare cases, tests only fail when several tests are run in a particular sequence.
 This is usually due to some kind of caching issue.
-To reproduce such errors locally, look at the Jobs list in GitLab and work out
-(a) how many parallel test groups there are (at the time of writing there are 10)
-and (b) what's the number of the test group  you want to reproduce locally
-(e.g. Job 4/10 is number 4).
-Install the ``pytest-test-groups`` in your local Python environment if you don't have it already
-(``pip3 install pytest-test-groups``), then run a command like the following:
-
-::
-
-    pytest --test-group-count 10 --test-group=4 --test-group-random-seed=12345 --ignore=tests/local_only --ignore=tests/isolated --chrome tests
-
-setting the values of ``--test-group-count`` and ``--test-group`` as appropriate.
+To reproduce such errors locally, note the failing job's shard number
+(e.g. job 4/6 is shard 4 of 6) and run that shard with
+``psynet dev ci run-tests`` as described in the previous section.
+Use ``--slots 1`` to check whether the failure depends on tests running concurrently.
 
 Playwright UI tests
 -------------------
@@ -128,6 +168,10 @@ GitLab CI selects suites with ``--grep`` instead of hardcoding file paths:
 
 * ``playwright_e2e_default`` runs ``@both|@inplace-only``
 * ``playwright_e2e_legacy`` runs ``@both|@legacy-only``
+
+Each job runs in three shards. ``psynet dev ci playwright-files`` chooses each
+shard's spec files using the durations in ``ci/test_durations.json``, so a new
+spec file needs no CI changes.
 
 Both jobs also run ``node tests/playwright/check-mode-tags.js``, which fails if
 any test is missing one of those tags. When adding a new lifecycle fixture,
@@ -295,7 +339,8 @@ Finding Playwright CI artifacts in GitLab
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Playwright artifacts are uploaded by the ``playwright_e2e_default`` and
-``playwright_e2e_legacy`` jobs.
+``playwright_e2e_legacy`` jobs. Each has three shards (``1/3`` to ``3/3``),
+and each shard uploads the artifacts of its own spec files.
 
 To view them in GitLab:
 
@@ -307,7 +352,8 @@ Uploaded artifacts include:
 
 - ``playwright-report/``: Playwright HTML report (open ``playwright-report/index.html``).
 - ``test-results/``: per-test failure assets (screenshots, traces, videos).
-- ``public/playwright-junit.xml``: JUnit XML used for test report integration.
+- ``public/playwright-<mode>-<shard>-junit.xml``: JUnit XML used for test report
+  integration and for refreshing ``ci/test_durations.json``.
 
 
 Debugging tests via Docker
