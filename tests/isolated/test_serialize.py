@@ -44,9 +44,18 @@ def test_unserialize_matches_jsonpickle(value):
         assert decoded == expected
 
 
+def _outcome(decode, text):
+    try:
+        return "value", decode(text)
+    except Exception as err:
+        return "error", type(err)
+
+
 @pytest.mark.parametrize("text", ["", "hello", "{'a': 1}"])
-def test_unserialize_still_decodes_non_json_text_like_jsonpickle(text):
-    assert unserialize(text) == jsonpickle.decode(text, context=PsyNetUnpickler())
+def test_unserialize_handles_non_json_text_like_jsonpickle(text):
+    # jsonpickle falls back to YAML only when PyYAML is installed.
+    expected = _outcome(lambda t: jsonpickle.decode(t, context=PsyNetUnpickler()), text)
+    assert _outcome(unserialize, text) == expected
 
 
 def test_unserialize_decodes_plain_json_without_jsonpickle(monkeypatch):
