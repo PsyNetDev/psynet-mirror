@@ -841,12 +841,6 @@ def _drop_foreign_key_constraints(*, max_attempts=5, wait_sec=0.05):
     )
 
 
-@contextlib.contextmanager
-def disable_foreign_key_constraints():
-    _drop_foreign_key_constraints()
-    yield
-
-
 def _sql_dallinger_base_classes():
     """
     These base classes define the basic object relational mappers for the
@@ -954,6 +948,7 @@ def ingest_to_model(
     engine=None,
     clear_columns: Optional[List] = None,
     replace_columns: Optional[dict] = None,
+    drop_foreign_keys: bool = True,
 ):
     """
     Imports a CSV file to the database.
@@ -975,6 +970,11 @@ def ingest_to_model(
 
     replace_columns :
         Optional dictionary of values to set for particular columns.
+
+    drop_foreign_keys :
+        Whether to drop every foreign-key constraint before importing.
+        Callers importing many tables should drop them once and pass ``False``,
+        because finding the constraints reflects every table in the database.
     """
     if engine is None:
         engine = db.engine
@@ -985,14 +985,21 @@ def ingest_to_model(
             patch_csv(file, patched_csv, clear_columns, replace_columns)
             with open(patched_csv, "r") as patched_csv_file:
                 ingest_to_model(
-                    patched_csv_file, model, clear_columns=None, replace_columns=None
+                    patched_csv_file,
+                    model,
+                    engine,
+                    clear_columns=None,
+                    replace_columns=None,
+                    drop_foreign_keys=drop_foreign_keys,
                 )
     else:
         inspector = sqlalchemy.inspect(db.engine)
         reader = csv.reader(file)
         columns = tuple('"{}"'.format(n) for n in next(reader))
 
-        with disable_foreign_key_constraints(), blocking_psycopg():
+        if drop_foreign_keys:
+            _drop_foreign_key_constraints()
+        with blocking_psycopg():
             postgres_copy_from(
                 file, model, engine, columns=columns, format="csv", HEADER=False
             )
@@ -1072,6 +1079,7 @@ def ingest_zip(path, engine=None):
     if is_zip_path(path):
         with ZipFile(path, "r") as archive:
             members = table_csv_members_by_table(archive)
+            _drop_foreign_key_constraints()
             for tablename in import_order:
                 member = members.get(tablename)
                 if member is None:
@@ -1079,17 +1087,18 @@ def ingest_zip(path, engine=None):
                 model = sql_base_classes()[tablename]
                 file = archive.open(member)
                 file = io.TextIOWrapper(file, encoding="utf8", newline="")
-                ingest_to_model(file, model, engine)
+                ingest_to_model(file, model, engine, drop_foreign_keys=False)
         return
 
     database_dir = resolve_database_dir(path)
+    _drop_foreign_key_constraints()
     for tablename in import_order:
         csv_path = table_csv_path(database_dir, tablename)
         if not os.path.exists(csv_path):
             continue
         model = sql_base_classes()[tablename]
         with open(csv_path, encoding="utf8", newline="") as file:
-            ingest_to_model(file, model, engine)
+            ingest_to_model(file, model, engine, drop_foreign_keys=False)
 
 
 dallinger.data.ingest_zip = ingest_zip

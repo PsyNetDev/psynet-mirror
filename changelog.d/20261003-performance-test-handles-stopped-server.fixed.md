@@ -1,0 +1,1 @@
+`psynet performance-test` now ends a test early with an explanation and reports the results collected so far when the experiment server stops mid-test (for example once a local experiment reaches its participant target), instead of respawning failing bots until the timeout and then crashing with a connection error.

@@ -363,9 +363,31 @@ See :doc:`/code/trials/participant_and_trial_failure`.
 -------------------------------------
 
 Search for ``def process_response``, ``response_approved``,
-``render_partial_timeline_payload``, and code in ``render()`` or templates
-that changes the database.
+``render_partial_timeline_payload``, ``session.commit(``,
+``session.rollback(``, ``accumulate_answers``, and code in ``render()`` or
+templates that changes the database.
 
+* With ``accumulate_answers=True``, ``participant.answer`` is now a dict from
+  the start of the page maker or trial, and each page adds its answer when it
+  is submitted. Code that reads ``participant.answer`` during such a trial
+  now gets the current trial's answers so far, not the previous trial's
+  answer. Answers from nested accumulating page makers now go into the same
+  dict instead of being lost.
+
+* Experiment code that runs while a participant moves through the timeline
+  must not call ``db.session.commit()`` or ``db.session.rollback()``; PsyNet
+  now raises ``RuntimeError`` if it does. This covers code blocks, page
+  makers, page methods (``format_answer``, ``validate``, ``on_complete``,
+  ``pre_render``), trial methods and trial maker hooks. Delete these calls:
+  PsyNet commits for you. Use ``db.session.flush()`` where you need a new
+  object's ``id``. Custom POST routes still commit themselves. See
+  :ref:`Saving changes <saving_changes>`.
+
+* ``participant.answer``, ``save_answer`` variables and ``on_complete`` are
+  now updated only after ``validate`` accepts the response. A custom
+  ``format_answer``, ``validate`` or ``process_response`` that reads
+  ``participant.answer`` now sees the previous answer; use the ``answer``
+  argument instead.
 * Pages now render in a read-only transaction. Move database writes from
   ``render()`` or templates to ``pre_render()``.
 * An override of ``Experiment.process_response`` must return a

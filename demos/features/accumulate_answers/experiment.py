@@ -147,6 +147,36 @@ part_3 = join(
     CodeBlock(part_3_check),
 )
 
+part_4_logic = PageMaker(
+    lambda: join(
+        animal_page("cat", time_estimate=5, bot_response="A little"),
+        # Earlier answers are already in participant.answer, and a nested
+        # accumulating page maker adds its answers to the same dict.
+        PageMaker(
+            lambda participant: color_page(
+                "blue" if participant.answer["cat"] == "A little" else "green",
+                time_estimate=5,
+                bot_response="Very much",
+            ),
+            time_estimate=5,
+            accumulate_answers=True,
+        ),
+    ),
+    accumulate_answers=True,
+    time_estimate=10,
+)
+
+
+def part_4_check(participant):
+    if isinstance(participant, Bot):
+        assert participant.answer == {"cat": "A little", "blue": "Very much"}
+
+
+part_4 = join(
+    part_4_logic,
+    CodeBlock(part_4_check),
+)
+
 
 class Exp(psynet.experiment.Experiment):
     label = "Static experiment demo"
@@ -155,4 +185,5 @@ class Exp(psynet.experiment.Experiment):
         part_1,
         part_2,
         part_3,
+        part_4,
     )

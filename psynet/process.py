@@ -1,12 +1,16 @@
 import datetime
 import threading
 import time
+from contextvars import ContextVar
+from functools import partial
 
 import dallinger.db
 from dallinger import db
 from dallinger.db import redis_conn
 from dallinger.utils import classproperty
+from redis.exceptions import RedisError
 from rq import Queue
+from rq.exceptions import InvalidJobOperation, NoSuchJobError
 from rq.job import Job
 from sqlalchemy import (
     Boolean,
@@ -16,19 +20,36 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
-    event,
+    inspect,
 )
 from sqlalchemy.exc import NoResultFound
 from sqlalchemy.orm import deferred, relationship
 from tenacity import retry, retry_if_exception_type, stop_after_delay, wait_exponential
 
 from .data import SQLBase, SQLMixin, register_table
-from .db import with_transaction
+from .db import _call_after_commit, _set_transaction_lock_timeout, with_transaction
 from .field import PythonDict, PythonObject
+from .notifier import _send_alert
 from .serialize import prepare_function_for_serialization
 from .utils import get_logger
 
 logger = get_logger()
+
+_RECHECK_LOCK_TIMEOUT_SECONDS = 5
+
+_running_async_process = ContextVar("psynet_running_async_process", default=False)
+
+
+def _in_async_process():
+    """Whether the current code runs inside an async process's function.
+
+    The process's own trial is finalized by :meth:`Trial.recheck_finalization`
+    after the process commits, which locks the participant before the trial;
+    other trials touched there are left to :meth:`Trial.finalize_pending_trials`.
+    Finalizing inside the process would lock the trial first, and a request
+    holding the participant could then deadlock with it.
+    """
+    return _running_async_process.get()
 
 
 @register_table
@@ -78,7 +99,7 @@ class AsyncProcess(SQLBase, SQLMixin):
     def add_to_launch_queue(self):
         """Queue this process to launch once the creating session commits."""
         self.time_enqueued = datetime.datetime.now()
-        _session_launch_queue(db.session()).append(self.get_launch_spec())
+        _call_after_commit(partial(_launch_unless_cancelled, self.get_launch_spec()))
 
     def get_launch_spec(self) -> dict:
         db.session.flush([self])
@@ -87,16 +108,6 @@ class AsyncProcess(SQLBase, SQLMixin):
             "class": self.__class__,
             "id": self.id,
         }
-
-    @classmethod
-    def launch_all(cls, session=None):
-        """Launch the processes queued by ``session`` (default: the current one)."""
-        queue = _session_launch_queue(db.session() if session is None else session)
-        while queue:
-            process = queue.pop(0)
-            assert process["obj"].id is not None
-            logger.info("Launching async process %s...", process["id"])
-            process["class"].launch(process)
 
     def __init__(
         self,
@@ -194,8 +205,13 @@ class AsyncProcess(SQLBase, SQLMixin):
         These are the objects that will be failed if the process fails. Ultimately we might want to
         add more objects to this list, for example participants, assets, and networks,
         but currently we're not confident that PsyNet supports failing those objects in that kind of way.
+        An asset's process (e.g. an async deposit) fails the asset's trial, which could otherwise
+        never be finalized; a trial that is already finalized is left alone.
         """
-        candidates = [self.trial, self.node]
+        trial = self.trial
+        if trial is None and self.asset and self.asset.trial:
+            trial = None if self.asset.trial.finalized else self.asset.trial
+        candidates = [trial, self.node]
         return [lambda obj=obj: [obj] for obj in candidates if obj is not None]
 
     @classmethod
@@ -245,6 +261,9 @@ class AsyncProcess(SQLBase, SQLMixin):
             experiment = get_experiment()
 
             process = cls.get_process(process_id)
+            if getattr(process, "cancelled", False):
+                logger.info("Async process %s was cancelled; skipping.", process_id)
+                return
             function = process.function
 
             arguments = cls.preprocess_args(process.arguments)
@@ -257,7 +276,11 @@ class AsyncProcess(SQLBase, SQLMixin):
                 ).total_seconds()
             db.session.commit()
 
-            function(**arguments)
+            token = _running_async_process.set(True)
+            try:
+                function(**arguments)
+            finally:
+                _running_async_process.reset(token)
 
             process.time_finished = datetime.datetime.now()
             process.time_taken = time.monotonic() - timer
@@ -288,7 +311,20 @@ class AsyncProcess(SQLBase, SQLMixin):
         if trial_id is not None:
             from psynet.trial.main import Trial
 
-            Trial.recheck_finalization(trial_id)
+            try:
+                # A busy participant should not tie up the worker; the
+                # finalize backstop picks the trial up if this times out.
+                _set_transaction_lock_timeout(_RECHECK_LOCK_TIMEOUT_SECONDS)
+                Trial.recheck_finalization(trial_id)
+                db.session.commit()
+            except Exception:
+                logger.warning(
+                    "Post-commit finalize re-check failed for trial %s; "
+                    "leaving it to the finalize backstop.",
+                    trial_id,
+                    exc_info=True,
+                )
+                db.session.rollback()
 
     @staticmethod
     def _get_trial_id(process):
@@ -332,58 +368,22 @@ class AsyncProcess(SQLBase, SQLMixin):
         )
 
 
-_LAUNCH_QUEUE_KEY = "psynet_async_process_launch_queue"
-_NESTED_LAUNCH_SNAPSHOTS_KEY = "psynet_nested_async_process_launch_lengths"
-
-
-def _session_launch_queue(session):
-    # Per session, so another greenlet's commit cannot launch a process whose
-    # row this session has not committed yet.
-    return session.info.setdefault(_LAUNCH_QUEUE_KEY, [])
-
-
-@event.listens_for(db.session, "after_transaction_create")
-def _snapshot_launch_queue_for_nested(session, transaction):
-    """Remember the queue length so a SAVEPOINT rollback can drop only its own entries."""
-    if not transaction.nested:
+def _launch_unless_cancelled(process):
+    """Launch a committed process, unless it was cancelled before the commit."""
+    # No SQL can run in after_commit, so read only already-loaded state; an
+    # expired object here means a rolled-back change, so launch it.
+    if inspect(process["obj"]).dict.get("cancelled", False):
         return
-    queue = session.info.get(_LAUNCH_QUEUE_KEY) or []
-    session.info.setdefault(_NESTED_LAUNCH_SNAPSHOTS_KEY, []).append(len(queue))
-
-
-@event.listens_for(db.session, "after_commit")
-def receive_after_commit(session):
-    # Releasing a SAVEPOINT also fires after_commit; wait for the root commit.
-    if session.in_nested_transaction():
-        return
-    AsyncProcess.launch_all(session)
-
-
-@event.listens_for(db.session, "after_rollback")
-def _discard_launch_queue_on_rollback(session):
-    """Drop entries from a rolled-back SAVEPOINT, or the whole queue on root rollback.
-
-    Detect the SAVEPOINT via the snapshot stack. ``in_nested_transaction()``
-    may already be false when this handler runs.
-    """
-    stack = session.info.get(_NESTED_LAUNCH_SNAPSHOTS_KEY) or []
-    if stack:
-        queue = session.info.get(_LAUNCH_QUEUE_KEY)
-        if queue is not None:
-            del queue[stack[-1] :]
-        return
-    session.info.pop(_LAUNCH_QUEUE_KEY, None)
-
-
-@event.listens_for(db.session, "after_transaction_end")
-def _end_launch_queue_transaction(session, transaction):
-    if transaction.nested:
-        stack = session.info.get(_NESTED_LAUNCH_SNAPSHOTS_KEY)
-        if stack:
-            stack.pop()
-    elif transaction.parent is None:
-        # Session.close() ends the root transaction without after_rollback.
-        session.info.pop(_LAUNCH_QUEUE_KEY, None)
+    logger.info("Launching async process %s...", process["id"])
+    try:
+        process["class"].launch(process)
+    except Exception:
+        logger.exception("Could not launch async process %s.", process["id"])
+        _send_alert(
+            f"Async process {process['id']} ({process['class'].__name__}) was "
+            "saved but could not be launched, "
+            "so it stays pending until its timeout, if any."
+        )
 
 
 class LocalAsyncProcess(AsyncProcess):
@@ -432,8 +432,31 @@ class LocalAsyncProcess(AsyncProcess):
     #     cls.log_to_redis(msg)
 
 
+def _rq_job_id(process_id):
+    """Return the RQ job ID for an async process, so it can be found to cancel."""
+    return f"psynet_async_process_{process_id}"
+
+
+def _cancel_rq_job(process_id):
+    """Cancel an async process's RQ job if it is still queued."""
+    try:
+        Job.fetch(_rq_job_id(process_id), connection=redis_conn).cancel()
+    except (NoSuchJobError, InvalidJobOperation):
+        logger.info(
+            "No job to cancel for async process %s; it expired, was already "
+            "cancelled, or was never launched.",
+            process_id,
+        )
+    except RedisError:
+        logger.warning(
+            "Could not cancel the RQ job of async process %s; the worker will "
+            "skip it because the process is marked cancelled.",
+            process_id,
+            exc_info=True,
+        )
+
+
 class WorkerAsyncProcess(AsyncProcess):
-    redis_job_id = Column(String)
     timeout = Column(Float)  # note -- currently only applies to non-local proceses
     timeout_scheduled_for = Column(DateTime)
     cancelled = Column(Boolean, default=False)
@@ -476,13 +499,12 @@ class WorkerAsyncProcess(AsyncProcess):
 
     @classmethod
     def launch(cls, process: dict):
-        # Previously we took the id of the enqueue_call and saved that in Process.redis_job_id,
-        # but this is not possible now that the Process object is not accessible.
         cls.redis_queue.enqueue_call(
             func=cls.call_function_with_logger,
             args=(),
             kwargs=dict(process_id=process["id"]),
             timeout=process["timeout"],
+            job_id=_rq_job_id(process["id"]),
         )
 
     @classmethod
@@ -507,14 +529,26 @@ class WorkerAsyncProcess(AsyncProcess):
             db.session.commit()
 
     @property
+    def redis_job_id(self):
+        return _rq_job_id(self.id)
+
+    @property
     def redis_job(self):
         return Job.fetch(self.redis_job_id, connection=redis_conn)
 
     def cancel(self):
+        """Cancel the process.
+
+        The caller's transaction saves the change; the queued job is cancelled
+        once that transaction commits, and not at all if it rolls back.
+        """
+        if self.cancelled:
+            return
         self.cancelled = True
         self.pending = False
         self.fail("Cancelled asynchronous process")
-        self.redis_job.cancel()
+        db.session.flush([self])
+        _call_after_commit(partial(_cancel_rq_job, self.id))
         if self.participant_id is not None:
             from psynet.timeline_hold import _queue_timeline_hold_wake
 
@@ -522,7 +556,6 @@ class WorkerAsyncProcess(AsyncProcess):
                 self.participant_id,
                 reason="async_process_cancelled",
             )
-        db.session.commit()
 
     # @classmethod
     # def log(cls, msg):

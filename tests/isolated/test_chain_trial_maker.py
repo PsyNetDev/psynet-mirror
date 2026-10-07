@@ -323,7 +323,9 @@ def test_static_selection_carries_context_to_on_trial_created(monkeypatch):
         def select_node(self, nodes, participant, experiment):
             return Selection(value=nodes[0], context=context)
 
-    trial_maker = make_static_trial_maker(AdaptiveStaticTrialMaker)
+    trial_maker = make_static_trial_maker(
+        AdaptiveStaticTrialMaker, target_trials_per_node=None
+    )
     participant = DummyParticipant()
     participant.module_state = DummyModuleState()
     network = SimpleNamespace(id=3, block="default")
@@ -437,13 +439,14 @@ def test_discovery_rejects_non_list_results(
         trial_maker._select_trial_node(DummyParticipant(), SimpleNamespace())
 
 
-def test_chain_selection_resolves_head_and_advances_block(monkeypatch):
+def test_chain_selection_resolves_head_and_advances_block_once_claimed(monkeypatch):
     trial_maker = make_trial_maker()
     participant = DummyParticipant()
     participant.module_state = DummyModuleState()
     participant.module_state.block_order = ["default", "next"]
-    head = SimpleNamespace(id=2)
-    chain = SimpleNamespace(id=1, head=head, block="next")
+    chain = SimpleNamespace(id=1, block="next")
+    head = SimpleNamespace(id=2, network=chain)
+    chain.head = head
     context = {"reason": "highest utility"}
 
     monkeypatch.setattr(
@@ -463,6 +466,8 @@ def test_chain_selection_resolves_head_and_advances_block(monkeypatch):
     selection = trial_maker._select_trial_node(participant, SimpleNamespace())
 
     assert selection == Selection(value=head, context=context)
+    assert participant.module_state.block == "default"
+    trial_maker._on_node_claimed(head, participant)
     assert participant.module_state.block == "next"
 
 
@@ -658,6 +663,8 @@ def test_selection_rejects_a_requery_with_the_same_id():
         ("find_nodes", "find_chains"),
         ("select_node", "select_chain"),
         ("custom_node_filter", "custom_chain_filter"),
+        ("filter_nodes_query", "filter_chains_query"),
+        ("node_priority", "chain_priority"),
     ],
 )
 def test_chain_rejects_removed_or_wrong_paradigm_hooks(method_name, replacement):
@@ -680,6 +687,8 @@ def test_chain_rejects_removed_or_wrong_paradigm_hooks(method_name, replacement)
         ("find_chains", "find_nodes"),
         ("select_chain", "select_node"),
         ("custom_chain_filter", "custom_node_filter"),
+        ("filter_chains_query", "filter_nodes_query"),
+        ("chain_priority", "node_priority"),
     ],
 )
 def test_static_rejects_removed_or_wrong_paradigm_hooks(method_name, replacement):
@@ -779,18 +788,6 @@ def test_custom_node_filter_rejects_duplicate_node():
             participant=SimpleNamespace(),
             experiment=SimpleNamespace(),
         )
-
-
-def test_static_node_filter_ignores_headless_network(caplog):
-    trial_maker = make_static_trial_maker()
-    (headed,) = _headed_chains(1)
-
-    assert trial_maker._filter_eligible_candidates(
-        [SimpleNamespace(id=99, head=None), headed],
-        participant=SimpleNamespace(),
-        experiment=SimpleNamespace(),
-    ) == [headed.head]
-    assert "Ignoring StaticNetwork objects without head nodes" in caplog.text
 
 
 def test_custom_chain_filter_drops_chains():

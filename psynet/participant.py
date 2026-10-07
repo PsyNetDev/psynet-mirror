@@ -451,7 +451,7 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
     complete = Column(Boolean)
     pending_redirect = Column(String)
     answer = Column(PythonObject)
-    answer_accumulators = Column(PythonList)
+    answer_accumulation_depth = Column(Integer)
     sequences = Column(PythonList)
     branch_log = Column(PythonObject)
     for_loops = Column(PythonObject)
@@ -801,7 +801,7 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         self.progress_fixes = []
         self.elt_id = ["main", -1]
         self.elt_id_max = []
-        self.answer_accumulators = []
+        self.answer_accumulation_depth = 0
         self.for_loops = {}
         self.failure_tags = []
         self.sequences = []
@@ -1093,7 +1093,7 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
 
         from psynet.timeline_hold import _queue_timeline_hold_wake
 
-        # A failed participant can leave their hold, so wake an overlay
+        # A failed participant can leave a hold outside end logic, so wake an overlay
         # failed from another request instead of waiting for its safety poll.
         cached_hold = getattr(self, "_timeline_hold_record", None)
         if cached_hold is not None and cached_hold.page_uuid != self.page_uuid:

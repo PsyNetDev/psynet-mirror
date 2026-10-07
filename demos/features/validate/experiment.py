@@ -60,6 +60,7 @@ class Exp(psynet.experiment.Experiment):
         )
         assert response.successful_validation is not None
         assert not response.successful_validation
+        assert bot.from_db("answer") is None, "A rejected answer must not be saved"
         assert bot.current_page_text.startswith(
             "This page has a custom validation function that prohibits the answer 'blue'."
         )
@@ -71,6 +72,7 @@ class Exp(psynet.experiment.Experiment):
             .first()
         )
         assert response.successful_validation
+        assert bot.from_db("answer") == "green"
 
         assert bot.current_page_text.startswith(
             "This control has a custom validation method that prohibits the answer 'green'."

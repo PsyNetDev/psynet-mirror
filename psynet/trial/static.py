@@ -17,7 +17,6 @@ from psynet.trial.chain import (
 )
 
 from ..utils import get_logger, is_method_overridden
-from .main import Selection
 
 logger = get_logger()
 
@@ -430,6 +429,16 @@ class StaticTrialMaker(ChainTrialMaker):
                 "custom_chain_filter",
                 "Static trial makers use custom_node_filter(nodes, participant, experiment).",
             ),
+            (
+                StaticTrialMaker,
+                "filter_chains_query",
+                "Static trial makers use filter_nodes_query(query, participant, experiment).",
+            ),
+            (
+                StaticTrialMaker,
+                "chain_priority",
+                "Static trial makers use node_priority(participant, experiment).",
+            ),
         ]
 
     def _deprecated_selection_hooks(self):
@@ -448,21 +457,64 @@ class StaticTrialMaker(ChainTrialMaker):
         To wait, exit, or drop candidates after built-in availability checks,
         override this method, call ``super().find_nodes``, then filter or
         return ``"wait"`` / ``"exit"``. ``select_node`` cannot return those
-        outcomes.
+        outcomes. Overriding this method loads every eligible node on each
+        trial; :meth:`~psynet.trial.chain.ChainTrialMaker.before_selection`
+        and :meth:`~psynet.trial.static.StaticTrialMaker.filter_nodes_query`
+        keep selection in the database.
         """
         return self._find_eligible_candidates(participant, experiment)
 
     _candidate_label = "node"
+    _list_selection_hooks = ("find_nodes", "select_node")
+    _python_filter_hooks = ("custom_node_filter", "custom_network_filter")
+    _query_hooks = ("filter_nodes_query", "node_priority")
+
+    def filter_nodes_query(self, query, participant, experiment):
+        """Narrow the database query that finds candidate nodes.
+
+        Override this to remove nodes in SQL rather than in Python. ``query``
+        selects each node's ``self.network_class`` joined to the node
+        (``self.node_class``) and already applies PsyNet's built-in checks.
+        Add conditions with ``query.filter(...)``, typically on columns of your
+        node class (``self.node_class`` is always ``StaticNode``, so use your
+        own subclass, e.g. ``ColorNode.difficulty``), and return the result. Unlike
+        :meth:`~psynet.trial.static.StaticTrialMaker.custom_node_filter`,
+        this keeps selection fast when there are many nodes.
+        """
+        return query
+
+    def node_priority(self, participant, experiment):
+        """Return SQL expressions that rank eligible nodes.
+
+        PsyNet orders candidates by block first, then by these expressions
+        (ascending; use ``.desc()`` to reverse), then by balancing when
+        ``balance_across_nodes`` is on, then randomly. The default
+        ``select_node`` takes the first node in that order. Expressions may
+        use columns of your node class (e.g. ``ColorNode.difficulty``) and
+        ``self.network_class``.
+        """
+        return []
+
+    def _filter_candidate_query(self, query, participant, experiment):
+        return self.filter_nodes_query(query, participant, experiment)
+
+    def _candidate_priority(self, participant, experiment):
+        return self.node_priority(participant, experiment)
+
+    def _candidate_value(self, network):
+        if network.head is None:
+            raise RuntimeError(f"Static network {network.id} has no head node.")
+        return network.head
+
+    def _hook_is_overridden(self, method_name):
+        """Return whether this trial maker or its class overrides ``method_name``."""
+        return method_name in vars(self) or is_method_overridden(
+            self, StaticTrialMaker, method_name
+        )
 
     def _filter_eligible_candidates(self, chains, participant, experiment):
         """Apply node eligibility before wait/exit checks."""
-        headless_chain_ids = [chain.id for chain in chains if chain.head is None]
-        if headless_chain_ids:
-            logger.warning(
-                "Ignoring StaticNetwork objects without head nodes: %s.",
-                headless_chain_ids,
-            )
-        nodes = [chain.head for chain in chains if chain.head is not None]
+        nodes = [self._candidate_value(chain) for chain in chains]
         if not is_method_overridden(
             self,
             StaticTrialMaker,
@@ -555,19 +607,34 @@ class StaticTrialMaker(ChainTrialMaker):
         """
         self._raise_unsupported_selection_hook("custom_chain_filter")
 
+    def filter_chains_query(self, query, participant, experiment):
+        """Wrong-paradigm selection hook.
+
+        :meta private:
+        """
+        self._raise_unsupported_selection_hook("filter_chains_query")
+
+    def chain_priority(self, participant, experiment):
+        """Wrong-paradigm selection hook.
+
+        :meta private:
+        """
+        self._raise_unsupported_selection_hook("chain_priority")
+
     def _select_trial_node(self, participant, experiment):
-        selection = self._select_from_discovered(
-            self.find_nodes(participant, experiment),
+        if self._uses_list_selection_hooks():
+            discovered = self.find_nodes(participant, experiment)
+        else:
+            discovered = self._find_eligible_candidates(
+                participant, experiment, limit=1
+            )
+        return self._select_from_discovered(
+            discovered,
             participant,
             experiment,
             self.select_node,
             "select_node",
         )
-        if not isinstance(selection, Selection):
-            return selection
-
-        self._advance_to_selected_block(selection.value.block, participant)
-        return selection
 
     def _start_nodes_param_name(self) -> str:
         return "nodes"

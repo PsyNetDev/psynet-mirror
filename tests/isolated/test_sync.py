@@ -5844,10 +5844,6 @@ def test_async_process_events_wake_timeline_holds(
         "psynet.timeline_hold._queue_timeline_hold_wake",
         lambda participant_id, reason=None, **kwargs: wakes.append(reason),
     )
-    monkeypatch.setattr(
-        "psynet.process.Job.fetch",
-        lambda *args, **kwargs: SimpleNamespace(cancel=lambda: None),
-    )
 
     participant = new_participant(get_experiment())
     db_session.flush()

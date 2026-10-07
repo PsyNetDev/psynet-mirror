@@ -3,9 +3,13 @@
 By default each page stores its own answer, but sometimes you want several pages
 to contribute to a single dictionary instead. Setting `accumulate_answers=True`
 on a `PageMaker` or trial class merges those responses under their page labels
-(repeating the same label yields `dog`, `dog_1`, `dog_2`, and so on). This demo
-walks through three cases: a plain multi-page maker, a static trial with
-kindness/bravery ratings, and a `for_loop` that repeats the same question.
+(repeating the same label yields `dog`, `dog_1`, `dog_2`, and so on). The
+dictionary fills up as each page is submitted, so later pages can read
+`participant.answer` to react to earlier ones, and accumulating page makers
+nested inside each other share one dictionary. This demo
+walks through four cases: a plain multi-page maker, a static trial with
+kindness/bravery ratings, a `for_loop` that repeats the same question, and a
+nested page maker whose question depends on an earlier answer.
 
 ## Usage
 
