@@ -1,5 +1,6 @@
 import importlib
 import inspect
+import json
 import pickle
 import types
 import warnings
@@ -287,6 +288,12 @@ def unserialize(x):
     # import_local_experiment()
     # custom_classes = list(get_custom_sql_classes().values())
     # return jsonpickle.decode(x, context=unpickler, classes=custom_classes)
+    #
+    # jsonpickle tags everything that is not plain JSON with "py/" (and
+    # non-string keys with "json://"). Untagged text decodes identically with
+    # json.loads, which is several times faster.
+    if '"py/' not in x and "json://" not in x:
+        return json.loads(x)
     unpickler = PsyNetUnpickler()
     return jsonpickle.decode(x, context=unpickler)
     # return jsonpickle.decode(x, classes=custom_classes)
