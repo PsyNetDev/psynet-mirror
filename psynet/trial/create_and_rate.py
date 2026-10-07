@@ -7,9 +7,11 @@ resolution remains node-based after the selected chain is resolved to its head.
 Experiments may optionally assign fixed participant roles; the mixin then uses
 the same role for candidate eligibility and final trial-class validation.
 Creators only receive heads that still need creators. Raters receive heads that
-are ready for raters, and they wait (or exit) on heads whose creator slots are
-filled but not yet finalized. Heads that still need creators are not
-rater-eligible.
+are ready for raters, and they wait (or finish the block) on heads whose
+creator slots are filled but not yet finalized. Heads that still need creators
+are not rater-eligible. Because roles follow each chain's creation phase,
+create-and-rate supports only the dynamic ``"balanced"`` and ``"random"``
+chain orders.
 """
 
 import inspect
@@ -21,7 +23,7 @@ from sqlalchemy.orm import declared_attr, deferred
 
 from psynet.field import PythonObject
 from psynet.trial import ChainNode
-from psynet.trial.chain import ChainTrial
+from psynet.trial.chain import ChainTrial, _trial_order_docs_url, _uses_planned_order
 from psynet.trial.main import TrialMaker
 from psynet.utils import get_logger
 
@@ -395,6 +397,12 @@ class CreateAndRateTrialMakerMixin(object):
     RATER_ROLE = "rater"
 
     def __init__(self, **kwargs):
+        if _uses_planned_order(kwargs.get("chain_order", "random")):
+            raise ValueError(
+                "Create-and-rate trial makers assign chains by their creation phase, "
+                "so chain_order must be 'balanced' or 'random'. "
+                f"See {_trial_order_docs_url()}."
+            )
         assert_correct_inheritance(self.__class__, CreateAndRateTrialMakerMixin)
         extended_class = get_extended_class(self)
         assert issubclass(extended_class, TrialMaker), (
@@ -562,6 +570,13 @@ class CreateAndRateTrialMakerMixin(object):
         return self._role_for_phase(phase) == role
 
     def _defer_assignment(self):
+        """Wait or exit when a selected head's phase no longer fits the participant.
+
+        ``find_chains`` already turns heads waiting for creators into a
+        wait or a finished block. This fallback only runs when the phase
+        changes after selection, once block handling is over, so without
+        ``wait_for_networks`` it leaves the trial maker.
+        """
         raise CreateAndRateAssignmentPending(
             "wait" if self.wait_for_networks else "exit"
         )
@@ -663,7 +678,7 @@ class CreateAndRateTrialMakerMixin(object):
         has_pending = any(phase == self.WAITING_FOR_CREATORS for _, phase in classified)
         if has_pending and self.wait_for_networks:
             return "wait"
-        return "exit"
+        return []
 
     def get_finished_creations(self, node):
         """Return the finalized, non-failed creator trials for a node."""

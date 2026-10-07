@@ -60,7 +60,8 @@ Allocation is set with arguments to
 
 - ``expected_trials_per_participant`` and ``max_trials_per_participant``:
   an integer, or ``"n_nodes"`` for one per node.
-- ``balance_across_nodes`` (default ``True``).
+- ``block_order`` (default ``"random"``) and ``node_order`` (default
+  ``"balanced"``); see :ref:`trial_order`.
 - ``allow_repeated_nodes`` (default ``False``) and ``n_repeat_trials``
   (default ``0``).
 - ``max_trials_per_block``.
@@ -84,33 +85,29 @@ Participant groups are also set on the nodes:
 
     StaticNode(definition={"instrument": "trumpet"}, participant_group="brass_players")
 
-To choose the block order, subclass the trial maker and override
-:meth:`~psynet.trial.chain.ChainTrialMaker.choose_block_order`. To assign
-participant groups, pass ``choose_participant_group``, a function from the
-participant to a group name. It is required whenever nodes have participant
-groups:
+To assign participant groups, pass ``choose_participant_group``, a function
+from the participant to a group name. It is required whenever nodes have
+participant groups:
 
 .. code-block:: python
 
-    class CustomTrialMaker(StaticTrialMaker):
-        def choose_block_order(self, experiment, participant, blocks):
-            return sorted(blocks)
-
-    CustomTrialMaker(
+    StaticTrialMaker(
         ...,
         choose_participant_group=lambda participant: participant.var.instrument_family,
     )
 
 To let the trial maker decide when recruitment stops, pass
 ``recruit_mode="n_participants"`` with ``target_n_participants``, or
-``recruit_mode="n_trials"`` with ``target_trials_per_node``.
+``recruit_mode="n_trials"`` with ``target_trials_per_node``. A target without
+its matching ``recruit_mode`` raises an error.
 
 With ``"n_participants"``, ``n_participants_completion`` decides who fills the
 quota. ``"experiment"`` (the default) counts participants who finish the
 whole experiment. ``"trial_maker"`` counts participants who finish this trial
 maker, even if they leave before the end page. In both cases, people still
 working in the experiment hold a slot so PsyNet does not recruit a
-replacement straight away.
+replacement straight away. Passing ``"trial_maker"`` with
+``recruit_mode=None`` or ``"n_trials"`` raises an error.
 
 .. _custom_node_selection:
 
@@ -146,19 +143,104 @@ once per selection, for primary trials only: not for repeat trials or for the
 copies given to other members of a synchronized group. Chain trial makers have
 the equivalent hooks for chains; see :doc:`/code/writing_a_chain_experiment`.
 
+.. _trial_order:
+
+Trial order
+~~~~~~~~~~~
+
+A participant works through their blocks one at a time, and PsyNet only
+considers nodes in the current block. The block ends when the participant
+reaches ``max_trials_per_block``, when
+:meth:`~psynet.trial.chain.ChainTrialMaker.should_finish_block` returns
+``True`` (it receives ``participant`` and the block's name), or when the
+block has nothing more to give them. PsyNet then moves
+to the next block, or leaves the trial maker after the last one.
+
+``block_order`` sets the order of the blocks:
+
+- ``"random"`` (default): a new random order for each participant.
+- ``"listed"``: the order in which the blocks first appear in ``nodes``.
+- A list of block names, used for every participant. It may name only some
+  of the blocks.
+- A function that takes any of ``participant``, ``experiment`` and
+  ``blocks`` and returns a list of block names. It may leave blocks out to
+  give a participant only some of them, but must keep at least one.
+
+``node_order`` sets the order of the nodes within a block. Dynamic orders
+are recomputed in the database for each trial:
+
+- ``"balanced"`` (default): nodes with the fewest trials first, counting
+  trials in progress, with ties broken at random. Participants requesting
+  a trial at the same moment are given different nodes where possible,
+  unless node selection runs in Python (see :ref:`trial_selection_performance`).
+- ``"random"``: a fresh random draw for each trial. Without
+  ``allow_repeated_nodes`` this gives each participant the block's nodes in
+  a random order; with it, a node can come up again before others have been
+  seen. For a shuffle without such repeats, use a function such as
+  ``lambda nodes: random.sample(nodes, len(nodes))``.
+
+A custom :meth:`~psynet.trial.static.StaticTrialMaker.node_priority` sorts
+first; a dynamic order only breaks ties among the nodes it ranks equally.
+
+Planned orders are fixed when the participant enters the block:
+
+- ``"listed"``: the order of ``nodes``.
+- A function that takes any of ``participant``, ``experiment``, ``block``
+  (the block's name) and ``nodes`` (the block's nodes in listed order), by
+  name, and returns the nodes in the order to present them. Returning fewer
+  nodes gives the participant only those; set
+  ``expected_trials_per_participant`` to match, as PsyNet uses it for
+  progress and payment estimates. With ``allow_repeated_nodes=True`` (which
+  also needs ``max_trials_per_participant`` or ``max_trials_per_block``) it
+  may list a node more than once.
+
+To use a different order in each block, pass a dict from block name to
+order; it must name every block. For example, to counterbalance the block
+order across participants and shuffle the conditions within each block with
+at most two trials of the same condition in a row:
+
+.. code-block:: python
+
+    from psynet.utils import shuffle_with_max_run
+
+    StaticTrialMaker(
+        ...,
+        block_order=lambda participant: ["A", "B"] if participant.id % 2 else ["B", "A"],
+        node_order=lambda nodes: shuffle_with_max_run(
+            nodes, key=lambda node: node.definition["condition"], max_run=2
+        ),
+    )
+
+A planned order gives the participant exactly the nodes it lists, however
+many trials those nodes already have. If a planned node is waiting for
+asynchronous processing, the participant waits for it; if it has failed,
+PsyNet skips it and logs a warning. A planned order already decides which node comes next, so it cannot
+be combined with ``select_node``, ``node_priority`` or ``find_nodes``; filter
+with ``filter_nodes_query`` or ``custom_node_filter`` instead. Repeat trials
+come after the last block and are not part of the plan.
+
+Chain trial makers take ``block_order`` too, and ``chain_order`` in place of
+``node_order``; see :doc:`/code/writing_a_chain_experiment`.
+
 .. _trial_selection_performance:
 
 Keeping selection fast
 ~~~~~~~~~~~~~~~~~~~~~~
 
-PsyNet finds each trial's node with one database query. It orders the
-eligible nodes by block, then by any custom priority, then by balancing (when
-it is on), then randomly, and loads only the first. It then locks that node
-and recounts its trials, a small fixed cost that stops simultaneous
-participants from overfilling it. Nodes are not eligible if they
-already have ``target_trials_per_node`` trials, if they are waiting for
-asynchronous processing, or if they are outside the participant's group or
-remaining blocks.
+PsyNet finds each trial's node in the database, without loading the other
+candidates. It orders the eligible nodes by any custom priority, then by
+balancing (with ``node_order="balanced"``), then randomly, and loads only
+the first. With ``"balanced"``, no Python selection hooks and no
+``node_priority``, PsyNet locks that node until the trial is saved and skips
+nodes that simultaneous requests have locked, so participants arriving
+together are spread across the best 20 nodes; beyond that, they share. A
+``node_priority`` always wins, so simultaneous participants may share its
+top node. Nodes are not eligible if they are waiting
+for asynchronous processing, or if they are outside the participant's group
+or current block. ``target_trials_per_node`` only decides when
+``recruit_mode="n_trials"`` stops recruiting; it never makes a node
+ineligible. Planned orders (see :ref:`trial_order`) load the block's nodes
+once, when the participant enters the block.
 
 ``custom_node_filter``, ``select_node`` and ``find_nodes`` run in Python, so
 overriding them makes PsyNet load every eligible node for every trial. With a

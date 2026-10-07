@@ -18,6 +18,7 @@ from psynet.trial.main import (
     TrialMakerState,
 )
 from psynet.trial.static import StaticNode, StaticTrial, StaticTrialMaker
+from psynet.utils import shuffle_with_max_run
 
 
 class CustomTrial(ChainTrial):
@@ -35,11 +36,20 @@ class CustomStaticTrial(StaticTrial):
 class DummyModuleState:
     def __init__(self):
         self.in_repeat_phase = False
-        self.block = "default"
+        self.n_completed_trials = 0
         self.block_order = ["default"]
+        self.set_block_position(0)
+
+    block = property(lambda self: self.block_order[self.block_position])
+    is_last_block = property(
+        lambda self: self.block_position == len(self.block_order) - 1
+    )
 
     def set_block_position(self, position):
-        self.block = self.block_order[position]
+        self.block_position = position
+        self.current_chain_id = None
+        self.planned_network_ids = None
+        self.plan_position = None
 
 
 class DummySyncGroup:
@@ -52,7 +62,7 @@ class DummyParticipant:
         self.id = 1
         self.active_sync_groups = {}
         self.branch_log = []
-        self.module_state = None
+        self.module_state = DummyModuleState()
         self.current_trial = None
         self.trial_status = None
 
@@ -85,6 +95,23 @@ def make_static_trial_maker(trial_maker_class=StaticTrialMaker, **kwargs):
         target_trials_per_node=1,
     )
     return trial_maker_class(**{**args, **kwargs})
+
+
+@pytest.mark.parametrize(
+    "expected, n_planned, warns", [("n_nodes", 3, False), (3, 3, False), (3, 2, True)]
+)
+def test_plan_length_warning_excludes_repeat_trials(caplog, expected, n_planned, warns):
+    trial_maker = make_static_trial_maker(
+        nodes=[StaticNode(definition={"x": x}) for x in range(3)],
+        expected_trials_per_participant=expected,
+        max_trials_per_participant=None,
+        n_repeat_trials=2,
+        node_order="listed",
+    )
+    trial_maker._warn_if_plan_length_is_unexpected(
+        n_planned, SimpleNamespace(n_blocks=1)
+    )
+    assert ("planned" in caplog.text) == warns
 
 
 @pytest.mark.parametrize("target_trials_per_node", [0, -1])
@@ -173,6 +200,53 @@ def test_fail_trials_on_premature_exit_true_emits_deprecation_warning():
     warning = record[0]
     if sys.version_info >= (3, 12):
         assert Path(warning.filename).resolve() == Path(__file__).resolve()
+
+
+@pytest.mark.parametrize(
+    "make, kwargs, message",
+    [
+        (
+            make_trial_maker,
+            dict(recruit_mode=None, target_n_participants=5),
+            "only takes effect",
+        ),
+        (
+            make_trial_maker,
+            dict(recruit_mode="n_participants"),
+            "needs target_n_participants",
+        ),
+        (make_static_trial_maker, dict(target_n_participants=5), "only takes effect"),
+        (
+            make_static_trial_maker,
+            dict(target_trials_per_node=None),
+            "needs target_trials_per_node",
+        ),
+        (
+            make_static_trial_maker,
+            dict(recruit_mode=None),
+            "target_trials_per_node only",
+        ),
+        (make_trial_maker, dict(recruit_mode="n_trial"), "Unknown recruit_mode"),
+    ],
+)
+def test_recruitment_targets_need_the_matching_recruit_mode(make, kwargs, message):
+    with pytest.raises(ValueError, match=message):
+        make(**kwargs)
+
+
+def test_custom_recruit_modes_are_allowed():
+    class CustomRecruitMaker(ChainTrialMaker):
+        recruit_criteria = {**ChainTrialMaker.recruit_criteria, "custom": None}
+
+    trial_maker = make_trial_maker(CustomRecruitMaker, recruit_mode="custom")
+    assert trial_maker.recruit_mode == "custom"
+
+
+def test_chain_node_accepts_empty_definition():
+    assert CustomNode(definition={}).definition == {}
+
+    with pytest.raises(NotImplementedError, match="without a definition"):
+        CustomNode()
 
 
 def test_chain_trial_maker_rejects_mismatched_start_nodes():
@@ -324,7 +398,7 @@ def test_static_selection_carries_context_to_on_trial_created(monkeypatch):
             return Selection(value=nodes[0], context=context)
 
     trial_maker = make_static_trial_maker(
-        AdaptiveStaticTrialMaker, target_trials_per_node=None
+        AdaptiveStaticTrialMaker, recruit_mode=None, target_trials_per_node=None
     )
     participant = DummyParticipant()
     participant.module_state = DummyModuleState()
@@ -439,13 +513,12 @@ def test_discovery_rejects_non_list_results(
         trial_maker._select_trial_node(DummyParticipant(), SimpleNamespace())
 
 
-def test_chain_selection_resolves_head_and_advances_block_once_claimed(monkeypatch):
+def test_chain_selection_resolves_head_without_leaving_the_block(monkeypatch):
     trial_maker = make_trial_maker()
     participant = DummyParticipant()
-    participant.module_state = DummyModuleState()
     participant.module_state.block_order = ["default", "next"]
-    chain = SimpleNamespace(id=1, block="next")
-    head = SimpleNamespace(id=2, network=chain)
+    chain = SimpleNamespace(id=1, block="default")
+    head = SimpleNamespace(id=2, network=chain, network_id=1)
     chain.head = head
     context = {"reason": "highest utility"}
 
@@ -466,9 +539,8 @@ def test_chain_selection_resolves_head_and_advances_block_once_claimed(monkeypat
     selection = trial_maker._select_trial_node(participant, SimpleNamespace())
 
     assert selection == Selection(value=head, context=context)
-    assert participant.module_state.block == "default"
     trial_maker._on_node_claimed(head, participant)
-    assert participant.module_state.block == "next"
+    assert participant.module_state.block == "default"
 
 
 def test_follower_uses_leader_trial_class(monkeypatch):
@@ -1003,3 +1075,148 @@ def test_varying_answers_are_scored_by_their_correlation():
         "score": 1.0,
         "passed": True,
     }
+
+
+def test_removed_balance_flags_name_their_replacement():
+    with pytest.raises(TypeError, match="chain_order='balanced'"):
+        make_trial_maker(balance_across_chains=True)
+    with pytest.raises(TypeError, match="node_order='random'"):
+        make_static_trial_maker(balance_across_nodes=False)
+
+
+@pytest.mark.parametrize(
+    "node_order, message",
+    [
+        ({}, "every block"),
+        ({"default": "random", "other": "random"}, "every block"),
+        ("sorted", "node_order"),
+        (None, "node_order"),
+    ],
+)
+def test_invalid_node_orders_are_rejected(node_order, message):
+    with pytest.raises((TypeError, ValueError), match=message):
+        make_static_trial_maker(node_order=node_order)
+
+
+def test_planned_order_cannot_be_combined_with_ranking_hooks():
+    class RankingMaker(StaticTrialMaker):
+        def select_node(self, nodes, participant, experiment):
+            return nodes[-1]
+
+    with pytest.raises(TypeError, match="select_node"):
+        make_static_trial_maker(RankingMaker, node_order="listed")
+
+
+def test_old_should_finish_block_signature_is_rejected():
+    class OldFinishMaker(ChainTrialMaker):
+        def should_finish_block(
+            self,
+            participant,
+            block,
+            block_position,
+            n_participant_trials_in_block,
+            n_participant_trials_in_trial_maker,
+        ):
+            return False
+
+    with pytest.raises(TypeError, match=r"\(participant, block\)"):
+        make_trial_maker(OldFinishMaker)
+
+    class FlexibleFinishMaker(ChainTrialMaker):
+        def should_finish_block(self, participant, block, **kwargs):
+            return False
+
+    make_trial_maker(FlexibleFinishMaker)
+
+
+def test_choose_block_order_override_conflicts_with_block_order():
+    class OrderedMaker(ChainTrialMaker):
+        def choose_block_order(self, experiment, participant, blocks):
+            return blocks
+
+    with pytest.raises(TypeError, match="block_order"):
+        make_trial_maker(OrderedMaker, block_order="listed")
+
+
+def test_sequential_across_chains_need_revisiting():
+    with pytest.raises(ValueError, match="interleave_chains=False"):
+        make_trial_maker(interleave_chains=False)
+
+
+def test_shuffle_with_max_run_limits_runs():
+    items = ["a"] * 50 + ["b"] * 50
+    for _ in range(20):
+        shuffled = shuffle_with_max_run(items, key=str, max_run=1)
+        assert sorted(shuffled) == items
+        assert all(x != y for x, y in zip(shuffled, shuffled[1:]))
+    with pytest.raises(ValueError, match="at most 1 consecutive"):
+        shuffle_with_max_run(["a", "a", "a", "b"], key=str, max_run=1, max_attempts=10)
+
+
+@pytest.mark.parametrize(
+    "block_order, expected",
+    [
+        ("listed", ["B", "A", "C"]),
+        (["C", "A"], ["C", "A"]),
+        (lambda blocks: blocks[::-1], ["C", "A", "B"]),
+        (lambda trial_maker: [trial_maker.id], ["B"]),
+    ],
+)
+def test_block_order_settings(block_order, expected):
+    trial_maker = make_trial_maker(block_order=block_order)
+    trial_maker.id = "B"
+    participant = DummyParticipant()
+
+    trial_maker.init_block_order(SimpleNamespace(), participant, ["B", "A", "C"])
+
+    assert participant.module_state.block_order == expected
+    assert participant.module_state.block == expected[0]
+
+
+@pytest.mark.parametrize("block_order", [["A", "Z"], ["A", "A"], lambda: []])
+def test_invalid_block_orders_are_rejected(block_order):
+    with pytest.raises(ValueError, match="non-empty list"):
+        make_trial_maker(block_order=[])
+    with pytest.raises(ValueError, match="does not have: \\['Z'\\]"):
+        make_static_trial_maker(block_order=["default", "Z"])
+    trial_maker = make_trial_maker(block_order=block_order)
+
+    with pytest.raises(ValueError, match="block order"):
+        trial_maker.init_block_order(SimpleNamespace(), DummyParticipant(), ["A", "B"])
+
+
+def test_within_chains_skip_listed_blocks_the_participant_lacks():
+    trial_maker = make_trial_maker(
+        chain_type="within",
+        chains_per_experiment=None,
+        chains_per_participant=1,
+        recruit_mode=None,
+        block_order=["C", "Z", "A"],
+    )
+    participant = DummyParticipant()
+
+    trial_maker.init_block_order(SimpleNamespace(), participant, ["A", "C"])
+
+    assert participant.module_state.block_order == ["C", "A"]
+
+
+def test_order_dict_may_cover_more_blocks_than_one_participant_has():
+    trial_maker = make_trial_maker(chain_order={"A": "listed", "B": "random"})
+    trial_maker._check_order_setting_blocks({"A"})
+    with pytest.raises(ValueError, match="every block"):
+        trial_maker._check_order_setting_blocks({"C"})
+
+
+def test_order_function_arguments_are_checked_at_construction():
+    with pytest.raises(TypeError, match="takes items"):
+        make_static_trial_maker(node_order=lambda items: items)
+    with pytest.raises(TypeError, match="takes nodes"):
+        make_trial_maker(chain_order=lambda nodes: nodes)
+    make_static_trial_maker(node_order=lambda participant, block, nodes: nodes)
+
+
+def test_repeats_without_a_trial_limit_name_the_missing_argument():
+    with pytest.raises(ValueError, match="max_trials_per_block"):
+        make_static_trial_maker(
+            allow_repeated_nodes=True, max_trials_per_participant=None
+        )

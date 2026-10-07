@@ -1511,12 +1511,14 @@ class TrialMaker(Module):
         another participant. The built-in criteria are ``"n_participants"``
         and ``"n_trials"``, though the latter requires overriding of
         :attr:`~psynet.trial.main.TrialMaker.n_trials_still_required`.
+        Custom criteria can be added to ``recruit_criteria``.
+        ``None`` leaves recruitment to the rest of the experiment.
 
     target_n_participants
-        Target number of participants to recruit for the experiment.
-        This target is only relevant if ``recruit_mode="n_participants"``.
-        Which completions fill the quota is controlled by
-        ``n_participants_completion``.
+        Target number of participants to recruit for the experiment. Requires
+        ``recruit_mode="n_participants"``; passing it with ``None`` or
+        ``"n_trials"`` raises an error. Which completions fill the quota is
+        controlled by ``n_participants_completion``.
 
     n_participants_completion
         Which kind of completion counts toward ``target_n_participants``.
@@ -1526,7 +1528,7 @@ class TrialMaker(Module):
         experiment end page. In-progress participants still occupy a slot
         in both cases, including people who have not yet reached this
         TrialMaker, so PsyNet does not immediately recruit a replacement.
-        This setting is only relevant if ``recruit_mode="n_participants"``.
+        ``"trial_maker"`` raises an error with ``recruit_mode=None`` or ``"n_trials"``.
 
     n_repeat_trials
         Number of repeat trials to present to the participant. These trials
@@ -1629,14 +1631,23 @@ class TrialMaker(Module):
         sync_group_wait_content=None,
         n_participants_completion: Literal["experiment", "trial_maker"] = "experiment",
     ):
+        if recruit_mode not in self.recruit_criteria:
+            raise ValueError(
+                f"Unknown recruit_mode {recruit_mode!r}. Valid options: "
+                f"{sorted(map(repr, self.recruit_criteria))}."
+            )
         if recruit_mode == "n_participants" and target_n_participants is None:
             raise ValueError(
-                "If <recruit_mode> == 'n_participants', then <target_n_participants> must be provided."
+                "recruit_mode='n_participants' needs target_n_participants, "
+                "the number of participants to recruit."
             )
 
-        if recruit_mode == "n_trials" and target_n_participants is not None:
+        if recruit_mode in (None, "n_trials") and target_n_participants is not None:
             raise ValueError(
-                "If <recruit_mode> == 'n_trials', then <target_n_participants> must be None."
+                f"target_n_participants only takes effect with "
+                f"recruit_mode='n_participants', but recruit_mode is {recruit_mode!r}. "
+                "Pass recruit_mode='n_participants' to recruit until this many "
+                "participants finish, or remove target_n_participants."
             )
 
         if hasattr(self, "performance_check_threshold"):
@@ -1666,6 +1677,15 @@ class TrialMaker(Module):
             raise ValueError(
                 "n_participants_completion must be 'experiment' or 'trial_maker', "
                 f"got {n_participants_completion!r}."
+            )
+        if n_participants_completion != "experiment" and recruit_mode in (
+            None,
+            "n_trials",
+        ):
+            raise ValueError(
+                f"n_participants_completion only takes effect with "
+                f"recruit_mode='n_participants', but recruit_mode is {recruit_mode!r}. "
+                "Pass recruit_mode='n_participants' or remove n_participants_completion."
             )
         self.n_participants_completion = n_participants_completion
         self.n_repeat_trials = n_repeat_trials
@@ -1932,7 +1952,7 @@ class TrialMaker(Module):
     def selected_recruit_criterion(self, experiment):
         if self.recruit_mode not in self.recruit_criteria:
             raise ValueError(
-                f"Invalid recruitment mode: {self.recruit_mode}. Valid options: f{self.recruit_criteria}"
+                f"Invalid recruitment mode: {self.recruit_mode}. Valid options: {list(self.recruit_criteria)}"
             )
         function = self.recruit_criteria[self.recruit_mode]
         return call_function(function, self=self, experiment=experiment)
@@ -2645,12 +2665,14 @@ class NetworkTrialMaker(TrialMaker):
         another participant. The built-in criteria are ``"n_participants"``
         and ``"n_trials"``, though the latter requires overriding of
         :attr:`~psynet.trial.main.TrialMaker.n_trials_still_required`.
+        Custom criteria can be added to ``recruit_criteria``.
+        ``None`` leaves recruitment to the rest of the experiment.
 
     target_n_participants
-        Target number of participants to recruit for the experiment.
-        This target is only relevant if ``recruit_mode="n_participants"``.
-        Which completions fill the quota is controlled by
-        ``n_participants_completion``.
+        Target number of participants to recruit for the experiment. Requires
+        ``recruit_mode="n_participants"``; passing it with ``None`` or
+        ``"n_trials"`` raises an error. Which completions fill the quota is
+        controlled by ``n_participants_completion``.
 
     n_participants_completion
         Which kind of completion counts toward ``target_n_participants``.
@@ -2660,7 +2682,7 @@ class NetworkTrialMaker(TrialMaker):
         experiment end page. In-progress participants still occupy a slot
         in both cases, including people who have not yet reached this
         TrialMaker, so PsyNet does not immediately recruit a replacement.
-        This setting is only relevant if ``recruit_mode="n_participants"``.
+        ``"trial_maker"`` raises an error with ``recruit_mode=None`` or ``"n_trials"``.
 
     n_repeat_trials
         Number of repeat trials to present to the participant. These trials
@@ -2930,7 +2952,6 @@ class NetworkTrialMaker(TrialMaker):
             )
 
         node = selection.value
-        self._on_node_claimed(node, participant)
         logger.info(
             "Selected node %i from network %i to give to participant %i.",
             node.id,
@@ -2942,6 +2963,7 @@ class NetworkTrialMaker(TrialMaker):
             participant=participant,
             experiment=experiment,
         )
+        self._on_node_claimed(node, participant)
         self.on_trial_created(
             trial=trial,
             experiment=experiment,
@@ -3016,27 +3038,8 @@ class NetworkTrialMaker(TrialMaker):
         return True
 
     def _on_node_claimed(self, node, participant):
-        """Apply participant state changes once the selected node is secured."""
+        """Apply participant state changes once a trial has been created on the node."""
         pass
-
-    def _select_from_discovered(
-        self, discovered, participant, experiment, select_hook, method_name
-    ):
-        """Select from a discovered list, or pass through ``wait`` / ``exit``."""
-        if isinstance(discovered, str):
-            return discovered
-        if not isinstance(discovered, list):
-            raise TypeError(
-                "find_chains / find_nodes must return a list of eligible values, "
-                "'wait', or 'exit'; it must not return None"
-            )
-        if not discovered:
-            return "exit"
-        return self._coerce_selection(
-            select_hook(discovered, participant, experiment),
-            allowed_values=discovered,
-            method_name=method_name,
-        )
 
     @staticmethod
     def _coerce_selection(selection, allowed_values, method_name):

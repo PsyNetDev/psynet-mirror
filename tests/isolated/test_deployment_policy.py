@@ -1,3 +1,4 @@
+import os
 import shutil
 import subprocess
 import tomllib
@@ -13,7 +14,6 @@ from psynet.experiment import Experiment
 from psynet.experiment_scaffold import (
     _DEPLOYMENT_POLICY_REVIEW_MARKER,
     _GENERATED_DOCKERIGNORE_VARIANTS,
-    _clear_deployment_policy_review_marker,
     _deployment_policy_needs_review,
     ensure_deployment_policy,
     scaffold_experiment_directory,
@@ -125,7 +125,7 @@ def test_scaffold_creates_stock_deployment_policy(tmp_path):
 
     with working_directory(tmp_path):
         scaffold_experiment_directory()
-        assert _deployment_policy_needs_review()
+        assert not _deployment_policy_needs_review()
 
     policy = parse_deployment_policy(tmp_path / "deploy.toml")
     assert policy.exclude_paths == EXPECTED_EXCLUDE_PATHS
@@ -134,13 +134,16 @@ def test_scaffold_creates_stock_deployment_policy(tmp_path):
     assert not (tmp_path / ".dockerignore").exists()
 
 
-def test_ensure_deployment_policy_uses_new_experiment_review_wording(tmp_path):
-    """Creating deploy.toml without an old .gitignore is not a migration."""
+def test_ensure_deployment_policy_marks_only_migrations_for_review(tmp_path):
+    """Only a deploy.toml that replaces an existing .gitignore selection is checked."""
     with working_directory(tmp_path):
         ensure_deployment_policy()
+        assert not _deployment_policy_needs_review()
 
-    marker = tmp_path / _DEPLOYMENT_POLICY_REVIEW_MARKER
-    assert marker.read_text().startswith("reason: new experiment\n")
+        Path("deploy.toml").unlink()
+        Path(".gitignore").write_text("secret.txt\n")
+        ensure_deployment_policy()
+        assert (tmp_path / _DEPLOYMENT_POLICY_REVIEW_MARKER).is_file()
 
 
 def test_scaffold_missing_files_does_not_leave_review_marker(tmp_path, monkeypatch):
@@ -306,18 +309,15 @@ def test_check_experiment_directory_stops_after_creating_missing_deploy_toml(
             _check_experiment_directory("debug")
 
         message = str(error.value)
-        assert "PsyNet now requires experiments to provide a deploy.toml" in message
         assert (
-            "existing .gitignore covered the following files, but your new "
-            "deploy.toml does not"
-        ) in message
-        assert "This only prints the files that PsyNet would copy" in message
-        assert "it does not start or deploy the experiment" in message
-        assert "Check the list for credentials, private data, large files" in message
-        assert "secret.txt" in message
-        assert "dallinger deployment-files list" in message
+            "Your .gitignore ignores these files, but deploy.toml does not exclude them"
+            in message
+        )
+        assert "  secret.txt\n" in message
+        assert "experiment.py" not in message
+        assert "[exclude]" in message
 
-        # The policy now exists, so the author can review it and rerun.
+        # The check runs once, so the author can edit deploy.toml and rerun.
         assert not _deployment_policy_needs_review()
         _check_experiment_directory("debug")
 
@@ -326,11 +326,143 @@ def test_check_experiment_directory_stops_after_creating_missing_deploy_toml(
     ).read_bytes()
 
 
-def test_check_experiment_directory_stops_after_setup_creates_deploy_toml(
+def _old_experiment_with_ignored_secret(root, rule="secret.txt", git_root=None):
+    """Lay out a pre-deploy.toml experiment whose .gitignore keeps a secret local."""
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "experiment.py").write_text("class Exp:\n    pass\n")
+    (root / "requirements.txt").write_text("psynet\n")
+    (root / ".gitignore").write_text(f"{rule}\n")
+    (root / "secret.txt").write_text("API_KEY=private\n")
+    subprocess.run(["git", "init", "-q"], cwd=git_root or root, check=True)
+
+
+@pytest.mark.parametrize("subdirectory", ["", "studies/pilot"])
+def test_scripts_update_keeps_old_gitignore_rules_for_migration_check(
+    tmp_path, monkeypatch, subdirectory
+):
+    """``psynet scripts update`` replaces .gitignore before the check runs."""
+    from click import ClickException
+
+    from psynet.command_line import _check_experiment_directory
+
+    monkeypatch.setattr("psynet.command_line.is_in_repo_experiment", lambda: False)
+    experiment = tmp_path / subdirectory
+    _old_experiment_with_ignored_secret(experiment, "/secret.txt", git_root=tmp_path)
+
+    with working_directory(experiment):
+        scaffold_experiment_directory(overwrite=True)
+        assert "secret.txt" not in Path(".gitignore").read_text()
+
+        with pytest.raises(ClickException, match="  secret.txt\n"):
+            _check_experiment_directory("debug")
+
+
+@pytest.mark.parametrize(
+    "rule, anchored",
+    [
+        ("/secret.txt", "exp[1]/secret.txt"),
+        ("static/key.txt", "exp[1]/static/key.txt"),
+        ("!/keep.txt", "!exp[1]/keep.txt"),
+        ("**/cache", "exp[1]/**/cache"),
+        ("secret.txt", "secret.txt"),
+        ("build/", "build/"),
+        ("build/  ", "build/  "),
+        ("# a/comment", "# a/comment"),
+    ],
+)
+def test_saved_gitignore_rules_are_anchored_to_the_experiment(rule, anchored):
+    from psynet.deployment_info import _anchor_gitignore_rules
+
+    assert (
+        _anchor_gitignore_rules(rule, "exp[1]/")
+        == anchored.replace("exp[1]", "exp\\[1\\]") + "\n"
+    )
+
+
+def test_migration_check_stops_when_git_cannot_answer(tmp_path, monkeypatch):
+    from click import ClickException
+
+    from psynet.command_line import _check_experiment_directory
+
+    monkeypatch.setattr("psynet.command_line.is_in_repo_experiment", lambda: False)
+    monkeypatch.setattr("psynet.command_line.git_repository_available", lambda: True)
+    _old_experiment_with_ignored_secret(tmp_path)
+
+    with working_directory(tmp_path):
+        scaffold_experiment_directory()
+        monkeypatch.setenv("GIT_DIR", str(tmp_path / "missing"))
+        with pytest.raises(ClickException, match="could not check"):
+            _check_experiment_directory("debug")
+        assert not _deployment_policy_needs_review()
+
+
+def test_migration_check_stops_once_when_global_excludes_are_unreadable(
     tmp_path, monkeypatch
 ):
     from click import ClickException
 
+    from psynet.command_line import _check_experiment_directory
+
+    monkeypatch.setattr("psynet.command_line.is_in_repo_experiment", lambda: False)
+    monkeypatch.setattr("psynet.command_line.git_repository_available", lambda: True)
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    (tmp_path / "config" / "git").mkdir(parents=True)
+    (tmp_path / "config" / "git" / "ignore").write_bytes(b"\xff\xfe\n")
+    experiment = tmp_path / "experiment"
+    experiment.mkdir()
+    _old_experiment_with_ignored_secret(experiment)
+
+    with working_directory(experiment):
+        scaffold_experiment_directory()
+        with pytest.raises(ClickException, match="could not check"):
+            _check_experiment_directory("debug")
+        assert not _deployment_policy_needs_review()
+
+
+def test_migration_check_survives_a_malformed_deploy_toml(tmp_path, monkeypatch):
+    from click import ClickException
+
+    from psynet.command_line import _check_experiment_directory
+
+    monkeypatch.setattr("psynet.command_line.is_in_repo_experiment", lambda: False)
+    monkeypatch.setattr("psynet.command_line.git_repository_available", lambda: True)
+    _old_experiment_with_ignored_secret(tmp_path)
+
+    with working_directory(tmp_path):
+        scaffold_experiment_directory()
+        policy = Path("deploy.toml").read_text()
+        Path("deploy.toml").write_text(policy + "\n[exclude\n")
+        with pytest.raises(ClickException, match="deploy.toml is invalid"):
+            _check_experiment_directory("debug")
+        Path("deploy.toml").write_text(policy)
+        with pytest.raises(ClickException, match="secret.txt"):
+            _check_experiment_directory("debug")
+
+
+def test_check_experiment_directory_migration_without_newly_deployed_files_is_silent(
+    tmp_path, monkeypatch
+):
+    from psynet.command_line import _check_experiment_directory
+
+    monkeypatch.setattr("psynet.command_line.is_in_repo_experiment", lambda: False)
+    (tmp_path / "experiment.py").write_text("class Exp:\n    pass\n")
+    (tmp_path / "requirements.txt").write_text("psynet\n")
+
+    with working_directory(tmp_path):
+        scaffold_experiment_directory()
+        Path("deploy.toml").unlink()
+        subprocess.run(["git", "init", "-q"], check=True)
+        ensure_deployment_policy()
+        assert _deployment_policy_needs_review()
+
+        _check_experiment_directory("debug")
+        assert not _deployment_policy_needs_review()
+
+
+def test_check_experiment_directory_is_silent_for_new_experiments(
+    tmp_path, monkeypatch
+):
     from psynet.command_line import _check_experiment_directory
 
     monkeypatch.setattr("psynet.command_line.is_in_repo_experiment", lambda: False)
@@ -344,16 +476,7 @@ def test_check_experiment_directory_stops_after_setup_creates_deploy_toml(
         Path("secret.txt").write_text("API_KEY=private\n")
         subprocess.run(["git", "init", "-q"], check=True)
 
-        assert _deployment_policy_needs_review()
-        with pytest.raises(ClickException) as error:
-            _check_experiment_directory("debug")
-
-        message = str(error.value)
-        assert "PsyNet created a deploy.toml file for this experiment." in message
-        assert "Previously .gitignore" not in message
-        assert "secret.txt" in message
         assert not _deployment_policy_needs_review()
-
         _check_experiment_directory("debug")
 
 
@@ -391,7 +514,6 @@ def test_check_experiment_directory_rejects_ignored_parent_provenance(tmp_path):
 
     with working_directory(experiment):
         scaffold_experiment_directory()
-        _clear_deployment_policy_review_marker()
         with pytest.raises(
             ClickException,
             match="commit cannot identify the experiment's source state",
@@ -412,7 +534,6 @@ def test_check_experiment_directory_removes_generated_dockerignore(
 
     with working_directory(tmp_path):
         scaffold_experiment_directory()
-        _clear_deployment_policy_review_marker()
         dockerignore.write_text(
             "\n".join(max(_GENERATED_DOCKERIGNORE_VARIANTS, key=len)) + "\n"
         )
@@ -437,7 +558,6 @@ def test_check_experiment_directory_rejects_custom_dockerignore(
 
     with working_directory(tmp_path):
         scaffold_experiment_directory()
-        _clear_deployment_policy_review_marker()
         dockerignore.write_text("custom-local-file\n")
         capsys.readouterr()
         with pytest.raises(ClickException, match="no longer supported"):
@@ -459,7 +579,6 @@ def test_check_experiment_directory_removes_obsolete_docker_helpers(
 
     with working_directory(tmp_path):
         scaffold_experiment_directory()
-        _clear_deployment_policy_review_marker()
         _write_obsolete_docker_helpers(tmp_path)
         _check_experiment_directory("debug")
 

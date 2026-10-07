@@ -163,7 +163,9 @@ Details: :doc:`/code/pages/custom_front_ends`.
 --------------------------------
 
 Search custom trial makers for ``find_networks``, ``find_node``,
-``prioritize_networks``, and ``custom_network_filter``.
+``prioritize_networks``, ``custom_network_filter``, ``balance_across_nodes``,
+``balance_across_chains``, ``choose_block_order``, ``should_finish_block``,
+``set_block_state`` and ``module_state.block``.
 
 * :class:`~psynet.trial.chain.ChainTrialMaker` subclasses now discover,
   filter, and select chains with ``find_chains``, ``custom_chain_filter``,
@@ -202,8 +204,8 @@ Search custom trial makers for ``find_networks``, ``find_node``,
   The mixin then uses that role for both chain eligibility and the final phase
   check. Do not override ``get_trial_class`` from participant role alone.
   Creators only receive heads that still need creators. Raters receive heads
-  that are ready for raters, and they wait or exit on heads whose creator
-  slots are filled but not yet finalized. Heads that still need creators are
+  that are ready for raters, and they wait or finish the block on heads whose
+  creator slots are filled but not yet finalized. Heads that still need creators are
   not rater-eligible. A selected head that later becomes incompatible waits
   or exits instead of assigning the opposite role's trial class.
 * :attr:`~psynet.trial.main.Trial.position` is now stored when the trial is
@@ -211,6 +213,66 @@ Search custom trial makers for ``find_networks``, ``find_node``,
   maker. Previously it was calculated within each concrete trial class. Trials
   constructed outside a trial-maker state may have ``position=None``; code that
   performs arithmetic with ``position`` should handle that case explicitly.
+* Blocks are now strict: a participant only receives nodes or chains from
+  their current block, and stays in it until ``max_trials_per_block`` or
+  ``should_finish_block`` ends it, or until it has nothing more to give them.
+  Previously a participant whose block was busy could receive a trial from a
+  later block. When every candidate in the block is busy,
+  ``wait_for_networks=True`` waits; ``False`` finishes the block early. An
+  empty list from ``find_chains`` or ``find_nodes`` now finishes the block;
+  ``"exit"`` still leaves the trial maker.
+* ``balance_across_nodes`` and ``balance_across_chains`` have been removed.
+  Replace ``True`` with ``node_order="balanced"`` / ``chain_order="balanced"``
+  and ``False`` with ``"random"``. ``node_order`` already defaults to
+  ``"balanced"`` and ``chain_order`` to ``"random"``, as before. See
+  :ref:`trial_order` for planned orders such as ``"listed"`` and functions,
+  which replace hacks like a ``select_node`` that walks a fixed list.
+* Replace a ``choose_block_order`` override with the ``block_order``
+  argument: a list, ``"listed"``, or a function of ``participant``,
+  ``experiment`` and ``blocks``. Passing ``block_order`` while also
+  overriding ``choose_block_order`` raises ``TypeError``.
+* ``should_finish_block`` now takes ``(participant, block)``. Read trial counts
+  from ``participant.module_state.n_participant_trials_in_block`` and
+  ``participant.module_state.n_participant_trials_in_trial_maker``.
+* ``module_state.block`` is now derived from ``block_order`` and
+  ``block_position`` and cannot be set; ``set_block_state`` has been removed.
+  ``ChainTrialMakerState.remaining_blocks`` and ``go_to_next_block`` have also
+  been removed: read ``block_order[block_position:]`` for the remaining
+  blocks, and end a block with ``should_finish_block`` instead of advancing
+  it yourself.
+* ``ChainTrialMaker.check_participant_groups`` now receives the participant
+  group names of the start nodes instead of a list of networks.
+* To keep a participant on one chain until it is finished, pass
+  ``interleave_chains=False`` instead of giving each chain its own block.
+  :class:`~psynet.trial.staircase.GeometricStaircaseTrialMaker` now does this
+  by default.
+* ``target_trials_per_node`` (and the dense trial maker's
+  ``target_trials_per_condition``) only drives ``recruit_mode="n_trials"``.
+  Static nodes no longer stop being selected once they reach it, so a node
+  can end up with a few more trials than its target. ``node_order="balanced"``
+  still spreads trials evenly and, unless node selection runs in Python or
+  ``node_priority`` is defined, gives participants who ask at the same moment different nodes where
+  possible. To stop offering nodes once they have enough
+  trials, filter them by trial count in ``filter_nodes_query``; simultaneous
+  requests can still go slightly over. Chain
+  ``trials_per_node`` is still a hard limit.
+* Pass ``recruit_mode`` explicitly whenever you set a recruitment target.
+  ``target_n_participants`` needs ``recruit_mode="n_participants"``, and
+  ``target_trials_per_node`` / ``target_trials_per_condition`` need
+  ``recruit_mode="n_trials"``. A target with ``None`` or the other built-in
+  mode raises ``ValueError``, as does a misspelt mode. Chain-based trial
+  makers, including staircase and graph trial makers, used to default to
+  ``"n_participants"`` and now default to ``None`` like static trial makers.
+  ``n_participants_completion="trial_maker"`` likewise needs
+  ``recruit_mode="n_participants"``:
+
+  .. code-block:: python
+
+      StaticTrialMaker(
+          ...,
+          recruit_mode="n_participants",
+          target_n_participants=30,
+      )
 
 PsyNet raises an actionable ``TypeError`` when a removed or wrong-paradigm
 hook is still overridden.
@@ -326,9 +388,9 @@ experiment directory.
 
 ``deploy.toml`` now decides which files are deployed; ``.gitignore`` and
 ``.dockerignore`` no longer do, so Git-ignored files under ``static/`` are
-deployed. PsyNet creates ``deploy.toml`` when it is missing, and the first
-debug, test or deploy command afterwards stops so that you can review the
-file list.
+deployed. PsyNet creates ``deploy.toml`` when it is missing. If your
+``.gitignore`` ignores files that ``deploy.toml`` does not exclude, the next
+debug, test or deploy command stops once and lists them.
 
 * Move any custom ``.dockerignore`` entries into ``deploy.toml``'s
   ``[exclude]`` table, then delete ``.dockerignore``. PsyNet removes

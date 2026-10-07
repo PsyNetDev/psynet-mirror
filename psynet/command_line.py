@@ -31,6 +31,7 @@ from dallinger.command_line.docker_ssh import (
 )
 from dallinger.command_line.utils import verify_id as dallinger_verify_id
 from dallinger.config import experiment_available, get_config
+from dallinger.deployment_plan import DeploymentPolicyError
 from dallinger.heroku.tools import HerokuApp
 from dallinger.recruiters import ProlificRecruiter
 from dallinger.version import __version__ as dallinger_version
@@ -55,9 +56,9 @@ from .data import (
     populate_db_from_zip_file,
 )
 from .experiment_scaffold import (
+    _DEPLOYMENT_POLICY_REVIEW_MARKER,
     _clear_deployment_policy_review_marker,
     _deployment_policy_needs_review,
-    _deployment_policy_review_is_migration,
     _remove_obsolete_generated_docker_scripts,
     _remove_obsolete_generated_dockerignore,
     _without_deployment_policy_review,
@@ -1879,12 +1880,12 @@ def _check_experiment_directory(mode, *, require_git_commit=False):
 
     In-repo experiments are auto-scaffolded first so their missing-boilerplate
     check does not falsely fail. A missing ``deploy.toml`` is created from the
-    PsyNet template and never overwritten. Auto-created policies leave a local
-    review marker so the next debug, test, or deploy command stops once when
-    setup or scaffold wrote the file on an author machine; that pause runs
-    after the Git checks so the message can list Git-ignored selected files.
-    Temporary pytest scaffolds and in-repo auto-prepare skip the pause so first
-    launch can run. Remote deployments additionally
+    PsyNet template and never overwritten. When that file replaces an existing
+    experiment's ``.gitignore``-based selection, a local review marker makes
+    the next debug, test, or deploy command check once, after the Git checks,
+    whether ``.gitignore`` ignores files that deploy.toml does not exclude; it
+    stops and lists them only if there are any. New experiments, temporary
+    pytest scaffolds and in-repo auto-prepare skip the check. Remote deployments additionally
     require a Git commit for provenance; local debug and test runs may use a
     repository with no commits. Leftover generated ``.dockerignore`` files and
     ``docker/`` helper scripts are removed (custom copies are preserved with a
@@ -1937,50 +1938,44 @@ def _check_experiment_directory(mode, *, require_git_commit=False):
         )
 
     # Runs after the Git checks so 'git check-ignore' can report which
-    # deployment-selected files the old .gitignore used to keep local.
+    # deployment-selected files the old .gitignore ignores.
     if _deployment_policy_needs_review():
-        migrating = _deployment_policy_review_is_migration()
-        ignored_paths = deployment_info._git_ignored_deployment_paths()
-        ignored_summary = ""
+        # Unexpected errors, such as a malformed deploy.toml, keep the marker
+        # so that the check runs again once they are fixed.
+        try:
+            ignored_paths = deployment_info._git_ignored_deployment_paths(
+                extra_excludes_file=_DEPLOYMENT_POLICY_REVIEW_MARKER
+            )
+        except DeploymentPolicyError as error:
+            raise click.ClickException(f"deploy.toml is invalid: {error}") from error
+        _clear_deployment_policy_review_marker()
+        intro = (
+            "PsyNet now uses deploy.toml instead of .gitignore to choose "
+            "which files are deployed, and created one for this experiment."
+        )
+        advice = (
+            "Add any that should not be deployed (credentials, private data, "
+            "large or generated files) to [exclude] in deploy.toml, then "
+            "rerun this command. This check runs only once; "
+            "'dallinger deployment-files list' shows the full selection."
+        )
+        if ignored_paths is None:
+            raise click.ClickException(
+                f"{intro} PsyNet could not check whether your .gitignore "
+                "ignores files that deploy.toml does not exclude, so review "
+                "the selection with "
+                f"'dallinger deployment-files list'.\n\n{advice}"
+            )
         if ignored_paths:
             preview_limit = 10
             preview = "\n".join(f"  {path}" for path in ignored_paths[:preview_limit])
             remaining = len(ignored_paths) - preview_limit
             if remaining > 0:
                 preview += f"\n  ... and {remaining} more"
-            if migrating:
-                intro = (
-                    "Your existing .gitignore covered the following files, but "
-                    "your new deploy.toml does not:"
-                )
-            else:
-                intro = (
-                    "Your .gitignore covers the following files, but deploy.toml "
-                    "does not exclude them:"
-                )
-            ignored_summary = f"\n\n{intro}\n{preview}"
-        if migrating:
-            intro = (
-                "PsyNet now requires experiments to provide a deploy.toml file to "
-                "specify which files to include in the deployed experiment. "
-                "Previously .gitignore was used for this purpose.\n\nPsyNet "
-                "created a new deploy.toml file for this experiment."
+            raise click.ClickException(
+                f"{intro} Your .gitignore ignores these files, but deploy.toml "
+                f"does not exclude them, so they would be deployed:\n{preview}\n\n{advice}"
             )
-        else:
-            intro = (
-                "PsyNet created a deploy.toml file for this experiment. It "
-                "specifies which files are included when the experiment is deployed."
-            )
-        _clear_deployment_policy_review_marker()
-        raise click.ClickException(
-            f"{intro}{ignored_summary}\n\nBefore continuing:\n"
-            "  1. Run 'dallinger deployment-files list'. This only prints the files "
-            "that PsyNet would copy; it does not start or deploy the experiment.\n"
-            "  2. Check the list for credentials, private data, large files, and "
-            "generated files that should stay local.\n"
-            "  3. Add anything that should stay local to [exclude] in deploy.toml.\n"
-            "  4. Rerun this command."
-        )
     if require_git_commit:
         from .light_utils import git_commit_available
 
