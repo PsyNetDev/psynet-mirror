@@ -301,9 +301,11 @@ class CommittingFinalizeAsyncTrial(CommittingFinalizeTrial):
 )
 @pytest.mark.parametrize("path", ["async_post_trial", "asset_deposit"])
 @pytest.mark.usefixtures("in_experiment_directory")
-def test_worker_finalize_forbids_commits_in_on_finalized_and_fails_the_trial(
+def test_on_finalized_commit_after_a_worker_is_forbidden_and_fails_the_trial(
     db_session, participant, monkeypatch, tmp_path, path
 ):
+    """Workers leave finalization to the post-commit re-check, whose failure
+    leaves the trial to the backstop, which fails it."""
     from psynet.asset import FileAsset
     from psynet.process import AsyncProcess, LocalAsyncProcess, WorkerAsyncProcess
 
@@ -349,6 +351,12 @@ def test_worker_finalize_forbids_commits_in_on_finalized_and_fails_the_trial(
     db.session.commit()
 
     type(process).call_function(process_id)
+
+    trial = db.session.get(Trial, trial_id, populate_existing=True)
+    assert (trial.finalized, trial.failed) == (False, False)
+
+    Trial.finalize_pending_trials()
+    db.session.commit()
 
     trial = db.session.get(Trial, trial_id, populate_existing=True)
     assert trial.finalized is False
@@ -490,7 +498,88 @@ def test_recheck_finalization_leaves_failing_trial_to_backstop(
     WorkerAsyncProcess.call_function(process_id)
 
     assert [t.id for t in Trial.get_trials_ready_to_finalize()] == [trial_id]
+    assert not Trial.query.get(trial_id).ready_for_feedback
+
+    wakes = []
+    monkeypatch.setattr(
+        "psynet.timeline_hold._queue_timeline_hold_wake",
+        lambda participant_id, reason=None, **kwargs: wakes.append(reason),
+    )
+    Trial.finalize_pending_trials()
+    db.session.commit()
+
+    trial = Trial.query.get(trial_id)
+    assert trial.failed and trial.ready_for_feedback
+    assert "trial_failed" in wakes
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_feedback_waits_until_the_trial_is_finalized(db_session, participant):
+    """After async_post_trial commits, feedback waits for the re-check to finalize the trial."""
+    network = _create_network(_chain_trial_maker(), get_experiment())
+    trial = _add_complete_unfinalized_trial(
+        network.head,
+        participant,
+        async_post_trial_requested=True,
+        async_post_trial_complete=True,
+    )
+    trial_id = trial.id
+    db.session.commit()
+
+    assert not Trial.query.get(trial_id).ready_for_feedback
+
+    Trial.recheck_finalization(trial_id)
+    db.session.commit()
+
+    trial = Trial.query.get(trial_id)
+    assert trial.finalized and trial.ready_for_feedback
 
 
 def _do_nothing():
     pass
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_finalize_skips_or_waits_for_a_locked_participant(db_session, participant):
+    """While a request (e.g. ``participant.fail()``) holds the participant, the
+    poller skips the trial and the post-commit re-check waits for the
+    participant."""
+    from sqlalchemy import text
+    from sqlalchemy.exc import OperationalError
+
+    network = _create_network(_chain_trial_maker(), get_experiment())
+    trial = _add_complete_unfinalized_trial(network.head, participant)
+    trial_id, participant_id = trial.id, participant.id
+    db.session.commit()
+
+    with db.engine.connect() as request:
+        with request.begin():
+            request.execute(
+                text("SELECT id FROM participant WHERE id = :id FOR UPDATE"),
+                {"id": participant_id},
+            )
+            assert Trial.get_trials_ready_to_finalize() == []
+            request.execute(
+                text("SELECT id FROM trial WHERE id = :id FOR UPDATE NOWAIT"),
+                {"id": trial_id},
+            )
+            db.session.rollback()
+
+            db.session.execute(text("SET LOCAL lock_timeout = '200ms'"))
+            with pytest.raises(OperationalError, match="lock timeout"):
+                Trial.recheck_finalization(trial_id)
+            db.session.rollback()
+
+    assert [t.id for t in Trial.get_trials_ready_to_finalize()] == [trial_id]
+    with db.engine.connect() as worker, worker.begin():
+        # Inserting a row that references the participant takes this lock.
+        worker.execute(
+            text("SELECT id FROM participant WHERE id = :id FOR KEY SHARE NOWAIT"),
+            {"id": participant_id},
+        )

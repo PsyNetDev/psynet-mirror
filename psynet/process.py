@@ -1,6 +1,7 @@
 import datetime
 import threading
 import time
+from contextvars import ContextVar
 from functools import partial
 
 import dallinger.db
@@ -26,13 +27,29 @@ from sqlalchemy.orm import deferred, relationship
 from tenacity import retry, retry_if_exception_type, stop_after_delay, wait_exponential
 
 from .data import SQLBase, SQLMixin, register_table
-from .db import _call_after_commit, with_transaction
+from .db import _call_after_commit, _set_transaction_lock_timeout, with_transaction
 from .field import PythonDict, PythonObject
 from .notifier import _send_alert
 from .serialize import prepare_function_for_serialization
 from .utils import get_logger
 
 logger = get_logger()
+
+_RECHECK_LOCK_TIMEOUT_SECONDS = 5
+
+_running_async_process = ContextVar("psynet_running_async_process", default=False)
+
+
+def _in_async_process():
+    """Whether the current code runs inside an async process's function.
+
+    The process's own trial is finalized by :meth:`Trial.recheck_finalization`
+    after the process commits, which locks the participant before the trial;
+    other trials touched there are left to :meth:`Trial.finalize_pending_trials`.
+    Finalizing inside the process would lock the trial first, and a request
+    holding the participant could then deadlock with it.
+    """
+    return _running_async_process.get()
 
 
 @register_table
@@ -259,7 +276,11 @@ class AsyncProcess(SQLBase, SQLMixin):
                 ).total_seconds()
             db.session.commit()
 
-            function(**arguments)
+            token = _running_async_process.set(True)
+            try:
+                function(**arguments)
+            finally:
+                _running_async_process.reset(token)
 
             process.time_finished = datetime.datetime.now()
             process.time_taken = time.monotonic() - timer
@@ -291,6 +312,9 @@ class AsyncProcess(SQLBase, SQLMixin):
             from psynet.trial.main import Trial
 
             try:
+                # A busy participant should not tie up the worker; the
+                # finalize backstop picks the trial up if this times out.
+                _set_transaction_lock_timeout(_RECHECK_LOCK_TIMEOUT_SECONDS)
                 Trial.recheck_finalization(trial_id)
                 db.session.commit()
             except Exception:

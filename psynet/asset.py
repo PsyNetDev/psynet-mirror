@@ -40,7 +40,7 @@ from .media import (
     get_s3_client,
     get_s3_resource,
 )
-from .process import LocalAsyncProcess
+from .process import LocalAsyncProcess, _in_async_process
 from .serialize import prepare_function_for_serialization
 from .utils import (
     content_object_path,
@@ -1198,7 +1198,8 @@ class ManagedAsset(Asset):
                 "Calling check_if_can_run_async_post_trial as part of after_deposit."
             )
             self.trial.check_if_can_run_async_post_trial()
-            self.trial.check_if_can_mark_as_finalized()
+            if not _in_async_process():
+                self.trial.check_if_can_mark_as_finalized()
         if self.participant_id is not None:
             from psynet.timeline_hold import _queue_timeline_hold_wake
 

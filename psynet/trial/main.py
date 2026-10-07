@@ -252,8 +252,11 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         This is only included for back-compatibility.
 
     wait_for_feedback : bool
-        Set this class attribute to ``False`` if you don't want to wait for asynchronous processes
-        to complete before giving feedback. The default is to wait.
+        By default, feedback waits until the trial is finalized or failed, so that
+        :meth:`~psynet.trial.main.Trial.show_feedback` sees the results of asynchronous
+        processes and :meth:`~psynet.trial.main.Trial.on_finalized`. Set this class attribute
+        to ``False`` to give feedback straight away; ``show_feedback`` may then see a trial
+        whose asynchronous processes are still running and whose ``score`` is not yet set.
 
     accumulate_answers : bool
         Set this class attribute to ``True`` if the trial contains multiple pages and you want
@@ -440,7 +443,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     time_estimate = None
     check_time_credit_received = True
 
-    wait_for_feedback = True  # determines whether feedback waits for async_post_trial
+    wait_for_feedback = True  # determines whether feedback waits for the trial to be finalized or failed
     accumulate_answers = False
 
     # Back-compat alias: older code referred to the creating node as ``origin``.
@@ -481,7 +484,11 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     @property
     def ready_for_feedback(self):
         """
-        Determines whether a trial is ready to give feedback to the participant.
+        Whether the trial is ready to give feedback to the participant.
+
+        With :attr:`wait_for_feedback`, feedback waits until the trial is
+        finalized (so :meth:`on_finalized` has run and ``score`` is set) or
+        failed, so :meth:`show_feedback` sees one of those two states.
         """
         msg = f"Participant {self.participant.id}: Checking if the trial is ready for feedback... "
 
@@ -493,17 +500,17 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             msg += "yes, because we don't need to wait for feedback."
             outcome = True
 
-        elif self.asset_deposit_pending:
-            msg += "no, because the trial is awaiting an asset deposit."
-            outcome = False
+        elif self.finalized:
+            msg += "yes, the trial is finalized."
+            outcome = True
 
-        elif self.async_post_trial_pending:
-            msg += "no, because the trial is awaiting async_post_trial."
-            outcome = False
+        elif self.failed:
+            msg += "yes, the trial failed."
+            outcome = True
 
         else:
-            msg += "yes, all conditions are satisfied."
-            outcome = True
+            msg += "no, because the trial is not finalized yet."
+            outcome = False
 
         logger.info(msg)
         return outcome
@@ -763,6 +770,12 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         Returns a Page object displaying feedback
         (or None, which means no feedback).
 
+        Unless :attr:`wait_for_feedback` is ``False``, the trial is either
+        finalized, so :meth:`on_finalized` has run and ``score`` is set, or
+        failed, in which case ``score`` may be unset. Check ``self.failed``
+        and ``self.failed_reason`` to give feedback on a failed trial, for
+        example a recording that the analysis rejected.
+
         Parameters
         ----------
 
@@ -817,8 +830,9 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             self.fail(reason="async_post_trial_failed")
             db.session.commit()
             raise
+        # The worker re-checks finalization after committing (see
+        # psynet.process._in_async_process).
         self.async_post_trial_complete = True
-        self.check_if_can_mark_as_finalized()
 
     def fail_async_processes(self, reason):
         for process in list(self.async_processes):
@@ -909,8 +923,10 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         Known blockers (undeposited assets, pending async post-trial) are
         excluded in SQL so the steady-state result is empty.
 
-        Uses ``FOR UPDATE SKIP LOCKED`` so the poller does not block when
-        participant requests or async workers already hold a row lock.
+        Locks participants ``FOR NO KEY UPDATE`` and then trials
+        ``FOR UPDATE``, both ``SKIP LOCKED``, so the poller does not block
+        when participant requests or async workers already hold a lock on the
+        trial or its participant.
         """
         return cls._lock_and_load(cls.ready_to_finalize_id_select(), skip_locked=True)
 
@@ -918,13 +934,44 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     def _lock_and_load(cls, id_select, *, skip_locked=False):
         """Lock the trial rows selected by ``id_select`` and load fresh trials.
 
+        Finalizing writes rows that the participant's requests also write
+        (the participant's reward and, for chains, network growth), and
+        requests lock the participant before its trials. Holding a trial lock
+        while waiting for those rows can therefore deadlock with
+        ``participant.fail()``, so the participants are locked first, in a
+        separate statement, and only trials of locked participants are then
+        locked. With ``skip_locked``, busy participants and trials are
+        skipped and no lock is taken on a skipped trial (its participant
+        stays locked if it was free), and trials without a participant are
+        never returned. The participant lock is ``FOR NO KEY UPDATE``: it
+        still excludes requests, but lets other transactions insert rows
+        that reference the participant (async processes, assets), which
+        would otherwise wait on it while holding the trial.
+
         Locks IDs first, then loads full polymorphic ``Trial`` objects by
         those IDs: loading polymorphic rows in the locked query can introduce
         ``DISTINCT``, which PostgreSQL rejects with ``FOR UPDATE``.
         """
-        id_rows = db.session.execute(
-            id_select.with_for_update(of=cls, skip_locked=skip_locked)
+        from psynet.participant import Participant
+
+        participant_rows = db.session.execute(
+            select(Participant.id)
+            .where(
+                Participant.id.in_(
+                    select(cls.participant_id).where(cls.id.in_(id_select))
+                )
+            )
+            .order_by(Participant.id)
+            .with_for_update(of=Participant, key_share=True, skip_locked=skip_locked)
         ).all()
+        if skip_locked:
+            if not participant_rows:
+                return []
+            id_select = id_select.where(
+                cls.participant_id.in_([row[0] for row in participant_rows])
+            )
+        locked_select = id_select.with_for_update(of=cls, skip_locked=skip_locked)
+        id_rows = db.session.execute(locked_select).all()
         trial_ids = [row[0] for row in id_rows]
         if not trial_ids:
             return []
@@ -966,6 +1013,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             )
             if trial.finalized and not was_finalized:
                 finalized_count += 1
+                trial._wake_participant(reason="trial_finalized")
 
         if finalized_count:
             logger.info(
@@ -979,6 +1027,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         """Fail a trial whose finalization raised in the backstop."""
         if not trial.failed:
             trial.fail(reason="finalize_backstop_error")
+            trial._wake_participant(reason="trial_failed")
 
     @classmethod
     def recheck_finalization(cls, trial_id):
@@ -993,7 +1042,22 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         committing to the caller.
         """
         for trial in cls._lock_and_load(select(cls.id).where(cls.id == trial_id)):
+            was_finalized = trial.finalized
             trial.check_if_can_mark_as_finalized()
+            if trial.finalized and not was_finalized:
+                trial._wake_participant(reason="trial_finalized")
+
+    def _wake_participant(self, *, reason):
+        """Wake the participant's held page after the background finalizes or fails this trial.
+
+        The asset-deposit and async-process wakes are sent before that
+        happens, so without this wake a page held for the trial (for example
+        waiting for feedback) waits for its next poll.
+        """
+        if self.participant_id is not None:
+            from psynet.timeline_hold import _queue_timeline_hold_wake
+
+            _queue_timeline_hold_wake(self.participant_id, reason=reason)
 
     def check_if_can_run_async_post_trial(self):
         msg = f"Checking if we should run async_post_trial for trial {self.id}... "
