@@ -45,7 +45,10 @@ package code, benchmark files, or the ASV/CI configuration those jobs use. The j
 ``asv continuous`` with ``--bench "^fast\\."`` to benchmark the merge-request
 base and head commits back-to-back on the same GitLab runner. The job exits
 non-zero when ASV detects a regression larger than ``--factor 1.25``. Docs,
-changelog, and skill-only merge requests skip this job.
+changelog, and skill-only merge requests skip this job. Merge-train pipelines
+also skip it when the merge request's last merged-results pipeline passed it
+on identical files, because it would benchmark the same two commits again;
+see :doc:`running_tests`.
 
 Export performance is not included in the ASV suite. End-to-end exports depend
 on mutable database fixtures, filesystem caches, and subprocess startup, which

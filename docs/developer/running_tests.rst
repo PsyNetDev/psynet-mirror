@@ -32,16 +32,20 @@ nothing is ahead of it in the train. Rerunning the suite on it would only
 delay the merge. The ``check_already_tested`` job runs first in each train
 pipeline. It runs ``ci/already_tested.py``, which finds the newest finished
 merged-results pipeline of the merge request that tested identical files. The
-pytest, Playwright and ``docs`` jobs that passed there end successfully at
-once, and their logs link to that pipeline. If anything differs, or the check fails,
-every job runs as usual. ``master`` push pipelines always run the full suite.
+pytest, Playwright, ``docs`` and ``asv_regression`` jobs that passed there end
+successfully at once, and their logs link to that pipeline. If anything
+differs, or the check fails, every job runs as usual. ``master`` push
+pipelines always run the full suite.
 
 A job opts in by sourcing ``ci/skip-if-already-passed.sh`` at the start of its
 ``before_script``. Only add this to jobs whose result is set by the
 repository files, and never to jobs that publish or deploy. Outside drift,
 such as a new dependency release or a dead external link, can still change a
 job's result between two runs on the same files; the full ``master`` push
-pipeline catches that after the merge.
+pipeline catches that after the merge. ``asv_regression`` is the exception: it
+runs only on merge requests, and its result also depends on runner noise. It
+still opts in, because a train rerun would benchmark the same two commits
+again and could only add a chance of a noisy failure.
 
 Test parallelization
 --------------------
