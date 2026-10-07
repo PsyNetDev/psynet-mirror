@@ -292,7 +292,7 @@ def unserialize(x):
     # jsonpickle tags every value that is not plain JSON with "py/" (the
     # "json://" check is defensive). Untagged JSON decodes identically with
     # json.loads, which is several times faster. Text that is not JSON still
-    # goes to jsonpickle, which falls back to YAML.
+    # goes to jsonpickle, which falls back to YAML when PyYAML is installed.
     if '"py/' not in x and "json://" not in x:
         try:
             return json.loads(x)
