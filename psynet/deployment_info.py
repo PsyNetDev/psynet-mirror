@@ -253,10 +253,16 @@ def write_all(content: dict):
     def f():
         # Replacing the file atomically gives it a new inode, so readers in other
         # processes never see a partial write or reuse a stale cache entry.
-        tmp_path = f"{path}.{os.getpid()}.tmp"
-        with open(tmp_path, "w") as file:
-            file.write(encoded)
-        os.replace(tmp_path, path)
+        # A unique name keeps concurrent writers apart; ``.deploy`` ships whole,
+        # so a failed write must not leave its temporary file behind.
+        tmp_path = f"{path}.{uuid.uuid4().hex}.tmp"
+        try:
+            with open(tmp_path, "x") as file:
+                file.write(encoded)
+            os.replace(tmp_path, path)
+        except BaseException:
+            Path(tmp_path).unlink(missing_ok=True)
+            raise
 
     _clear_cache()
     try:

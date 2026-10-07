@@ -42,6 +42,22 @@ def test_deployment_info_reads_see_external_writes_and_return_copies(tmp_path):
         assert deployment_info.read("x") == [2]
 
 
+def test_failed_deployment_info_write_leaves_no_temporary_file(tmp_path, monkeypatch):
+    with working_directory(tmp_path):
+        deployment_info.reset()
+        deployment_info.write(x=1)
+
+        def fail(*args):
+            raise OSError("disk full")
+
+        monkeypatch.setattr(os, "replace", fail)
+        with pytest.raises(OSError, match="disk full"):
+            deployment_info.write(x=2)
+
+        assert os.listdir(".deploy") == ["deployment_info.json"]
+        assert deployment_info.read("x") == 1
+
+
 def _git(*args):
     return subprocess.run(
         ["git", *args],
