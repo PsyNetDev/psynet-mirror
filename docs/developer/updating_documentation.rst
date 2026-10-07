@@ -77,12 +77,19 @@ The PsyNet command shows progress during that run, then reprints the failures
 grouped by category (for example 404s, missing anchors, SSL errors, and
 connection errors).
 
-Only internal links, missing anchors, and pages not found (404) make the
-command fail, because those mean the documentation itself needs fixing.
+Only internal links, missing anchors, and pages not found (404 or 410) make
+the command fail, because those mean the documentation itself needs fixing.
 Other failures, such as 403s, timeouts, and SSL or connection errors, usually
 come from the remote site or the network, so they are reported without
-failing. Pass ``--strict`` to fail on every broken link. A weekly scheduled
-pipeline on ``master`` runs the strict check.
+failing. Pass ``--strict`` to fail on every broken link.
+
+The ``docs_linkcheck_strict`` CI job runs the strict check on ``master``. It
+runs only in pipelines from a weekly GitLab pipeline schedule (*Build >
+Pipeline schedules*) on ``master`` that sets the variable ``WEEKLY_LINKCHECK``
+to ``1``, for example with the cron expression ``0 3 * * 1``. Those pipelines
+run no other jobs. Don't also set ``NIGHTLY_BENCHMARKS`` on that schedule. As
+with the nightly benchmark schedule, the schedule's owner needs the
+Maintainer role to run pipelines on ``master``.
 
 The command deletes ``docs/_build`` first by default. For faster local reruns, pass
 ``--no-clean``. Extra Sphinx flags can be passed with ``--sphinx-option``.

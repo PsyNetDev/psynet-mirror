@@ -538,6 +538,8 @@ docs:
 # so links that stay unreachable get noticed without blocking merges.
 docs_linkcheck_strict:
   extends: .docs_ci
+  # A push to master would otherwise cancel this week's run.
+  interruptible: false
   script:
     - psynet dev docs linkcheck --strict
   artifacts:

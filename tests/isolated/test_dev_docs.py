@@ -18,6 +18,20 @@ def source_checkout(tmp_path, monkeypatch):
     return tmp_path
 
 
+def _fake_linkcheck_run(monkeypatch, source_checkout, entries, returncode=1):
+    """Make ``subprocess.run`` act like Sphinx linkcheck writing ``entries``."""
+    output_json = source_checkout / "docs" / "_build" / "linkcheck" / "output.json"
+
+    def fake_run(command, **kwargs):
+        output_json.parent.mkdir(parents=True, exist_ok=True)
+        output_json.write_text(
+            "".join(json.dumps(entry) + "\n" for entry in entries), encoding="utf-8"
+        )
+        return subprocess.CompletedProcess(command, returncode, "", "")
+
+    monkeypatch.setattr(docs_module.subprocess, "run", fake_run)
+
+
 def test_make_command_runs_docs_make_target_with_options(source_checkout, monkeypatch):
     build_dir = source_checkout / "docs" / "_build"
     build_dir.mkdir()
@@ -247,43 +261,33 @@ def test_make_command_reports_failed_make_command(source_checkout, monkeypatch):
 def test_linkcheck_command_prints_structured_summary(
     source_checkout, monkeypatch, capsys
 ):
-    linkcheck_dir = source_checkout / "docs" / "_build" / "linkcheck"
-    linkcheck_dir.mkdir(parents=True)
-    (linkcheck_dir / "output.json").write_text(
-        "\n".join(
-            json.dumps(entry)
-            for entry in [
-                {
-                    "filename": "api/graphics.rst",
-                    "lineno": 3,
-                    "status": "working",
-                    "uri": "https://www.w3.org/TR/SVG/",
-                    "info": "",
-                },
-                {
-                    "filename": "api/utils.rst",
-                    "lineno": 3,
-                    "status": "broken",
-                    "uri": "http://localhost:5000",
-                    "info": "connection refused",
-                },
-                {
-                    "filename": "deploy/ssh_server.rst",
-                    "lineno": 205,
-                    "status": "broken",
-                    "uri": "https://your-app-name.example.com",
-                    "info": "certificate mismatch",
-                },
-            ]
-        )
-        + "\n",
-        encoding="utf-8",
+    _fake_linkcheck_run(
+        monkeypatch,
+        source_checkout,
+        [
+            {
+                "filename": "api/graphics.rst",
+                "lineno": 3,
+                "status": "working",
+                "uri": "https://www.w3.org/TR/SVG/",
+                "info": "",
+            },
+            {
+                "filename": "api/utils.rst",
+                "lineno": 3,
+                "status": "broken",
+                "uri": "http://localhost:5000",
+                "info": "connection refused",
+            },
+            {
+                "filename": "deploy/ssh_server.rst",
+                "lineno": 205,
+                "status": "broken",
+                "uri": "https://your-app-name.example.com",
+                "info": "certificate mismatch",
+            },
+        ],
     )
-
-    def fake_run(command, **kwargs):
-        return subprocess.CompletedProcess(command, 1, stdout="", stderr="")
-
-    monkeypatch.setattr(docs_module.subprocess, "run", fake_run)
 
     with working_directory(source_checkout):
         with pytest.raises(ValueError, match="Linkcheck found 2 broken link"):
@@ -314,10 +318,10 @@ def test_linkcheck_command_prints_structured_summary(
 def test_linkcheck_command_fails_only_on_docs_errors_unless_strict(
     source_checkout, monkeypatch, capsys, uri, info, fails
 ):
-    linkcheck_dir = source_checkout / "docs" / "_build" / "linkcheck"
-    linkcheck_dir.mkdir(parents=True)
-    (linkcheck_dir / "output.json").write_text(
-        json.dumps(
+    _fake_linkcheck_run(
+        monkeypatch,
+        source_checkout,
+        [
             {
                 "filename": "index.rst",
                 "lineno": 1,
@@ -325,14 +329,7 @@ def test_linkcheck_command_fails_only_on_docs_errors_unless_strict(
                 "uri": uri,
                 "info": info,
             }
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(
-        docs_module.subprocess,
-        "run",
-        lambda command, **kwargs: subprocess.CompletedProcess(command, 1, "", ""),
+        ],
     )
 
     with working_directory(source_checkout):
@@ -346,26 +343,67 @@ def test_linkcheck_command_fails_only_on_docs_errors_unless_strict(
             docs_module.linkcheck_command(clean=False, show_progress=False, strict=True)
 
 
+def test_linkcheck_command_fails_when_sphinx_crashes_or_output_is_stale(
+    source_checkout, monkeypatch
+):
+    output_json = source_checkout / "docs" / "_build" / "linkcheck" / "output.json"
+    output_json.parent.mkdir(parents=True)
+    stale_issue = json.dumps(
+        {
+            "filename": "index.rst",
+            "lineno": 1,
+            "status": "broken",
+            "uri": "http://example.com",
+            "info": "403 Client Error: Forbidden",
+        }
+    )
+    output_json.write_text(stale_issue + "\n", encoding="utf-8")
+    monkeypatch.setattr(
+        docs_module.subprocess,
+        "run",
+        lambda command, **kwargs: subprocess.CompletedProcess(command, 2, "", ""),
+    )
+
+    with working_directory(source_checkout):
+        with pytest.raises(ValueError, match="exit code 2"):
+            docs_module.linkcheck_command(clean=False, show_progress=False)
+    assert not output_json.exists()
+
+
+@pytest.mark.parametrize(
+    ("reason", "category"),
+    [
+        (
+            "410 Client Error: Gone for url: https://a.org/x",
+            "Pages not found (404/410)",
+        ),
+        (
+            "403 Client Error: Forbidden for url: https://a.org/issues/1404",
+            "Access denied (403), possibly bot-blocked",
+        ),
+        ("Max retries exceeded with url: /a404", "Connection errors"),
+    ],
+)
+def test_categorize_linkcheck_issue_reads_status_not_url(reason, category):
+    issue = docs_module.LinkcheckIssue(
+        source="index.rst", line=1, status="broken", url="https://a.org", reason=reason
+    )
+    assert docs_module._categorize_linkcheck_issue(issue) == category
+
+
 def test_linkcheck_command_updates_progress(source_checkout, monkeypatch, capsys):
     updates = []
     postfixes = []
     spinner_texts = []
 
     linkcheck_dir = source_checkout / "docs" / "_build" / "linkcheck"
-    linkcheck_dir.mkdir(parents=True)
-    (linkcheck_dir / "output.json").write_text(
-        json.dumps(
-            {
-                "filename": "api/utils.rst",
-                "lineno": 3,
-                "status": "broken",
-                "uri": "http://localhost:5000",
-                "info": "refused",
-            }
-        )
-        + "\n",
-        encoding="utf-8",
-    )
+    issue = {
+        "filename": "api/utils.rst",
+        "lineno": 3,
+        "status": "broken",
+        "uri": "http://localhost:5000",
+        "info": "refused",
+    }
 
     class FakeProcess:
         # Sphinx colours these lines; the progress counter must still see them.
@@ -378,6 +416,10 @@ def test_linkcheck_command_updates_progress(source_checkout, monkeypatch, capsys
         ]
 
         def wait(self):
+            linkcheck_dir.mkdir(parents=True, exist_ok=True)
+            (linkcheck_dir / "output.json").write_text(
+                json.dumps(issue) + "\n", encoding="utf-8"
+            )
             return 1
 
         def terminate(self):
@@ -543,7 +585,7 @@ def test_format_linkcheck_summary_groups_issues_by_category():
     assert headers == [
         "Internal documentation links (2):",
         "Missing anchors (1):",
-        "Pages not found (404) (1):",
+        "Pages not found (404/410) (1):",
         "Access denied (403), possibly bot-blocked (1):",
         "SSL/TLS errors (1):",
         "Connection errors (1):",

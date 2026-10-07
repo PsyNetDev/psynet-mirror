@@ -268,6 +268,9 @@ def linkcheck_command(
 
     if clean and build_dir.exists():
         shutil.rmtree(build_dir)
+    # Without this, a run that fails before linkcheck starts would be
+    # judged on the previous run's results.
+    (build_dir / "linkcheck" / "output.json").unlink(missing_ok=True)
 
     options = build_sphinx_options(
         strict=False,
@@ -286,7 +289,9 @@ def linkcheck_command(
     print(format_linkcheck_summary(issues))
 
     if result.returncode != 0:
-        if issues:
+        # Sphinx exits 1 for broken links; other codes mean the run itself
+        # failed, so the parsed issues may be incomplete.
+        if issues and result.returncode == 1:
             blocking = [
                 issue
                 for issue in issues
@@ -417,7 +422,7 @@ def parse_linkcheck_issues(build_dir: Path) -> list[LinkcheckIssue]:
 LINKCHECK_CATEGORIES = (
     "Internal documentation links",
     "Missing anchors",
-    "Pages not found (404)",
+    "Pages not found (404/410)",
     "Access denied (403), possibly bot-blocked",
     "SSL/TLS errors",
     "Connection errors",
@@ -431,7 +436,7 @@ LINKCHECK_BLOCKING_CATEGORIES = frozenset(
     {
         "Internal documentation links",
         "Missing anchors",
-        "Pages not found (404)",
+        "Pages not found (404/410)",
     }
 )
 
@@ -447,9 +452,11 @@ def _categorize_linkcheck_issue(issue: LinkcheckIssue) -> str:
         return "Timeouts"
     if re.search(r"\bAnchor\b.*not found", reason):
         return "Missing anchors"
-    if "404" in reason:
-        return "Pages not found (404)"
-    if "403" in reason:
+    # Match the status at the start: requests appends the URL, which may
+    # itself contain these digits.
+    if re.match(r"(404|410)\b", reason):
+        return "Pages not found (404/410)"
+    if re.match(r"403\b", reason):
         return "Access denied (403), possibly bot-blocked"
     if "SSL" in reason or "certificate" in reason.lower():
         return "SSL/TLS errors"
