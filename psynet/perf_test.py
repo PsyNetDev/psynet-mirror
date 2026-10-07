@@ -120,7 +120,8 @@ def run_parallel_test(n_bots, time_factor, stagger_interval_s, check_bots):
     def run_bot():
         try:
             experiment.run_bot(BotDriver(), time_factor=time_factor)
-        except Exception as err:
+        # pytest.fail() and pytest.skip() raise BaseException subclasses.
+        except BaseException as err:
             logger.exception("Bot failed.")
             errors.append(err)
         finally:
@@ -361,7 +362,7 @@ class PerformanceTester:
                 outcome = "completed"
             except DriverStopped:
                 outcome = "stopped"
-            except Exception:
+            except BaseException:
                 logger.exception("Bot %s failed.", bot_id)
                 outcome = "error"
             finally:

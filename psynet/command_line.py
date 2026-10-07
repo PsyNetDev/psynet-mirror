@@ -1303,12 +1303,11 @@ def _run_bot(time_factor, dashboard_user, dashboard_password):
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
-    config = get_config()
-    if not config.ready:
-        config.load()
-
-    config.set("dashboard_user", dashboard_user)
-    config.set("dashboard_password", dashboard_password)
+    config = _load_runtime_server_config()
+    if dashboard_user is not None:
+        config.set("dashboard_user", dashboard_user)
+    if dashboard_password is not None:
+        config.set("dashboard_password", dashboard_password)
 
     from .bot import BotDriver
 

@@ -55,6 +55,7 @@ from dallinger.utils import classproperty
 from dallinger.utils import get_base_url as dallinger_get_base_url
 from dallinger.version import __version__ as dallinger_version
 from flask import (
+    current_app,
     flash,
     has_request_context,
     jsonify,
@@ -5629,7 +5630,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         with tempfile.TemporaryDirectory() as tempdir:
             zip_path = os.path.join(tempdir, "status.zip")
             with zipfile.ZipFile(zip_path, "w") as zf:
-                zf.writestr("status.json", json.dumps(status))
+                zf.writestr("status.json", current_app.json.dumps(status))
                 for key, blob in bot_response.blobs.items():
                     zf.write(blob.file, f"bot_response_files/{key}")
             return send_file(zip_path, mimetype="application/zip")

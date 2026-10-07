@@ -100,8 +100,10 @@ def test_bots_still_taking_the_experiment_stop_when_the_test_ends(monkeypatch):
 
     for _ in range(3):
         start_bot_slot()
-    while len(bot_state["running"]) < 3:
+    deadline = time.time() + 5
+    while len(bot_state["running"]) < 3 and time.time() < deadline:
         time.sleep(0.01)
+    assert len(bot_state["running"]) == 3
     tester._stop_bots(bot_state, timeout_s=5)
 
     assert not any(thread.is_alive() for thread in bot_state["threads"])
@@ -122,7 +124,7 @@ def test_parallel_test_reraises_a_bot_error_after_all_bots_finish(monkeypatch):
     def run_bot(bot, time_factor):
         finished.append(bot)
         if threading.current_thread().name.endswith("-1"):
-            raise ValueError("bot failed")
+            pytest.fail("bot failed")
 
     experiment = Mock(run_bot=run_bot)
     monkeypatch.setattr("psynet.bot.BotDriver", Mock)
@@ -130,7 +132,7 @@ def test_parallel_test_reraises_a_bot_error_after_all_bots_finish(monkeypatch):
     monkeypatch.setattr(db, "session", Mock())
     check_bots = Mock()
 
-    with pytest.raises(ValueError, match="bot failed"):
+    with pytest.raises(pytest.fail.Exception, match="bot failed"):
         run_parallel_test(
             n_bots=3, time_factor=0, stagger_interval_s=0, check_bots=check_bots
         )
