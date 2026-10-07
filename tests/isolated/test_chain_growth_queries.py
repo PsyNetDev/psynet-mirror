@@ -23,6 +23,7 @@ from psynet.trial.graph import (
     GraphChainTrialMaker,
     GraphChainVertex,
 )
+from psynet.trial.main import TrialNode
 from psynet.trial.static import StaticNetwork, StaticNode, StaticTrial, StaticTrialMaker
 
 
@@ -1334,3 +1335,45 @@ def test_listed_chain_order_rotates_through_chains(db_session, participant):
         received.append(selection.value)
 
     assert received == [first.head, second.head, first.head]
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_nodes_on_deploy_marks_nodes_and_queues_only_pending_async_work(
+    db_session, monkeypatch
+):
+    exp = get_experiment()
+    trial_maker = chain_trial_maker()
+    plain, unset, needs_async, already_requested = [
+        create_chain_network(trial_maker, exp).head for _ in range(4)
+    ]
+    unset.on_deploy_complete = None
+    unset.async_on_deploy_required = None
+    needs_async.async_on_deploy_required = True
+    already_requested.async_on_deploy_required = True
+    already_requested.async_on_deploy_requested = True
+    ids = [plain.id, unset.id, needs_async.id, already_requested.id]
+    checked, queued = [], []
+    check_on_deploy = TrialNode.check_on_deploy
+    monkeypatch.setattr(
+        TrialNode,
+        "check_on_deploy",
+        lambda node: checked.append(node.id) or check_on_deploy(node),
+    )
+    monkeypatch.setattr(
+        TrialNode, "queue_async_on_deploy", lambda node: queued.append(node.id)
+    )
+    monkeypatch.setattr("psynet.experiment.in_deployment_package", lambda: True)
+
+    exp._nodes_on_deploy()
+
+    assert sorted(checked) == sorted(ids[2:])
+    assert queued == [ids[2]]
+    complete = dict(
+        db.session.query(TrialNode.id, TrialNode.on_deploy_complete).filter(
+            TrialNode.id.in_(ids)
+        )
+    )
+    assert complete == {node_id: True for node_id in ids}

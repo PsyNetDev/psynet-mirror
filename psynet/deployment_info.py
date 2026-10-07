@@ -7,6 +7,7 @@ excluded files as deployment changes. Git path output is normalized to the
 experiment directory so nested repositories compare cleanly.
 """
 
+import copy
 import os
 import re
 import subprocess
@@ -27,6 +28,10 @@ from .utils import find_git_repo, get_logger
 logger = get_logger()
 
 path = ".deploy/deployment_info.json"
+
+# ``(cache_key, content)``, replaced in a single assignment so threads never
+# observe a partially updated cache.
+_cache = None
 
 
 def _git_output(*args):
@@ -246,9 +251,20 @@ def write_all(content: dict):
     encoded = jsonpickle.encode(content, indent=4, keys=True)
 
     def f():
-        with open(path, "w") as file:
-            file.write(encoded)
+        # Replacing the file atomically gives it a new inode, so readers in other
+        # processes never see a partial write or reuse a stale cache entry.
+        # A unique name keeps concurrent writers apart; ``.deploy`` ships whole,
+        # so a failed write must not leave its temporary file behind.
+        tmp_path = f"{path}.{uuid.uuid4().hex}.tmp"
+        try:
+            with open(tmp_path, "x") as file:
+                file.write(encoded)
+            os.replace(tmp_path, path)
+        except BaseException:
+            Path(tmp_path).unlink(missing_ok=True)
+            raise
 
+    _clear_cache()
     try:
         f()
     except FileNotFoundError:
@@ -262,15 +278,45 @@ def write(**kwargs):
     write_all(content)
 
 
+def read_all():
+    """Return the deployment info, decoding the file only when it has changed.
+
+    Asset deposits read several keys per asset, so re-decoding the file on
+    every call slowed deployment preparation for large asset sets. The cache
+    is keyed on the file's path, inode, modification and change times, and
+    size, so writes from other processes are still picked up.
+    """
+    return copy.deepcopy(_cached_content())
+
+
 @retry(
     retry=retry_if_not_exception_type(FileNotFoundError),
     stop=stop_after_attempt(5),
     wait=wait_fixed(1),
     reraise=True,
 )
-def read_all():
+def _cached_content():
+    """Return the decoded deployment info, shared between callers; do not mutate.
+
+    Retries cover reading a file that another process is still writing.
+    """
+    global _cache
+
+    stat = os.stat(path)
+    key = (
+        os.path.abspath(path),
+        stat.st_ino,
+        stat.st_mtime_ns,
+        stat.st_ctime_ns,
+        stat.st_size,
+    )
+    cache = _cache
+    if cache is not None and cache[0] == key:
+        return cache[1]
     with open(path, "r") as file:
-        return loads(file.read())
+        content = loads(file.read())
+    _cache = (key, content)
+    return content
 
 
 def loads(txt: str) -> dict:
@@ -280,10 +326,17 @@ def loads(txt: str) -> dict:
     return content
 
 
+def _clear_cache():
+    """Forget the decoded deployment info after this process changes the file."""
+    global _cache
+    _cache = None
+
+
 def read(key):
-    content = read_all()
-    return content[key]
+    """Return a copy of one deployment-info value."""
+    return copy.deepcopy(_cached_content()[key])
 
 
 def delete():
+    _clear_cache()
     os.remove(path)
