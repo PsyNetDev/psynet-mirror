@@ -1851,11 +1851,11 @@ class AssetStorage:
         host_path: str,
         delete_input: bool,  # , db_commit: bool = False
     ):
-        # logger.info("Calling _call_receive_deposit...")
-        # We include this for compatibility with threaded dispatching.
-        # Without it, SQLAlchemy complains that the object has become disconnected
-        # from the SQLAlchemy session. This command 'merges' it back into the session.
-        asset = db.session.merge(asset)
+        # Assets from outside this session (e.g. detached objects) must be merged
+        # first. Skip the merge otherwise, because it autoflushes, which costs one
+        # flush per asset when preparing many assets.
+        if asset not in db.session:
+            asset = db.session.merge(asset)
         self._receive_deposit(asset, host_path)
         asset.deposited = True
         asset.after_deposit()
