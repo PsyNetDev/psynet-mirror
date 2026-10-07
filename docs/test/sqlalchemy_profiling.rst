@@ -51,6 +51,9 @@ Useful options include:
 * ``min_ms`` - minimum per-query duration to record (ms).
 * ``top_n`` - number of rows to show in reports.
 * ``stack`` - set to ``1`` to capture query stack traces for callsite context.
+* ``stack_depth`` - number of innermost non-SQLAlchemy frames to keep per
+  stack (default 6). Raise it, for example to ``40``, to see which route a
+  query came from.
 
 Output formats
 --------------
