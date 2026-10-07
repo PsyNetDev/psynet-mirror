@@ -5573,14 +5573,16 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     @with_transaction
     def route_participant_status(cls, participant_id):
         """
-        This route provides a .zip file containing useful information about the
-        participant's current status. This information is used by automated tests
-        to verify what is being displayed on the current page and what response
-        should be submitted by the bot.
+        Describe the participant's current status for automated tests.
 
-        The zip file contains:
-        - status.json: a JSON file summarising the participant's status
-        - bot_response_files/: a directory containing the files that the participant would upload as a response to the page
+        Bots use this to check what the current page shows and what response
+        to submit. The response is the status as JSON, unless the bot's
+        response to the page includes files. In that case it is a zip file
+        containing:
+
+        - status.json: the status
+        - bot_response_files/: the files that the participant would upload as
+          a response to the page
         """
         participant = Bot.query.get(participant_id)
         experiment = get_experiment()
@@ -5608,33 +5610,15 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         else:
             bot_response = None
 
+        if not (bot_response and bot_response.blobs):
+            return jsonify(status)
+
         with tempfile.TemporaryDirectory() as tempdir:
-            # status.json (a JSON file summarising the participant's status)
-            status_path = os.path.join(tempdir, "status.json")
-            with open(status_path, "w") as f:
-                json.dump(status, f)
-
-            # bot_response_files/... (the files that the participant would upload as a response to the page)
-            files_dir = os.path.join(tempdir, "bot_response_files")
-            os.makedirs(files_dir, exist_ok=True)
-            if bot_response:
-                for key, blob in bot_response.blobs.items():
-                    src_path = blob.file
-                    dst_path = os.path.join(files_dir, key)
-                    shutil.copyfile(src_path, dst_path)
-
-            # status.zip (a zip file containing the status.json and the bot_response_files)
             zip_path = os.path.join(tempdir, "status.zip")
             with zipfile.ZipFile(zip_path, "w") as zf:
-                zf.write(status_path, "status.json")
-
-                if bot_response:
-                    for filename in bot_response.blobs:
-                        zf.write(
-                            os.path.join(files_dir, filename),
-                            os.path.join("bot_response_files", filename),
-                        )
-
+                zf.writestr("status.json", json.dumps(status))
+                for key, blob in bot_response.blobs.items():
+                    zf.write(blob.file, f"bot_response_files/{key}")
             return send_file(zip_path, mimetype="application/zip")
 
     @classmethod

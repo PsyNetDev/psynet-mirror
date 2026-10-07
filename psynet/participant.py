@@ -1360,11 +1360,6 @@ class ParticipantDriver:
         Fetch the participant's current status and any associated response files,
         and store them in the participant driver's attributes
         (self.status and self.response_files).
-
-        Parameters
-        ----------
-        directory : str
-            Path to a directory for extracting files.
         """
         response = _retry_busy_http(
             lambda: self.experiment.authenticated_session.get(
@@ -1373,24 +1368,23 @@ class ParticipantDriver:
         )
 
         self.response_files = {}
+        shutil.rmtree(
+            os.path.join(self.directory, "bot_response_files"), ignore_errors=True
+        )
 
-        with zipfile.ZipFile(io.BytesIO(response.content)) as zf:
-            # Load the status.
-            with zf.open("status.json") as f:
-                self.status = json.load(f)
-
-            # Clean up any old response files.
-            try:
-                shutil.rmtree(os.path.join(self.directory, "bot_response_files"))
-            except FileNotFoundError:
-                pass
-
-            # Extract the new response files.
-            for name in zf.namelist():
-                if name.startswith("bot_response_files/") and not name.endswith("/"):
-                    zf.extract(name, self.directory)
-                    key = name.replace("bot_response_files/", "", 1)
-                    self.response_files[key] = os.path.join(self.directory, name)
+        if response.headers.get("Content-Type", "").startswith("application/json"):
+            self.status = response.json()
+        else:
+            with zipfile.ZipFile(io.BytesIO(response.content)) as zf:
+                with zf.open("status.json") as f:
+                    self.status = json.load(f)
+                for name in zf.namelist():
+                    if name.startswith("bot_response_files/") and not name.endswith(
+                        "/"
+                    ):
+                        zf.extract(name, self.directory)
+                        key = name.replace("bot_response_files/", "", 1)
+                        self.response_files[key] = os.path.join(self.directory, name)
 
         self.status_time_fetched = time.monotonic()
 
