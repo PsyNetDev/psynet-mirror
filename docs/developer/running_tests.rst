@@ -24,6 +24,25 @@ requests that change only that path. If you add a top-level file or directory
 that tests or the CI image depend on, or a test that reads a docs page, add
 its path to ``.docker_test_rules``.
 
+Merge-train pipelines skip jobs that already passed on the same files.
+Merging goes through a GitLab merge train, whose pipeline tests the commit that
+``master`` will become. That commit often has exactly the same files as the
+merge request's last merged-results pipeline: when ``master`` hasn't moved and
+nothing is ahead of it in the train. Rerunning the suite on it would only
+delay the merge. The ``check_already_tested`` job runs first in each train
+pipeline. It runs ``ci/already_tested.py``, which finds the newest finished
+merged-results pipeline of the merge request that tested identical files. The
+pytest, Playwright and ``docs`` jobs that passed there end successfully at
+once, and their logs link to that pipeline. If anything differs, or the check fails,
+every job runs as usual. ``master`` push pipelines always run the full suite.
+
+A job opts in by sourcing ``ci/skip-if-already-passed.sh`` at the start of its
+``before_script``. Only add this to jobs whose result is set by the
+repository files, and never to jobs that publish or deploy. Outside drift,
+such as a new dependency release or a dead external link, can still change a
+job's result between two runs on the same files; the full ``master`` push
+pipeline catches that after the merge.
+
 Test parallelization
 --------------------
 
