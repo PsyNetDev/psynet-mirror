@@ -4463,7 +4463,7 @@ def test_anonymize_export_kwarg_warns_when_used(capsys):
     assert "have no effect" in warning
 
 
-def test_run_performance_test_with_new_server_loads_runtime_server_config():
+def test_run_performance_test_with_new_server_starts_legacy_debug_server():
     from psynet.command_line import _run_performance_test_with_new_server
 
     process = Mock()
@@ -4478,7 +4478,6 @@ def test_run_performance_test_with_new_server_loads_runtime_server_config():
             "psynet.command_line._start_local_server_and_wait_for_ready",
             return_value=server_info,
         ) as start_server,
-        patch("psynet.command_line._load_runtime_server_config") as load_runtime_config,
         patch("psynet.command_line._run_performance_test_with_existing_server"),
         patch("psynet.command_line._stop_server"),
     ):
@@ -4491,6 +4490,22 @@ def test_run_performance_test_with_new_server_loads_runtime_server_config():
         debug=False,
         extra_env={"PSYNET_PERFORMANCE_TEST": "1"},
     )
+
+
+def test_performance_test_existing_server_loads_runtime_server_config():
+    """``--existing`` needs the running server's dashboard credentials."""
+    from psynet.command_line import _run_performance_test_with_existing_server
+
+    with (
+        patch("psynet.command_line._load_runtime_server_config") as load_runtime_config,
+        patch("psynet.experiment.get_experiment", return_value=Mock(test_n_bots=1)),
+        patch("psynet.perf_test.PerformanceTester") as tester,
+    ):
+        tester.return_value.run.return_value = []
+        _run_performance_test_with_existing_server(
+            n_bots="1", stagger=0.1, time_factor=1.0, duration_minutes=0.1, debug=False
+        )
+
     load_runtime_config.assert_called_once_with()
 
 
