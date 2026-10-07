@@ -1181,6 +1181,10 @@ def get_participant(participant_id: int, for_update: bool = False) -> Participan
     return query.one()
 
 
+class DriverStopped(Exception):
+    """Raised by a :class:`ParticipantDriver` whose ``stop_event`` has been set."""
+
+
 class ParticipantDriver:
     """
     Driver class for automating participant actions in an experiment.
@@ -1214,6 +1218,13 @@ class ParticipantDriver:
         The ID of the participant to automate
         (i.e. corresponding to the ``id`` column in the Participant table).
         If not provided, a new bot participant is created.
+
+    Attributes
+    ----------
+    stop_event : threading.Event or None
+        If set while the driver is taking pages, the next page raises
+        :class:`DriverStopped`. Load tests use this to end bots that run in
+        threads.
     """
 
     def __init__(
@@ -1222,6 +1233,7 @@ class ParticipantDriver:
     ):
         from .experiment import get_experiment
 
+        self.stop_event = None
         self.id = id_
         self.experiment = get_experiment()
         # self._directory = tempfile.TemporaryDirectory()
@@ -1335,7 +1347,7 @@ class ParticipantDriver:
             # Ordinary Next on an unready hold takes FOR UPDATE and busy-loops
             # parallel bots. Hold-resume already skipped the row lock; pause
             # so last-arrival can skip this waiter.
-            time.sleep(_TIMELINE_HOLD_POLL_SECONDS)
+            self._sleep(_TIMELINE_HOLD_POLL_SECONDS)
 
         return self.is_working
 
@@ -1413,9 +1425,14 @@ class ParticipantDriver:
         time_estimate = self.status["page"]["time_estimate"]
         simulated_page_time = time_estimate * time_factor
         wake_time = self.status_time_fetched + simulated_page_time
-        remaining_sleep_duration = wake_time - time.monotonic()
-        if remaining_sleep_duration > 0:
-            time.sleep(remaining_sleep_duration)
+        self._sleep(max(wake_time - time.monotonic(), 0))
+
+    def _sleep(self, seconds):
+        """Sleep, raising :class:`DriverStopped` if ``stop_event`` is or becomes set."""
+        if self.stop_event is None:
+            time.sleep(seconds)
+        elif self.stop_event.wait(seconds):
+            raise DriverStopped()
 
     def _retry_submit_after_page_advanced(self, status, response, already_retried):
         """Retry once when last-arrival already rotated this driver's page uuid.

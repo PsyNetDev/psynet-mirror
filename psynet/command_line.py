@@ -4433,7 +4433,7 @@ def _run_performance_test_with_existing_server(
     root_logger.addHandler(console_handler)
 
     bot_log_file = tempfile.NamedTemporaryFile(
-        delete=False, prefix="psynet_bots_", suffix=".log"
+        mode="w", delete=False, prefix="psynet_bots_", suffix=".log"
     )
     print(f"Bot output log: {bot_log_file.name}")
 

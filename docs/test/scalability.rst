@@ -105,11 +105,11 @@ local --sql-profile``; see :doc:`/test/sqlalchemy_profiling`.
 Testing on a server
 -------------------
 
-A local test is limited by your own computer. Each bot is a separate
-``psynet run-bot`` process that uses about 200 MB of memory and a second or
-more of CPU time to start, and the bots share the CPUs with the server. On a
-four-core computer with 16 GB of memory, a few dozen bots can use more CPU
-than the server does. To test a real server, launch
+A local test is limited by your own computer, because the bots share its CPUs
+with the server. The bots run as threads inside the ``performance-test``
+process, so they are cheap: on a four-core computer, 200 bots working at a
+realistic pace used about a third of one core, against nearly three cores for
+the server. To test a real server, launch
 the experiment there in debug mode, then run the test over SSH:
 
 .. code-block:: bash

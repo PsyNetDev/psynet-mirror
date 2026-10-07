@@ -75,6 +75,41 @@ def test_monitoring_loop_ends_early_when_server_stops():
     assert time.time() - start < 5
 
 
+def test_bots_still_taking_the_experiment_stop_when_the_test_ends(monkeypatch):
+    import itertools
+    import time
+
+    from dallinger import db
+
+    from psynet.participant import ParticipantDriver
+
+    ids = itertools.count(1)
+
+    class FakeDriver(ParticipantDriver):
+        def __init__(self):
+            self.stop_event = None
+            self.id = next(ids)
+
+    experiment = Mock()
+    experiment.run_bot.side_effect = lambda bot, time_factor: bot._sleep(60)
+    monkeypatch.setattr("psynet.bot.BotDriver", FakeDriver)
+    monkeypatch.setattr("psynet.experiment.get_experiment", lambda: experiment)
+    monkeypatch.setattr(db, "session", Mock())
+    tester = PerformanceTester(authenticated_session=Mock(), base_url="http://x")
+    bot_state = tester._initialize_bot_tracking()
+    start_bot_slot = tester._create_bot_launcher(bot_state, time.time() + 60)
+
+    for _ in range(3):
+        start_bot_slot()
+    while len(bot_state["running"]) < 3:
+        time.sleep(0.01)
+    tester._stop_bots(bot_state, timeout_s=5)
+
+    assert not any(thread.is_alive() for thread in bot_state["threads"])
+    assert [terminated for _, _, terminated in bot_state["bot_durations"]] == [True] * 3
+    assert bot_state["total_bot_errors"] == 0
+
+
 # --- colorize_success_rate ---
 
 

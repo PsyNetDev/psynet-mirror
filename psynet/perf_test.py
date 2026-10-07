@@ -1,12 +1,12 @@
 import datetime
 import logging
 import math
-import os
 import random
 import re
-import signal
 import sys
+import threading
 import time
+from contextlib import contextmanager
 from decimal import Decimal
 from statistics import mean
 
@@ -18,6 +18,44 @@ from psynet.log import bold, error, success, warning
 logger = logging.getLogger(__name__)
 
 _SERVER_CHECK_INTERVAL_S = 5
+_BOT_THREAD_PREFIX = "psynet-bot-"
+
+
+def _is_bot_thread_record(record):
+    return record.threadName.startswith(_BOT_THREAD_PREFIX)
+
+
+@contextmanager
+def _bot_logs_to(stream):
+    """Send log records from bot threads to ``stream`` rather than the console.
+
+    Bot output still reaches the console with ``--debug``.
+    """
+    root = logging.getLogger()
+    hidden_from = []
+    if logger.getEffectiveLevel() > logging.DEBUG:
+        for handler in root.handlers:
+            handler.addFilter(_hide_bot_thread_records)
+            hidden_from.append(handler)
+    bot_handler = None
+    if stream is not None:
+        bot_handler = logging.StreamHandler(stream)
+        bot_handler.addFilter(_is_bot_thread_record)
+        bot_handler.setFormatter(
+            logging.Formatter("%(threadName)s %(levelname)s %(message)s")
+        )
+        root.addHandler(bot_handler)
+    try:
+        yield
+    finally:
+        for handler in hidden_from:
+            handler.removeFilter(_hide_bot_thread_records)
+        if bot_handler is not None:
+            root.removeHandler(bot_handler)
+
+
+def _hide_bot_thread_records(record):
+    return not _is_bot_thread_record(record)
 
 
 # ---------------------------------------------------------------------------
@@ -285,25 +323,17 @@ class PerformanceTester:
             )
         )
 
-        # Setup
         initial_state = self._capture_initial_state()
         bot_state = self._initialize_bot_tracking()
-        bot_state["bot_log_file"] = bot_log_file
         start_time = time.time()
         end_time = start_time + (duration_minutes * 60)
+        start_bot_slot = self._create_bot_launcher(bot_state, end_time)
 
-        # Create bot launcher
-        start_new_bot = self._create_bot_launcher(bot_state)
-
-        # Launch first bot and wait for initialization
-        logger.debug("Launching first bot and waiting for initialization...")
-        start_new_bot()
-
-        # Show initial status immediately
-        self._show_realtime_status(bot_state, time.time(), end_time, force=True)
-
-        # Main monitoring loop
-        self._run_monitoring_loop(n, bot_state, start_new_bot, start_time, end_time)
+        with _bot_logs_to(bot_log_file):
+            self._run_monitoring_loop(
+                n, bot_state, start_bot_slot, start_time, end_time
+            )
+            self._stop_bots(bot_state)
         self._clear_realtime_status()
 
         # Calculate and report results
@@ -334,25 +364,20 @@ class PerformanceTester:
     def _initialize_bot_tracking(self):
         """Initialize tracking structures for bots."""
         return {
-            "processes": {},
-            "next_bot_id": 1,
-            "next_process_id": 0,
+            "lock": threading.Lock(),
+            "stop_event": threading.Event(),
+            "threads": [],
+            # Bot ID -> time the bot was created, for bots taking the experiment.
+            "running": {},
             "total_bots_started": 0,
-            "total_bots_completed": 0,
             "bots_completed_during_test": 0,
             "total_bot_errors": 0,
             "bot_durations": [],
             "initialization_times": [],
-            "bot_exit_failures": {},
-            "bot_monitor_errors": {},
             "first_bot_initialized": False,
-            "bots_to_launch": 0,
             "server_stopped": False,
-            "testing_stats": TestingStats(TESTING_STAT_DEFINITIONS),
             "last_status_update": time.time(),
             "status_line_length": 0,
-            "bot_ids": set(),
-            "bot_log_file": None,
         }
 
     @staticmethod
@@ -377,56 +402,95 @@ class PerformanceTester:
             if x <= max_stagger:
                 return x
 
-    def _create_bot_launcher(self, bot_state):
-        """Create a function to launch new bot processes."""
-        from psynet.utils import get_config
+    def _create_bot_launcher(self, bot_state, end_time):
+        """Return a function that starts one bot slot in a new thread."""
 
-        config = get_config()
-        dashboard_user = config.get("dashboard_user")
-        dashboard_password = config.get("dashboard_password")
-        time_factor = self.time_factor
-
-        def start_new_bot():
-            bot_id = bot_state["next_bot_id"]
-            process_id = bot_state["next_process_id"]
-            bot_state["next_bot_id"] += 1
-            bot_state["next_process_id"] += 1
-
-            randomized_time_factor = time_factor * self._bounded_random_multiplier()
-            cmd = (
-                f"psynet run-bot --dashboard-user {dashboard_user} "
-                f"--dashboard-password {dashboard_password} "
-                f"--time-factor {randomized_time_factor}"
+        def start_bot_slot():
+            thread = threading.Thread(
+                target=self._run_bot_slot,
+                args=(bot_state, end_time),
+                name=f"{_BOT_THREAD_PREFIX}{len(bot_state['threads']) + 1}",
+                daemon=True,
             )
+            bot_state["threads"].append(thread)
+            thread.start()
 
-            logger.debug(
-                f"Starting bot {bot_id} (time_factor={randomized_time_factor:.2f})..."
-            )
+        return start_bot_slot
 
+    def _run_bot_slot(self, bot_state, end_time):
+        """Run bots one after another until the test ends.
+
+        Each slot stands for one participant at a time, so ``n`` slots keep
+        ``n`` participants active. Bots share this process: threads cost far
+        less memory and start-up CPU than one ``psynet run-bot`` process per
+        bot, and the bots spend most of their time waiting on the server.
+        """
+        from dallinger import db
+
+        from psynet.bot import BotDriver
+        from psynet.experiment import get_experiment
+        from psynet.participant import DriverStopped
+
+        experiment = get_experiment()
+        stop_event = bot_state["stop_event"]
+        while not stop_event.is_set() and time.time() < end_time:
+            create_time = time.time()
+            bot_id = None
             try:
-                env = os.environ.copy()
-                # Disable colors in log output, so it can be read with any tool
-                env["PYTHON_COLORS"] = "0"
-                p = pexpect.spawn(cmd, timeout=None, cwd=None, env=env)
-                bot_state["processes"][process_id] = {
-                    "process": p,
-                    "bot_id": bot_id,
-                    "spawn_time": time.time(),
-                    "start_time": None,
-                    "next_start_time": None,
-                    "recent_output": [],
-                }
-                if bot_state["bot_log_file"]:
-                    p.logfile_read = bot_state["bot_log_file"]
-                bot_state["total_bots_started"] += 1
-                bot_state["bot_ids"].add(bot_id)
+                bot = BotDriver()
+                bot.stop_event = stop_event
+                bot_id = bot.id
+                self._record_bot_start(bot_state, bot_id, create_time)
+                experiment.run_bot(
+                    bot,
+                    time_factor=self.time_factor * self._bounded_random_multiplier(),
+                )
+                outcome = "completed"
+            except DriverStopped:
+                outcome = "stopped"
+            except Exception:
+                logger.exception("Bot %s failed.", bot_id)
+                outcome = "error"
+            finally:
+                db.session.remove()
+            self._record_bot_end(bot_state, bot_id, outcome, end_time)
+            stop_event.wait(self._bounded_random_stagger())
 
-                return True
-            except Exception as e:
-                logger.error(f"Failed to start bot {bot_id}: {e}")
-                return False
+    @staticmethod
+    def _record_bot_start(bot_state, bot_id, create_time):
+        now = time.time()
+        with bot_state["lock"]:
+            bot_state["total_bots_started"] += 1
+            bot_state["initialization_times"].append(now - create_time)
+            bot_state["first_bot_initialized"] = True
+            bot_state["running"][bot_id] = now
 
-        return start_new_bot
+    @staticmethod
+    def _record_bot_end(bot_state, bot_id, outcome, end_time):
+        now = time.time()
+        with bot_state["lock"]:
+            start = bot_state["running"].pop(bot_id, None)
+            if outcome == "error":
+                bot_state["total_bot_errors"] += 1
+            elif outcome == "completed" and now < end_time:
+                bot_state["bots_completed_during_test"] += 1
+            if start is not None:
+                bot_state["bot_durations"].append(
+                    (bot_id, now - start, outcome == "stopped")
+                )
+
+    def _stop_bots(self, bot_state, timeout_s=30):
+        """Stop the bots that are still running and wait for their threads."""
+        bot_state["stop_event"].set()
+        deadline = time.time() + timeout_s
+        for thread in bot_state["threads"]:
+            thread.join(max(0.0, deadline - time.time()))
+        n_alive = sum(thread.is_alive() for thread in bot_state["threads"])
+        if n_alive:
+            logger.warning(
+                f"{n_alive} bot(s) were still waiting for the server "
+                f"{timeout_s} s after the test ended."
+            )
 
     def _show_realtime_status(self, bot_state, current_time, end_time, force=False):
         """Show real-time status update if not in debug mode and enough time has passed."""
@@ -441,9 +505,7 @@ class PerformanceTester:
         bot_state["last_status_update"] = current_time
 
         # Calculate stats
-        running = len(
-            [p for p in bot_state["processes"].values() if p["next_start_time"] is None]
-        )
+        running = len(bot_state["running"])
         completed = bot_state["bots_completed_during_test"]
         errors = bot_state["total_bot_errors"]
 
@@ -488,13 +550,17 @@ class PerformanceTester:
             return False
         return True
 
-    def _run_monitoring_loop(self, n, bot_state, start_new_bot, start_time, end_time):
-        """Main loop to monitor bot processes."""
+    def _run_monitoring_loop(self, n, bot_state, start_bot_slot, start_time, end_time):
+        """Start ``n`` staggered bot slots and watch the server until the test ends."""
+        # The first bot waits for the experiment launch; the rest follow it.
+        start_bot_slot()
+        n_started = 1
+        next_slot_time = None
         next_server_check = start_time
-        while time.time() < end_time or len(bot_state["processes"]) > 0:
+        while time.time() < end_time:
             current_time = time.time()
 
-            if current_time < end_time and current_time >= next_server_check:
+            if current_time >= next_server_check:
                 next_server_check = current_time + _SERVER_CHECK_INTERVAL_S
                 if not self._server_is_reachable():
                     self._clear_realtime_status()
@@ -508,204 +574,18 @@ class PerformanceTester:
                         )
                     )
                     bot_state["server_stopped"] = True
-                    end_time = current_time
+                    return
 
-            # Show real-time status update
+            if n_started < n and bot_state["first_bot_initialized"]:
+                if next_slot_time is None:
+                    next_slot_time = current_time
+                while n_started < n and current_time >= next_slot_time:
+                    start_bot_slot()
+                    n_started += 1
+                    next_slot_time += self._bounded_random_stagger()
+
             self._show_realtime_status(bot_state, current_time, end_time)
-
-            # Start new bots after bots have completed
-            if self._start_scheduled_bots(
-                bot_state, start_new_bot, current_time, end_time
-            ):
-                # Force status update after starting a bot
-                self._show_realtime_status(
-                    bot_state, current_time, end_time, force=True
-                )
-
-            # Launch n-1 bots after first one initializes
-            if bot_state["first_bot_initialized"] and bot_state["bots_to_launch"] > 0:
-                logger.debug(
-                    f"First bot initialized. Launching remaining {bot_state['bots_to_launch']} bots..."
-                )
-                for i in range(bot_state["bots_to_launch"]):
-                    if i > 0:
-                        random_stagger = self._bounded_random_stagger()
-                        logger.debug(
-                            f"Waiting {random_stagger:.2f}s before launching next bot..."
-                        )
-                        time.sleep(random_stagger)
-                    start_new_bot()
-                    # Force status update after each bot
-                    self._show_realtime_status(
-                        bot_state, time.time(), end_time, force=True
-                    )
-                bot_state["bots_to_launch"] = 0
-
-            self._monitor_all_processes(bot_state, current_time, end_time, n)
-
-            # Terminate running bots once time is up to ensure consistent stats
-            if current_time >= end_time and len(bot_state.get("processes", {})) > 0:
-                logger.debug(
-                    "End time reached \u2014 terminating remaining bot processes"
-                )
-                for proc_id, proc_info in list(bot_state.get("processes", {}).items()):
-                    # Only target running processes
-                    if proc_info.get("next_start_time") is not None:
-                        continue
-                    proc_info["terminated_by_test"] = True
-                    p = proc_info.get("process")
-                    if p is None:
-                        continue
-                    pidnum = getattr(p, "pid", None)
-                    try:
-                        if pidnum:
-                            os.kill(pidnum, signal.SIGTERM)
-                        else:
-                            try:
-                                p.kill(signal.SIGTERM)
-                            except Exception:
-                                try:
-                                    p.close(force=True)
-                                except Exception:
-                                    pass
-                    except Exception as e:
-                        logger.debug(f"Failed to terminate bot process {proc_id}: {e}")
-
-                # Give processes a short grace period to exit
-                time.sleep(0.2)
-
-            time.sleep(0.1)
-
-    def _start_scheduled_bots(self, bot_state, start_new_bot, current_time, end_time):
-        """Start bots that are scheduled to start. Returns True if any bots were started."""
-        to_start = [
-            pid
-            for pid, info in list(bot_state["processes"].items())
-            if info["next_start_time"] is not None
-            and current_time >= info["next_start_time"]
-        ]
-
-        for process_id in to_start:
-            del bot_state["processes"][process_id]
-            if current_time < end_time:
-                start_new_bot()
-
-        return len(to_start) > 0
-
-    def _monitor_all_processes(self, bot_state, current_time, end_time, n):
-        """Monitor all running bot processes."""
-        for process_id, process_info in list(bot_state["processes"].items()):
-            if process_info["next_start_time"] is not None:
-                continue  # Wait to start
-
-            self._monitor_single_process(
-                bot_state, process_id, process_info, current_time, end_time, n
-            )
-
-    def _monitor_single_process(
-        self, bot_state, process_id, process_info, current_time, end_time, n
-    ):
-        """Monitor a single bot process."""
-        p = process_info["process"]
-        bot_id = process_info["bot_id"]
-
-        try:
-            while True:
-                output = (
-                    p.read_nonblocking(size=100000, timeout=0)
-                    .decode()
-                    .strip()
-                    .split("\n")
-                )
-                for line in output:
-                    line = line.replace("INFO:root:", "")
-                    logger.debug(f"(Bot {bot_id}) " + line)
-                    bot_state["testing_stats"].update_from_line(bot_id, line)
-                    recent = process_info["recent_output"]
-                    recent.append(line)
-                    # Keep just the most recent 10 lines. Remove overflow from
-                    # the front of the list
-                    recent[:] = recent[-10:]
-
-                    # Detect bot initialization
-                    if process_info["start_time"] is None and "Initializing" in line:
-                        process_info["start_time"] = time.time()
-                        init_time = (
-                            process_info["start_time"] - process_info["spawn_time"]
-                        )
-                        logger.debug(f"Bot {bot_id} initialized in {init_time:.1f}s")
-
-                        bot_state["initialization_times"].append(init_time)
-
-                        if not bot_state["first_bot_initialized"]:
-                            bot_state["first_bot_initialized"] = True
-                            bot_state["bots_to_launch"] = n - 1
-
-                time.sleep(0.01)
-
-        except pexpect.TIMEOUT:
-            pass
-        except pexpect.EOF:
-            self._handle_bot_completion(
-                bot_state, process_info, process_id, current_time, end_time
-            )
-        except Exception as e:
-            self._handle_bot_error(
-                bot_state, process_info, process_id, e, current_time, end_time
-            )
-
-    def _handle_bot_completion(
-        self, bot_state, process_info, process_id, current_time, end_time
-    ):
-        """Handle a bot process completion."""
-        p = process_info["process"]
-        bot_id = process_info["bot_id"]
-
-        # Calculate duration
-        if process_info["start_time"] is not None:
-            bot_duration = current_time - process_info["start_time"]
-        else:
-            bot_duration = current_time - process_info["spawn_time"]
-
-        # Record duration for all exits
-        terminated = process_info.get("terminated_by_test", False)
-        if process_info["start_time"] is not None:
-            bot_state["bot_durations"].append((bot_id, bot_duration, terminated))
-
-        if p.exitstatus == 0:
-            logger.debug(f"Bot {bot_id} completed successfully in {bot_duration:.1f}s")
-            if current_time < end_time:
-                bot_state["bots_completed_during_test"] += 1
-        else:
-            if p.exitstatus is not None:
-                bot_state["bot_exit_failures"][bot_id] = {
-                    "exitstatus": p.exitstatus,
-                    "output": process_info["recent_output"],
-                }
-                bot_state["total_bot_errors"] += 1
-
-        # Schedule bot replacement or cleanup
-        if current_time < end_time:
-            random_delay = self._bounded_random_stagger()
-            process_info["next_start_time"] = current_time + random_delay
-            logger.debug(f"Will start replacement bot in {random_delay:.2f} seconds")
-        else:
-            del bot_state["processes"][process_id]
-
-    def _handle_bot_error(
-        self, bot_state, process_info, process_id, error, current_time, end_time
-    ):
-        """Handle a bot process error."""
-        bot_id = process_info["bot_id"]
-        bot_state["bot_monitor_errors"][bot_id] = error
-        bot_state["total_bot_errors"] += 1
-
-        if current_time < end_time:
-            random_delay = self._bounded_random_stagger()
-            process_info["next_start_time"] = current_time + random_delay
-            logger.debug(f"Will start replacement bot in {random_delay:.2f} seconds")
-        else:
-            del bot_state["processes"][process_id]
+            time.sleep(0.05)
 
     def _calculate_and_report_results(
         self, n, duration_minutes, actual_duration, initial_state, bot_state
