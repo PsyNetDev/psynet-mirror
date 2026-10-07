@@ -289,11 +289,15 @@ def unserialize(x):
     # custom_classes = list(get_custom_sql_classes().values())
     # return jsonpickle.decode(x, context=unpickler, classes=custom_classes)
     #
-    # jsonpickle tags everything that is not plain JSON with "py/" (and
-    # non-string keys with "json://"). Untagged text decodes identically with
-    # json.loads, which is several times faster.
+    # jsonpickle tags every value that is not plain JSON with "py/" (the
+    # "json://" check is defensive). Untagged JSON decodes identically with
+    # json.loads, which is several times faster. Text that is not JSON still
+    # goes to jsonpickle, which falls back to YAML.
     if '"py/' not in x and "json://" not in x:
-        return json.loads(x)
+        try:
+            return json.loads(x)
+        except ValueError:
+            pass
     unpickler = PsyNetUnpickler()
     return jsonpickle.decode(x, context=unpickler)
     # return jsonpickle.decode(x, classes=custom_classes)

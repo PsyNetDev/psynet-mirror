@@ -22,7 +22,6 @@ shared = {"x": 1}
         "é ünïcode",
         'user text mentioning "py/object" and json://',
         {"a": [1, {"b": None}], "c": "d"},
-        {1: "a"},
         [shared, shared],
         {"k": (1, 2)},
         {1, 2},
@@ -43,6 +42,11 @@ def test_unserialize_matches_jsonpickle(value):
         assert (decoded == expected).all()
     else:
         assert decoded == expected
+
+
+@pytest.mark.parametrize("text", ["", "hello", "{'a': 1}"])
+def test_unserialize_still_decodes_non_json_text_like_jsonpickle(text):
+    assert unserialize(text) == jsonpickle.decode(text, context=PsyNetUnpickler())
 
 
 def test_unserialize_decodes_plain_json_without_jsonpickle(monkeypatch):
