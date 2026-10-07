@@ -405,7 +405,7 @@ def test_only_survey_js_pages_load_survey_js():
     )
     button_page = ModularPage("test", Prompt("Buttons"), PushButtonControl(["A"]))
 
-    survey_js = "/static/scripts/survey-jquery/survey-jquery.js"
+    survey_js = "/static/scripts/survey-jquery/survey.jquery.min.js"
     assert survey_page.js_dependencies == [survey_js]
     assert survey_js not in button_page.js_dependencies
 
