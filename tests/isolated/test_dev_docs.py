@@ -287,7 +287,7 @@ def test_linkcheck_command_prints_structured_summary(
 
     with working_directory(source_checkout):
         with pytest.raises(ValueError, match="Linkcheck found 2 broken link"):
-            docs_module.linkcheck_command(clean=False, show_progress=False)
+            docs_module.linkcheck_command(clean=False, show_progress=False, strict=True)
 
     summary = capsys.readouterr().out
     assert "Linkcheck found 2 broken link(s):" in summary
@@ -299,6 +299,51 @@ def test_linkcheck_command_prints_structured_summary(
     assert "certificate mismatch" in summary
     # Working links are not reported.
     assert "www.w3.org" not in summary
+
+
+@pytest.mark.parametrize(
+    ("uri", "info", "fails"),
+    [
+        ("http://example.com", "403 Client Error: Forbidden", False),
+        ("https://www.gnu.org", "Network is unreachable", False),
+        ("http://example.com", "404 Client Error: Not Found", True),
+        ("http://example.com#top", "Anchor 'top' not found", True),
+        ("api/missing", "", True),
+    ],
+)
+def test_linkcheck_command_fails_only_on_docs_errors_unless_strict(
+    source_checkout, monkeypatch, capsys, uri, info, fails
+):
+    linkcheck_dir = source_checkout / "docs" / "_build" / "linkcheck"
+    linkcheck_dir.mkdir(parents=True)
+    (linkcheck_dir / "output.json").write_text(
+        json.dumps(
+            {
+                "filename": "index.rst",
+                "lineno": 1,
+                "status": "broken",
+                "uri": uri,
+                "info": info,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        docs_module.subprocess,
+        "run",
+        lambda command, **kwargs: subprocess.CompletedProcess(command, 1, "", ""),
+    )
+
+    with working_directory(source_checkout):
+        if fails:
+            with pytest.raises(ValueError, match="1 broken link.*to fix"):
+                docs_module.linkcheck_command(clean=False, show_progress=False)
+        else:
+            assert docs_module.linkcheck_command(clean=False, show_progress=False) == 0
+            assert "Pass --strict" in capsys.readouterr().out
+        with pytest.raises(ValueError, match="Linkcheck found 1 broken link"):
+            docs_module.linkcheck_command(clean=False, show_progress=False, strict=True)
 
 
 def test_linkcheck_command_updates_progress(source_checkout, monkeypatch, capsys):
@@ -391,7 +436,7 @@ def test_linkcheck_command_updates_progress(source_checkout, monkeypatch, capsys
 
     with working_directory(source_checkout):
         with pytest.raises(ValueError, match="Linkcheck found 1 broken link"):
-            docs_module.linkcheck_command(clean=False)
+            docs_module.linkcheck_command(clean=False, strict=True)
 
     assert updates == [42, 58]
     assert spinner_texts == [

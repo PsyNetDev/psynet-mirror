@@ -77,6 +77,13 @@ The PsyNet command shows progress during that run, then reprints the failures
 grouped by category (for example 404s, missing anchors, SSL errors, and
 connection errors).
 
+Only internal links, missing anchors, and pages not found (404) make the
+command fail, because those mean the documentation itself needs fixing.
+Other failures, such as 403s, timeouts, and SSL or connection errors, usually
+come from the remote site or the network, so they are reported without
+failing. Pass ``--strict`` to fail on every broken link. A weekly scheduled
+pipeline on ``master`` runs the strict check.
+
 The command deletes ``docs/_build`` first by default. For faster local reruns, pass
 ``--no-clean``. Extra Sphinx flags can be passed with ``--sphinx-option``.
 
