@@ -4033,7 +4033,7 @@ class SurveyJSControl(Control):
     def get_js_dependencies(self):
         """Load the SurveyJS library only on pages that contain a survey."""
         return super().get_js_dependencies() + [
-            "/static/scripts/survey-jquery/survey-jquery.js"
+            "/static/scripts/survey-jquery/survey.jquery.min.js"
         ]
 
     def get_css(self):
