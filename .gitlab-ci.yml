@@ -534,8 +534,9 @@ docs:
 
 # Weekly strict linkcheck on the default branch. The `docs` job above fails
 # only on links that mean the docs are wrong (internal links, missing
-# anchors, 404s); this job also fails on 403s, timeouts, and network errors,
-# so links that stay unreachable get noticed without blocking merges.
+# anchors, 404s and 410s); this job also fails on 403s, timeouts, and
+# network errors, so links that stay unreachable get noticed without
+# blocking merges.
 docs_linkcheck_strict:
   extends: .docs_ci
   # A push to master would otherwise cancel this week's run.

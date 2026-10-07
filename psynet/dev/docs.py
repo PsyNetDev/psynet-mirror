@@ -268,9 +268,10 @@ def linkcheck_command(
 
     if clean and build_dir.exists():
         shutil.rmtree(build_dir)
-    # Without this, a run that fails before linkcheck starts would be
+    # Without this, a run that fails before linkcheck finishes would be
     # judged on the previous run's results.
-    (build_dir / "linkcheck" / "output.json").unlink(missing_ok=True)
+    if (build_dir / "linkcheck").exists():
+        shutil.rmtree(build_dir / "linkcheck")
 
     options = build_sphinx_options(
         strict=False,

@@ -215,7 +215,7 @@ def linkcheck_docs(clean, jobs, sphinx_options, strict):
     by failure category.
 
     By default only internal links, missing anchors, and pages not found
-    (404) fail the command; other failures usually come from the remote
+    (404/410) fail the command; other failures usually come from the remote
     site or the network and are only reported. Pass --strict to fail on
     every broken link.
 
