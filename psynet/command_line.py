@@ -1310,8 +1310,10 @@ def _run_bot(time_factor, dashboard_user, dashboard_password):
     config.set("dashboard_user", dashboard_user)
     config.set("dashboard_password", dashboard_password)
 
+    from .bot import BotDriver
+
     exp = get_experiment()
-    exp.run_bot(time_factor=time_factor)
+    exp.run_bot(BotDriver(), time_factor=time_factor)
 
 
 @psynet.command()

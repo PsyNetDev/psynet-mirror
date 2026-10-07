@@ -2,15 +2,12 @@ import datetime
 import logging
 import math
 import random
-import re
 import sys
 import threading
 import time
 from contextlib import contextmanager
 from decimal import Decimal
-from statistics import mean
 
-import pexpect
 from tabulate import tabulate
 
 from psynet.log import bold, error, success, warning
@@ -105,149 +102,47 @@ def _to_json_safe(value):
     return str(value)
 
 
-# ---------------------------------------------------------------------------
-# TestingStats / TestingStatDefinition (moved from Experiment inner classes)
-# ---------------------------------------------------------------------------
-
-
-class TestingStatDefinition:
-    def __init__(self, key, label, regex, suffix, decimal_places=3):
-        self.key = key
-        self.label = label
-        self.regex = regex
-        self.suffix = suffix
-        self.decimal_places = decimal_places
-
-    def extract_stat(self, line):
-        match = re.search(self.regex, line)
-        if match:
-            return float(match.group(1))
-
-    def report(self, values):
-        values_not_none = [value for value in values if value is not None]
-
-        if len(values_not_none) > 0:
-            _mean = mean(values_not_none)
-            template = f"Mean %s = %.{self.decimal_places}f%s"
-            logger.info(template % (self.label, _mean, self.suffix))
-        else:
-            logger.info(f"Didn't find any values for {self.label} to report.")
-
-
-class TestingStats:
-    def __init__(self, stat_definitions):
-        self.stat_definitions = stat_definitions
-        self.data = {stat_definition.key: {} for stat_definition in stat_definitions}
-
-    def update_from_line(self, bot_id, line):
-        for stat_definition in self.stat_definitions:
-            stat = stat_definition.extract_stat(line)
-            if stat is not None:
-                self.update_from_stat(stat_definition.key, bot_id, stat)
-
-    def update_from_stat(self, stat_key, bot_id, value):
-        self.data[stat_key][bot_id] = value
-
-    def report(self):
-        logger.info("BOT TESTING STATISTICS:")
-        for stat_definition in self.stat_definitions:
-            values = self.data[stat_definition.key].values()
-            stat_definition.report(values)
-
-
-TESTING_STAT_DEFINITIONS = [
-    TestingStatDefinition(
-        "progress",
-        label="progress through experiment",
-        regex="progress = ([0-9]*)%",
-        suffix="%",
-        decimal_places=0,
-    ),
-    TestingStatDefinition(
-        "total_wait_page_time",
-        label="total wait page time per bot",
-        regex="total WaitPage time = ([0-9]*\\.[0-9]*) seconds",
-        suffix=" seconds",
-        decimal_places=2,
-    ),
-    TestingStatDefinition(
-        "total_experiment_time",
-        label="time taken to complete experiment",
-        regex="total experiment time = ([0-9]*\\.[0-9]*) seconds",
-        suffix=" seconds",
-    ),
-]
-
-
-# ---------------------------------------------------------------------------
-# run_parallel_test (moved from Experiment._test_experiment_parallel)
-# ---------------------------------------------------------------------------
-
-
 def run_parallel_test(n_bots, time_factor, stagger_interval_s, check_bots):
-    """Run n_bots in parallel subprocesses and report stats."""
-    from psynet.utils import get_config
+    """Run ``n_bots`` bots at once, each in its own thread, then check them.
 
-    from .bot import Bot
+    The first bot error is re-raised once every bot has finished.
+    """
+    from dallinger import db
+
+    from psynet.db import transaction
+    from psynet.experiment import get_experiment
+
+    from .bot import Bot, BotDriver
 
     logger.info(f"Testing experiment with {n_bots} parallel bots...")
+    experiment = get_experiment()
+    errors = []
 
-    config = get_config()
-    dashboard_user = config.get("dashboard_user")
-    dashboard_password = config.get("dashboard_password")
+    def run_bot():
+        try:
+            experiment.run_bot(BotDriver(), time_factor=time_factor)
+        except Exception as err:
+            logger.exception("Bot failed.")
+            errors.append(err)
+        finally:
+            db.session.remove()
 
-    n_processes = n_bots
-
-    processes = []
-    process_ids = list(range(n_processes))
-    bot_ids = [process_id + 1 for process_id in process_ids]
-
-    cmd = f"psynet run-bot --dashboard-user {dashboard_user} --dashboard-password {dashboard_password}"
-    cmd += f" --time-factor {time_factor}"
-
-    for bot_id in bot_ids:
-        if bot_id > 0:
+    threads = []
+    for i in range(n_bots):
+        if i > 0:
             time.sleep(stagger_interval_s)
+        thread = threading.Thread(
+            target=run_bot, name=f"{_BOT_THREAD_PREFIX}{i + 1}", daemon=True
+        )
+        thread.start()
+        threads.append(thread)
+    for thread in threads:
+        thread.join()
+    if errors:
+        raise errors[0]
 
-        logger.info(f"Creating and running bot {bot_id}...")
-        p = pexpect.spawn(cmd, timeout=None, cwd=None)
-        processes.append(p)
-
-    waiting_for_processes = True
-    finished_processes = set()
-
-    testing_stats = TestingStats(TESTING_STAT_DEFINITIONS)
-
-    while waiting_for_processes:
-        for process, process_id, bot_id in zip(processes, process_ids, bot_ids):
-            try:
-                while True:
-                    output = (
-                        process.read_nonblocking(size=100000, timeout=0)
-                        .decode()
-                        .strip()
-                        .split("\n")
-                    )
-                    for line in output:
-                        line = line.replace("INFO:root:", "")
-                        logger.info(f"(Bot {bot_id}) " + line)
-
-                        testing_stats.update_from_line(bot_id, line)
-
-                    time.sleep(0.01)
-            except pexpect.TIMEOUT:
-                pass
-            except pexpect.EOF:
-                assert process.exitstatus == 0
-                finished_processes.add(process_id)
-
-        if len(finished_processes) == n_processes:
-            waiting_for_processes = False
-
-    bots = Bot.query.all()
-    check_bots(bots)
-
-    testing_stats.report()
+    with transaction():
+        check_bots(Bot.query.all())
 
 
 # ---------------------------------------------------------------------------
@@ -422,8 +317,8 @@ class PerformanceTester:
 
         Each slot stands for one participant at a time, so ``n`` slots keep
         ``n`` participants active. Bots share this process: threads cost far
-        less memory and start-up CPU than one ``psynet run-bot`` process per
-        bot, and the bots spend most of their time waiting on the server.
+        less memory and start-up CPU than a process per bot, and the bots
+        spend most of their time waiting on the server.
         """
         from dallinger import db
 

@@ -109,6 +109,34 @@ def test_bots_still_taking_the_experiment_stop_when_the_test_ends(monkeypatch):
     assert bot_state["total_bot_errors"] == 0
 
 
+def test_parallel_test_reraises_a_bot_error_after_all_bots_finish(monkeypatch):
+    import pytest
+    from dallinger import db
+
+    from psynet.perf_test import run_parallel_test
+
+    finished = []
+
+    def run_bot(bot, time_factor):
+        finished.append(bot)
+        if len(finished) == 1:
+            raise ValueError("bot failed")
+
+    experiment = Mock(run_bot=run_bot)
+    monkeypatch.setattr("psynet.bot.BotDriver", Mock)
+    monkeypatch.setattr("psynet.experiment.get_experiment", lambda: experiment)
+    monkeypatch.setattr(db, "session", Mock())
+    check_bots = Mock()
+
+    with pytest.raises(ValueError, match="bot failed"):
+        run_parallel_test(
+            n_bots=3, time_factor=0, stagger_interval_s=0, check_bots=check_bots
+        )
+
+    assert len(finished) == 3
+    check_bots.assert_not_called()
+
+
 # --- colorize_success_rate ---
 
 
