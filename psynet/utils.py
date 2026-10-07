@@ -1383,7 +1383,7 @@ def _excluded_from_ci_experiment_dirs(dir_path: str) -> bool:
     )
 
 
-def list_experiment_dirs(for_ci_tests=False, ci_node_total=None, ci_node_index=None):
+def list_experiment_dirs(for_ci_tests=False):
     """List in-repo experiment directories under :data:`_IN_REPO_EXPERIMENT_ROOTS`.
 
     Skips hidden directories while walking so leftover virtualenvs under a demo
@@ -1403,21 +1403,10 @@ def list_experiment_dirs(for_ci_tests=False, ci_node_total=None, ci_node_index=N
             if for_ci_tests and _excluded_from_ci_experiment_dirs(dir_):
                 continue
             dirs.append(dir_)
-    dirs = sorted(dirs)
-
-    if ci_node_total is not None and ci_node_index is not None:
-        dirs = with_parallel_ci(dirs, ci_node_total, ci_node_index)
-
-    return dirs
+    return sorted(dirs)
 
 
-def with_parallel_ci(paths, ci_node_total, ci_node_index):
-    index = ci_node_index - 1  # 1-indexed to 0-indexed
-    assert 0 <= index < ci_node_total
-    return [paths[i] for i in range(len(paths)) if i % ci_node_total == index]
-
-
-def list_isolated_tests(ci_node_total=None, ci_node_index=None):
+def list_isolated_tests():
     isolated_tests_root = get_psynet_root() / "tests" / "isolated"
     isolated_tests_demos = isolated_tests_root / "demos"
     isolated_tests_experiments = isolated_tests_root / "experiments"
@@ -1435,9 +1424,6 @@ def list_isolated_tests(ci_node_total=None, ci_node_index=None):
         # Only pytest-discoverable modules; shared helper modules live
         # alongside the tests and must not be run as empty test files.
         tests.extend(glob.glob(str(directory / "test_*.py")))
-
-    if ci_node_total is not None and ci_node_index is not None:
-        tests = with_parallel_ci(tests, ci_node_total, ci_node_index)
 
     return tests
 

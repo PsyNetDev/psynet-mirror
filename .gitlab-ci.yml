@@ -27,6 +27,17 @@ services:
   - postgres:16.2-bookworm
   - redis:latest
 
+# Test jobs run Postgres without durability: their databases are thrown away,
+# and database-heavy tests run about twice as fast. Benchmark jobs keep the
+# default services so their results stay comparable over time.
+.test_services: &test_services
+  services:
+    - docker:26.1.1-dind
+    - name: postgres:16.2-bookworm
+      alias: postgres
+      command: ["postgres", "-c", "fsync=off", "-c", "synchronous_commit=off", "-c", "full_page_writes=off"]
+    - redis:latest
+
 variables:
   AWS_ACCESS_KEY_ID: $AWS_ACCESS_KEY_ID
   AWS_DEFAULT_REGION: $AWS_DEFAULT_REGION
@@ -44,19 +55,46 @@ variables:
   DOCKER_DRIVER: overlay2
   DOCKER_TLS_CERTDIR: ""
 
-before_script:
+before_script: &docker_setup
   - export POSTGRES_IP=$(getent ahostsv4 postgres | awk '{ print $1 }' | tail -n 1)
   - export REDIS_IP=$(getent ahostsv4 redis | awk '{ print $1 }' | tail -n 1)
   - echo $POSTGRES_IP
   - echo $REDIS_IP
   - docker build --build-arg PYTHON_VERSION=$PYTHON_VERSION --tag $DOCKER_LOCAL_TAG .
 
+# Merge-train pipelines often test exactly the files that the merge request's
+# last merged-results pipeline already tested: when master has not moved and
+# nothing is ahead in the train. This job finds such a pipeline and records
+# which jobs passed there (see ci/already_tested.py). Jobs that source
+# ci/skip-if-already-passed.sh first then end successfully without rerunning.
+# Only add that hook to jobs whose result is set by the repository files,
+# apart from outside drift such as new dependency releases or dead links,
+# and never to jobs that publish or deploy. Master push pipelines still run
+# everything, so they catch that drift and keep a full record of each merge.
+check_already_tested:
+  image: python:3.13-alpine
+  stage: .pre
+  services: []
+  before_script: []
+  script:
+    - python ci/already_tested.py
+  artifacts:
+    reports:
+      dotenv: already_tested.env
+  allow_failure: true
+  rules:
+    - if: $CI_MERGE_REQUEST_EVENT_TYPE == "merge_train"
+      when: always
+    - when: never
+
 # The nightly benchmark schedule sets NIGHTLY_BENCHMARKS=1. Its pipelines only
 # run `asv_benchmarks` (and `pages`, which republishes the results), so every
-# other job opts out of them. Other schedules run the usual jobs.
+# other job opts out of them. The weekly linkcheck schedule sets
+# WEEKLY_LINKCHECK=1, and its pipelines only run `docs_linkcheck_strict`.
+# Other schedules run the usual jobs.
 .default_rules: &default_rules
   rules:
-    - if: $NIGHTLY_BENCHMARKS == "1"
+    - if: $NIGHTLY_BENCHMARKS == "1" || $WEEKLY_LINKCHECK == "1"
       when: never
     - if: $CI_MERGE_REQUEST_ID
       when: always
@@ -76,7 +114,7 @@ before_script:
 # exclude paths, so "everything except docs/" cannot be written instead.
 .docker_test_rules: &docker_test_rules
   rules:
-    - if: $NIGHTLY_BENCHMARKS == "1"
+    - if: $NIGHTLY_BENCHMARKS == "1" || $WEEKLY_LINKCHECK == "1"
       when: never
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
       changes:
@@ -179,12 +217,22 @@ changelog_check:
 # on to CI_NODE_* below, falling back to GitLab's own numbering when unset. That
 # keeps plain `parallel: N` jobs working unchanged while letting matrix jobs
 # declare a shard dimension of their own.
+#
+# Each job runs TEST_SLOTS tests at once (see psynet/dev/ci_tests.py). On the
+# 2-vCPU runners, 2 slots keep the CPU about 80% busy and slow each test by
+# about 1.15x; 3 slots saturate the CPU and slow tests by about 1.5x. Twelve
+# 2-slot shards keep pytest level with the Playwright shards below, at about
+# 7.5 minutes per job.
 .test_suite:
-  parallel: 10
+  parallel: 12
   stage: test
-  <<: *docker_test_rules
+  <<: [*docker_test_rules, *test_services]
+  before_script:
+    - . ci/skip-if-already-passed.sh
+    - *docker_setup
   variables:
     TEST_SCOPE: full
+    TEST_SLOTS: "2"
   script:
     - export PSYNET_WORKSPACE=/root/workspaces/PsyNet
     - docker run
@@ -197,7 +245,7 @@ changelog_check:
       -e CI_NODE_INDEX="${SHARD_INDEX:-$CI_NODE_INDEX}"
       -e CI_COMMIT_REF_NAME
       -e SKIP_PYTHON_VERSION_CHECK
-      -e PYTHON_VERSION -e TEST_SCOPE
+      -e PYTHON_VERSION -e TEST_SCOPE -e TEST_SLOTS
       -e PSYNET_WORKSPACE
       -v "$PWD:$PSYNET_WORKSPACE"
       -v "$PWD/public:/public"
@@ -236,15 +284,22 @@ compatibility_tests:
   parallel:
     matrix:
       - PYTHON_VERSION: ["3.11", "3.12"]
-        SHARD_INDEX: ["1", "2", "3", "4", "5"]
-        SHARD_TOTAL: "5"
+        SHARD_INDEX: ["1", "2", "3"]
+        SHARD_TOTAL: "3"
   variables:
     SKIP_PYTHON_VERSION_CHECK: "1"
     TEST_SCOPE: isolated
 
-playwright_e2e_legacy:
+# Each Playwright mode runs in three shards. `psynet dev ci playwright-files`
+# picks this shard's spec files by recorded duration, because Playwright's own
+# --shard splits by test count and leaves one shard with most of the work.
+.playwright_e2e:
   stage: test
-  <<: *docker_test_rules
+  parallel: 3
+  <<: [*docker_test_rules, *test_services]
+  before_script:
+    - . ci/skip-if-already-passed.sh
+    - *docker_setup
   script:
     - export PSYNET_WORKSPACE=/root/workspaces/PsyNet
     - mkdir -p public test-results
@@ -254,13 +309,13 @@ playwright_e2e_legacy:
       --add-host=redis:$REDIS_IP
       -e HEADLESS=TRUE -e REDIS_URL -e DATABASE_URL -e POSTGRES_DB -e POSTGRES_USER -e POSTGRES_PASSWORD
       -e AWS_ACCESS_KEY_ID -e AWS_DEFAULT_REGION -e AWS_SECRET_ACCESS_KEY
-      -e PLAYWRIGHT_JUNIT_OUTPUT_NAME=public/playwright-junit-legacy.xml
+      -e PLAYWRIGHT_JUNIT_OUTPUT_NAME=public/playwright-${PLAYWRIGHT_MODE}-${CI_NODE_INDEX}-junit.xml
       -e PSYNET_WORKSPACE
       -e PSYNET_USE_LEGACY_DEBUG=1
-      -e inplace_timeline_transitions=false
+      -e inplace_timeline_transitions
       -v "$PWD:$PSYNET_WORKSPACE"
       -w $PSYNET_WORKSPACE
-      $DOCKER_LOCAL_TAG-playwright bash -c "uv pip install --no-cache --system --no-deps -e \"$PSYNET_WORKSPACE\" && npm ci && node tests/playwright/check-mode-tags.js && npx playwright test --grep '@both|@legacy-only' --reporter=line,junit,html"
+      $DOCKER_LOCAL_TAG-playwright bash -c "uv pip install --no-cache --system --no-deps -e \"$PSYNET_WORKSPACE\" && npm ci && node tests/playwright/check-mode-tags.js && files=\$(psynet dev ci playwright-files --mode $PLAYWRIGHT_MODE --node-total $CI_NODE_TOTAL --node-index $CI_NODE_INDEX) && test -n \"\$files\" && npx playwright test \$files --grep '$PLAYWRIGHT_GREP' --pass-with-no-tests --reporter=line,junit,html"
   artifacts:
     when: always
     paths:
@@ -268,34 +323,20 @@ playwright_e2e_legacy:
       - test-results/
       - playwright-report/
     reports:
-      junit: public/playwright-junit-legacy.xml
+      junit: public/playwright-*-junit.xml
+
+playwright_e2e_legacy:
+  extends: .playwright_e2e
+  variables:
+    PLAYWRIGHT_MODE: legacy
+    PLAYWRIGHT_GREP: "@both|@legacy-only"
+    inplace_timeline_transitions: "false"
 
 playwright_e2e_default:
-  stage: test
-  <<: *docker_test_rules
-  script:
-    - export PSYNET_WORKSPACE=/root/workspaces/PsyNet
-    - mkdir -p public test-results
-    - docker build --build-arg BASE_IMAGE=$DOCKER_LOCAL_TAG --tag $DOCKER_LOCAL_TAG-playwright -f Dockerfile.playwright .
-    - docker run
-      --add-host=postgres:$POSTGRES_IP
-      --add-host=redis:$REDIS_IP
-      -e HEADLESS=TRUE -e REDIS_URL -e DATABASE_URL -e POSTGRES_DB -e POSTGRES_USER -e POSTGRES_PASSWORD
-      -e AWS_ACCESS_KEY_ID -e AWS_DEFAULT_REGION -e AWS_SECRET_ACCESS_KEY
-      -e PLAYWRIGHT_JUNIT_OUTPUT_NAME=public/playwright-junit-default.xml
-      -e PSYNET_WORKSPACE
-      -e PSYNET_USE_LEGACY_DEBUG=1
-      -v "$PWD:$PSYNET_WORKSPACE"
-      -w $PSYNET_WORKSPACE
-      $DOCKER_LOCAL_TAG-playwright bash -c "uv pip install --no-cache --system --no-deps -e \"$PSYNET_WORKSPACE\" && npm ci && node tests/playwright/check-mode-tags.js && npx playwright test --grep '@both|@inplace-only' --reporter=line,junit,html"
-  artifacts:
-    when: always
-    paths:
-      - public/
-      - test-results/
-      - playwright-report/
-    reports:
-      junit: public/playwright-junit-default.xml
+  extends: .playwright_e2e
+  variables:
+    PLAYWRIGHT_MODE: default
+    PLAYWRIGHT_GREP: "@both|@inplace-only"
 
 merge_test_results:
   image: python:3.13-alpine
@@ -313,8 +354,11 @@ merge_test_results:
       optional: true
     - "playwright_e2e_legacy"
     - "playwright_e2e_default"
+    - job: "check_already_tested"
+      optional: true
   when: always
   before_script:
+    - . ci/skip-if-already-passed.sh
     - pip install -q junitparser
   script:
     - ls -la public
@@ -399,6 +443,8 @@ asv_benchmarks:
   rules:
     - if: $NIGHTLY_BENCHMARKS == "1" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
       when: always
+    - if: $WEEKLY_LINKCHECK == "1"
+      when: never
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
       when: manual
     - when: never
@@ -418,6 +464,9 @@ asv_regression:
   # Still allows for a cold .asv/env cache and Docker startup, but the selected
   # benchmark set should remain small enough for normal MR iteration.
   timeout: 45m
+  before_script:
+    - . ci/skip-if-already-passed.sh
+    - *docker_setup
   variables:
     # Full clone: the merge base can be far back in the target branch's
     # history and is otherwise unreachable in the default shallow clone.
@@ -496,7 +545,7 @@ benchmark_load_sweep:
       - public/sweep-*.json
       - public/sweep-report.md
   rules:
-    - if: $NIGHTLY_BENCHMARKS == "1"
+    - if: $NIGHTLY_BENCHMARKS == "1" || $WEEKLY_LINKCHECK == "1"
       when: never
     - when: manual
       allow_failure: true
@@ -509,6 +558,7 @@ benchmark_load_sweep:
   <<: *default_rules
   services: []
   before_script:
+    - . ci/skip-if-already-passed.sh
     - python -m pip install -e '.[dev]'
 
 # Check this commit's Sphinx docs without publishing. Treats warnings as
@@ -527,6 +577,27 @@ docs:
       - docs/_build/html/
       - docs/_build/linkcheck/
     expire_in: 1 week
+
+# Weekly strict linkcheck on the default branch. The `docs` job above fails
+# only on links that mean the docs are wrong (internal links, missing
+# anchors, 404s and 410s); this job also fails on 403s, timeouts, and
+# network errors, so links that stay unreachable get noticed without
+# blocking merges.
+docs_linkcheck_strict:
+  extends: .docs_ci
+  # A push to master would otherwise cancel this week's run.
+  interruptible: false
+  script:
+    - psynet dev docs linkcheck --strict
+  artifacts:
+    when: on_failure
+    paths:
+      - docs/_build/linkcheck/
+    expire_in: 1 week
+  rules:
+    - if: $WEEKLY_LINKCHECK == "1" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: always
+    - when: never
 
 # Build and publish the multi-version docs site to GitLab Pages.
 # Build logic lives in docs/scripts/build_pages.sh; this job is a thin
@@ -574,6 +645,8 @@ pages:
     - if: $NIGHTLY_BENCHMARKS == "1" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
       when: always
       interruptible: false
+    - if: $WEEKLY_LINKCHECK == "1"
+      when: never
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
       when: always
     - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+((rc|a)\d+)?$/

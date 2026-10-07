@@ -10,6 +10,7 @@ import zipfile
 import pandas as pd
 import pytest
 import requests
+from dallinger.utils import get_base_url
 
 import psynet.artifact as psynet_artifact
 import psynet.asset as psynet_asset
@@ -112,7 +113,7 @@ def test_mock_s3_root_configures_s3_globals(tmp_path, monkeypatch):
 class TestAPI:
     def test_exp(self, launched_experiment):
         deployment_id = launched_experiment.deployment_id
-        base_url = "http://localhost:5000"
+        base_url = get_base_url()
 
         self.check_commenting(base_url, deployment_id)
         self.check_export(base_url, deployment_id)
