@@ -250,8 +250,8 @@ Search custom trial makers for ``find_networks``, ``find_node``,
   ``target_trials_per_condition``) only drives ``recruit_mode="n_trials"``.
   Static nodes no longer stop being selected once they reach it, so a node
   can end up with a few more trials than its target. ``node_order="balanced"``
-  still spreads trials evenly and, unless node selection runs in Python,
-  gives participants who ask at the same moment different nodes where
+  still spreads trials evenly and, unless node selection runs in Python or
+  ``node_priority`` is defined, gives participants who ask at the same moment different nodes where
   possible. To stop offering nodes once they have enough
   trials, filter them by trial count in ``filter_nodes_query``; simultaneous
   requests can still go slightly over. Chain

@@ -521,7 +521,8 @@ class StaticTrialMaker(ChainTrialMaker):
         node in that order. Expressions may use columns of your node class
         (e.g. ``ColorNode.difficulty``) and ``self.network_class``. Planned
         node orders (``"listed"`` or a function) cannot be combined with this
-        hook.
+        hook. Defining it stops balanced selection from giving simultaneous
+        requests different nodes, so they may share the top-ranked node.
         """
         return []
 
