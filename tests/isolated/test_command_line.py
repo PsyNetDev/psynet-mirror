@@ -434,6 +434,7 @@ class TestCommandLine(object):
                 "--jobs",
                 "auto",
                 "--sphinx-option=-q",
+                "--strict",
             ],
         )
 
@@ -443,6 +444,7 @@ class TestCommandLine(object):
                 "clean": True,
                 "jobs": "auto",
                 "sphinx_options": ("-q",),
+                "strict": True,
             }
         ]
 
@@ -465,6 +467,7 @@ class TestCommandLine(object):
                 "clean": True,
                 "jobs": "1",
                 "sphinx_options": (),
+                "strict": False,
             }
         ]
 
@@ -487,6 +490,7 @@ class TestCommandLine(object):
                 "clean": False,
                 "jobs": "1",
                 "sphinx_options": (),
+                "strict": False,
             }
         ]
 
