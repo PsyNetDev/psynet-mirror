@@ -308,14 +308,15 @@ def _cached_content():
     if cache is not None and cache[0] == key:
         return cache[1]
     with open(path, "r") as file:
-        return loads(file.read())
+        content = loads(file.read())
+    _cache = (key, content)
+    return content
 
 
 def loads(txt: str) -> dict:
     """Decode a ``deployment_info.json`` document, for example one read from a server."""
     content = jsonpickle.decode(txt, keys=True)
     assert isinstance(content, dict)
-    _cache = (key, content)
     return content
 
 
