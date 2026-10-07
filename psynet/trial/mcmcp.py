@@ -151,9 +151,6 @@ class MCMCPNode(ChainNode):
             "proposal": self.get_proposal(seed, experiment, participant),
         }
 
-    def create_initial_seed(self, experiment, participant):
-        raise NotImplementedError
-
 
 class MCMCPTrialMaker(ChainTrialMaker):
     """

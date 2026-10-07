@@ -90,6 +90,22 @@ bot took one trial per node:
 
 The base implementation asserts that the bot didn't fail.
 
+To check something across all bots, such as how trials were shared between
+them, override ``Experiment.test_check_bots``. It runs once after every bot
+has finished, in serial and parallel mode, and receives the bots as
+:class:`~psynet.bot.Bot` objects that can be queried like any other
+database model. The base implementation calls ``test_check_bot`` for each
+bot, so call ``super()`` to keep those checks. For example, the ``gibbs``
+demo checks that the bots were split evenly between its two participant
+groups:
+
+.. code-block:: python
+
+    def test_check_bots(self, bots: List[Bot]):
+        assert len([b for b in bots if b.var.participant_group == "A"]) == 3
+        assert len([b for b in bots if b.var.participant_group == "B"]) == 3
+        super().test_check_bots(bots)
+
 For finer control in serial mode (the default), override
 ``test_serial_run_bots``, which steps the bots
 through the experiment. The ``rock_paper_scissors`` demo uses it to have two

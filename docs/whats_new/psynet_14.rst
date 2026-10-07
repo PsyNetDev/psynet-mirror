@@ -113,8 +113,9 @@ Deployment and recruitment
 
 **deploy.toml.** Each experiment's ``deploy.toml`` now decides which files
 are deployed; ``.gitignore`` and ``.dockerignore`` no longer do. PsyNet
-creates the file when it is missing and stops once so that you can review
-it. Remote deployments need a Git commit, and stop early if
+creates the file when it is missing. If your ``.gitignore`` ignores files
+that the new ``deploy.toml`` does not exclude, the next debug, test or deploy
+command stops once and lists them, because they would now be deployed. Remote deployments need a Git commit, and stop early if
 ``constraints.txt`` is out of date. See :doc:`/deploy/how_deployment_works`.
 
 **MTurk is gone.** Amazon is `closing MTurk on September 30, 2026

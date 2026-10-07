@@ -27,7 +27,6 @@ from psynet.command_line import (
     run_pre_checks,
 )
 from psynet.experiment_scaffold import (
-    _clear_deployment_policy_review_marker,
     _remove_empty_parent_dirs,
     missing_scaffold_paths_required_for_local_run,
     prune_experiment_scaffold,
@@ -2939,7 +2938,6 @@ def test_check_experiment_directory_reports_missing_git(tmp_path, monkeypatch):
         (tmp_path / "experiment.py").write_text("class Exp:\n    pass\n")
         (tmp_path / "requirements.txt").write_text("psynet\n")
         scaffold_experiment_directory()
-        _clear_deployment_policy_review_marker()
         with pytest.raises(click.ClickException, match="git init"):
             _check_experiment_directory("debug")
 
@@ -2954,7 +2952,6 @@ def test_check_experiment_directory_passes_with_scaffold_and_git(tmp_path, monke
         (tmp_path / "experiment.py").write_text("class Exp:\n    pass\n")
         (tmp_path / "requirements.txt").write_text("psynet\n")
         scaffold_experiment_directory()
-        _clear_deployment_policy_review_marker()
         _check_experiment_directory("debug")
 
 
@@ -2970,7 +2967,6 @@ def test_check_experiment_directory_requires_commit_only_for_remote_deployments(
         Path("requirements.txt").write_text("psynet\n")
         scaffold_experiment_directory()
         subprocess.run(["git", "init", "-q"], check=True)
-        _clear_deployment_policy_review_marker()
 
         _check_experiment_directory("debug", require_git_commit=False)
         with pytest.raises(click.ClickException, match="has no commits"):

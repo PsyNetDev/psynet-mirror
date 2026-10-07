@@ -26,6 +26,7 @@ def _loads_to_prepare_one_trial(n_nodes):
         expected_trials_per_participant=1,
         max_trials_per_participant=1,
         target_trials_per_node=2,
+        recruit_mode="n_trials",
     )
     trial_maker.create_networks_across(exp)
     participant = Participant(

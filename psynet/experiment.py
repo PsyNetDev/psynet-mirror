@@ -2482,7 +2482,15 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 + " in the '[Recruitment strategy]' section of the config.txt."
             )
 
-        n_char_title = len(config.get("title"))
+        title = config.get("title", None)
+        if not title:
+            raise RuntimeError(
+                "The experiment needs a title, which recruiters show to "
+                "participants. Set it in config.txt, for example "
+                "'title = Pitch discrimination (Chrome browser, 10 minutes to complete)', "
+                "or in Experiment.config."
+            )
+        n_char_title = len(title)
         if n_char_title > 128:
             raise RuntimeError(
                 f"The maximum title length is 128 characters (current = {n_char_title}), please fix this in config.txt."
