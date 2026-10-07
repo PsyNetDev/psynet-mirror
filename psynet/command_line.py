@@ -4437,6 +4437,8 @@ def _run_performance_test_with_existing_server(
     )
     print(f"Bot output log: {bot_log_file.name}")
 
+    _load_runtime_server_config()
+
     try:
         exp = get_experiment()
     except Exception as e:
@@ -4712,7 +4714,6 @@ def _run_performance_test_with_new_server(
     )
 
     try:
-        _load_runtime_server_config()
         all_results = _run_performance_test_with_existing_server(
             n_bots, stagger, time_factor, duration_minutes, debug, json_output
         )
