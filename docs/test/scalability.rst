@@ -91,6 +91,12 @@ that the slowest participants experience. The report also shows:
   the queue. A high queue share, highlighted in yellow or red, means more
   worker processes are needed.
 
+Response times are measured inside the server, from when a web worker starts
+handling a request until it finishes. They do not include time that a request
+spends waiting for a free worker. When the server's CPUs are fully used, that
+waiting grows faster than the reported times, so also watch the server's CPU
+use and the number of request errors.
+
 If response times are high, profile the database queries with ``psynet test
 local --sql-profile``; see :doc:`/test/sqlalchemy_profiling`.
 
@@ -99,7 +105,11 @@ local --sql-profile``; see :doc:`/test/sqlalchemy_profiling`.
 Testing on a server
 -------------------
 
-A local test is limited by your own computer. To test a real server, launch
+A local test is limited by your own computer. Each bot is a separate
+``psynet run-bot`` process that uses about 200 MB of memory and a second or
+more of CPU time to start, and the bots share the CPUs with the server. On a
+four-core computer with 16 GB of memory, a few dozen bots can use more CPU
+than the server does. To test a real server, launch
 the experiment there in debug mode, then run the test over SSH:
 
 .. code-block:: bash
