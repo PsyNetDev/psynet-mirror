@@ -24,6 +24,7 @@ import json
 import os
 import re
 import sys
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -67,6 +68,7 @@ class _Api:
             page = int(next_page)
 
     def get_first_page(self, path, **params):
+        """GET the first 20 items of a list endpoint."""
         query = urllib.parse.urlencode({**params, "per_page": 20})
         request = urllib.request.Request(
             f"{self.prefix}/{path}?{query}", headers=self.headers
@@ -82,15 +84,18 @@ class _Api:
         )
 
 
-def find_already_passed(api, *, mr_iid, sha, pipeline_id):
+def find_already_passed(api, *, project_id, mr_iid, sha):
     """Return ``(pipeline, passed job names)`` for a matching pipeline, or ``None``."""
     merged_results_ref = f"refs/merge-requests/{mr_iid}/merge"
+    # The list also holds branch pipelines, which for a fork's merge request
+    # run in the fork, so only this project's merged-results pipelines count.
     candidates = [
         pipeline
         for pipeline in api.get_first_page(f"merge_requests/{mr_iid}/pipelines")
         if pipeline["status"] == "success"
         and pipeline["ref"] == merged_results_ref
-        and pipeline["id"] != pipeline_id
+        and pipeline["source"] == "merge_request_event"
+        and pipeline["project_id"] == project_id
     ][:_MAX_CANDIDATES]
     if not candidates:
         print(f"No passing merged-results pipeline for !{mr_iid}.")
@@ -98,7 +103,13 @@ def find_already_passed(api, *, mr_iid, sha, pipeline_id):
 
     current_tree = api.root_tree(sha)
     for pipeline in candidates:
-        if api.root_tree(pipeline["sha"]) != current_tree:
+        try:
+            tree = api.root_tree(pipeline["sha"])
+        except urllib.error.HTTPError as exc:
+            # For example, a merge commit that Git has since garbage-collected.
+            print(f"WARNING: could not read pipeline {pipeline['id']}'s files ({exc}).")
+            continue
+        if tree != current_tree:
             print(f"Pipeline {pipeline['id']} tested different files.")
             continue
         jobs = api.get_all(f"pipelines/{pipeline['id']}/jobs")
@@ -118,15 +129,16 @@ def main():
         )
         match = find_already_passed(
             api,
+            project_id=int(os.environ["CI_PROJECT_ID"]),
             mr_iid=os.environ["CI_MERGE_REQUEST_IID"],
             sha=os.environ["CI_COMMIT_SHA"],
-            pipeline_id=int(os.environ["CI_PIPELINE_ID"]),
         )
         if match:
             pipeline, passed = match
             pipeline_url = pipeline["web_url"]
             print(f"Pipeline {pipeline_url} tested identical files.")
-            print("Jobs that passed there and will be skipped: " + ", ".join(passed))
+            print("Jobs that passed there: " + ", ".join(passed))
+            print("Those that source ci/skip-if-already-passed.sh will end early.")
         else:
             print("No pipeline tested identical files; running every job.")
     except Exception as exc:

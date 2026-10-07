@@ -37,8 +37,11 @@ link to the pipeline that passed. If anything differs, or the check fails,
 every job runs as usual. ``master`` push pipelines always run the full suite.
 
 A job opts in by sourcing ``ci/skip-if-already-passed.sh`` at the start of its
-``before_script``. Only add this to jobs whose result depends on nothing but
-the repository files, and never to jobs that publish or deploy.
+``before_script``. Only add this to jobs whose result is set by the
+repository files, and never to jobs that publish or deploy. Outside drift,
+such as a new dependency release or a dead external link, can still change a
+job's result between two runs on the same files; the full ``master`` push
+pipeline catches that after the merge.
 
 Test parallelization
 --------------------

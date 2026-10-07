@@ -67,9 +67,10 @@ before_script: &docker_setup
 # nothing is ahead in the train. This job finds such a pipeline and records
 # which jobs passed there (see ci/already_tested.py). Jobs that source
 # ci/skip-if-already-passed.sh first then end successfully without rerunning.
-# Only add that hook to jobs whose result depends on nothing but the files,
+# Only add that hook to jobs whose result is set by the repository files,
+# apart from outside drift such as new dependency releases or dead links,
 # and never to jobs that publish or deploy. Master push pipelines still run
-# everything, so master keeps a full record of each merge.
+# everything, so they catch that drift and keep a full record of each merge.
 check_already_tested:
   image: python:3.13-alpine
   stage: .pre

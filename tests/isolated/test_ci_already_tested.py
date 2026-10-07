@@ -1,5 +1,6 @@
 import importlib.util
 import subprocess
+import urllib.error
 from pathlib import Path
 
 import pytest
@@ -26,11 +27,28 @@ class _FakeApi:
         return self.jobs[path]
 
     def root_tree(self, sha):
+        if sha == "gone":
+            raise urllib.error.HTTPError(sha, 404, "Not Found", {}, None)
         return self.trees[sha]
 
 
-def _pipeline(id, sha, status="success", ref="refs/merge-requests/7/merge"):
-    return {"id": id, "sha": sha, "status": status, "ref": ref, "web_url": f"p/{id}"}
+def _pipeline(
+    id,
+    sha,
+    status="success",
+    ref="refs/merge-requests/7/merge",
+    source="merge_request_event",
+    project_id=1,
+):
+    return {
+        "id": id,
+        "sha": sha,
+        "status": status,
+        "ref": ref,
+        "source": source,
+        "project_id": project_id,
+        "web_url": f"p/{id}",
+    }
 
 
 def test_passed_jobs_requires_every_shard_to_succeed():
@@ -52,14 +70,25 @@ def test_passed_jobs_requires_every_shard_to_succeed():
 @pytest.mark.parametrize(
     ("pipelines", "expected_id"),
     [
-        # The newest passing merged-results pipeline with identical files.
-        ([_pipeline(3, "other"), _pipeline(2, "same"), _pipeline(1, "same")], 2),
-        # Failed pipelines, the train pipeline itself, and train refs don't count.
+        # The newest passing merged-results pipeline with identical files,
+        # after skipping one whose commit can no longer be read.
         (
             [
-                _pipeline(9, "train", ref="refs/merge-requests/7/train"),
+                _pipeline(4, "gone"),
+                _pipeline(3, "other"),
+                _pipeline(2, "same"),
+                _pipeline(1, "same"),
+            ],
+            2,
+        ),
+        # Failed pipelines, train pipelines, branch pipelines and pipelines in
+        # another project (a fork) don't count.
+        (
+            [
+                _pipeline(9, "same", ref="refs/merge-requests/7/train"),
                 _pipeline(4, "same", status="failed"),
-                _pipeline(5, "same", ref="refs/merge-requests/7/train"),
+                _pipeline(3, "same", source="push"),
+                _pipeline(2, "same", project_id=2),
             ],
             None,
         ),
@@ -69,18 +98,16 @@ def test_find_already_passed_matches_identical_files(pipelines, expected_id):
     api = _FakeApi(
         pipelines,
         trees={"train": {"a"}, "same": {"a"}, "other": {"b"}},
-        jobs={
-            f"pipelines/{i}/jobs": [{"name": "docs", "status": "success"}]
-            for i in (1, 2)
-        },
+        jobs={"pipelines/2/jobs": [{"name": "docs", "status": "success"}]},
     )
     match = already_tested.find_already_passed(
-        api, mr_iid="7", sha="train", pipeline_id=9
+        api, project_id=1, mr_iid="7", sha="train"
     )
     if expected_id is None:
         assert match is None
     else:
-        assert match == (pipelines[1], ["docs"])
+        assert match[0]["id"] == expected_id
+        assert match[1] == ["docs"]
 
 
 def test_main_runs_everything_when_the_check_fails(tmp_path, monkeypatch):
@@ -95,21 +122,25 @@ def test_main_runs_everything_when_the_check_fails(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize(
-    ("job_name", "skipped"),
+    ("job_name", "event_type", "skipped"),
     [
-        ("tests_python_3_13 10/12", True),
-        ("compatibility_tests: [3.11, 1, 3]", True),
-        ("docs", True),
-        ("docs_linkcheck_strict", False),
-        ("playwright_e2e_legacy 1/3", False),
+        ("tests_python_3_13 10/12", "merge_train", True),
+        ("compatibility_tests: [3.11, 1, 3]", "merge_train", True),
+        ("docs", "merge_train", True),
+        ("docs_linkcheck_strict", "merge_train", False),
+        ("playwright_e2e_legacy 1/3", "merge_train", False),
+        # Outside merge trains the list is ignored, wherever it came from.
+        ("docs", "merged_result", False),
     ],
 )
-def test_skip_hook_ends_only_jobs_that_already_passed(job_name, skipped):
+def test_skip_hook_ends_only_jobs_that_already_passed(job_name, event_type, skipped):
     result = subprocess.run(
         ["sh", "-c", ". ci/skip-if-already-passed.sh; echo ran-setup"],
         cwd=ROOT,
         env={
+            "PATH": "/usr/bin:/bin",
             "CI_JOB_NAME": job_name,
+            "CI_MERGE_REQUEST_EVENT_TYPE": event_type,
             "ALREADY_PASSED_JOBS": ",tests_python_3_13,compatibility_tests,docs,",
             "ALREADY_TESTED_PIPELINE_URL": "https://example.com/p/1",
         },
