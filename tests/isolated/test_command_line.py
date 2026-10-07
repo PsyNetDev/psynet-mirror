@@ -652,8 +652,11 @@ def test_debug_auto_reload_no_browsers_launches_without_browsers(monkeypatch, ca
     monkeypatch.setattr("psynet.command_line.patch_dallinger_develop", lambda: None)
     monkeypatch.setattr("psynet.command_line.db.session.commit", lambda: None)
     monkeypatch.setattr("psynet.command_line.reset_console", lambda: None)
+    monkeypatch.setattr("psynet.command_line._local_base_port", lambda: 5010)
+    monkeypatch.delenv("FLASK_RUN_PORT", raising=False)
     _debug_auto_reload(_Ctx(), archive=None, no_browsers=True)
-    assert calls == [({"skip_flask": False}, launch_app_without_browsers)]
+    assert calls == [({"skip_flask": False, "port": 5010}, launch_app_without_browsers)]
+    assert os.environ["FLASK_RUN_PORT"] == "5010"
     assert develop.launch_app_and_open_browser is original_job
 
     config = Mock(ready=True)

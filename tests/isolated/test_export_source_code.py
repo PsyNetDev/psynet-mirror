@@ -1,5 +1,6 @@
 import pytest
 import requests
+from dallinger.utils import get_base_url
 
 from psynet.pytest_psynet import path_to_test_experiment
 
@@ -12,7 +13,7 @@ def test_source_download_is_removed_and_git_provenance_is_recorded(
     launched_experiment,
 ):
     response = requests.get(
-        "http://localhost:5000/download_source",
+        f"{get_base_url()}/download_source",
         auth=("test_admin", "test_password"),
     )
 

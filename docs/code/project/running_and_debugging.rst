@@ -29,6 +29,40 @@ page. Changes to assets in the timeline need a restart.
 To run the experiment inside its Docker image instead, as it runs when
 deployed, use ``psynet debug local --docker``.
 
+.. _running_several_local_experiments:
+
+Run several experiments at once
+-------------------------------
+
+By default every local experiment uses port 5000, the ``dallinger``
+PostgreSQL database, the Redis server on port 6379 and the
+``/tmp/dallinger_develop`` folder, so only one can run at a time. To run
+another one alongside it, for example when several coding agents test
+different experiments on one machine, give the second terminal its own
+database, Redis server, port and development folder:
+
+.. code-block:: bash
+
+    createdb -h localhost -U dallinger dallinger_2
+    redis-server --port 6381 --bind 127.0.0.1 --dir "$(mktemp -d)" --save "" --daemonize yes
+
+    export DATABASE_URL=postgresql://dallinger:dallinger@localhost/dallinger_2
+    export REDIS_URL=redis://localhost:6381
+    export base_port=5010
+    export dallinger_develop_directory=/tmp/dallinger_develop_2
+
+``psynet debug local`` and ``psynet test local`` in that terminal then serve
+on port 5010 and leave the other experiment's processes and browsers alone.
+Use a separate Redis server rather than another database number on the same
+server: Redis delivers PsyNet's live notifications (for example waking a
+participant who waits on a page) to every database on a server, so two
+experiments sharing one would wake each other's participants.
+
+Two runs in the same experiment directory still conflict, because each
+creates and removes generated files there. Tests wait for each other
+automatically; for ``psynet debug local``, use a separate copy (such as a git
+worktree) of the experiment.
+
 Set a breakpoint
 ----------------
 

@@ -149,11 +149,22 @@ git checkout -b bump-master-post-release
 Update the version in both version files from `13.2.0` to `13.3.0a0`.
 New changes on `master` should be recorded as fragments in `changelog.d/`.
 
-Then commit the version bump and open a MR:
+Then commit the version bump:
 
 ```bash
 git add -A
 git commit -m "Bump version to 13.3.0a0"
+```
+
+Refresh the CI test durations in the same MR, so CI shards stay balanced as
+tests are added or change speed. Run the snippet under "Test parallelization"
+in `docs/developer/running_tests.rst` (anchor `refresh_test_durations`). It
+fetches timings from the latest passing `master` push pipeline and rewrites
+`ci/test_durations.json`. Then commit and push:
+
+```bash
+git add ci/test_durations.json
+git commit -m "Refresh CI test durations"
 git push --set-upstream origin bump-master-post-release
 ```
 
@@ -162,7 +173,7 @@ git push --set-upstream origin bump-master-post-release
   and the next development version for `13.3.0a0`:
 
   > Post-release bump after the 13.2.0 release: sets `master` to the next
-  > development version `13.3.0a0`.
+  > development version `13.3.0a0` and refreshes `ci/test_durations.json`.
 
 > **Human checkpoint:** the release manager must approve the
 > `bump-master-post-release` MR before it is merged.
@@ -172,7 +183,7 @@ on `master` stays aligned with the CHANGELOG.
 
 Unlike release branches, **delete `bump-master-post-release` when the MR
 merges** (e.g. create the MR with `remove_source_branch=true`). It is a
-throwaway vehicle for the two bookkeeping commits, recreated from fresh
+throwaway vehicle for the bookkeeping commits, recreated from fresh
 `master` each cycle; a stale leftover from the previous cycle otherwise
 forces the next release to force-push over it.
 

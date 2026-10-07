@@ -27,6 +27,17 @@ services:
   - postgres:16.2-bookworm
   - redis:latest
 
+# Test jobs run Postgres without durability: their databases are thrown away,
+# and database-heavy tests run about twice as fast. Benchmark jobs keep the
+# default services so their results stay comparable over time.
+.test_services: &test_services
+  services:
+    - docker:26.1.1-dind
+    - name: postgres:16.2-bookworm
+      alias: postgres
+      command: ["postgres", "-c", "fsync=off", "-c", "synchronous_commit=off", "-c", "full_page_writes=off"]
+    - redis:latest
+
 variables:
   AWS_ACCESS_KEY_ID: $AWS_ACCESS_KEY_ID
   AWS_DEFAULT_REGION: $AWS_DEFAULT_REGION
@@ -179,12 +190,19 @@ changelog_check:
 # on to CI_NODE_* below, falling back to GitLab's own numbering when unset. That
 # keeps plain `parallel: N` jobs working unchanged while letting matrix jobs
 # declare a shard dimension of their own.
+#
+# Each job runs TEST_SLOTS tests at once (see psynet/dev/ci_tests.py). On the
+# 2-vCPU runners, 2 slots keep the CPU about 80% busy and slow each test by
+# about 1.15x; 3 slots saturate the CPU and slow tests by about 1.5x. Twelve
+# 2-slot shards keep pytest level with the Playwright shards below, at about
+# 7.5 minutes per job.
 .test_suite:
-  parallel: 10
+  parallel: 12
   stage: test
-  <<: *docker_test_rules
+  <<: [*docker_test_rules, *test_services]
   variables:
     TEST_SCOPE: full
+    TEST_SLOTS: "2"
   script:
     - export PSYNET_WORKSPACE=/root/workspaces/PsyNet
     - docker run
@@ -197,7 +215,7 @@ changelog_check:
       -e CI_NODE_INDEX="${SHARD_INDEX:-$CI_NODE_INDEX}"
       -e CI_COMMIT_REF_NAME
       -e SKIP_PYTHON_VERSION_CHECK
-      -e PYTHON_VERSION -e TEST_SCOPE
+      -e PYTHON_VERSION -e TEST_SCOPE -e TEST_SLOTS
       -e PSYNET_WORKSPACE
       -v "$PWD:$PSYNET_WORKSPACE"
       -v "$PWD/public:/public"
@@ -236,15 +254,19 @@ compatibility_tests:
   parallel:
     matrix:
       - PYTHON_VERSION: ["3.11", "3.12"]
-        SHARD_INDEX: ["1", "2", "3", "4", "5"]
-        SHARD_TOTAL: "5"
+        SHARD_INDEX: ["1", "2", "3"]
+        SHARD_TOTAL: "3"
   variables:
     SKIP_PYTHON_VERSION_CHECK: "1"
     TEST_SCOPE: isolated
 
-playwright_e2e_legacy:
+# Each Playwright mode runs in three shards. `psynet dev ci playwright-files`
+# picks this shard's spec files by recorded duration, because Playwright's own
+# --shard splits by test count and leaves one shard with most of the work.
+.playwright_e2e:
   stage: test
-  <<: *docker_test_rules
+  parallel: 3
+  <<: [*docker_test_rules, *test_services]
   script:
     - export PSYNET_WORKSPACE=/root/workspaces/PsyNet
     - mkdir -p public test-results
@@ -254,13 +276,13 @@ playwright_e2e_legacy:
       --add-host=redis:$REDIS_IP
       -e HEADLESS=TRUE -e REDIS_URL -e DATABASE_URL -e POSTGRES_DB -e POSTGRES_USER -e POSTGRES_PASSWORD
       -e AWS_ACCESS_KEY_ID -e AWS_DEFAULT_REGION -e AWS_SECRET_ACCESS_KEY
-      -e PLAYWRIGHT_JUNIT_OUTPUT_NAME=public/playwright-junit-legacy.xml
+      -e PLAYWRIGHT_JUNIT_OUTPUT_NAME=public/playwright-${PLAYWRIGHT_MODE}-${CI_NODE_INDEX}-junit.xml
       -e PSYNET_WORKSPACE
       -e PSYNET_USE_LEGACY_DEBUG=1
-      -e inplace_timeline_transitions=false
+      -e inplace_timeline_transitions
       -v "$PWD:$PSYNET_WORKSPACE"
       -w $PSYNET_WORKSPACE
-      $DOCKER_LOCAL_TAG-playwright bash -c "uv pip install --no-cache --system --no-deps -e \"$PSYNET_WORKSPACE\" && npm ci && node tests/playwright/check-mode-tags.js && npx playwright test --grep '@both|@legacy-only' --reporter=line,junit,html"
+      $DOCKER_LOCAL_TAG-playwright bash -c "uv pip install --no-cache --system --no-deps -e \"$PSYNET_WORKSPACE\" && npm ci && node tests/playwright/check-mode-tags.js && files=\$(psynet dev ci playwright-files --mode $PLAYWRIGHT_MODE --node-total $CI_NODE_TOTAL --node-index $CI_NODE_INDEX) && test -n \"\$files\" && npx playwright test \$files --grep '$PLAYWRIGHT_GREP' --pass-with-no-tests --reporter=line,junit,html"
   artifacts:
     when: always
     paths:
@@ -268,34 +290,20 @@ playwright_e2e_legacy:
       - test-results/
       - playwright-report/
     reports:
-      junit: public/playwright-junit-legacy.xml
+      junit: public/playwright-*-junit.xml
+
+playwright_e2e_legacy:
+  extends: .playwright_e2e
+  variables:
+    PLAYWRIGHT_MODE: legacy
+    PLAYWRIGHT_GREP: "@both|@legacy-only"
+    inplace_timeline_transitions: "false"
 
 playwright_e2e_default:
-  stage: test
-  <<: *docker_test_rules
-  script:
-    - export PSYNET_WORKSPACE=/root/workspaces/PsyNet
-    - mkdir -p public test-results
-    - docker build --build-arg BASE_IMAGE=$DOCKER_LOCAL_TAG --tag $DOCKER_LOCAL_TAG-playwright -f Dockerfile.playwright .
-    - docker run
-      --add-host=postgres:$POSTGRES_IP
-      --add-host=redis:$REDIS_IP
-      -e HEADLESS=TRUE -e REDIS_URL -e DATABASE_URL -e POSTGRES_DB -e POSTGRES_USER -e POSTGRES_PASSWORD
-      -e AWS_ACCESS_KEY_ID -e AWS_DEFAULT_REGION -e AWS_SECRET_ACCESS_KEY
-      -e PLAYWRIGHT_JUNIT_OUTPUT_NAME=public/playwright-junit-default.xml
-      -e PSYNET_WORKSPACE
-      -e PSYNET_USE_LEGACY_DEBUG=1
-      -v "$PWD:$PSYNET_WORKSPACE"
-      -w $PSYNET_WORKSPACE
-      $DOCKER_LOCAL_TAG-playwright bash -c "uv pip install --no-cache --system --no-deps -e \"$PSYNET_WORKSPACE\" && npm ci && node tests/playwright/check-mode-tags.js && npx playwright test --grep '@both|@inplace-only' --reporter=line,junit,html"
-  artifacts:
-    when: always
-    paths:
-      - public/
-      - test-results/
-      - playwright-report/
-    reports:
-      junit: public/playwright-junit-default.xml
+  extends: .playwright_e2e
+  variables:
+    PLAYWRIGHT_MODE: default
+    PLAYWRIGHT_GREP: "@both|@inplace-only"
 
 merge_test_results:
   image: python:3.13-alpine

@@ -564,18 +564,18 @@ automatically.
 Run several local experiments at once
 -------------------------------------
 
-Local experiments share port 5000, the PostgreSQL database, Redis and
-Dallinger's ``/tmp/dallinger_develop`` folder, and each launch stops every
-PsyNet worker process on the machine, so a second experiment breaks the first.
-The documentation and Agent Skills tell users and agents to run one at a
-time. Proper isolation would need launches to stop only their own workers
-(for example by marking processes with the experiment directory), a refusal
-to rebuild a development folder another experiment is serving from,
-``base_port`` honoured in the default debug mode, per-experiment databases or
-Redis databases, and Chrome cleanup limited to the experiment's own windows.
-A first implementation was prototyped and then reverted in
-`!1253 <https://gitlab.com/PsyNetDev/PsyNet/-/merge_requests/1253>`_, as too
-large for a bug-fix merge request.
+Several local experiments can run at once when each terminal sets its own
+``DATABASE_URL``, ``REDIS_URL``, ``base_port`` and
+``dallinger_develop_directory`` (see :ref:`running_several_local_experiments`);
+launches then stop only workers and browsers that use their own database, and
+CI uses the same isolation for parallel test slots. Two gaps remain. Every
+run still needs its own Redis server, because Redis pub/sub channels (PsyNet's
+timeline-hold wakes and Dallinger's chat channels) are shared by all database
+numbers on a server; prefixing channel names with the database identity in
+both packages would let runs share one server. And a single command that
+picks a free slot and sets these variables (for example
+``psynet services ensure --slot 2``) would save users from setting them by
+hand.
 
 Remote deployments have the same problem. ``psynet deploy ssh`` builds the
 starting database on the local PostgreSQL and Redis: it clears every Redis
