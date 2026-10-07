@@ -1,6 +1,5 @@
 import datetime
 import logging
-import math
 import random
 import sys
 import threading
@@ -166,6 +165,8 @@ class PerformanceTester:
         self.duration_minutes = duration_minutes
         self.stagger_interval_s = stagger_interval_s
         self.time_factor = time_factor
+        # Experiment code shares this process and may call random.seed().
+        self._random = random.Random()
 
     def run(self, bot_counts=None, bot_log_file=None):
         """Run performance tests for one or more bot count values."""
@@ -275,13 +276,12 @@ class PerformanceTester:
             "status_line_length": 0,
         }
 
-    @staticmethod
-    def _bounded_random_multiplier(max_multiplier=3.0):
+    def _bounded_random_multiplier(self, max_multiplier=3.0):
         """Bounded lognormal distribution for user completion times"""
         sigma = 0.6
         mu = -0.5 * sigma * sigma
         while True:
-            x = math.exp(random.gauss(mu, sigma))
+            x = self._random.lognormvariate(mu, sigma)
             if x <= max_multiplier:
                 return x
 
@@ -293,7 +293,7 @@ class PerformanceTester:
             return 0.0
         max_stagger = max_multiplier * self.stagger_interval_s
         while True:
-            x = random.gammavariate(k, theta)
+            x = self._random.gammavariate(k, theta)
             if x <= max_stagger:
                 return x
 
@@ -335,6 +335,8 @@ class PerformanceTester:
                 bot = BotDriver()
                 bot.stop_event = stop_event
                 bot_id = bot.id
+                if stop_event.is_set():
+                    raise DriverStopped()
                 self._record_bot_start(bot_state, bot_id, create_time)
                 experiment.run_bot(
                     bot,

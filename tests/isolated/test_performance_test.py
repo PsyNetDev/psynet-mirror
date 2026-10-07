@@ -54,7 +54,7 @@ def test_random_stagger_is_bounded_relative_to_configured_interval():
         stagger_interval_s=0.1,
     )
 
-    with patch("psynet.perf_test.random.gammavariate", side_effect=[0.6, 0.4]):
+    with patch.object(tester._random, "gammavariate", side_effect=[0.6, 0.4]):
         assert tester._bounded_random_stagger() == 0.4
 
 
@@ -110,6 +110,8 @@ def test_bots_still_taking_the_experiment_stop_when_the_test_ends(monkeypatch):
 
 
 def test_parallel_test_reraises_a_bot_error_after_all_bots_finish(monkeypatch):
+    import threading
+
     import pytest
     from dallinger import db
 
@@ -119,7 +121,7 @@ def test_parallel_test_reraises_a_bot_error_after_all_bots_finish(monkeypatch):
 
     def run_bot(bot, time_factor):
         finished.append(bot)
-        if len(finished) == 1:
+        if threading.current_thread().name.endswith("-1"):
             raise ValueError("bot failed")
 
     experiment = Mock(run_bot=run_bot)

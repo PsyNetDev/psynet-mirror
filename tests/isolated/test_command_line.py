@@ -4497,6 +4497,8 @@ def test_performance_test_existing_server_loads_runtime_server_config():
     from psynet.command_line import _run_performance_test_with_existing_server
 
     with (
+        patch("logging.getLogger", return_value=Mock(handlers=[])),
+        patch("psynet.command_line.tempfile.NamedTemporaryFile"),
         patch("psynet.command_line._load_runtime_server_config") as load_runtime_config,
         patch("psynet.experiment.get_experiment", return_value=Mock(test_n_bots=1)),
         patch("psynet.perf_test.PerformanceTester") as tester,

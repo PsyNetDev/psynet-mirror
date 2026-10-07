@@ -7,6 +7,7 @@ import shutil
 import signal
 import sys
 import tempfile
+import threading
 import time
 import traceback
 import uuid
@@ -14,7 +15,7 @@ import zipfile
 from collections import Counter, OrderedDict
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from functools import cache, cached_property, partial
+from functools import cache, partial
 from importlib import resources
 from os.path import abspath, dirname, exists
 from os.path import join as join_path
@@ -743,9 +744,19 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         self.process_timeline()
 
-    @cached_property
+    @property
     def authenticated_session(self):
-        return get_authenticated_session(self.base_url)
+        """Return a dashboard-authenticated session for the current thread.
+
+        ``requests.Session`` is not thread-safe, so bots running in threads
+        each log in once and keep their own session.
+        """
+        sessions = self.__dict__.setdefault(
+            "_authenticated_sessions", threading.local()
+        )
+        if not hasattr(sessions, "session"):
+            sessions.session = get_authenticated_session(self.base_url)
+        return sessions.session
 
     @classmethod
     def get_index_html(cls):
@@ -1711,8 +1722,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     def test_serial_run_bots(self, bots: List[BotDriver]):
         """
-        Defines the logic for testing the experiment in a serial process
-        (i.e. not running bots in parallel processes).
+        Defines the logic for testing the experiment serially
+        (i.e. not running bots in parallel).
         This is useful for testing specific experiment logic,
         but less useful for load-testing.
 
