@@ -1,0 +1,1 @@
+GitLab merge-train pipelines now skip the pytest, Playwright and docs jobs when the merge request's last merged-results pipeline already passed them on identical files, so a merge no longer waits for a second full test run when `master` hasn't moved.

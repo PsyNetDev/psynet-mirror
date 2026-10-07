@@ -55,12 +55,36 @@ variables:
   DOCKER_DRIVER: overlay2
   DOCKER_TLS_CERTDIR: ""
 
-before_script:
+before_script: &docker_setup
   - export POSTGRES_IP=$(getent ahostsv4 postgres | awk '{ print $1 }' | tail -n 1)
   - export REDIS_IP=$(getent ahostsv4 redis | awk '{ print $1 }' | tail -n 1)
   - echo $POSTGRES_IP
   - echo $REDIS_IP
   - docker build --build-arg PYTHON_VERSION=$PYTHON_VERSION --tag $DOCKER_LOCAL_TAG .
+
+# Merge-train pipelines often test exactly the files that the merge request's
+# last merged-results pipeline already tested: when master has not moved and
+# nothing is ahead in the train. This job finds such a pipeline and records
+# which jobs passed there (see ci/already_tested.py). Jobs that source
+# ci/skip-if-already-passed.sh first then end successfully without rerunning.
+# Only add that hook to jobs whose result depends on nothing but the files,
+# and never to jobs that publish or deploy. Master push pipelines still run
+# everything, so master keeps a full record of each merge.
+check_already_tested:
+  image: python:3.13-alpine
+  stage: .pre
+  services: []
+  before_script: []
+  script:
+    - python ci/already_tested.py
+  artifacts:
+    reports:
+      dotenv: already_tested.env
+  allow_failure: true
+  rules:
+    - if: $CI_MERGE_REQUEST_EVENT_TYPE == "merge_train"
+      when: always
+    - when: never
 
 # The nightly benchmark schedule sets NIGHTLY_BENCHMARKS=1. Its pipelines only
 # run `asv_benchmarks` (and `pages`, which republishes the results), so every
@@ -202,6 +226,9 @@ changelog_check:
   parallel: 12
   stage: test
   <<: [*docker_test_rules, *test_services]
+  before_script:
+    - . ci/skip-if-already-passed.sh
+    - *docker_setup
   variables:
     TEST_SCOPE: full
     TEST_SLOTS: "2"
@@ -269,6 +296,9 @@ compatibility_tests:
   stage: test
   parallel: 3
   <<: [*docker_test_rules, *test_services]
+  before_script:
+    - . ci/skip-if-already-passed.sh
+    - *docker_setup
   script:
     - export PSYNET_WORKSPACE=/root/workspaces/PsyNet
     - mkdir -p public test-results
@@ -323,8 +353,11 @@ merge_test_results:
       optional: true
     - "playwright_e2e_legacy"
     - "playwright_e2e_default"
+    - job: "check_already_tested"
+      optional: true
   when: always
   before_script:
+    - . ci/skip-if-already-passed.sh
     - pip install -q junitparser
   script:
     - ls -la public
@@ -521,6 +554,7 @@ benchmark_load_sweep:
   <<: *default_rules
   services: []
   before_script:
+    - . ci/skip-if-already-passed.sh
     - python -m pip install -e '.[dev]'
 
 # Check this commit's Sphinx docs without publishing. Treats warnings as
