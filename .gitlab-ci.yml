@@ -301,6 +301,7 @@ playwright_e2e_legacy:
 
 playwright_e2e_default:
   extends: .playwright_e2e
+  parallel: 4
   variables:
     PLAYWRIGHT_MODE: default
     PLAYWRIGHT_GREP: "@both|@inplace-only"
