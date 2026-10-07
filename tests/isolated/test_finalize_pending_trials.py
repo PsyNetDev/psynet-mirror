@@ -498,6 +498,44 @@ def test_recheck_finalization_leaves_failing_trial_to_backstop(
     WorkerAsyncProcess.call_function(process_id)
 
     assert [t.id for t in Trial.get_trials_ready_to_finalize()] == [trial_id]
+    assert not Trial.query.get(trial_id).ready_for_feedback
+
+    wakes = []
+    monkeypatch.setattr(
+        "psynet.timeline_hold._queue_timeline_hold_wake",
+        lambda participant_id, reason=None, **kwargs: wakes.append(reason),
+    )
+    Trial.finalize_pending_trials()
+    db.session.commit()
+
+    trial = Trial.query.get(trial_id)
+    assert trial.failed and trial.ready_for_feedback
+    assert wakes == ["trial_failed"]
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_feedback_waits_until_the_trial_is_finalized(db_session, participant):
+    """After async_post_trial commits, feedback waits for the re-check to set the score."""
+    network = _create_network(_chain_trial_maker(), get_experiment())
+    trial = _add_complete_unfinalized_trial(
+        network.head,
+        participant,
+        async_post_trial_requested=True,
+        async_post_trial_complete=True,
+    )
+    trial_id = trial.id
+    db.session.commit()
+
+    assert not Trial.query.get(trial_id).ready_for_feedback
+
+    Trial.recheck_finalization(trial_id)
+    db.session.commit()
+
+    trial = Trial.query.get(trial_id)
+    assert trial.finalized and trial.ready_for_feedback
 
 
 def _do_nothing():

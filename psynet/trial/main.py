@@ -252,8 +252,11 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         This is only included for back-compatibility.
 
     wait_for_feedback : bool
-        Set this class attribute to ``False`` if you don't want to wait for asynchronous processes
-        to complete before giving feedback. The default is to wait.
+        By default, feedback waits until the trial is finalized or failed, so that
+        :meth:`~psynet.trial.main.Trial.show_feedback` sees the results of asynchronous
+        processes and :meth:`~psynet.trial.main.Trial.on_finalized`. Set this class attribute
+        to ``False`` to give feedback straight away; ``show_feedback`` may then see a trial
+        whose asynchronous processes are still running and whose ``score`` is not yet set.
 
     accumulate_answers : bool
         Set this class attribute to ``True`` if the trial contains multiple pages and you want
@@ -440,7 +443,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     time_estimate = None
     check_time_credit_received = True
 
-    wait_for_feedback = True  # determines whether feedback waits for async_post_trial
+    wait_for_feedback = True  # determines whether feedback waits for the trial to be finalized or failed
     accumulate_answers = False
 
     # Back-compat alias: older code referred to the creating node as ``origin``.
@@ -481,7 +484,11 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     @property
     def ready_for_feedback(self):
         """
-        Determines whether a trial is ready to give feedback to the participant.
+        Whether the trial is ready to give feedback to the participant.
+
+        With :attr:`wait_for_feedback`, feedback waits until the trial is
+        finalized (so :meth:`on_finalized` has run and ``score`` is set) or
+        failed, so :meth:`show_feedback` sees one of those two states.
         """
         msg = f"Participant {self.participant.id}: Checking if the trial is ready for feedback... "
 
@@ -493,17 +500,17 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             msg += "yes, because we don't need to wait for feedback."
             outcome = True
 
-        elif self.asset_deposit_pending:
-            msg += "no, because the trial is awaiting an asset deposit."
-            outcome = False
+        elif self.finalized:
+            msg += "yes, the trial is finalized."
+            outcome = True
 
-        elif self.async_post_trial_pending:
-            msg += "no, because the trial is awaiting async_post_trial."
-            outcome = False
+        elif self.failed:
+            msg += "yes, the trial failed."
+            outcome = True
 
         else:
-            msg += "yes, all conditions are satisfied."
-            outcome = True
+            msg += "no, because the trial is not finalized yet."
+            outcome = False
 
         logger.info(msg)
         return outcome
@@ -763,6 +770,12 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         Returns a Page object displaying feedback
         (or None, which means no feedback).
 
+        Unless :attr:`wait_for_feedback` is ``False``, the trial is either
+        finalized, so :meth:`on_finalized` has run and ``score`` is set, or
+        failed, in which case ``score`` may be unset. Check ``self.failed``
+        and ``self.failed_reason`` to give feedback on a failed trial, for
+        example a recording that the analysis rejected.
+
         Parameters
         ----------
 
@@ -1000,7 +1013,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             )
             if trial.finalized and not was_finalized:
                 finalized_count += 1
-                trial._wake_participant_after_finalizing()
+                trial._wake_participant(reason="trial_finalized")
 
         if finalized_count:
             logger.info(
@@ -1014,6 +1027,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         """Fail a trial whose finalization raised in the backstop."""
         if not trial.failed:
             trial.fail(reason="finalize_backstop_error")
+            trial._wake_participant(reason="trial_failed")
 
     @classmethod
     def recheck_finalization(cls, trial_id):
@@ -1031,19 +1045,19 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             was_finalized = trial.finalized
             trial.check_if_can_mark_as_finalized()
             if trial.finalized and not was_finalized:
-                trial._wake_participant_after_finalizing()
+                trial._wake_participant(reason="trial_finalized")
 
-    def _wake_participant_after_finalizing(self):
-        """Wake the participant's held page, which may be waiting on this trial's score.
+    def _wake_participant(self, *, reason):
+        """Wake the participant's held page after the background finalizes or fails this trial.
 
-        Finalizing outside the participant's request happens after the
-        asset-deposit and async-process wakes were sent, so without this
-        wake a page held for the score waits for its next poll.
+        The asset-deposit and async-process wakes are sent before that
+        happens, so without this wake a page held for the trial (for example
+        waiting for feedback) waits for its next poll.
         """
         if self.participant_id is not None:
             from psynet.timeline_hold import _queue_timeline_hold_wake
 
-            _queue_timeline_hold_wake(self.participant_id, reason="trial_finalized")
+            _queue_timeline_hold_wake(self.participant_id, reason=reason)
 
     def check_if_can_run_async_post_trial(self):
         msg = f"Checking if we should run async_post_trial for trial {self.id}... "
