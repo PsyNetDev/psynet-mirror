@@ -32,8 +32,8 @@ nothing is ahead of it in the train. Rerunning the suite on it would only
 delay the merge. The ``check_already_tested`` job runs first in each train
 pipeline. It runs ``ci/already_tested.py``, which finds the newest finished
 merged-results pipeline of the merge request that tested identical files. The
-pytest, Playwright and ``docs`` jobs that passed there end successfully at
-once, and their logs link to that pipeline. If anything differs, or the check fails,
+pytest, Playwright, ``docs`` and ``asv_regression`` jobs that passed there end
+successfully at once, and their logs link to that pipeline. If anything differs, or the check fails,
 every job runs as usual. ``master`` push pipelines always run the full suite.
 
 A job opts in by sourcing ``ci/skip-if-already-passed.sh`` at the start of its

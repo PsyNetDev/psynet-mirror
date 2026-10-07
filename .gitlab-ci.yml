@@ -464,6 +464,9 @@ asv_regression:
   # Still allows for a cold .asv/env cache and Docker startup, but the selected
   # benchmark set should remain small enough for normal MR iteration.
   timeout: 45m
+  before_script:
+    - . ci/skip-if-already-passed.sh
+    - *docker_setup
   variables:
     # Full clone: the merge base can be far back in the target branch's
     # history and is otherwise unreachable in the default shallow clone.
