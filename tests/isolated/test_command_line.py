@@ -4543,6 +4543,7 @@ def test_performance_test_preserves_explicit_zero_options():
 
     with (
         patch("logging.getLogger", return_value=Mock(handlers=[])),
+        patch("psynet.command_line._load_runtime_server_config"),
         patch("psynet.experiment.get_experiment", return_value=experiment),
         patch(
             "psynet.perf_test.PerformanceTester", return_value=tester
@@ -4588,6 +4589,7 @@ def test_performance_test_uses_defaults_when_options_omitted():
 
     with (
         patch("logging.getLogger", return_value=Mock(handlers=[])),
+        patch("psynet.command_line._load_runtime_server_config"),
         patch("psynet.experiment.get_experiment", return_value=experiment),
         patch(
             "psynet.perf_test.PerformanceTester", return_value=tester

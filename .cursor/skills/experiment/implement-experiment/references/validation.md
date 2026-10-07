@@ -50,9 +50,11 @@ shorter than the experiment. If those percentiles are high, profile SQL with
 the performance-testing tutorial). Use top-level
 `psynet performance-test local --json-output <path>` for a custom non-audit
 file.
-If the experiment customizes `run_bot`, preserve `bot=None` support and delegate
-to `super().run_bot(...)` for framework-created bots; `psynet performance-test`
-calls `exp.run_bot(time_factor=...)` without passing a bot object.
+If the experiment customizes `run_bot`, accept the `bot` argument and
+`**kwargs`. `psynet performance-test`, `psynet test local --parallel` and
+`psynet run-bot` all call `exp.run_bot(bot, time_factor=...)` with a new
+`BotDriver`. Those bots run as threads in one process, so keep per-bot state on
+`bot.var`, not in globals, and do not call `random.seed()`.
 
 Short smoke runs are fine for a first pass or infrastructure testing; use
 top-level `psynet performance-test local` so they do not become packet evidence.

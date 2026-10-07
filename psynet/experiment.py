@@ -751,9 +751,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         ``requests.Session`` is not thread-safe, so bots running in threads
         each log in once and keep their own session.
         """
-        sessions = self.__dict__.setdefault(
-            "_authenticated_sessions", threading.local()
-        )
+        sessions = self.__dict__.get("_authenticated_sessions")
+        if sessions is None:
+            sessions = self.__dict__.setdefault(
+                "_authenticated_sessions", threading.local()
+            )
         if not hasattr(sessions, "session"):
             sessions.session = get_authenticated_session(self.base_url)
         return sessions.session

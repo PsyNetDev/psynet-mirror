@@ -229,11 +229,10 @@ class PerformanceTester:
             self._run_monitoring_loop(
                 n, bot_state, start_bot_slot, start_time, end_time
             )
+            actual_duration = time.time() - start_time
             self._stop_bots(bot_state)
         self._clear_realtime_status()
 
-        # Calculate and report results
-        actual_duration = time.time() - start_time
         return self._calculate_and_report_results(
             n, duration_minutes, actual_duration, initial_state, bot_state
         )
@@ -386,7 +385,8 @@ class PerformanceTester:
         if n_alive:
             logger.warning(
                 f"{n_alive} bot(s) were still waiting for the server "
-                f"{timeout_s} s after the test ended."
+                f"{timeout_s} s after the test ended; their requests may "
+                "still load the server during the next test."
             )
 
     def _show_realtime_status(self, bot_state, current_time, end_time, force=False):
