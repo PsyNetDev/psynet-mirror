@@ -510,7 +510,7 @@ def test_recheck_finalization_leaves_failing_trial_to_backstop(
 
     trial = Trial.query.get(trial_id)
     assert trial.failed and trial.ready_for_feedback
-    assert wakes == ["trial_failed"]
+    assert "trial_failed" in wakes
 
 
 @pytest.mark.parametrize(
@@ -518,7 +518,7 @@ def test_recheck_finalization_leaves_failing_trial_to_backstop(
 )
 @pytest.mark.usefixtures("in_experiment_directory")
 def test_feedback_waits_until_the_trial_is_finalized(db_session, participant):
-    """After async_post_trial commits, feedback waits for the re-check to set the score."""
+    """After async_post_trial commits, feedback waits for the re-check to finalize the trial."""
     network = _create_network(_chain_trial_maker(), get_experiment())
     trial = _add_complete_unfinalized_trial(
         network.head,

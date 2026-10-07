@@ -206,6 +206,12 @@ class VerticalProcessingTrial(StaticTrial):
     should_display_trial_position_alert = None
 
     def show_feedback(self, experiment, participant):
+        if self.failed:
+            return InfoPage(
+                "Sorry, we couldn't analyze your singing on this trial.",
+                time_estimate=3,
+            )
+
         score = self.score
         assert isinstance(score, (float, int))
 

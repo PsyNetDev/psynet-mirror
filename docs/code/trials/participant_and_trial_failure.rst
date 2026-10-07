@@ -31,8 +31,8 @@ PsyNet also fails trials itself:
   (``failed_reason="async_post_trial_failed"``), an asynchronous process that
   fails or times out, such as an asset deposit, or ``on_finalized`` when PsyNet
   finalizes the trial in the background
-  (``failed_reason="finalize_backstop_error"``). The error is also recorded
-  and reported to the researcher.
+  (``failed_reason="finalize_backstop_error"``). Errors raised by this work
+  are also recorded and reported to the researcher.
 
 A failed trial does not fail its participant. If the trial gives feedback,
 :meth:`~psynet.trial.main.Trial.show_feedback` still runs and should check
