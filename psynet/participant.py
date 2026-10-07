@@ -1227,13 +1227,14 @@ class ParticipantDriver:
         threads.
     """
 
+    stop_event = None
+
     def __init__(
         self,
         id_: int,
     ):
         from .experiment import get_experiment
 
-        self.stop_event = None
         self.id = id_
         self.experiment = get_experiment()
         # self._directory = tempfile.TemporaryDirectory()

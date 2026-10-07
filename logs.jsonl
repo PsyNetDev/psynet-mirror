@@ -1,0 +1,4 @@
+{"name": "dallinger.experiment", "asctime": "2026-10-07 19:33:32,052", "levelname": "ERROR", "filename": "experiment.py", "lineno": 2244, "message": "Error retrieving experiment class"}
+{"name": "dallinger.experiment", "asctime": "2026-10-07 19:33:32,053", "levelname": "ERROR", "filename": "experiment.py", "lineno": 2257, "message": "Could not import experiment."}
+{"name": "dallinger.experiment", "asctime": "2026-10-07 19:34:01,169", "levelname": "ERROR", "filename": "experiment.py", "lineno": 2244, "message": "Error retrieving experiment class"}
+{"name": "dallinger.experiment", "asctime": "2026-10-07 19:34:01,169", "levelname": "ERROR", "filename": "experiment.py", "lineno": 2257, "message": "Could not import experiment."}

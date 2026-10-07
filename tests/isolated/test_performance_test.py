@@ -87,7 +87,6 @@ def test_bots_still_taking_the_experiment_stop_when_the_test_ends(monkeypatch):
 
     class FakeDriver(ParticipantDriver):
         def __init__(self):
-            self.stop_event = None
             self.id = next(ids)
 
     experiment = Mock()
