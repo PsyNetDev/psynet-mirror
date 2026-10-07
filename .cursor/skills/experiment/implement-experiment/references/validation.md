@@ -51,11 +51,12 @@ the performance-testing tutorial). Use top-level
 `psynet performance-test local --json-output <path>` for a custom non-audit
 file.
 If the experiment customizes `run_bot`, accept the `bot` argument and
-`**kwargs`. `psynet performance-test`, `psynet test local --parallel` and
-`psynet run-bot` all call `exp.run_bot(bot, time_factor=...)` with a new
-`BotDriver`. Those bots run as threads in one process and share one experiment
-instance, so keep per-bot state on `bot.var`, not in globals or on `self`, and
-do not call `random.seed()`.
+`**kwargs`, and pass that same `bot` on to `super().run_bot(bot, **kwargs)`.
+`psynet performance-test`, `psynet test local --parallel` and `psynet run-bot`
+all call `exp.run_bot(bot, time_factor=...)` with a new `BotDriver`. In
+`performance-test` and `test local --parallel` the bots run as threads in one
+process and share one experiment instance, so keep per-bot state on `bot.var`,
+not in globals or on `self`, and do not call `random.seed()`.
 
 Short smoke runs are fine for a first pass or infrastructure testing; use
 top-level `psynet performance-test local` so they do not become packet evidence.

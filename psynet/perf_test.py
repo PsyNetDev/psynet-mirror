@@ -226,12 +226,14 @@ class PerformanceTester:
         start_bot_slot = self._create_bot_launcher(bot_state, end_time)
 
         with _bot_logs_to(bot_log_file):
-            self._run_monitoring_loop(
-                n, bot_state, start_bot_slot, start_time, end_time
-            )
-            actual_duration = time.time() - start_time
-            last_request_id = self._max_request_id()
-            self._stop_bots(bot_state)
+            try:
+                self._run_monitoring_loop(
+                    n, bot_state, start_bot_slot, start_time, end_time
+                )
+                actual_duration = time.time() - start_time
+                last_request_id = self._max_request_id()
+            finally:
+                self._stop_bots(bot_state)
         self._clear_realtime_status()
 
         return self._calculate_and_report_results(
