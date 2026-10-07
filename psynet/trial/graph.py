@@ -497,7 +497,7 @@ class GraphChainTrialMaker(ChainTrialMaker):
             id_within_participant=id_within_participant,
         )
         db.session.add(network)
-        db.session.commit()
+        db.session.flush()
         return network
 
     def create_graph_topology(self, network_structure, blocks, groups):
@@ -584,9 +584,7 @@ class GraphChainTrialMaker(ChainTrialMaker):
             )
             db.session.add(node)
             network.add_node(node)
-            db.session.commit()
             node.check_on_deploy()
-            db.session.commit()
             return True
         return False
 

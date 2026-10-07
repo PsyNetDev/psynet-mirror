@@ -33,6 +33,7 @@ from sqlalchemy.orm.collections import attribute_mapped_collection
 
 from . import templates
 from .data import SQLBase, SQLMixin, register_table
+from .db import forbid_commits
 from .field import PythonObject
 from .serialize import is_lambda_function, prepare_function_for_serialization
 from .static_resources import version_static_urls
@@ -299,6 +300,13 @@ def get_template(name):
         return file.read()
 
 
+def _timeline_step_name(elt):
+    """Name a timeline element for error messages, e.g. ``CodeBlock 'save'``."""
+    function = getattr(elt, "function", None)
+    detail = getattr(elt, "label", None) or getattr(function, "__qualname__", None)
+    return f"{type(elt).__name__} {detail!r}" if detail else type(elt).__name__
+
+
 class Elt:
     returns_time_credit = False
     time_estimate = None
@@ -475,6 +483,17 @@ class AsyncCodeBlock(EltCollection):
         Only relevant if ``wait=True``; corresponds to the fallback interval
         between checks when no completion wake arrives. Default: 2.0 seconds.
 
+    max_wait_time:
+        Only relevant if ``wait=True``; the participant is failed if the
+        function has not finished after this many seconds. Default: 20.0 seconds.
+
+    on_timeout:
+        Only relevant if ``wait=True``; a function called with
+        ``participant=...`` when the participant's page next checks in after
+        ``max_wait_time``, unless the function has finished or failed by
+        then. The function keeps running in the background. ``on_timeout``
+        must not commit the database session.
+
     content:
         Only relevant if ``wait=True``; overlay message while waiting.
         Markup is allowed. Omit to keep the stock wait copy.
@@ -487,6 +506,8 @@ class AsyncCodeBlock(EltCollection):
         expected_wait: Optional[float] = None,
         check_interval: float = 2.0,
         content: Optional[str] = None,
+        max_wait_time: float = 20.0,
+        on_timeout: Optional[Callable] = None,
     ):
         if is_lambda_function(function):
             raise ValueError(
@@ -509,6 +530,8 @@ class AsyncCodeBlock(EltCollection):
         self.expected_wait = expected_wait
         self.check_interval = check_interval
         self.content = content
+        self.max_wait_time = max_wait_time
+        self.on_timeout = on_timeout
 
     def resolve(self):
         return join(
@@ -587,11 +610,25 @@ class AsyncCodeBlock(EltCollection):
                 condition=lambda participant: not self.process_is_finished(participant),
                 expected_wait=self.expected_wait,
                 check_interval=self.check_interval,
+                max_wait_time=self.max_wait_time,
                 log_message="Waiting for async code block to finish.",
                 content=self.content,
+                on_timeout=None
+                if self.on_timeout is None
+                else self._call_on_timeout_unless_finished,
             ),
             CodeBlock(lambda: logger.info("Finished waiting for async code block.")),
         )
+
+    def _call_on_timeout_unless_finished(self, participant):
+        """Call ``on_timeout`` unless the function finished or failed before the timeout was noticed.
+
+        A failed function has already been reported through ``handle_error``.
+        """
+        process = participant.awaited_async_code_block_process
+        if process is not None and (process.finished or process.failed):
+            return
+        call_function_with_context(self.on_timeout, participant=participant)
 
     def process_is_finished(self, participant):
         process = participant.awaited_async_code_block_process
@@ -1784,13 +1821,19 @@ class Page(Elt):
             else:
                 trial.time_taken += resp.metadata["time_taken"]
 
+        participant.browser_platform = metadata.get(
+            "platform", "Browser platform info could not be retrieved."
+        )
+
+        return resp
+
+    def _accept_response(self, resp, experiment, participant):
+        """Save an answer that passed validation and run ``on_complete``."""
         if self.save_answer:
-            if len(participant.answer_accumulators) > 0:
-                page_label = self.label
-                accumulator = participant.answer_accumulators[-1]
-                answer_label = self._find_answer_label(page_label, accumulator)
-                accumulator[answer_label] = resp.answer
-                flag_modified(participant, "answer_accumulators")
+            if participant.answer_accumulation_depth:
+                answers = participant.answer
+                answers[self._find_answer_label(self.label, answers)] = resp.answer
+                flag_modified(participant, "answer")
             else:
                 participant.answer = resp.answer
             participant.answer_is_fresh = True
@@ -1799,13 +1842,7 @@ class Page(Elt):
         else:
             participant.answer_is_fresh = False
 
-        participant.browser_platform = metadata.get(
-            "platform", "Browser platform info could not be retrieved."
-        )
-
         self.on_complete(experiment=experiment, participant=participant)
-
-        return resp
 
     def _find_answer_label(self, page_label, accumulator):
         if page_label not in accumulator:
@@ -2464,6 +2501,13 @@ class PageMaker(Elt):
         ``time_estimate`` values, then these ``time_estimate`` values will be imputed by dividing
         the parent :class:`psynet.timeline.PageMaker`'s ``time_estimate``
         by the number of produced elements.
+
+    accumulate_answers:
+        If ``True``, ``participant.answer`` becomes a dict when the page maker
+        starts, and each page saves its answer under its label as soon as it
+        is submitted, so later pages can read earlier answers. A repeated
+        label is saved as ``label_1``, ``label_2`` and so on. Answers from
+        nested accumulating page makers or trials go into the same dict.
     """
 
     returns_time_credit = True
@@ -2794,7 +2838,8 @@ class Timeline:
                     if index_max is not None and index > index_max:
                         raise IndexError
                     position = participant.elt_id[0:depth]
-                    selected = selected.resolve(experiment, participant, position)
+                    with forbid_commits(_timeline_step_name(selected)):
+                        selected = selected.resolve(experiment, participant, position)
                     if index_max is None:
                         participant.elt_id_max.append(len(selected) - 1)
                 except IndexError:
@@ -2831,7 +2876,8 @@ class Timeline:
                     participant.elt_id.append(-1)
                     continue
 
-                new_elt.consume(experiment, participant)
+                with forbid_commits(_timeline_step_name(new_elt)):
+                    new_elt.consume(experiment, participant)
 
                 if isinstance(new_elt, Page):
                     finished = True
@@ -3945,14 +3991,24 @@ class EndModule(NullElt):
 
 
 class StartAccumulateAnswers(NullElt):
+    """Start collecting page answers into the dict ``participant.answer``.
+
+    Nested blocks share the outermost block's dict, so their answers are
+    flattened into it.
+    """
+
     def consume(self, experiment, participant):
-        participant.answer_accumulators = participant.answer_accumulators + [{}]
+        if not participant.answer_accumulation_depth:
+            participant.answer = {}
+            participant.answer_is_fresh = False
+        participant.answer_accumulation_depth = (
+            participant.answer_accumulation_depth or 0
+        ) + 1
 
 
 class EndAccumulateAnswers(NullElt):
     def consume(self, experiment, participant):
-        participant.answer = participant.answer_accumulators[-1]
-        participant.answer_accumulators = participant.answer_accumulators[:-1]
+        participant.answer_accumulation_depth -= 1
 
 
 class DatabaseCheck(NullElt):

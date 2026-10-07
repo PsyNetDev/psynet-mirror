@@ -34,11 +34,11 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
-    event,
 )
 from sqlalchemy.orm import relationship
 
 from psynet.data import SQLBase, SQLMixin, register_table
+from psynet.db import _SessionQueue, forbid_commits
 from psynet.timeline import Page, get_template
 from psynet.utils import call_function_with_context, get_logger, get_translator
 
@@ -54,8 +54,6 @@ def _timeline_hold_channel(participant_id):
     return f"{_TIMELINE_HOLD_CHANNEL}_{participant_id}"
 
 
-_PENDING_WAKE_KEY = "psynet_timeline_hold_wakes"
-_NESTED_WAKE_SNAPSHOTS_KEY = "psynet_nested_timeline_hold_wake_keys"
 _wake_defer_depth = ContextVar("psynet_timeline_hold_wake_defer_depth", default=0)
 _deferred_wake_stash = ContextVar("psynet_timeline_hold_deferred_wakes", default=None)
 _next_hold_is_catchup = ContextVar("psynet_next_hold_is_catchup", default=False)
@@ -128,7 +126,7 @@ def _enqueue_timeline_hold_wake(
         "reason": reason,
         "participant_id": participant_id,
     }
-    db.session.info.setdefault(_PENDING_WAKE_KEY, {})[active_hold.wake_token] = wake
+    _pending_wakes.get()[active_hold.wake_token] = wake
 
 
 def _queue_timeline_hold_wake(
@@ -153,9 +151,7 @@ def _queue_timeline_hold_wake(
 def _queue_arrival_update(participant_id, *, hold_message=None, notice=None):
     """Queue an arrival-progress or partner-ready update after the next commit."""
     try:
-        db.session.info.setdefault(_PENDING_WAKE_KEY, {})[
-            f"arrival:{participant_id}"
-        ] = {
+        _pending_wakes.get()[f"arrival:{participant_id}"] = {
             "participant_id": participant_id,
             "reason": "arrival_update",
             "hold_message": hold_message,
@@ -231,8 +227,8 @@ def _defer_timeline_hold_wakes():
     commits. Each poller visit commits in its own session, so the stash lives
     in a context variable that survives ``session.remove()``. SAVEPOINT
     releases are not durable: nested ``after_commit`` does not publish or
-    stash. Nested rollback restores pending wakes to the keys that existed
-    when that savepoint began. Root rollback still discards uncommitted
+    stash. Nested rollback restores pending wakes to what they
+    were when that savepoint began. Root rollback still discards uncommitted
     pending wakes; already committed wakes stay deferred and flush here even
     if a later check fails.
     """
@@ -289,53 +285,17 @@ def _publish_wakes(wakes):
         logger.warning("Failed to publish timeline hold wake.", exc_info=True)
 
 
-@event.listens_for(db.session, "after_transaction_create")
-def _snapshot_pending_wakes_for_nested(session, transaction):
-    """Remember pending wake keys so a SAVEPOINT rollback can restore them."""
-    if not transaction.nested:
-        return
-    pending = session.info.get(_PENDING_WAKE_KEY) or {}
-    session.info.setdefault(_NESTED_WAKE_SNAPSHOTS_KEY, []).append(set(pending))
-
-
-@event.listens_for(db.session, "after_commit")
-def _publish_timeline_hold_wakes(session):
-    if session.in_nested_transaction():
-        return
-    pending = session.info.pop(_PENDING_WAKE_KEY, None) or {}
+def _publish_timeline_hold_wakes(pending):
+    """Publish wakes once their transaction commits, or stash them while deferred."""
     if _wake_defer_depth.get():
         _stash_committed_wakes(pending)
         return
     _publish_wakes(list(pending.values()))
 
 
-@event.listens_for(db.session, "after_rollback")
-def _discard_timeline_hold_wakes(session):
-    """Restore pre-savepoint wakes on nested rollback; drop pending on root rollback.
-
-    Detect the SAVEPOINT via the snapshot stack. ``in_nested_transaction()``
-    may already be false when this handler runs.
-    """
-    stack = session.info.get(_NESTED_WAKE_SNAPSHOTS_KEY) or []
-    if stack:
-        keys_before = stack[-1]
-        pending = session.info.get(_PENDING_WAKE_KEY) or {}
-        session.info[_PENDING_WAKE_KEY] = {
-            key: wake for key, wake in pending.items() if key in keys_before
-        }
-        return
-    session.info.pop(_PENDING_WAKE_KEY, None)
-
-
-@event.listens_for(db.session, "after_transaction_end")
-def _pop_nested_wake_snapshot(session, transaction):
-    if transaction.nested:
-        stack = session.info.get(_NESTED_WAKE_SNAPSHOTS_KEY)
-        if stack:
-            stack.pop()
-    elif transaction.parent is None:
-        # Session.close() ends the root transaction without after_rollback.
-        session.info.pop(_PENDING_WAKE_KEY, None)
+_pending_wakes = _SessionQueue(
+    "timeline_hold_wakes", dict, on_commit=_publish_timeline_hold_wakes
+)
 
 
 @register_table
@@ -483,7 +443,6 @@ class _TimelineHoldPage(Page):
             time_estimate=expected_wait,
             save_answer=False,
             template_str=get_template("timeline-hold-page.html"),
-            template_arg={"content": content},
             framework_owned_template=True,
         )
 
@@ -554,6 +513,18 @@ class _TimelineHoldPage(Page):
             return False
         return timenow() >= deadline
 
+    @staticmethod
+    def failure_releases_hold(experiment, participant):
+        """Return whether failing lets the participant leave this hold.
+
+        A participant failed while waiting leaves for the unsuccessful end.
+        Holds inside end logic still wait, because failed participants reach
+        them after failing, for example to wait for a recruiter payment.
+        """
+        return participant.failed and not (
+            experiment.timeline.participant_is_in_end_logic(participant)
+        )
+
     def is_ready_to_resume(self, experiment, participant):
         """Return whether this hold can resume, without timeout side effects.
 
@@ -562,7 +533,9 @@ class _TimelineHoldPage(Page):
         ``FOR UPDATE`` can stall a worker or fail a waiter a partner already
         advanced.
         """
-        if participant.pending_redirect is not None or participant.failed:
+        if participant.pending_redirect is not None or self.failure_releases_hold(
+            experiment, participant
+        ):
             return True
         if getattr(participant, "page_uuid", None) is not None:
             if self.get_hold_record(participant) is None:
@@ -573,7 +546,9 @@ class _TimelineHoldPage(Page):
 
     def prepare_resume_if_ready(self, experiment, participant):
         """Prepare a cleared or timed-out hold and return whether it can resume."""
-        if participant.pending_redirect is not None or participant.failed:
+        if participant.pending_redirect is not None or self.failure_releases_hold(
+            experiment, participant
+        ):
             self.prepare_to_resume(participant)
             return True
         if getattr(participant, "page_uuid", None) is not None:
@@ -599,8 +574,9 @@ class _TimelineHoldPage(Page):
     def apply_timeout(self, participant):
         """Run timeout side effects and optionally fail the participant."""
         if self.on_timeout is not None:
-            call_function_with_context(self.on_timeout, participant=participant)
-        if self.fail_on_timeout:
+            with forbid_commits(f"on_timeout of timeline hold {self.hold_id!r}"):
+                call_function_with_context(self.on_timeout, participant=participant)
+        if self.fail_on_timeout and not participant.failed:
             participant.append_failure_tags(
                 f"timeline_hold:{self.hold_id}",
                 "fail_on_timeout",

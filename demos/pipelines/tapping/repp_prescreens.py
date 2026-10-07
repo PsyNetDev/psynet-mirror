@@ -359,6 +359,10 @@ class FreeTappingRecordTrial(AudioRecordTrial, StaticTrial):
         return self.position == 0
 
     def show_feedback(self, experiment, participant):
+        if self.failed and self.failed_reason != "analysis":
+            # The trial failed for another reason, so ``analysis`` may be missing.
+            return None
+
         num_resp_onsets_detected = self.analysis["num_resp_onsets_detected"]
 
         if self.failed:

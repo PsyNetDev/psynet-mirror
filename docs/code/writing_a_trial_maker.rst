@@ -119,8 +119,9 @@ hooks. :meth:`~psynet.trial.static.StaticTrialMaker.custom_node_filter`
 removes nodes the participant must not receive, and
 :meth:`~psynet.trial.static.StaticTrialMaker.select_node` picks one of the
 rest; blocks, repeat rules, performance checks and trial-based recruitment
-keep working. The nodes arrive shuffled, then sorted by balancing (when it is
-on) and by block, and the default ``select_node`` takes the first. ``select_node`` must return one of the objects it was given, not a
+keep working. The nodes arrive in selection order (see
+:ref:`trial_selection_performance`), and the default ``select_node`` takes
+the first. ``select_node`` must return one of the objects it was given, not a
 re-queried copy, either directly or wrapped in a
 :class:`~psynet.trial.main.Selection` with a ``context``. Returning ``None``
 raises ``TypeError``. PsyNet passes the context to
@@ -144,6 +145,67 @@ raises ``TypeError``. PsyNet passes the context to
 once per selection, for primary trials only: not for repeat trials or for the
 copies given to other members of a synchronized group. Chain trial makers have
 the equivalent hooks for chains; see :doc:`/code/writing_a_chain_experiment`.
+
+.. _trial_selection_performance:
+
+Keeping selection fast
+~~~~~~~~~~~~~~~~~~~~~~
+
+PsyNet finds each trial's node with one database query. It orders the
+eligible nodes by block, then by any custom priority, then by balancing (when
+it is on), then randomly, and loads only the first. It then locks that node
+and recounts its trials, a small fixed cost that stops simultaneous
+participants from overfilling it. Nodes are not eligible if they
+already have ``target_trials_per_node`` trials, if they are waiting for
+asynchronous processing, or if they are outside the participant's group or
+remaining blocks.
+
+``custom_node_filter``, ``select_node`` and ``find_nodes`` run in Python, so
+overriding them makes PsyNet load every eligible node for every trial. With a
+few hundred nodes that is fine. With thousands it slows each response, and
+PsyNet logs a warning. There are three ways to keep it fast:
+
+- Filter and rank in the database.
+  :meth:`~psynet.trial.static.StaticTrialMaker.filter_nodes_query` receives
+  the query and returns it with extra conditions.
+  :meth:`~psynet.trial.static.StaticTrialMaker.node_priority` returns SQL
+  expressions to sort by. Both can use columns of ``self.network_class`` and
+  of your node class, including columns you add to it. Refer to those columns
+  through your own class (``ColorNode.difficulty`` in the example), because a
+  static trial maker's ``self.node_class`` is always ``StaticNode``.
+- Decide whether the participant should get a trial at all in
+  :meth:`~psynet.trial.chain.ChainTrialMaker.before_selection`. It runs before
+  PsyNet looks for nodes and returns ``"wait"``, ``"exit"`` or ``None`` (go
+  ahead).
+- Set ``selection_pool_size`` to pass only the best-ranked eligible nodes to
+  the Python hooks. Nodes outside the pool are ignored for that trial, unless
+  ``custom_node_filter`` rejects every available node in the pool; PsyNet then
+  loads them all and filters again, so the filter may see the same node twice
+  in one selection. Keep filters free of side effects.
+
+.. code-block:: python
+
+    from sqlalchemy import Column, Integer
+
+    class ColorNode(StaticNode):
+        difficulty = Column(Integer)
+
+    class ColorTrialMaker(StaticTrialMaker):
+        selection_pool_size = 50
+
+        def filter_nodes_query(self, query, participant, experiment):
+            return query.filter(ColorNode.difficulty <= participant.var.level)
+
+        def node_priority(self, participant, experiment):
+            return [ColorNode.difficulty.desc()]
+
+        def select_node(self, nodes, participant, experiment):
+            return max(nodes, key=lambda node: score_item(node.definition))
+
+``filter_nodes_query`` and ``node_priority`` work in SQL, so they cannot read
+``node.definition``, which PsyNet stores in encoded form. Store anything you
+filter or rank on in its own column. Chain trial makers have the same
+hooks under the names ``filter_chains_query`` and ``chain_priority``.
 
 .. _trial_after_the_response:
 
@@ -177,8 +239,15 @@ tapping recording:
 .. literalinclude:: ../../demos/pipelines/tapping/repp_utils.py
    :pyobject: TapTrial.analyze_recording
 
-The analysis runs in a background process. Feedback waits for it by default;
-set ``wait_for_feedback = False`` on the trial class to skip waiting.
+The analysis runs in a background process. By default, feedback waits until
+the trial is finalized (the analysis has finished and ``on_finalized`` has set
+``score``) or has failed, for example because the analysis rejected the
+recording. In ``show_feedback``, check ``self.failed`` to tell the two apart.
+Results such as ``self.analysis`` exist only if the analysis ran; for
+recording trials, ``failed_reason == "analysis"`` means it ran and rejected
+the recording.
+Set ``wait_for_feedback = False`` on the trial class to skip waiting; feedback
+may then see a trial whose analysis is still running.
 
 For a performance check, set ``check_performance_at_end=True`` or
 ``check_performance_every_trial=True`` and choose a built-in check with

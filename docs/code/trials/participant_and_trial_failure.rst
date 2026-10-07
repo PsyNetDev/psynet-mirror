@@ -26,7 +26,18 @@ PsyNet also fails trials itself:
   after the trial was created (a trial maker attribute, default five
   minutes). If they submit later, the answer is still stored, but the trial
   stays failed and the participant is not failed;
-- when the participant fails or leaves before completing the trial.
+- when the participant fails or leaves before completing the trial;
+- when background work for the trial raises an error: ``async_post_trial``
+  (``failed_reason="async_post_trial_failed"``), an asynchronous process that
+  fails or times out, such as an asset deposit, or ``on_finalized`` when PsyNet
+  finalizes the trial in the background
+  (``failed_reason="finalize_backstop_error"``). Errors raised by this work
+  are also recorded and reported to the researcher.
+
+A failed trial does not fail its participant. If the trial gives feedback,
+:meth:`~psynet.trial.main.Trial.show_feedback` still runs and should check
+``self.failed``, because ``score`` and other results of
+:meth:`~psynet.trial.main.Trial.on_finalized` may be missing.
 
 Failing a participant
 ---------------------

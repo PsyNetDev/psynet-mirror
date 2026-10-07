@@ -4,12 +4,14 @@ from datetime import datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import MagicMock, PropertyMock, patch
 
+import dallinger.db
 import dallinger.experiment
 import dallinger.recruiters
 import pytest
 import requests
 from dallinger.prolific import ProlificServiceException
 
+from psynet.db import forbid_commits
 from psynet.exit import (
     EarlyExitConfirmation,
     ErrorRecoveryPresentation,
@@ -101,16 +103,21 @@ def prolific_error(status):
     )
 
 
-@pytest.mark.parametrize("status", [408, 429, 500, 502, 503, 504])
+@pytest.mark.parametrize(
+    "error",
+    [prolific_error(status) for status in (408, 429, 500, 502, 503, 504)]
+    + [
+        requests.Timeout("slow"),
+        ProlificServiceException('{"URL": "/submissions/1/", "error": "Timeout()"}'),
+    ],
+)
 def test_check_assignment_return_status_handles_retriable_prolific_lookup_failure(
-    status,
+    error,
     caplog,
 ):
     participant = make_participant()
     experiment = MagicMock()
-    experiment.recruiter.prolificservice.get_participant_submission.side_effect = (
-        prolific_error(status)
-    )
+    experiment.recruiter.prolificservice.get_participant_submission.side_effect = error
 
     with patch("psynet.experiment.get_experiment", return_value=experiment):
         result = PsyNetProlificRecruiterMixin.check_assignment_return_status(
@@ -2518,6 +2525,86 @@ def test_lucid_prepares_error_recovery_without_an_external_termination_request()
     recruiter.lucidservice.terminate_respondent.assert_not_called()
 
 
+@pytest.mark.parametrize(
+    "call",
+    [
+        "lucid_terminate",
+        "lucid_outcome",
+        "lucid_status",
+        "prolific_reward_bonus",
+        "lab_outcome",
+        "hotair_reward_bonus",
+        "zero_outcome",
+        "experiment_pay",
+        "lucid_service_complete",
+        "lucid_service_terminate",
+        "lucid_service_submissions",
+        "prolific_approve",
+    ],
+)
+def test_payment_and_panel_calls_raise_inside_a_timeline_step_before_any_request(
+    call,
+):
+    from psynet.experiment import Experiment
+
+    participant = MagicMock(
+        assignment_id="rid-1", module_state=None, failed=False, progress=1
+    )
+    lucid = _lucid_recruiter_with_service()
+    prolific = object.__new__(ProlificRecruiter)
+    prolific.prolificservice = MagicMock()
+    calls = {
+        "lucid_terminate": lambda: lucid.terminate_participant(
+            participant=participant, reason="timeout"
+        ),
+        "lucid_outcome": lambda: lucid.report_submission_outcome(
+            participant, 0.0, "bonus"
+        ),
+        "lucid_status": lambda: lucid.change_lucid_status("live"),
+        "prolific_reward_bonus": lambda: prolific.reward_bonus(
+            participant, 1.0, "bonus"
+        ),
+        "lab_outcome": lambda: object.__new__(
+            BaseLabRecruiter
+        ).report_submission_outcome(participant, 1.0, "bonus"),
+        "hotair_reward_bonus": lambda: object.__new__(HotAirRecruiter).reward_bonus(
+            participant, 1.0, "bonus"
+        ),
+        "zero_outcome": lambda: object.__new__(
+            HotAirRecruiter
+        ).report_submission_outcome(participant, 0.0, "bonus"),
+        "experiment_pay": lambda: object.__new__(Experiment).pay_decided_bonus(
+            participant, MagicMock()
+        ),
+        "lucid_service_complete": lambda: object.__new__(
+            LucidService
+        ).complete_respondent("rid-1"),
+        "lucid_service_terminate": lambda: object.__new__(
+            LucidService
+        ).terminate_respondent("rid-1", "timeout"),
+        "lucid_service_submissions": lambda: object.__new__(
+            LucidService
+        ).get_submissions(1),
+        "prolific_approve": lambda: prolific.approve_hit("rid-1"),
+    }
+
+    with (
+        patch("psynet.recruiters.get_lucid_service") as lucid_service,
+        patch("psynet.recruiters.requests.post") as post,
+        patch.object(dallinger.recruiters.HotAirRecruiter, "reward_bonus") as hotair,
+        forbid_commits("CodeBlock 'pay'"),
+        pytest.raises(RuntimeError, match="from an AsyncCodeBlock"),
+    ):
+        calls[call]()
+
+    assert not lucid.lucidservice.method_calls
+    assert not lucid_service.called
+    assert not prolific.prolificservice.method_calls
+    assert not post.called
+    assert not hotair.called
+    assert participant.failed is False
+
+
 def test_lucid_plan_execution_propagates_termination_failure_without_commit():
     recruiter = _lucid_recruiter_with_service()
     recruiter.lucidservice.terminate_respondent.side_effect = RuntimeError(
@@ -3177,6 +3264,32 @@ def test_reward_and_set_bonus_leaves_unsettled_when_transfer_fails():
     assert participant.bonus_status == BONUS_STATUS_UNCONFIRMED
     assert participant.planned_bonus == 2.50
     assert PsyNetProlificRecruiterMixin._return_for_bonus_credited(participant) is False
+
+
+def test_return_for_bonus_payment_wait_timeout_notifies_the_researcher():
+    recruiter = object.__new__(PsyNetProlificRecruiterMixin)
+    payment_hold = next(
+        elt
+        for elt in recruiter.assignment_returned_logic()
+        if getattr(elt, "is_timeline_hold", False) and elt.on_timeout is not None
+    )
+    participant = SimpleNamespace(
+        id=7,
+        assignment_id="A7",
+        worker_id="W7",
+        failed=True,
+        module_state=None,
+        awaited_async_code_block_process=MagicMock(finished=False, failed=False),
+    )
+    experiment = MagicMock()
+
+    with patch("psynet.experiment.get_experiment", return_value=experiment):
+        payment_hold.apply_timeout(participant)
+        experiment.notifier.notify.assert_not_called()
+        dallinger.db.session.commit()
+
+    (message,), _ = experiment.notifier.notify.call_args
+    assert "participant 7" in message and "stalled" in message
 
 
 def test_return_for_bonus_credited_when_hard_cap_paid_a_remainder():
@@ -4606,8 +4719,27 @@ def test_lucid_report_submission_outcome_terminates_when_responses_empty():
 
     recruiter.complete_participant.assert_not_called()
     recruiter.terminate_participant.assert_called_once_with(
-        participant=participant, reason="participant-did-not-complete"
+        participant=participant,
+        reason="participant-did-not-complete",
+        raise_on_error=True,
     )
+
+
+def test_lucid_report_submission_outcome_returns_false_when_terminate_fails():
+    recruiter = _lucid_recruiter_with_service()
+    recruiter.lucidservice.terminate_respondent.side_effect = RuntimeError(
+        "Lucid timeout"
+    )
+    participant = MagicMock(assignment_id="rid-1", progress=0.5, id=1, exit_plan=None)
+
+    with (
+        patch("psynet.recruiters.Response") as response_cls,
+        patch("psynet.recruiters.record_bonus_attempt_detail") as record_detail,
+    ):
+        response_cls.query.filter_by.return_value.order_by.return_value.all.return_value = []
+        assert recruiter.report_submission_outcome(participant, 0.0, "bonus") is False
+
+    record_detail.assert_called_once_with(participant, "Lucid timeout")
 
 
 def test_lucid_reward_bonus_raises():
@@ -5003,7 +5135,7 @@ def test_lab_recruiter_consent_rejection_failure_stays_unconfirmed():
     assert not experiment.notify_calls
 
 
-def test_rejected_consent_dispatches_recruiter_hook():
+def test_rejected_consent_calls_recruiter_hook_in_async_code_block():
     from psynet.end import RejectedConsentLogic
 
     recruiter = make_lab_recruiter()
@@ -5013,11 +5145,39 @@ def test_rejected_consent_dispatches_recruiter_hook():
     experiment.with_lucid_recruitment.return_value = False
     participant = MagicMock()
     participant.recruiter = recruiter
+    logic = RejectedConsentLogic()
 
-    RejectedConsentLogic().before_debrief(experiment, participant)
+    logic.before_debrief(experiment, participant)
 
     participant.fail.assert_called_once_with()
+    recruiter.after_rejected_consent.assert_not_called()
+
+    logic.report_rejected_consent(experiment=experiment, participant=participant)
     recruiter.after_rejected_consent.assert_called_once_with(experiment, participant)
+
+
+@pytest.mark.parametrize(
+    "recruiter_class, lucid, expected",
+    [
+        (BaseLabRecruiter, False, True),
+        (DevProlificRecruiter, False, False),
+        (DevProlificRecruiter, True, True),
+    ],
+)
+def test_rejected_consent_is_reported_only_when_the_recruiter_needs_it(
+    recruiter_class, lucid, expected
+):
+    from psynet.end import RejectedConsentLogic
+
+    experiment = MagicMock()
+    experiment.with_lucid_recruitment.return_value = lucid
+    participant = MagicMock()
+    participant.recruiter = object.__new__(recruiter_class)
+
+    assert (
+        RejectedConsentLogic.has_rejected_consent_to_report(experiment, participant)
+        is expected
+    )
 
 
 def test_lucid_rejected_consent_uses_a_terminate_callback():

@@ -3,7 +3,7 @@ from importlib import resources
 from math import ceil
 from pathlib import Path
 from pprint import pformat
-from typing import List, Optional, Union
+from typing import Callable, List, Optional, Union
 from urllib.parse import urlparse
 
 from dominate import tags
@@ -245,6 +245,7 @@ def wait_while(
     fail_on_timeout=True,
     fix_time_credit: Optional[bool] = None,
     content: Optional[str] = None,
+    on_timeout: Optional[Callable] = None,
 ):
     """
     Displays the participant a waiting page while a given condition
@@ -296,6 +297,11 @@ def wait_while(
         Message displayed by the timeline hold. Only used when ``wait_page`` is
         omitted.
 
+    on_timeout
+        Optional function called with ``participant=...`` when
+        ``max_wait_time`` is reached, before the participant is failed or
+        moves on. It must not commit the database session.
+
     Returns
     -------
 
@@ -340,6 +346,7 @@ def wait_while(
             content=content,
             message_kind="generic" if content is None else None,
             fail_on_timeout=fail_on_timeout,
+            on_timeout=on_timeout,
         )
         hold_logic = hold if log_message is None else join(CodeBlock(log), hold)
         return join(
@@ -368,6 +375,7 @@ def wait_while(
             expected_repetitions=expected_repetitions,
             max_loop_time=max_wait_time,
             fail_on_timeout=fail_on_timeout,
+            on_timeout=on_timeout,
             fix_time_credit=fix_time_credit,
         ),
     )
