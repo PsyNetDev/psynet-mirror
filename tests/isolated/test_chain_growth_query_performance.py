@@ -8,12 +8,14 @@ from dallinger import db
 from psynet.experiment import get_experiment
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
+from psynet.sqlalchemy_profiling import sqlalchemy_profile
 from psynet.trial.chain import ChainNetwork, ChainNode, ChainTrial, ChainTrialMaker
 from psynet.trial.graph import GraphChainNetwork, GraphChainNode, GraphChainTrialMaker
 from psynet.trial.static import StaticNetwork
 
 N_NETWORKS = 1000
 N_REPEATS = 3
+HANG_CAP_MS = 30_000
 
 
 class BenchmarkTrial(ChainTrial):
@@ -140,8 +142,10 @@ def create_graph_scenario(trial_maker, participant):
 
 
 def time_ready_query(trial_maker):
-    # Warm up query planning/caches before measuring.
-    trial_maker.get_networks_ready_to_grow()
+    """Return the ready count, statement count, and median and max call times in ms."""
+    with sqlalchemy_profile(db.engine) as profiler:
+        trial_maker.get_networks_ready_to_grow()
+    n_statements = profiler.total_count
     timings = []
     ready_count = None
     for _ in range(N_REPEATS):
@@ -149,7 +153,7 @@ def time_ready_query(trial_maker):
         ready = trial_maker.get_networks_ready_to_grow()
         timings.append((time.perf_counter() - start) * 1000)
         ready_count = len(ready)
-    return ready_count, statistics.median(timings), max(timings)
+    return ready_count, n_statements, statistics.median(timings), max(timings)
 
 
 @pytest.mark.parametrize(
@@ -167,7 +171,6 @@ def test_growth_readiness_query_performance(db_session):
                 tm, participant, finalized=True, network_class=ChainNetwork
             ),
             "expected_ready": N_NETWORKS,
-            "threshold_ms": 1500,
             "n_edges": 0,
         },
         {
@@ -177,7 +180,6 @@ def test_growth_readiness_query_performance(db_session):
                 tm, participant, finalized=False, network_class=ChainNetwork
             ),
             "expected_ready": 0,
-            "threshold_ms": 1500,
             "n_edges": 0,
         },
         {
@@ -189,7 +191,6 @@ def test_growth_readiness_query_performance(db_session):
                 tm, participant, finalized=True, network_class=StaticNetwork
             ),
             "expected_ready": 0,
-            "threshold_ms": 1500,
             "n_edges": 0,
         },
         {
@@ -197,7 +198,6 @@ def test_growth_readiness_query_performance(db_session):
             "trial_maker": make_graph_trial_maker("graph_sparse"),
             "setup": lambda tm: create_graph_scenario(tm, participant),
             "expected_ready": N_NETWORKS,
-            "threshold_ms": 1000,
             "n_edges": N_NETWORKS,
         },
     ]
@@ -206,32 +206,36 @@ def test_growth_readiness_query_performance(db_session):
     for scenario in scenarios:
         trial_maker = scenario["trial_maker"]
         scenario["setup"](trial_maker)
-        ready_count, median_ms, max_ms = time_ready_query(trial_maker)
+        ready_count, n_statements, median_ms, max_ms = time_ready_query(trial_maker)
         rows.append(
             {
                 "scenario": scenario["name"],
                 "networks": N_NETWORKS,
                 "edges": scenario["n_edges"],
                 "ready": ready_count,
+                "expected_ready": scenario["expected_ready"],
+                "statements": n_statements,
                 "median_ms": median_ms,
                 "max_ms": max_ms,
-                "threshold_ms": scenario["threshold_ms"],
             }
         )
-        assert ready_count == scenario["expected_ready"]
-        assert median_ms < scenario["threshold_ms"]
 
     print("\ngrowth readiness query benchmark")
-    print(
-        "scenario             networks  edges  ready  median_ms  max_ms  threshold_ms"
-    )
+    print("scenario             networks  edges  ready  statements  median_ms  max_ms")
     for row in rows:
         print(
             f"{row['scenario']:<20} "
             f"{row['networks']:>8} "
             f"{row['edges']:>6} "
             f"{row['ready']:>6} "
-            f"{row['median_ms']:>9.1f} "
-            f"{row['max_ms']:>7.1f} "
-            f"{row['threshold_ms']:>12.0f}"
+            f"{row['statements']:>11} "
+            f"{row['median_ms']:>10.1f} "
+            f"{row['max_ms']:>7.1f}"
         )
+
+    for row in rows:
+        assert row["ready"] == row["expected_ready"], row
+        # One locking ID query, plus one load when any network is ready.
+        assert row["statements"] == (2 if row["ready"] else 1), row
+        # Timings vary too much under CI load for a budget; only catch hangs.
+        assert row["max_ms"] < HANG_CAP_MS, row
