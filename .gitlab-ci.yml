@@ -294,6 +294,7 @@ compatibility_tests:
 
 playwright_e2e_legacy:
   extends: .playwright_e2e
+  parallel: 4
   variables:
     PLAYWRIGHT_MODE: legacy
     PLAYWRIGHT_GREP: "@both|@legacy-only"
