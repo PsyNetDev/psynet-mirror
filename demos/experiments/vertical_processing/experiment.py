@@ -209,7 +209,7 @@ class VerticalProcessingTrial(StaticTrial):
         if self.failed:
             return InfoPage(
                 "Sorry, we couldn't analyze your singing on this trial.",
-                time_estimate=3,
+                time_estimate=0,
             )
 
         score = self.score

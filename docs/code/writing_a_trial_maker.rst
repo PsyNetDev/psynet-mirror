@@ -243,6 +243,9 @@ The analysis runs in a background process. By default, feedback waits until
 the trial is finalized (the analysis has finished and ``on_finalized`` has set
 ``score``) or has failed, for example because the analysis rejected the
 recording. In ``show_feedback``, check ``self.failed`` to tell the two apart.
+Results such as ``self.analysis`` exist only if the analysis ran; for
+recording trials, ``failed_reason == "analysis"`` means it ran and rejected
+the recording.
 Set ``wait_for_feedback = False`` on the trial class to skip waiting; feedback
 may then see a trial whose analysis is still running.
 

@@ -360,7 +360,7 @@ class FreeTappingRecordTrial(AudioRecordTrial, StaticTrial):
 
     def show_feedback(self, experiment, participant):
         if self.failed and self.failed_reason != "analysis":
-            # The recording was never analyzed, e.g. its upload failed.
+            # The trial failed for another reason, so ``analysis`` may be missing.
             return None
 
         num_resp_onsets_detected = self.analysis["num_resp_onsets_detected"]
