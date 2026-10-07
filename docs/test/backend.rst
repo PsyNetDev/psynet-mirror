@@ -188,10 +188,10 @@ experiment class, or pass options on the command line:
 
 Parallel runs check that the experiment behaves correctly with several
 participants at once. The bots run as threads in one process, so they share
-module-level state: store per-bot traits on ``bot.var`` in
-``initialize_bot`` rather than in globals, and avoid calling
-``random.seed()`` from experiment code. To measure how the server performs under load, see
-:doc:`scalability`.
+module-level state and the experiment instance, including its timeline: store
+per-bot traits on ``bot.var`` in ``initialize_bot`` rather than in globals or
+on ``self``, and avoid calling ``random.seed()`` from experiment code. To
+measure how the server performs under load, see :doc:`scalability`.
 
 Testing on a remote server
 --------------------------

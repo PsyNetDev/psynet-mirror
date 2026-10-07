@@ -230,23 +230,38 @@ class PerformanceTester:
                 n, bot_state, start_bot_slot, start_time, end_time
             )
             actual_duration = time.time() - start_time
+            last_request_id = self._max_request_id()
             self._stop_bots(bot_state)
         self._clear_realtime_status()
 
         return self._calculate_and_report_results(
-            n, duration_minutes, actual_duration, initial_state, bot_state
+            n,
+            duration_minutes,
+            actual_duration,
+            initial_state,
+            bot_state,
+            last_request_id,
         )
+
+    @staticmethod
+    def _max_request_id():
+        """Return the ID of the most recently logged request, or 0 if none."""
+        from dallinger import db
+        from sqlalchemy import func
+
+        from psynet.experiment import Request
+
+        return db.session.query(func.max(Request.id)).scalar() or 0
 
     def _capture_initial_state(self):
         """Capture initial database state before test."""
         from dallinger import db
         from sqlalchemy import func
 
-        from psynet.experiment import Request
         from psynet.participant import Participant
         from psynet.process import AsyncProcess
 
-        max_request_id = db.session.query(func.max(Request.id)).scalar() or 0
+        max_request_id = self._max_request_id()
         max_process_id = db.session.query(func.max(AsyncProcess.id)).scalar() or 0
         max_participant_id = db.session.query(func.max(Participant.id)).scalar() or 0
 
@@ -334,9 +349,9 @@ class PerformanceTester:
                 bot = BotDriver()
                 bot.stop_event = stop_event
                 bot_id = bot.id
+                self._record_bot_start(bot_state, bot_id, create_time)
                 if stop_event.is_set():
                     raise DriverStopped()
-                self._record_bot_start(bot_state, bot_id, create_time)
                 experiment.run_bot(
                     bot,
                     time_factor=self.time_factor * self._bounded_random_multiplier(),
@@ -485,9 +500,19 @@ class PerformanceTester:
             time.sleep(0.05)
 
     def _calculate_and_report_results(
-        self, n, duration_minutes, actual_duration, initial_state, bot_state
+        self,
+        n,
+        duration_minutes,
+        actual_duration,
+        initial_state,
+        bot_state,
+        last_request_id,
     ):
-        """Calculate final metrics and report results."""
+        """Calculate final metrics and report results.
+
+        Request statistics cover requests logged up to ``last_request_id``, i.e.
+        before the bots were stopped, so that they match ``actual_duration``.
+        """
         from dallinger import db
         from sqlalchemy import case, func
 
@@ -495,10 +520,12 @@ class PerformanceTester:
         from psynet.experiment import Request
         from psynet.process import AsyncProcess
 
+        request_window = (
+            Request.id > initial_state["max_request_id"],
+            Request.id <= last_request_id,
+        )
         requests_during_test = (
-            db.session.query(func.count(Request.id))
-            .filter(Request.id > initial_state["max_request_id"])
-            .scalar()
+            db.session.query(func.count(Request.id)).filter(*request_window).scalar()
         )
 
         key_endpoints = ["/timeline", "/response"]
@@ -515,7 +542,7 @@ class PerformanceTester:
                 func.max(Request.duration).label("max"),
             )
             .filter(
-                Request.id > initial_state["max_request_id"],
+                *request_window,
                 Request.endpoint.in_(key_endpoints),
             )
             .one()
@@ -524,7 +551,7 @@ class PerformanceTester:
         request_errors = (
             db.session.query(func.count(Request.id))
             .filter(
-                Request.id > initial_state["max_request_id"],
+                *request_window,
                 Request.endpoint.in_(key_endpoints),
                 Request.status_code >= 400,
             )

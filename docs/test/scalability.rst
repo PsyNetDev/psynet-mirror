@@ -110,7 +110,7 @@ with the server. The bots run as threads inside the ``performance-test``
 process, so they are cheap: on a four-core computer, 200 bots working at a
 realistic pace used about a third of one core, against nearly three cores for
 the server. Because the bots share a process, they also share module-level
-state, as in :ref:`parallel tests <parallel_bot_tests>`. To test a real
+state and the experiment instance, as in :ref:`parallel tests <parallel_bot_tests>`. To test a real
 server, launch
 the experiment there in debug mode, then run the test over SSH:
 
