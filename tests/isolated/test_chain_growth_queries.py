@@ -425,6 +425,36 @@ def test_balanced_selection_skips_nodes_being_given_out_concurrently(
     "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
 )
 @pytest.mark.usefixtures("in_experiment_directory")
+def test_custom_priority_is_not_overridden_by_concurrent_selections(
+    db_session, participant
+):
+    exp = get_experiment()
+    trial_maker = static_trial_maker(
+        target_trials_per_node=None,
+        max_trials_per_participant=None,
+        node_order="balanced",
+    )
+    networks = networks_in_blocks(
+        trial_maker, participant, ["default"] * 2, network_class=StaticNetwork
+    )
+    preferred = networks[1].head
+    add_trial(GrowthQueryStaticTrial, preferred, new_participant())
+    db.session.commit()
+    trial_maker.node_priority = lambda *args: (Node.id == preferred.id).desc()
+
+    with db.engine.connect() as concurrent, concurrent.begin():
+        concurrent.execute(
+            select(Node.id).where(Node.id == preferred.id).with_for_update()
+        )
+        selection = trial_maker._select_trial_node(participant, exp)
+        assert selection.value.id == preferred.id
+        db.session.rollback()
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
 def test_create_and_rate_phase_queries_are_bounded(db_session, participant):
     exp = get_experiment()
     trial_maker = chain_trial_maker()

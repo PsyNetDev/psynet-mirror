@@ -2513,10 +2513,13 @@ class ChainTrialMaker(NetworkTrialMaker):
 
         Only uncapped balanced orders need this: chains already lock and
         recount the chosen node, and random or planned orders take no account
-        of what other participants receive.
+        of what other participants receive. A custom priority is never
+        overridden, because skipping a locked node could pass over one it
+        ranks strictly higher.
         """
         return (
             not self._enforces_node_capacity
+            and not self._hook_is_overridden(self._query_hooks[1])
             and self._order_for_block(participant.module_state.block) == "balanced"
         )
 

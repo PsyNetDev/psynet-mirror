@@ -228,13 +228,14 @@ Keeping selection fast
 ~~~~~~~~~~~~~~~~~~~~~~
 
 PsyNet finds each trial's node in the database, without loading the other
-candidates. It orders the
-eligible nodes by any custom priority, then by balancing (with
-``node_order="balanced"``), then randomly, and loads only the first. With
-``"balanced"`` and no Python selection hooks, PsyNet locks that node until
-the trial is saved and skips nodes that simultaneous requests have locked,
-so participants arriving together are spread across the best 20 nodes;
-beyond that, they share. Nodes are not eligible if they are waiting
+candidates. It orders the eligible nodes by any custom priority, then by
+balancing (with ``node_order="balanced"``), then randomly, and loads only
+the first. With ``"balanced"``, no Python selection hooks and no
+``node_priority``, PsyNet locks that node until the trial is saved and skips
+nodes that simultaneous requests have locked, so participants arriving
+together are spread across the best 20 nodes; beyond that, they share. A
+``node_priority`` always wins, so simultaneous participants may share its
+top node. Nodes are not eligible if they are waiting
 for asynchronous processing, or if they are outside the participant's group
 or current block. ``target_trials_per_node`` only decides when
 ``recruit_mode="n_trials"`` stops recruiting; it never makes a node
