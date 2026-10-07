@@ -77,6 +77,37 @@ The PsyNet command shows progress during that run, then reprints the failures
 grouped by category (for example 404s, missing anchors, SSL errors, and
 connection errors).
 
+Only internal links, missing anchors, and pages not found (404 or 410) make
+the command fail, because those mean the documentation itself needs fixing.
+Other failures, such as 403s, timeouts, and SSL or connection errors, usually
+come from the remote site or the network, so they are reported without
+failing. Pass ``--strict`` to fail on every broken link.
+
+Checks against external sites are unreliable in CI. The ``docs`` job fetches
+every external link in every merge request pipeline, so the same sites
+receive requests from GitLab's shared runners many times a day. Some sites
+rate-limit or block that traffic and answer with 403s or dropped
+connections, and runners sometimes lose network access to a host for a
+while. A link that works in a browser can therefore fail in CI, and such a
+failure would block a merge request that has nothing to do with the link.
+
+The strict check still matters, because a link that is blocked or
+unreachable for weeks may have moved or gone for good. It therefore runs
+once a week rather than on every pipeline. Running it rarely keeps the
+request volume low, and a failure that persists across weekly runs is
+worth investigating. Because it runs on a schedule, its failures don't block
+anyone's merge request. When the weekly job fails, open the link in a
+browser. If it works there but keeps failing in CI, add it to
+``linkcheck_ignore`` in ``docs/conf.py``. Otherwise, update or remove it.
+
+The ``docs_linkcheck_strict`` CI job runs the strict check on ``master``. It
+runs only in pipelines from a weekly GitLab pipeline schedule (*Build >
+Pipeline schedules*) on ``master`` that sets the variable ``WEEKLY_LINKCHECK``
+to ``1``, for example with the cron expression ``0 3 * * 1``. Those pipelines
+run no other jobs. Don't also set ``NIGHTLY_BENCHMARKS`` on that schedule. As
+with the nightly benchmark schedule, the schedule's owner needs the
+Maintainer role to run pipelines on ``master``.
+
 The command deletes ``docs/_build`` first by default. For faster local reruns, pass
 ``--no-clean``. Extra Sphinx flags can be passed with ``--sphinx-option``.
 

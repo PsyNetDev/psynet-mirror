@@ -262,12 +262,22 @@ def bundle_docs():
     multiple=True,
     help="Extra option passed to Sphinx; repeat as needed.",
 )
-def linkcheck_docs(clean, jobs, sphinx_options):
+@click.option(
+    "--strict",
+    is_flag=True,
+    help="Fail on every broken link, including 403s, timeouts and network errors.",
+)
+def linkcheck_docs(clean, jobs, sphinx_options, strict):
     """Wrap Sphinx's linkcheck builder and summarize broken links.
 
     Runs the same Sphinx ``linkcheck`` builder as
     `psynet dev docs make linkcheck`, then prints broken links grouped
     by failure category.
+
+    By default only internal links, missing anchors, and pages not found
+    (404/410) fail the command; other failures usually come from the remote
+    site or the network and are only reported. Pass --strict to fail on
+    every broken link.
 
     Cleans docs/_build by default. For faster local reruns, pass
     --no-clean. Pass extra Sphinx flags with --sphinx-option.
@@ -277,6 +287,7 @@ def linkcheck_docs(clean, jobs, sphinx_options):
             clean=clean,
             jobs=jobs,
             sphinx_options=sphinx_options,
+            strict=strict,
         )
     except ValueError as exc:
         raise click.ClickException(str(exc)) from exc
