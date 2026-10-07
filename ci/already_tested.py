@@ -9,8 +9,10 @@ then only delays the merge.
 
 This script runs in the ``check_already_tested`` job. It compares the root
 tree of the current commit with the commits of the merge request's recent
-passing merged-results pipelines. On a match it writes a dotenv file listing
-the jobs whose every shard passed there; ``ci/skip-if-already-passed.sh``
+finished merged-results pipelines. It uses only the newest one with identical
+files, so a later failure on those files is never hidden by an earlier pass.
+It writes a dotenv file listing the jobs whose every shard passed in that
+pipeline; ``ci/skip-if-already-passed.sh``
 then makes those jobs exit early. Any doubt (no match, an API error, a
 missing variable) writes an empty list, so every job runs as usual.
 
@@ -29,6 +31,7 @@ import urllib.parse
 import urllib.request
 
 _MAX_CANDIDATES = 3
+_FINISHED_STATUSES = {"success", "failed", "canceled"}
 _SHARD_SUFFIX_RE = re.compile(r"( \d+/\d+|: \[.*\])$")
 
 
@@ -92,13 +95,13 @@ def find_already_passed(api, *, project_id, mr_iid, sha):
     candidates = [
         pipeline
         for pipeline in api.get_first_page(f"merge_requests/{mr_iid}/pipelines")
-        if pipeline["status"] == "success"
+        if pipeline["status"] in _FINISHED_STATUSES
         and pipeline["ref"] == merged_results_ref
         and pipeline["source"] == "merge_request_event"
         and pipeline["project_id"] == project_id
     ][:_MAX_CANDIDATES]
     if not candidates:
-        print(f"No passing merged-results pipeline for !{mr_iid}.")
+        print(f"No finished merged-results pipeline for !{mr_iid}.")
         return None
 
     current_tree = api.root_tree(sha)

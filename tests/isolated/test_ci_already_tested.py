@@ -68,10 +68,10 @@ def test_passed_jobs_requires_every_shard_to_succeed():
 
 
 @pytest.mark.parametrize(
-    ("pipelines", "expected_id"),
+    ("pipelines", "expected"),
     [
-        # The newest passing merged-results pipeline with identical files,
-        # after skipping one whose commit can no longer be read.
+        # The newest merged-results pipeline with identical files, after
+        # skipping one whose commit can no longer be read.
         (
             [
                 _pipeline(4, "gone"),
@@ -79,14 +79,19 @@ def test_passed_jobs_requires_every_shard_to_succeed():
                 _pipeline(2, "same"),
                 _pipeline(1, "same"),
             ],
-            2,
+            (2, ["docs"]),
         ),
-        # Failed pipelines, train pipelines, branch pipelines and pipelines in
-        # another project (a fork) don't count.
+        # A newer failure on the same files hides an older pass.
+        (
+            [_pipeline(5, "same", status="failed"), _pipeline(2, "same")],
+            (5, ["pre_commit"]),
+        ),
+        # Unfinished pipelines, train pipelines, branch pipelines and
+        # pipelines in another project (a fork) don't count.
         (
             [
+                _pipeline(6, "same", status="running"),
                 _pipeline(9, "same", ref="refs/merge-requests/7/train"),
-                _pipeline(4, "same", status="failed"),
                 _pipeline(3, "same", source="push"),
                 _pipeline(2, "same", project_id=2),
             ],
@@ -94,20 +99,27 @@ def test_passed_jobs_requires_every_shard_to_succeed():
         ),
     ],
 )
-def test_find_already_passed_matches_identical_files(pipelines, expected_id):
+def test_find_already_passed_uses_newest_pipeline_with_identical_files(
+    pipelines, expected
+):
     api = _FakeApi(
         pipelines,
         trees={"train": {"a"}, "same": {"a"}, "other": {"b"}},
-        jobs={"pipelines/2/jobs": [{"name": "docs", "status": "success"}]},
+        jobs={
+            "pipelines/2/jobs": [{"name": "docs", "status": "success"}],
+            "pipelines/5/jobs": [
+                {"name": "docs", "status": "failed"},
+                {"name": "pre_commit", "status": "success"},
+            ],
+        },
     )
     match = already_tested.find_already_passed(
         api, project_id=1, mr_iid="7", sha="train"
     )
-    if expected_id is None:
+    if expected is None:
         assert match is None
     else:
-        assert match[0]["id"] == expected_id
-        assert match[1] == ["docs"]
+        assert (match[0]["id"], match[1]) == expected
 
 
 def test_main_runs_everything_when_the_check_fails(tmp_path, monkeypatch):
