@@ -351,7 +351,7 @@ def test_performance_test_ssh_rejects_json_output():
             )
 
 
-@pytest.mark.parametrize("args, expected", [([], None), (["--n-bots", "3"], "3")])
+@pytest.mark.parametrize("args, expected", [([], None), (["--n-bots", "3"], 3)])
 def test_audit_simulate_passes_n_bots_to_test_local(
     tmp_path, monkeypatch, args, expected
 ):
