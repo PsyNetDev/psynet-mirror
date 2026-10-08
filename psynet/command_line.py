@@ -4119,8 +4119,34 @@ def test__docker_ssh(
     run_remote_experiment_command(executor, app, cmd)
 
 
+def _parse_performance_n_bots(n_bots):
+    """Return ``"auto"``, a list of bot counts, or ``None`` for the default.
+
+    Raises
+    ------
+    ValueError
+        If ``n_bots`` is neither ``auto`` nor comma-separated whole numbers.
+    """
+    if n_bots is None or not str(n_bots).strip():
+        return None
+    if str(n_bots).strip().lower() == "auto":
+        return "auto"
+    return [int(x) for x in str(n_bots).split(",")]
+
+
+def _validate_performance_n_bots(ctx, param, value):
+    try:
+        _parse_performance_n_bots(value)
+    except ValueError:
+        raise click.BadParameter(
+            "use 'auto' or comma-separated whole numbers, such as 5,10,20."
+        ) from None
+    return value
+
+
 _test_options["performance_n_bots"] = click.option(
     "--n-bots",
+    callback=_validate_performance_n_bots,
     help="""
     The --n-bots parameter can accept a comma-separated list of integers
     to run sequential tests with different maximum concurrency levels.
@@ -4511,13 +4537,8 @@ def _run_performance_test_with_existing_server(
 
     os.environ["PASSTHROUGH_ERRORS"] = "True"
 
-    find_capacity = str(n_bots).strip().lower() == "auto"
-    if find_capacity:
-        bot_counts = None
-    elif n_bots:
-        bot_counts = [int(x.strip()) for x in n_bots.split(",")]
-    else:
-        bot_counts = [exp.test_n_bots]
+    bot_counts = _parse_performance_n_bots(n_bots) or [exp.test_n_bots]
+    find_capacity = bot_counts == "auto"
 
     tester = PerformanceTester(
         authenticated_session=exp.authenticated_session,
@@ -4993,7 +5014,7 @@ def audit_performance_test(
 
     from psynet.perf_test import capacity_advice
 
-    capacity_search = str(n_bots).strip().lower() == "auto"
+    capacity_search = _parse_performance_n_bots(n_bots) == "auto"
     for line in capacity_advice(capacity_search=capacity_search):
         click.echo(line)
 

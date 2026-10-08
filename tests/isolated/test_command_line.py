@@ -4513,6 +4513,19 @@ def test_performance_test_existing_server_loads_runtime_server_config():
     load_runtime_config.assert_called_once_with()
 
 
+def test_performance_test_bot_counts():
+    from psynet.command_line import (
+        _parse_performance_n_bots,
+        _validate_performance_n_bots,
+    )
+
+    assert _parse_performance_n_bots(None) is None
+    assert _parse_performance_n_bots(" AUTO ") == "auto"
+    assert _parse_performance_n_bots("5, 10") == [5, 10]
+    with pytest.raises(click.BadParameter, match="whole numbers"):
+        _validate_performance_n_bots(None, None, "10,many")
+
+
 def test_experiment_never_completes_during_performance_test(monkeypatch):
     from psynet.experiment import Experiment
 
