@@ -171,10 +171,12 @@ video), count participants as active for longer:
 
         def is_at_capacity(self):
             limit = self.var.max_concurrent_participants
-            return bool(limit) and count_active_participants(1800) >= limit
+            return limit is not None and count_active_participants(1800) >= limit
 
 The method runs every time a newcomer tries to start, including each retry
-from the start page, so keep it cheap. Use it only for load: newcomers are
+from the start page, so keep it cheap. After it reports the study as full,
+each web process skips it for 2 seconds, so a raised cap can take that long to
+let people in. Use it only for load: newcomers are
 told that many people are taking part and retried automatically, which would
 mislead them if the study were closed for another reason.
 

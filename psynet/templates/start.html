@@ -53,7 +53,7 @@
         <p id="starting-message">
             {{ pgettext("start", "Starting experiment...") }}
         </p>
-        <div id="study-full" hidden>
+        <div id="study-full" role="status" aria-live="polite" hidden>
             <p>{{ pgettext("start", "Lots of people are taking part right now.") }}</p>
             <p>{{ pgettext("start", "Please keep this page open: you will join automatically as soon as there is space. You can also come back later.") }}</p>
         </div>

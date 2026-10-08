@@ -431,6 +431,10 @@ def _is_replacement_gunicorn_worker(worker):
     return worker.age > worker.cfg.workers
 
 
+def _is_participant_limit(value):
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
 class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     """
     The main experiment class from which to inherit when building experiments.
@@ -508,7 +512,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         The maximum number of participants taking the study at once; newcomers
         over the limit wait on the start page until there is space (see
         :meth:`is_at_capacity`). Only supported with the ``generic`` and
-        ``hotair`` recruiters. Default: `None` (no limit).
+        ``hotair`` recruiters. ``0`` admits nobody new. Default: `None` (no
+        limit).
 
     There are also a few experiment variables that are set automatically and that should,
     in general, not be changed manually:
@@ -1043,8 +1048,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     @staticmethod
     def before_request():
         flask_app_globals.request_start_time = time.monotonic()
-        if request.method == "POST" and request.path == "/participant":
-            return refuse_new_participant_if_full()
+        return refuse_new_participant_if_full()
 
     @staticmethod
     def after_request(request, response):
@@ -2549,9 +2553,14 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     @classmethod
     def check_max_concurrent_participants_support(cls, config):
         """Reject participant limits for recruiters that send paid participants."""
+        limit = cls.variables.get("max_concurrent_participants")
+        if limit is not None and not _is_participant_limit(limit):
+            raise ValueError(
+                "max_concurrent_participants must be a whole number of at least 0, "
+                f"or None for no limit, not {limit!r}."
+            )
         limits_participants = (
-            cls.variables.get("max_concurrent_participants")
-            or cls.is_at_capacity is not Experiment.is_at_capacity
+            limit is not None or cls.is_at_capacity is not Experiment.is_at_capacity
         )
         if not limits_participants:
             return
@@ -2576,7 +2585,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         While this returns ``True``, newcomers wait on the start page, which
         tells them that many people are taking part and retries every 20 to
         40 seconds. It is called before each new participant is created,
-        including those retries, so keep it cheap. Returning participants are
+        including those retries, so keep it cheap; after it returns ``True``,
+        each web process skips it for 2 seconds. Returning participants are
         never refused. Use it only for load: the waiting message and retries
         don't suit closing the study (for example outside certain hours).
 
@@ -2592,7 +2602,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
             def is_at_capacity(self):
                 limit = self.var.max_concurrent_participants
-                return bool(limit) and count_active_participants(1800) >= limit
+                return limit is not None and count_active_participants(1800) >= limit
 
         Only supported with the ``generic`` and ``hotair`` recruiters.
 
@@ -2603,7 +2613,16 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         from .capacity import count_active_participants
 
         limit = self.var.get("max_concurrent_participants", None)
-        return bool(limit) and count_active_participants() >= limit
+        if limit is None:
+            return False
+        if not _is_participant_limit(limit):
+            logger.warning(
+                "Ignoring max_concurrent_participants=%r: it must be a whole number "
+                "of at least 0, or None for no limit.",
+                limit,
+            )
+            return False
+        return count_active_participants() >= limit
 
     @staticmethod
     def check_recruiter_support(config):

@@ -18,7 +18,7 @@ Design constraints:
   experiment variable rather than a config option so that it can change while
   the study runs.
 * The check runs only when a new participant would be created
-  (``POST /participant``), before any database row exists, so a waiting
+  (``POST /participant`` and its path-style variant), before any database row exists, so a waiting
   visitor costs one cheap request per retry and leaves no trace in the data.
 * A participant is *active* while they are working, have not failed, and have
   either joined or submitted a page in the last ``DEFAULT_IDLE_TIMEOUT_S`` seconds.
@@ -41,11 +41,13 @@ import time
 from datetime import datetime, timedelta
 
 from dallinger import db
-from flask import jsonify
+from flask import jsonify, request
 
 STUDY_FULL_ERROR_CODE = "study_full"
 _FULL_CACHE_S = 2.0
 _RETRY_AFTER_S = 30
+# Dallinger's two views that create a participant.
+_PARTICIPANT_CREATION_ENDPOINTS = {"post_participant", "create_participant"}
 
 DEFAULT_IDLE_TIMEOUT_S = 600
 
@@ -90,12 +92,22 @@ def count_active_participants(idle_timeout_s=DEFAULT_IDLE_TIMEOUT_S):
 def refuse_new_participant_if_full():
     """Return a 503 "study full" response if the study is at capacity, else ``None``.
 
-    Called before ``POST /participant`` creates a participant; the decision
-    comes from :meth:`~psynet.experiment.Experiment.is_at_capacity`.
+    Called before every request; acts only on requests that would create a
+    participant, and only for recruiters that support waiting newcomers. The
+    decision comes from :meth:`~psynet.experiment.Experiment.is_at_capacity`.
     """
     global _full_until
 
     from .experiment import get_experiment
+    from .recruiters import configured_recruiter_class
+
+    if request.endpoint not in _PARTICIPANT_CREATION_ENDPOINTS:
+        return None
+    recruiter_class = configured_recruiter_class()
+    if recruiter_class is not None and not getattr(
+        recruiter_class, "supports_max_concurrent_participants", False
+    ):
+        return None
 
     now = time.monotonic()
     if now >= _full_until:
