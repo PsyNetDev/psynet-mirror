@@ -3955,10 +3955,23 @@ def _in_isolated_test_environment(func):
 
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
-        from .isolated_environment import should_isolate
+        from .isolated_environment import (
+            READY_ENV_VAR,
+            shared_environment_warning,
+            should_isolate,
+        )
 
-        if not kwargs.get("existing") and should_isolate():
-            _rerun_in_isolated_test_environment()
+        if not kwargs.get("existing"):
+            try:
+                isolate = should_isolate()
+            except ValueError as e:
+                raise click.ClickException(str(e)) from e
+            if isolate:
+                _rerun_in_isolated_test_environment()
+            warning = shared_environment_warning()
+            if warning:
+                log(warning)
+                os.environ[READY_ENV_VAR] = "1"
         return func(*args, **kwargs)
 
     return wrapper
@@ -4049,13 +4062,14 @@ def _rerun_in_isolated_test_environment():
     example ``psynet test local --n-bots 4``), and this process then exits
     with its code.
     """
-    from .isolated_environment import IsolatedEnvironment, IsolationError
+    from .isolated_environment import IsolatedEnvironment, check_no_debug_server
     from .services import ensure_local_services
 
     ensure_local_services(assume_yes=False, strict=True)
     try:
+        check_no_debug_server(os.getcwd())
         environment = IsolatedEnvironment.start()
-    except IsolationError as e:
+    except RuntimeError as e:
         raise click.ClickException(str(e)) from e
     with environment:
         log(environment.describe())

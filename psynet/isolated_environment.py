@@ -39,10 +39,17 @@ module therefore imports nothing from Dallinger. It is used in two places:
 - ``psynet test local``, which has already imported Dallinger by the time it
   runs, and so re-runs itself in a child process inside the environment.
 
-Sessions do nothing when ``PSYNET_TEST_ENVIRONMENT`` is already set (the value
-``isolated`` marks a session's own children, and ``shared`` opts out) or when
+``PSYNET_TEST_ENVIRONMENT`` may be unset, ``isolated`` (the default) or
+``shared`` (opt out); other values are an error, so a typo can't silently turn
+isolation off. Sessions do nothing when :data:`READY_ENV_VAR` is set, which
+marks the processes a session starts once their environment is chosen, or when
 ``CI`` is set, because CI machines run no debug server and their test slots
 are isolated already.
+
+Isolation separates services, not files: tests still scaffold and remove
+generated files in the experiment directory, so a ``psynet debug`` serving the
+same directory breaks. :func:`check_no_debug_server` refuses to start in that
+case.
 """
 
 import fcntl
@@ -58,6 +65,8 @@ from urllib.parse import urlsplit, urlunsplit
 ENV_VAR = "PSYNET_TEST_ENVIRONMENT"
 ISOLATED = "isolated"
 SHARED = "shared"
+#: Set for processes that a test session starts after choosing their environment.
+READY_ENV_VAR = "_PSYNET_TEST_ENVIRONMENT_READY"
 
 DEFAULT_DATABASE_URL = "postgresql://dallinger:dallinger@localhost/dallinger"
 DEFAULT_REDIS_URL = "redis://localhost:6379"
@@ -66,9 +75,62 @@ _PORT_OFFSET = 100
 
 
 def should_isolate(environ=None):
-    """Return whether a new test session should start an isolated environment."""
+    """Return whether a new test session should start an isolated environment.
+
+    Raises
+    ------
+    ValueError
+        If ``PSYNET_TEST_ENVIRONMENT`` is neither unset, ``isolated`` nor ``shared``.
+    """
     environ = os.environ if environ is None else environ
-    return not environ.get(ENV_VAR) and not environ.get("CI")
+    value = environ.get(ENV_VAR, "")
+    if value not in ("", ISOLATED, SHARED):
+        raise ValueError(
+            f"{ENV_VAR} must be {ISOLATED!r} (the default) or {SHARED!r}, not {value!r}."
+        )
+    return value != SHARED and not _is_configured(environ)
+
+
+def shared_environment_warning(environ=None):
+    """Return a warning for a session that opted out of isolation, or None."""
+    environ = os.environ if environ is None else environ
+    if environ.get(ENV_VAR) != SHARED or _is_configured(environ):
+        return None
+    return (
+        f"{ENV_VAR}={SHARED}: these tests use the local database, Redis and port, "
+        "so they reset them and stop any local debug server that uses them."
+    )
+
+
+def _is_configured(environ):
+    return bool(environ.get(READY_ENV_VAR) or environ.get("CI"))
+
+
+def check_no_debug_server(directory):
+    """Raise ``RuntimeError`` if a ``psynet debug`` process runs in ``directory``.
+
+    Tests replace the generated files in the experiment directory, which
+    breaks a debug server that serves it, even when the services are isolated.
+    """
+    import psutil
+
+    directory = os.path.realpath(directory)
+    for process in psutil.process_iter(["cmdline", "cwd"]):
+        cmdline = process.info["cmdline"] or []
+        cwd = process.info["cwd"]
+        if cwd and os.path.realpath(cwd) == directory and _is_psynet_debug(cmdline):
+            raise RuntimeError(
+                f"psynet debug (PID {process.pid}) is serving {directory}, and the "
+                "tests would replace its generated files. Stop it, or run the tests "
+                "from a copy of the experiment such as a git worktree."
+            )
+
+
+def _is_psynet_debug(cmdline):
+    return any(
+        os.path.basename(arg) == "psynet" and cmdline[i + 1 : i + 2] == ["debug"]
+        for i, arg in enumerate(cmdline)
+    )
 
 
 class IsolationError(RuntimeError):
@@ -140,7 +202,7 @@ class IsolatedEnvironment:
         try:
             env = {
                 **environ,
-                ENV_VAR: ISOLATED,
+                READY_ENV_VAR: "1",
                 "DATABASE_URL": ensure_database(
                     database_url, suffix=f"_test_{base_port}"
                 ),
@@ -174,8 +236,8 @@ class IsolatedEnvironment:
         database = urlsplit(self.env["DATABASE_URL"]).path.lstrip("/")
         return (
             f"PsyNet tests use database {database}, Redis at {self.env['REDIS_URL']} "
-            f"and port {self.env['base_port']}, leaving local debug servers alone "
-            f"(set {ENV_VAR}={SHARED} to share them instead)."
+            f"and port {self.env['base_port']}, so they leave the services of local "
+            f"debug servers alone (set {ENV_VAR}={SHARED} to share them instead)."
         )
 
     def close(self):

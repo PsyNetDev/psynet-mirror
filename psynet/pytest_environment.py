@@ -12,8 +12,11 @@ import sys
 import pytest
 
 from .isolated_environment import (
+    READY_ENV_VAR,
     IsolatedEnvironment,
     IsolationError,
+    check_no_debug_server,
+    shared_environment_warning,
     should_isolate,
 )
 
@@ -29,7 +32,17 @@ _INFO_ONLY_ARGS |= {
 
 
 def _start():
-    if not should_isolate() or _INFO_ONLY_ARGS.intersection(sys.argv[1:]):
+    if _INFO_ONLY_ARGS.intersection(sys.argv[1:]):
+        return
+    try:
+        isolate = should_isolate()
+    except ValueError as e:
+        raise pytest.UsageError(str(e)) from e
+    if not isolate:
+        warning = shared_environment_warning()
+        if warning:
+            print(warning, file=sys.stderr)
+            os.environ[READY_ENV_VAR] = "1"
         return
     if "dallinger.db" in sys.modules:
         raise pytest.UsageError(
@@ -41,8 +54,9 @@ def _start():
             )
         )
     try:
+        check_no_debug_server(os.getcwd())
         environment = IsolatedEnvironment.start()
-    except IsolationError as e:
+    except RuntimeError as e:
         raise pytest.UsageError(str(e)) from e
     # Not pytest_unconfigure: a nested pytest.main() in the same process
     # would close the outer session's environment.

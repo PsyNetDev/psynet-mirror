@@ -64,8 +64,9 @@ experiments sharing one would wake each other's participants.
 
 Two runs in the same experiment directory still conflict, because each
 creates and removes generated files there. Tests wait for each other
-automatically; for ``psynet debug local``, use a separate copy (such as a git
-worktree) of the experiment.
+automatically and refuse to start while ``psynet debug`` serves the same
+directory; to debug and test at once, or to debug twice, use a separate copy
+(such as a git worktree) of the experiment.
 
 Set a breakpoint
 ----------------

@@ -50,12 +50,11 @@ import click
 
 from psynet.isolated_environment import (
     DEFAULT_DATABASE_URL,
-    ISOLATED,
+    READY_ENV_VAR,
     ensure_database,
     start_redis_server,
     stop_process,
 )
-from psynet.isolated_environment import ENV_VAR as ISOLATED_ENV_VAR
 from psynet.testing.locks import HELD_LOCK_ENV_VAR, experiment_directory_lock
 from psynet.utils import get_psynet_root, list_experiment_dirs, list_isolated_tests
 
@@ -170,7 +169,7 @@ class _Slot:
         base_port, redis_port = _slot_ports(
             _caller_base_port(), os.environ.get("REDIS_URL", ""), index
         )
-        self.env[ISOLATED_ENV_VAR] = ISOLATED
+        self.env[READY_ENV_VAR] = "1"
         self.env["DATABASE_URL"] = ensure_database(
             database_url, suffix=f"_slot{index}", fresh=True
         )

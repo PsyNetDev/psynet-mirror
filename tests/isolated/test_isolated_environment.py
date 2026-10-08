@@ -1,7 +1,10 @@
 import os
 import shutil
 import socket
+import subprocess
+import sys
 import tempfile
+import time
 from urllib.parse import urlsplit
 
 import pytest
@@ -10,10 +13,13 @@ from psynet.isolated_environment import (
     DEFAULT_DATABASE_URL,
     DEFAULT_REDIS_URL,
     ENV_VAR,
+    READY_ENV_VAR,
     IsolatedEnvironment,
     IsolationError,
     _claim_port,
     _spare_redis_database,
+    check_no_debug_server,
+    shared_environment_warning,
     should_isolate,
     start_redis_server,
 )
@@ -21,9 +27,41 @@ from psynet.isolated_environment import (
 
 def test_should_isolate_respects_opt_out_and_ci():
     assert should_isolate({})
+    assert should_isolate({ENV_VAR: "isolated"})
     assert not should_isolate({ENV_VAR: "shared"})
-    assert not should_isolate({ENV_VAR: "isolated"})
+    assert not should_isolate({READY_ENV_VAR: "1"})
     assert not should_isolate({"CI": "true"})
+    with pytest.raises(ValueError, match="'isolated'.*'shared'.*'bogus'"):
+        should_isolate({ENV_VAR: "bogus"})
+
+
+def test_shared_environment_warns_once():
+    assert "reset" in shared_environment_warning({ENV_VAR: "shared"})
+    assert shared_environment_warning({ENV_VAR: "shared", READY_ENV_VAR: "1"}) is None
+    assert shared_environment_warning({}) is None
+
+
+def test_tests_refuse_to_run_beside_a_debug_server_in_their_directory(tmp_path):
+    fake_psynet = tmp_path / "psynet"
+    fake_psynet.write_text("import time\ntime.sleep(60)\n")
+    process = subprocess.Popen(
+        [sys.executable, str(fake_psynet), "debug", "local"], cwd=tmp_path
+    )
+    try:
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            try:
+                check_no_debug_server(tmp_path)
+            except RuntimeError as e:
+                assert f"PID {process.pid}" in str(e)
+                break
+            time.sleep(0.1)
+        else:
+            pytest.fail("the debug process was not detected")
+        check_no_debug_server(tmp_path / "..")
+    finally:
+        process.kill()
+        process.wait()
 
 
 @pytest.mark.skipif(shutil.which("redis-server") is None, reason="needs redis-server")
@@ -39,7 +77,7 @@ def test_isolated_environment_uses_its_own_services():
     ):
         for key in ["DATABASE_URL", "REDIS_URL", "base_port"]:
             assert len({shared[key], first.env[key], second.env[key]}) == 3
-        assert first.env[ENV_VAR] == "isolated"
+        assert first.env[READY_ENV_VAR] == "1"
         port = first.env["base_port"]
         database = urlsplit(shared["DATABASE_URL"]).path.lstrip("/")
         assert urlsplit(first.env["DATABASE_URL"]).path == f"/{database}_test_{port}"
