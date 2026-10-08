@@ -41,8 +41,8 @@ a paid place is unfair to them.
 import time
 from datetime import datetime, timedelta
 
+import flask
 from dallinger import db
-from flask import jsonify, request
 
 STUDY_FULL_ERROR_CODE = "study_full"
 _FULL_CACHE_S = 2.0
@@ -122,7 +122,7 @@ def refuse_new_participant_if_full():
     from .experiment import get_experiment
     from .recruiters import configured_recruiter_class
 
-    if request.endpoint not in _PARTICIPANT_CREATION_ENDPOINTS:
+    if flask.request.endpoint not in _PARTICIPANT_CREATION_ENDPOINTS:
         return None
     try:
         recruiter_class = configured_recruiter_class()
@@ -137,7 +137,7 @@ def refuse_new_participant_if_full():
             return None
         _full_until = now + _FULL_CACHE_S
 
-    response = jsonify(
+    response = flask.jsonify(
         status="error",
         error_code=STUDY_FULL_ERROR_CODE,
         message="The study is at capacity; please try again shortly.",
