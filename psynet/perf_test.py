@@ -568,6 +568,7 @@ class PerformanceTester:
 
         Request statistics cover requests logged up to ``last_request_id``, i.e.
         before the bots were stopped, so that they match ``actual_duration``.
+        Async processes count if they started by ``ended_at``.
         ``oldest_queued_s`` is how long the oldest async process enqueued
         during the test had been waiting for a worker at ``ended_at``, so a
         backlog that never drains still counts against capacity.
@@ -620,10 +621,16 @@ class PerformanceTester:
         # Like requests, only count processes that started before the test
         # ended: jobs left queued while the bots stop would otherwise report
         # the stop time as queue delay. Those are covered by oldest_queued_s.
-        process_window = (
+        # Queue delay is known once a process starts, so it also covers
+        # processes that were still running.
+        queue_window = (
             AsyncProcess.id > initial_state["max_process_id"],
-            AsyncProcess.finished == True,  # noqa: E712
             AsyncProcess.time_started <= ended_at,
+            AsyncProcess.queue_delay.isnot(None),
+        )
+        process_window = (
+            *queue_window,
+            AsyncProcess.finished == True,  # noqa: E712
         )
 
         # Async process duration stats, grouped by (trial_maker_id, label).
@@ -683,7 +690,7 @@ class PerformanceTester:
             db.session.query(
                 func.percentile_cont(0.5).within_group(AsyncProcess.queue_delay)
             )
-            .filter(*process_window)
+            .filter(*queue_window)
             .scalar()
         )
 
@@ -691,7 +698,7 @@ class PerformanceTester:
             db.session.query(
                 func.percentile_cont(0.95).within_group(AsyncProcess.queue_delay)
             )
-            .filter(*process_window)
+            .filter(*queue_window)
             .scalar()
         )
 
