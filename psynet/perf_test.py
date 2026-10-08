@@ -205,6 +205,7 @@ class PerformanceTester:
             bot_counts = [self.n_bots]
 
         self._print_suite_header(", ".join(str(n) for n in bot_counts))
+        self._suite_started_at = datetime.datetime.now()
         all_results = []
         for i, n_bots in enumerate(bot_counts, 1):
             if i > 1:
@@ -233,6 +234,7 @@ class PerformanceTester:
             f"automatic (from {_CAPACITY_SEARCH_START}, while keeping "
             f"{self.limits.describe()})"
         )
+        self._suite_started_at = datetime.datetime.now()
         all_results = []
         highest_pass = lowest_fail = None
         while True:
@@ -258,7 +260,7 @@ class PerformanceTester:
         return all_results
 
     def _pause_between_tests(self):
-        """Pause, then let async processes queued by the last test start.
+        """Pause, then let async processes queued by earlier tests start.
 
         Otherwise they would hold up the next test's processes and count
         against its queue wait.
@@ -275,6 +277,7 @@ class PerformanceTester:
             queued = (
                 db.session.query(func.count(AsyncProcess.id))
                 .filter(
+                    AsyncProcess.time_enqueued >= self._suite_started_at,
                     AsyncProcess.time_started.is_(None),
                     AsyncProcess.failed.is_(False),
                 )
