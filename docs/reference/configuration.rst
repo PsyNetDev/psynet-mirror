@@ -822,7 +822,9 @@ Web server
     Number of worker processes. Used by the legacy local process manager
     and by SSH Docker deployments, where it creates ``worker_1`` …
     ``worker_N``. Increase this for live experiments that run many
-    background jobs.
+    background jobs. Each worker process runs up to 20 jobs at once, but
+    only while they wait on I/O; CPU-bound jobs run one at a time per
+    process.
 
 ``threads`` *str* |dlgr-icon|
     The number of gunicorn web worker processes to start.

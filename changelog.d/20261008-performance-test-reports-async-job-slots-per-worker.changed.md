@@ -1,0 +1,1 @@
+`psynet performance-test` now reports how many async jobs the worker processes can run at once (for example "1 worker process, up to 20 jobs at once") instead of only counting the processes, and the scalability docs explain that these slots only overlap jobs that wait on I/O, so CPU-bound jobs run one at a time per worker process.

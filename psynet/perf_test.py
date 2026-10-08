@@ -868,9 +868,14 @@ class PerformanceTester:
             from dallinger.db import redis_conn
             from rq import Worker
 
-            result["n_rq_workers"] = len(Worker.all(connection=redis_conn))
-        except Exception:
-            pass
+            workers = Worker.all(connection=redis_conn)
+            result["n_rq_workers"] = len(workers)
+            # Dallinger's gevent workers record how many jobs each can run at once.
+            result["n_rq_job_slots"] = sum(
+                int(redis_conn.hget(w.key, "pool_size") or 1) for w in workers
+            )
+        except Exception as e:
+            logger.warning(f"Could not count async workers: {e}")
 
         self._report_test_results(result)
         return result
@@ -900,6 +905,18 @@ def colorize_success_rate(rate_str):
 
 def _fmt(value, suffix=""):
     return f"{value:.3f}{suffix}" if value is not None else "N/A"
+
+
+def _describe_workers(result):
+    """Describe the async worker processes and how many jobs they can run at once."""
+    n_workers = result.get("n_rq_workers")
+    if not n_workers:
+        return ""
+    text = f"{n_workers} worker process{'es' if n_workers != 1 else ''}"
+    n_slots = result.get("n_rq_job_slots")
+    if n_slots and n_slots != n_workers:
+        text += f", up to {n_slots} jobs at once"
+    return text
 
 
 def format_test_results(result):
@@ -1062,8 +1079,8 @@ def format_test_results(result):
     # ASYNC PROCESS TIMES
     if result.get("process_stats"):
         n_procs = sum(ps["count"] for ps in result["process_stats"])
-        n_workers = result.get("n_rq_workers")
-        worker_info = f" via {n_workers} workers" if n_workers else ""
+        worker_info = _describe_workers(result)
+        worker_info = f", {worker_info}" if worker_info else ""
         _section(f"ASYNC PROCESS TIMES ({n_procs} completed{worker_info})")
         lines.append("  Avg/Med/P95/Max — statistics on actual execution time")
         lines.append(
@@ -1141,8 +1158,8 @@ def format_test_results(result):
         )
         lines.append("")
     else:
-        n_workers = result.get("n_rq_workers")
-        worker_info = f", {n_workers} workers" if n_workers else ""
+        worker_info = _describe_workers(result)
+        worker_info = f" ({worker_info})" if worker_info else ""
         _section(f"ASYNC PROCESS TIMES{worker_info}")
         lines.append("  No completed async processes.")
         lines.append("")

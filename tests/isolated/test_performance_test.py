@@ -41,6 +41,7 @@ def _base_result(**overrides):
         "max_trial_count": 5,
         "n_succeeded_bots": 2,
         "n_rq_workers": 2,
+        "n_rq_job_slots": 40,
         "q_delay_median": 0.02,
     }
     result.update(overrides)
@@ -319,7 +320,7 @@ def test_format_test_results_process_stats():
     )
     text = _join(lines)
     assert "ASYNC PROCESS TIMES" in text
-    assert "2 workers" in text
+    assert "2 worker processes, up to 40 jobs at once" in text
     assert "tm1" in text
     assert "create_trial" in text
     assert "Q Med" in text
@@ -329,7 +330,7 @@ def test_format_test_results_no_process_stats():
     lines = format_test_results(_base_result(process_stats=None))
     text = _join(lines)
     assert "No completed async processes" in text
-    assert "2 workers" in text
+    assert "2 worker processes, up to 40 jobs at once" in text
 
 
 def test_format_test_results_returns_list():

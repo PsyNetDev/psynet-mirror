@@ -128,6 +128,18 @@ is what caps capacity, add worker processes with the ``num_dynos_worker``
 config variable (see :doc:`/reference/configuration`) before resorting to a
 lower participant cap.
 
+How many async processes a worker process can handle depends on what they
+do. Each worker process runs up to 20 jobs at once with gevent, but jobs
+only overlap while they wait, for example on a web API, the database or
+``time.sleep``. A job that keeps the CPU busy, such as audio analysis in
+Python, blocks the other jobs in its process until it finishes. In the
+``async_codeblock`` demo, one worker process finished about 14 one-second
+jobs per second when they slept, but only about one per second when they
+computed. For CPU-bound jobs, plan on about one worker process per CPU core
+and on throughput of one job at a time per process. The async section of
+the report shows the number of worker processes and how many jobs they can
+run at once.
+
 The search starts at 10 bots and doubles the count until a test fails, then
 halves the gap between the largest passing and smallest failing counts until
 they are within 10% of each other, so it usually runs six to ten tests. It
