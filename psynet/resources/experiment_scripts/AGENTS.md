@@ -23,7 +23,8 @@ virtual environment at `.venv/` (ask the user before creating one with
 `uv pip install psynet` and `psynet setup`, which installs the experiment
 dependencies. Start PostgreSQL and Redis with `psynet services ensure`.
 Without Docker (for example on some cloud agents), install both natively and
-create a `dallinger` PostgreSQL user and database with password `dallinger`.
+create a `dallinger` PostgreSQL user (with permission to create databases,
+which `psynet test local` needs) and database with password `dallinger`.
 
 In Cursor, disable sandboxing when running PsyNet commands by setting
 `required_permissions: ["all"]`.
@@ -40,8 +41,9 @@ another experiment is running, don't stop it yourself: either ask the user to
 stop it, or run yours alongside it with its own database, Redis server and
 port, as described in "Run several experiments at once" in
 `code/project/running_and_debugging`.
-`psynet deploy` also clears the local database and Redis, so don't run it
-while a local experiment is running.
+`psynet deploy` and `psynet performance-test local` also use and clear the
+local database and Redis, so don't run them while a local experiment is
+running.
 
 From `experiment.py`, import sibling modules with `from . import my_module`.
 Validate code with `psynet test local`, not `python experiment.py`. For

@@ -13,12 +13,14 @@ import pytest
 
 from .isolated_environment import ENV_VAR, SHARED, IsolatedEnvironment, should_isolate
 
+# Runs that don't execute tests and so don't need their own services.
 _INFO_ONLY_ARGS = {"-h", "--help", "-V", "--version"}
+_INFO_ONLY_ARGS |= {"--co", "--collect-only", "--fixtures", "--markers"}
 
 
 def _start():
     if not should_isolate() or _INFO_ONLY_ARGS.intersection(sys.argv[1:]):
-        return None
+        return
     if "dallinger.db" in sys.modules:
         raise pytest.UsageError(
             "Dallinger connected to the local database before PsyNet could give "
@@ -34,15 +36,11 @@ def _start():
             f"Set {ENV_VAR}={SHARED} to run them against the local database and "
             "Redis instead, which resets any local debug server."
         ) from e
+    # Not pytest_unconfigure: a nested pytest.main() in the same process
+    # would close the outer session's environment.
     atexit.register(environment.close)
     os.environ.update(environment.env)
     print(environment.describe(), file=sys.stderr)
-    return environment
 
 
-_environment = _start()
-
-
-def pytest_unconfigure(config):
-    if _environment is not None:
-        _environment.close()
+_start()

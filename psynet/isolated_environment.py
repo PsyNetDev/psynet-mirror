@@ -90,7 +90,7 @@ class IsolatedEnvironment:
 
         Raises
         ------
-        RuntimeError
+        RuntimeError or psycopg2.Error
             If the test database can't be created or Redis doesn't start.
         """
         environ = dict(os.environ if environ is None else environ)
@@ -121,11 +121,13 @@ class IsolatedEnvironment:
                 "dallinger_develop_directory": f"/tmp/dallinger_develop_{base_port}",
             }
             if not private_redis:
-                env["REDIS_URL"] = _with_redis_database(redis_url, 1)
+                slot = (base_port - shared_base_port - _PORT_OFFSET) // 10
+                number = _spare_redis_database(redis_url, slot)
+                env["REDIS_URL"] = _with_redis_database(redis_url, number)
                 print(
-                    "redis-server is not on PATH, so these tests use Redis database 1 "
-                    "on the shared server. Live notifications can still reach a local "
-                    "debug server's participants.",
+                    f"redis-server is not on PATH, so these tests use Redis database "
+                    f"{number} on the shared server. Live notifications can still "
+                    "reach a local debug server's participants.",
                     file=sys.stderr,
                 )
                 return cls(env, port_lock)
@@ -216,6 +218,8 @@ def start_redis_server(port, directory, log_file=None):
         If the server exits (for example because the port is taken) or doesn't
         answer within 10 seconds.
     """
+    if not _port_is_free(port):
+        raise RuntimeError(f"Port {port} for a test Redis server is in use.")
     process = subprocess.Popen(
         ["redis-server", "--bind", "127.0.0.1", "--port", str(port)]
         + ["--dir", str(directory), "--save", "", "--appendonly", "no"],
@@ -270,9 +274,12 @@ def _claim_port(start, also_free=None):
     also be free, such as the session's Redis port.
     """
     for port in range(start, start + 1000, 10):
-        lock = open(
-            os.path.join(tempfile.gettempdir(), f"psynet-test-{port}.lock"), "w"
-        )
+        try:
+            lock = open(
+                os.path.join(tempfile.gettempdir(), f"psynet-test-{port}.lock"), "w"
+            )
+        except OSError:
+            continue
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError:
@@ -284,6 +291,13 @@ def _claim_port(start, also_free=None):
             return port, lock
         lock.close()
     raise RuntimeError(f"No free port found from {start}.")
+
+
+def _spare_redis_database(redis_url, slot):
+    """Return a Redis database number for session ``slot``, other than the shared one."""
+    shared = int(urlsplit(redis_url).path.lstrip("/") or 0)
+    numbers = [n for n in range(16) if n != shared]
+    return numbers[slot % len(numbers)]
 
 
 def _with_redis_database(redis_url, number):

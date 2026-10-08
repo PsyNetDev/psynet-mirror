@@ -1,6 +1,7 @@
 import os
 import shutil
 import socket
+import tempfile
 from urllib.parse import urlsplit
 
 import pytest
@@ -10,7 +11,9 @@ from psynet.isolated_environment import (
     DEFAULT_REDIS_URL,
     ENV_VAR,
     IsolatedEnvironment,
+    _spare_redis_database,
     should_isolate,
+    start_redis_server,
 )
 
 
@@ -57,3 +60,11 @@ def test_isolated_environment_skips_ports_whose_redis_port_is_taken():
         with IsolatedEnvironment.start() as environment:
             assert environment.env["base_port"] != web_port
             assert environment.env["REDIS_URL"] != redis_url
+        with pytest.raises(RuntimeError, match="in use"):
+            start_redis_server(redis_port, tempfile.gettempdir())
+
+
+def test_spare_redis_databases_avoid_the_shared_one():
+    assert _spare_redis_database("redis://localhost:6379", 0) == 1
+    assert _spare_redis_database("redis://localhost:6379", 1) == 2
+    assert _spare_redis_database("redis://localhost:6379/1", 0) == 0

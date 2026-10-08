@@ -3945,6 +3945,24 @@ _test_options["time_factor"] = click.option(
 )
 
 
+def _in_isolated_test_environment(func):
+    """Run a local test command in its own database, Redis and port.
+
+    Applied outside :func:`sql_profiled_command` so that only the re-run child
+    profiles and reports. ``--existing`` runs test a live server and run here.
+    """
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        from .isolated_environment import should_isolate
+
+        if not kwargs.get("existing") and should_isolate():
+            _rerun_in_isolated_test_environment()
+        return func(*args, **kwargs)
+
+    return wrapper
+
+
 @test.command("local")
 @_test_options["existing"]
 @_test_options["n_bots"]
@@ -3953,6 +3971,7 @@ _test_options["time_factor"] = click.option(
 @_test_options["stagger"]
 @_test_options["time_factor"]
 @_add_sql_profile_options
+@_in_isolated_test_environment
 @sql_profiled_command
 def test__local(
     existing=False,
@@ -3971,11 +3990,6 @@ def test__local(
     Test the experiment locally.
     """
     assert not (parallel and serial)
-
-    from .isolated_environment import should_isolate
-
-    if not existing and should_isolate():
-        _rerun_in_isolated_test_environment()
 
     # --existing talks to a live server; skip local scaffold/git readiness.
     # Non-existing runs share debug's directory checks (incl. bundled-demo prepare).
@@ -4047,7 +4061,14 @@ def _rerun_in_isolated_test_environment():
         ) from e
     with environment:
         log(environment.describe())
-        exit_code = subprocess.call(sys.orig_argv, env=environment.env)
+        process = subprocess.Popen(sys.orig_argv, env=environment.env)
+        while True:
+            try:
+                exit_code = process.wait()
+                break
+            except KeyboardInterrupt:
+                # The child got the same Ctrl+C; let it stop its servers.
+                pass
     sys.exit(exit_code)
 
 

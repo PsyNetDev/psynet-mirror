@@ -146,9 +146,9 @@ by default), uses the database ``<database>_test_<port>`` next to
 ``DATABASE_URL`` (created when missing) and starts a private ``redis-server``
 that stops when the session ends, so several test sessions can also run at
 once. If ``redis-server`` isn't installed (for example when Redis runs only in
-Docker), the session uses Redis database 1 on your Redis server instead, which
-keeps its data apart but can still send live notifications to a debug
-server's participants. If the environment can't be set up, the session stops
+Docker), the session uses a spare database number on your Redis server
+instead, which keeps its data apart but can still send live notifications to a
+debug server's participants. If the environment can't be set up, the session stops
 with an error rather than falling back to your database.
 
 This applies to ``pytest`` runs from the PsyNet checkout, to experiments
