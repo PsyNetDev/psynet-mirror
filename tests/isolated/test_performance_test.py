@@ -5,6 +5,7 @@ import pytest
 from psynet.perf_test import (
     CapacityLimits,
     PerformanceTester,
+    capacity_failures,
     colorize_success_rate,
     format_capacity_summary,
     format_performance_summary,
@@ -203,7 +204,29 @@ def test_capacity_summary_says_when_no_limit_was_reached():
     text = _join(format_capacity_summary(results, time_factor=0))
 
     assert "at least 50" in text
+    assert "Suggested" not in text
     assert "--time-factor 1" in text
+
+
+def test_capacity_summary_uses_counts_below_the_first_failure():
+    results = [
+        _base_result(n_bots=10, p95_response_time=0.1),
+        _base_result(n_bots=20, p95_response_time=0.1, bot_errors=1),
+        _base_result(n_bots=40, p95_response_time=0.1),
+    ]
+
+    text = _join(format_capacity_summary(results))
+
+    assert "about 10 concurrent bots" in text
+    assert "inconsistent" in text
+
+
+def test_a_test_whose_bots_did_not_all_start_is_not_within_capacity():
+    result = _base_result(n_bots=640, p95_response_time=0.1, slots_started=590)
+
+    assert capacity_failures(result) == [
+        "only 590 of 640 bots started (use a longer --duration-minutes)"
+    ]
 
 
 # --- colorize_success_rate ---

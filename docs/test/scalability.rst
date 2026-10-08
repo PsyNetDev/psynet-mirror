@@ -147,8 +147,9 @@ halves the gap between the largest passing and smallest failing counts until
 they are within 10% of each other, so it usually runs six to ten tests. It
 stops at 2,000 bots.
 
-The summary at the end of every multi-count run, automatic or not, reports
-the capacity it found and suggests a cap of 80% of it, for example::
+The summary at the end of every run reports the capacity it found and, once a
+larger bot count has exceeded the limits, suggests a cap of 80% of it, for
+example::
 
     Capacity: about 160 concurrent bots kept p95 response time under 500 ms, p95 async queue wait under 5 s and no errors; 170 did not (p95 response time 622 ms).
     Suggested max_concurrent_participants: 128 (80% of 160)
@@ -156,8 +157,9 @@ the capacity it found and suggests a cap of 80% of it, for example::
 Run the search on the server you will deploy to, with ``--time-factor 1`` so
 that bots work at a realistic pace; bots with ``--time-factor 0`` load the
 server far more than people do. Each test's measurement window includes the
-time bots take to start, so use a ``--duration-minutes`` of at least two or
-three for steady results.
+time bots take to start (about 10 per second by default), so use a
+``--duration-minutes`` of at least two or three for steady results. A test
+whose bots didn't all start within the window counts as exceeding the limits.
 
 .. _performance_testing_server:
 
@@ -169,9 +171,10 @@ with the server. The bots run as threads inside the ``performance-test``
 process, so they are cheap: on a four-core computer, 200 bots working at a
 realistic pace used about a third of one core, against nearly three cores for
 the server. Because the bots share a process, they also share module-level
-state and the experiment instance, as in :ref:`parallel tests <parallel_bot_tests>`. To test a real
-server, launch
-the experiment there in debug mode, then run the test over SSH:
+state and the experiment instance, as in :ref:`parallel tests
+<parallel_bot_tests>`. To test a real server, launch the experiment there in
+debug mode, then run the test over SSH. The bots then run inside the server's
+web container, so they still take a little of its CPU:
 
 .. code-block:: bash
 

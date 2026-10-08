@@ -1,3 +1,18 @@
+"""Load tests that run simulated participants against a PsyNet server.
+
+:class:`PerformanceTester` backs ``psynet performance-test``. It runs bots as
+threads in one process (each a :class:`~psynet.bot.BotDriver` making real HTTP
+requests), keeps a fixed number of them taking the experiment at once, and
+then reads the server's ``Request`` and ``AsyncProcess`` tables to measure
+response times and async queue waits. Measurements cover only the test window:
+requests logged before the bots were told to stop and processes that started
+by then, plus the wait of the oldest process still queued at the end.
+
+:func:`find_capacity <PerformanceTester.find_capacity>` searches for the
+largest bot count that stays within :class:`CapacityLimits`. Bots share this
+process, so experiment code they run must not rely on per-process state.
+"""
+
 import datetime
 import logging
 import random
@@ -15,6 +30,7 @@ from psynet.log import bold, error, success, warning
 logger = logging.getLogger(__name__)
 
 _SERVER_CHECK_INTERVAL_S = 5
+_BACKLOG_DRAIN_TIMEOUT_S = 120
 _BOT_THREAD_PREFIX = "psynet-bot-"
 
 DEFAULT_MAX_P95_S = 0.5
@@ -28,6 +44,7 @@ _CAPACITY_HEADROOM = 0.8
 
 
 def _is_bot_thread_record(record):
+    """Return whether a log record came from a bot thread."""
     return record.threadName.startswith(_BOT_THREAD_PREFIX)
 
 
@@ -61,6 +78,7 @@ def _bot_logs_to(stream):
 
 
 def _hide_bot_thread_records(record):
+    """Log filter that drops bot-thread records from the console."""
     return not _is_bot_thread_record(record)
 
 
@@ -190,7 +208,7 @@ class PerformanceTester:
         all_results = []
         for i, n_bots in enumerate(bot_counts, 1):
             if i > 1:
-                time.sleep(5)
+                self._pause_between_tests()
             result = self._run_one_test(f"{i}/{len(bot_counts)}", n_bots, bot_log_file)
             all_results.append(result)
             if result["server_stopped"]:
@@ -222,7 +240,7 @@ class PerformanceTester:
             if n_bots is None:
                 break
             if all_results:
-                time.sleep(5)
+                self._pause_between_tests()
             result = self._run_one_test(f"{len(all_results) + 1}", n_bots, bot_log_file)
             all_results.append(result)
             if result["server_stopped"]:
@@ -238,6 +256,47 @@ class PerformanceTester:
 
         self._print_performance_summary(all_results)
         return all_results
+
+    def _pause_between_tests(self):
+        """Pause, then let async processes queued by the last test start.
+
+        Otherwise they would hold up the next test's processes and count
+        against its queue wait.
+        """
+        from dallinger import db
+        from sqlalchemy import func
+
+        from psynet.process import AsyncProcess
+
+        time.sleep(5)
+        deadline = time.monotonic() + _BACKLOG_DRAIN_TIMEOUT_S
+        announced = False
+        while True:
+            queued = (
+                db.session.query(func.count(AsyncProcess.id))
+                .filter(
+                    AsyncProcess.time_started.is_(None),
+                    AsyncProcess.failed.is_(False),
+                )
+                .scalar()
+            )
+            db.session.rollback()
+            if not queued:
+                return
+            if time.monotonic() >= deadline:
+                logger.warning(
+                    warning(
+                        f"{queued:,} async processes from earlier tests are still "
+                        "queued, so they may slow the next test's processes."
+                    )
+                )
+                return
+            if not announced:
+                logger.info(
+                    f"Waiting for {queued:,} queued async processes to start..."
+                )
+                announced = True
+            time.sleep(2)
 
     def _print_suite_header(self, bots_description):
         logger.info(bold("=" * 80))
@@ -341,6 +400,7 @@ class PerformanceTester:
             "initialization_times": [],
             "first_bot_initialized": False,
             "server_stopped": False,
+            "slots_started": 0,
             "last_status_update": time.time(),
             "status_line_length": 0,
         }
@@ -424,6 +484,7 @@ class PerformanceTester:
 
     @staticmethod
     def _record_bot_start(bot_state, bot_id, create_time):
+        """Record that a bot started, for the live status and results."""
         now = time.time()
         with bot_state["lock"]:
             bot_state["total_bots_started"] += 1
@@ -433,6 +494,7 @@ class PerformanceTester:
 
     @staticmethod
     def _record_bot_end(bot_state, bot_id, outcome, end_time):
+        """Record how and when a bot finished."""
         now = time.time()
         with bot_state["lock"]:
             start = bot_state["running"].pop(bot_id, None)
@@ -521,7 +583,7 @@ class PerformanceTester:
         """Start ``n`` staggered bot slots and watch the server until the test ends."""
         # The first bot waits for the experiment launch; the rest follow it.
         start_bot_slot()
-        n_started = 1
+        n_started = bot_state["slots_started"] = 1
         next_slot_time = None
         next_server_check = start_time
         while time.time() < end_time:
@@ -548,7 +610,7 @@ class PerformanceTester:
                     next_slot_time = current_time
                 while n_started < n and current_time >= next_slot_time:
                     start_bot_slot()
-                    n_started += 1
+                    n_started = bot_state["slots_started"] = n_started + 1
                     next_slot_time += self._bounded_random_stagger()
 
             self._show_realtime_status(bot_state, current_time, end_time)
@@ -707,6 +769,7 @@ class PerformanceTester:
             .filter(
                 AsyncProcess.id > initial_state["max_process_id"],
                 AsyncProcess.time_enqueued <= ended_at,
+                AsyncProcess.failed.is_(False),
                 or_(
                     AsyncProcess.time_started.is_(None),
                     AsyncProcess.time_started > ended_at,
@@ -836,6 +899,7 @@ class PerformanceTester:
             "duration_minutes": duration_minutes,
             "actual_duration": actual_duration,
             "server_stopped": bot_state["server_stopped"],
+            "slots_started": bot_state["slots_started"],
             "total_bots_started": bot_state["total_bots_started"],
             "completed_during_test": bot_state["bots_completed_during_test"],
             "bots_succeeded": bots_succeeded,
@@ -1289,6 +1353,7 @@ class CapacityLimits:
     max_queue_p95_s: float = DEFAULT_MAX_QUEUE_P95_S
 
     def describe(self):
+        """Return the limits as a phrase, for summaries."""
         return (
             f"p95 response time under {self.max_p95_s * 1000:.0f} ms, "
             f"p95 async queue wait under {self.max_queue_p95_s:g} s and no errors"
@@ -1315,6 +1380,12 @@ def capacity_failures(result, limits=CapacityLimits()):
     reasons = []
     if result.get("server_stopped"):
         reasons.append("server stopped")
+    slots_started = result.get("slots_started")
+    if slots_started is not None and slots_started < result.get("n_bots", 0):
+        reasons.append(
+            f"only {slots_started:,} of {result['n_bots']:,} bots started "
+            "(use a longer --duration-minutes)"
+        )
     if result.get("request_errors"):
         reasons.append(f"{result['request_errors']} request errors")
     if result.get("bot_errors"):
@@ -1366,30 +1437,32 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
     """
     limit = limits.describe()
     passed = [r["n_bots"] for r in results if within_capacity(r, limits)]
-    if not passed:
-        return [f"  No tested bot count kept {limit}.", ""]
+    failed = [r for r in results if not within_capacity(r, limits)]
+    first_fail = min(failed, key=lambda r: r["n_bots"]) if failed else None
+    below_fail = [n for n in passed if first_fail is None or n < first_fail["n_bots"]]
+    if not below_fail:
+        return [f"  No tested bot count below every failing count kept {limit}.", ""]
 
-    capacity = max(passed)
-    failed_above = [
-        r for r in results if r["n_bots"] > capacity and not within_capacity(r, limits)
-    ]
-    if failed_above:
-        first_fail = min(failed_above, key=lambda r: r["n_bots"])
-        lines = [
-            f"  Capacity: about {capacity:,} concurrent bots kept {limit}; "
-            f"{first_fail['n_bots']:,} did not "
-            f"({', '.join(capacity_failures(first_fail, limits))})."
-        ]
-    else:
+    capacity = max(below_fail)
+    if first_fail is None:
         lines = [
             f"  Capacity: at least {capacity:,} concurrent bots kept {limit}. "
             "Test more bots to find the limit."
         ]
-    suggested = int(capacity * _CAPACITY_HEADROOM)
-    lines.append(
-        f"  Suggested max_concurrent_participants: {suggested:,} "
-        f"({_CAPACITY_HEADROOM:.0%} of {capacity:,})"
-    )
+    else:
+        lines = [
+            f"  Capacity: about {capacity:,} concurrent bots kept {limit}; "
+            f"{first_fail['n_bots']:,} did not "
+            f"({', '.join(capacity_failures(first_fail, limits))}).",
+            f"  Suggested max_concurrent_participants: "
+            f"{max(1, int(capacity * _CAPACITY_HEADROOM)):,} "
+            f"({_CAPACITY_HEADROOM:.0%} of {capacity:,})",
+        ]
+        if max(passed) > first_fail["n_bots"]:
+            lines.append(
+                f"  {max(passed):,} bots also passed, so the results are "
+                "inconsistent; rerun to confirm."
+            )
     if not time_factor:
         lines.append(
             "  These bots ran without pauses (--time-factor 0) and load the server "
