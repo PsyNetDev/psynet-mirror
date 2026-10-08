@@ -12,6 +12,7 @@ from psynet.isolated_environment import (
     ENV_VAR,
     IsolatedEnvironment,
     IsolationError,
+    _claim_port,
     _spare_redis_database,
     should_isolate,
     start_redis_server,
@@ -74,5 +75,14 @@ def test_spare_redis_databases_avoid_the_shared_one():
 def test_a_failed_start_explains_how_to_opt_out():
     unreachable = "postgresql://dallinger:dallinger@127.0.0.1:1/dallinger"
 
-    with pytest.raises(IsolationError, match=f"{ENV_VAR}=shared"):
-        IsolatedEnvironment.start({**os.environ, "DATABASE_URL": unreachable})
+    environ = {**os.environ, "DATABASE_URL": unreachable}
+    free_port, lock = _claim_port(int(environ.get("base_port", 5000)) + 100)
+    lock.close()
+
+    with pytest.raises(IsolationError, match=f"{ENV_VAR}=shared") as error:
+        IsolatedEnvironment.start(environ)
+
+    assert isinstance(error.value.__cause__, RuntimeError)
+    port, lock = _claim_port(free_port)
+    lock.close()
+    assert port == free_port, "the failed start kept its port claim"

@@ -4045,8 +4045,9 @@ def _rerun_in_isolated_test_environment():
 
     Dallinger connected to the shared database when this module was imported,
     so the switch needs a new process; see :mod:`psynet.isolated_environment`.
-    The child re-runs the whole original command line (for example all of
-    ``psynet audit simulate``), and this process then exits with its code.
+    The child re-runs the whole original command line (``sys.orig_argv``, for
+    example ``psynet test local --n-bots 4``), and this process then exits
+    with its code.
     """
     from .isolated_environment import IsolatedEnvironment, IsolationError
     from .services import ensure_local_services

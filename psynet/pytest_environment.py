@@ -12,8 +12,6 @@ import sys
 import pytest
 
 from .isolated_environment import (
-    ENV_VAR,
-    SHARED,
     IsolatedEnvironment,
     IsolationError,
     should_isolate,
@@ -35,10 +33,12 @@ def _start():
         return
     if "dallinger.db" in sys.modules:
         raise pytest.UsageError(
-            "Dallinger connected to the local database before PsyNet could give "
-            "these tests their own, so they would reset any local debug server. "
-            f"Load this plugin earlier, or set {ENV_VAR}={SHARED} to share the "
-            "local database and Redis."
+            str(
+                IsolationError(
+                    "Dallinger connected to the local database first; load "
+                    "this plugin earlier"
+                )
+            )
         )
     try:
         environment = IsolatedEnvironment.start()

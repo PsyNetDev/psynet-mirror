@@ -72,7 +72,11 @@ def should_isolate(environ=None):
 
 
 class IsolationError(RuntimeError):
-    """Raised when a test session can't get its own database and Redis."""
+    """Raised when a test session can't get its own database and Redis.
+
+    The message gives the reason and how to opt out, so callers can show
+    ``str(error)`` as is; the original exception is the ``__cause__``.
+    """
 
     def __init__(self, reason):
         super().__init__(
@@ -102,12 +106,17 @@ class IsolatedEnvironment:
         Raises
         ------
         IsolationError
-            If the test database can't be created or Redis doesn't start; the
-            message says how to opt out.
+            If no free port is found, PostgreSQL or Redis can't be reached, the
+            test database can't be created or Redis doesn't start; the message
+            says how to opt out. Other errors propagate unchanged, because
+            opting out would not fix them.
         """
+        import psycopg2
+        import redis
+
         try:
             return cls._start(environ)
-        except Exception as e:
+        except (OSError, RuntimeError, psycopg2.Error, redis.RedisError) as e:
             raise IsolationError(e) from e
 
     @classmethod
