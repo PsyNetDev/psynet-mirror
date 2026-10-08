@@ -154,9 +154,15 @@ cap by a few participants.
 Choose the cap with a performance test on the real server: take the number
 of bots at which response times start to grow, and leave some headroom.
 
-Because the cap is an experiment variable, it can change while the study
-runs, for example from a code block
-(``experiment.var.max_concurrent_participants = 80``). To measure load
+Bots from ``psynet test`` and ``psynet performance-test`` create their
+participants directly rather than through the start page, so the cap never
+holds them back; a performance test measures the server, not the cap.
+
+PsyNet reads the cap from the experiment's variables each time a newcomer
+arrives, so experiment code can change it while the study runs, for example a
+code block that sets ``experiment.var.max_concurrent_participants = 80``.
+There is no dashboard control or command for changing it by hand yet; to use
+a different fixed cap, change ``variables`` and redeploy. To measure load
 differently, override
 :meth:`~psynet.experiment.Experiment.is_at_capacity`. For example, if some
 pages run longer than 10 minutes without a submission (such as a long

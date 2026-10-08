@@ -65,7 +65,9 @@ def _participant_app():
     return app
 
 
-def test_newcomers_are_refused_only_while_the_study_is_full(db_session, monkeypatch):
+def test_newcomers_are_refused_only_while_the_study_is_full(
+    db_session, monkeypatch, caplog
+):
     monkeypatch.setattr(capacity, "_full_until", 0.0)
     experiment = get_experiment()
     experiment.setup_experiment_config()
@@ -83,7 +85,9 @@ def test_newcomers_are_refused_only_while_the_study_is_full(db_session, monkeypa
     assert before_request() is None
     make_participant()
 
-    refused = before_request()
+    with caplog.at_level("INFO"):
+        refused = before_request()
+    assert "at capacity" in caplog.text
     assert refused.status_code == 503
     assert refused.get_json()["error_code"] == "study_full"
     assert refused.headers["Retry-After"]
@@ -138,7 +142,9 @@ def test_only_open_link_recruiters_accept_a_participant_limit(
         experiment_class.check_max_concurrent_participants_support(config)
     else:
         match = (
-            "recruiter = generic" if recruiter is None else "initial_recruitment_size"
+            "recruiter = generic"
+            if recruiter is None
+            else f"'{recruiter}' recruiter.*Remove max_concurrent_participants"
         )
         with pytest.raises(RuntimeError, match=match):
             experiment_class.check_max_concurrent_participants_support(config)

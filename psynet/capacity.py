@@ -44,6 +44,10 @@ from datetime import datetime, timedelta
 import flask
 from dallinger import db
 
+from .utils import get_logger
+
+logger = get_logger()
+
 #: ``error_code`` of the 503 response that refuses a newcomer; ``start.html``
 #: checks for it to show the waiting message.
 STUDY_FULL_ERROR_CODE = "study_full"
@@ -140,6 +144,7 @@ def refuse_new_participant_if_full():
         if not get_experiment().is_at_capacity():
             return None
         _full_until = now + _FULL_CACHE_S
+        logger.info("The study is at capacity, so newcomers wait on the start page.")
 
     response = flask.jsonify(
         status="error",

@@ -2587,12 +2587,14 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     "hotair) in config.txt or Experiment.config."
                 )
             raise RuntimeError(
-                "max_concurrent_participants and is_at_capacity are only "
-                "supported with the generic and hotair recruiters, because other "
-                "recruiters send participants who have accepted a place and should "
-                "not be kept waiting. With Prolific, limit simultaneous participants "
-                "through initial_recruitment_size instead. "
-                f"Configured recruiter: {recruiter!r}."
+                f"The {recruiter!r} recruiter doesn't support "
+                "max_concurrent_participants or is_at_capacity: only generic and "
+                "hotair do, because other recruiters send participants who have "
+                "accepted a place and should not be kept waiting. Remove "
+                "max_concurrent_participants from Experiment.variables (or set it "
+                "to None) and remove any is_at_capacity override. With Prolific, "
+                "limit simultaneous participants through initial_recruitment_size "
+                "instead."
             )
 
     def is_at_capacity(self):
