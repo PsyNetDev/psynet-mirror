@@ -30,6 +30,10 @@
             max-width: 36rem;
         }
 
+        #study-full[hidden] {
+            display: none;
+        }
+
         #starting-experiment #study-full p + p {
             font-size: 1.1rem;
             font-weight: 400;
@@ -53,9 +57,11 @@
         <p id="starting-message">
             {{ pgettext("start", "Starting experiment...") }}
         </p>
-        <div id="study-full" role="status" aria-live="polite" hidden>
-            <p>{{ pgettext("start", "Lots of people are taking part right now.") }}</p>
-            <p>{{ pgettext("start", "Please keep this page open: you will join automatically as soon as there is space. You can also come back later.") }}</p>
+        <div role="status" aria-live="polite">
+            <div id="study-full" hidden>
+                <p>{{ pgettext("start", "Lots of people are taking part right now.") }}</p>
+                <p>{{ pgettext("start", "Please keep this page open: you will join automatically as soon as there is space. You can also come back later.") }}</p>
+            </div>
         </div>
     </div>
 {% endblock %}
@@ -99,6 +105,12 @@
 
         function isStudyFull(resp) {
             return Boolean(resp && resp.status === 503 && resp.errorCode === "study_full");
+        }
+
+        function isPassingFailure(resp) {
+            // Network blips and gateway errors are likely while the server is busy.
+            return Boolean(resp) && ([0, 502, 504].includes(resp.status)
+                || (resp.status === 503 && !resp.errorCode));
         }
 
         function waitForSpace(entryInformation, attempt) {
@@ -150,7 +162,9 @@
                 }
                 window.location.replace("/timeline?unique_id=" + resp.participant.unique_id);
             }).fail(function(resp) {
-                if (attempt === startAttempt && isStudyFull(resp)) {
+                const waiting = !document.getElementById("study-full").hidden;
+                if (attempt === startAttempt
+                    && (isStudyFull(resp) || (waiting && isPassingFailure(resp)))) {
                     waitForSpace(entryInformation, attempt);
                 } else {
                     handleStartError(resp, attempt);

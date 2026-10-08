@@ -85,7 +85,7 @@ from . import deployment_info
 from . import exit as exit_domain
 from .asset import Asset, AssetRegistry, LocalStorage, OnDemandAsset, S3Storage
 from .bot import Bot, BotDriver, BotResponse
-from .capacity import refuse_new_participant_if_full
+from .capacity import count_active_participants, refuse_new_participant_if_full
 from .command_line import export_launch_data
 from .data import SQLBase, SQLMixin, ingest_zip, register_table
 from .db import (
@@ -131,6 +131,7 @@ from .recruiters import (  # noqa: F401
     PsyNetProlificRecruiterMixin,
     StagingCapRecruiter,  # noqa: F401  # Backward compatibility alias
     StagingLabRecruiter,
+    _recruiter_class_by_name,
     configured_recruiter_class,
 )
 from .redis import redis_vars
@@ -2552,7 +2553,15 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @classmethod
     def check_max_concurrent_participants_support(cls, config):
-        """Reject participant limits for recruiters that send paid participants."""
+        """Reject participant limits for recruiters that send paid participants.
+
+        Raises
+        ------
+        ValueError
+            If the class sets an invalid ``max_concurrent_participants``.
+        RuntimeError
+            If the configured recruiter doesn't support participant limits.
+        """
         limit = cls.variables.get("max_concurrent_participants")
         if limit is not None and not _is_participant_limit(limit):
             raise ValueError(
@@ -2564,10 +2573,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         )
         if not limits_participants:
             return
-        try:
-            recruiter_class = configured_recruiter_class(config)
-        except NotImplementedError:
-            return
+        # The named recruiter, not the debug-mode stand-in, decides: deploy
+        # commands run this check while the config is still in debug mode.
+        name = config.get("recruiter", None)
+        recruiter_class = _recruiter_class_by_name(name) if name else None
         if recruiter_class is not None and not getattr(
             recruiter_class, "supports_max_concurrent_participants", False
         ):
@@ -2610,8 +2619,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         -------
         bool
         """
-        from .capacity import count_active_participants
-
         limit = self.var.get("max_concurrent_participants", None)
         if limit is None:
             return False

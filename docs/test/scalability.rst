@@ -175,10 +175,11 @@ video), count participants as active for longer:
 
 The method runs every time a newcomer tries to start, including each retry
 from the start page, so keep it cheap. After it reports the study as full,
-each web process skips it for 2 seconds, so a raised cap can take that long to
-let people in. Use it only for load: newcomers are
-told that many people are taking part and retried automatically, which would
-mislead them if the study were closed for another reason.
+each web process skips it for 2 seconds. People already waiting are let in at
+their next retry, up to 40 seconds after the cap is raised. Use it only for
+load: newcomers are told that many people are taking part and retried
+automatically, which would mislead them if the study were closed for another
+reason.
 
 The cap and the method only work with the ``generic`` and ``hotair``
 recruiters.

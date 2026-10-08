@@ -119,12 +119,18 @@ class _CustomRule(Experiment):
 @pytest.mark.parametrize("experiment_class", [_Limited, _CustomRule])
 @pytest.mark.parametrize(
     "recruiter, allowed",
-    [("generic", True), ("hotair", True), ("prolific", False)],
+    [
+        ("generic", True),
+        ("hotair", True),
+        ("prolific", False),
+        ("lab-recruiter", False),
+    ],
 )
 def test_only_open_link_recruiters_accept_a_participant_limit(
     experiment_class, recruiter, allowed
 ):
-    config = {"recruiter": recruiter}
+    # Deploy commands run the check while the config is still in debug mode.
+    config = {"recruiter": recruiter, "mode": "debug"}
 
     if allowed:
         experiment_class.check_max_concurrent_participants_support(config)
