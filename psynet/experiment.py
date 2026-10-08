@@ -504,6 +504,17 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     big_base_payment : `bool`
         Set this to `True` if you REALLY want to set `base_payment` to a value > 20.
 
+    max_concurrent_participants : `int` or `None`
+        The maximum number of participants taking the study at once; newcomers
+        over the limit wait on the start page until there is space (see
+        :meth:`accepts_new_participants`). Only supported with the ``generic``
+        and ``hotair`` recruiters. Default: `None` (no limit).
+
+    max_concurrent_participants_idle_s : `int`
+        Seconds without joining or submitting a page after which a working
+        participant stops counting towards ``max_concurrent_participants``.
+        Default: `600`.
+
     There are also a few experiment variables that are set automatically and that should,
     in general, not be changed manually:
 
@@ -2179,7 +2190,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             "lock_table_when_creating_participant": False,
             "loglevel": 1,
             "loglevel_worker": 1,
-            "max_concurrent_participants_idle_s": 600,
             "min_reward_for_paid_early_exit": 0.20,
             # Chrome 105 is the first release with CSS :has(), which the default
             # participant theme uses for selected-option styling.
@@ -2259,6 +2269,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             "hard_max_experiment_payment": 1100.0,
             "soft_max_experiment_payment": 1000.0,
             "max_participant_payment": 25.0,
+            "max_concurrent_participants": None,
+            "max_concurrent_participants_idle_s": 600,
         }
 
     @experiment_route("/api/<endpoint>", methods=["GET", "POST"])
@@ -2540,10 +2552,14 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         cls._warn_about_overridden_experiment_config(config)
 
-    @staticmethod
-    def check_max_concurrent_participants_support(config):
-        """Reject ``max_concurrent_participants`` for recruiters that send paid participants."""
-        if not config.get("max_concurrent_participants", None):
+    @classmethod
+    def check_max_concurrent_participants_support(cls, config):
+        """Reject participant limits for recruiters that send paid participants."""
+        limits_participants = (
+            cls.variables.get("max_concurrent_participants")
+            or cls.accepts_new_participants is not Experiment.accepts_new_participants
+        )
+        if not limits_participants:
             return
         try:
             recruiter_class = configured_recruiter_class(config)
@@ -2553,12 +2569,43 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             recruiter_class, "supports_max_concurrent_participants", False
         ):
             raise RuntimeError(
-                "max_concurrent_participants is only supported with the generic "
-                "and hotair recruiters, because other recruiters send participants "
-                "who have accepted a place and should not be kept waiting. With "
-                "Prolific, limit simultaneous participants through "
-                "initial_recruitment_size instead."
+                "max_concurrent_participants and accepts_new_participants are only "
+                "supported with the generic and hotair recruiters, because other "
+                "recruiters send participants who have accepted a place and should "
+                "not be kept waiting. With Prolific, limit simultaneous participants "
+                "through initial_recruitment_size instead."
             )
+
+    def accepts_new_participants(self):
+        """Return whether a newcomer may start the study now.
+
+        Called before each new participant is created, including the retries
+        of people waiting on the start page while the study is full, so keep
+        it cheap. Returning participants are never refused.
+
+        By default, admits newcomers while fewer than the experiment variable
+        ``max_concurrent_participants`` are active (see
+        :func:`psynet.capacity.count_active_participants`). Because it is an
+        experiment variable, the limit can change while the study runs, for
+        example ``experiment.var.max_concurrent_participants = 80``. Override
+        this method to add other conditions::
+
+            def accepts_new_participants(self):
+                return super().accepts_new_participants() and is_daytime()
+
+        Only supported with the ``generic`` and ``hotair`` recruiters.
+
+        Returns
+        -------
+        bool
+        """
+        from .capacity import count_active_participants
+
+        limit = self.var.get("max_concurrent_participants", None)
+        if not limit:
+            return True
+        idle_timeout_s = self.var.get("max_concurrent_participants_idle_s", 600)
+        return count_active_participants(idle_timeout_s) < limit
 
     @staticmethod
     def check_recruiter_support(config):
@@ -4180,8 +4227,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         config.register("lucid_api_key", str, sensitive=True)
         config.register("lucid_recruitment_config", str)
         config.register("lucid_sha1_hashing_key", str, sensitive=True)
-        config.register("max_concurrent_participants", int)
-        config.register("max_concurrent_participants_idle_s", int)
         config.register("min_reward_for_paid_early_exit", float)
         config.register("min_browser_version", str)
         config.register("show_early_exit_button", bool)

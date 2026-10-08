@@ -3,7 +3,6 @@ from datetime import datetime, timedelta
 
 import pytest
 from dallinger import db
-from dallinger.config import get_config
 from flask import Flask
 
 from psynet import capacity
@@ -56,43 +55,53 @@ def test_only_recently_active_working_participants_count(db_session):
 
 def test_newcomers_are_refused_only_while_the_study_is_full(db_session, monkeypatch):
     monkeypatch.setattr(capacity, "_full_until", 0.0)
-    config = get_config()
+    experiment = get_experiment()
+    experiment.setup_experiment_config()
+    experiment.setup_experiment_variables()
     app = Flask(__name__)
 
     def before_request(path="/participant"):
         with app.test_request_context(path, method="POST"):
             return Experiment.before_request()
 
+    assert before_request() is None
     active = capacity.count_active_participants(idle_timeout_s=600)
-    config.set("max_concurrent_participants", active + 1)
-    try:
-        assert before_request() is None
-        make_participant()
+    experiment.var.max_concurrent_participants = active + 1
+    assert before_request() is None
+    make_participant()
 
-        refused = before_request()
-        assert refused.status_code == 503
-        assert refused.get_json()["error_code"] == "study_full"
-        assert refused.headers["Retry-After"]
-        assert before_request("/load-participant") is None
-    finally:
-        config.set("max_concurrent_participants", 0)
+    refused = before_request()
+    assert refused.status_code == 503
+    assert refused.get_json()["error_code"] == "study_full"
+    assert refused.headers["Retry-After"]
+    assert before_request("/load-participant") is None
 
+    monkeypatch.setattr(capacity, "_full_until", 0.0)
+    experiment.var.max_concurrent_participants = active + 2
     assert before_request() is None
 
 
+class _Limited(Experiment):
+    variables = {"max_concurrent_participants": 100}
+
+
+class _CustomRule(Experiment):
+    def accepts_new_participants(self):
+        return False
+
+
+@pytest.mark.parametrize("experiment_class", [_Limited, _CustomRule])
 @pytest.mark.parametrize(
     "recruiter, allowed",
     [("generic", True), ("hotair", True), ("prolific", False)],
 )
-def test_only_open_link_recruiters_accept_a_concurrency_limit(recruiter, allowed):
-    config = {"recruiter": recruiter, "max_concurrent_participants": 100}
-
-    class Config(dict):
-        def get(self, key, default=None):
-            return super().get(key, default)
+def test_only_open_link_recruiters_accept_a_participant_limit(
+    experiment_class, recruiter, allowed
+):
+    config = {"recruiter": recruiter}
 
     if allowed:
-        Experiment.check_max_concurrent_participants_support(Config(config))
+        experiment_class.check_max_concurrent_participants_support(config)
     else:
         with pytest.raises(RuntimeError, match="initial_recruitment_size"):
-            Experiment.check_max_concurrent_participants_support(Config(config))
+            experiment_class.check_max_concurrent_participants_support(config)

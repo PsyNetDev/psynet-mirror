@@ -3,14 +3,18 @@
 Citizen-science studies shared through a public link (the ``generic`` and
 ``hotair`` recruiters) can attract more simultaneous visitors than the server
 can serve. Past capacity every participant's pages slow down, including those
-of people who are already halfway through. Setting
-``max_concurrent_participants`` caps the number of active participants: newcomers
-over the cap wait on the start page, which retries until a place frees up.
-Returning participants are never refused, and nobody already in the study is
-removed.
+of people who are already halfway through. Setting the experiment variable
+``max_concurrent_participants`` caps the number of active participants:
+newcomers over the cap wait on the start page, which retries until a place
+frees up. Returning participants are never refused, and nobody already in the
+study is removed.
 
 Design constraints:
 
+* The decision belongs to :meth:`psynet.experiment.Experiment.accepts_new_participants`,
+  which experiments may override with their own logic (for example a time
+  window or a queue length). The cap is an experiment variable rather than a
+  config option so that it can change while the study runs.
 * The check runs only when a new participant would be created
   (``POST /participant``), before any database row exists, so a waiting
   visitor costs one cheap request per retry and leaves no trace in the data.
@@ -21,9 +25,9 @@ Design constraints:
   submission (for example long videos or timeline holds) briefly stop counting.
 * While the study is full, each web process remembers that for
   ``_FULL_CACHE_S`` seconds, so a crowd of retries does not query the database
-  each time. Admissions are always re-checked against the database, so the
-  cache cannot admit extra people; simultaneous admissions can still overshoot
-  the cap by a few participants.
+  each time. Admissions are always re-checked, so the cache cannot admit extra
+  people; simultaneous admissions can still overshoot the cap by a few
+  participants.
 
 Recruiters opt in through ``supports_max_concurrent_participants``; recruiters
 that send paid participants (Prolific, Lucid) should limit concurrency through
@@ -35,7 +39,6 @@ import time
 from datetime import datetime, timedelta
 
 from dallinger import db
-from dallinger.config import get_config
 from flask import jsonify
 
 STUDY_FULL_ERROR_CODE = "study_full"
@@ -83,20 +86,16 @@ def count_active_participants(idle_timeout_s):
 def refuse_new_participant_if_full():
     """Return a 503 "study full" response if the study is at capacity, else ``None``.
 
-    Called before ``POST /participant`` creates a participant. Does nothing
-    unless ``max_concurrent_participants`` is set.
+    Called before ``POST /participant`` creates a participant; the decision
+    comes from :meth:`~psynet.experiment.Experiment.accepts_new_participants`.
     """
     global _full_until
 
-    config = get_config()
-    limit = config.get("max_concurrent_participants", None)
-    if not limit:
-        return None
+    from .experiment import get_experiment
 
     now = time.monotonic()
     if now >= _full_until:
-        idle_timeout_s = config.get("max_concurrent_participants_idle_s")
-        if count_active_participants(idle_timeout_s) < limit:
+        if get_experiment().accepts_new_participants():
             return None
         _full_until = now + _FULL_CACHE_S
 

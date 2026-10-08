@@ -134,13 +134,12 @@ A study shared through a public link, such as a citizen-science study, can
 attract more visitors at once than the server can serve. Past that point
 every participant's pages slow down, including those of people who are
 already halfway through. To protect them, cap the number of active
-participants in ``config.txt``:
+participants with the experiment variable ``max_concurrent_participants``:
 
-.. code-block:: ini
+.. code-block:: python
 
-    [Config]
-    recruiter = generic
-    max_concurrent_participants = 150
+    class Exp(psynet.experiment.Experiment):
+        variables = {"max_concurrent_participants": 150}
 
 Newcomers over the cap see a message on the start page saying that many
 people are taking part. The page retries every 20 to 40 seconds and lets
@@ -157,7 +156,25 @@ cap by a few participants.
 Choose the cap with a performance test on the real server: take the number
 of bots at which response times start to grow, and leave some headroom.
 
-The cap only works with the ``generic`` and ``hotair`` recruiters.
+Because the cap is an experiment variable, it can change while the study
+runs, for example from a code block
+(``experiment.var.max_concurrent_participants = 80``). For other rules, such
+as admitting people only at certain times or while the async queue is short,
+override :meth:`~psynet.experiment.Experiment.accepts_new_participants`:
+
+.. code-block:: python
+
+    class Exp(psynet.experiment.Experiment):
+        variables = {"max_concurrent_participants": 150}
+
+        def accepts_new_participants(self):
+            return super().accepts_new_participants() and is_daytime()
+
+It runs every time a newcomer tries to start, including each retry from the
+start page, so keep it cheap.
+
+The cap and the method only work with the ``generic`` and ``hotair``
+recruiters.
 Prolific and CINT participants have accepted a place, so they should not
 be kept waiting. With Prolific, ``initial_recruitment_size`` already roughly
 limits how many people take part at once, because PsyNet opens a new place
