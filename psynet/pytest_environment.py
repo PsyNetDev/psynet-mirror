@@ -11,7 +11,13 @@ import sys
 
 import pytest
 
-from .isolated_environment import ENV_VAR, SHARED, IsolatedEnvironment, should_isolate
+from .isolated_environment import (
+    ENV_VAR,
+    SHARED,
+    IsolatedEnvironment,
+    IsolationError,
+    should_isolate,
+)
 
 # Runs that don't execute tests and so don't need their own services.
 _INFO_ONLY_ARGS = {"-h", "--help", "-V", "--version"}
@@ -36,12 +42,8 @@ def _start():
         )
     try:
         environment = IsolatedEnvironment.start()
-    except Exception as e:
-        raise pytest.UsageError(
-            f"Could not give these tests their own database and Redis ({e}). "
-            f"Set {ENV_VAR}={SHARED} to run them against the local database and "
-            "Redis instead, which resets any local debug server."
-        ) from e
+    except IsolationError as e:
+        raise pytest.UsageError(str(e)) from e
     # Not pytest_unconfigure: a nested pytest.main() in the same process
     # would close the outer session's environment.
     atexit.register(environment.close)

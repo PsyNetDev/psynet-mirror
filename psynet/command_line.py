@@ -4048,18 +4048,14 @@ def _rerun_in_isolated_test_environment():
     The child re-runs the whole original command line (for example all of
     ``psynet audit simulate``), and this process then exits with its code.
     """
-    from .isolated_environment import ENV_VAR, SHARED, IsolatedEnvironment
+    from .isolated_environment import IsolatedEnvironment, IsolationError
     from .services import ensure_local_services
 
     ensure_local_services(assume_yes=False, strict=True)
     try:
         environment = IsolatedEnvironment.start()
-    except Exception as e:
-        raise click.ClickException(
-            f"Could not give this test its own database and Redis ({e}). "
-            f"Set {ENV_VAR}={SHARED} to run it against the local database and "
-            "Redis instead, which resets any local debug server."
-        ) from e
+    except IsolationError as e:
+        raise click.ClickException(str(e)) from e
     with environment:
         log(environment.describe())
         process = subprocess.Popen(sys.orig_argv, env=environment.env)

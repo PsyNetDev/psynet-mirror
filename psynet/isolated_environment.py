@@ -71,6 +71,17 @@ def should_isolate(environ=None):
     return not environ.get(ENV_VAR) and not environ.get("CI")
 
 
+class IsolationError(RuntimeError):
+    """Raised when a test session can't get its own database and Redis."""
+
+    def __init__(self, reason):
+        super().__init__(
+            f"Could not give these tests their own database and Redis ({reason}). "
+            f"Set {ENV_VAR}={SHARED} to run them against the local database and "
+            "Redis instead, which resets any local debug server."
+        )
+
+
 class IsolatedEnvironment:
     """Environment variables for an isolated test session, plus its Redis server.
 
@@ -90,9 +101,17 @@ class IsolatedEnvironment:
 
         Raises
         ------
-        RuntimeError or psycopg2.Error
-            If the test database can't be created or Redis doesn't start.
+        IsolationError
+            If the test database can't be created or Redis doesn't start; the
+            message says how to opt out.
         """
+        try:
+            return cls._start(environ)
+        except Exception as e:
+            raise IsolationError(e) from e
+
+    @classmethod
+    def _start(cls, environ):
         environ = dict(os.environ if environ is None else environ)
         database_url = environ.get("DATABASE_URL", DEFAULT_DATABASE_URL)
         redis_url = environ.get("REDIS_URL", DEFAULT_REDIS_URL)

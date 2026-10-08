@@ -11,6 +11,7 @@ from psynet.isolated_environment import (
     DEFAULT_REDIS_URL,
     ENV_VAR,
     IsolatedEnvironment,
+    IsolationError,
     _spare_redis_database,
     should_isolate,
     start_redis_server,
@@ -68,3 +69,10 @@ def test_spare_redis_databases_avoid_the_shared_one():
     assert _spare_redis_database("redis://localhost:6379", 0) == 1
     assert _spare_redis_database("redis://localhost:6379", 1) == 2
     assert _spare_redis_database("redis://localhost:6379/1", 0) == 0
+
+
+def test_a_failed_start_explains_how_to_opt_out():
+    unreachable = "postgresql://dallinger:dallinger@127.0.0.1:1/dallinger"
+
+    with pytest.raises(IsolationError, match=f"{ENV_VAR}=shared"):
+        IsolatedEnvironment.start({**os.environ, "DATABASE_URL": unreachable})
