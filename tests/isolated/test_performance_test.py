@@ -1,8 +1,11 @@
 from unittest.mock import Mock, patch
 
+import pytest
+
 from psynet.perf_test import (
     PerformanceTester,
     colorize_success_rate,
+    format_capacity_summary,
     format_performance_summary,
     format_test_results,
 )
@@ -139,6 +142,52 @@ def test_parallel_test_reraises_a_bot_error_after_all_bots_finish(monkeypatch):
 
     assert len(finished) == 3
     check_bots.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "capacity, expected_probes",
+    [
+        (150, [10, 20, 40, 80, 160, 120, 140, 150]),
+        (5, [10, 5, 7, 6]),
+    ],
+)
+def test_capacity_search_brackets_then_bisects(capacity, expected_probes):
+    tester = PerformanceTester(authenticated_session=Mock(), base_url="http://x")
+
+    def fake_test(n_bots, bot_log_file):
+        p95 = 0.1 if n_bots <= capacity else 0.9
+        return _base_result(n_bots=n_bots, p95_response_time=p95, server_stopped=False)
+
+    with (
+        patch.object(tester, "_test_performance", side_effect=fake_test),
+        patch("psynet.perf_test.time.sleep"),
+    ):
+        results = tester.find_capacity()
+
+    assert [r["n_bots"] for r in results] == expected_probes
+
+
+def test_capacity_summary_suggests_a_cap_below_the_measured_capacity():
+    results = [
+        _base_result(n_bots=100, p95_response_time=0.2),
+        _base_result(n_bots=150, p95_response_time=0.4),
+        _base_result(n_bots=200, p95_response_time=0.3, request_errors=3),
+    ]
+
+    text = _join(format_capacity_summary(results, max_p95_s=0.5))
+
+    assert "about 150 concurrent bots" in text
+    assert "200 did not" in text
+    assert "Suggested max_concurrent_participants: 120" in text
+
+
+def test_capacity_summary_says_when_no_limit_was_reached():
+    results = [_base_result(n_bots=50, p95_response_time=0.1)]
+
+    text = _join(format_capacity_summary(results, max_p95_s=0.5, time_factor=0))
+
+    assert "at least 50" in text
+    assert "--time-factor 1" in text
 
 
 # --- colorize_success_rate ---

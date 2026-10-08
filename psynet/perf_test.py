@@ -16,6 +16,14 @@ logger = logging.getLogger(__name__)
 _SERVER_CHECK_INTERVAL_S = 5
 _BOT_THREAD_PREFIX = "psynet-bot-"
 
+DEFAULT_MAX_P95_S = 0.5
+_CAPACITY_SEARCH_START = 10
+_CAPACITY_SEARCH_MAX = 2000
+# The search stops once the gap between the largest passing and smallest
+# failing bot counts is within this fraction of the passing count.
+_CAPACITY_RESOLUTION = 0.1
+_CAPACITY_HEADROOM = 0.8
+
 
 def _is_bot_thread_record(record):
     return record.threadName.startswith(_BOT_THREAD_PREFIX)
@@ -159,6 +167,7 @@ class PerformanceTester:
         duration_minutes=1,
         stagger_interval_s=0.1,
         time_factor=0.0,
+        max_p95_s=DEFAULT_MAX_P95_S,
     ):
         self.authenticated_session = authenticated_session
         self.base_url = base_url
@@ -166,6 +175,7 @@ class PerformanceTester:
         self.duration_minutes = duration_minutes
         self.stagger_interval_s = stagger_interval_s
         self.time_factor = time_factor
+        self.max_p95_s = max_p95_s
         # Experiment code shares this process and may call random.seed().
         self._random = random.Random()
 
@@ -174,40 +184,74 @@ class PerformanceTester:
         if bot_counts is None:
             bot_counts = [self.n_bots]
 
+        self._print_suite_header(", ".join(str(n) for n in bot_counts))
         all_results = []
-
-        logger.info(bold("=" * 80))
-        logger.info(bold("\u26a1 PERFORMANCE TEST SUITE"))
-        logger.info(f"Bots per test:        {', '.join(str(n) for n in bot_counts)}")
-        logger.info(f"Test duration:        {self.duration_minutes:.1f} min")
-        logger.info(f"Bot start stagger:    ~{self.stagger_interval_s:.1f}s")
-        logger.info(f"Bot time factor:      {self.time_factor:.1f}")
-
         for i, n_bots in enumerate(bot_counts, 1):
-            logger.info("")
-            logger.info(bold("=" * 80))
-            logger.info(
-                bold(
-                    f"TEST {i}/{len(bot_counts)}: Running with {n_bots:,} concurrent bots"
-                )
-            )
-
-            result = self._test_performance(n_bots, bot_log_file=bot_log_file)
+            if i > 1:
+                time.sleep(5)
+            result = self._run_one_test(f"{i}/{len(bot_counts)}", n_bots, bot_log_file)
             all_results.append(result)
             if result["server_stopped"]:
                 break
 
-            if i < len(bot_counts):
-                logger.debug("")
-                logger.debug("Waiting 5 seconds before next test...")
+        self._print_performance_summary(all_results)
+        return all_results
+
+    def find_capacity(self, bot_log_file=None):
+        """Search for the largest bot count the server handles within limits.
+
+        Doubles the bot count from 10 until a test fails
+        :func:`within_capacity`, then bisects between the largest passing and
+        smallest failing counts until they are within 10% of each other.
+
+        Returns
+        -------
+        list[dict]
+            One result per test, in the order they ran.
+        """
+        self._print_suite_header(
+            f"automatic (from {_CAPACITY_SEARCH_START}, until p95 response time "
+            f"exceeds {self.max_p95_s * 1000:.0f} ms or errors occur)"
+        )
+        all_results = []
+        highest_pass = lowest_fail = None
+        while True:
+            n_bots = next_capacity_probe(highest_pass, lowest_fail)
+            if n_bots is None:
+                break
+            if all_results:
                 time.sleep(5)
+            result = self._run_one_test(f"{len(all_results) + 1}", n_bots, bot_log_file)
+            all_results.append(result)
+            if result["server_stopped"]:
+                break
+            if within_capacity(result, self.max_p95_s):
+                highest_pass = n_bots
+            else:
+                lowest_fail = n_bots
 
         self._print_performance_summary(all_results)
         return all_results
 
+    def _print_suite_header(self, bots_description):
+        logger.info(bold("=" * 80))
+        logger.info(bold("\u26a1 PERFORMANCE TEST SUITE"))
+        logger.info(f"Bots per test:        {bots_description}")
+        logger.info(f"Test duration:        {self.duration_minutes:.1f} min")
+        logger.info(f"Bot start stagger:    ~{self.stagger_interval_s:.1f}s")
+        logger.info(f"Bot time factor:      {self.time_factor:.1f}")
+
+    def _run_one_test(self, label, n_bots, bot_log_file):
+        logger.info("")
+        logger.info(bold("=" * 80))
+        logger.info(bold(f"TEST {label}: Running with {n_bots:,} concurrent bots"))
+        return self._test_performance(n_bots, bot_log_file=bot_log_file)
+
     def _print_performance_summary(self, results):
-        """Print cross-test comparison table."""
+        """Print cross-test comparison table and the capacity it implies."""
         for line in format_performance_summary(results):
+            logger.info(line)
+        for line in format_capacity_summary(results, self.max_p95_s, self.time_factor):
             logger.info(line)
 
     def _test_performance(self, n, bot_log_file):
@@ -1094,6 +1138,7 @@ def format_performance_summary(results):
         "Succeeded",
         "Requests",
         "Req/s",
+        "Resp P95 (s)",
         "Resp Med (s)",
     ]
     if show_scaling:
@@ -1115,6 +1160,7 @@ def format_performance_summary(results):
                 if result.get("requests_per_sec") is not None
                 else "N/A"
             ),
+            _fmt(result.get("p95_response_time")),
             _fmt(response_median),
         ]
         if show_scaling:
@@ -1141,7 +1187,8 @@ def format_performance_summary(results):
     lines.append("")
     lines.append(bold("CUMULATIVE PERFORMANCE TEST SUMMARY\n"))
     lines.append(
-        "  Resp Med — median HTTP response time for key endpoints (/timeline, /response)"
+        "  Resp P95 / Resp Med — 95th percentile / median HTTP response time for key "
+        "endpoints (/timeline, /response)"
     )
     lines.append("  Q Med all — median queue delay across all async processes")
     lines.append(
@@ -1153,4 +1200,80 @@ def format_performance_summary(results):
         lines.append(f"  {line}")
     lines.append("")
 
+    return lines
+
+
+def within_capacity(result, max_p95_s=DEFAULT_MAX_P95_S):
+    """Return whether a test kept p95 response time under ``max_p95_s`` without errors."""
+    p95 = result.get("p95_response_time")
+    return (
+        not result.get("server_stopped")
+        and not result.get("request_errors")
+        and not result.get("bot_errors")
+        and p95 is not None
+        and float(p95) <= max_p95_s
+    )
+
+
+def next_capacity_probe(highest_pass, lowest_fail, max_bots=_CAPACITY_SEARCH_MAX):
+    """Return the next bot count for the capacity search, or ``None`` when done.
+
+    Parameters
+    ----------
+    highest_pass : int or None
+        Largest bot count that has passed so far.
+    lowest_fail : int or None
+        Smallest bot count that has failed so far.
+    max_bots : int
+        The search never goes above this count.
+    """
+    if lowest_fail is None:
+        if highest_pass is None:
+            return _CAPACITY_SEARCH_START
+        if highest_pass >= max_bots:
+            return None
+        return min(highest_pass * 2, max_bots)
+    lower = highest_pass or 0
+    if lowest_fail - lower <= max(1, lower * _CAPACITY_RESOLUTION):
+        return None
+    return (lower + lowest_fail) // 2
+
+
+def format_capacity_summary(results, max_p95_s=DEFAULT_MAX_P95_S, time_factor=1.0):
+    """Describe the capacity that ``results`` imply and suggest a participant cap.
+
+    Returns list[str].
+    """
+    limit = f"p95 response time under {max_p95_s * 1000:.0f} ms with no errors"
+    passed = [r["n_bots"] for r in results if within_capacity(r, max_p95_s)]
+    if not passed:
+        return [f"  No tested bot count kept {limit}.", ""]
+
+    capacity = max(passed)
+    failed_above = [
+        r["n_bots"]
+        for r in results
+        if r["n_bots"] > capacity and not within_capacity(r, max_p95_s)
+    ]
+    if failed_above:
+        lines = [
+            f"  Capacity: about {capacity:,} concurrent bots kept {limit}; "
+            f"{min(failed_above):,} did not."
+        ]
+    else:
+        lines = [
+            f"  Capacity: at least {capacity:,} concurrent bots kept {limit}. "
+            "Test more bots to find the limit."
+        ]
+    suggested = int(capacity * _CAPACITY_HEADROOM)
+    lines.append(
+        f"  Suggested max_concurrent_participants: {suggested:,} "
+        f"({_CAPACITY_HEADROOM:.0%} of {capacity:,})"
+    )
+    if not time_factor:
+        lines.append(
+            "  These bots ran without pauses (--time-factor 0) and load the server "
+            "far more than people do; use --time-factor 1 to size a participant cap."
+        )
+    lines.append("")
     return lines

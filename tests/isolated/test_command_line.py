@@ -4568,6 +4568,7 @@ def test_performance_test_preserves_explicit_zero_options():
         duration_minutes=0,
         stagger_interval_s=0.0,
         time_factor=0,
+        max_p95_s=0.5,
     )
 
 
@@ -4614,6 +4615,7 @@ def test_performance_test_uses_defaults_when_options_omitted():
         duration_minutes=2.0,
         stagger_interval_s=0.5,
         time_factor=1.0,
+        max_p95_s=0.5,
     )
 
 

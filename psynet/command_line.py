@@ -4123,7 +4123,20 @@ _test_options["performance_n_bots"] = click.option(
     The --n-bots parameter can accept a comma-separated list of integers
     to run sequential tests with different maximum concurrency levels.
     Example: --n-bots "5,10,20" will run three separate tests.
+    Use --n-bots auto to search for the largest bot count that keeps the
+    95th-percentile response time under --max-p95-ms without errors.
     If not specified, will default to Experiment.test_n_bots""",
+)
+
+_test_options["performance_max_p95_ms"] = click.option(
+    "--max-p95-ms",
+    type=float,
+    default=None,
+    help="""
+    The 95th-percentile response time (for /timeline and /response) that a
+    test may reach while still counting as within capacity. Used by
+    --n-bots auto and by the suggested participant cap in the summary.
+    Defaults to 500.""",
 )
 
 _test_options["performance_time_factor"] = click.option(
@@ -4321,6 +4334,7 @@ def performance_test(ctx):
 @_test_options["performance_stagger"]
 @_test_options["performance_time_factor"]
 @_test_options["duration_minutes"]
+@_test_options["performance_max_p95_ms"]
 @_test_options["performance_json_output"]
 @click.option("--debug", is_flag=True, help="Enable debug logging for verbose output")
 def performance_test__local(
@@ -4329,6 +4343,7 @@ def performance_test__local(
     stagger=None,
     time_factor=None,
     duration_minutes=None,
+    max_p95_ms=None,
     json_output=None,
     debug=False,
 ):
@@ -4337,7 +4352,8 @@ def performance_test__local(
 
     The --n-bots parameter can accept a comma-separated list of integers
     to run sequential tests with different concurrency levels.
-    Example: --n-bots "5,10,20" will run three separate tests.
+    Example: --n-bots "5,10,20" will run three separate tests, and
+    --n-bots auto searches for the server's capacity.
 
     By default, this command starts a new experiment server automatically.
     Use --existing to connect to an already-running server instead.
@@ -4351,6 +4367,7 @@ def performance_test__local(
         stagger=stagger,
         time_factor=time_factor,
         duration_minutes=duration_minutes,
+        max_p95_ms=max_p95_ms,
         json_output=json_output,
         debug=debug,
     )
@@ -4365,15 +4382,28 @@ def _run_performance_test_local(
     duration_minutes,
     json_output,
     debug,
+    max_p95_ms=None,
 ):
     """Run a local performance test and return its result records."""
 
     if existing:
         return _run_performance_test_with_existing_server(
-            n_bots, stagger, time_factor, duration_minutes, debug, json_output
+            n_bots,
+            stagger,
+            time_factor,
+            duration_minutes,
+            debug,
+            json_output,
+            max_p95_ms=max_p95_ms,
         )
     return _run_performance_test_with_new_server(
-        n_bots, stagger, time_factor, duration_minutes, debug, json_output
+        n_bots,
+        stagger,
+        time_factor,
+        duration_minutes,
+        debug,
+        json_output,
+        max_p95_ms=max_p95_ms,
     )
 
 
@@ -4409,7 +4439,13 @@ def _write_json_results(json_output, *, metadata, options, all_results):
 
 
 def _run_performance_test_with_existing_server(
-    n_bots, stagger, time_factor, duration_minutes, debug, json_output=None
+    n_bots,
+    stagger,
+    time_factor,
+    duration_minutes,
+    debug,
+    json_output=None,
+    max_p95_ms=None,
 ):
     """Run performance test connecting to an already-running server."""
     import logging
@@ -4450,12 +4486,14 @@ def _run_performance_test_with_existing_server(
         )
         sys.exit(1)
 
-    from psynet.perf_test import PerformanceTester
+    from psynet.perf_test import DEFAULT_MAX_P95_S, PerformanceTester
 
     os.environ["PASSTHROUGH_ERRORS"] = "True"
 
-    # Parse n_bots - can be comma-separated list
-    if n_bots:
+    find_capacity = str(n_bots).strip().lower() == "auto"
+    if find_capacity:
+        bot_counts = None
+    elif n_bots:
         bot_counts = [int(x.strip()) for x in n_bots.split(",")]
     else:
         bot_counts = [exp.test_n_bots]
@@ -4473,9 +4511,15 @@ def _run_performance_test_with_existing_server(
         # Documented CLI default is 1.0 (realistic pacing). Do not fall back to
         # Experiment.test_time_factor, which defaults to 0.0 for correctness tests.
         time_factor=(1.0 if time_factor is None else time_factor),
+        max_p95_s=(
+            DEFAULT_MAX_P95_S if max_p95_ms is None else float(max_p95_ms) / 1000
+        ),
     )
     started_at = datetime.datetime.now().isoformat(timespec="seconds")
-    all_results = tester.run(bot_counts=bot_counts, bot_log_file=bot_log_file)
+    if find_capacity:
+        all_results = tester.find_capacity(bot_log_file=bot_log_file)
+    else:
+        all_results = tester.run(bot_counts=bot_counts, bot_log_file=bot_log_file)
     finished_at = datetime.datetime.now().isoformat(timespec="seconds")
     bot_log_file.close()
     print(f"Bot output log: {bot_log_file.name}")
@@ -4487,7 +4531,9 @@ def _run_performance_test_with_existing_server(
             "finished_at": finished_at,
         }
         options = {
-            "n_bots_sweep": bot_counts,
+            "n_bots_sweep": [result["n_bots"] for result in all_results],
+            "capacity_search": find_capacity,
+            "max_p95_s": tester.max_p95_s,
             "duration_minutes": tester.duration_minutes,
             "stagger_interval_s": tester.stagger_interval_s,
             "time_factor": tester.time_factor,
@@ -4702,7 +4748,13 @@ def _stop_server(server_info):
 
 
 def _run_performance_test_with_new_server(
-    n_bots, stagger, time_factor, duration_minutes, debug, json_output=None
+    n_bots,
+    stagger,
+    time_factor,
+    duration_minutes,
+    debug,
+    json_output=None,
+    max_p95_ms=None,
 ):
     """Run performance test after starting a new experiment server"""
     # Prefer legacy debug: gunicorn with several workers is closer to a deployed
@@ -4716,7 +4768,13 @@ def _run_performance_test_with_new_server(
 
     try:
         all_results = _run_performance_test_with_existing_server(
-            n_bots, stagger, time_factor, duration_minutes, debug, json_output
+            n_bots,
+            stagger,
+            time_factor,
+            duration_minutes,
+            debug,
+            json_output,
+            max_p95_ms=max_p95_ms,
         )
         print("✓ Performance test completed")
         return all_results
@@ -4732,6 +4790,7 @@ def _run_performance_test_with_new_server(
 @_test_options["performance_stagger"]
 @_test_options["performance_time_factor"]
 @_test_options["duration_minutes"]
+@_test_options["performance_max_p95_ms"]
 @_test_options["performance_json_output"]
 @click.pass_context
 def performance_test__docker_ssh(
@@ -4742,6 +4801,7 @@ def performance_test__docker_ssh(
     stagger=None,
     time_factor=None,
     duration_minutes=None,
+    max_p95_ms=None,
     json_output=None,
 ):
     """
@@ -4771,6 +4831,7 @@ def performance_test__docker_ssh(
         stagger=stagger,
         time_factor=time_factor,
         duration_minutes=duration_minutes,
+        max_p95_ms=max_p95_ms,
     )
 
     server_info = CONFIGURED_HOSTS[server]
@@ -4780,7 +4841,9 @@ def performance_test__docker_ssh(
     run_remote_experiment_command(executor, app, cmd)
 
 
-def _build_ssh_performance_test_cmd(n_bots, stagger, time_factor, duration_minutes):
+def _build_ssh_performance_test_cmd(
+    n_bots, stagger, time_factor, duration_minutes, max_p95_ms=None
+):
     """Build the remote performance-test command, preserving explicit zeros."""
     cmd = "psynet performance-test local --existing"
 
@@ -4795,6 +4858,9 @@ def _build_ssh_performance_test_cmd(n_bots, stagger, time_factor, duration_minut
 
     if duration_minutes is not None:
         cmd += f" --duration-minutes {duration_minutes}"
+
+    if max_p95_ms is not None:
+        cmd += f" --max-p95-ms {max_p95_ms}"
 
     return cmd
 
@@ -4859,6 +4925,7 @@ def audit_simulate(ctx, n_bots=None):
 @_test_options["performance_stagger"]
 @_test_options["performance_time_factor"]
 @_test_options["duration_minutes"]
+@_test_options["performance_max_p95_ms"]
 @click.option("--debug", is_flag=True, help="Enable debug logging for verbose output")
 @require_exp_directory
 def audit_performance_test(
@@ -4867,6 +4934,7 @@ def audit_performance_test(
     stagger=None,
     time_factor=None,
     duration_minutes=None,
+    max_p95_ms=None,
     debug=False,
 ):
     """Run a local performance test and write its audit evidence."""
@@ -4878,6 +4946,7 @@ def audit_performance_test(
         stagger=stagger,
         time_factor=time_factor,
         duration_minutes=duration_minutes,
+        max_p95_ms=max_p95_ms,
         json_output=json_output,
         debug=debug,
     )

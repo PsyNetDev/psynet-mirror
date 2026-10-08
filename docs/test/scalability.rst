@@ -100,6 +100,37 @@ use and the number of request errors.
 If response times are high, profile the database queries with ``psynet test
 local --sql-profile``; see :doc:`/test/sqlalchemy_profiling`.
 
+.. _performance_testing_capacity:
+
+Finding the server's capacity
+-----------------------------
+
+``--n-bots auto`` searches for the largest number of bots the server handles
+well, so you don't have to guess a list of counts:
+
+.. code-block:: bash
+
+    psynet performance-test local --n-bots auto --time-factor 1 --duration-minutes 3
+
+A test counts as within capacity if the 95th-percentile response time stays
+under ``--max-p95-ms`` (default 500) and no request or bot errors occur. The
+search starts at 10 bots and doubles the count until a test fails, then
+halves the gap between the largest passing and smallest failing counts until
+they are within 10% of each other, so it usually runs six to ten tests. It
+stops at 2,000 bots.
+
+The summary at the end of every multi-count run, automatic or not, reports
+the capacity it found and suggests a cap of 80% of it, for example::
+
+    Capacity: about 150 concurrent bots kept p95 response time under 500 ms with no errors; 160 did not.
+    Suggested max_concurrent_participants: 120 (80% of 150)
+
+Run the search on the server you will deploy to, with ``--time-factor 1`` so
+that bots work at a realistic pace; bots with ``--time-factor 0`` load the
+server far more than people do. Each test's measurement window includes the
+time bots take to start, so use a ``--duration-minutes`` of at least two or
+three for steady results.
+
 .. _performance_testing_server:
 
 Testing on a server
@@ -135,4 +166,5 @@ section.
 
 A typical sequence is a local sweep to see how response times grow with
 load, then more worker processes or faster queries where needed, then a
-final test on the real server at the expected peak number of participants.
+capacity search (``--n-bots auto``) on the real server to choose the
+participant cap.

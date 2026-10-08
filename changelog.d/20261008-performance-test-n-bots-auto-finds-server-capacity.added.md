@@ -1,0 +1,1 @@
+Added `psynet performance-test --n-bots auto`, which searches for the largest number of bots the server handles with a 95th-percentile response time under `--max-p95-ms` (default 500) and no errors. The summary of every multi-count run now reports this capacity, a suggested `max_concurrent_participants` of 80% of it, and the 95th-percentile response time per bot count.
