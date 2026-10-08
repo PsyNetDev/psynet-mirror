@@ -31,6 +31,12 @@ from psynet.audit.model import (
     CompletenessItem,
     screenshot_caption,
 )
+from psynet.perf_test import (
+    CapacityLimits,
+    capacity_advice,
+    capacity_failures,
+    format_capacity_summary,
+)
 
 UrlTransform = Callable[[str], str]
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
@@ -849,9 +855,14 @@ def render_performance_result(
             "tabular result rows.</p></section>"
         )
 
+    options_data = evidence.performance_data.get("options")
+    options_data = options_data if isinstance(options_data, dict) else {}
+    limits = _performance_limits(options_data)
     body: list[str] = []
     for row in evidence.performance_results:
         errors = int(row.get("request_errors") or 0) + int(row.get("bot_errors") or 0)
+        failures = capacity_failures(row, limits)
+        verdict = f"No: {', '.join(failures)}" if failures else "Yes"
         body.append(
             "<tr>"
             f"<td>{html.escape(str(row.get('n_bots', '')))}</td>"
@@ -862,8 +873,28 @@ def render_performance_result(
             f"<td>{format_metric(row.get('p95_response_time'))}</td>"
             f"<td>{format_metric(row.get('q_delay_p95'))}</td>"
             f"<td>{errors}</td>"
+            f"<td>{html.escape(verdict)}</td>"
             "</tr>"
         )
+    summary = [
+        line.strip()
+        for line in format_capacity_summary(
+            [
+                row
+                for row in evidence.performance_results
+                if isinstance(row.get("n_bots"), int)
+            ],
+            limits,
+            options_data.get("time_factor", 1.0),
+        )
+        if line.strip()
+    ]
+    notes = summary + capacity_advice(
+        capacity_search=bool(options_data.get("capacity_search"))
+    )
+    notes_html = "".join(
+        f'<p class="artifact-note">{html.escape(note)}</p>' for note in notes
+    )
     return (
         f'<section class="{section_class}">'
         f"{render_performance_header(evidence.performance_file, url_transform, standalone=standalone)}"
@@ -878,7 +909,22 @@ def render_performance_result(
         f"{performance_heading('Resp P95 (s)', '95th percentile HTTP response time, in seconds, for key participant endpoints; higher values show slower tail latency.')}"
         f"{performance_heading('Q P95 all (s)', '95th percentile async-process queue delay across trial makers, when queue metrics are available.')}"
         f"{performance_heading('Errors', 'Request errors plus bot errors recorded during the run.')}"
-        "</tr></thead><tbody>" + "\n".join(body) + "</tbody></table></div></section>"
+        f"{performance_heading('Within limits', f'Whether the run kept {limits.describe()}.')}"
+        "</tr></thead><tbody>"
+        + "\n".join(body)
+        + f"</tbody></table></div>{notes_html}</section>"
+    )
+
+
+def _performance_limits(options: Mapping[str, object]) -> CapacityLimits:
+    """Return the capacity limits a performance test was judged against."""
+
+    defaults = CapacityLimits()
+    return CapacityLimits(
+        max_p95_s=float(options.get("max_p95_s") or defaults.max_p95_s),
+        max_queue_p95_s=float(
+            options.get("max_queue_p95_s") or defaults.max_queue_p95_s
+        ),
     )
 
 

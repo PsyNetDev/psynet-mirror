@@ -1390,3 +1390,29 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
         )
     lines.append("")
     return lines
+
+
+def capacity_advice(capacity_search=False):
+    """Return advice on getting participant numbers that apply to a deployment.
+
+    Parameters
+    ----------
+    capacity_search : bool
+        Whether the test already searched for capacity with ``--n-bots auto``.
+
+    Returns
+    -------
+    list[str]
+    """
+    advice = [
+        "Local results only show how the experiment copes on this computer. "
+        "For numbers that apply to your study, launch the experiment on its "
+        "deployment server (psynet debug ssh) and run psynet performance-test ssh "
+        "there; the server's CPU, memory and worker settings set the real capacity."
+    ]
+    if not capacity_search:
+        advice.append(
+            "To find the largest number of concurrent participants the server "
+            "handles, add --n-bots auto."
+        )
+    return advice

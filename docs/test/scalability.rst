@@ -190,7 +190,11 @@ to a file (local tests only). To record the results in the experiment's
 audit, use ``psynet audit performance-test`` instead. It runs locally, takes
 the same load options and ``--existing``, and writes
 ``audit/artifacts/performance.json`` for the audit's *Performance test*
-section.
+section. That section marks each tested bot count as within limits or not,
+using the same response-time and queue-wait limits as the capacity search,
+and reminds readers that participant numbers for a study must come from
+``psynet performance-test ssh`` on the deployment server, with
+``--n-bots auto`` to find the largest number it handles.
 
 A typical sequence is a local sweep to see how response times grow with
 load, then more worker processes or faster queries where needed, then a

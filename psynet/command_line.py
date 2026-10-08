@@ -5000,6 +5000,12 @@ def audit_performance_test(
     )
     mark_performance_result_present(all_results)
 
+    from psynet.perf_test import capacity_advice
+
+    capacity_search = str(n_bots).strip().lower() == "auto"
+    for line in capacity_advice(capacity_search=capacity_search):
+        click.echo(line)
+
 
 @audit.command("init")
 @click.option(

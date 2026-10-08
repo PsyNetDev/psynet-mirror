@@ -60,7 +60,9 @@ Sections
    A static copy of the PsyNet monitor page.
 
 **Performance test**
-   Response times with many bots at once; see :doc:`scalability`.
+   Response times with many bots at once, and whether each tested number of
+   bots stayed within the response-time and queue-wait limits; see
+   :doc:`scalability`.
 
 **Data exports**
    The export produced by bots, in the same format as a real export; see

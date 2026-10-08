@@ -11,6 +11,7 @@ from psynet.audit.html import (
     render_markdown_document,
     render_notebook_output,
     render_notebook_panel,
+    render_performance_result,
     render_timeline_section,
     safe_section_html,
 )
@@ -38,6 +39,32 @@ def unpublished_file(path: str) -> AuditFile:
         published=False,
         publication_note="Excluded from publication.",
     )
+
+
+def test_performance_result_judges_each_run_and_advises_next_steps() -> None:
+    def performance(capacity_search):
+        options = {"capacity_search": capacity_search, "max_p95_s": 1.0}
+        results = [
+            {"n_bots": 8, "p95_response_time": 0.2},
+            {"n_bots": 16, "p95_response_time": 3.0},
+        ]
+        view = classify_audit_evidence(
+            [
+                file(
+                    "performance.json",
+                    json.dumps({"options": options, "results": results}),
+                )
+            ]
+        )
+        return render_performance_result(view)
+
+    html = performance(capacity_search=False)
+    assert "<td>Yes</td>" in html
+    assert "<td>No: p95 response time 3000 ms</td>" in html
+    assert "Capacity: about 8 concurrent bots" in html
+    assert "psynet performance-test ssh" in html
+    assert "--n-bots auto" in html
+    assert "--n-bots auto" not in performance(capacity_search=True)
 
 
 def test_safe_section_html_returns_body_on_success() -> None:
