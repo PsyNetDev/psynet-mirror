@@ -257,6 +257,10 @@ Prefer concise tests that exercise real/public interfaces.
 Avoid very long tests with extensive monkeypatching unless there is no practical
 alternative; if monkeypatching is necessary, keep it minimal and focused on
 observable behavior rather than internal implementation details.
+Running tests, including isolated unit tests, resets the local Postgres and
+Redis and stops local PsyNet servers on the same database. Run tests before
+starting a long-lived `psynet debug local` server, or restart the server
+afterwards.
 
 ## Code organization and documentation
 

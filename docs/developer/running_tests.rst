@@ -126,6 +126,15 @@ You can do this by running the following in your terminal:
     pytest tests/isolated/test_assets.py --chrome -s
 
 
+.. warning::
+
+    Tests use the same PostgreSQL database and Redis as ``psynet debug
+    local``. They reset both and stop local PsyNet servers that use that
+    database, so stop any local experiment you want to keep, or point it at
+    a different ``DATABASE_URL``, before running tests. This applies to
+    isolated unit tests too: the ``in_experiment_directory`` fixture clears
+    Redis.
+
 The ``--chrome`` argument is only needed for tests that invoke an automated
 web browser; if you omit this argument for such a test,
 then the test will be skipped. This behavior is inherited from Dallinger,
