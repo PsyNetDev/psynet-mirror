@@ -46,7 +46,10 @@ If a change is needed in Dallinger, make it there and submit a PR .
 
 ### Dallinger repo instructions
 
-Cloud Agents push to a Dallinger fork at `DALLINGER_FORK_URL` using the PAT `DALLINGER_GH_TOKEN`.
+Cloud Agents use the PAT `DALLINGER_GH_TOKEN` and a Dallinger fork at `DALLINGER_FORK_URL`.
+When the token can push to `Dallinger/Dallinger`, push feature branches there instead of to
+the fork: CI on PRs from a fork runs without the repository's secrets, so tests that call
+live services (such as the Prolific tests) fail.
 If these environment variables are not present, tell the user to follow these user instructions:
 
 #### User instructions
@@ -56,6 +59,8 @@ If these environment variables are not present, tell the user to follow these us
       - Contents: Read and write
       - Pull requests: Read and write
    - Set an expiry of 1 year or less (required for interacting with Dallinger organization).
+   - If you have write access to `Dallinger/Dallinger`, you can add it to the token's
+     repositories so that agents push branches there.
 2. Save this token as a Cloud Agent secret named `DALLINGER_GH_TOKEN` via the Cursor website.
 3. Create a Dallinger fork on the GitHub website (e.g., `https://github.com/<your-username>/Dallinger`).
 4. Save the fork URL as a Cloud Agent secret named `DALLINGER_FORK_URL` via the Cursor website.
@@ -90,16 +95,23 @@ development headers (e.g. `libpq-dev`) and retry.
 
 Make changes and commit locally.
 
-Push: `git push -u origin <branch-name>`
+Push to the main repository: `git push -u upstream <branch-name>`.
+If GitHub refuses the push because the token cannot write there, push to the fork
+instead: `git push -u origin <branch-name>`.
 
-Open a PR to upstream: `gh pr create --base master --head <your-username>:<branch-name>`
+Open a PR to upstream:
+
+- branch on the main repository: `gh pr create --repo Dallinger/Dallinger --base master --head <branch-name>`
+- branch on the fork: `gh pr create --repo Dallinger/Dallinger --base master --head <your-username>:<branch-name>`
 
 If your PsyNet PR depends on this new unmerged change to Dallinger,
-specify your fork in `pyproject.toml` (use a literal URL; environment
-variables are not expanded in `pyproject.toml`):
+specify the repository that holds the branch in `pyproject.toml` (use a
+literal URL; environment variables are not expanded in `pyproject.toml`):
 
 ```toml
 # In [project].dependencies
+"dallinger[docker] @ git+https://github.com/Dallinger/Dallinger.git@<branch-name>",
+# or, for a branch on the fork:
 "dallinger[docker] @ git+https://github.com/<your-username>/Dallinger.git@<branch-name>",
 ```
 
@@ -107,13 +119,13 @@ Use the GitHub CLI to find and read Dallinger job logs.
 Use the token `DALLINGER_GH_TOKEN` for all these commands (either via
 `gh auth login --with-token` above or by setting `GH_TOKEN` in the command).
 
-1. List recent runs:
-   - `gh run list --repo "$DALLINGER_FORK_URL" --limit 10`
+1. List recent runs. PR checks run on the canonical repo, including PRs from a fork:
+   - `gh run list --repo https://github.com/Dallinger/Dallinger --branch <branch-name> --limit 10`
 2. View logs for a specific run:
-   - `gh run view <run-id> --repo "$DALLINGER_FORK_URL" --log-failed`
-3. If the run is against upstream, use the canonical repo:
-   - `gh run list --repo https://github.com/Dallinger/Dallinger --limit 10`
    - `gh run view <run-id> --repo https://github.com/Dallinger/Dallinger --log-failed`
+3. Runs triggered by pushing to the fork run on the fork:
+   - `gh run list --repo "$DALLINGER_FORK_URL" --limit 10`
+   - `gh run view <run-id> --repo "$DALLINGER_FORK_URL" --log-failed`
 
 Local agents use a similar approach, but `~/Dallinger` should be created already by the user,
 and it may be a clone of the original repository, not a fork.
