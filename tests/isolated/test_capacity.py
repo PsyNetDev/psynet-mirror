@@ -86,8 +86,8 @@ class _Limited(Experiment):
 
 
 class _CustomRule(Experiment):
-    def accepts_new_participants(self):
-        return False
+    def is_at_capacity(self):
+        return True
 
 
 @pytest.mark.parametrize("experiment_class", [_Limited, _CustomRule])

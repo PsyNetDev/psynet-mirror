@@ -11,15 +11,17 @@ study is removed.
 
 Design constraints:
 
-* The decision belongs to :meth:`psynet.experiment.Experiment.accepts_new_participants`,
-  which experiments may override with their own logic (for example a time
-  window or a queue length). The cap is an experiment variable rather than a
-  config option so that it can change while the study runs.
+* The decision belongs to :meth:`psynet.experiment.Experiment.is_at_capacity`,
+  which experiments may override to measure load differently. It is only for
+  load: newcomers are told the study is busy and retried automatically, which
+  would mislead them if the study were closed instead. The cap is an
+  experiment variable rather than a config option so that it can change while
+  the study runs.
 * The check runs only when a new participant would be created
   (``POST /participant``), before any database row exists, so a waiting
   visitor costs one cheap request per retry and leaves no trace in the data.
 * A participant is *active* while they are working, have not failed, and have
-  either joined or submitted a page within ``max_concurrent_participants_idle_s``.
+  either joined or submitted a page in the last ``DEFAULT_IDLE_TIMEOUT_S`` seconds.
   People who close the tab stop counting once that timeout passes, so no
   cleanup job is needed. Pages that run longer than the timeout without a
   submission (for example long videos or timeline holds) briefly stop counting.
@@ -45,17 +47,19 @@ STUDY_FULL_ERROR_CODE = "study_full"
 _FULL_CACHE_S = 2.0
 _RETRY_AFTER_S = 30
 
+DEFAULT_IDLE_TIMEOUT_S = 600
+
 _full_until = 0.0
 
 
-def count_active_participants(idle_timeout_s):
+def count_active_participants(idle_timeout_s=DEFAULT_IDLE_TIMEOUT_S):
     """Count participants who are working and joined or submitted a page recently.
 
     Parameters
     ----------
     idle_timeout_s : float
         Participants with no page submission for this many seconds, and who
-        joined longer ago than that, do not count.
+        joined longer ago than that, do not count. Default: 600.
 
     Returns
     -------
@@ -87,7 +91,7 @@ def refuse_new_participant_if_full():
     """Return a 503 "study full" response if the study is at capacity, else ``None``.
 
     Called before ``POST /participant`` creates a participant; the decision
-    comes from :meth:`~psynet.experiment.Experiment.accepts_new_participants`.
+    comes from :meth:`~psynet.experiment.Experiment.is_at_capacity`.
     """
     global _full_until
 
@@ -95,7 +99,7 @@ def refuse_new_participant_if_full():
 
     now = time.monotonic()
     if now >= _full_until:
-        if get_experiment().accepts_new_participants():
+        if not get_experiment().is_at_capacity():
             return None
         _full_until = now + _FULL_CACHE_S
 

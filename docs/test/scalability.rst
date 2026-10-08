@@ -147,10 +147,8 @@ them in once there is space. People who are already taking the study, or
 who return to it, are never refused.
 
 A participant counts towards the cap while they are working and have
-joined or submitted a page in the last ``max_concurrent_participants_idle_s``
-seconds (default 600). People who close the tab stop counting once that
-time passes. Keep the timeout longer than the longest page that has no
-submission, such as a long video. Simultaneous arrivals can overshoot the
+joined or submitted a page in the last 10 minutes. People who close the tab
+stop counting once that time passes. Simultaneous arrivals can overshoot the
 cap by a few participants.
 
 Choose the cap with a performance test on the real server: take the number
@@ -158,20 +156,27 @@ of bots at which response times start to grow, and leave some headroom.
 
 Because the cap is an experiment variable, it can change while the study
 runs, for example from a code block
-(``experiment.var.max_concurrent_participants = 80``). For other rules, such
-as admitting people only at certain times or while the async queue is short,
-override :meth:`~psynet.experiment.Experiment.accepts_new_participants`:
+(``experiment.var.max_concurrent_participants = 80``). To measure load
+differently, override
+:meth:`~psynet.experiment.Experiment.is_at_capacity`. For example, if some
+pages run longer than 10 minutes without a submission (such as a long
+video), count participants as active for longer:
 
 .. code-block:: python
+
+    from psynet.capacity import count_active_participants
 
     class Exp(psynet.experiment.Experiment):
         variables = {"max_concurrent_participants": 150}
 
-        def accepts_new_participants(self):
-            return super().accepts_new_participants() and is_daytime()
+        def is_at_capacity(self):
+            limit = self.var.max_concurrent_participants
+            return bool(limit) and count_active_participants(1800) >= limit
 
-It runs every time a newcomer tries to start, including each retry from the
-start page, so keep it cheap.
+The method runs every time a newcomer tries to start, including each retry
+from the start page, so keep it cheap. Use it only for load: newcomers are
+told that many people are taking part and retried automatically, which would
+mislead them if the study were closed for another reason.
 
 The cap and the method only work with the ``generic`` and ``hotair``
 recruiters.

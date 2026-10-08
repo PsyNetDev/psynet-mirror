@@ -507,13 +507,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     max_concurrent_participants : `int` or `None`
         The maximum number of participants taking the study at once; newcomers
         over the limit wait on the start page until there is space (see
-        :meth:`accepts_new_participants`). Only supported with the ``generic``
-        and ``hotair`` recruiters. Default: `None` (no limit).
-
-    max_concurrent_participants_idle_s : `int`
-        Seconds without joining or submitting a page after which a working
-        participant stops counting towards ``max_concurrent_participants``.
-        Default: `600`.
+        :meth:`is_at_capacity`). Only supported with the ``generic`` and
+        ``hotair`` recruiters. Default: `None` (no limit).
 
     There are also a few experiment variables that are set automatically and that should,
     in general, not be changed manually:
@@ -2270,7 +2265,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             "soft_max_experiment_payment": 1000.0,
             "max_participant_payment": 25.0,
             "max_concurrent_participants": None,
-            "max_concurrent_participants_idle_s": 600,
         }
 
     @experiment_route("/api/<endpoint>", methods=["GET", "POST"])
@@ -2557,7 +2551,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         """Reject participant limits for recruiters that send paid participants."""
         limits_participants = (
             cls.variables.get("max_concurrent_participants")
-            or cls.accepts_new_participants is not Experiment.accepts_new_participants
+            or cls.is_at_capacity is not Experiment.is_at_capacity
         )
         if not limits_participants:
             return
@@ -2569,29 +2563,36 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             recruiter_class, "supports_max_concurrent_participants", False
         ):
             raise RuntimeError(
-                "max_concurrent_participants and accepts_new_participants are only "
+                "max_concurrent_participants and is_at_capacity are only "
                 "supported with the generic and hotair recruiters, because other "
                 "recruiters send participants who have accepted a place and should "
                 "not be kept waiting. With Prolific, limit simultaneous participants "
                 "through initial_recruitment_size instead."
             )
 
-    def accepts_new_participants(self):
-        """Return whether a newcomer may start the study now.
+    def is_at_capacity(self):
+        """Return whether the study is too busy to admit a newcomer right now.
 
-        Called before each new participant is created, including the retries
-        of people waiting on the start page while the study is full, so keep
-        it cheap. Returning participants are never refused.
+        While this returns ``True``, newcomers wait on the start page, which
+        tells them that many people are taking part and retries every 20 to
+        40 seconds. It is called before each new participant is created,
+        including those retries, so keep it cheap. Returning participants are
+        never refused. Use it only for load: the waiting message and retries
+        don't suit closing the study (for example outside certain hours).
 
-        By default, admits newcomers while fewer than the experiment variable
-        ``max_concurrent_participants`` are active (see
+        By default, the study is at capacity once the experiment variable
+        ``max_concurrent_participants`` participants are active (see
         :func:`psynet.capacity.count_active_participants`). Because it is an
         experiment variable, the limit can change while the study runs, for
         example ``experiment.var.max_concurrent_participants = 80``. Override
-        this method to add other conditions::
+        this method to measure load differently, for example to count
+        participants as active for 30 minutes after their last page::
 
-            def accepts_new_participants(self):
-                return super().accepts_new_participants() and is_daytime()
+            from psynet.capacity import count_active_participants
+
+            def is_at_capacity(self):
+                limit = self.var.max_concurrent_participants
+                return bool(limit) and count_active_participants(1800) >= limit
 
         Only supported with the ``generic`` and ``hotair`` recruiters.
 
@@ -2602,10 +2603,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         from .capacity import count_active_participants
 
         limit = self.var.get("max_concurrent_participants", None)
-        if not limit:
-            return True
-        idle_timeout_s = self.var.get("max_concurrent_participants_idle_s", 600)
-        return count_active_participants(idle_timeout_s) < limit
+        return bool(limit) and count_active_participants() >= limit
 
     @staticmethod
     def check_recruiter_support(config):
