@@ -103,7 +103,10 @@ def refuse_new_participant_if_full():
 
     if request.endpoint not in _PARTICIPANT_CREATION_ENDPOINTS:
         return None
-    recruiter_class = configured_recruiter_class()
+    try:
+        recruiter_class = configured_recruiter_class()
+    except NotImplementedError:
+        recruiter_class = None
     if recruiter_class is not None and not getattr(
         recruiter_class, "supports_max_concurrent_participants", False
     ):
