@@ -15,7 +15,13 @@ from .isolated_environment import ENV_VAR, SHARED, IsolatedEnvironment, should_i
 
 # Runs that don't execute tests and so don't need their own services.
 _INFO_ONLY_ARGS = {"-h", "--help", "-V", "--version"}
-_INFO_ONLY_ARGS |= {"--co", "--collect-only", "--fixtures", "--markers"}
+_INFO_ONLY_ARGS |= {
+    "--co",
+    "--collect-only",
+    "--collectonly",
+    "--fixtures",
+    "--markers",
+}
 
 
 def _start():

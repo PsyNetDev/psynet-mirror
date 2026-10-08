@@ -3949,7 +3949,8 @@ def _in_isolated_test_environment(func):
     """Run a local test command in its own database, Redis and port.
 
     Applied outside :func:`sql_profiled_command` so that only the re-run child
-    profiles and reports. ``--existing`` runs test a live server and run here.
+    profiles and reports. With ``--existing`` the command tests a live server,
+    so it runs in this process.
     """
 
     @functools.wraps(func)
