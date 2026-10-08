@@ -4520,10 +4520,13 @@ def test_performance_test_bot_counts():
     )
 
     assert _parse_performance_n_bots(None) is None
-    assert _parse_performance_n_bots(" AUTO ") == "auto"
     assert _parse_performance_n_bots("5, 10") == [5, 10]
-    with pytest.raises(click.BadParameter, match="whole numbers"):
-        _validate_performance_n_bots(None, None, "10,many")
+    assert _validate_performance_n_bots(None, None, None) is None
+    assert _validate_performance_n_bots(None, None, " AUTO ") == "auto"
+    assert _validate_performance_n_bots(None, None, "5, 10") == "5,10"
+    for invalid in ["10,many", "", " ", "0", "-1", "0,10"]:
+        with pytest.raises(click.BadParameter, match="whole numbers"):
+            _validate_performance_n_bots(None, None, invalid)
 
 
 def test_experiment_never_completes_during_performance_test(monkeypatch):
@@ -4644,9 +4647,12 @@ def test_ssh_performance_test_command_forwards_zero_valued_options():
         stagger=0,
         time_factor=0,
         duration_minutes=0,
+        max_p95_ms=0,
+        max_queue_p95_s=0,
     ) == (
         "psynet performance-test local --existing "
-        "--n-bots 5 --stagger 0 --time-factor 0 --duration-minutes 0"
+        "--n-bots 5 --stagger 0 --time-factor 0 --duration-minutes 0 "
+        "--max-p95-ms 0 --max-queue-p95-s 0"
     )
 
 

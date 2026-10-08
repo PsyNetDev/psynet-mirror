@@ -4125,23 +4125,32 @@ def _parse_performance_n_bots(n_bots):
     Raises
     ------
     ValueError
-        If ``n_bots`` is neither ``auto`` nor comma-separated whole numbers.
+        If ``n_bots`` is neither ``auto`` nor comma-separated positive whole numbers.
     """
-    if n_bots is None or not str(n_bots).strip():
+    if n_bots is None:
         return None
     if str(n_bots).strip().lower() == "auto":
         return "auto"
-    return [int(x) for x in str(n_bots).split(",")]
+    counts = [int(x) for x in str(n_bots).split(",")]
+    if any(n < 1 for n in counts):
+        raise ValueError(f"Bot counts must be at least 1, got {n_bots!r}.")
+    return counts
 
 
 def _validate_performance_n_bots(ctx, param, value):
+    """Click callback: reject invalid ``--n-bots`` and return it as ``auto`` or ``5,10``.
+
+    The canonical form has no spaces, so it can be forwarded in the SSH command.
+    """
     try:
-        _parse_performance_n_bots(value)
+        parsed = _parse_performance_n_bots(value)
     except ValueError:
         raise click.BadParameter(
-            "use 'auto' or comma-separated whole numbers, such as 5,10,20."
+            "use 'auto' or comma-separated whole numbers of at least 1, such as 5,10,20."
         ) from None
-    return value
+    if parsed is None or parsed == "auto":
+        return parsed
+    return ",".join(str(n) for n in parsed)
 
 
 _test_options["performance_n_bots"] = click.option(
