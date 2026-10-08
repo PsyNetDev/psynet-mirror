@@ -3910,6 +3910,7 @@ _test_options["existing"] = click.option(
 
 _test_options["n_bots"] = click.option(
     "--n-bots",
+    type=click.IntRange(min=1),
     help="Number of bots to use in the test. If not specified, will default to Experiment.test_n_bots.",
 )
 
@@ -3933,6 +3934,7 @@ _test_options["serial"] = click.option(
 
 _test_options["stagger"] = click.option(
     "--stagger",
+    type=float,
     help="""
     Time interval to wait (in seconds) between instantiating each parallel bot.
     If not specified, will default to Experiment.test_parallel_stagger_interval_s (0.1 s)""",
@@ -4201,6 +4203,7 @@ _test_options["performance_time_factor"] = click.option(
 
 _test_options["performance_stagger"] = click.option(
     "--stagger",
+    type=float,
     help="""
     Average time interval to wait (in seconds) between starting each bot.
     Start times will vary randomly using a gamma distribution with an upper bound of 5x this value.
