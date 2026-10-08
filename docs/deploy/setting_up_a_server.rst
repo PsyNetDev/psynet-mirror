@@ -89,6 +89,55 @@ Then add the path to ``~/.dallingerconfig``:
     [SSH]
     server_pem = ~/.ssh/my-server.pem
 
+Dallinger accepts an Ed25519, RSA, or ECDSA key. A DSA key has to be replaced;
+see :ref:`replacing-a-dsa-key`.
+
+.. _replacing-a-dsa-key:
+
+Replacing a DSA key
+^^^^^^^^^^^^^^^^^^^
+
+A DSA (DSS) private key cannot be converted to Ed25519, RSA, or ECDSA.
+Check the file named by ``server_pem``:
+
+.. code-block:: bash
+
+    ssh-keygen -l -f ~/.ssh/my-server.pem
+
+``(DSA)`` in that output means the key has to be replaced. Generate a new
+key, and do not overwrite the old file yet:
+
+.. code-block:: bash
+
+    ssh-keygen -t ed25519 -f ~/.ssh/my-new-server.pem
+    chmod 600 ~/.ssh/my-new-server.pem
+
+Install ``~/.ssh/my-new-server.pem.pub`` on the server while a login still
+works. Another authorized key can append it to ``~/.ssh/authorized_keys`` for
+the deploy user:
+
+.. code-block:: bash
+
+    ssh -i ~/.ssh/other-key.pem ubuntu@my-server.example.org 'mkdir -p ~/.ssh && chmod 700 ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys' < ~/.ssh/my-new-server.pem.pub
+
+A current OpenSSH client cannot log in with the DSA key, because it no longer
+offers ``ssh-dss``. If that key is the only login, paste the new public key
+in through the server provider's console. Then point ``server_pem`` at
+``~/.ssh/my-new-server.pem`` and confirm it:
+
+.. code-block:: bash
+
+    ssh -i ~/.ssh/my-new-server.pem ubuntu@my-server.example.org
+
+If you provision servers with ``dallinger ec2 provision``, set
+``ec2_default_pem`` to the new key pair's name as well. The file name must
+still match that name, as ``~/.ssh/<ec2_default_pem>.pem``. Dallinger imports
+the key pair into a region when it is missing. An instance that is already
+running still needs the public key in its ``authorized_keys``.
+
+When Dallinger no longer loads DSA keys, it reports the file as ``not a valid
+OPENSSH private key file``.
+
 Docker image name
 ^^^^^^^^^^^^^^^^^
 
@@ -211,7 +260,9 @@ Registering the server
           server_pem = ~/.ssh/cool-psychology.pem
 
       If the key pair does not exist in the region you provision in, Dallinger
-      imports it there from the local file.
+      imports it there from the local file. AWS does not issue DSA keys. If
+      ``server_pem`` is a DSA key you created yourself, replace it as
+      described in :ref:`replacing-a-dsa-key`.
 
       **Provision.** List the regions with ``dallinger ec2 list regions`` and
       choose the one closest to your participants. Then run:

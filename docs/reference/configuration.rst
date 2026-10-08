@@ -790,6 +790,8 @@ General
 ``server_pem`` *str* |dlgr-icon|
     Path to the PEM file for SSH authentication when deploying to a server using Docker SSH.
     This file will be used to authenticate SSH connections to the server.
+    Ed25519, RSA, and ECDSA keys are accepted. A DSA key is not; see
+    :ref:`replacing-a-dsa-key`.
     Can be set in either your experiment's `config.txt` or in `~/.dallingerconfig`:
 
     .. code-block:: ini

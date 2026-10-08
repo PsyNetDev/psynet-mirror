@@ -42,6 +42,13 @@ If you know that the name now points at a new server, remove the old key from
 
     ssh-keygen -R my-server.example.org
 
+DSA key rejected
+^^^^^^^^^^^^^^^^
+
+If connecting fails with ``not a valid OPENSSH private key file``,
+``server_pem`` is a DSA key. Replace it as described in
+:ref:`replacing-a-dsa-key`.
+
 I cannot access my server anymore
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
