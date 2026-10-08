@@ -112,9 +112,23 @@ well, so you don't have to guess a list of counts:
 
     psynet performance-test local --n-bots auto --time-factor 1 --duration-minutes 3
 
-A test counts as within capacity if the 95th-percentile response time stays
-under ``--max-p95-ms`` (default 500) and no request or bot errors occur. The
-search starts at 10 bots and doubles the count until a test fails, then
+A test counts as within capacity if no request or bot errors occur and both
+of these stay within their limits:
+
+- the 95th-percentile response time for ``/timeline`` and ``/response``,
+  limited by ``--max-p95-ms`` (default 500);
+- the 95th-percentile time that async processes wait in the queue for a
+  worker, limited by ``--max-queue-p95-s`` (default 5). Participants often
+  sit on a wait page during this time, so it matters as much as response
+  time. Processes still waiting when the test ends count with the time they
+  have waited so far, so a queue that never drains fails the test.
+
+The summary names the limit that a failing test exceeded. If the queue limit
+is what caps capacity, add worker processes with the ``num_dynos_worker``
+config variable (see :doc:`/reference/configuration`) before resorting to a
+lower participant cap.
+
+The search starts at 10 bots and doubles the count until a test fails, then
 halves the gap between the largest passing and smallest failing counts until
 they are within 10% of each other, so it usually runs six to ten tests. It
 stops at 2,000 bots.
@@ -122,8 +136,8 @@ stops at 2,000 bots.
 The summary at the end of every multi-count run, automatic or not, reports
 the capacity it found and suggests a cap of 80% of it, for example::
 
-    Capacity: about 150 concurrent bots kept p95 response time under 500 ms with no errors; 160 did not.
-    Suggested max_concurrent_participants: 120 (80% of 150)
+    Capacity: about 160 concurrent bots kept p95 response time under 500 ms, p95 async queue wait under 5 s and no errors; 170 did not (p95 response time 622 ms).
+    Suggested max_concurrent_participants: 128 (80% of 160)
 
 Run the search on the server you will deploy to, with ``--time-factor 1`` so
 that bots work at a realistic pace; bots with ``--time-factor 0`` load the

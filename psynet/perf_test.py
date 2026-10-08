@@ -5,6 +5,7 @@ import sys
 import threading
 import time
 from contextlib import contextmanager
+from dataclasses import dataclass
 from decimal import Decimal
 
 from tabulate import tabulate
@@ -17,6 +18,7 @@ _SERVER_CHECK_INTERVAL_S = 5
 _BOT_THREAD_PREFIX = "psynet-bot-"
 
 DEFAULT_MAX_P95_S = 0.5
+DEFAULT_MAX_QUEUE_P95_S = 5.0
 _CAPACITY_SEARCH_START = 10
 _CAPACITY_SEARCH_MAX = 2000
 # The search stops once the gap between the largest passing and smallest
@@ -167,7 +169,7 @@ class PerformanceTester:
         duration_minutes=1,
         stagger_interval_s=0.1,
         time_factor=0.0,
-        max_p95_s=DEFAULT_MAX_P95_S,
+        limits=None,
     ):
         self.authenticated_session = authenticated_session
         self.base_url = base_url
@@ -175,7 +177,7 @@ class PerformanceTester:
         self.duration_minutes = duration_minutes
         self.stagger_interval_s = stagger_interval_s
         self.time_factor = time_factor
-        self.max_p95_s = max_p95_s
+        self.limits = limits or CapacityLimits()
         # Experiment code shares this process and may call random.seed().
         self._random = random.Random()
 
@@ -210,8 +212,8 @@ class PerformanceTester:
             One result per test, in the order they ran.
         """
         self._print_suite_header(
-            f"automatic (from {_CAPACITY_SEARCH_START}, until p95 response time "
-            f"exceeds {self.max_p95_s * 1000:.0f} ms or errors occur)"
+            f"automatic (from {_CAPACITY_SEARCH_START}, while keeping "
+            f"{self.limits.describe()})"
         )
         all_results = []
         highest_pass = lowest_fail = None
@@ -225,10 +227,14 @@ class PerformanceTester:
             all_results.append(result)
             if result["server_stopped"]:
                 break
-            if within_capacity(result, self.max_p95_s):
-                highest_pass = n_bots
-            else:
+            failures = capacity_failures(result, self.limits)
+            if failures:
+                logger.info(
+                    warning(f"{n_bots:,} bots exceeded limits: {', '.join(failures)}")
+                )
                 lowest_fail = n_bots
+            else:
+                highest_pass = n_bots
 
         self._print_performance_summary(all_results)
         return all_results
@@ -251,7 +257,7 @@ class PerformanceTester:
         """Print cross-test comparison table and the capacity it implies."""
         for line in format_performance_summary(results):
             logger.info(line)
-        for line in format_capacity_summary(results, self.max_p95_s, self.time_factor):
+        for line in format_capacity_summary(results, self.limits, self.time_factor):
             logger.info(line)
 
     def _test_performance(self, n, bot_log_file):
@@ -277,6 +283,7 @@ class PerformanceTester:
                 )
                 actual_duration = time.time() - start_time
                 last_request_id = self._max_request_id()
+                ended_at = datetime.datetime.now()
             finally:
                 self._stop_bots(bot_state)
         self._clear_realtime_status()
@@ -288,6 +295,7 @@ class PerformanceTester:
             initial_state,
             bot_state,
             last_request_id,
+            ended_at,
         )
 
     @staticmethod
@@ -554,14 +562,18 @@ class PerformanceTester:
         initial_state,
         bot_state,
         last_request_id,
+        ended_at,
     ):
         """Calculate final metrics and report results.
 
         Request statistics cover requests logged up to ``last_request_id``, i.e.
         before the bots were stopped, so that they match ``actual_duration``.
+        ``oldest_queued_s`` is how long the oldest async process enqueued
+        during the test had been waiting for a worker at ``ended_at``, so a
+        backlog that never drains still counts against capacity.
         """
         from dallinger import db
-        from sqlalchemy import case, func
+        from sqlalchemy import case, func, or_
 
         from psynet.bot import Bot
         from psynet.experiment import Request
@@ -681,6 +693,22 @@ class PerformanceTester:
                 AsyncProcess.finished == True,  # noqa: E712
             )
             .scalar()
+        )
+
+        oldest_enqueued = (
+            db.session.query(func.min(AsyncProcess.time_enqueued))
+            .filter(
+                AsyncProcess.id > initial_state["max_process_id"],
+                AsyncProcess.time_enqueued <= ended_at,
+                or_(
+                    AsyncProcess.time_started.is_(None),
+                    AsyncProcess.time_started > ended_at,
+                ),
+            )
+            .scalar()
+        )
+        oldest_queued_s = (
+            (ended_at - oldest_enqueued).total_seconds() if oldest_enqueued else None
         )
 
         bots = Bot.query.filter(Bot.id > initial_state["max_participant_id"]).all()
@@ -828,6 +856,7 @@ class PerformanceTester:
             "avg_incomplete_duration": avg_incomplete_duration,
             "q_delay_median": q_delay_median,
             "q_delay_p95": q_delay_p95,
+            "oldest_queued_s": oldest_queued_s,
             "process_stats": process_stats,
             "min_trial_count": min_trial_count,
             "median_trial_count": median_trial_count,
@@ -1118,6 +1147,15 @@ def format_test_results(result):
         lines.append("  No completed async processes.")
         lines.append("")
 
+    if result.get("oldest_queued_s") is not None:
+        lines.append(
+            warning(
+                "  Still queued when the test ended: oldest process had waited "
+                f"{result['oldest_queued_s']:.1f}s for a worker."
+            )
+        )
+        lines.append("")
+
     return lines
 
 
@@ -1146,6 +1184,7 @@ def format_performance_summary(results):
     summary_headers.append("Q Med all (s)")
     if show_scaling:
         summary_headers.append("vs base")
+    summary_headers.append("Q P95 (s)")
 
     summary_rows = []
     for i, result in enumerate(results):
@@ -1182,6 +1221,7 @@ def format_performance_summary(results):
                 row.append(f"{q_median / baseline_q_median:.1f}x")
             else:
                 row.append("N/A")
+        row.append(_fmt(queue_wait_p95(result)))
         summary_rows.append(row)
 
     lines.append("")
@@ -1191,6 +1231,10 @@ def format_performance_summary(results):
         "endpoints (/timeline, /response)"
     )
     lines.append("  Q Med all — median queue delay across all async processes")
+    lines.append(
+        "  Q P95 — 95th percentile queue delay, or the wait of the oldest process "
+        "still queued at the end if longer"
+    )
     lines.append(
         "  vs base — ratio to the first (lowest bot-count) row, if multiple counts are run"
     )
@@ -1203,16 +1247,68 @@ def format_performance_summary(results):
     return lines
 
 
-def within_capacity(result, max_p95_s=DEFAULT_MAX_P95_S):
-    """Return whether a test kept p95 response time under ``max_p95_s`` without errors."""
+@dataclass(frozen=True)
+class CapacityLimits:
+    """Thresholds a performance test must stay within to count as within capacity.
+
+    Parameters
+    ----------
+    max_p95_s : float
+        Largest acceptable 95th-percentile response time for ``/timeline``
+        and ``/response``.
+    max_queue_p95_s : float
+        Largest acceptable time async processes spend waiting for a worker,
+        measured by :func:`queue_wait_p95`.
+    """
+
+    max_p95_s: float = DEFAULT_MAX_P95_S
+    max_queue_p95_s: float = DEFAULT_MAX_QUEUE_P95_S
+
+    def describe(self):
+        return (
+            f"p95 response time under {self.max_p95_s * 1000:.0f} ms, "
+            f"p95 async queue wait under {self.max_queue_p95_s:g} s and no errors"
+        )
+
+
+def queue_wait_p95(result):
+    """Return the 95th-percentile async queue delay, counting any unfinished backlog.
+
+    Processes still waiting when the test ended have no ``queue_delay`` yet,
+    so the wait of the oldest one is used instead whenever it is longer.
+    Returns ``None`` if the test ran no async processes.
+    """
+    waits = [
+        float(v)
+        for v in (result.get("q_delay_p95"), result.get("oldest_queued_s"))
+        if v is not None
+    ]
+    return max(waits) if waits else None
+
+
+def capacity_failures(result, limits=CapacityLimits()):
+    """Return the reasons a test result exceeded ``limits`` (empty if it did not)."""
+    reasons = []
+    if result.get("server_stopped"):
+        reasons.append("server stopped")
+    if result.get("request_errors"):
+        reasons.append(f"{result['request_errors']} request errors")
+    if result.get("bot_errors"):
+        reasons.append(f"{result['bot_errors']} bot errors")
     p95 = result.get("p95_response_time")
-    return (
-        not result.get("server_stopped")
-        and not result.get("request_errors")
-        and not result.get("bot_errors")
-        and p95 is not None
-        and float(p95) <= max_p95_s
-    )
+    if p95 is None:
+        reasons.append("no responses recorded")
+    elif float(p95) > limits.max_p95_s:
+        reasons.append(f"p95 response time {float(p95) * 1000:.0f} ms")
+    queue_wait = queue_wait_p95(result)
+    if queue_wait is not None and queue_wait > limits.max_queue_p95_s:
+        reasons.append(f"p95 async queue wait {queue_wait:.2f} s")
+    return reasons
+
+
+def within_capacity(result, limits=CapacityLimits()):
+    """Return whether a test result stayed within ``limits``."""
+    return not capacity_failures(result, limits)
 
 
 def next_capacity_probe(highest_pass, lowest_fail, max_bots=_CAPACITY_SEARCH_MAX):
@@ -1239,26 +1335,26 @@ def next_capacity_probe(highest_pass, lowest_fail, max_bots=_CAPACITY_SEARCH_MAX
     return (lower + lowest_fail) // 2
 
 
-def format_capacity_summary(results, max_p95_s=DEFAULT_MAX_P95_S, time_factor=1.0):
+def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
     """Describe the capacity that ``results`` imply and suggest a participant cap.
 
     Returns list[str].
     """
-    limit = f"p95 response time under {max_p95_s * 1000:.0f} ms with no errors"
-    passed = [r["n_bots"] for r in results if within_capacity(r, max_p95_s)]
+    limit = limits.describe()
+    passed = [r["n_bots"] for r in results if within_capacity(r, limits)]
     if not passed:
         return [f"  No tested bot count kept {limit}.", ""]
 
     capacity = max(passed)
     failed_above = [
-        r["n_bots"]
-        for r in results
-        if r["n_bots"] > capacity and not within_capacity(r, max_p95_s)
+        r for r in results if r["n_bots"] > capacity and not within_capacity(r, limits)
     ]
     if failed_above:
+        first_fail = min(failed_above, key=lambda r: r["n_bots"])
         lines = [
             f"  Capacity: about {capacity:,} concurrent bots kept {limit}; "
-            f"{min(failed_above):,} did not."
+            f"{first_fail['n_bots']:,} did not "
+            f"({', '.join(capacity_failures(first_fail, limits))})."
         ]
     else:
         lines = [

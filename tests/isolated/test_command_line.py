@@ -4527,6 +4527,7 @@ def test_experiment_never_completes_during_performance_test(monkeypatch):
 
 def test_performance_test_preserves_explicit_zero_options():
     from psynet.command_line import _run_performance_test_with_existing_server
+    from psynet.perf_test import CapacityLimits
 
     experiment = Mock(
         authenticated_session=Mock(),
@@ -4568,12 +4569,13 @@ def test_performance_test_preserves_explicit_zero_options():
         duration_minutes=0,
         stagger_interval_s=0.0,
         time_factor=0,
-        max_p95_s=0.5,
+        limits=CapacityLimits(),
     )
 
 
 def test_performance_test_uses_defaults_when_options_omitted():
     from psynet.command_line import _run_performance_test_with_existing_server
+    from psynet.perf_test import CapacityLimits
 
     experiment = Mock(
         authenticated_session=Mock(),
@@ -4615,7 +4617,7 @@ def test_performance_test_uses_defaults_when_options_omitted():
         duration_minutes=2.0,
         stagger_interval_s=0.5,
         time_factor=1.0,
-        max_p95_s=0.5,
+        limits=CapacityLimits(),
     )
 
 

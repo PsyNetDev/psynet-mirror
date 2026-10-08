@@ -3,6 +3,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 from psynet.perf_test import (
+    CapacityLimits,
     PerformanceTester,
     colorize_success_rate,
     format_capacity_summary,
@@ -174,17 +175,31 @@ def test_capacity_summary_suggests_a_cap_below_the_measured_capacity():
         _base_result(n_bots=200, p95_response_time=0.3, request_errors=3),
     ]
 
-    text = _join(format_capacity_summary(results, max_p95_s=0.5))
+    text = _join(format_capacity_summary(results))
 
     assert "about 150 concurrent bots" in text
-    assert "200 did not" in text
+    assert "200 did not (3 request errors)" in text
     assert "Suggested max_concurrent_participants: 120" in text
+
+
+def test_async_queue_backlog_limits_capacity():
+    results = [
+        _base_result(n_bots=100, p95_response_time=0.2, q_delay_p95=1.0),
+        _base_result(
+            n_bots=200, p95_response_time=0.2, q_delay_p95=2.0, oldest_queued_s=40.0
+        ),
+    ]
+
+    text = _join(format_capacity_summary(results, CapacityLimits(max_queue_p95_s=5)))
+
+    assert "about 100 concurrent bots" in text
+    assert "200 did not (p95 async queue wait 40.00 s)" in text
 
 
 def test_capacity_summary_says_when_no_limit_was_reached():
     results = [_base_result(n_bots=50, p95_response_time=0.1)]
 
-    text = _join(format_capacity_summary(results, max_p95_s=0.5, time_factor=0))
+    text = _join(format_capacity_summary(results, time_factor=0))
 
     assert "at least 50" in text
     assert "--time-factor 1" in text

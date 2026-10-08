@@ -4124,7 +4124,8 @@ _test_options["performance_n_bots"] = click.option(
     to run sequential tests with different maximum concurrency levels.
     Example: --n-bots "5,10,20" will run three separate tests.
     Use --n-bots auto to search for the largest bot count that keeps the
-    95th-percentile response time under --max-p95-ms without errors.
+    95th-percentile response time under --max-p95-ms and async queue waits
+    under --max-queue-p95-s, without errors.
     If not specified, will default to Experiment.test_n_bots""",
 )
 
@@ -4137,6 +4138,17 @@ _test_options["performance_max_p95_ms"] = click.option(
     test may reach while still counting as within capacity. Used by
     --n-bots auto and by the suggested participant cap in the summary.
     Defaults to 500.""",
+)
+
+_test_options["performance_max_queue_p95_s"] = click.option(
+    "--max-queue-p95-s",
+    type=float,
+    default=None,
+    help="""
+    The 95th-percentile time, in seconds, that async processes may wait for
+    a worker while the test still counts as within capacity. Processes still
+    queued when the test ends count with the time they have waited so far.
+    Used alongside --max-p95-ms. Defaults to 5.""",
 )
 
 _test_options["performance_time_factor"] = click.option(
@@ -4335,6 +4347,7 @@ def performance_test(ctx):
 @_test_options["performance_time_factor"]
 @_test_options["duration_minutes"]
 @_test_options["performance_max_p95_ms"]
+@_test_options["performance_max_queue_p95_s"]
 @_test_options["performance_json_output"]
 @click.option("--debug", is_flag=True, help="Enable debug logging for verbose output")
 def performance_test__local(
@@ -4344,6 +4357,7 @@ def performance_test__local(
     time_factor=None,
     duration_minutes=None,
     max_p95_ms=None,
+    max_queue_p95_s=None,
     json_output=None,
     debug=False,
 ):
@@ -4368,6 +4382,7 @@ def performance_test__local(
         time_factor=time_factor,
         duration_minutes=duration_minutes,
         max_p95_ms=max_p95_ms,
+        max_queue_p95_s=max_queue_p95_s,
         json_output=json_output,
         debug=debug,
     )
@@ -4383,6 +4398,7 @@ def _run_performance_test_local(
     json_output,
     debug,
     max_p95_ms=None,
+    max_queue_p95_s=None,
 ):
     """Run a local performance test and return its result records."""
 
@@ -4395,6 +4411,7 @@ def _run_performance_test_local(
             debug,
             json_output,
             max_p95_ms=max_p95_ms,
+            max_queue_p95_s=max_queue_p95_s,
         )
     return _run_performance_test_with_new_server(
         n_bots,
@@ -4404,6 +4421,7 @@ def _run_performance_test_local(
         debug,
         json_output,
         max_p95_ms=max_p95_ms,
+        max_queue_p95_s=max_queue_p95_s,
     )
 
 
@@ -4446,6 +4464,7 @@ def _run_performance_test_with_existing_server(
     debug,
     json_output=None,
     max_p95_ms=None,
+    max_queue_p95_s=None,
 ):
     """Run performance test connecting to an already-running server."""
     import logging
@@ -4486,7 +4505,12 @@ def _run_performance_test_with_existing_server(
         )
         sys.exit(1)
 
-    from psynet.perf_test import DEFAULT_MAX_P95_S, PerformanceTester
+    from psynet.perf_test import (
+        DEFAULT_MAX_P95_S,
+        DEFAULT_MAX_QUEUE_P95_S,
+        CapacityLimits,
+        PerformanceTester,
+    )
 
     os.environ["PASSTHROUGH_ERRORS"] = "True"
 
@@ -4511,8 +4535,15 @@ def _run_performance_test_with_existing_server(
         # Documented CLI default is 1.0 (realistic pacing). Do not fall back to
         # Experiment.test_time_factor, which defaults to 0.0 for correctness tests.
         time_factor=(1.0 if time_factor is None else time_factor),
-        max_p95_s=(
-            DEFAULT_MAX_P95_S if max_p95_ms is None else float(max_p95_ms) / 1000
+        limits=CapacityLimits(
+            max_p95_s=(
+                DEFAULT_MAX_P95_S if max_p95_ms is None else float(max_p95_ms) / 1000
+            ),
+            max_queue_p95_s=(
+                DEFAULT_MAX_QUEUE_P95_S
+                if max_queue_p95_s is None
+                else float(max_queue_p95_s)
+            ),
         ),
     )
     started_at = datetime.datetime.now().isoformat(timespec="seconds")
@@ -4533,7 +4564,8 @@ def _run_performance_test_with_existing_server(
         options = {
             "n_bots_sweep": [result["n_bots"] for result in all_results],
             "capacity_search": find_capacity,
-            "max_p95_s": tester.max_p95_s,
+            "max_p95_s": tester.limits.max_p95_s,
+            "max_queue_p95_s": tester.limits.max_queue_p95_s,
             "duration_minutes": tester.duration_minutes,
             "stagger_interval_s": tester.stagger_interval_s,
             "time_factor": tester.time_factor,
@@ -4755,6 +4787,7 @@ def _run_performance_test_with_new_server(
     debug,
     json_output=None,
     max_p95_ms=None,
+    max_queue_p95_s=None,
 ):
     """Run performance test after starting a new experiment server"""
     # Prefer legacy debug: gunicorn with several workers is closer to a deployed
@@ -4775,6 +4808,7 @@ def _run_performance_test_with_new_server(
             debug,
             json_output,
             max_p95_ms=max_p95_ms,
+            max_queue_p95_s=max_queue_p95_s,
         )
         print("✓ Performance test completed")
         return all_results
@@ -4791,6 +4825,7 @@ def _run_performance_test_with_new_server(
 @_test_options["performance_time_factor"]
 @_test_options["duration_minutes"]
 @_test_options["performance_max_p95_ms"]
+@_test_options["performance_max_queue_p95_s"]
 @_test_options["performance_json_output"]
 @click.pass_context
 def performance_test__docker_ssh(
@@ -4802,6 +4837,7 @@ def performance_test__docker_ssh(
     time_factor=None,
     duration_minutes=None,
     max_p95_ms=None,
+    max_queue_p95_s=None,
     json_output=None,
 ):
     """
@@ -4832,6 +4868,7 @@ def performance_test__docker_ssh(
         time_factor=time_factor,
         duration_minutes=duration_minutes,
         max_p95_ms=max_p95_ms,
+        max_queue_p95_s=max_queue_p95_s,
     )
 
     server_info = CONFIGURED_HOSTS[server]
@@ -4842,7 +4879,12 @@ def performance_test__docker_ssh(
 
 
 def _build_ssh_performance_test_cmd(
-    n_bots, stagger, time_factor, duration_minutes, max_p95_ms=None
+    n_bots,
+    stagger,
+    time_factor,
+    duration_minutes,
+    max_p95_ms=None,
+    max_queue_p95_s=None,
 ):
     """Build the remote performance-test command, preserving explicit zeros."""
     cmd = "psynet performance-test local --existing"
@@ -4861,6 +4903,9 @@ def _build_ssh_performance_test_cmd(
 
     if max_p95_ms is not None:
         cmd += f" --max-p95-ms {max_p95_ms}"
+
+    if max_queue_p95_s is not None:
+        cmd += f" --max-queue-p95-s {max_queue_p95_s}"
 
     return cmd
 
@@ -4926,6 +4971,7 @@ def audit_simulate(ctx, n_bots=None):
 @_test_options["performance_time_factor"]
 @_test_options["duration_minutes"]
 @_test_options["performance_max_p95_ms"]
+@_test_options["performance_max_queue_p95_s"]
 @click.option("--debug", is_flag=True, help="Enable debug logging for verbose output")
 @require_exp_directory
 def audit_performance_test(
@@ -4935,6 +4981,7 @@ def audit_performance_test(
     time_factor=None,
     duration_minutes=None,
     max_p95_ms=None,
+    max_queue_p95_s=None,
     debug=False,
 ):
     """Run a local performance test and write its audit evidence."""
@@ -4947,6 +4994,7 @@ def audit_performance_test(
         time_factor=time_factor,
         duration_minutes=duration_minutes,
         max_p95_ms=max_p95_ms,
+        max_queue_p95_s=max_queue_p95_s,
         json_output=json_output,
         debug=debug,
     )
