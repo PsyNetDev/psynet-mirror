@@ -44,6 +44,8 @@ from datetime import datetime, timedelta
 import flask
 from dallinger import db
 
+#: ``error_code`` of the 503 response that refuses a newcomer; ``start.html``
+#: checks for it to show the waiting message.
 STUDY_FULL_ERROR_CODE = "study_full"
 _FULL_CACHE_S = 2.0
 _RETRY_AFTER_S = 30
@@ -59,6 +61,7 @@ def is_valid_participant_limit(value):
     """Return whether ``value`` can be ``max_concurrent_participants``.
 
     Valid limits are ``None`` (no limit) and whole numbers of at least 0.
+    Booleans are rejected even though Python treats them as integers.
     """
     return value is None or (
         isinstance(value, int) and not isinstance(value, bool) and value >= 0
@@ -68,11 +71,9 @@ def is_valid_participant_limit(value):
 def recruiter_supports_participant_limits(recruiter_class):
     """Return whether newcomers from ``recruiter_class`` may wait for a place.
 
-    An unknown recruiter (``None``) counts as supporting limits.
+    ``None`` (no recruiter, or an unknown one) does not support limits.
     """
-    return recruiter_class is None or getattr(
-        recruiter_class, "supports_max_concurrent_participants", False
-    )
+    return bool(getattr(recruiter_class, "supports_max_concurrent_participants", False))
 
 
 def count_active_participants(idle_timeout_s=DEFAULT_IDLE_TIMEOUT_S):
@@ -127,8 +128,11 @@ def refuse_new_participant_if_full():
     try:
         recruiter_class = configured_recruiter_class()
     except NotImplementedError:
+        # An unknown recruiter name fails closed: the gate still applies.
         recruiter_class = None
-    if not recruiter_supports_participant_limits(recruiter_class):
+    if recruiter_class is not None and not recruiter_supports_participant_limits(
+        recruiter_class
+    ):
         return None
 
     now = time.monotonic()

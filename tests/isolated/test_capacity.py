@@ -124,6 +124,8 @@ class _CustomRule(Experiment):
         ("hotair", True),
         ("prolific", False),
         ("lab-recruiter", False),
+        (None, False),
+        ("no-such-recruiter", False),
     ],
 )
 def test_only_open_link_recruiters_accept_a_participant_limit(
@@ -139,9 +141,10 @@ def test_only_open_link_recruiters_accept_a_participant_limit(
             experiment_class.check_max_concurrent_participants_support(config)
 
 
-def test_a_participant_limit_must_be_a_whole_number():
+@pytest.mark.parametrize("limit", ["150", True, -1])
+def test_a_participant_limit_must_be_a_whole_number(limit):
     class Invalid(Experiment):
-        variables = {"max_concurrent_participants": "150"}
+        variables = {"max_concurrent_participants": limit}
 
     with pytest.raises(ValueError, match="whole number"):
         Invalid.check_max_concurrent_participants_support({"recruiter": "generic"})

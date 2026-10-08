@@ -274,7 +274,9 @@ def named_recruiter_class(config=None):
     """Return the class of the recruiter named in the configuration, or ``None``.
 
     Unlike :func:`configured_recruiter_class`, this ignores the debug-mode
-    stand-in, so it gives the recruiter that a deployment will use.
+    stand-in and replay mode, so it gives the recruiter that a deployment
+    will use. It returns ``None`` when no recruiter is named or the name is
+    unknown.
     """
     if config is None:
         config = get_config()

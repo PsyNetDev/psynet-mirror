@@ -2561,7 +2561,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         ValueError
             If the class sets an invalid ``max_concurrent_participants``.
         RuntimeError
-            If the configured recruiter doesn't support participant limits.
+            If the recruiter named in the configuration (ignoring the
+            debug-mode stand-in) is missing, unknown or doesn't support
+            participant limits.
         """
         limit = cls.variables.get("max_concurrent_participants")
         if not is_valid_participant_limit(limit):
@@ -2582,7 +2584,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 "supported with the generic and hotair recruiters, because other "
                 "recruiters send participants who have accepted a place and should "
                 "not be kept waiting. With Prolific, limit simultaneous participants "
-                "through initial_recruitment_size instead."
+                "through initial_recruitment_size instead. "
+                f"Configured recruiter: {config.get('recruiter', None)!r}."
             )
 
     def is_at_capacity(self):
