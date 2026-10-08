@@ -141,14 +141,23 @@ example::
 
     PsyNet tests use database dallinger_test_5100, Redis at redis://127.0.0.1:6479 and port 5100, ...
 
-It claims a free web port from 5100 upwards, uses the database
-``<database>_test_<port>`` next to ``DATABASE_URL`` (created when missing) and
-starts a private ``redis-server`` that stops when the session ends, so several
-test sessions can also run at once. This applies to ``pytest`` runs from the
-PsyNet checkout and to ``psynet test local``. Set
-``PSYNET_TEST_ENVIRONMENT=shared`` to use your current database, Redis and
-port instead. CI jobs (where ``CI`` is set) always use their configured
-services.
+It claims a free web port 100 or more above your ``base_port`` (so from 5100
+by default), uses the database ``<database>_test_<port>`` next to
+``DATABASE_URL`` (created when missing) and starts a private ``redis-server``
+that stops when the session ends, so several test sessions can also run at
+once. If ``redis-server`` isn't installed (for example when Redis runs only in
+Docker), the session uses Redis database 1 on your Redis server instead, which
+keeps its data apart but can still send live notifications to a debug
+server's participants. If the environment can't be set up, the session stops
+with an error rather than falling back to your database.
+
+This applies to ``pytest`` runs from the PsyNet checkout, to experiments
+whose ``pytest.ini`` loads ``-p psynet.pytest_environment`` (run ``psynet
+scripts update`` in older experiments) and to ``psynet test local``.
+``psynet test local --existing`` tests a server that is already running, so it
+isn't isolated. Set ``PSYNET_TEST_ENVIRONMENT=shared`` to use your current
+database, Redis and port instead. CI jobs (where ``CI`` is set) always use
+their configured services.
 
 In most IDEs, you can run tests through the integrated test interface
 or by right-clicking on test files/functions and selecting "Run Test" or "Debug Test".

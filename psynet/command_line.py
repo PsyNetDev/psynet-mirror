@@ -4030,21 +4030,21 @@ def _rerun_in_isolated_test_environment():
 
     Dallinger connected to the shared database when this module was imported,
     so the switch needs a new process; see :mod:`psynet.isolated_environment`.
-    Returns only if the environment can't be created, in which case the test
-    runs here and shares the local database and Redis.
+    The child re-runs the whole original command line (for example all of
+    ``psynet audit simulate``), and this process then exits with its code.
     """
-    from .isolated_environment import IsolatedEnvironment
+    from .isolated_environment import ENV_VAR, SHARED, IsolatedEnvironment
     from .services import ensure_local_services
 
     ensure_local_services(assume_yes=False, strict=True)
     try:
         environment = IsolatedEnvironment.start()
     except Exception as e:
-        log(
-            f"Could not isolate this test from local debug servers ({e}); "
-            "it will share the local database and Redis."
-        )
-        return
+        raise click.ClickException(
+            f"Could not give this test its own database and Redis ({e}). "
+            f"Set {ENV_VAR}={SHARED} to run it against the local database and "
+            "Redis instead, which resets any local debug server."
+        ) from e
     with environment:
         log(environment.describe())
         exit_code = subprocess.call(sys.orig_argv, env=environment.env)

@@ -95,8 +95,21 @@ class IsolatedEnvironment:
         """
         environ = dict(os.environ if environ is None else environ)
         database_url = environ.get("DATABASE_URL", DEFAULT_DATABASE_URL)
+        redis_url = environ.get("REDIS_URL", DEFAULT_REDIS_URL)
+        private_redis = shutil.which("redis-server") is not None
         shared_base_port = int(environ.get("base_port", _DEFAULT_BASE_PORT))
-        base_port, port_lock = _claim_port(shared_base_port + _PORT_OFFSET)
+        shared_redis_port = urlsplit(redis_url).port or 6379
+
+        def redis_port(web_port):
+            # Offsetting from the claimed web port keeps concurrent sessions
+            # from picking the same Redis port.
+            return shared_redis_port + web_port - shared_base_port
+
+        base_port, port_lock = _claim_port(
+            shared_base_port + _PORT_OFFSET,
+            also_free=redis_port if private_redis else None,
+        )
+        redis_dir = None
         try:
             env = {
                 **environ,
@@ -107,8 +120,7 @@ class IsolatedEnvironment:
                 "base_port": str(base_port),
                 "dallinger_develop_directory": f"/tmp/dallinger_develop_{base_port}",
             }
-            redis_url = environ.get("REDIS_URL", DEFAULT_REDIS_URL)
-            if shutil.which("redis-server") is None:
+            if not private_redis:
                 env["REDIS_URL"] = _with_redis_database(redis_url, 1)
                 print(
                     "redis-server is not on PATH, so these tests use Redis database 1 "
@@ -118,17 +130,14 @@ class IsolatedEnvironment:
                 )
                 return cls(env, port_lock)
 
-            # Offsetting from the claimed web port keeps concurrent sessions
-            # from picking the same Redis port.
-            port = (urlsplit(redis_url).port or 6379) + base_port - shared_base_port
-            if not _port_is_free(port):
-                raise RuntimeError(f"Port {port} for the test Redis server is in use.")
             redis_dir = tempfile.mkdtemp(prefix="psynet-test-redis-")
-            process = start_redis_server(port, redis_dir)
+            process = start_redis_server(redis_port(base_port), redis_dir)
         except BaseException:
+            if redis_dir is not None:
+                shutil.rmtree(redis_dir, ignore_errors=True)
             port_lock.close()
             raise
-        env["REDIS_URL"] = f"redis://127.0.0.1:{port}"
+        env["REDIS_URL"] = f"redis://127.0.0.1:{redis_port(base_port)}"
         return cls(env, port_lock, process, redis_dir)
 
     def describe(self):
@@ -213,18 +222,21 @@ def start_redis_server(port, directory, log_file=None):
         stdout=log_file or subprocess.DEVNULL,
         stderr=subprocess.STDOUT,
     )
-    deadline = time.monotonic() + 10
-    while time.monotonic() < deadline and process.poll() is None:
-        try:
-            with socket.create_connection(("127.0.0.1", port), timeout=1) as sock:
-                sock.sendall(b"PING\r\n")
-                if sock.recv(16).startswith(b"+PONG"):
-                    return process
-        except OSError:
-            pass
-        time.sleep(0.1)
-    stop_process(process)
-    raise RuntimeError(f"Redis on port {port} did not start.")
+    try:
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline and process.poll() is None:
+            try:
+                with socket.create_connection(("127.0.0.1", port), timeout=1) as sock:
+                    sock.sendall(b"PING\r\n")
+                    if sock.recv(16).startswith(b"+PONG"):
+                        return process
+            except OSError:
+                pass
+            time.sleep(0.1)
+        raise RuntimeError(f"Redis on port {port} did not start.")
+    except BaseException:
+        stop_process(process)
+        raise
 
 
 def stop_process(process):
@@ -248,13 +260,14 @@ def _port_is_free(port):
         return True
 
 
-def _claim_port(start):
+def _claim_port(start, also_free=None):
     """Return a free web port and an open lock file that reserves it.
 
     A test session's server binds its port only once the experiment has
     started, so the lock stops a second session from choosing the same port
     (and with it the same database) in the meantime. Closing the file releases
-    the claim.
+    the claim. ``also_free`` maps a candidate port to another port that must
+    also be free, such as the session's Redis port.
     """
     for port in range(start, start + 1000, 10):
         lock = open(
@@ -265,7 +278,9 @@ def _claim_port(start):
         except OSError:
             lock.close()
             continue
-        if _port_is_free(port):
+        if _port_is_free(port) and (
+            also_free is None or _port_is_free(also_free(port))
+        ):
             return port, lock
         lock.close()
     raise RuntimeError(f"No free port found from {start}.")
