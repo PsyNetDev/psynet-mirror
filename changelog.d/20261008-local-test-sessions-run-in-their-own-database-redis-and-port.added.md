@@ -1,0 +1,1 @@
+Local `pytest` and `psynet test local` sessions now run in their own PostgreSQL database, Redis server, web port and development folder, so they no longer reset or stop a running `psynet debug local`, and several test sessions can run at once. Set `PSYNET_TEST_ENVIRONMENT=shared` to use the current services instead; CI is unaffected.

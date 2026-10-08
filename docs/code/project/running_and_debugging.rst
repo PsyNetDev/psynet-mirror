@@ -34,7 +34,11 @@ deployed, use ``psynet debug local --docker``.
 Run several experiments at once
 -------------------------------
 
-By default every local experiment uses port 5000, the ``dallinger``
+``psynet test local`` runs in its own database, Redis server and port
+automatically, so you can run tests while ``psynet debug local`` is serving
+another experiment, and run several test sessions at once.
+
+By default every ``psynet debug local`` uses port 5000, the ``dallinger``
 PostgreSQL database, the Redis server on port 6379 and the
 ``/tmp/dallinger_develop`` folder, so only one can run at a time. To run
 another one alongside it, for example when several coding agents test
@@ -51,8 +55,8 @@ database, Redis server, port and development folder:
     export base_port=5010
     export dallinger_develop_directory=/tmp/dallinger_develop_2
 
-``psynet debug local`` and ``psynet test local`` in that terminal then serve
-on port 5010 and leave the other experiment's processes and browsers alone.
+``psynet debug local`` in that terminal then serves on port 5010 and leaves
+the other experiment's processes and browsers alone.
 Use a separate Redis server rather than another database number on the same
 server: Redis delivers PsyNet's live notifications (for example waking a
 participant who waits on a page) to every database on a server, so two

@@ -3972,6 +3972,11 @@ def test__local(
     """
     assert not (parallel and serial)
 
+    from .isolated_environment import should_isolate
+
+    if not existing and should_isolate():
+        _rerun_in_isolated_test_environment()
+
     # --existing talks to a live server; skip local scaffold/git readiness.
     # Non-existing runs share debug's directory checks (incl. bundled-demo prepare).
     if not existing:
@@ -4018,6 +4023,32 @@ def test__local(
         # Use sys.exit() to ensure that the exit code is propagated to the shell.
         # This is helpful for CI pipelines, where we want to fail the build if the tests fail.
         sys.exit(exit_code)
+
+
+def _rerun_in_isolated_test_environment():
+    """Re-run this command in a child process with its own database, Redis and port.
+
+    Dallinger connected to the shared database when this module was imported,
+    so the switch needs a new process; see :mod:`psynet.isolated_environment`.
+    Returns only if the environment can't be created, in which case the test
+    runs here and shares the local database and Redis.
+    """
+    from .isolated_environment import IsolatedEnvironment
+    from .services import ensure_local_services
+
+    ensure_local_services(assume_yes=False, strict=True)
+    try:
+        environment = IsolatedEnvironment.start()
+    except Exception as e:
+        log(
+            f"Could not isolate this test from local debug servers ({e}); "
+            "it will share the local database and Redis."
+        )
+        return
+    with environment:
+        log(environment.describe())
+        exit_code = subprocess.call(sys.orig_argv, env=environment.env)
+    sys.exit(exit_code)
 
 
 def build_remote_experiment_command(app, cmd):

@@ -567,8 +567,9 @@ Run several local experiments at once
 Several local experiments can run at once when each terminal sets its own
 ``DATABASE_URL``, ``REDIS_URL``, ``base_port`` and
 ``dallinger_develop_directory`` (see :ref:`running_several_local_experiments`);
-launches then stop only workers and browsers that use their own database, and
-CI uses the same isolation for parallel test slots. Two gaps remain. Every
+launches then stop only workers and browsers that use their own database. CI
+uses the same isolation for parallel test slots, and local test sessions set
+it up automatically (``psynet.isolated_environment``). Two gaps remain. Every
 run still needs its own Redis server, because Redis pub/sub channels (PsyNet's
 timeline-hold wakes and Dallinger's chat channels) are shared by all database
 numbers on a server; prefixing channel names with the database identity in

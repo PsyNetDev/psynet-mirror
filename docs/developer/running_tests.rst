@@ -134,6 +134,22 @@ we plan to remove it in the future.
 The ``-s`` argument tells pytest to log live output from the test as it runs.
 This is normally a good idea for keeping track of what's going on.
 
+Tests reset their database and Redis and stop local servers that use them, so
+by default each local test session gets its own environment and leaves a
+running ``psynet debug local`` alone. The session prints where it runs, for
+example::
+
+    PsyNet tests use database dallinger_test_5100, Redis at redis://127.0.0.1:6479 and port 5100, ...
+
+It claims a free web port from 5100 upwards, uses the database
+``<database>_test_<port>`` next to ``DATABASE_URL`` (created when missing) and
+starts a private ``redis-server`` that stops when the session ends, so several
+test sessions can also run at once. This applies to ``pytest`` runs from the
+PsyNet checkout and to ``psynet test local``. Set
+``PSYNET_TEST_ENVIRONMENT=shared`` to use your current database, Redis and
+port instead. CI jobs (where ``CI`` is set) always use their configured
+services.
+
 In most IDEs, you can run tests through the integrated test interface
 or by right-clicking on test files/functions and selecting "Run Test" or "Debug Test".
 The debugger will work with breakpoints as expected.

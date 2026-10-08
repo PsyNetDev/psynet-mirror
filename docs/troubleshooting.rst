@@ -52,9 +52,10 @@ On macOS, turn off AirPlay Receiver (**System Settings > General > AirDrop &
 Handoff**), which uses port 5000. Otherwise, stop any other experiment running
 in another terminal or IDE window.
 
-By default, local experiments share port 5000, the PostgreSQL database, Redis
-and Dallinger's development folder, so starting a second one stops the first
-one's worker processes and can break both. Stop the other experiment (Ctrl+C
+By default, ``psynet debug local`` sessions share port 5000, the PostgreSQL
+database, Redis and Dallinger's development folder, so starting a second one
+stops the first one's worker processes and can break both. (``psynet test
+local`` uses its own database, Redis and port, so it can run alongside.) Stop the other experiment (Ctrl+C
 in its terminal) before starting another; to see what is using the port, run
 ``lsof -nP -iTCP:5000 -sTCP:LISTEN``. To keep both running, give one of them
 its own database, Redis server and port as described in
