@@ -11,8 +11,8 @@ stopped any experiment you were debugging.
 
 An isolated environment gives the test session:
 
-- a free web port (Dallinger's ``base_port``, 5100 or above), claimed with a
-  lock file so that concurrent sessions choose different ports;
+- a free web port (at least 100 above Dallinger's ``base_port``), claimed
+  with a lock file so that concurrent sessions choose different ports;
 - the ``<database>_test_<port>`` database next to ``DATABASE_URL``, created if
   it is missing and reused by later sessions on the same port (tests reset its
   tables themselves);

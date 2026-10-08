@@ -14,8 +14,9 @@ Two things make this faster than running items one after another:
   local PsyNet environment: its own Postgres database, Redis server, web
   port and Dallinger develop directory. A Redis server (not just a database
   number) is needed because Redis pub/sub channels are shared across
-  database numbers. Slot 0 uses the caller's environment unchanged, so
-  ``--slots 1`` behaves like a plain serial run.
+  database numbers. Slot 0 uses the caller's environment, so ``--slots 1``
+  behaves like a plain serial run (outside CI, its pytest sessions still
+  isolate themselves; see :mod:`psynet.isolated_environment`).
 
 Items that share an experiment directory are serialized by
 :func:`psynet.testing.locks.experiment_directory_lock`.
