@@ -58,6 +58,7 @@ If these environment variables are not present, tell the user to follow these us
    an expiry of 1 year or less (required for interacting with Dallinger organization):
    - Contents: Read and write
    - Pull requests: Read and write
+   - Workflows: Read and write, only if agents may change `.github/workflows/`
 
    A fine-grained PAT has a single resource owner, so choose one of:
    - If you have write access to `Dallinger/Dallinger` (preferred): resource owner
@@ -67,6 +68,7 @@ If these environment variables are not present, tell the user to follow these us
 2. Save this token as a Cloud Agent secret named `DALLINGER_GH_TOKEN` via the Cursor website.
 3. Create a Dallinger fork on the GitHub website (e.g., `https://github.com/<your-username>/Dallinger`).
 4. Save the fork URL as a Cloud Agent secret named `DALLINGER_FORK_URL` via the Cursor website.
+   Agents clone the fork even when the token is owned by `Dallinger`, so both secrets are needed.
 
 #### Cloud Agent instructions
 
@@ -101,7 +103,9 @@ Make changes and commit locally.
 Push to the main repository: `git push -u upstream <branch-name>`.
 If GitHub refuses it with a permission error (HTTP 403), the token cannot write there,
 so push to the fork instead: `git push -u origin <branch-name>`. Other push failures,
-such as network errors, are not a reason to fall back to the fork.
+such as network errors, are not a reason to fall back to the fork. If the fork also
+refuses the push, stop and tell the user: the token is still waiting for organization
+approval or cannot write to either repository.
 
 Open a PR to upstream, writing the description to a file first:
 
