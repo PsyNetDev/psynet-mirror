@@ -3038,7 +3038,7 @@ def test_test_local_prepares_bundled_demo_via_directory_check(tmp_path, monkeypa
 
 
 def test_test_local_existing_bypasses_scaffold_gate(tmp_path, monkeypatch):
-    """--existing talks to a live server and must not require local scaffold/git."""
+    """--existing talks to a live server: no local scaffold/git, but its config."""
     (tmp_path / "experiment.py").write_text("class Exp:\n    pass\n")
     mock_exp = Mock()
     runner = CliRunner()
@@ -3048,12 +3048,14 @@ def test_test_local_existing_bypasses_scaffold_gate(tmp_path, monkeypatch):
         patch(
             "psynet.command_line._check_experiment_directory"
         ) as mock_check_directory,
+        patch("psynet.command_line._load_runtime_server_config") as load_runtime_config,
         patch("psynet.experiment.get_experiment", return_value=mock_exp),
     ):
         result = runner.invoke(psynet, ["test", "local", "--existing"])
 
     assert result.exit_code == 0, result.output
     mock_check_directory.assert_not_called()
+    load_runtime_config.assert_called_once_with()
     mock_exp.test_experiment.assert_called_once_with()
 
 

@@ -36,6 +36,7 @@ from psynet.perf_test import (
     capacity_advice,
     capacity_failures,
     format_capacity_summary,
+    queue_wait_p95,
 )
 
 UrlTransform = Callable[[str], str]
@@ -871,7 +872,7 @@ def render_performance_result(
             f"<td>{html.escape(str(row.get('total_requests', '')))}</td>"
             f"<td>{format_metric(row.get('median_response_time'))}</td>"
             f"<td>{format_metric(row.get('p95_response_time'))}</td>"
-            f"<td>{format_metric(row.get('q_delay_p95'))}</td>"
+            f"<td>{format_metric(queue_wait_p95(row))}</td>"
             f"<td>{errors}</td>"
             f"<td>{html.escape(verdict)}</td>"
             "</tr>"
@@ -907,7 +908,7 @@ def render_performance_result(
         f"{performance_heading('Requests', 'HTTP requests observed for key participant endpoints such as timeline and response routes.')}"
         f"{performance_heading('Resp Med (s)', 'Median HTTP response time, in seconds, for key participant endpoints.')}"
         f"{performance_heading('Resp P95 (s)', '95th percentile HTTP response time, in seconds, for key participant endpoints; higher values show slower tail latency.')}"
-        f"{performance_heading('Q P95 all (s)', '95th percentile async-process queue delay across trial makers, when queue metrics are available.')}"
+        f"{performance_heading('Q P95 all (s)', '95th percentile async-process queue delay across trial makers, or the wait of the oldest process still queued when the test ended if that is longer.')}"
         f"{performance_heading('Errors', 'Request errors plus bot errors recorded during the run.')}"
         f"{performance_heading('Within limits', f'Whether the run kept {limits.describe()}.')}"
         "</tr></thead><tbody>"
@@ -920,10 +921,14 @@ def _performance_limits(options: Mapping[str, object]) -> CapacityLimits:
     """Return the capacity limits a performance test was judged against."""
 
     defaults = CapacityLimits()
+    max_p95_s = options.get("max_p95_s")
+    max_queue_p95_s = options.get("max_queue_p95_s")
     return CapacityLimits(
-        max_p95_s=float(options.get("max_p95_s") or defaults.max_p95_s),
-        max_queue_p95_s=float(
-            options.get("max_queue_p95_s") or defaults.max_queue_p95_s
+        max_p95_s=defaults.max_p95_s if max_p95_s is None else float(max_p95_s),
+        max_queue_p95_s=(
+            defaults.max_queue_p95_s
+            if max_queue_p95_s is None
+            else float(max_queue_p95_s)
         ),
     )
 

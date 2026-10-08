@@ -617,6 +617,15 @@ class PerformanceTester:
             .scalar()
         )
 
+        # Like requests, only count processes that started before the test
+        # ended: jobs left queued while the bots stop would otherwise report
+        # the stop time as queue delay. Those are covered by oldest_queued_s.
+        process_window = (
+            AsyncProcess.id > initial_state["max_process_id"],
+            AsyncProcess.finished == True,  # noqa: E712
+            AsyncProcess.time_started <= ended_at,
+        )
+
         # Async process duration stats, grouped by (trial_maker_id, label).
         process_stats_rows = (
             db.session.query(
@@ -649,10 +658,7 @@ class PerformanceTester:
                     )
                 ).label("q_share"),
             )
-            .filter(
-                AsyncProcess.id > initial_state["max_process_id"],
-                AsyncProcess.finished == True,  # noqa: E712
-            )
+            .filter(*process_window)
             .group_by(AsyncProcess.trial_maker_id, AsyncProcess.label)
             .all()
         )
@@ -677,10 +683,7 @@ class PerformanceTester:
             db.session.query(
                 func.percentile_cont(0.5).within_group(AsyncProcess.queue_delay)
             )
-            .filter(
-                AsyncProcess.id > initial_state["max_process_id"],
-                AsyncProcess.finished == True,  # noqa: E712
-            )
+            .filter(*process_window)
             .scalar()
         )
 
@@ -688,10 +691,7 @@ class PerformanceTester:
             db.session.query(
                 func.percentile_cont(0.95).within_group(AsyncProcess.queue_delay)
             )
-            .filter(
-                AsyncProcess.id > initial_state["max_process_id"],
-                AsyncProcess.finished == True,  # noqa: E712
-            )
+            .filter(*process_window)
             .scalar()
         )
 

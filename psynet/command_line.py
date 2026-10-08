@@ -3986,6 +3986,8 @@ def test__local(
 
     from psynet.experiment import get_experiment
 
+    if existing:
+        _load_runtime_server_config()
     exp = get_experiment()
 
     if n_bots:
