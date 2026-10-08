@@ -137,7 +137,10 @@ def test_only_open_link_recruiters_accept_a_participant_limit(
     if allowed:
         experiment_class.check_max_concurrent_participants_support(config)
     else:
-        with pytest.raises(RuntimeError, match="initial_recruitment_size"):
+        match = (
+            "recruiter = generic" if recruiter is None else "initial_recruitment_size"
+        )
+        with pytest.raises(RuntimeError, match=match):
             experiment_class.check_max_concurrent_participants_support(config)
 
 

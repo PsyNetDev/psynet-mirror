@@ -182,7 +182,8 @@ automatically, which would mislead them if the study were closed for another
 reason.
 
 The cap and the method only work with the ``generic`` and ``hotair``
-recruiters.
+recruiters, and the recruiter must be named in ``config.txt`` or
+``Experiment.config``; launching fails otherwise.
 Prolific and CINT participants have accepted a place, so they should not
 be kept waiting. With Prolific, ``initial_recruitment_size`` already roughly
 limits how many people take part at once, because PsyNet opens a new place

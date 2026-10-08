@@ -2579,13 +2579,20 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         # The named recruiter, not the debug-mode stand-in, decides: deploy
         # commands run this check while the config is still in debug mode.
         if not recruiter_supports_participant_limits(named_recruiter_class(config)):
+            recruiter = config.get("recruiter", None)
+            if not recruiter:
+                raise RuntimeError(
+                    "max_concurrent_participants and is_at_capacity need a named "
+                    "recruiter that supports them: set recruiter = generic (or "
+                    "hotair) in config.txt or Experiment.config."
+                )
             raise RuntimeError(
                 "max_concurrent_participants and is_at_capacity are only "
                 "supported with the generic and hotair recruiters, because other "
                 "recruiters send participants who have accepted a place and should "
                 "not be kept waiting. With Prolific, limit simultaneous participants "
                 "through initial_recruitment_size instead. "
-                f"Configured recruiter: {config.get('recruiter', None)!r}."
+                f"Configured recruiter: {recruiter!r}."
             )
 
     def is_at_capacity(self):
