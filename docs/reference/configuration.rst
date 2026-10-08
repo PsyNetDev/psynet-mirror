@@ -450,6 +450,17 @@ General
     The number of participants initially to be recruited. This value is used during the
     experiment's launch phase to start the recruitment process. Default: ``1``.
 
+``max_concurrent_participants`` *int* |psynet-icon|
+    The maximum number of participants taking the study at once. Newcomers
+    over the limit wait on the start page until there is space; see
+    :ref:`limiting_simultaneous_participants`. Only supported with the
+    ``generic`` and ``hotair`` recruiters. Default: no limit.
+
+``max_concurrent_participants_idle_s`` *int* |psynet-icon|
+    Seconds without joining or submitting a page after which a working
+    participant stops counting towards ``max_concurrent_participants``.
+    Default: ``600``.
+
 ``recruiter`` *str* |dlgr-icon|
     The recruiter class to use during the experiment run. While this can be a
     full class name, it is more common to use the class's ``nickname`` property

@@ -85,6 +85,7 @@ from . import deployment_info
 from . import exit as exit_domain
 from .asset import Asset, AssetRegistry, LocalStorage, OnDemandAsset, S3Storage
 from .bot import Bot, BotDriver, BotResponse
+from .capacity import refuse_new_participant_if_full
 from .command_line import export_launch_data
 from .data import SQLBase, SQLMixin, ingest_zip, register_table
 from .db import (
@@ -1036,6 +1037,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     @staticmethod
     def before_request():
         flask_app_globals.request_start_time = time.monotonic()
+        if request.method == "POST" and request.path == "/participant":
+            return refuse_new_participant_if_full()
 
     @staticmethod
     def after_request(request, response):
@@ -2176,6 +2179,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             "lock_table_when_creating_participant": False,
             "loglevel": 1,
             "loglevel_worker": 1,
+            "max_concurrent_participants_idle_s": 600,
             "min_reward_for_paid_early_exit": 0.20,
             # Chrome 105 is the first release with CSS :has(), which the default
             # participant theme uses for selected-option styling.
@@ -2484,6 +2488,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         config = get_config()
 
         cls.check_recruiter_support(config)
+        cls.check_max_concurrent_participants_support(config)
 
         if not config.get("clock_on"):
             # We force the clock to be on because it's necessary for the check_networks functionality.
@@ -2534,6 +2539,26 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 )
 
         cls._warn_about_overridden_experiment_config(config)
+
+    @staticmethod
+    def check_max_concurrent_participants_support(config):
+        """Reject ``max_concurrent_participants`` for recruiters that send paid participants."""
+        if not config.get("max_concurrent_participants", None):
+            return
+        try:
+            recruiter_class = configured_recruiter_class(config)
+        except NotImplementedError:
+            return
+        if recruiter_class is not None and not getattr(
+            recruiter_class, "supports_max_concurrent_participants", False
+        ):
+            raise RuntimeError(
+                "max_concurrent_participants is only supported with the generic "
+                "and hotair recruiters, because other recruiters send participants "
+                "who have accepted a place and should not be kept waiting. With "
+                "Prolific, limit simultaneous participants through "
+                "initial_recruitment_size instead."
+            )
 
     @staticmethod
     def check_recruiter_support(config):
@@ -4155,6 +4180,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         config.register("lucid_api_key", str, sensitive=True)
         config.register("lucid_recruitment_config", str)
         config.register("lucid_sha1_hashing_key", str, sensitive=True)
+        config.register("max_concurrent_participants", int)
+        config.register("max_concurrent_participants_idle_s", int)
         config.register("min_reward_for_paid_early_exit", float)
         config.register("min_browser_version", str)
         config.register("show_early_exit_button", bool)

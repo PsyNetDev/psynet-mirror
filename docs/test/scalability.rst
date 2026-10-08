@@ -124,3 +124,41 @@ section.
 A typical sequence is a local sweep to see how response times grow with
 load, then more worker processes or faster queries where needed, then a
 final test on the real server at the expected peak number of participants.
+
+.. _limiting_simultaneous_participants:
+
+Limiting simultaneous participants
+----------------------------------
+
+A study shared through a public link, such as a citizen-science study, can
+attract more visitors at once than the server can serve. Past that point
+every participant's pages slow down, including those of people who are
+already halfway through. To protect them, cap the number of active
+participants in ``config.txt``:
+
+.. code-block:: ini
+
+    [Config]
+    recruiter = generic
+    max_concurrent_participants = 150
+
+Newcomers over the cap see a message on the start page saying that many
+people are taking part. The page retries every 20 to 40 seconds and lets
+them in once there is space. People who are already taking the study, or
+who return to it, are never refused.
+
+A participant counts towards the cap while they are working and have
+joined or submitted a page in the last ``max_concurrent_participants_idle_s``
+seconds (default 600). People who close the tab stop counting once that
+time passes. Keep the timeout longer than the longest page that has no
+submission, such as a long video. Simultaneous arrivals can overshoot the
+cap by a few participants.
+
+Choose the cap with a performance test on the real server: take the number
+of bots at which response times start to grow, and leave some headroom.
+
+The cap only works with the ``generic`` and ``hotair`` recruiters.
+Prolific and CINT participants have accepted a place, so they should not
+be kept waiting. With Prolific, ``initial_recruitment_size`` already roughly
+limits how many people take part at once, because PsyNet opens a new place
+only when someone finishes.

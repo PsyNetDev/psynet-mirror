@@ -1,0 +1,1 @@
+Added the `max_concurrent_participants` config option for studies recruited through a public link (`generic` and `hotair` recruiters). When the study is full, newcomers wait on the start page, which lets them in automatically once there is space, so a spike of visitors no longer slows the study down for people already taking part.

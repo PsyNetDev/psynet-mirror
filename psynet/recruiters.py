@@ -344,6 +344,10 @@ class PsyNetRecruiterMixin:
         }
     )
 
+    #: Whether ``max_concurrent_participants`` may hold newcomers on the start
+    #: page. Only open-link recruiters support it; see :mod:`psynet.capacity`.
+    supports_max_concurrent_participants = False
+
     #: Whether participants are shown their accumulated reward when the
     #: experiment does not say either way. Recruiters that disburse money
     #: through a platform show it; local and generic recruitment does not,
@@ -863,6 +867,7 @@ class HotAirRecruiter(
 ):
     # Local debug recruitment pays nobody, so there is no reward to report.
     shows_reward_by_default = False
+    supports_max_concurrent_participants = True
 
     def has_external_bonus_payment(self) -> bool:
         """HotAir does not pay through an external recruitment platform."""
@@ -3791,6 +3796,7 @@ class GenericRecruiter(
     # Generic recruitment has no platform to pay through, so any figure PsyNet
     # showed would be one the experimenter has to disburse by hand.
     shows_reward_by_default = False
+    supports_max_concurrent_participants = True
 
     def has_external_bonus_payment(self) -> bool:
         """Generic/local recruitment does not pay through an external platform."""
