@@ -8,6 +8,7 @@ import re
 import shlex
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import tempfile
@@ -1201,6 +1202,17 @@ def is_psynet_chrome_process(process):
         pass
 
     return False
+
+
+def _local_port_is_free(port):
+    """Return whether nothing on this machine listens on ``port``."""
+    with socket.socket() as sock:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            sock.bind(("127.0.0.1", port))
+        except OSError:
+            return False
+        return True
 
 
 def _local_base_port():
@@ -4170,7 +4182,7 @@ _test_options["performance_n_bots"] = click.option(
 
 _test_options["performance_max_p95_ms"] = click.option(
     "--max-p95-ms",
-    type=float,
+    type=click.FloatRange(min=0, min_open=True),
     default=None,
     help="""
     The 95th-percentile response time (for /timeline and /response) that a
@@ -4181,7 +4193,7 @@ _test_options["performance_max_p95_ms"] = click.option(
 
 _test_options["performance_max_queue_p95_s"] = click.option(
     "--max-queue-p95-s",
-    type=float,
+    type=click.FloatRange(min=0),
     default=None,
     help="""
     The 95th-percentile time, in seconds, that async processes may wait for
@@ -4192,7 +4204,7 @@ _test_options["performance_max_queue_p95_s"] = click.option(
 
 _test_options["performance_time_factor"] = click.option(
     "--time-factor",
-    type=float,
+    type=click.FloatRange(min=0),
     default=None,
     help="""
     Multiply the timings in time_estimate by a random amount around this factor.
@@ -4203,7 +4215,7 @@ _test_options["performance_time_factor"] = click.option(
 
 _test_options["performance_stagger"] = click.option(
     "--stagger",
-    type=float,
+    type=click.FloatRange(min=0),
     help="""
     Average time interval to wait (in seconds) between starting each bot.
     Start times will vary randomly using a gamma distribution with an upper bound of 5x this value.
@@ -4212,7 +4224,7 @@ _test_options["performance_stagger"] = click.option(
 
 _test_options["duration_minutes"] = click.option(
     "--duration-minutes",
-    type=float,
+    type=click.FloatRange(min=0, min_open=True),
     default=None,
     help="""
     Total performance-test measurement window in minutes. This includes
@@ -4440,20 +4452,15 @@ def _run_performance_test_local(
     max_p95_ms=None,
     max_queue_p95_s=None,
 ):
-    """Run a local performance test and return its result records."""
+    """Run a local performance test, print advice for deployments, and return results."""
+    from psynet.perf_test import capacity_advice
 
-    if existing:
-        return _run_performance_test_with_existing_server(
-            n_bots,
-            stagger,
-            time_factor,
-            duration_minutes,
-            debug,
-            json_output,
-            max_p95_ms=max_p95_ms,
-            max_queue_p95_s=max_queue_p95_s,
-        )
-    return _run_performance_test_with_new_server(
+    run = (
+        _run_performance_test_with_existing_server
+        if existing
+        else _run_performance_test_with_new_server
+    )
+    all_results = run(
         n_bots,
         stagger,
         time_factor,
@@ -4463,6 +4470,10 @@ def _run_performance_test_local(
         max_p95_ms=max_p95_ms,
         max_queue_p95_s=max_queue_p95_s,
     )
+    capacity_search = _parse_performance_n_bots(n_bots) == "auto"
+    for line in capacity_advice(capacity_search=capacity_search):
+        click.echo(line)
+    return all_results
 
 
 def _collect_run_metadata(experiment_label):
@@ -4814,6 +4825,13 @@ def _run_performance_test_with_new_server(
     max_queue_p95_s=None,
 ):
     """Run performance test after starting a new experiment server"""
+    port = _local_base_port()
+    if not _local_port_is_free(port):
+        raise click.ClickException(
+            f"Port {port} is in use, probably by a running psynet debug local. "
+            "Starting another server would stop it and reset its database. Stop "
+            "it first, or add --existing to load-test it without resetting it."
+        )
     # Prefer legacy debug: gunicorn with several workers is closer to a deployed
     # server than the auto-reload develop path used by normal
     # ``psynet debug local``.
@@ -4869,7 +4887,7 @@ def performance_test__docker_ssh(
     already been launched on the remote server using ``psynet debug ssh``.
 
     Running this command will not reset the database to a vanilla state, but
-    will instead just use the state that exists already. Be sure the app has is
+    will instead just use the state that exists already. Be sure the app is
     configured to allow a large quantity of bots.
 
     If the app is in use during the performance test, results may not be
@@ -5023,12 +5041,6 @@ def audit_performance_test(
         debug=debug,
     )
     mark_performance_result_present(all_results)
-
-    from psynet.perf_test import capacity_advice
-
-    capacity_search = _parse_performance_n_bots(n_bots) == "auto"
-    for line in capacity_advice(capacity_search=capacity_search):
-        click.echo(line)
 
 
 @audit.command("init")

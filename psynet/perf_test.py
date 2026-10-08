@@ -1253,6 +1253,7 @@ def format_test_results(result):
 def format_performance_summary(results):
     """Format cross-test comparison table. Returns list[str]."""
     lines = []
+    results = sorted(results, key=lambda r: r["n_bots"])
 
     show_scaling = (
         len(results) > 1 and results[0].get("median_response_time") is not None
@@ -1263,7 +1264,7 @@ def format_performance_summary(results):
     baseline_q_median = results[0].get("q_delay_median") if show_scaling else None
 
     summary_headers = [
-        "|| Bots",
+        "Bots",
         "Succeeded",
         "Requests",
         "Req/s",
@@ -1271,10 +1272,10 @@ def format_performance_summary(results):
         "Resp Med (s)",
     ]
     if show_scaling:
-        summary_headers.append("vs base")
+        summary_headers.append("Resp Med vs base")
     summary_headers.append("Q Med all (s)")
     if show_scaling:
-        summary_headers.append("vs base")
+        summary_headers.append("Q Med vs base")
     summary_headers.append("Q P95 (s)")
 
     summary_rows = []
@@ -1327,7 +1328,7 @@ def format_performance_summary(results):
         "still queued at the end if longer"
     )
     lines.append(
-        "  vs base — ratio to the first (lowest bot-count) row, if multiple counts are run"
+        "  vs base — ratio of the median to the lowest bot count's, if several counts ran"
     )
     lines.append("")
     table = tabulate(summary_rows, headers=summary_headers, tablefmt="simple")
@@ -1368,11 +1369,17 @@ class CapacityLimits:
             ),
         )
 
-    def describe(self):
-        """Return the limits as a phrase, for summaries."""
+    def describe(self, include_queue=True):
+        """Return the limits as a phrase, for summaries.
+
+        Pass ``include_queue=False`` when the tests ran no async processes.
+        """
+        response = f"p95 response time under {self.max_p95_s * 1000:.0f} ms"
+        if not include_queue:
+            return f"{response} and no errors"
         return (
-            f"p95 response time under {self.max_p95_s * 1000:.0f} ms, "
-            f"p95 async queue wait under {self.max_queue_p95_s:g} s and no errors"
+            f"{response}, p95 async queue wait under {self.max_queue_p95_s:g} s "
+            "and no errors"
         )
 
 
@@ -1451,7 +1458,12 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
 
     Returns list[str].
     """
-    limit = limits.describe()
+    limit = limits.describe(
+        include_queue=any(
+            queue_wait_p95(r) is not None or r.get("q_delay_median") is not None
+            for r in results
+        )
+    )
     passed = [r["n_bots"] for r in results if within_capacity(r, limits)]
     failed = [r for r in results if not within_capacity(r, limits)]
     first_fail = min(failed, key=lambda r: r["n_bots"]) if failed else None

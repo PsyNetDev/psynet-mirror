@@ -3,6 +3,7 @@ import importlib
 import io
 import json
 import os
+import socket
 import subprocess
 import sys
 import tempfile
@@ -4482,6 +4483,7 @@ def test_run_performance_test_with_new_server_starts_legacy_debug_server():
         ) as start_server,
         patch("psynet.command_line._run_performance_test_with_existing_server"),
         patch("psynet.command_line._stop_server"),
+        patch("psynet.command_line._local_port_is_free", return_value=True),
     ):
         _run_performance_test_with_new_server(
             n_bots="2", stagger=0.1, time_factor=1.0, duration_minutes=0.5, debug=False
@@ -4492,6 +4494,50 @@ def test_run_performance_test_with_new_server_starts_legacy_debug_server():
         debug=False,
         extra_env={"PSYNET_PERFORMANCE_TEST": "1"},
     )
+
+
+def test_performance_test_refuses_to_replace_a_running_local_server():
+    from psynet.command_line import _run_performance_test_with_new_server
+
+    with socket.socket() as busy:
+        busy.bind(("127.0.0.1", 0))
+        busy.listen()
+        port = busy.getsockname()[1]
+        with (
+            patch("psynet.command_line._local_base_port", return_value=port),
+            patch(
+                "psynet.command_line._start_local_server_and_wait_for_ready"
+            ) as start,
+            pytest.raises(click.ClickException, match="--existing"),
+        ):
+            _run_performance_test_with_new_server(
+                n_bots="2", stagger=0, time_factor=1, duration_minutes=1, debug=False
+            )
+    start.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "option, value",
+    [
+        ("duration_minutes", "0"),
+        ("duration_minutes", "-1"),
+        ("performance_time_factor", "-1"),
+        ("performance_stagger", "-0.5"),
+        ("performance_max_p95_ms", "0"),
+        ("performance_max_queue_p95_s", "-1"),
+    ],
+)
+def test_performance_test_options_reject_out_of_range_values(option, value):
+    from psynet.command_line import _test_options
+
+    @click.command()
+    @_test_options[option]
+    def command(**kwargs):
+        pass
+
+    result = CliRunner().invoke(command, [command.params[0].opts[0], value])
+    assert result.exit_code == 2
+    assert "Invalid value" in result.output
 
 
 def test_performance_test_existing_server_loads_runtime_server_config():

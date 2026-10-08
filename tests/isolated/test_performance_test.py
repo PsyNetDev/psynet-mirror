@@ -190,6 +190,14 @@ def test_capacity_summary_suggests_a_cap_below_the_measured_capacity():
     assert "Suggested max_concurrent_participants: 120" in text
 
 
+def test_capacity_summary_mentions_queue_waits_only_with_async_processes():
+    results = [_base_result(n_bots=50, p95_response_time=0.1, q_delay_median=None)]
+    assert "async" not in _join(format_capacity_summary(results))
+
+    results[0]["q_delay_median"] = 0.5
+    assert "async queue wait under" in _join(format_capacity_summary(results))
+
+
 def test_async_queue_backlog_limits_capacity():
     results = [
         _base_result(n_bots=100, p95_response_time=0.2, q_delay_p95=1.0),
@@ -394,10 +402,14 @@ def test_format_performance_summary_none_metrics():
 def test_format_performance_summary_scaling():
     r1 = _base_result(n_bots=1, median_response_time=0.1, q_delay_median=0.05)
     r2 = _base_result(n_bots=2, median_response_time=0.2, q_delay_median=0.1)
-    lines = format_performance_summary([r1, r2])
+    lines = format_performance_summary([r2, r1])
     text = _join(lines)
     assert "2.0x" in text
     assert "\u2014" in text  # baseline marker
+    assert "Resp Med vs base" in text and "Q Med vs base" in text
+    assert "||" not in text
+    rows = [line.split()[0] for line in lines if line.strip()[:1].isdigit()]
+    assert rows == ["1", "2"]
 
 
 def test_format_performance_summary_returns_list():

@@ -929,8 +929,8 @@ def render_performance_header(
 
     explanation = (
         '<span class="info-popover-content" role="tooltip">'
-        "A performance test starts a local PsyNet server, repeatedly launches automated bot participants, "
-        "and records how many complete the experiment, how many requests they make, and how quickly key "
+        "A performance test repeatedly launches automated bot participants against a PsyNet server "
+        "(one it starts locally, or one already running), and records how many complete the experiment, how many requests they make, and how quickly key "
         "pages respond under load."
         "</span>"
     )
