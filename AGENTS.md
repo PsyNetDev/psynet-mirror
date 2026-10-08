@@ -54,13 +54,16 @@ If these environment variables are not present, tell the user to follow these us
 
 #### User instructions
 
-1. Create a fine-grained GitHub PAT via the GitHub website.
-   - Scope it to the agent's fork of Dallinger only, with the following permissions:
-      - Contents: Read and write
-      - Pull requests: Read and write
-   - Set an expiry of 1 year or less (required for interacting with Dallinger organization).
-   - If you have write access to `Dallinger/Dallinger`, you can add it to the token's
-     repositories so that agents push branches there.
+1. Create a fine-grained GitHub PAT via the GitHub website, with these permissions and
+   an expiry of 1 year or less (required for interacting with Dallinger organization):
+   - Contents: Read and write
+   - Pull requests: Read and write
+
+   A fine-grained PAT has a single resource owner, so choose one of:
+   - If you have write access to `Dallinger/Dallinger` (preferred): resource owner
+     `Dallinger`, repository `Dallinger/Dallinger` only. An organization owner may need
+     to approve the token; until then, pushes to `Dallinger/Dallinger` are refused.
+   - Otherwise: resource owner your account, repository your Dallinger fork only.
 2. Save this token as a Cloud Agent secret named `DALLINGER_GH_TOKEN` via the Cursor website.
 3. Create a Dallinger fork on the GitHub website (e.g., `https://github.com/<your-username>/Dallinger`).
 4. Save the fork URL as a Cloud Agent secret named `DALLINGER_FORK_URL` via the Cursor website.
@@ -96,13 +99,14 @@ development headers (e.g. `libpq-dev`) and retry.
 Make changes and commit locally.
 
 Push to the main repository: `git push -u upstream <branch-name>`.
-If GitHub refuses the push because the token cannot write there, push to the fork
-instead: `git push -u origin <branch-name>`.
+If GitHub refuses it with a permission error (HTTP 403), the token cannot write there,
+so push to the fork instead: `git push -u origin <branch-name>`. Other push failures,
+such as network errors, are not a reason to fall back to the fork.
 
-Open a PR to upstream:
+Open a PR to upstream, writing the description to a file first:
 
-- branch on the main repository: `gh pr create --repo Dallinger/Dallinger --base master --head <branch-name>`
-- branch on the fork: `gh pr create --repo Dallinger/Dallinger --base master --head <your-username>:<branch-name>`
+- branch on the main repository: `gh pr create --repo Dallinger/Dallinger --base master --head <branch-name> --title "<title>" --body-file <file>`
+- branch on the fork: `gh pr create --repo Dallinger/Dallinger --base master --head <your-username>:<branch-name> --title "<title>" --body-file <file>`
 
 If your PsyNet PR depends on this new unmerged change to Dallinger,
 specify the repository that holds the branch in `pyproject.toml` (use a
@@ -119,16 +123,20 @@ Use the GitHub CLI to find and read Dallinger job logs.
 Use the token `DALLINGER_GH_TOKEN` for all these commands (either via
 `gh auth login --with-token` above or by setting `GH_TOKEN` in the command).
 
-1. List recent runs. PR checks run on the canonical repo, including PRs from a fork:
+1. PR checks run on the canonical repo, including for PRs from a fork:
+   - `gh pr checks <pr-number> --repo https://github.com/Dallinger/Dallinger`
+2. Runs for a branch pushed to the main repository:
    - `gh run list --repo https://github.com/Dallinger/Dallinger --branch <branch-name> --limit 10`
-2. View logs for a specific run:
+3. View logs for a specific run:
    - `gh run view <run-id> --repo https://github.com/Dallinger/Dallinger --log-failed`
-3. Runs triggered by pushing to the fork run on the fork:
+4. Runs triggered by pushing to the fork run on the fork:
    - `gh run list --repo "$DALLINGER_FORK_URL" --limit 10`
    - `gh run view <run-id> --repo "$DALLINGER_FORK_URL" --log-failed`
 
 Local agents use a similar approach, but `~/Dallinger` should be created already by the user,
-and it may be a clone of the original repository, not a fork.
+and it may be a clone of the original repository, not a fork. In that case `origin` is
+`Dallinger/Dallinger`: skip adding an `upstream` remote, sync with `origin/master`, push with
+`git push -u origin <branch-name>` and use the main-repository form of `gh pr create`.
 
 ## CI status checks (GitLab)
 
