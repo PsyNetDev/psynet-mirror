@@ -106,17 +106,16 @@ class IsolatedEnvironment:
         Raises
         ------
         IsolationError
-            If no free port is found, PostgreSQL or Redis can't be reached, the
+            If no free port is found, PostgreSQL can't be reached, the
             test database can't be created or Redis doesn't start; the message
             says how to opt out. Other errors propagate unchanged, because
             opting out would not fix them.
         """
         import psycopg2
-        import redis
 
         try:
             return cls._start(environ)
-        except (OSError, RuntimeError, psycopg2.Error, redis.RedisError) as e:
+        except (OSError, RuntimeError, psycopg2.Error) as e:
             raise IsolationError(e) from e
 
     @classmethod
