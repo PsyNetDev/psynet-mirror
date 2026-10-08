@@ -18,8 +18,9 @@ Design constraints:
   experiment variable rather than a config option so that it can change while
   the study runs.
 * The check runs only when a new participant would be created
-  (``POST /participant`` and its path-style variant), before any database row exists, so a waiting
-  visitor costs one cheap request per retry and leaves no trace in the data.
+  (``POST /participant`` and its path-style variant), before any database
+  row exists, so a waiting visitor costs one cheap request per retry and
+  leaves no trace in the data.
 * A participant is *active* while they are working, have not failed, and have
   either joined or submitted a page in the last ``DEFAULT_IDLE_TIMEOUT_S`` seconds.
   People who close the tab stop counting once that timeout passes, so no
@@ -52,6 +53,26 @@ _PARTICIPANT_CREATION_ENDPOINTS = {"post_participant", "create_participant"}
 DEFAULT_IDLE_TIMEOUT_S = 600
 
 _full_until = 0.0
+
+
+def is_valid_participant_limit(value):
+    """Return whether ``value`` can be ``max_concurrent_participants``.
+
+    Valid limits are ``None`` (no limit) and whole numbers of at least 0.
+    """
+    return value is None or (
+        isinstance(value, int) and not isinstance(value, bool) and value >= 0
+    )
+
+
+def recruiter_supports_participant_limits(recruiter_class):
+    """Return whether newcomers from ``recruiter_class`` may wait for a place.
+
+    An unknown recruiter (``None``) counts as supporting limits.
+    """
+    return recruiter_class is None or getattr(
+        recruiter_class, "supports_max_concurrent_participants", False
+    )
 
 
 def count_active_participants(idle_timeout_s=DEFAULT_IDLE_TIMEOUT_S):
@@ -107,9 +128,7 @@ def refuse_new_participant_if_full():
         recruiter_class = configured_recruiter_class()
     except NotImplementedError:
         recruiter_class = None
-    if recruiter_class is not None and not getattr(
-        recruiter_class, "supports_max_concurrent_participants", False
-    ):
+    if not recruiter_supports_participant_limits(recruiter_class):
         return None
 
     now = time.monotonic()

@@ -85,7 +85,12 @@ from . import deployment_info
 from . import exit as exit_domain
 from .asset import Asset, AssetRegistry, LocalStorage, OnDemandAsset, S3Storage
 from .bot import Bot, BotDriver, BotResponse
-from .capacity import count_active_participants, refuse_new_participant_if_full
+from .capacity import (
+    count_active_participants,
+    is_valid_participant_limit,
+    recruiter_supports_participant_limits,
+    refuse_new_participant_if_full,
+)
 from .command_line import export_launch_data
 from .data import SQLBase, SQLMixin, ingest_zip, register_table
 from .db import (
@@ -131,8 +136,8 @@ from .recruiters import (  # noqa: F401
     PsyNetProlificRecruiterMixin,
     StagingCapRecruiter,  # noqa: F401  # Backward compatibility alias
     StagingLabRecruiter,
-    _recruiter_class_by_name,
     configured_recruiter_class,
+    named_recruiter_class,
 )
 from .redis import redis_vars
 from .serialize import serialize, unserialize
@@ -430,10 +435,6 @@ def _is_replacement_gunicorn_worker(worker):
     ``cfg.workers`` spawns are the initial boot.
     """
     return worker.age > worker.cfg.workers
-
-
-def _is_participant_limit(value):
-    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
 
 
 class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
@@ -2563,7 +2564,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             If the configured recruiter doesn't support participant limits.
         """
         limit = cls.variables.get("max_concurrent_participants")
-        if limit is not None and not _is_participant_limit(limit):
+        if not is_valid_participant_limit(limit):
             raise ValueError(
                 "max_concurrent_participants must be a whole number of at least 0, "
                 f"or None for no limit, not {limit!r}."
@@ -2575,11 +2576,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             return
         # The named recruiter, not the debug-mode stand-in, decides: deploy
         # commands run this check while the config is still in debug mode.
-        name = config.get("recruiter", None)
-        recruiter_class = _recruiter_class_by_name(name) if name else None
-        if recruiter_class is not None and not getattr(
-            recruiter_class, "supports_max_concurrent_participants", False
-        ):
+        if not recruiter_supports_participant_limits(named_recruiter_class(config)):
             raise RuntimeError(
                 "max_concurrent_participants and is_at_capacity are only "
                 "supported with the generic and hotair recruiters, because other "
@@ -2622,7 +2619,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         limit = self.var.get("max_concurrent_participants", None)
         if limit is None:
             return False
-        if not _is_participant_limit(limit):
+        if not is_valid_participant_limit(limit):
             logger.warning(
                 "Ignoring max_concurrent_participants=%r: it must be a whole number "
                 "of at least 0, or None for no limit.",
