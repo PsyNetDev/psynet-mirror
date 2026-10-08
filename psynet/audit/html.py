@@ -858,7 +858,9 @@ def render_performance_result(
 
     options_data = evidence.performance_data.get("options")
     options_data = options_data if isinstance(options_data, dict) else {}
-    limits = _performance_limits(options_data)
+    limits = CapacityLimits.from_options(
+        options_data.get("max_p95_s"), options_data.get("max_queue_p95_s")
+    )
     body: list[str] = []
     for row in evidence.performance_results:
         errors = int(row.get("request_errors") or 0) + int(row.get("bot_errors") or 0)
@@ -914,22 +916,6 @@ def render_performance_result(
         "</tr></thead><tbody>"
         + "\n".join(body)
         + f"</tbody></table></div>{notes_html}</section>"
-    )
-
-
-def _performance_limits(options: Mapping[str, object]) -> CapacityLimits:
-    """Return the capacity limits a performance test was judged against."""
-
-    defaults = CapacityLimits()
-    max_p95_s = options.get("max_p95_s")
-    max_queue_p95_s = options.get("max_queue_p95_s")
-    return CapacityLimits(
-        max_p95_s=defaults.max_p95_s if max_p95_s is None else float(max_p95_s),
-        max_queue_p95_s=(
-            defaults.max_queue_p95_s
-            if max_queue_p95_s is None
-            else float(max_queue_p95_s)
-        ),
     )
 
 

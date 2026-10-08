@@ -170,6 +170,12 @@ def test_capacity_search_brackets_then_bisects(capacity, expected_probes):
     assert [r["n_bots"] for r in results] == expected_probes
 
 
+def test_capacity_limits_from_options_keeps_zero_and_defaults_none():
+    limits = CapacityLimits.from_options(max_p95_s=0, max_queue_p95_s=None)
+
+    assert limits == CapacityLimits(max_p95_s=0.0)
+
+
 def test_capacity_summary_suggests_a_cap_below_the_measured_capacity():
     results = [
         _base_result(n_bots=100, p95_response_time=0.2),

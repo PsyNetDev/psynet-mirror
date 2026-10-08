@@ -1355,6 +1355,19 @@ class CapacityLimits:
     max_p95_s: float = DEFAULT_MAX_P95_S
     max_queue_p95_s: float = DEFAULT_MAX_QUEUE_P95_S
 
+    @classmethod
+    def from_options(cls, max_p95_s=None, max_queue_p95_s=None):
+        """Return limits from optional settings; ``None`` means the default."""
+        defaults = cls()
+        return cls(
+            max_p95_s=defaults.max_p95_s if max_p95_s is None else float(max_p95_s),
+            max_queue_p95_s=(
+                defaults.max_queue_p95_s
+                if max_queue_p95_s is None
+                else float(max_queue_p95_s)
+            ),
+        )
+
     def describe(self):
         """Return the limits as a phrase, for summaries."""
         return (

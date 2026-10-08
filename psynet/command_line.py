@@ -4507,12 +4507,7 @@ def _run_performance_test_with_existing_server(
         )
         sys.exit(1)
 
-    from psynet.perf_test import (
-        DEFAULT_MAX_P95_S,
-        DEFAULT_MAX_QUEUE_P95_S,
-        CapacityLimits,
-        PerformanceTester,
-    )
+    from psynet.perf_test import CapacityLimits, PerformanceTester
 
     os.environ["PASSTHROUGH_ERRORS"] = "True"
 
@@ -4537,15 +4532,9 @@ def _run_performance_test_with_existing_server(
         # Documented CLI default is 1.0 (realistic pacing). Do not fall back to
         # Experiment.test_time_factor, which defaults to 0.0 for correctness tests.
         time_factor=(1.0 if time_factor is None else time_factor),
-        limits=CapacityLimits(
-            max_p95_s=(
-                DEFAULT_MAX_P95_S if max_p95_ms is None else float(max_p95_ms) / 1000
-            ),
-            max_queue_p95_s=(
-                DEFAULT_MAX_QUEUE_P95_S
-                if max_queue_p95_s is None
-                else float(max_queue_p95_s)
-            ),
+        limits=CapacityLimits.from_options(
+            max_p95_s=None if max_p95_ms is None else float(max_p95_ms) / 1000,
+            max_queue_p95_s=max_queue_p95_s,
         ),
     )
     started_at = datetime.datetime.now().isoformat(timespec="seconds")
