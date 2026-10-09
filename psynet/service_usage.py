@@ -35,6 +35,8 @@ _SESSION_SCRIPTS = {"psynet", "dallinger", "pytest", "py.test", "flask"}
 _TEST_DATABASE = re.compile(r"_(test_\d{4,5}|slot\d{1,2})$")
 _PYTHON_OPTIONS_WITH_VALUES = {"-W", "-X", "-Q"}
 _TEST_REDIS_MARKERS = ("psynet-test-redis-", "redis_slot")
+# Set in the command that an isolated test or debug session reruns.
+_ISOLATED_CHILD = "_PSYNET_TEST_ENVIRONMENT_READY"
 
 
 @dataclass
@@ -111,8 +113,8 @@ def find_sessions():
     import psutil
 
     uid, own_pid = os.getuid(), os.getpid()
-    sessions = {}
-    for process in psutil.process_iter(["pid", "uids", "cmdline"]):
+    found = []
+    for process in psutil.process_iter(["pid", "ppid", "uids", "cmdline"]):
         info = process.info
         if not info["uids"] or info["uids"].real != uid or info["pid"] == own_pid:
             continue
@@ -131,6 +133,14 @@ def find_sessions():
             _database_name(environ.get("DATABASE_URL", _DEFAULT_DATABASE_URL)),
             _redis_port(environ.get("REDIS_URL", _DEFAULT_REDIS_URL)),
         )
+        found.append((info, key, command, cwd, _ISOLATED_CHILD in environ))
+    # An isolated launcher keeps the caller's settings but only waits for its
+    # rerun child, so it belongs to the child's session.
+    child_keys = {info["ppid"]: key for info, key, *_, child in found if child}
+    sessions = {}
+    for info, key, command, cwd, child in found:
+        if not child:
+            key = child_keys.get(info["pid"], key)
         session = sessions.setdefault(key, Session(*key))
         session.pids.append(info["pid"])
         if not session.command:
@@ -220,13 +230,18 @@ def _report(sessions, redis_servers, databases):
     click.echo("\nRedis servers:")
     for r in redis_servers:
         users = _session_names(sessions, lambda s: s.redis_port == r.port)
-        click.echo(f"  {r.port}  PID {r.pid}  {users or 'unused'}")
+        clients = "no answer" if r.clients is None else _count(r.clients, "client")
+        click.echo(f"  {r.port}  PID {r.pid}  {clients}  {users or 'no session'}")
     click.echo("\nDatabases:")
     for d in databases:
         users = _session_names(sessions, lambda s: s.database == d.name)
-        click.echo(
-            f"  {d.name}  {d.connections} connections  {users or 'not referenced'}"
-        )
+        connections = _count(d.connections, "connection")
+        click.echo(f"  {d.name}  {connections}  {users or 'no session'}")
+
+
+def _count(number, noun):
+    """Return e.g. ``1 connection`` or ``2 connections``."""
+    return f"{number} {noun}{'' if number == 1 else 's'}"
 
 
 def leftovers(sessions, redis_servers, databases):

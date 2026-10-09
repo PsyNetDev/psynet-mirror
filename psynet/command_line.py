@@ -1,5 +1,6 @@
 import datetime
 import functools
+import glob
 import hashlib
 import importlib
 import json
@@ -1058,13 +1059,18 @@ def _reloader_exclude_patterns():
     ``sys.path`` entry, and an editable install puts the whole PsyNet (or
     Dallinger) checkout there. Without these patterns, editing a test or
     scaffolding a demo restarts every debug server. The served experiment is
-    watched through Dallinger's development folder, so it is unaffected.
+    watched through Dallinger's development folder, so it is unaffected, but
+    other debug servers' development folders are excluded.
     """
     import dallinger
+    from dallinger.utils import develop_target_path
 
     import psynet
 
-    patterns = []
+    config = get_config()
+    if not config.ready:
+        config.load()
+    patterns = _other_develop_folder_patterns(develop_target_path(config))
     for package in (psynet, dallinger):
         root = Path(package.__file__).resolve().parent.parent
         if not (root / "pyproject.toml").exists():
@@ -1072,6 +1078,30 @@ def _reloader_exclude_patterns():
         for folder in ("demos", "tests", "docs"):
             if (root / folder).is_dir():
                 patterns.append(f"{root / folder}{os.sep}*")
+    return patterns
+
+
+def _other_develop_folder_patterns(develop_path):
+    """Return reloader exclusions for the other debug servers' development folders.
+
+    ``flask run`` puts the parent of the development folder (usually ``/tmp``)
+    on ``sys.path``, so without these patterns each debug server would also
+    watch, and restart for, the folders that other debug servers write next
+    to it. ``fnmatch`` has no negation, so the patterns match every
+    ``dallinger_develop*`` name that differs from this server's own folder
+    at some character, plus every longer name.
+    """
+    develop_path = Path(develop_path)
+    parent = glob.escape(str(develop_path.parent)) + os.sep
+    prefix = "dallinger_develop"
+    name = develop_path.name
+    if not name.startswith(prefix):
+        return [f"{parent}{prefix}*"]
+    patterns = [
+        f"{parent}{glob.escape(name[:i])}[!{name[i]}]*"
+        for i in range(len(prefix), len(name))
+    ]
+    patterns.append(f"{parent}{glob.escape(name)}[!{os.sep}]*")
     return patterns
 
 

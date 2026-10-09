@@ -639,6 +639,21 @@ def test_debug_legacy_starts_four_gunicorn_workers(monkeypatch):
     ]
 
 
+@pytest.mark.parametrize("own", ["dallinger_develop", "dallinger_develop_5100"])
+def test_reloader_ignores_only_other_develop_folders(own):
+    """A debug server watches its own development folder but not its neighbours'."""
+    from fnmatch import fnmatch
+
+    from psynet.command_line import _other_develop_folder_patterns
+
+    patterns = _other_develop_folder_patterns(f"/tmp/{own}")
+    names = {"", "_5100", "_51", "_51000", "_5200"}
+    for name in {f"dallinger_develop{suffix}" for suffix in names} - {own}:
+        assert any(fnmatch(f"/tmp/{name}/app.py", p) for p in patterns), name
+    for path in (f"/tmp/{own}/app.py", "/tmp/review/psynet/psynet/experiment.py"):
+        assert not any(fnmatch(path, p) for p in patterns), path
+
+
 def test_debug_auto_reload_no_browsers_launches_without_browsers(monkeypatch, capsys):
     """PsyNet's launch job opens no browsers and prints what the browser would show."""
     from psynet.command_line import _debug_auto_reload, launch_app_without_browsers
