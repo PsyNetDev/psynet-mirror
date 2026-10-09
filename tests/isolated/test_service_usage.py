@@ -8,17 +8,13 @@ import sys
 import time
 
 import psutil
-from click.testing import CliRunner
 
-from psynet.bootstrap_commands import services_list
 from psynet.isolated_environment import READY_ENV_VAR
 from psynet.service_usage import (
     Database,
-    Session,
+    _database_users,
     _session_command,
-    find_databases,
     find_sessions,
-    leftovers,
 )
 
 
@@ -80,94 +76,16 @@ def test_session_command_recognises_scripts_and_python_modules():
     assert _session_command(["bash"]) is None
 
 
-def test_leftovers_are_unused_session_databases():
-    sessions = [Session("5100", "dallinger_test_5100", 6400)]
-    databases = [
-        Database("dallinger", 0),
-        Database("dallinger_test_5100", 0),
-        Database("dallinger_test_5110", 0),
-        Database("dallinger_test_5140", 0),
-        Database("dallinger_debug_5130", 0),
-        Database("dallinger_test_5120", 1),
-        Database("dallinger_slot2", 0),
-        Database("booking_test_6000", 0),
-        Database("dallinger_test_70000", 0),
-        Database("attention_test_1", 0),
-        Database("pilot_test_2020_extra", 0),
-        Database("study_test_2024", 0),
-        Database("survey_debug_2023", 0),
-    ]
-
-    stale = leftovers(sessions, databases, in_use={"dallinger_test_5140"})
-
-    assert [d.name for d in stale] == ["dallinger_test_5110", "dallinger_debug_5130"]
-
-
-def test_clean_keeps_a_database_whose_port_lock_is_held_or_unreadable(
-    tmp_path, monkeypatch, capsys
+def test_databases_of_plain_pytest_sessions_are_found_by_their_port_lock(
+    tmp_path, monkeypatch
 ):
     """Plain pytest sessions are invisible in process environments; their lock isn't."""
-    from psynet.service_usage import _clean, _cursor
-
-    lock_path = tmp_path / "6990.lock"
     monkeypatch.setattr(
-        "psynet.service_usage.port_lock_path", lambda port: str(lock_path)
+        "psynet.service_usage.port_lock_path", lambda port: str(tmp_path / port)
     )
-    name = "psynet_services_test_6990"
-    with _cursor() as cursor:
-        cursor.execute(f"DROP DATABASE IF EXISTS {name}")
-        cursor.execute(f"CREATE DATABASE {name}")
-    try:
-        with open(lock_path, "w") as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            _clean([Database(name, 0)])
-        lock_path.unlink()
-        lock_path.symlink_to(tmp_path / "elsewhere")
-        _clean([Database(name, 0)])
-        assert name in [d.name for d in find_databases()]
-        output = capsys.readouterr().out
-        assert "a session now holds port 6990" in output
-        assert "can't open the lock file" in output
-        lock_path.unlink()
-        _clean([Database(name, 0)])
-        assert name not in [d.name for d in find_databases()]
-    finally:
-        with _cursor() as cursor:
-            cursor.execute(f"DROP DATABASE IF EXISTS {name}")
-
-
-def test_clean_without_a_terminal_needs_yes(tmp_path, monkeypatch):
-    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@localhost/dallinger")
-    monkeypatch.setattr(
-        "psynet.service_usage.port_lock_path", lambda port: str(tmp_path / "lock")
-    )
-    for finder in ("find_sessions", "find_redis_servers"):
-        monkeypatch.setattr(f"psynet.service_usage.{finder}", lambda: [])
-    monkeypatch.setattr(
-        "psynet.service_usage.find_databases",
-        lambda: [Database("dallinger_test_5990", 0)],
-    )
-
-    result = CliRunner().invoke(services_list, ["--clean"])
-
-    assert result.exit_code != 0
-    assert "dallinger_test_5990" in result.output
-    assert "pass --yes" in result.output
-
-
-def test_clean_refuses_a_remote_database_server(monkeypatch):
-    for finder in ("find_sessions", "find_redis_servers", "find_databases"):
-        monkeypatch.setattr(f"psynet.service_usage.{finder}", lambda: [])
-    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@db.example.org/dallinger")
-
-    result = CliRunner().invoke(services_list, ["--clean", "--yes"])
-
-    assert result.exit_code != 0
-    assert "only cleans a local PostgreSQL server" in result.output
-
-
-def test_yes_needs_clean():
-    result = CliRunner().invoke(services_list, ["--yes"])
-
-    assert result.exit_code == 2
-    assert "only works with --clean" in result.output
+    database = Database("dallinger_test_6990", 0)
+    assert _database_users(database, []) == "no session"
+    with open(tmp_path / "6990", "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        assert _database_users(database, []) == "a session holding port 6990"
+    assert _database_users(Database("study_test_1", 0), []) == "no session"

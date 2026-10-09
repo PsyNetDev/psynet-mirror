@@ -194,21 +194,10 @@ pick free settings before starting another session.
 .. code:: bash
 
   psynet services list
-  psynet services list --clean
 
 Isolated test and debug sessions drop their own databases when they end, so
-a database is only left over when its session was killed. ``--clean`` drops
-those: databases named ``dallinger_test_<port>`` or ``dallinger_debug_<port>``
-(or named after the database in the current shell's ``DATABASE_URL``). It only
-works on a local PostgreSQL server and never stops processes. CI slot databases (``*_slot<n>``) are kept, because
-``psynet dev ci run-tests`` reuses them. It skips
-databases that have connections, that a session it can see or the current
-shell uses, or whose port a running test or debug session still holds; it
-can see only your own PsyNet, Dallinger and pytest processes, but the port
-check also covers other users' isolated sessions. ``--clean`` lists what it
-would drop and asks first. Pass ``--yes``
-to skip the question, which you must do where nobody can answer it, such as
-in a script.
+a ``dallinger_test_<port>`` or ``dallinger_debug_<port>`` database with no
+session is left over from a killed session; drop it with ``dropdb <name>``.
 
 
 .. _scripts:

@@ -12,17 +12,8 @@ sessions under plain ``pytest`` change theirs in-process (see
 :mod:`psynet.isolated_environment`), so the port lock that every isolated test
 and debug session holds is the reliable sign that its database is in use.
 
-``psynet services list`` prints the result. With ``--clean`` it drops the
-databases of isolated sessions that were killed before they could drop them
-themselves: those named ``<base>_test_<port>`` and ``<base>_debug_<port>``,
-where ``<base>`` is ``dallinger`` or this shell's database. It never stops
-processes, and it skips databases with connections, databases that a visible
-session or this shell uses, and databases whose port lock is held, which it
-holds itself while dropping. It
-only cleans a local PostgreSQL server, because the port locks and processes
-it checks are this machine's. CI slot databases (``*_slot<n>``) are left
-alone: ``psynet dev ci run-tests`` reuses them and holds no lock between
-test items.
+``psynet services list`` prints the result. It only reads; it never stops
+processes or drops databases.
 
 Unlike :mod:`psynet.services`, this module needs ``psutil`` and ``psycopg2``,
 so it is imported lazily and needs ``psynet[experiment]``.
@@ -33,29 +24,23 @@ from __future__ import annotations
 import fcntl
 import os
 import re
-import sys
-from contextlib import ExitStack, contextmanager
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from urllib.parse import urlparse
 
 import click
 
 from .isolated_environment import (
-    DEBUG,
     DEFAULT_DATABASE_URL,
     DEFAULT_REDIS_URL,
     READY_ENV_VAR,
-    TEST,
     port_lock_path,
+    split_session_database,
 )
 
 _DEFAULT_BASE_PORT = "5000"
 _SESSION_SCRIPTS = {"psynet", "dallinger", "pytest", "py.test", "flask"}
-_ISOLATED_DATABASE = re.compile(rf"(\w+)_({TEST}|{DEBUG})_(\d{{4,5}})")
-# Session ports start at 5000, so that names such as ``study_test_2024`` don't match.
-_SESSION_PORTS = range(5000, 65536)
-_LOCAL_HOSTS = {"", "localhost", "127.0.0.1", "::1"}
-_PYTHON_OPTIONS_WITH_VALUES = {"-W", "-X", "-Q"}
+_PYTHON_OPTIONS_WITH_VALUES = {"-W", "-X"}
 
 
 @dataclass
@@ -193,17 +178,13 @@ def find_redis_servers():
 
 @contextmanager
 def _cursor():
-    """Yield an autocommit cursor on the ``postgres`` database of ``DATABASE_URL``'s server.
-
-    Not on ``DATABASE_URL``'s own database, which could be one to drop.
-    """
+    """Yield a cursor on the ``postgres`` database of ``DATABASE_URL``'s server."""
     import psycopg2
 
     from .services import _postgres_url
 
     url = urlparse(_postgres_url())._replace(path="/postgres").geturl()
     connection = psycopg2.connect(url, connect_timeout=3)
-    connection.autocommit = True
     try:
         with connection.cursor() as cursor:
             yield cursor
@@ -224,65 +205,18 @@ def find_databases():
         return [Database(name, count) for name, count in cursor.fetchall()]
 
 
-def _isolated_database(database_name):
-    """Return ``(base, purpose, port)`` for an isolated session's database, or ``None``."""
-    match = _ISOLATED_DATABASE.fullmatch(database_name)
-    if not match or int(match.group(3)) not in _SESSION_PORTS:
-        return None
-    return match.group(1), match.group(2), int(match.group(3))
-
-
-def _session_port(database_name):
-    """Return the port in an isolated session's database name, or ``None``."""
-    parts = _isolated_database(database_name)
-    return parts[2] if parts else None
-
-
-def _base_database(database_name):
-    """Return the database that an isolated session's database was named after."""
-    parts = _isolated_database(database_name)
-    return parts[0] if parts else database_name
-
-
-def _open_lock(path):
-    """Open a lock file read-only, creating it if missing, without following symlinks.
-
-    ``flock`` works on read-only files, and opening another user's existing
-    file without ``O_CREAT`` passes Linux's ``protected_regular`` check.
-    """
+def _port_is_claimed(port):
+    """Return whether an isolated session holds the lock of ``port``."""
     try:
-        return os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
-    except FileNotFoundError:
-        return os.open(path, os.O_RDONLY | os.O_CREAT | os.O_NOFOLLOW, 0o644)
-
-
-@contextmanager
-def _port_claim(port):
-    """Yield whether the lock of ``port`` was free, holding it until exit if so.
-
-    Yields ``None`` if the lock file can't be opened, for example because it
-    is a symbolic link.
-    """
-    try:
-        lock = os.fdopen(_open_lock(port_lock_path(port)))
+        lock = os.fdopen(os.open(port_lock_path(port), os.O_RDONLY | os.O_NOFOLLOW))
     except OSError:
-        yield None
-        return
+        return False
     with lock:
         try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(lock, fcntl.LOCK_SH | fcntl.LOCK_NB)
         except OSError:
-            yield False
-        else:
-            yield True
-
-
-def _port_is_claimed(port):
-    """Return whether the lock of ``port`` is held, or can't be checked."""
-    if not os.path.lexists(port_lock_path(port)):
-        return False
-    with _port_claim(port) as free:
-        return free is not True
+            return True
+    return False
 
 
 def _session_names(sessions, matches):
@@ -293,7 +227,7 @@ def _session_names(sessions, matches):
 def _database_users(database, sessions):
     """Describe who uses ``database``, e.g. ``session 5100`` or ``no session``."""
     users = _session_names(sessions, lambda s: s.database == database.name)
-    port = _session_port(database.name)
+    _, port = split_session_database(database.name)
     if not users and port is not None and _port_is_claimed(port):
         users = f"a session holding port {port}"
     return users or "no session"
@@ -325,24 +259,6 @@ def _count(number, noun):
     return f"{number} {noun}{'' if number == 1 else 's'}"
 
 
-def leftovers(sessions, databases, *, in_use=(), bases=("dallinger",)):
-    """Return the databases that ``--clean`` drops.
-
-    ``in_use`` names further databases to keep, such as this shell's own.
-    Only isolated databases named after one of ``bases`` count, so that a
-    look-alike such as ``booking_test_6000`` is kept.
-    """
-    used = {s.database for s in sessions} | set(in_use)
-    stale = []
-    for d in databases:
-        parts = _isolated_database(d.name)
-        if parts is None or parts[0] not in bases:
-            continue
-        if d.connections == 0 and d.name not in used:
-            stale.append(d)
-    return stale
-
-
 def _redis_clients(port):
     """Return the number of other clients connected to Redis on ``port``.
 
@@ -357,61 +273,7 @@ def _redis_clients(port):
     return info["connected_clients"] - 1
 
 
-def _clean(stale_databases):
-    """Drop ``stale_databases`` and return the number of failures.
-
-    A database whose port lock a session has claimed meanwhile is kept; the
-    lock is held while dropping, so no session can claim it halfway.
-    """
-    from psycopg2 import Error as PostgresError
-    from psycopg2 import sql
-
-    failures = 0
-    if stale_databases:
-        with _cursor() as cursor:
-            for database in stale_databases:
-                port = _session_port(database.name)
-                with ExitStack() as stack:
-                    free = port is None or stack.enter_context(_port_claim(port))
-                    if free is None:
-                        click.echo(
-                            f"Kept database {database.name}: can't open the "
-                            f"lock file {port_lock_path(port)}."
-                        )
-                        continue
-                    if not free:
-                        click.echo(
-                            f"Kept database {database.name}: a session now "
-                            f"holds port {port}."
-                        )
-                        continue
-                    try:
-                        cursor.execute(
-                            sql.SQL("DROP DATABASE {}").format(
-                                sql.Identifier(database.name)
-                            )
-                        )
-                    except PostgresError as e:
-                        failures += 1
-                        click.echo(f"Could not drop database {database.name}: {e}")
-                    else:
-                        click.echo(f"Dropped database {database.name}.")
-    return failures
-
-
-def _find_leftovers():
-    """Return the databases ``--clean`` would drop now, skipping claimed session ports."""
-    own = _database_name(os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL))
-    bases = {_database_name(DEFAULT_DATABASE_URL), _base_database(own)}
-    stale = leftovers(find_sessions(), find_databases(), in_use={own}, bases=bases)
-    return [
-        d
-        for d in stale
-        if _session_port(d.name) is None or not _port_is_claimed(_session_port(d.name))
-    ]
-
-
-def list_services(*, clean_leftovers, assume_yes):
+def list_services():
     """Implement ``psynet services list``."""
     try:
         import psutil  # noqa: F401
@@ -430,48 +292,3 @@ def list_services(*, clean_leftovers, assume_yes):
     _report(sessions, redis_servers, databases or [])
     if databases is None:
         click.echo(f"  could not list them: {database_error}")
-        if clean_leftovers:
-            raise click.ClickException("--clean needs PostgreSQL to be reachable.")
-    if not clean_leftovers:
-        return
-    host = _database_host()
-    if host not in _LOCAL_HOSTS and not host.startswith("/"):
-        raise click.ClickException(
-            f"--clean only cleans a local PostgreSQL server, but DATABASE_URL "
-            f"points at {host}, whose other users this computer can't see."
-        )
-    try:
-        _clean_interactively(assume_yes)
-    except psycopg2.Error as e:
-        raise click.ClickException(f"PostgreSQL failed while cleaning: {e}") from e
-
-
-def _database_host():
-    """Return the host of the PostgreSQL server that ``DATABASE_URL`` names."""
-    from .services import _postgres_url
-
-    return urlparse(_postgres_url()).hostname or ""
-
-
-def _clean_interactively(assume_yes):
-    """List the leftover databases, ask for confirmation, then drop those still left over."""
-    stale = _find_leftovers()
-    if not stale:
-        click.echo("\nNo databases of ended test or debug sessions to drop.")
-        return
-    click.echo("\nDatabases of ended test and debug sessions:")
-    for d in stale:
-        click.echo(f"  {d.name}")
-    if not assume_yes and not sys.stdin.isatty():
-        raise click.ClickException(
-            "Nobody can confirm dropping them here; pass --yes to drop them."
-        )
-    if not (assume_yes or click.confirm("Drop them?", default=False)):
-        return
-    # Sessions may have started while the question was open.
-    now_names = {d.name for d in _find_leftovers()}
-    failures = _clean([d for d in stale if d.name in now_names])
-    if failures:
-        raise click.ClickException(
-            f"{_count(failures, 'database')} could not be dropped."
-        )
