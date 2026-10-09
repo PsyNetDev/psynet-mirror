@@ -50,7 +50,7 @@ variables:
   REDIS_URL: redis://redis:6379
   HEADLESS: "TRUE"
   DOCKER_LOCAL_TAG: psynet-build
-  PYTHON_VERSION: "3.13"
+  PYTHON_VERSION: "3.14"
   DOCKER_HOST: tcp://docker:2375
   DOCKER_DRIVER: overlay2
   DOCKER_TLS_CERTDIR: ""
@@ -72,7 +72,7 @@ before_script: &docker_setup
 # and never to jobs that publish or deploy. Master push pipelines still run
 # everything, so they catch that drift and keep a full record of each merge.
 check_already_tested:
-  image: python:3.13-alpine
+  image: python:3.14-alpine
   stage: .pre
   services: []
   before_script: []
@@ -152,7 +152,7 @@ check_already_tested:
       when: always
 
 pre_commit:
-  image: python:3.13
+  image: python:3.14
   <<: *default_rules
   services: []
   before_script:
@@ -161,7 +161,7 @@ pre_commit:
     - pre-commit run --all-files
 
 validate_agent_skills:
-  image: python:3.13
+  image: python:3.14
   <<: *default_rules
   services: []
   before_script:
@@ -170,7 +170,7 @@ validate_agent_skills:
     - python scripts/validate_agent_skills.py
 
 changelog_check:
-  image: python:3.13
+  image: python:3.14
   stage: test
   services: []
   # Importing ``psynet.dev.changelog`` from the checkout needs only ``click``
@@ -255,25 +255,25 @@ changelog_check:
     paths:
       - public/
 
-tests_python_3_13:
+tests_python_3_14:
   extends: .test_suite
   # Stated explicitly rather than inherited from the global default, so this
-  # job keeps testing 3.13 even if the default Python version changes.
+  # job keeps testing 3.14 even if the default Python version changes.
   variables:
-    PYTHON_VERSION: "3.13"
+    PYTHON_VERSION: "3.14"
 
-# To reduce CI cost, non-recommended Python versions (3.11, 3.12, 3.14) are
+# To reduce CI cost, non-recommended Python versions (3.11, 3.12, 3.13) are
 # only verified on release branches: day-to-day MRs rarely affect version
 # compatibility. Note that regular pipelines validate dependency resolution
 # only for the default Python version (via the Docker build's `uv pip
 # compile`); all supported versions are resolution-checked when maintainers
 # run `psynet dev ci update-dallinger-constraints`, and fully tested on
 # release-branch pipelines.
-tests_python_3_14:
+tests_python_3_13:
   extends: .test_suite
   <<: *release_branch_only
   variables:
-    PYTHON_VERSION: "3.14"
+    PYTHON_VERSION: "3.13"
     SKIP_PYTHON_VERSION_CHECK: "1"
 
 # GitLab does not allow combining `parallel: N` with a matrix, so the shard is
@@ -339,7 +339,7 @@ playwright_e2e_default:
     PLAYWRIGHT_GREP: "@both|@inplace-only"
 
 merge_test_results:
-  image: python:3.13-alpine
+  image: python:3.14-alpine
   stage: test
   # Must match the jobs it needs, or skipped test jobs break pipeline creation.
   <<: *docker_test_rules
@@ -553,7 +553,7 @@ benchmark_load_sweep:
 # Shared setup for docs CI. Replaces the global Docker before_script
 # and opts out of Docker-in-Docker, Postgres, and Redis.
 .docs_ci:
-  image: python:3.13
+  image: python:3.14
   stage: test
   <<: *default_rules
   services: []
@@ -604,7 +604,7 @@ docs_linkcheck_strict:
 # wrapper that supplies the image, cache, artifacts, and rules.
 # ``services: []`` opts out of Docker-in-Docker, Postgres, and Redis.
 pages:
-  image: python:3.13
+  image: python:3.14
   stage: deploy
   variables:
     # Single absolute URL so every versioned subdir loads the same JSON.

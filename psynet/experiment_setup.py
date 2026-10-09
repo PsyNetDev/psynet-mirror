@@ -255,8 +255,8 @@ def _ensure_active_virtualenv():
     if sys.prefix == sys.base_prefix and not os.environ.get("VIRTUAL_ENV"):
         raise click.UsageError(
             "PsyNet setup must run in an active virtual environment. "
-            "Create one with 'uv venv --python 3.13', then activate it before "
-            "trying again."
+            f"Create one with 'uv venv --python {_recommended_python()}', then "
+            "activate it before trying again."
         )
 
 

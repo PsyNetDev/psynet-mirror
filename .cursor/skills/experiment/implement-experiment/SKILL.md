@@ -124,7 +124,7 @@ and the experiment's `AGENTS.md`, which `psynet setup` writes.
 From the experiment directory:
 
 ```bash
-uv venv --python 3.13
+uv venv --python 3.14
 source .venv/bin/activate
 uv pip install psynet          # thin bootstrap only
 psynet setup                   # scaffolds files, pins, constraints, install

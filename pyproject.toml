@@ -24,7 +24,7 @@ license = {file = "LICENSE"}
 description = "PsyNet – complex psychological experiments made easy"  # A framework for running advanced psychological experiments
 keywords = ["psychology", "experiments", "online", "networks"]
 readme = "README.md"
-requires-python = ">=3.11"  # recommended Python version: 3.13
+requires-python = ">=3.11"  # recommended Python version: 3.14
 classifiers = [
     "Development Status :: 4 - Beta",
     "Programming Language :: Python :: 3.14",

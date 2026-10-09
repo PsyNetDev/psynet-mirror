@@ -104,7 +104,7 @@ that PsyNet requires.
 .. code-block:: bash
 
     cd ~/PsyNet
-    uv venv --python 3.13
+    uv venv --python 3.14
     source .venv/bin/activate
     uv pip install -e ".[dev,demos,slack]"
     psynet --version

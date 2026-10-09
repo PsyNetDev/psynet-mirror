@@ -84,11 +84,11 @@ from the PsyNet checkout:
     PIPELINE=$(curl -s "$P/pipelines?ref=master&source=push&status=success&per_page=1" | jq '.[0].id')
     DIR=$(mktemp -d)
     curl -s "$P/pipelines/$PIPELINE/jobs?per_page=100" \
-      | jq -r '.[] | select(.name | test("^(tests_python_3_13|playwright_e2e_)")) | "\(.id) \(.name)"' \
+      | jq -r '.[] | select(.name | test("^(tests_python_3_14|playwright_e2e_)")) | "\(.id) \(.name)"' \
       | while read -r id name shard; do
           i=${shard%/*}
           case $name in
-            tests_*) f=ci_durations_3.13_$i.json ;;
+            tests_*) f=ci_durations_3.14_$i.json ;;
             *) f=playwright-${name#playwright_e2e_}-$i-junit.xml ;;
           esac
           curl -sfL -o "$DIR/$f" "$P/jobs/$id/artifacts/public/$f" || echo "missing $f"

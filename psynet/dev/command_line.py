@@ -81,7 +81,7 @@ def update_dallinger_constraints(skip_compile_check):
 @click.option(
     "--junit-dir", default=None, help="Write one JUnit XML file per item here."
 )
-@click.option("--python-version", default="3.13", show_default=True)
+@click.option("--python-version", default="3.14", show_default=True)
 @click.option(
     "--durations-output",
     default=None,

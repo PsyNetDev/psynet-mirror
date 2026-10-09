@@ -5,7 +5,7 @@
     "repo": ".",
     "branches": ["master"],
     "environment_type": "virtualenv",
-    "pythons": ["3.13"],
+    "pythons": ["3.14"],
     "matrix": {},
     "build_command": [
         "python -m pip wheel --no-deps --wheel-dir {build_cache_dir} {build_dir}"

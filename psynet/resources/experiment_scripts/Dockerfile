@@ -1,7 +1,7 @@
 # This Dockerfile is used both to specify a functional development environment
 # (e.g. on GitHub Codespaces) and a deployment image.
 
-FROM python:3.13-bookworm
+FROM python:3.14-bookworm
 
 RUN pip install uv
 

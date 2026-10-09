@@ -18,7 +18,7 @@ the name of an existing Python module such as ``code`` or ``test``.
 
    mkdir chords
    cd chords
-   uv venv --python 3.13
+   uv venv --python 3.14
    source .venv/bin/activate
    uv pip install psynet
    psynet setup
