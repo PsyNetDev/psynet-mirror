@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -6,7 +7,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 
 import pytest
 
@@ -113,10 +114,42 @@ def test_a_debug_server_is_not_refused_by_its_own_wrapper(tmp_path):
     assert result.returncode == 0
 
 
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Linux only")
+def test_children_stop_when_their_caller_is_killed(tmp_path):
+    """A SIGKILLed launcher still stops its Redis server and re-run command."""
+    import psutil
+
+    pid_file = tmp_path / "child.pid"
+    caller = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            "import subprocess, time\n"
+            "from psynet.isolated_environment import sigterm_on_caller_exit\n"
+            "child = subprocess.Popen(['sleep', '60'], "
+            "preexec_fn=sigterm_on_caller_exit())\n"
+            f"open({str(pid_file)!r}, 'w').write(str(child.pid))\n"
+            "time.sleep(60)\n",
+        ],
+        env={**os.environ, "PYTHONPATH": str(Path(psynet.__file__).parents[1])},
+    )
+    deadline = time.monotonic() + 30
+    while not pid_file.exists() or not pid_file.read_text():
+        assert time.monotonic() < deadline, "child process did not start"
+        time.sleep(0.1)
+    child = psutil.Process(int(pid_file.read_text()))
+    caller.kill()
+    caller.wait()
+    child.wait(timeout=10)
+
+
 @pytest.mark.skipif(shutil.which("redis-server") is None, reason="needs redis-server")
 def test_isolated_environment_uses_its_own_services(drop_new_databases):
+    url = urlsplit(os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL))
+    database = re.sub(r"_(test|debug)_\d+$", "", url.path.lstrip("/"))
     shared = {
-        "DATABASE_URL": os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL),
+        # As in a shell that exported a debug server's settings.
+        "DATABASE_URL": urlunsplit(url._replace(path=f"/{database}_debug_5999")),
         "REDIS_URL": os.environ.get("REDIS_URL", DEFAULT_REDIS_URL),
         "base_port": os.environ.get("base_port", "5000"),
     }
@@ -128,7 +161,6 @@ def test_isolated_environment_uses_its_own_services(drop_new_databases):
             assert len({shared[key], first.env[key], second.env[key]}) == 3
         assert first.env[READY_ENV_VAR] == "1"
         port = first.env["base_port"]
-        database = urlsplit(shared["DATABASE_URL"]).path.lstrip("/")
         assert urlsplit(first.env["DATABASE_URL"]).path == f"/{database}_test_{port}"
         debug_port = second.env["base_port"]
         assert second.env["DATABASE_URL"].endswith(f"/{database}_debug_{debug_port}")
@@ -138,6 +170,11 @@ def test_isolated_environment_uses_its_own_services(drop_new_databases):
 
     with pytest.raises(OSError):
         socket.create_connection(("127.0.0.1", redis_port), timeout=1).close()
+    with IsolatedEnvironment.start(shared, purpose=DEBUG) as debug:
+        pass
+    with IsolatedEnvironment.start(shared, purpose=DEBUG) as again:
+        assert again.env["DATABASE_URL"] == debug.env["DATABASE_URL"]
+        assert "earlier debug server on this port" in again.describe()
 
 
 @pytest.mark.skipif(shutil.which("redis-server") is None, reason="needs redis-server")

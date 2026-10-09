@@ -51,9 +51,14 @@ different experiments on one machine, add ``--isolated``:
 It picks a free port (5100 or above) and uses a database and a Redis server
 of its own, which it starts and stops with the server. It prints the port, and
 the ``export`` line that points other local commands, such as
-``psynet export local``, at it. The database stays after the server stops,
-until the next ``--isolated`` server on the same port resets it; its Redis
-server doesn't, so after the server stops, export only ``DATABASE_URL``.
+``psynet export local``, at it; with ``--no-browsers`` it repeats that line
+under the dashboard credentials. Local commands run in the served directory
+warn when they would read a different database from the server. The
+database stays after the server stops, until the next ``--isolated`` server
+on the same port resets it, which that server mentions. Its Redis server
+doesn't stay, so after the server stops, export only ``DATABASE_URL``. If the
+launcher is killed outright, Linux still stops the server and its Redis
+server.
 Two debug servers can't share an experiment directory, because each replaces
 the generated files the other serves. ``--isolated`` refuses to start where
 another ``psynet debug`` is already serving; plain ``psynet debug local``
@@ -139,7 +144,9 @@ The local experiment stores its data in PostgreSQL. Connect with:
 
     psql -h localhost -U dallinger -d dallinger
 
-The password is ``dallinger``. The main tables are ``participant``,
+The password is ``dallinger``. A server started with ``--isolated`` uses the
+database it prints at startup, such as ``dallinger_debug_5100``; pass that name
+to ``-d`` instead. The main tables are ``participant``,
 ``trial``, ``response`` (page answers), ``node`` and ``network`` (trial maker
 nodes and chains) and ``asset``; ``\dt`` lists them all. For example:
 

@@ -412,6 +412,7 @@ def prompt_for_ssh_server():
 def get_db_uri(location, app=None, server=None):
     match location:
         case "local":
+            _warn_if_debug_server_uses_another_database()
             yield db.db_url
         case "heroku" | "docker_heroku":
             if app is None:
@@ -427,6 +428,50 @@ def get_db_uri(location, app=None, server=None):
                 yield db_uri
         case _:
             raise click.BadParameter(f"Invalid location: {location}")
+
+
+def _warn_if_debug_server_uses_another_database():
+    """Warn if the ``psynet debug`` serving this directory uses another database.
+
+    This happens when a shell lacks, or still has, the ``export`` line that
+    ``psynet debug local --isolated`` prints.
+    """
+    from .isolated_environment import (
+        DEFAULT_DATABASE_URL,
+        debug_server_environment,
+        export_advice,
+        is_isolated_debug_server,
+    )
+
+    server = debug_server_environment(os.getcwd())
+    if server is None:
+        return
+    pid, environ = server
+    theirs = urlsplit(environ.get("DATABASE_URL", DEFAULT_DATABASE_URL)).path
+    ours = urlsplit(db.db_url).path
+    if theirs == ours:
+        return
+    if is_isolated_debug_server(environ):
+        advice = export_advice(environ)
+    else:
+        advice = "To use its database, run: unset DATABASE_URL REDIS_URL base_port"
+    click.echo(
+        f"Warning: psynet debug (PID {pid}) serves this directory with database "
+        f"{theirs.lstrip('/')}, but this command uses {ours.lstrip('/')}. {advice}",
+        err=True,
+    )
+
+
+def _check_exported_redis_is_running():
+    """Fail clearly if ``REDIS_URL`` points at a Redis server that isn't running."""
+    from .services import check_redis
+
+    if "REDIS_URL" in os.environ and not check_redis().ok:
+        raise click.ClickException(
+            f"Nothing answers at REDIS_URL={os.environ['REDIS_URL']}. If it "
+            "belonged to a psynet debug local --isolated server that has "
+            "stopped, run 'unset REDIS_URL base_port' and keep DATABASE_URL."
+        )
 
 
 @psynet.command("db")
@@ -1038,6 +1083,11 @@ def launch_app_without_browsers(port, **kwargs):
         f"password: {config.get('dashboard_password')}",
         chevrons=False,
     )
+    from .isolated_environment import export_advice, is_isolated_debug_server
+
+    # Repeated here because the advice printed at startup has scrolled away.
+    if is_isolated_debug_server(os.environ):
+        log(export_advice(os.environ), chevrons=False)
 
 
 @contextmanager
@@ -3035,6 +3085,7 @@ def export__local(ctx=None, **kwargs):
     """
     Export the experiment locally.
     """
+    _check_exported_redis_is_running()
     export_(
         ctx,
         get_exp_variables=lambda: _read_experiment_variables("local"),
@@ -4097,7 +4148,11 @@ def _rerun_in_isolated_environment(purpose):
     example ``psynet test local --n-bots 4``), and this process then exits
     with its code. ``purpose`` is ``TEST`` or ``DEBUG`` from that module.
     """
-    from .isolated_environment import IsolatedEnvironment, check_no_debug_server
+    from .isolated_environment import (
+        IsolatedEnvironment,
+        check_no_debug_server,
+        sigterm_on_caller_exit,
+    )
     from .services import SERVICES_CHECKED_ENV_VAR, ensure_local_services
 
     try:
@@ -4116,7 +4171,9 @@ def _rerun_in_isolated_environment(purpose):
         log(environment.describe())
         exit_code = _wait_forwarding_signals(
             subprocess.Popen(
-                sys.orig_argv, env={**environment.env, SERVICES_CHECKED_ENV_VAR: "1"}
+                sys.orig_argv,
+                env={**environment.env, SERVICES_CHECKED_ENV_VAR: "1"},
+                preexec_fn=sigterm_on_caller_exit(),
             )
         )
     sys.exit(exit_code)

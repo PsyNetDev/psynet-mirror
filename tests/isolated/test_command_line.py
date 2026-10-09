@@ -4936,6 +4936,50 @@ def test_isolated_waiter_passes_sigterm_to_its_child(tmp_path):
     assert not psutil.pid_exists(child_pid)
 
 
+def test_local_commands_point_at_the_isolated_debug_server(tmp_path, capsys):
+    """Without the export line, local commands say how to reach the server."""
+    import sys
+    import time
+
+    from psynet.command_line import _warn_if_debug_server_uses_another_database
+    from psynet.isolated_environment import debug_server_environment
+
+    fake_psynet = tmp_path / "psynet"
+    fake_psynet.write_text("import time\ntime.sleep(60)\n")
+    server_url = "postgresql://dallinger:dallinger@localhost/dallinger_debug_5987"
+    env = {
+        **os.environ,
+        "_PSYNET_TEST_ENVIRONMENT_READY": "1",
+        "DATABASE_URL": server_url,
+        "REDIS_URL": "redis://127.0.0.1:7366",
+        "base_port": "5987",
+    }
+    server = subprocess.Popen(
+        [sys.executable, str(fake_psynet), "debug", "local"], cwd=tmp_path, env=env
+    )
+    try:
+        deadline = time.monotonic() + 10
+        while debug_server_environment(tmp_path) is None:
+            assert time.monotonic() < deadline, "the server was not found"
+            time.sleep(0.1)
+        with working_directory(tmp_path):
+            _warn_if_debug_server_uses_another_database()
+        warning = capsys.readouterr().err
+        assert f"psynet debug (PID {server.pid})" in warning
+        assert f"export DATABASE_URL={server_url} " in warning
+    finally:
+        server.kill()
+        server.wait()
+
+
+def test_export_local_says_when_the_exported_redis_has_stopped(monkeypatch):
+    from psynet.command_line import _check_exported_redis_is_running
+
+    monkeypatch.setenv("REDIS_URL", "redis://127.0.0.1:1")
+    with pytest.raises(click.ClickException, match="unset REDIS_URL base_port"):
+        _check_exported_redis_is_running()
+
+
 def test_debug_isolated_reruns_once_and_rejects_docker(monkeypatch):
     from psynet.command_line import _debug_in_isolated_environment_if_requested
     from psynet.isolated_environment import DEBUG, READY_ENV_VAR

@@ -60,9 +60,12 @@ same directory breaks. :func:`check_no_debug_server` refuses to start in that
 case.
 """
 
+import ctypes
 import fcntl
 import os
+import re
 import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -83,6 +86,7 @@ DEFAULT_DATABASE_URL = "postgresql://dallinger:dallinger@localhost/dallinger"
 DEFAULT_REDIS_URL = "redis://localhost:6379"
 _DEFAULT_BASE_PORT = 5000
 _PORT_OFFSET = 100
+_PR_SET_PDEATHSIG = 1
 
 
 def should_isolate(environ=None):
@@ -124,26 +128,52 @@ def check_no_debug_server(directory, purpose=TEST):
     directory, which breaks a debug server that serves it, even when the
     services are isolated.
     """
+    newcomer = "the tests" if purpose == TEST else "a second debug server"
+    for process in _debug_servers(directory):
+        raise RuntimeError(
+            f"psynet debug (PID {process.pid}) is serving "
+            f"{os.path.realpath(directory)}, and {newcomer} would replace its "
+            f"generated files. Stop it, or run {newcomer} from a copy of the "
+            "experiment such as a git worktree."
+        )
+
+
+def debug_server_environment(directory):
+    """Return the PID and environment of the ``psynet debug`` serving ``directory``.
+
+    For ``psynet debug local --isolated`` this is the re-run child, whose
+    environment holds the server's own settings. Returns ``None`` if no debug
+    server runs there or its environment can't be read.
+    """
+    import psutil
+
+    found = None
+    for process in _debug_servers(directory):
+        try:
+            environ = process.environ()
+        except (psutil.AccessDenied, psutil.NoSuchProcess, psutil.ZombieProcess):
+            continue
+        if found is None or READY_ENV_VAR in environ:
+            found = process.pid, environ
+    return found
+
+
+def _debug_servers(directory):
+    """Yield the ``psynet debug`` processes in ``directory``, except this command."""
     import psutil
 
     directory = os.path.realpath(directory)
-    newcomer = "the tests" if purpose == TEST else "a second debug server"
     # Wrappers such as ``timeout 60 psynet debug local`` are this command itself.
     this_command = {os.getpid(), *(p.pid for p in psutil.Process().parents())}
     for process in psutil.process_iter(["cmdline", "cwd"]):
-        cmdline = process.info["cmdline"] or []
         cwd = process.info["cwd"]
         if (
             process.pid not in this_command
             and cwd
             and os.path.realpath(cwd) == directory
-            and _is_psynet_debug(cmdline)
+            and _is_psynet_debug(process.info["cmdline"] or [])
         ):
-            raise RuntimeError(
-                f"psynet debug (PID {process.pid}) is serving {directory}, and "
-                f"{newcomer} would replace its generated files. Stop it, or run "
-                f"{newcomer} from a copy of the experiment such as a git worktree."
-            )
+            yield process
 
 
 def _is_psynet_debug(cmdline):
@@ -175,6 +205,24 @@ class IsolationError(RuntimeError):
         super().__init__(message)
 
 
+def is_isolated_debug_server(environ):
+    """Return whether ``environ`` is that of a ``psynet debug local --isolated``."""
+    database = urlsplit(environ.get("DATABASE_URL", "")).path
+    return bool(environ.get(READY_ENV_VAR)) and database.endswith(
+        f"_{DEBUG}_{environ.get('base_port')}"
+    )
+
+
+def export_advice(environ):
+    """Return how to point other local commands at an isolated debug server."""
+    return (
+        "To point other local commands (such as psynet export local) at it, run:\n"
+        f"  export DATABASE_URL={environ['DATABASE_URL']} "
+        f"REDIS_URL={environ['REDIS_URL']} base_port={environ['base_port']}\n"
+        "Its Redis server stops with it, so after it stops export only DATABASE_URL."
+    )
+
+
 class IsolatedEnvironment:
     """Environment variables for an isolated test session, plus its Redis server.
 
@@ -183,10 +231,18 @@ class IsolatedEnvironment:
     """
 
     def __init__(
-        self, env, port_lock=None, redis_process=None, redis_dir=None, purpose=TEST
+        self,
+        env,
+        port_lock=None,
+        redis_process=None,
+        redis_dir=None,
+        purpose=TEST,
+        reused_database=False,
     ):
         self.env = env
         self.purpose = purpose
+        #: Whether the database was left by an earlier session on this port.
+        self.reused_database = reused_database
         self._port_lock = port_lock
         self._redis_process = redis_process
         self._redis_dir = redis_dir
@@ -216,7 +272,9 @@ class IsolatedEnvironment:
     @classmethod
     def _start(cls, environ, purpose):
         environ = dict(os.environ if environ is None else environ)
-        database_url = environ.get("DATABASE_URL", DEFAULT_DATABASE_URL)
+        database_url = _without_session_suffix(
+            environ.get("DATABASE_URL", DEFAULT_DATABASE_URL)
+        )
         redis_url = environ.get("REDIS_URL", DEFAULT_REDIS_URL)
         private_redis = shutil.which("redis-server") is not None
         shared_base_port = int(environ.get("base_port", _DEFAULT_BASE_PORT))
@@ -233,14 +291,17 @@ class IsolatedEnvironment:
         )
         redis_dir = None
         try:
+            session_database_url, reused = _ensure_database(
+                database_url, suffix=f"_{purpose}_{base_port}"
+            )
             env = {
                 **environ,
                 READY_ENV_VAR: "1",
-                "DATABASE_URL": ensure_database(
-                    database_url, suffix=f"_{purpose}_{base_port}"
-                ),
+                "DATABASE_URL": session_database_url,
                 "base_port": str(base_port),
-                "dallinger_develop_directory": f"/tmp/dallinger_develop_{base_port}",
+                "dallinger_develop_directory": os.path.join(
+                    tempfile.gettempdir(), f"dallinger_develop_{base_port}"
+                ),
             }
             if not private_redis:
                 slot = (base_port - shared_base_port - _PORT_OFFSET) // 10
@@ -252,31 +313,35 @@ class IsolatedEnvironment:
                     "can still reach another local debug server's participants.",
                     file=sys.stderr,
                 )
-                return cls(env, port_lock, purpose=purpose)
+                return cls(env, port_lock, purpose=purpose, reused_database=reused)
 
-            redis_dir = tempfile.mkdtemp(prefix="psynet-test-redis-")
-            process = start_redis_server(redis_port(base_port), redis_dir)
+            redis_dir = tempfile.mkdtemp(prefix=f"psynet-{purpose}-redis-")
+            process = start_redis_server(
+                redis_port(base_port), redis_dir, stop_with_caller=True
+            )
         except BaseException:
             if redis_dir is not None:
                 shutil.rmtree(redis_dir, ignore_errors=True)
             port_lock.close()
             raise
         env["REDIS_URL"] = f"redis://127.0.0.1:{redis_port(base_port)}"
-        return cls(env, port_lock, process, redis_dir, purpose)
+        return cls(env, port_lock, process, redis_dir, purpose, reused)
 
     def describe(self):
         """Return a summary of where the session's services are."""
         database = urlsplit(self.env["DATABASE_URL"]).path.lstrip("/")
         if self.purpose == DEBUG:
+            reset = (
+                f"\nIt replaces the data that an earlier debug server on this port "
+                f"left in {database}."
+                if self.reused_database
+                else ""
+            )
             return (
                 f"This debug server uses database {database}, Redis at "
                 f"{self.env['REDIS_URL']} and port {self.env['base_port']}, so it "
-                "runs alongside other local servers and tests. To point other "
-                "local commands (such as psynet export local) at it, run:\n"
-                f"  export DATABASE_URL={self.env['DATABASE_URL']} "
-                f"REDIS_URL={self.env['REDIS_URL']} base_port={self.env['base_port']}\n"
-                "Its Redis server stops with it, so after it stops export only "
-                "DATABASE_URL."
+                "runs alongside other local servers and tests."
+                f"{reset}\n" + export_advice(self.env)
             )
         return (
             f"PsyNet tests use database {database}, Redis at {self.env['REDIS_URL']} "
@@ -303,12 +368,28 @@ class IsolatedEnvironment:
         self.close()
 
 
+def _without_session_suffix(database_url):
+    """Strip an isolated session's ``_test_<port>`` or ``_debug_<port>`` suffix.
+
+    A shell that exported a debug server's ``DATABASE_URL`` would otherwise
+    give its tests databases such as ``dallinger_debug_5100_test_5200``.
+    """
+    parts = urlsplit(database_url)
+    path = re.sub(rf"_({TEST}|{DEBUG})_\d+$", "", parts.path)
+    return urlunsplit(parts._replace(path=path))
+
+
 def ensure_database(database_url, *, suffix, fresh=False):
     """Create ``<database><suffix>`` next to ``database_url`` and return its URL.
 
     With ``fresh=True`` an existing database is dropped first, after
     terminating its connections.
     """
+    return _ensure_database(database_url, suffix=suffix, fresh=fresh)[0]
+
+
+def _ensure_database(database_url, *, suffix, fresh=False):
+    """Like :func:`ensure_database`, but also return whether the database existed."""
     import psycopg2
     from psycopg2 import sql
 
@@ -333,17 +414,21 @@ def ensure_database(database_url, *, suffix, fresh=False):
                     sql.SQL("DROP DATABASE IF EXISTS {}").format(sql.Identifier(name))
                 )
             cursor.execute("SELECT 1 FROM pg_database WHERE datname = %s", (name,))
-            if cursor.fetchone() is None:
+            existed = cursor.fetchone() is not None
+            if not existed:
                 cursor.execute(
                     sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name))
                 )
     finally:
         connection.close()
-    return urlunsplit(parts._replace(path=f"/{name}"))
+    return urlunsplit(parts._replace(path=f"/{name}")), existed
 
 
-def start_redis_server(port, directory, log_file=None):
+def start_redis_server(port, directory, log_file=None, stop_with_caller=False):
     """Start a non-persistent ``redis-server`` on ``port`` and wait until it answers.
+
+    With ``stop_with_caller=True`` the server also stops when the calling
+    process dies without cleaning up; see :func:`sigterm_on_caller_exit`.
 
     Raises
     ------
@@ -361,6 +446,7 @@ def start_redis_server(port, directory, log_file=None):
         stdout=log_file or subprocess.DEVNULL,
         stderr=subprocess.STDOUT,
         start_new_session=True,
+        preexec_fn=sigterm_on_caller_exit() if stop_with_caller else None,
     )
     try:
         deadline = time.monotonic() + 10
@@ -377,6 +463,21 @@ def start_redis_server(port, directory, log_file=None):
     except BaseException:
         stop_process(process)
         raise
+
+
+def sigterm_on_caller_exit():
+    """Return a ``preexec_fn`` that sends the child SIGTERM when the caller dies.
+
+    This stops a session's Redis server and re-run command even when the
+    process that started them is killed with SIGKILL and can't clean up. It
+    uses Linux's ``PR_SET_PDEATHSIG``, which fires when the calling *thread*
+    exits, so call it from a thread that lives as long as the session. Returns
+    ``None`` on other platforms.
+    """
+    if not sys.platform.startswith("linux"):
+        return None
+    prctl = ctypes.CDLL(None, use_errno=True).prctl
+    return lambda: prctl(_PR_SET_PDEATHSIG, signal.SIGTERM)
 
 
 def stop_process(process):
