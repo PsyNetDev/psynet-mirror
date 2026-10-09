@@ -41,6 +41,7 @@ _CAPACITY_SEARCH_MAX = 2000
 # failing bot counts is within this fraction of the passing count.
 _CAPACITY_RESOLUTION = 0.1
 _CAPACITY_HEADROOM = 0.8
+_RAMP_UP_WARNING_SHARE = 0.25
 
 
 def _is_bot_thread_record(record):
@@ -178,6 +179,27 @@ def run_parallel_test(n_bots, time_factor, stagger_interval_s, check_bots):
 # ---------------------------------------------------------------------------
 
 
+def raise_open_file_limit():
+    """Raise this process's soft open-file limit to its hard limit.
+
+    Each bot holds its own database and HTTP connections, and the default soft
+    limit (often 1024, or 256 on macOS) runs out at a few hundred bots.
+    """
+    try:
+        import resource
+    except ImportError:
+        return
+    soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    # macOS refuses limits above OPEN_MAX (10240) even when the hard limit is unlimited.
+    target = 10240 if hard == resource.RLIM_INFINITY else hard
+    if soft == resource.RLIM_INFINITY or soft >= target:
+        return
+    try:
+        resource.setrlimit(resource.RLIMIT_NOFILE, (target, hard))
+    except (ValueError, OSError) as e:
+        logger.warning(f"Could not raise the open-file limit above {soft}: {e}")
+
+
 class PerformanceTester:
     def __init__(
         self,
@@ -201,6 +223,7 @@ class PerformanceTester:
 
     def run(self, bot_counts=None, bot_log_file=None):
         """Run performance tests for one or more bot count values."""
+        raise_open_file_limit()
         if bot_counts is None:
             bot_counts = [self.n_bots]
 
@@ -230,6 +253,7 @@ class PerformanceTester:
         list[dict]
             One result per test, in the order they ran.
         """
+        raise_open_file_limit()
         self._print_suite_header(
             f"automatic (from {_CAPACITY_SEARCH_START}, while keeping "
             f"{self.limits.describe()})"
@@ -404,6 +428,8 @@ class PerformanceTester:
             "first_bot_initialized": False,
             "server_stopped": False,
             "slots_started": 0,
+            # Seconds from the test start until the last bot slot started.
+            "ramp_up_s": None,
             "last_status_update": time.time(),
             "status_line_length": 0,
         }
@@ -587,6 +613,8 @@ class PerformanceTester:
         # The first bot waits for the experiment launch; the rest follow it.
         start_bot_slot()
         n_started = bot_state["slots_started"] = 1
+        if n_started >= n:
+            bot_state["ramp_up_s"] = 0.0
         next_slot_time = None
         next_server_check = start_time
         while time.time() < end_time:
@@ -615,6 +643,8 @@ class PerformanceTester:
                     start_bot_slot()
                     n_started = bot_state["slots_started"] = n_started + 1
                     next_slot_time += self._bounded_random_stagger()
+                if n_started >= n:
+                    bot_state["ramp_up_s"] = current_time - start_time
 
             self._show_realtime_status(bot_state, current_time, end_time)
             time.sleep(0.05)
@@ -903,6 +933,7 @@ class PerformanceTester:
             "actual_duration": actual_duration,
             "server_stopped": bot_state["server_stopped"],
             "slots_started": bot_state["slots_started"],
+            "ramp_up_s": bot_state["ramp_up_s"],
             "total_bots_started": bot_state["total_bots_started"],
             "completed_during_test": bot_state["bots_completed_during_test"],
             "bots_succeeded": bots_succeeded,
@@ -1491,6 +1522,15 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
                 f"  {max(passed):,} bots also passed, so the results are "
                 "inconsistent; rerun to confirm."
             )
+    capacity_result = next(r for r in results if r["n_bots"] == capacity)
+    ramp_up = capacity_result.get("ramp_up_s")
+    test_length = capacity_result.get("actual_duration")
+    if ramp_up and test_length and ramp_up > _RAMP_UP_WARNING_SHARE * test_length:
+        lines.append(
+            f"  Starting all {capacity:,} bots took {ramp_up:.0f} s of the "
+            f"{test_length:.0f} s test, so the server ran fully loaded only "
+            "briefly; use a longer --duration-minutes to confirm the capacity."
+        )
     if not time_factor:
         lines.append(
             "  These bots ran without pauses (--time-factor 0) and load the server "
@@ -1500,24 +1540,35 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
     return lines
 
 
-def capacity_advice(capacity_search=False):
+def capacity_advice(capacity_search=False, on_deployment=False):
     """Return advice on getting participant numbers that apply to a deployment.
 
     Parameters
     ----------
     capacity_search : bool
         Whether the test already searched for capacity with ``--n-bots auto``.
+    on_deployment : bool
+        Whether the test ran on the deployment server (``performance-test ssh``),
+        so that its results already apply to the study.
 
     Returns
     -------
     list[str]
     """
-    advice = [
-        "Local results only show how the experiment copes on this computer. "
-        "For numbers that apply to your study, launch the experiment on its "
-        "deployment server (psynet debug ssh) and run psynet performance-test ssh "
-        "there; the server's CPU, memory and worker settings set the real capacity."
-    ]
+    advice = []
+    if not on_deployment:
+        advice.append(
+            "Local results only show how the experiment copes on this computer. "
+            "For numbers that apply to your study, launch the experiment on its "
+            "deployment server (psynet debug ssh) and run psynet performance-test "
+            "ssh there; the server's CPU, memory and worker settings set the real "
+            "capacity."
+        )
+    advice.append(
+        "Bots fetch pages and submit answers without a browser, so the results "
+        "leave out the static files, media and JavaScript requests that "
+        "participants' browsers make."
+    )
     if not capacity_search:
         advice.append(
             "To find the largest number of concurrent participants the server "

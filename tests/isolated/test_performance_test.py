@@ -163,7 +163,7 @@ def test_capacity_search_brackets_then_bisects(capacity, expected_probes):
 
     with (
         patch.object(tester, "_test_performance", side_effect=fake_test),
-        patch("psynet.perf_test.time.sleep"),
+        patch.object(tester, "_pause_between_tests"),
     ):
         results = tester.find_capacity()
 
@@ -233,6 +233,46 @@ def test_capacity_summary_uses_counts_below_the_first_failure():
 
     assert "about 10 concurrent bots" in text
     assert "inconsistent" in text
+
+
+def test_capacity_summary_warns_when_starting_the_bots_took_much_of_the_test():
+    results = [_base_result(n_bots=50, actual_duration=60.0, ramp_up_s=30.0)]
+    assert "took 30 s of the 60 s test" in _join(format_capacity_summary(results))
+
+    results[0]["ramp_up_s"] = 5.0
+    assert "took" not in _join(format_capacity_summary(results))
+
+
+def test_monitoring_loop_records_how_long_the_bots_took_to_start():
+    import time
+
+    tester = PerformanceTester(
+        authenticated_session=Mock(), base_url="http://x", stagger_interval_s=0.01
+    )
+    bot_state = tester._initialize_bot_tracking()
+    bot_state["first_bot_initialized"] = True
+    start = time.time()
+
+    tester._run_monitoring_loop(3, bot_state, Mock(), start, start + 0.5)
+
+    assert bot_state["slots_started"] == 3
+    assert 0 <= bot_state["ramp_up_s"] < 0.5
+
+
+def test_raise_open_file_limit_reaches_the_hard_limit():
+    resource = pytest.importorskip("resource")
+    from psynet.perf_test import raise_open_file_limit
+
+    original = resource.getrlimit(resource.RLIMIT_NOFILE)
+    soft, hard = original
+    if hard == resource.RLIM_INFINITY or soft < 2:
+        pytest.skip("needs a finite hard limit")
+    resource.setrlimit(resource.RLIMIT_NOFILE, (soft // 2, hard))
+    try:
+        raise_open_file_limit()
+        assert resource.getrlimit(resource.RLIMIT_NOFILE) == (hard, hard)
+    finally:
+        resource.setrlimit(resource.RLIMIT_NOFILE, original)
 
 
 def test_a_test_whose_bots_did_not_all_start_is_not_within_capacity():

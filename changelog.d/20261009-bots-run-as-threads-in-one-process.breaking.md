@@ -1,0 +1,1 @@
+Bots in `psynet performance-test` and `psynet test local --parallel` now share one process, so bot code that relies on module-level state (for example a global counter or `random.seed()`) affects every bot at once. Keep per-bot state in local variables or on the bot object, and use a `random.Random()` instance instead of seeding the global generator.

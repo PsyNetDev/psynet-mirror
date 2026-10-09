@@ -4484,6 +4484,7 @@ def test_run_performance_test_with_new_server_starts_legacy_debug_server():
         patch("psynet.command_line._run_performance_test_with_existing_server"),
         patch("psynet.command_line._stop_server"),
         patch("psynet.command_line._local_port_is_free", return_value=True),
+        patch("psynet.command_line.list_psynet_worker_processes", return_value=[]),
     ):
         _run_performance_test_with_new_server(
             n_bots="2", stagger=0.1, time_factor=1.0, duration_minutes=0.5, debug=False
@@ -4514,6 +4515,39 @@ def test_performance_test_refuses_to_replace_a_running_local_server():
                 n_bots="2", stagger=0, time_factor=1, duration_minutes=1, debug=False
             )
     start.assert_not_called()
+
+
+def test_performance_test_refuses_while_workers_use_this_database():
+    from psynet.command_line import _run_performance_test_with_new_server
+
+    with (
+        patch("psynet.command_line._local_port_is_free", return_value=True),
+        patch(
+            "psynet.command_line.list_psynet_worker_processes", return_value=[Mock()]
+        ),
+        patch("psynet.command_line._start_local_server_and_wait_for_ready") as start,
+        pytest.raises(click.ClickException, match="--existing"),
+    ):
+        _run_performance_test_with_new_server(
+            n_bots="2", stagger=0, time_factor=1, duration_minutes=1, debug=False
+        )
+    start.assert_not_called()
+
+
+def test_local_base_port_reads_the_experiment_config(tmp_path, monkeypatch):
+    from dallinger.config import get_config
+
+    from psynet.command_line import _local_base_port
+
+    (tmp_path / "config.txt").write_text("[Server]\nbase_port = 5987\n")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("base_port", raising=False)
+    config = get_config()
+    config.clear()
+    try:
+        assert _local_base_port() == 5987
+    finally:
+        config.clear()
 
 
 @pytest.mark.parametrize(
@@ -4692,13 +4726,13 @@ def test_ssh_performance_test_command_forwards_zero_valued_options():
         n_bots="5",
         stagger=0,
         time_factor=0,
-        duration_minutes=0,
-        max_p95_ms=0,
+        duration_minutes=1.5,
+        max_p95_ms=800,
         max_queue_p95_s=0,
     ) == (
-        "psynet performance-test local --existing "
-        "--n-bots 5 --stagger 0 --time-factor 0 --duration-minutes 0 "
-        "--max-p95-ms 0 --max-queue-p95-s 0"
+        "psynet performance-test local --existing --on-deployment "
+        "--n-bots 5 --stagger 0 --time-factor 0 --duration-minutes 1.5 "
+        "--max-p95-ms 800 --max-queue-p95-s 0"
     )
 
 
@@ -4712,7 +4746,16 @@ def test_ssh_performance_test_command_omits_unspecified_options():
             time_factor=None,
             duration_minutes=None,
         )
-        == "psynet performance-test local --existing"
+        == "psynet performance-test local --existing --on-deployment"
+    )
+
+
+def test_capacity_advice_on_the_deployment_skips_the_local_caveat():
+    from psynet.perf_test import capacity_advice
+
+    assert "Local results" in capacity_advice()[0]
+    assert not any(
+        "Local results" in line for line in capacity_advice(on_deployment=True)
     )
 
 
