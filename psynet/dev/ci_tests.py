@@ -14,8 +14,9 @@ Two things make this faster than running items one after another:
   local PsyNet environment: its own Postgres database, Redis server, web
   port and Dallinger develop directory. A Redis server (not just a database
   number) is needed because Redis pub/sub channels are shared across
-  database numbers. Slot 0 uses the caller's environment unchanged, so
-  ``--slots 1`` behaves like a plain serial run.
+  database numbers. Slot 0 uses the caller's environment, so ``--slots 1``
+  behaves like a plain serial run (outside CI, its pytest sessions still
+  isolate themselves; see :mod:`psynet.isolated_environment`).
 
 Items that share an experiment directory are serialized by
 :func:`psynet.testing.locks.experiment_directory_lock`.
@@ -43,10 +44,17 @@ import time
 import traceback
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import urlsplit
 
 import click
 
+from psynet.isolated_environment import (
+    DEFAULT_DATABASE_URL,
+    READY_ENV_VAR,
+    create_database,
+    start_redis_server,
+    stop_process,
+)
 from psynet.testing.locks import HELD_LOCK_ENV_VAR, experiment_directory_lock
 from psynet.utils import get_psynet_root, list_experiment_dirs, list_isolated_tests
 
@@ -157,13 +165,12 @@ class _Slot:
         if index == 0:
             return
 
-        database_url = os.environ.get(
-            "DATABASE_URL", "postgresql://dallinger:dallinger@localhost/dallinger"
-        )
+        database_url = os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL)
         base_port, redis_port = _slot_ports(
             _caller_base_port(), os.environ.get("REDIS_URL", ""), index
         )
-        self.env["DATABASE_URL"] = _create_slot_database(database_url, index)
+        self.env[READY_ENV_VAR] = "1"
+        self.env["DATABASE_URL"] = create_database(database_url, suffix=f"_slot{index}")
         self.env["REDIS_URL"] = self._start_redis(redis_port, workspace)
         self.env["base_port"] = str(base_port)
         self.env["dallinger_develop_directory"] = (
@@ -176,32 +183,16 @@ class _Slot:
                 "--slots > 1 needs redis-server on PATH to give each slot its own Redis."
             )
         self._redis_log = open(workspace / f"redis_slot{self.index}.log", "w")
-        self._redis = subprocess.Popen(
-            ["redis-server", "--bind", "127.0.0.1", "--port", str(port)]
-            + ["--dir", str(workspace), "--dbfilename", f"redis_slot{self.index}.rdb"]
-            + ["--save", "", "--appendonly", "no"],
-            stdout=self._redis_log,
-            stderr=subprocess.STDOUT,
-        )
-        deadline = time.monotonic() + 10
-        while time.monotonic() < deadline:
-            probe = subprocess.run(
-                ["redis-cli", "-p", str(port), "ping"], capture_output=True, text=True
-            )
-            if probe.stdout.strip() == "PONG":
-                return f"redis://127.0.0.1:{port}"
-            time.sleep(0.2)
-        self.close()
-        raise click.ClickException(f"Redis for slot {self.index} did not start.")
+        try:
+            self._redis = start_redis_server(port, workspace, log_file=self._redis_log)
+        except RuntimeError as e:
+            self.close()
+            raise click.ClickException(f"Redis for slot {self.index}: {e}") from e
+        return f"redis://127.0.0.1:{port}"
 
     def close(self):
         if self._redis is not None:
-            self._redis.terminate()
-            try:
-                self._redis.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                self._redis.kill()
-                self._redis.wait()
+            stop_process(self._redis)
             self._redis = None
         if self._redis_log is not None:
             self._redis_log.close()
@@ -224,31 +215,6 @@ def _slot_ports(base_port, redis_url, index):
     """Return ``(base_port, redis_port)`` for slot ``index``, offset from the caller's."""
     redis_port = (urlsplit(redis_url).port or 6379) + 100 * index
     return base_port + 10 * index, redis_port
-
-
-def _create_slot_database(database_url, index):
-    """Create a fresh ``<database>_slot<index>`` next to ``database_url``."""
-    import psycopg2
-    from psycopg2 import sql
-
-    parts = urlsplit(database_url)
-    name = f"{parts.path.lstrip('/') or 'dallinger'}_slot{index}"
-    connection = psycopg2.connect(database_url)
-    connection.autocommit = True
-    with connection.cursor() as cursor:
-        # DROP DATABASE ... WITH (FORCE) needs PostgreSQL 13, but
-        # `psynet services ensure` starts PostgreSQL 12.
-        cursor.execute(
-            "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-            "WHERE datname = %s AND pid <> pg_backend_pid()",
-            (name,),
-        )
-        cursor.execute(
-            sql.SQL("DROP DATABASE IF EXISTS {}").format(sql.Identifier(name))
-        )
-        cursor.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name)))
-    connection.close()
-    return urlunsplit(parts._replace(path=f"/{name}"))
 
 
 def _junit_args(item, junit_dir, python_version):

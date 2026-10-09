@@ -19,10 +19,12 @@ From the experiment directory:
     psynet performance-test local
 
 This starts a local server, keeps ``Experiment.test_n_bots`` bots (default 1)
-active for one minute, prints a report, and shuts the server down. It prints
-the paths of the server and bot logs, which go to a
-``psynet-performance-logs-<user>`` folder in the temporary directory; it keeps
-the 20 most recent of each. For a heavier load,
+active for one minute, prints a report, and shuts the server down. Like
+``psynet test local``, the server gets a free port, a database and a Redis
+server of its own, so local debug servers keep running (see
+:doc:`/developer/running_tests`). It prints the paths of the server and bot
+logs, which go to a ``psynet-performance-logs-<user>`` folder in the temporary
+directory; it keeps the 20 most recent of each. For a heavier load,
 ask for more bots and a longer run:
 
 .. code-block:: bash
@@ -42,10 +44,7 @@ itself once the experiment reports that it is complete, which can happen
 between bots when recruitment has closed. Start it with
 ``PSYNET_PERFORMANCE_TEST=1 psynet debug local --legacy`` to keep it running;
 ``psynet performance-test local`` does this for the server it starts. The
-default ``psynet debug local`` server does not stop itself. Without
-``--existing``, ``psynet performance-test local`` refuses to start while
-another server uses its port or its database, because starting its own server
-would stop that one and reset its database.
+default ``psynet debug local`` server does not stop itself.
 
 Local results show how the experiment copes on your computer, and the command
 says so when it finishes. For a participant cap, measure the deployment server

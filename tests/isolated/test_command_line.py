@@ -3827,6 +3827,25 @@ def test_pre_launch_skips_dependency_check_for_in_repo_experiments(
     os.environ.pop("SKIP_DEPENDENCY_CHECK", None)
 
 
+def test_isolated_tests_check_the_experiment_before_creating_services(
+    tmp_path, monkeypatch
+):
+    from psynet.command_line import _rerun_in_isolated_test_environment
+
+    monkeypatch.setattr(
+        "psynet.command_line._check_experiment_directory",
+        Mock(side_effect=click.ClickException("run psynet setup")),
+    )
+    start, ensure = Mock(), Mock()
+    monkeypatch.setattr("psynet.isolated_environment.IsolatedEnvironment.start", start)
+    monkeypatch.setattr("psynet.services.ensure_local_services", ensure)
+    with working_directory(tmp_path):
+        with pytest.raises(click.ClickException, match="run psynet setup"):
+            _rerun_in_isolated_test_environment()
+    start.assert_not_called()
+    ensure.assert_not_called()
+
+
 def test_pre_launch_checks_directory_before_redis():
     """Directory guidance must run before Redis I/O when Redis is unavailable."""
     from psynet.command_line import _pre_launch
@@ -4492,9 +4511,6 @@ def test_run_performance_test_with_new_server_starts_legacy_debug_server():
         ) as start_server,
         patch("psynet.command_line._run_performance_test_with_existing_server"),
         patch("psynet.command_line._stop_server"),
-        patch("psynet.command_line.get_config", return_value=Mock(ready=True)),
-        patch("psynet.command_line._local_port_is_free", return_value=True),
-        patch("psynet.command_line.list_psynet_worker_processes", return_value=[]),
     ):
         _run_performance_test_with_new_server(
             n_bots="2", stagger=0.1, time_factor=1.0, duration_minutes=0.5, debug=False
@@ -4505,64 +4521,6 @@ def test_run_performance_test_with_new_server_starts_legacy_debug_server():
         debug=False,
         extra_env={"PSYNET_PERFORMANCE_TEST": "1"},
     )
-
-
-def test_performance_test_refuses_to_replace_a_server_on_its_configured_port(
-    tmp_path, monkeypatch
-):
-    from dallinger.config import get_config
-
-    from psynet.command_line import _run_performance_test_with_new_server
-
-    config = get_config()
-    was_ready = config.ready
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv("base_port", raising=False)
-    with socket.socket() as busy:
-        busy.bind(("127.0.0.1", 0))
-        busy.listen()
-        port = busy.getsockname()[1]
-        (tmp_path / "config.txt").write_text(f"[Server]\nbase_port = {port}\n")
-        config.clear()
-        try:
-            with (
-                patch(
-                    "psynet.command_line._start_local_server_and_wait_for_ready"
-                ) as start,
-                pytest.raises(click.ClickException, match=f"Port {port} .*--existing"),
-            ):
-                _run_performance_test_with_new_server(
-                    n_bots="2",
-                    stagger=0,
-                    time_factor=1,
-                    duration_minutes=1,
-                    debug=False,
-                )
-        finally:
-            config.clear()
-            (tmp_path / "config.txt").unlink()
-            if was_ready:
-                config.load()
-    start.assert_not_called()
-
-
-def test_performance_test_refuses_while_workers_use_this_database():
-    from psynet.command_line import _run_performance_test_with_new_server
-
-    with (
-        patch("psynet.command_line.get_config", return_value=Mock(ready=True)),
-        patch("psynet.command_line._local_port_is_free", return_value=True),
-        patch(
-            "psynet.command_line.list_psynet_worker_processes",
-            return_value=[Mock(pid=4242)],
-        ),
-        patch("psynet.command_line._start_local_server_and_wait_for_ready") as start,
-        pytest.raises(click.ClickException, match=r"PIDs 4242\).*kill 4242"),
-    ):
-        _run_performance_test_with_new_server(
-            n_bots="2", stagger=0, time_factor=1, duration_minutes=1, debug=False
-        )
-    start.assert_not_called()
 
 
 @pytest.mark.parametrize(
@@ -5092,3 +5050,38 @@ def test_performance_test_existing_explains_a_missing_server():
     with patch("psynet.command_line.redis_vars.get", return_value=url):
         with pytest.raises(click.ClickException, match=f"No server answers at {url}"):
             _check_existing_server_answers()
+
+
+def test_performance_test_refuses_a_directory_that_a_debug_server_serves():
+    from psynet.command_line import _run_performance_test_with_new_server
+
+    with (
+        patch(
+            "psynet.isolated_environment.check_no_debug_server",
+            side_effect=RuntimeError("psynet debug (PID 7) is serving here"),
+        ),
+        patch("psynet.command_line._start_local_server_and_wait_for_ready") as start,
+        pytest.raises(click.ClickException, match="PID 7"),
+    ):
+        _run_performance_test_with_new_server("2", 0, 1, 1, False)
+    start.assert_not_called()
+
+
+@pytest.mark.parametrize("existing", [False, True])
+def test_performance_tests_get_their_own_services_unless_existing(
+    monkeypatch, existing
+):
+    from psynet.command_line import performance_test__local
+
+    rerun = Mock(side_effect=SystemExit(0))
+    monkeypatch.setattr(
+        "psynet.command_line._rerun_in_isolated_test_environment", rerun
+    )
+    monkeypatch.setattr("psynet.isolated_environment.should_isolate", lambda: True)
+    monkeypatch.setattr("psynet.command_line._run_performance_test_local", Mock())
+    try:
+        performance_test__local.callback(existing=existing)
+    except SystemExit:
+        pass
+
+    assert rerun.called is not existing
