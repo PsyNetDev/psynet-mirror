@@ -5081,9 +5081,7 @@ def test_performance_tests_get_their_own_services_unless_existing(
     from psynet.command_line import performance_test__local
 
     rerun = Mock(side_effect=SystemExit(0))
-    monkeypatch.setattr(
-        "psynet.command_line._rerun_in_isolated_test_environment", rerun
-    )
+    monkeypatch.setattr("psynet.command_line._rerun_in_isolated_environment", rerun)
     monkeypatch.setattr("psynet.isolated_environment.should_isolate", lambda: True)
     monkeypatch.setattr("psynet.command_line._run_performance_test_local", Mock())
     try:

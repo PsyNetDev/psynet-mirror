@@ -4176,6 +4176,7 @@ def _rerun_in_isolated_environment(purpose):
     with its code. ``purpose`` is ``TEST`` or ``DEBUG`` from that module.
     """
     from .isolated_environment import (
+        DEBUG,
         IsolatedEnvironment,
         check_no_debug_server,
         sigterm_on_caller_exit,
@@ -4213,6 +4214,8 @@ def _rerun_in_isolated_environment(purpose):
                 preexec_fn=sigterm_on_caller_exit(),
             )
         )
+    if purpose == DEBUG:
+        log(environment.stopped_message())
     # A child killed by signal N reports -N; shells report 128 + N.
     sys.exit(exit_code if exit_code >= 0 else 128 - exit_code)
 

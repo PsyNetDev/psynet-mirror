@@ -60,7 +60,7 @@ server mentions; servers for other directories pick another port, so they
 leave its data alone. The ``export`` line keeps working after the server
 stops: ``psynet export local`` notices that its Redis server has gone and
 reads the database alone. Without the line, local commands run in the
-directory print it. If the launcher is killed outright,
+directory print it. The server also prints the line again when it stops. If the launcher is killed outright,
 Linux still stops the server and its Redis server.
 
 Two debug servers can't share an experiment directory, because each replaces

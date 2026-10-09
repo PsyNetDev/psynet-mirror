@@ -218,6 +218,9 @@ def test_isolated_environment_uses_its_own_services(
     assert not develop_directory.exists()
     with IsolatedEnvironment.start(shared, purpose=DEBUG) as debug:
         pass
+    stopped = debug.stopped_message()
+    assert f"port {debug.env['base_port']} has stopped" in stopped
+    assert f"export DATABASE_URL={debug.env['DATABASE_URL']}" in stopped
     with IsolatedEnvironment.start(shared, purpose=DEBUG) as again:
         assert again.env["DATABASE_URL"] == debug.env["DATABASE_URL"]
         assert "earlier debug server for this experiment" in again.describe()
