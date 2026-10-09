@@ -55,6 +55,12 @@ def test_new_sessions_ignore_an_exported_debug_session():
     }
     plain = {"DATABASE_URL": "postgresql://u:p@localhost/study_2", "base_port": "5200"}
     assert without_session_settings(plain) == plain
+    look_alike = {
+        "DATABASE_URL": "postgresql://u:p@localhost/study_test_1",
+        "REDIS_URL": "redis://localhost:6380",
+        "base_port": "6000",
+    }
+    assert without_session_settings(look_alike) == look_alike
 
 
 def test_shared_environment_warns_once():
