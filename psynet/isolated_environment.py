@@ -311,13 +311,15 @@ class IsolatedEnvironment:
         base_port, port_lock = _claim_port(
             _shared_base_port(environ) + _PORT_OFFSET, usable=usable
         )
+        session_database_url = None
         try:
+            session_database_url = create_database(
+                database_url, suffix=f"_{purpose}_{base_port}"
+            )
             env = {
                 **environ,
                 READY_ENV_VAR: "1",
-                "DATABASE_URL": create_database(
-                    database_url, suffix=f"_{purpose}_{base_port}"
-                ),
+                "DATABASE_URL": session_database_url,
                 "REDIS_URL": _session_redis_url(environ, base_port, private_redis),
                 "base_port": str(base_port),
                 # Not gettempdir(): Dallinger rejects development paths with a period.
@@ -338,6 +340,8 @@ class IsolatedEnvironment:
                 stop_with_caller=True,
             )
         except BaseException:
+            if session_database_url is not None:
+                _drop_session_database(session_database_url)
             port_lock.close()
             raise
         return cls(env, port_lock, process, purpose)
@@ -383,16 +387,29 @@ def without_session_settings(environ):
     ``<database>_debug_<port>`` database, its private Redis (which stops with
     the server) and its port. A new session should start from the shared
     settings instead, not from databases such as
-    ``dallinger_debug_5100_test_5200`` and a stopped Redis.
+    ``dallinger_debug_5100_test_5200`` and a stopped Redis. Only a suffix that
+    matches ``base_port`` counts, so a user's own ``study_test_1`` is kept.
     """
     environ = dict(environ)
-    parts = urlsplit(environ.get("DATABASE_URL", ""))
-    path = re.sub(rf"_({TEST}|{DEBUG})_\d+$", "", parts.path)
-    if path != parts.path:
-        environ["DATABASE_URL"] = urlunsplit(parts._replace(path=path))
+    database_url = environ.get("DATABASE_URL", "")
+    shared_url, port = _split_session_database(database_url)
+    if port is not None and port == environ.get("base_port"):
+        environ["DATABASE_URL"] = shared_url
         environ.pop("REDIS_URL", None)
         environ.pop("base_port", None)
     return environ
+
+
+def _split_session_database(database_url):
+    """Split ``<database>_(test|debug)_<port>`` into the shared URL and the port.
+
+    Returns ``(database_url, None)`` for other names.
+    """
+    parts = urlsplit(database_url)
+    match = re.fullmatch(rf"(.*)_(?:{TEST}|{DEBUG})_(\d+)", parts.path)
+    if match is None:
+        return database_url, None
+    return urlunsplit(parts._replace(path=match.group(1))), match.group(2)
 
 
 def _shared_base_port(environ):
@@ -457,9 +474,7 @@ def _drop_session_database(session_database_url):
     """Drop a session's database, warning instead of raising if that fails."""
     import psycopg2
 
-    shared_url = without_session_settings({"DATABASE_URL": session_database_url})[
-        "DATABASE_URL"
-    ]
+    shared_url, _ = _split_session_database(session_database_url)
     name = urlsplit(session_database_url).path.lstrip("/")
     try:
         connection = psycopg2.connect(shared_url)
