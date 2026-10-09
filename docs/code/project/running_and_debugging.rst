@@ -43,7 +43,7 @@ database, Redis server, port and development folder:
 
 .. code-block:: bash
 
-    createdb -h localhost -U dallinger dallinger_2
+    PGPASSWORD=dallinger createdb -h localhost -U dallinger dallinger_2
     redis-server --port 6381 --bind 127.0.0.1 --dir "$(mktemp -d)" --save "" --daemonize yes
 
     export DATABASE_URL=postgresql://dallinger:dallinger@localhost/dallinger_2

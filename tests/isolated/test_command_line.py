@@ -2933,12 +2933,35 @@ def test_check_experiment_directory_reports_missing_git(tmp_path, monkeypatch):
 
     monkeypatch.setattr("psynet.command_line.is_in_repo_experiment", lambda: False)
     monkeypatch.setattr("psynet.command_line.git_repository_available", lambda: False)
+    monkeypatch.delenv("SKIP_DEPENDENCY_CHECK", raising=False)
 
     with working_directory(tmp_path):
         (tmp_path / "experiment.py").write_text("class Exp:\n    pass\n")
         (tmp_path / "requirements.txt").write_text("psynet\n")
         scaffold_experiment_directory()
-        with pytest.raises(click.ClickException, match="git init"):
+        with pytest.raises(
+            click.ClickException,
+            match="not a git repository and has no constraints.txt.*psynet setup",
+        ):
+            _check_experiment_directory("debug")
+        Path("constraints.txt").write_text("")
+        with pytest.raises(click.ClickException, match="'git init' is enough"):
+            _check_experiment_directory("debug")
+
+
+def test_check_experiment_directory_reports_missing_constraints(tmp_path, monkeypatch):
+    from psynet.command_line import _check_experiment_directory
+
+    monkeypatch.setattr("psynet.command_line.is_in_repo_experiment", lambda: False)
+    monkeypatch.setattr("psynet.command_line.git_repository_available", lambda: True)
+    monkeypatch.delenv("SKIP_DEPENDENCY_CHECK", raising=False)
+
+    with working_directory(tmp_path):
+        (tmp_path / "experiment.py").write_text("class Exp:\n    pass\n")
+        (tmp_path / "requirements.txt").write_text("psynet\n")
+        scaffold_experiment_directory()
+        Path("constraints.txt").unlink(missing_ok=True)
+        with pytest.raises(click.ClickException, match="no constraints.txt"):
             _check_experiment_directory("debug")
 
 
@@ -2952,6 +2975,7 @@ def test_check_experiment_directory_passes_with_scaffold_and_git(tmp_path, monke
         (tmp_path / "experiment.py").write_text("class Exp:\n    pass\n")
         (tmp_path / "requirements.txt").write_text("psynet\n")
         scaffold_experiment_directory()
+        Path("constraints.txt").write_text("")
         _check_experiment_directory("debug")
 
 
@@ -2966,6 +2990,7 @@ def test_check_experiment_directory_requires_commit_only_for_remote_deployments(
         Path("experiment.py").write_text("class Exp:\n    pass\n")
         Path("requirements.txt").write_text("psynet\n")
         scaffold_experiment_directory()
+        Path("constraints.txt").write_text("")
         subprocess.run(["git", "init", "-q"], check=True)
 
         _check_experiment_directory("debug", require_git_commit=False)
@@ -4906,3 +4931,47 @@ def test_prolific_listing_warnings():
     assert "shorter than the estimated 8.5 minutes" in warnings(2, 0.85)[0]
     assert "£5.00/hour" in " ".join(warnings(12, 1.00))
     assert "£4.24/hour" in " ".join(warnings(5, 0.60))
+
+
+def test_subcommand_help_works_outside_an_experiment(tmp_path, monkeypatch):
+    args = ["performance-test", "local", "--help"]
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "argv", ["psynet", *args])
+
+    result = CliRunner().invoke(psynet, args)
+
+    assert result.exit_code == 0, result.output
+    assert "performance-test local [OPTIONS]" in result.output
+
+
+def test_local_experiment_variables_need_no_ssh_server(monkeypatch):
+    from contextlib import contextmanager
+
+    connections = []
+
+    @contextmanager
+    def fake_connection(location, app, server):
+        connections.append((location, server))
+        yield Mock()
+
+    monkeypatch.setattr("psynet.command_line.db_connection", fake_connection)
+    monkeypatch.setattr(
+        "psynet.command_line._experiment_variables", lambda *args, **kwargs: {}
+    )
+
+    result = CliRunner().invoke(psynet, ["experiment-variables", "local"])
+
+    assert result.exit_code == 0, result.output
+    assert connections == [("local", None)]
+
+
+def test_debug_reloader_skips_checkout_tests_demos_and_docs():
+    import psynet as psynet_package
+    from psynet.command_line import _reloader_exclude_patterns
+
+    root = Path(psynet_package.__file__).resolve().parent.parent
+    patterns = _reloader_exclude_patterns()
+
+    for folder in ["demos", "tests", "docs"]:
+        assert f"{root / folder}{os.sep}*" in patterns
+    assert not any(p.startswith(f"{root / 'psynet'}") for p in patterns)

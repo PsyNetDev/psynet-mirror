@@ -28,6 +28,7 @@ from dallinger.command_line.docker_ssh import (
     CONFIGURED_HOSTS,
     option_server,
     remote_postgres,
+    resolve_server_option,
 )
 from dallinger.command_line.utils import verify_id as dallinger_verify_id
 from dallinger.config import experiment_available, get_config
@@ -356,11 +357,20 @@ def _validate_location(ctx, param, value):
     default=None,
     help="Name of the experiment app (required for non-local deployments)",
 )
-@option_server
-def experiment_variables(location, app, server):
+@click.option(
+    "--server",
+    default=None,
+    help="Name of the remote server (for the ssh location)",
+)
+@click.pass_context
+def experiment_variables(ctx, location, app, server):
     """
     Show the variables of the experiment.
     """
+    # Dallinger's shared --server option insists on a configured server even
+    # for local experiments, so the server is only resolved for ssh.
+    if location == "ssh":
+        server = resolve_server_option(ctx, None, server)
     with db_connection(location, app, server) as connection:
         return _experiment_variables(connection, echo=True)
 
@@ -1041,6 +1051,30 @@ def _stop_child_processes_on_signal():
             signal.signal(sig, previous_handler)
 
 
+def _reloader_exclude_patterns():
+    """Return reloader exclusions for the demos, tests and docs of source checkouts.
+
+    Flask's reloader watches every ``.py`` file under each non-system
+    ``sys.path`` entry, and an editable install puts the whole PsyNet (or
+    Dallinger) checkout there. Without these patterns, editing a test or
+    scaffolding a demo restarts every debug server. The served experiment is
+    watched through Dallinger's development folder, so it is unaffected.
+    """
+    import dallinger
+
+    import psynet
+
+    patterns = []
+    for package in (psynet, dallinger):
+        root = Path(package.__file__).resolve().parent.parent
+        if not (root / "pyproject.toml").exists():
+            continue
+        for folder in ("demos", "tests", "docs"):
+            if (root / folder).is_dir():
+                patterns.append(f"{root / folder}{os.sep}*")
+    return patterns
+
+
 def _debug_auto_reload(ctx, archive, no_browsers):
     from dallinger.command_line.develop import debug as dallinger_debug
     from dallinger.deployment import DevelopmentDeployment
@@ -1048,8 +1082,11 @@ def _debug_auto_reload(ctx, archive, no_browsers):
     develop_module = importlib.import_module("dallinger.command_line.develop")
     launch_job = develop_module.launch_app_and_open_browser
     port = _local_base_port()
-    # Dallinger's development server runs `flask run`, which reads this variable.
+    # Dallinger's development server runs `flask run`, which reads these variables.
     os.environ["FLASK_RUN_PORT"] = str(port)
+    exclude = [os.environ.get("FLASK_RUN_EXCLUDE_PATTERNS", "")]
+    exclude += _reloader_exclude_patterns()
+    os.environ["FLASK_RUN_EXCLUDE_PATTERNS"] = os.pathsep.join(filter(None, exclude))
     debug_kwargs = {"skip_flask": False, "port": port}
     if no_browsers:
         develop_module.launch_app_and_open_browser = launch_app_without_browsers
@@ -1913,21 +1950,32 @@ def _check_experiment_directory(mode, *, require_git_commit=False):
             f"{_missing_boilerplate_fix(mode=mode, missing_paths=missing_boilerplate)}"
         )
     # Git provenance (commit SHA and dirty state) is recorded for deployments.
-    if not git_repository_available():
-        from .light_utils import git_command_available
+    from .light_utils import git_command_available
 
-        if not git_command_available():
-            raise click.ClickException(
-                "Git does not appear to be installed. Install it from "
-                "https://git-scm.com/downloads, then create a repository by "
-                "running 'git init'. If you copied a demo into a new directory, "
-                "run 'git init' before 'psynet debug local' or 'psynet test local'."
-            )
+    if not git_repository_available() and not git_command_available():
         raise click.ClickException(
-            "This directory is not a git repository. Create one by running "
-            "'git init'. If you copied a demo into a new directory, run "
-            "'git init' before 'psynet debug local' or 'psynet test local'."
+            "Git does not appear to be installed. Install it from "
+            "https://git-scm.com/downloads, then run 'psynet setup', which "
+            "creates the experiment's repository."
         )
+    not_set_up = []
+    if not git_repository_available():
+        not_set_up.append("is not a git repository")
+    if (
+        not is_in_repo_experiment()
+        and not os.environ.get("SKIP_DEPENDENCY_CHECK")
+        and not Path("constraints.txt").exists()
+    ):
+        not_set_up.append("has no constraints.txt")
+    if not_set_up:
+        message = (
+            f"This experiment directory {' and '.join(not_set_up)}. If you copied "
+            "a demo or an experiment here, activate a virtual environment for it "
+            "and run 'psynet setup', which creates what is missing."
+        )
+        if not_set_up == ["is not a git repository"]:
+            message += " If the other files are already in place, 'git init' is enough."
+        raise click.ClickException(message)
     from .experiment_setup import _containing_worktree_ignores_experiment
 
     if _containing_worktree_ignores_experiment():

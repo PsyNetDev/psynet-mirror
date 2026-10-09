@@ -588,6 +588,9 @@ def require_exp_directory(f):
 
     @wraps(f)
     def wrapper(*args, **kwargs):
+        # On a group, this runs before Click reaches a subcommand's --help.
+        if "--help" in sys.argv[1:]:
+            return f(*args, **kwargs)
         try:
             ensure_experiment_directory_name_does_not_conflict()
             if not experiment_available():
