@@ -135,8 +135,9 @@ still match that name, as ``~/.ssh/<ec2_default_pem>.pem``. Dallinger imports
 the key pair into a region when it is missing. An instance that is already
 running still needs the public key in its ``authorized_keys``.
 
-When Dallinger no longer loads DSA keys, it reports the file as ``not a valid
-OPENSSH private key file``.
+When Dallinger no longer loads DSA keys, a PEM-format key (``BEGIN DSA PRIVATE
+KEY``) fails with ``not a valid OPENSSH private key file`` and an OpenSSH-format
+key fails with a ``ValueError`` such as ``dmq1 must be odd``.
 
 Docker image name
 ^^^^^^^^^^^^^^^^^

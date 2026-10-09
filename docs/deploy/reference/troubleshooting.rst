@@ -45,9 +45,9 @@ If you know that the name now points at a new server, remove the old key from
 DSA key rejected
 ^^^^^^^^^^^^^^^^
 
-If connecting fails with ``not a valid OPENSSH private key file``,
-``server_pem`` is a DSA key. Replace it as described in
-:ref:`replacing-a-dsa-key`.
+If connecting fails with ``not a valid OPENSSH private key file``, or with a
+``ValueError`` such as ``dmq1 must be odd``, ``server_pem`` is a DSA key.
+Replace it as described in :ref:`replacing-a-dsa-key`.
 
 I cannot access my server anymore
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
