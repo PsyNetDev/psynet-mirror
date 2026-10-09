@@ -16,8 +16,9 @@ virtual environment active. ``psynet <command> --help`` lists every option.
    * - ``psynet setup``
      - Prepare a standalone experiment: files, ``constraints.txt``,
        packages and Git (see `Set up an experiment (setup)`_).
-   * - ``psynet services check`` / ``ensure``
-     - Check, or start in Docker, the local PostgreSQL and Redis
+   * - ``psynet services check`` / ``ensure`` / ``list``
+     - Check, or start in Docker, the local PostgreSQL and Redis, or list
+       which local sessions use them
        (see `Local PostgreSQL and Redis (services)`_).
    * - ``psynet scripts scaffold`` / ``update`` / ``prune``
      - Create, refresh or remove boilerplate files
@@ -180,6 +181,22 @@ that publish those host ports (``--yes`` skips the prompt). ``psynet debug``,
 ``psynet deploy``, and ``psynet test local`` call ``ensure`` automatically
 before launch or packaging, including SSH deployments that still prepare the
 experiment against local Postgres/Redis on this machine.
+
+When several experiments or test runs share a machine, ``psynet services list``
+shows each running session's port, database, Redis server and directory, read
+from the environments of your PsyNet, Dallinger and pytest processes, followed
+by every Redis server and database and the session that uses it. Use it to
+pick free settings before starting another session.
+
+.. code:: bash
+
+  psynet services list
+  psynet services list --clean
+
+``--clean`` removes leftovers of test sessions that ended without cleaning up:
+databases named ``*_test_<port>`` or ``*_slot<n>`` that have no connections,
+and Redis servers PsyNet started for test sessions. It never touches anything
+a running session uses, and asks before removing (``--yes`` skips the prompt).
 
 
 .. _scripts:

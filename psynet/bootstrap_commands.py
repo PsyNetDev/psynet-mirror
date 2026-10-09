@@ -186,6 +186,26 @@ def services_ensure(assume_yes):
     ensure_local_services(assume_yes=assume_yes, strict=True)
 
 
+@services.command("list")
+@click.option(
+    "--clean",
+    "clean_leftovers",
+    is_flag=True,
+    help="Remove test databases and Redis servers that no running session uses.",
+)
+@click.option("--yes", "assume_yes", is_flag=True, help="Clean without prompting.")
+def services_list(clean_leftovers, assume_yes):
+    """Show which local sessions use which ports, databases and Redis servers.
+
+    Reads the settings of your running PsyNet, Dallinger and pytest processes.
+    With --clean, also removes databases named *_test_<port> or *_slot<n> and
+    test Redis servers that are left over from ended test sessions.
+    """
+    from psynet.service_usage import list_services
+
+    list_services(clean_leftovers=clean_leftovers, assume_yes=assume_yes)
+
+
 @click.command("generate-constraints")
 def generate_constraints():
     """Generate constraints.txt from requirements.txt."""

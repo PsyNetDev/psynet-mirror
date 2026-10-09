@@ -1,0 +1,1 @@
+Added `psynet services list`, which shows the port, database, Redis server and directory of each PsyNet session running on the machine; `--clean` removes test databases and Redis servers left over from test sessions that ended without cleaning up.

@@ -63,6 +63,9 @@ creates and removes generated files there. Tests wait for each other
 automatically; for ``psynet debug local``, use a separate copy (such as a git
 worktree) of the experiment.
 
+``psynet services list`` shows which ports, databases and Redis servers the
+sessions running on your machine already use.
+
 Set a breakpoint
 ----------------
 
