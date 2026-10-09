@@ -1,4 +1,5 @@
 import datetime
+import fnmatch
 import functools
 import glob
 import hashlib
@@ -1140,7 +1141,7 @@ def _stop_child_processes_on_signal():
             signal.signal(sig, previous_handler)
 
 
-def _reloader_exclude_patterns():
+def _reloader_exclude_patterns(inherited=""):
     """Return reloader exclusions for the demos, tests and docs of source checkouts.
 
     Flask's reloader watches every ``.py`` file under each non-system
@@ -1148,7 +1149,10 @@ def _reloader_exclude_patterns():
     Dallinger) checkout there. Without these patterns, editing a test or
     scaffolding a demo restarts every debug server. The served experiment is
     watched through Dallinger's development folder, so it is unaffected, but
-    other debug servers' development folders are excluded.
+    other debug servers' development folders are excluded. ``inherited``
+    patterns (``FLASK_RUN_EXCLUDE_PATTERNS`` from the caller) are kept unless
+    they would exclude this server's own development folder, as patterns
+    inherited from another debug server can.
     """
     import dallinger
     from dallinger.utils import develop_target_path
@@ -1158,7 +1162,17 @@ def _reloader_exclude_patterns():
     config = get_config()
     if not config.ready:
         config.load()
-    patterns = _other_develop_folder_patterns(develop_target_path(config))
+    develop_path = Path(develop_target_path(config))
+    # The reloader may watch the resolved path, e.g. /private/tmp on macOS.
+    own_paths = list(dict.fromkeys([develop_path, develop_path.resolve()]))
+    own_files = [str(path / "app.py") for path in own_paths]
+    patterns = [
+        pattern
+        for pattern in inherited.split(os.pathsep)
+        if pattern and not any(fnmatch.fnmatch(f, pattern) for f in own_files)
+    ]
+    for path in own_paths:
+        patterns += _other_develop_folder_patterns(path)
     for package in (psynet, dallinger):
         root = Path(package.__file__).resolve().parent.parent
         if not (root / "pyproject.toml").exists():
@@ -1202,9 +1216,10 @@ def _debug_auto_reload(ctx, archive, no_browsers):
     port = _local_base_port()
     # Dallinger's development server runs `flask run`, which reads these variables.
     os.environ["FLASK_RUN_PORT"] = str(port)
-    exclude = [os.environ.get("FLASK_RUN_EXCLUDE_PATTERNS", "")]
-    exclude += _reloader_exclude_patterns()
-    os.environ["FLASK_RUN_EXCLUDE_PATTERNS"] = os.pathsep.join(filter(None, exclude))
+    exclude = _reloader_exclude_patterns(
+        os.environ.get("FLASK_RUN_EXCLUDE_PATTERNS", "")
+    )
+    os.environ["FLASK_RUN_EXCLUDE_PATTERNS"] = os.pathsep.join(exclude)
     debug_kwargs = {"skip_flask": False, "port": port}
     if no_browsers:
         develop_module.launch_app_and_open_browser = launch_app_without_browsers
@@ -1636,7 +1651,11 @@ def _pre_launch(
 
     # Scaffold/git checks before Redis so missing-boilerplate guidance is visible
     # even when Redis is not running.
-    _check_experiment_directory(mode, require_git_commit=not local_)
+    _check_experiment_directory(
+        mode,
+        require_git_commit=not local_,
+        docker_builds_constraints=docker and Path("Dockerfile").exists(),
+    )
 
     from .services import ensure_local_services
 
@@ -2029,10 +2048,12 @@ def _prepare_in_repo_experiment():
     return True
 
 
-def _check_experiment_is_set_up():
+def _check_experiment_is_set_up(*, docker_builds_constraints=False):
     """Point copied experiments without git or ``constraints.txt`` to ``psynet setup``.
 
     Git provenance (commit SHA and dirty state) is recorded for deployments.
+    Docker launches with a ``Dockerfile`` may lack ``constraints.txt``, because
+    the image build manages dependencies.
     """
     from .light_utils import git_command_available
 
@@ -2048,6 +2069,7 @@ def _check_experiment_is_set_up():
         missing.append("is not a git repository")
     if (
         not is_in_repo_experiment()
+        and not docker_builds_constraints
         and not os.environ.get("SKIP_DEPENDENCY_CHECK")
         and not Path("constraints.txt").exists()
     ):
@@ -2064,7 +2086,9 @@ def _check_experiment_is_set_up():
     raise click.ClickException(message)
 
 
-def _check_experiment_directory(mode, *, require_git_commit=False):
+def _check_experiment_directory(
+    mode, *, require_git_commit=False, docker_builds_constraints=False
+):
     """
     Fail fast on missing scaffold or git before Redis or other heavy I/O.
 
@@ -2102,7 +2126,7 @@ def _check_experiment_directory(mode, *, require_git_commit=False):
             f"({missing_paths}). "
             f"{_missing_boilerplate_fix(mode=mode, missing_paths=missing_boilerplate)}"
         )
-    _check_experiment_is_set_up()
+    _check_experiment_is_set_up(docker_builds_constraints=docker_builds_constraints)
     from .experiment_setup import _containing_worktree_ignores_experiment
 
     if _containing_worktree_ignores_experiment():

@@ -654,6 +654,25 @@ def test_reloader_ignores_only_other_develop_folders(own):
         assert not any(fnmatch(path, p) for p in patterns), path
 
 
+def test_reloader_drops_inherited_patterns_that_exclude_its_own_folder(monkeypatch):
+    from fnmatch import fnmatch
+
+    from psynet.command_line import (
+        _other_develop_folder_patterns,
+        _reloader_exclude_patterns,
+    )
+
+    monkeypatch.setenv("dallinger_develop_directory", "/tmp/dallinger_develop_5100")
+    from_default_server = _other_develop_folder_patterns("/tmp/dallinger_develop")
+    inherited = os.pathsep.join([*from_default_server, "/elsewhere/*"])
+
+    patterns = _reloader_exclude_patterns(inherited)
+
+    assert "/elsewhere/*" in patterns
+    own_file = "/tmp/dallinger_develop_5100/app.py"
+    assert not any(fnmatch(own_file, p) for p in patterns)
+
+
 def test_debug_auto_reload_no_browsers_launches_without_browsers(monkeypatch, capsys):
     """PsyNet's launch job opens no browsers and prints what the browser would show."""
     from psynet.command_line import _debug_auto_reload, launch_app_without_browsers
@@ -672,6 +691,7 @@ def test_debug_auto_reload_no_browsers_launches_without_browsers(monkeypatch, ca
     monkeypatch.setattr("psynet.command_line.reset_console", lambda: None)
     monkeypatch.setattr("psynet.command_line._local_base_port", lambda: 5010)
     monkeypatch.delenv("FLASK_RUN_PORT", raising=False)
+    monkeypatch.delenv("FLASK_RUN_EXCLUDE_PATTERNS", raising=False)
     _debug_auto_reload(_Ctx(), archive=None, no_browsers=True)
     assert calls == [({"skip_flask": False, "port": 5010}, launch_app_without_browsers)]
     assert os.environ["FLASK_RUN_PORT"] == "5010"
@@ -2982,6 +3002,7 @@ def test_check_experiment_directory_reports_missing_constraints(tmp_path, monkey
         Path("constraints.txt").unlink(missing_ok=True)
         with pytest.raises(click.ClickException, match="no constraints.txt"):
             _check_experiment_directory("debug")
+        _check_experiment_directory("debug", docker_builds_constraints=True)
 
 
 def test_check_experiment_directory_passes_with_scaffold_and_git(tmp_path, monkeypatch):
@@ -3822,7 +3843,9 @@ def test_pre_launch_aborts_when_app_exists():
                 app="test-app",
             )
 
-    mock_check_directory.assert_called_once_with("live", require_git_commit=True)
+    mock_check_directory.assert_called_once_with(
+        "live", require_git_commit=True, docker_builds_constraints=True
+    )
     mock_run_pre_checks.assert_not_called()
 
 
