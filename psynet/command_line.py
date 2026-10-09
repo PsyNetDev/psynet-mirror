@@ -4584,6 +4584,9 @@ def _check_existing_server_answers():
         )
     try:
         requests.head(base_url, timeout=10)
+    except requests.Timeout:
+        # A server too busy to answer quickly is still running.
+        pass
     except requests.exceptions.ConnectionError:
         raise click.ClickException(
             f"No server answers at {base_url}. Start one with psynet debug local, "
@@ -4648,15 +4651,6 @@ def _run_performance_test_with_existing_server(
     console_handler.setFormatter(formatter)
     root_logger.addHandler(console_handler)
 
-    bot_log_file = tempfile.NamedTemporaryFile(
-        mode="w",
-        delete=False,
-        prefix="psynet_bots_",
-        suffix=".log",
-        dir=_performance_log_directory(),
-    )
-    print(f"Bot output log: {bot_log_file.name}")
-
     _load_runtime_server_config()
     _check_existing_server_answers()
 
@@ -4695,13 +4689,23 @@ def _run_performance_test_with_existing_server(
             max_queue_p95_s=max_queue_p95_s,
         ),
     )
+    bot_log_file = tempfile.NamedTemporaryFile(
+        mode="w",
+        delete=False,
+        prefix="psynet_bots_",
+        suffix=".log",
+        dir=_performance_log_directory(),
+    )
+    print(f"Bot output log: {bot_log_file.name}")
     started_at = datetime.datetime.now().isoformat(timespec="seconds")
-    if find_capacity:
-        all_results = tester.find_capacity(bot_log_file=bot_log_file)
-    else:
-        all_results = tester.run(bot_counts=bot_counts, bot_log_file=bot_log_file)
+    try:
+        if find_capacity:
+            all_results = tester.find_capacity(bot_log_file=bot_log_file)
+        else:
+            all_results = tester.run(bot_counts=bot_counts, bot_log_file=bot_log_file)
+    finally:
+        bot_log_file.close()
     finished_at = datetime.datetime.now().isoformat(timespec="seconds")
-    bot_log_file.close()
 
     if json_output:
         metadata = {

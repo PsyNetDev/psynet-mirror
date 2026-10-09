@@ -5030,6 +5030,8 @@ def test_prolific_listing_warnings():
 
 
 def test_performance_test_existing_explains_a_missing_server():
+    import requests
+
     from psynet.command_line import _check_existing_server_answers
 
     with patch("psynet.command_line.redis_vars.get", return_value=None):
@@ -5040,6 +5042,8 @@ def test_performance_test_existing_explains_a_missing_server():
         url = f"http://127.0.0.1:{unused.getsockname()[1]}"
     with patch("psynet.command_line.redis_vars.get", return_value=url):
         with pytest.raises(click.ClickException, match=f"No server answers at {url}"):
+            _check_existing_server_answers()
+        with patch("requests.head", side_effect=requests.Timeout):
             _check_existing_server_answers()
 
 
