@@ -46,10 +46,11 @@ which gives it its own port, database and Redis server and prints them (see
 "Run several experiments at once" in `code/project/running_and_debugging`).
 This works for a different experiment directory (or a git worktree); if
 `psynet debug` already serves your directory, don't start a second one there.
-`psynet deploy` and `psynet performance-test local` (unless given
-`--existing`, which load-tests a server that is already running) also use and
-clear the local database and Redis, so don't run them while a local
-experiment is running.
+`psynet deploy` also uses and clears the local database and Redis, so don't
+run it while a local experiment is running. `psynet test local` and
+`psynet performance-test local` get their own database, Redis server and
+port, so they leave a running experiment alone, unless it serves the same
+directory, where they refuse to run.
 
 From `experiment.py`, import sibling modules with `from . import my_module`.
 Validate code with `psynet test local`, not `python experiment.py`. For

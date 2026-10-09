@@ -210,9 +210,12 @@ def test_isolated_environment_uses_its_own_services(
         assert f"export DATABASE_URL={second.env['DATABASE_URL']}" in second.describe()
         redis_port = int(first.env["REDIS_URL"].rsplit(":", 1)[1])
         socket.create_connection(("127.0.0.1", redis_port), timeout=1).close()
+        develop_directory = Path(first.env["dallinger_develop_directory"])
+        develop_directory.mkdir(exist_ok=True)
 
     with pytest.raises(OSError):
         socket.create_connection(("127.0.0.1", redis_port), timeout=1).close()
+    assert not develop_directory.exists()
     with IsolatedEnvironment.start(shared, purpose=DEBUG) as debug:
         pass
     with IsolatedEnvironment.start(shared, purpose=DEBUG) as again:

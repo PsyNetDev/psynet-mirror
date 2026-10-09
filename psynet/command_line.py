@@ -4054,7 +4054,7 @@ _test_options["time_factor"] = click.option(
 
 
 def _in_isolated_test_environment(func):
-    """Run a local test command in its own database, Redis and port.
+    """Run a local test or performance-test command in its own database, Redis and port.
 
     Applied outside :func:`sql_profiled_command` so that only the re-run child
     profiles and reports. With ``--existing`` the command tests a live server,
@@ -4556,6 +4556,7 @@ def performance_test(ctx):
 @_test_options["duration_minutes"]
 @_test_options["performance_json_output"]
 @click.option("--debug", is_flag=True, help="Enable debug logging for verbose output")
+@_in_isolated_test_environment
 def performance_test__local(
     existing=False,
     n_bots=None,
@@ -4572,8 +4573,11 @@ def performance_test__local(
     to run sequential tests with different concurrency levels.
     Example: --n-bots "5,10,20" will run three separate tests.
 
-    By default, this command starts a new experiment server automatically.
-    Use --existing to connect to an already-running server instead.
+    By default, this command starts a new experiment server automatically,
+    with a free port, a database and a Redis server of its own, so it leaves
+    local debug servers alone (set PSYNET_TEST_ENVIRONMENT=shared to use the
+    local ones instead, which resets them). Use --existing to connect to an
+    already-running server instead.
 
     This command never updates an experiment audit. Use
     ``psynet audit performance-test`` to collect audit evidence.
@@ -5099,6 +5103,7 @@ def audit_simulate(ctx, n_bots=None):
 @_test_options["duration_minutes"]
 @click.option("--debug", is_flag=True, help="Enable debug logging for verbose output")
 @require_exp_directory
+@_in_isolated_test_environment
 def audit_performance_test(
     existing=False,
     n_bots=None,

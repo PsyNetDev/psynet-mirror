@@ -391,6 +391,8 @@ class IsolatedEnvironment:
             shutil.rmtree(self._redis_dir, ignore_errors=True)
             self._redis_dir = None
         if self._port_lock is not None:
+            # While the port is still claimed, so no new session is using it yet.
+            shutil.rmtree(self.env["dallinger_develop_directory"], ignore_errors=True)
             self._port_lock.close()
             self._port_lock = None
 
