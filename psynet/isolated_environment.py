@@ -306,40 +306,42 @@ class IsolatedEnvironment:
             dict(os.environ if environ is None else environ)
         )
         database_url = environ.get("DATABASE_URL", DEFAULT_DATABASE_URL)
-        redis_url = environ.get("REDIS_URL", DEFAULT_REDIS_URL)
         private_redis = shutil.which("redis-server") is not None
-        shared_base_port = int(environ.get("base_port", _DEFAULT_BASE_PORT))
-        shared_redis_port = urlsplit(redis_url).port or 6379
+        directory = os.path.realpath(os.getcwd())
+        # A debug database keeps its data after the server stops, so a debug
+        # server only takes over one that a server for this directory left.
+        owners = _debug_database_owners(database_url) if purpose == DEBUG else {}
 
-        def redis_port(web_port):
-            # Offsetting from the claimed web port keeps concurrent sessions
-            # from picking the same Redis port.
-            return shared_redis_port + web_port - shared_base_port
+        def usable(port):
+            owner = owners.get(_session_database_name(database_url, purpose, port))
+            redis_port = _session_redis_port(environ, port)
+            return owner in (None, directory) and (
+                not private_redis or _port_is_free(redis_port)
+            )
 
         base_port, port_lock = _claim_port(
-            shared_base_port + _PORT_OFFSET,
-            also_free=redis_port if private_redis else None,
+            _shared_base_port(environ) + _PORT_OFFSET, usable=usable
         )
         redis_dir = None
         try:
             session_database_url, reused = _ensure_database(
-                database_url, suffix=f"_{purpose}_{base_port}"
+                database_url,
+                suffix=f"_{purpose}_{base_port}",
+                owner=directory if purpose == DEBUG else None,
             )
             env = {
                 **environ,
                 READY_ENV_VAR: "1",
                 "DATABASE_URL": session_database_url,
+                "REDIS_URL": _session_redis_url(environ, base_port, private_redis),
                 "base_port": str(base_port),
                 # Not gettempdir(): Dallinger rejects development paths with a period.
                 "dallinger_develop_directory": f"/tmp/dallinger_develop_{base_port}",
             }
             if not private_redis:
-                slot = (base_port - shared_base_port - _PORT_OFFSET) // 10
-                number = _spare_redis_database(redis_url, slot)
-                env["REDIS_URL"] = _with_redis_database(redis_url, number)
                 print(
-                    f"redis-server is not on PATH, so this session uses Redis "
-                    f"database {number} on the shared server. Live notifications "
+                    f"redis-server is not on PATH, so this session uses "
+                    f"{env['REDIS_URL']} on the shared server. Live notifications "
                     "can still reach another local debug server's participants.",
                     file=sys.stderr,
                 )
@@ -347,14 +349,15 @@ class IsolatedEnvironment:
 
             redis_dir = tempfile.mkdtemp(prefix=f"psynet-{purpose}-redis-")
             process = start_redis_server(
-                redis_port(base_port), redis_dir, stop_with_caller=True
+                _session_redis_port(environ, base_port),
+                redis_dir,
+                stop_with_caller=True,
             )
         except BaseException:
             if redis_dir is not None:
                 shutil.rmtree(redis_dir, ignore_errors=True)
             port_lock.close()
             raise
-        env["REDIS_URL"] = f"redis://127.0.0.1:{redis_port(base_port)}"
         return cls(env, port_lock, process, redis_dir, purpose, reused)
 
     def describe(self):
@@ -362,8 +365,8 @@ class IsolatedEnvironment:
         database = urlsplit(self.env["DATABASE_URL"]).path.lstrip("/")
         if self.purpose == DEBUG:
             reset = (
-                f"\nIt replaces the data that an earlier debug server on this port "
-                f"left in {database}."
+                f"\nIt replaces the data that an earlier debug server for this "
+                f"experiment left in {database}."
                 if self.reused_database
                 else ""
             )
@@ -417,6 +420,87 @@ def without_session_settings(environ):
     return environ
 
 
+def stopped_debug_server_environments(directory, environ=None):
+    """Return the settings of isolated debug servers that served ``directory`` and left data.
+
+    Each is a dictionary like a running server's, from which
+    :func:`export_advice` builds the line that reaches its database.
+    """
+    environ = without_session_settings(dict(os.environ if environ is None else environ))
+    database_url = environ.get("DATABASE_URL", DEFAULT_DATABASE_URL)
+    private_redis = shutil.which("redis-server") is not None
+    directory = os.path.realpath(directory)
+    found = []
+    for name, owner in _debug_database_owners(database_url).items():
+        if owner != directory:
+            continue
+        port = int(name.rsplit("_", 1)[1])
+        found.append(
+            {
+                READY_ENV_VAR: "1",
+                "DATABASE_URL": urlunsplit(
+                    urlsplit(database_url)._replace(path=f"/{name}")
+                ),
+                "REDIS_URL": _session_redis_url(environ, port, private_redis),
+                "base_port": str(port),
+            }
+        )
+    return sorted(found, key=lambda env: int(env["base_port"]))
+
+
+def _shared_base_port(environ):
+    return int(environ.get("base_port", _DEFAULT_BASE_PORT))
+
+
+def _session_database_name(database_url, purpose, port):
+    return f"{urlsplit(database_url).path.lstrip('/') or 'dallinger'}_{purpose}_{port}"
+
+
+def _session_redis_port(environ, port):
+    # Offsetting from the claimed web port keeps concurrent sessions from
+    # picking the same Redis port.
+    shared_redis_port = urlsplit(environ.get("REDIS_URL", DEFAULT_REDIS_URL)).port
+    return (shared_redis_port or 6379) + port - _shared_base_port(environ)
+
+
+def _session_redis_url(environ, port, private_redis):
+    """Return the Redis URL of the session on web ``port``."""
+    if private_redis:
+        return f"redis://127.0.0.1:{_session_redis_port(environ, port)}"
+    redis_url = environ.get("REDIS_URL", DEFAULT_REDIS_URL)
+    slot = (port - _shared_base_port(environ) - _PORT_OFFSET) // 10
+    return _with_redis_database(redis_url, _spare_redis_database(redis_url, slot))
+
+
+def _debug_database_owners(database_url):
+    """Map each ``<database>_debug_<port>`` database to the directory recorded on it.
+
+    Databases without a recorded directory map to ``""``.
+    """
+    import psycopg2
+
+    base = urlsplit(database_url).path.lstrip("/") or "dallinger"
+    pattern = re.compile(rf"{re.escape(base)}_{DEBUG}_\d+")
+    try:
+        connection = psycopg2.connect(database_url)
+    except psycopg2.Error as e:
+        raise RuntimeError(
+            f"Could not connect to {urlsplit(database_url).hostname}: {e}"
+        ) from e
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT datname, shobj_description(oid, 'pg_database') FROM pg_database"
+            )
+            return {
+                name: owner or ""
+                for name, owner in cursor.fetchall()
+                if pattern.fullmatch(name)
+            }
+    finally:
+        connection.close()
+
+
 def ensure_database(database_url, *, suffix, fresh=False):
     """Create ``<database><suffix>`` next to ``database_url`` and return its URL.
 
@@ -426,8 +510,11 @@ def ensure_database(database_url, *, suffix, fresh=False):
     return _ensure_database(database_url, suffix=suffix, fresh=fresh)[0]
 
 
-def _ensure_database(database_url, *, suffix, fresh=False):
-    """Like :func:`ensure_database`, but also return whether the database existed."""
+def _ensure_database(database_url, *, suffix, fresh=False, owner=None):
+    """Like :func:`ensure_database`, but also return whether the database existed.
+
+    ``owner`` is an experiment directory to record on a database it creates.
+    """
     import psycopg2
     from psycopg2 import sql
 
@@ -457,6 +544,13 @@ def _ensure_database(database_url, *, suffix, fresh=False):
                 cursor.execute(
                     sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name))
                 )
+                if owner is not None:
+                    cursor.execute(
+                        sql.SQL("COMMENT ON DATABASE {} IS %s").format(
+                            sql.Identifier(name)
+                        ),
+                        (owner,),
+                    )
     finally:
         connection.close()
     return urlunsplit(parts._replace(path=f"/{name}")), existed
@@ -558,14 +652,14 @@ def port_lock_path(port):
     return os.path.join(root, f"psynet-test-{port}.lock")
 
 
-def _claim_port(start, also_free=None):
+def _claim_port(start, usable=None):
     """Return a free web port and an open lock file that reserves it.
 
     A test session's server binds its port only once the experiment has
     started, so the lock stops a second session from choosing the same port
     (and with it the same database) in the meantime. Closing the file releases
-    the claim. ``also_free`` maps a candidate port to another port that must
-    also be free, such as the session's Redis port.
+    the claim. ``usable`` says whether a candidate port can be used besides
+    being free, for example because the session's Redis port is also free.
     """
     for port in range(start, start + 1000, 10):
         try:
@@ -582,9 +676,7 @@ def _claim_port(start, also_free=None):
         except OSError:
             lock.close()
             continue
-        if _port_is_free(port) and (
-            also_free is None or _port_is_free(also_free(port))
-        ):
+        if _port_is_free(port) and (usable is None or usable(port)):
             return port, lock
         lock.close()
     raise RuntimeError(f"No free port found from {start}.")

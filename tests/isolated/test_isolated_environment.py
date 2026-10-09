@@ -27,6 +27,7 @@ from psynet.isolated_environment import (
     shared_environment_warning,
     should_isolate,
     start_redis_server,
+    stopped_debug_server_environments,
     without_session_settings,
 )
 
@@ -185,7 +186,9 @@ def test_children_stop_when_their_caller_is_killed(tmp_path):
 
 
 @pytest.mark.skipif(shutil.which("redis-server") is None, reason="needs redis-server")
-def test_isolated_environment_uses_its_own_services(drop_new_databases):
+def test_isolated_environment_uses_its_own_services(
+    drop_new_databases, tmp_path, monkeypatch
+):
     url = urlsplit(os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL))
     database = re.sub(r"_(test|debug)_\d+$", "", url.path.lstrip("/"))
     shared = {
@@ -214,7 +217,18 @@ def test_isolated_environment_uses_its_own_services(drop_new_databases):
         pass
     with IsolatedEnvironment.start(shared, purpose=DEBUG) as again:
         assert again.env["DATABASE_URL"] == debug.env["DATABASE_URL"]
-        assert "earlier debug server on this port" in again.describe()
+        assert "earlier debug server for this experiment" in again.describe()
+    here = os.getcwd()
+    monkeypatch.chdir(tmp_path)
+    with IsolatedEnvironment.start(shared, purpose=DEBUG) as elsewhere:
+        assert elsewhere.env["DATABASE_URL"] != debug.env["DATABASE_URL"]
+        assert not elsewhere.reused_database
+    left = stopped_debug_server_environments(here, shared)
+    assert debug.env["DATABASE_URL"] in [env["DATABASE_URL"] for env in left]
+    assert [
+        env["DATABASE_URL"]
+        for env in stopped_debug_server_environments(tmp_path, shared)
+    ] == [elsewhere.env["DATABASE_URL"]]
 
 
 @pytest.mark.skipif(shutil.which("redis-server") is None, reason="needs redis-server")
@@ -276,3 +290,18 @@ def test_a_failed_start_explains_how_to_opt_out():
     port, lock = _claim_port(free_port)
     lock.close()
     assert port == free_port, "the failed start kept its port claim"
+
+
+@pytest.mark.skipif(shutil.which("redis-server") is None, reason="needs redis-server")
+def test_local_commands_mention_a_stopped_debug_servers_data(
+    drop_new_databases, tmp_path, monkeypatch, capsys
+):
+    from psynet.command_line import _mention_stopped_debug_servers
+
+    monkeypatch.chdir(tmp_path)
+    with IsolatedEnvironment.start(purpose=DEBUG) as debug:
+        pass
+    _mention_stopped_debug_servers("/dallinger")
+
+    output = capsys.readouterr()
+    assert f"export DATABASE_URL={debug.env['DATABASE_URL']}" in output.out + output.err
