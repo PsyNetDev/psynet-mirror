@@ -198,9 +198,10 @@ ended: databases named ``*_test_<port>``, ``*_debug_<port>`` or ``*_slot<n>``
 that have no connections, Redis servers PsyNet started for such sessions that
 have no clients, and their Redis folders. A ``*_debug_<port>`` database is
 kept after its server stops so that you can still export it, so export first
-if you need the data. ``--clean`` skips anything a session it can see uses, which covers only your own PsyNet,
-Dallinger and pytest processes, and asks before removing (``--yes`` skips the
-prompt).
+if you need the data. ``--clean`` skips anything a session it can see uses,
+which covers only your own PsyNet, Dallinger and pytest processes, and asks
+before removing. Pass ``--yes`` to skip the question, which you must do
+where nobody can answer it, such as in a script.
 
 
 .. _scripts:

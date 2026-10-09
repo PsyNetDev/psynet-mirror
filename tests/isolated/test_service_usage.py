@@ -4,15 +4,19 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import time
 
 import psutil
+from click.testing import CliRunner
 
+from psynet.bootstrap_commands import services_list
 from psynet.service_usage import (
     Database,
     RedisServer,
     Session,
     _session_command,
+    find_redis_folders,
     find_sessions,
     leftovers,
 )
@@ -85,6 +89,8 @@ def test_leftovers_are_unused_session_databases_redis_servers_and_folders():
         Database("dallinger_slot2", 0),
         Database("attention_test_1", 0),
         Database("pilot_test_2020_extra", 0),
+        Database("study_test_2024", 0),
+        Database("survey_debug_2023", 0),
     ]
     redis_servers = [
         RedisServer(1, 6379, "/", started_by_psynet=False, own=True, clients=0),
@@ -107,3 +113,29 @@ def test_leftovers_are_unused_session_databases_redis_servers_and_folders():
     ]
     assert [r.pid for r in stale_redis] == [3]
     assert stale_folders == ["/tmp/psynet-debug-redis-gone"]
+
+    unknown = RedisServer(6, 6440, "", started_by_psynet=False, own=True, clients=0)
+    *_, stale_folders = leftovers(sessions, [*redis_servers, unknown], [], folders)
+    assert stale_folders == []
+
+
+def test_find_redis_folders_skips_symlinks(tmp_path, monkeypatch):
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    (tmp_path / "psynet-test-redis-real").mkdir()
+    (tmp_path / "elsewhere").mkdir()
+    (tmp_path / "psynet-test-redis-link").symlink_to(tmp_path / "elsewhere")
+
+    assert find_redis_folders() == [str(tmp_path / "psynet-test-redis-real")]
+
+
+def test_clean_without_a_terminal_needs_yes(tmp_path, monkeypatch):
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    folder = tmp_path / "psynet-test-redis-gone"
+    folder.mkdir()
+
+    result = CliRunner().invoke(services_list, ["--clean"])
+
+    assert result.exit_code != 0
+    assert f"Redis folder {folder}" in result.output
+    assert "pass --yes" in result.output
+    assert folder.exists()

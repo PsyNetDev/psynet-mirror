@@ -23,6 +23,8 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import stat
+import sys
 import tempfile
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -34,10 +36,14 @@ _DEFAULT_DATABASE_URL = "postgresql://dallinger:dallinger@localhost/dallinger"
 _DEFAULT_REDIS_URL = "redis://localhost:6379"
 _DEFAULT_BASE_PORT = "5000"
 _SESSION_SCRIPTS = {"psynet", "dallinger", "pytest", "py.test", "flask"}
-# Databases named by isolated test and debug sessions and by CI slots.
-_SESSION_DATABASE = re.compile(r"_((test|debug)_\d{4,5}|slot\d{1,2})$")
+# Databases named by isolated test and debug sessions (with ports 5000-69999)
+# and by CI slots, but not e.g. ``study_test_2024``.
+_SESSION_DATABASE = re.compile(
+    r"_((test|debug)_(?:[5-9]\d{3}|[1-6]\d{4})|slot\d{1,2})$"
+)
 _PYTHON_OPTIONS_WITH_VALUES = {"-W", "-X", "-Q"}
-_SESSION_REDIS_MARKERS = ("psynet-test-redis-", "psynet-debug-redis-", "redis_slot")
+# Redis rewrites its command line to ``redis-server <host>:<port>``, so the
+# folder it runs in is what identifies the servers that PsyNet started.
 _REDIS_FOLDER = re.compile(r"psynet-(test|debug)-redis-\w+$")
 # Set in the command that an isolated test or debug session reruns.
 _ISOLATED_CHILD = "_PSYNET_TEST_ENVIRONMENT_READY"
@@ -176,10 +182,7 @@ def find_redis_servers():
                 pid=process.info["pid"],
                 port=port,
                 directory=directory,
-                started_by_psynet=any(
-                    marker in cmdline or marker in directory
-                    for marker in _SESSION_REDIS_MARKERS
-                ),
+                started_by_psynet=_is_session_redis_folder(directory),
                 own=bool(process.info["uids"]) and process.info["uids"].real == uid,
                 clients=_redis_clients(port) if port else None,
             )
@@ -248,16 +251,27 @@ def _count(number, noun):
     return f"{number} {noun}{'' if number == 1 else 's'}"
 
 
+def _is_session_redis_folder(path):
+    """Return whether ``path`` is a Redis folder of an isolated session."""
+    return bool(path) and bool(_REDIS_FOLDER.match(os.path.basename(path)))
+
+
 def find_redis_folders():
-    """Return the current user's Redis folders of isolated sessions."""
+    """Return the current user's Redis folders of isolated sessions.
+
+    Symbolic links are skipped, so cleaning never follows one out of the
+    temporary directory.
+    """
     root = tempfile.gettempdir()
     uid = os.getuid()
     folders = []
     for name in sorted(os.listdir(root)):
         path = os.path.join(root, name)
-        if _REDIS_FOLDER.match(name) and os.path.isdir(path):
-            if os.stat(path).st_uid == uid:
-                folders.append(path)
+        if not _REDIS_FOLDER.match(name):
+            continue
+        status = os.lstat(path)
+        if stat.S_ISDIR(status.st_mode) and status.st_uid == uid:
+            folders.append(path)
     return folders
 
 
@@ -265,7 +279,8 @@ def leftovers(sessions, redis_servers, databases, redis_folders=()):
     """Return the databases, Redis servers and Redis folders that ``--clean`` removes.
 
     A Redis folder is left over once no ``redis-server`` runs in it, for
-    example after its session was killed with SIGKILL.
+    example after its session was killed with SIGKILL. No folder counts as
+    left over while one of the user's Redis servers runs in an unknown folder.
     """
     used_databases = {s.database for s in sessions}
     used_redis_ports = {s.redis_port for s in sessions}
@@ -284,6 +299,8 @@ def leftovers(sessions, redis_servers, databases, redis_folders=()):
         and r.port not in used_redis_ports
         and r.clients == 0
     ]
+    if any(r.own and not r.directory for r in redis_servers):
+        return stale_databases, stale_redis, []
     running = {os.path.realpath(r.directory) for r in redis_servers if r.directory}
     stale_folders = [f for f in redis_folders if os.path.realpath(f) not in running]
     return stale_databases, stale_redis, stale_folders
@@ -325,6 +342,12 @@ def _clean(stale_databases, stale_redis, stale_folders):
     for server in stale_redis:
         try:
             process = psutil.Process(server.pid)
+            if not _is_same_redis_server(process, server):
+                click.echo(
+                    f"Left PID {server.pid} running: it is no longer the "
+                    f"redis-server on port {server.port}."
+                )
+                continue
             process.terminate()
             try:
                 process.wait(timeout=10)
@@ -337,11 +360,27 @@ def _clean(stale_databases, stale_redis, stale_folders):
             click.echo(
                 f"Stopped redis-server on port {server.port} (PID {server.pid})."
             )
-        if _REDIS_FOLDER.match(os.path.basename(server.directory)):
+        if _is_session_redis_folder(server.directory):
             stale_folders = [*stale_folders, server.directory]
     for folder in stale_folders:
-        shutil.rmtree(folder, ignore_errors=True)
-        click.echo(f"Removed Redis folder {folder}.")
+        try:
+            shutil.rmtree(folder)
+        except OSError as e:
+            click.echo(f"Could not remove Redis folder {folder}: {e}")
+        else:
+            click.echo(f"Removed Redis folder {folder}.")
+
+
+def _is_same_redis_server(process, server):
+    """Return whether ``process`` is still the ``redis-server`` listed as ``server``."""
+    import psutil
+
+    try:
+        return process.name() == "redis-server" and os.path.realpath(
+            process.cwd()
+        ) == os.path.realpath(server.directory)
+    except (psutil.AccessDenied, psutil.ZombieProcess):
+        return False
 
 
 def list_services(*, clean_leftovers, assume_yes):
@@ -379,5 +418,9 @@ def list_services(*, clean_leftovers, assume_yes):
         click.echo(f"  redis-server on port {r.port} (PID {r.pid})")
     for folder in stale_folders:
         click.echo(f"  Redis folder {folder}")
+    if not assume_yes and not sys.stdin.isatty():
+        raise click.ClickException(
+            "Nobody can confirm the removal here; pass --yes to remove them."
+        )
     if assume_yes or click.confirm("Remove them?", default=False):
         _clean(stale_databases, stale_redis, stale_folders)
