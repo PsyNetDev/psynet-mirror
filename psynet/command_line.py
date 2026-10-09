@@ -1116,6 +1116,11 @@ def _stop_child_processes_on_signal():
 
     def handler(signum, frame):
         children = psutil.Process().children(recursive=True)
+        if signum == signal.SIGINT:
+            # A terminal Ctrl-C has usually reached the children already, and a
+            # second signal makes Dallinger's worker do a cold shutdown, which
+            # prints a traceback.
+            _, children = psutil.wait_procs(children, timeout=3)
         for child in children:
             try:
                 child.terminate()
@@ -1992,35 +1997,35 @@ def check_prolific_payment(experiment, config):
     )
 
 
-def _missing_boilerplate_fix(*, mode=None, missing_paths=None):
-    """Return actionable guidance when experiment boilerplate is missing."""
+def _missing_boilerplate_message(missing_paths):
+    """Return the error for an experiment directory that lacks boilerplate files."""
     if is_in_repo_experiment():
         command = "psynet scripts scaffold"
-        context = (
+        details = [
             "This looks like a PsyNet bundled demo or test experiment, so only "
             "template files are needed."
-        )
+        ]
     else:
         command = "psynet setup"
-        context = (
-            "Besides the files, it pins PsyNet, writes constraints.txt, "
-            "installs packages into your active virtual environment, and "
-            "initialises Git. If you only need template files, run "
-            "'psynet scripts scaffold' instead."
-        )
-
-    mode_clause = ""
-    if mode is not None:
-        mode_clause = f" before running 'psynet {mode} ...'"
-
-    message = f"Run '{command}' to generate the missing files{mode_clause}. {context}"
-    if missing_paths and "config.txt" in missing_paths:
-        message += (
-            " If you are upgrading an experiment that already sets options in "
+        details = [
+            "It also pins PsyNet, writes constraints.txt, installs packages into "
+            "your active virtual environment, and initialises Git.",
+            "If you only need the template files, run 'psynet scripts scaffold' "
+            "instead.",
+        ]
+    if "config.txt" in missing_paths:
+        details.append(
+            "If you are upgrading an experiment that already sets options in "
             "Experiment.config, create an empty config.txt with 'touch config.txt' "
             "instead of scaffolding a full template."
         )
-    return message
+    return "\n".join(
+        [
+            f"Run '{command}' to create the PsyNet files this experiment is "
+            f"missing ({', '.join(missing_paths)}).",
+            *details,
+        ]
+    )
 
 
 def _prepare_in_repo_experiment():
@@ -2102,13 +2107,9 @@ def _check_experiment_directory(
             "deployment exclusions to deploy.toml, then remove .dockerignore."
         )
 
-    missing_boilerplate = missing_after_policy_creation
-    if missing_boilerplate:
-        missing_paths = ", ".join(missing_boilerplate)
+    if missing_after_policy_creation:
         raise click.ClickException(
-            "Experiment directory is missing required PsyNet boilerplate files "
-            f"({missing_paths}). "
-            f"{_missing_boilerplate_fix(mode=mode, missing_paths=missing_boilerplate)}"
+            _missing_boilerplate_message(missing_after_policy_creation)
         )
     _check_experiment_is_set_up(docker_builds_constraints=docker_builds_constraints)
     from .experiment_setup import _containing_worktree_ignores_experiment

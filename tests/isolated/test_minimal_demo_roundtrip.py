@@ -645,7 +645,7 @@ def test_minimal_demo_prompts_for_scaffold_before_debug(tmp_path):
     assert result.returncode != 0
     combined_output = result.stdout + result.stderr
     assert "Run 'psynet setup'" in combined_output
-    assert "required PsyNet boilerplate files" in combined_output
+    assert "PsyNet files this experiment is missing" in combined_output
     assert "touch config.txt" in combined_output
     for required_path in (
         ".gitignore",

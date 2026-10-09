@@ -2298,14 +2298,19 @@ def test_setup_shared_env_force_syncs_with_warning(tmp_path, monkeypatch):
     ]
 
 
-def test_setup_foreign_env_noninteractive_scaffolds_then_refuses_sync(
+def test_setup_foreign_env_noninteractive_declines_sync_and_fails(
     tmp_path, monkeypatch
 ):
+    """Without a terminal, setup does what declining does, then exits nonzero."""
     foreign = tmp_path / "other" / ".venv"
     foreign.mkdir(parents=True)
     experiment = tmp_path / "experiment"
     experiment.mkdir()
     _mock_foreign_experiment_venv(monkeypatch, foreign)
+    monkeypatch.setattr(
+        "psynet.experiment_setup.git_repository_available", lambda: False
+    )
+    monkeypatch.setattr("psynet.experiment_setup.git_command_available", lambda: True)
     monkeypatch.setattr("psynet.experiment_setup._is_interactive", lambda: False)
     monkeypatch.setattr(
         "psynet.experiment_setup._run_uv",
@@ -2315,9 +2320,11 @@ def test_setup_foreign_env_noninteractive_scaffolds_then_refuses_sync(
     with working_directory(experiment):
         result = CliRunner().invoke(psynet, ["setup"])
 
-    assert result.exit_code != 0
-    assert "--force-foreign-env" in result.output
+    assert result.exit_code == 1, result.output
     assert (experiment / "Dockerfile").exists()
+    assert (experiment / ".git").is_dir()
+    assert "  psynet setup\n" in result.output
+    assert "--force-foreign-env" in result.output
 
 
 def test_setup_declining_foreign_sync_still_initialises_git(tmp_path, monkeypatch):
@@ -2981,18 +2988,21 @@ def test_check_experiment_directory_reports_partial_boilerplate(tmp_path, monkey
     assert "touch config.txt" not in str(exc.value)
 
 
-def test_missing_boilerplate_fix_mentions_blank_config_for_upgrades():
-    from psynet.command_line import _missing_boilerplate_fix
+def test_missing_boilerplate_message_mentions_blank_config_for_upgrades(
+    monkeypatch,
+):
+    from psynet.command_line import _missing_boilerplate_message
 
-    message = _missing_boilerplate_fix(
-        mode="debug", missing_paths=["config.txt", "Dockerfile"]
+    monkeypatch.setattr("psynet.command_line.is_in_repo_experiment", lambda: False)
+    message = _missing_boilerplate_message(["config.txt", "Dockerfile"])
+    assert message.splitlines()[0] == (
+        "Run 'psynet setup' to create the PsyNet files this experiment is "
+        "missing (config.txt, Dockerfile)."
     )
     assert "touch config.txt" in message
     assert "Experiment.config" in message
 
-    without_config = _missing_boilerplate_fix(
-        mode="debug", missing_paths=["Dockerfile"]
-    )
+    without_config = _missing_boilerplate_message(["Dockerfile"])
     assert "touch config.txt" not in without_config
 
 
@@ -3168,7 +3178,7 @@ def test_scripts_scaffold_allows_incomplete_experiment_py():
             assert Path("requirements.txt").exists()
 
 
-def test_scripts_scaffold_reports_when_nothing_is_needed():
+def test_scripts_scaffold_is_quiet_when_nothing_is_needed():
     runner = CliRunner()
 
     with tempfile.TemporaryDirectory() as dir:
@@ -3178,10 +3188,7 @@ def test_scripts_scaffold_reports_when_nothing_is_needed():
 
             second = runner.invoke(psynet, ["scripts", "scaffold"])
             assert second.exit_code == 0, second.output
-            assert (
-                "Nothing to scaffold; experiment boilerplate is already present."
-                in second.output
-            )
+            assert "Scaffolded" not in second.output
 
 
 def test_scripts_scaffold_preserves_existing_authored_files():

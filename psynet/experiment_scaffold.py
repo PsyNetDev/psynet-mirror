@@ -775,9 +775,6 @@ def _report_scaffold_result(written, *, overwrite):
     if summary:
         click.echo(f"Scaffolded experiment in {directory_name}")
         click.echo(f"  created: {summary}")
-        return
-
-    click.echo("Nothing to scaffold; experiment boilerplate is already present.")
 
 
 def _copy_template_file(relative_path, overwrite, *, previous_gitignore=None):

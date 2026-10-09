@@ -293,8 +293,9 @@ def _warn_foreign_virtualenv_sync(active, expected):
 def _resolve_foreign_virtualenv_action(*, force_foreign_env):
     """Decide whether package sync may target a non-experiment virtualenv.
 
-    Returns ``"sync"`` or ``"cancel"``. PsyNet's shared checkout ``.venv`` is
-    handled earlier by ``_resolve_shared_checkout_venv_action``; this guard
+    Returns ``"sync"`` or ``"cancel"``; without a terminal to ask, it cancels.
+    PsyNet's shared checkout ``.venv`` is handled earlier by
+    ``_resolve_shared_checkout_venv_action``; this guard
     covers other foreign environments (for example another project's
     ``.venv``). Scaffolding is intentionally allowed before this check so an
     empty experiment directory can still receive boilerplate.
@@ -313,16 +314,8 @@ def _resolve_foreign_virtualenv_action(*, force_foreign_env):
         f"(active: {active}; expected: {expected}). Syncing would install "
         "packages into that environment."
     )
-    if not _is_interactive():
-        raise click.UsageError(
-            f"{summary} Create a dedicated environment with "
-            f"'uv venv --python={_recommended_python()}', activate it with "
-            "'source .venv/bin/activate', install PsyNet, and re-run setup; "
-            "or use --force-foreign-env to sync anyway."
-        )
-
     click.echo(summary)
-    if not click.confirm(
+    if not _is_interactive() or not click.confirm(
         "Continue syncing into the active environment?",
         default=False,
     ):
@@ -620,7 +613,7 @@ def _resolve_shared_checkout_venv_action(*, no_install, force_shared_env):
             "The active virtual environment appears to be PsyNet's shared "
             "checkout environment. Refusing to synchronize without an explicit "
             "choice. Create a dedicated environment with "
-            f"'uv venv --python={_recommended_python()}', activate it, and "
+            f"'uv venv --python {_recommended_python()}', activate it, and "
             "re-run setup; or use --no-install to scaffold and generate "
             "constraints without installing packages; or use "
             "--force-shared-env to sync anyway (this can remove packages from "
@@ -917,6 +910,8 @@ def setup_experiment(
     ):
         _ensure_git_repository()
         _echo_foreign_sync_declined()
+        if not _is_interactive():
+            raise click.exceptions.Exit(1)
         return
 
     _run_uv(
