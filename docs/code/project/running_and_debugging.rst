@@ -54,8 +54,10 @@ the ``export`` line that points other local commands, such as
 ``psynet export local``, at it. The database stays after the server stops,
 until the next ``--isolated`` server on the same port resets it; its Redis
 server doesn't, so after the server stops, export only ``DATABASE_URL``.
-Like any debug server, it needs a directory of its own: it refuses to start
-where another ``psynet debug`` is already serving the experiment.
+Two debug servers can't share an experiment directory, because each replaces
+the generated files the other serves. ``--isolated`` refuses to start where
+another ``psynet debug`` is already serving; plain ``psynet debug local``
+doesn't check, so give each server its own copy, such as a git worktree.
 
 To choose the settings yourself instead, give the second terminal its own
 database, Redis server, port and development folder:

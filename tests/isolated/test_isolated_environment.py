@@ -5,10 +5,12 @@ import subprocess
 import sys
 import tempfile
 import time
+from pathlib import Path
 from urllib.parse import urlsplit
 
 import pytest
 
+import psynet
 from psynet.isolated_environment import (
     DEBUG,
     DEFAULT_DATABASE_URL,
@@ -94,6 +96,21 @@ def test_sessions_refuse_a_directory_that_a_debug_server_serves(
     finally:
         process.kill()
         process.wait()
+
+
+def test_a_debug_server_is_not_refused_by_its_own_wrapper(tmp_path):
+    """``timeout 60 psynet debug local`` doesn't count as a server in its directory."""
+    wrapper = tmp_path / "psynet"
+    wrapper.write_text(
+        "import subprocess, sys\n"
+        "check = 'from psynet.isolated_environment import check_no_debug_server as c; c(\".\")'\n"
+        "sys.exit(subprocess.run([sys.executable, '-c', check]).returncode)\n"
+    )
+    env = {**os.environ, "PYTHONPATH": str(Path(psynet.__file__).parents[1])}
+    result = subprocess.run(
+        [sys.executable, str(wrapper), "debug", "local"], cwd=tmp_path, env=env
+    )
+    assert result.returncode == 0
 
 
 @pytest.mark.skipif(shutil.which("redis-server") is None, reason="needs redis-server")

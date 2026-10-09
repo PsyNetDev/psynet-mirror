@@ -128,11 +128,13 @@ def check_no_debug_server(directory, purpose=TEST):
 
     directory = os.path.realpath(directory)
     newcomer = "the tests" if purpose == TEST else "a second debug server"
+    # Wrappers such as ``timeout 60 psynet debug local`` are this command itself.
+    this_command = {os.getpid(), *(p.pid for p in psutil.Process().parents())}
     for process in psutil.process_iter(["cmdline", "cwd"]):
         cmdline = process.info["cmdline"] or []
         cwd = process.info["cwd"]
         if (
-            process.pid != os.getpid()
+            process.pid not in this_command
             and cwd
             and os.path.realpath(cwd) == directory
             and _is_psynet_debug(cmdline)
