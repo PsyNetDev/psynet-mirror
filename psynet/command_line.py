@@ -992,6 +992,11 @@ def _debug_docker(ctx, archive, no_browsers):
         reset_console()
 
 
+_BROWSER_WINDOWS_SENTENCE = (
+    "Recruitment requests will open browser windows automatically."
+)
+
+
 def launch_app_without_browsers(port, **kwargs):
     """Launch the development app without opening browsers.
 
@@ -1007,8 +1012,11 @@ def launch_app_without_browsers(port, **kwargs):
     launch_data = handle_launch_data(
         BASE_URL.format(port) + "launch", error=log, delay=1.0, context="local"
     )
-    if launch_data.get("recruitment_msg"):
-        log(launch_data["recruitment_msg"], chevrons=False)
+    message = launch_data.get("recruitment_msg") or ""
+    # Dallinger's HotAir recruiter says this regardless of --no-browsers.
+    message = message.replace(_BROWSER_WINDOWS_SENTENCE, "").strip()
+    if message:
+        log(message, chevrons=False)
 
     config = get_config()
     if not config.ready:

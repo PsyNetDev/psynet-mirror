@@ -191,15 +191,16 @@ def services_ensure(assume_yes):
     "--clean",
     "clean_leftovers",
     is_flag=True,
-    help="Remove test databases and Redis servers that no running session uses.",
+    help="Remove session databases and Redis servers that no running session uses.",
 )
 @click.option("--yes", "assume_yes", is_flag=True, help="Clean without prompting.")
 def services_list(clean_leftovers, assume_yes):
     """Show which local sessions use which ports, databases and Redis servers.
 
     Reads the settings of your running PsyNet, Dallinger and pytest processes.
-    With --clean, also removes databases named *_test_<port> or *_slot<n> and
-    test Redis servers that are left over from ended test sessions.
+    With --clean, also removes the databases (*_test_<port>, *_debug_<port>,
+    *_slot<n>), Redis servers and Redis folders left over from ended isolated
+    test and debug sessions.
     """
     from psynet.service_usage import list_services
 

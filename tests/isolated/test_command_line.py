@@ -685,12 +685,16 @@ def test_debug_auto_reload_no_browsers_launches_without_browsers(monkeypatch, ca
     monkeypatch.setattr("psynet.command_line.get_config", lambda: config)
     monkeypatch.setattr(
         "dallinger.deployment.handle_launch_data",
-        lambda url, **kwargs: {"recruitment_msg": "Prolific study simulated"},
+        lambda url, **kwargs: {
+            "recruitment_msg": "Single recruitment link: ...\n\n"
+            "Recruitment requests will open browser windows automatically."
+        },
     )
     monkeypatch.setattr(develop, "_async_browser", pytest.fail)
     launch_app_without_browsers(5001, no_browsers=False)
     output = capsys.readouterr().out
-    assert "Prolific study simulated" in output
+    assert "Single recruitment link" in output
+    assert "browser windows" not in output
     assert "http://127.0.0.1:5001/dashboard" in output
     assert "Dashboard user: admin password: s3cret" in output
 
