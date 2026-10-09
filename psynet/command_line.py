@@ -4199,38 +4199,21 @@ def test__docker_ssh(
     run_remote_experiment_command(executor, app, cmd)
 
 
-def _parse_performance_n_bots(n_bots):
-    """Return ``"auto"``, a list of bot counts, or ``None`` for the default.
-
-    Raises
-    ------
-    ValueError
-        If ``n_bots`` is neither ``auto`` nor comma-separated positive whole numbers.
-    """
-    if n_bots is None:
-        return None
-    if str(n_bots).strip().lower() == "auto":
-        return "auto"
-    counts = [int(x) for x in str(n_bots).split(",")]
-    if any(n < 1 for n in counts):
-        raise ValueError(f"Bot counts must be at least 1, got {n_bots!r}.")
-    return counts
-
-
 def _validate_performance_n_bots(ctx, param, value):
-    """Click callback: reject invalid ``--n-bots`` and return it as ``auto`` or ``5,10``.
-
-    The canonical form has no spaces, so it can be forwarded in the SSH command.
-    """
+    """Click callback: return ``--n-bots`` as ``"auto"``, a list of bot counts, or ``None``."""
+    if value is None:
+        return None
+    if value.strip().lower() == "auto":
+        return "auto"
     try:
-        parsed = _parse_performance_n_bots(value)
+        counts = [int(x) for x in value.split(",")]
     except ValueError:
+        counts = []
+    if not counts or any(n < 1 for n in counts):
         raise click.BadParameter(
             "use 'auto' or comma-separated whole numbers of at least 1, such as 5,10,20."
-        ) from None
-    if parsed is None or parsed == "auto":
-        return parsed
-    return ",".join(str(n) for n in parsed)
+        )
+    return counts
 
 
 _test_options["performance_n_bots"] = click.option(
@@ -4469,17 +4452,7 @@ def performance_test(ctx):
 @_test_options["performance_json_output"]
 @click.option("--debug", is_flag=True, help="Enable debug logging for verbose output")
 @_in_isolated_test_environment
-def performance_test__local(
-    existing=False,
-    n_bots=None,
-    stagger=None,
-    time_factor=None,
-    duration_minutes=None,
-    max_p95_ms=None,
-    max_queue_p95_s=None,
-    json_output=None,
-    debug=False,
-):
+def performance_test__local(existing=False, json_output=None, debug=False, **options):
     """
     Run a performance test of the experiment locally.
 
@@ -4498,46 +4471,21 @@ def performance_test__local(
     ``psynet audit performance-test`` to collect audit evidence.
     """
     return _run_performance_test_local(
-        existing=existing,
-        n_bots=n_bots,
-        stagger=stagger,
-        time_factor=time_factor,
-        duration_minutes=duration_minutes,
-        max_p95_ms=max_p95_ms,
-        max_queue_p95_s=max_queue_p95_s,
-        json_output=json_output,
-        debug=debug,
+        existing=existing, json_output=json_output, debug=debug, **options
     )
 
 
-def _run_performance_test_local(
-    *,
-    existing,
-    n_bots,
-    stagger,
-    time_factor,
-    duration_minutes,
-    json_output,
-    debug,
-    max_p95_ms=None,
-    max_queue_p95_s=None,
-):
-    """Run a local performance test and return its result records."""
+def _run_performance_test_local(*, existing, json_output, debug, **options):
+    """Run a local performance test and return its result records.
+
+    ``options`` are the performance-test options, such as ``n_bots``.
+    """
     run = (
         _run_performance_test_with_existing_server
         if existing
         else _run_performance_test_with_new_server
     )
-    return run(
-        n_bots,
-        stagger,
-        time_factor,
-        duration_minutes,
-        debug,
-        json_output,
-        max_p95_ms=max_p95_ms,
-        max_queue_p95_s=max_queue_p95_s,
-    )
+    return run(debug=debug, json_output=json_output, **options)
 
 
 def _collect_run_metadata(experiment_label):
@@ -4573,7 +4521,7 @@ def _write_json_results(json_output, *, metadata, options, all_results):
 
 def _check_existing_server_answers():
     """Raise ``click.ClickException`` unless a server runs for this shell's settings."""
-    import requests
+    from psynet.perf_test import server_is_reachable
 
     base_url = redis_vars.get("base_url", None)
     if base_url is None:
@@ -4582,16 +4530,11 @@ def _check_existing_server_answers():
             "with psynet debug local, or set REDIS_URL and DATABASE_URL to those "
             "of the running server."
         )
-    try:
-        requests.head(base_url, timeout=10)
-    except requests.Timeout:
-        # A server too busy to answer quickly is still running.
-        pass
-    except requests.exceptions.ConnectionError:
+    if not server_is_reachable(base_url):
         raise click.ClickException(
             f"No server answers at {base_url}. Start one with psynet debug local, "
             "or remove --existing."
-        ) from None
+        )
 
 
 _KEPT_PERFORMANCE_LOGS = 20
@@ -4620,12 +4563,13 @@ def _performance_log_directory():
 
 
 def _run_performance_test_with_existing_server(
-    n_bots,
-    stagger,
-    time_factor,
-    duration_minutes,
-    debug,
+    *,
+    debug=False,
     json_output=None,
+    n_bots=None,
+    stagger=None,
+    time_factor=None,
+    duration_minutes=None,
     max_p95_ms=None,
     max_queue_p95_s=None,
 ):
@@ -4668,7 +4612,7 @@ def _run_performance_test_with_existing_server(
 
     os.environ["PASSTHROUGH_ERRORS"] = "True"
 
-    bot_counts = _parse_performance_n_bots(n_bots) or [exp.test_n_bots]
+    bot_counts = n_bots or [exp.test_n_bots]
     find_capacity = bot_counts == "auto"
 
     tester = PerformanceTester(
@@ -4934,16 +4878,7 @@ def _stop_server(server_info):
     print(f"✓ Server stopped (log: {tmp_log_path})")
 
 
-def _run_performance_test_with_new_server(
-    n_bots,
-    stagger,
-    time_factor,
-    duration_minutes,
-    debug,
-    json_output=None,
-    max_p95_ms=None,
-    max_queue_p95_s=None,
-):
+def _run_performance_test_with_new_server(*, debug=False, json_output=None, **options):
     """Run performance test after starting a new experiment server"""
     from .isolated_environment import check_no_debug_server
 
@@ -4962,14 +4897,7 @@ def _run_performance_test_with_new_server(
 
     try:
         all_results = _run_performance_test_with_existing_server(
-            n_bots,
-            stagger,
-            time_factor,
-            duration_minutes,
-            debug,
-            json_output,
-            max_p95_ms=max_p95_ms,
-            max_queue_p95_s=max_queue_p95_s,
+            debug=debug, json_output=json_output, **options
         )
         print("✓ Performance test completed")
         return all_results
@@ -4989,18 +4917,7 @@ def _run_performance_test_with_new_server(
 @_test_options["performance_max_queue_p95_s"]
 @_test_options["performance_json_output"]
 @click.pass_context
-def performance_test__docker_ssh(
-    ctx,
-    app,
-    server,
-    n_bots=None,
-    stagger=None,
-    time_factor=None,
-    duration_minutes=None,
-    max_p95_ms=None,
-    max_queue_p95_s=None,
-    json_output=None,
-):
+def performance_test__docker_ssh(ctx, app, server, json_output=None, **options):
     """
     Runs performance tests on the remote server. Assumes that the app has
     already been launched on the remote server using ``psynet debug ssh``.
@@ -5023,14 +4940,7 @@ def performance_test__docker_ssh(
 
     from dallinger.command_line.docker_ssh import Executor
 
-    cmd = _build_ssh_performance_test_cmd(
-        n_bots=n_bots,
-        stagger=stagger,
-        time_factor=time_factor,
-        duration_minutes=duration_minutes,
-        max_p95_ms=max_p95_ms,
-        max_queue_p95_s=max_queue_p95_s,
-    )
+    cmd = _build_ssh_performance_test_cmd(**options)
 
     server_info = CONFIGURED_HOSTS[server]
     ssh_host = server_info["host"]
@@ -5039,35 +4949,17 @@ def performance_test__docker_ssh(
     run_remote_experiment_command(executor, app, cmd)
 
 
-def _build_ssh_performance_test_cmd(
-    n_bots,
-    stagger,
-    time_factor,
-    duration_minutes,
-    max_p95_ms=None,
-    max_queue_p95_s=None,
-):
-    """Build the remote performance-test command, preserving explicit zeros."""
+def _build_ssh_performance_test_cmd(**options):
+    """Build the remote performance-test command, preserving explicit zeros.
+
+    ``options`` are named like the command's options, e.g. ``n_bots`` for ``--n-bots``.
+    """
     cmd = "psynet performance-test local --existing"
-
-    if n_bots is not None:
-        cmd += f" --n-bots {n_bots}"
-
-    if stagger is not None:
-        cmd += f" --stagger {stagger}"
-
-    if time_factor is not None:
-        cmd += f" --time-factor {time_factor}"
-
-    if duration_minutes is not None:
-        cmd += f" --duration-minutes {duration_minutes}"
-
-    if max_p95_ms is not None:
-        cmd += f" --max-p95-ms {max_p95_ms}"
-
-    if max_queue_p95_s is not None:
-        cmd += f" --max-queue-p95-s {max_queue_p95_s}"
-
+    for name, value in options.items():
+        if isinstance(value, list):
+            value = ",".join(str(v) for v in value)
+        if value is not None:
+            cmd += f" --{name.replace('_', '-')} {value}"
     return cmd
 
 
@@ -5136,29 +5028,12 @@ def audit_simulate(ctx, n_bots=None):
 @click.option("--debug", is_flag=True, help="Enable debug logging for verbose output")
 @require_exp_directory
 @_in_isolated_test_environment
-def audit_performance_test(
-    existing=False,
-    n_bots=None,
-    stagger=None,
-    time_factor=None,
-    duration_minutes=None,
-    max_p95_ms=None,
-    max_queue_p95_s=None,
-    debug=False,
-):
+def audit_performance_test(existing=False, debug=False, **options):
     """Run a local performance test and write its audit evidence."""
 
     json_output = str(resolve_audit_artifact_path(AUDIT_PERFORMANCE_JSON))
     all_results = _run_performance_test_local(
-        existing=existing,
-        n_bots=n_bots,
-        stagger=stagger,
-        time_factor=time_factor,
-        duration_minutes=duration_minutes,
-        max_p95_ms=max_p95_ms,
-        max_queue_p95_s=max_queue_p95_s,
-        json_output=json_output,
-        debug=debug,
+        existing=existing, json_output=json_output, debug=debug, **options
     )
     mark_performance_result_present(all_results)
 

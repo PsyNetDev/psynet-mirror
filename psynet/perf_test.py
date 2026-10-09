@@ -251,7 +251,7 @@ class PerformanceTester:
         """Search for the largest bot count the server handles within limits.
 
         Doubles the bot count from 10 until a test fails
-        :func:`within_capacity`, then bisects between the largest passing and
+        :func:`capacity_failures`, then bisects between the largest passing and
         smallest failing counts until they are within 10% of each other.
 
         Returns
@@ -604,20 +604,6 @@ class PerformanceTester:
             sys.stdout.write("\r" + " " * 150 + "\r")
             sys.stdout.flush()
 
-    def _server_is_reachable(self):
-        """Return whether the experiment server still accepts connections."""
-        import requests
-
-        try:
-            self.authenticated_session.head(self.base_url, timeout=10)
-        except requests.Timeout:
-            # Includes ConnectTimeout: a full connection backlog under load
-            # still means the server is up.
-            return True
-        except requests.ConnectionError:
-            return False
-        return True
-
     def _run_monitoring_loop(self, n, bot_state, start_bot_slot, start_time, end_time):
         """Start ``n`` staggered bot slots and watch the server until the test ends."""
         # The first bot waits for the experiment launch; the rest follow it.
@@ -632,7 +618,7 @@ class PerformanceTester:
 
             if current_time >= next_server_check:
                 next_server_check = current_time + _SERVER_CHECK_INTERVAL_S
-                if not self._server_is_reachable():
+                if not server_is_reachable(self.base_url, self.authenticated_session):
                     self._clear_realtime_status()
                     logger.warning(
                         warning(
@@ -791,20 +777,13 @@ class PerformanceTester:
             for row in process_stats_rows
         ]
 
-        q_delay_median = (
+        q_delay_median, q_delay_p95 = (
             db.session.query(
-                func.percentile_cont(0.5).within_group(AsyncProcess.queue_delay)
+                func.percentile_cont(0.5).within_group(AsyncProcess.queue_delay),
+                func.percentile_cont(0.95).within_group(AsyncProcess.queue_delay),
             )
             .filter(*queue_window)
-            .scalar()
-        )
-
-        q_delay_p95 = (
-            db.session.query(
-                func.percentile_cont(0.95).within_group(AsyncProcess.queue_delay)
-            )
-            .filter(*queue_window)
-            .scalar()
+            .one()
         )
 
         oldest_enqueued = (
@@ -841,22 +820,14 @@ class PerformanceTester:
                 bots_failed += 1
 
         succeeded_bots = [b for b in bots if bot_status_map[b.id] in succeeded_statuses]
-        wait_page_times = [
+        wait_page_times = sorted(
             b.total_wait_page_time
             for b in succeeded_bots
             if b.total_wait_page_time is not None
-        ]
-        if wait_page_times:
-            wait_page_times_sorted = sorted(wait_page_times)
-            median_wait_page_time = wait_page_times_sorted[
-                len(wait_page_times_sorted) // 2
-            ]
-            p95_wait_page_time = wait_page_times_sorted[
-                int(len(wait_page_times_sorted) * 0.95)
-            ]
-            max_wait_page_time = wait_page_times_sorted[-1]
-        else:
-            median_wait_page_time = p95_wait_page_time = max_wait_page_time = None
+        )
+        median_wait_page_time = _quantile(wait_page_times, 0.5)
+        p95_wait_page_time = _quantile(wait_page_times, 0.95)
+        max_wait_page_time = _quantile(wait_page_times, 1)
 
         avg_response_time = stats.avg
         median_response_time = stats.median
@@ -884,7 +855,7 @@ class PerformanceTester:
             counts = sorted(
                 [0] * (len(bot_ids) - len(rows)) + [r.n_trials for r in rows]
             )
-            return counts[0], counts[len(counts) // 2], counts[-1]
+            return counts[0], _quantile(counts, 0.5), counts[-1]
 
         succeeded_bot_ids = [b.id for b in succeeded_bots]
         (
@@ -911,29 +882,11 @@ class PerformanceTester:
         ]
         all_durations = [d for _, d, _ in bot_state["bot_durations"]]
 
-        avg_bot_duration = (
-            sum(all_durations) / len(all_durations) if all_durations else None
-        )
-        avg_succeeded_duration = (
-            sum(succeeded_durations) / len(succeeded_durations)
-            if succeeded_durations
-            else None
-        )
-        avg_failed_duration = (
-            sum(failed_durations) / len(failed_durations) if failed_durations else None
-        )
-        avg_incomplete_duration = (
-            sum(incomplete_durations) / len(incomplete_durations)
-            if incomplete_durations
-            else None
-        )
-
-        avg_init_time = (
-            sum(bot_state["initialization_times"])
-            / len(bot_state["initialization_times"])
-            if bot_state["initialization_times"]
-            else None
-        )
+        avg_bot_duration = _mean(all_durations)
+        avg_succeeded_duration = _mean(succeeded_durations)
+        avg_failed_duration = _mean(failed_durations)
+        avg_incomplete_duration = _mean(incomplete_durations)
+        avg_init_time = _mean(bot_state["initialization_times"])
 
         requests_per_sec = (
             requests_during_test / actual_duration if actual_duration > 0 else None
@@ -1038,6 +991,18 @@ def _describe_workers(result):
     return text
 
 
+def _mean(values):
+    """Return the mean of ``values``, or ``None`` if there are none."""
+    return sum(values) / len(values) if values else None
+
+
+def _quantile(sorted_values, q):
+    """Return the value at quantile ``q`` of ``sorted_values``, or ``None`` if empty."""
+    if not sorted_values:
+        return None
+    return sorted_values[min(int(len(sorted_values) * q), len(sorted_values) - 1)]
+
+
 def format_test_results(result):
     """Format detailed results after a single test completes. Returns list[str]."""
     lines = []
@@ -1124,8 +1089,8 @@ def format_test_results(result):
     init_times = result.get("initialization_times", [])
     if init_times:
         init_sorted = sorted(init_times)
-        init_median = init_sorted[len(init_sorted) // 2]
-        init_p95 = init_sorted[int(len(init_sorted) * 0.95)]
+        init_median = _quantile(init_sorted, 0.5)
+        init_p95 = _quantile(init_sorted, 0.95)
         init_max = init_sorted[-1]
         n_init = len(init_sorted)
         lines.append(bold(f"  BOT INIT TIMES (n={n_init}):"))
@@ -1295,6 +1260,15 @@ def format_test_results(result):
     return lines
 
 
+def _ratio(value, baseline, is_baseline):
+    """Format ``value / baseline`` for the summary's "vs base" columns."""
+    if is_baseline:
+        return "\u2014"
+    if value is None or not baseline or baseline <= 0:
+        return "N/A"
+    return f"{value / baseline:.1f}x"
+
+
 def format_performance_summary(results):
     """Format cross-test comparison table. Returns list[str]."""
     lines = []
@@ -1340,24 +1314,10 @@ def format_performance_summary(results):
             _fmt(response_median),
         ]
         if show_scaling:
-            if i == 0:
-                row.append("\u2014")
-            elif (
-                response_median is not None
-                and baseline_response_median
-                and baseline_response_median > 0
-            ):
-                row.append(f"{response_median / baseline_response_median:.1f}x")
-            else:
-                row.append("N/A")
+            row.append(_ratio(response_median, baseline_response_median, i == 0))
         row.append(_fmt(q_median))
         if show_scaling:
-            if i == 0:
-                row.append("\u2014")
-            elif q_median is not None and baseline_q_median and baseline_q_median > 0:
-                row.append(f"{q_median / baseline_q_median:.1f}x")
-            else:
-                row.append("N/A")
+            row.append(_ratio(q_median, baseline_q_median, i == 0))
         row.append(_fmt(queue_wait_p95(result)))
         summary_rows.append(row)
 
@@ -1381,6 +1341,21 @@ def format_performance_summary(results):
     lines.append("")
 
     return lines
+
+
+def server_is_reachable(url, session=None):
+    """Return whether a server accepts connections at ``url``."""
+    import requests
+
+    try:
+        (session or requests).head(url, timeout=10)
+    except requests.Timeout:
+        # Includes ConnectTimeout: a full connection backlog under load
+        # still means the server is up.
+        return True
+    except requests.ConnectionError:
+        return False
+    return True
 
 
 @dataclass(frozen=True)
@@ -1468,11 +1443,6 @@ def capacity_failures(result, limits=CapacityLimits()):
     return reasons
 
 
-def within_capacity(result, limits=CapacityLimits()):
-    """Return whether a test result stayed within ``limits``."""
-    return not capacity_failures(result, limits)
-
-
 def next_capacity_probe(highest_pass, lowest_fail, max_bots=_CAPACITY_SEARCH_MAX):
     """Return the next bot count for the capacity search, or ``None`` when done.
 
@@ -1510,15 +1480,17 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
             for r in results
         )
     )
-    passed = [r["n_bots"] for r in results if within_capacity(r, limits)]
-    failed = [r for r in results if not within_capacity(r, limits)]
-    first_fail = min(failed, key=lambda r: r["n_bots"]) if failed else None
+    failures = [(r, capacity_failures(r, limits)) for r in results]
+    passed = [r["n_bots"] for r, reasons in failures if not reasons]
+    failed = [(r, reasons) for r, reasons in failures if reasons]
+    first_fail, first_reasons = (
+        min(failed, key=lambda f: f[0]["n_bots"]) if failed else (None, None)
+    )
     below_fail = [n for n in passed if first_fail is None or n < first_fail["n_bots"]]
     if not below_fail:
         return [
             f"  Even {first_fail['n_bots']:,} bots did not keep {limit} "
-            f"({', '.join(capacity_failures(first_fail, limits))}); fix any errors "
-            "or test fewer bots.",
+            f"({', '.join(first_reasons)}); fix any errors or test fewer bots.",
             "",
         ]
 
@@ -1532,7 +1504,7 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
         lines = [
             f"  Capacity: about {capacity:,} concurrent bots kept {limit}; "
             f"{first_fail['n_bots']:,} did not "
-            f"({', '.join(capacity_failures(first_fail, limits))}).",
+            f"({', '.join(first_reasons)}).",
             f"  Suggested max_concurrent_participants: "
             f"{max(1, int(capacity * _CAPACITY_HEADROOM)):,} "
             f"({_CAPACITY_HEADROOM:.0%} of {capacity:,})",
