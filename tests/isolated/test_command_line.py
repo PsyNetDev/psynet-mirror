@@ -4952,8 +4952,8 @@ def test_local_commands_point_at_the_isolated_debug_server(tmp_path):
     fake_psynet.write_text(
         "import json, os, subprocess, sys, time\n"
         "if 'CHILD_ENV' in os.environ:\n"
-        "    env = {**os.environ, **json.loads(os.environ.pop('CHILD_ENV'))}\n"
-        "    subprocess.Popen([sys.executable, *sys.argv], env=env)\n"
+        "    child_env = json.loads(os.environ.pop('CHILD_ENV'))\n"
+        "    subprocess.Popen([sys.executable, *sys.argv], env={**os.environ, **child_env})\n"
         "time.sleep(60)\n"
     )
     server_url = "postgresql://dallinger:dallinger@localhost/dallinger_debug_5987"
@@ -4982,7 +4982,7 @@ def test_local_commands_point_at_the_isolated_debug_server(tmp_path):
         assert f"psynet debug (PID {launcher.pid})" not in str(error.value)
         assert f"export DATABASE_URL={server_url} " in str(error.value)
     finally:
-        for child in psutil.Process(launcher.pid).children():
+        for child in psutil.Process(launcher.pid).children(recursive=True):
             child.kill()
         launcher.kill()
         launcher.wait()
