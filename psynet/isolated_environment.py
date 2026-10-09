@@ -13,9 +13,8 @@ An isolated environment gives the test session:
 
 - a free web port (at least 100 above Dallinger's ``base_port``), claimed
   with a lock file so that concurrent sessions choose different ports;
-- the ``<database>_test_<port>`` database next to ``DATABASE_URL``, created if
-  it is missing and reused by later sessions on the same port (tests reset its
-  tables themselves);
+- the ``<database>_test_<port>`` database next to ``DATABASE_URL``, created
+  afresh when the session starts and dropped when it ends;
 - a private ``redis-server`` on the shared Redis port plus the same offset,
   stopped when the session ends (Redis delivers live notifications to every
   database on a server, so a database number on the shared server is only a
@@ -54,6 +53,7 @@ case.
 
 import fcntl
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -168,11 +168,10 @@ class IsolatedEnvironment:
     stop its Redis server.
     """
 
-    def __init__(self, env, port_lock=None, redis_process=None, redis_dir=None):
+    def __init__(self, env, port_lock=None, redis_process=None):
         self.env = env
         self._port_lock = port_lock
         self._redis_process = redis_process
-        self._redis_dir = redis_dir
 
     @classmethod
     def start(cls, environ=None):
@@ -211,12 +210,11 @@ class IsolatedEnvironment:
             shared_base_port + _PORT_OFFSET,
             also_free=redis_port if private_redis else None,
         )
-        redis_dir = None
         try:
             env = {
                 **environ,
                 READY_ENV_VAR: "1",
-                "DATABASE_URL": ensure_database(
+                "DATABASE_URL": create_database(
                     database_url, suffix=f"_test_{base_port}"
                 ),
                 "base_port": str(base_port),
@@ -234,15 +232,12 @@ class IsolatedEnvironment:
                 )
                 return cls(env, port_lock)
 
-            redis_dir = tempfile.mkdtemp(prefix="psynet-test-redis-")
-            process = start_redis_server(redis_port(base_port), redis_dir)
+            process = start_redis_server(redis_port(base_port), tempfile.gettempdir())
         except BaseException:
-            if redis_dir is not None:
-                shutil.rmtree(redis_dir, ignore_errors=True)
             port_lock.close()
             raise
         env["REDIS_URL"] = f"redis://127.0.0.1:{redis_port(base_port)}"
-        return cls(env, port_lock, process, redis_dir)
+        return cls(env, port_lock, process)
 
     def describe(self):
         """Return a one-line summary of where the session's services are."""
@@ -254,16 +249,14 @@ class IsolatedEnvironment:
         )
 
     def close(self):
-        """Stop the session's Redis server, if it started one."""
+        """Stop the session's Redis server and drop its database."""
         if self._redis_process is not None:
             stop_process(self._redis_process)
             self._redis_process = None
-        if self._redis_dir is not None:
-            shutil.rmtree(self._redis_dir, ignore_errors=True)
-            self._redis_dir = None
         if self._port_lock is not None:
             # While the port is still claimed, so no new session is using it yet.
             shutil.rmtree(self.env["dallinger_develop_directory"], ignore_errors=True)
+            _drop_session_database(self.env["DATABASE_URL"])
             self._port_lock.close()
             self._port_lock = None
 
@@ -274,11 +267,10 @@ class IsolatedEnvironment:
         self.close()
 
 
-def ensure_database(database_url, *, suffix, fresh=False):
-    """Create ``<database><suffix>`` next to ``database_url`` and return its URL.
+def create_database(database_url, *, suffix):
+    """Create an empty ``<database><suffix>`` next to ``database_url``; return its URL.
 
-    With ``fresh=True`` an existing database is dropped first, after
-    terminating its connections.
+    A database of that name left by an earlier session is dropped first.
     """
     import psycopg2
     from psycopg2 import sql
@@ -292,25 +284,48 @@ def ensure_database(database_url, *, suffix, fresh=False):
     connection.autocommit = True
     try:
         with connection.cursor() as cursor:
-            if fresh:
-                # DROP DATABASE ... WITH (FORCE) needs PostgreSQL 13, but
-                # `psynet services ensure` starts PostgreSQL 12.
-                cursor.execute(
-                    "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-                    "WHERE datname = %s AND pid <> pg_backend_pid()",
-                    (name,),
-                )
-                cursor.execute(
-                    sql.SQL("DROP DATABASE IF EXISTS {}").format(sql.Identifier(name))
-                )
-            cursor.execute("SELECT 1 FROM pg_database WHERE datname = %s", (name,))
-            if cursor.fetchone() is None:
-                cursor.execute(
-                    sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name))
-                )
+            _drop_database(cursor, name)
+            cursor.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name)))
     finally:
         connection.close()
     return urlunsplit(parts._replace(path=f"/{name}"))
+
+
+def _drop_database(cursor, name):
+    """Drop database ``name`` if it exists, after terminating its connections."""
+    from psycopg2 import sql
+
+    # DROP DATABASE ... WITH (FORCE) needs PostgreSQL 13, but
+    # `psynet services ensure` starts PostgreSQL 12.
+    cursor.execute(
+        "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+        "WHERE datname = %s AND pid <> pg_backend_pid()",
+        (name,),
+    )
+    cursor.execute(sql.SQL("DROP DATABASE IF EXISTS {}").format(sql.Identifier(name)))
+
+
+def _drop_session_database(session_database_url):
+    """Drop a session's database, warning instead of raising if that fails."""
+    import psycopg2
+
+    parts = urlsplit(session_database_url)
+    name = parts.path.lstrip("/")
+    shared_url = urlunsplit(parts._replace(path=re.sub(r"_test_\d+$", "", parts.path)))
+    try:
+        connection = psycopg2.connect(shared_url)
+        try:
+            connection.autocommit = True
+            with connection.cursor() as cursor:
+                _drop_database(cursor, name)
+        finally:
+            connection.close()
+    except psycopg2.Error as e:
+        print(
+            f"Warning: could not drop database {name} ({e}). Drop it with "
+            f"'dropdb {name}'.",
+            file=sys.stderr,
+        )
 
 
 def start_redis_server(port, directory, log_file=None):
