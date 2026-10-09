@@ -117,6 +117,40 @@ def test_bots_still_taking_the_experiment_stop_when_the_test_ends(monkeypatch):
     assert bot_state["total_bot_errors"] == 0
 
 
+def test_bots_that_fail_count_as_started_and_errored(monkeypatch):
+    import itertools
+    import time
+
+    from dallinger import db
+
+    from psynet.participant import ParticipantDriver
+
+    ids = itertools.count(1)
+
+    class FakeDriver(ParticipantDriver):
+        def __init__(self):
+            self.id = next(ids)
+            if self.id == 1:
+                raise RuntimeError("500 Server Error")
+
+    experiment = Mock()
+    experiment.run_bot.side_effect = RuntimeError("500 Server Error")
+    monkeypatch.setattr("psynet.bot.BotDriver", FakeDriver)
+    monkeypatch.setattr("psynet.experiment.get_experiment", lambda: experiment)
+    monkeypatch.setattr(db, "session", Mock())
+    tester = PerformanceTester(
+        authenticated_session=Mock(), base_url="http://x", stagger_interval_s=0
+    )
+    bot_state = tester._initialize_bot_tracking()
+    tester._create_bot_launcher(bot_state, time.time() + 0.2)()
+    time.sleep(0.4)
+    tester._stop_bots(bot_state, timeout_s=5)
+
+    assert bot_state["total_bots_started"] == bot_state["total_bot_errors"] >= 2
+    assert 1 not in bot_state["errored_bot_ids"]
+    assert 2 in bot_state["errored_bot_ids"]
+
+
 def test_parallel_test_reraises_a_bot_error_after_all_bots_finish(monkeypatch):
     import threading
 
@@ -234,6 +268,12 @@ def test_capacity_summary_uses_counts_below_the_first_failure():
 
     assert "about 10 concurrent bots" in text
     assert "inconsistent" in text
+
+
+def test_capacity_summary_says_when_every_count_failed():
+    results = [_base_result(n_bots=n, bot_errors=1) for n in (2, 4)]
+
+    assert "Even 2 bots did not keep" in _join(format_capacity_summary(results))
 
 
 def test_capacity_summary_warns_when_starting_the_bots_took_much_of_the_test():

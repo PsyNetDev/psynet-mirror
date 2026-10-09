@@ -429,6 +429,7 @@ class PerformanceTester:
             "total_bots_started": 0,
             "bots_completed_during_test": 0,
             "total_bot_errors": 0,
+            "errored_bot_ids": set(),
             "bot_durations": [],
             "initialization_times": [],
             "first_bot_initialized": False,
@@ -495,6 +496,8 @@ class PerformanceTester:
         while not stop_event.is_set() and time.time() < end_time:
             create_time = time.time()
             bot_id = None
+            with bot_state["lock"]:
+                bot_state["total_bots_started"] += 1
             try:
                 bot = BotDriver()
                 bot.stop_event = stop_event
@@ -522,7 +525,6 @@ class PerformanceTester:
         """Record that a bot started, for the live status and results."""
         now = time.time()
         with bot_state["lock"]:
-            bot_state["total_bots_started"] += 1
             bot_state["initialization_times"].append(now - create_time)
             bot_state["first_bot_initialized"] = True
             bot_state["running"][bot_id] = now
@@ -535,6 +537,8 @@ class PerformanceTester:
             start = bot_state["running"].pop(bot_id, None)
             if outcome == "error":
                 bot_state["total_bot_errors"] += 1
+                if bot_id is not None:
+                    bot_state["errored_bot_ids"].add(bot_id)
             elif outcome == "completed" and now < end_time:
                 bot_state["bots_completed_during_test"] += 1
             if start is not None:
@@ -821,17 +825,22 @@ class PerformanceTester:
         )
 
         bots = Bot.query.filter(Bot.id > initial_state["max_participant_id"]).all()
+        # A bot whose thread raised failed, whatever status the server recorded.
+        bot_status_map = {
+            b.id: "failed" if b.id in bot_state["errored_bot_ids"] else b.status
+            for b in bots
+        }
+        succeeded_statuses = {"approved", "submitted"}
         bots_succeeded = bots_failed = bots_incomplete = 0
-        for bot in bots:
-            if bot.status in {"approved", "submitted"}:
+        for status in bot_status_map.values():
+            if status in succeeded_statuses:
                 bots_succeeded += 1
-            elif bot.status == "working":
+            elif status == "working":
                 bots_incomplete += 1
             else:
                 bots_failed += 1
 
-        succeeded_statuses = {"approved", "submitted"}
-        succeeded_bots = [b for b in bots if b.status in succeeded_statuses]
+        succeeded_bots = [b for b in bots if bot_status_map[b.id] in succeeded_statuses]
         wait_page_times = [
             b.total_wait_page_time
             for b in succeeded_bots
@@ -877,13 +886,12 @@ class PerformanceTester:
             )
             return counts[0], counts[len(counts) // 2], counts[-1]
 
-        succeeded_bot_ids = [b.id for b in bots if b.status in succeeded_statuses]
+        succeeded_bot_ids = [b.id for b in succeeded_bots]
         (
             min_trial_count,
             median_trial_count,
             max_trial_count,
         ) = _trial_count_stats(succeeded_bot_ids)
-        bot_status_map = {b.id: b.status for b in bots}
         succeeded_durations = [
             d
             for bot_id, d, terminated in bot_state["bot_durations"]
@@ -1364,9 +1372,8 @@ def format_performance_summary(results):
         "  Q P95 — 95th percentile queue delay, or the wait of the oldest process "
         "still queued at the end if longer"
     )
-    lines.append(
-        "  vs base — ratio of the median to the lowest bot count's, if several counts ran"
-    )
+    if show_scaling:
+        lines.append("  vs base — ratio of the median to the lowest bot count's")
     lines.append("")
     table = tabulate(summary_rows, headers=summary_headers, tablefmt="simple")
     for line in table.splitlines():
@@ -1506,7 +1513,12 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
     first_fail = min(failed, key=lambda r: r["n_bots"]) if failed else None
     below_fail = [n for n in passed if first_fail is None or n < first_fail["n_bots"]]
     if not below_fail:
-        return [f"  No tested bot count below every failing count kept {limit}.", ""]
+        return [
+            f"  Even {first_fail['n_bots']:,} bots did not keep {limit} "
+            f"({', '.join(capacity_failures(first_fail, limits))}); fix any errors "
+            "or test fewer bots.",
+            "",
+        ]
 
     capacity = max(below_fail)
     if first_fail is None:

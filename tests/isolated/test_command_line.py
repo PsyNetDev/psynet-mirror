@@ -3050,6 +3050,7 @@ def test_test_local_existing_bypasses_scaffold_gate(tmp_path, monkeypatch):
             "psynet.command_line._check_experiment_directory"
         ) as mock_check_directory,
         patch("psynet.command_line._load_runtime_server_config") as load_runtime_config,
+        patch("psynet.command_line._check_existing_server_answers"),
         patch("psynet.experiment.get_experiment", return_value=mock_exp),
     ):
         result = runner.invoke(psynet, ["test", "local", "--existing"])
@@ -4588,6 +4589,7 @@ def test_performance_test_existing_server_loads_runtime_server_config():
         patch("logging.getLogger", return_value=Mock(handlers=[])),
         patch("psynet.command_line.tempfile.NamedTemporaryFile"),
         patch("psynet.command_line._load_runtime_server_config") as load_runtime_config,
+        patch("psynet.command_line._check_existing_server_answers"),
         patch("psynet.experiment.get_experiment", return_value=Mock(test_n_bots=1)),
         patch("psynet.perf_test.PerformanceTester") as tester,
     ):
@@ -4649,6 +4651,7 @@ def test_performance_test_preserves_explicit_zero_options():
     with (
         patch("logging.getLogger", return_value=Mock(handlers=[])),
         patch("psynet.command_line._load_runtime_server_config"),
+        patch("psynet.command_line._check_existing_server_answers"),
         patch("psynet.experiment.get_experiment", return_value=experiment),
         patch(
             "psynet.perf_test.PerformanceTester", return_value=tester
@@ -4697,6 +4700,7 @@ def test_performance_test_uses_defaults_when_options_omitted():
     with (
         patch("logging.getLogger", return_value=Mock(handlers=[])),
         patch("psynet.command_line._load_runtime_server_config"),
+        patch("psynet.command_line._check_existing_server_answers"),
         patch("psynet.experiment.get_experiment", return_value=experiment),
         patch(
             "psynet.perf_test.PerformanceTester", return_value=tester
@@ -5045,3 +5049,17 @@ def test_prolific_listing_warnings():
     assert "shorter than the estimated 8.5 minutes" in warnings(2, 0.85)[0]
     assert "£5.00/hour" in " ".join(warnings(12, 1.00))
     assert "£4.24/hour" in " ".join(warnings(5, 0.60))
+
+
+def test_performance_test_existing_explains_a_missing_server():
+    from psynet.command_line import _check_existing_server_answers
+
+    with patch("psynet.command_line.redis_vars.get", return_value=None):
+        with pytest.raises(click.ClickException, match="No experiment server has"):
+            _check_existing_server_answers()
+    with socket.socket() as unused:
+        unused.bind(("127.0.0.1", 0))
+        url = f"http://127.0.0.1:{unused.getsockname()[1]}"
+    with patch("psynet.command_line.redis_vars.get", return_value=url):
+        with pytest.raises(click.ClickException, match=f"No server answers at {url}"):
+            _check_existing_server_answers()

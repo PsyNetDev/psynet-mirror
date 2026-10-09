@@ -4516,6 +4516,26 @@ def _write_json_results(json_output, *, metadata, options, all_results):
         json.dump(payload, f, indent=2, allow_nan=False)
 
 
+def _check_existing_server_answers():
+    """Raise ``click.ClickException`` unless a server runs for this shell's settings."""
+    import requests
+
+    base_url = redis_vars.get("base_url", None)
+    if base_url is None:
+        raise click.ClickException(
+            "No experiment server has registered in this shell's Redis. Start one "
+            "with psynet debug local, or set REDIS_URL and DATABASE_URL to those "
+            "of the running server."
+        )
+    try:
+        requests.head(base_url, timeout=10)
+    except requests.exceptions.ConnectionError:
+        raise click.ClickException(
+            f"No server answers at {base_url}. Start one with psynet debug local, "
+            "or remove --existing."
+        ) from None
+
+
 def _run_performance_test_with_existing_server(
     n_bots,
     stagger,
@@ -4554,6 +4574,7 @@ def _run_performance_test_with_existing_server(
     print(f"Bot output log: {bot_log_file.name}")
 
     _load_runtime_server_config()
+    _check_existing_server_answers()
 
     try:
         exp = get_experiment()
