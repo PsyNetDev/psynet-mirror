@@ -4169,7 +4169,7 @@ def _rerun_in_isolated_environment(purpose):
             )
         )
     if purpose == DEBUG:
-        log(environment.stopped_message())
+        log(f"The debug server on port {environment.env['base_port']} has stopped.")
     # A child killed by signal N reports -N; shells report 128 + N.
     sys.exit(exit_code if exit_code >= 0 else 128 - exit_code)
 
