@@ -311,13 +311,15 @@ class IsolatedEnvironment:
         base_port, port_lock = _claim_port(
             _shared_base_port(environ) + _PORT_OFFSET, usable=usable
         )
+        session_database_url = None
         try:
+            session_database_url = create_database(
+                database_url, suffix=f"_{purpose}_{base_port}"
+            )
             env = {
                 **environ,
                 READY_ENV_VAR: "1",
-                "DATABASE_URL": create_database(
-                    database_url, suffix=f"_{purpose}_{base_port}"
-                ),
+                "DATABASE_URL": session_database_url,
                 "REDIS_URL": _session_redis_url(environ, base_port, private_redis),
                 "base_port": str(base_port),
                 # Not gettempdir(): Dallinger rejects development paths with a period.
@@ -338,6 +340,8 @@ class IsolatedEnvironment:
                 stop_with_caller=True,
             )
         except BaseException:
+            if session_database_url is not None:
+                _drop_session_database(session_database_url)
             port_lock.close()
             raise
         return cls(env, port_lock, process, purpose)
