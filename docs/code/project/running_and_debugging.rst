@@ -42,12 +42,24 @@ By default every ``psynet debug local`` uses port 5000, the ``dallinger``
 PostgreSQL database, the Redis server on port 6379 and the
 ``/tmp/dallinger_develop`` folder, so only one can run at a time. To run
 another one alongside it, for example when several coding agents test
-different experiments on one machine, give the second terminal its own
+different experiments on one machine, add ``--isolated``:
+
+.. code-block:: bash
+
+    psynet debug local --isolated
+
+It picks a free port (5100 or above) and uses a database and a Redis server
+of its own, which it starts and stops with the server. It prints the port, and
+the ``export`` line that points other local commands, such as
+``psynet export local``, at its database. The database stays after the server
+stops, until the next ``--isolated`` server on the same port resets it.
+
+To choose the settings yourself instead, give the second terminal its own
 database, Redis server, port and development folder:
 
 .. code-block:: bash
 
-    createdb -h localhost -U dallinger dallinger_2
+    PGPASSWORD=dallinger createdb -h localhost -U dallinger dallinger_2
     redis-server --port 6381 --bind 127.0.0.1 --dir "$(mktemp -d)" --save "" --daemonize yes
 
     export DATABASE_URL=postgresql://dallinger:dallinger@localhost/dallinger_2

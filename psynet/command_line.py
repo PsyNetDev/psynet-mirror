@@ -762,6 +762,26 @@ def sql_profiled_command(func):
     return wrapper
 
 
+def _debug_in_isolated_environment_if_requested(func):
+    """With ``--isolated``, re-run ``psynet debug local`` in its own environment.
+
+    Applied outside :func:`sql_profiled_command` so that only the re-run child
+    profiles and reports.
+    """
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        from .isolated_environment import DEBUG, READY_ENV_VAR
+
+        if kwargs.get("isolated") and not os.environ.get(READY_ENV_VAR):
+            if kwargs.get("docker"):
+                raise click.UsageError("--isolated does not work with --docker.")
+            _rerun_in_isolated_environment(DEBUG)
+        return func(*args, **kwargs)
+
+    return wrapper
+
+
 @debug.command("local")
 @click.option("--docker", is_flag=True, help="Docker mode.")
 @click.option("--archive", default=None, help="Optional path to an experiment archive.")
@@ -771,8 +791,17 @@ def sql_profiled_command(func):
     help="Use gunicorn instead of Flask auto-reload (default four worker processes).",
 )
 @click.option("--no-browsers", is_flag=True, help="Skip opening browsers.")
+@click.option(
+    "--isolated",
+    is_flag=True,
+    help=(
+        "Use a free port, a database and a Redis server of its own, so that "
+        "this server runs alongside other local servers and tests."
+    ),
+)
 @_add_sql_profile_options
 @click.pass_context
+@_debug_in_isolated_environment_if_requested
 @sql_profiled_command
 def debug__local(
     ctx,
@@ -780,6 +809,7 @@ def debug__local(
     archive,
     legacy,
     no_browsers,
+    isolated,
     sql_profile,
     sql_profile_options,
     sql_profile_dir,
@@ -3957,6 +3987,7 @@ def _in_isolated_test_environment(func):
     def wrapper(*args, **kwargs):
         from .isolated_environment import (
             READY_ENV_VAR,
+            TEST,
             shared_environment_warning,
             should_isolate,
         )
@@ -3967,7 +3998,7 @@ def _in_isolated_test_environment(func):
             except ValueError as e:
                 raise click.ClickException(str(e)) from e
             if isolate:
-                _rerun_in_isolated_test_environment()
+                _rerun_in_isolated_environment(TEST)
             warning = shared_environment_warning()
             if warning:
                 log(warning)
@@ -4053,22 +4084,23 @@ def test__local(
         sys.exit(exit_code)
 
 
-def _rerun_in_isolated_test_environment():
+def _rerun_in_isolated_environment(purpose):
     """Re-run this command in a child process with its own database, Redis and port.
 
     Dallinger connected to the shared database when this module was imported,
     so the switch needs a new process; see :mod:`psynet.isolated_environment`.
     The child re-runs the whole original command line (``sys.orig_argv``, for
     example ``psynet test local --n-bots 4``), and this process then exits
-    with its code.
+    with its code. ``purpose`` is ``TEST`` or ``DEBUG`` from that module.
     """
-    from .isolated_environment import IsolatedEnvironment, check_no_debug_server
+    from .isolated_environment import TEST, IsolatedEnvironment, check_no_debug_server
     from .services import ensure_local_services
 
     ensure_local_services(assume_yes=False, strict=True)
     try:
-        check_no_debug_server(os.getcwd())
-        environment = IsolatedEnvironment.start()
+        if purpose == TEST:
+            check_no_debug_server(os.getcwd())
+        environment = IsolatedEnvironment.start(purpose=purpose)
     except RuntimeError as e:
         raise click.ClickException(str(e)) from e
     with environment:

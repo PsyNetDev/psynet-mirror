@@ -10,6 +10,7 @@ from urllib.parse import urlsplit
 import pytest
 
 from psynet.isolated_environment import (
+    DEBUG,
     DEFAULT_DATABASE_URL,
     DEFAULT_REDIS_URL,
     ENV_VAR,
@@ -73,7 +74,7 @@ def test_isolated_environment_uses_its_own_services():
     }
     with (
         IsolatedEnvironment.start(shared) as first,
-        IsolatedEnvironment.start(shared) as second,
+        IsolatedEnvironment.start(shared, purpose=DEBUG) as second,
     ):
         for key in ["DATABASE_URL", "REDIS_URL", "base_port"]:
             assert len({shared[key], first.env[key], second.env[key]}) == 3
@@ -81,6 +82,9 @@ def test_isolated_environment_uses_its_own_services():
         port = first.env["base_port"]
         database = urlsplit(shared["DATABASE_URL"]).path.lstrip("/")
         assert urlsplit(first.env["DATABASE_URL"]).path == f"/{database}_test_{port}"
+        debug_port = second.env["base_port"]
+        assert second.env["DATABASE_URL"].endswith(f"/{database}_debug_{debug_port}")
+        assert f"export DATABASE_URL={second.env['DATABASE_URL']}" in second.describe()
         redis_port = int(first.env["REDIS_URL"].rsplit(":", 1)[1])
         socket.create_connection(("127.0.0.1", redis_port), timeout=1).close()
 

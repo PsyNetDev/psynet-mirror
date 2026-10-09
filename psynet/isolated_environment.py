@@ -1,4 +1,4 @@
-"""Run local tests in their own database, Redis server, port and develop folder.
+"""Run local tests and debug servers in their own database, Redis, port and folder.
 
 Why this exists
 ---------------
@@ -46,6 +46,13 @@ marks the processes a session starts once their environment is chosen, or when
 ``CI`` is set, because CI machines run no debug server and their test slots
 are isolated already.
 
+``psynet debug local --isolated`` uses the same environment for a debug
+server, with a ``<database>_debug_<port>`` database, so that several debug
+servers and test sessions can run side by side. The database outlives the
+server, so local commands such as ``psynet export local`` can still read it
+with the ``DATABASE_URL`` that :meth:`IsolatedEnvironment.describe` prints; the
+next debug server on that port resets it.
+
 Isolation separates services, not files: tests still scaffold and remove
 generated files in the experiment directory, so a ``psynet debug`` serving the
 same directory breaks. :func:`check_no_debug_server` refuses to start in that
@@ -67,6 +74,9 @@ ISOLATED = "isolated"
 SHARED = "shared"
 #: Set for processes that a test session starts after choosing their environment.
 READY_ENV_VAR = "_PSYNET_TEST_ENVIRONMENT_READY"
+#: Purposes of an isolated environment; they name its database.
+TEST = "test"
+DEBUG = "debug"
 
 DEFAULT_DATABASE_URL = "postgresql://dallinger:dallinger@localhost/dallinger"
 DEFAULT_REDIS_URL = "redis://localhost:6379"
@@ -140,12 +150,19 @@ class IsolationError(RuntimeError):
     ``str(error)`` as is; the original exception is the ``__cause__``.
     """
 
-    def __init__(self, reason):
-        super().__init__(
-            f"Could not give these tests their own database and Redis ({reason}). "
-            f"Set {ENV_VAR}={SHARED} to run them against the local database and "
-            "Redis instead, which resets any local debug server."
-        )
+    def __init__(self, reason, purpose=TEST):
+        if purpose == DEBUG:
+            message = (
+                f"Could not give this debug server its own database and Redis "
+                f"({reason}). Run it without --isolated to use the local ones."
+            )
+        else:
+            message = (
+                f"Could not give these tests their own database and Redis ({reason}). "
+                f"Set {ENV_VAR}={SHARED} to run them against the local database and "
+                "Redis instead, which resets any local debug server."
+            )
+        super().__init__(message)
 
 
 class IsolatedEnvironment:
@@ -155,33 +172,39 @@ class IsolatedEnvironment:
     stop its Redis server.
     """
 
-    def __init__(self, env, port_lock=None, redis_process=None, redis_dir=None):
+    def __init__(
+        self, env, port_lock=None, redis_process=None, redis_dir=None, purpose=TEST
+    ):
         self.env = env
+        self.purpose = purpose
         self._port_lock = port_lock
         self._redis_process = redis_process
         self._redis_dir = redis_dir
 
     @classmethod
-    def start(cls, environ=None):
-        """Create the test database and start Redis; return the new environment.
+    def start(cls, environ=None, purpose=TEST):
+        """Create the database and start Redis; return the new environment.
+
+        ``purpose`` is :data:`TEST` or :data:`DEBUG`; the database is named
+        ``<database>_<purpose>_<port>``.
 
         Raises
         ------
         IsolationError
             If no free port is found, PostgreSQL can't be reached, the
-            test database can't be created or Redis doesn't start; the message
+            database can't be created or Redis doesn't start; the message
             says how to opt out. Other errors propagate unchanged, because
             opting out would not fix them.
         """
         import psycopg2
 
         try:
-            return cls._start(environ)
+            return cls._start(environ, purpose)
         except (OSError, RuntimeError, psycopg2.Error) as e:
-            raise IsolationError(e) from e
+            raise IsolationError(e, purpose) from e
 
     @classmethod
-    def _start(cls, environ):
+    def _start(cls, environ, purpose):
         environ = dict(os.environ if environ is None else environ)
         database_url = environ.get("DATABASE_URL", DEFAULT_DATABASE_URL)
         redis_url = environ.get("REDIS_URL", DEFAULT_REDIS_URL)
@@ -204,7 +227,7 @@ class IsolatedEnvironment:
                 **environ,
                 READY_ENV_VAR: "1",
                 "DATABASE_URL": ensure_database(
-                    database_url, suffix=f"_test_{base_port}"
+                    database_url, suffix=f"_{purpose}_{base_port}"
                 ),
                 "base_port": str(base_port),
                 "dallinger_develop_directory": f"/tmp/dallinger_develop_{base_port}",
@@ -214,12 +237,12 @@ class IsolatedEnvironment:
                 number = _spare_redis_database(redis_url, slot)
                 env["REDIS_URL"] = _with_redis_database(redis_url, number)
                 print(
-                    f"redis-server is not on PATH, so these tests use Redis database "
-                    f"{number} on the shared server. Live notifications can still "
-                    "reach a local debug server's participants.",
+                    f"redis-server is not on PATH, so this session uses Redis "
+                    f"database {number} on the shared server. Live notifications "
+                    "can still reach another local debug server's participants.",
                     file=sys.stderr,
                 )
-                return cls(env, port_lock)
+                return cls(env, port_lock, purpose=purpose)
 
             redis_dir = tempfile.mkdtemp(prefix="psynet-test-redis-")
             process = start_redis_server(redis_port(base_port), redis_dir)
@@ -229,11 +252,20 @@ class IsolatedEnvironment:
             port_lock.close()
             raise
         env["REDIS_URL"] = f"redis://127.0.0.1:{redis_port(base_port)}"
-        return cls(env, port_lock, process, redis_dir)
+        return cls(env, port_lock, process, redis_dir, purpose)
 
     def describe(self):
         """Return a one-line summary of where the session's services are."""
         database = urlsplit(self.env["DATABASE_URL"]).path.lstrip("/")
+        if self.purpose == DEBUG:
+            return (
+                f"This debug server uses database {database}, Redis at "
+                f"{self.env['REDIS_URL']} and port {self.env['base_port']}, so it "
+                "runs alongside other local servers and tests. To point other "
+                "local commands (such as psynet export local) at it, run:\n"
+                f"  export DATABASE_URL={self.env['DATABASE_URL']} "
+                f"REDIS_URL={self.env['REDIS_URL']} base_port={self.env['base_port']}"
+            )
         return (
             f"PsyNet tests use database {database}, Redis at {self.env['REDIS_URL']} "
             f"and port {self.env['base_port']}, so they leave the services of local "
