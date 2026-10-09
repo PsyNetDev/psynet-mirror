@@ -4951,9 +4951,11 @@ def test_local_commands_point_at_the_isolated_debug_server(tmp_path):
 
 def test_local_commands_explain_a_dropped_exported_database(monkeypatch, tmp_path):
     """A shell with a stopped isolated debug server's export line gets advice."""
-    from psynet.command_line import _read_experiment_variables
+    from urllib.parse import urlsplit, urlunsplit
 
-    url = "postgresql://dallinger:dallinger@localhost/dallinger_debug_1"
+    from psynet.command_line import _read_experiment_variables, db
+
+    url = urlunsplit(urlsplit(db.db_url)._replace(path="/dallinger_debug_1"))
     monkeypatch.setenv("DATABASE_URL", url)
     monkeypatch.setattr("psynet.command_line.db.db_url", url)
     monkeypatch.chdir(tmp_path)
