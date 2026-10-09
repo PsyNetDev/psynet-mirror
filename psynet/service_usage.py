@@ -93,10 +93,15 @@ class RedisServer:
 
 @dataclass
 class Database:
-    """A PostgreSQL database and its open connection count."""
+    """A PostgreSQL database, its open connection count and recorded directory.
+
+    ``directory`` is the experiment directory that an isolated debug server
+    recorded on its database, or ``""``.
+    """
 
     name: str
     connections: int
+    directory: str = ""
 
 
 def _session_command(cmdline):
@@ -233,13 +238,29 @@ def find_databases():
     """Return the non-template databases with their open connection counts."""
     with _cursor() as cursor:
         cursor.execute(
-            "SELECT d.datname, count(a.pid) FROM pg_database d "
+            "SELECT d.datname, count(a.pid), "
+            "shobj_description(d.oid, 'pg_database') FROM pg_database d "
             "LEFT JOIN pg_stat_activity a "
             "ON a.datname = d.datname AND a.pid <> pg_backend_pid() "
             "WHERE NOT d.datistemplate AND d.datname <> 'postgres' "
-            "GROUP BY d.datname ORDER BY d.datname"
+            "GROUP BY d.datname, d.oid ORDER BY d.datname"
         )
-        return [Database(name, count) for name, count in cursor.fetchall()]
+        return [
+            Database(name, count, directory=_debug_directory(name, comment))
+            for name, count, comment in cursor.fetchall()
+        ]
+
+
+def _debug_directory(database_name, comment):
+    """Return the experiment directory recorded on an isolated debug database."""
+    parts = _isolated_database(database_name)
+    return comment or "" if parts and parts[1] == DEBUG else ""
+
+
+def _describe_database(database):
+    return database.name + (
+        f" (from {database.directory})" if database.directory else ""
+    )
 
 
 def _isolated_database(database_name):
@@ -335,7 +356,9 @@ def _report(sessions, redis_servers, databases):
     click.echo("\nDatabases:")
     for d in databases:
         connections = _count(d.connections, "connection")
-        click.echo(f"  {d.name}  {connections}  {_database_users(d, sessions)}")
+        click.echo(
+            f"  {_describe_database(d)}  {connections}  {_database_users(d, sessions)}"
+        )
 
 
 def _count(number, noun):
@@ -543,7 +566,7 @@ def _clean_interactively(include_debug_data, assume_yes):
         return
     click.echo("\nLeftovers of ended test and debug sessions:")
     for d in stale_databases:
-        click.echo(f"  database {d.name}")
+        click.echo(f"  database {_describe_database(d)}")
     for folder in stale_folders:
         click.echo(f"  Redis folder {folder}")
     if not assume_yes and not sys.stdin.isatty():

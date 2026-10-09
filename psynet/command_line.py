@@ -455,11 +455,12 @@ def _check_debug_server_uses_this_database():
     )
 
     server = debug_server_environment(os.getcwd())
+    ours = urlsplit(db.db_url).path
     if server is None:
+        _mention_stopped_debug_servers(ours)
         return
     pid, environ = server
     theirs = urlsplit(environ.get("DATABASE_URL", DEFAULT_DATABASE_URL)).path
-    ours = urlsplit(db.db_url).path
     if theirs == ours:
         return
     raise click.ClickException(
@@ -467,6 +468,30 @@ def _check_debug_server_uses_this_database():
         f"{theirs.lstrip('/')}, but this command would use {ours.lstrip('/')}. "
         f"{export_advice(environ)}"
     )
+
+
+def _mention_stopped_debug_servers(database_path):
+    """Say how to reach this directory's stopped isolated debug servers, if any.
+
+    A shell without their ``export`` line reads ``database_path`` instead.
+    """
+    from .isolated_environment import export_advice, stopped_debug_server_environments
+
+    try:
+        stopped = stopped_debug_server_environments(os.getcwd())
+    except RuntimeError as e:
+        logger.warning(f"Could not look for isolated debug databases: {e}")
+        return
+    others = [
+        env for env in stopped if urlsplit(env["DATABASE_URL"]).path != database_path
+    ]
+    for env in others:
+        database = urlsplit(env["DATABASE_URL"]).path.lstrip("/")
+        log(
+            f"This command reads {database_path.lstrip('/')}, but an isolated "
+            f"debug server for this experiment left data in {database}. "
+            f"{export_advice(env)}"
+        )
 
 
 def _exported_redis_has_stopped():
@@ -4280,7 +4305,7 @@ def _rerun_in_isolated_environment(purpose):
     shared = without_session_settings(os.environ)
     if shared != dict(os.environ):
         log(
-            "Ignoring the exported settings of an earlier isolated session; "
+            "Ignoring the exported settings of another isolated session; "
             "this session starts from the shared ones."
         )
         for key in ("DATABASE_URL", "REDIS_URL", "base_port"):
@@ -5030,6 +5055,12 @@ def _run_performance_test_with_new_server(
     n_bots, stagger, time_factor, duration_minutes, debug, json_output=None
 ):
     """Run performance test after starting a new experiment server"""
+    from .isolated_environment import check_no_debug_server
+
+    try:
+        check_no_debug_server(os.getcwd())
+    except RuntimeError as e:
+        raise click.ClickException(str(e)) from e
     # Prefer legacy debug: gunicorn with several workers is closer to a deployed
     # server than the auto-reload develop path used by normal
     # ``psynet debug local``.

@@ -205,7 +205,7 @@ can see only your own PsyNet, Dallinger and pytest processes, but the port
 check also covers other users' isolated sessions. The ``*_debug_<port>``
 databases of stopped ``psynet debug local --isolated`` servers are kept so
 that you can still export them; add ``--include-debug-data`` to drop those
-too. ``--clean`` lists what it would remove and asks first. Pass ``--yes``
+too. The list names the experiment directory each one came from. ``--clean`` lists what it would remove and asks first. Pass ``--yes``
 to skip the question, which you must do where nobody can answer it, such as
 in a script.
 

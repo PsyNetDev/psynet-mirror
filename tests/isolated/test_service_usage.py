@@ -201,3 +201,19 @@ def test_yes_needs_clean():
 
     assert result.exit_code == 2
     assert "only work with --clean" in result.output
+
+
+def test_find_databases_reads_a_debug_databases_directory(tmp_path):
+    from psynet.service_usage import _cursor
+
+    name = "psynet_services_debug_6990"
+    with _cursor() as cursor:
+        cursor.execute(f"DROP DATABASE IF EXISTS {name}")
+        cursor.execute(f"CREATE DATABASE {name}")
+        cursor.execute(f"COMMENT ON DATABASE {name} IS %s", (str(tmp_path),))
+    try:
+        found = next(d for d in find_databases() if d.name == name)
+        assert found.directory == str(tmp_path)
+    finally:
+        with _cursor() as cursor:
+            cursor.execute(f"DROP DATABASE IF EXISTS {name}")

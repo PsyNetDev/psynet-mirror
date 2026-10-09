@@ -5168,3 +5168,18 @@ def test_debug_reloader_skips_checkout_tests_demos_and_docs():
     for folder in ["demos", "tests", "docs"]:
         assert f"{root / folder}{os.sep}*" in patterns
     assert not any(p.startswith(f"{root / 'psynet'}") for p in patterns)
+
+
+def test_performance_test_refuses_a_directory_that_a_debug_server_serves():
+    from psynet.command_line import _run_performance_test_with_new_server
+
+    with (
+        patch(
+            "psynet.isolated_environment.check_no_debug_server",
+            side_effect=RuntimeError("psynet debug (PID 7) is serving here"),
+        ),
+        patch("psynet.command_line._start_local_server_and_wait_for_ready") as start,
+        pytest.raises(click.ClickException, match="PID 7"),
+    ):
+        _run_performance_test_with_new_server("2", 0, 1, 1, False)
+    start.assert_not_called()
