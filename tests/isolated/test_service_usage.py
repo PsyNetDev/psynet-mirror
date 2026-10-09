@@ -111,11 +111,11 @@ def test_leftovers_are_unused_session_databases_and_folders():
         sessions, redis_servers, databases, folders, in_use={"dallinger_test_5140"}
     )
 
-    assert [d.name for d in stale_databases] == ["dallinger_test_5110"]
+    assert [d.name for d in stale_databases] == [
+        "dallinger_test_5110",
+        "dallinger_debug_5130",
+    ]
     assert stale_folders == ["/tmp/psynet-debug-redis-gone"]
-
-    stale_databases, _ = leftovers(sessions, [], databases, include_debug_data=True)
-    assert "dallinger_debug_5130" in [d.name for d in stale_databases]
 
     unknown = RedisServer(4, 6440, "", own=True, clients=0)
     _, stale_folders = leftovers(sessions, [*redis_servers, unknown], [], folders)
@@ -201,20 +201,4 @@ def test_yes_needs_clean():
     result = CliRunner().invoke(services_list, ["--yes"])
 
     assert result.exit_code == 2
-    assert "only work with --clean" in result.output
-
-
-def test_find_databases_reads_a_debug_databases_directory(tmp_path):
-    from psynet.service_usage import _cursor
-
-    name = "psynet_services_debug_6990"
-    with _cursor() as cursor:
-        cursor.execute(f"DROP DATABASE IF EXISTS {name}")
-        cursor.execute(f"CREATE DATABASE {name}")
-        cursor.execute(f"COMMENT ON DATABASE {name} IS %s", (str(tmp_path),))
-    try:
-        found = next(d for d in find_databases() if d.name == name)
-        assert found.directory == str(tmp_path)
-    finally:
-        with _cursor() as cursor:
-            cursor.execute(f"DROP DATABASE IF EXISTS {name}")
+    assert "only works with --clean" in result.output

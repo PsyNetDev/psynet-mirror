@@ -191,34 +191,24 @@ def services_ensure(assume_yes):
     "--clean",
     "clean_leftovers",
     is_flag=True,
-    help="Remove the databases and Redis folders of ended isolated test sessions.",
-)
-@click.option(
-    "--include-debug-data",
-    is_flag=True,
-    help="With --clean, also drop the databases of stopped isolated debug servers.",
+    help="Remove the databases and Redis folders of ended isolated sessions.",
 )
 @click.option("--yes", "assume_yes", is_flag=True, help="Clean without prompting.")
-def services_list(clean_leftovers, include_debug_data, assume_yes):
+def services_list(clean_leftovers, assume_yes):
     """Show which local sessions use which ports, databases and Redis servers.
 
     Reads the settings of your running PsyNet, Dallinger and pytest processes.
-    With --clean, also removes the databases (dallinger_test_<port>) and
-    Redis folders left over from ended isolated test sessions on a local
-    PostgreSQL server. The databases of stopped debug servers
-    (dallinger_debug_<port>) are kept for 'psynet export local' unless you add
-    --include-debug-data. CI slot databases (*_slot<n>) are kept for reuse.
+    With --clean, also removes the databases (dallinger_test_<port>,
+    dallinger_debug_<port>) and Redis folders left over from ended isolated
+    test and debug sessions on a local PostgreSQL server. CI slot databases
+    (*_slot<n>) are kept for reuse.
     """
     from psynet.service_usage import list_services
 
-    if (assume_yes or include_debug_data) and not clean_leftovers:
-        raise click.UsageError("--yes and --include-debug-data only work with --clean.")
+    if assume_yes and not clean_leftovers:
+        raise click.UsageError("--yes only works with --clean.")
 
-    list_services(
-        clean_leftovers=clean_leftovers,
-        assume_yes=assume_yes,
-        include_debug_data=include_debug_data,
-    )
+    list_services(clean_leftovers=clean_leftovers, assume_yes=assume_yes)
 
 
 @click.command("generate-constraints")

@@ -14,8 +14,7 @@ and debug session holds is the reliable sign that its database is in use.
 
 ``psynet services list`` prints the result. With ``--clean`` it removes
 leftovers of isolated sessions that have ended: databases named
-``<base>_test_<port>`` (and, if asked, ``<base>_debug_<port>``), where
-``<base>`` is ``dallinger`` or this shell's database, and Redis folders that no
+``<base>_test_<port>`` and ``<base>_debug_<port>``, where ``<base>`` is ``dallinger`` or this shell's database, and Redis folders that no
 ``redis-server`` runs in. It never stops processes, and it skips databases
 with connections, databases that a visible session or this shell uses, and
 databases whose port lock is held, which it holds itself while dropping. It
@@ -93,15 +92,10 @@ class RedisServer:
 
 @dataclass
 class Database:
-    """A PostgreSQL database, its open connection count and recorded directory.
-
-    ``directory`` is the experiment directory that an isolated debug server
-    recorded on its database, or ``""``.
-    """
+    """A PostgreSQL database and its open connection count."""
 
     name: str
     connections: int
-    directory: str = ""
 
 
 def _session_command(cmdline):
@@ -238,29 +232,13 @@ def find_databases():
     """Return the non-template databases with their open connection counts."""
     with _cursor() as cursor:
         cursor.execute(
-            "SELECT d.datname, count(a.pid), "
-            "shobj_description(d.oid, 'pg_database') FROM pg_database d "
+            "SELECT d.datname, count(a.pid) FROM pg_database d "
             "LEFT JOIN pg_stat_activity a "
             "ON a.datname = d.datname AND a.pid <> pg_backend_pid() "
             "WHERE NOT d.datistemplate AND d.datname <> 'postgres' "
-            "GROUP BY d.datname, d.oid ORDER BY d.datname"
+            "GROUP BY d.datname ORDER BY d.datname"
         )
-        return [
-            Database(name, count, directory=_debug_directory(name, comment))
-            for name, count, comment in cursor.fetchall()
-        ]
-
-
-def _debug_directory(database_name, comment):
-    """Return the experiment directory recorded on an isolated debug database."""
-    parts = _isolated_database(database_name)
-    return comment or "" if parts and parts[1] == DEBUG else ""
-
-
-def _describe_database(database):
-    return database.name + (
-        f" (from {database.directory})" if database.directory else ""
-    )
+        return [Database(name, count) for name, count in cursor.fetchall()]
 
 
 def _isolated_database(database_name):
@@ -356,9 +334,7 @@ def _report(sessions, redis_servers, databases):
     click.echo("\nDatabases:")
     for d in databases:
         connections = _count(d.connections, "connection")
-        click.echo(
-            f"  {_describe_database(d)}  {connections}  {_database_users(d, sessions)}"
-        )
+        click.echo(f"  {d.name}  {connections}  {_database_users(d, sessions)}")
 
 
 def _count(number, noun):
@@ -399,7 +375,6 @@ def leftovers(
     databases,
     redis_folders=(),
     *,
-    include_debug_data=False,
     in_use=(),
     bases=("dallinger",),
 ):
@@ -408,8 +383,7 @@ def leftovers(
     ``in_use`` names further databases to keep, such as this shell's own.
     Only isolated databases named after one of ``bases`` count, so that a
     look-alike such as ``booking_test_6000`` is kept.
-    Debug databases are kept for ``psynet export local`` unless
-    ``include_debug_data`` is set. A Redis folder is left over once no
+    A Redis folder is left over once no
     ``redis-server`` runs in it, for example after its session was killed
     with SIGKILL. No folder counts as left over while one of the user's Redis
     servers runs in an unknown folder.
@@ -419,8 +393,6 @@ def leftovers(
     for d in databases:
         parts = _isolated_database(d.name)
         if parts is None or parts[0] not in bases:
-            continue
-        if parts[1] == DEBUG and not include_debug_data:
             continue
         if d.connections == 0 and d.name not in used:
             stale_databases.append(d)
@@ -495,7 +467,7 @@ def _clean(stale_databases, stale_folders):
     return failures
 
 
-def _find_leftovers(include_debug_data):
+def _find_leftovers():
     """Return what ``--clean`` would remove now, skipping claimed session ports."""
     own = _database_name(os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL))
     bases = {_database_name(DEFAULT_DATABASE_URL), _base_database(own)}
@@ -504,7 +476,6 @@ def _find_leftovers(include_debug_data):
         find_redis_servers(),
         find_databases(),
         find_redis_folders(),
-        include_debug_data=include_debug_data,
         in_use={own},
         bases=bases,
     )
@@ -516,7 +487,7 @@ def _find_leftovers(include_debug_data):
     return stale_databases, stale_folders
 
 
-def list_services(*, clean_leftovers, assume_yes, include_debug_data=False):
+def list_services(*, clean_leftovers, assume_yes):
     """Implement ``psynet services list``."""
     try:
         import psutil  # noqa: F401
@@ -546,7 +517,7 @@ def list_services(*, clean_leftovers, assume_yes, include_debug_data=False):
             f"points at {host}, whose other users this computer can't see."
         )
     try:
-        _clean_interactively(include_debug_data, assume_yes)
+        _clean_interactively(assume_yes)
     except psycopg2.Error as e:
         raise click.ClickException(f"PostgreSQL failed while cleaning: {e}") from e
 
@@ -558,15 +529,15 @@ def _database_host():
     return urlparse(_postgres_url()).hostname or ""
 
 
-def _clean_interactively(include_debug_data, assume_yes):
+def _clean_interactively(assume_yes):
     """List the leftovers, ask for confirmation, then remove those still left over."""
-    stale_databases, stale_folders = _find_leftovers(include_debug_data)
+    stale_databases, stale_folders = _find_leftovers()
     if not (stale_databases or stale_folders):
         click.echo("\nNo leftovers of ended test or debug sessions to clean.")
         return
     click.echo("\nLeftovers of ended test and debug sessions:")
     for d in stale_databases:
-        click.echo(f"  database {_describe_database(d)}")
+        click.echo(f"  database {d.name}")
     for folder in stale_folders:
         click.echo(f"  Redis folder {folder}")
     if not assume_yes and not sys.stdin.isatty():
@@ -576,7 +547,7 @@ def _clean_interactively(include_debug_data, assume_yes):
     if not (assume_yes or click.confirm("Remove them?", default=False)):
         return
     # Sessions may have started while the question was open.
-    now_databases, now_folders = _find_leftovers(include_debug_data)
+    now_databases, now_folders = _find_leftovers()
     now_names = {d.name for d in now_databases}
     failures = _clean(
         [d for d in stale_databases if d.name in now_names],
