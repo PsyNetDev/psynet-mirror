@@ -51,7 +51,7 @@ import click
 from psynet.isolated_environment import (
     DEFAULT_DATABASE_URL,
     READY_ENV_VAR,
-    ensure_database,
+    create_database,
     start_redis_server,
     stop_process,
 )
@@ -170,9 +170,7 @@ class _Slot:
             _caller_base_port(), os.environ.get("REDIS_URL", ""), index
         )
         self.env[READY_ENV_VAR] = "1"
-        self.env["DATABASE_URL"] = ensure_database(
-            database_url, suffix=f"_slot{index}", fresh=True
-        )
+        self.env["DATABASE_URL"] = create_database(database_url, suffix=f"_slot{index}")
         self.env["REDIS_URL"] = self._start_redis(redis_port, workspace)
         self.env["base_port"] = str(base_port)
         self.env["dallinger_develop_directory"] = (

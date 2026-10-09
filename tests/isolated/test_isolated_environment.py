@@ -31,40 +31,6 @@ from psynet.isolated_environment import (
 )
 
 
-@pytest.fixture
-def drop_new_databases(monkeypatch):
-    """Drop the databases that the test's isolated environments create.
-
-    Only those: other sessions may create databases meanwhile.
-    """
-    import psycopg2
-    from psycopg2 import sql
-
-    started = []
-    original_start = IsolatedEnvironment.start.__func__
-
-    def start(cls, *args, **kwargs):
-        environment = original_start(cls, *args, **kwargs)
-        started.append(urlsplit(environment.env["DATABASE_URL"]).path.lstrip("/"))
-        return environment
-
-    monkeypatch.setattr(IsolatedEnvironment, "start", classmethod(start))
-
-    connection = psycopg2.connect(os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL))
-    connection.autocommit = True
-    try:
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT datname FROM pg_database")
-            before = {name for (name,) in cursor.fetchall()}
-            yield
-            for name in set(started) - before:
-                cursor.execute(
-                    sql.SQL("DROP DATABASE IF EXISTS {}").format(sql.Identifier(name))
-                )
-    finally:
-        connection.close()
-
-
 def test_should_isolate_respects_opt_out_and_ci():
     assert should_isolate({})
     assert should_isolate({ENV_VAR: "isolated"})
@@ -185,7 +151,7 @@ def test_children_stop_when_their_caller_is_killed(tmp_path):
 
 
 @pytest.mark.skipif(shutil.which("redis-server") is None, reason="needs redis-server")
-def test_isolated_environment_uses_its_own_services(drop_new_databases):
+def test_isolated_environment_uses_its_own_services():
     url = urlsplit(os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL))
     database = re.sub(r"_(test|debug)_\d+$", "", url.path.lstrip("/"))
     shared = {
@@ -204,6 +170,7 @@ def test_isolated_environment_uses_its_own_services(drop_new_databases):
         assert urlsplit(first.env["DATABASE_URL"]).path == f"/{database}_test_{port}"
         debug_port = second.env["base_port"]
         assert second.env["DATABASE_URL"].endswith(f"/{database}_debug_{debug_port}")
+        assert _database_exists(shared, first.env["DATABASE_URL"])
         assert _database_exists(shared, second.env["DATABASE_URL"])
         assert f"export DATABASE_URL={second.env['DATABASE_URL']}" in second.describe()
         redis_port = int(first.env["REDIS_URL"].rsplit(":", 1)[1])
@@ -214,7 +181,7 @@ def test_isolated_environment_uses_its_own_services(drop_new_databases):
     with pytest.raises(OSError):
         socket.create_connection(("127.0.0.1", redis_port), timeout=1).close()
     assert not develop_directory.exists()
-    assert _database_exists(shared, first.env["DATABASE_URL"])
+    assert not _database_exists(shared, first.env["DATABASE_URL"])
     assert not _database_exists(shared, second.env["DATABASE_URL"])
     assert "were removed" in second.stopped_message()
 
@@ -235,9 +202,7 @@ def _database_exists(shared, database_url):
 
 
 @pytest.mark.skipif(shutil.which("redis-server") is None, reason="needs redis-server")
-def test_isolated_environment_skips_ports_whose_redis_port_is_taken(
-    drop_new_databases,
-):
+def test_isolated_environment_skips_ports_whose_redis_port_is_taken():
     with IsolatedEnvironment.start() as probe:
         web_port, redis_url = probe.env["base_port"], probe.env["REDIS_URL"]
     redis_port = int(redis_url.rsplit(":", 1)[1])
