@@ -406,17 +406,17 @@ def db_connection(location, app=None, server=None):
                 f"Couldn't connect to the experiment database. Are you sure the app name ({app}) is correct? "
                 "You can list all valid apps using the following command:\n\tpsynet apps ssh"
             )
+        port = os.environ.get("base_port")
         if (
             location == "local"
-            and "DATABASE_URL" in os.environ
             and "does not exist" in str(err)
+            and urlsplit(db.db_url).path.endswith(f"_debug_{port}")
         ):
-            database = urlsplit(db.db_url).path.lstrip("/")
             raise click.ClickException(
-                f"Database {database} does not exist. If you exported DATABASE_URL "
-                "for a psynet debug local --isolated server, that server has "
-                "stopped; run 'unset DATABASE_URL REDIS_URL base_port' to use "
-                "your local services instead."
+                "This shell still points at the psynet debug local --isolated "
+                f"server on port {port}, which has stopped. To go back to your "
+                "local database and Redis, run:\n"
+                "  unset DATABASE_URL REDIS_URL base_port"
             ) from err
         raise
     finally:

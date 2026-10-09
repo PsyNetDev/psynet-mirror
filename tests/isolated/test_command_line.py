@@ -5057,13 +5057,16 @@ def test_local_commands_explain_a_dropped_exported_database(monkeypatch, tmp_pat
 
     from psynet.command_line import _read_experiment_variables, db
 
-    url = urlunsplit(urlsplit(db.db_url)._replace(path="/dallinger_debug_1"))
+    url = urlunsplit(urlsplit(db.db_url)._replace(path="/dallinger_debug_5990"))
     monkeypatch.setenv("DATABASE_URL", url)
+    monkeypatch.setenv("base_port", "5990")
     monkeypatch.setattr("psynet.command_line.db.db_url", url)
     monkeypatch.chdir(tmp_path)
 
-    with pytest.raises(click.ClickException, match="unset DATABASE_URL REDIS_URL"):
+    with pytest.raises(click.ClickException) as error:
         _read_experiment_variables("local")
+    assert "server on port 5990, which has stopped" in str(error.value)
+    assert "unset DATABASE_URL REDIS_URL base_port" in str(error.value)
 
 
 def test_debug_isolated_reruns_once_and_rejects_docker(monkeypatch):
