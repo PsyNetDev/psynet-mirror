@@ -356,9 +356,8 @@ class IsolatedEnvironment:
                 + export_advice(self.env)
             )
         return (
-            f"PsyNet tests use database {database}, Redis at {self.env['REDIS_URL']} "
-            f"and port {self.env['base_port']}, so they leave the services of local "
-            f"debug servers alone (set {ENV_VAR}={SHARED} to share them instead)."
+            f"Using database {database}, Redis at {self.env['REDIS_URL']}, "
+            f"and port {self.env['base_port']}."
         )
 
     def stopped_message(self):
