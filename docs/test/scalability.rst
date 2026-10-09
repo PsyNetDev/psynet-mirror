@@ -118,12 +118,12 @@ local --sql-profile``; see :doc:`/test/sqlalchemy_profiling`.
 Finding the server's capacity
 -----------------------------
 
-Run a sweep of bot counts to find the largest number the server handles
-well:
+``--n-bots auto`` searches for the largest number of bots the server handles
+well, so you don't have to guess a list of counts:
 
 .. code-block:: bash
 
-    psynet performance-test local --n-bots 10,20,40,80 --time-factor 1 --duration-minutes 3
+    psynet performance-test local --n-bots auto --time-factor 1 --duration-minutes 3
 
 A test counts as within capacity if no request or bot errors occur and both
 of these stay within their limits:
@@ -153,6 +153,11 @@ and on throughput of one job at a time per process. The async section of
 the report shows the number of worker processes and how many jobs they can
 run at once.
 
+The search starts at 10 bots and doubles the count until a test fails, then
+halves the gap between the largest passing and smallest failing counts until
+they are within 10% of each other, so it usually runs six to ten tests. It
+stops at 2,000 bots.
+
 The summary at the end of every run reports the capacity it found and, once a
 larger bot count has exceeded the limits, suggests a cap of 80% of it, for
 example::
@@ -160,7 +165,7 @@ example::
     Capacity: about 160 concurrent bots kept p95 response time under 500 ms, p95 async queue wait under 5 s and no errors; 170 did not (p95 response time 622 ms).
     Suggested max_concurrent_participants: 128 (80% of 160)
 
-Run the sweep on the server you will deploy to, with ``--time-factor 1`` so
+Run the search on the server you will deploy to, with ``--time-factor 1`` so
 that bots work at a realistic pace; bots with ``--time-factor 0`` load the
 server far more than people do. Each test's measurement window includes the
 time bots take to start (about 10 per second by default), so use a
@@ -202,10 +207,12 @@ audit, use ``psynet audit performance-test`` instead. It runs locally, takes
 the same load options and ``--existing``, and writes
 ``audit/artifacts/performance.json`` for the audit's *Performance test*
 section. That section marks each tested bot count as within limits or not,
-using the same response-time and queue-wait limits as the summary, and
-reminds readers that participant numbers for a study must come from
-``psynet performance-test ssh`` on the deployment server.
+using the same response-time and queue-wait limits as the capacity search,
+and reminds readers that participant numbers for a study must come from
+``psynet performance-test ssh`` on the deployment server, with
+``--n-bots auto`` to find the largest number it handles.
 
 A typical sequence is a local sweep to see how response times grow with
 load, then more worker processes or faster queries where needed, then a
-sweep on the real server to choose the participant cap.
+capacity search (``--n-bots auto``) on the real server to choose the
+participant cap.

@@ -4570,8 +4570,9 @@ def test_performance_test_bot_counts():
     from psynet.command_line import _validate_performance_n_bots
 
     assert _validate_performance_n_bots(None, None, None) is None
+    assert _validate_performance_n_bots(None, None, " AUTO ") == "auto"
     assert _validate_performance_n_bots(None, None, "5, 10") == [5, 10]
-    for invalid in ["auto", "10,many", "", " ", "0", "-1", "0,10"]:
+    for invalid in ["10,many", "", " ", "0", "-1", "0,10"]:
         with pytest.raises(click.BadParameter, match="whole numbers"):
             _validate_performance_n_bots(None, None, invalid)
 
