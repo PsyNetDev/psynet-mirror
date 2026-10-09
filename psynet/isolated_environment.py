@@ -353,10 +353,6 @@ class IsolatedEnvironment:
             summary += "\n" + export_advice(self.env)
         return summary
 
-    def stopped_message(self):
-        """Return what to tell the user once a debug server has stopped."""
-        return f"The debug server on port {self.env['base_port']} has stopped."
-
     def close(self):
         """Stop the session's Redis server and drop its database."""
         if self._redis_process is not None:
