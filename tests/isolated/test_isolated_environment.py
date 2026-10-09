@@ -32,22 +32,32 @@ from psynet.isolated_environment import (
 
 
 @pytest.fixture
-def drop_new_databases():
-    """Drop the databases that the test creates."""
+def drop_new_databases(monkeypatch):
+    """Drop the databases that the test's isolated environments create.
+
+    Only those: other sessions may create databases meanwhile.
+    """
     import psycopg2
     from psycopg2 import sql
 
-    def names(cursor):
-        cursor.execute("SELECT datname FROM pg_database")
-        return {name for (name,) in cursor.fetchall()}
+    started = []
+    original_start = IsolatedEnvironment.start.__func__
+
+    def start(cls, *args, **kwargs):
+        environment = original_start(cls, *args, **kwargs)
+        started.append(urlsplit(environment.env["DATABASE_URL"]).path.lstrip("/"))
+        return environment
+
+    monkeypatch.setattr(IsolatedEnvironment, "start", classmethod(start))
 
     connection = psycopg2.connect(os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL))
     connection.autocommit = True
     try:
         with connection.cursor() as cursor:
-            before = names(cursor)
+            cursor.execute("SELECT datname FROM pg_database")
+            before = {name for (name,) in cursor.fetchall()}
             yield
-            for name in names(cursor) - before:
+            for name in set(started) - before:
                 cursor.execute(
                     sql.SQL("DROP DATABASE IF EXISTS {}").format(sql.Identifier(name))
                 )
@@ -61,6 +71,7 @@ def test_should_isolate_respects_opt_out_and_ci():
     assert not should_isolate({ENV_VAR: "shared"})
     assert not should_isolate({READY_ENV_VAR: "1"})
     assert not should_isolate({"CI": "true"})
+    assert should_isolate({"CI": "false"})
     with pytest.raises(ValueError, match="'isolated'.*'shared'.*'bogus'"):
         should_isolate({ENV_VAR: "bogus"})
 
@@ -92,18 +103,31 @@ def test_shared_environment_warns_once():
 def test_sessions_refuse_a_directory_that_a_debug_server_serves(
     tmp_path, purpose, newcomer
 ):
+    """A user's debug server is refused; one that a test session started isn't."""
+    from psynet.testing.locks import HELD_LOCK_ENV_VAR
+
     fake_psynet = tmp_path / "psynet"
     fake_psynet.write_text("import time\ntime.sleep(60)\n")
-    process = subprocess.Popen(
-        [sys.executable, str(fake_psynet), "debug", "local"], cwd=tmp_path
-    )
+    shell = {k: v for k, v in os.environ.items() if k != HELD_LOCK_ENV_VAR}
+
+    def spawn(env):
+        return subprocess.Popen(
+            [sys.executable, str(fake_psynet), "debug", "local"], cwd=tmp_path, env=env
+        )
+
+    test_server = spawn({**shell, HELD_LOCK_ENV_VAR: str(tmp_path)})
+    processes = [test_server]
     try:
+        time.sleep(0.5)
+        check_no_debug_server(tmp_path, purpose)
+        user_server = spawn(shell)
+        processes.append(user_server)
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline:
             try:
                 check_no_debug_server(tmp_path, purpose)
             except RuntimeError as e:
-                assert f"PID {process.pid}" in str(e)
+                assert f"PID {user_server.pid}" in str(e)
                 assert f"{newcomer} would replace" in str(e)
                 break
             time.sleep(0.1)
@@ -111,8 +135,9 @@ def test_sessions_refuse_a_directory_that_a_debug_server_serves(
             pytest.fail("the debug process was not detected")
         check_no_debug_server(tmp_path / "..")
     finally:
-        process.kill()
-        process.wait()
+        for process in processes:
+            process.kill()
+            process.wait()
 
 
 def test_a_debug_server_is_not_refused_by_its_own_wrapper(tmp_path):
@@ -216,8 +241,9 @@ def test_spare_redis_databases_avoid_the_shared_one():
     assert _spare_redis_database("redis://localhost:6379/1", 0) == 0
 
 
-def test_a_failed_debug_start_says_to_drop_isolated():
-    assert "without --isolated" in str(IsolationError("no port", DEBUG))
+def test_a_failed_debug_start_warns_what_dropping_isolated_does():
+    message = str(IsolationError("no port", DEBUG))
+    assert "Without --isolated" in message and "resets them" in message
 
 
 def test_a_failed_start_explains_how_to_opt_out():

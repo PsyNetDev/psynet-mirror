@@ -440,7 +440,6 @@ def _check_debug_server_uses_this_database():
         DEFAULT_DATABASE_URL,
         debug_server_environment,
         export_advice,
-        is_isolated_debug_server,
     )
 
     server = debug_server_environment(os.getcwd())
@@ -451,27 +450,29 @@ def _check_debug_server_uses_this_database():
     ours = urlsplit(db.db_url).path
     if theirs == ours:
         return
-    if is_isolated_debug_server(environ):
-        advice = export_advice(environ)
-    else:
-        advice = "To use its database, run: unset DATABASE_URL REDIS_URL base_port"
     raise click.ClickException(
         f"psynet debug (PID {pid}) serves this directory with database "
         f"{theirs.lstrip('/')}, but this command would use {ours.lstrip('/')}. "
-        f"{advice}"
+        f"{export_advice(environ)}"
     )
 
 
-def _check_exported_redis_is_running():
-    """Fail clearly if ``REDIS_URL`` points at a Redis server that isn't running."""
+def _exported_redis_has_stopped():
+    """Return whether an exported ``REDIS_URL`` no longer answers, saying so if it doesn't.
+
+    This happens after a ``psynet debug local --isolated`` server stops: its
+    Redis server stops with it, but its database stays.
+    """
     from .services import check_redis
 
-    if "REDIS_URL" in os.environ and not check_redis().ok:
-        raise click.ClickException(
-            f"Nothing answers at REDIS_URL={os.environ['REDIS_URL']}. If it "
-            "belonged to a psynet debug local --isolated server that has "
-            "stopped, run 'unset REDIS_URL base_port' and keep DATABASE_URL."
-        )
+    if "REDIS_URL" not in os.environ or check_redis().ok:
+        return False
+    log(
+        f"Nothing answers at REDIS_URL={os.environ['REDIS_URL']}, as after a "
+        "psynet debug local --isolated server stops, so this reads the database "
+        "without the stopped server's settings."
+    )
+    return True
 
 
 @psynet.command("db")
@@ -1159,7 +1160,9 @@ def _load_runtime_server_config(config=None, deployment_id=None):
 
     # The debug server runs from Dallinger's generated development directory,
     # whose config.txt includes runtime values such as dashboard credentials.
-    server_working_directory = redis_vars.get("server_working_directory", None)
+    server_working_directory = None
+    if not _exported_redis_has_stopped():
+        server_working_directory = redis_vars.get("server_working_directory", None)
     if server_working_directory:
         config.load_from_file(os.path.join(server_working_directory, "config.txt"))
         return config
@@ -3085,7 +3088,6 @@ def export__local(ctx=None, **kwargs):
     """
     Export the experiment locally.
     """
-    _check_exported_redis_is_running()
     export_(
         ctx,
         get_exp_variables=lambda: _read_experiment_variables("local"),
@@ -4186,35 +4188,45 @@ def _rerun_in_isolated_environment(purpose):
                 preexec_fn=sigterm_on_caller_exit(),
             )
         )
-    sys.exit(exit_code)
+    # A child killed by signal N reports -N; shells report 128 + N.
+    sys.exit(exit_code if exit_code >= 0 else 128 - exit_code)
 
 
 def _wait_forwarding_signals(process):
-    """Wait for ``process`` and return its exit code, passing SIGTERM and SIGHUP on.
+    """Wait for ``process`` and return its exit code, passing signals on.
 
     A signal sent to this PID alone would otherwise leave the child's servers
-    running. SIGINT is not forwarded: Ctrl+C in a terminal already reaches the
-    child through the foreground process group, so this process just waits
-    for it to stop its servers. Must be called from the main thread.
+    running. Ctrl+C in a terminal already reaches the child through the
+    foreground process group, so SIGINT is only forwarded when this process
+    isn't in the terminal's foreground, as with ``kill -INT``. Must be called
+    from the main thread.
     """
 
     def forward(signum, frame):
+        if signum == signal.SIGINT and _in_terminal_foreground():
+            return
         try:
             process.send_signal(signum)
         except ProcessLookupError:
             pass
 
-    signals = (signal.SIGTERM, signal.SIGHUP)
+    signals = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
     previous = {sig: signal.signal(sig, forward) for sig in signals}
     try:
-        while True:
-            try:
-                return process.wait()
-            except KeyboardInterrupt:
-                pass
+        return process.wait()
     finally:
         for sig, previous_handler in previous.items():
             signal.signal(sig, previous_handler)
+
+
+def _in_terminal_foreground():
+    """Return whether this process is in its terminal's foreground process group."""
+    for stream in (sys.stdin, sys.stderr):
+        try:
+            return os.tcgetpgrp(stream.fileno()) == os.getpgrp()
+        except (OSError, ValueError, AttributeError):
+            continue
+    return False
 
 
 def build_remote_experiment_command(app, cmd):

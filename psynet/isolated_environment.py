@@ -64,6 +64,7 @@ import ctypes
 import fcntl
 import os
 import re
+import shlex
 import shutil
 import signal
 import socket
@@ -118,7 +119,8 @@ def shared_environment_warning(environ=None):
 
 
 def _is_configured(environ):
-    return bool(environ.get(READY_ENV_VAR) or environ.get("CI"))
+    in_ci = environ.get("CI", "").lower() not in ("", "0", "false")
+    return bool(environ.get(READY_ENV_VAR)) or in_ci
 
 
 def check_no_debug_server(directory, purpose=TEST):
@@ -126,15 +128,26 @@ def check_no_debug_server(directory, purpose=TEST):
 
     Tests and debug servers replace the generated files in the experiment
     directory, which breaks a debug server that serves it, even when the
-    services are isolated.
+    services are isolated. Servers that a test session started there are
+    skipped: that session holds the directory's lock, which tests wait for.
     """
+    import psutil
+
+    from .testing.locks import HELD_LOCK_ENV_VAR
+
     newcomer = "the tests" if purpose == TEST else "a second debug server"
+    directory = os.path.realpath(directory)
     for process in _debug_servers(directory):
+        try:
+            held_lock = process.environ().get(HELD_LOCK_ENV_VAR)
+        except (psutil.AccessDenied, psutil.NoSuchProcess, psutil.ZombieProcess):
+            held_lock = None
+        if held_lock is not None and os.path.realpath(held_lock) == directory:
+            continue
         raise RuntimeError(
-            f"psynet debug (PID {process.pid}) is serving "
-            f"{os.path.realpath(directory)}, and {newcomer} would replace its "
-            f"generated files. Stop it, or run {newcomer} from a copy of the "
-            "experiment such as a git worktree."
+            f"psynet debug (PID {process.pid}) is serving {directory}, and "
+            f"{newcomer} would replace its generated files. Stop it, or run "
+            f"{newcomer} from a copy of the experiment such as a git worktree."
         )
 
 
@@ -194,7 +207,8 @@ class IsolationError(RuntimeError):
         if purpose == DEBUG:
             message = (
                 f"Could not give this debug server its own database and Redis "
-                f"({reason}). Run it without --isolated to use the local ones."
+                f"({reason}). Without --isolated it uses the local ones instead, "
+                "which resets them and stops any other local debug server that uses them."
             )
         else:
             message = (
@@ -213,14 +227,31 @@ def is_isolated_debug_server(environ):
     )
 
 
+_SERVER_SETTINGS = ("DATABASE_URL", "REDIS_URL", "base_port")
+
+
 def export_advice(environ):
-    """Return how to point other local commands at an isolated debug server."""
-    return (
+    """Return how to point other local commands at the debug server with ``environ``.
+
+    Settings the server has are exported and those it lacks are unset, so the
+    line also works for a plain ``psynet debug local``.
+    """
+    exported = [
+        f"{k}={shlex.quote(environ[k])}" for k in _SERVER_SETTINGS if k in environ
+    ]
+    unset = [k for k in _SERVER_SETTINGS if k not in environ]
+    commands = []
+    if exported:
+        commands.append("export " + " ".join(exported))
+    if unset:
+        commands.append("unset " + " ".join(unset))
+    advice = (
         "To point other local commands (such as psynet export local) at it, run:\n"
-        f"  export DATABASE_URL={environ['DATABASE_URL']} "
-        f"REDIS_URL={environ['REDIS_URL']} base_port={environ['base_port']}\n"
-        "Its Redis server stops with it, so after it stops export only DATABASE_URL."
+        f"  {'; '.join(commands)}"
     )
+    if is_isolated_debug_server(environ):
+        advice += "\nIts database stays after it stops, and this line still reaches it."
+    return advice
 
 
 class IsolatedEnvironment:
@@ -516,6 +547,17 @@ def _port_is_free(port):
         return True
 
 
+def port_lock_path(port):
+    """Return the lock file that a session holds while it uses ``port``.
+
+    In ``/tmp`` rather than ``TMPDIR``, so that sessions with different
+    temporary directories still see each other's claims, like the
+    development folders that are also in ``/tmp``.
+    """
+    root = "/tmp" if os.access("/tmp", os.W_OK) else tempfile.gettempdir()
+    return os.path.join(root, f"psynet-test-{port}.lock")
+
+
 def _claim_port(start, also_free=None):
     """Return a free web port and an open lock file that reserves it.
 
@@ -527,9 +569,7 @@ def _claim_port(start, also_free=None):
     """
     for port in range(start, start + 1000, 10):
         try:
-            lock = open(
-                os.path.join(tempfile.gettempdir(), f"psynet-test-{port}.lock"), "w"
-            )
+            lock = open(port_lock_path(port), "w")
         except OSError:
             continue
         try:

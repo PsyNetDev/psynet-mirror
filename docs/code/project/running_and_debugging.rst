@@ -55,10 +55,11 @@ the ``export`` line that points other local commands, such as
 under the dashboard credentials. Local commands run in the served directory
 refuse to run when they would read a different database from the server. The
 database stays after the server stops, until the next ``--isolated`` server
-on the same port resets it, which that server mentions. Its Redis server
-doesn't stay, so after the server stops, export only ``DATABASE_URL``. If the
-launcher is killed outright, Linux still stops the server and its Redis
-server.
+on the same port resets it, which that server mentions, so export the data
+before another server takes the port. The ``export`` line keeps working
+after the server stops: ``psynet export local`` notices that its Redis server
+has gone and reads the database alone. If the launcher is killed outright,
+Linux still stops the server and its Redis server.
 
 Two debug servers can't share an experiment directory, because each replaces
 the generated files the other serves. ``--isolated`` refuses to start where

@@ -3,6 +3,7 @@ import importlib
 import io
 import json
 import os
+import signal
 import subprocess
 import sys
 import tempfile
@@ -4911,13 +4912,28 @@ def test_signalled_debug_process_stops_its_child_processes(tmp_path):
         time.sleep(0.1)
 
 
-def test_isolated_waiter_passes_sigterm_to_its_child(tmp_path):
-    import signal
-    import sys
-    import time
+def _wait_until_catching(pid, signum, timeout=30):
+    """Wait until process ``pid`` has a handler for ``signum`` (Linux), or briefly."""
+    status = Path(f"/proc/{pid}/status")
+    if not status.exists():
+        time.sleep(2)
+        return
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        caught = next(
+            line
+            for line in status.read_text().splitlines()
+            if line.startswith("SigCgt")
+        )
+        if int(caught.split()[1], 16) & (1 << (signum - 1)):
+            return
+        time.sleep(0.05)
+    pytest.fail(f"PID {pid} never caught signal {signum}")
 
-    import psutil
 
+@pytest.mark.parametrize("signum", [signal.SIGTERM, signal.SIGINT])
+def test_isolated_waiter_passes_signals_to_its_child(tmp_path, signum):
+    """``kill`` on the launcher's PID alone stops the child too."""
     pid_file = tmp_path / "child.pid"
     script = (
         "import subprocess, sys\n"
@@ -4926,15 +4942,18 @@ def test_isolated_waiter_passes_sigterm_to_its_child(tmp_path):
         f"open({str(pid_file)!r}, 'w').write(str(child.pid))\n"
         "sys.exit(-_wait_forwarding_signals(child))\n"
     )
-    waiter = subprocess.Popen([sys.executable, "-c", script])
+    # Outside the terminal's foreground, like a launcher stopped with kill.
+    waiter = subprocess.Popen([sys.executable, "-c", script], start_new_session=True)
     deadline = time.monotonic() + 60
     while not pid_file.exists() or not pid_file.read_text():
         assert time.monotonic() < deadline, "child process did not start"
         time.sleep(0.1)
     child_pid = int(pid_file.read_text())
+    # SIGHUP's handler is installed last.
+    _wait_until_catching(waiter.pid, signal.SIGHUP)
 
-    waiter.send_signal(signal.SIGTERM)
-    assert waiter.wait(timeout=30) == signal.SIGTERM
+    waiter.send_signal(signum)
+    assert waiter.wait(timeout=30) == signum
     assert not psutil.pid_exists(child_pid)
 
 
@@ -4988,12 +5007,16 @@ def test_local_commands_point_at_the_isolated_debug_server(tmp_path):
         launcher.wait()
 
 
-def test_export_local_says_when_the_exported_redis_has_stopped(monkeypatch):
-    from psynet.command_line import _check_exported_redis_is_running
+def test_runtime_config_skips_the_redis_of_a_stopped_server(monkeypatch, capsys):
+    """After an isolated debug server stops, its exported line still works for export."""
+    from psynet.command_line import _load_runtime_server_config
 
     monkeypatch.setenv("REDIS_URL", "redis://127.0.0.1:1")
-    with pytest.raises(click.ClickException, match="unset REDIS_URL base_port"):
-        _check_exported_redis_is_running()
+    monkeypatch.setattr("psynet.command_line.redis_vars.get", pytest.fail)
+    config = Mock(ready=True)
+
+    assert _load_runtime_server_config(config) is config
+    assert "Nothing answers at REDIS_URL=redis://127.0.0.1:1" in capsys.readouterr().out
 
 
 def test_debug_isolated_reruns_once_and_rejects_docker(monkeypatch):
