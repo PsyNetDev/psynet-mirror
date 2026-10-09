@@ -394,8 +394,19 @@ def db_connection(location, app=None, server=None):
                 f"Couldn't connect to the experiment database. Are you sure the app name ({app}) is correct? "
                 "You can list all valid apps using the following command:\n\tpsynet apps ssh"
             )
-        else:
-            raise
+        if (
+            location == "local"
+            and "DATABASE_URL" in os.environ
+            and "does not exist" in str(err)
+        ):
+            database = urlsplit(db.db_url).path.lstrip("/")
+            raise click.ClickException(
+                f"Database {database} does not exist. If you exported DATABASE_URL "
+                "for a psynet debug local --isolated server, that server has "
+                "stopped; run 'unset DATABASE_URL REDIS_URL base_port' to use "
+                "your local services instead."
+            ) from err
+        raise
     finally:
         if connection:
             connection.close()
@@ -442,7 +453,6 @@ def _check_debug_server_uses_this_database():
         export_advice,
     )
 
-    _check_exported_redis_answers()
     server = debug_server_environment(os.getcwd())
     ours = urlsplit(db.db_url).path
     if server is None:
@@ -456,24 +466,6 @@ def _check_debug_server_uses_this_database():
         f"{theirs.lstrip('/')}, but this command would use {ours.lstrip('/')}. "
         f"{export_advice(environ)}"
     )
-
-
-def _check_exported_redis_answers():
-    """Fail with advice if an exported ``REDIS_URL`` no longer answers.
-
-    This happens in a shell that still has the ``export`` line of a stopped
-    ``psynet debug local --isolated`` server, whose Redis server and database
-    were removed with it.
-    """
-    from .services import check_redis
-
-    if "REDIS_URL" in os.environ and not check_redis().ok:
-        raise click.ClickException(
-            f"Nothing answers at REDIS_URL={os.environ['REDIS_URL']}. If it "
-            "belonged to a psynet debug local --isolated server, that server has "
-            "stopped and its database was dropped; run 'unset DATABASE_URL "
-            "REDIS_URL base_port' to use the local services instead."
-        )
 
 
 @psynet.command("db")
@@ -1154,29 +1146,18 @@ def _debug_auto_reload(ctx, archive, no_browsers):
         develop_module.launch_app_and_open_browser = launch_job
 
 
-def _load_runtime_server_config(config=None, deployment_id=None):
-    config = config or get_config()
+def _load_runtime_server_config():
+    """Load the running debug server's config, such as its dashboard credentials.
+
+    The debug server runs from Dallinger's generated development directory,
+    whose config.txt includes runtime values that the experiment's own lacks.
+    """
+    config = get_config()
     if not config.ready:
         config.load()
-
-    # The debug server runs from Dallinger's generated development directory,
-    # whose config.txt includes runtime values such as dashboard credentials.
-    _check_exported_redis_answers()
     server_working_directory = redis_vars.get("server_working_directory", None)
     if server_working_directory:
         config.load_from_file(os.path.join(server_working_directory, "config.txt"))
-        return config
-
-    if deployment_id:
-        launch_info_path = (
-            Path("~/psynet-data/launch-data").expanduser()
-            / deployment_id
-            / "launch-info.json"
-        )
-        if launch_info_path.exists():
-            with open(launch_info_path, encoding="utf-8") as f:
-                config.extend(json.load(f))
-
     return config
 
 
@@ -3234,9 +3215,7 @@ def export_(
         _confirm_matching_experiment_label(
             exp_variables["label"], experiment_class.label
         )
-        deployment_id = exp_variables["deployment_id"]
-        assert len(deployment_id) > 0
-        _load_runtime_server_config(config, deployment_id=deployment_id)
+        assert len(exp_variables["deployment_id"]) > 0
 
     # Only the default location keeps a rotating history of previous exports.
     rotate_history = experiment_class.rotate_export_history if path is None else None
