@@ -128,8 +128,8 @@ it:
 
 Useful flags:
 
-* ``--no-install`` — do steps 1–2 only (write files and pin; ensure
-  constraints when missing or stale; do not install packages). After a
+* ``--no-install`` — skip step 3: write files, pin PsyNet, ensure
+  constraints and the Git repository, but do not install packages. After a
   full ``psynet setup``, use ``psynet debug local --docker`` or a Docker
   deploy command when you want Docker.
 * ``--force-shared-env`` — allow installing into the PsyNet repository's
@@ -151,9 +151,11 @@ offers a numeric menu: create a dedicated ``.venv`` here (recommended),
 cancel, write files only, or install into the repository ``.venv`` anyway.
 
 If the active environment is some other foreign virtualenv (not this
-experiment's ``./.venv``), setup still scaffolds and writes constraints, but
-refuses to ``uv pip sync`` into that environment unless you confirm
-interactively or pass ``--force-foreign-env``.
+experiment's ``./.venv``), setup still scaffolds, writes constraints and
+ensures the Git repository, but refuses to ``uv pip sync`` into that
+environment unless you confirm interactively or pass ``--force-foreign-env``.
+If you decline, setup prints the commands that create and use a dedicated
+``./.venv`` instead.
 
 In a demo inside a PsyNet source checkout, ``psynet setup`` only adds the
 boilerplate files; it never installs packages or rewrites requirements, so

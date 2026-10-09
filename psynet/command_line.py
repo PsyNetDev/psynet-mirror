@@ -2047,9 +2047,9 @@ def _missing_boilerplate_fix(*, mode=None, missing_paths=None):
     else:
         command = "psynet setup"
         context = (
-            "For a standalone experiment this prepares files, pins PsyNet, "
-            "writes constraints.txt, and installs packages into your active "
-            "virtual environment. If you only need template files, run "
+            "Besides the files, it pins PsyNet, writes constraints.txt, "
+            "installs packages into your active virtual environment, and "
+            "initialises Git. If you only need template files, run "
             "'psynet scripts scaffold' instead."
         )
 
@@ -2057,7 +2057,7 @@ def _missing_boilerplate_fix(*, mode=None, missing_paths=None):
     if mode is not None:
         mode_clause = f" before running 'psynet {mode} ...'"
 
-    message = f"{context} Run '{command}' to generate the missing files{mode_clause}."
+    message = f"Run '{command}' to generate the missing files{mode_clause}. {context}"
     if missing_paths and "config.txt" in missing_paths:
         message += (
             " If you are upgrading an experiment that already sets options in "

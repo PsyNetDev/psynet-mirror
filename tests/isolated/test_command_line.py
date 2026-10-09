@@ -2320,6 +2320,34 @@ def test_setup_foreign_env_noninteractive_scaffolds_then_refuses_sync(
     assert (experiment / "Dockerfile").exists()
 
 
+def test_setup_declining_foreign_sync_still_initialises_git(tmp_path, monkeypatch):
+    """Declining the sync leaves a directory that only needs packages installed."""
+    foreign = tmp_path / "other" / ".venv"
+    foreign.mkdir(parents=True)
+    experiment = tmp_path / "experiment"
+    experiment.mkdir()
+    (experiment / "requirements.txt").write_text("psynet==0.0.0\n")
+    _mock_foreign_experiment_venv(monkeypatch, foreign)
+    monkeypatch.setattr(
+        "psynet.experiment_setup.git_repository_available", lambda: False
+    )
+    monkeypatch.setattr("psynet.experiment_setup.git_command_available", lambda: True)
+    monkeypatch.setattr("psynet.experiment_setup._is_interactive", lambda: True)
+    monkeypatch.setattr(
+        "psynet.experiment_setup._run_uv",
+        lambda *args, **kwargs: pytest.fail("declined sync must not install"),
+    )
+
+    with working_directory(experiment):
+        result = CliRunner().invoke(psynet, ["setup"], input="n\n")
+
+    assert result.exit_code == 0, result.output
+    assert (experiment / ".git").is_dir()
+    assert (experiment / "constraints.txt").exists()
+    assert "  psynet setup\n" in result.output
+    assert "--force-foreign-env" in result.output
+
+
 def test_setup_foreign_env_force_flag_syncs_with_warning(tmp_path, monkeypatch):
     calls = []
     foreign = tmp_path / "other" / ".venv"
@@ -2897,7 +2925,7 @@ def test_check_experiment_directory_reports_missing_boilerplate(tmp_path):
         with pytest.raises(click.ClickException, match="psynet setup") as exc:
             _check_experiment_directory("debug")
     message = str(exc.value)
-    assert "standalone" in message.lower()
+    assert message.index("Run 'psynet setup'") < message.index("pins PsyNet")
     for required_path in (
         ".gitignore",
         ".python-version",
