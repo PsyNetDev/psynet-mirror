@@ -51,8 +51,11 @@ different experiments on one machine, add ``--isolated``:
 It picks a free port (5100 or above) and uses a database and a Redis server
 of its own, which it starts and stops with the server. It prints the port, and
 the ``export`` line that points other local commands, such as
-``psynet export local``, at its database. The database stays after the server
-stops, until the next ``--isolated`` server on the same port resets it.
+``psynet export local``, at it. The database stays after the server stops,
+until the next ``--isolated`` server on the same port resets it; its Redis
+server doesn't, so after the server stops, export only ``DATABASE_URL``.
+Like any debug server, it needs a directory of its own: it refuses to start
+where another ``psynet debug`` is already serving the experiment.
 
 To choose the settings yourself instead, give the second terminal its own
 database, Redis server, port and development folder:

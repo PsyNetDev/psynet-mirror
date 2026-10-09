@@ -15,6 +15,7 @@ from psynet.isolated_environment import (
     DEFAULT_REDIS_URL,
     ENV_VAR,
     READY_ENV_VAR,
+    TEST,
     IsolatedEnvironment,
     IsolationError,
     _claim_port,
@@ -66,7 +67,12 @@ def test_shared_environment_warns_once():
     assert shared_environment_warning({}) is None
 
 
-def test_tests_refuse_to_run_beside_a_debug_server_in_their_directory(tmp_path):
+@pytest.mark.parametrize(
+    "purpose, newcomer", [(TEST, "the tests"), (DEBUG, "a second debug server")]
+)
+def test_sessions_refuse_a_directory_that_a_debug_server_serves(
+    tmp_path, purpose, newcomer
+):
     fake_psynet = tmp_path / "psynet"
     fake_psynet.write_text("import time\ntime.sleep(60)\n")
     process = subprocess.Popen(
@@ -76,9 +82,10 @@ def test_tests_refuse_to_run_beside_a_debug_server_in_their_directory(tmp_path):
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline:
             try:
-                check_no_debug_server(tmp_path)
+                check_no_debug_server(tmp_path, purpose)
             except RuntimeError as e:
                 assert f"PID {process.pid}" in str(e)
+                assert f"{newcomer} would replace" in str(e)
                 break
             time.sleep(0.1)
         else:
@@ -138,6 +145,10 @@ def test_spare_redis_databases_avoid_the_shared_one():
     assert _spare_redis_database("redis://localhost:6379", 0) == 1
     assert _spare_redis_database("redis://localhost:6379", 1) == 2
     assert _spare_redis_database("redis://localhost:6379/1", 0) == 0
+
+
+def test_a_failed_debug_start_says_to_drop_isolated():
+    assert "without --isolated" in str(IsolationError("no port", DEBUG))
 
 
 def test_a_failed_start_explains_how_to_opt_out():

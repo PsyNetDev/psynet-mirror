@@ -4093,27 +4093,46 @@ def _rerun_in_isolated_environment(purpose):
     example ``psynet test local --n-bots 4``), and this process then exits
     with its code. ``purpose`` is ``TEST`` or ``DEBUG`` from that module.
     """
-    from .isolated_environment import TEST, IsolatedEnvironment, check_no_debug_server
+    from .isolated_environment import IsolatedEnvironment, check_no_debug_server
     from .services import ensure_local_services
 
     ensure_local_services(assume_yes=False, strict=True)
     try:
-        if purpose == TEST:
-            check_no_debug_server(os.getcwd())
+        check_no_debug_server(os.getcwd(), purpose)
         environment = IsolatedEnvironment.start(purpose=purpose)
     except RuntimeError as e:
         raise click.ClickException(str(e)) from e
     with environment:
         log(environment.describe())
-        process = subprocess.Popen(sys.orig_argv, env=environment.env)
+        exit_code = _wait_forwarding_signals(
+            subprocess.Popen(sys.orig_argv, env=environment.env)
+        )
+    sys.exit(exit_code)
+
+
+def _wait_forwarding_signals(process):
+    """Wait for ``process`` and return its exit code, passing SIGTERM and SIGHUP on.
+
+    A signal sent to this PID alone would otherwise leave the child's servers
+    running. SIGINT is not forwarded: Ctrl+C in a terminal already reaches the
+    child through the foreground process group, so this process just waits
+    for it to stop its servers. Must be called from the main thread.
+    """
+
+    def forward(signum, frame):
+        process.send_signal(signum)
+
+    signals = (signal.SIGTERM, signal.SIGHUP)
+    previous = {sig: signal.signal(sig, forward) for sig in signals}
+    try:
         while True:
             try:
-                exit_code = process.wait()
-                break
+                return process.wait()
             except KeyboardInterrupt:
-                # The child got the same Ctrl+C; let it stop its servers.
                 pass
-    sys.exit(exit_code)
+    finally:
+        for sig, previous_handler in previous.items():
+            signal.signal(sig, previous_handler)
 
 
 def build_remote_experiment_command(app, cmd):

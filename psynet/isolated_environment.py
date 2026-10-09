@@ -116,23 +116,30 @@ def _is_configured(environ):
     return bool(environ.get(READY_ENV_VAR) or environ.get("CI"))
 
 
-def check_no_debug_server(directory):
-    """Raise ``RuntimeError`` if a ``psynet debug`` process runs in ``directory``.
+def check_no_debug_server(directory, purpose=TEST):
+    """Raise ``RuntimeError`` if another ``psynet debug`` process runs in ``directory``.
 
-    Tests replace the generated files in the experiment directory, which
-    breaks a debug server that serves it, even when the services are isolated.
+    Tests and debug servers replace the generated files in the experiment
+    directory, which breaks a debug server that serves it, even when the
+    services are isolated.
     """
     import psutil
 
     directory = os.path.realpath(directory)
+    newcomer = "the tests" if purpose == TEST else "a second debug server"
     for process in psutil.process_iter(["cmdline", "cwd"]):
         cmdline = process.info["cmdline"] or []
         cwd = process.info["cwd"]
-        if cwd and os.path.realpath(cwd) == directory and _is_psynet_debug(cmdline):
+        if (
+            process.pid != os.getpid()
+            and cwd
+            and os.path.realpath(cwd) == directory
+            and _is_psynet_debug(cmdline)
+        ):
             raise RuntimeError(
-                f"psynet debug (PID {process.pid}) is serving {directory}, and the "
-                "tests would replace its generated files. Stop it, or run the tests "
-                "from a copy of the experiment such as a git worktree."
+                f"psynet debug (PID {process.pid}) is serving {directory}, and "
+                f"{newcomer} would replace its generated files. Stop it, or run "
+                f"{newcomer} from a copy of the experiment such as a git worktree."
             )
 
 
@@ -255,7 +262,7 @@ class IsolatedEnvironment:
         return cls(env, port_lock, process, redis_dir, purpose)
 
     def describe(self):
-        """Return a one-line summary of where the session's services are."""
+        """Return a summary of where the session's services are."""
         database = urlsplit(self.env["DATABASE_URL"]).path.lstrip("/")
         if self.purpose == DEBUG:
             return (
@@ -264,7 +271,9 @@ class IsolatedEnvironment:
                 "runs alongside other local servers and tests. To point other "
                 "local commands (such as psynet export local) at it, run:\n"
                 f"  export DATABASE_URL={self.env['DATABASE_URL']} "
-                f"REDIS_URL={self.env['REDIS_URL']} base_port={self.env['base_port']}"
+                f"REDIS_URL={self.env['REDIS_URL']} base_port={self.env['base_port']}\n"
+                "Its Redis server stops with it, so after it stops export only "
+                "DATABASE_URL."
             )
         return (
             f"PsyNet tests use database {database}, Redis at {self.env['REDIS_URL']} "
@@ -341,11 +350,14 @@ def start_redis_server(port, directory, log_file=None):
     """
     if not _port_is_free(port):
         raise RuntimeError(f"Port {port} for a test Redis server is in use.")
+    # In its own session, Ctrl+C in the terminal doesn't stop Redis before the
+    # servers that use it; the session's owner stops it afterwards.
     process = subprocess.Popen(
         ["redis-server", "--bind", "127.0.0.1", "--port", str(port)]
         + ["--dir", str(directory), "--save", "", "--appendonly", "no"],
         stdout=log_file or subprocess.DEVNULL,
         stderr=subprocess.STDOUT,
+        start_new_session=True,
     )
     try:
         deadline = time.monotonic() + 10

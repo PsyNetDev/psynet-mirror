@@ -44,6 +44,8 @@ another experiment is running, don't stop it yourself: either ask the user to
 stop it, or run yours alongside it with `psynet debug local --isolated`,
 which gives it its own port, database and Redis server and prints them (see
 "Run several experiments at once" in `code/project/running_and_debugging`).
+This works for a different experiment directory (or a git worktree); if
+`psynet debug` already serves your directory, don't start a second one there.
 `psynet deploy` and `psynet performance-test local` (unless given
 `--existing`, which load-tests a server that is already running) also use and
 clear the local database and Redis, so don't run them while a local

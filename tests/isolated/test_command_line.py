@@ -4891,6 +4891,56 @@ def test_signalled_debug_process_stops_its_child_processes(tmp_path):
         time.sleep(0.1)
 
 
+def test_isolated_waiter_passes_sigterm_to_its_child(tmp_path):
+    import signal
+    import sys
+    import time
+
+    import psutil
+
+    pid_file = tmp_path / "child.pid"
+    script = (
+        "import subprocess, sys\n"
+        "from psynet.command_line import _wait_forwarding_signals\n"
+        "child = subprocess.Popen(['sleep', '60'])\n"
+        f"open({str(pid_file)!r}, 'w').write(str(child.pid))\n"
+        "sys.exit(-_wait_forwarding_signals(child))\n"
+    )
+    waiter = subprocess.Popen([sys.executable, "-c", script])
+    deadline = time.monotonic() + 60
+    while not pid_file.exists() or not pid_file.read_text():
+        assert time.monotonic() < deadline, "child process did not start"
+        time.sleep(0.1)
+    child_pid = int(pid_file.read_text())
+
+    waiter.send_signal(signal.SIGTERM)
+    assert waiter.wait(timeout=30) == signal.SIGTERM
+    assert not psutil.pid_exists(child_pid)
+
+
+def test_debug_isolated_reruns_once_and_rejects_docker(monkeypatch):
+    from psynet.command_line import _debug_in_isolated_environment_if_requested
+    from psynet.isolated_environment import DEBUG, READY_ENV_VAR
+
+    reruns = []
+    monkeypatch.setattr(
+        "psynet.command_line._rerun_in_isolated_environment", reruns.append
+    )
+    debug = _debug_in_isolated_environment_if_requested(lambda **kwargs: "served")
+    monkeypatch.delenv(READY_ENV_VAR, raising=False)
+
+    with pytest.raises(click.UsageError, match="--docker"):
+        debug(isolated=True, docker=True)
+    assert debug(isolated=False, docker=False) == "served"
+    assert reruns == []
+    debug(isolated=True, docker=False)
+    assert reruns == [DEBUG]
+
+    monkeypatch.setenv(READY_ENV_VAR, "1")
+    assert debug(isolated=True, docker=False) == "served"
+    assert reruns == [DEBUG]
+
+
 def test_prolific_listing_warnings():
     from psynet.command_line import prolific_listing_warnings
 
