@@ -4412,11 +4412,14 @@ def test_load_runtime_server_config_loads_generated_config():
     config = Mock()
     config.ready = True
 
-    with patch(
-        "psynet.command_line.redis_vars.get",
-        return_value="/tmp/dallinger_develop/exp",
+    with (
+        patch("psynet.command_line.get_config", return_value=config),
+        patch(
+            "psynet.command_line.redis_vars.get",
+            return_value="/tmp/dallinger_develop/exp",
+        ),
     ):
-        _load_runtime_server_config(config)
+        _load_runtime_server_config()
 
     config.load.assert_not_called()
     config.load_from_file.assert_called_once_with(
@@ -4424,69 +4427,14 @@ def test_load_runtime_server_config_loads_generated_config():
     )
 
 
-def test_load_runtime_server_config_loads_launch_info_when_runtime_dir_is_missing(
-    tmp_path, monkeypatch
-):
-    from psynet.command_line import _load_runtime_server_config
-
-    deployment_id = "timeline-demo__mode=debug__launch=test"
-    launch_info_dir = tmp_path / "psynet-data" / "launch-data" / deployment_id
-    launch_info_dir.mkdir(parents=True)
-    (launch_info_dir / "launch-info.json").write_text(
-        json.dumps(
-            {
-                "dashboard_user": "admin",
-                "dashboard_password": "generated-password",
-            }
-        ),
-        encoding="utf-8",
-    )
-
-    config = Mock()
-    config.ready = True
-    monkeypatch.setenv("HOME", str(tmp_path))
-
-    with patch("psynet.command_line.redis_vars.get", return_value=None):
-        _load_runtime_server_config(config, deployment_id=deployment_id)
-
-    config.load.assert_not_called()
-    config.load_from_file.assert_not_called()
-    config.extend.assert_called_once_with(
-        {
-            "dashboard_user": "admin",
-            "dashboard_password": "generated-password",
-        }
-    )
-
-
-def test_export_local_builds_directly_from_the_runtime_configuration(
-    tmp_path, monkeypatch
-):
-    """A local export reads the local database instead of its own dashboard."""
+def test_export_local_builds_directly_from_the_database(tmp_path):
+    """A local export reads the local database, not its dashboard or Redis."""
     import requests
 
     from psynet.command_line import export_
 
-    deployment_id = "timeline-demo__mode=debug__launch=test"
-    launch_info_dir = tmp_path / "psynet-data" / "launch-data" / deployment_id
-    launch_info_dir.mkdir(parents=True)
-    (launch_info_dir / "launch-info.json").write_text(
-        json.dumps(
-            {
-                "dashboard_user": "admin",
-                "dashboard_password": "generated-password",
-            }
-        ),
-        encoding="utf-8",
-    )
-
     config = Mock()
     config.ready = True
-    config.values = {}
-    config.extend.side_effect = config.values.update
-    config.get.side_effect = lambda key, default=None: config.values.get(key, default)
-    monkeypatch.setenv("HOME", str(tmp_path))
-
     experiment_class = Mock(label="Timeline demo")
     destination = tmp_path / "exports" / "latest"
 
@@ -4504,14 +4452,14 @@ def test_export_local_builds_directly_from_the_runtime_configuration(
             return_value={"class": experiment_class},
         ),
         patch("psynet.command_line.get_config", return_value=config),
-        patch("psynet.command_line.redis_vars.get", return_value=None),
+        patch("psynet.command_line.redis_vars.get", side_effect=pytest.fail),
         patch("psynet.export.service.build_export_tree", side_effect=fake_build),
         patch.object(requests, "get", side_effect=refuse_http),
     ):
         export_(
             ctx=Mock(),
             get_exp_variables=lambda: {
-                "deployment_id": deployment_id,
+                "deployment_id": "timeline-demo__mode=debug__launch=test",
                 "label": "Timeline demo",
             },
             local=True,
@@ -4519,12 +4467,6 @@ def test_export_local_builds_directly_from_the_runtime_configuration(
             assets="collected",
         )
 
-    config.extend.assert_called_once_with(
-        {
-            "dashboard_user": "admin",
-            "dashboard_password": "generated-password",
-        }
-    )
     assert (destination / "manifest.json").exists()
 
 
@@ -5102,15 +5044,17 @@ def test_local_commands_point_at_the_isolated_debug_server(tmp_path):
         launcher.wait()
 
 
-def test_runtime_config_explains_the_redis_of_a_stopped_server(monkeypatch):
+def test_local_commands_explain_a_dropped_exported_database(monkeypatch, tmp_path):
     """A shell with a stopped isolated debug server's export line gets advice."""
-    from psynet.command_line import _load_runtime_server_config
+    from psynet.command_line import _read_experiment_variables
 
-    monkeypatch.setenv("REDIS_URL", "redis://127.0.0.1:1")
-    monkeypatch.setattr("psynet.command_line.redis_vars.get", pytest.fail)
+    url = "postgresql://dallinger:dallinger@localhost/dallinger_debug_1"
+    monkeypatch.setenv("DATABASE_URL", url)
+    monkeypatch.setattr("psynet.command_line.db.db_url", url)
+    monkeypatch.chdir(tmp_path)
 
     with pytest.raises(click.ClickException, match="unset DATABASE_URL REDIS_URL"):
-        _load_runtime_server_config(Mock(ready=True))
+        _read_experiment_variables("local")
 
 
 def test_debug_isolated_reruns_once_and_rejects_docker(monkeypatch):

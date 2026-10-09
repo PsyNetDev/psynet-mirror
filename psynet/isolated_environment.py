@@ -235,13 +235,10 @@ def export_advice(environ):
     Settings the server has are exported and those it lacks are unset, so the
     line also works for a plain ``psynet debug local``.
     """
-    advice = (
+    return (
         "To point other local commands (such as psynet export local) at it, run:\n"
         f"  {_export_line(environ)}"
     )
-    if is_isolated_debug_server(environ):
-        advice += "\nExport what you need while it runs: its database is dropped when it stops."
-    return advice
 
 
 def _export_line(environ):
@@ -348,26 +345,17 @@ class IsolatedEnvironment:
     def describe(self):
         """Return a summary of where the session's services are."""
         database = urlsplit(self.env["DATABASE_URL"]).path.lstrip("/")
-        if self.purpose == DEBUG:
-            return (
-                f"This debug server uses database {database}, Redis at "
-                f"{self.env['REDIS_URL']} and port {self.env['base_port']}, so it "
-                "runs alongside other local servers and tests.\n"
-                + export_advice(self.env)
-            )
-        return (
-            f"PsyNet tests use database {database}, Redis at {self.env['REDIS_URL']} "
-            f"and port {self.env['base_port']}, so they leave the services of local "
-            f"debug servers alone (set {ENV_VAR}={SHARED} to share them instead)."
+        summary = (
+            f"Using database {database}, Redis at {self.env['REDIS_URL']}, "
+            f"and port {self.env['base_port']}."
         )
+        if self.purpose == DEBUG:
+            summary += "\n" + export_advice(self.env)
+        return summary
 
     def stopped_message(self):
         """Return what to tell the user once a debug server has stopped."""
-        database = urlsplit(self.env["DATABASE_URL"]).path.lstrip("/")
-        return (
-            f"The debug server on port {self.env['base_port']} has stopped. Its "
-            f"database {database} and Redis server were removed with it."
-        )
+        return f"The debug server on port {self.env['base_port']} has stopped."
 
     def close(self):
         """Stop the session's Redis server and drop its database."""

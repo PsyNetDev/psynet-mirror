@@ -183,7 +183,7 @@ def test_isolated_environment_uses_its_own_services():
     assert not develop_directory.exists()
     assert not _database_exists(shared, first.env["DATABASE_URL"])
     assert not _database_exists(shared, second.env["DATABASE_URL"])
-    assert "were removed" in second.stopped_message()
+    assert "has stopped" in second.stopped_message()
 
 
 def _database_exists(shared, database_url):
