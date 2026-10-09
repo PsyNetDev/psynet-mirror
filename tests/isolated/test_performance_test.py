@@ -222,7 +222,7 @@ def test_capacity_summary_suggests_a_cap_below_the_measured_capacity():
 
     assert "about 150 concurrent bots" in text
     assert "200 did not (3 request errors)" in text
-    assert "Suggested max_concurrent_participants: 120" in text
+    assert "Suggested limit on concurrent participants: 120" in text
 
 
 def test_capacity_summary_mentions_queue_waits_only_with_async_processes():
@@ -274,6 +274,7 @@ def test_capacity_summary_says_when_every_count_failed():
     results = [_base_result(n_bots=n, bot_errors=1) for n in (2, 4)]
 
     assert "Even 2 bots did not keep" in _join(format_capacity_summary(results))
+    assert format_capacity_summary([]) == []
 
 
 def test_capacity_summary_warns_when_starting_the_bots_took_much_of_the_test():

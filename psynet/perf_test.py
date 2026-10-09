@@ -1502,6 +1502,8 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
 
     Returns list[str].
     """
+    if not results:
+        return []
     limit = limits.describe(
         include_queue=any(
             queue_wait_p95(r) is not None or r.get("q_delay_median") is not None
@@ -1531,7 +1533,7 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
             f"  Capacity: about {capacity:,} concurrent bots kept {limit}; "
             f"{first_fail['n_bots']:,} did not "
             f"({', '.join(capacity_failures(first_fail, limits))}).",
-            f"  Suggested max_concurrent_participants: "
+            f"  Suggested limit on concurrent participants: "
             f"{max(1, int(capacity * _CAPACITY_HEADROOM)):,} "
             f"({_CAPACITY_HEADROOM:.0%} of {capacity:,})",
         ]

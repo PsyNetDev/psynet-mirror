@@ -163,7 +163,7 @@ larger bot count has exceeded the limits, suggests a cap of 80% of it, for
 example::
 
     Capacity: about 160 concurrent bots kept p95 response time under 500 ms, p95 async queue wait under 5 s and no errors; 170 did not (p95 response time 622 ms).
-    Suggested max_concurrent_participants: 128 (80% of 160)
+    Suggested limit on concurrent participants: 128 (80% of 160)
 
 Run the search on the server you will deploy to, with ``--time-factor 1`` so
 that bots work at a realistic pace; bots with ``--time-factor 0`` load the
