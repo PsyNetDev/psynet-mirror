@@ -1,5 +1,6 @@
 import json
 import multiprocessing
+import os
 import threading
 import time
 
@@ -85,12 +86,16 @@ def test_shard_fails_when_an_item_has_no_result(tmp_path, monkeypatch):
     assert code == 1
 
 
-def test_slot_ports_are_offset_from_the_callers(monkeypatch):
+def test_slots_get_their_own_services(monkeypatch):
     monkeypatch.setenv("base_port", "5010")
-
-    assert ci_tests._caller_base_port() == 5010
-    assert ci_tests._slot_ports(5010, "redis://localhost:6380", 1) == (5020, 6480)
-    assert ci_tests._slot_ports(5000, "", 2) == (5020, 6579)
+    first, second = ci_tests._Slot(0), ci_tests._Slot(1)
+    try:
+        assert first.env == dict(os.environ)
+        assert int(second.env["base_port"]) >= 5110
+        assert second.env["DATABASE_URL"] != os.environ.get("DATABASE_URL")
+    finally:
+        second.close()
+        first.close()
 
 
 def _hold_lock(directory, held, release):
