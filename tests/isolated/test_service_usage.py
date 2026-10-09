@@ -172,6 +172,7 @@ def test_clean_keeps_a_database_whose_port_lock_is_held_or_unreadable(
 
 def test_clean_without_a_terminal_needs_yes(tmp_path, monkeypatch):
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@localhost/dallinger")
     for finder in ("find_sessions", "find_redis_servers", "find_databases"):
         monkeypatch.setattr(f"psynet.service_usage.{finder}", lambda: [])
     folder = tmp_path / "psynet-test-redis-gone"
