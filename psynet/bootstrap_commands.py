@@ -203,12 +203,16 @@ def services_list(clean_leftovers, include_debug_data, assume_yes):
     """Show which local sessions use which ports, databases and Redis servers.
 
     Reads the settings of your running PsyNet, Dallinger and pytest processes.
-    With --clean, also removes the databases (*_test_<port>, *_slot<n>) and
-    Redis folders left over from ended isolated test sessions. The databases
-    of stopped debug servers (*_debug_<port>) are kept for 'psynet export
-    local' unless you add --include-debug-data.
+    With --clean, also removes the databases (dallinger_test_<port>) and
+    Redis folders left over from ended isolated test sessions on a local
+    PostgreSQL server. The databases of stopped debug servers
+    (dallinger_debug_<port>) are kept for 'psynet export local' unless you add
+    --include-debug-data. CI slot databases (*_slot<n>) are kept for reuse.
     """
     from psynet.service_usage import list_services
+
+    if (assume_yes or include_debug_data) and not clean_leftovers:
+        raise click.UsageError("--yes and --include-debug-data only work with --clean.")
 
     list_services(
         clean_leftovers=clean_leftovers,

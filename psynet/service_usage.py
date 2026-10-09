@@ -14,11 +14,15 @@ and debug session holds is the reliable sign that its database is in use.
 
 ``psynet services list`` prints the result. With ``--clean`` it removes
 leftovers of isolated sessions that have ended: databases named
-``*_test_<port>`` or ``*_slot<n>`` (and, if asked, ``*_debug_<port>``) and
-Redis folders that no ``redis-server`` runs in. It never stops processes, and
-it skips databases with connections, databases that a visible session or this
-shell uses, and databases whose port lock is held, which it holds itself
-while dropping.
+``<base>_test_<port>`` (and, if asked, ``<base>_debug_<port>``), where
+``<base>`` is ``dallinger`` or this shell's database, and Redis folders that no
+``redis-server`` runs in. It never stops processes, and it skips databases
+with connections, databases that a visible session or this shell uses, and
+databases whose port lock is held, which it holds itself while dropping. It
+only cleans a local PostgreSQL server, because the port locks and processes
+it checks are this machine's. CI slot databases (``*_slot<n>``) are left
+alone: ``psynet dev ci run-tests`` reuses them and holds no lock between
+test items.
 
 Unlike :mod:`psynet.services`, this module needs ``psutil`` and ``psycopg2``,
 so it is imported lazily and needs ``psynet[experiment]``.
@@ -51,10 +55,10 @@ from .isolated_environment import (
 
 _DEFAULT_BASE_PORT = "5000"
 _SESSION_SCRIPTS = {"psynet", "dallinger", "pytest", "py.test", "flask"}
-# Ports 5000-69999, so that names such as ``study_test_2024`` don't match.
-_SESSION_PORT = r"(?:[5-9]\d{3}|[1-6]\d{4})"
-_ISOLATED_DATABASE = re.compile(rf"_({TEST}|{DEBUG})_({_SESSION_PORT})$")
-_SLOT_DATABASE = re.compile(r"_slot\d{1,2}$")
+_ISOLATED_DATABASE = re.compile(rf"(\w+)_({TEST}|{DEBUG})_(\d{{4,5}})")
+# Session ports start at 5000, so that names such as ``study_test_2024`` don't match.
+_SESSION_PORTS = range(5000, 65536)
+_LOCAL_HOSTS = {"", "localhost", "127.0.0.1", "::1"}
 _PYTHON_OPTIONS_WITH_VALUES = {"-W", "-X", "-Q"}
 # Redis rewrites its command line to ``redis-server <host>:<port>``, so the
 # folder it runs in is what ties a server to an isolated session.
@@ -146,9 +150,12 @@ def find_sessions():
             continue
         try:
             environ = process.environ()
-            cwd = process.cwd()
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
             continue
+        try:
+            cwd = process.cwd()
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            cwd = ""
         if command[0] == "flask" and "base_port" not in environ:
             continue
         key = (
@@ -235,19 +242,49 @@ def find_databases():
         return [Database(name, count) for name, count in cursor.fetchall()]
 
 
+def _isolated_database(database_name):
+    """Return ``(base, purpose, port)`` for an isolated session's database, or ``None``."""
+    match = _ISOLATED_DATABASE.fullmatch(database_name)
+    if not match or int(match.group(3)) not in _SESSION_PORTS:
+        return None
+    return match.group(1), match.group(2), int(match.group(3))
+
+
 def _session_port(database_name):
     """Return the port in an isolated session's database name, or ``None``."""
-    match = _ISOLATED_DATABASE.search(database_name)
-    return int(match.group(2)) if match else None
+    parts = _isolated_database(database_name)
+    return parts[2] if parts else None
+
+
+def _base_database(database_name):
+    """Return the database that an isolated session's database was named after."""
+    parts = _isolated_database(database_name)
+    return parts[0] if parts else database_name
+
+
+def _open_lock(path):
+    """Open a lock file read-only, creating it if missing, without following symlinks.
+
+    ``flock`` works on read-only files, and opening another user's existing
+    file without ``O_CREAT`` passes Linux's ``protected_regular`` check.
+    """
+    try:
+        return os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    except FileNotFoundError:
+        return os.open(path, os.O_RDONLY | os.O_CREAT | os.O_NOFOLLOW, 0o644)
 
 
 @contextmanager
 def _port_claim(port):
-    """Yield whether the lock of ``port`` was free, holding it until exit if so."""
+    """Yield whether the lock of ``port`` was free, holding it until exit if so.
+
+    Yields ``None`` if the lock file can't be opened, for example because it
+    is a symbolic link.
+    """
     try:
-        lock = open(port_lock_path(port), "a")
+        lock = os.fdopen(_open_lock(port_lock_path(port)))
     except OSError:
-        yield False
+        yield None
         return
     with lock:
         try:
@@ -259,11 +296,11 @@ def _port_claim(port):
 
 
 def _port_is_claimed(port):
-    """Return whether a running isolated session holds the lock of ``port``."""
-    if not os.path.exists(port_lock_path(port)):
+    """Return whether the lock of ``port`` is held, or can't be checked."""
+    if not os.path.lexists(port_lock_path(port)):
         return False
     with _port_claim(port) as free:
-        return not free
+        return free is not True
 
 
 def _session_names(sessions, matches):
@@ -341,10 +378,13 @@ def leftovers(
     *,
     include_debug_data=False,
     in_use=(),
+    bases=("dallinger",),
 ):
     """Return the databases and Redis folders that ``--clean`` removes.
 
     ``in_use`` names further databases to keep, such as this shell's own.
+    Only isolated databases named after one of ``bases`` count, so that a
+    look-alike such as ``booking_test_6000`` is kept.
     Debug databases are kept for ``psynet export local`` unless
     ``include_debug_data`` is set. A Redis folder is left over once no
     ``redis-server`` runs in it, for example after its session was killed
@@ -354,10 +394,10 @@ def leftovers(
     used = {s.database for s in sessions} | set(in_use)
     stale_databases = []
     for d in databases:
-        match = _ISOLATED_DATABASE.search(d.name)
-        if not (match or _SLOT_DATABASE.search(d.name)):
+        parts = _isolated_database(d.name)
+        if parts is None or parts[0] not in bases:
             continue
-        if match and match.group(1) == DEBUG and not include_debug_data:
+        if parts[1] == DEBUG and not include_debug_data:
             continue
         if d.connections == 0 and d.name not in used:
             stale_databases.append(d)
@@ -383,7 +423,7 @@ def _redis_clients(port):
 
 
 def _clean(stale_databases, stale_folders):
-    """Drop ``stale_databases`` and remove ``stale_folders``.
+    """Drop ``stale_databases`` and remove ``stale_folders``; return the number of failures.
 
     A database whose port lock a session has claimed meanwhile is kept; the
     lock is held while dropping, so no session can claim it halfway.
@@ -391,12 +431,20 @@ def _clean(stale_databases, stale_folders):
     from psycopg2 import Error as PostgresError
     from psycopg2 import sql
 
+    failures = 0
     if stale_databases:
         with _cursor() as cursor:
             for database in stale_databases:
                 port = _session_port(database.name)
                 with ExitStack() as stack:
-                    if port is not None and not stack.enter_context(_port_claim(port)):
+                    free = port is None or stack.enter_context(_port_claim(port))
+                    if free is None:
+                        click.echo(
+                            f"Kept database {database.name}: can't open the "
+                            f"lock file {port_lock_path(port)}."
+                        )
+                        continue
+                    if not free:
                         click.echo(
                             f"Kept database {database.name}: a session now "
                             f"holds port {port}."
@@ -409,6 +457,7 @@ def _clean(stale_databases, stale_folders):
                             )
                         )
                     except PostgresError as e:
+                        failures += 1
                         click.echo(f"Could not drop database {database.name}: {e}")
                     else:
                         click.echo(f"Dropped database {database.name}.")
@@ -416,21 +465,25 @@ def _clean(stale_databases, stale_folders):
         try:
             shutil.rmtree(folder)
         except OSError as e:
+            failures += 1
             click.echo(f"Could not remove Redis folder {folder}: {e}")
         else:
             click.echo(f"Removed Redis folder {folder}.")
+    return failures
 
 
 def _find_leftovers(include_debug_data):
     """Return what ``--clean`` would remove now, skipping claimed session ports."""
-    in_use = {_database_name(os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL))}
+    own = _database_name(os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL))
+    bases = {_database_name(DEFAULT_DATABASE_URL), _base_database(own)}
     stale_databases, stale_folders = leftovers(
         find_sessions(),
         find_redis_servers(),
         find_databases(),
         find_redis_folders(),
         include_debug_data=include_debug_data,
-        in_use=in_use,
+        in_use={own},
+        bases=bases,
     )
     stale_databases = [
         d
@@ -463,6 +516,27 @@ def list_services(*, clean_leftovers, assume_yes, include_debug_data=False):
             raise click.ClickException("--clean needs PostgreSQL to be reachable.")
     if not clean_leftovers:
         return
+    host = _database_host()
+    if host not in _LOCAL_HOSTS and not host.startswith("/"):
+        raise click.ClickException(
+            f"--clean only cleans a local PostgreSQL server, but DATABASE_URL "
+            f"points at {host}, whose other users this computer can't see."
+        )
+    try:
+        _clean_interactively(include_debug_data, assume_yes)
+    except psycopg2.Error as e:
+        raise click.ClickException(f"PostgreSQL failed while cleaning: {e}") from e
+
+
+def _database_host():
+    """Return the host of the PostgreSQL server that ``DATABASE_URL`` names."""
+    from .services import _postgres_url
+
+    return urlparse(_postgres_url()).hostname or ""
+
+
+def _clean_interactively(include_debug_data, assume_yes):
+    """List the leftovers, ask for confirmation, then remove those still left over."""
     stale_databases, stale_folders = _find_leftovers(include_debug_data)
     if not (stale_databases or stale_folders):
         click.echo("\nNo leftovers of ended test or debug sessions to clean.")
@@ -481,7 +555,9 @@ def list_services(*, clean_leftovers, assume_yes, include_debug_data=False):
     # Sessions may have started while the question was open.
     now_databases, now_folders = _find_leftovers(include_debug_data)
     now_names = {d.name for d in now_databases}
-    _clean(
+    failures = _clean(
         [d for d in stale_databases if d.name in now_names],
         [f for f in stale_folders if f in now_folders],
     )
+    if failures:
+        raise click.ClickException(f"{failures} leftovers could not be removed.")

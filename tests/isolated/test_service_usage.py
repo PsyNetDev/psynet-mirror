@@ -93,6 +93,8 @@ def test_leftovers_are_unused_session_databases_and_folders():
         Database("dallinger_debug_5130", 0),
         Database("dallinger_test_5120", 1),
         Database("dallinger_slot2", 0),
+        Database("booking_test_6000", 0),
+        Database("dallinger_test_70000", 0),
         Database("attention_test_1", 0),
         Database("pilot_test_2020_extra", 0),
         Database("study_test_2024", 0),
@@ -109,10 +111,7 @@ def test_leftovers_are_unused_session_databases_and_folders():
         sessions, redis_servers, databases, folders, in_use={"dallinger_test_5140"}
     )
 
-    assert [d.name for d in stale_databases] == [
-        "dallinger_test_5110",
-        "dallinger_slot2",
-    ]
+    assert [d.name for d in stale_databases] == ["dallinger_test_5110"]
     assert stale_folders == ["/tmp/psynet-debug-redis-gone"]
 
     stale_databases, _ = leftovers(sessions, [], databases, include_debug_data=True)
@@ -138,22 +137,32 @@ def test_find_redis_folders_skips_symlinks_and_new_folders(tmp_path, monkeypatch
     assert find_redis_folders() == [str(tmp_path / "psynet-test-redis-real")]
 
 
-def test_clean_keeps_a_database_whose_port_a_session_holds(tmp_path, monkeypatch):
+def test_clean_keeps_a_database_whose_port_lock_is_held_or_unreadable(
+    tmp_path, monkeypatch, capsys
+):
     """Plain pytest sessions are invisible in process environments; their lock isn't."""
-    from psynet.isolated_environment import port_lock_path
     from psynet.service_usage import _clean, _cursor
 
-    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    lock_path = tmp_path / "6990.lock"
+    monkeypatch.setattr(
+        "psynet.service_usage.port_lock_path", lambda port: str(lock_path)
+    )
     name = "psynet_services_test_6990"
     with _cursor() as cursor:
         cursor.execute(f"DROP DATABASE IF EXISTS {name}")
         cursor.execute(f"CREATE DATABASE {name}")
     try:
-        with open(port_lock_path(6990), "w") as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX)
-            assert [d.name for d in find_databases()].count(name) == 1
+        with open(lock_path, "w") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             _clean([Database(name, 0)], [])
-            assert name in [d.name for d in find_databases()]
+        lock_path.unlink()
+        lock_path.symlink_to(tmp_path / "elsewhere")
+        _clean([Database(name, 0)], [])
+        assert name in [d.name for d in find_databases()]
+        output = capsys.readouterr().out
+        assert "a session now holds port 6990" in output
+        assert "can't open the lock file" in output
+        lock_path.unlink()
         _clean([Database(name, 0)], [])
         assert name not in [d.name for d in find_databases()]
     finally:
@@ -174,3 +183,21 @@ def test_clean_without_a_terminal_needs_yes(tmp_path, monkeypatch):
     assert f"Redis folder {folder}" in result.output
     assert "pass --yes" in result.output
     assert folder.exists()
+
+
+def test_clean_refuses_a_remote_database_server(monkeypatch):
+    for finder in ("find_sessions", "find_redis_servers", "find_databases"):
+        monkeypatch.setattr(f"psynet.service_usage.{finder}", lambda: [])
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@db.example.org/dallinger")
+
+    result = CliRunner().invoke(services_list, ["--clean", "--yes"])
+
+    assert result.exit_code != 0
+    assert "only cleans a local PostgreSQL server" in result.output
+
+
+def test_yes_needs_clean():
+    result = CliRunner().invoke(services_list, ["--yes"])
+
+    assert result.exit_code == 2
+    assert "only work with --clean" in result.output

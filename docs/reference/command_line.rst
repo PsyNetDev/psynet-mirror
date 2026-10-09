@@ -194,8 +194,11 @@ pick free settings before starting another session.
   psynet services list --clean
 
 ``--clean`` removes leftovers of isolated test sessions that have ended:
-databases named ``*_test_<port>`` or ``*_slot<n>`` and the Redis folders that
-no Redis server runs in any more. It never stops processes. It skips
+databases named ``dallinger_test_<port>`` (or named after the database in the
+current shell's ``DATABASE_URL``) and the Redis folders that no Redis server
+runs in any more. It only works on a local PostgreSQL server and never stops
+processes. CI slot databases (``*_slot<n>``) are kept, because
+``psynet dev ci run-tests`` reuses them. It skips
 databases that have connections, that a session it can see or the current
 shell uses, or whose port a running test or debug session still holds; it
 can see only your own PsyNet, Dallinger and pytest processes, but the port
