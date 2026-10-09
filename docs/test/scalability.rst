@@ -41,8 +41,8 @@ between bots when recruitment has closed. Start it with
 ``psynet performance-test local`` does this for the server it starts. The
 default ``psynet debug local`` server does not stop itself. Without
 ``--existing``, ``psynet performance-test local`` refuses to start while
-another server uses its port, because starting its own server would stop that
-one and reset its database.
+another server uses its port or its database, because starting its own server
+would stop that one and reset its database.
 
 Local results show how the experiment copes on your computer, and the command
 says so when it finishes. For a participant cap, measure the deployment server
@@ -104,6 +104,10 @@ spends waiting for a free worker. When the server's CPUs are fully used, that
 waiting grows faster than the reported times, so also watch the server's CPU
 use and the number of request errors.
 
+The bots fetch pages and submit answers without a browser, so the results
+leave out the static files, media and JavaScript requests that participants'
+browsers make.
+
 If response times are high, profile the database queries with ``psynet test
 local --sql-profile``; see :doc:`/test/sqlalchemy_profiling`.
 
@@ -164,7 +168,9 @@ that bots work at a realistic pace; bots with ``--time-factor 0`` load the
 server far more than people do. Each test's measurement window includes the
 time bots take to start (about 10 per second by default), so use a
 ``--duration-minutes`` of at least two or three for steady results. A test
-whose bots didn't all start within the window counts as exceeding the limits.
+whose bots didn't all start within the window counts as exceeding the limits,
+and the summary warns when starting the bots took more than a quarter of the
+test.
 
 .. _performance_testing_server:
 

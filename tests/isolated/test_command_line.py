@@ -4506,6 +4506,7 @@ def test_performance_test_refuses_to_replace_a_server_on_its_configured_port(
     from psynet.command_line import _run_performance_test_with_new_server
 
     config = get_config()
+    was_ready = config.ready
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("base_port", raising=False)
     with socket.socket() as busy:
@@ -4519,7 +4520,7 @@ def test_performance_test_refuses_to_replace_a_server_on_its_configured_port(
                 patch(
                     "psynet.command_line._start_local_server_and_wait_for_ready"
                 ) as start,
-                pytest.raises(click.ClickException, match=f"port {port} .*--existing"),
+                pytest.raises(click.ClickException, match=f"Port {port} .*--existing"),
             ):
                 _run_performance_test_with_new_server(
                     n_bots="2",
@@ -4530,6 +4531,9 @@ def test_performance_test_refuses_to_replace_a_server_on_its_configured_port(
                 )
         finally:
             config.clear()
+            (tmp_path / "config.txt").unlink()
+            if was_ready:
+                config.load()
     start.assert_not_called()
 
 
@@ -4540,10 +4544,11 @@ def test_performance_test_refuses_while_workers_use_this_database():
         patch("psynet.command_line.get_config", return_value=Mock(ready=True)),
         patch("psynet.command_line._local_port_is_free", return_value=True),
         patch(
-            "psynet.command_line.list_psynet_worker_processes", return_value=[Mock()]
+            "psynet.command_line.list_psynet_worker_processes",
+            return_value=[Mock(pid=4242)],
         ),
         patch("psynet.command_line._start_local_server_and_wait_for_ready") as start,
-        pytest.raises(click.ClickException, match="--existing"),
+        pytest.raises(click.ClickException, match=r"PIDs 4242\).*kill 4242"),
     ):
         _run_performance_test_with_new_server(
             n_bots="2", stagger=0, time_factor=1, duration_minutes=1, debug=False
@@ -4731,7 +4736,7 @@ def test_ssh_performance_test_command_forwards_zero_valued_options():
         max_p95_ms=800,
         max_queue_p95_s=0,
     ) == (
-        "psynet performance-test local --existing --on-deployment "
+        "env PSYNET_PERFORMANCE_TEST_ON_DEPLOYMENT=1 psynet performance-test local --existing "
         "--n-bots 5 --stagger 0 --time-factor 0 --duration-minutes 1.5 "
         "--max-p95-ms 800 --max-queue-p95-s 0"
     )
@@ -4747,7 +4752,7 @@ def test_ssh_performance_test_command_omits_unspecified_options():
             time_factor=None,
             duration_minutes=None,
         )
-        == "psynet performance-test local --existing --on-deployment"
+        == "env PSYNET_PERFORMANCE_TEST_ON_DEPLOYMENT=1 psynet performance-test local --existing"
     )
 
 

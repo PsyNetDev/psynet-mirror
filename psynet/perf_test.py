@@ -42,6 +42,8 @@ _CAPACITY_SEARCH_MAX = 2000
 _CAPACITY_RESOLUTION = 0.1
 _CAPACITY_HEADROOM = 0.8
 _RAMP_UP_WARNING_SHARE = 0.25
+_OPEN_FILE_TARGET = 65536
+_MACOS_OPEN_FILE_MAX = 10240
 
 
 def _is_bot_thread_record(record):
@@ -180,7 +182,7 @@ def run_parallel_test(n_bots, time_factor, stagger_interval_s, check_bots):
 
 
 def raise_open_file_limit():
-    """Raise this process's soft open-file limit to its hard limit.
+    """Raise this process's soft open-file limit to 65536, or its hard limit if lower.
 
     Each bot holds its own database and HTTP connections, and the default soft
     limit (often 1024, or 256 on macOS) runs out at a few hundred bots.
@@ -189,15 +191,19 @@ def raise_open_file_limit():
         import resource
     except ImportError:
         return
+    infinity = resource.RLIM_INFINITY
     soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
-    # macOS refuses limits above OPEN_MAX (10240) even when the hard limit is unlimited.
-    target = 10240 if hard == resource.RLIM_INFINITY else hard
-    if soft == resource.RLIM_INFINITY or soft >= target:
+    target = _OPEN_FILE_TARGET if hard == infinity else min(hard, _OPEN_FILE_TARGET)
+    if soft == infinity or soft >= target:
         return
-    try:
-        resource.setrlimit(resource.RLIMIT_NOFILE, (target, hard))
-    except (ValueError, OSError) as e:
-        logger.warning(f"Could not raise the open-file limit above {soft}: {e}")
+    # macOS refuses limits above its per-process maximum, whatever the hard limit.
+    for limit in dict.fromkeys([target, min(target, _MACOS_OPEN_FILE_MAX)]):
+        try:
+            resource.setrlimit(resource.RLIMIT_NOFILE, (limit, hard))
+            return
+        except (ValueError, OSError) as e:
+            error = e
+    logger.warning(f"Could not raise the open-file limit above {soft}: {error}")
 
 
 class PerformanceTester:
@@ -644,7 +650,7 @@ class PerformanceTester:
                     n_started = bot_state["slots_started"] = n_started + 1
                     next_slot_time += self._bounded_random_stagger()
                 if n_started >= n:
-                    bot_state["ramp_up_s"] = current_time - start_time
+                    bot_state["ramp_up_s"] = time.time() - start_time
 
             self._show_realtime_status(bot_state, current_time, end_time)
             time.sleep(0.05)
@@ -1528,8 +1534,9 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
     if ramp_up and test_length and ramp_up > _RAMP_UP_WARNING_SHARE * test_length:
         lines.append(
             f"  Starting all {capacity:,} bots took {ramp_up:.0f} s of the "
-            f"{test_length:.0f} s test, so the server ran fully loaded only "
-            "briefly; use a longer --duration-minutes to confirm the capacity."
+            f"{test_length:.0f} s test, so the server ran fully loaded for only "
+            f"{1 - ramp_up / test_length:.0%} of it; use a longer "
+            "--duration-minutes to confirm the capacity."
         )
     if not time_factor:
         lines.append(

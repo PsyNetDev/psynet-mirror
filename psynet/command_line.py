@@ -4402,8 +4402,6 @@ def performance_test(ctx):
 @_test_options["performance_max_queue_p95_s"]
 @_test_options["performance_json_output"]
 @click.option("--debug", is_flag=True, help="Enable debug logging for verbose output")
-# Set by ``performance-test ssh``, whose results already apply to the deployment.
-@click.option("--on-deployment", is_flag=True, hidden=True)
 def performance_test__local(
     existing=False,
     n_bots=None,
@@ -4414,7 +4412,6 @@ def performance_test__local(
     max_queue_p95_s=None,
     json_output=None,
     debug=False,
-    on_deployment=False,
 ):
     """
     Run a performance test of the experiment locally.
@@ -4440,8 +4437,13 @@ def performance_test__local(
         max_queue_p95_s=max_queue_p95_s,
         json_output=json_output,
         debug=debug,
-        on_deployment=on_deployment,
     )
+
+
+# Set by ``performance-test ssh``, whose results already apply to the
+# deployment. An environment variable rather than an option, so that a
+# deployment running an older PsyNet ignores it instead of failing.
+_ON_DEPLOYMENT_ENV_VAR = "PSYNET_PERFORMANCE_TEST_ON_DEPLOYMENT"
 
 
 def _run_performance_test_local(
@@ -4455,7 +4457,6 @@ def _run_performance_test_local(
     debug,
     max_p95_ms=None,
     max_queue_p95_s=None,
-    on_deployment=False,
 ):
     """Run a local performance test, print advice for deployments, and return results."""
     from psynet.perf_test import capacity_advice
@@ -4477,7 +4478,8 @@ def _run_performance_test_local(
     )
     capacity_search = _parse_performance_n_bots(n_bots) == "auto"
     for line in capacity_advice(
-        capacity_search=capacity_search, on_deployment=on_deployment
+        capacity_search=capacity_search,
+        on_deployment=os.environ.get(_ON_DEPLOYMENT_ENV_VAR) == "1",
     ):
         click.echo(line)
     return all_results
@@ -4837,12 +4839,20 @@ def _run_performance_test_with_new_server(
         # So that a base_port in config.txt counts, as it does for the server.
         config.load()
     port = config.get("base_port")
-    if not _local_port_is_free(port) or list_psynet_worker_processes():
+    if not _local_port_is_free(port):
         raise click.ClickException(
-            f"A local server is already running (port {port} or this database is "
-            "in use), probably a psynet debug local. Starting another server would "
-            "stop it and reset its database. Stop it first, or add --existing to "
-            "load-test it without resetting it."
+            f"Port {port} is in use, probably by a running psynet debug local. "
+            "Starting another server would stop it and reset its database. Stop "
+            "it first, or add --existing to load-test it without resetting it."
+        )
+    workers = list_psynet_worker_processes()
+    if workers:
+        pids = " ".join(str(p.pid) for p in workers)
+        raise click.ClickException(
+            f"Dallinger processes (PIDs {pids}) use this database, either for a "
+            "server on another port or left over from an earlier run. Starting a "
+            "server would reset the database under them. Stop that server, or "
+            f"run 'kill {pids}' if they are left over."
         )
     # Prefer legacy debug: gunicorn with several workers is closer to a deployed
     # server than the auto-reload develop path used by normal
@@ -4941,7 +4951,7 @@ def _build_ssh_performance_test_cmd(
     max_queue_p95_s=None,
 ):
     """Build the remote performance-test command, preserving explicit zeros."""
-    cmd = "psynet performance-test local --existing --on-deployment"
+    cmd = f"env {_ON_DEPLOYMENT_ENV_VAR}=1 psynet performance-test local --existing"
 
     if n_bots is not None:
         cmd += f" --n-bots {n_bots}"
