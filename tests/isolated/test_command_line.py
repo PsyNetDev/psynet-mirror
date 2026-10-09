@@ -5183,3 +5183,21 @@ def test_performance_test_refuses_a_directory_that_a_debug_server_serves():
     ):
         _run_performance_test_with_new_server("2", 0, 1, 1, False)
     start.assert_not_called()
+
+
+@pytest.mark.parametrize("existing", [False, True])
+def test_performance_tests_get_their_own_services_unless_existing(
+    monkeypatch, existing
+):
+    from psynet.command_line import performance_test__local
+
+    rerun = Mock(side_effect=SystemExit(0))
+    monkeypatch.setattr("psynet.command_line._rerun_in_isolated_environment", rerun)
+    monkeypatch.setattr("psynet.isolated_environment.should_isolate", lambda: True)
+    monkeypatch.setattr("psynet.command_line._run_performance_test_local", Mock())
+    try:
+        performance_test__local.callback(existing=existing)
+    except SystemExit:
+        pass
+
+    assert rerun.called is not existing

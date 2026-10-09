@@ -236,6 +236,16 @@ def export_advice(environ):
     Settings the server has are exported and those it lacks are unset, so the
     line also works for a plain ``psynet debug local``.
     """
+    advice = (
+        "To point other local commands (such as psynet export local) at it, run:\n"
+        f"  {_export_line(environ)}"
+    )
+    if is_isolated_debug_server(environ):
+        advice += "\nIts database stays after it stops, and this line still reaches it."
+    return advice
+
+
+def _export_line(environ):
     exported = [
         f"{k}={shlex.quote(environ[k])}" for k in _SERVER_SETTINGS if k in environ
     ]
@@ -245,13 +255,7 @@ def export_advice(environ):
         commands.append("export " + " ".join(exported))
     if unset:
         commands.append("unset " + " ".join(unset))
-    advice = (
-        "To point other local commands (such as psynet export local) at it, run:\n"
-        f"  {'; '.join(commands)}"
-    )
-    if is_isolated_debug_server(environ):
-        advice += "\nIts database stays after it stops, and this line still reaches it."
-    return advice
+    return "; ".join(commands)
 
 
 class IsolatedEnvironment:
@@ -382,6 +386,15 @@ class IsolatedEnvironment:
             f"debug servers alone (set {ENV_VAR}={SHARED} to share them instead)."
         )
 
+    def stopped_message(self):
+        """Return what to tell the user once a debug server has stopped."""
+        database = urlsplit(self.env["DATABASE_URL"]).path.lstrip("/")
+        return (
+            f"The debug server on port {self.env['base_port']} has stopped, and "
+            f"its Redis server with it. Its data stays in {database}. To export "
+            f"it, run:\n  {_export_line(self.env)}\nthen psynet export local."
+        )
+
     def close(self):
         """Stop the session's Redis server, if it started one."""
         if self._redis_process is not None:
@@ -391,6 +404,8 @@ class IsolatedEnvironment:
             shutil.rmtree(self._redis_dir, ignore_errors=True)
             self._redis_dir = None
         if self._port_lock is not None:
+            # While the port is still claimed, so no new session is using it yet.
+            shutil.rmtree(self.env["dallinger_develop_directory"], ignore_errors=True)
             self._port_lock.close()
             self._port_lock = None
 

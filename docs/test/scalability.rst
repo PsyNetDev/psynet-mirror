@@ -19,7 +19,10 @@ From the experiment directory:
     psynet performance-test local
 
 This starts a local server, keeps ``Experiment.test_n_bots`` bots (default 1)
-active for one minute, prints a report, and shuts the server down. For a heavier load,
+active for one minute, prints a report, and shuts the server down. Like
+``psynet test local``, the server gets a free port, a database and a Redis
+server of its own, so local debug servers keep running (see
+:doc:`/developer/running_tests`). For a heavier load,
 ask for more bots and a longer run:
 
 .. code-block:: bash
