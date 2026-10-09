@@ -222,7 +222,7 @@ def test_capacity_summary_suggests_a_cap_below_the_measured_capacity():
 
     assert "about 150 concurrent bots" in text
     assert "200 did not (3 request errors)" in text
-    assert "Suggested limit on concurrent participants: 120" in text
+    assert "Suggested max_concurrent_participants: 120" in text
 
 
 def test_capacity_summary_mentions_queue_waits_only_with_async_processes():

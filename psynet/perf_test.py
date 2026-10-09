@@ -1533,7 +1533,7 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
             f"  Capacity: about {capacity:,} concurrent bots kept {limit}; "
             f"{first_fail['n_bots']:,} did not "
             f"({', '.join(capacity_failures(first_fail, limits))}).",
-            f"  Suggested limit on concurrent participants: "
+            f"  Suggested max_concurrent_participants: "
             f"{max(1, int(capacity * _CAPACITY_HEADROOM)):,} "
             f"({_CAPACITY_HEADROOM:.0%} of {capacity:,})",
         ]
