@@ -4911,6 +4911,12 @@ def _run_performance_test_with_new_server(
     n_bots, stagger, time_factor, duration_minutes, debug, json_output=None
 ):
     """Run performance test after starting a new experiment server"""
+    from .isolated_environment import check_no_debug_server
+
+    try:
+        check_no_debug_server(os.getcwd())
+    except RuntimeError as e:
+        raise click.ClickException(str(e)) from e
     # Prefer legacy debug: gunicorn with several workers is closer to a deployed
     # server than the auto-reload develop path used by normal
     # ``psynet debug local``.

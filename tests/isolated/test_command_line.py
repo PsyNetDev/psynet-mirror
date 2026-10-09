@@ -5057,3 +5057,18 @@ def test_prolific_listing_warnings():
     assert "shorter than the estimated 8.5 minutes" in warnings(2, 0.85)[0]
     assert "£5.00/hour" in " ".join(warnings(12, 1.00))
     assert "£4.24/hour" in " ".join(warnings(5, 0.60))
+
+
+def test_performance_test_refuses_a_directory_that_a_debug_server_serves():
+    from psynet.command_line import _run_performance_test_with_new_server
+
+    with (
+        patch(
+            "psynet.isolated_environment.check_no_debug_server",
+            side_effect=RuntimeError("psynet debug (PID 7) is serving here"),
+        ),
+        patch("psynet.command_line._start_local_server_and_wait_for_ready") as start,
+        pytest.raises(click.ClickException, match="PID 7"),
+    ):
+        _run_performance_test_with_new_server("2", 0, 1, 1, False)
+    start.assert_not_called()
