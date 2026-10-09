@@ -454,10 +454,10 @@ def _check_debug_server_uses_this_database():
         export_advice,
     )
 
+    _check_exported_redis_answers()
     server = debug_server_environment(os.getcwd())
     ours = urlsplit(db.db_url).path
     if server is None:
-        _mention_stopped_debug_servers(ours)
         return
     pid, environ = server
     theirs = urlsplit(environ.get("DATABASE_URL", DEFAULT_DATABASE_URL)).path
@@ -470,46 +470,22 @@ def _check_debug_server_uses_this_database():
     )
 
 
-def _mention_stopped_debug_servers(database_path):
-    """Say how to reach this directory's stopped isolated debug servers, if any.
+def _check_exported_redis_answers():
+    """Fail with advice if an exported ``REDIS_URL`` no longer answers.
 
-    A shell without their ``export`` line reads ``database_path`` instead.
-    """
-    from .isolated_environment import export_advice, stopped_debug_server_environments
-
-    try:
-        stopped = stopped_debug_server_environments(os.getcwd())
-    except RuntimeError as e:
-        logger.warning(f"Could not look for isolated debug databases: {e}")
-        return
-    others = [
-        env for env in stopped if urlsplit(env["DATABASE_URL"]).path != database_path
-    ]
-    for env in others:
-        database = urlsplit(env["DATABASE_URL"]).path.lstrip("/")
-        log(
-            f"This command reads {database_path.lstrip('/')}, but an isolated "
-            f"debug server for this experiment left data in {database}. "
-            f"{export_advice(env)}"
-        )
-
-
-def _exported_redis_has_stopped():
-    """Return whether an exported ``REDIS_URL`` no longer answers, saying so if it doesn't.
-
-    This happens after a ``psynet debug local --isolated`` server stops: its
-    Redis server stops with it, but its database stays.
+    This happens in a shell that still has the ``export`` line of a stopped
+    ``psynet debug local --isolated`` server, whose Redis server and database
+    were removed with it.
     """
     from .services import check_redis
 
-    if "REDIS_URL" not in os.environ or check_redis().ok:
-        return False
-    log(
-        f"Nothing answers at REDIS_URL={os.environ['REDIS_URL']}, as after a "
-        "psynet debug local --isolated server stops, so this reads the database "
-        "without the stopped server's settings."
-    )
-    return True
+    if "REDIS_URL" in os.environ and not check_redis().ok:
+        raise click.ClickException(
+            f"Nothing answers at REDIS_URL={os.environ['REDIS_URL']}. If it "
+            "belonged to a psynet debug local --isolated server, that server has "
+            "stopped and its database was dropped; run 'unset DATABASE_URL "
+            "REDIS_URL base_port' to use the local services instead."
+        )
 
 
 @psynet.command("db")
@@ -1275,9 +1251,8 @@ def _load_runtime_server_config(config=None, deployment_id=None):
 
     # The debug server runs from Dallinger's generated development directory,
     # whose config.txt includes runtime values such as dashboard credentials.
-    server_working_directory = None
-    if not _exported_redis_has_stopped():
-        server_working_directory = redis_vars.get("server_working_directory", None)
+    _check_exported_redis_answers()
+    server_working_directory = redis_vars.get("server_working_directory", None)
     if server_working_directory:
         config.load_from_file(os.path.join(server_working_directory, "config.txt"))
         return config

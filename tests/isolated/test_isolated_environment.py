@@ -27,7 +27,6 @@ from psynet.isolated_environment import (
     shared_environment_warning,
     should_isolate,
     start_redis_server,
-    stopped_debug_server_environments,
     without_session_settings,
 )
 
@@ -186,9 +185,7 @@ def test_children_stop_when_their_caller_is_killed(tmp_path):
 
 
 @pytest.mark.skipif(shutil.which("redis-server") is None, reason="needs redis-server")
-def test_isolated_environment_uses_its_own_services(
-    drop_new_databases, tmp_path, monkeypatch
-):
+def test_isolated_environment_uses_its_own_services(drop_new_databases):
     url = urlsplit(os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL))
     database = re.sub(r"_(test|debug)_\d+$", "", url.path.lstrip("/"))
     shared = {
@@ -207,6 +204,7 @@ def test_isolated_environment_uses_its_own_services(
         assert urlsplit(first.env["DATABASE_URL"]).path == f"/{database}_test_{port}"
         debug_port = second.env["base_port"]
         assert second.env["DATABASE_URL"].endswith(f"/{database}_debug_{debug_port}")
+        assert _database_exists(shared, second.env["DATABASE_URL"])
         assert f"export DATABASE_URL={second.env['DATABASE_URL']}" in second.describe()
         redis_port = int(first.env["REDIS_URL"].rsplit(":", 1)[1])
         socket.create_connection(("127.0.0.1", redis_port), timeout=1).close()
@@ -216,25 +214,24 @@ def test_isolated_environment_uses_its_own_services(
     with pytest.raises(OSError):
         socket.create_connection(("127.0.0.1", redis_port), timeout=1).close()
     assert not develop_directory.exists()
-    with IsolatedEnvironment.start(shared, purpose=DEBUG) as debug:
-        pass
-    stopped = debug.stopped_message()
-    assert f"port {debug.env['base_port']} has stopped" in stopped
-    assert f"export DATABASE_URL={debug.env['DATABASE_URL']}" in stopped
-    with IsolatedEnvironment.start(shared, purpose=DEBUG) as again:
-        assert again.env["DATABASE_URL"] == debug.env["DATABASE_URL"]
-        assert "earlier debug server for this experiment" in again.describe()
-    here = os.getcwd()
-    monkeypatch.chdir(tmp_path)
-    with IsolatedEnvironment.start(shared, purpose=DEBUG) as elsewhere:
-        assert elsewhere.env["DATABASE_URL"] != debug.env["DATABASE_URL"]
-        assert not elsewhere.reused_database
-    left = stopped_debug_server_environments(here, shared)
-    assert debug.env["DATABASE_URL"] in [env["DATABASE_URL"] for env in left]
-    assert [
-        env["DATABASE_URL"]
-        for env in stopped_debug_server_environments(tmp_path, shared)
-    ] == [elsewhere.env["DATABASE_URL"]]
+    assert _database_exists(shared, first.env["DATABASE_URL"])
+    assert not _database_exists(shared, second.env["DATABASE_URL"])
+    assert "were removed" in second.stopped_message()
+
+
+def _database_exists(shared, database_url):
+    import psycopg2
+
+    connection = psycopg2.connect(shared["DATABASE_URL"])
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT 1 FROM pg_database WHERE datname = %s",
+                (urlsplit(database_url).path.lstrip("/"),),
+            )
+            return cursor.fetchone() is not None
+    finally:
+        connection.close()
 
 
 @pytest.mark.skipif(shutil.which("redis-server") is None, reason="needs redis-server")
@@ -296,18 +293,3 @@ def test_a_failed_start_explains_how_to_opt_out():
     port, lock = _claim_port(free_port)
     lock.close()
     assert port == free_port, "the failed start kept its port claim"
-
-
-@pytest.mark.skipif(shutil.which("redis-server") is None, reason="needs redis-server")
-def test_local_commands_mention_a_stopped_debug_servers_data(
-    drop_new_databases, tmp_path, monkeypatch, capsys
-):
-    from psynet.command_line import _mention_stopped_debug_servers
-
-    monkeypatch.chdir(tmp_path)
-    with IsolatedEnvironment.start(purpose=DEBUG) as debug:
-        pass
-    _mention_stopped_debug_servers("/dallinger")
-
-    output = capsys.readouterr()
-    assert f"export DATABASE_URL={debug.env['DATABASE_URL']}" in output.out + output.err
