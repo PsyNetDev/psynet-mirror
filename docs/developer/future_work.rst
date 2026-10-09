@@ -575,8 +575,7 @@ timeline-hold wakes and Dallinger's chat channels) are shared by all database
 numbers on a server; prefixing channel names with the database identity in
 both packages would let runs share one server. And ``psynet debug local
 --isolated`` picks a free slot for a debug server, but other commands, such as
-``psynet deploy`` and ``psynet performance-test local``, still need these
-variables set by hand.
+``psynet deploy``, still need these variables set by hand.
 
 Remote deployments have the same problem. ``psynet deploy ssh`` builds the
 starting database on the local PostgreSQL and Redis: it clears every Redis

@@ -49,10 +49,11 @@ are isolated already.
 
 ``psynet debug local --isolated`` uses the same environment for a debug
 server, with a ``<database>_debug_<port>`` database, so that several debug
-servers and test sessions can run side by side. The database outlives the
-server, so local commands such as ``psynet export local`` can still read it
-with the ``DATABASE_URL`` that :meth:`IsolatedEnvironment.describe` prints; the
-next debug server on that port resets it.
+servers and test sessions can run side by side. Debug databases are
+temporary: the server starts with a new one and drops it when it stops, so
+local commands such as ``psynet export local`` must read it, with the
+``DATABASE_URL`` that :meth:`IsolatedEnvironment.describe` prints, while the
+server runs.
 
 Isolation separates services, not files: tests still scaffold and remove
 generated files in the experiment directory, so a ``psynet debug`` serving the
@@ -241,7 +242,7 @@ def export_advice(environ):
         f"  {_export_line(environ)}"
     )
     if is_isolated_debug_server(environ):
-        advice += "\nIts database stays after it stops, and this line still reaches it."
+        advice += "\nExport what you need while it runs: its database is dropped when it stops."
     return advice
 
 
@@ -272,12 +273,9 @@ class IsolatedEnvironment:
         redis_process=None,
         redis_dir=None,
         purpose=TEST,
-        reused_database=False,
     ):
         self.env = env
         self.purpose = purpose
-        #: Whether the database was left by an earlier session on this port.
-        self.reused_database = reused_database
         self._port_lock = port_lock
         self._redis_process = redis_process
         self._redis_dir = redis_dir
@@ -311,16 +309,10 @@ class IsolatedEnvironment:
         )
         database_url = environ.get("DATABASE_URL", DEFAULT_DATABASE_URL)
         private_redis = shutil.which("redis-server") is not None
-        directory = os.path.realpath(os.getcwd())
-        # A debug database keeps its data after the server stops, so a debug
-        # server only takes over one that a server for this directory left.
-        owners = _debug_database_owners(database_url) if purpose == DEBUG else {}
 
         def usable(port):
-            owner = owners.get(_session_database_name(database_url, purpose, port))
-            redis_port = _session_redis_port(environ, port)
-            return owner in (None, directory) and (
-                not private_redis or _port_is_free(redis_port)
+            return not private_redis or _port_is_free(
+                _session_redis_port(environ, port)
             )
 
         base_port, port_lock = _claim_port(
@@ -328,15 +320,16 @@ class IsolatedEnvironment:
         )
         redis_dir = None
         try:
-            session_database_url, reused = _ensure_database(
-                database_url,
-                suffix=f"_{purpose}_{base_port}",
-                owner=directory if purpose == DEBUG else None,
-            )
             env = {
                 **environ,
                 READY_ENV_VAR: "1",
-                "DATABASE_URL": session_database_url,
+                # A debug database left by a server that was killed is garbage;
+                # test databases are reused, because tests reset them anyway.
+                "DATABASE_URL": ensure_database(
+                    database_url,
+                    suffix=f"_{purpose}_{base_port}",
+                    fresh=purpose == DEBUG,
+                ),
                 "REDIS_URL": _session_redis_url(environ, base_port, private_redis),
                 "base_port": str(base_port),
                 # Not gettempdir(): Dallinger rejects development paths with a period.
@@ -349,7 +342,7 @@ class IsolatedEnvironment:
                     "can still reach another local debug server's participants.",
                     file=sys.stderr,
                 )
-                return cls(env, port_lock, purpose=purpose, reused_database=reused)
+                return cls(env, port_lock, purpose=purpose)
 
             redis_dir = tempfile.mkdtemp(prefix=f"psynet-{purpose}-redis-")
             process = start_redis_server(
@@ -362,23 +355,17 @@ class IsolatedEnvironment:
                 shutil.rmtree(redis_dir, ignore_errors=True)
             port_lock.close()
             raise
-        return cls(env, port_lock, process, redis_dir, purpose, reused)
+        return cls(env, port_lock, process, redis_dir, purpose)
 
     def describe(self):
         """Return a summary of where the session's services are."""
         database = urlsplit(self.env["DATABASE_URL"]).path.lstrip("/")
         if self.purpose == DEBUG:
-            reset = (
-                f"\nIt replaces the data that an earlier debug server for this "
-                f"experiment left in {database}."
-                if self.reused_database
-                else ""
-            )
             return (
                 f"This debug server uses database {database}, Redis at "
                 f"{self.env['REDIS_URL']} and port {self.env['base_port']}, so it "
-                "runs alongside other local servers and tests."
-                f"{reset}\n" + export_advice(self.env)
+                "runs alongside other local servers and tests.\n"
+                + export_advice(self.env)
             )
         return (
             f"PsyNet tests use database {database}, Redis at {self.env['REDIS_URL']} "
@@ -390,13 +377,12 @@ class IsolatedEnvironment:
         """Return what to tell the user once a debug server has stopped."""
         database = urlsplit(self.env["DATABASE_URL"]).path.lstrip("/")
         return (
-            f"The debug server on port {self.env['base_port']} has stopped, and "
-            f"its Redis server with it. Its data stays in {database}. To export "
-            f"it, run:\n  {_export_line(self.env)}\nthen psynet export local."
+            f"The debug server on port {self.env['base_port']} has stopped. Its "
+            f"database {database} and Redis server were removed with it."
         )
 
     def close(self):
-        """Stop the session's Redis server, if it started one."""
+        """Stop the session's Redis server and drop a debug session's database."""
         if self._redis_process is not None:
             stop_process(self._redis_process)
             self._redis_process = None
@@ -406,6 +392,8 @@ class IsolatedEnvironment:
         if self._port_lock is not None:
             # While the port is still claimed, so no new session is using it yet.
             shutil.rmtree(self.env["dallinger_develop_directory"], ignore_errors=True)
+            if self.purpose == DEBUG:
+                _drop_session_database(self.env["DATABASE_URL"])
             self._port_lock.close()
             self._port_lock = None
 
@@ -435,40 +423,8 @@ def without_session_settings(environ):
     return environ
 
 
-def stopped_debug_server_environments(directory, environ=None):
-    """Return the settings of isolated debug servers that served ``directory`` and left data.
-
-    Each is a dictionary like a running server's, from which
-    :func:`export_advice` builds the line that reaches its database.
-    """
-    environ = without_session_settings(dict(os.environ if environ is None else environ))
-    database_url = environ.get("DATABASE_URL", DEFAULT_DATABASE_URL)
-    private_redis = shutil.which("redis-server") is not None
-    directory = os.path.realpath(directory)
-    found = []
-    for name, owner in _debug_database_owners(database_url).items():
-        if owner != directory:
-            continue
-        port = int(name.rsplit("_", 1)[1])
-        found.append(
-            {
-                READY_ENV_VAR: "1",
-                "DATABASE_URL": urlunsplit(
-                    urlsplit(database_url)._replace(path=f"/{name}")
-                ),
-                "REDIS_URL": _session_redis_url(environ, port, private_redis),
-                "base_port": str(port),
-            }
-        )
-    return sorted(found, key=lambda env: int(env["base_port"]))
-
-
 def _shared_base_port(environ):
     return int(environ.get("base_port", _DEFAULT_BASE_PORT))
-
-
-def _session_database_name(database_url, purpose, port):
-    return f"{urlsplit(database_url).path.lstrip('/') or 'dallinger'}_{purpose}_{port}"
 
 
 def _session_redis_port(environ, port):
@@ -487,48 +443,11 @@ def _session_redis_url(environ, port, private_redis):
     return _with_redis_database(redis_url, _spare_redis_database(redis_url, slot))
 
 
-def _debug_database_owners(database_url):
-    """Map each ``<database>_debug_<port>`` database to the directory recorded on it.
-
-    Databases without a recorded directory map to ``""``.
-    """
-    import psycopg2
-
-    base = urlsplit(database_url).path.lstrip("/") or "dallinger"
-    pattern = re.compile(rf"{re.escape(base)}_{DEBUG}_\d+")
-    try:
-        connection = psycopg2.connect(database_url)
-    except psycopg2.Error as e:
-        raise RuntimeError(
-            f"Could not connect to {urlsplit(database_url).hostname}: {e}"
-        ) from e
-    try:
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT datname, shobj_description(oid, 'pg_database') FROM pg_database"
-            )
-            return {
-                name: owner or ""
-                for name, owner in cursor.fetchall()
-                if pattern.fullmatch(name)
-            }
-    finally:
-        connection.close()
-
-
 def ensure_database(database_url, *, suffix, fresh=False):
     """Create ``<database><suffix>`` next to ``database_url`` and return its URL.
 
     With ``fresh=True`` an existing database is dropped first, after
     terminating its connections.
-    """
-    return _ensure_database(database_url, suffix=suffix, fresh=fresh)[0]
-
-
-def _ensure_database(database_url, *, suffix, fresh=False, owner=None):
-    """Like :func:`ensure_database`, but also return whether the database existed.
-
-    ``owner`` is an experiment directory to record on a database it creates.
     """
     import psycopg2
     from psycopg2 import sql
@@ -543,32 +462,53 @@ def _ensure_database(database_url, *, suffix, fresh=False, owner=None):
     try:
         with connection.cursor() as cursor:
             if fresh:
-                # DROP DATABASE ... WITH (FORCE) needs PostgreSQL 13, but
-                # `psynet services ensure` starts PostgreSQL 12.
-                cursor.execute(
-                    "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-                    "WHERE datname = %s AND pid <> pg_backend_pid()",
-                    (name,),
-                )
-                cursor.execute(
-                    sql.SQL("DROP DATABASE IF EXISTS {}").format(sql.Identifier(name))
-                )
+                _drop_database(cursor, name)
             cursor.execute("SELECT 1 FROM pg_database WHERE datname = %s", (name,))
-            existed = cursor.fetchone() is not None
-            if not existed:
+            if cursor.fetchone() is None:
                 cursor.execute(
                     sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name))
                 )
-                if owner is not None:
-                    cursor.execute(
-                        sql.SQL("COMMENT ON DATABASE {} IS %s").format(
-                            sql.Identifier(name)
-                        ),
-                        (owner,),
-                    )
     finally:
         connection.close()
-    return urlunsplit(parts._replace(path=f"/{name}")), existed
+    return urlunsplit(parts._replace(path=f"/{name}"))
+
+
+def _drop_database(cursor, name):
+    """Drop database ``name`` if it exists, after terminating its connections."""
+    from psycopg2 import sql
+
+    # DROP DATABASE ... WITH (FORCE) needs PostgreSQL 13, but
+    # `psynet services ensure` starts PostgreSQL 12.
+    cursor.execute(
+        "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+        "WHERE datname = %s AND pid <> pg_backend_pid()",
+        (name,),
+    )
+    cursor.execute(sql.SQL("DROP DATABASE IF EXISTS {}").format(sql.Identifier(name)))
+
+
+def _drop_session_database(session_database_url):
+    """Drop a session's database, warning instead of raising if that fails."""
+    import psycopg2
+
+    shared_url = without_session_settings({"DATABASE_URL": session_database_url})[
+        "DATABASE_URL"
+    ]
+    name = urlsplit(session_database_url).path.lstrip("/")
+    try:
+        connection = psycopg2.connect(shared_url)
+        try:
+            connection.autocommit = True
+            with connection.cursor() as cursor:
+                _drop_database(cursor, name)
+        finally:
+            connection.close()
+    except psycopg2.Error as e:
+        print(
+            f"Warning: could not drop database {name} ({e}). Drop it with "
+            f"'dropdb {name}'.",
+            file=sys.stderr,
+        )
 
 
 def start_redis_server(port, directory, log_file=None, stop_with_caller=False):

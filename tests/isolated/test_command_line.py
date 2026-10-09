@@ -5007,16 +5007,15 @@ def test_local_commands_point_at_the_isolated_debug_server(tmp_path):
         launcher.wait()
 
 
-def test_runtime_config_skips_the_redis_of_a_stopped_server(monkeypatch, capsys):
-    """After an isolated debug server stops, its exported line still works for export."""
+def test_runtime_config_explains_the_redis_of_a_stopped_server(monkeypatch):
+    """A shell with a stopped isolated debug server's export line gets advice."""
     from psynet.command_line import _load_runtime_server_config
 
     monkeypatch.setenv("REDIS_URL", "redis://127.0.0.1:1")
     monkeypatch.setattr("psynet.command_line.redis_vars.get", pytest.fail)
-    config = Mock(ready=True)
 
-    assert _load_runtime_server_config(config) is config
-    assert "Nothing answers at REDIS_URL=redis://127.0.0.1:1" in capsys.readouterr().out
+    with pytest.raises(click.ClickException, match="unset DATABASE_URL REDIS_URL"):
+        _load_runtime_server_config(Mock(ready=True))
 
 
 def test_debug_isolated_reruns_once_and_rejects_docker(monkeypatch):

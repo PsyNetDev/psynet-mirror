@@ -53,15 +53,14 @@ of its own, which it starts and stops with the server. It prints the port, and
 the ``export`` line that points other local commands, such as
 ``psynet export local``, at it; with ``--no-browsers`` it repeats that line
 under the dashboard credentials. Local commands run in the served directory
-refuse to run when they would read a different database from the server. The
-database stays after the server stops. A later ``--isolated`` server for the
-same experiment directory may take the same port and reset it, which that
-server mentions; servers for other directories pick another port, so they
-leave its data alone. The ``export`` line keeps working after the server
-stops: ``psynet export local`` notices that its Redis server has gone and
-reads the database alone. Without the line, local commands run in the
-directory print it. The server also prints the line again when it stops. If the launcher is killed outright,
-Linux still stops the server and its Redis server.
+refuse to run when they would read a different database from the server.
+
+The database is temporary: the server starts with a new one and drops it when
+it stops, together with its Redis server. Export anything you want to keep,
+for example with ``psynet export local``, while the server runs. If the
+launcher is killed outright, Linux still stops the server and its Redis
+server; the database it leaves is replaced by the next ``--isolated`` server
+on that port.
 
 Two debug servers can't share an experiment directory, because each replaces
 the generated files the other serves. ``--isolated`` refuses to start where
