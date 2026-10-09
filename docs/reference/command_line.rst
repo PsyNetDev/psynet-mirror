@@ -155,7 +155,8 @@ experiment's ``./.venv``), setup still scaffolds, writes constraints and
 ensures the Git repository, but refuses to ``uv pip sync`` into that
 environment unless you confirm interactively or pass ``--force-foreign-env``.
 If you decline, setup prints the commands that create and use a dedicated
-``./.venv`` instead.
+``./.venv`` instead. Without a terminal to ask, it does the same and exits
+with status 1.
 
 In a demo inside a PsyNet source checkout, ``psynet setup`` only adds the
 boilerplate files; it never installs packages or rewrites requirements, so
