@@ -1911,6 +1911,41 @@ def _prepare_in_repo_experiment():
     return True
 
 
+def _check_experiment_is_set_up():
+    """Point copied experiments without git or ``constraints.txt`` to ``psynet setup``.
+
+    Git provenance (commit SHA and dirty state) is recorded for deployments.
+    """
+    from .light_utils import git_command_available
+
+    has_repository = git_repository_available()
+    if not has_repository and not git_command_available():
+        raise click.ClickException(
+            "Git does not appear to be installed. Install it from "
+            "https://git-scm.com/downloads, then run 'psynet setup', which "
+            "creates the experiment's repository."
+        )
+    missing = []
+    if not has_repository:
+        missing.append("is not a git repository")
+    if (
+        not is_in_repo_experiment()
+        and not os.environ.get("SKIP_DEPENDENCY_CHECK")
+        and not Path("constraints.txt").exists()
+    ):
+        missing.append("has no constraints.txt")
+    if not missing:
+        return
+    message = (
+        f"This experiment directory {' and '.join(missing)}. If you copied "
+        "a demo or an experiment here, activate a virtual environment for it "
+        "and run 'psynet setup', which creates what is missing."
+    )
+    if missing == ["is not a git repository"]:
+        message += " If the other files are already in place, 'git init' is enough."
+    raise click.ClickException(message)
+
+
 def _check_experiment_directory(mode, *, require_git_commit=False):
     """
     Fail fast on missing scaffold or git before Redis or other heavy I/O.
@@ -1949,33 +1984,7 @@ def _check_experiment_directory(mode, *, require_git_commit=False):
             f"({missing_paths}). "
             f"{_missing_boilerplate_fix(mode=mode, missing_paths=missing_boilerplate)}"
         )
-    # Git provenance (commit SHA and dirty state) is recorded for deployments.
-    from .light_utils import git_command_available
-
-    if not git_repository_available() and not git_command_available():
-        raise click.ClickException(
-            "Git does not appear to be installed. Install it from "
-            "https://git-scm.com/downloads, then run 'psynet setup', which "
-            "creates the experiment's repository."
-        )
-    not_set_up = []
-    if not git_repository_available():
-        not_set_up.append("is not a git repository")
-    if (
-        not is_in_repo_experiment()
-        and not os.environ.get("SKIP_DEPENDENCY_CHECK")
-        and not Path("constraints.txt").exists()
-    ):
-        not_set_up.append("has no constraints.txt")
-    if not_set_up:
-        message = (
-            f"This experiment directory {' and '.join(not_set_up)}. If you copied "
-            "a demo or an experiment here, activate a virtual environment for it "
-            "and run 'psynet setup', which creates what is missing."
-        )
-        if not_set_up == ["is not a git repository"]:
-            message += " If the other files are already in place, 'git init' is enough."
-        raise click.ClickException(message)
+    _check_experiment_is_set_up()
     from .experiment_setup import _containing_worktree_ignores_experiment
 
     if _containing_worktree_ignores_experiment():

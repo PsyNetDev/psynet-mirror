@@ -164,9 +164,9 @@ def _cursor():
     """Yield an autocommit cursor on the ``DATABASE_URL`` server."""
     import psycopg2
 
-    connection = psycopg2.connect(
-        os.environ.get("DATABASE_URL", _DEFAULT_DATABASE_URL), connect_timeout=3
-    )
+    from .services import _postgres_url
+
+    connection = psycopg2.connect(_postgres_url(), connect_timeout=3)
     connection.autocommit = True
     try:
         with connection.cursor() as cursor:
@@ -188,11 +188,12 @@ def find_databases():
         return [Database(name, count) for name, count in cursor.fetchall()]
 
 
-def _users(sessions, matches):
+def _session_names(sessions, matches):
+    """Return the sessions for which ``matches`` holds, e.g. ``session 5100``."""
     return ", ".join(f"session {s.base_port}" for s in sessions if matches(s))
 
 
-def report(sessions, redis_servers, databases):
+def _report(sessions, redis_servers, databases):
     """Print sessions, Redis servers and databases with who uses them."""
     click.echo("Sessions (base_port, database, Redis port, directory):")
     if not sessions:
@@ -204,11 +205,11 @@ def report(sessions, redis_servers, databases):
         )
     click.echo("\nRedis servers:")
     for r in redis_servers:
-        users = _users(sessions, lambda s: s.redis_port == r.port)
+        users = _session_names(sessions, lambda s: s.redis_port == r.port)
         click.echo(f"  {r.port}  PID {r.pid}  {users or 'unused'}")
     click.echo("\nDatabases:")
     for d in databases:
-        users = _users(sessions, lambda s: s.database == d.name)
+        users = _session_names(sessions, lambda s: s.database == d.name)
         click.echo(
             f"  {d.name}  {d.connections} connections  {users or 'not referenced'}"
         )
@@ -233,7 +234,7 @@ def leftovers(sessions, redis_servers, databases):
     return stale_databases, stale_redis
 
 
-def clean(stale_databases, stale_redis):
+def _clean(stale_databases, stale_redis):
     """Drop ``stale_databases`` and stop ``stale_redis``."""
     import psutil
     from psycopg2 import sql
@@ -269,7 +270,7 @@ def list_services(*, clean_leftovers, assume_yes):
     sessions = find_sessions()
     redis_servers = find_redis_servers()
     databases = find_databases()
-    report(sessions, redis_servers, databases)
+    _report(sessions, redis_servers, databases)
     if not clean_leftovers:
         return
     stale_databases, stale_redis = leftovers(sessions, redis_servers, databases)
@@ -282,4 +283,4 @@ def list_services(*, clean_leftovers, assume_yes):
     for r in stale_redis:
         click.echo(f"  redis-server on port {r.port} (PID {r.pid})")
     if assume_yes or click.confirm("Remove them?", default=False):
-        clean(stale_databases, stale_redis)
+        _clean(stale_databases, stale_redis)
