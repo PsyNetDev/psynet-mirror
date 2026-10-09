@@ -482,7 +482,10 @@ def ensure_local_services(*, assume_yes: bool = False, strict: bool = True) -> b
     strict :
         If True, raise when services remain unavailable after any start attempt.
     """
-    if os.environ.get(SERVICES_CHECKED_ENV_VAR):
+    from .isolated_environment import READY_ENV_VAR
+
+    # Only within an isolated session, so a stray export can't hide stopped services.
+    if os.environ.get(SERVICES_CHECKED_ENV_VAR) and os.environ.get(READY_ENV_VAR):
         return True
     click.echo("Checking local PostgreSQL and Redis...")
     checks = check_local_services()

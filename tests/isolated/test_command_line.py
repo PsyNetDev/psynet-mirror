@@ -3832,12 +3832,14 @@ def test_isolated_tests_check_the_experiment_before_creating_services(
         "psynet.command_line._check_experiment_directory",
         Mock(side_effect=click.ClickException("run psynet setup")),
     )
-    start = Mock()
+    start, ensure = Mock(), Mock()
     monkeypatch.setattr("psynet.isolated_environment.IsolatedEnvironment.start", start)
+    monkeypatch.setattr("psynet.services.ensure_local_services", ensure)
     with working_directory(tmp_path):
         with pytest.raises(click.ClickException, match="run psynet setup"):
             _rerun_in_isolated_test_environment()
     start.assert_not_called()
+    ensure.assert_not_called()
 
 
 def test_pre_launch_checks_directory_before_redis():

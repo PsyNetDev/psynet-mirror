@@ -109,6 +109,11 @@ def test_ensure_local_services_soft_does_not_raise(monkeypatch):
 def test_ensure_local_services_trusts_a_parent_that_checked_them(monkeypatch):
     monkeypatch.setattr("psynet.services.check_local_services", _down_checks)
     monkeypatch.setenv("_PSYNET_LOCAL_SERVICES_CHECKED", "1")
+    monkeypatch.delenv("_PSYNET_TEST_ENVIRONMENT_READY", raising=False)
+    monkeypatch.setattr("psynet.services._is_interactive", lambda: False)
+    with pytest.raises(click.ClickException):
+        ensure_local_services(assume_yes=False, strict=True)
+    monkeypatch.setenv("_PSYNET_TEST_ENVIRONMENT_READY", "1")
     assert ensure_local_services(assume_yes=False, strict=True) is True
 
 
