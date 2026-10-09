@@ -3001,6 +3001,7 @@ def test_missing_boilerplate_message_mentions_blank_config_for_upgrades(
     )
     assert "touch config.txt" in message
     assert "Experiment.config" in message
+    assert "'psynet scripts scaffold' and then 'git init'" in message
 
     without_config = _missing_boilerplate_message(["Dockerfile"])
     assert "touch config.txt" not in without_config

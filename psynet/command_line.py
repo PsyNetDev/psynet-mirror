@@ -2011,7 +2011,7 @@ def _missing_boilerplate_message(missing_paths):
             "It also pins PsyNet, writes constraints.txt, installs packages into "
             "your active virtual environment, and initialises Git.",
             "If you only need the template files, run 'psynet scripts scaffold' "
-            "instead.",
+            "and then 'git init' instead.",
         ]
     if "config.txt" in missing_paths:
         details.append(
