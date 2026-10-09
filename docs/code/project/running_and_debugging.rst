@@ -60,7 +60,7 @@ it stops, together with its Redis server. Export anything you want to keep,
 for example with ``psynet export local``, while the server runs. If the
 launcher is killed outright, Linux still stops the server and its Redis
 server; the database it leaves is replaced by the next ``--isolated`` server
-on that port, and ``psynet services list --clean`` removes it.
+on that port, and ``psynet services list`` shows it until then.
 
 Two debug servers can't share an experiment directory, because each replaces
 the generated files the other serves. ``--isolated`` refuses to start where
