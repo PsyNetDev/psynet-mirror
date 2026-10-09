@@ -234,7 +234,7 @@ class IsolatedEnvironment:
                 )
                 return cls(env, port_lock)
 
-            process = start_redis_server(redis_port(base_port), tempfile.gettempdir())
+            process = start_redis_server(redis_port(base_port))
         except BaseException:
             if session_database_url is not None:
                 _drop_session_database(session_database_url)
@@ -331,7 +331,7 @@ def _drop_session_database(session_database_url):
         )
 
 
-def start_redis_server(port, directory, log_file=None):
+def start_redis_server(port):
     """Start a non-persistent ``redis-server`` on ``port`` and wait until it answers.
 
     Raises
@@ -344,8 +344,8 @@ def start_redis_server(port, directory, log_file=None):
         raise RuntimeError(f"Port {port} for a test Redis server is in use.")
     process = subprocess.Popen(
         ["redis-server", "--bind", "127.0.0.1", "--port", str(port)]
-        + ["--dir", str(directory), "--save", "", "--appendonly", "no"],
-        stdout=log_file or subprocess.DEVNULL,
+        + ["--dir", tempfile.gettempdir(), "--save", "", "--appendonly", "no"],
+        stdout=subprocess.DEVNULL,
         stderr=subprocess.STDOUT,
     )
     try:
