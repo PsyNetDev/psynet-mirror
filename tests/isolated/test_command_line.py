@@ -4938,40 +4938,54 @@ def test_isolated_waiter_passes_sigterm_to_its_child(tmp_path):
     assert not psutil.pid_exists(child_pid)
 
 
-def test_local_commands_point_at_the_isolated_debug_server(tmp_path, capsys):
-    """Without the export line, local commands say how to reach the server."""
+def test_local_commands_point_at_the_isolated_debug_server(tmp_path):
+    """Without the export line, local commands refuse and say how to reach it."""
+    import json
     import sys
     import time
 
-    from psynet.command_line import _warn_if_debug_server_uses_another_database
-    from psynet.isolated_environment import debug_server_environment
+    from psynet.command_line import _check_debug_server_uses_this_database
+    from psynet.isolated_environment import READY_ENV_VAR, debug_server_environment
 
+    # Like the launcher of `psynet debug local --isolated` and its re-run child.
     fake_psynet = tmp_path / "psynet"
-    fake_psynet.write_text("import time\ntime.sleep(60)\n")
+    fake_psynet.write_text(
+        "import json, os, subprocess, sys, time\n"
+        "if 'CHILD_ENV' in os.environ:\n"
+        "    env = {**os.environ, **json.loads(os.environ.pop('CHILD_ENV'))}\n"
+        "    subprocess.Popen([sys.executable, *sys.argv], env=env)\n"
+        "time.sleep(60)\n"
+    )
     server_url = "postgresql://dallinger:dallinger@localhost/dallinger_debug_5987"
-    env = {
-        **os.environ,
-        "_PSYNET_TEST_ENVIRONMENT_READY": "1",
+    child_env = {
+        READY_ENV_VAR: "1",
         "DATABASE_URL": server_url,
         "REDIS_URL": "redis://127.0.0.1:7366",
         "base_port": "5987",
     }
-    server = subprocess.Popen(
-        [sys.executable, str(fake_psynet), "debug", "local"], cwd=tmp_path, env=env
+    shell = {k: v for k, v in os.environ.items() if k != READY_ENV_VAR}
+    launcher = subprocess.Popen(
+        [sys.executable, str(fake_psynet), "debug", "local"],
+        cwd=tmp_path,
+        env={**shell, "CHILD_ENV": json.dumps(child_env)},
     )
     try:
         deadline = time.monotonic() + 10
-        while debug_server_environment(tmp_path) is None:
+        while (debug_server_environment(tmp_path) or (0, {}))[1].get(
+            READY_ENV_VAR
+        ) is None:
             assert time.monotonic() < deadline, "the server was not found"
             time.sleep(0.1)
         with working_directory(tmp_path):
-            _warn_if_debug_server_uses_another_database()
-        warning = capsys.readouterr().err
-        assert f"psynet debug (PID {server.pid})" in warning
-        assert f"export DATABASE_URL={server_url} " in warning
+            with pytest.raises(click.ClickException) as error:
+                _check_debug_server_uses_this_database()
+        assert f"psynet debug (PID {launcher.pid})" not in str(error.value)
+        assert f"export DATABASE_URL={server_url} " in str(error.value)
     finally:
-        server.kill()
-        server.wait()
+        for child in psutil.Process(launcher.pid).children():
+            child.kill()
+        launcher.kill()
+        launcher.wait()
 
 
 def test_export_local_says_when_the_exported_redis_has_stopped(monkeypatch):

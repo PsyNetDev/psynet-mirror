@@ -27,6 +27,7 @@ from psynet.isolated_environment import (
     shared_environment_warning,
     should_isolate,
     start_redis_server,
+    without_session_settings,
 )
 
 
@@ -62,6 +63,21 @@ def test_should_isolate_respects_opt_out_and_ci():
     assert not should_isolate({"CI": "true"})
     with pytest.raises(ValueError, match="'isolated'.*'shared'.*'bogus'"):
         should_isolate({ENV_VAR: "bogus"})
+
+
+def test_new_sessions_ignore_an_exported_debug_session():
+    exported = {
+        "DATABASE_URL": "postgresql://u:p@localhost/dallinger_debug_5100",
+        "REDIS_URL": "redis://127.0.0.1:6479",
+        "base_port": "5100",
+        "OTHER": "kept",
+    }
+    assert without_session_settings(exported) == {
+        "DATABASE_URL": "postgresql://u:p@localhost/dallinger",
+        "OTHER": "kept",
+    }
+    plain = {"DATABASE_URL": "postgresql://u:p@localhost/study_2", "base_port": "5200"}
+    assert without_session_settings(plain) == plain
 
 
 def test_shared_environment_warns_once():
@@ -148,8 +164,7 @@ def test_isolated_environment_uses_its_own_services(drop_new_databases):
     url = urlsplit(os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL))
     database = re.sub(r"_(test|debug)_\d+$", "", url.path.lstrip("/"))
     shared = {
-        # As in a shell that exported a debug server's settings.
-        "DATABASE_URL": urlunsplit(url._replace(path=f"/{database}_debug_5999")),
+        "DATABASE_URL": urlunsplit(url._replace(path=f"/{database}")),
         "REDIS_URL": os.environ.get("REDIS_URL", DEFAULT_REDIS_URL),
         "base_port": os.environ.get("base_port", "5000"),
     }

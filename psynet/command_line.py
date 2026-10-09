@@ -412,7 +412,7 @@ def prompt_for_ssh_server():
 def get_db_uri(location, app=None, server=None):
     match location:
         case "local":
-            _warn_if_debug_server_uses_another_database()
+            _check_debug_server_uses_this_database()
             yield db.db_url
         case "heroku" | "docker_heroku":
             if app is None:
@@ -430,8 +430,8 @@ def get_db_uri(location, app=None, server=None):
             raise click.BadParameter(f"Invalid location: {location}")
 
 
-def _warn_if_debug_server_uses_another_database():
-    """Warn if the ``psynet debug`` serving this directory uses another database.
+def _check_debug_server_uses_this_database():
+    """Fail if the ``psynet debug`` serving this directory uses another database.
 
     This happens when a shell lacks, or still has, the ``export`` line that
     ``psynet debug local --isolated`` prints.
@@ -455,10 +455,10 @@ def _warn_if_debug_server_uses_another_database():
         advice = export_advice(environ)
     else:
         advice = "To use its database, run: unset DATABASE_URL REDIS_URL base_port"
-    click.echo(
-        f"Warning: psynet debug (PID {pid}) serves this directory with database "
-        f"{theirs.lstrip('/')}, but this command uses {ours.lstrip('/')}. {advice}",
-        err=True,
+    raise click.ClickException(
+        f"psynet debug (PID {pid}) serves this directory with database "
+        f"{theirs.lstrip('/')}, but this command would use {ours.lstrip('/')}. "
+        f"{advice}"
     )
 
 
@@ -4152,9 +4152,19 @@ def _rerun_in_isolated_environment(purpose):
         IsolatedEnvironment,
         check_no_debug_server,
         sigterm_on_caller_exit,
+        without_session_settings,
     )
     from .services import SERVICES_CHECKED_ENV_VAR, ensure_local_services
 
+    shared = without_session_settings(os.environ)
+    if shared != dict(os.environ):
+        log(
+            "Ignoring the exported settings of an earlier isolated session; "
+            "this session starts from the shared ones."
+        )
+        for key in ("DATABASE_URL", "REDIS_URL", "base_port"):
+            os.environ.pop(key, None)
+        os.environ.update(shared)
     try:
         check_no_debug_server(os.getcwd(), purpose)
     except RuntimeError as e:
@@ -4189,7 +4199,10 @@ def _wait_forwarding_signals(process):
     """
 
     def forward(signum, frame):
-        process.send_signal(signum)
+        try:
+            process.send_signal(signum)
+        except ProcessLookupError:
+            pass
 
     signals = (signal.SIGTERM, signal.SIGHUP)
     previous = {sig: signal.signal(sig, forward) for sig in signals}

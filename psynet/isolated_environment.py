@@ -271,10 +271,10 @@ class IsolatedEnvironment:
 
     @classmethod
     def _start(cls, environ, purpose):
-        environ = dict(os.environ if environ is None else environ)
-        database_url = _without_session_suffix(
-            environ.get("DATABASE_URL", DEFAULT_DATABASE_URL)
+        environ = without_session_settings(
+            dict(os.environ if environ is None else environ)
         )
+        database_url = environ.get("DATABASE_URL", DEFAULT_DATABASE_URL)
         redis_url = environ.get("REDIS_URL", DEFAULT_REDIS_URL)
         private_redis = shutil.which("redis-server") is not None
         shared_base_port = int(environ.get("base_port", _DEFAULT_BASE_PORT))
@@ -299,9 +299,8 @@ class IsolatedEnvironment:
                 READY_ENV_VAR: "1",
                 "DATABASE_URL": session_database_url,
                 "base_port": str(base_port),
-                "dallinger_develop_directory": os.path.join(
-                    tempfile.gettempdir(), f"dallinger_develop_{base_port}"
-                ),
+                # Not gettempdir(): Dallinger rejects development paths with a period.
+                "dallinger_develop_directory": f"/tmp/dallinger_develop_{base_port}",
             }
             if not private_redis:
                 slot = (base_port - shared_base_port - _PORT_OFFSET) // 10
@@ -368,15 +367,23 @@ class IsolatedEnvironment:
         self.close()
 
 
-def _without_session_suffix(database_url):
-    """Strip an isolated session's ``_test_<port>`` or ``_debug_<port>`` suffix.
+def without_session_settings(environ):
+    """Return ``environ`` without the exported settings of an isolated session.
 
-    A shell that exported a debug server's ``DATABASE_URL`` would otherwise
-    give its tests databases such as ``dallinger_debug_5100_test_5200``.
+    A shell that ran the ``export`` line of a debug server has its
+    ``<database>_debug_<port>`` database, its private Redis (which stops with
+    the server) and its port. A new session should start from the shared
+    settings instead, not from databases such as
+    ``dallinger_debug_5100_test_5200`` and a stopped Redis.
     """
-    parts = urlsplit(database_url)
+    environ = dict(environ)
+    parts = urlsplit(environ.get("DATABASE_URL", ""))
     path = re.sub(rf"_({TEST}|{DEBUG})_\d+$", "", parts.path)
-    return urlunsplit(parts._replace(path=path))
+    if path != parts.path:
+        environ["DATABASE_URL"] = urlunsplit(parts._replace(path=path))
+        environ.pop("REDIS_URL", None)
+        environ.pop("base_port", None)
+    return environ
 
 
 def ensure_database(database_url, *, suffix, fresh=False):
@@ -427,8 +434,11 @@ def _ensure_database(database_url, *, suffix, fresh=False):
 def start_redis_server(port, directory, log_file=None, stop_with_caller=False):
     """Start a non-persistent ``redis-server`` on ``port`` and wait until it answers.
 
-    With ``stop_with_caller=True`` the server also stops when the calling
-    process dies without cleaning up; see :func:`sigterm_on_caller_exit`.
+    With ``stop_with_caller=True`` the server runs in its own session, so
+    Ctrl+C in the terminal doesn't stop it before the servers that use it, and
+    stops when the calling process dies without cleaning up; see
+    :func:`sigterm_on_caller_exit`. Otherwise it stays in the caller's process
+    group and gets its signals.
 
     Raises
     ------
@@ -437,15 +447,13 @@ def start_redis_server(port, directory, log_file=None, stop_with_caller=False):
         answer within 10 seconds.
     """
     if not _port_is_free(port):
-        raise RuntimeError(f"Port {port} for a test Redis server is in use.")
-    # In its own session, Ctrl+C in the terminal doesn't stop Redis before the
-    # servers that use it; the session's owner stops it afterwards.
+        raise RuntimeError(f"Port {port} for a session's Redis server is in use.")
     process = subprocess.Popen(
         ["redis-server", "--bind", "127.0.0.1", "--port", str(port)]
         + ["--dir", str(directory), "--save", "", "--appendonly", "no"],
         stdout=log_file or subprocess.DEVNULL,
         stderr=subprocess.STDOUT,
-        start_new_session=True,
+        start_new_session=stop_with_caller,
         preexec_fn=sigterm_on_caller_exit() if stop_with_caller else None,
     )
     try:
@@ -477,7 +485,14 @@ def sigterm_on_caller_exit():
     if not sys.platform.startswith("linux"):
         return None
     prctl = ctypes.CDLL(None, use_errno=True).prctl
-    return lambda: prctl(_PR_SET_PDEATHSIG, signal.SIGTERM)
+    caller = os.getpid()
+
+    def preexec():
+        # The caller may already have died between fork and prctl.
+        if prctl(_PR_SET_PDEATHSIG, signal.SIGTERM) != 0 or os.getppid() != caller:
+            os.kill(os.getpid(), signal.SIGTERM)
+
+    return preexec
 
 
 def stop_process(process):

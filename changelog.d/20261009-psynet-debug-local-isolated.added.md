@@ -1,1 +1,1 @@
-Added `psynet debug local --isolated`, which runs the debug server on a free port with its own database and Redis server, so it can run alongside other local debug servers and tests.
+Added `psynet debug local --isolated`, which runs the debug server on a free port with its own database and Redis server, so it can run alongside other local debug servers and tests. It prints an `export` line for other local commands, and local commands run in its directory refuse to run when they would read a different database.

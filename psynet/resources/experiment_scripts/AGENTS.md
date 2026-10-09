@@ -56,7 +56,8 @@ Validate code with `psynet test local`, not `python experiment.py`. For
 running, debugging and inspecting the database, read
 `code/project/running_and_debugging`. After `psynet debug local`, the log
 prints an ad page URL such as
-`http://127.0.0.1:5000/ad?generate_tokens=true&recruiter=hotair`; offer to
+`http://127.0.0.1:5000/ad?generate_tokens=true&recruiter=hotair` (with
+`--isolated`, use the port it prints instead of 5000); offer to
 walk through the experiment in the browser. When you start the server from a
 non-interactive background shell, keep stdin open
 (`tail -f /dev/null | psynet debug local`); otherwise it can stop without a
