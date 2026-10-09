@@ -32,8 +32,8 @@ from psynet.audit.model import (
     screenshot_caption,
 )
 from psynet.perf_test import (
+    CAPACITY_ADVICE,
     CapacityLimits,
-    capacity_advice,
     capacity_failures,
     format_capacity_summary,
     queue_wait_p95,
@@ -892,9 +892,7 @@ def render_performance_result(
         )
         if line.strip()
     ]
-    notes = summary + capacity_advice(
-        capacity_search=bool(options_data.get("capacity_search"))
-    )
+    notes = [*summary, *CAPACITY_ADVICE]
     notes_html = "".join(
         f'<p class="artifact-note">{html.escape(note)}</p>' for note in notes
     )

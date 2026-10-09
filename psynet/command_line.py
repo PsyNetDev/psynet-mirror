@@ -4200,18 +4200,16 @@ def test__docker_ssh(
 
 
 def _validate_performance_n_bots(ctx, param, value):
-    """Click callback: return ``--n-bots`` as ``"auto"``, a list of bot counts, or ``None``."""
+    """Click callback: return ``--n-bots`` as a list of bot counts, or ``None``."""
     if value is None:
         return None
-    if value.strip().lower() == "auto":
-        return "auto"
     try:
         counts = [int(x) for x in value.split(",")]
     except ValueError:
         counts = []
     if not counts or any(n < 1 for n in counts):
         raise click.BadParameter(
-            "use 'auto' or comma-separated whole numbers of at least 1, such as 5,10,20."
+            "use comma-separated whole numbers of at least 1, such as 5,10,20."
         )
     return counts
 
@@ -4223,9 +4221,6 @@ _test_options["performance_n_bots"] = click.option(
     The --n-bots parameter can accept a comma-separated list of integers
     to run sequential tests with different maximum concurrency levels.
     Example: --n-bots "5,10,20" will run three separate tests.
-    Use --n-bots auto to search for the largest bot count that keeps the
-    95th-percentile response time under --max-p95-ms and async queue waits
-    under --max-queue-p95-s, without errors.
     If not specified, will default to Experiment.test_n_bots""",
 )
 
@@ -4235,8 +4230,8 @@ _test_options["performance_max_p95_ms"] = click.option(
     default=None,
     help="""
     The 95th-percentile response time (for /timeline and /response) that a
-    test may reach while still counting as within capacity. Used by
-    --n-bots auto and by the suggested participant cap in the summary.
+    test may reach while still counting as within capacity. Used by the
+    capacity and suggested participant cap in the summary.
     Defaults to 500.""",
 )
 
@@ -4458,8 +4453,7 @@ def performance_test__local(existing=False, json_output=None, debug=False, **opt
 
     The --n-bots parameter can accept a comma-separated list of integers
     to run sequential tests with different concurrency levels.
-    Example: --n-bots "5,10,20" will run three separate tests, and
-    --n-bots auto searches for the server's capacity.
+    Example: --n-bots "5,10,20" will run three separate tests.
 
     By default, this command starts a new experiment server automatically,
     with a free port, a database and a Redis server of its own, so it leaves
@@ -4613,7 +4607,6 @@ def _run_performance_test_with_existing_server(
     os.environ["PASSTHROUGH_ERRORS"] = "True"
 
     bot_counts = n_bots or [exp.test_n_bots]
-    find_capacity = bot_counts == "auto"
 
     tester = PerformanceTester(
         authenticated_session=exp.authenticated_session,
@@ -4643,10 +4636,7 @@ def _run_performance_test_with_existing_server(
     print(f"Bot output log: {bot_log_file.name}")
     started_at = datetime.datetime.now().isoformat(timespec="seconds")
     try:
-        if find_capacity:
-            all_results = tester.find_capacity(bot_log_file=bot_log_file)
-        else:
-            all_results = tester.run(bot_counts=bot_counts, bot_log_file=bot_log_file)
+        all_results = tester.run(bot_counts=bot_counts, bot_log_file=bot_log_file)
     finally:
         bot_log_file.close()
     finished_at = datetime.datetime.now().isoformat(timespec="seconds")
@@ -4659,7 +4649,6 @@ def _run_performance_test_with_existing_server(
         }
         options = {
             "n_bots_sweep": [result["n_bots"] for result in all_results],
-            "capacity_search": find_capacity,
             "max_p95_s": tester.limits.max_p95_s,
             "max_queue_p95_s": tester.limits.max_queue_p95_s,
             "duration_minutes": tester.duration_minutes,

@@ -181,30 +181,6 @@ def test_parallel_test_reraises_a_bot_error_after_all_bots_finish(monkeypatch):
     check_bots.assert_not_called()
 
 
-@pytest.mark.parametrize(
-    "capacity, expected_probes",
-    [
-        (150, [10, 20, 40, 80, 160, 120, 140, 150]),
-        (5, [10, 5, 7, 6]),
-    ],
-)
-def test_capacity_search_brackets_then_bisects(capacity, expected_probes):
-    tester = PerformanceTester(authenticated_session=Mock(), base_url="http://x")
-
-    def fake_test(n_bots, bot_log_file):
-        p95 = 0.1 if n_bots <= capacity else 0.9
-        return _base_result(n_bots=n_bots, p95_response_time=p95, server_stopped=False)
-
-    with (
-        patch.object(tester, "_test_performance", side_effect=fake_test),
-        patch.object(tester, "_pause_between_tests"),
-        patch("psynet.perf_test.raise_open_file_limit"),
-    ):
-        results = tester.find_capacity()
-
-    assert [r["n_bots"] for r in results] == expected_probes
-
-
 def test_capacity_limits_from_options_keeps_zero_and_defaults_none():
     limits = CapacityLimits.from_options(max_p95_s=0, max_queue_p95_s=None)
 

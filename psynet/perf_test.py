@@ -6,11 +6,10 @@ requests), keeps a fixed number of them taking the experiment at once, and
 then reads the server's ``Request`` and ``AsyncProcess`` tables to measure
 response times and async queue waits. Measurements cover only the test window:
 requests logged before the bots were told to stop and processes that started
-by then, plus the wait of the oldest process still queued at the end.
-
-:func:`find_capacity <PerformanceTester.find_capacity>` searches for the
-largest bot count that stays within :class:`CapacityLimits`. Bots share this
-process, so experiment code they run must not rely on per-process state.
+by then, plus the wait of the oldest process still queued at the end, and
+:func:`format_capacity_summary` judges them against :class:`CapacityLimits`.
+Bots share this process, so experiment code they run must not rely on
+per-process state.
 """
 
 import datetime
@@ -35,11 +34,6 @@ _BOT_THREAD_PREFIX = "psynet-bot-"
 
 DEFAULT_MAX_P95_S = 0.5
 DEFAULT_MAX_QUEUE_P95_S = 5.0
-_CAPACITY_SEARCH_START = 10
-_CAPACITY_SEARCH_MAX = 2000
-# The search stops once the gap between the largest passing and smallest
-# failing bot counts is within this fraction of the passing count.
-_CAPACITY_RESOLUTION = 0.1
 _CAPACITY_HEADROOM = 0.8
 _RAMP_UP_WARNING_SHARE = 0.25
 _OPEN_FILE_TARGET = 65536
@@ -243,48 +237,6 @@ class PerformanceTester:
             all_results.append(result)
             if result["server_stopped"]:
                 break
-
-        self._print_performance_summary(all_results)
-        return all_results
-
-    def find_capacity(self, bot_log_file=None):
-        """Search for the largest bot count the server handles within limits.
-
-        Doubles the bot count from 10 until a test fails
-        :func:`capacity_failures`, then bisects between the largest passing and
-        smallest failing counts until they are within 10% of each other.
-
-        Returns
-        -------
-        list[dict]
-            One result per test, in the order they ran.
-        """
-        raise_open_file_limit()
-        self._print_suite_header(
-            f"automatic (from {_CAPACITY_SEARCH_START}, while keeping "
-            f"{self.limits.describe()})"
-        )
-        self._suite_started_at = datetime.datetime.now()
-        all_results = []
-        highest_pass = lowest_fail = None
-        while True:
-            n_bots = next_capacity_probe(highest_pass, lowest_fail)
-            if n_bots is None:
-                break
-            if all_results:
-                self._pause_between_tests()
-            result = self._run_one_test(f"{len(all_results) + 1}", n_bots, bot_log_file)
-            all_results.append(result)
-            if result["server_stopped"]:
-                break
-            failures = capacity_failures(result, self.limits)
-            if failures:
-                logger.info(
-                    warning(f"{n_bots:,} bots exceeded limits: {', '.join(failures)}")
-                )
-                lowest_fail = n_bots
-            else:
-                highest_pass = n_bots
 
         self._print_performance_summary(all_results)
         return all_results
@@ -1443,30 +1395,6 @@ def capacity_failures(result, limits=CapacityLimits()):
     return reasons
 
 
-def next_capacity_probe(highest_pass, lowest_fail, max_bots=_CAPACITY_SEARCH_MAX):
-    """Return the next bot count for the capacity search, or ``None`` when done.
-
-    Parameters
-    ----------
-    highest_pass : int or None
-        Largest bot count that has passed so far.
-    lowest_fail : int or None
-        Smallest bot count that has failed so far.
-    max_bots : int
-        The search never goes above this count.
-    """
-    if lowest_fail is None:
-        if highest_pass is None:
-            return _CAPACITY_SEARCH_START
-        if highest_pass >= max_bots:
-            return None
-        return min(highest_pass * 2, max_bots)
-    lower = highest_pass or 0
-    if lowest_fail - lower <= max(1, lower * _CAPACITY_RESOLUTION):
-        return None
-    return (lower + lowest_fail) // 2
-
-
 def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
     """Describe the capacity that ``results`` imply and suggest a participant cap.
 
@@ -1533,34 +1461,15 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
     return lines
 
 
-def capacity_advice(capacity_search=False):
-    """Return advice on getting participant numbers that apply to a deployment.
-
-    The audit shows it beside the results. ``performance.json`` doesn't record
-    where the test ran, so the advice always includes the local caveat.
-
-    Parameters
-    ----------
-    capacity_search : bool
-        Whether the test already searched for capacity with ``--n-bots auto``.
-
-    Returns
-    -------
-    list[str]
-    """
-    advice = [
-        "Local results only show how the experiment copes on this computer. "
-        "For numbers that apply to your study, launch the experiment on its "
-        "deployment server (psynet debug ssh) and run psynet performance-test "
-        "ssh there; the server's CPU, memory and worker settings set the real "
-        "capacity.",
-        "Bots fetch pages and submit answers without a browser, so the results "
-        "leave out the static files, media and JavaScript requests that "
-        "participants' browsers make.",
-    ]
-    if not capacity_search:
-        advice.append(
-            "To find the largest number of concurrent participants the server "
-            "handles, add --n-bots auto."
-        )
-    return advice
+#: Shown beside performance results in the audit. ``performance.json`` doesn't
+#: record where the test ran, so it always includes the local caveat.
+CAPACITY_ADVICE = (
+    "Local results only show how the experiment copes on this computer. "
+    "For numbers that apply to your study, launch the experiment on its "
+    "deployment server (psynet debug ssh) and run psynet performance-test "
+    "ssh there; the server's CPU, memory and worker settings set the real "
+    "capacity.",
+    "Bots fetch pages and submit answers without a browser, so the results "
+    "leave out the static files, media and JavaScript requests that "
+    "participants' browsers make.",
+)
