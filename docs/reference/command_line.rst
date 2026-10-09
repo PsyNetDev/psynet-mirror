@@ -193,15 +193,18 @@ pick free settings before starting another session.
   psynet services list
   psynet services list --clean
 
-``--clean`` removes leftovers of isolated test and debug sessions that have
-ended: databases named ``*_test_<port>``, ``*_debug_<port>`` or ``*_slot<n>``
-that have no connections, Redis servers PsyNet started for such sessions that
-have no clients, and their Redis folders. A ``*_debug_<port>`` database is
-kept after its server stops so that you can still export it, so export first
-if you need the data. ``--clean`` skips anything a session it can see uses,
-which covers only your own PsyNet, Dallinger and pytest processes, and asks
-before removing. Pass ``--yes`` to skip the question, which you must do
-where nobody can answer it, such as in a script.
+``--clean`` removes leftovers of isolated test sessions that have ended:
+databases named ``*_test_<port>`` or ``*_slot<n>`` and the Redis folders that
+no Redis server runs in any more. It never stops processes. It skips
+databases that have connections, that a session it can see or the current
+shell uses, or whose port a running test or debug session still holds; it
+can see only your own PsyNet, Dallinger and pytest processes, but the port
+check also covers other users' isolated sessions. The ``*_debug_<port>``
+databases of stopped ``psynet debug local --isolated`` servers are kept so
+that you can still export them; add ``--include-debug-data`` to drop those
+too. ``--clean`` lists what it would remove and asks first. Pass ``--yes``
+to skip the question, which you must do where nobody can answer it, such as
+in a script.
 
 
 .. _scripts:

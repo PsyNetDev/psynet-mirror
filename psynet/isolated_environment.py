@@ -516,6 +516,11 @@ def _port_is_free(port):
         return True
 
 
+def port_lock_path(port):
+    """Return the lock file that a test or debug session holds while it uses ``port``."""
+    return os.path.join(tempfile.gettempdir(), f"psynet-test-{port}.lock")
+
+
 def _claim_port(start, also_free=None):
     """Return a free web port and an open lock file that reserves it.
 
@@ -527,9 +532,7 @@ def _claim_port(start, also_free=None):
     """
     for port in range(start, start + 1000, 10):
         try:
-            lock = open(
-                os.path.join(tempfile.gettempdir(), f"psynet-test-{port}.lock"), "w"
-            )
+            lock = open(port_lock_path(port), "w")
         except OSError:
             continue
         try:

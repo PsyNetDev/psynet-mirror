@@ -191,20 +191,30 @@ def services_ensure(assume_yes):
     "--clean",
     "clean_leftovers",
     is_flag=True,
-    help="Remove session databases and Redis servers that no running session uses.",
+    help="Remove the databases and Redis folders of ended isolated test sessions.",
+)
+@click.option(
+    "--include-debug-data",
+    is_flag=True,
+    help="With --clean, also drop the databases of stopped isolated debug servers.",
 )
 @click.option("--yes", "assume_yes", is_flag=True, help="Clean without prompting.")
-def services_list(clean_leftovers, assume_yes):
+def services_list(clean_leftovers, include_debug_data, assume_yes):
     """Show which local sessions use which ports, databases and Redis servers.
 
     Reads the settings of your running PsyNet, Dallinger and pytest processes.
-    With --clean, also removes the databases (*_test_<port>, *_debug_<port>,
-    *_slot<n>), Redis servers and Redis folders left over from ended isolated
-    test and debug sessions.
+    With --clean, also removes the databases (*_test_<port>, *_slot<n>) and
+    Redis folders left over from ended isolated test sessions. The databases
+    of stopped debug servers (*_debug_<port>) are kept for 'psynet export
+    local' unless you add --include-debug-data.
     """
     from psynet.service_usage import list_services
 
-    list_services(clean_leftovers=clean_leftovers, assume_yes=assume_yes)
+    list_services(
+        clean_leftovers=clean_leftovers,
+        assume_yes=assume_yes,
+        include_debug_data=include_debug_data,
+    )
 
 
 @click.command("generate-constraints")
