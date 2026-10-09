@@ -30,14 +30,15 @@ Design constraints
 ------------------
 Dallinger connects to PostgreSQL and Redis when ``dallinger.db`` is first
 imported, so the environment variables must change before that import. This
-module therefore imports nothing from Dallinger. It is used in two places:
+module therefore imports nothing from Dallinger. It is used in these places:
 
 - :mod:`psynet.pytest_environment`, an early pytest plugin that PsyNet's
   pytest configuration and the experiment ``pytest.ini`` template load with
   ``-p``. Plugins named with ``-p`` are imported before auto-loaded plugins
   such as ``pytest_dallinger`` and ``pytest_psynet``.
-- ``psynet test local``, which has already imported Dallinger by the time it
-  runs, and so re-runs itself in a child process inside the environment.
+- ``psynet test local`` and ``psynet debug local --isolated``, which have
+  already imported Dallinger by the time they run, and so re-run themselves
+  in a child process inside the environment.
 
 ``PSYNET_TEST_ENVIRONMENT`` may be unset, ``isolated`` (the default) or
 ``shared`` (opt out); other values are an error, so a typo can't silently turn
