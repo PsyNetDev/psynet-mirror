@@ -4483,6 +4483,7 @@ def test_run_performance_test_with_new_server_starts_legacy_debug_server():
         ) as start_server,
         patch("psynet.command_line._run_performance_test_with_existing_server"),
         patch("psynet.command_line._stop_server"),
+        patch("psynet.command_line.get_config", return_value=Mock(ready=True)),
         patch("psynet.command_line._local_port_is_free", return_value=True),
         patch("psynet.command_line.list_psynet_worker_processes", return_value=[]),
     ):
@@ -4497,23 +4498,38 @@ def test_run_performance_test_with_new_server_starts_legacy_debug_server():
     )
 
 
-def test_performance_test_refuses_to_replace_a_running_local_server():
+def test_performance_test_refuses_to_replace_a_server_on_its_configured_port(
+    tmp_path, monkeypatch
+):
+    from dallinger.config import get_config
+
     from psynet.command_line import _run_performance_test_with_new_server
 
+    config = get_config()
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("base_port", raising=False)
     with socket.socket() as busy:
         busy.bind(("127.0.0.1", 0))
         busy.listen()
         port = busy.getsockname()[1]
-        with (
-            patch("psynet.command_line._local_base_port", return_value=port),
-            patch(
-                "psynet.command_line._start_local_server_and_wait_for_ready"
-            ) as start,
-            pytest.raises(click.ClickException, match="--existing"),
-        ):
-            _run_performance_test_with_new_server(
-                n_bots="2", stagger=0, time_factor=1, duration_minutes=1, debug=False
-            )
+        (tmp_path / "config.txt").write_text(f"[Server]\nbase_port = {port}\n")
+        config.clear()
+        try:
+            with (
+                patch(
+                    "psynet.command_line._start_local_server_and_wait_for_ready"
+                ) as start,
+                pytest.raises(click.ClickException, match=f"port {port} .*--existing"),
+            ):
+                _run_performance_test_with_new_server(
+                    n_bots="2",
+                    stagger=0,
+                    time_factor=1,
+                    duration_minutes=1,
+                    debug=False,
+                )
+        finally:
+            config.clear()
     start.assert_not_called()
 
 
@@ -4521,6 +4537,7 @@ def test_performance_test_refuses_while_workers_use_this_database():
     from psynet.command_line import _run_performance_test_with_new_server
 
     with (
+        patch("psynet.command_line.get_config", return_value=Mock(ready=True)),
         patch("psynet.command_line._local_port_is_free", return_value=True),
         patch(
             "psynet.command_line.list_psynet_worker_processes", return_value=[Mock()]
@@ -4532,22 +4549,6 @@ def test_performance_test_refuses_while_workers_use_this_database():
             n_bots="2", stagger=0, time_factor=1, duration_minutes=1, debug=False
         )
     start.assert_not_called()
-
-
-def test_local_base_port_reads_the_experiment_config(tmp_path, monkeypatch):
-    from dallinger.config import get_config
-
-    from psynet.command_line import _local_base_port
-
-    (tmp_path / "config.txt").write_text("[Server]\nbase_port = 5987\n")
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv("base_port", raising=False)
-    config = get_config()
-    config.clear()
-    try:
-        assert _local_base_port() == 5987
-    finally:
-        config.clear()
 
 
 @pytest.mark.parametrize(

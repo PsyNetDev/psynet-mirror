@@ -1218,9 +1218,9 @@ def _local_port_is_free(port):
 def _local_base_port():
     """Return the port of this shell's local server (Dallinger's ``base_port``)."""
     config = get_config()
-    if not config.ready:
-        config.load()
-    return config.get("base_port")
+    if config.ready:
+        return config.get("base_port")
+    return int(os.environ.get("base_port", 5000))
 
 
 def psynet_browser_prefix(kind):
@@ -4832,7 +4832,11 @@ def _run_performance_test_with_new_server(
     max_queue_p95_s=None,
 ):
     """Run performance test after starting a new experiment server"""
-    port = _local_base_port()
+    config = get_config()
+    if not config.ready:
+        # So that a base_port in config.txt counts, as it does for the server.
+        config.load()
+    port = config.get("base_port")
     if not _local_port_is_free(port) or list_psynet_worker_processes():
         raise click.ClickException(
             f"A local server is already running (port {port} or this database is "
