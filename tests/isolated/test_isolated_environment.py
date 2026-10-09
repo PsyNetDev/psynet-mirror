@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from pathlib import Path
 from urllib.parse import urlsplit
 
 import pytest
@@ -132,9 +133,12 @@ def test_isolated_environment_uses_its_own_services(drop_new_databases):
         assert urlsplit(first.env["DATABASE_URL"]).path == f"/{database}_test_{port}"
         redis_port = int(first.env["REDIS_URL"].rsplit(":", 1)[1])
         socket.create_connection(("127.0.0.1", redis_port), timeout=1).close()
+        develop_directory = Path(first.env["dallinger_develop_directory"])
+        develop_directory.mkdir(exist_ok=True)
 
     with pytest.raises(OSError):
         socket.create_connection(("127.0.0.1", redis_port), timeout=1).close()
+    assert not develop_directory.exists()
 
 
 @pytest.mark.skipif(shutil.which("redis-server") is None, reason="needs redis-server")
