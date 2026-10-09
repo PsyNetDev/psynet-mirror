@@ -3252,6 +3252,12 @@ msgstr "សូមព្យាយាមម្តងទៀតក្នុងរយ
 
 #: psynet/templates/macros/timeline-shell.html
 #, fuzzy
+msgctxt "timeline_problem"
+msgid "Getting ready, please wait..."
+msgstr "កំពុងត្រៀមខ្លួន សូមរង់ចាំ..."
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
 msgctxt "timeline"
 msgid "Reward"
 msgstr "រង្វាន់"

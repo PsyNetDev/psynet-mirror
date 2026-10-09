@@ -3339,6 +3339,12 @@ msgstr "ꯑꯃꯥ ꯂꯣꯟꯕ"
 
 #: psynet/templates/macros/timeline-shell.html
 #, fuzzy
+msgctxt "timeline_problem"
+msgid "Getting ready, please wait..."
+msgstr "ꯑꯃꯥ ꯂꯣꯟꯕ"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
 msgctxt "timeline"
 msgid "Reward"
 msgstr "ꯑꯃꯥ ꯂꯣꯟꯕ"

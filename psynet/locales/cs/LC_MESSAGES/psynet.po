@@ -3264,6 +3264,12 @@ msgstr "Zkuste to znovu za pár sekund."
 
 #: psynet/templates/macros/timeline-shell.html
 #, fuzzy
+msgctxt "timeline_problem"
+msgid "Getting ready, please wait..."
+msgstr "Připravuji se, prosím, čekejte..."
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
 msgctxt "timeline"
 msgid "Reward"
 msgstr "Odměna"

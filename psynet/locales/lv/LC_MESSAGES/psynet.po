@@ -3269,6 +3269,12 @@ msgstr "Mēģiniet vēlreiz pēc pāris sekundēm."
 
 #: psynet/templates/macros/timeline-shell.html
 #, fuzzy
+msgctxt "timeline_problem"
+msgid "Getting ready, please wait..."
+msgstr "Gatavošanās, lūdzu, uzgaidiet..."
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
 msgctxt "timeline"
 msgid "Reward"
 msgstr "Atlīdzība"

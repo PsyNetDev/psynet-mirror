@@ -3264,6 +3264,12 @@ msgstr "دووبارە هەوڵ بدە لە چەند چرکەیەکدا."
 
 #: psynet/templates/macros/timeline-shell.html
 #, fuzzy
+msgctxt "timeline_problem"
+msgid "Getting ready, please wait..."
+msgstr "ئامادە دەبم، تکایە چاوەڕوان بنە..."
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
 msgctxt "timeline"
 msgid "Reward"
 msgstr "خەڵات"

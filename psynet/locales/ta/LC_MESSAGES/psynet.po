@@ -3334,6 +3334,12 @@ msgstr "ஒரு சில வினாடிகளில் மீண்டு
 
 #: psynet/templates/macros/timeline-shell.html
 #, fuzzy
+msgctxt "timeline_problem"
+msgid "Getting ready, please wait..."
+msgstr "தயாராகிக் கொண்டிருக்கிறது, காத்திருக்கவும்..."
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
 msgctxt "timeline"
 msgid "Reward"
 msgstr "வெகுமதி"

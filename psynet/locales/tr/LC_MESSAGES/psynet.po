@@ -3262,6 +3262,12 @@ msgstr "Birkaç saniye sonra tekrar deneyin."
 
 #: psynet/templates/macros/timeline-shell.html
 #, fuzzy
+msgctxt "timeline_problem"
+msgid "Getting ready, please wait..."
+msgstr "Hazırlanıyor, lütfen bekleyin..."
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
 msgctxt "timeline"
 msgid "Reward"
 msgstr "Ödül"

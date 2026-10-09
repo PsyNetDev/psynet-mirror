@@ -6,371 +6,371 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
-#: psynet/demography/general.py:137
+#: psynet/demography/general.py:153
 msgctxt "gender"
 msgid "How do you identify yourself?"
 msgstr ""
 
-#: psynet/demography/general.py:145
+#: psynet/demography/general.py:161
 msgctxt "gender"
 msgid "Female"
 msgstr ""
 
-#: psynet/demography/general.py:146
+#: psynet/demography/general.py:162
 msgctxt "gender"
 msgid "Male"
 msgstr ""
 
-#: psynet/demography/general.py:147
+#: psynet/demography/general.py:163
 msgctxt "gender"
 msgid "Non-binary"
 msgstr ""
 
-#: psynet/demography/general.py:148
+#: psynet/demography/general.py:164
 msgctxt "gender"
 msgid "Not specified"
 msgstr ""
 
-#: psynet/demography/general.py:149
+#: psynet/demography/general.py:165
 msgctxt "gender"
 msgid "I prefer not to answer"
 msgstr ""
 
-#: psynet/demography/general.py:153
+#: psynet/demography/general.py:170
 msgctxt "gender"
 msgid "Specify yourself"
 msgstr ""
 
-#: psynet/demography/general.py:171
+#: psynet/demography/general.py:190
 msgctxt "age"
 msgid "What is your age?"
 msgstr ""
 
-#: psynet/demography/general.py:185
+#: psynet/demography/general.py:204
 msgctxt "age"
 msgid "You need to provide your age as an integer between 0 and 120!"
 msgstr ""
 
-#: psynet/demography/general.py:187
+#: psynet/demography/general.py:206
 #, python-brace-format
 msgctxt "age"
 msgid "Your answer was: '{AGE}'"
 msgstr ""
 
-#: psynet/demography/general.py:209
+#: psynet/demography/general.py:228
 msgctxt "country-select"
 msgid "Other country"
 msgstr ""
 
-#: psynet/demography/general.py:210
+#: psynet/demography/general.py:229
 msgctxt "country-select"
 msgid "Select a country"
 msgstr ""
 
-#: psynet/demography/general.py:228
+#: psynet/demography/general.py:247
 msgctxt "country-select"
 msgid "You need to select a country!"
 msgstr ""
 
-#: psynet/demography/general.py:242
+#: psynet/demography/general.py:261
 msgctxt "country-select"
 msgid "What country are you from?"
 msgstr ""
 
-#: psynet/demography/general.py:254
+#: psynet/demography/general.py:273
 msgctxt "country-select"
 msgid "What is your current country of residence?"
 msgstr ""
 
-#: psynet/demography/general.py:265
+#: psynet/demography/general.py:284
 msgctxt "formal-education"
 msgid "What is your highest level of formal education?"
 msgstr ""
 
-#: psynet/demography/general.py:278
+#: psynet/demography/general.py:297
 msgctxt "formal-education"
 msgid "None"
 msgstr ""
 
-#: psynet/demography/general.py:279
+#: psynet/demography/general.py:298
 msgctxt "formal-education"
 msgid "High school"
 msgstr ""
 
-#: psynet/demography/general.py:280
+#: psynet/demography/general.py:299
 msgctxt "formal-education"
 msgid "College"
 msgstr ""
 
-#: psynet/demography/general.py:281
+#: psynet/demography/general.py:300
 msgctxt "formal-education"
 msgid "Graduate School"
 msgstr ""
 
-#: psynet/demography/general.py:282
+#: psynet/demography/general.py:301
 msgctxt "formal-education"
 msgid "Postgraduate degree or higher"
 msgstr ""
 
-#: psynet/demography/general.py:306
+#: psynet/demography/general.py:325
 msgctxt "language-select"
 msgid ""
 "What is your mother tongue - i.e., the language which you have grown up "
 "speaking from early childhood?"
 msgstr ""
 
-#: psynet/demography/general.py:315
+#: psynet/demography/general.py:334
 msgctxt "language-select"
 msgid "Select a language"
 msgstr ""
 
-#: psynet/demography/general.py:330
+#: psynet/demography/general.py:349
 msgctxt "language-select"
 msgid "You need to select a language!"
 msgstr ""
 
-#: psynet/demography/general.py:343
+#: psynet/demography/general.py:362
 msgctxt "language-select"
 msgid "Do you speak more than one language?"
 msgstr ""
 
-#: psynet/demography/general.py:348 psynet/demography/general.py:583
-#: psynet/demography/general.py:681 psynet/demography/general.py:708
+#: psynet/demography/general.py:367 psynet/demography/general.py:602
+#: psynet/demography/general.py:700 psynet/demography/general.py:727
 msgid "Yes"
 msgstr ""
 
-#: psynet/demography/general.py:348 psynet/demography/general.py:583
-#: psynet/demography/general.py:681 psynet/demography/general.py:708
+#: psynet/demography/general.py:367 psynet/demography/general.py:602
+#: psynet/demography/general.py:700 psynet/demography/general.py:727
 msgid "No"
 msgstr ""
 
-#: psynet/demography/general.py:432
+#: psynet/demography/general.py:451
 msgctxt "language-select"
 msgid "Please list at least one language!"
 msgstr ""
 
-#: psynet/demography/general.py:465
+#: psynet/demography/general.py:484
 msgctxt "language-select"
 msgid ""
 "Please list the languages you speak in order of proficiency (first language "
 "first, second language second, ...)"
 msgstr ""
 
-#: psynet/demography/general.py:497
+#: psynet/demography/general.py:516
 msgctxt "language-select"
 msgid ""
 "Please list all languages you speak as mother tongues (i.e., which you grew "
 "up speaking since childhood)."
 msgstr ""
 
-#: psynet/demography/general.py:511
+#: psynet/demography/general.py:530
 msgctxt "music"
 msgid ""
 "How many years of formal training on a musical instrument (including voice) "
 "have you had during your lifetime?"
 msgstr ""
 
-#: psynet/demography/general.py:531
+#: psynet/demography/general.py:550
 msgctxt "music"
 msgid "On average, how many hours do you listen to music daily?"
 msgstr ""
 
-#: psynet/demography/general.py:550
+#: psynet/demography/general.py:569
 msgctxt "music"
 msgid "Do you make money from playing music?"
 msgstr ""
 
-#: psynet/demography/general.py:555
+#: psynet/demography/general.py:574
 msgctxt "music"
 msgid "Frequently"
 msgstr ""
 
-#: psynet/demography/general.py:555
+#: psynet/demography/general.py:574
 msgctxt "music"
 msgid "Sometimes"
 msgstr ""
 
-#: psynet/demography/general.py:555
+#: psynet/demography/general.py:574
 msgctxt "music"
 msgid "Never"
 msgstr ""
 
-#: psynet/demography/general.py:577
+#: psynet/demography/general.py:596
 msgctxt "music"
 msgid "Do you have hearing loss or any other hearing issues?"
 msgstr ""
 
-#: psynet/demography/general.py:603
+#: psynet/demography/general.py:622
 msgctxt "dance"
 msgid "Do you dance socially or professionally?"
 msgstr ""
 
-#: psynet/demography/general.py:609
+#: psynet/demography/general.py:628
 msgctxt "dance"
 msgid "Socially"
 msgstr ""
 
-#: psynet/demography/general.py:610
+#: psynet/demography/general.py:629
 msgctxt "dance"
 msgid "Professionally"
 msgstr ""
 
-#: psynet/demography/general.py:611
+#: psynet/demography/general.py:630
 msgctxt "dance"
 msgid "I never dance"
 msgstr ""
 
-#: psynet/demography/general.py:633
+#: psynet/demography/general.py:652
 msgctxt "dance"
 msgid "When was the last time you danced? (choose the most accurate answer):"
 msgstr ""
 
-#: psynet/demography/general.py:647
+#: psynet/demography/general.py:666
 msgctxt "dance"
 msgid "This week"
 msgstr ""
 
-#: psynet/demography/general.py:648
+#: psynet/demography/general.py:667
 msgctxt "dance"
 msgid "This month"
 msgstr ""
 
-#: psynet/demography/general.py:649
+#: psynet/demography/general.py:668
 msgctxt "dance"
 msgid "This year"
 msgstr ""
 
-#: psynet/demography/general.py:650
+#: psynet/demography/general.py:669
 msgctxt "dance"
 msgid "Some years ago"
 msgstr ""
 
-#: psynet/demography/general.py:651
+#: psynet/demography/general.py:670
 msgctxt "dance"
 msgid "Many years ago"
 msgstr ""
 
-#: psynet/demography/general.py:652
+#: psynet/demography/general.py:671
 msgctxt "dance"
 msgid "I never danced"
 msgstr ""
 
-#: psynet/demography/general.py:675
+#: psynet/demography/general.py:694
 msgctxt "speech-disorder"
 msgid "Did you get speech-language therapy as a child?"
 msgstr ""
 
-#: psynet/demography/general.py:681 psynet/demography/general.py:708
+#: psynet/demography/general.py:700 psynet/demography/general.py:727
 msgid "I don’t know"
 msgstr ""
 
-#: psynet/demography/general.py:702
+#: psynet/demography/general.py:721
 msgctxt "speech-disorder"
 msgid "Have you ever been diagnosed with dyslexia?"
 msgstr ""
 
-#: psynet/demography/general.py:729
+#: psynet/demography/general.py:748
 msgctxt "income"
 msgid "What is your total household income per year?"
 msgstr ""
 
-#: psynet/demography/general.py:748
+#: psynet/demography/general.py:767
 #, python-brace-format
 msgctxt "income"
 msgid "Less than 10,000 {CURRENCY}"
 msgstr ""
 
-#: psynet/demography/general.py:749
+#: psynet/demography/general.py:768
 #, python-brace-format
 msgctxt "income"
 msgid "10,000 to 19,999 {CURRENCY}"
 msgstr ""
 
-#: psynet/demography/general.py:750
+#: psynet/demography/general.py:769
 #, python-brace-format
 msgctxt "income"
 msgid "20,000 to 29,999 {CURRENCY}"
 msgstr ""
 
-#: psynet/demography/general.py:751
+#: psynet/demography/general.py:770
 #, python-brace-format
 msgctxt "income"
 msgid "30,000 to 39,999 {CURRENCY}"
 msgstr ""
 
-#: psynet/demography/general.py:752
+#: psynet/demography/general.py:771
 #, python-brace-format
 msgctxt "income"
 msgid "40,000 to 49,999 {CURRENCY}"
 msgstr ""
 
-#: psynet/demography/general.py:753
+#: psynet/demography/general.py:772
 #, python-brace-format
 msgctxt "income"
 msgid "50,000 to 59,999 {CURRENCY}"
 msgstr ""
 
-#: psynet/demography/general.py:754
+#: psynet/demography/general.py:773
 #, python-brace-format
 msgctxt "income"
 msgid "60,000 to 69,999 {CURRENCY}"
 msgstr ""
 
-#: psynet/demography/general.py:755
+#: psynet/demography/general.py:774
 #, python-brace-format
 msgctxt "income"
 msgid "70,000 to 79,999 {CURRENCY}"
 msgstr ""
 
-#: psynet/demography/general.py:756
+#: psynet/demography/general.py:775
 #, python-brace-format
 msgctxt "income"
 msgid "80,000 to 89,999 {CURRENCY}"
 msgstr ""
 
-#: psynet/demography/general.py:757
+#: psynet/demography/general.py:776
 #, python-brace-format
 msgctxt "income"
 msgid "90,000 to 99,999 {CURRENCY}"
 msgstr ""
 
-#: psynet/demography/general.py:758
+#: psynet/demography/general.py:777
 #, python-brace-format
 msgctxt "income"
 msgid "100,000 to 149,999 {CURRENCY}"
 msgstr ""
 
-#: psynet/demography/general.py:759
+#: psynet/demography/general.py:778
 #, python-brace-format
 msgctxt "income"
 msgid "150,000 {CURRENCY} or more"
 msgstr ""
 
-#: psynet/demography/general.py:782
+#: psynet/demography/general.py:801
 msgctxt "experiment-feedback"
 msgid "Did you like the experiment?"
 msgstr ""
 
-#: psynet/demography/general.py:803
+#: psynet/demography/general.py:822
 msgctxt "experiment-feedback"
 msgid "Did you find the experiment difficult?"
 msgstr ""
 
-#: psynet/demography/general.py:826
+#: psynet/demography/general.py:845
 msgctxt "experiment-feedback"
 msgid "Did you encounter any technical problems during the experiment?"
 msgstr ""
 
-#: psynet/demography/general.py:831
+#: psynet/demography/general.py:850
 msgctxt "experiment-feedback"
 msgid "If so, please provide a few words describing the problem."
 msgstr ""
 
-#: psynet/end.py:91
+#: psynet/end.py:97
 msgid "Finish"
 msgstr ""
 
-#: psynet/end.py:127
+#: psynet/end.py:133
 #, python-brace-format
 msgctxt "final-page-rewards"
 msgid ""
@@ -378,7 +378,7 @@ msgid ""
 "the time you spent. "
 msgstr ""
 
-#: psynet/end.py:136
+#: psynet/end.py:142
 #, python-brace-format
 msgctxt "final-page-performance-reward"
 msgid ""
@@ -386,66 +386,66 @@ msgid ""
 "<strong>{CURRENCY}{PERFORMANCE_REWARD}</strong>. "
 msgstr ""
 
-#: psynet/end.py:149
+#: psynet/end.py:155
 msgid "Click Finish to return to your panel."
 msgstr ""
 
-#: psynet/end.py:150
+#: psynet/end.py:156
 msgid "Click Finish to finalize the session."
 msgstr ""
 
-#: psynet/end.py:168
+#: psynet/end.py:174
 msgctxt "final_page_successful"
 msgid "That's the end!"
 msgstr ""
 
-#: psynet/end.py:173 psynet/end.py:312
+#: psynet/end.py:179 psynet/end.py:318
 msgid "Thank you for taking part."
 msgstr ""
 
-#: psynet/end.py:299
+#: psynet/end.py:305
 msgctxt "final_page_unsuccessful"
 msgid "Unfortunately we have to stop early."
 msgstr ""
 
-#: psynet/end.py:307
+#: psynet/end.py:313
 msgctxt "final_page_unsuccessful"
 msgid "However, you will still be paid for the time you spent already."
 msgstr ""
 
-#: psynet/end.py:341
+#: psynet/end.py:369
 msgctxt "final_page_rejected_consent"
 msgid "You chose not to continue."
 msgstr ""
 
-#: psynet/end.py:342
+#: psynet/end.py:370
 msgctxt "final_page_rejected_consent"
 msgid "You may close this page."
 msgstr ""
 
-#: psynet/end.py:346
+#: psynet/end.py:374
 msgid "We will return you to your panel in a few seconds."
 msgstr ""
 
-#: psynet/equipment.py:28
+#: psynet/equipment.py:35
 msgid ""
 "When continuing to the next page you may see a permissions request; please "
 "grant it."
 msgstr ""
 
-#: psynet/experiment.py:3339
+#: psynet/experiment.py:3513
 msgctxt "timeline_problem"
 msgid "This session has already ended. Please reload the page."
 msgstr ""
 
-#: psynet/experiment.py:3372 psynet/experiment.py:6636
+#: psynet/experiment.py:3546 psynet/experiment.py:6905
 msgctxt "timeline_problem"
 msgid ""
 "Synchronization problem detected. Are you running the same experiment in "
 "multiple browser tabs? Please close all other tabs and refresh the page."
 msgstr ""
 
-#: psynet/experiment.py:3596
+#: psynet/experiment.py:3755
 msgid "The experiment is temporarily busy. Please try again."
 msgstr ""
 
@@ -461,60 +461,60 @@ msgstr ""
 msgid "Loop"
 msgstr ""
 
-#: psynet/modular_page.py:1061
+#: psynet/modular_page.py:1059
 msgctxt "validation"
 msgid "You need to check at least one answer!"
 msgstr ""
 
-#: psynet/modular_page.py:1141 psynet/modular_page.py:1521
+#: psynet/modular_page.py:1139 psynet/modular_page.py:1519
 msgctxt "validation"
 msgid "You need to select an answer!"
 msgstr ""
 
-#: psynet/modular_page.py:1571
+#: psynet/modular_page.py:1569
 msgctxt "validation"
 msgid "You need to provide a number!"
 msgstr ""
 
-#: psynet/page.py:633
+#: psynet/page.py:643
 msgctxt "status"
 msgid "Working..."
 msgstr ""
 
-#: psynet/prescreen/__init__.py:1239
+#: psynet/prescreen/__init__.py:1245
 msgctxt "color_blindness_test"
 msgid "Write down the number in the image."
 msgstr ""
 
-#: psynet/prescreen/__init__.py:1321
+#: psynet/prescreen/__init__.py:1327
 msgctxt "color_blindness_test_intro_1"
 msgid ""
 "We will now perform a quick test to check your ability to perceive colors."
 msgstr ""
 
-#: psynet/prescreen/__init__.py:1325
+#: psynet/prescreen/__init__.py:1331
 msgctxt "color_blindness_test_intro_1"
 msgid ""
 "In each trial, you will be presented with an image that contains a number."
 msgstr ""
 
-#: psynet/prescreen/__init__.py:1333
+#: psynet/prescreen/__init__.py:1339
 #, python-brace-format
 msgctxt "color_blindness_test_intro_1"
 msgid "This image will disappear after {HIDE_AFTER} seconds."
 msgstr ""
 
-#: psynet/prescreen/__init__.py:1339
+#: psynet/prescreen/__init__.py:1345
 msgctxt "color_blindness_test_intro_1"
 msgid "You must enter the number that you see into the text box."
 msgstr ""
 
-#: psynet/prescreen/__init__.py:1766
+#: psynet/prescreen/__init__.py:1780
 msgctxt "Beep-headphone-test"
 msgid "Which sound is different from the other two: 1, 2, or 3?"
 msgstr ""
 
-#: psynet/prescreen/__init__.py:1802
+#: psynet/prescreen/__init__.py:1833
 msgid ""
 "Your task will be to judge <strong>which sound is the odd one out</strong>."
 msgstr ""
@@ -613,7 +613,7 @@ msgstr ""
 msgid "The test will start on the next page."
 msgstr ""
 
-#: psynet/recruiters.py:350
+#: psynet/recruiters.py:460
 #, python-brace-format
 msgctxt "early_exit_error"
 msgid ""
@@ -621,36 +621,36 @@ msgid ""
 " quote reference code {REFERENCE_CODE}."
 msgstr ""
 
-#: psynet/recruiters.py:359
+#: psynet/recruiters.py:469
 #, python-brace-format
 msgctxt "early_exit_error"
 msgid ""
 "If you need to contact the researcher about this error, write to {EMAIL}."
 msgstr ""
 
-#: psynet/recruiters.py:369
+#: psynet/recruiters.py:479
 msgctxt "early_exit_error"
 msgid "You may close this page."
 msgstr ""
 
-#: psynet/recruiters.py:381
+#: psynet/recruiters.py:491
 msgctxt "early_exit_error"
 msgid "Unfortunately an error occurred and we cannot continue."
 msgstr ""
 
-#: psynet/recruiters.py:388
+#: psynet/recruiters.py:498
 msgctxt "early_exit_error"
 msgid "However, your responses so far have been saved."
 msgstr ""
 
-#: psynet/recruiters.py:509
+#: psynet/recruiters.py:619
 msgctxt "early_exit"
 msgid ""
 "If you leave now, you will not be able to continue later. Your responses so "
 "far will still be saved."
 msgstr ""
 
-#: psynet/recruiters.py:533
+#: psynet/recruiters.py:643
 #, python-brace-format
 msgctxt "early_exit"
 msgid ""
@@ -659,32 +659,32 @@ msgid ""
 "later. Your responses so far will still be saved."
 msgstr ""
 
-#: psynet/recruiters.py:560
+#: psynet/recruiters.py:670
 msgctxt "early_exit"
 msgid "Leave without payment"
 msgstr ""
 
-#: psynet/recruiters.py:562
+#: psynet/recruiters.py:672
 msgctxt "early_exit"
 msgid "Leave"
 msgstr ""
 
-#: psynet/recruiters.py:564
+#: psynet/recruiters.py:674
 msgctxt "early_exit"
 msgid "Leave without finishing?"
 msgstr ""
 
-#: psynet/recruiters.py:567
+#: psynet/recruiters.py:677
 msgctxt "early_exit"
 msgid "Cancel"
 msgstr ""
 
-#: psynet/recruiters.py:588
+#: psynet/recruiters.py:698
 msgctxt "early_exit_unpaid"
 msgid "You may close this page."
 msgstr ""
 
-#: psynet/recruiters.py:885
+#: psynet/recruiters.py:1016
 #, python-brace-format
 msgctxt "early_exit_prolific"
 msgid ""
@@ -694,7 +694,7 @@ msgid ""
 "will still be saved."
 msgstr ""
 
-#: psynet/recruiters.py:898
+#: psynet/recruiters.py:1029
 #, python-brace-format
 msgctxt "early_exit_prolific"
 msgid ""
@@ -703,7 +703,7 @@ msgid ""
 "saved."
 msgstr ""
 
-#: psynet/recruiters.py:906
+#: psynet/recruiters.py:1037
 #, python-brace-format
 msgctxt "early_exit_prolific"
 msgid ""
@@ -713,7 +713,7 @@ msgid ""
 "far will still be saved."
 msgstr ""
 
-#: psynet/recruiters.py:915
+#: psynet/recruiters.py:1046
 #, python-brace-format
 msgctxt "early_exit_prolific"
 msgid ""
@@ -722,7 +722,7 @@ msgid ""
 "time. Your responses so far will still be saved."
 msgstr ""
 
-#: psynet/recruiters.py:923
+#: psynet/recruiters.py:1054
 #, python-brace-format
 msgctxt "early_exit_prolific"
 msgid ""
@@ -732,19 +732,19 @@ msgid ""
 "saved."
 msgstr ""
 
-#: psynet/recruiters.py:983
+#: psynet/recruiters.py:1114
 msgctxt "prolific_error"
 msgid "If you had already started, message the researcher through Prolific."
 msgstr ""
 
-#: psynet/recruiters.py:994
+#: psynet/recruiters.py:1125
 msgctxt "prolific_error"
 msgid ""
 "Please message the researcher through Prolific and describe what led to this"
 " error."
 msgstr ""
 
-#: psynet/recruiters.py:1004
+#: psynet/recruiters.py:1135
 #, python-brace-format
 msgctxt "early_exit_error_prolific"
 msgid ""
@@ -752,35 +752,35 @@ msgid ""
 "Prolific."
 msgstr ""
 
-#: psynet/recruiters.py:1019
+#: psynet/recruiters.py:1150
 #, python-brace-format
 msgctxt "early_exit_error_prolific"
 msgid ""
 "We will also pay {BONUS} as a bonus, bringing your total payment to {TOTAL}."
 msgstr ""
 
-#: psynet/recruiters.py:1029
+#: psynet/recruiters.py:1160
 #, python-brace-format
 msgctxt "early_exit_error_prolific"
 msgid "We will also pay your {BONUS} performance bonus."
 msgstr ""
 
-#: psynet/recruiters.py:1037
+#: psynet/recruiters.py:1168
 msgctxt "early_exit_error_prolific"
 msgid "Any additional amount you earned will be paid as a bonus."
 msgstr ""
 
-#: psynet/recruiters.py:1048
+#: psynet/recruiters.py:1179
 msgctxt "early_exit_error_prolific"
 msgid "Select Submit to Prolific to complete your submission."
 msgstr ""
 
-#: psynet/recruiters.py:1051
+#: psynet/recruiters.py:1182
 msgctxt "early_exit_error_prolific"
 msgid "Submit to Prolific"
 msgstr ""
 
-#: psynet/recruiters.py:1063
+#: psynet/recruiters.py:1194
 #, python-brace-format
 msgctxt "early_exit_error_prolific"
 msgid ""
@@ -788,69 +788,69 @@ msgid ""
 " submission on Prolific."
 msgstr ""
 
-#: psynet/recruiters.py:1071
+#: psynet/recruiters.py:1202
 msgctxt "early_exit_error_prolific"
 msgid ""
 "To receive payment for the work you completed, you will need to return your "
 "submission on Prolific."
 msgstr ""
 
-#: psynet/recruiters.py:1076
+#: psynet/recruiters.py:1207
 msgctxt "early_exit_error_prolific"
 msgid "Select Continue to payment instructions to complete these steps."
 msgstr ""
 
-#: psynet/recruiters.py:1086
+#: psynet/recruiters.py:1217
 msgctxt "early_exit_error_prolific"
 msgid ""
 "We could not open the payment instructions. Please try again. If this keeps "
 "happening, message the researcher through Prolific."
 msgstr ""
 
-#: psynet/recruiters.py:1092
+#: psynet/recruiters.py:1223
 msgctxt "early_exit_error_prolific"
 msgid "Continue to payment instructions"
 msgstr ""
 
-#: psynet/recruiters.py:1107
+#: psynet/recruiters.py:1238
 msgctxt "early_exit_unpaid_prolific"
 msgid ""
 "Your responses so far have been saved. Please return your submission on "
 "Prolific. You will not receive payment. You may close this page."
 msgstr ""
 
-#: psynet/recruiters.py:1390
+#: psynet/recruiters.py:1530
 msgctxt "early_exit_error_prolific"
 msgid "Your submission has been sent to Prolific."
 msgstr ""
 
-#: psynet/recruiters.py:1394
+#: psynet/recruiters.py:1534
 msgctxt "early_exit_error_prolific"
 msgid "You may close this page."
 msgstr ""
 
-#: psynet/recruiters.py:1403
+#: psynet/recruiters.py:1543
 msgctxt "early_exit_error_prolific"
 msgid ""
 "We could not send your submission to Prolific. Please try again. If this "
 "keeps happening, message the researcher through Prolific."
 msgstr ""
 
-#: psynet/recruiters.py:1760
+#: psynet/recruiters.py:1903
 msgctxt "return_assignment_instructions"
 msgid ""
 "Please return your submission via the Prolific interface and click Next. We "
 "will then automatically pay you a bonus."
 msgstr ""
 
-#: psynet/recruiters.py:1788
+#: psynet/recruiters.py:1938
 msgctxt "return_for_bonus_completed"
 msgid ""
 "That worked. You have been credited for the time you spent. Thank you for "
 "taking part. You may close this page."
 msgstr ""
 
-#: psynet/recruiters.py:1797
+#: psynet/recruiters.py:1947
 msgctxt "return_for_bonus_payment_failed"
 msgid ""
 "Your return was recorded, but we could not complete the bonus payment "
@@ -858,14 +858,14 @@ msgid ""
 "You may close this page."
 msgstr ""
 
-#: psynet/recruiters.py:1809
+#: psynet/recruiters.py:1959
 msgctxt "assignment_return_retry"
 msgid ""
 "That didn't work. Are you sure you returned the submission? Return it on "
 "Prolific, then click Next."
 msgstr ""
 
-#: psynet/recruiters.py:1833
+#: psynet/recruiters.py:1983
 msgctxt "screen_out_return_and_message_experimenter"
 msgid ""
 "To receive payment for the time you spent, return your submission on "
@@ -873,7 +873,7 @@ msgid ""
 "arrange payment if it is due. You may close this page."
 msgstr ""
 
-#: psynet/recruiters.py:3182
+#: psynet/recruiters.py:3423
 msgctxt "early_exit_lucid"
 msgid ""
 "If you leave now, you will not be able to continue later, and you will "
@@ -882,24 +882,24 @@ msgid ""
 "still be saved."
 msgstr ""
 
-#: psynet/recruiters.py:3239
+#: psynet/recruiters.py:3480
 msgctxt "lucid_error"
 msgid "We will return you to your panel in a few seconds."
 msgstr ""
 
-#: psynet/recruiters.py:3247
+#: psynet/recruiters.py:3488
 msgctxt "early_exit_error_lucid"
 msgid "We will return you to your panel in a few seconds."
 msgstr ""
 
-#: psynet/recruiters.py:3255
+#: psynet/recruiters.py:3496
 msgctxt "early_exit_error_lucid"
 msgid ""
 "We could not return you to your panel. Please try again. If this keeps "
 "happening, contact your panel provider."
 msgstr ""
 
-#: psynet/recruiters.py:3260
+#: psynet/recruiters.py:3501
 msgctxt "early_exit_error_lucid"
 msgid "Return to your panel"
 msgstr ""
@@ -2503,19 +2503,24 @@ msgstr ""
 msgid "Image not found"
 msgstr ""
 
-#: psynet/templates/macros/timeline-shell.html:33
+#: psynet/templates/macros/timeline-shell.html:32
 msgctxt "timeline_problem"
 msgid "Comment stored."
 msgstr ""
 
-#: psynet/templates/macros/timeline-shell.html:34
+#: psynet/templates/macros/timeline-shell.html:33
 msgctxt "timeline_problem"
 msgid "Please wait for the page to load."
 msgstr ""
 
-#: psynet/templates/macros/timeline-shell.html:34
+#: psynet/templates/macros/timeline-shell.html:33
 msgctxt "timeline_problem"
 msgid "Try again in a couple of seconds."
+msgstr ""
+
+#: psynet/templates/macros/timeline-shell.html:34
+msgctxt "timeline_problem"
+msgid "Getting ready, please wait..."
 msgstr ""
 
 #: psynet/templates/macros/timeline-shell.html:103
@@ -2660,12 +2665,12 @@ msgctxt "timeline_hold"
 msgid "{ARRIVED}/{TOTAL} of your group are ready."
 msgstr ""
 
-#: psynet/timeline_hold.py:600
+#: psynet/timeline_hold.py:607
 msgctxt "timeline_hold"
 msgid "Waiting for other participants…"
 msgstr ""
 
-#: psynet/timeline_hold.py:604
+#: psynet/timeline_hold.py:611
 msgctxt "timeline_hold"
 msgid "Please wait, the experiment should continue shortly..."
 msgstr ""
