@@ -388,7 +388,7 @@ def without_session_settings(environ):
     """
     environ = dict(environ)
     database_url = environ.get("DATABASE_URL", "")
-    shared_url, port = _split_session_database(database_url)
+    shared_url, port = split_session_database(database_url)
     if port is not None and port == environ.get("base_port"):
         environ["DATABASE_URL"] = shared_url
         environ.pop("REDIS_URL", None)
@@ -396,10 +396,11 @@ def without_session_settings(environ):
     return environ
 
 
-def _split_session_database(database_url):
+def split_session_database(database_url):
     """Split ``<database>_(test|debug)_<port>`` into the shared URL and the port.
 
-    Returns ``(database_url, None)`` for other names.
+    Also accepts a bare database name. Returns ``(database_url, None)`` for
+    other names.
     """
     parts = urlsplit(database_url)
     match = re.fullmatch(rf"(.*)_(?:{TEST}|{DEBUG})_(\d+)", parts.path)
@@ -470,7 +471,7 @@ def _drop_session_database(session_database_url):
     """Drop a session's database, warning instead of raising if that fails."""
     import psycopg2
 
-    shared_url, _ = _split_session_database(session_database_url)
+    shared_url, _ = split_session_database(session_database_url)
     name = urlsplit(session_database_url).path.lstrip("/")
     try:
         connection = psycopg2.connect(shared_url)
