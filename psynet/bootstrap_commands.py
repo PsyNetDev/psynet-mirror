@@ -191,16 +191,16 @@ def services_ensure(assume_yes):
     "--clean",
     "clean_leftovers",
     is_flag=True,
-    help="Remove the databases and Redis folders of ended isolated sessions.",
+    help="Drop the databases of isolated sessions that were killed.",
 )
-@click.option("--yes", "assume_yes", is_flag=True, help="Clean without prompting.")
+@click.option("--yes", "assume_yes", is_flag=True, help="Drop them without prompting.")
 def services_list(clean_leftovers, assume_yes):
     """Show which local sessions use which ports, databases and Redis servers.
 
     Reads the settings of your running PsyNet, Dallinger and pytest processes.
-    With --clean, also removes the databases (dallinger_test_<port>,
-    dallinger_debug_<port>) and Redis folders left over from ended isolated
-    test and debug sessions on a local PostgreSQL server. CI slot databases
+    With --clean, also drops the databases (dallinger_test_<port>,
+    dallinger_debug_<port>) that isolated test and debug sessions left on a
+    local PostgreSQL server when they were killed. CI slot databases
     (*_slot<n>) are kept for reuse.
     """
     from psynet.service_usage import list_services

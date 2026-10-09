@@ -5,7 +5,6 @@ import json
 import os
 import subprocess
 import sys
-import tempfile
 import time
 
 import psutil
@@ -15,11 +14,9 @@ from psynet.bootstrap_commands import services_list
 from psynet.isolated_environment import READY_ENV_VAR
 from psynet.service_usage import (
     Database,
-    RedisServer,
     Session,
     _session_command,
     find_databases,
-    find_redis_folders,
     find_sessions,
     leftovers,
 )
@@ -83,7 +80,7 @@ def test_session_command_recognises_scripts_and_python_modules():
     assert _session_command(["bash"]) is None
 
 
-def test_leftovers_are_unused_session_databases_and_folders():
+def test_leftovers_are_unused_session_databases():
     sessions = [Session("5100", "dallinger_test_5100", 6400)]
     databases = [
         Database("dallinger", 0),
@@ -100,41 +97,10 @@ def test_leftovers_are_unused_session_databases_and_folders():
         Database("study_test_2024", 0),
         Database("survey_debug_2023", 0),
     ]
-    redis_servers = [
-        RedisServer(1, 6379, "/", own=True, clients=0),
-        RedisServer(2, 6400, "/tmp/b", own=True, clients=0),
-        RedisServer(3, 6420, "", own=False, clients=0),
-    ]
-    folders = ["/tmp/b", "/tmp/psynet-debug-redis-gone"]
 
-    stale_databases, stale_folders = leftovers(
-        sessions, redis_servers, databases, folders, in_use={"dallinger_test_5140"}
-    )
+    stale = leftovers(sessions, databases, in_use={"dallinger_test_5140"})
 
-    assert [d.name for d in stale_databases] == [
-        "dallinger_test_5110",
-        "dallinger_debug_5130",
-    ]
-    assert stale_folders == ["/tmp/psynet-debug-redis-gone"]
-
-    unknown = RedisServer(4, 6440, "", own=True, clients=0)
-    _, stale_folders = leftovers(sessions, [*redis_servers, unknown], [], folders)
-    assert stale_folders == []
-
-
-def _old_folder(path):
-    path.mkdir()
-    os.utime(path, (time.time() - 3600, time.time() - 3600))
-
-
-def test_find_redis_folders_skips_symlinks_and_new_folders(tmp_path, monkeypatch):
-    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
-    _old_folder(tmp_path / "psynet-test-redis-real")
-    (tmp_path / "psynet-test-redis-starting").mkdir()
-    _old_folder(tmp_path / "elsewhere")
-    (tmp_path / "psynet-test-redis-link").symlink_to(tmp_path / "elsewhere")
-
-    assert find_redis_folders() == [str(tmp_path / "psynet-test-redis-real")]
+    assert [d.name for d in stale] == ["dallinger_test_5110", "dallinger_debug_5130"]
 
 
 def test_clean_keeps_a_database_whose_port_lock_is_held_or_unreadable(
@@ -154,16 +120,16 @@ def test_clean_keeps_a_database_whose_port_lock_is_held_or_unreadable(
     try:
         with open(lock_path, "w") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            _clean([Database(name, 0)], [])
+            _clean([Database(name, 0)])
         lock_path.unlink()
         lock_path.symlink_to(tmp_path / "elsewhere")
-        _clean([Database(name, 0)], [])
+        _clean([Database(name, 0)])
         assert name in [d.name for d in find_databases()]
         output = capsys.readouterr().out
         assert "a session now holds port 6990" in output
         assert "can't open the lock file" in output
         lock_path.unlink()
-        _clean([Database(name, 0)], [])
+        _clean([Database(name, 0)])
         assert name not in [d.name for d in find_databases()]
     finally:
         with _cursor() as cursor:
@@ -171,19 +137,22 @@ def test_clean_keeps_a_database_whose_port_lock_is_held_or_unreadable(
 
 
 def test_clean_without_a_terminal_needs_yes(tmp_path, monkeypatch):
-    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
     monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@localhost/dallinger")
-    for finder in ("find_sessions", "find_redis_servers", "find_databases"):
+    monkeypatch.setattr(
+        "psynet.service_usage.port_lock_path", lambda port: str(tmp_path / "lock")
+    )
+    for finder in ("find_sessions", "find_redis_servers"):
         monkeypatch.setattr(f"psynet.service_usage.{finder}", lambda: [])
-    folder = tmp_path / "psynet-test-redis-gone"
-    _old_folder(folder)
+    monkeypatch.setattr(
+        "psynet.service_usage.find_databases",
+        lambda: [Database("dallinger_test_5990", 0)],
+    )
 
     result = CliRunner().invoke(services_list, ["--clean"])
 
     assert result.exit_code != 0
-    assert f"Redis folder {folder}" in result.output
+    assert "dallinger_test_5990" in result.output
     assert "pass --yes" in result.output
-    assert folder.exists()
 
 
 def test_clean_refuses_a_remote_database_server(monkeypatch):

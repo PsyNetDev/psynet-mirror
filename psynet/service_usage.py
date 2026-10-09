@@ -12,12 +12,13 @@ sessions under plain ``pytest`` change theirs in-process (see
 :mod:`psynet.isolated_environment`), so the port lock that every isolated test
 and debug session holds is the reliable sign that its database is in use.
 
-``psynet services list`` prints the result. With ``--clean`` it removes
-leftovers of isolated sessions that have ended: databases named
-``<base>_test_<port>`` and ``<base>_debug_<port>``, where ``<base>`` is ``dallinger`` or this shell's database, and Redis folders that no
-``redis-server`` runs in. It never stops processes, and it skips databases
-with connections, databases that a visible session or this shell uses, and
-databases whose port lock is held, which it holds itself while dropping. It
+``psynet services list`` prints the result. With ``--clean`` it drops the
+databases of isolated sessions that were killed before they could drop them
+themselves: those named ``<base>_test_<port>`` and ``<base>_debug_<port>``,
+where ``<base>`` is ``dallinger`` or this shell's database. It never stops
+processes, and it skips databases with connections, databases that a visible
+session or this shell uses, and databases whose port lock is held, which it
+holds itself while dropping. It
 only cleans a local PostgreSQL server, because the port locks and processes
 it checks are this machine's. CI slot databases (``*_slot<n>``) are left
 alone: ``psynet dev ci run-tests`` reuses them and holds no lock between
@@ -32,11 +33,7 @@ from __future__ import annotations
 import fcntl
 import os
 import re
-import shutil
-import stat
 import sys
-import tempfile
-import time
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field
 from urllib.parse import urlparse
@@ -59,11 +56,6 @@ _ISOLATED_DATABASE = re.compile(rf"(\w+)_({TEST}|{DEBUG})_(\d{{4,5}})")
 _SESSION_PORTS = range(5000, 65536)
 _LOCAL_HOSTS = {"", "localhost", "127.0.0.1", "::1"}
 _PYTHON_OPTIONS_WITH_VALUES = {"-W", "-X", "-Q"}
-# Redis rewrites its command line to ``redis-server <host>:<port>``, so the
-# folder it runs in is what ties a server to an isolated session.
-_REDIS_FOLDER = re.compile(rf"psynet-({TEST}|{DEBUG})-redis-\w+$")
-# A session creates its Redis folder just before starting Redis in it.
-_REDIS_FOLDER_GRACE_SECONDS = 60
 
 
 @dataclass
@@ -84,8 +76,6 @@ class RedisServer:
 
     pid: int
     port: int | None
-    directory: str
-    own: bool
     #: Other connected clients, or ``None`` if the server didn't answer.
     clients: int | None = None
 
@@ -184,24 +174,17 @@ def find_redis_servers():
     """Return all running ``redis-server`` processes."""
     import psutil
 
-    uid = os.getuid()
     servers = []
-    for process in psutil.process_iter(["pid", "name", "uids", "cmdline"]):
+    for process in psutil.process_iter(["pid", "name", "cmdline"]):
         if process.info["name"] != "redis-server":
             continue
         cmdline = " ".join(process.info["cmdline"] or [])
-        try:
-            directory = process.cwd()
-        except (psutil.AccessDenied, psutil.NoSuchProcess, psutil.ZombieProcess):
-            directory = ""
         match = re.search(r"--port (\d+)|:(\d+)\s*$", cmdline)
         port = int(match.group(1) or match.group(2)) if match else None
         servers.append(
             RedisServer(
                 pid=process.info["pid"],
                 port=port,
-                directory=directory,
-                own=bool(process.info["uids"]) and process.info["uids"].real == uid,
                 clients=_redis_clients(port) if port else None,
             )
         )
@@ -342,65 +325,22 @@ def _count(number, noun):
     return f"{number} {noun}{'' if number == 1 else 's'}"
 
 
-def find_redis_folders():
-    """Return the current user's Redis folders of isolated sessions.
-
-    Symbolic links are skipped, so cleaning never follows one out of the
-    temporary directory, as are folders created in the last minute, whose
-    session may be about to start Redis in them.
-    """
-    root = tempfile.gettempdir()
-    uid = os.getuid()
-    folders = []
-    for name in sorted(os.listdir(root)):
-        if not _REDIS_FOLDER.match(name):
-            continue
-        path = os.path.join(root, name)
-        try:
-            status = os.lstat(path)
-        except FileNotFoundError:
-            continue
-        if (
-            stat.S_ISDIR(status.st_mode)
-            and status.st_uid == uid
-            and time.time() - status.st_mtime > _REDIS_FOLDER_GRACE_SECONDS
-        ):
-            folders.append(path)
-    return folders
-
-
-def leftovers(
-    sessions,
-    redis_servers,
-    databases,
-    redis_folders=(),
-    *,
-    in_use=(),
-    bases=("dallinger",),
-):
-    """Return the databases and Redis folders that ``--clean`` removes.
+def leftovers(sessions, databases, *, in_use=(), bases=("dallinger",)):
+    """Return the databases that ``--clean`` drops.
 
     ``in_use`` names further databases to keep, such as this shell's own.
     Only isolated databases named after one of ``bases`` count, so that a
     look-alike such as ``booking_test_6000`` is kept.
-    A Redis folder is left over once no
-    ``redis-server`` runs in it, for example after its session was killed
-    with SIGKILL. No folder counts as left over while one of the user's Redis
-    servers runs in an unknown folder.
     """
     used = {s.database for s in sessions} | set(in_use)
-    stale_databases = []
+    stale = []
     for d in databases:
         parts = _isolated_database(d.name)
         if parts is None or parts[0] not in bases:
             continue
         if d.connections == 0 and d.name not in used:
-            stale_databases.append(d)
-    if any(r.own and not r.directory for r in redis_servers):
-        return stale_databases, []
-    running = {os.path.realpath(r.directory) for r in redis_servers if r.directory}
-    stale_folders = [f for f in redis_folders if os.path.realpath(f) not in running]
-    return stale_databases, stale_folders
+            stale.append(d)
+    return stale
 
 
 def _redis_clients(port):
@@ -417,8 +357,8 @@ def _redis_clients(port):
     return info["connected_clients"] - 1
 
 
-def _clean(stale_databases, stale_folders):
-    """Drop ``stale_databases`` and remove ``stale_folders``; return the number of failures.
+def _clean(stale_databases):
+    """Drop ``stale_databases`` and return the number of failures.
 
     A database whose port lock a session has claimed meanwhile is kept; the
     lock is held while dropping, so no session can claim it halfway.
@@ -456,35 +396,19 @@ def _clean(stale_databases, stale_folders):
                         click.echo(f"Could not drop database {database.name}: {e}")
                     else:
                         click.echo(f"Dropped database {database.name}.")
-    for folder in stale_folders:
-        try:
-            shutil.rmtree(folder)
-        except OSError as e:
-            failures += 1
-            click.echo(f"Could not remove Redis folder {folder}: {e}")
-        else:
-            click.echo(f"Removed Redis folder {folder}.")
     return failures
 
 
 def _find_leftovers():
-    """Return what ``--clean`` would remove now, skipping claimed session ports."""
+    """Return the databases ``--clean`` would drop now, skipping claimed session ports."""
     own = _database_name(os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL))
     bases = {_database_name(DEFAULT_DATABASE_URL), _base_database(own)}
-    stale_databases, stale_folders = leftovers(
-        find_sessions(),
-        find_redis_servers(),
-        find_databases(),
-        find_redis_folders(),
-        in_use={own},
-        bases=bases,
-    )
-    stale_databases = [
+    stale = leftovers(find_sessions(), find_databases(), in_use={own}, bases=bases)
+    return [
         d
-        for d in stale_databases
+        for d in stale
         if _session_port(d.name) is None or not _port_is_claimed(_session_port(d.name))
     ]
-    return stale_databases, stale_folders
 
 
 def list_services(*, clean_leftovers, assume_yes):
@@ -530,28 +454,24 @@ def _database_host():
 
 
 def _clean_interactively(assume_yes):
-    """List the leftovers, ask for confirmation, then remove those still left over."""
-    stale_databases, stale_folders = _find_leftovers()
-    if not (stale_databases or stale_folders):
-        click.echo("\nNo leftovers of ended test or debug sessions to clean.")
+    """List the leftover databases, ask for confirmation, then drop those still left over."""
+    stale = _find_leftovers()
+    if not stale:
+        click.echo("\nNo databases of ended test or debug sessions to drop.")
         return
-    click.echo("\nLeftovers of ended test and debug sessions:")
-    for d in stale_databases:
-        click.echo(f"  database {d.name}")
-    for folder in stale_folders:
-        click.echo(f"  Redis folder {folder}")
+    click.echo("\nDatabases of ended test and debug sessions:")
+    for d in stale:
+        click.echo(f"  {d.name}")
     if not assume_yes and not sys.stdin.isatty():
         raise click.ClickException(
-            "Nobody can confirm the removal here; pass --yes to remove them."
+            "Nobody can confirm dropping them here; pass --yes to drop them."
         )
-    if not (assume_yes or click.confirm("Remove them?", default=False)):
+    if not (assume_yes or click.confirm("Drop them?", default=False)):
         return
     # Sessions may have started while the question was open.
-    now_databases, now_folders = _find_leftovers()
-    now_names = {d.name for d in now_databases}
-    failures = _clean(
-        [d for d in stale_databases if d.name in now_names],
-        [f for f in stale_folders if f in now_folders],
-    )
+    now_names = {d.name for d in _find_leftovers()}
+    failures = _clean([d for d in stale if d.name in now_names])
     if failures:
-        raise click.ClickException(f"{failures} leftovers could not be removed.")
+        raise click.ClickException(
+            f"{_count(failures, 'database')} could not be dropped."
+        )
