@@ -335,9 +335,9 @@ class PerformanceTester:
         logger.info(bold("=" * 80))
         logger.info(bold("\u26a1 PERFORMANCE TEST SUITE"))
         logger.info(f"Bots per test:        {bots_description}")
-        logger.info(f"Test duration:        {self.duration_minutes:.1f} min")
-        logger.info(f"Bot start stagger:    ~{self.stagger_interval_s:.1f}s")
-        logger.info(f"Bot time factor:      {self.time_factor:.1f}")
+        logger.info(f"Test duration:        {self.duration_minutes:g} min")
+        logger.info(f"Bot start stagger:    ~{self.stagger_interval_s:g}s")
+        logger.info(f"Bot time factor:      {self.time_factor:g}")
 
     def _run_one_test(self, label, n_bots, bot_log_file):
         logger.info("")
@@ -1559,35 +1559,31 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
     return lines
 
 
-def capacity_advice(capacity_search=False, on_deployment=False):
+def capacity_advice(capacity_search=False):
     """Return advice on getting participant numbers that apply to a deployment.
+
+    The audit shows it beside the results. ``performance.json`` doesn't record
+    where the test ran, so the advice always includes the local caveat.
 
     Parameters
     ----------
     capacity_search : bool
         Whether the test already searched for capacity with ``--n-bots auto``.
-    on_deployment : bool
-        Whether the test ran on the deployment server (``performance-test ssh``),
-        so that its results already apply to the study.
 
     Returns
     -------
     list[str]
     """
-    advice = []
-    if not on_deployment:
-        advice.append(
-            "Local results only show how the experiment copes on this computer. "
-            "For numbers that apply to your study, launch the experiment on its "
-            "deployment server (psynet debug ssh) and run psynet performance-test "
-            "ssh there; the server's CPU, memory and worker settings set the real "
-            "capacity."
-        )
-    advice.append(
+    advice = [
+        "Local results only show how the experiment copes on this computer. "
+        "For numbers that apply to your study, launch the experiment on its "
+        "deployment server (psynet debug ssh) and run psynet performance-test "
+        "ssh there; the server's CPU, memory and worker settings set the real "
+        "capacity.",
         "Bots fetch pages and submit answers without a browser, so the results "
         "leave out the static files, media and JavaScript requests that "
-        "participants' browsers make."
-    )
+        "participants' browsers make.",
+    ]
     if not capacity_search:
         advice.append(
             "To find the largest number of concurrent participants the server "

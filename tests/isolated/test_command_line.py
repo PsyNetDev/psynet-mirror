@@ -4727,7 +4727,7 @@ def test_ssh_performance_test_command_forwards_zero_valued_options():
         max_p95_ms=800,
         max_queue_p95_s=0,
     ) == (
-        "env PSYNET_PERFORMANCE_TEST_ON_DEPLOYMENT=1 psynet performance-test local --existing "
+        "psynet performance-test local --existing "
         "--n-bots 5 --stagger 0 --time-factor 0 --duration-minutes 1.5 "
         "--max-p95-ms 800 --max-queue-p95-s 0"
     )
@@ -4743,16 +4743,7 @@ def test_ssh_performance_test_command_omits_unspecified_options():
             time_factor=None,
             duration_minutes=None,
         )
-        == "env PSYNET_PERFORMANCE_TEST_ON_DEPLOYMENT=1 psynet performance-test local --existing"
-    )
-
-
-def test_capacity_advice_on_the_deployment_skips_the_local_caveat():
-    from psynet.perf_test import capacity_advice
-
-    assert "Local results" in capacity_advice()[0]
-    assert not any(
-        "Local results" in line for line in capacity_advice(on_deployment=True)
+        == "psynet performance-test local --existing"
     )
 
 

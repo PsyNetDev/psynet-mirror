@@ -46,9 +46,9 @@ between bots when recruitment has closed. Start it with
 ``psynet performance-test local`` does this for the server it starts. The
 default ``psynet debug local`` server does not stop itself.
 
-Local results show how the experiment copes on your computer, and the command
-says so when it finishes. For a participant cap, measure the deployment server
-with ``psynet performance-test ssh`` (see below).
+Local results show how the experiment copes on your computer. For a
+participant cap, measure the deployment server with
+``psynet performance-test ssh`` (see below).
 
 Controlling the load
 --------------------

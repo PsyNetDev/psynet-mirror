@@ -4510,12 +4510,6 @@ def performance_test__local(
     )
 
 
-# Set by ``performance-test ssh``, whose results already apply to the
-# deployment. An environment variable rather than an option, so that a
-# deployment running an older PsyNet ignores it instead of failing.
-_ON_DEPLOYMENT_ENV_VAR = "PSYNET_PERFORMANCE_TEST_ON_DEPLOYMENT"
-
-
 def _run_performance_test_local(
     *,
     existing,
@@ -4528,15 +4522,13 @@ def _run_performance_test_local(
     max_p95_ms=None,
     max_queue_p95_s=None,
 ):
-    """Run a local performance test, print advice for deployments, and return results."""
-    from psynet.perf_test import capacity_advice
-
+    """Run a local performance test and return its result records."""
     run = (
         _run_performance_test_with_existing_server
         if existing
         else _run_performance_test_with_new_server
     )
-    all_results = run(
+    return run(
         n_bots,
         stagger,
         time_factor,
@@ -4546,13 +4538,6 @@ def _run_performance_test_local(
         max_p95_ms=max_p95_ms,
         max_queue_p95_s=max_queue_p95_s,
     )
-    capacity_search = _parse_performance_n_bots(n_bots) == "auto"
-    for line in capacity_advice(
-        capacity_search=capacity_search,
-        on_deployment=os.environ.get(_ON_DEPLOYMENT_ENV_VAR) == "1",
-    ):
-        click.echo(line)
-    return all_results
 
 
 def _collect_run_metadata(experiment_label):
@@ -4717,7 +4702,6 @@ def _run_performance_test_with_existing_server(
         all_results = tester.run(bot_counts=bot_counts, bot_log_file=bot_log_file)
     finished_at = datetime.datetime.now().isoformat(timespec="seconds")
     bot_log_file.close()
-    print(f"Bot output log: {bot_log_file.name}")
 
     if json_output:
         metadata = {
@@ -5060,7 +5044,7 @@ def _build_ssh_performance_test_cmd(
     max_queue_p95_s=None,
 ):
     """Build the remote performance-test command, preserving explicit zeros."""
-    cmd = f"env {_ON_DEPLOYMENT_ENV_VAR}=1 psynet performance-test local --existing"
+    cmd = "psynet performance-test local --existing"
 
     if n_bots is not None:
         cmd += f" --n-bots {n_bots}"
