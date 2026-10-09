@@ -103,7 +103,8 @@ def shared_environment_warning(environ=None):
 
 
 def _is_configured(environ):
-    return bool(environ.get(READY_ENV_VAR) or environ.get("CI"))
+    in_ci = environ.get("CI", "").lower() not in ("", "0", "false")
+    return bool(environ.get(READY_ENV_VAR)) or in_ci
 
 
 def check_no_debug_server(directory):
@@ -111,14 +112,26 @@ def check_no_debug_server(directory):
 
     Tests replace the generated files in the experiment directory, which
     breaks a debug server that serves it, even when the services are isolated.
+    Servers that another test session started there are skipped: that session
+    holds the directory's lock, which this session waits for.
     """
     import psutil
+
+    from .testing.locks import HELD_LOCK_ENV_VAR
 
     directory = os.path.realpath(directory)
     for process in psutil.process_iter(["cmdline", "cwd"]):
         cmdline = process.info["cmdline"] or []
         cwd = process.info["cwd"]
-        if cwd and os.path.realpath(cwd) == directory and _is_psynet_debug(cmdline):
+        if not (
+            cwd and os.path.realpath(cwd) == directory and _is_psynet_debug(cmdline)
+        ):
+            continue
+        try:
+            held_lock = process.environ().get(HELD_LOCK_ENV_VAR)
+        except (psutil.AccessDenied, psutil.NoSuchProcess, psutil.ZombieProcess):
+            held_lock = None
+        if held_lock is None or os.path.realpath(held_lock) != directory:
             raise RuntimeError(
                 f"psynet debug (PID {process.pid}) is serving {directory}, and the "
                 "tests would replace its generated files. Stop it, or run the tests "
@@ -353,6 +366,17 @@ def _port_is_free(port):
         return True
 
 
+def port_lock_path(port):
+    """Return the lock file that a session holds while it uses ``port``.
+
+    In ``/tmp`` rather than ``TMPDIR``, so that sessions with different
+    temporary directories still see each other's claims, like the
+    development folders that are also in ``/tmp``.
+    """
+    root = "/tmp" if os.access("/tmp", os.W_OK) else tempfile.gettempdir()
+    return os.path.join(root, f"psynet-test-{port}.lock")
+
+
 def _claim_port(start, also_free=None):
     """Return a free web port and an open lock file that reserves it.
 
@@ -364,9 +388,7 @@ def _claim_port(start, also_free=None):
     """
     for port in range(start, start + 1000, 10):
         try:
-            lock = open(
-                os.path.join(tempfile.gettempdir(), f"psynet-test-{port}.lock"), "w"
-            )
+            lock = open(port_lock_path(port), "w")
         except OSError:
             continue
         try:

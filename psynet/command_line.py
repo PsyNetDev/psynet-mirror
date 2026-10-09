@@ -4093,7 +4093,8 @@ def _rerun_in_isolated_test_environment():
             except KeyboardInterrupt:
                 # The child got the same Ctrl+C; let it stop its servers.
                 pass
-    sys.exit(exit_code)
+    # A child killed by signal N reports -N; shells report 128 + N.
+    sys.exit(exit_code if exit_code >= 0 else 128 - exit_code)
 
 
 def build_remote_experiment_command(app, cmd):

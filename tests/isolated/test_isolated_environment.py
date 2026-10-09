@@ -26,22 +26,32 @@ from psynet.isolated_environment import (
 
 
 @pytest.fixture
-def drop_new_databases():
-    """Drop the databases that the test creates."""
+def drop_new_databases(monkeypatch):
+    """Drop the databases that the test's isolated environments create.
+
+    Only those: other sessions may create databases meanwhile.
+    """
     import psycopg2
     from psycopg2 import sql
 
-    def names(cursor):
-        cursor.execute("SELECT datname FROM pg_database")
-        return {name for (name,) in cursor.fetchall()}
+    started = []
+    original_start = IsolatedEnvironment.start.__func__
+
+    def start(cls, *args, **kwargs):
+        environment = original_start(cls, *args, **kwargs)
+        started.append(urlsplit(environment.env["DATABASE_URL"]).path.lstrip("/"))
+        return environment
+
+    monkeypatch.setattr(IsolatedEnvironment, "start", classmethod(start))
 
     connection = psycopg2.connect(os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL))
     connection.autocommit = True
     try:
         with connection.cursor() as cursor:
-            before = names(cursor)
+            cursor.execute("SELECT datname FROM pg_database")
+            before = {name for (name,) in cursor.fetchall()}
             yield
-            for name in names(cursor) - before:
+            for name in set(started) - before:
                 cursor.execute(
                     sql.SQL("DROP DATABASE IF EXISTS {}").format(sql.Identifier(name))
                 )
@@ -55,6 +65,7 @@ def test_should_isolate_respects_opt_out_and_ci():
     assert not should_isolate({ENV_VAR: "shared"})
     assert not should_isolate({READY_ENV_VAR: "1"})
     assert not should_isolate({"CI": "true"})
+    assert should_isolate({"CI": "false"})
     with pytest.raises(ValueError, match="'isolated'.*'shared'.*'bogus'"):
         should_isolate({ENV_VAR: "bogus"})
 
@@ -66,26 +77,40 @@ def test_shared_environment_warns_once():
 
 
 def test_tests_refuse_to_run_beside_a_debug_server_in_their_directory(tmp_path):
+    """A user's debug server is refused; one that another test session started isn't."""
+    from psynet.testing.locks import HELD_LOCK_ENV_VAR
+
     fake_psynet = tmp_path / "psynet"
     fake_psynet.write_text("import time\ntime.sleep(60)\n")
-    process = subprocess.Popen(
-        [sys.executable, str(fake_psynet), "debug", "local"], cwd=tmp_path
-    )
+    shell = {k: v for k, v in os.environ.items() if k != HELD_LOCK_ENV_VAR}
+
+    def spawn(env):
+        return subprocess.Popen(
+            [sys.executable, str(fake_psynet), "debug", "local"], cwd=tmp_path, env=env
+        )
+
+    test_server = spawn({**shell, HELD_LOCK_ENV_VAR: str(tmp_path)})
+    processes = [test_server]
     try:
+        time.sleep(0.5)
+        check_no_debug_server(tmp_path)
+        user_server = spawn(shell)
+        processes.append(user_server)
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline:
             try:
                 check_no_debug_server(tmp_path)
             except RuntimeError as e:
-                assert f"PID {process.pid}" in str(e)
+                assert f"PID {user_server.pid}" in str(e)
                 break
             time.sleep(0.1)
         else:
             pytest.fail("the debug process was not detected")
         check_no_debug_server(tmp_path / "..")
     finally:
-        process.kill()
-        process.wait()
+        for process in processes:
+            process.kill()
+            process.wait()
 
 
 @pytest.mark.skipif(shutil.which("redis-server") is None, reason="needs redis-server")
