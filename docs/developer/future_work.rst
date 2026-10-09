@@ -567,15 +567,16 @@ Run several local experiments at once
 Several local experiments can run at once when each terminal sets its own
 ``DATABASE_URL``, ``REDIS_URL``, ``base_port`` and
 ``dallinger_develop_directory`` (see :ref:`running_several_local_experiments`);
-launches then stop only workers and browsers that use their own database, and
-CI uses the same isolation for parallel test slots. Two gaps remain. Every
+launches then stop only workers and browsers that use their own database. CI
+uses the same isolation for parallel test slots, and local test sessions set
+it up automatically (``psynet.isolated_environment``). Two gaps remain. Every
 run still needs its own Redis server, because Redis pub/sub channels (PsyNet's
 timeline-hold wakes and Dallinger's chat channels) are shared by all database
 numbers on a server; prefixing channel names with the database identity in
-both packages would let runs share one server. And a single command that
-picks a free slot and sets these variables (for example
-``psynet services ensure --slot 2``) would save users from setting them by
-hand.
+both packages would let runs share one server. And ``psynet debug local
+--isolated`` picks a free slot for a debug server, but other commands, such as
+``psynet deploy`` and ``psynet performance-test local``, still need these
+variables set by hand.
 
 Remote deployments have the same problem. ``psynet deploy ssh`` builds the
 starting database on the local PostgreSQL and Redis: it clears every Redis

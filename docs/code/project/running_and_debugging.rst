@@ -34,11 +34,38 @@ deployed, use ``psynet debug local --docker``.
 Run several experiments at once
 -------------------------------
 
-By default every local experiment uses port 5000, the ``dallinger``
+``psynet test local`` runs in its own database, Redis server and port
+automatically, so you can run tests while ``psynet debug local`` is serving
+another experiment, and run several test sessions at once.
+
+By default every ``psynet debug local`` uses port 5000, the ``dallinger``
 PostgreSQL database, the Redis server on port 6379 and the
 ``/tmp/dallinger_develop`` folder, so only one can run at a time. To run
 another one alongside it, for example when several coding agents test
-different experiments on one machine, give the second terminal its own
+different experiments on one machine, add ``--isolated``:
+
+.. code-block:: bash
+
+    psynet debug local --isolated
+
+It picks a free port (5100 or above) and uses a database and a Redis server
+of its own, which it starts and stops with the server. It prints the port, and
+the ``export`` line that points other local commands, such as
+``psynet export local``, at it; with ``--no-browsers`` it repeats that line
+under the dashboard credentials. Local commands run in the served directory
+refuse to run when they would read a different database from the server. The
+database stays after the server stops, until the next ``--isolated`` server
+on the same port resets it, which that server mentions. Its Redis server
+doesn't stay, so after the server stops, export only ``DATABASE_URL``. If the
+launcher is killed outright, Linux still stops the server and its Redis
+server.
+
+Two debug servers can't share an experiment directory, because each replaces
+the generated files the other serves. ``--isolated`` refuses to start where
+another ``psynet debug`` is already serving; plain ``psynet debug local``
+doesn't check, so give each server its own copy, such as a git worktree.
+
+To choose the settings yourself instead, give the second terminal its own
 database, Redis server, port and development folder:
 
 .. code-block:: bash
@@ -51,8 +78,8 @@ database, Redis server, port and development folder:
     export base_port=5010
     export dallinger_develop_directory=/tmp/dallinger_develop_2
 
-``psynet debug local`` and ``psynet test local`` in that terminal then serve
-on port 5010 and leave the other experiment's processes and browsers alone.
+``psynet debug local`` in that terminal then serves on port 5010 and leaves
+the other experiment's processes and browsers alone.
 Use a separate Redis server rather than another database number on the same
 server: Redis delivers PsyNet's live notifications (for example waking a
 participant who waits on a page) to every database on a server, so two
@@ -60,8 +87,9 @@ experiments sharing one would wake each other's participants.
 
 Two runs in the same experiment directory still conflict, because each
 creates and removes generated files there. Tests wait for each other
-automatically; for ``psynet debug local``, use a separate copy (such as a git
-worktree) of the experiment.
+automatically and refuse to start while ``psynet debug`` serves the same
+directory; to debug and test at once, or to debug twice, use a separate copy
+(such as a git worktree) of the experiment.
 
 ``psynet services list`` shows which ports, databases and Redis servers the
 sessions running on your machine already use.
@@ -120,7 +148,9 @@ The local experiment stores its data in PostgreSQL. Connect with:
 
     psql -h localhost -U dallinger -d dallinger
 
-The password is ``dallinger``. The main tables are ``participant``,
+The password is ``dallinger``. A server started with ``--isolated`` uses the
+database it prints at startup, such as ``dallinger_debug_5100``; pass that name
+to ``-d`` instead. The main tables are ``participant``,
 ``trial``, ``response`` (page answers), ``node`` and ``network`` (trial maker
 nodes and chains) and ``asset``; ``\dt`` lists them all. For example:
 

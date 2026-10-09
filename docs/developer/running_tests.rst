@@ -134,6 +134,41 @@ we plan to remove it in the future.
 The ``-s`` argument tells pytest to log live output from the test as it runs.
 This is normally a good idea for keeping track of what's going on.
 
+Tests reset their database and Redis and stop local servers that use them, so
+by default each local test session gets its own environment and leaves a
+running ``psynet debug local`` alone. The session prints where it runs, for
+example::
+
+    PsyNet tests use database dallinger_test_5100, Redis at redis://127.0.0.1:6479 and port 5100, ...
+
+It claims a free web port 100 or more above your ``base_port`` (so from 5100
+by default), uses the database ``<database>_test_<port>`` next to
+``DATABASE_URL`` (created when missing) and starts a private ``redis-server``
+that stops when the session ends, so several test sessions can also run at
+once. If ``redis-server`` isn't installed (for example when Redis runs only in
+Docker), the session uses a spare database number on your Redis server
+instead, which keeps its data apart but can still send live notifications to a
+debug server's participants. If the environment can't be set up, the session stops
+with an error rather than falling back to your database.
+
+This applies to ``pytest`` runs from the PsyNet checkout, to experiments
+whose ``pytest.ini`` loads ``-p psynet.pytest_environment`` (run ``psynet
+scripts update`` in older experiments) and to ``psynet test local``.
+``psynet test local --existing`` tests a server that is already running, so it
+isn't isolated. CI jobs (where ``CI`` is set) always use their configured
+services.
+
+Isolation covers services, not files: tests still create and remove generated
+files in the experiment directory. A test session therefore refuses to start
+while ``psynet debug`` is serving the same directory; run the tests from a copy
+of the experiment (such as a git worktree) instead.
+
+Set ``PSYNET_TEST_ENVIRONMENT=shared`` to use your current database, Redis and
+port, for example if your PostgreSQL user can't create databases. The session
+then prints a warning, because it resets those services and stops any debug
+server that uses them. ``PSYNET_TEST_ENVIRONMENT`` accepts only ``isolated``
+(the default) and ``shared``; any other value is an error.
+
 In most IDEs, you can run tests through the integrated test interface
 or by right-clicking on test files/functions and selecting "Run Test" or "Debug Test".
 The debugger will work with breakpoints as expected.

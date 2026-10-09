@@ -423,6 +423,7 @@ def prompt_for_ssh_server():
 def get_db_uri(location, app=None, server=None):
     match location:
         case "local":
+            _check_debug_server_uses_this_database()
             yield db.db_url
         case "heroku" | "docker_heroku":
             if app is None:
@@ -438,6 +439,50 @@ def get_db_uri(location, app=None, server=None):
                 yield db_uri
         case _:
             raise click.BadParameter(f"Invalid location: {location}")
+
+
+def _check_debug_server_uses_this_database():
+    """Fail if the ``psynet debug`` serving this directory uses another database.
+
+    This happens when a shell lacks, or still has, the ``export`` line that
+    ``psynet debug local --isolated`` prints.
+    """
+    from .isolated_environment import (
+        DEFAULT_DATABASE_URL,
+        debug_server_environment,
+        export_advice,
+        is_isolated_debug_server,
+    )
+
+    server = debug_server_environment(os.getcwd())
+    if server is None:
+        return
+    pid, environ = server
+    theirs = urlsplit(environ.get("DATABASE_URL", DEFAULT_DATABASE_URL)).path
+    ours = urlsplit(db.db_url).path
+    if theirs == ours:
+        return
+    if is_isolated_debug_server(environ):
+        advice = export_advice(environ)
+    else:
+        advice = "To use its database, run: unset DATABASE_URL REDIS_URL base_port"
+    raise click.ClickException(
+        f"psynet debug (PID {pid}) serves this directory with database "
+        f"{theirs.lstrip('/')}, but this command would use {ours.lstrip('/')}. "
+        f"{advice}"
+    )
+
+
+def _check_exported_redis_is_running():
+    """Fail clearly if ``REDIS_URL`` points at a Redis server that isn't running."""
+    from .services import check_redis
+
+    if "REDIS_URL" in os.environ and not check_redis().ok:
+        raise click.ClickException(
+            f"Nothing answers at REDIS_URL={os.environ['REDIS_URL']}. If it "
+            "belonged to a psynet debug local --isolated server that has "
+            "stopped, run 'unset REDIS_URL base_port' and keep DATABASE_URL."
+        )
 
 
 @psynet.command("db")
@@ -773,6 +818,26 @@ def sql_profiled_command(func):
     return wrapper
 
 
+def _debug_in_isolated_environment_if_requested(func):
+    """With ``--isolated``, re-run ``psynet debug local`` in its own environment.
+
+    Applied outside :func:`sql_profiled_command` so that only the re-run child
+    profiles and reports.
+    """
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        from .isolated_environment import DEBUG, READY_ENV_VAR
+
+        if kwargs.get("isolated") and not os.environ.get(READY_ENV_VAR):
+            if kwargs.get("docker"):
+                raise click.UsageError("--isolated does not work with --docker.")
+            _rerun_in_isolated_environment(DEBUG)
+        return func(*args, **kwargs)
+
+    return wrapper
+
+
 @debug.command("local")
 @click.option("--docker", is_flag=True, help="Docker mode.")
 @click.option("--archive", default=None, help="Optional path to an experiment archive.")
@@ -782,8 +847,17 @@ def sql_profiled_command(func):
     help="Use gunicorn instead of Flask auto-reload (default four worker processes).",
 )
 @click.option("--no-browsers", is_flag=True, help="Skip opening browsers.")
+@click.option(
+    "--isolated",
+    is_flag=True,
+    help=(
+        "Use a free port, a database and a Redis server of its own, so that "
+        "this server runs alongside other local servers and tests."
+    ),
+)
 @_add_sql_profile_options
 @click.pass_context
+@_debug_in_isolated_environment_if_requested
 @sql_profiled_command
 def debug__local(
     ctx,
@@ -791,6 +865,7 @@ def debug__local(
     archive,
     legacy,
     no_browsers,
+    isolated,
     sql_profile,
     sql_profile_options,
     sql_profile_dir,
@@ -1027,6 +1102,11 @@ def launch_app_without_browsers(port, **kwargs):
         f"password: {config.get('dashboard_password')}",
         chevrons=False,
     )
+    from .isolated_environment import export_advice, is_isolated_debug_server
+
+    # Repeated here because the advice printed at startup has scrolled away.
+    if is_isolated_debug_server(os.environ):
+        log(export_advice(os.environ), chevrons=False)
 
 
 @contextmanager
@@ -3100,6 +3180,7 @@ def export__local(ctx=None, **kwargs):
     """
     Export the experiment locally.
     """
+    _check_exported_redis_is_running()
     export_(
         ctx,
         get_exp_variables=lambda: _read_experiment_variables("local"),
@@ -4040,6 +4121,39 @@ _test_options["time_factor"] = click.option(
 )
 
 
+def _in_isolated_test_environment(func):
+    """Run a local test command in its own database, Redis and port.
+
+    Applied outside :func:`sql_profiled_command` so that only the re-run child
+    profiles and reports. With ``--existing`` the command tests a live server,
+    so it runs in this process.
+    """
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        from .isolated_environment import (
+            READY_ENV_VAR,
+            TEST,
+            shared_environment_warning,
+            should_isolate,
+        )
+
+        if not kwargs.get("existing"):
+            try:
+                isolate = should_isolate()
+            except ValueError as e:
+                raise click.ClickException(str(e)) from e
+            if isolate:
+                _rerun_in_isolated_environment(TEST)
+            warning = shared_environment_warning()
+            if warning:
+                log(warning)
+                os.environ[READY_ENV_VAR] = "1"
+        return func(*args, **kwargs)
+
+    return wrapper
+
+
 @test.command("local")
 @_test_options["existing"]
 @_test_options["n_bots"]
@@ -4048,6 +4162,7 @@ _test_options["time_factor"] = click.option(
 @_test_options["stagger"]
 @_test_options["time_factor"]
 @_add_sql_profile_options
+@_in_isolated_test_environment
 @sql_profiled_command
 def test__local(
     existing=False,
@@ -4064,6 +4179,10 @@ def test__local(
 ):
     """
     Test the experiment locally.
+
+    The tests get a free port, a database and a Redis server of their own, so
+    they leave local debug servers alone. Set PSYNET_TEST_ENVIRONMENT=shared
+    to run them against the local ones instead, which resets them.
     """
     assert not (parallel and serial)
 
@@ -4113,6 +4232,84 @@ def test__local(
         # Use sys.exit() to ensure that the exit code is propagated to the shell.
         # This is helpful for CI pipelines, where we want to fail the build if the tests fail.
         sys.exit(exit_code)
+
+
+def _rerun_in_isolated_environment(purpose):
+    """Re-run this command in a child process with its own database, Redis and port.
+
+    Dallinger connected to the shared database when this module was imported,
+    so the switch needs a new process; see :mod:`psynet.isolated_environment`.
+    The child re-runs the whole original command line (``sys.orig_argv``, for
+    example ``psynet test local --n-bots 4``), and this process then exits
+    with its code. ``purpose`` is ``TEST`` or ``DEBUG`` from that module.
+    """
+    from .isolated_environment import (
+        IsolatedEnvironment,
+        check_no_debug_server,
+        sigterm_on_caller_exit,
+        without_session_settings,
+    )
+    from .services import SERVICES_CHECKED_ENV_VAR, ensure_local_services
+
+    shared = without_session_settings(os.environ)
+    if shared != dict(os.environ):
+        log(
+            "Ignoring the exported settings of an earlier isolated session; "
+            "this session starts from the shared ones."
+        )
+        for key in ("DATABASE_URL", "REDIS_URL", "base_port"):
+            os.environ.pop(key, None)
+        os.environ.update(shared)
+    try:
+        check_no_debug_server(os.getcwd(), purpose)
+    except RuntimeError as e:
+        raise click.ClickException(str(e)) from e
+    # Before creating the database and Redis, so that an experiment that isn't
+    # set up fails without advice about services it won't use.
+    _check_experiment_directory(purpose)
+    ensure_local_services(assume_yes=False, strict=True)
+    try:
+        environment = IsolatedEnvironment.start(purpose=purpose)
+    except RuntimeError as e:
+        raise click.ClickException(str(e)) from e
+    with environment:
+        log(environment.describe())
+        exit_code = _wait_forwarding_signals(
+            subprocess.Popen(
+                sys.orig_argv,
+                env={**environment.env, SERVICES_CHECKED_ENV_VAR: "1"},
+                preexec_fn=sigterm_on_caller_exit(),
+            )
+        )
+    sys.exit(exit_code)
+
+
+def _wait_forwarding_signals(process):
+    """Wait for ``process`` and return its exit code, passing SIGTERM and SIGHUP on.
+
+    A signal sent to this PID alone would otherwise leave the child's servers
+    running. SIGINT is not forwarded: Ctrl+C in a terminal already reaches the
+    child through the foreground process group, so this process just waits
+    for it to stop its servers. Must be called from the main thread.
+    """
+
+    def forward(signum, frame):
+        try:
+            process.send_signal(signum)
+        except ProcessLookupError:
+            pass
+
+    signals = (signal.SIGTERM, signal.SIGHUP)
+    previous = {sig: signal.signal(sig, forward) for sig in signals}
+    try:
+        while True:
+            try:
+                return process.wait()
+            except KeyboardInterrupt:
+                pass
+    finally:
+        for sig, previous_handler in previous.items():
+            signal.signal(sig, previous_handler)
 
 
 def build_remote_experiment_command(app, cmd):

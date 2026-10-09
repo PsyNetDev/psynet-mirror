@@ -3867,6 +3867,26 @@ def test_pre_launch_skips_dependency_check_for_in_repo_experiments(
     os.environ.pop("SKIP_DEPENDENCY_CHECK", None)
 
 
+@pytest.mark.parametrize("purpose", ["test", "debug"])
+def test_isolated_sessions_check_the_experiment_before_creating_services(
+    tmp_path, monkeypatch, purpose
+):
+    from psynet.command_line import _rerun_in_isolated_environment
+
+    monkeypatch.setattr(
+        "psynet.command_line._check_experiment_directory",
+        Mock(side_effect=click.ClickException("run psynet setup")),
+    )
+    start, ensure = Mock(), Mock()
+    monkeypatch.setattr("psynet.isolated_environment.IsolatedEnvironment.start", start)
+    monkeypatch.setattr("psynet.services.ensure_local_services", ensure)
+    with working_directory(tmp_path):
+        with pytest.raises(click.ClickException, match="run psynet setup"):
+            _rerun_in_isolated_environment(purpose)
+    start.assert_not_called()
+    ensure.assert_not_called()
+
+
 def test_pre_launch_checks_directory_before_redis():
     """Directory guidance must run before Redis I/O when Redis is unavailable."""
     from psynet.command_line import _pre_launch
@@ -4933,6 +4953,114 @@ def test_signalled_debug_process_stops_its_child_processes(tmp_path):
     while psutil.pid_exists(child_pid):
         assert time.monotonic() < deadline, "child process outlived its parent"
         time.sleep(0.1)
+
+
+def test_isolated_waiter_passes_sigterm_to_its_child(tmp_path):
+    import signal
+    import sys
+    import time
+
+    import psutil
+
+    pid_file = tmp_path / "child.pid"
+    script = (
+        "import subprocess, sys\n"
+        "from psynet.command_line import _wait_forwarding_signals\n"
+        "child = subprocess.Popen(['sleep', '60'])\n"
+        f"open({str(pid_file)!r}, 'w').write(str(child.pid))\n"
+        "sys.exit(-_wait_forwarding_signals(child))\n"
+    )
+    waiter = subprocess.Popen([sys.executable, "-c", script])
+    deadline = time.monotonic() + 60
+    while not pid_file.exists() or not pid_file.read_text():
+        assert time.monotonic() < deadline, "child process did not start"
+        time.sleep(0.1)
+    child_pid = int(pid_file.read_text())
+
+    waiter.send_signal(signal.SIGTERM)
+    assert waiter.wait(timeout=30) == signal.SIGTERM
+    assert not psutil.pid_exists(child_pid)
+
+
+def test_local_commands_point_at_the_isolated_debug_server(tmp_path):
+    """Without the export line, local commands refuse and say how to reach it."""
+    import json
+    import sys
+    import time
+
+    from psynet.command_line import _check_debug_server_uses_this_database
+    from psynet.isolated_environment import READY_ENV_VAR, debug_server_environment
+
+    # Like the launcher of `psynet debug local --isolated` and its re-run child.
+    fake_psynet = tmp_path / "psynet"
+    fake_psynet.write_text(
+        "import json, os, subprocess, sys, time\n"
+        "if 'CHILD_ENV' in os.environ:\n"
+        "    child_env = json.loads(os.environ.pop('CHILD_ENV'))\n"
+        "    subprocess.Popen([sys.executable, *sys.argv], env={**os.environ, **child_env})\n"
+        "time.sleep(60)\n"
+    )
+    server_url = "postgresql://dallinger:dallinger@localhost/dallinger_debug_5987"
+    child_env = {
+        READY_ENV_VAR: "1",
+        "DATABASE_URL": server_url,
+        "REDIS_URL": "redis://127.0.0.1:7366",
+        "base_port": "5987",
+    }
+    shell = {k: v for k, v in os.environ.items() if k != READY_ENV_VAR}
+    launcher = subprocess.Popen(
+        [sys.executable, str(fake_psynet), "debug", "local"],
+        cwd=tmp_path,
+        env={**shell, "CHILD_ENV": json.dumps(child_env)},
+    )
+    try:
+        deadline = time.monotonic() + 10
+        while (debug_server_environment(tmp_path) or (0, {}))[1].get(
+            READY_ENV_VAR
+        ) is None:
+            assert time.monotonic() < deadline, "the server was not found"
+            time.sleep(0.1)
+        with working_directory(tmp_path):
+            with pytest.raises(click.ClickException) as error:
+                _check_debug_server_uses_this_database()
+        assert f"psynet debug (PID {launcher.pid})" not in str(error.value)
+        assert f"export DATABASE_URL={server_url} " in str(error.value)
+    finally:
+        for child in psutil.Process(launcher.pid).children(recursive=True):
+            child.kill()
+        launcher.kill()
+        launcher.wait()
+
+
+def test_export_local_says_when_the_exported_redis_has_stopped(monkeypatch):
+    from psynet.command_line import _check_exported_redis_is_running
+
+    monkeypatch.setenv("REDIS_URL", "redis://127.0.0.1:1")
+    with pytest.raises(click.ClickException, match="unset REDIS_URL base_port"):
+        _check_exported_redis_is_running()
+
+
+def test_debug_isolated_reruns_once_and_rejects_docker(monkeypatch):
+    from psynet.command_line import _debug_in_isolated_environment_if_requested
+    from psynet.isolated_environment import DEBUG, READY_ENV_VAR
+
+    reruns = []
+    monkeypatch.setattr(
+        "psynet.command_line._rerun_in_isolated_environment", reruns.append
+    )
+    debug = _debug_in_isolated_environment_if_requested(lambda **kwargs: "served")
+    monkeypatch.delenv(READY_ENV_VAR, raising=False)
+
+    with pytest.raises(click.UsageError, match="--docker"):
+        debug(isolated=True, docker=True)
+    assert debug(isolated=False, docker=False) == "served"
+    assert reruns == []
+    debug(isolated=True, docker=False)
+    assert reruns == [DEBUG]
+
+    monkeypatch.setenv(READY_ENV_VAR, "1")
+    assert debug(isolated=True, docker=False) == "served"
+    assert reruns == [DEBUG]
 
 
 def test_prolific_listing_warnings():
