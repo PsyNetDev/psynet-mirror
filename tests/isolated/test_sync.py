@@ -3195,10 +3195,15 @@ def _assert_still_on_hold(exp, participant_ids):
 
 
 def _advisory_lock_count():
-    """Return how many advisory locks the database currently holds."""
+    """Return how many advisory locks the test database currently holds."""
+    # pg_locks spans the whole server, which parallel CI slots share.
     with db.engine.connect() as conn:
         return conn.execute(
-            text("SELECT count(*) FROM pg_locks WHERE locktype = 'advisory'")
+            text(
+                "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' "
+                "AND database = (SELECT oid FROM pg_database "
+                "WHERE datname = current_database())"
+            )
         ).scalar()
 
 
@@ -3871,6 +3876,121 @@ def test_stale_wait_while_uuid_is_catch_up_after_get_skip(
         assert approved.payload["page"]["attributes"]["page_uuid"] == first.page_uuid
     finally:
         exp.timeline = original_timeline
+
+
+@pytest.mark.parametrize("resume", [False, True])
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_stale_hold_uuid_catches_up_across_a_skipped_hold(
+    in_experiment_directory, db_session, resume
+):
+    """Pages consumed since the old hold were all holds, so it is still catch-up."""
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    ready = {"a": False, "b": False}
+    exp.timeline = Timeline(
+        wait_while(lambda: not ready["a"], expected_wait=1),
+        wait_while(lambda: not ready["b"], expected_wait=1),
+        wait_while(lambda: True, expected_wait=1, max_wait_time=60),
+        InfoPage("done", time_estimate=1),
+    )
+    try:
+        (first,) = _working_participants(exp, 1)
+        assert _json_timeline(exp, first).status_code == 200
+        first = Participant.query.get(first.id)
+        hold_uuid = first.page_uuid
+        for key in ready:
+            ready[key] = True
+            assert _json_timeline(exp, first).status_code == 200
+            db.session.expire_all()
+            first = Participant.query.get(first.id)
+
+        result = _process_response(exp, first, hold_uuid, timeline_hold_resume=resume)
+        assert result.payload["submission"] == "approved"
+    finally:
+        exp.timeline = original_timeline
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_hold_uuid_is_not_catch_up_after_answering_a_later_page(
+    in_experiment_directory, db_session
+):
+    """An old hold uuid from a stale tab must still get the multi-tab reject."""
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    ready = {"stop": False}
+    exp.timeline = Timeline(
+        wait_while(lambda: not ready["stop"], expected_wait=1),
+        ModularPage("first", "First", time_estimate=1),
+        ModularPage("second", "Second", time_estimate=1),
+    )
+    try:
+        (first,) = _working_participants(exp, 1)
+        assert _json_timeline(exp, first).status_code == 200
+        first = Participant.query.get(first.id)
+        hold_uuid = first.page_uuid
+        ready["stop"] = True
+        assert _json_timeline(exp, first).status_code == 200
+        db.session.expire_all()
+        first = Participant.query.get(first.id)
+        answered = _process_response(exp, first, first.page_uuid)
+        assert answered.payload["submission"] == "approved"
+        db.session.commit()
+        first = Participant.query.get(first.id)
+        assert exp.timeline.get_current_elt(exp, first).label == "second"
+
+        stale = _process_response(exp, first, hold_uuid)
+        assert stale.payload["submission"] == "rejected"
+        stale_resume = _process_response(
+            exp, first, hold_uuid, timeline_hold_resume=True
+        )
+        assert stale_resume.payload["submission"] == "rejected"
+    finally:
+        exp.timeline = original_timeline
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_failing_a_held_participant_wakes_their_overlay(
+    in_experiment_directory, db_session, monkeypatch
+):
+    """Admin or partner fails must not leave the overlay on its safety poll."""
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    exp.timeline = Timeline(
+        wait_while(lambda: True, expected_wait=1, max_wait_time=60),
+        InfoPage("done", time_estimate=1),
+    )
+    publications = []
+    try:
+        (first,) = _working_participants(exp, 1)
+        assert _json_timeline(exp, first).status_code == 200
+        first = Participant.query.get(first.id)
+        wake_token = first.timeline_holds[0].wake_token
+        monkeypatch.setattr(
+            db.redis_conn,
+            "publish",
+            lambda channel, data: publications.append((channel, json.loads(data))),
+        )
+
+        first.fail("manual")
+        db_session.commit()
+    finally:
+        exp.timeline = original_timeline
+
+    assert publications == [
+        (
+            _timeline_hold_channel(first.id),
+            {
+                "type": "timeline_hold_wake",
+                "targets": [{"wake_token": wake_token, "reason": "participant_failed"}],
+            },
+        )
+    ]
 
 
 @pytest.mark.parametrize(
@@ -5411,6 +5531,29 @@ def test_savepoint_then_outer_rollback_does_not_publish_hold_wakes(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
+def test_session_close_discards_uncommitted_hold_wakes(
+    in_experiment_directory, db_session, monkeypatch
+):
+    """``Session.close()`` fires no ``after_rollback``, so wakes must not leak."""
+    participant = new_participant(get_experiment())
+    hold = _participant_hold(participant, "closed-wake", "closed")
+    publications = _hold_wake_publications(monkeypatch)
+
+    _enqueue_timeline_hold_wake(
+        participant.id,
+        page_uuid="closed-wake",
+        reason="barrier_released",
+        hold=hold,
+    )
+    db_session.close()
+    db_session.commit()
+
+    assert publications == []
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
 def test_nested_rollback_keeps_wakes_queued_before_the_savepoint(
     in_experiment_directory, db_session, monkeypatch
 ):
@@ -5701,10 +5844,6 @@ def test_async_process_events_wake_timeline_holds(
         "psynet.timeline_hold._queue_timeline_hold_wake",
         lambda participant_id, reason=None, **kwargs: wakes.append(reason),
     )
-    monkeypatch.setattr(
-        "psynet.process.Job.fetch",
-        lambda *args, **kwargs: SimpleNamespace(cancel=lambda: None),
-    )
 
     participant = new_participant(get_experiment())
     db_session.flush()
@@ -5825,6 +5964,54 @@ def test_group_barrier_timeout_between_barriers_kick_releases_waiters_after_diss
     assert group.active_participants == []
     assert missing_participant not in released
     assert set(released) == set(waiting_participants)
+
+
+@pytest.mark.parametrize("action", ["kick", "fail"])
+@pytest.mark.parametrize("min_group_size", [2, 3])
+@pytest.mark.parametrize("accepts_top_ups", [False, True])
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_group_barrier_would_release_predicts_timeout_between_barriers(
+    in_experiment_directory, db_session, action, min_group_size, accepts_top_ups
+):
+    """The release peek must see the late member the check will remove."""
+    exp = get_experiment()
+    barrier = GroupBarrier(
+        id_=f"would_release_between_{action}_{min_group_size}_{accepts_top_ups}",
+        group_type="main",
+        timeout_between_barriers_time=5,
+        timeout_between_barriers_action=action,
+    )
+    participants = [new_participant(exp) for _ in range(3)]
+    for p in participants:
+        p.status = "working"
+    waiting_participants = participants[:2]
+    group = SimpleSyncGroup(
+        group_type="main",
+        initial_group_size=3,
+        max_group_size=3,
+        min_group_size=min_group_size,
+        n_active_participants=3,
+        accepts_top_ups=accepts_top_ups,
+        fail_participants_below_min_size=False,
+    )
+    group.last_barrier_pass_time = timenow() - timedelta(seconds=10)
+    db_session.add(group)
+    for p in participants:
+        group.add_participant(p)
+    db_session.commit()
+    # A group that accepts top-ups waits below its minimum instead of dissolving.
+    expected = (
+        set() if accepts_top_ups and min_group_size == 3 else set(waiting_participants)
+    )
+
+    assert barrier.would_release(waiting_participants) is bool(expected)
+    assert len(group.active_participants) == 3
+    assert not db_session.dirty
+
+    barrier.check_waiting_participants(waiting_participants)
+    assert set(barrier.choose_who_to_release(waiting_participants)) == expected
 
 
 @pytest.mark.parametrize(

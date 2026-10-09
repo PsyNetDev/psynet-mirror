@@ -1,0 +1,1 @@
+Removed the unused participant language switcher: `Participant.locale`, which always returned `None`, the `supported_language_dict` template variable, and the front-end handler and route entry for a language selector that PsyNet never rendered. Each deployment runs in the single locale set by `locale`.

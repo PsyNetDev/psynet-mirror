@@ -1,5 +1,3 @@
-# pylint: disable=unused-import,abstract-method,unused-argument,no-member
-
 import psynet.experiment
 from psynet.bot import Bot
 from psynet.page import VolumeCalibration
@@ -25,9 +23,6 @@ class Exp(psynet.experiment.Experiment):
         from psynet.prescreen import AntiphaseHeadphoneTrial, HugginsHeadphoneTrial
 
         is_good_bot = bot.var.is_good_bot
-        if not is_good_bot:
-            pass
-
         assert bot.failed == (not is_good_bot)
 
         for trial_class, trial_maker_id in zip(

@@ -1,0 +1,1 @@
+Trial feedback now waits until the trial is finalized or failed, so `show_feedback` sees a set `score` and the results of `on_finalized`, or a failed trial it can check with `self.failed`. A failed trial does not fail its participant, and participants waiting for feedback move on as soon as background work fails the trial.

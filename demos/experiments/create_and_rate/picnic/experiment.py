@@ -1,5 +1,3 @@
-# pylint: disable=unused-import,abstract-method,unused-argument
-
 ##########################################################################################
 # Imports
 ##########################################################################################
@@ -196,7 +194,6 @@ class Exp(psynet.experiment.Experiment):
             max_trials_per_participant=len(start_nodes),
             start_nodes=start_nodes,
             chains_per_experiment=len(start_nodes),
-            balance_across_chains=False,
             check_performance_at_end=True,
             check_performance_every_trial=False,
             propagate_failure=False,

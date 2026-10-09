@@ -147,28 +147,37 @@ def test_ingest_zip_skips_tables_without_csv_files(tmp_path, monkeypatch):
     csv_dir = export_dir / "database"
     csv_dir.mkdir(parents=True)
     (csv_dir / "trial.csv").write_text("id\n1\n")
+    (csv_dir / "network.csv").write_text("id\n1\n")
 
     ingested = []
+    fkey_drops = []
 
     class _Inspector:
         def get_table_names(self):
-            return ["trial", "chat_message"]
+            return ["network", "trial", "chat_message"]
 
     monkeypatch.setattr("psynet.data.sqlalchemy.inspect", lambda engine: _Inspector())
     monkeypatch.setattr(
         "psynet.data.sql_base_classes",
         lambda: {
+            "network": type("Network", (), {"__tablename__": "network"}),
             "trial": type("Trial", (), {"__tablename__": "trial"}),
             "chat_message": type("ChatMessage", (), {"__tablename__": "chat_message"}),
         },
     )
     monkeypatch.setattr(
+        "psynet.data._drop_foreign_key_constraints", lambda: fkey_drops.append(1)
+    )
+    monkeypatch.setattr(
         "psynet.data.ingest_to_model",
-        lambda file, model, engine: ingested.append(model.__tablename__),
+        lambda file, model, engine, drop_foreign_keys: ingested.append(
+            (model.__tablename__, drop_foreign_keys)
+        ),
     )
 
     ingest_zip(str(export_dir), engine=object())
-    assert ingested == ["trial"]
+    assert ingested == [("network", False), ("trial", False)]
+    assert len(fkey_drops) == 1
 
 
 def test_archive_template_only_packs_present_table_csvs(tmp_path):
@@ -287,9 +296,9 @@ def test_write_export_manifest_records_git_provenance(tmp_path, monkeypatch):
     (csv_dir / "trial.csv").write_text("id\n1\n")
 
     experiment = Mock()
-    experiment.deployment_id = "demo__export"
     experiment.label = "demo"
     experiment.var.get.side_effect = lambda name, default=None: {
+        "deployment_id": "demo__export",
         "git_commit_sha": "abc123def",
         "git_dirty": True,
     }.get(name, default)
@@ -337,3 +346,27 @@ def test_unpack_json_column_does_not_overwrite_unless_requested():
     assert kept.iloc[0]["animal"] == "dog"
     overwritten = unpack_json_column(frame, "definition", overwrite=True)
     assert overwritten.iloc[0]["animal"] == "cat"
+
+
+def test_export_manifest_without_deployment_info_uses_database_vars(
+    tmp_path, monkeypatch, caplog
+):
+    from psynet.export.database import write_export_manifest
+
+    monkeypatch.chdir(tmp_path)
+    experiment = Mock()
+    type(experiment).deployment_id = property(
+        lambda self: pytest.fail("must not read the missing deployment_info.json")
+    )
+    experiment.label = "demo"
+    experiment.var.get.side_effect = {"deployment_id": "demo__db"}.get
+    monkeypatch.setattr("psynet.experiment.get_experiment", lambda: experiment)
+
+    manifest = json.loads(
+        Path(
+            write_export_manifest(str(tmp_path), table_names=[], csv_dir=str(tmp_path))
+        ).read_text()
+    )
+    assert manifest["deployment_id"] == "demo__db"
+    assert "Traceback" not in caplog.text
+    assert "Could not" not in caplog.text

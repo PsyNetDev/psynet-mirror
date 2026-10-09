@@ -579,74 +579,20 @@ def test_timeline_hold_payload_warns_when_the_record_is_missing(caplog):
     assert "barrier:missing" in caplog.text
 
 
-def test_advance_past_ready_holds_follows_live_page_when_hold_is_stale():
-    """A stale hold object must not first-paint after another session advanced us."""
+def test_advance_past_ready_holds_returns_a_waiting_hold_without_rereading():
+    """Consecutive holds can share a hold_id, so the walk must not compare ids."""
     hold = MagicMock()
     hold.is_timeline_hold = True
+    hold.hold_id = "wait_while"
     hold.prepare_resume_if_ready.return_value = False
-    nxt = MagicMock()
-    nxt.is_timeline_hold = False
     experiment = Experiment.__new__(Experiment)
     experiment.timeline = MagicMock()
-    experiment.timeline.get_current_elt.return_value = nxt
     participant = SimpleNamespace()
-    participant.inc_progress = MagicMock()
 
     page = experiment._advance_past_ready_holds(participant, hold)
 
-    assert page is nxt
-    hold.account_wait.assert_not_called()
-    experiment.timeline.advance_page.assert_not_called()
-
-
-def test_advance_past_ready_holds_stops_when_live_hold_is_reconstructed():
-    """Page makers reconstruct the hold on each read; that is still this wait."""
-    hold = MagicMock()
-    hold.is_timeline_hold = True
-    hold.hold_id = "barrier:wait_for_partner"
-    hold.prepare_resume_if_ready.return_value = False
-
-    def _reconstructed_hold(*_args, **_kwargs):
-        live = MagicMock()
-        live.is_timeline_hold = True
-        live.hold_id = "barrier:wait_for_partner"
-        live.prepare_resume_if_ready.return_value = False
-        return live
-
-    experiment = Experiment.__new__(Experiment)
-    experiment.timeline = MagicMock()
-    experiment.timeline.get_current_elt.side_effect = _reconstructed_hold
-    participant = SimpleNamespace()
-    participant.inc_progress = MagicMock()
-
-    page = experiment._advance_past_ready_holds(participant, hold)
-
-    assert page.hold_id == "barrier:wait_for_partner"
-    assert experiment.timeline.get_current_elt.call_count == 1
-    hold.account_wait.assert_not_called()
-    experiment.timeline.advance_page.assert_not_called()
-
-
-def test_advance_past_ready_holds_follows_a_later_hold():
-    """A different hold_id is a cursor move, not a reconstructed wait."""
-    hold = MagicMock()
-    hold.is_timeline_hold = True
-    hold.hold_id = "barrier:stack_init"
-    hold.prepare_resume_if_ready.return_value = False
-    nxt = MagicMock()
-    nxt.is_timeline_hold = True
-    nxt.hold_id = "barrier:stack_prepare"
-    nxt.prepare_resume_if_ready.return_value = False
-    experiment = Experiment.__new__(Experiment)
-    experiment.timeline = MagicMock()
-    experiment.timeline.get_current_elt.return_value = nxt
-    participant = SimpleNamespace()
-    participant.inc_progress = MagicMock()
-
-    page = experiment._advance_past_ready_holds(participant, hold)
-
-    assert page is nxt
-    assert experiment.timeline.get_current_elt.call_count == 2
+    assert page is hold
+    experiment.timeline.get_current_elt.assert_not_called()
     hold.account_wait.assert_not_called()
     experiment.timeline.advance_page.assert_not_called()
 
@@ -660,7 +606,8 @@ def test_advance_past_ready_holds_stops_after_max_skip_steps():
         hold = MagicMock()
         hold.is_timeline_hold = True
         hold.hold_id = f"barrier:{n['i']}"
-        hold.prepare_resume_if_ready.return_value = False
+        hold.prepare_resume_if_ready.return_value = True
+        hold.time_estimate = 1
         return hold
 
     from psynet.sync import _MAX_BARRIER_WALK_PASSES
@@ -673,9 +620,7 @@ def test_advance_past_ready_holds_stops_after_max_skip_steps():
     with pytest.raises(RuntimeError, match="did not settle"):
         experiment._advance_past_ready_holds(participant, _new_hold())
 
-    assert (
-        experiment.timeline.get_current_elt.call_count == _MAX_BARRIER_WALK_PASSES + 1
-    )
+    assert experiment.timeline.advance_page.call_count == _MAX_BARRIER_WALK_PASSES
 
 
 def test_advance_past_ready_holds_settles_on_the_last_allowed_skip(monkeypatch):
@@ -1601,7 +1546,7 @@ def new_trial_maker(**kwarg):
         chains_per_participant=None,
         chains_per_experiment=5,
         trials_per_node=1,
-        balance_across_chains=True,
+        chain_order="balanced",
         check_performance_at_end=False,
         check_performance_every_trial=False,
         recruit_mode="n_trials",
@@ -2202,7 +2147,7 @@ def test_consent_pages_hide_footer_exit_by_default():
 
 def _experiment_offering_early_exit(in_end_logic):
     experiment = MagicMock()
-    experiment.recruiter.show_early_exit_button = True
+    experiment.recruiter_class.show_early_exit_button = True
     experiment.timeline.participant_is_in_end_logic.return_value = in_end_logic
     return experiment
 
@@ -2237,6 +2182,6 @@ def test_page_level_early_exit_setting_overrides_the_recruiter_and_config():
     hidden = InfoPage("Hello", time_estimate=1, show_early_exit_button=False)
     assert hidden.early_exit_available(experiment, participant) is False
 
-    experiment.recruiter.show_early_exit_button = False
+    experiment.recruiter_class.show_early_exit_button = False
     shown = InfoPage("Hello", time_estimate=1, show_early_exit_button=True)
     assert shown.early_exit_available(experiment, participant) is True

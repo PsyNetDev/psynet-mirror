@@ -92,7 +92,9 @@ dev = [
     "psynet[experiment]",
     "asv",
     "beautifulsoup4",
+    "citeproc-py",
     "google-cloud-translate",
+    "myst-parser",
     "openai",
     "pre-commit",
     "pydata-sphinx-theme",
@@ -102,7 +104,9 @@ dev = [
     "sphinx-autobuild",
     "sphinx-autodoc-typehints<3.0.0",
     "sphinx-copybutton",
+    "sphinx-design",
     "sphinx-inline-tabs",
+    "sphinx-reredirects",
     "virtualenv",
 ]
 slack = [
@@ -136,6 +140,11 @@ Homepage = "https://www.psynet.dev/"
 Issues = "https://gitlab.com/PsyNetDev/PsyNet/-/issues"
 Repository = "https://gitlab.com/PsyNetDev/PsyNet/"
 
+# Built by `psynet dev docs bundle` for `psynet docs`; gitignored, so it must
+# be listed as an artifact to reach the sdist and wheel.
+[tool.hatch.build]
+artifacts = ["/psynet/resources/docs_text"]
+
 [tool.hatch.build.targets.wheel]
 include = ["/psynet"]
 
@@ -145,14 +154,20 @@ include = ["/psynet"]
 [tool.hatch.build.targets.sdist]
 exclude = [
     "/.gitlab",
-    "/.postgres_setup.sql",
-    "/.run-ci-tests-locally-v2.sh",
-    "/.run-ci-tests-locally.sh",
+    "/postgres_setup.sql",
+    "/run-ci-tests-locally-v2.sh",
     "/.venv*",
     "/ci",
     "/demos",
     "/docs",
     "/tests",
+]
+
+[tool.pytest.ini_options]
+norecursedirs = [
+    "tests/experiments",
+    "tests/isolated",
+    "tests/template_experiment_tests",
 ]
 
 [tool.ruff]

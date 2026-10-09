@@ -1,5 +1,3 @@
-# pylint: disable=unused-import,abstract-method,unused-argument
-
 import random
 import re
 from statistics import mean
@@ -100,7 +98,7 @@ class Exp(psynet.experiment.Experiment):
             chains_per_participant=1,
             chains_per_experiment=None,
             trials_per_node=1,
-            balance_across_chains=True,
+            chain_order="balanced",
             check_performance_at_end=False,
             check_performance_every_trial=False,
             recruit_mode="n_participants",

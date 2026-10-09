@@ -13,6 +13,7 @@ from sqlalchemy.orm.exc import MultipleResultsFound, NoResultFound
 
 from psynet import deployment_info
 from psynet.data import SQLBase, SQLMixin, register_table
+from psynet.db import _check_external_call_allowed, _commit_external_call_state
 from psynet.field import PythonObject
 from psynet.log import bold, error, success, warning
 from psynet.utils import get_config, get_logger
@@ -48,6 +49,8 @@ class LucidService(object):
     """Facade for Lucid Marketplace services provided via its HTTP API."""
 
     RATE_LIMIT_KEY = "last_rate_limit"
+    #: Connect and read timeouts in seconds for Lucid complete/terminate requests.
+    EXIT_REQUEST_TIMEOUT = (10, 30)
 
     def __init__(
         self,
@@ -307,16 +310,17 @@ class LucidService(object):
         self.log(
             f"Sending exit request for respondent with RID '{rid}' using redirect URL '{redirect_url}'."
         )
-        return requests.get(redirect_url)
+        return requests.get(redirect_url, timeout=self.EXIT_REQUEST_TIMEOUT)
 
     def complete_respondent(self, rid):
+        _check_external_call_allowed()
         lucid_rid = get_lucid_rid(rid)
 
         if lucid_rid.completed_at is None and lucid_rid.terminated_at is None:
             response = self.send_complete_request(rid)
             if response.ok:
                 lucid_rid.completed_at = datetime.now()
-                session.commit()
+                _commit_external_call_state()
                 self.log("Respondent completed successfully.")
             else:
                 if response.status_code == 403:
@@ -326,7 +330,7 @@ class LucidService(object):
                         "Marking as completed locally."
                     )
                     lucid_rid.completed_at = datetime.now()
-                    session.commit()
+                    _commit_external_call_state()
                 else:
                     self.log(
                         f"Error completing respondent (RID '{rid}'): "
@@ -342,16 +346,16 @@ class LucidService(object):
         lucid_rid.terminated_at = datetime.now()
         lucid_rid.termination_reason = reason
         lucid_rid.termination_details = details
-        session.commit()
 
     def terminate_respondent(self, rid, reason, details=None):
+        _check_external_call_allowed()
         lucid_rid = get_lucid_rid(rid)
 
         if lucid_rid.completed_at is None and lucid_rid.terminated_at is None:
             response = self.send_terminate_request(rid)
             if response.ok:
                 self.set_termination_details(rid, reason, details)
-                session.commit()
+                _commit_external_call_state()
                 self.log("Respondent terminated successfully.")
             else:
                 if response.status_code == 403:
@@ -361,6 +365,7 @@ class LucidService(object):
                         "(e.g., mobile/browser detection). Marking as terminated locally."
                     )
                     self.set_termination_details(rid, reason, details)
+                    _commit_external_call_state()
                 elif response.status_code == 400:
                     self.log(
                         f"Termination returned status code 400 for RID '{rid}'. "
@@ -368,6 +373,7 @@ class LucidService(object):
                         "Marking as terminated locally."
                     )
                     self.set_termination_details(rid, reason, details)
+                    _commit_external_call_state()
                 else:
                     self.log(
                         f"Error terminating respondent (RID '{rid}'): "
@@ -409,6 +415,7 @@ class LucidService(object):
 
     def get_submissions(self, survey_number, days_lookback=90):
         assert days_lookback <= 90
+        _check_external_call_allowed()
         from datetime import datetime, timedelta
 
         from dallinger.db import redis_conn
@@ -446,7 +453,7 @@ class LucidService(object):
         if response.ok:
             submissions = LucidSubmissions(response=response.json()["sessions"])
             db.session.add(submissions)
-            db.session.commit()
+            _commit_external_call_state()
             return submissions.get()
         if response.status_code == 429:
             if last_rate_limit is None:
@@ -832,6 +839,25 @@ class LucidService(object):
 
 
 def get_lucid_service(config=None, recruitment_config=None):
+    """
+    Create a :class:`LucidService` client for the Lucid (Cint) API.
+
+    Reads ``lucid_api_key`` and ``lucid_sha1_hashing_key`` from the experiment config
+    when run in an experiment directory (one with ``config.txt``), otherwise from
+    ``~/.dallingerconfig``.
+
+    Parameters
+    ----------
+    config : dallinger.config.Configuration, optional
+        Experiment config; loaded if omitted. Ignored outside an experiment directory.
+    recruitment_config : dict, optional
+        Lucid recruitment config, as returned by
+        :func:`psynet.lucid.qualifications.create_lucid_recruitment_config`.
+
+    Returns
+    -------
+    LucidService
+    """
     if os.path.exists("config.txt"):
         if config is None:
             config = get_config()

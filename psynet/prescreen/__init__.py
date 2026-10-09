@@ -388,6 +388,10 @@ class FreeTappingRecordTrial(AudioRecordTrial, StaticTrial):
         return self.position == 0
 
     def show_feedback(self, experiment, participant):
+        if self.failed and self.failed_reason != "analysis":
+            # The trial failed for another reason, so ``analysis`` may be missing.
+            return None
+
         num_resp_onsets_detected = self.analysis["num_resp_onsets_detected"]
 
         if self.failed:
@@ -440,17 +444,17 @@ class FreeTappingRecordTest(StaticTrialMaker):
     label : string
         The label for the test, default: "free_tapping_record_test".
 
-    performance_threshold : int
-        The performance threshold, default: 0.6.
+    performance_threshold : float
+        The performance threshold, default: 0.5.
 
     duration_rec_sec : float
         Length of the recording, default: 8 sec.
 
-    min_num_detected_taps : float
-        Mininum number of detected taps to pass the test, default: 1.
+    min_num_detected_taps : int
+        Minimum number of detected taps to pass a trial, default: 3.
 
-    n_repeat_trials : float
-        Number of trials to repeat in the trial maker, default: 0.
+    n_repeat_trials : int
+        Number of trials to repeat in the trial maker, default: 1.
 
     time_estimate_per_trial : float
         The time estimate in seconds per trial, default: 10.0.
@@ -942,10 +946,12 @@ class LanguageVocabularyTest(StaticTrialMaker):
                     "audio": ExternalAsset(
                         f"{media_url}/recordings/{language_code}/{word}.wav"
                     ),
-                    "image_correct": ExternalAsset(f"{media_url}/images/correct.png"),
-                    "image_wrong1": ExternalAsset(f"{media_url}/images/wrong1.png"),
-                    "image_wrong2": ExternalAsset(f"{media_url}/images/wrong2.png"),
-                    "image_wrong3": ExternalAsset(f"{media_url}/images/wrong3.png"),
+                    **{
+                        f"image_{choice}": ExternalAsset(
+                            f"{media_url}/images/{word}/{choice}.png"
+                        )
+                        for choice in ["correct", "wrong1", "wrong2", "wrong3"]
+                    },
                 },
             )
             for word in words
@@ -1674,6 +1680,10 @@ class HugginsHeadphoneTest(GeneralHeadphoneTest):
     """
     Implements: Milne, A.E., Bianco, R., Poole, K.C. et al. An online headphone screening test based on dichotic pitch.
     Behav Res 53, 1551–1562 (2021). https://doi.org/10.3758/s13428-020-01514-0
+
+    Participants pass when at least ``performance_threshold`` (default 4) of the
+    ``n_trials`` (default 6) answers are correct. Bots answer correctly unless
+    ``bot.var.is_good_bot`` is ``False``, in which case every answer is wrong.
     """
 
     def __init__(
@@ -1723,6 +1733,10 @@ class AntiphaseHeadphoneTest(GeneralHeadphoneTest):
     https://doi.org/10.3758/s13414-017-1361-2
 
     Note: we currently recommend using the HugginsHeadphoneTest instead.
+
+    Participants pass when at least ``performance_threshold`` (default 4) of the
+    ``n_trials`` (default 6) answers are correct. Bots answer correctly unless
+    ``bot.var.is_good_bot`` is ``False``, in which case every answer is wrong.
     """
 
     def __init__(
@@ -1769,6 +1783,23 @@ class BeepHeadphoneTrial(HeadphoneTrial):
 
 
 class BeepHeadphoneTest(GeneralHeadphoneTest):
+    """
+    Headphone check in which the participant picks the sound that differs from the other two.
+
+    Parameters
+    ----------
+    label : str
+        Trial maker ID.
+    media_url : str, optional
+        Base URL of the test sounds; defaults to PsyNet's hosted copies.
+    time_estimate_per_trial : float
+        Time estimate in seconds per trial.
+    performance_threshold : int
+        Minimum number of correct trials needed to pass.
+    n_trials : int
+        Number of trials.
+    """
+
     def __init__(
         self,
         label="beep_headphone_test",
@@ -1807,6 +1838,14 @@ class BeepHeadphoneTest(GeneralHeadphoneTest):
 
 
 class AudioForcedChoiceTrial(StaticTrial):
+    """
+    Trial class for :class:`AudioForcedChoiceTest`: plays the ``stimulus`` asset and shows answer buttons.
+
+    The node definition holds the CSV row plus ``question`` and ``answer_options``.
+    A trial scores 1 if the answer equals ``definition["answer"]`` and 0 otherwise.
+    Subclass it and override :meth:`show_trial` to customize the page.
+    """
+
     def show_trial(self, experiment, participant):
         return ModularPage(
             "audio_forced_choice_trial",

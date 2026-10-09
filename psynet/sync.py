@@ -65,7 +65,7 @@ this module. That loop:
 
 Each default barrier visit links to a durable ``TimelineHoldRecord``. Releasing
 the link accounts waiting through the release time and queues a targeted browser
-wake. Each participant's hold channel (`psynet_timeline_hold:<id>`) publishes
+wake. Each participant's hold channel (`psynet_timeline_hold_<id>`) publishes
 that wake only after the database transaction commits; the browser then
 rechecks the authoritative link state.
 
@@ -102,7 +102,6 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
-    event,
     text,
 )
 from sqlalchemy import inspect as sa_inspect
@@ -112,6 +111,7 @@ from sqlalchemy.orm import (
     backref,
     deferred,
     joinedload,
+    lazyload,
     object_session,
     relationship,
     selectinload,
@@ -126,6 +126,7 @@ from psynet.barrier_spec import (
 )
 from psynet.data import SQLBase, SQLMixin, register_table
 from psynet.db import (
+    _SessionQueue,
     _set_transaction_lock_timeout,
     is_transient_transaction_error,
 )
@@ -135,6 +136,7 @@ from psynet.participant import Participant
 from psynet.serialize import serialize_callable
 from psynet.timeline import CodeBlock, EltCollection, _is_timeline_hold, conditional
 from psynet.timeline_hold import (
+    TimelineHoldRecord,
     _defer_timeline_hold_wakes,
     _queue_arrival_update,
     _queue_timeline_hold_wake,
@@ -145,9 +147,6 @@ from psynet.utils import call_function_with_context, get_config, get_logger
 
 logger = get_logger()
 
-_PENDING_BARRIER_CHECKS_KEY = "psynet_pending_barrier_checks"
-_RELEASED_HOLD_WAITER_IDS_KEY = "psynet_released_hold_waiter_ids"
-_NESTED_BARRIER_QUEUE_SNAPSHOTS_KEY = "psynet_nested_barrier_queue_snapshots"
 _BARRIER_FROM_SPEC_CACHE_KEY = "psynet_barrier_from_spec"
 
 
@@ -188,29 +187,33 @@ class _BarrierAuthorHookError(Exception):
     """Author ``on_release`` failed; last-arrival keeps the group waiting."""
 
 
+# Read by the request after its transaction commits. A savepoint rollback
+# restores them, so a later instance's waiter ``NOWAIT`` miss does not wipe
+# stacked checks queued by an earlier skip in the same sweep.
+_pending_barrier_checks = _SessionQueue("pending_barrier_checks", set)
+_released_hold_waiter_ids = _SessionQueue("released_hold_waiter_ids", set)
+
+
 def _queue_barrier_check(barrier_instance_id):
     """Queue one instance for checking after the arrival transaction commits."""
-    db.session.info.setdefault(_PENDING_BARRIER_CHECKS_KEY, set()).add(
-        barrier_instance_id
-    )
+    _pending_barrier_checks.get().add(barrier_instance_id)
 
 
 def _take_pending_barrier_checks():
     """Take the barrier checks queued by the preceding successful transaction."""
-    return sorted(db.session.info.pop(_PENDING_BARRIER_CHECKS_KEY, set()))
+    return sorted(_pending_barrier_checks.take())
 
 
 def _queue_released_hold_waiters(participants):
     """Remember released waiters so the poller can skip them after its own check."""
-    db.session.info.setdefault(_RELEASED_HOLD_WAITER_IDS_KEY, []).extend(
+    _released_hold_waiter_ids.get().update(
         participant.id for participant in participants
     )
 
 
 def _take_released_hold_waiter_ids():
     """Take waiter ids queued by the barrier check that just ran."""
-    ids = db.session.info.pop(_RELEASED_HOLD_WAITER_IDS_KEY, [])
-    return sorted(set(ids))
+    return sorted(_released_hold_waiter_ids.take())
 
 
 def _rollback_preserving_barrier_queues():
@@ -221,13 +224,11 @@ def _rollback_preserving_barrier_queues():
     roll back before the next waiter. ``after_rollback`` would otherwise
     discard stacked checks queued by a waiter this loop already skipped.
     """
-    pending = set(db.session.info.get(_PENDING_BARRIER_CHECKS_KEY, set()))
-    released = list(db.session.info.get(_RELEASED_HOLD_WAITER_IDS_KEY, []))
+    pending = _pending_barrier_checks.peek()
+    released = _released_hold_waiter_ids.peek()
     db.session.rollback()
-    if pending:
-        db.session.info[_PENDING_BARRIER_CHECKS_KEY] = pending
-    if released:
-        db.session.info[_RELEASED_HOLD_WAITER_IDS_KEY] = released
+    _pending_barrier_checks.replace(pending)
+    _released_hold_waiter_ids.replace(released)
 
 
 def _hold_instance_id_for_page(participant, page):
@@ -303,52 +304,6 @@ def _pending_checks_should_wait_for_claim(instance_ids):
     return any(_visit_check_would_release(instance_id) for instance_id in instance_ids)
 
 
-@event.listens_for(db.session, "after_transaction_create")
-def _snapshot_pending_barrier_queues_for_nested(session, transaction):
-    """Remember queued checks so a SAVEPOINT rollback can restore them."""
-    if not transaction.nested:
-        return
-    pending = set(session.info.get(_PENDING_BARRIER_CHECKS_KEY, set()))
-    released = list(session.info.get(_RELEASED_HOLD_WAITER_IDS_KEY, []))
-    session.info.setdefault(_NESTED_BARRIER_QUEUE_SNAPSHOTS_KEY, []).append(
-        (pending, released)
-    )
-
-
-@event.listens_for(db.session, "after_rollback")
-def _discard_pending_barrier_checks(session):
-    """Restore pre-savepoint queues on nested rollback; drop them on root rollback.
-
-    Detect the SAVEPOINT via the snapshot stack. ``in_nested_transaction()``
-    may already be false when this handler runs. A later instance's waiter
-    ``NOWAIT`` miss must not wipe stacked checks queued by an earlier skip
-    in the same ``_run_pending_barrier_checks`` sweep.
-    """
-    stack = session.info.get(_NESTED_BARRIER_QUEUE_SNAPSHOTS_KEY) or []
-    if stack:
-        pending, released = stack[-1]
-        if pending:
-            session.info[_PENDING_BARRIER_CHECKS_KEY] = set(pending)
-        else:
-            session.info.pop(_PENDING_BARRIER_CHECKS_KEY, None)
-        if released:
-            session.info[_RELEASED_HOLD_WAITER_IDS_KEY] = list(released)
-        else:
-            session.info.pop(_RELEASED_HOLD_WAITER_IDS_KEY, None)
-        return
-    session.info.pop(_PENDING_BARRIER_CHECKS_KEY, None)
-    session.info.pop(_RELEASED_HOLD_WAITER_IDS_KEY, None)
-
-
-@event.listens_for(db.session, "after_transaction_end")
-def _pop_nested_barrier_queue_snapshot(session, transaction):
-    if not transaction.nested:
-        return
-    stack = session.info.get(_NESTED_BARRIER_QUEUE_SNAPSHOTS_KEY)
-    if stack:
-        stack.pop()
-
-
 def _execute_advisory_xact_lock(bind, instance_id, *, wait):
     """Take or try the visit xact claim on ``bind``.
 
@@ -416,8 +371,8 @@ def _get_waiting_participants(
     that alias is not in the ``OF`` list. The follow-up ``IN`` queries do
     not take extra row locks.
 
-    ``sync_group_links`` is populated separately; see
-    ``_populate_sync_group_links``.
+    ``active_barriers`` and ``sync_group_links`` are populated separately;
+    see ``_populate_active_barriers`` and ``_populate_sync_group_links``.
     """
     query = (
         ParticipantLinkBarrier.query.join(Participant)
@@ -430,7 +385,7 @@ def _get_waiting_participants(
         )
         .options(
             joinedload(ParticipantLinkBarrier.participant, innerjoin=True).options(
-                selectinload(Participant.active_barriers),
+                lazyload(Participant.active_barriers),
             ),
             selectinload(ParticipantLinkBarrier.timeline_hold),
         )
@@ -441,9 +396,93 @@ def _get_waiting_participants(
             of=[ParticipantLinkBarrier, Participant],
             nowait=nowait,
         ).populate_existing()
-    waiters = [link.participant for link in query.all()]
+    links = query.all()
+    waiters = [link.participant for link in links]
+    _populate_active_barriers(waiters)
     _populate_sync_group_links(waiters)
     return waiters
+
+
+def _populate_active_barriers(participants):
+    """Batch-load ``active_barriers`` without a relationship loader option.
+
+    The waiter links are themselves members of ``active_barriers``. A nested
+    loader under ``populate_existing`` reloads those same links and resets
+    their eager-loaded ``timeline_hold``, so releasing each waiter lazy-loads
+    it and flushes its UPDATEs one row at a time. An explicit ``IN`` query
+    returns the identity-mapped links unchanged, provided the caller still
+    holds them: the identity map is weak.
+    """
+    if not participants:
+        return
+    grouped = {participant.id: [] for participant in participants}
+    for link in ParticipantLinkBarrier.query.filter(
+        ParticipantLinkBarrier.participant_id.in_(list(grouped)),
+        ~ParticipantLinkBarrier.released,
+    ):
+        grouped[link.participant_id].append(link)
+    for participant in participants:
+        set_committed_value(participant, "active_barriers", grouped[participant.id])
+
+
+def _load_link_participants(links):
+    """Batch-load ``link.participant`` for group links that have not loaded it.
+
+    Group walks would otherwise lazy-load each member, plus that member's
+    select-in collections, once per member.
+    """
+    unloaded = [
+        link
+        for link in links
+        if "participant" in sa_inspect(link).unloaded and link.participant_id
+    ]
+    if not unloaded:
+        return
+    session = db.session()
+    mapper = sa_inspect(Participant)
+    by_id = {}
+    for link in unloaded:
+        key = mapper.identity_key_from_primary_key((link.participant_id,))
+        cached = session.identity_map.get(key)
+        if cached is not None and not sa_inspect(cached).expired:
+            by_id[link.participant_id] = cached
+    missing_ids = {link.participant_id for link in unloaded} - set(by_id)
+    if len(missing_ids) > 1:
+        by_id.update(
+            (participant.id, participant)
+            for participant in Participant.query.filter(Participant.id.in_(missing_ids))
+        )
+    for link in unloaded:
+        if link.participant_id in by_id:
+            set_committed_value(link, "participant", by_id[link.participant_id])
+
+
+def _prime_timeline_hold_records(participants, barrier_id):
+    """Batch-load waiters' hold records so per-member hold lookups skip SQL."""
+    links = {p.id: p.active_barriers.get(barrier_id) for p in participants}
+    hold_ids = {
+        link.timeline_hold_id
+        for link in links.values()
+        if link is not None
+        and link.timeline_hold_id
+        and "timeline_hold" in sa_inspect(link).unloaded
+    }
+    if len(hold_ids) < 2:
+        return
+    records = {
+        record.id: record
+        for record in TimelineHoldRecord.query.filter(
+            TimelineHoldRecord.id.in_(hold_ids)
+        )
+    }
+    for participant in participants:
+        link = links[participant.id]
+        record = records.get(link.timeline_hold_id) if link is not None else None
+        if record is None:
+            continue
+        set_committed_value(link, "timeline_hold", record)
+        if record.page_uuid == participant.page_uuid:
+            participant._timeline_hold_record = record
 
 
 def _populate_sync_group_links(participants):
@@ -551,6 +590,11 @@ class _BarrierHoldPage(_TimelineHoldPage):
     @property
     def fail_on_timeout(self):
         return self.barrier.max_wait_action == "fail"
+
+    @staticmethod
+    def failure_releases_hold(experiment, participant):
+        """Release failed participants anywhere, because barriers never release them."""
+        return participant.failed
 
     def participant_can_resume(self, experiment, participant):
         """Return whether the barrier released this participant.
@@ -1042,6 +1086,20 @@ def _advance_released_hold_waiters_after_commit(participant_ids):
             raise
 
 
+def _group_barrier_outcome(group, members, waiting_ids):
+    """Return ``"dissolve"``, ``"release"`` or ``"wait"`` for one group visit.
+
+    Pure: ``GroupBarrier.would_release`` passes the members it projects will
+    remain, and ``choose_who_to_release`` passes the live members, so the
+    peek and the real release share one decision.
+    """
+    if len(members) < group.min_group_size:
+        return "wait" if group.accepts_top_ups else "dissolve"
+    if all(participant.id in waiting_ids for participant in members):
+        return "release"
+    return "wait"
+
+
 class GroupBarrier(Barrier):
     """
     A GroupBarrier is a Barrier that waits until all participants in a given :class:`~psynet.sync.SyncGroup`
@@ -1259,24 +1317,24 @@ class GroupBarrier(Barrier):
         group = arriving_participant.active_sync_groups.get(self.group_type)
         if group is None:
             return
-        waiting_count = sum(
-            1
-            for member in group.active_participants
-            if self._participant_is_waiting(member)
-        )
-        group_size = len(group.active_participants)
-        for member in group.active_participants:
+        members = group.active_participants
+        waiting = [m for m in members if self._participant_is_waiting(m)]
+        waiting_count = len(waiting)
+        group_size = len(members)
+        if self._uses_timeline_hold:
+            _prime_timeline_hold_records(waiting, self.id)
+        for member in members:
             if member.failed:
                 continue
             if self._participant_is_waiting(member):
                 hold_html = None
                 if self._uses_timeline_hold:
-                    waiting = self.waiting_logic
+                    hold_page = self.waiting_logic
                     if getattr(
-                        waiting, "_is_silent_for", None
-                    ) and waiting._is_silent_for(member):
+                        hold_page, "_is_silent_for", None
+                    ) and hold_page._is_silent_for(member):
                         continue
-                    hold_html = waiting.overlay_html(member)
+                    hold_html = hold_page.overlay_html(member)
                 _queue_arrival_update(member.id, hold_message=hold_html)
                 continue
             text = self._call_arrival_message(
@@ -1304,31 +1362,24 @@ class GroupBarrier(Barrier):
 
         for group in groups.values():
             group.check_numbers()
-
-            if group.n_active_participants < group.min_group_size:
-                # If join_existing_groups is False, then the group will never be able
-                # to get to the minimum size, so we remove all participants from the group
-                # and release participants who are waiting at this barrier. Optionally fail them
-                # (when fail_participants_below_min_size is True).
-                if not group.accepts_top_ups:
-                    for participant in list(group.active_participants):
-                        if group.fail_participants_below_min_size:
-                            participant.fail("sync group below minimum size")
-                        group.remove_participant(participant)
-                        if participant.id in waiting_participant_ids:
-                            participants_to_release.append(participant)
-                    group.check_numbers()
-                    if group.n_active_participants == 0:
-                        group.close()
-                continue
-
-            all_participants_present = all(
-                [
-                    participant.id in waiting_participant_ids
-                    for participant in group.active_participants
-                ]
+            outcome = _group_barrier_outcome(
+                group, group.active_participants, waiting_participant_ids
             )
-            if all_participants_present:
+
+            if outcome == "dissolve":
+                # The group can never reach its minimum size, so remove everyone
+                # and release whoever is waiting here, failing them first when
+                # fail_participants_below_min_size is True.
+                for participant in list(group.active_participants):
+                    if group.fail_participants_below_min_size:
+                        participant.fail("sync group below minimum size")
+                    group.remove_participant(participant)
+                    if participant.id in waiting_participant_ids:
+                        participants_to_release.append(participant)
+                group.check_numbers()
+                if group.n_active_participants == 0:
+                    group.close()
+            elif outcome == "release":
                 group.check_leader()
                 for participant in group.active_participants:
                     participants_to_release.append(participant)
@@ -1364,17 +1415,25 @@ class GroupBarrier(Barrier):
         return participants_to_release
 
     def would_release(self, waiting_participants: List[Participant]) -> bool:
-        """Return whether this group visit would release, without mutating state."""
+        """Return whether this group visit would release, without mutating state.
+
+        Mirrors :meth:`check_waiting_participants` followed by
+        :meth:`choose_who_to_release`: late members that the between-barrier
+        timeout would kick or fail count as already gone, and group size is
+        recounted rather than read from ``n_active_participants``.
+        """
         waiting_ids = {participant.id for participant in waiting_participants}
         for group in self.get_waiting_groups(waiting_participants).values():
-            if group.n_active_participants < group.min_group_size:
-                if not group.accepts_top_ups:
-                    return True
-                continue
-            if all(
-                participant.id in waiting_ids
+            late_ids = {
+                participant.id
+                for participant in self._late_between_barriers(group, waiting_ids)
+            }
+            members = [
+                participant
                 for participant in group.active_participants
-            ):
+                if participant.id not in late_ids
+            ]
+            if _group_barrier_outcome(group, members, waiting_ids) != "wait":
                 return True
         return any(
             self.group_type not in participant.active_sync_groups
@@ -1400,21 +1459,8 @@ class GroupBarrier(Barrier):
         self, group: "SyncGroup", waiting_participants: List[Participant]
     ):
         """Kick or fail group members who are late reaching this barrier."""
-        if (
-            self.timeout_between_barriers_time is None
-            or group.last_barrier_pass_time is None
-        ):
-            return
-
-        elapsed_seconds = (timenow() - group.last_barrier_pass_time).total_seconds()
-        if elapsed_seconds <= self.timeout_between_barriers_time:
-            return
-
         waiting_participant_ids = {p.id for p in waiting_participants}
-        missing = [
-            p for p in group.active_participants if p.id not in waiting_participant_ids
-        ]
-        for participant in missing:
+        for participant in self._late_between_barriers(group, waiting_participant_ids):
             if self.timeout_between_barriers_action == "kick":
                 logger.info(
                     "GroupBarrier '%s': kicking participant %s from group %s (timeout between barriers)",
@@ -1430,6 +1476,18 @@ class GroupBarrier(Barrier):
                     participant.id,
                 )
                 participant.fail("timeout between barriers")
+
+    def _late_between_barriers(self, group: "SyncGroup", waiting_ids) -> list:
+        """Return active members past the between-barrier timeout who are not waiting."""
+        if (
+            self.timeout_between_barriers_time is None
+            or group.last_barrier_pass_time is None
+        ):
+            return []
+        elapsed_seconds = (timenow() - group.last_barrier_pass_time).total_seconds()
+        if elapsed_seconds <= self.timeout_between_barriers_time:
+            return []
+        return [p for p in group.active_participants if p.id not in waiting_ids]
 
 
 class Grouper(Barrier):
@@ -1480,9 +1538,11 @@ class Grouper(Barrier):
         visible waiting time.
 
     fail_participants_below_min_size
-        If ``True`` (default), participants in a group that is below minimum size and does not accept
-        top-ups are failed and released when they hit a GroupBarrier. If ``False``, they are released
-        without being failed. (Only applies to groups that have a minimum size, e.g. created by SimpleGrouper.)
+        Applies to groups that have a minimum size and don't accept top-ups, such as those created
+        by :class:`~psynet.sync.SimpleGrouper`. When a member leaves and the group falls below its
+        minimum size, the group is dissolved at once. If ``True`` (default), the remaining members
+        are failed. If ``False``, they are removed from the group without being failed and continue
+        alone.
     """
 
     def __init__(
@@ -1642,8 +1702,10 @@ class SimpleGrouper(Grouper):
         To be used in conjunction with ``join_existing_groups=True``.
 
     fail_participants_below_min_size
-        If ``True`` (default), participants in a group below minimum size that does not accept top-ups
-        are failed and released at GroupBarriers. If ``False``, they are released without being failed.
+        When a member leaves a group that doesn't accept top-ups and the group falls below
+        ``min_group_size``, the group is dissolved at once. If ``True`` (default), the remaining
+        members are failed. If ``False``, they are removed from the group without being failed and
+        continue alone.
 
     kwargs
         Further arguments to pass to Grouper.
@@ -1829,11 +1891,11 @@ class SyncGroup(SQLBase, SQLMixin):
 
         Use ``group.add_participant(participant)`` to add a participant.
         """
-        return _ReadOnlyParticipantList(
-            link.participant
-            for link in self.participant_links
-            if getattr(link, "active", True)
-        )
+        links = [
+            link for link in self.participant_links if getattr(link, "active", True)
+        ]
+        _load_link_participants(links)
+        return _ReadOnlyParticipantList(link.participant for link in links)
 
     def add_participant(self, participant: Participant):
         """Add a participant to the group (creates an active link)."""

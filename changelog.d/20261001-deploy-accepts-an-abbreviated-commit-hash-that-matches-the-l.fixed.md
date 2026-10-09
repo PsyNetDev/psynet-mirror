@@ -1,0 +1,1 @@
+Fixed `psynet deploy` rejecting a PsyNet or Dallinger git pin with an abbreviated commit hash (for example `@2da1cc66`) even when it matched the locally installed commit. A pinned hash now matches when the installed commit starts with it.

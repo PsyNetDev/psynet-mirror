@@ -70,7 +70,7 @@ def test_skip_common_venv_names():
 
 def test_skip_ide_and_build_directories():
     """Test that IDE and build directories are skipped."""
-    skip_dirs = ["__pycache__", ".vscode", ".github", "node_modules"]
+    skip_dirs = ["__pycache__", ".vscode", ".github", "node_modules", "docs_text"]
 
     with tempfile.TemporaryDirectory() as tmpdir:
         # Create a normal Python file

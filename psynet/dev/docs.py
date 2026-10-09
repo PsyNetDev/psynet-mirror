@@ -7,6 +7,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -27,6 +28,12 @@ LINKCHECK_READ_PROGRESS_RE = re.compile(
 )
 # Statuses that Sphinx counts as linkcheck failures.
 LINKCHECK_FAILURE_STATUSES = frozenset({"broken", "timeout"})
+# Demo files bundled for ``psynet docs demos``: authored text only. The size
+# cap leaves out vendored libraries such as jsPsych and Unity builds.
+DEMO_CODE_SUFFIXES = frozenset(
+    {".py", ".txt", ".toml", ".md", ".html", ".js", ".css", ".json", ".ini", ".cfg"}
+)
+DEMO_CODE_MAX_BYTES = 64 * 1024
 
 
 @dataclass(frozen=True)
@@ -85,6 +92,76 @@ def make_command(
         open_html_index(target, build_dir)
 
     return 0
+
+
+def bundle_command() -> Path:
+    """Build the plain-text docs that release wheels ship for ``psynet docs``."""
+    from psynet import __version__
+    from psynet.local_docs import BUNDLED_DOCS_DIR
+
+    docs_dir = assert_docs_available()
+    with tempfile.TemporaryDirectory() as tmp:
+        text_dir = Path(tmp) / "text"
+        command = [
+            sys.executable,
+            "-m",
+            "sphinx",
+            "-b",
+            "text",
+            "-q",
+            "-W",
+            "--keep-going",
+            "-d",
+            str(Path(tmp) / "doctrees"),
+            ".",
+            str(text_dir),
+        ]
+        try:
+            subprocess.run(command, cwd=docs_dir, check=True)
+        except subprocess.CalledProcessError as exc:
+            raise ValueError(
+                f"Text docs build failed with exit code {exc.returncode}: "
+                f"{shlex.join(command)}"
+            ) from exc
+
+        shutil.rmtree(BUNDLED_DOCS_DIR, ignore_errors=True)
+        for source in text_dir.rglob("*.txt"):
+            target = BUNDLED_DOCS_DIR / source.relative_to(text_dir)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, target)
+    _bundle_demo_code(docs_dir.parent, BUNDLED_DOCS_DIR / "demos")
+    commit = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=docs_dir,
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout.strip()
+    (BUNDLED_DOCS_DIR / "VERSION").write_text(f"{__version__}\n{commit}\n")
+    return BUNDLED_DOCS_DIR
+
+
+def _bundle_demo_code(source_root: Path, target_dir: Path) -> None:
+    """Copy the demos' tracked text files, without media or vendored libraries."""
+    tracked = subprocess.run(
+        ["git", "ls-files", "demos"],
+        cwd=source_root,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.splitlines()
+    for name in tracked:
+        source = source_root / name
+        if (
+            source.suffix not in DEMO_CODE_SUFFIXES
+            or source.name == "constraints.txt"
+            or not source.is_file()
+            or source.stat().st_size > DEMO_CODE_MAX_BYTES
+        ):
+            continue
+        target = target_dir / Path(name).relative_to("demos")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, target)
 
 
 def run_live_preview(
@@ -175,17 +252,26 @@ def linkcheck_command(
     jobs: str | None = "1",
     sphinx_options: tuple[str, ...] = (),
     show_progress: bool = True,
+    strict: bool = False,
 ) -> int:
     """Run Sphinx's linkcheck builder and print a structured summary.
 
     This is a wrapper around Sphinx's ``linkcheck`` builder. After Sphinx
     finishes, broken links are reprinted grouped by failure category.
+
+    By default only :data:`LINKCHECK_BLOCKING_CATEGORIES` fail the check;
+    other failures usually come from the remote site or the network and are
+    only reported. ``strict=True`` fails on every broken link.
     """
     docs_dir = assert_docs_available()
     build_dir = docs_dir / "_build"
 
     if clean and build_dir.exists():
         shutil.rmtree(build_dir)
+    # Without this, a run that fails before linkcheck finishes would be
+    # judged on the previous run's results.
+    if (build_dir / "linkcheck").exists():
+        shutil.rmtree(build_dir / "linkcheck")
 
     options = build_sphinx_options(
         strict=False,
@@ -204,10 +290,30 @@ def linkcheck_command(
     print(format_linkcheck_summary(issues))
 
     if result.returncode != 0:
-        if issues:
-            raise ValueError(
-                f"Linkcheck found {len(issues)} broken link(s); see summary above."
+        # Sphinx exits 1 for broken links; other codes mean the run itself
+        # failed, so the parsed issues may be incomplete.
+        if issues and result.returncode == 1:
+            blocking = [
+                issue
+                for issue in issues
+                if _categorize_linkcheck_issue(issue) in LINKCHECK_BLOCKING_CATEGORIES
+            ]
+            if strict:
+                raise ValueError(
+                    f"Linkcheck found {len(issues)} broken link(s); see summary above."
+                )
+            if blocking:
+                raise ValueError(
+                    f"Linkcheck found {len(blocking)} broken link(s) to fix: "
+                    "internal links, missing anchors, or pages not found. "
+                    "See summary above."
+                )
+            print(
+                f"\nNot failing on these {len(issues)} link(s): they usually "
+                "come from the remote site or the network. Pass --strict to "
+                "fail on them."
             )
+            return 0
         raise ValueError(
             f"Linkcheck failed with exit code {result.returncode}: "
             f"{shlex.join(str(arg) for arg in command)}"
@@ -317,12 +423,22 @@ def parse_linkcheck_issues(build_dir: Path) -> list[LinkcheckIssue]:
 LINKCHECK_CATEGORIES = (
     "Internal documentation links",
     "Missing anchors",
-    "Pages not found (404)",
+    "Pages not found (404/410)",
     "Access denied (403), possibly bot-blocked",
     "SSL/TLS errors",
     "Connection errors",
     "Timeouts",
     "Other",
+)
+
+# Categories that mean the docs themselves are wrong, so they fail
+# linkcheck even without ``strict``.
+LINKCHECK_BLOCKING_CATEGORIES = frozenset(
+    {
+        "Internal documentation links",
+        "Missing anchors",
+        "Pages not found (404/410)",
+    }
 )
 
 
@@ -337,9 +453,11 @@ def _categorize_linkcheck_issue(issue: LinkcheckIssue) -> str:
         return "Timeouts"
     if re.search(r"\bAnchor\b.*not found", reason):
         return "Missing anchors"
-    if "404" in reason:
-        return "Pages not found (404)"
-    if "403" in reason:
+    # Match the status at the start: requests appends the URL, which may
+    # itself contain these digits.
+    if re.match(r"(404|410)\b", reason):
+        return "Pages not found (404/410)"
+    if re.match(r"403\b", reason):
         return "Access denied (403), possibly bot-blocked"
     if "SSL" in reason or "certificate" in reason.lower():
         return "SSL/TLS errors"

@@ -1,4 +1,3 @@
-.. _developer:
 .. highlight:: shell
 
 .. |br| raw:: html
@@ -8,6 +7,11 @@
 =============================
 Contributing a feature/bugfix
 =============================
+
+PsyNet's ``master`` branch is the default branch. Each change is made on its
+own feature or bugfix branch, created from ``master`` and merged back through
+a merge request once it has been reviewed. Releases are cut from ``master``
+onto ``release-MAJOR.MINOR`` branches (see :doc:`making_a_release`).
 
 Step 1: Creating an issue
 +++++++++++++++++++++++++
@@ -40,8 +44,9 @@ which will be generated from the issue name.
 Click 'Create merge request' to continue.
 
 You will now see a page with some further options for your merge request.
-Take a note of the template 'Changelog' in the Description section;
-you will need to fill this out after you have implemented the feature.
+The Description is pre-filled from PsyNet's merge request template, with the
+sections Motivation, Summary of changes, Behavior changes, Testing, and
+Automatic code review. You will fill these in once you have implemented the feature.
 
 Scroll down and ensure that you are listed as the Assignee (the person who will do the implementation)
 and the Reviewer is left unassigned. The Reviewer will stay unassigned until you have finished your implementation.
@@ -78,13 +83,14 @@ which will display the required commands automatically for us to copy and paste.
       git push -u origin issue-288-network-participant
 
 Once we've checked out the code locally, we should make sure that our Python is using this local version of PsyNet.
-Make sure you're in the right virtual environment, then run:
+If you haven't set up a development environment yet, follow :doc:`additional_developer_installation`.
+Otherwise, activate your virtual environment and run:
 
 .. code-block:: console
 
-  pip3 install -e .  # installs PsyNet in local editable mode
+  uv pip install -e ".[dev,demos,slack]"  # installs PsyNet in local editable mode
 
-Try running ``which psynet`` in your terminal; it should return a path to your local PsyNet source code.
+Try running ``which psynet`` in your terminal; it should return a path inside your PsyNet checkout's virtual environment.
 
 Step 3: Implementing the feature
 ++++++++++++++++++++++++++++++++
@@ -173,52 +179,24 @@ A couple of observations are useful to bear in mind for this cost-benefit analys
 
 Bearing all this in mind, we will write a simple test for this new ``Network.participant`` attribute. We won't worry about testing ``Network.source`` because we know that Network.source will have to work in order for ``Network.participant`` to work anyway.
 
-We can see the pre-existing tests within PsyNet's ``tests/`` folder. There are quite a few of them already:
+PsyNet's tests live in the ``tests/`` folder. All test files must begin with the prefix ``test_``. The folder also contains a file called ``conftest.py``, which provides shared test fixtures; we won't worry about that here. The parts of ``tests/`` that matter most for contributors are:
 
-.. figure:: ../_static/images/developer/workflow/psynet_tests.png
-  :width: 540
-  :align: center
+* ``tests/isolated/``: the main test suite. CI runs each file here in its own pytest process, so that database state from one experiment cannot leak into the next. Subfolders such as ``tests/isolated/demos/`` and ``tests/isolated/experiments/`` hold tests that launch a whole experiment.
+* ``tests/experiments/``: small experiments written only for testing. They are not tests themselves; test files in ``tests/isolated/experiments/`` launch them.
 
-|br|
-All test files must begin with the prefix ``test_``. The ``tests`` folder additionally contains a file called ``conftest.py``, which is used to provide additional helper materials; we won't worry about that here.
+Tests that launch a whole experiment are particularly good for testing things to do with the user interface and the database. However, they are relatively slow to run, because each test file has to spin up an experiment debugging session. To keep the process efficient, we therefore try to pack several checks into one existing test file rather than creating a new one.
 
-This folder contains a special collection of tests with the prefix ``test_demo_``. These tests work by running particular demos within PsyNet (stored in the ``demos`` folder) and checking that they behave as expected. These tests are particularly good for testing things to do with the user interface and the database. However, they have the disadvantage of being relatively slow to run, because each test file requires PsyNet to spin up an experiment debugging session. To keep the process efficient, we therefore try and pack lots of different tests into a particular demo test file.
+We'll add our test to the test for the MCMCP test experiment, ``tests/isolated/experiments/test_experiment_mcmcp.py``, which launches the experiment in ``tests/experiments/mcmcp/``. This is a good one to choose because each network in the MCMCP experiment is the property of a particular participant, which means that the ``network.participant`` call should return a meaningful value.
 
-We'll add our test to the test for the MCMCP demo (``test_demo_mcmcp.py``). This is a good one to choose because each network in the MCMCP demo is the property of a particular participant, which means that the ``network.participant`` call should return a meaningful value.
+This test drives a real Chrome browser through the experiment, so you need Chrome and a matching ChromeDriver installed. See :doc:`additional_developer_installation` for setup instructions, including how to unblock ChromeDriver on macOS.
 
-For these browser-based tests to work we must make sure we have an appropriate version of the ChromeDriver software installed. This is a piece of software for programmatically running Chrome sessions. It can be downloaded from the `ChromeDriver website <https://chromedriver.chromium.org/downloads>`_; once you've downloaded the appropriate version for your Chrome browser and your operating system/processor (you can check your Chrome browser's version by clicking 'Chrome' then 'About Chrome'), you should unzip the file and copy the resulting executable file to the ``/usr/local/bin/`` folder. You should only have to do this once in a while (occasionally Chrome updates will require you to get a new version of ChromeDriver).
-
-Once you've downloaded ChromeDriver, verify that it works by running the following terminal command:
-
-.. code-block:: console
-
-  chromedriver --version
-
-If running your test on Mac, you may be faced with a security message like the one below:
-
-.. figure:: ../_static/images/developer/workflow/macos_security_message.png
-  :width: 340
-  :align: center
-
-|br|
-To bypass this message, you will need to go to System Preferences, Security & Privacy, and find the dialog below which allows you to enable chromedriver to run:
-
-.. figure:: ../_static/images/developer/workflow/macos_security_dialog-1.png
-  :width: 500
-  :align: center
-
-.. figure:: ../_static/images/developer/workflow/macos_security_dialog-2.png
-  :width: 340
-  :align: center
-
-|br|
 To run this test, we execute the following code from the PsyNet root directory:
 
 .. code-block:: console
 
-  pytest tests/test_demo_mcmcp.py --chrome
+  pytest tests/isolated/experiments/test_experiment_mcmcp.py --chrome -s
 
-The ``--chrome`` flag is required whenever we run a demo test (i.e., any test file beginning with ``test_demo_``). This instructs pytest to run the test using the Chrome browser; if we don't have this flag, pytest will skip the test entirely. Otherwise we can just write '``pytest``' followed by the path to the test file we want to run.
+The ``--chrome`` flag is required for any test that uses a browser. If we leave it out, pytest skips those tests. The ``-s`` flag shows live output from the test as it runs. For tests that don't use a browser, we can just write ``pytest`` followed by the path to the test file. :doc:`running_tests` has more tips on running and debugging tests locally.
 
 These browser-based tests are a little fragile when run on local machines, often getting stuck at the point of opening the browser. This most often happens when running tests repeatedly. This seems to be caused by zombie ChromeDriver processes that aren't shut down properly when tests finish. The problem seems to be solved by running the following command in between tests:
 
@@ -226,39 +204,39 @@ These browser-based tests are a little fragile when run on local machines, often
 
   killall chromedriver
 
-If we run the pytest command described above, we should see PsyNet spin up a browser window and progress through the experiment. Once the experiment is completed, the browser window should be automatically closed, and we should see a collection of green success messages in the computer terminal.
+If we run the pytest command described above, we should see PsyNet spin up a browser window and progress through the experiment. Once the experiment is completed, the browser window should be automatically closed, and we should see a collection of green success messages in the computer terminal. To run without a visible browser window, set ``HEADLESS=TRUE`` before the command.
 
-So, having replicated the MCMCP demo test locally, the next step is to incorporate a test of our new ``network.participant`` feature. To work out exactly what to do here, I inserted a breakpoint into the main part of ``test_demo_mcmcp.py``:
+So, having replicated the MCMCP test locally, the next step is to incorporate a test of our new ``network.participant`` feature. To work out exactly what to do here, I inserted a breakpoint into the main part of ``test_experiment_mcmcp.py``:
 
 .. code-block:: python
 
-  @pytest.mark.usefixtures("demo_mcmcp")
+  @pytest.mark.parametrize(
+      "experiment_directory", [path_to_test_experiment("mcmcp")], indirect=True
+  )
+  @pytest.mark.usefixtures("launched_experiment")
   class TestExp:
       def test_exp(self, bot_recruits, db_session):
-          for participant, bot in enumerate(bot_recruits):
+          for participant_id, bot in enumerate(bot_recruits):
+              # Python zero-indexes, SQL one-indexes
+              participant_id += 1
+
               driver = bot.driver
               time.sleep(1)
 
               driver.execute_script(
                   "$('html').animate({ scrollTop: $(document).height() }, 0);"
               )
-              next_page(driver, "standard-consent")
+              next_page(driver, "consent")
 
               breakpoint()
 
-Rerunning the pytest command, we see PsyNet spin up a browser window and navigate through the consent form. After this point it freezes because it has hit the breakpoint. At this point we can enter custom code into the Python terminal and see what happens when we execute it. On this basis I replaced the breakpoint with the following lines of code:
+Rerunning the pytest command, we see PsyNet spin up a browser window and navigate through the consent form. After this point it freezes because it has hit the breakpoint. At this point we can enter custom code into the Python terminal and see what happens when we execute it. On this basis I replaced the breakpoint with the following lines of code, and added the imports ``from psynet.participant import Participant`` and ``from psynet.trial.mcmcp import MCMCPNetwork`` at the top of the file:
 
 .. code-block:: python
 
   # Testing that network.participant works correctly
   # (we are in a within-participant experiment, so each chain
   # should be associated with a single participant).
-  from psynet.trial.mcmcp import MCMCPNetwork
-  from psynet.participant import Participant
-
-  # SQLAlchemy uses 1-indexing, Python uses 0-indexing...
-  participant_id = participant + 1
-
   network = MCMCPNetwork.query.all()[0]
   assert isinstance(network.participant, Participant)
   assert network.participant.id == participant_id
@@ -267,12 +245,12 @@ The ``assert`` keyword is crucial in test construction. When we write ``assert [
 
 Here I implemented two assertions. We're asserting that ``network.participant`` returns an object of class ``Participant``, and we're asserting that this participant has the same ID as the participant who's currently taking the experiment. This is very basic stuff; nonetheless, I claim that it's enough to provide some basic reassurance that the new feature works.
 
-Once we've learned all we want to from this breakpoint, we can quit the test early by typing 'q' into the breakpoint terminal. We can now restart the test by running the same pytest command from before. If everything goes well, we should again see PsyNet running through the experiment and delivering lots of green success messages. If not, we can try killing the ChromeDriver process as described above…
+Once we've learned all we want to from this breakpoint, we can quit the test early by typing 'q' into the breakpoint terminal. We can now restart the test by running the same pytest command from before. If everything goes well, we should again see PsyNet running through the experiment and delivering lots of green success messages. If not, we can try killing the ChromeDriver process as described above.
 
 Step 6: Push the draft code
 +++++++++++++++++++++++++++
 
-We've just finalized our draft implementation, including code, documentation, and tests. We should now ensure that your proposed changes are all pushed to the remote repository. First we run ``git status`` to verify that we have no uncommitted file changes and that we're on the right branch (in our example, the branch was called ``288-network-participant``). If we had uncommitted changes we could fix them with ``git commit``; if we weren't on the right branch we could fix this using ``git checkout``. Lastly, we make sure that all our local changes are pushed to the remote repository by running one final ``git push``.
+We've just finalized our draft implementation, including code, documentation, and tests. We should now ensure that your proposed changes are all pushed to the remote repository. First we run ``git status`` to verify that we have no uncommitted file changes and that we're on the right branch (in our example, the branch was called ``issue-288-network-participant``). If we had uncommitted changes we could fix them with ``git commit``; if we weren't on the right branch we could fix this using ``git checkout``. Lastly, we make sure that all our local changes are pushed to the remote repository by running one final ``git push``.
 
 Step 7: Verify that the automated tests run successfully
 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -295,35 +273,25 @@ If the tests ran successfully, congratulations! You can proceed to the next step
 |br|
 You should have a skim through these error logs to work out what went wrong. Sometimes the solution will be obvious and you can fix it immediately by making and pushing a new commit. Other times the solution will be harder to find. In this cases the next step is typically to rerun the offending test locally (using the pytest command described earlier) to see if you can reproduce it, and thereby debug it more efficiently.
 
-Step 8: Populating the CHANGELOG entry
-++++++++++++++++++++++++++++++++++++++
+Step 8: Adding a changelog fragment and filling in the description
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-The next step is to add a CHANGELOG entry to the merge-request description. The CHANGELOG entry summarizes the changes that have been made in the merge request;
-t will later be compiled into the CHANGELOG.md file situated in PsyNet's root directory.
-This process is very important for helping PsyNet users to keep abreast of new features.
+The next step is to record the change for PsyNet's changelog. This is very important for helping PsyNet users to keep abreast of new features.
+Don't edit ``CHANGELOG.md`` directly. Instead, add a small *fragment* file to the ``changelog.d/`` folder; the maintainers combine the fragments into ``CHANGELOG.md`` when they cut a release. Working this way avoids merge conflicts on ``CHANGELOG.md`` between merge requests.
 
-We have some conventions about how to format the CHANGELOG entry. It should be organized into sections, with the sections drawn from the following options:
+Create a fragment with the helper command:
 
-* Added (corresponding to new features);
-* Fixed (corresponding to bugfixes);
-* Changed (corresponding to changed functionality);
-* Updated (corresponding to updated versions, e.g. for dependencies).
+.. code-block:: console
 
-Here are some examples of CHANGELOG entries from PsyNet's history:
+  psynet dev changelog new added "Added Network.participant and Network.source attributes."
 
-.. code-block:: markdown
+The first argument is the category, one of ``breaking``, ``added``, ``changed``, ``deprecated``, ``removed``, ``fixed``, ``updated``, or ``documentation``.
+The command writes a file named like ``changelog.d/<YYYYMMDD>-<slug>.<category>.md`` containing your description. Edit it if needed, then commit it with the rest of your branch.
+Each entry should be one or two sentences that summarize the change for PsyNet users, ending with a period.
+To preview how the fragments will render, run ``psynet dev changelog preview``; it prints the preview without changing ``CHANGELOG.md``.
 
-  #### Added
-  - Added 'Edit on GitLab' button to documentation pages.
-  - Added `FreeTappingRecordTest` to prescreens.
-
-  #### Fixed
-  - Renamed `clickedObject` to `clicked_object` in the graph experiment demo's
-    `format_answer` method.
-
-  #### Updated
-  - Updated Dallinger to v9.3.0.
-  - Updated google-chrome and chromedriver to version 109.x in .gitlab-ci.yml.
+Then fill in each section of the merge request description: Motivation, Summary of changes, Behavior changes, Testing, and Automatic code review.
+Write for experiment authors, not only for maintainers, and include a short code example if the change affects a public API.
 
 Step 9: Dealing with merge conflicts
 ++++++++++++++++++++++++++++++++++++
@@ -336,10 +304,10 @@ that have subsequently happened to the master branch. The way I normally do this
 
 .. code-block:: console
 
-  git checkout dev
+  git checkout master
   git pull
   git checkout my-feature-branch
-  git merge dev
+  git merge master
 
 The more regularly you do this, the less divergence can occur, and the easier it is to resolve the conflicts.
 
@@ -355,6 +323,8 @@ Nonetheless, it is true that code review plays a critical role in protecting the
 How do we ensure that every contribution passes through the core PsyNet developers without creating adverse load on Frank and Peter? My proposal is that contributions from non-core PsyNet developers should undergo an initial round of code review from another non-core PsyNet developer. The reviewer will provide some suggested revisions, with the idea that these should be enacted directly by the original submitter. Once the reviewer is satisfied with the enacted revisions, the contribution is then allocated to one of the core PsyNet developers for a final review. This review may introduce further required revisions that need to be addressed by the original submitter. Once the final reviewer is satisfied, they give final approval to the contribution, and merge it into PsyNet's master branch, so that the contribution will be made available in PsyNet's next official release.
 
 Let's now talk about the specifics of the process. If we navigate to the corresponding merge request in GitLab/GitHub, we should see evidence of our recent activity. In particular, if we navigate to the 'Changes' tab, we should see a diff representation of the changes that we have introduced. At this point take a few minutes to read through this diff representation line-by-line to verify the correctness of the changes. It's surprising how many mistakes this process can catch, even if it feels unnecessary.
+
+If you use Cursor, also run the automatic code review described in :doc:`branch_review` before asking for a human review. It merges the latest target branch into yours, reviews the diff, and updates the merge request title and description. Record in the Automatic code review section of the description whether it was run.
 
 The next task is to pass your merge request to the first reviewer listed in your merge request's Description. If you yourself are a non-core PsyNet developer, then your first reviewer will generally also be a non-core PsyNet developer.
 
@@ -420,7 +390,7 @@ Eventually the conversation between the contributor and the first reviewer will 
 Step 11: Merging
 ++++++++++++++++
 
-The final reviewer has the job of signing off on the merge request. This is done by clicking the 'Approve' button in the GitLab interface (which removes the 'Draft:' prefix from the merge request's title) and then clicking 'Merge' (or 'Merge when pipeline success' in the case when the automated tests are still running).
+The final reviewer has the job of signing off on the merge request. If the merge request is still marked as a draft, the contributor first clicks 'Mark as ready' to remove the 'Draft:' prefix. The final reviewer then clicks 'Approve' in the GitLab interface, followed by 'Merge', or 'Set to auto-merge' if the automated tests are still running.
 
 Congratulations! Your merge request has been successfully processed. It should become available in PsyNet once the next public release is created by the PsyNet core developers.
 
@@ -436,8 +406,19 @@ Depending on a custom branch of Dallinger
 -----------------------------------------
 
 Sometimes you may need to use a custom branch of Dallinger in a feature you are contributing to PsyNet.
-In order to do this, you will need to update the Dallinger entry in ``pyproject.toml`` to point to your branch.
-You should write something like this: ``"dallinger @ git+https://github.com/Dallinger/Dallinger.git@2350v82u38ud3unwoiunec8un3c"``
-where the string after ``.git@`` is the commit hash for the commit you want to use.
+In order to do this, you will need to update the Dallinger entry in the ``[project].dependencies`` list of ``pyproject.toml`` to point to your branch.
+You should write something like this:
 
-You can find the commit hash by clicking the "Copy" button next to the commit hash on the GitLab page for the branch you want to use.
+.. code-block:: toml
+
+  [project]
+  dependencies = [
+      # ...
+      "dallinger[docker] @ git+https://github.com/Dallinger/Dallinger.git@<commit-hash>",
+      # ...
+  ]
+
+where ``<commit-hash>`` is the commit you want to use. You can also give a branch name there, but a commit hash keeps the dependency fixed while your merge request is reviewed.
+
+You can find the commit hash by clicking the "Copy" button next to the commit hash on the GitHub page for the branch you want to use.
+Restore the released Dallinger version requirement before your merge request is merged.

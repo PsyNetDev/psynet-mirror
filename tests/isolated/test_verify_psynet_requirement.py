@@ -4,10 +4,14 @@ from pathlib import Path
 
 import pytest
 
-from psynet.command_line import check_psynet_requirement_is_unambiguous
+from psynet.command_line import (
+    check_psynet_requirement_includes_experiment_extra,
+    check_psynet_requirement_is_unambiguous,
+)
 from psynet.experiment_scaffold import (
     get_psynet_requirement,
     is_unambiguous_psynet_requirement,
+    requirement_includes_experiment_extra,
 )
 from psynet.utils import working_directory
 
@@ -219,6 +223,7 @@ def test_check_psynet_requirement_is_unambiguous_name_based_with_spaces():
     [
         "psynet[experiment] @ file:///home/frank/projects/PsyNet",
         "-e file:///home/frank/projects/PsyNet#egg=psynet[experiment]",
+        "psynet[experiment] @ file:///tmp/psynet-14.0.0-py3-none-any.whl",
     ],
 )
 def test_check_psynet_requirement_is_unambiguous_local_path_suggests_commit_pin(
@@ -234,3 +239,81 @@ def test_check_psynet_requirement_is_unambiguous_local_path_suggests_commit_pin(
             Path("requirements.txt").write_text(f"{requirement}\n")
             with pytest.raises(ValueError, match="psynet setup --psynet-source commit"):
                 check_psynet_requirement_is_unambiguous()
+
+
+@pytest.mark.parametrize(
+    "requirement, expected",
+    [
+        ("psynet[experiment]==14.0.0", True),
+        (
+            "psynet[experiment] @ git+https://gitlab.com/PsyNetDev/PsyNet.git@v14.0.0rc2",
+            True,
+        ),
+        ("PsyNet[Experiment]==14.0.0", True),
+        ("psynet[docs, experiment]==14.0.0", True),
+        ("-e file:///tmp/PsyNet#egg=psynet[experiment]", True),
+        ("psynet==14.0.0", False),
+        ("psynet @ git+https://gitlab.com/PsyNetDev/PsyNet.git@v14.0.0rc2", False),
+        ("psynet[docs]==14.0.0", False),
+        ("psynet[experimental]==14.0.0", False),
+        ("-e file:///tmp/PsyNet#egg=psynet", False),
+    ],
+)
+def test_requirement_includes_experiment_extra(requirement, expected):
+    assert requirement_includes_experiment_extra(requirement) is expected
+
+
+def test_deploy_rejects_psynet_pin_without_experiment_extra():
+    try:
+        del os.environ["SKIP_CHECK_PSYNET_EXPERIMENT_EXTRA"]
+    except KeyError:
+        pass
+
+    with tempfile.TemporaryDirectory() as directory:
+        with working_directory(directory):
+            Path("requirements.txt").write_text(
+                "psynet @ git+https://gitlab.com/PsyNetDev/PsyNet.git@v14.0.0rc2\n"
+            )
+            with pytest.raises(ValueError, match=r"psynet\[experiment\]") as error:
+                check_psynet_requirement_includes_experiment_extra()
+            message = str(error.value)
+            assert "clock process fails to start" in message
+            assert (
+                "psynet[experiment] @ git+https://gitlab.com/PsyNetDev/PsyNet.git@v14.0.0rc2"
+                in message
+            )
+
+            Path("requirements.txt").write_text("psynet[experiment]==14.0.0\n")
+            check_psynet_requirement_includes_experiment_extra()
+
+            os.environ["SKIP_CHECK_PSYNET_EXPERIMENT_EXTRA"] = "1"
+            Path("requirements.txt").write_text("psynet==14.0.0\n")
+            check_psynet_requirement_includes_experiment_extra()
+            del os.environ["SKIP_CHECK_PSYNET_EXPERIMENT_EXTRA"]
+
+
+@pytest.mark.parametrize(
+    "requirement, suggested",
+    [
+        ("psynet==14.0.0", "psynet[experiment]==14.0.0"),
+        ("psynet[docs]==14.0.0", "psynet[docs,experiment]==14.0.0"),
+        (
+            "-e file:///tmp/PsyNet#egg=psynet[docs]",
+            "-e file:///tmp/PsyNet#egg=psynet[docs,experiment]",
+        ),
+    ],
+)
+def test_experiment_extra_error_suggests_pin_that_passes(
+    requirement, suggested, monkeypatch, tmp_path
+):
+    monkeypatch.delenv("SKIP_CHECK_PSYNET_EXPERIMENT_EXTRA", raising=False)
+    monkeypatch.chdir(tmp_path)
+    requirements = tmp_path / "requirements.txt"
+
+    requirements.write_text(f"{requirement}\n")
+    with pytest.raises(ValueError) as error:
+        check_psynet_requirement_includes_experiment_extra()
+    assert f"Change it to:\n  {suggested}\n" in str(error.value)
+
+    requirements.write_text(f"{suggested}\n")
+    check_psynet_requirement_includes_experiment_extra()

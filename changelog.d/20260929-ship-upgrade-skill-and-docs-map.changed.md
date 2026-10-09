@@ -1,0 +1,1 @@
+Experiments now receive the `upgrade-to-psynet-14` Agent Skill that PsyNet's error messages recommend, and the experiment `AGENTS.md` gives coding agents a map of which documentation page covers each topic. It also now starts PostgreSQL and Redis with `psynet services ensure` rather than native installs, where Docker is available.

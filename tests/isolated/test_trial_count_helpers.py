@@ -1,7 +1,5 @@
 """Tests for explicit trial/network count helpers."""
 
-from unittest.mock import MagicMock, patch
-
 from psynet.trial.chain import (
     count_completed_trials_for_network,
     count_completed_trials_for_networks,
@@ -29,35 +27,3 @@ def test_count_helpers_are_importable():
     assert callable(count_completed_trials_for_networks)
     assert callable(count_participant_trials_in_trial_maker)
     assert callable(count_participant_trials_in_block)
-
-
-def test_chain_trial_maker_n_trials_still_required_batches_counts():
-    from psynet.trial.chain import ChainTrialMaker
-
-    maker = ChainTrialMaker.__new__(ChainTrialMaker)
-    maker.chain_type = "across"
-
-    networks = []
-    for network_id, full, target in [
-        (1, False, 10),
-        (2, True, 10),
-        (3, False, 8),
-    ]:
-        network = MagicMock()
-        network.id = network_id
-        network.full = full
-        network.target_n_trials = target
-        networks.append(network)
-
-    with (
-        patch.object(ChainTrialMaker, "networks", new=property(lambda self: networks)),
-        patch(
-            "psynet.trial.chain.count_completed_trials_for_networks",
-            return_value={1: 3, 3: 2},
-        ) as batch_count,
-    ):
-        assert maker.n_trials_still_required == (10 - 3) + (8 - 2)
-        batch_count.assert_called_once()
-        # Full networks are skipped; only incomplete ids are queried.
-        queried_ids = list(batch_count.call_args.args[0])
-        assert queried_ids == [1, 3]

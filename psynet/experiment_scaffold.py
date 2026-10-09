@@ -15,7 +15,7 @@ from urllib.parse import unquote, urlparse
 
 import click
 
-from psynet.light_utils import md5_directory
+from psynet.light_utils import md5_directory, strip_url_credentials
 from psynet.version import psynet_version
 
 _TEMPLATE_FILES = (
@@ -134,9 +134,9 @@ class Exp(psynet.experiment.Experiment):
 _REQUIREMENTS_TXT_COMMENTS = """\
 
 # Alternatively, you can use one of the following syntaxes to specify a custom PsyNet version
-# psynet@git+https://gitlab.com/PsyNetDev/PsyNet@v10.4.0#egg=psynet
-# psynet@git+https://gitlab.com/PsyNetDev/PsyNet@45f317688af59350f9a6f3052fd73076318f2775#egg=psynet
-# psynet@git+https://gitlab.com/PsyNetDev/PsyNet@45f31768#egg=psynet
+# psynet[experiment]@git+https://gitlab.com/PsyNetDev/PsyNet@v10.4.0#egg=psynet
+# psynet[experiment]@git+https://gitlab.com/PsyNetDev/PsyNet@45f317688af59350f9a6f3052fd73076318f2775#egg=psynet
+# psynet[experiment]@git+https://gitlab.com/PsyNetDev/PsyNet@45f31768#egg=psynet
 """
 
 
@@ -255,7 +255,7 @@ def _normalize_git_remote_to_pip_base(remote_url: str) -> str:
 
 
 def _git_remote_url(source: Path, remote: str = "origin") -> str | None:
-    """Return the configured URL for a git remote, if present."""
+    """Return the configured URL for a git remote without credentials, if present."""
     try:
         url = subprocess.check_output(
             ["git", "-C", str(source), "remote", "get-url", remote],
@@ -264,7 +264,7 @@ def _git_remote_url(source: Path, remote: str = "origin") -> str | None:
         ).strip()
     except (OSError, subprocess.CalledProcessError):
         return None
-    return url or None
+    return strip_url_credentials(url) or None
 
 
 def _remote_advertises_commit(
@@ -470,11 +470,17 @@ def _default_psynet_requirement() -> str:
 
     direct = installed_psynet_direct_requirement()
     if direct is not None:
-        return _with_experiment_extra(direct)
-
-    local_path = _installed_psynet_file_path()
-    if local_path is not None:
-        return f"psynet[experiment] @ {local_path.as_uri()}"
+        requirement = _with_experiment_extra(direct)
+        if _installed_psynet_file_path() is not None:
+            click.echo(
+                f"Warning: PsyNet is installed from a local file, so "
+                f"requirements.txt will pin '{requirement}'. This only works on "
+                "this machine, so remote deployments will fail. Before deploying, "
+                f"replace it with a published version (psynet[experiment]=="
+                f"{psynet_version}) or a pushed Git commit.",
+                err=True,
+            )
+        return requirement
 
     return f"psynet[experiment]=={psynet_version}"
 
@@ -583,6 +589,22 @@ def _is_psynet_requirement_line(line: str) -> bool:
         re.match(r"(?i)^psynet(?:\s*$|\s*[@<>=!~\[])", stripped)
         or re.search(r"(?i)#egg=psynet(?:\[[\w,]+\])?(?:\s|$)", stripped)
     )
+
+
+def requirement_includes_experiment_extra(requirement: str) -> bool:
+    """Return whether a PsyNet requirement installs the experiment runtime.
+
+    The extra may be written on the package name (``psynet[experiment]``) or,
+    for an editable install, on the egg fragment (``#egg=psynet[experiment]``).
+    """
+    match = re.search(
+        r"(?i)(?:^|\s|#egg=)psynet\[([^]]*)\]",
+        requirement.strip(),
+    )
+    if match is None:
+        return False
+    extras = [part.strip().lower() for part in match.group(1).split(",")]
+    return "experiment" in extras
 
 
 def is_unambiguous_psynet_requirement(requirement: str) -> bool:
@@ -758,8 +780,14 @@ def _report_scaffold_result(written, *, overwrite):
     click.echo("Nothing to scaffold; experiment boilerplate is already present.")
 
 
-def _copy_template_file(relative_path, overwrite):
-    """Copy one scaffold-managed template file into the experiment directory."""
+def _copy_template_file(relative_path, overwrite, *, previous_gitignore=None):
+    """Copy one scaffold-managed template file into the experiment directory.
+
+    ``previous_gitignore`` is the experiment's ``.gitignore`` from before this
+    scaffold run, or ``None`` for a new experiment. A newly created
+    ``deploy.toml`` that replaces such ``.gitignore``-based file selection gets
+    a launch-time review against those rules.
+    """
     destination = Path(relative_path)
     if relative_path in _PRESERVE_EXISTING_TEMPLATE_FILES:
         overwrite = False
@@ -771,8 +799,12 @@ def _copy_template_file(relative_path, overwrite):
     destination.parent.mkdir(parents=True, exist_ok=True)
     with resources.as_file(_experiment_script_resource(relative_path)) as path:
         shutil.copyfile(path, destination)
-    if relative_path == "deploy.toml" and not _suppress_policy_review_marker.get():
-        _mark_deployment_policy_for_review()
+    if (
+        relative_path == "deploy.toml"
+        and previous_gitignore is not None
+        and not _suppress_policy_review_marker.get()
+    ):
+        _mark_deployment_policy_for_review(previous_gitignore)
     return True
 
 
@@ -782,15 +814,29 @@ _suppress_policy_review_marker: ContextVar[bool] = ContextVar(
 )
 
 
-def _mark_deployment_policy_for_review() -> None:
-    """Record that a newly created ``deploy.toml`` still needs a launch-time review."""
+def _read_gitignore():
+    """Return the experiment's ``.gitignore`` text, or ``None`` if it has none."""
+    path = Path(".gitignore")
+    return path.read_text(encoding="utf-8") if path.is_file() else None
+
+
+def _mark_deployment_policy_for_review(previous_gitignore: str) -> None:
+    """Record that a migrated ``deploy.toml`` still needs a launch-time check.
+
+    The marker is itself a gitignore file holding the experiment's original
+    rules, because ``psynet scripts update`` may replace ``.gitignore`` before
+    the check runs.
+    """
     marker = _DEPLOYMENT_POLICY_REVIEW_MARKER
     marker.parent.mkdir(parents=True, exist_ok=True)
     marker.write_text(
-        "PsyNet created deploy.toml for this experiment. The next debug, test, "
-        "or deploy command stops once so you can inspect the deployment plan "
-        "with 'dallinger deployment-files list'. This file is local-only; "
-        "you can delete it after that review.\n"
+        "# PsyNet created deploy.toml to replace this experiment's\n"
+        "# .gitignore-based deployment selection. The next debug, test, or\n"
+        "# deploy command checks once whether deploy.toml now deploys files\n"
+        "# that the .gitignore rules below ignore. This file is\n"
+        "# local-only; you can delete it.\n"
+        f"{previous_gitignore}\n",
+        encoding="utf-8",
     )
 
 
@@ -823,13 +869,18 @@ def _without_deployment_policy_review():
 def ensure_deployment_policy() -> None:
     """Create ``deploy.toml`` from the PsyNet template when it is missing.
 
-    Existing files are never overwritten. A newly written file also gets a
-    local review marker so the next debug, test, or deploy command pauses
-    once before copying files, unless the copy happens inside a temporary
-    pytest scaffold or in-repo auto-prepare.
+    Existing files are never overwritten. When the experiment already has a
+    ``.gitignore``, a newly written file also gets a local review marker so
+    the next debug, test, or deploy command checks once whether deploy.toml
+    now deploys files that .gitignore ignores, unless the copy happens
+    inside a temporary pytest scaffold or in-repo auto-prepare.
     """
     _assert_managed_path_is_safe("deploy.toml")
-    _copy_template_file("deploy.toml", overwrite=False)
+    _copy_template_file(
+        "deploy.toml",
+        overwrite=False,
+        previous_gitignore=_read_gitignore(),
+    )
 
 
 def _remove_obsolete_generated_dockerignore() -> bool:
@@ -1085,6 +1136,7 @@ def scaffold_experiment_directory(
 
     written = []
     skipped = []
+    previous_gitignore = _read_gitignore()
 
     try:
         bootstrap_written, bootstrap_skipped = _bootstrap_authored_files(skip_files)
@@ -1098,7 +1150,9 @@ def scaffold_experiment_directory(
             skipped.append(relative_path)
             continue
 
-        if _copy_template_file(relative_path, overwrite):
+        if _copy_template_file(
+            relative_path, overwrite, previous_gitignore=previous_gitignore
+        ):
             written.append(relative_path)
         else:
             skipped.append(relative_path)

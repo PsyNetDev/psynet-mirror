@@ -1,5 +1,3 @@
-# pylint: disable=unused-import,abstract-method,unused-argument,no-member
-
 from markupsafe import Markup
 
 import psynet.experiment
@@ -73,7 +71,7 @@ trial_maker = HtmlGibbsTrialMaker(
     start_nodes=lambda: [CustomNode(context={"target": target}) for target in TARGETS],
     chains_per_experiment=NUM_CHAINS_PER_EXPERIMENT,  # set to None if chain_type="within"
     trials_per_node=1,
-    balance_across_chains=True,
+    chain_order="balanced",
     check_performance_at_end=False,
     check_performance_every_trial=False,
     propagate_failure=False,

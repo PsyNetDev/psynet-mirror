@@ -12,15 +12,15 @@ Example (minor): releasing `13.2.0` from `master` while `master` is at
 Example (major): last final tag `v13.3.0`, committed `*.breaking.md`
 fragments, releasing `14.0.0`. Branch `release-14.0`. After the
 release, bump `master` to `14.1.0a0`. What's new is required on a
-major (see [Update What's new](#update-whats-new)).
+major (see [Update What's new](shared-steps.md#update-whats-new)).
 
 **Default to a release candidate first.** For major and minor releases,
 cut an RC (e.g. `13.2.0rc1` or `14.0.0rc1`) before the final version,
 unless the release manager explicitly instructs otherwise. After
 creating the release branch (step 1 below), switch to the
-[release candidate flow](#release-candidates-minor-releases) instead of
+[release candidate flow](release-candidates.md) instead of
 continuing with steps 2–7; return to the final-release steps via
-[Promote the final RC to the official release](#promote-the-final-rc-to-the-official-release)
+[Promote the final RC to the official release](release-candidates.md#promote-the-final-rc-to-the-official-release)
 once the RC has been validated.
 
 ### 1. Create the release branch
@@ -38,12 +38,12 @@ git checkout -b release-13.2
 
 Perform the shared steps, in this order:
 
-1. [Update the CHANGELOG](#update-the-changelog)
-2. [Bump the version](#bump-the-version) (from the alpha version, e.g.
+1. [Update the CHANGELOG](shared-steps.md#update-the-changelog)
+2. [Bump the version](shared-steps.md#bump-the-version) (from the alpha version, e.g.
    `13.2.0a0` → `13.2.0`)
-3. [Update What's new](#update-whats-new) when the release has
+3. [Update What's new](shared-steps.md#update-whats-new) when the release has
    experimenter-facing highlights or breaking changes
-4. [Update package translations](#update-package-translations)
+4. [Update package translations](shared-steps.md#update-package-translations)
 
 ### 3. Push the release branch
 
@@ -79,12 +79,12 @@ may have gained additional changes after the release branch was created.
 
 Perform the shared steps, in this order:
 
-1. [Wait for CI to pass](#wait-for-ci-to-pass)
-2. [Tag the release](#tag-the-release)
-3. [Build and upload to PyPI](#build-and-upload-to-pypi)
-4. [Verify the documentation deployment](#verify-the-documentation-deployment)
-5. [Create the GitLab release](#create-the-gitlab-release)
-6. [Announce the release on Slack](#announce-the-release-on-slack)
+1. [Wait for CI to pass](shared-steps.md#wait-for-ci-to-pass)
+2. [Tag the release](shared-steps.md#tag-the-release)
+3. [Build and upload to PyPI](shared-steps.md#build-and-upload-to-pypi)
+4. [Verify the documentation deployment](shared-steps.md#verify-the-documentation-deployment)
+5. [Create the GitLab release](shared-steps.md#create-the-gitlab-release)
+6. [Announce the release on Slack](shared-steps.md#announce-the-release-on-slack)
 
 ### 6. Merge the release branch back into master
 
@@ -161,11 +161,22 @@ git checkout -b bump-master-post-release
 Update the version in both version files from `13.2.0` to `13.3.0a0`.
 New changes on `master` should be recorded as fragments in `changelog.d/`.
 
-Then commit the version bump and open a MR:
+Then commit the version bump:
 
 ```bash
 git add -A
 git commit -m "Bump version to 13.3.0a0"
+```
+
+Refresh the CI test durations in the same MR, so CI shards stay balanced as
+tests are added or change speed. Run the snippet under "Test parallelization"
+in `docs/developer/running_tests.rst` (anchor `refresh_test_durations`). It
+fetches timings from the latest passing `master` push pipeline and rewrites
+`ci/test_durations.json`. Then commit and push:
+
+```bash
+git add ci/test_durations.json
+git commit -m "Refresh CI test durations"
 git push --set-upstream origin bump-master-post-release
 ```
 
@@ -174,7 +185,7 @@ git push --set-upstream origin bump-master-post-release
   and the next development version for `13.3.0a0`:
 
   > Post-release bump after the 13.2.0 release: sets `master` to the next
-  > development version `13.3.0a0`.
+  > development version `13.3.0a0` and refreshes `ci/test_durations.json`.
 
 > **Human checkpoint:** the release manager must approve the
 > `bump-master-post-release` MR before it is merged.
@@ -184,7 +195,7 @@ on `master` stays aligned with the CHANGELOG.
 
 Unlike release branches, **delete `bump-master-post-release` when the MR
 merges** (e.g. create the MR with `remove_source_branch=true`). It is a
-throwaway vehicle for the two bookkeeping commits, recreated from fresh
+throwaway vehicle for the bookkeeping commits, recreated from fresh
 `master` each cycle; a stale leftover from the previous cycle otherwise
 forces the next release to force-push over it.
 

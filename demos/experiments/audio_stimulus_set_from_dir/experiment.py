@@ -1,15 +1,11 @@
 import random
 
 import psynet.experiment
-from psynet.asset import Asset
 from psynet.modular_page import AudioPrompt, ModularPage, PushButtonControl
 from psynet.page import InfoPage
 from psynet.timeline import Timeline
 from psynet.trial import compile_nodes_from_directory
 from psynet.trial.static import StaticNode, StaticTrial, StaticTrialMaker
-from psynet.utils import get_logger
-
-logger = get_logger()
 
 
 class CustomTrial(StaticTrial):
@@ -18,7 +14,7 @@ class CustomTrial(StaticTrial):
     def show_trial(self, experiment, participant):
         return ModularPage(
             "question_page",
-            AudioPrompt(self.assets["prompt"], "Do you like this audio file?"),
+            AudioPrompt(self.definition["url"], "Do you like this audio file?"),
             PushButtonControl(["Yes", "No"]),
             time_estimate=self.time_estimate,
         )
@@ -33,7 +29,7 @@ class Exp(psynet.experiment.Experiment):
             id_="audio_practice",
             trial_class=CustomTrial,
             nodes=compile_nodes_from_directory(
-                input_dir="data/practice", media_ext=".wav", node_class=StaticNode
+                input_dir="static/practice", media_ext=".wav", node_class=StaticNode
             ),
             target_n_participants=0,
             recruit_mode="n_participants",
@@ -45,7 +41,7 @@ class Exp(psynet.experiment.Experiment):
             id_="audio_experiment",
             trial_class=CustomTrial,
             nodes=compile_nodes_from_directory(
-                input_dir="data/experiment", media_ext=".wav", node_class=StaticNode
+                input_dir="static/experiment", media_ext=".wav", node_class=StaticNode
             ),
             target_n_participants=10,
             recruit_mode="n_participants",
@@ -59,5 +55,9 @@ class Exp(psynet.experiment.Experiment):
     def test_experiment(self):
         super().test_experiment()
 
-        assert Asset.query.filter_by(module_id="audio_practice").count() == 2
-        assert Asset.query.filter_by(module_id="audio_experiment").count() == 11
+        practice = StaticNode.query.filter_by(trial_maker_id="audio_practice").all()
+        experiment = StaticNode.query.filter_by(trial_maker_id="audio_experiment").all()
+        assert len(practice) == 2
+        assert len(experiment) == 11
+        for node in (*practice, *experiment):
+            assert node.definition["url"].startswith("/static/")

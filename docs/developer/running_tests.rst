@@ -1,4 +1,3 @@
-.. _developer:
 .. highlight:: shell
 
 =============
@@ -12,16 +11,94 @@ they complete in the correct state.
 Whenever you push a contribution to a branch of the PsyNet repository,
 these automated tests will be automatically queued. They normally take 10-15 minutes
 to complete. Keep an eye on the GitLab interface to see if any errors have occurred.
-Errors should be resolved before merging branches into ``dev`` or ``master``.
+Resolve any errors before merging into ``master``.
+
+Merge requests that change only documentation, changelog fragments, ``AGENTS.md``,
+or non-experiment Cursor skills skip the Docker pytest and Playwright jobs.
+The ``.docker_test_rules`` block in ``.gitlab-ci.yml`` lists the paths that
+still trigger them, including the few docs pages whose content tests check.
+Default-branch, tag, and non-MR branch pipelines always run the full suite.
+
+That list is an allowlist: a path missing from it skips the tests on merge
+requests that change only that path. If you add a top-level file or directory
+that tests or the CI image depend on, or a test that reads a docs page, add
+its path to ``.docker_test_rules``.
+
+Merge-train pipelines skip jobs that already passed on the same files.
+Merging goes through a GitLab merge train, whose pipeline tests the commit that
+``master`` will become. That commit often has exactly the same files as the
+merge request's last merged-results pipeline: when ``master`` hasn't moved and
+nothing is ahead of it in the train. Rerunning the suite on it would only
+delay the merge. The ``check_already_tested`` job runs first in each train
+pipeline. It runs ``ci/already_tested.py``, which finds the newest finished
+merged-results pipeline of the merge request that tested identical files. The
+pytest, Playwright, ``docs`` and ``asv_regression`` jobs that passed there end
+successfully at once, and their logs link to that pipeline. If anything
+differs, or the check fails, every job runs as usual. ``master`` push
+pipelines always run the full suite.
+
+A job opts in by sourcing ``ci/skip-if-already-passed.sh`` at the start of its
+``before_script``. Only add this to jobs whose result is set by the
+repository files, and never to jobs that publish or deploy. Outside drift,
+such as a new dependency release or a dead external link, can still change a
+job's result between two runs on the same files; the full ``master`` push
+pipeline catches that after the merge. ``asv_regression`` is the exception: it
+runs only on merge requests, and its result also depends on runner noise. It
+still opts in, because a train rerun would benchmark the same two commits
+again and could only add a chance of a noisy failure.
 
 Test parallelization
 --------------------
 
-The automated test suite is slow because it has to run more than 70 demo experiments.
-GitLab therefore runs these tests in parallel to save time. This is not
-really practical on most local machines, so be warned that running the full test
+The automated test suite is slow because it has to run more than 70 demo experiments
+and more than 170 isolated test files, each in its own pytest process.
+GitLab therefore splits these tests across several shard jobs, and each job
+runs several tests at once in *slots*. Running the full test
 suite locally will ordinarily take a very long time. It's better instead to
 run individual tests locally and only run the full test suite on GitLab.
+
+``run-ci-tests.sh`` calls ``psynet dev ci run-tests``, which works as follows:
+
+- Tests are assigned to shards so that each shard's estimated duration is
+  about the same. Estimates come from ``ci/test_durations.json``; tests that
+  are missing from that file get the median duration for their kind.
+- Within a shard, ``TEST_SLOTS`` tests run concurrently. Slot 0 uses the job's
+  database and Redis server; every other slot gets its own database, its own
+  Redis server and its own port (see :ref:`running_several_local_experiments`).
+- Tests that use the same demo directory never run at the same time, because
+  the ``in_experiment_directory`` fixture holds a lock on the directory.
+
+.. _refresh_test_durations:
+
+Each shard job publishes per-test logs in ``public/test-logs`` and its measured
+durations in ``public/ci_durations_<python>_<shard>.json``; each Playwright
+shard publishes ``public/playwright-<mode>-<shard>-junit.xml``. Stale estimates
+only make shards less even, so the release process refreshes them once per
+minor release. To refresh them from the latest passing ``master`` push pipeline
+(the artifacts are public, so no token is needed; requires ``jq``), run this
+from the PsyNet checkout:
+
+.. code-block:: bash
+
+    P=https://gitlab.com/api/v4/projects/PsyNetDev%2FPsyNet
+    PIPELINE=$(curl -s "$P/pipelines?ref=master&source=push&status=success&per_page=1" | jq '.[0].id')
+    DIR=$(mktemp -d)
+    curl -s "$P/pipelines/$PIPELINE/jobs?per_page=100" \
+      | jq -r '.[] | select(.name | test("^(tests_python_3_13|playwright_e2e_)")) | "\(.id) \(.name)"' \
+      | while read -r id name shard; do
+          i=${shard%/*}
+          case $name in
+            tests_*) f=ci_durations_3.13_$i.json ;;
+            *) f=playwright-${name#playwright_e2e_}-$i-junit.xml ;;
+          esac
+          curl -sfL -o "$DIR/$f" "$P/jobs/$id/artifacts/public/$f" || echo "missing $f"
+        done
+    psynet dev ci update-test-durations "$DIR"/*
+
+You can reproduce one CI shard locally, for example shard 4 of 12 with two
+slots::
+
+    psynet dev ci run-tests --node-total 12 --node-index 4 --slots 2
 
 Identifying which test failed
 -----------------------------
@@ -30,10 +107,9 @@ visit the GitLab error logs to see which particular test failed.
 You're looking for a test script with a name like ``test_assets.py``,
 and a test function within that, for example ``test_assets_upload_correctly()``.
 
-The umbrella test scripts ``test_run_all_demos.py`` and ``test_run_isolated_tests.py``
-iterate through many subsidiary test scripts.
-If you see a failure there, inspect the logs to see exactly which
-subsidiary test script failed.
+Each shard job prints one ``PASSED`` or ``FAILED`` line per test file, followed by
+the full output of any failed test and a summary of all failures.
+The output of every test is also saved in the job's ``public/test-logs`` artifact.
 
 Debugging tests locally
 -----------------------
@@ -41,13 +117,13 @@ Debugging tests locally
 It is often faster to debug test failures on your local computer rather than
 on GitLab. The first step is to identify which test failed, following
 the instructions above. Let's suppose that the test is located in
-``tests/test_assets.py``.
+``tests/isolated/test_assets.py``.
 The next step is to reproduce this failure on your local computer.
 You can do this by running the following in your terminal:
 
 .. code-block:: python
 
-    pytest tests/test_assets.py --chrome -s
+    pytest tests/isolated/test_assets.py --chrome -s
 
 
 The ``--chrome`` argument is only needed for tests that invoke an automated
@@ -79,18 +155,10 @@ and run the test by clicking 'Run pytest in ...', or alternatively
 
 In rare cases, tests only fail when several tests are run in a particular sequence.
 This is usually due to some kind of caching issue.
-To reproduce such errors locally, look at the Jobs list in GitLab and work out
-(a) how many parallel test groups there are (at the time of writing there are 10)
-and (b) what's the number of the test group  you want to reproduce locally
-(e.g. Job 4/10 is number 4).
-Install the ``pytest-test-groups`` in your local Python environment if you don't have it already
-(``pip3 install pytest-test-groups``), then run a command like the following:
-
-::
-
-    pytest --test-group-count 10 --test-group=4 --test-group-random-seed=12345 --ignore=tests/local_only --ignore=tests/isolated --chrome tests
-
-setting the values of ``--test-group-count`` and ``--test-group`` as appropriate.
+To reproduce such errors locally, note the failing job's shard number
+(e.g. job 4/6 is shard 4 of 6) and run that shard with
+``psynet dev ci run-tests`` as described in the previous section.
+Use ``--slots 1`` to check whether the failure depends on tests running concurrently.
 
 Playwright UI tests
 -------------------
@@ -105,7 +173,9 @@ using Playwright's UI mode during development:
     HEADLESS=false npx playwright test --ui
 
 These tests launch demo experiments locally, so you still need PostgreSQL and
-Redis running (same as for the pytest-driven e2e tests).
+Redis running (same as for the pytest-driven e2e tests). They need Node 20 or
+later, and ``participant_recording.spec.js`` also needs ``ffmpeg`` and
+``ffprobe`` on ``PATH``.
 
 Mode tags
 ^^^^^^^^^
@@ -121,6 +191,10 @@ GitLab CI selects suites with ``--grep`` instead of hardcoding file paths:
 
 * ``playwright_e2e_default`` runs ``@both|@inplace-only``
 * ``playwright_e2e_legacy`` runs ``@both|@legacy-only``
+
+Each job runs in three shards. ``psynet dev ci playwright-files`` chooses each
+shard's spec files using the durations in ``ci/test_durations.json``, so a new
+spec file needs no CI changes.
 
 Both jobs also run ``node tests/playwright/check-mode-tags.js``, which fails if
 any test is missing one of those tags. When adding a new lifecycle fixture,
@@ -138,6 +212,21 @@ Example:
 Hold-resume probes
 ^^^^^^^^^^^^^^^^^^
 
+Hold specs use the helpers in ``tests/playwright/psynetHarness.js`` and
+``tests/playwright/stackedHoldHarness.js``; experiments cannot import them.
+When the contract is first paint, for example the last group member skipping
+a partner wait, ``enterTimelineAfterGateway`` returns the first
+``GET /timeline`` HTML (``entry.timeline.durationMs``), and
+``lastArriverWorkRecord`` returns the last arriver's grouping request (the
+302 or the submit POST), whose handler time ``requestHandlerMs`` reads. An
+eventual prompt can arrive from the poller after a hold was already shown,
+so do not assert it instead. When a partner is already on a hold,
+``enterWaitingHold`` wraps the resume probe, silences the 2s safety poll, and
+arms ``waitForHeldParticipantToResume`` before the last arriver consents;
+``assertWaiterReleasedWithLastArriver`` then checks the release against
+``enterSkippingHold``'s entry. Concurrent late arrivals must wrap and arm at
+first paint, inside the same ``Promise.all`` as consent.
+
 Legacy hold resumes reload the document, which destroys Playwright's execution
 context. ``wrapTimelineHoldResumeProbe`` retries ``page.evaluate`` after that
 navigation. ``waitForHeldParticipantToResume`` treats the same navigation as a
@@ -148,9 +237,10 @@ page as a cleared hold (wake token and hold-resume POST) instead of failing on
 the destroyed context.
 
 Overlay linger after a published wake is last-wake→last-end wallclock,
-including gunicorn listen-queue. Summaries log that interval; the hung-overlay
-cap is 30000ms (fail-fast versus the 120s step timeout), not a per-hop
-performance budget. A slow approved POST is not a missed wake; still assert
+including gunicorn listen-queue. Summaries log that interval. Stacked-hold
+tests have no performance budgets, because CI load routinely doubles request
+times; the only time limit is a 30000ms hang cap (fail-fast versus the 120s
+step timeout) on requests, signups and overlays. A slow approved POST is not a missed wake; still assert
 that the resume reason is not ``safety poll`` or ``hold timeout``. If a
 legacy reload drops in-page wake clocks, a published wake token plus an
 approved hold-resume POST still counts as a server wake.
@@ -160,12 +250,11 @@ POST so a long linger can be split into handler time versus pool occupancy.
 Do not subtract ``queue~`` from overlay linger.
 ``GET /timeline`` also prints ``lock``, ``page``, ``barriers``, and
 ``render``. Blocking-request checks use ``app`` when that header is present, so
-worker-pool queueing is not treated as a slow handler. The 3000ms entry
-budget applies to ``GET /timeline`` and ``POST /load-participant``, not to
-``POST /participant``. Dallinger ``@db.serialized`` retries concurrent
-signups with ``expovariate(0.5)`` sleep (mean 2s); overlapping
-``consent→timeline`` uses a 15000ms serialized-signup budget. Sequential
-starts still have the 6000ms start-page budget. GitLab Playwright jobs always set ``PSYNET_USE_LEGACY_DEBUG=1``, so they
+worker-pool queueing is not treated as a slow handler. They cover
+``GET /timeline`` and ``POST /load-participant``, not ``POST /participant``:
+Dallinger ``@db.serialized`` retries concurrent signups with
+``expovariate(0.5)`` sleep (mean 2s). GitLab Playwright jobs always set
+``PSYNET_USE_LEGACY_DEBUG=1``, so they
 run ``psynet debug --legacy`` (gunicorn). The default single-process Flask
 reloader (``psynet debug local`` without ``--legacy``) is not exercised in
 CI; run that locally when debugging reloader-only issues. Playwright hold
@@ -176,9 +265,20 @@ A short HTTP 503 on hold-resume is the
 ``NOWAIT`` busy retry when those requests hit the same participant row;
 the in-request retry waits 250ms; if that is still busy, one delayed
 ``queued hold wake`` runs. The suite still fails a busy retry that lasts
-500ms or more. Concurrent last arrivals may post a fourth hold-resume when the
+500ms or more. An in-page probe that counts hold wakes or schedule calls must
+swallow ``psynet.resumeTimelineHold`` and call
+``window.__settleTimelineHoldResume`` before installing its counters. The helper
+waits for ``resumeInFlight`` to clear and then yields one ``setTimeout(0)``: a
+resume that settles with ``resumeRequested`` set queues a 0ms
+``queued hold wake``, which would otherwise land in the probe.
+A ``wait_while`` test that asserts ``timelineHoldWakeReceived``
+must silence that 1s safety poll after the hold chip appears. Otherwise an
+in-place hold-resume POST can stop the controller before the websocket
+message dispatches the event, and a counter installed only with
+``page.addInitScript`` after consent is already loaded never attaches.
+Concurrent last arrivals may post a fourth hold-resume when the
 poller and ``GET /timeline`` both publish, a stacked-hold reload posts
-again on websocket onOpen, and a still-on-hold server notification posts
+again once its websocket confirms it is listening, and a still-on-hold server notification posts
 once more before ``ModularPage``; sequential last arrivals stay at two. Both Playwright
 CI jobs use gunicorn; the default vs legacy job is in-place vs full reload.
 Worker-pool ``queue~`` is therefore not reload-specific.
@@ -227,10 +327,10 @@ Playwright harness startup options
 
 The Playwright harness launches experiments with ``psynet debug local`` by default
 and does not force legacy mode. That Flask reloader is one process; use
-``PSYNET_USE_LEGACY_DEBUG=1`` (or ``psynet debug --legacy``) for gunicorn
+``PSYNET_USE_LEGACY_DEBUG=1`` (or ``psynet debug local --legacy``) for gunicorn
 workers. GitLab Playwright jobs set
 ``PSYNET_USE_LEGACY_DEBUG=1`` so those runs use gunicorn. CI therefore never
-exercises the default single-process Flask debug server. ``psynet debug
+exercises the default single-process Flask debug server. ``psynet debug local
 --legacy`` starts four gunicorn workers by default. Playwright stacked-hold
 tests set ``PSYNET_LEGACY_DEBUG_GUNICORN_THREADS`` to the session count plus
 two spares so concurrent last-arrival ``GET /timeline`` can overlap every waiter
@@ -242,7 +342,7 @@ Optional environment variables:
 
 - ``PSYNET_USE_LEGACY_DEBUG=1``: add ``--legacy`` to the debug command.
 - ``PSYNET_LEGACY_DEBUG_GUNICORN_THREADS``: gunicorn worker processes for
-  ``psynet debug --legacy`` (default ``4``). Stacked-hold tests set this to
+  ``psynet debug local --legacy`` (default ``4``). Stacked-hold tests set this to
   the session count plus two spares.
 - ``PSYNET_DEBUG_EXTRA_FLAGS="..."``: append extra flags to the debug command
   (for local troubleshooting).
@@ -262,7 +362,8 @@ Finding Playwright CI artifacts in GitLab
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Playwright artifacts are uploaded by the ``playwright_e2e_default`` and
-``playwright_e2e_legacy`` jobs.
+``playwright_e2e_legacy`` jobs. Each has three shards (``1/3`` to ``3/3``),
+and each shard uploads the artifacts of its own spec files.
 
 To view them in GitLab:
 
@@ -274,7 +375,8 @@ Uploaded artifacts include:
 
 - ``playwright-report/``: Playwright HTML report (open ``playwright-report/index.html``).
 - ``test-results/``: per-test failure assets (screenshots, traces, videos).
-- ``public/playwright-junit.xml``: JUnit XML used for test report integration.
+- ``public/playwright-<mode>-<shard>-junit.xml``: JUnit XML used for test report
+  integration and for refreshing ``ci/test_durations.json``.
 
 
 Debugging tests via Docker

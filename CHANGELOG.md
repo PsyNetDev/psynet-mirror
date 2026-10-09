@@ -29,9 +29,10 @@
 - Replaced Git and `.dockerignore` deployment file selection with explicit
   `deploy.toml` policies as a breaking PsyNet cutover. PsyNet scaffolds
   `deploy.toml` (and creates it automatically when missing without overwriting
-  an existing file). The first debug, test, or deploy after an auto-created
-  policy stops once so authors can review the plan; Git-ignored files may still
-  be deployed after that review. Leftover generated `.dockerignore` files are removed on
+  an existing file). When an existing experiment's `.gitignore` ignores files
+  that the new policy does not exclude, the next debug, test, or deploy stops once
+  and lists them; otherwise the switch is silent. Git-ignored files are deployed
+  unless `deploy.toml` excludes them. Leftover generated `.dockerignore` files are removed on
   debug, deploy, scaffold, and prune; custom copies are preserved by scaffold
   commands but must be migrated to `deploy.toml` and removed before debug or
   deployment.
@@ -117,7 +118,7 @@
 - Added an ASV benchmark for the static_big experiment's launch time.
 - Added ``js_dependencies`` for document-level libraries, ``js_page_code`` for short inline activation bodies, and ``js_page_modules`` for reusable lifecycle-managed page behavior.
 - Added namespaced package-owned static resources for built-in and third-party components through the ``psynet.static`` entry-point group, including the chatroom widget.
-- Added blocking ASV regression coverage for debug launch performance with representative static-file payloads.
+- Added an ASV benchmark for debug launch with representative static-file payloads, recorded on `master` as the fastest of three launches per profile.
 - Added ASV coverage for canonical local database and asset export performance.
 - Added ``get_css_links()`` so modular page components can contribute stylesheet URLs, matching ``css_links`` on pages.
 - Added a soft size warning for the local asset export cache (50 GiB by default, overridable via ``PSYNET_ASSET_CACHE_SOFT_LIMIT_BYTES``); exports never fail or prune because of the limit.
@@ -719,7 +720,7 @@
 - Documented agentic programming with PsyNet, including Agent Skills, the audit
   handover, and a from-scratch implementation workflow. On Windows, use WSL
   (Ubuntu) and the Linux commands; native Windows is not supported.
-- Added Cursor commands that merge the GitLab merge-request target before `/branch-review`, and documented that workflow for developers. `/reorganize-onto-target` is a separate command used just before the MR is merged into that target; it compares the backup tree to `HEAD` before pushing.
+- Added Cursor commands that merge the GitLab merge-request target before `/branch-review`, and documented that workflow for developers.
 - Added experiment skills for shared participant-response models, standardized power-analysis artifacts, and simulation-based precision estimation.
 - Prefer SVG plot outputs in analysis notebooks
 - Instruct participant-flow screenshot capture to use Playwright ``fullPage:

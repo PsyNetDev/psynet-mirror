@@ -1,5 +1,3 @@
-# pylint: disable=unused-argument,abstract-method
-
 from ..media import recode_wav
 from ..utils import get_logger
 from .record import (
@@ -14,6 +12,14 @@ logger = get_logger()
 
 
 class AudioRecordTrial(RecordTrial):
+    """
+    Mixin for trials that record audio and analyze the recording on the server.
+
+    List it before the trial class, for example
+    ``class SingingTrial(AudioRecordTrial, StaticTrial)``, and implement
+    ``analyze_recording``.
+    """
+
     def sanitize_recording(self, path):
         recode_wav(path)
 

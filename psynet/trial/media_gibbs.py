@@ -1,5 +1,3 @@
-# pylint: disable=unused-argument,abstract-method
-
 import json
 import os
 import random
@@ -9,7 +7,7 @@ from uuid import uuid4
 
 from markupsafe import Markup, escape
 
-from ..asset import ExperimentAsset
+from ..asset import FileAsset
 from ..field import claim_var
 from ..media import make_batch_file
 from ..modular_page import (
@@ -412,7 +410,7 @@ class MediaGibbsNode(GibbsNode):
                     )
                 batch_path = zipped_batch_path
 
-            asset = ExperimentAsset(
+            asset = FileAsset(
                 local_key="slider_stimulus",
                 input_path=batch_path,
                 parent=self,
