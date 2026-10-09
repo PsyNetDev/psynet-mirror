@@ -164,8 +164,12 @@ def test_spare_redis_databases_avoid_the_shared_one():
     assert _spare_redis_database("redis://localhost:6379/1", 0) == 0
 
 
-def test_a_failed_start_explains_how_to_opt_out():
+def test_a_failed_start_explains_how_to_opt_out(tmp_path, monkeypatch):
     unreachable = "postgresql://dallinger:dallinger@127.0.0.1:1/dallinger"
+    monkeypatch.setattr(
+        "psynet.isolated_environment.port_lock_path",
+        lambda port: str(tmp_path / f"{port}.lock"),
+    )
 
     environ = {**os.environ, "DATABASE_URL": unreachable}
     free_port, lock = _claim_port(int(environ.get("base_port", 5000)) + 100)
@@ -178,3 +182,29 @@ def test_a_failed_start_explains_how_to_opt_out():
     port, lock = _claim_port(free_port)
     lock.close()
     assert port == free_port, "the failed start kept its port claim"
+
+
+@pytest.mark.skipif(not shutil.which("redis-server"), reason="needs redis-server")
+def test_a_failed_redis_start_drops_the_new_database(monkeypatch):
+    import psynet.isolated_environment as isolated_environment
+
+    created = []
+    create_database = isolated_environment.create_database
+
+    def recording_create_database(*args, **kwargs):
+        created.append(create_database(*args, **kwargs))
+        return created[-1]
+
+    def failing_redis(*args, **kwargs):
+        raise RuntimeError("Redis did not start.")
+
+    monkeypatch.setattr(
+        isolated_environment, "create_database", recording_create_database
+    )
+    monkeypatch.setattr(isolated_environment, "start_redis_server", failing_redis)
+
+    with pytest.raises(IsolationError, match="Redis did not start"):
+        IsolatedEnvironment.start()
+
+    assert len(created) == 1
+    assert not _database_exists(created[0])

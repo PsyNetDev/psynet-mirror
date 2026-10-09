@@ -210,13 +210,15 @@ class IsolatedEnvironment:
             shared_base_port + _PORT_OFFSET,
             also_free=redis_port if private_redis else None,
         )
+        session_database_url = None
         try:
+            session_database_url = create_database(
+                database_url, suffix=f"_test_{base_port}"
+            )
             env = {
                 **environ,
                 READY_ENV_VAR: "1",
-                "DATABASE_URL": create_database(
-                    database_url, suffix=f"_test_{base_port}"
-                ),
+                "DATABASE_URL": session_database_url,
                 "base_port": str(base_port),
                 "dallinger_develop_directory": f"/tmp/dallinger_develop_{base_port}",
             }
@@ -234,6 +236,8 @@ class IsolatedEnvironment:
 
             process = start_redis_server(redis_port(base_port), tempfile.gettempdir())
         except BaseException:
+            if session_database_url is not None:
+                _drop_session_database(session_database_url)
             port_lock.close()
             raise
         env["REDIS_URL"] = f"redis://127.0.0.1:{redis_port(base_port)}"
