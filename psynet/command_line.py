@@ -4033,6 +4033,10 @@ def test__local(
 ):
     """
     Test the experiment locally.
+
+    The tests get a free port, a database and a Redis server of their own, so
+    they leave local debug servers alone. Set PSYNET_TEST_ENVIRONMENT=shared
+    to run them against the local ones instead, which resets them.
     """
     assert not (parallel and serial)
 
@@ -4094,18 +4098,26 @@ def _rerun_in_isolated_environment(purpose):
     with its code. ``purpose`` is ``TEST`` or ``DEBUG`` from that module.
     """
     from .isolated_environment import IsolatedEnvironment, check_no_debug_server
-    from .services import ensure_local_services
+    from .services import SERVICES_CHECKED_ENV_VAR, ensure_local_services
 
-    ensure_local_services(assume_yes=False, strict=True)
     try:
         check_no_debug_server(os.getcwd(), purpose)
+    except RuntimeError as e:
+        raise click.ClickException(str(e)) from e
+    # Before creating the database and Redis, so that an experiment that isn't
+    # set up fails without advice about services it won't use.
+    _check_experiment_directory(purpose)
+    ensure_local_services(assume_yes=False, strict=True)
+    try:
         environment = IsolatedEnvironment.start(purpose=purpose)
     except RuntimeError as e:
         raise click.ClickException(str(e)) from e
     with environment:
         log(environment.describe())
         exit_code = _wait_forwarding_signals(
-            subprocess.Popen(sys.orig_argv, env=environment.env)
+            subprocess.Popen(
+                sys.orig_argv, env={**environment.env, SERVICES_CHECKED_ENV_VAR: "1"}
+            )
         )
     sys.exit(exit_code)
 

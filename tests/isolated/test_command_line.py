@@ -3823,6 +3823,24 @@ def test_pre_launch_skips_dependency_check_for_in_repo_experiments(
     os.environ.pop("SKIP_DEPENDENCY_CHECK", None)
 
 
+@pytest.mark.parametrize("purpose", ["test", "debug"])
+def test_isolated_sessions_check_the_experiment_before_creating_services(
+    tmp_path, monkeypatch, purpose
+):
+    from psynet.command_line import _rerun_in_isolated_environment
+
+    monkeypatch.setattr(
+        "psynet.command_line._check_experiment_directory",
+        Mock(side_effect=click.ClickException("run psynet setup")),
+    )
+    start = Mock()
+    monkeypatch.setattr("psynet.isolated_environment.IsolatedEnvironment.start", start)
+    with working_directory(tmp_path):
+        with pytest.raises(click.ClickException, match="run psynet setup"):
+            _rerun_in_isolated_environment(purpose)
+    start.assert_not_called()
+
+
 def test_pre_launch_checks_directory_before_redis():
     """Directory guidance must run before Redis I/O when Redis is unavailable."""
     from psynet.command_line import _pre_launch
