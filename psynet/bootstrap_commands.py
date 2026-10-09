@@ -152,7 +152,7 @@ def scripts_prune(ctx, include_modified, include_tracked):
 
 @click.group("services")
 def services():
-    """Check and ensure local PostgreSQL and Redis services."""
+    """Check, ensure and list local PostgreSQL and Redis services."""
     pass
 
 

@@ -195,8 +195,10 @@ pick free settings before starting another session.
 
 ``--clean`` removes leftovers of test sessions that ended without cleaning up:
 databases named ``*_test_<port>`` or ``*_slot<n>`` that have no connections,
-and Redis servers PsyNet started for test sessions. It never touches anything
-a running session uses, and asks before removing (``--yes`` skips the prompt).
+and Redis servers PsyNet started for test sessions that have no clients. It
+skips anything a session it can see uses, which covers only your own PsyNet,
+Dallinger and pytest processes, and asks before removing (``--yes`` skips the
+prompt).
 
 
 .. _scripts:

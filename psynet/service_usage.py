@@ -31,7 +31,9 @@ _DEFAULT_DATABASE_URL = "postgresql://dallinger:dallinger@localhost/dallinger"
 _DEFAULT_REDIS_URL = "redis://localhost:6379"
 _DEFAULT_BASE_PORT = "5000"
 _SESSION_SCRIPTS = {"psynet", "dallinger", "pytest", "py.test", "flask"}
-_TEST_DATABASE = re.compile(r"_(test_\d+|slot\d+)$")
+# Databases named by isolated test sessions (``_test_<port>``) and CI slots.
+_TEST_DATABASE = re.compile(r"_(test_\d{4,5}|slot\d{1,2})$")
+_PYTHON_OPTIONS_WITH_VALUES = {"-W", "-X", "-Q"}
 _TEST_REDIS_MARKERS = ("psynet-test-redis-", "redis_slot")
 
 
@@ -56,6 +58,8 @@ class RedisServer:
     directory: str
     started_by_psynet_tests: bool
     own: bool
+    #: Other connected clients, or ``None`` if the server didn't answer.
+    clients: int | None = None
 
 
 @dataclass
@@ -69,14 +73,23 @@ class Database:
 def _session_command(cmdline):
     """Return a command line's script and arguments, e.g. ``psynet debug local``.
 
+    Handles both scripts run directly and ``python [options] -m pytest``.
     Returns ``None`` for commands other than PsyNet, Dallinger, Flask and pytest.
     """
-    for i, arg in enumerate(cmdline[:3]):
-        name = cmdline[i + 1] if arg == "-m" and i + 1 < len(cmdline) else arg
-        name = os.path.basename(name)
-        if name in _SESSION_SCRIPTS or name.startswith("dallinger_heroku_"):
-            rest = cmdline[i + 2 :] if arg == "-m" else cmdline[i + 1 :]
-            return [name, *rest]
+    args = list(cmdline)
+    if args and os.path.basename(args[0]).startswith("python"):
+        args.pop(0)
+        while args and args[0].startswith("-"):
+            option = args.pop(0)
+            if option == "-m":
+                break
+            if option in _PYTHON_OPTIONS_WITH_VALUES and args:
+                args.pop(0)
+    if not args:
+        return None
+    name = os.path.basename(args[0])
+    if name in _SESSION_SCRIPTS or name.startswith("dallinger_heroku_"):
+        return [name, *args[1:]]
     return None
 
 
@@ -125,7 +138,7 @@ def find_sessions():
             session.directory = cwd
     for session in sessions.values():
         session.pids.sort()
-    return sorted(sessions.values(), key=lambda s: (int(s.base_port), s.database))
+    return sorted(sessions.values(), key=lambda s: (s.base_port.zfill(6), s.database))
 
 
 def find_redis_servers():
@@ -154,6 +167,7 @@ def find_redis_servers():
                     for marker in _TEST_REDIS_MARKERS
                 ),
                 own=bool(process.info["uids"]) and process.info["uids"].real == uid,
+                clients=_redis_clients(port) if port else None,
             )
         )
     return sorted(servers, key=lambda s: s.port or 0)
@@ -229,32 +243,59 @@ def leftovers(sessions, redis_servers, databases):
     stale_redis = [
         r
         for r in redis_servers
-        if r.own and r.started_by_psynet_tests and r.port not in used_redis_ports
+        if r.own
+        and r.started_by_psynet_tests
+        and r.port not in used_redis_ports
+        and r.clients == 0
     ]
     return stale_databases, stale_redis
+
+
+def _redis_clients(port):
+    """Return the number of other clients connected to Redis on ``port``.
+
+    Returns ``None`` if the server doesn't answer, so it is never cleaned.
+    """
+    import redis
+
+    try:
+        info = redis.Redis(port=port, socket_timeout=2).info("clients")
+    except redis.RedisError:
+        return None
+    return info["connected_clients"] - 1
 
 
 def _clean(stale_databases, stale_redis):
     """Drop ``stale_databases`` and stop ``stale_redis``."""
     import psutil
+    from psycopg2 import Error as PostgresError
     from psycopg2 import sql
 
     if stale_databases:
         with _cursor() as cursor:
             for database in stale_databases:
-                cursor.execute(
-                    sql.SQL("DROP DATABASE IF EXISTS {}").format(
-                        sql.Identifier(database.name)
+                try:
+                    cursor.execute(
+                        sql.SQL("DROP DATABASE {}").format(
+                            sql.Identifier(database.name)
+                        )
                     )
-                )
-                click.echo(f"Dropped database {database.name}.")
+                except PostgresError as e:
+                    click.echo(f"Could not drop database {database.name}: {e}")
+                else:
+                    click.echo(f"Dropped database {database.name}.")
     for server in stale_redis:
         try:
             process = psutil.Process(server.pid)
             process.terminate()
-            process.wait(timeout=10)
+            try:
+                process.wait(timeout=10)
+            except psutil.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=10)
         except psutil.NoSuchProcess:
-            pass
+            click.echo(f"redis-server PID {server.pid} had already stopped.")
+            continue
         click.echo(f"Stopped redis-server on port {server.port} (PID {server.pid}).")
 
 
@@ -262,15 +303,23 @@ def list_services(*, clean_leftovers, assume_yes):
     """Implement ``psynet services list``."""
     try:
         import psutil  # noqa: F401
-        import psycopg2  # noqa: F401
+        import psycopg2
     except ImportError as e:
         raise click.ClickException(
             "'psynet services list' needs psynet[experiment]; run 'psynet setup' first."
         ) from e
     sessions = find_sessions()
     redis_servers = find_redis_servers()
-    databases = find_databases()
-    _report(sessions, redis_servers, databases)
+    try:
+        databases = find_databases()
+    except psycopg2.Error as e:
+        databases = None
+        database_error = str(e).strip()
+    _report(sessions, redis_servers, databases or [])
+    if databases is None:
+        click.echo(f"  could not list them: {database_error}")
+        if clean_leftovers:
+            raise click.ClickException("--clean needs PostgreSQL to be reachable.")
     if not clean_leftovers:
         return
     stale_databases, stale_redis = leftovers(sessions, redis_servers, databases)
