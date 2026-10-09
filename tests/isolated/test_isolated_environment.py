@@ -155,6 +155,22 @@ def test_isolated_environment_skips_ports_whose_redis_port_is_taken(
             start_redis_server(redis_port, tempfile.gettempdir())
 
 
+def test_port_claims_skip_symlinked_lock_files(tmp_path, monkeypatch):
+    target = tmp_path / "precious"
+    target.write_text("keep me")
+    (tmp_path / "6990.lock").symlink_to(target)
+    monkeypatch.setattr(
+        "psynet.isolated_environment.port_lock_path",
+        lambda port: str(tmp_path / f"{port}.lock"),
+    )
+
+    port, lock = _claim_port(6990)
+    lock.close()
+
+    assert port != 6990
+    assert target.read_text() == "keep me"
+
+
 def test_spare_redis_databases_avoid_the_shared_one():
     assert _spare_redis_database("redis://localhost:6379", 0) == 1
     assert _spare_redis_database("redis://localhost:6379", 1) == 2

@@ -388,9 +388,14 @@ def _claim_port(start, also_free=None):
     """
     for port in range(start, start + 1000, 10):
         try:
-            lock = open(port_lock_path(port), "w")
+            # Not following symlinks or truncating, so a link planted in /tmp
+            # can't make this empty someone's file.
+            fd = os.open(
+                port_lock_path(port), os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o644
+            )
         except OSError:
             continue
+        lock = os.fdopen(fd, "r+")
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError:
