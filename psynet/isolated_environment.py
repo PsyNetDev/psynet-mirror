@@ -243,9 +243,8 @@ class IsolatedEnvironment:
         """Return a one-line summary of where the session's services are."""
         database = urlsplit(self.env["DATABASE_URL"]).path.lstrip("/")
         return (
-            f"PsyNet tests use database {database}, Redis at {self.env['REDIS_URL']} "
-            f"and port {self.env['base_port']}, so they leave the services of local "
-            f"debug servers alone (set {ENV_VAR}={SHARED} to share them instead)."
+            f"Using database {database}, Redis at {self.env['REDIS_URL']}, "
+            f"and port {self.env['base_port']}."
         )
 
     def close(self):
