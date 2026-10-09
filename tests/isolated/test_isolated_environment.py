@@ -26,6 +26,30 @@ from psynet.isolated_environment import (
 )
 
 
+@pytest.fixture
+def drop_new_databases():
+    """Drop the databases that the test creates."""
+    import psycopg2
+    from psycopg2 import sql
+
+    def names(cursor):
+        cursor.execute("SELECT datname FROM pg_database")
+        return {name for (name,) in cursor.fetchall()}
+
+    connection = psycopg2.connect(os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL))
+    connection.autocommit = True
+    try:
+        with connection.cursor() as cursor:
+            before = names(cursor)
+            yield
+            for name in names(cursor) - before:
+                cursor.execute(
+                    sql.SQL("DROP DATABASE IF EXISTS {}").format(sql.Identifier(name))
+                )
+    finally:
+        connection.close()
+
+
 def test_should_isolate_respects_opt_out_and_ci():
     assert should_isolate({})
     assert should_isolate({ENV_VAR: "isolated"})
@@ -66,7 +90,7 @@ def test_tests_refuse_to_run_beside_a_debug_server_in_their_directory(tmp_path):
 
 
 @pytest.mark.skipif(shutil.which("redis-server") is None, reason="needs redis-server")
-def test_isolated_environment_uses_its_own_services():
+def test_isolated_environment_uses_its_own_services(drop_new_databases):
     shared = {
         "DATABASE_URL": os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL),
         "REDIS_URL": os.environ.get("REDIS_URL", DEFAULT_REDIS_URL),
@@ -93,7 +117,9 @@ def test_isolated_environment_uses_its_own_services():
 
 
 @pytest.mark.skipif(shutil.which("redis-server") is None, reason="needs redis-server")
-def test_isolated_environment_skips_ports_whose_redis_port_is_taken():
+def test_isolated_environment_skips_ports_whose_redis_port_is_taken(
+    drop_new_databases,
+):
     with IsolatedEnvironment.start() as probe:
         web_port, redis_url = probe.env["base_port"], probe.env["REDIS_URL"]
     redis_port = int(redis_url.rsplit(":", 1)[1])
