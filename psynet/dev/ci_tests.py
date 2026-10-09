@@ -36,7 +36,6 @@ import heapq
 import json
 import os
 import re
-import shutil
 import statistics
 import subprocess
 import threading
@@ -44,17 +43,10 @@ import time
 import traceback
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import urlsplit
 
 import click
 
-from psynet.isolated_environment import (
-    DEFAULT_DATABASE_URL,
-    READY_ENV_VAR,
-    create_database,
-    start_redis_server,
-    stop_process,
-)
+from psynet.isolated_environment import IsolatedEnvironment, IsolationError
 from psynet.testing.locks import HELD_LOCK_ENV_VAR, experiment_directory_lock
 from psynet.utils import get_psynet_root, list_experiment_dirs, list_isolated_tests
 
@@ -155,48 +147,30 @@ def load_durations():
 
 
 class _Slot:
-    """An isolated local environment (database, Redis, port) for one worker."""
+    """An isolated local environment (database, Redis, port) for one worker.
 
-    def __init__(self, index, workspace):
+    Slots other than 0 claim their port with the same lock as other isolated
+    sessions, so they never collide with a test session or debug server.
+    """
+
+    def __init__(self, index):
         self.index = index
-        self.env = dict(os.environ)
-        self._redis = None
-        self._redis_log = None
+        self._environment = None
         if index == 0:
+            self.env = dict(os.environ)
             return
-
-        database_url = os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL)
-        base_port, redis_port = _slot_ports(
-            _caller_base_port(), os.environ.get("REDIS_URL", ""), index
-        )
-        self.env[READY_ENV_VAR] = "1"
-        self.env["DATABASE_URL"] = create_database(database_url, suffix=f"_slot{index}")
-        self.env["REDIS_URL"] = self._start_redis(redis_port, workspace)
-        self.env["base_port"] = str(base_port)
-        self.env["dallinger_develop_directory"] = (
-            f"/tmp/dallinger_develop_{base_port}_slot{index}"
-        )
-
-    def _start_redis(self, port, workspace):
-        if shutil.which("redis-server") is None:
-            raise click.ClickException(
-                "--slots > 1 needs redis-server on PATH to give each slot its own Redis."
-            )
-        self._redis_log = open(workspace / f"redis_slot{self.index}.log", "w")
         try:
-            self._redis = start_redis_server(port, workspace, log_file=self._redis_log)
-        except RuntimeError as e:
-            self.close()
-            raise click.ClickException(f"Redis for slot {self.index}: {e}") from e
-        return f"redis://127.0.0.1:{port}"
+            self._environment = IsolatedEnvironment.start(
+                {**os.environ, "base_port": str(_caller_base_port())}
+            )
+        except IsolationError as e:
+            raise click.ClickException(f"Slot {index}: {e}") from e
+        self.env = self._environment.env
 
     def close(self):
-        if self._redis is not None:
-            stop_process(self._redis)
-            self._redis = None
-        if self._redis_log is not None:
-            self._redis_log.close()
-            self._redis_log = None
+        if self._environment is not None:
+            self._environment.close()
+            self._environment = None
 
 
 def _caller_base_port():
@@ -209,12 +183,6 @@ def _caller_base_port():
     if not config.ready:
         config.load()
     return config.get("base_port")
-
-
-def _slot_ports(base_port, redis_url, index):
-    """Return ``(base_port, redis_port)`` for slot ``index``, offset from the caller's."""
-    redis_port = (urlsplit(redis_url).port or 6379) + 100 * index
-    return base_port + 10 * index, redis_port
 
 
 def _junit_args(item, junit_dir, python_version):
@@ -318,7 +286,7 @@ def run_items(items, n_slots, timeout, junit_dir, python_version, log_dir):
     threads = []
     try:
         for index in range(n_slots):
-            slots.append(_Slot(index, log_dir))
+            slots.append(_Slot(index))
         threads = [threading.Thread(target=worker, args=(slot,)) for slot in slots]
         for thread in threads:
             thread.start()

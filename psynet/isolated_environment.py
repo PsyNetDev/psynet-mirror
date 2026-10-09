@@ -334,11 +334,7 @@ class IsolatedEnvironment:
                 )
                 return cls(env, port_lock, purpose=purpose)
 
-            process = start_redis_server(
-                _session_redis_port(environ, base_port),
-                tempfile.gettempdir(),
-                stop_with_caller=True,
-            )
+            process = start_redis_server(_session_redis_port(environ, base_port))
         except BaseException:
             if session_database_url is not None:
                 _drop_session_database(session_database_url)
@@ -492,14 +488,12 @@ def _drop_session_database(session_database_url):
         )
 
 
-def start_redis_server(port, directory, log_file=None, stop_with_caller=False):
+def start_redis_server(port):
     """Start a non-persistent ``redis-server`` on ``port`` and wait until it answers.
 
-    With ``stop_with_caller=True`` the server runs in its own session, so
-    Ctrl+C in the terminal doesn't stop it before the servers that use it, and
-    stops when the calling process dies without cleaning up; see
-    :func:`sigterm_on_caller_exit`. Otherwise it stays in the caller's process
-    group and gets its signals.
+    The server runs in its own session, so Ctrl+C in the terminal doesn't stop
+    it before the servers that use it, and it stops when the calling process
+    dies without cleaning up; see :func:`sigterm_on_caller_exit`.
 
     Raises
     ------
@@ -511,11 +505,11 @@ def start_redis_server(port, directory, log_file=None, stop_with_caller=False):
         raise RuntimeError(f"Port {port} for a session's Redis server is in use.")
     process = subprocess.Popen(
         ["redis-server", "--bind", "127.0.0.1", "--port", str(port)]
-        + ["--dir", str(directory), "--save", "", "--appendonly", "no"],
-        stdout=log_file or subprocess.DEVNULL,
+        + ["--dir", tempfile.gettempdir(), "--save", "", "--appendonly", "no"],
+        stdout=subprocess.DEVNULL,
         stderr=subprocess.STDOUT,
-        start_new_session=stop_with_caller,
-        preexec_fn=sigterm_on_caller_exit() if stop_with_caller else None,
+        start_new_session=True,
+        preexec_fn=sigterm_on_caller_exit(),
     )
     try:
         deadline = time.monotonic() + 10

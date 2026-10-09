@@ -4,7 +4,6 @@ import shutil
 import socket
 import subprocess
 import sys
-import tempfile
 import time
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
@@ -220,7 +219,7 @@ def test_isolated_environment_skips_ports_whose_redis_port_is_taken():
             assert environment.env["base_port"] != web_port
             assert environment.env["REDIS_URL"] != redis_url
         with pytest.raises(RuntimeError, match="in use"):
-            start_redis_server(redis_port, tempfile.gettempdir())
+            start_redis_server(redis_port)
 
 
 def test_port_claims_skip_symlinked_lock_files(tmp_path, monkeypatch):
