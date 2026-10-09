@@ -1,5 +1,4 @@
 import datetime
-import fnmatch
 import functools
 import glob
 import hashlib
@@ -1140,7 +1139,7 @@ def _stop_child_processes_on_signal():
             signal.signal(sig, previous_handler)
 
 
-def _reloader_exclude_patterns(inherited=""):
+def _reloader_exclude_patterns():
     """Return reloader exclusions for the demos, tests and docs of source checkouts.
 
     Flask's reloader watches every ``.py`` file under each non-system
@@ -1148,10 +1147,7 @@ def _reloader_exclude_patterns(inherited=""):
     Dallinger) checkout there. Without these patterns, editing a test or
     scaffolding a demo restarts every debug server. The served experiment is
     watched through Dallinger's development folder, so it is unaffected, but
-    other debug servers' development folders are excluded. ``inherited``
-    patterns (``FLASK_RUN_EXCLUDE_PATTERNS`` from the caller) are kept unless
-    they would exclude this server's own development folder, as patterns
-    inherited from another debug server can.
+    other debug servers' development folders are excluded.
     """
     import dallinger
     from dallinger.utils import develop_target_path
@@ -1164,12 +1160,7 @@ def _reloader_exclude_patterns(inherited=""):
     develop_path = Path(develop_target_path(config))
     # The reloader may watch the resolved path, e.g. /private/tmp on macOS.
     own_paths = list(dict.fromkeys([develop_path, develop_path.resolve()]))
-    own_files = [str(path / "app.py") for path in own_paths]
-    patterns = [
-        pattern
-        for pattern in inherited.split(os.pathsep)
-        if pattern and not any(fnmatch.fnmatch(f, pattern) for f in own_files)
-    ]
+    patterns = []
     for path in own_paths:
         patterns += _other_develop_folder_patterns(path)
     for package in (psynet, dallinger):
@@ -1215,10 +1206,11 @@ def _debug_auto_reload(ctx, archive, no_browsers):
     port = _local_base_port()
     # Dallinger's development server runs `flask run`, which reads these variables.
     os.environ["FLASK_RUN_PORT"] = str(port)
-    exclude = _reloader_exclude_patterns(
-        os.environ.get("FLASK_RUN_EXCLUDE_PATTERNS", "")
+    # Replaced rather than extended: an inherited value can come from another
+    # debug server and exclude this one's development folder.
+    os.environ["FLASK_RUN_EXCLUDE_PATTERNS"] = os.pathsep.join(
+        _reloader_exclude_patterns()
     )
-    os.environ["FLASK_RUN_EXCLUDE_PATTERNS"] = os.pathsep.join(exclude)
     debug_kwargs = {"skip_flask": False, "port": port}
     if no_browsers:
         develop_module.launch_app_and_open_browser = launch_app_without_browsers

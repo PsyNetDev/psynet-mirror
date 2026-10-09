@@ -655,25 +655,6 @@ def test_reloader_ignores_only_other_develop_folders(own):
         assert not any(fnmatch(path, p) for p in patterns), path
 
 
-def test_reloader_drops_inherited_patterns_that_exclude_its_own_folder(monkeypatch):
-    from fnmatch import fnmatch
-
-    from psynet.command_line import (
-        _other_develop_folder_patterns,
-        _reloader_exclude_patterns,
-    )
-
-    monkeypatch.setenv("dallinger_develop_directory", "/tmp/dallinger_develop_5100")
-    from_default_server = _other_develop_folder_patterns("/tmp/dallinger_develop")
-    inherited = os.pathsep.join([*from_default_server, "/elsewhere/*"])
-
-    patterns = _reloader_exclude_patterns(inherited)
-
-    assert "/elsewhere/*" in patterns
-    own_file = "/tmp/dallinger_develop_5100/app.py"
-    assert not any(fnmatch(own_file, p) for p in patterns)
-
-
 def test_debug_auto_reload_no_browsers_launches_without_browsers(monkeypatch, capsys):
     """PsyNet's launch job opens no browsers and prints what the browser would show."""
     from psynet.command_line import _debug_auto_reload, launch_app_without_browsers
