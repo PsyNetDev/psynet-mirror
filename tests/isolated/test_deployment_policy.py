@@ -56,6 +56,12 @@ EXPECTED_EXCLUDE_SUFFIXES = (
 )
 
 
+@pytest.fixture(autouse=True)
+def _skip_constraints_check(monkeypatch):
+    """These experiments have no constraints.txt, which the checks would reject."""
+    monkeypatch.setenv("SKIP_DEPENDENCY_CHECK", "1")
+
+
 def test_prototype_metadata_declares_posix_only():
     root = get_psynet_root()
     project = tomllib.loads((root / "pyproject.toml").read_text())["project"]
