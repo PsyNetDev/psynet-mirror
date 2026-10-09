@@ -1,0 +1,1 @@
+`psynet performance-test` now writes its server and bot logs to a per-user `psynet-performance-logs-<user>` folder in the temporary directory and keeps only the 20 most recent of each, instead of leaving a new pair of files in `/tmp` after every run.

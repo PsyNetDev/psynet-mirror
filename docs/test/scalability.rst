@@ -19,7 +19,10 @@ From the experiment directory:
     psynet performance-test local
 
 This starts a local server, keeps ``Experiment.test_n_bots`` bots (default 1)
-active for one minute, prints a report, and shuts the server down. For a heavier load,
+active for one minute, prints a report, and shuts the server down. It prints
+the paths of the server and bot logs, which go to a
+``psynet-performance-logs-<user>`` folder in the temporary directory; it keeps
+the 20 most recent of each. For a heavier load,
 ask for more bots and a longer run:
 
 .. code-block:: bash

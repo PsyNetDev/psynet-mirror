@@ -1,5 +1,6 @@
 import datetime
 import functools
+import getpass
 import hashlib
 import importlib
 import json
@@ -4536,6 +4537,31 @@ def _check_existing_server_answers():
         ) from None
 
 
+_KEPT_PERFORMANCE_LOGS = 20
+
+
+def _performance_log_directory():
+    """Return this user's folder for performance-test logs, pruning old logs.
+
+    Each run writes a server log and a bot log; only the newest
+    ``_KEPT_PERFORMANCE_LOGS`` of each kind are kept.
+    """
+    directory = (
+        Path(tempfile.gettempdir()) / f"psynet-performance-logs-{getpass.getuser()}"
+    )
+    directory.mkdir(mode=0o700, exist_ok=True)
+    for prefix in ("psynet_server_", "psynet_bots_"):
+        logs = []
+        for path in directory.glob(f"{prefix}*.log"):
+            try:
+                logs.append((path.stat().st_mtime, path))
+            except FileNotFoundError:
+                continue
+        for _mtime, path in sorted(logs, reverse=True)[_KEPT_PERFORMANCE_LOGS - 1 :]:
+            path.unlink(missing_ok=True)
+    return directory
+
+
 def _run_performance_test_with_existing_server(
     n_bots,
     stagger,
@@ -4569,7 +4595,11 @@ def _run_performance_test_with_existing_server(
     root_logger.addHandler(console_handler)
 
     bot_log_file = tempfile.NamedTemporaryFile(
-        mode="w", delete=False, prefix="psynet_bots_", suffix=".log"
+        mode="w",
+        delete=False,
+        prefix="psynet_bots_",
+        suffix=".log",
+        dir=_performance_log_directory(),
     )
     print(f"Bot output log: {bot_log_file.name}")
 
@@ -4696,7 +4726,10 @@ def _start_local_server_and_wait_for_ready(
     print("▶ Starting experiment server...")
 
     tmp_log = tempfile.NamedTemporaryFile(
-        delete=False, prefix="psynet_server_", suffix=".log"
+        delete=False,
+        prefix="psynet_server_",
+        suffix=".log",
+        dir=_performance_log_directory(),
     )
     tmp_log_path = tmp_log.name
     tmp_log.close()

@@ -3919,7 +3919,15 @@ def test_create_sql_profile_run_dir_without_custom_parent():
     assert Path(profile_dir).name.startswith("psynet-sql-profile-")
 
 
-def test_start_local_server_uses_debug_local_subprocess():
+@pytest.fixture
+def performance_logs_in_tmp(tmp_path, monkeypatch):
+    """Keep server logs from these tests out of the real performance-log folder."""
+    monkeypatch.setattr(
+        "psynet.command_line._performance_log_directory", lambda: tmp_path
+    )
+
+
+def test_start_local_server_uses_debug_local_subprocess(performance_logs_in_tmp):
     from psynet.command_line import _start_local_server_and_wait_for_ready, _stop_server
 
     process = Mock()
@@ -3945,7 +3953,7 @@ def test_start_local_server_uses_debug_local_subprocess():
     _stop_server(server_info)
 
 
-def test_start_local_server_uses_exact_command_args():
+def test_start_local_server_uses_exact_command_args(performance_logs_in_tmp):
     from psynet.command_line import _start_local_server_and_wait_for_ready, _stop_server
 
     process = Mock()
@@ -3974,7 +3982,7 @@ def test_start_local_server_uses_exact_command_args():
     ],
 )
 def test_start_local_server_reports_the_correct_failure(
-    capsys, exception_name, expected_message
+    capsys, exception_name, expected_message, performance_logs_in_tmp
 ):
     from psynet.command_line import (
         _start_local_server_and_wait_for_ready,
@@ -4579,6 +4587,27 @@ def test_performance_test_options_reject_out_of_range_values(option, value):
     result = CliRunner().invoke(command, [command.params[0].opts[0], value])
     assert result.exit_code == 2
     assert "Invalid value" in result.output
+
+
+def test_performance_log_directory_keeps_only_recent_logs(tmp_path, monkeypatch):
+    from psynet.command_line import _KEPT_PERFORMANCE_LOGS, _performance_log_directory
+
+    monkeypatch.setattr("psynet.command_line.tempfile.gettempdir", lambda: tmp_path)
+    directory = _performance_log_directory()
+    server_logs = []
+    for i in range(_KEPT_PERFORMANCE_LOGS + 5):
+        path = directory / f"psynet_server_{i}.log"
+        path.touch()
+        os.utime(path, (i, i))
+        server_logs.append(path)
+    bot_log = directory / "psynet_bots_0.log"
+    bot_log.touch()
+
+    assert _performance_log_directory() == directory
+    remaining = sorted(directory.glob("psynet_server_*.log"), key=os.path.getmtime)
+    # Leaves room for the log the caller is about to create.
+    assert remaining == server_logs[-(_KEPT_PERFORMANCE_LOGS - 1) :]
+    assert bot_log.exists()
 
 
 def test_performance_test_existing_server_loads_runtime_server_config():
