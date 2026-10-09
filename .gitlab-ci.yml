@@ -345,10 +345,10 @@ merge_test_results:
   <<: *docker_test_rules
   services: []
   needs:
-    - "tests_python_3_13"
-    # tests_python_3_14 and compatibility_tests only exist on
+    - "tests_python_3_14"
+    # tests_python_3_13 and compatibility_tests only exist on
     # release-branch pipelines.
-    - job: "tests_python_3_14"
+    - job: "tests_python_3_13"
       optional: true
     - job: "compatibility_tests"
       optional: true
