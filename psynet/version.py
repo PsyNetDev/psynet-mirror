@@ -256,11 +256,7 @@ def get_requirement_line_from_pip_freeze(name):
 
 def get_installed_commit_or_version_from_pip_freeze(package_name):
     """Return the installed commit hash or version from pip freeze output."""
-    line = get_requirement_line_from_pip_freeze(package_name)
-    match = re.search(f".*{package_name}(?:\\.git)?@([^#]*)", line, re.IGNORECASE)
-    if match is not None:
-        return match.group(1)
-    return line.split("==")[-1]
+    return specified_version(get_requirement_line_from_pip_freeze(package_name))
 
 
 def parse_version_triplet(x):
