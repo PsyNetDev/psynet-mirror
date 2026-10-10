@@ -1517,6 +1517,9 @@ def _pre_launch(
 ):
     from .experiment import get_experiment
 
+    if docker:
+        _reject_leftover_psynet_wheels()
+
     # Scaffold/git checks before Redis so missing-boilerplate guidance is visible
     # even when Redis is not running.
     _check_experiment_directory(mode, require_git_commit=not local_)
@@ -1721,7 +1724,6 @@ def deploy__docker_ssh(
     """
     try:
         _validate_ssh_deploy_update(app, archive, update)
-        _reject_leftover_psynet_wheels()
         _configure_dallinger_image_source(use_local_dallinger=False)
 
         _pre_launch(
@@ -1842,7 +1844,6 @@ def _local_psynet_wheel(enabled):
     experiment files, and the experiment Dockerfile installs it over the
     requirements.txt version. It is removed again afterwards.
     """
-    _reject_leftover_psynet_wheels()
     if not enabled:
         yield
         return
