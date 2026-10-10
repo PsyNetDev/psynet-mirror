@@ -36,6 +36,7 @@ import heapq
 import json
 import os
 import re
+import shutil
 import statistics
 import subprocess
 import threading
@@ -159,6 +160,10 @@ class _Slot:
         if index == 0:
             self.env = dict(os.environ)
             return
+        if shutil.which("redis-server") is None:
+            raise click.ClickException(
+                "--slots > 1 needs redis-server on PATH to give each slot its own Redis."
+            )
         try:
             self._environment = IsolatedEnvironment.start(
                 {**os.environ, "base_port": str(_caller_base_port())}

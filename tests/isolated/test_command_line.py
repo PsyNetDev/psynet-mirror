@@ -10,7 +10,7 @@ import time
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import click
 import pandas as pd
@@ -3840,6 +3840,26 @@ def test_isolated_tests_check_the_experiment_before_creating_services(
             _rerun_in_isolated_test_environment()
     start.assert_not_called()
     ensure.assert_not_called()
+
+
+def test_isolated_tests_rerun_with_the_current_interpreter(tmp_path, monkeypatch):
+    from psynet.command_line import _rerun_in_isolated_test_environment
+
+    monkeypatch.setattr("psynet.command_line._check_experiment_directory", Mock())
+    monkeypatch.setattr("psynet.services.ensure_local_services", Mock())
+    environment = MagicMock(env={})
+    environment.__enter__.return_value = environment
+    monkeypatch.setattr(
+        "psynet.isolated_environment.IsolatedEnvironment.start",
+        Mock(return_value=environment),
+    )
+    monkeypatch.setattr(sys, "orig_argv", ["/framework/Python", "-m", "psynet", "test"])
+    popen = Mock(**{"return_value.wait.return_value": 0})
+    monkeypatch.setattr("subprocess.Popen", popen)
+    with working_directory(tmp_path), pytest.raises(SystemExit, match="0"):
+        _rerun_in_isolated_test_environment()
+
+    assert popen.call_args.args[0] == [sys.executable, "-m", "psynet", "test"]
 
 
 def test_pre_launch_checks_directory_before_redis():
