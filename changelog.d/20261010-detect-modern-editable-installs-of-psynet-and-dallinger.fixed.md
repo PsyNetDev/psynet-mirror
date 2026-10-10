@@ -1,0 +1,1 @@
+`psynet installation update` and the PsyNet folder-name check before auto-reload now recognise editable installs made by current pip and uv. Before, `psynet installation update` treated an editable Dallinger checkout as a normal install and replaced it with a non-editable copy.

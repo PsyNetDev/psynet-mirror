@@ -317,3 +317,44 @@ def test_experiment_extra_error_suggests_pin_that_passes(
 
     requirements.write_text(f"{suggested}\n")
     check_psynet_requirement_includes_experiment_extra()
+
+
+@pytest.mark.parametrize(
+    "requirement, is_release",
+    [
+        ("psynet[experiment]==14.0.0", True),
+        ("psynet[experiment]==14.0.0rc1", True),
+        ("psynet@git+https://gitlab.com/PsyNetDev/PsyNet@v14.0.0#egg=psynet", True),
+        ("psynet[experiment]==14.1.0a2", False),
+        ("psynet@git+https://gitlab.com/PsyNetDev/PsyNet@45f31768#egg=psynet", False),
+        ("psynet[experiment]", False),
+    ],
+)
+def test_live_deploys_ask_before_installing_a_development_psynet(
+    tmp_path, monkeypatch, capsys, requirement, is_release
+):
+    import click
+
+    from psynet import command_line
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("SKIP_CHECK_PSYNET_VERSION_REQUIREMENT", raising=False)
+    Path("requirements.txt").write_text(f"{requirement}\n")
+    questions = []
+    monkeypatch.setattr(
+        command_line, "user_confirms", lambda q: questions.append(q) or False
+    )
+
+    if is_release:
+        command_line.confirm_deploying_development_psynet()
+        assert not questions
+        return
+
+    with pytest.raises(click.Abort):
+        command_line.confirm_deploying_development_psynet()
+    assert requirement in questions[0]
+
+    monkeypatch.setenv("SKIP_CHECK_PSYNET_VERSION_REQUIREMENT", "1")
+    command_line.confirm_deploying_development_psynet()
+    assert len(questions) == 1
+    assert "development version of PsyNet" in capsys.readouterr().err

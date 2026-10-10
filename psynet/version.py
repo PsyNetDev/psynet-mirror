@@ -112,19 +112,7 @@ def collect_core_dependency_version_info_from_requirements(file_content):
         if len(requirements) == 0:
             continue
 
-        requirement = requirements[0]
-
-        match = re.search(
-            f"/{package_name}(?:\\.git)?@([^#]+)(?:#egg={package_name})?",
-            requirement,
-            re.IGNORECASE,
-        )
-
-        # We either assume PsyNet is specified in the correct requirement syntax
-        # or as a standard requirement (e.g. 'psynet==10.0.0')
-        specified = (
-            match.group(1) if match is not None else re.split("==", requirement)[-1]
-        )
+        specified = specified_version(requirements[0], package_name)
 
         # In case just specified as the package name
         if specified == package_name.lower():
@@ -164,6 +152,22 @@ def collect_core_dependency_version_info_from_requirements(file_content):
             "skip_reason": skip_reason,
         }
     return versions
+
+
+def specified_version(requirement, package_name):
+    """Return the version, tag or commit that a requirement line pins.
+
+    Handles Git requirements (``.../PsyNet@<ref>#egg=psynet``) and standard
+    ones (``psynet==10.0.0``). A bare package name is returned unchanged.
+    """
+    match = re.search(
+        f"/{package_name}(?:\\.git)?@([^#]+)(?:#egg={package_name})?",
+        requirement,
+        re.IGNORECASE,
+    )
+    if match is not None:
+        return match.group(1)
+    return re.split("==", requirement)[-1]
 
 
 def _commit_pin_matches(specified, installed):

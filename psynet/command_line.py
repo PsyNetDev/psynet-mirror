@@ -44,6 +44,8 @@ from psynet.runtime_init import ensure_runtime
 from psynet.version import (
     check_core_dependency_versions_match_requirements,
     check_installed_dallinger_version_is_recommended,
+    is_release_version_specifier,
+    specified_version,
 )
 
 from . import deployment_info
@@ -874,6 +876,8 @@ def run_pre_auto_reload_checks():
 
     from dallinger.utils import develop_target_path
 
+    from .experiment_scaffold import get_editable_psynet_source
+
     _develop_path = str(develop_target_path(config))
     if "." in _develop_path:
         raise ValueError(
@@ -883,7 +887,7 @@ def run_pre_auto_reload_checks():
             "We recommend: dallinger_develop_directory = /tmp/dallinger_develop"
         )
 
-    if is_editable("psynet"):
+    if get_editable_psynet_source() is not None:
         root_dir = str(psynet_dir())
         root_basename = os.path.basename(root_dir)
         if root_basename == "psynet" and root_dir in os.getcwd():
@@ -1346,6 +1350,8 @@ def run_bot(ctx, time_factor=0.0, dashboard_user=None, dashboard_password=None):
 ##############
 def run_pre_checks_deploy(local_, recruiter):
     check_psynet_requirement_is_unambiguous()
+    if not local_:
+        confirm_deploying_development_psynet()
     check_psynet_requirement_includes_experiment_extra()
     check_core_dependency_versions_match_requirements()
 
@@ -2271,6 +2277,7 @@ def install_autocomplete():
 #######################
 def _run_installation_update(dallinger_version, psynet_version, verbose):
     """Update the locally installed Dallinger and PsyNet packages."""
+    from dallinger.utils import get_editable_dallinger_path
 
     def _git_checkout(version, cwd, capture_output):
         with yaspin(text=f"Checking out {version}...", color="green") as spinner:
@@ -2332,7 +2339,8 @@ def _run_installation_update(dallinger_version, psynet_version, verbose):
     # Dallinger
     log("Updating Dallinger...")
     cwd = dallinger_dir()
-    if is_editable("dallinger"):
+    dallinger_is_editable = get_editable_dallinger_path() is not None
+    if dallinger_is_editable:
         _prepare(
             dallinger_version,
             "Dallinger",
@@ -2340,7 +2348,7 @@ def _run_installation_update(dallinger_version, psynet_version, verbose):
             capture_output,
         )
 
-    if is_editable("dallinger"):
+    if dallinger_is_editable:
         text = "Installing base packages and development requirements..."
         install_command = "pip install --editable '.[data]'"
     else:
@@ -2351,7 +2359,7 @@ def _run_installation_update(dallinger_version, psynet_version, verbose):
         text=text,
         color="green",
     ) as spinner:
-        if is_editable("dallinger"):
+        if dallinger_is_editable:
             subprocess.run(
                 ["pip3 install -r dev-requirements.txt"],
                 shell=True,
@@ -2471,14 +2479,6 @@ def get_version(project_name):
         .decode("utf-8")
         .strip()
     )
-
-
-def is_editable(project):
-    for path_item in sys.path:
-        egg_link = os.path.join(path_item, project + ".egg-link")
-        if os.path.isfile(egg_link):
-            return True
-    return False
 
 
 ############
@@ -2751,6 +2751,41 @@ def check_psynet_requirement_is_unambiguous():
 
         if not valid:
             raise ValueError(_ambiguous_psynet_requirement_message(requirement))
+
+
+def confirm_deploying_development_psynet():
+    """Ask before a live remote deployment installs a development PsyNet.
+
+    Release pins (``14.0.0``, ``14.0.0rc1`` or the tag ``v14.0.0``) pass
+    silently. A commit, an alpha, or an entry accepted only because
+    ``SKIP_CHECK_PSYNET_VERSION_REQUIREMENT`` is set is a development version.
+    Setting that variable replaces the question with a warning.
+
+    Raises
+    ------
+    click.Abort
+        If the user declines to deploy a development version.
+    """
+    requirement = get_psynet_requirement()
+    if requirement and is_release_version_specifier(
+        specified_version(requirement, "PsyNet").strip()
+    ):
+        return
+
+    message = (
+        "requirements.txt installs a development version of PsyNet, not a release:\n"
+        f"  {requirement or '(no PsyNet entry)'}\n"
+        "Live experiments should normally pin a PsyNet release, for example "
+        "psynet[experiment]==<version>."
+    )
+    if os.environ.get("SKIP_CHECK_PSYNET_VERSION_REQUIREMENT"):
+        click.echo(f"Warning: {message}", err=True)
+        return
+    if not user_confirms(
+        f"{message}\nDeploy it anyway? (Set SKIP_CHECK_PSYNET_VERSION_REQUIREMENT=1 "
+        "to skip this question.)"
+    ):
+        raise click.Abort
 
 
 def check_psynet_requirement_includes_experiment_extra():

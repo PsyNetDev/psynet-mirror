@@ -1,0 +1,1 @@
+`psynet deploy ssh` and `psynet deploy heroku` now ask for confirmation when `requirements.txt` installs a development PsyNet (a Git commit or an alpha version) rather than a release. Setting `SKIP_CHECK_PSYNET_VERSION_REQUIREMENT=1` skips the question and prints a warning instead.
