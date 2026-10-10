@@ -4134,10 +4134,8 @@ def _stop_when_disconnected(cmd):
     return f"sh -c {shlex.quote(script)}"
 
 
-def run_remote_experiment_command(executor, app, cmd, on_line=None):
+def run_remote_experiment_command(executor, app, cmd):
     """Run ``cmd`` in the app's web container, echoing its output as it arrives.
-
-    If given, ``on_line`` is called with each decoded output line.
 
     Dallinger's ``Executor.run_and_echo`` also watches local stdin so that the user
     can quit by pressing ``q``; that makes it exit immediately when stdin is closed
@@ -4158,12 +4156,9 @@ def run_remote_experiment_command(executor, app, cmd, on_line=None):
     channel.exec_command(remote_cmd)
 
     stream = channel.makefile("rb", 0)
-    for raw_line in iter(stream.readline, b""):
-        line = raw_line.decode("utf-8", "replace")
-        sys.stdout.write(line)
+    for line in iter(stream.readline, b""):
+        sys.stdout.write(line.decode("utf-8", "replace"))
         sys.stdout.flush()
-        if on_line is not None:
-            on_line(line)
 
     status = channel.recv_exit_status()
     if status != 0:
@@ -4319,6 +4314,15 @@ _test_options["performance_json_output"] = click.option(
     Useful for downstream consumption (e.g. benchmarking tools like asv).""",
 )
 
+# ``performance-test ssh`` chooses where the remote run writes its bot log, so
+# that it can copy the log back afterwards.
+_test_options["performance_bot_log"] = click.option(
+    "--bot-log",
+    type=click.Path(dir_okay=False, writable=True),
+    default=None,
+    hidden=True,
+)
+
 AUDIT_PERFORMANCE_JSON = Path("artifacts") / "performance.json"
 SIMULATED_EXPORT_PATH = Path("simulate") / "analysis" / "simulated_export"
 AUDIT_ARTIFACT_IDS = {
@@ -4471,6 +4475,7 @@ def performance_test(ctx):
 @_test_options["performance_max_p95_ms"]
 @_test_options["performance_max_queue_p95_s"]
 @_test_options["performance_json_output"]
+@_test_options["performance_bot_log"]
 @click.option("--debug", is_flag=True, help="Enable debug logging for verbose output")
 @_in_isolated_test_environment
 def performance_test__local(existing=False, json_output=None, debug=False, **options):
@@ -4559,7 +4564,7 @@ def _check_existing_server_answers():
 
 
 _KEPT_PERFORMANCE_LOGS = 20
-_BOT_LOG_LABEL = "Bot output log: "
+_REMOTE_BOT_LOG = "/tmp/psynet_bots_performance_test.log"
 
 
 def _performance_log_directory():
@@ -4597,6 +4602,7 @@ def _run_performance_test_with_existing_server(
     duration_minutes=None,
     max_p95_ms=None,
     max_queue_p95_s=None,
+    bot_log=None,
 ):
     """Run performance test connecting to an already-running server."""
     import logging
@@ -4658,14 +4664,17 @@ def _run_performance_test_with_existing_server(
             max_queue_p95_s=max_queue_p95_s,
         ),
     )
-    bot_log_file = tempfile.NamedTemporaryFile(
-        mode="w",
-        delete=False,
-        prefix="psynet_bots_",
-        suffix=".log",
-        dir=_performance_log_directory(),
-    )
-    print(f"{_BOT_LOG_LABEL}{bot_log_file.name}")
+    if bot_log is None:
+        bot_log_file = tempfile.NamedTemporaryFile(
+            mode="w",
+            delete=False,
+            prefix="psynet_bots_",
+            suffix=".log",
+            dir=_performance_log_directory(),
+        )
+    else:
+        bot_log_file = open(bot_log, "w")
+    print(f"Bot output log: {bot_log_file.name}")
     started_at = datetime.datetime.now().isoformat(timespec="seconds")
     try:
         if find_capacity:
@@ -4963,34 +4972,33 @@ def performance_test__docker_ssh(ctx, app, server, json_output=None, **options):
             "Use 'psynet performance-test local --json-output' instead.",
         )
 
-    cmd = _build_ssh_performance_test_cmd(**options)
+    cmd = _build_ssh_performance_test_cmd(**options, bot_log=_REMOTE_BOT_LOG)
     executor = _ssh_executor(server)
-    remote_bot_log = []
-
-    def remember_bot_log(line):
-        if line.startswith(_BOT_LOG_LABEL):
-            remote_bot_log.append(line[len(_BOT_LOG_LABEL) :].strip())
-
     try:
-        run_remote_experiment_command(executor, app, cmd, on_line=remember_bot_log)
+        run_remote_experiment_command(executor, app, cmd)
     finally:
-        if remote_bot_log:
-            _copy_remote_bot_log(executor, app, remote_bot_log[-1])
+        _move_remote_bot_log(executor, app, _REMOTE_BOT_LOG)
 
 
-def _copy_remote_bot_log(executor, app, remote_path):
-    """Copy the bot log out of the app's web container into the local log folder."""
-    local_path = _performance_log_directory() / (
-        f"psynet_bots_{app}_{datetime.datetime.now():%Y%m%d-%H%M%S}.log"
-    )
+def _move_remote_bot_log(executor, app, remote_path):
+    """Move the bot log out of the app's web container into the local log folder.
+
+    Removing the remote copy stops a later run that fails before writing its
+    own log from copying this run's log instead.
+    """
+    path = shlex.quote(remote_path)
+    move = shlex.quote(f"cat {path} 2>/dev/null; rm -f {path}")
     try:
-        contents = executor.run(
-            build_remote_experiment_command(app, f"cat {shlex.quote(remote_path)}")
-        )
+        contents = executor.run(build_remote_experiment_command(app, f"sh -c {move}"))
     except Exception as err:
         log(f"Could not copy the bot log from {remote_path}: {err}")
         return
-    local_path.write_text(contents or "")
+    if not contents:
+        return
+    local_path = _performance_log_directory() / (
+        f"psynet_bots_{app}_{datetime.datetime.now():%Y%m%d-%H%M%S}.log"
+    )
+    local_path.write_text(contents)
     print(f"Bot log copied to: {local_path}")
 
 
