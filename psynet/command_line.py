@@ -4097,7 +4097,7 @@ def _rerun_in_isolated_test_environment():
             except KeyboardInterrupt:
                 # The child got the same Ctrl+C; let it stop its servers,
                 # unless the user presses Ctrl+C again.
-                if interrupted:
+                if interrupted and process.poll() is None:
                     process.kill()
                 interrupted = True
     # A child killed by signal N reports -N; shells report 128 + N.
