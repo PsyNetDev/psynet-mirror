@@ -388,10 +388,11 @@ def test_redis_pool_lets_every_bot_hold_a_connection(monkeypatch, blocking):
     import redis
     from dallinger import db
 
+    server = db.redis_conn.connection_pool.connection_kwargs
     if blocking:
-        pool = redis.BlockingConnectionPool(max_connections=2, timeout=0.1)
+        pool = redis.BlockingConnectionPool(max_connections=2, timeout=0.1, **server)
     else:
-        pool = redis.ConnectionPool(max_connections=2)
+        pool = redis.ConnectionPool(max_connections=2, **server)
     monkeypatch.setattr(db, "redis_conn", redis.Redis(connection_pool=pool))
     tester = PerformanceTester(authenticated_session=Mock(), base_url="http://x")
     with patch.object(tester, "_test_performance"):
