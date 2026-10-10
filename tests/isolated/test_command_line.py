@@ -4545,6 +4545,20 @@ def test_performance_test_options_reject_out_of_range_values(option, value):
     assert "Invalid value" in result.output
 
 
+def test_performance_log_directory_works_without_a_user_name(tmp_path, monkeypatch):
+    from psynet.command_line import _performance_log_directory
+
+    def no_user_name():
+        raise OSError("No username set in the environment")
+
+    monkeypatch.setattr("psynet.command_line.tempfile.gettempdir", lambda: tmp_path)
+    monkeypatch.setattr("psynet.command_line.getpass.getuser", no_user_name)
+
+    directory = _performance_log_directory()
+    assert directory == tmp_path / f"psynet-performance-logs-{os.getuid()}"
+    assert directory.is_dir()
+
+
 def test_performance_log_directory_keeps_only_recent_logs(tmp_path, monkeypatch):
     from psynet.command_line import _KEPT_PERFORMANCE_LOGS, _performance_log_directory
 

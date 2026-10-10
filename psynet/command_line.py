@@ -4540,9 +4540,12 @@ def _performance_log_directory():
     Each run writes a server log and a bot log; only the newest
     ``_KEPT_PERFORMANCE_LOGS`` of each kind are kept.
     """
-    directory = (
-        Path(tempfile.gettempdir()) / f"psynet-performance-logs-{getpass.getuser()}"
-    )
+    try:
+        user = getpass.getuser()
+    except (KeyError, OSError):
+        # Containers run as the host uid, which may have no account or USER.
+        user = str(os.getuid())
+    directory = Path(tempfile.gettempdir()) / f"psynet-performance-logs-{user}"
     directory.mkdir(mode=0o700, exist_ok=True)
     for prefix in ("psynet_server_", "psynet_bots_"):
         logs = []
