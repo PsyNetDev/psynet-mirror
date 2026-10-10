@@ -1842,6 +1842,12 @@ def format_timedelta(timedelta_obj):
 
 
 def get_experiment_url(app=None, server=None):
+    """Return the experiment's URL.
+
+    Without ``app`` or ``server``, this is the URL the running experiment
+    registered in Redis, unless the ``PSYNET_EXPERIMENT_URL`` environment
+    variable gives another address for this process to reach it by.
+    """
     if server:
         if app:
             return f"https://{app}.{server}"
@@ -1853,7 +1859,7 @@ def get_experiment_url(app=None, server=None):
         else:
             from .redis import redis_vars
 
-            return redis_vars.get("base_url")
+            return os.environ.get("PSYNET_EXPERIMENT_URL") or redis_vars.get("base_url")
 
 
 def generate_text_file(path, text="Lorem ipsum"):

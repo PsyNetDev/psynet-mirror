@@ -208,7 +208,11 @@ the server. Because the bots share a process, they also share module-level
 state and the experiment instance, as in :ref:`parallel tests
 <parallel_bot_tests>`. To test a real server, launch the experiment there in
 debug mode, then run the test over SSH. The bots then run inside the server's
-web container, so they still take a little of its CPU:
+web container and send their requests straight to the experiment server,
+skipping the server's web proxy and any Cloudflare tunnel, so the test
+measures the experiment itself. They still take a little of the server's
+CPU, and a capacity search loads the whole machine, so on a shared server
+check with the other users first:
 
 .. code-block:: bash
 

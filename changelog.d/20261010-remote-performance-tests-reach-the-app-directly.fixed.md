@@ -1,0 +1,1 @@
+Bots in ``psynet performance-test ssh`` now send their requests straight to the experiment server inside its container instead of to its public URL. Before, every request went out through the server's proxy and any Cloudflare tunnel and back, and the bots spent so much CPU on encryption that the test measured the bots rather than the experiment.
