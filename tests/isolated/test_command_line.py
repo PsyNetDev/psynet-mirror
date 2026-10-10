@@ -4709,6 +4709,7 @@ def test_ssh_performance_test_command_forwards_zero_valued_options():
         max_p95_ms=800,
         max_queue_p95_s=0,
     ) == (
+        "env PSYNET_EXPERIMENT_URL=http://localhost:5000 "
         "psynet performance-test local --existing "
         "--n-bots 5,10 --stagger 0 --time-factor 0 --duration-minutes 1.5 "
         "--max-p95-ms 800 --max-queue-p95-s 0"
@@ -4725,8 +4726,17 @@ def test_ssh_performance_test_command_omits_unspecified_options():
             time_factor=None,
             duration_minutes=None,
         )
-        == "psynet performance-test local --existing"
+        == "env PSYNET_EXPERIMENT_URL=http://localhost:5000 "
+        "psynet performance-test local --existing"
     )
+
+
+def test_experiment_url_can_be_overridden_for_one_process(monkeypatch):
+    from psynet.utils import get_experiment_url
+
+    monkeypatch.setenv("PSYNET_EXPERIMENT_URL", "http://localhost:5000")
+
+    assert get_experiment_url() == "http://localhost:5000"
 
 
 @pytest.mark.parametrize(

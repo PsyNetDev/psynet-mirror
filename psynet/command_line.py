@@ -4541,13 +4541,13 @@ def _check_existing_server_answers():
     """Raise ``click.ClickException`` unless a server runs for this shell's settings."""
     from psynet.perf_test import server_is_reachable
 
-    base_url = redis_vars.get("base_url", None)
-    if base_url is None:
+    if redis_vars.get("base_url", None) is None:
         raise click.ClickException(
             "No experiment server has registered in this shell's Redis. Start one "
             "with psynet debug local, or set REDIS_URL and DATABASE_URL to those "
             "of the running server."
         )
+    base_url = get_experiment_url()
     if not server_is_reachable(base_url):
         raise click.ClickException(
             f"No server answers at {base_url}. Start one with psynet debug local, "
@@ -4965,12 +4965,20 @@ def performance_test__docker_ssh(ctx, app, server, json_output=None, **options):
     run_remote_experiment_command(executor, app, cmd)
 
 
+_CONTAINER_WEB_PORT = 5000
+
+
 def _build_ssh_performance_test_cmd(**options):
     """Build the remote performance-test command, preserving explicit zeros.
 
     ``options`` are named like the command's options, e.g. ``n_bots`` for ``--n-bots``.
     """
-    cmd = "psynet performance-test local --existing"
+    # Bots run inside the web container, so they reach the app directly rather
+    # than through the server's proxy and Cloudflare.
+    cmd = (
+        f"env PSYNET_EXPERIMENT_URL=http://localhost:{_CONTAINER_WEB_PORT} "
+        "psynet performance-test local --existing"
+    )
     for name, value in options.items():
         if isinstance(value, list):
             value = ",".join(str(v) for v in value)
