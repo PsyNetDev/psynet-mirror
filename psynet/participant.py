@@ -41,6 +41,7 @@ from .utils import (
     call_function_with_context,
     get_config,
     get_logger,
+    keep_alive_session,
     organize_by_key,
 )
 
@@ -1322,7 +1323,7 @@ class ParticipantDriver:
         bottleneck of a performance test.
         """
         if "_http_session" not in self.__dict__:
-            self.__dict__["_http_session"] = requests.Session()
+            self.__dict__["_http_session"] = keep_alive_session()
         return self.__dict__["_http_session"]
 
     def take_page(

@@ -845,3 +845,37 @@ def test_templates_read_config_lazily_and_hide_sensitive_keys():
         html = render_string_with_translations(template, locale="en")
 
     assert html == "dark|hidden|unset"
+
+
+def test_keep_alive_session_retries_a_dropped_connection():
+    """A POST on a connection the server drops is resent once, not failed."""
+    import socket
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    from psynet.utils import keep_alive_session
+
+    attempts = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            attempts.append(self.path)
+            if len(attempts) == 1:
+                self.connection.shutdown(socket.SHUT_RDWR)
+                return
+            self.send_response(200)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+        def log_message(self, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        url = f"http://127.0.0.1:{server.server_port}/response"
+        assert keep_alive_session().post(url, data={"a": 1}).status_code == 200
+    finally:
+        server.shutdown()
+
+    assert attempts == ["/response", "/response"]
