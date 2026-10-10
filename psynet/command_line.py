@@ -4083,8 +4083,11 @@ def _rerun_in_isolated_test_environment():
         raise click.ClickException(str(e)) from e
     with environment:
         log(environment.describe())
+        # On macOS framework builds, sys.orig_argv[0] is the framework's own
+        # interpreter, which runs outside the virtual environment.
         process = subprocess.Popen(
-            sys.orig_argv, env={**environment.env, SERVICES_CHECKED_ENV_VAR: "1"}
+            [sys.executable, *sys.orig_argv[1:]],
+            env={**environment.env, SERVICES_CHECKED_ENV_VAR: "1"},
         )
         while True:
             try:
