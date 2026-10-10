@@ -112,7 +112,7 @@ def collect_core_dependency_version_info_from_requirements(file_content):
         if len(requirements) == 0:
             continue
 
-        specified = specified_version(requirements[0], package_name)
+        specified = specified_version(requirements[0])
 
         # In case just specified as the package name
         if specified == package_name.lower():
@@ -154,20 +154,19 @@ def collect_core_dependency_version_info_from_requirements(file_content):
     return versions
 
 
-def specified_version(requirement, package_name):
+def specified_version(requirement):
     """Return the version, tag or commit that a requirement line pins.
 
-    Handles Git requirements (``.../PsyNet@<ref>#egg=psynet``) and standard
-    ones (``psynet==10.0.0``). A bare package name is returned unchanged.
+    Handles Git requirements (``...@git+https://host/repo@<ref>#egg=psynet``,
+    whatever the repository is called) and standard ones (``psynet==10.0.0``).
+    A bare package name is returned unchanged.
     """
-    match = re.search(
-        f"/{package_name}(?:\\.git)?@([^#]+)(?:#egg={package_name})?",
-        requirement,
-        re.IGNORECASE,
-    )
-    if match is not None:
-        return match.group(1)
-    return re.split("==", requirement)[-1]
+    url = re.search(r"git\+\S+", requirement)
+    if url is not None:
+        path = url.group(0).split("#")[0].split("://", 1)[-1]
+        if "@" in path.split("/", 1)[-1]:
+            return path.rsplit("@", 1)[-1].strip()
+    return re.split("==", requirement)[-1].strip()
 
 
 def _commit_pin_matches(specified, installed):

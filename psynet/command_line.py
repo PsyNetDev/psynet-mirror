@@ -2767,9 +2767,7 @@ def confirm_deploying_development_psynet():
         If the user declines to deploy a development version.
     """
     requirement = get_psynet_requirement()
-    if requirement and is_release_version_specifier(
-        specified_version(requirement, "PsyNet").strip()
-    ):
+    if requirement and is_release_version_specifier(specified_version(requirement)):
         return
 
     message = (
