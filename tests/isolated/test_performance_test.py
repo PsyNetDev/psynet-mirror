@@ -253,6 +253,18 @@ def test_capacity_summary_says_when_every_count_failed():
     assert format_capacity_summary([]) == []
 
 
+def test_capacity_summary_flags_a_pass_above_a_failed_smallest_count():
+    results = [
+        _base_result(n_bots=10, p95_response_time=0.1, bot_errors=1),
+        _base_result(n_bots=20, p95_response_time=0.1),
+    ]
+
+    text = _join(format_capacity_summary(results))
+
+    assert "Even 10 bots did not keep" in text
+    assert "20 bots passed, so the results are inconsistent" in text
+
+
 def test_capacity_summary_warns_when_starting_the_bots_took_much_of_the_test():
     results = [_base_result(n_bots=50, actual_duration=60.0, ramp_up_s=30.0)]
     assert (

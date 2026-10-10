@@ -1416,11 +1416,16 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
     )
     below_fail = [n for n in passed if first_fail is None or n < first_fail["n_bots"]]
     if not below_fail:
-        return [
+        lines = [
             f"  Even {first_fail['n_bots']:,} bots did not keep {limit} "
-            f"({', '.join(first_reasons)}); fix any errors or test fewer bots.",
-            "",
+            f"({', '.join(first_reasons)}); fix any errors or test fewer bots."
         ]
+        if passed:
+            lines.append(
+                f"  {max(passed):,} bots passed, so the results are "
+                "inconsistent; rerun to confirm."
+            )
+        return lines + [""]
 
     capacity = max(below_fail)
     if first_fail is None:
