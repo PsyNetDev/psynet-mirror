@@ -121,6 +121,7 @@ def test_bots_that_fail_count_as_started_and_errored(monkeypatch):
     import itertools
     import time
 
+    import requests
     from dallinger import db
 
     from psynet.participant import ParticipantDriver
@@ -133,8 +134,11 @@ def test_bots_that_fail_count_as_started_and_errored(monkeypatch):
             if self.id == 1:
                 raise RuntimeError("500 Server Error")
 
+    response = requests.Response()
+    response.status_code = 500
+    response.url = "http://localhost:5000/participant_status/7194"
     experiment = Mock()
-    experiment.run_bot.side_effect = RuntimeError("500 Server Error")
+    experiment.run_bot.side_effect = requests.HTTPError(response=response)
     monkeypatch.setattr("psynet.bot.BotDriver", FakeDriver)
     monkeypatch.setattr("psynet.experiment.get_experiment", lambda: experiment)
     monkeypatch.setattr(db, "session", Mock())
@@ -149,6 +153,37 @@ def test_bots_that_fail_count_as_started_and_errored(monkeypatch):
     assert bot_state["total_bots_started"] == bot_state["total_bot_errors"] >= 2
     assert 1 not in bot_state["errored_bot_ids"]
     assert 2 in bot_state["errored_bot_ids"]
+    kinds = bot_state["bot_error_kinds"]
+    assert kinds["RuntimeError"] == 1
+    assert kinds["HTTP 500 on /participant_status"] == bot_state["total_bot_errors"] - 1
+
+
+def test_capacity_summary_names_the_bot_errors():
+    results = [
+        _base_result(n_bots=10),
+        _base_result(
+            n_bots=20,
+            bot_errors=1,
+            bot_error_kinds={"HTTP 500 on /participant_status": 1},
+        ),
+    ]
+
+    assert "20 did not (1 bot error (HTTP 500 on /participant_status))" in _join(
+        format_capacity_summary(results)
+    )
+
+
+def test_status_is_printed_as_plain_lines_when_output_is_not_a_terminal(capsys):
+    import time
+
+    tester = PerformanceTester(authenticated_session=Mock(), base_url="http://x")
+    bot_state = tester._initialize_bot_tracking()
+
+    tester._show_realtime_status(bot_state, time.time(), time.time() + 60, force=True)
+
+    output = capsys.readouterr().out
+    assert "Running: 0" in output
+    assert "\r" not in output
 
 
 def test_parallel_test_reraises_a_bot_error_after_all_bots_finish(monkeypatch):

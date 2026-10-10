@@ -1139,6 +1139,22 @@ def _executor_for(channel):
     return executor
 
 
+def test_remote_bot_log_is_copied_into_the_local_log_folder(tmp_path, monkeypatch):
+    from psynet import command_line
+
+    monkeypatch.setattr(command_line, "_performance_log_directory", lambda: tmp_path)
+    executor = Mock()
+    executor.run.return_value = "bot 1 failed\n"
+
+    command_line._copy_remote_bot_log(executor, "my-app", "/tmp/psynet_bots_x.log")
+
+    assert executor.run.call_args.args[0].endswith(
+        "exec -T web cat /tmp/psynet_bots_x.log"
+    )
+    [copy] = tmp_path.glob("psynet_bots_my-app_*.log")
+    assert copy.read_text() == "bot 1 failed\n"
+
+
 def test_remote_experiment_commands_disable_tty_allocation():
     from psynet.command_line import build_remote_experiment_command
 
@@ -1153,12 +1169,14 @@ def test_remote_experiment_command_echoes_all_output_and_reports_failure(capsys)
     from psynet.command_line import run_remote_experiment_command
 
     channel = _FakeChannel(0, output=b"running bots\n" + b"=== 1 passed ===\n")
+    lines = []
     assert (
         run_remote_experiment_command(
-            _executor_for(channel), "my-app", "psynet test local"
+            _executor_for(channel), "my-app", "psynet test local", on_line=lines.append
         )
         == 0
     )
+    assert lines == ["running bots\n", "=== 1 passed ===\n"]
     assert channel.command.startswith(
         "cd ~/dallinger/my-app && docker compose exec -T web"
     )

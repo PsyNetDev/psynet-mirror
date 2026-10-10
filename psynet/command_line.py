@@ -4112,8 +4112,10 @@ def build_remote_experiment_command(app, cmd):
     return f"cd ~/dallinger/{app} && docker compose exec -T web {cmd}"
 
 
-def run_remote_experiment_command(executor, app, cmd):
+def run_remote_experiment_command(executor, app, cmd, on_line=None):
     """Run ``cmd`` in the app's web container, echoing its output as it arrives.
+
+    If given, ``on_line`` is called with each decoded output line.
 
     Dallinger's ``Executor.run_and_echo`` also watches local stdin so that the user
     can quit by pressing ``q``; that makes it exit immediately when stdin is closed
@@ -4134,9 +4136,12 @@ def run_remote_experiment_command(executor, app, cmd):
     channel.exec_command(remote_cmd)
 
     stream = channel.makefile("rb", 0)
-    for line in iter(stream.readline, b""):
-        sys.stdout.write(line.decode("utf-8", "replace"))
+    for raw_line in iter(stream.readline, b""):
+        line = raw_line.decode("utf-8", "replace")
+        sys.stdout.write(line)
         sys.stdout.flush()
+        if on_line is not None:
+            on_line(line)
 
     status = channel.recv_exit_status()
     if status != 0:
@@ -4538,6 +4543,7 @@ def _check_existing_server_answers():
 
 
 _KEPT_PERFORMANCE_LOGS = 20
+_BOT_LOG_LABEL = "Bot output log: "
 
 
 def _performance_log_directory():
@@ -4640,7 +4646,7 @@ def _run_performance_test_with_existing_server(
         suffix=".log",
         dir=_performance_log_directory(),
     )
-    print(f"Bot output log: {bot_log_file.name}")
+    print(f"{_BOT_LOG_LABEL}{bot_log_file.name}")
     started_at = datetime.datetime.now().isoformat(timespec="seconds")
     try:
         if find_capacity:
@@ -4946,7 +4952,33 @@ def performance_test__docker_ssh(ctx, app, server, json_output=None, **options):
     ssh_host = server_info["host"]
     ssh_user = server_info.get("user")
     executor = Executor(ssh_host, user=ssh_user)
-    run_remote_experiment_command(executor, app, cmd)
+    remote_bot_log = []
+
+    def remember_bot_log(line):
+        if line.startswith(_BOT_LOG_LABEL):
+            remote_bot_log.append(line[len(_BOT_LOG_LABEL) :].strip())
+
+    try:
+        run_remote_experiment_command(executor, app, cmd, on_line=remember_bot_log)
+    finally:
+        if remote_bot_log:
+            _copy_remote_bot_log(executor, app, remote_bot_log[-1])
+
+
+def _copy_remote_bot_log(executor, app, remote_path):
+    """Copy the bot log out of the app's web container into the local log folder."""
+    local_path = _performance_log_directory() / (
+        f"psynet_bots_{app}_{datetime.datetime.now():%Y%m%d-%H%M%S}.log"
+    )
+    try:
+        contents = executor.run(
+            build_remote_experiment_command(app, f"cat {shlex.quote(remote_path)}")
+        )
+    except Exception as err:
+        log(f"Could not copy the bot log from {remote_path}: {err}")
+        return
+    local_path.write_text(contents or "")
+    print(f"Bot log copied to: {local_path}")
 
 
 def _build_ssh_performance_test_cmd(**options):

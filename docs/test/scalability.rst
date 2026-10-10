@@ -155,8 +155,15 @@ run at once.
 
 The search starts at 10 bots and doubles the count until a test fails, then
 halves the gap between the largest passing and smallest failing counts until
-they are within 10% of each other, so it usually runs six to ten tests. It
-stops at 2,000 bots.
+they are within 10% of each other. It stops at 2,000 bots. For a server that
+handles more than about 100 bots this takes 9 to 12 tests, so a search with
+``--duration-minutes 3`` takes 30 to 40 minutes; the run prints its upper
+bound when it starts.
+
+When bots fail, the report lists what went wrong, for example
+``HTTP 500 on /response``. The request error count only includes errors that
+the server managed to log, so a server that cannot reach its database shows
+them under *Bot errors* instead.
 
 The summary at the end of every run reports the capacity it found and, once a
 larger bot count has exceeded the limits, suggests a cap of 80% of it, for
@@ -196,7 +203,12 @@ web container, so they still take a little of its CPU:
 
 The test does not reset the database, so repeated runs accumulate data. Make
 sure the app allows enough participants for the number of bots, and that
-nobody else is using it during the test.
+nobody else is using it during the test. When the run ends, PsyNet copies the
+bot log out of the container and prints where it saved it.
+
+If the server is on a private network, such as a lab computer, deploy with
+``--ingress cloudflare``: Let's Encrypt cannot issue certificates for a
+private address, so classic ingress fails there.
 
 Saving results
 --------------

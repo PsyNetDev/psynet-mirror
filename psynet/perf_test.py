@@ -19,9 +19,11 @@ import random
 import sys
 import threading
 import time
+from collections import Counter
 from contextlib import contextmanager
 from dataclasses import dataclass
 from decimal import Decimal
+from urllib.parse import urlparse
 
 from tabulate import tabulate
 
@@ -264,6 +266,11 @@ class PerformanceTester:
             f"automatic (from {_CAPACITY_SEARCH_START}, while keeping "
             f"{self.limits.describe()})"
         )
+        max_tests = _max_capacity_probes()
+        logger.info(
+            f"Expected run time:    up to {max_tests} tests, about "
+            f"{max_tests * self.duration_minutes:g} min plus pauses between tests"
+        )
         self._suite_started_at = datetime.datetime.now()
         all_results = []
         highest_pass = lowest_fail = None
@@ -430,6 +437,8 @@ class PerformanceTester:
             "bots_completed_during_test": 0,
             "total_bot_errors": 0,
             "errored_bot_ids": set(),
+            # Short description of each failure, e.g. "HTTP 500 on /response".
+            "bot_error_kinds": Counter(),
             "bot_durations": [],
             "initialization_times": [],
             "first_bot_initialized": False,
@@ -496,6 +505,7 @@ class PerformanceTester:
         while not stop_event.is_set() and time.time() < end_time:
             create_time = time.time()
             bot_id = None
+            error_kind = None
             with bot_state["lock"]:
                 bot_state["total_bots_started"] += 1
             try:
@@ -512,12 +522,13 @@ class PerformanceTester:
                 outcome = "completed"
             except DriverStopped:
                 outcome = "stopped"
-            except BaseException:
+            except BaseException as err:
                 logger.exception("Bot %s failed.", bot_id)
                 outcome = "error"
+                error_kind = _describe_bot_error(err)
             finally:
                 db.session.remove()
-            self._record_bot_end(bot_state, bot_id, outcome, end_time)
+            self._record_bot_end(bot_state, bot_id, outcome, end_time, error_kind)
             stop_event.wait(self._bounded_random_stagger())
 
     @staticmethod
@@ -530,13 +541,14 @@ class PerformanceTester:
             bot_state["running"][bot_id] = now
 
     @staticmethod
-    def _record_bot_end(bot_state, bot_id, outcome, end_time):
+    def _record_bot_end(bot_state, bot_id, outcome, end_time, error_kind=None):
         """Record how and when a bot finished."""
         now = time.time()
         with bot_state["lock"]:
             start = bot_state["running"].pop(bot_id, None)
             if outcome == "error":
                 bot_state["total_bot_errors"] += 1
+                bot_state["bot_error_kinds"][error_kind] += 1
                 if bot_id is not None:
                     bot_state["errored_bot_ids"].add(bot_id)
             elif outcome == "completed" and now < end_time:
@@ -566,8 +578,11 @@ class PerformanceTester:
         if is_debug:
             return
 
-        # Update every 2 seconds, or immediately if forced
-        if not force and current_time - bot_state["last_status_update"] < 2:
+        # Redraw a terminal every 2 seconds; logs and SSH sessions get a new
+        # line every 30 seconds instead of carriage-return redraws.
+        interactive = sys.stdout.isatty()
+        interval = 2 if interactive else 30
+        if not force and current_time - bot_state["last_status_update"] < interval:
             return
 
         bot_state["last_status_update"] = current_time
@@ -591,6 +606,10 @@ class PerformanceTester:
         # Build status line
         status = f"\U0001f916 Running: {running} | \u2713 Completed: {completed:,} | \u2717 Errors: {errors} | \u23f1 Avg: {avg_duration:.1f}s | \u23f3 {mins_left}:{secs_left:02d} left"
 
+        if not interactive:
+            print(status, flush=True)
+            return
+
         # Clear previous line and print new status
         sys.stdout.write("\r" + " " * bot_state["status_line_length"] + "\r")
         sys.stdout.write(status)
@@ -600,7 +619,7 @@ class PerformanceTester:
     def _clear_realtime_status(self):
         """Clear the status line when progress is complete."""
         is_debug = logger.getEffectiveLevel() <= logging.DEBUG
-        if not is_debug:
+        if not is_debug and sys.stdout.isatty():
             sys.stdout.write("\r" + " " * 150 + "\r")
             sys.stdout.flush()
 
@@ -909,6 +928,7 @@ class PerformanceTester:
             "total_requests": requests_during_test,
             "requests_per_sec": requests_per_sec,
             "bot_errors": bot_state["total_bot_errors"],
+            "bot_error_kinds": dict(bot_state["bot_error_kinds"].most_common()),
             "avg_response_time": avg_response_time,
             "median_response_time": median_response_time,
             "p95_response_time": p95_response_time,
@@ -991,6 +1011,43 @@ def _describe_workers(result):
     return text
 
 
+def _describe_bot_error(err):
+    """Summarize why a bot failed, e.g. ``HTTP 500 on /participant_status``.
+
+    Bots raise on the first HTTP error, so this also counts failed requests
+    that the server could not log because it could not reach the database.
+    """
+    import requests
+
+    cause, seen = err, set()
+    while cause is not None and id(cause) not in seen:
+        seen.add(id(cause))
+        response = getattr(cause, "response", None)
+        if isinstance(cause, requests.HTTPError) and response is not None:
+            route = urlparse(response.url).path.split("/")[1]
+            return f"HTTP {response.status_code} on /{route}"
+        cause = cause.__cause__ or cause.__context__
+    return type(err).__name__
+
+
+def _plural(count, noun):
+    return f"{count:,} {noun}{'' if count == 1 else 's'}"
+
+
+def _describe_bot_errors(result, limit=3):
+    """Describe a result's bot errors, naming the most common causes."""
+    text = _plural(result["bot_errors"], "bot error")
+    kinds = list((result.get("bot_error_kinds") or {}).items())
+    if not kinds:
+        return text
+    if len(kinds) == 1:
+        return f"{text} ({kinds[0][0]})"
+    named = ", ".join(f"{count:,} {kind}" for kind, count in kinds[:limit])
+    if len(kinds) > limit:
+        named += ", ..."
+    return f"{text} ({named})"
+
+
 def _mean(values):
     """Return the mean of ``values``, or ``None`` if there are none."""
     return sum(values) / len(values) if values else None
@@ -1053,6 +1110,16 @@ def format_test_results(result):
     _table_lines(outcome_rows, headers=[], colalign=("left", "right"))
     lines.append("")
 
+    error_kinds = result.get("bot_error_kinds")
+    if error_kinds:
+        _section("BOT ERRORS")
+        _table_lines(
+            [[kind, count] for kind, count in error_kinds.items()],
+            headers=[],
+            colalign=("left", "right"),
+        )
+        lines.append("")
+
     # BOT RUNTIMES
     _section("BOT RUNTIMES")
     runtime_rows = []
@@ -1111,7 +1178,9 @@ def format_test_results(result):
     _section("REQUEST METRICS")
     request_rows = [
         ["Total requests", result["total_requests"]],
-        ["Request errors", result["request_errors"]],
+        # Requests that fail before the server can log them appear only
+        # under BOT ERRORS.
+        ["Request errors (logged)", result["request_errors"]],
     ]
     if result.get("requests_per_sec") is not None:
         request_rows.append(["Throughput", f"{result['requests_per_sec']:.2f} req/s"])
@@ -1429,9 +1498,9 @@ def capacity_failures(result, limits=CapacityLimits()):
             "(use a longer --duration-minutes)"
         )
     if result.get("request_errors"):
-        reasons.append(f"{result['request_errors']} request errors")
+        reasons.append(_plural(result["request_errors"], "request error"))
     if result.get("bot_errors"):
-        reasons.append(f"{result['bot_errors']} bot errors")
+        reasons.append(_describe_bot_errors(result))
     p95 = result.get("p95_response_time")
     if p95 is None:
         reasons.append("no responses recorded")
@@ -1465,6 +1534,25 @@ def next_capacity_probe(highest_pass, lowest_fail, max_bots=_CAPACITY_SEARCH_MAX
     if lowest_fail - lower <= max(1, lower * _CAPACITY_RESOLUTION):
         return None
     return (lower + lowest_fail) // 2
+
+
+def _max_capacity_probes(max_bots=_CAPACITY_SEARCH_MAX):
+    """Return the most tests the capacity search can run, over all capacities."""
+
+    def n_probes(capacity):
+        highest_pass = lowest_fail = None
+        n = 0
+        while (
+            probe := next_capacity_probe(highest_pass, lowest_fail, max_bots)
+        ) is not None:
+            n += 1
+            if probe <= capacity:
+                highest_pass = probe
+            else:
+                lowest_fail = probe
+        return n
+
+    return max(n_probes(capacity) for capacity in range(max_bots + 1))
 
 
 def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
