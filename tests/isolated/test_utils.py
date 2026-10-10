@@ -872,10 +872,12 @@ def test_keep_alive_session_retries_a_dropped_connection():
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
+    url = f"http://127.0.0.1:{server.server_port}/response"
     try:
-        url = f"http://127.0.0.1:{server.server_port}/response"
-        assert keep_alive_session().post(url, data={"a": 1}).status_code == 200
+        with keep_alive_session() as session:
+            assert session.post(url, data={"a": 1}).status_code == 200
     finally:
         server.shutdown()
+        server.server_close()
 
     assert attempts == ["/response", "/response"]
