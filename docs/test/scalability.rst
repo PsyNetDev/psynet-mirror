@@ -181,6 +181,17 @@ whose bots didn't all start within the window counts as exceeding the limits,
 and the summary warns when starting the bots took more than a quarter of the
 test.
 
+Bots don't open websockets, so the search doesn't measure how many
+participants can wait at once. A participant on a waiting page, such as a
+barrier or ``wait_while``, keeps a websocket open, and the web worker that
+accepted it holds a Redis connection for it. Redis allows 10,000 clients by
+default, shared by the whole app, so about 10,000 participants can wait at
+once on an SSH server. A web worker's open-file limit, often 1,024 with two
+files per waiting participant, also caps it at about 500 per worker. This
+needs a Dallinger release newer than 12.4; with 12.4 and earlier, a web
+worker runs out of Redis connections once about 100 participants have waited
+on it.
+
 .. _performance_testing_server:
 
 Testing on a server
