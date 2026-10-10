@@ -4744,6 +4744,7 @@ def test_ssh_performance_test_command_forwards_zero_valued_options():
         "--max-p95-ms 800 --max-queue-p95-s 0"
     )
     assert _build_ssh_performance_test_cmd(n_bots="auto", bot_log="/tmp/b.log") == (
+        "env PSYNET_EXPERIMENT_URL=http://localhost:5000 "
         "psynet performance-test local --existing --n-bots auto --bot-log /tmp/b.log"
     )
 
