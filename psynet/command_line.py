@@ -4108,8 +4108,22 @@ def build_remote_experiment_command(app, cmd):
 
     ``docker compose exec -T`` disables TTY allocation, which is what makes the
     command safe to run when the local process has no interactive terminal.
+
+    Docker leaves an exec'd process running when its client goes away, so a
+    dropped SSH connection would leave a load test running unwatched. The SSH
+    session never writes to the container's stdin, which therefore reaches
+    end-of-file only when the session ends; a watcher then stops ``cmd``.
     """
-    return f"cd ~/dallinger/{app} && docker compose exec -T web {cmd}"
+    stop_when_disconnected = (
+        "exec 3<&0; "
+        f"{cmd} </dev/null & pid=$!; "
+        '(cat <&3 >/dev/null; kill "$pid") >/dev/null 2>&1 & '
+        'wait "$pid"'
+    )
+    return (
+        f"cd ~/dallinger/{app} && docker compose exec -T web "
+        f"sh -c {shlex.quote(stop_when_disconnected)}"
+    )
 
 
 def run_remote_experiment_command(executor, app, cmd):

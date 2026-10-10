@@ -1143,10 +1143,29 @@ def test_remote_experiment_commands_disable_tty_allocation():
     from psynet.command_line import build_remote_experiment_command
 
     command = build_remote_experiment_command("my-app", "psynet test local --existing")
-    assert command == (
-        "cd ~/dallinger/my-app && docker compose exec -T web "
-        "psynet test local --existing"
-    )
+    assert command.startswith("cd ~/dallinger/my-app && docker compose exec -T web ")
+    assert "psynet test local --existing" in command
+
+
+def _run_in_container_shell(cmd):
+    """Run ``cmd`` as the web container would, with a pipe standing in for SSH."""
+    from psynet.command_line import build_remote_experiment_command
+
+    prefix = "cd ~/dallinger/app && docker compose exec -T web "
+    in_container = build_remote_experiment_command("app", cmd).removeprefix(prefix)
+    return subprocess.Popen(in_container, shell=True, stdin=subprocess.PIPE)
+
+
+def test_remote_experiment_command_reports_the_exit_status():
+    process = _run_in_container_shell("exit 3")
+    assert process.wait(timeout=10) == 3
+    process.stdin.close()
+
+
+def test_remote_experiment_command_stops_when_the_ssh_session_ends():
+    process = _run_in_container_shell("sleep 60")
+    process.stdin.close()
+    assert process.wait(timeout=10) != 0
 
 
 def test_remote_experiment_command_echoes_all_output_and_reports_failure(capsys):
