@@ -356,6 +356,20 @@ def test_raise_open_file_limit_reaches_the_hard_limit_or_65536():
         resource.setrlimit(resource.RLIMIT_NOFILE, original)
 
 
+def test_redis_pool_grows_to_fit_the_bots():
+    from dallinger.db import redis_conn
+
+    pool = redis_conn.connection_pool
+    original = pool.max_connections
+    tester = PerformanceTester(authenticated_session=Mock(), base_url="http://x")
+    try:
+        with patch.object(tester, "_test_performance"):
+            tester._run_one_test("1/1", original + 500, bot_log_file=None)
+        assert pool.max_connections >= original + 500
+    finally:
+        pool.max_connections = original
+
+
 def test_a_test_whose_bots_did_not_all_start_is_not_within_capacity():
     result = _base_result(n_bots=640, p95_response_time=0.1, slots_started=590)
 

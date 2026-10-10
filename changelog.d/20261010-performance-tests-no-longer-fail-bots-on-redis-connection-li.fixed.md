@@ -1,0 +1,1 @@
+Fixed performance tests with more than about 100 bots failing bots with `redis.exceptions.MaxConnectionsError`, which made them under-report server capacity. The bots share one process, whose Redis connection pool now grows to fit them.

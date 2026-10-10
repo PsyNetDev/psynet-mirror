@@ -208,6 +208,18 @@ def raise_open_file_limit():
     logger.warning(f"Could not raise the open-file limit above {soft}: {error}")
 
 
+def _fit_redis_pool_to_bots(n_bots):
+    """Let every bot thread hold a Redis connection at once.
+
+    All bots share this process's Redis pool, whose redis-py default of 100
+    connections otherwise fails bots with ``MaxConnectionsError``.
+    """
+    from dallinger.db import redis_conn
+
+    pool = redis_conn.connection_pool
+    pool.max_connections = max(pool.max_connections, n_bots + 100)
+
+
 class PerformanceTester:
     def __init__(
         self,
@@ -350,6 +362,7 @@ class PerformanceTester:
         logger.info("")
         logger.info(bold("=" * 80))
         logger.info(bold(f"TEST {label}: Running with {n_bots:,} concurrent bots"))
+        _fit_redis_pool_to_bots(n_bots)
         return self._test_performance(n_bots, bot_log_file=bot_log_file)
 
     def _print_performance_summary(self, results):
