@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import uuid
 import zipfile
 from contextlib import contextmanager, nullcontext
 from pathlib import Path
@@ -4312,7 +4313,8 @@ _test_options["performance_json_output"] = click.option(
     The file will contain a top-level object with: schema_version, psynet_version,
     dallinger_version, python_version, platform, experiment_label,
     started_at / finished_at (ISO timestamps), options (n_bots_sweep,
-    duration_minutes, stagger_interval_s, time_factor), and results
+    capacity_search, max_p95_s, max_queue_p95_s, duration_minutes,
+    stagger_interval_s, time_factor), and results
     (one entry per bot count tested, with all metrics).
     Useful for downstream consumption (e.g. benchmarking tools like asv).""",
 )
@@ -4567,7 +4569,6 @@ def _check_existing_server_answers():
 
 
 _KEPT_PERFORMANCE_LOGS = 20
-_REMOTE_BOT_LOG = "/tmp/psynet_bots_performance_test.log"
 
 
 def _performance_log_directory():
@@ -4975,20 +4976,19 @@ def performance_test__docker_ssh(ctx, app, server, json_output=None, **options):
             "Use 'psynet performance-test local --json-output' instead.",
         )
 
-    cmd = _build_ssh_performance_test_cmd(**options, bot_log=_REMOTE_BOT_LOG)
+    # A name unique to this run, so a run that fails before writing its log
+    # never copies an older one.
+    remote_bot_log = f"/tmp/psynet_bots_{uuid.uuid4().hex}.log"
+    cmd = _build_ssh_performance_test_cmd(**options, bot_log=remote_bot_log)
     executor = _ssh_executor(server)
     try:
         run_remote_experiment_command(executor, app, cmd)
     finally:
-        _move_remote_bot_log(executor, app, _REMOTE_BOT_LOG)
+        _move_remote_bot_log(executor, app, remote_bot_log)
 
 
 def _move_remote_bot_log(executor, app, remote_path):
-    """Move the bot log out of the app's web container into the local log folder.
-
-    Removing the remote copy stops a later run that fails before writing its
-    own log from copying this run's log instead.
-    """
+    """Move the bot log out of the app's web container into the local log folder."""
     path = shlex.quote(remote_path)
     move = shlex.quote(f"cat {path} 2>/dev/null; rm -f {path}")
     try:

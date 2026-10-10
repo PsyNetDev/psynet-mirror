@@ -158,6 +158,20 @@ def test_bots_that_fail_count_as_started_and_errored(monkeypatch):
     assert kinds["HTTP 500 on /participant_status"] == bot_state["total_bot_errors"] - 1
 
 
+@pytest.mark.parametrize("url", ["http://localhost:5000", None])
+def test_bot_errors_without_a_route_are_still_described(url):
+    import requests
+
+    from psynet.perf_test import _describe_bot_error
+
+    response = requests.Response()
+    response.status_code = 502
+    response.url = url
+    assert _describe_bot_error(requests.HTTPError(response=response)) == (
+        "HTTP 502 on /"
+    )
+
+
 def test_capacity_summary_names_the_bot_errors():
     results = [
         _base_result(n_bots=10),

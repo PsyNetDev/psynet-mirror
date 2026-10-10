@@ -183,7 +183,7 @@ test.
 
 Bots don't open websockets, so the search doesn't measure how many
 participants can wait at once. A participant on a waiting page, such as a
-barrier or ``wait_while``, keeps a websocket open, and the web worker that
+barrier or :func:`~psynet.page.wait_while`, keeps a websocket open, and the web worker that
 accepted it holds a Redis connection for it. Redis allows 10,000 clients by
 default, shared by the whole app, so about 10,000 participants can wait at
 once on an SSH server. A web worker's open-file limit, often 1,024 with two

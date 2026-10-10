@@ -8,7 +8,7 @@ response times and async queue waits. Measurements cover only the test window:
 requests logged before the bots were told to stop and processes that started
 by then, plus the wait of the oldest process still queued at the end.
 
-:func:`find_capacity <PerformanceTester.find_capacity>` searches for the
+:meth:`PerformanceTester.find_capacity` searches for the
 largest bot count that stays within :class:`CapacityLimits`. Bots share this
 process, so experiment code they run must not rely on per-process state.
 """
@@ -1037,7 +1037,7 @@ def _describe_bot_error(err):
         seen.add(id(cause))
         response = getattr(cause, "response", None)
         if isinstance(cause, requests.HTTPError) and response is not None:
-            route = urlparse(response.url).path.split("/")[1]
+            route = urlparse(response.url or "").path.strip("/").split("/")[0]
             return f"HTTP {response.status_code} on /{route}"
         cause = cause.__cause__ or cause.__context__
     return type(err).__name__

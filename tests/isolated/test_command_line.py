@@ -4712,6 +4712,9 @@ def test_ssh_performance_test_command_forwards_zero_valued_options():
         "--n-bots 5,10 --stagger 0 --time-factor 0 --duration-minutes 1.5 "
         "--max-p95-ms 800 --max-queue-p95-s 0"
     )
+    assert _build_ssh_performance_test_cmd(n_bots="auto", bot_log="/tmp/b.log") == (
+        "psynet performance-test local --existing --n-bots auto --bot-log /tmp/b.log"
+    )
 
 
 def test_ssh_performance_test_command_omits_unspecified_options():
