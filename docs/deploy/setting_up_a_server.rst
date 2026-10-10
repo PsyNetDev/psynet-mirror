@@ -18,18 +18,18 @@ requirements:
   as well (a wildcard record such as ``*.my-server.example.org``). Each
   experiment is served at a subdomain.
 
-For a live study with several participants at a time, choose a machine with
-at least 16 GB of RAM and 4 CPU cores, such as an AWS ``m7i.xlarge``
-instance. A pilot runs on a smaller machine such as ``m7i.large``. As a rough
-guide, allow 5 GB of RAM for each experiment that runs on the server at the
-same time.
+A pilot runs on a machine with 2 CPU cores and 8 GB of RAM, such as an AWS
+``m7i.large`` instance. A live study usually needs at least 4 cores and 16 GB,
+such as an ``m7i.xlarge``; to size the server for your study, see
+:ref:`choosing_server_size`. Allow 5 GB of RAM for each experiment that runs
+on the server at the same time.
 
 The usual choices are:
 
 - **An AWS EC2 instance provisioned by Dallinger.** One command creates the
   machine, its DNS records and its registration. You pay for the instance
-  while it exists; at the time of writing (January 2026) an ``m7i.xlarge``
-  costs around $0.20 an hour, so a five-hour study costs around $1.
+  while it exists; at the time of writing (October 2026) an ``m7i.xlarge``
+  costs around $0.23 an hour, so a five-hour study costs around $1.
 - **A virtual machine from any cloud provider**, such as Hetzner, Contabo, or
   AWS configured by hand in the console.
 - **A physical machine** run by you or your institution.
@@ -50,6 +50,73 @@ records before you register it; see
    - your SSH key is registered wherever the lab requires it, for example
      on GitLab or on the lab's servers;
    - you have received the lab's credential files (see below).
+
+.. _choosing_server_size:
+
+Choosing a server size
+^^^^^^^^^^^^^^^^^^^^^^
+
+How many participants a server can serve at the same time depends mostly on
+its CPU. What matters is the number taking part at the same moment, not the
+total: recruitment platforms can send many participants within minutes of a
+study opening, so plan for that peak rather than for the average.
+
+In one test, the ``mcmcp`` demo ran on a desktop server with 8 cores, 16 CPU
+threads and 32 GB of RAM (AMD Ryzen 7 5800X). With bots working at a
+realistic pace, about 560 bots at once kept the 95th-percentile response time
+under 500 ms, and at 600 it rose to about 900 ms. That is about 35
+participants per CPU thread, even though the bots ran on the same server and
+used some of its CPU. Memory was not the limit. (With Dallinger 12.4
+and earlier, a database connection limit capped the same test at about 360.)
+
+A cloud vCPU is one CPU thread, often on a slower core, and most experiments
+do more work per page than this demo, so as a starting point plan on 20 to 30
+participants at a time per vCPU:
+
+.. list-table::
+   :header-rows: 1
+
+   * - AWS instance
+     - vCPUs
+     - RAM
+     - Participants at a time
+     - Price per hour
+   * - ``m7i.large``
+     - 2
+     - 8 GB
+     - 40–60
+     - $0.12
+   * - ``m7i.xlarge``
+     - 4
+     - 16 GB
+     - 80–120
+     - $0.23
+   * - ``m7i.2xlarge``
+     - 8
+     - 32 GB
+     - 160–240
+     - $0.47
+   * - ``m7i.4xlarge``
+     - 16
+     - 64 GB
+     - 320–480
+     - $0.93
+
+Prices are on-demand Linux prices in the London region (``eu-west-2``) in
+October 2026; US regions are about 15% cheaper. See AWS's lists of
+`instance types <https://aws.amazon.com/ec2/instance-types/>`_ and
+`on-demand prices <https://aws.amazon.com/ec2/pricing/on-demand/>`_.
+These figures are only a starting point. Before a large study, measure your
+own experiment on the server you will use (see
+:ref:`performance_testing_server`), and cap the number of participants at a
+time with ``max_concurrent_participants``.
+
+The server is a small part of a study's cost. 100 participants at once, paid
+£9 an hour, cost about £900 an hour, while an ``m7i.4xlarge`` that can serve
+several times as many costs under $1 an hour. A server that is too small
+makes pages slow or fail for everyone taking part, which wastes their time
+and your payments, so choose a size with room to spare. Remember to tear the
+server down afterwards: a forgotten ``m7i.4xlarge`` costs about $22 a day.
 
 Configuring your computer
 -------------------------
