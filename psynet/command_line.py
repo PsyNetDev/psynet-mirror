@@ -4068,9 +4068,9 @@ def _rerun_in_isolated_test_environment():
 
     Dallinger connected to the shared database when this module was imported,
     so the switch needs a new process; see :mod:`psynet.isolated_environment`.
-    The child re-runs the whole original command line (``sys.orig_argv``, for
-    example ``psynet test local --n-bots 4``), and this process then exits
-    with its code.
+    The child re-runs the whole original command line (for example
+    ``psynet test local --n-bots 4``) with this interpreter, and this process
+    then exits with its code. A second Ctrl+C kills the child.
     """
     from .isolated_environment import IsolatedEnvironment, check_no_debug_server
     from .services import SERVICES_CHECKED_ENV_VAR, ensure_local_services
@@ -4095,13 +4095,17 @@ def _rerun_in_isolated_test_environment():
             [sys.executable, *sys.orig_argv[1:]],
             env={**environment.env, SERVICES_CHECKED_ENV_VAR: "1"},
         )
+        interrupted = False
         while True:
             try:
                 exit_code = process.wait()
                 break
             except KeyboardInterrupt:
-                # The child got the same Ctrl+C; let it stop its servers.
-                pass
+                # The child got the same Ctrl+C; let it stop its servers,
+                # unless the user presses Ctrl+C again.
+                if interrupted and process.poll() is None:
+                    process.kill()
+                interrupted = True
     # A child killed by signal N reports -N; shells report 128 + N.
     sys.exit(exit_code if exit_code >= 0 else 128 - exit_code)
 

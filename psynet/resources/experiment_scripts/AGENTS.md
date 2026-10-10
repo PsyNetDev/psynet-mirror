@@ -35,8 +35,7 @@ In Cursor, disable sandboxing when running PsyNet commands by setting
 can run while another experiment is being served or tested. It refuses to run
 in a directory that `psynet debug` is serving, because both create and remove
 generated files there; test from a copy (such as a git worktree) instead.
-`psynet debug
-local` sessions, however, share port 5000, the PostgreSQL database, Redis and
+`psynet debug local` sessions, however, share port 5000, the PostgreSQL database, Redis and
 Dallinger's development folder, and starting one stops the other's worker
 processes. Before `psynet debug local`, check that nothing is listening on
 port 5000 (`lsof -nP -iTCP:5000 -sTCP:LISTEN`). If
