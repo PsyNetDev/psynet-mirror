@@ -1,0 +1,1 @@
+Added guidance on choosing a server size to "Setting up a server": a measured example of about 35 participants at a time per CPU thread, a rule of thumb of 20 to 30 per vCPU with rough capacities and prices for AWS `m7i` instances, and a comparison of server costs with participant payments.
