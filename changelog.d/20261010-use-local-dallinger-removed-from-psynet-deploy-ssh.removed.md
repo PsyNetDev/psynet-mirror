@@ -1,0 +1,1 @@
+Removed `--use-local-dallinger` from `psynet deploy ssh`, so live deployments always install the Dallinger version pinned in `requirements.txt`. Use `psynet debug ssh --use-local-dallinger` to try a local Dallinger checkout on a server.

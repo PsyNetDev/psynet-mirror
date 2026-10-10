@@ -31,6 +31,13 @@ RUN if test -f prepare_docker_image.sh ; then bash prepare_docker_image.sh ; fi
 
 COPY . /experiment
 
+# ``psynet debug ssh --use-local-psynet`` stages a wheel of the local PsyNet
+# checkout, which replaces the requirements.txt version.
+RUN set -- /experiment/psynet-*.whl; \
+    if [ -f "$1" ]; then \
+        uv pip install --system --reinstall-package psynet "psynet[experiment] @ file://$1"; \
+    fi
+
 # A local Dallinger wheel staged by ``DALLINGER_SOURCE`` / editable install
 # must win over the Git pin installed from requirements/constraints above.
 RUN set -- /experiment/dallinger-*.whl; \

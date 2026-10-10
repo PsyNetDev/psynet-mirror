@@ -97,12 +97,45 @@ ensure_runtime()
 
 logger = get_logger()
 
+
+def _reject_ingress_without_dallinger_support(ctx, param, value):
+    if value is not None:
+        raise click.UsageError(
+            "--ingress needs a Dallinger version with Cloudflare ingress support, "
+            "which this Dallinger installation does not have. Install Dallinger "
+            "from its master branch, or omit --ingress to use classic ingress."
+        )
+    return value
+
+
 try:
     from dallinger.command_line.docker_ssh import option_ingress
 except ImportError:  # pragma: no cover - older Dallinger without Cloudflare ingress
+    option_ingress = click.option(
+        "--ingress",
+        type=click.Choice(["classic", "cloudflare"]),
+        default=None,
+        callback=_reject_ingress_without_dallinger_support,
+        help=(
+            "How participants reach the experiment. Cloudflare ingress needs a "
+            "newer Dallinger than the one installed."
+        ),
+    )
 
-    def option_ingress(func):
-        return func
+
+_LOCAL_PSYNET_WHEEL_PATTERN = "psynet-*.whl"
+
+
+def _use_local_psynet_option(func):
+    return click.option(
+        "--use-local-psynet",
+        is_flag=True,
+        default=False,
+        help=(
+            "Build the editable PsyNet checkout into the experiment image instead "
+            "of installing the PsyNet version in requirements.txt."
+        ),
+    )(func)
 
 
 def _use_local_dallinger_option(func):
@@ -1476,6 +1509,7 @@ def _pre_launch(
     server=None,
     app=None,
     update=False,
+    use_local_psynet=False,
 ):
     from .experiment import get_experiment
 
@@ -1516,7 +1550,7 @@ def _pre_launch(
         if update:
             _check_ssh_update(server, app, mode)
 
-    run_pre_checks(mode, local_, heroku, docker, app)
+    run_pre_checks(mode, local_, heroku, docker, app, use_local_psynet)
 
     if os.environ.get("DALLINGER_SOURCE"):
         os.environ.pop("DALLINGER_NO_EGG_BUILD", None)
@@ -1663,7 +1697,6 @@ def _deploy__docker_heroku(ctx, app, archive):
     help="DNS name to use. Must resolve all its subdomains to the IP address specified as ssh host",
 )
 @option_ingress
-@_use_local_dallinger_option
 @_option_ssh_update
 @click.pass_context
 def deploy__docker_ssh(
@@ -1673,15 +1706,18 @@ def deploy__docker_ssh(
     dns_host,
     server,
     ingress=None,
-    use_local_dallinger=False,
     update=False,
 ):
     """
     Deploy the experiment to a remote server via Docker and SSH.
+
+    The image always installs the PsyNet and Dallinger versions pinned in
+    requirements.txt. To try local checkouts, use ``psynet debug ssh`` with
+    ``--use-local-psynet`` or ``--use-local-dallinger``.
     """
     try:
         _validate_ssh_deploy_update(app, archive, update)
-        _configure_dallinger_image_source(use_local_dallinger=use_local_dallinger)
+        _configure_dallinger_image_source(use_local_dallinger=False)
 
         _pre_launch(
             ctx,
@@ -1752,7 +1788,8 @@ def _configure_dallinger_image_source(use_local_dallinger=False):
         # Dallinger bakes DALLINGER_SOURCE whenever it is set.
         if os.environ.pop("DALLINGER_SOURCE", None):
             click.echo(
-                "Ignoring DALLINGER_SOURCE; pass --use-local-dallinger to bake it."
+                "Ignoring DALLINGER_SOURCE; only "
+                "'psynet debug ssh --use-local-dallinger' bakes it."
             )
         return
     os.environ.pop("DALLINGER_NO_EGG_BUILD", None)
@@ -1773,6 +1810,37 @@ def _configure_dallinger_image_source(use_local_dallinger=False):
         )
     os.environ["DALLINGER_SOURCE"] = source
     click.echo(f"Baking local Dallinger from {source} into the experiment image.")
+
+
+@contextmanager
+def _local_psynet_wheel(enabled):
+    """Build the editable PsyNet checkout into a wheel for the experiment image.
+
+    The wheel goes in the experiment directory, so it is sent with the other
+    experiment files, and the experiment Dockerfile installs it over the
+    requirements.txt version. It is removed again afterwards.
+    """
+    if not enabled:
+        yield
+        return
+    from dallinger.utils import build_and_place
+
+    from .experiment_scaffold import get_editable_psynet_source
+
+    source = get_editable_psynet_source()
+    if source is None:
+        raise click.UsageError("--use-local-psynet needs an editable PsyNet checkout.")
+    if _LOCAL_PSYNET_WHEEL_PATTERN not in Path("Dockerfile").read_text():
+        raise click.UsageError(
+            "This experiment's Dockerfile does not install a local PsyNet wheel. "
+            "Run 'psynet scripts update' to refresh it."
+        )
+    click.echo(f"Baking local PsyNet from {source} into the experiment image.")
+    wheel = Path(build_and_place(str(source), os.getcwd()))
+    try:
+        yield
+    finally:
+        wheel.unlink(missing_ok=True)
 
 
 def _awaken_ssh_app(server, app):
@@ -1988,7 +2056,9 @@ def _check_experiment_directory(mode, *, require_git_commit=False):
             )
 
 
-def run_pre_checks(mode, local_, heroku=False, docker=False, app=None):
+def run_pre_checks(
+    mode, local_, heroku=False, docker=False, app=None, use_local_psynet=False
+):
     from .experiment import get_experiment
     from .utils import check_todos_before_deployment
 
@@ -2086,7 +2156,10 @@ def run_pre_checks(mode, local_, heroku=False, docker=False, app=None):
                 check_prolific_payment(exp, config)
 
         if mode == "sandbox":
-            run_pre_checks_sandbox()
+            # The image installs the local checkout, so the requirements.txt
+            # pin does not decide which PsyNet runs.
+            if not use_local_psynet:
+                run_pre_checks_sandbox()
         elif mode == "live":
             run_pre_checks_deploy(local_, recruiter)
 
@@ -2167,6 +2240,7 @@ def debug__docker_heroku(ctx, app, archive):
     help="DNS name to use. Must resolve all its subdomains to the IP address specified as ssh host",
 )
 @option_ingress
+@_use_local_psynet_option
 @_use_local_dallinger_option
 @_option_ssh_update
 @click.pass_context
@@ -2177,6 +2251,7 @@ def debug__docker_ssh(
     server,
     dns_host,
     ingress=None,
+    use_local_psynet=False,
     use_local_dallinger=False,
     update=False,
 ):
@@ -2199,18 +2274,20 @@ def debug__docker_ssh(
             server=server,
             app=app,
             update=update,
+            use_local_psynet=use_local_psynet,
         )
 
-        # Note: PsyNet bypasses Dallinger's deploy-from-archive system and uses its own, so we set archive_path=None.
-        result = _invoke_docker_ssh_deploy(
-            ctx,
-            sandbox,
-            server=server,
-            dns_host=dns_host,
-            app=app,
-            ingress=ingress,
-            update=update,
-        )
+        with _local_psynet_wheel(enabled=use_local_psynet):
+            # Note: PsyNet bypasses Dallinger's deploy-from-archive system and uses its own, so we set archive_path=None.
+            result = _invoke_docker_ssh_deploy(
+                ctx,
+                sandbox,
+                server=server,
+                dns_host=dns_host,
+                app=app,
+                ingress=ingress,
+                update=update,
+            )
 
         _post_deploy(result)
     finally:
@@ -2857,6 +2934,14 @@ def _ambiguous_psynet_requirement_message(requirement: str | None) -> str:
                 "  psynet setup --psynet-source commit\n"
                 "to pin a pushed Git commit before deploying."
             )
+    from .experiment_scaffold import get_editable_psynet_source
+
+    if get_editable_psynet_source() is not None:
+        parts.append(
+            "\n\nTo try your editable PsyNet checkout on a server without "
+            "pinning it, run 'psynet debug ssh --use-local-psynet'. "
+            "'psynet deploy' always needs a pin."
+        )
     parts.append(
         "\n\nExamples:\n"
         + "\n".join(examples)

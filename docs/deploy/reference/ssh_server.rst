@@ -60,6 +60,13 @@ experiment is reachable at a first-level hostname such as
 
     psynet deploy ssh --app consonance --ingress cloudflare
 
+Use a Cloudflare tunnel for a server on a private network, such as a lab
+computer: Let's Encrypt cannot issue certificates for a private address, so
+classic ingress cannot serve participants there. To make it the server's
+default, register it with ``dallinger docker-ssh servers add --host <host>
+--default-ingress cloudflare``. Cloudflare ingress needs a Dallinger version
+newer than 12.4.
+
 Classic ``--dns-host`` is only for host Caddy. Cloudflare hostnames use
 ``cloudflare_dns_zone`` from Dallinger config (for example
 ``science-of-music.org``).
@@ -112,14 +119,18 @@ writable, retrying with a root Alpine container if needed.
 ``psynet export ssh`` reaches a deployment at the public origin recorded in
 its deployment manifest.
 
-To deploy with an unreleased Dallinger checkout, bake it into the image::
+``psynet deploy ssh`` always installs the PsyNet and Dallinger versions pinned
+in ``requirements.txt``. To try unreleased PsyNet or Dallinger checkouts on a
+server, bake them into a debug deployment's image::
 
-    psynet deploy ssh --app your-app-name --use-local-dallinger
+    psynet debug ssh --app your-app-name --use-local-psynet --use-local-dallinger
 
-PYTHONPATH is not enough: the image still pip-installs the Dallinger version
-pinned in ``pyproject.toml``. ``--use-local-dallinger`` builds a wheel from
-the editable checkout (or ``DALLINGER_SOURCE``), and the image build installs
-it after ``COPY .``.
+Each option builds a wheel from the editable checkout (for Dallinger, or
+``DALLINGER_SOURCE``), and the image build installs it after ``COPY .``, over
+the pinned version. ``--use-local-psynet`` also skips the checks on the PsyNet
+pin, so bundled demos, whose ``requirements.txt`` lists plain ``psynet``, can
+be deployed this way. It needs the experiment's ``Dockerfile`` from this PsyNet
+version; run ``psynet scripts update`` if PsyNet says it is out of date.
 
 Services
 ^^^^^^^^

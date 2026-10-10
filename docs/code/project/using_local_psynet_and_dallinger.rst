@@ -45,6 +45,16 @@ replacing the editable install, so rerun
 :ref:`dependencies_updating_psynet` shows the format for pinning a branch or
 tag by hand.
 
+To try the checkout on a server without pinning or pushing it, including
+uncommitted changes, launch a debug deployment that builds it into the
+image:
+
+.. code-block:: bash
+
+    psynet debug ssh --app my-test --use-local-psynet
+
+``psynet deploy`` does not offer this, so live deployments always use a pin.
+
 Use a local Dallinger
 ---------------------
 
@@ -64,6 +74,9 @@ To deploy with a Dallinger branch, push it and add a pin to
 ::
 
     dallinger@git+https://github.com/<your-username>/Dallinger@<branch-name>#egg=dallinger
+
+For a debug deployment, ``psynet debug ssh --use-local-dallinger`` builds the
+editable checkout into the image instead.
 
 Contribute a change
 -------------------

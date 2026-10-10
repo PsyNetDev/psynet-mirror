@@ -84,15 +84,40 @@ class TestCommandLine(object):
         assert "--app" in hibernate.output
         assert "--server" in awaken.output
 
-    def test_deploy_ssh_exposes_ingress_when_dallinger_supports_it(self):
-        from psynet.command_line import deploy__docker_ssh
+    def test_only_debug_ssh_can_bake_local_checkouts(self):
+        from psynet.command_line import debug__docker_ssh, deploy__docker_ssh
 
-        # ``dallinger.command_line.docker_ssh`` as an attribute is the click group.
-        dssh = importlib.import_module("dallinger.command_line.docker_ssh")
-        names = [param.name for param in deploy__docker_ssh.params]
-        if hasattr(dssh, "option_ingress"):
-            assert "ingress" in names
-        assert "use_local_dallinger" in names
+        deploy_names = {param.name for param in deploy__docker_ssh.params}
+        debug_names = {param.name for param in debug__docker_ssh.params}
+        assert "ingress" in deploy_names and "ingress" in debug_names
+        assert {"use_local_psynet", "use_local_dallinger"} <= debug_names
+        assert not {"use_local_psynet", "use_local_dallinger"} & deploy_names
+
+    def test_local_psynet_wheel_is_staged_for_the_image_build_only(
+        self, monkeypatch, tmp_path
+    ):
+        from psynet import command_line, experiment_scaffold
+
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(
+            experiment_scaffold, "get_editable_psynet_source", lambda: tmp_path
+        )
+
+        def build_and_place(source, destination):
+            (Path(destination) / "psynet-1.0-py3-none-any.whl").write_text("")
+            return "psynet-1.0-py3-none-any.whl"
+
+        monkeypatch.setattr("dallinger.utils.build_and_place", build_and_place)
+
+        Path("Dockerfile").write_text("FROM python\n")
+        with pytest.raises(click.UsageError, match="psynet scripts update"):
+            with command_line._local_psynet_wheel(enabled=True):
+                pass
+
+        Path("Dockerfile").write_text("RUN set -- /experiment/psynet-*.whl\n")
+        with command_line._local_psynet_wheel(enabled=True):
+            assert Path("psynet-1.0-py3-none-any.whl").exists()
+        assert not list(tmp_path.glob("*.whl"))
 
     def test_awaken_ssh_app_does_not_require_a_front_door(self):
         from psynet.command_line import _awaken_ssh_app
