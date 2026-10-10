@@ -1410,10 +1410,6 @@ class ParticipantDriver:
 
         Parameters
         ----------
-        page_time_started : float
-            The time the page started (from time.monotonic()).
-        status : dict
-            The status dictionary for the participant.
         time_factor : float
             Factor to multiply the simulated page time by.
         """
