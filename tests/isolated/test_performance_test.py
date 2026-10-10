@@ -248,6 +248,7 @@ def test_capacity_search_brackets_then_bisects(capacity, expected_probes):
         patch.object(tester, "_test_performance", side_effect=fake_test),
         patch.object(tester, "_pause_between_tests"),
         patch("psynet.perf_test.raise_open_file_limit"),
+        patch("psynet.perf_test._fit_redis_pool_to_bots"),
     ):
         results = tester.find_capacity()
 
@@ -370,18 +371,24 @@ def test_raise_open_file_limit_reaches_the_hard_limit_or_65536():
         resource.setrlimit(resource.RLIMIT_NOFILE, original)
 
 
-def test_redis_pool_grows_to_fit_the_bots():
-    from dallinger.db import redis_conn
+@pytest.mark.parametrize("blocking", [False, True])
+def test_redis_pool_lets_every_bot_hold_a_connection(monkeypatch, blocking):
+    import redis
+    from dallinger import db
 
-    pool = redis_conn.connection_pool
-    original = pool.max_connections
+    if blocking:
+        pool = redis.BlockingConnectionPool(max_connections=2, timeout=0.1)
+    else:
+        pool = redis.ConnectionPool(max_connections=2)
+    monkeypatch.setattr(db, "redis_conn", redis.Redis(connection_pool=pool))
     tester = PerformanceTester(authenticated_session=Mock(), base_url="http://x")
-    try:
-        with patch.object(tester, "_test_performance"):
-            tester._run_one_test("1/1", original + 500, bot_log_file=None)
-        assert pool.max_connections >= original + 500
-    finally:
-        pool.max_connections = original
+    with patch.object(tester, "_test_performance"):
+        tester._run_one_test("1/1", 5, bot_log_file=None)
+
+    connections = [pool.get_connection() for _ in range(105)]
+    for connection in connections:
+        pool.release(connection)
+    pool.disconnect()
 
 
 def test_a_test_whose_bots_did_not_all_start_is_not_within_capacity():

@@ -1,1 +1,1 @@
-Fixed performance tests with more than about 100 bots failing bots with `redis.exceptions.MaxConnectionsError`, which made them under-report server capacity. The bots share one process, whose Redis connection pool now grows to fit them.
+Fixed performance tests with more than about 100 bots failing bots on Redis connection limits, which made them under-report server capacity. The bots share one process, whose Redis connection pool now grows to fit them, including the waiting pool used by newer Dallinger versions, which holds up to 1,000 connections.

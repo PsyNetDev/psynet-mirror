@@ -4654,8 +4654,12 @@ def test_experiment_never_completes_during_performance_test(monkeypatch):
             dict(duration_minutes=0, stagger_interval_s=0.0, time_factor=0),
         ),
         ({}, dict(duration_minutes=2.0, stagger_interval_s=0.5, time_factor=1.0)),
+        (
+            dict(n_bots="auto"),
+            dict(duration_minutes=2.0, stagger_interval_s=0.5, time_factor=1.0),
+        ),
     ],
-    ids=["explicit-zeros", "defaults"],
+    ids=["explicit-zeros", "defaults", "capacity-search"],
 )
 def test_performance_test_options_reach_the_tester(options, expected):
     """Explicit zeros are kept; omitted options use the experiment's defaults."""
@@ -4673,6 +4677,7 @@ def test_performance_test_options_reach_the_tester(options, expected):
     )
     tester = Mock()
     tester.run.return_value = []
+    tester.find_capacity.return_value = []
 
     with (
         patch("logging.getLogger", return_value=Mock(handlers=[])),
@@ -4694,6 +4699,11 @@ def test_performance_test_options_reach_the_tester(options, expected):
         n_bots=experiment.test_n_bots,
         limits=CapacityLimits(),
         **expected,
+    )
+    searching = options.get("n_bots") == "auto"
+    assert (tester.find_capacity.called, tester.run.called) == (
+        searching,
+        not searching,
     )
 
 

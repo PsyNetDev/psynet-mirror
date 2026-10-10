@@ -211,13 +211,24 @@ def raise_open_file_limit():
 def _fit_redis_pool_to_bots(n_bots):
     """Let every bot thread hold a Redis connection at once.
 
-    All bots share this process's Redis pool, whose redis-py default of 100
-    connections otherwise fails bots with ``MaxConnectionsError``.
+    All bots share this process's Redis pool. A plain ``ConnectionPool`` fails
+    bots with ``MaxConnectionsError`` at its limit (100 by default in
+    redis-py 8). A ``BlockingConnectionPool`` makes them wait, and its queue
+    of free slots is sized when it is created, so that queue grows too.
     """
+    import redis
     from dallinger.db import redis_conn
 
     pool = redis_conn.connection_pool
-    pool.max_connections = max(pool.max_connections, n_bots + 100)
+    needed = n_bots + 100
+    if pool.max_connections >= needed:
+        return
+    extra = needed - pool.max_connections
+    pool.max_connections = needed
+    if isinstance(pool, redis.BlockingConnectionPool):
+        pool.pool.maxsize = needed
+        for _ in range(extra):
+            pool.pool.put_nowait(None)
 
 
 class PerformanceTester:
