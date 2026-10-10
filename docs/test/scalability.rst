@@ -216,8 +216,8 @@ debug mode, then run the test over SSH. The bots then run inside the server's
 web container and send their requests straight to the experiment server,
 skipping the server's web proxy and any Cloudflare tunnel, so the test
 measures the experiment itself. They still take a little of the server's
-CPU, and a capacity search loads the whole machine, so on a shared server
-check with the other users first:
+CPU (about half a core for 480 bots), and a capacity search loads the whole
+machine, so on a shared server check with the other users first:
 
 .. code-block:: bash
 

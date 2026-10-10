@@ -61,16 +61,21 @@ its CPU. What matters is the number taking part at the same moment, not the
 total: recruitment platforms can send many participants within minutes of a
 study opening, so plan for that peak rather than for the average.
 
-In one test, the ``mcmcp`` demo ran on a desktop server with 8 cores, 16 CPU
-threads and 32 GB of RAM (AMD Ryzen 7 5800X). With bots working at a
-realistic pace, about 560 bots at once kept the 95th-percentile response time
-under 500 ms, and at 600 it rose to about 900 ms. That is about 35
-participants per CPU thread, even though the bots ran on the same server and
-used some of its CPU. Memory was not the limit. (With Dallinger 12.4
-and earlier, a database connection limit capped the same test at about 360.)
+In one test, a simple rating experiment (ten static trials and one async
+process) ran on a desktop server with 8 cores, 16 CPU threads and 32 GB of
+RAM (AMD Ryzen 7 5800X). With 480 bots at once working at a realistic pace,
+the 95th-percentile response time was about 100 ms, with no errors. The
+experiment used about 7 of the 16 threads (5 for the web workers, 2 for the
+database), so the server could probably take a few hundred more. Memory
+was not the limit: the experiment used about 4 GB.
+
+With Dallinger 12.4 and earlier, the database connection pool caps every
+docker-ssh server at about 200 participants at a time, whatever its size: in
+the same test, the response time rose to over 400 ms at 320 bots while most
+of the CPU sat idle.
 
 A cloud vCPU is one CPU thread, often on a slower core, and most experiments
-do more work per page than this demo, so as a starting point plan on 20 to 30
+do more work per page than this one, so as a starting point plan on 20 to 30
 participants at a time per vCPU:
 
 .. list-table::
