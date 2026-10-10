@@ -1364,8 +1364,12 @@ class ParticipantDriver:
         if _status_is_timeline_hold(self.status):
             # Ordinary Next on an unready hold takes FOR UPDATE and busy-loops
             # parallel bots. Hold-resume already skipped the row lock; pause
-            # so last-arrival can skip this waiter.
-            self._sleep(_TIMELINE_HOLD_POLL_SECONDS)
+            # so last-arrival can skip this waiter. Paced bots poll like a
+            # browser's safety poll, so performance tests see realistic load.
+            poll_seconds = _TIMELINE_HOLD_POLL_SECONDS
+            if time_factor > 0:
+                poll_seconds = self.status["page"].get("check_interval", poll_seconds)
+            self._sleep(poll_seconds)
 
         return self.is_working
 
