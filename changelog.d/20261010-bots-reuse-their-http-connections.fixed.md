@@ -1,0 +1,1 @@
+Bots now keep their HTTP connections open between pages, as a browser does. Before, each page load and answer opened a new connection, so a performance test over HTTPS, and especially through a Cloudflare tunnel, measured the bots' own CPU rather than the server's capacity.

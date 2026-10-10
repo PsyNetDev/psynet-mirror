@@ -1304,9 +1304,26 @@ class ParticipantDriver:
         Run the participant through the entire experiment.
         """
         start_time = time.monotonic()
-        self.run_to_completion(render_pages, time_factor)
+        try:
+            self.run_to_completion(render_pages, time_factor)
+        finally:
+            session = self.__dict__.pop("_http_session", None)
+            if session is not None:
+                session.close()
         total_experiment_time = time.monotonic() - start_time
         self._report_stats(total_experiment_time)
+
+    @property
+    def http_session(self):
+        """Return this participant's own ``requests.Session``, as a browser tab would keep.
+
+        Reusing connections keeps bots cheap under load; opening a new HTTPS
+        connection for every request can make the bots, not the server, the
+        bottleneck of a performance test.
+        """
+        if "_http_session" not in self.__dict__:
+            self.__dict__["_http_session"] = requests.Session()
+        return self.__dict__["_http_session"]
 
     def take_page(
         self,
@@ -1397,7 +1414,7 @@ class ParticipantDriver:
         redirects to the live page, which ``requests`` follows.
         """
         _retry_busy_http(
-            lambda: requests.get(
+            lambda: self.http_session.get(
                 f"{self.experiment.base_url}/timeline",
                 params={"unique_id": self.participant_unique_id},
             ),
@@ -1512,7 +1529,7 @@ class ParticipantDriver:
                     file_obj = file_tuple[1]
                     if hasattr(file_obj, "seek"):
                         file_obj.seek(0)
-                return requests.post(
+                return self.http_session.post(
                     f"{self.experiment.base_url}/response",
                     data={"json": json.dumps(submission_data)},
                     files=files,
