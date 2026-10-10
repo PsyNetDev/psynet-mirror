@@ -1400,15 +1400,20 @@ _option_ssh_update = click.option(
 _SSH_COMMAND_FOR_MODE = {"sandbox": "psynet debug ssh", "live": "psynet deploy ssh"}
 
 
+def _ssh_executor(server, app=None):
+    """Return a Dallinger SSH ``Executor`` connected to a configured server."""
+    from dallinger.command_line.docker_ssh import Executor
+
+    server_info = CONFIGURED_HOSTS[server]
+    return Executor(server_info["host"], user=server_info.get("user"), app=app)
+
+
 def _read_running_deployment_info(server, app):
     """Return the ``deployment_info`` baked into a running SSH app's image.
 
     A stopped ``web``, as in a hibernated app, is read from a one-off container.
     """
-    from dallinger.command_line.docker_ssh import Executor
-
-    server_info = CONFIGURED_HOSTS[server]
-    executor = Executor(server_info["host"], user=server_info.get("user"), app=app)
+    executor = _ssh_executor(server, app=app)
     compose = f"docker compose -f ~/dallinger/{app}/docker-compose.yml"
     path = f"/experiment/{deployment_info.path}"
     output = executor.run(
@@ -4195,8 +4200,6 @@ def test__docker_ssh(
 
     Note: this feature is currently experimental and the API is likely to change without warning.
     """
-    from dallinger.command_line.docker_ssh import Executor
-
     cmd = "psynet test local --existing"
 
     if n_bots:
@@ -4214,11 +4217,7 @@ def test__docker_ssh(
     if time_factor:
         cmd += f" --time-factor {time_factor}"
 
-    server_info = CONFIGURED_HOSTS[server]
-    ssh_host = server_info["host"]
-    ssh_user = server_info.get("user")
-    executor = Executor(ssh_host, user=ssh_user)
-    run_remote_experiment_command(executor, app, cmd)
+    run_remote_experiment_command(_ssh_executor(server), app, cmd)
 
 
 def _validate_performance_n_bots(ctx, param, value):
@@ -4964,14 +4963,8 @@ def performance_test__docker_ssh(ctx, app, server, json_output=None, **options):
             "Use 'psynet performance-test local --json-output' instead.",
         )
 
-    from dallinger.command_line.docker_ssh import Executor
-
     cmd = _build_ssh_performance_test_cmd(**options)
-
-    server_info = CONFIGURED_HOSTS[server]
-    ssh_host = server_info["host"]
-    ssh_user = server_info.get("user")
-    executor = Executor(ssh_host, user=ssh_user)
+    executor = _ssh_executor(server)
     remote_bot_log = []
 
     def remember_bot_log(line):
