@@ -4108,22 +4108,25 @@ def build_remote_experiment_command(app, cmd):
 
     ``docker compose exec -T`` disables TTY allocation, which is what makes the
     command safe to run when the local process has no interactive terminal.
+    """
+    return f"cd ~/dallinger/{app} && docker compose exec -T web {cmd}"
+
+
+def _stop_when_disconnected(cmd):
+    """Wrap ``cmd`` in a shell command that stops it once its stdin closes.
 
     Docker leaves an exec'd process running when its client goes away, so a
     dropped SSH connection would leave a load test running unwatched. The SSH
     session never writes to the container's stdin, which therefore reaches
-    end-of-file only when the session ends; a watcher then stops ``cmd``.
+    end-of-file only when the session ends.
     """
-    stop_when_disconnected = (
+    script = (
         "exec 3<&0; "
         f"{cmd} </dev/null & pid=$!; "
         '(cat <&3 >/dev/null; kill "$pid") >/dev/null 2>&1 & '
         'wait "$pid"'
     )
-    return (
-        f"cd ~/dallinger/{app} && docker compose exec -T web "
-        f"sh -c {shlex.quote(stop_when_disconnected)}"
-    )
+    return f"sh -c {shlex.quote(script)}"
 
 
 def run_remote_experiment_command(executor, app, cmd):
@@ -4140,7 +4143,7 @@ def run_remote_experiment_command(executor, app, cmd):
     on it drops whatever is still in flight -- typically the test summary, which
     is the part worth reading.
     """
-    remote_cmd = build_remote_experiment_command(app, cmd)
+    remote_cmd = build_remote_experiment_command(app, _stop_when_disconnected(cmd))
     channel = executor.client.get_transport().open_session()
     # Interleaving two streams without threads risks reordering the output, and
     # the caller only wants to read it, so merge stderr into stdout.

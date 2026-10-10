@@ -1143,17 +1143,19 @@ def test_remote_experiment_commands_disable_tty_allocation():
     from psynet.command_line import build_remote_experiment_command
 
     command = build_remote_experiment_command("my-app", "psynet test local --existing")
-    assert command.startswith("cd ~/dallinger/my-app && docker compose exec -T web ")
-    assert "psynet test local --existing" in command
+    assert command == (
+        "cd ~/dallinger/my-app && docker compose exec -T web "
+        "psynet test local --existing"
+    )
 
 
 def _run_in_container_shell(cmd):
     """Run ``cmd`` as the web container would, with a pipe standing in for SSH."""
-    from psynet.command_line import build_remote_experiment_command
+    from psynet.command_line import _stop_when_disconnected
 
-    prefix = "cd ~/dallinger/app && docker compose exec -T web "
-    in_container = build_remote_experiment_command("app", cmd).removeprefix(prefix)
-    return subprocess.Popen(in_container, shell=True, stdin=subprocess.PIPE)
+    return subprocess.Popen(
+        _stop_when_disconnected(cmd), shell=True, stdin=subprocess.PIPE
+    )
 
 
 def test_remote_experiment_command_reports_the_exit_status():
@@ -1169,6 +1171,7 @@ def test_remote_experiment_command_stops_when_the_ssh_session_ends():
 
 
 def test_remote_experiment_command_echoes_all_output_and_reports_failure(capsys):
+    from psynet import command_line
     from psynet.command_line import run_remote_experiment_command
 
     channel = _FakeChannel(0, output=b"running bots\n" + b"=== 1 passed ===\n")
@@ -1178,8 +1181,9 @@ def test_remote_experiment_command_echoes_all_output_and_reports_failure(capsys)
         )
         == 0
     )
-    assert channel.command.startswith(
-        "cd ~/dallinger/my-app && docker compose exec -T web"
+    assert channel.command == (
+        "cd ~/dallinger/my-app && docker compose exec -T web "
+        + command_line._stop_when_disconnected("psynet test local")
     )
     output = capsys.readouterr().out
     assert "running bots" in output
