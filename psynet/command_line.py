@@ -99,13 +99,17 @@ logger = get_logger()
 
 
 def _reject_ingress_without_dallinger_support(ctx, param, value):
-    if value is not None:
+    """Reject ``--ingress cloudflare`` when Dallinger only supports classic ingress.
+
+    The value is not passed on, because such a Dallinger has no ingress option.
+    """
+    if value == "cloudflare":
         raise click.UsageError(
-            "--ingress needs a Dallinger version with Cloudflare ingress support, "
-            "which this Dallinger installation does not have. Install Dallinger "
-            "from its master branch, or omit --ingress to use classic ingress."
+            "--ingress cloudflare needs a Dallinger version with Cloudflare "
+            "ingress support, which this Dallinger installation does not have. "
+            "Install Dallinger from its master branch, or use classic ingress."
         )
-    return value
+    return None
 
 
 try:
@@ -1717,6 +1721,7 @@ def deploy__docker_ssh(
     """
     try:
         _validate_ssh_deploy_update(app, archive, update)
+        _reject_leftover_psynet_wheels()
         _configure_dallinger_image_source(use_local_dallinger=False)
 
         _pre_launch(
@@ -1812,6 +1817,23 @@ def _configure_dallinger_image_source(use_local_dallinger=False):
     click.echo(f"Baking local Dallinger from {source} into the experiment image.")
 
 
+def _reject_leftover_psynet_wheels():
+    """Stop if the experiment directory holds a PsyNet wheel from an earlier run.
+
+    The experiment Dockerfile installs any such wheel over the pinned version,
+    so a wheel left by an interrupted ``--use-local-psynet`` run would replace
+    the pin, even in ``psynet deploy``.
+    """
+    leftovers = sorted(p.name for p in Path.cwd().glob(_LOCAL_PSYNET_WHEEL_PATTERN))
+    if leftovers:
+        raise click.UsageError(
+            f"Remove {', '.join(leftovers)} from the experiment directory. It is "
+            "left over from an interrupted 'psynet debug ssh --use-local-psynet', "
+            "and the image would install it instead of the PsyNet version in "
+            "requirements.txt."
+        )
+
+
 @contextmanager
 def _local_psynet_wheel(enabled):
     """Build the editable PsyNet checkout into a wheel for the experiment image.
@@ -1820,6 +1842,7 @@ def _local_psynet_wheel(enabled):
     experiment files, and the experiment Dockerfile installs it over the
     requirements.txt version. It is removed again afterwards.
     """
+    _reject_leftover_psynet_wheels()
     if not enabled:
         yield
         return
@@ -1836,7 +1859,7 @@ def _local_psynet_wheel(enabled):
             "Run 'psynet scripts update' to refresh it."
         )
     click.echo(f"Baking local PsyNet from {source} into the experiment image.")
-    wheel = Path(build_and_place(str(source), os.getcwd()))
+    wheel = Path.cwd() / Path(build_and_place(str(source), os.getcwd())).name
     try:
         yield
     finally:

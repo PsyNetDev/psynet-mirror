@@ -17,6 +17,9 @@ env/
 # Automatically generated server log file
 server.log
 
+# Local PsyNet wheel staged by `psynet debug ssh --use-local-psynet`
+psynet-*.whl
+
 # Automatically generated resources for running experiments with assets
 static/assets
 

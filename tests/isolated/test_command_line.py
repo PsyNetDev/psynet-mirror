@@ -119,6 +119,12 @@ class TestCommandLine(object):
             assert Path("psynet-1.0-py3-none-any.whl").exists()
         assert not list(tmp_path.glob("*.whl"))
 
+        Path("psynet-0.9-py3-none-any.whl").write_text("")
+        for enabled in (True, False):
+            with pytest.raises(click.UsageError, match="psynet-0.9-py3"):
+                with command_line._local_psynet_wheel(enabled=enabled):
+                    pass
+
     def test_awaken_ssh_app_does_not_require_a_front_door(self):
         from psynet.command_line import _awaken_ssh_app
 
