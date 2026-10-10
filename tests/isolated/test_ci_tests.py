@@ -4,6 +4,8 @@ import os
 import threading
 import time
 
+import click
+import pytest
 from click.testing import CliRunner
 
 from psynet.command_line import psynet
@@ -96,6 +98,13 @@ def test_slots_get_their_own_services(monkeypatch):
     finally:
         second.close()
         first.close()
+
+
+def test_extra_slots_need_their_own_redis_server(monkeypatch):
+    monkeypatch.setattr(ci_tests.shutil, "which", lambda name: None)
+
+    with pytest.raises(click.ClickException, match="needs redis-server"):
+        ci_tests._Slot(1)
 
 
 def _hold_lock(directory, held, release):
