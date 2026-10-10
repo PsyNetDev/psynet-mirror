@@ -1,0 +1,1 @@
+Bots in performance tests with a ``--time-factor`` above 0 now check a timeline hold every ``check_interval`` seconds, as a browser's fallback poll does, instead of every 0.1 seconds, so tests of experiments with holds no longer overstate the load. Bots with ``--time-factor 0``, as in ``psynet test local``, still check every 0.1 seconds.

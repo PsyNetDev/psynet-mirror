@@ -166,8 +166,8 @@ def test_render_page_requests_html_timeline(monkeypatch):
         response.raise_for_status = lambda: None
         return response
 
-    monkeypatch.setattr("psynet.participant.requests.get", fake_get)
     driver = ParticipantDriver.__new__(ParticipantDriver)
+    driver.__dict__["_http_session"] = SimpleNamespace(get=fake_get)
     driver.experiment = SimpleNamespace(base_url="http://psynet.test")
     driver.participant_unique_id = "abc"
     driver._render_page()
@@ -203,7 +203,7 @@ def test_submit_response_retries_once_when_the_page_uuid_rotated(monkeypatch):
         driver.response_files = {}
         driver.status_time_fetched = 0
 
-    monkeypatch.setattr("psynet.participant.requests.post", fake_post)
+    driver.__dict__["_http_session"] = SimpleNamespace(post=fake_post)
     monkeypatch.setattr(driver, "_fetch_status", fake_fetch)
     monkeypatch.setattr("psynet.participant.db.session.expire_all", lambda: None)
 
@@ -237,7 +237,7 @@ def test_submit_response_does_not_retry_when_the_page_uuid_is_unchanged(
         driver.response_files = {}
         driver.status_time_fetched = 0
 
-    monkeypatch.setattr("psynet.participant.requests.post", fake_post)
+    driver.__dict__["_http_session"] = SimpleNamespace(post=fake_post)
     monkeypatch.setattr(driver, "_fetch_status", fake_fetch)
     monkeypatch.setattr("psynet.participant.db.session.expire_all", lambda: None)
 
@@ -261,7 +261,7 @@ def test_submit_response_sends_hold_resume_for_timeline_holds(monkeypatch):
         posted.append(json.loads(data["json"]))
         return _driver_http_response({"submission": "approved"})
 
-    monkeypatch.setattr("psynet.participant.requests.post", fake_post)
+    driver.__dict__["_http_session"] = SimpleNamespace(post=fake_post)
     monkeypatch.setattr(driver, "_fetch_status", lambda: None)
     monkeypatch.setattr("psynet.participant.db.session.expire_all", lambda: None)
 
@@ -293,7 +293,7 @@ def test_submit_response_retries_structured_busy_like_timeline_gets(monkeypatch)
             )
         return _driver_http_response({"submission": "approved"})
 
-    monkeypatch.setattr("psynet.participant.requests.post", fake_post)
+    driver.__dict__["_http_session"] = SimpleNamespace(post=fake_post)
     monkeypatch.setattr(driver, "_fetch_status", lambda: None)
     monkeypatch.setattr("psynet.participant.db.session.expire_all", lambda: None)
     monkeypatch.setattr("psynet.participant.time.sleep", lambda s: None)
@@ -303,14 +303,16 @@ def test_submit_response_retries_structured_busy_like_timeline_gets(monkeypatch)
     assert calls["n"] == _BOT_TIMELINE_BUSY_ATTEMPTS
 
 
-def test_take_page_pauses_when_still_on_timeline_hold(monkeypatch):
-    """Hold polling must not busy-loop ordinary Next against last-arrival."""
-    from psynet.participant import _TIMELINE_HOLD_POLL_SECONDS
-
+@pytest.mark.parametrize("time_factor, expected_sleep", [(0, 0.1), (1, 2.0)])
+def test_take_page_pauses_when_still_on_timeline_hold(
+    monkeypatch, time_factor, expected_sleep
+):
+    """Bots pause at an unready hold, and paced bots poll at the hold's interval."""
     driver = ParticipantDriver.__new__(ParticipantDriver)
     driver.status = _driver_page_status("hold-a")
     driver.status["status"] = "working"
     driver.status["page"]["is_timeline_hold"] = True
+    driver.status["page"]["check_interval"] = 2.0
     driver.response_files = {}
     sleeps = []
     monkeypatch.setattr(driver, "_simulate_page_time", lambda *a, **k: None)
@@ -319,6 +321,6 @@ def test_take_page_pauses_when_still_on_timeline_hold(monkeypatch):
     monkeypatch.setattr(driver, "refresh_status", lambda: None)
     monkeypatch.setattr("psynet.participant.time.sleep", lambda s: sleeps.append(s))
 
-    driver.take_page()
+    driver.take_page(time_factor=time_factor)
 
-    assert sleeps == [_TIMELINE_HOLD_POLL_SECONDS]
+    assert sleeps == [expected_sleep]

@@ -5619,6 +5619,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 "is_timeline_hold": _is_timeline_hold(current_page),
                 "bot_response": bot_response.__json__(),
             }
+            if _is_timeline_hold(current_page):
+                status["page"]["check_interval"] = current_page.check_interval
         else:
             bot_response = None
 

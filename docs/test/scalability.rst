@@ -106,9 +106,14 @@ spends waiting for a free worker. When the server's CPUs are fully used, that
 waiting grows faster than the reported times, so also watch the server's CPU
 use and the number of request errors.
 
-The bots fetch pages and submit answers without a browser, so the results
-leave out the static files, media and JavaScript requests that participants'
-browsers make.
+The bots fetch pages and submit answers without a browser. They also run
+the server-side work that answers trigger, such as async processes, and
+they wait at timeline holds: with a ``--time-factor`` above 0 they check the
+hold every ``check_interval`` seconds, as a browser's fallback poll does. The
+results leave out everything else a browser does, including static files and
+media, requests to custom routes from page JavaScript, and websockets, which
+browsers keep open at timeline holds and in live multi-participant pages. If
+an experiment leans on these, also test it with real browsers.
 
 If response times are high, profile the database queries with ``psynet test
 local --sql-profile``; see :doc:`/test/sqlalchemy_profiling`.
