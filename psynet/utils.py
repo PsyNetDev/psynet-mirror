@@ -34,6 +34,7 @@ from dallinger.recruiters import _descendent_classes
 from flask.globals import current_app
 from flask.templating import Environment, _render
 from sqlalchemy import or_
+from urllib3.util import Retry
 
 from psynet.light_utils import (  # noqa: F401 – re-exported for backwards compat
     _IN_REPO_EXPERIMENT_ROOTS,
@@ -1967,6 +1968,26 @@ def safe(func):
     return wrapper
 
 
+def keep_alive_session():
+    """
+    Return a ``requests.Session`` that reuses connections and retries dropped ones.
+
+    A server or proxy may close an idle keep-alive connection just as the
+    client reuses it (gunicorn's default keep-alive is 2 seconds), which shows
+    up as "Connection reset by peer". The session retries such a request once.
+    Responses with error statuses are never retried. Repeating a ``/response``
+    POST is safe because the server rejects answers for a page the
+    participant has already left.
+    """
+    session = requests.Session()
+    adapter = requests.adapters.HTTPAdapter(
+        max_retries=Retry(total=1, status=0, allowed_methods=None)
+    )
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    return session
+
+
 def get_authenticated_session(base_url, username=None, password=None):
     """
     Returns a requests.Session authenticated with the dashboard login.
@@ -2005,19 +2026,7 @@ def get_authenticated_session(base_url, username=None, password=None):
     if password is None:
         password = config.get("dashboard_password")
 
-    session = requests.Session()
-
-    # Tell the server to close the TCP connection after each request (disable HTTP keep-alive).
-    # This should prevent "Connection reset by peer" errors caused by reusing stale keep-alive sockets,
-    # which can happen if the server or a proxy drops idle connections
-    # (see e.g. https://gitlab.com/PsyNetDev/PsyNet/-/jobs/11132444772)
-    #
-    # Trade-off: every request opens a new connection, which is less efficient.
-    # The other approach would be to to keep connections alive but configure a Retry/Timeout policy
-    # (e.g. with requests.adapters.HTTPAdapter + urllib3.util.Retry).
-    # However, retry logic might complicate the logs when we get error messages due to server logic.
-    # We therefore use `Connection: close` here for simplicity.
-    session.headers["Connection"] = "close"
+    session = keep_alive_session()
 
     login_url = f"{base_url}/dashboard/login"
 
