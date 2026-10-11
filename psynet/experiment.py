@@ -1718,6 +1718,37 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         return _get_cpu_time_summary()
 
+    @experiment_route("/async_job_status", methods=["GET"])
+    @classmethod
+    @login_required
+    @with_transaction
+    def async_job_status(cls):
+        """Report the async jobs still pending, for ``psynet destroy`` and ``psynet export``."""
+        from .async_job import _get_pending_job_summary
+
+        return _get_pending_job_summary()
+
+    def reason_to_stay_awake(self):
+        """Keep a docker-ssh app awake while async jobs are pending.
+
+        Idle hibernation stops the workers and the web process, so pending
+        :class:`~psynet.async_job.WorkerAsyncJob` and
+        :class:`~psynet.async_job.LocalAsyncJob` jobs would not finish.
+
+        Returns
+        -------
+        str or None
+            A short reason for the deploy logs, or ``None`` to allow sleep.
+        """
+        parent = getattr(super(), "reason_to_stay_awake", None)
+        reason = parent() if parent else None
+        if reason:
+            return reason
+        from .async_job import _describe_pending_jobs, _get_pending_job_summary
+
+        summary = _get_pending_job_summary()
+        return _describe_pending_jobs(summary) if summary["total"] else None
+
     def _test_experiment_serial(self):
         logger.info(f"Testing experiment with {self.test_n_bots} serial bot(s)...")
 

@@ -609,6 +609,68 @@ def _format_cpu_time_summary(rows):
     return "\n".join(lines)
 
 
+def _get_pending_job_summary():
+    """Count the async jobs that are enqueued but have not yet ended.
+
+    A job ends when it finishes, fails, times out, or is cancelled.
+
+    Returns
+    -------
+    dict
+        ``"counts"`` maps ``"high"`` and ``"low"`` to the number of pending
+        :class:`WorkerAsyncJob` rows on each queue, and ``"local"`` to pending
+        :class:`LocalAsyncJob` rows, which run in the web process.
+        ``"total"`` is their sum and ``"oldest_age"`` is the number of
+        seconds since the oldest pending job was enqueued, or ``None``.
+    """
+    counts = {"high": 0, "low": 0, "local": 0}
+    oldest = None
+    for cls in [WorkerAsyncJob, LocalAsyncJob]:
+        rows = (
+            db.session.query(
+                cls.priority, func.count(cls.id), func.min(cls.time_enqueued)
+            )
+            .filter(
+                cls.pending,
+                ~cls.failed,
+                cls.time_enqueued != None,  # noqa: E711
+            )
+            .group_by(cls.priority)
+            .all()
+        )
+        for priority, count, enqueued in rows:
+            counts["local" if cls is LocalAsyncJob else priority] += count
+            oldest = enqueued if oldest is None else min(oldest, enqueued)
+    oldest_age = (
+        None if oldest is None else (datetime.datetime.now() - oldest).total_seconds()
+    )
+    return {"counts": counts, "total": sum(counts.values()), "oldest_age": oldest_age}
+
+
+def _describe_pending_jobs(summary):
+    """Describe the output of :func:`_get_pending_job_summary` in one sentence."""
+    from .utils import format_timedelta
+
+    total = summary["total"]
+    parts = [
+        f"{summary['counts'][key]} {name}"
+        for key, name in [
+            ("high", "high priority"),
+            ("low", "low priority"),
+            ("local", "in the web process"),
+        ]
+        if summary["counts"].get(key)
+    ]
+    text = (
+        f"{total} async job{'s are' if total != 1 else ' is'} still pending"
+        f" ({', '.join(parts)})"
+    )
+    if summary["oldest_age"] is not None:
+        age = datetime.timedelta(seconds=summary["oldest_age"])
+        text += f"; the oldest was enqueued {format_timedelta(age)} ago"
+    return text
+
+
 class LocalAsyncJob(AsyncJob):
     """An async job that runs in a new thread of the current process.
 

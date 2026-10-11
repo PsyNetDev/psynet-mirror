@@ -1,0 +1,1 @@
+Added protection for pending async jobs on docker-ssh deployments: idle hibernation keeps the app awake while jobs are pending, `psynet export ssh` and `psynet export local` warn that the export misses their results, and `psynet destroy ssh` asks for confirmation (or refuses when it cannot ask) unless `--discard-pending-jobs` is passed.

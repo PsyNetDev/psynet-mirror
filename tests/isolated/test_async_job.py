@@ -493,6 +493,51 @@ def test_cpu_time_summary_says_where_jobs_run():
     ]
 
 
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("static")], indirect=True
+)
+@pytest.mark.usefixtures("launched_experiment")
+def test_pending_jobs_keep_the_app_awake():
+    from psynet.async_job import AsyncJob, _get_pending_job_summary
+    from psynet.experiment import get_experiment
+
+    experiment = get_experiment()
+    AsyncJob.query.filter_by(pending=True).update({"pending": False})
+    assert _get_pending_job_summary() == {
+        "counts": {"high": 0, "low": 0, "local": 0},
+        "total": 0,
+        "oldest_age": None,
+    }
+    assert experiment.reason_to_stay_awake() is None
+
+    WorkerAsyncJob(do_nothing).enqueue()
+    WorkerAsyncJob(do_nothing, priority="low").enqueue()
+    WorkerAsyncJob(do_nothing, priority="low").enqueue()
+    LocalAsyncJob(do_nothing).enqueue()
+    WorkerAsyncJob(do_nothing).enqueue().cancel()
+    WorkerAsyncJob(do_nothing, timeout=1).enqueue().fail("Async job timed out")
+    finished = WorkerAsyncJob(do_nothing).enqueue()
+    finished.pending, finished.finished = False, True
+    db.session.add(WorkerAsyncJob(do_nothing, label="never_enqueued"))
+    db.session.flush()
+
+    summary = _get_pending_job_summary()
+    assert summary["counts"] == {"high": 1, "low": 2, "local": 1}
+    assert summary["total"] == 4 and summary["oldest_age"] >= 0
+    assert experiment.reason_to_stay_awake().startswith(
+        "4 async jobs are still pending "
+        "(1 high priority, 2 low priority, 1 in the web process); "
+        "the oldest was enqueued "
+    )
+    db.session.rollback()
+
+    response = experiment.authenticated_session.get(
+        experiment.base_url + "/async_job_status"
+    )
+    response.raise_for_status()
+    assert set(response.json()) == {"counts", "total", "oldest_age"}
+
+
 def test_cpu_time_summary_flags_cpu_heavy_labels():
     from psynet.async_job import _format_cpu_time_summary
 
