@@ -318,7 +318,7 @@ late its threads run: a background thread repeatedly sleeps for 50 ms and
 records how much longer than that it actually took to wake up. Bot threads
 wait just as long for the interpreter and the CPU before each step. The
 report shows the 95th percentile of this lag for the worst process under
-*Bot runtimes* as *Bot lag*. A test in which it exceeded 100 ms counts as
+*Bot runtimes* as *Bot lag*. A test in which it exceeded 50 ms counts as
 could not be tested, like a test whose bots could not start fast enough.
 With ``--n-bots auto``, the search treats that bot count as failed, and the
 summary reports the capacity as at least the largest count that passed and

@@ -2078,7 +2078,7 @@ def queue_wait_p95(result):
 
 # Bots between runs, or still being created, leave a few slots briefly empty.
 _MIN_RUNNING_SHARE = 0.9
-_MAX_TESTER_LAG_P95_S = 0.1
+_MAX_TESTER_LAG_P95_S = 0.05
 
 
 def _tester_lagged(result):
