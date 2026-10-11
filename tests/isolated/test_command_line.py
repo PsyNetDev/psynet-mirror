@@ -125,6 +125,43 @@ class TestCommandLine(object):
                 Mock(), mode="debug", archive=None, local_=True, docker=True
             )
 
+    def test_dockerfile_skips_pins_of_packages_with_staged_wheels(
+        self, monkeypatch, tmp_path
+    ):
+        import psynet as psynet_pkg
+
+        dockerfile = (
+            Path(psynet_pkg.__file__).parent / "resources/experiment_scripts/Dockerfile"
+        ).read_text()
+        (install,) = [
+            instruction.removeprefix("RUN ")
+            for instruction in dockerfile.replace("\\\n", "").split("\n")
+            if instruction.startswith("RUN ") and "uv pip install -r" in instruction
+        ]
+        fake_uv = tmp_path / "bin" / "uv"
+        fake_uv.parent.mkdir()
+        fake_uv.write_text('#!/bin/sh\ncat "$4"\n')
+        fake_uv.chmod(0o755)
+        monkeypatch.setenv("PATH", f"{fake_uv.parent}{os.pathsep}{os.environ['PATH']}")
+        monkeypatch.chdir(tmp_path)
+        Path("requirements.txt").write_text("psynet\n")
+        Path("constraints.txt").write_text(
+            "-e file:///Users/me/PsyNet\n"
+            "dallinger @ file:///Users/me/Dallinger\n"
+            "    # via psynet\n"
+            "numpy==2.0\n"
+        )
+
+        def installed():
+            return subprocess.run(
+                ["sh", "-c", install], capture_output=True, text=True, check=True
+            ).stdout
+
+        assert "PsyNet" in installed() and "Dallinger" in installed()
+        Path("psynet-1.0-py3-none-any.whl").touch()
+        Path("dallinger-1.0-py3-none-any.whl").touch()
+        assert installed() == "    # via psynet\nnumpy==2.0\n"
+
     def test_awaken_ssh_app_does_not_require_a_front_door(self):
         from psynet.command_line import _awaken_ssh_app
 

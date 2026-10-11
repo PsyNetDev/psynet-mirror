@@ -127,9 +127,11 @@ server, bake them into a debug deployment's image::
 
 Each option builds a wheel from the editable checkout (for Dallinger, or
 ``DALLINGER_SOURCE``), and the image build installs it after ``COPY .``, over
-the pinned version. ``--use-local-psynet`` also skips the checks on the PsyNet
-pin, so bundled demos, whose ``requirements.txt`` lists plain ``psynet``, can
-be deployed this way. It needs the experiment's ``Dockerfile`` from this PsyNet
+the pinned version. The image skips that package's lines in
+``constraints.txt`` or ``requirements.txt``, so an editable pin that points at
+a path on your machine does not break the build. ``--use-local-psynet`` also
+skips the checks on the PsyNet pin, so bundled demos, whose
+``requirements.txt`` lists plain ``psynet``, can be deployed this way. It needs the experiment's ``Dockerfile`` from this PsyNet
 version; run ``psynet scripts update`` if PsyNet says it is out of date.
 
 Services

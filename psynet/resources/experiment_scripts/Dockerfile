@@ -17,14 +17,25 @@ WORKDIR /experiment
 COPY requirements.txt requirements.txt
 COPY *constraints.txt constraints.txt
 
+# Local PsyNet and Dallinger wheels, staged by ``psynet debug ssh
+# --use-local-psynet`` and ``--use-local-dallinger``, are installed further
+# down. Their packages' own pins are skipped here, because an editable pin
+# points at a checkout that only exists on the developer's machine.
+COPY psynet-*.whl dallinger-*.whl ./
+
 ENV SKIP_DEPENDENCY_CHECK=""
 ENV DALLINGER_NO_EGG_BUILD=1
 
-RUN if [ -f constraints.txt ]; then \
-        uv pip install -r constraints.txt --system; \
-    else \
-        uv pip install -r requirements.txt --system; \
-    fi
+RUN pins=requirements.txt; \
+    if [ -f constraints.txt ]; then pins=constraints.txt; fi; \
+    for package in psynet dallinger; do \
+        if ls "$package"-*.whl >/dev/null 2>&1; then \
+            grep -viE "^[^#]*(^|[^[:alnum:]_-])$package([^[:alnum:]_-]|$)" \
+                "$pins" > "/tmp/$package-pins.txt"; \
+            pins="/tmp/$package-pins.txt"; \
+        fi; \
+    done; \
+    uv pip install -r "$pins" --system
 
 COPY *prepare_docker_image.sh prepare_docker_image.sh
 RUN if test -f prepare_docker_image.sh ; then bash prepare_docker_image.sh ; fi
