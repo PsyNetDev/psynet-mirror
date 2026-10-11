@@ -34,7 +34,7 @@ import threading
 import time
 import traceback
 from collections import Counter
-from contextlib import contextmanager, nullcontext
+from contextlib import contextmanager
 from dataclasses import dataclass
 from decimal import Decimal
 from functools import partial
@@ -361,7 +361,9 @@ class PerformanceTester:
         self.limits = limits or CapacityLimits()
         self.bot_processes = bot_processes
         self._n_bot_processes = 1
-        self._bot_processes = None
+        # Runs the bots: _ThreadBots, or _BotProcesses during a suite that
+        # needs several processes.
+        self._bots = _ThreadBots(self)
         # Experiment code shares this process and may call random.seed().
         self._random = random.Random()
 
@@ -373,7 +375,7 @@ class PerformanceTester:
 
         self._print_suite_header(", ".join(str(n) for n in bot_counts))
         all_results = []
-        with self._bots_in_processes(max(bot_counts), bot_log_file):
+        with self._bot_runner(max(bot_counts), bot_log_file):
             self._suite_started_at = datetime.datetime.now()
             for i, n_bots in enumerate(bot_counts, 1):
                 if i > 1:
@@ -412,7 +414,7 @@ class PerformanceTester:
             f"{max_tests * self.duration_minutes:g} min plus pauses between tests"
         )
         all_results = []
-        with self._bots_in_processes(_CAPACITY_SEARCH_MAX, bot_log_file):
+        with self._bot_runner(_CAPACITY_SEARCH_MAX, bot_log_file):
             self._suite_started_at = datetime.datetime.now()
             highest_pass = lowest_fail = None
             while True:
@@ -443,7 +445,7 @@ class PerformanceTester:
         return all_results
 
     @contextmanager
-    def _bots_in_processes(self, max_bots, bot_log_file):
+    def _bot_runner(self, max_bots, bot_log_file):
         """Start the bot processes a suite of up to ``max_bots`` bots needs, if any.
 
         They last for the whole suite, because each one imports the
@@ -458,7 +460,7 @@ class PerformanceTester:
             return
         log_path = getattr(bot_log_file, "name", None)
         logger.info(f"Starting {n_processes} bot processes...")
-        self._bot_processes = _BotProcesses(
+        self._bots = _BotProcesses(
             n_processes,
             stagger_interval_s=self.stagger_interval_s,
             time_factor=self.time_factor,
@@ -467,7 +469,7 @@ class PerformanceTester:
         try:
             yield
         finally:
-            bot_processes, self._bot_processes = self._bot_processes, None
+            bot_processes, self._bots = self._bots, _ThreadBots(self)
             bot_processes.close()
 
     def _pause_between_tests(self):
@@ -524,8 +526,6 @@ class PerformanceTester:
         logger.info("")
         logger.info(bold("=" * 80))
         logger.info(bold(f"TEST {label}: Running with {n_bots:,} concurrent bots"))
-        if self._bot_processes is None:
-            _fit_redis_pool_to_bots(n_bots)
         return self._test_performance(n_bots, bot_log_file=bot_log_file)
 
     def _print_performance_summary(self, results):
@@ -549,27 +549,19 @@ class PerformanceTester:
         bot_state = self._initialize_bot_tracking()
         start_time = time.time()
         end_time = start_time + (duration_minutes * 60)
-        if self._bot_processes is None:
-            load = _LoadMonitor()
-            start_bot_slot = self._create_bot_launcher(bot_state, end_time)
-            bot_logs = _bot_logs_to(bot_log_file)
-        else:
-            load = None
-            self._bot_processes.begin_test(bot_state, end_time, n)
-            start_bot_slot = self._bot_processes.start_slot
-            bot_logs = nullcontext()
+        self._bots.begin_test(bot_state, end_time, n)
 
-        with bot_logs:
+        # Only bot threads in this process log here; bot processes append
+        # to the same file themselves.
+        with _bot_logs_to(bot_log_file):
             try:
                 self._run_monitoring_loop(
-                    n, bot_state, start_bot_slot, start_time, end_time
+                    n, bot_state, self._bots.start_slot, start_time, end_time
                 )
                 actual_duration = time.time() - start_time
                 last_request_id = self._max_request_id()
                 ended_at = datetime.datetime.now()
             finally:
-                if load is not None:
-                    bot_state["process_loads"].append(load.stop())
                 self._stop_bots(bot_state)
         self._clear_realtime_status()
 
@@ -615,8 +607,6 @@ class PerformanceTester:
         """Initialize tracking structures for bots."""
         return {
             "lock": threading.Lock(),
-            "stop_event": threading.Event(),
-            "threads": [],
             # Bot ID -> time the bot was created, for bots taking the experiment.
             "running": {},
             "total_bots_started": 0,
@@ -664,22 +654,6 @@ class PerformanceTester:
             x = self._random.gammavariate(k, theta)
             if x <= max_stagger:
                 return x
-
-    def _create_bot_launcher(self, bot_state, end_time):
-        """Return a function that starts one bot slot in a new thread."""
-        record = partial(self._record_bot_event, bot_state, end_time)
-
-        def start_bot_slot():
-            thread = threading.Thread(
-                target=self._run_bot_slot,
-                args=(bot_state["stop_event"], end_time, record),
-                name=f"{_BOT_THREAD_PREFIX}{len(bot_state['threads']) + 1}",
-                daemon=True,
-            )
-            bot_state["threads"].append(thread)
-            thread.start()
-
-        return start_bot_slot
 
     def _run_bot_slot(self, stop_event, end_time, record):
         """Run bots one after another until the test ends.
@@ -777,13 +751,9 @@ class PerformanceTester:
 
     def _stop_bots(self, bot_state, timeout_s=30):
         """Stop the bots that are still running and wait for their threads."""
-        bot_state["stop_event"].set()
-        if self._bot_processes is None:
-            n_alive = _join_threads(bot_state["threads"], timeout_s)
-        else:
-            process_loads, unreported, n_alive = self._bot_processes.end_test(timeout_s)
-            bot_state["process_loads"] += process_loads
-            bot_state["unreported_bot_processes"] = unreported
+        process_loads, unreported, n_alive = self._bots.end_test(timeout_s)
+        bot_state["process_loads"] += process_loads
+        bot_state["unreported_bot_processes"] = unreported
         if n_alive:
             logger.warning(
                 f"{n_alive} bot(s) were still waiting for the server "
@@ -869,7 +839,7 @@ class PerformanceTester:
                     )
                     bot_state["server_stopped"] = True
                     return
-                failure = self._bot_processes and self._bot_processes.failure()
+                failure = self._bots.failure()
                 if failure:
                     self._clear_realtime_status()
                     logger.warning(warning(f"The test ends early: {failure}."))
@@ -1223,41 +1193,83 @@ class PerformanceTester:
         for line in format_test_results(result):
             logger.info(line)
 
-    def _serve_bot_commands(self, index, commands, events):
-        """Run bot slots in this bot process as the parent asks, until it says to exit.
 
-        See :class:`_BotProcesses` for the commands and events.
+class _ThreadBots:
+    """Run bot slots as threads in this process.
+
+    :class:`PerformanceTester` uses this directly for one process, and each
+    bot process uses it for its share of the slots (see :class:`_BotProcesses`,
+    which has the same interface).
+    """
+
+    def __init__(self, tester, thread_prefix=_BOT_THREAD_PREFIX):
+        self._tester = tester
+        self._thread_prefix = thread_prefix
+        self._stop_event, self._threads = threading.Event(), []
+        self._end_time = self._record = self._load = None
+
+    def begin_test(self, bot_state, end_time, n_bots, record=None):
+        """Prepare for a test of ``n_bots`` slots that ends at ``end_time``.
+
+        Bots report to ``record`` (see :meth:`PerformanceTester._run_bot_slot`),
+        which by default updates ``bot_state``.
         """
-        stop_event, threads, end_time = threading.Event(), [], None
-        test_id, load = 0, None
-        while True:
-            command, *args = commands.get()
-            if command == "test":
-                test_id, end_time, n_slots = args
-                stop_event, threads = threading.Event(), []
-                record = partial(_put_bot_event, events, test_id)
-                _fit_redis_pool_to_bots(n_slots)
-                load = _LoadMonitor()
-            elif command == "slot":
-                thread = threading.Thread(
-                    target=self._run_bot_slot,
-                    args=(stop_event, end_time, record),
-                    name=f"{_BOT_THREAD_PREFIX}{index + 1}.{len(threads) + 1}",
-                    daemon=True,
-                )
-                threads.append(thread)
-                thread.start()
-            elif command == "stop":
-                (timeout_s,) = args
-                process_load = (None, None) if load is None else load.stop()
-                load = None
-                stop_event.set()
-                n_alive = _join_threads(threads, timeout_s)
-                events.put((test_id, "finished", index, process_load, n_alive))
-            elif command == "exit":
-                stop_event.set()
-                _join_threads(threads, _BOT_PROCESS_EXIT_JOIN_S)
-                return
+        self._stop_event, self._threads = threading.Event(), []
+        self._end_time = end_time
+        self._record = record or partial(
+            PerformanceTester._record_bot_event, bot_state, end_time
+        )
+        _fit_redis_pool_to_bots(n_bots)
+        self._load = _LoadMonitor()
+
+    def start_slot(self):
+        """Start one bot slot in a new thread."""
+        thread = threading.Thread(
+            target=self._tester._run_bot_slot,
+            args=(self._stop_event, self._end_time, self._record),
+            name=f"{self._thread_prefix}{len(self._threads) + 1}",
+            daemon=True,
+        )
+        self._threads.append(thread)
+        thread.start()
+
+    def end_test(self, timeout_s):
+        """Stop the test's bots, as :meth:`_BotProcesses.end_test` does, for this process."""
+        load = (None, None) if self._load is None else self._load.stop()
+        self._load = None
+        self._stop_event.set()
+        return [load], [], _join_threads(self._threads, timeout_s)
+
+    def failure(self):
+        """Return ``None``: threads can't stop the way a process can."""
+        return None
+
+    def close(self, timeout_s=_BOT_PROCESS_EXIT_JOIN_S):
+        """Stop any bots still running, waiting up to ``timeout_s`` for them."""
+        self._stop_event.set()
+        _join_threads(self._threads, timeout_s)
+
+
+def _serve_bot_commands(bots, index, commands, events):
+    """Run ``bots`` in a bot process as the parent asks, until it says to exit.
+
+    See :class:`_BotProcesses` for the commands and events.
+    """
+    test_id = 0
+    while True:
+        command, *args = commands.get()
+        if command == "test":
+            test_id, end_time, n_slots = args
+            record = partial(_put_bot_event, events, test_id)
+            bots.begin_test(None, end_time, n_slots, record=record)
+        elif command == "slot":
+            bots.start_slot()
+        elif command == "stop":
+            (load,), _, n_alive = bots.end_test(*args)
+            events.put((test_id, "finished", index, load, n_alive))
+        elif command == "exit":
+            bots.close()
+            return
 
 
 def _put_bot_event(events, test_id, kind, *args):
@@ -1269,7 +1281,7 @@ _REPLY_KINDS = frozenset({"ready", "failed", "finished"})
 
 
 class _BotProcesses:
-    """Spawned child processes that run bot slots for a :class:`PerformanceTester`.
+    """Run bot slots in spawned child processes, each using :class:`_ThreadBots`.
 
     The parent keeps all the bookkeeping. It sends each child commands on the
     child's own queue: ``("test", test_id, end_time, n_slots)`` before a test,
@@ -1482,6 +1494,7 @@ def _run_bot_process(index, commands, events, settings):
             stagger_interval_s=settings["stagger_interval_s"],
             time_factor=settings["time_factor"],
         )
+        bots = _ThreadBots(tester, f"{_BOT_THREAD_PREFIX}{index + 1}.")
     except BaseException:
         events.put((0, "failed", index, traceback.format_exc()))
         return
@@ -1491,7 +1504,7 @@ def _run_bot_process(index, commands, events, settings):
     bot_log = open(log_path, "a") if log_path else None
     try:
         with _bot_logs_to(bot_log):
-            tester._serve_bot_commands(index, commands, events)
+            _serve_bot_commands(bots, index, commands, events)
     finally:
         if bot_log is not None:
             bot_log.close()

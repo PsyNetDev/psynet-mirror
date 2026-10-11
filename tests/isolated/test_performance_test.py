@@ -104,17 +104,16 @@ def test_bots_still_taking_the_experiment_stop_when_the_test_ends(monkeypatch):
     monkeypatch.setattr(db, "session", Mock())
     tester = PerformanceTester(authenticated_session=Mock(), base_url="http://x")
     bot_state = tester._initialize_bot_tracking()
-    start_bot_slot = tester._create_bot_launcher(bot_state, time.time() + 60)
+    tester._bots.begin_test(bot_state, time.time() + 60, 3)
 
     for _ in range(3):
-        start_bot_slot()
+        tester._bots.start_slot()
     deadline = time.time() + 5
     while len(bot_state["running"]) < 3 and time.time() < deadline:
         time.sleep(0.01)
     assert len(bot_state["running"]) == 3
     tester._stop_bots(bot_state, timeout_s=5)
 
-    assert not any(thread.is_alive() for thread in bot_state["threads"])
     assert [terminated for _, _, terminated in bot_state["bot_durations"]] == [True] * 3
     assert bot_state["total_bot_errors"] == 0
 
@@ -148,7 +147,8 @@ def test_bots_that_fail_count_as_started_and_errored(monkeypatch):
         authenticated_session=Mock(), base_url="http://x", stagger_interval_s=0
     )
     bot_state = tester._initialize_bot_tracking()
-    tester._create_bot_launcher(bot_state, time.time() + 0.2)()
+    tester._bots.begin_test(bot_state, time.time() + 0.2, 1)
+    tester._bots.start_slot()
     time.sleep(0.4)
     tester._stop_bots(bot_state, timeout_s=5)
 
@@ -171,6 +171,7 @@ def test_bot_processes_report_their_bots_to_the_parent(monkeypatch):
     from dallinger import db
 
     from psynet.participant import ParticipantDriver
+    from psynet.perf_test import _serve_bot_commands, _ThreadBots
 
     ids = itertools.count(1)
 
@@ -187,9 +188,8 @@ def test_bot_processes_report_their_bots_to_the_parent(monkeypatch):
 
     def run_bot_process(index, commands, events, settings):
         events.put((0, "ready", index))
-        PerformanceTester(
-            None, None, stagger_interval_s=0, time_factor=0
-        )._serve_bot_commands(index, commands, events)
+        bots = _ThreadBots(PerformanceTester(None, None, stagger_interval_s=0))
+        _serve_bot_commands(bots, index, commands, events)
 
     experiment = Mock()
     experiment.run_bot.side_effect = lambda bot, time_factor: bot._sleep(60)
@@ -204,11 +204,11 @@ def test_bot_processes_report_their_bots_to_the_parent(monkeypatch):
     )
     tester = PerformanceTester(Mock(), "http://x", bot_processes=2)
 
-    with tester._bots_in_processes(max_bots=4, bot_log_file=None):
+    with tester._bot_runner(max_bots=4, bot_log_file=None):
         bot_state = tester._initialize_bot_tracking()
-        tester._bot_processes.begin_test(bot_state, time.time() + 60, 4)
+        tester._bots.begin_test(bot_state, time.time() + 60, 4)
         for _ in range(4):
-            tester._bot_processes.start_slot()
+            tester._bots.start_slot()
         deadline = time.time() + 5
         while len(bot_state["running"]) < 4 and time.time() < deadline:
             time.sleep(0.01)
@@ -487,8 +487,8 @@ def test_redis_pool_lets_every_bot_hold_a_connection(monkeypatch, blocking):
         pool = redis.ConnectionPool(max_connections=2, **server)
     monkeypatch.setattr(db, "redis_conn", redis.Redis(connection_pool=pool))
     tester = PerformanceTester(authenticated_session=Mock(), base_url="http://x")
-    with patch.object(tester, "_test_performance"):
-        tester._run_one_test("1/1", 5, bot_log_file=None)
+    tester._bots.begin_test(tester._initialize_bot_tracking(), 0, 5)
+    tester._bots.end_test(timeout_s=0)
 
     connections = [pool.get_connection() for _ in range(105)]
     for connection in connections:
