@@ -776,6 +776,11 @@ class PerformanceTester:
         process_loads, unreported, n_alive = self._bots.end_test(timeout_s)
         bot_state["process_loads"] += process_loads
         bot_state["unreported_bot_processes"] = unreported
+        if unreported:
+            logger.warning(
+                f"Bot process(es) {', '.join(map(str, unreported))} did not report "
+                "after the test, so the suite stops here."
+            )
         if n_alive:
             logger.warning(
                 f"{n_alive} bot(s) were still waiting for the server "

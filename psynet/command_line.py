@@ -4706,6 +4706,8 @@ def _run_performance_test_with_existing_server(
             dir=_performance_log_directory(),
         )
     else:
+        # Bot processes append to the log, so clear an earlier run's output first.
+        open(bot_log, "w").close()
         bot_log_file = open(bot_log, "a")
     print(f"Bot output log: {bot_log_file.name}")
     started_at = datetime.datetime.now().isoformat(timespec="seconds")
