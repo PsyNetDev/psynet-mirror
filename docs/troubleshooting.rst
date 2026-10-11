@@ -63,8 +63,8 @@ Remote launches (``psynet deploy ssh``, ``psynet deploy heroku``,
 ``psynet debug ssh`` and ``psynet debug heroku``) also use the local database
 and Redis while they prepare the experiment, so they wipe a local experiment
 that is running at the same time. They ask before doing so if the local data
-looks in use: a local server or other client is connected to the database, the
-database has participants, or Redis has keys. ``--update`` launches leave local
+looks in use: a local server or other client is connected to the database or
+Redis, or the database has participants. ``--update`` launches leave local
 data alone.
 
 Database connection refused

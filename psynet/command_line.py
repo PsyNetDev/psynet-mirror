@@ -870,8 +870,6 @@ def _reset_local_data(*, remote, assume_yes=False):
 
 def _confirm_local_data_reset(assume_yes):
     """Describe the local reset, and ask first if the local data looks in use."""
-    from dallinger.db import redis_conn
-
     from .data import _format_other_database_clients
     from .db import list_other_database_clients
     from .services import _is_interactive, _redis_url
@@ -902,9 +900,11 @@ def _confirm_local_data_reset(assume_yes):
     n_participants = _count_local_participants()
     if n_participants:
         in_use.append(f"The local database contains {n_participants} participant(s).")
-    n_redis_keys = redis_conn.dbsize()
-    if n_redis_keys:
-        in_use.append(f"Local Redis contains {n_redis_keys} key(s).")
+    n_redis_clients = _count_other_redis_clients()
+    if n_redis_clients:
+        in_use.append(
+            f"{n_redis_clients} other client(s) are connected to local Redis."
+        )
     if not in_use:
         return
     click.echo("\n".join(in_use))
@@ -917,6 +917,24 @@ def _confirm_local_data_reset(assume_yes):
             "or point DATABASE_URL and REDIS_URL at a scratch database."
         )
     click.confirm("Reset this local data and continue?", default=False, abort=True)
+
+
+def _count_other_redis_clients():
+    """Return the number of connections to local Redis from other programs.
+
+    Keys left behind by a stopped experiment don't count, so a launch after
+    ``psynet debug local`` has stopped doesn't ask. This process's pooled
+    connections are closed first, so only the connection running the query
+    belongs to it.
+    """
+    from dallinger.db import redis_conn
+
+    redis_conn.connection_pool.disconnect()
+    pipe = redis_conn.pipeline(transaction=False)
+    pipe.client_id()
+    pipe.client_list()
+    own_id, clients = pipe.execute()
+    return sum(1 for client in clients if int(client["id"]) != own_id)
 
 
 def _count_local_participants():

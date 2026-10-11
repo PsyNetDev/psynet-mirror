@@ -4344,7 +4344,7 @@ def remote_launch(monkeypatch, tmp_path):
         workers=0,
         clients=(),
         participants=0,
-        redis_keys=0,
+        redis_clients=0,
         interactive=True,
         **kwargs,
     ):
@@ -4356,7 +4356,9 @@ def remote_launch(monkeypatch, tmp_path):
         monkeypatch.setattr(
             "psynet.command_line._count_local_participants", lambda: participants
         )
-        monkeypatch.setattr("dallinger.db.redis_conn", Mock(dbsize=lambda: redis_keys))
+        monkeypatch.setattr(
+            "psynet.command_line._count_other_redis_clients", lambda: redis_clients
+        )
         monkeypatch.setattr("psynet.services._is_interactive", lambda: interactive)
         with pytest.raises(_LaunchContinued):
             _pre_launch(Mock(), mode="sandbox", archive=None, local_=False, **kwargs)
@@ -4366,7 +4368,7 @@ def remote_launch(monkeypatch, tmp_path):
 
 def test_remote_update_keeps_local_data(remote_launch):
     launch, resets, confirm = remote_launch
-    launch(update=True, workers=1, participants=3, redis_keys=2)
+    launch(update=True, workers=1, participants=3, redis_clients=2)
     assert resets.mock_calls == []
     confirm.assert_not_called()
 
@@ -4378,7 +4380,7 @@ def test_remote_update_keeps_local_data(remote_launch):
         ({"workers": 1}, "1 local PsyNet server process(es)"),
         ({"clients": [(4321, "u", "flask", "idle")]}, "pid 4321 (flask, idle)"),
         ({"participants": 3}, "3 participant(s)"),
-        ({"redis_keys": 5}, "Redis contains 5 key(s)"),
+        ({"redis_clients": 2}, "2 other client(s) are connected to local Redis"),
     ],
 )
 def test_remote_launch_asks_before_resetting_local_data_in_use(
@@ -4413,6 +4415,23 @@ def test_remote_launch_needs_yes_without_a_terminal(remote_launch):
     launch(participants=3, interactive=False, assume_yes=True)
     confirm.assert_not_called()
     resets.kill_workers.assert_called_once()
+
+
+def test_other_redis_clients_are_counted_but_not_this_process():
+    import redis
+    from dallinger.db import redis_conn
+
+    from psynet.command_line import _count_other_redis_clients
+    from psynet.services import _redis_url
+
+    redis_conn.ping()
+    before = _count_other_redis_clients()
+    other = redis.Redis.from_url(_redis_url())
+    other.ping()
+    try:
+        assert _count_other_redis_clients() == before + 1
+    finally:
+        other.close()
 
 
 @pytest.mark.parametrize(
