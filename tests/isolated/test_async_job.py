@@ -9,8 +9,8 @@ from rq import Queue
 from rq.exceptions import NoSuchJobError
 
 import psynet.experiment  # noqa -- to ensure that all SQLAlchemy classes are registered
+from psynet.async_job import LocalAsyncJob, WorkerAsyncJob
 from psynet.db import forbid_commits
-from psynet.process import LocalAsyncProcess, WorkerAsyncProcess
 from psynet.pytest_psynet import path_to_test_experiment
 
 
@@ -30,62 +30,62 @@ def failing_function():
     "experiment_directory", [path_to_test_experiment("static")], indirect=True
 )
 @pytest.mark.usefixtures("launched_experiment")
-class TestProcesses:
-    def test_process_that_fails(self):
-        process = LocalAsyncProcess(failing_function)
+class TestAsyncJobs:
+    def test_job_that_fails(self):
+        job = LocalAsyncJob(failing_function).enqueue()
 
         db.session.commit()
         time.sleep(0.5)
         db.session.commit()
 
-        assert process.failed
-        assert not process.finished
-        assert not process.pending
+        assert job.failed
+        assert not job.finished
+        assert not job.pending
 
-    def test_async_process_participant(self, participant):
-        assert len(participant.async_processes) == 0
-        process = LocalAsyncProcess(do_nothing, participant=participant)
+    def test_async_job_participant(self, participant):
+        assert len(participant.async_jobs) == 0
+        job = LocalAsyncJob(do_nothing, participant=participant).enqueue()
         db.session.commit()
-        assert len(participant.async_processes) == 1
+        assert len(participant.async_jobs) == 1
 
-        # Give the process time to finish before we shut down the experiment.
+        # Give the job time to finish before we shut down the experiment.
         # If we don't, then we are likely to see a PytestUnhandledThreadExceptionWarning
-        # from when the process tries to run but the app has already been shut down.
+        # from when the job tries to run but the app has already been shut down.
         time.sleep(0.5)
         db.session.commit()
-        assert process.finished
+        assert job.finished
 
 
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("static")], indirect=True
 )
 @pytest.mark.usefixtures("launched_experiment")
-class TestProcesses2:
-    def test_async_process_trial(self, trial, node, network, participant):
-        # When a trial spawns an async process, this async process also is 'owned'
+class TestAsyncJobs2:
+    def test_async_job_trial(self, trial, node, network, participant):
+        # When a trial spawns an async job, this async job also is 'owned'
         # by the participant. The trial's node and network do not count as owners
-        # of the process, however.
+        # of the job, however.
         db.session.commit()
         owners = [trial, participant]
         for o in owners:
-            assert len(o.async_processes) == 0
+            assert len(o.async_jobs) == 0
 
-        process = LocalAsyncProcess(sleep_for_1s, trial=trial)
+        job = LocalAsyncJob(sleep_for_1s, trial=trial).enqueue()
 
         db.session.commit()
 
         for o in owners:
-            assert len(o.async_processes) == 1
+            assert len(o.async_jobs) == 1
 
         time.sleep(1.5)
 
         db.session.commit()
 
         for o in owners:
-            for p in o.async_processes:
+            for p in o.async_jobs:
                 assert p.finished
 
-        assert abs(process.time_taken - 1) < 0.5
+        assert abs(job.time_taken - 1) < 0.5
 
     def test_invalid_function(self):
         def local_function():
@@ -95,7 +95,7 @@ class TestProcesses2:
             ValueError,
             match="You cannot serialize a lambda function or a function defined within another function.",
         ):
-            LocalAsyncProcess(
+            LocalAsyncJob(
                 local_function,
                 arguments={},
             )
@@ -110,27 +110,24 @@ class TestProcesses2:
 
         a = A()
 
-        with pytest.raises(ValueError) as e:
-            LocalAsyncProcess(
+        with pytest.raises(ValueError, match="You cannot serialize a lambda function"):
+            LocalAsyncJob(
                 a.instance_method,
                 arguments={},
             )
-            assert "You cannot pass an instance method to an AsyncProcess." in str(
-                e.value
-            )
 
-    def test_local_process(self):
+    def test_local_job(self):
         message = "Hello!"
 
         with tempfile.NamedTemporaryFile(delete=False) as file:
-            process = LocalAsyncProcess(
+            job = LocalAsyncJob(
                 self.sleep_then_write_to_file,
                 dict(
                     duration=0.5,
                     file=file.name,
                     message=message,
                 ),
-            )
+            ).enqueue()
 
             db.session.commit()
 
@@ -140,12 +137,12 @@ class TestProcesses2:
             time.sleep(1.5)
 
             db.session.commit()
-            assert process.finished
+            assert job.finished
 
             with open(file.name, "r") as file_reader:
                 assert file_reader.readline() == message
 
-            assert abs(process.time_taken - 0.5) < 0.1
+            assert abs(job.time_taken - 0.5) < 0.1
 
     @staticmethod
     def sleep_then_write_to_file(duration, file, message):
@@ -159,11 +156,11 @@ class TestProcesses2:
     "experiment_directory", [path_to_test_experiment("static")], indirect=True
 )
 @pytest.mark.usefixtures("launched_experiment")
-def test_processes_launch_only_on_their_own_sessions_commit(monkeypatch):
-    """Another session's commit must not launch a process that is not committed yet."""
+def test_jobs_launch_only_on_their_own_sessions_commit(monkeypatch):
+    """Another session's commit must not launch a job that is not committed yet."""
     launched = []
     monkeypatch.setattr(
-        LocalAsyncProcess,
+        LocalAsyncJob,
         "launch",
         classmethod(lambda cls, p: launched.append(p["id"])),
     )
@@ -172,7 +169,7 @@ def test_processes_launch_only_on_their_own_sessions_commit(monkeypatch):
 
     def create_then_commit():
         try:
-            created["id"] = LocalAsyncProcess(do_nothing).id
+            created["id"] = LocalAsyncJob(do_nothing).enqueue().id
             queued.set()
             release.wait(timeout=10)
             db.session.commit()
@@ -189,7 +186,7 @@ def test_processes_launch_only_on_their_own_sessions_commit(monkeypatch):
     worker.join(timeout=10)
     assert launched == [created["id"]]
 
-    LocalAsyncProcess(do_nothing)
+    LocalAsyncJob(do_nothing).enqueue()
     db.session.rollback()
     db.session.commit()
     assert launched == [created["id"]]
@@ -200,28 +197,28 @@ def test_processes_launch_only_on_their_own_sessions_commit(monkeypatch):
 )
 @pytest.mark.usefixtures("launched_experiment")
 def test_launch_queue_follows_savepoints_and_close(monkeypatch):
-    """SAVEPOINTs and close() must not launch or lose processes early."""
+    """SAVEPOINTs and close() must not launch or lose jobs early."""
     launched = []
     monkeypatch.setattr(
-        LocalAsyncProcess,
+        LocalAsyncJob,
         "launch",
         classmethod(lambda cls, p: launched.append(p["id"])),
     )
 
-    outer = LocalAsyncProcess(do_nothing).id
+    outer = LocalAsyncJob(do_nothing).enqueue().id
     with db.session.begin_nested():
-        released = LocalAsyncProcess(do_nothing).id
+        released = LocalAsyncJob(do_nothing).enqueue().id
     assert launched == []
     nested = db.session.begin_nested()
-    LocalAsyncProcess(do_nothing)
+    LocalAsyncJob(do_nothing).enqueue()
     nested.rollback()
     db.session.commit()
     assert launched == [outer, released]
 
     with db.session.begin_nested():
-        LocalAsyncProcess(do_nothing)
+        LocalAsyncJob(do_nothing).enqueue()
     db.session.rollback()
-    LocalAsyncProcess(do_nothing)
+    LocalAsyncJob(do_nothing).enqueue()
     db.session.close()
     db.session.commit()
     assert launched == [outer, released]
@@ -234,22 +231,22 @@ def test_launch_queue_follows_savepoints_and_close(monkeypatch):
 def test_failed_launch_alerts_and_later_launches_still_run(monkeypatch):
     launched = []
 
-    def launch(cls, process):
+    def launch(cls, job):
         if not launched:
             launched.append(None)
             raise ConnectionError("Redis is down")
-        launched.append(process["id"])
+        launched.append(job["id"])
 
     alerts = []
-    monkeypatch.setattr(LocalAsyncProcess, "launch", classmethod(launch))
-    monkeypatch.setattr("psynet.process._send_alert", alerts.append)
+    monkeypatch.setattr(LocalAsyncJob, "launch", classmethod(launch))
+    monkeypatch.setattr("psynet.async_job._send_alert", alerts.append)
 
-    failed = LocalAsyncProcess(do_nothing).id
-    later = LocalAsyncProcess(do_nothing).id
+    failed = LocalAsyncJob(do_nothing).enqueue().id
+    later = LocalAsyncJob(do_nothing).enqueue().id
     db.session.commit()
 
     assert launched == [None, later]
-    assert len(alerts) == 1 and f"Async process {failed}" in alerts[0]
+    assert len(alerts) == 1 and f"Async job {failed}" in alerts[0]
 
 
 @pytest.mark.parametrize(
@@ -258,28 +255,28 @@ def test_failed_launch_alerts_and_later_launches_still_run(monkeypatch):
 @pytest.mark.usefixtures("launched_experiment")
 def test_cancel_cancels_the_queued_worker_job(monkeypatch):
     unworked_queue = Queue("psynet_test_unworked", connection=redis_conn)
-    monkeypatch.setattr(WorkerAsyncProcess, "redis_queue", unworked_queue)
+    monkeypatch.setattr(WorkerAsyncJob, "redis_queue", unworked_queue)
 
-    process = WorkerAsyncProcess(do_nothing)
+    job = WorkerAsyncJob(do_nothing).enqueue()
     db.session.commit()
     with forbid_commits("CodeBlock 'cancel_analysis'"):
-        process.cancel()
-        process.cancel()
+        job.cancel()
+        job.cancel()
     db.session.commit()
 
-    assert process.redis_job.get_status() == "canceled"
-    assert process.cancelled and not process.pending
-    process_id = process.id
-    WorkerAsyncProcess.call_function(process_id)
-    assert not WorkerAsyncProcess.query.get(process_id).finished
+    assert job.redis_job.get_status() == "canceled"
+    assert job.cancelled and not job.pending
+    async_job_id = job.id
+    WorkerAsyncJob.call_function(async_job_id)
+    assert not WorkerAsyncJob.query.get(async_job_id).finished
 
-    cancelled_before_launch = WorkerAsyncProcess(do_nothing)
+    cancelled_before_launch = WorkerAsyncJob(do_nothing).enqueue()
     cancelled_before_launch.cancel()
     db.session.commit()
     with pytest.raises(NoSuchJobError):
         cancelled_before_launch.redis_job
 
-    cancel_rolled_back = WorkerAsyncProcess(do_nothing)
+    cancel_rolled_back = WorkerAsyncJob(do_nothing).enqueue()
     savepoint = db.session.begin_nested()
     cancel_rolled_back.cancel()
     savepoint.rollback()
@@ -290,3 +287,56 @@ def test_cancel_cancels_the_queued_worker_job(monkeypatch):
     db.session.rollback()
     assert cancel_rolled_back.redis_job.get_status() == "queued"
     assert cancel_rolled_back.pending and not cancel_rolled_back.cancelled
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("static")], indirect=True
+)
+@pytest.mark.usefixtures("launched_experiment")
+def test_only_enqueued_jobs_launch(monkeypatch, caplog):
+    launched = []
+    monkeypatch.setattr(
+        LocalAsyncJob,
+        "launch",
+        classmethod(lambda cls, p: launched.append(p["id"])),
+    )
+
+    enqueued = LocalAsyncJob(do_nothing).enqueue()
+    with pytest.raises(RuntimeError, match="already been enqueued"):
+        enqueued.enqueue()
+    forgotten = LocalAsyncJob(do_nothing, label="forgotten")
+    db.session.add(forgotten)
+    with caplog.at_level("WARNING", logger="psynet"):
+        db.session.commit()
+
+    assert launched == [enqueued.id]
+    assert (
+        f"Async job {forgotten.id} (label 'forgotten') was created but never enqueued"
+        in caplog.text
+    )
+    assert "label 'do_nothing'" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("static")], indirect=True
+)
+@pytest.mark.usefixtures("launched_experiment")
+def test_deprecated_process_names_still_work(monkeypatch, participant):
+    import psynet.process
+    from psynet.async_job import AsyncJob
+
+    launched = []
+    monkeypatch.setattr(
+        LocalAsyncJob,
+        "launch",
+        classmethod(lambda cls, p: launched.append(p["id"])),
+    )
+
+    with pytest.warns(DeprecationWarning, match="renamed to psynet.async_job.AsyncJob"):
+        assert psynet.process.AsyncProcess is AsyncJob
+    with pytest.warns(DeprecationWarning, match="LocalAsyncJob"):
+        job = psynet.process.LocalAsyncProcess(do_nothing, participant=participant)
+    db.session.commit()
+    assert launched == [job.id]
+    with pytest.warns(DeprecationWarning, match="renamed to async_jobs"):
+        assert participant.async_processes == [job]

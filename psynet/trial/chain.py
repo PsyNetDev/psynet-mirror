@@ -366,9 +366,6 @@ class ChainNetwork(TrialNetwork):
         Indicates the target number of trials for that network.
         Left empty by default, but can be set by custom ``__init__`` functions.
 
-    earliest_async_process_start_time : Optional[datetime]
-        Time at which the earliest pending async process was called.
-
     var : :class:`~psynet.field.VarStore`
         A repository for arbitrary variables; see :class:`~psynet.field.VarStore` for details.
 
@@ -984,7 +981,7 @@ class ChainNode(TrialNode):
         trials
             Trials to be summarized. By default only trials that are completed
             (i.e. have received a response) and processed
-            (i.e. aren't waiting for an asynchronous process)
+            (i.e. aren't waiting for an async job)
             are provided here.
 
         experiment
@@ -1188,9 +1185,6 @@ class ChainTrial(Trial):
         to JSON, so it shouldn't be too big.
         The user should not typically change this directly.
         Stored in ``details`` in the database.
-
-    earliest_async_process_start_time : Optional[datetime]
-        Time at which the earliest pending async process was called.
 
     propagate_failure : bool
         Whether failure of a trial should be propagated to other
@@ -1474,7 +1468,7 @@ class ChainTrialMaker(NetworkTrialMaker):
 
     wait_for_networks
         If ``True``, then the participant will be made to wait if there are
-        still more networks to participate in, but these networks are pending asynchronous processes.
+        still more networks to participate in, but these networks are pending async jobs.
 
     allow_revisiting_networks_in_across_chains : bool
         If this is set to ``True``, then participants can revisit the same network
@@ -1538,7 +1532,7 @@ class ChainTrialMaker(NetworkTrialMaker):
         Users are invited to override this.
 
     async_timeout_sec : float
-        How long until an async process times out, in seconds (default = 300).
+        How long until an async job times out, in seconds (default = 300).
         This is a lower bound on the actual timeout
         time, which depends on when the timeout daemon next runs,
         which in turn depends on :attr:`~psynet.trial.main.TrialMaker.check_timeout_interval_sec`.
@@ -1561,7 +1555,7 @@ class ChainTrialMaker(NetworkTrialMaker):
 
     end_performance_check_waits : bool
         If ``True`` (default), then the final performance check waits until all trials no
-        longer have any pending asynchronous processes, and until trials that are ready
+        longer have any pending async jobs, and until trials that are ready
         to finalize have been finalized (so their scores are set).
     """
 
@@ -2213,7 +2207,7 @@ class ChainTrialMaker(NetworkTrialMaker):
         """Find eligible chains for the participant's next trial.
 
         This method applies PsyNet's built-in eligibility checks (the
-        participant's current block, capacity, asynchronous processes, and
+        participant's current block, capacity, async jobs, and
         :meth:`~psynet.trial.chain.ChainTrialMaker.custom_chain_filter`).
         Override ``select_chain`` to change which eligible chain is assigned.
         To wait, exit, or drop candidates after those built-in checks, override
@@ -2380,7 +2374,7 @@ class ChainTrialMaker(NetworkTrialMaker):
     def _when_candidates_are_busy(self, participant, experiment):
         """Decide between waiting and finishing the block when every candidate is busy.
 
-        Candidates are busy when they await an asynchronous process or, in
+        Candidates are busy when they await an async job or, in
         chains, have no trial capacity left for now. A participant committed
         to one chain or planned node waits for it; otherwise
         ``wait_for_networks`` decides.
@@ -2464,7 +2458,7 @@ class ChainTrialMaker(NetworkTrialMaker):
         return self._filter_candidate_query(query, participant, experiment)
 
     def _candidate_is_not_pending(self):
-        """Return a SQL condition for candidates not awaiting an asynchronous process."""
+        """Return a SQL condition for candidates not awaiting an async job."""
         return and_(
             # The pending flags are nullable; NULL means not pending.
             self.network_class.async_post_grow_network_pending.is_not(True),

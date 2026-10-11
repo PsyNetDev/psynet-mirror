@@ -255,9 +255,8 @@ class ConcurrentResponseAsyncTrial(FinalizeBackstopTrial):
 def test_async_post_trial_finalizes_trial_completed_concurrently(
     db_session, participant, monkeypatch
 ):
-    from psynet.process import AsyncProcess, WorkerAsyncProcess
+    from psynet.async_job import WorkerAsyncJob
 
-    monkeypatch.setattr(AsyncProcess, "add_to_launch_queue", lambda self: None)
     exp = get_experiment()
     network = _create_network(_chain_trial_maker(), exp)
     trial = ConcurrentResponseAsyncTrial(
@@ -271,12 +270,13 @@ def test_async_post_trial_finalizes_trial_completed_concurrently(
     trial.async_post_trial_requested = True
     db.session.add(trial)
     db.session.flush()
-    process = WorkerAsyncProcess(trial.call_async_post_trial, trial=trial)
+    job = WorkerAsyncJob(trial.call_async_post_trial, trial=trial)
+    db.session.add(job)
     db.session.flush()
-    process_id, trial_id = process.id, trial.id
+    async_job_id, trial_id = job.id, trial.id
     db.session.commit()
 
-    WorkerAsyncProcess.call_function(process_id)
+    WorkerAsyncJob.call_function(async_job_id)
 
     trial = db.session.get(Trial, trial_id, populate_existing=True)
     assert trial.complete is True
@@ -307,9 +307,8 @@ def test_on_finalized_commit_after_a_worker_is_forbidden_and_fails_the_trial(
     """Workers leave finalization to the post-commit re-check, whose failure
     leaves the trial to the backstop, which fails it."""
     from psynet.asset import FileAsset
-    from psynet.process import AsyncProcess, LocalAsyncProcess, WorkerAsyncProcess
+    from psynet.async_job import LocalAsyncJob, WorkerAsyncJob
 
-    monkeypatch.setattr(AsyncProcess, "add_to_launch_queue", lambda self: None)
     exp = get_experiment()
     monkeypatch.setattr(
         type(exp),
@@ -335,7 +334,7 @@ def test_on_finalized_commit_after_a_worker_is_forbidden_and_fails_the_trial(
     db.session.flush()
     if path == "async_post_trial":
         trial.async_post_trial_requested = True
-        process = WorkerAsyncProcess(trial.call_async_post_trial, trial=trial)
+        job = WorkerAsyncJob(trial.call_async_post_trial, trial=trial)
     else:
         asset_path = tmp_path / "recording.txt"
         asset_path.write_text("recording")
@@ -345,12 +344,13 @@ def test_on_finalized_commit_after_a_worker_is_forbidden_and_fails_the_trial(
         db.session.add(asset)
         trial.assets["recording"] = asset
         asset.deposited = True
-        process = LocalAsyncProcess(asset.after_deposit, asset=asset)
+        job = LocalAsyncJob(asset.after_deposit, asset=asset)
+    db.session.add(job)
     db.session.flush()
-    process_id, trial_id = process.id, trial.id
+    async_job_id, trial_id = job.id, trial.id
     db.session.commit()
 
-    type(process).call_function(process_id)
+    type(job).call_function(async_job_id)
 
     trial = db.session.get(Trial, trial_id, populate_existing=True)
     assert (trial.finalized, trial.failed) == (False, False)
@@ -473,9 +473,8 @@ def test_finalize_pending_trials_fails_every_bad_trial(
 def test_recheck_finalization_leaves_failing_trial_to_backstop(
     db_session, participant, monkeypatch
 ):
-    from psynet.process import AsyncProcess, WorkerAsyncProcess
+    from psynet.async_job import WorkerAsyncJob
 
-    monkeypatch.setattr(AsyncProcess, "add_to_launch_queue", lambda self: None)
     exp = get_experiment()
     network = _create_network(_chain_trial_maker(), exp)
     trial = ExplodingFinalizeTrial(
@@ -490,12 +489,13 @@ def test_recheck_finalization_leaves_failing_trial_to_backstop(
     trial.finalized = False
     db.session.add(trial)
     db.session.flush()
-    process = WorkerAsyncProcess(_do_nothing, trial=trial)
+    job = WorkerAsyncJob(_do_nothing, trial=trial)
+    db.session.add(job)
     db.session.flush()
-    process_id, trial_id = process.id, trial.id
+    async_job_id, trial_id = job.id, trial.id
     db.session.commit()
 
-    WorkerAsyncProcess.call_function(process_id)
+    WorkerAsyncJob.call_function(async_job_id)
 
     assert [t.id for t in Trial.get_trials_ready_to_finalize()] == [trial_id]
     assert not Trial.query.get(trial_id).ready_for_feedback

@@ -167,10 +167,10 @@ def test_format_test_results_wait_page_times():
     assert "WAIT PAGE TIMES" in text
 
 
-def test_format_test_results_process_stats():
+def test_format_test_results_async_job_stats():
     lines = format_test_results(
         _base_result(
-            process_stats=[
+            async_job_stats=[
                 {
                     "trial_maker_id": "tm1",
                     "label": "create_trial",
@@ -188,17 +188,17 @@ def test_format_test_results_process_stats():
         )
     )
     text = _join(lines)
-    assert "ASYNC PROCESS TIMES" in text
+    assert "ASYNC JOB TIMES" in text
     assert "2 workers" in text
     assert "tm1" in text
     assert "create_trial" in text
     assert "Q Med" in text
 
 
-def test_format_test_results_no_process_stats():
-    lines = format_test_results(_base_result(process_stats=None))
+def test_format_test_results_no_async_job_stats():
+    lines = format_test_results(_base_result(async_job_stats=None))
     text = _join(lines)
-    assert "No completed async processes" in text
+    assert "No completed async jobs" in text
     assert "2 workers" in text
 
 
