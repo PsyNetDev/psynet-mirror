@@ -5003,3 +5003,13 @@ def test_prolific_listing_warnings():
     assert "shorter than the estimated 8.5 minutes" in warnings(2, 0.85)[0]
     assert "£5.00/hour" in " ".join(warnings(12, 1.00))
     assert "£4.24/hour" in " ".join(warnings(5, 0.60))
+
+
+def test_prompt_for_ssh_server_returns_the_chosen_server(monkeypatch):
+    from click.testing import CliRunner
+
+    import psynet.command_line as command_line
+
+    monkeypatch.setattr(command_line, "CONFIGURED_HOSTS", {"rr-pc02": {}, "musix": {}})
+    with CliRunner().isolation(input="musix\n"):
+        assert command_line.prompt_for_ssh_server() == "musix"

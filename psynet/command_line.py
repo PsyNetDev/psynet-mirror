@@ -402,10 +402,12 @@ def db_connection(location, app=None, server=None):
 
 
 def prompt_for_ssh_server():
-    click.echo(
-        "Choose one of the configured servers (add one with `dallinger docker-ssh servers add`):"
+    """Ask the user to choose one of the configured SSH servers."""
+    return click.prompt(
+        "Choose one of the configured servers "
+        "(add one with `dallinger docker-ssh servers add`)",
+        type=click.Choice(list(CONFIGURED_HOSTS)),
     )
-    return click.Choice(CONFIGURED_HOSTS.keys())
 
 
 @contextmanager
