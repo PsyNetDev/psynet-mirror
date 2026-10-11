@@ -121,8 +121,8 @@ October 2026; US regions are about 15% cheaper. See AWS's lists of
 `on-demand prices <https://aws.amazon.com/ec2/pricing/on-demand/>`_.
 These figures are only a starting point. Before a large study, measure your
 own experiment on the server you will use (see
-:ref:`performance_testing_server`), and cap the number of participants at a
-time with ``max_concurrent_participants``.
+:ref:`performance_testing_server`), and keep the number of participants
+taking part at once below the capacity it reports.
 
 The server is a small part of a study's cost. 100 participants at once, paid
 £9 an hour, cost about £900 an hour, while an ``m7i.4xlarge`` that can serve

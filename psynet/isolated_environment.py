@@ -113,8 +113,9 @@ def check_no_debug_server(directory):
 
     Tests replace the generated files in the experiment directory, which
     breaks a debug server that serves it, even when the services are isolated.
-    Servers that another test session started there are skipped: that session
-    holds the directory's lock, which this session waits for.
+    Servers that another test session started there are skipped: they run with
+    the test environment already set up, or their session holds the directory's
+    lock, which this session waits for.
     """
     import psutil
 
