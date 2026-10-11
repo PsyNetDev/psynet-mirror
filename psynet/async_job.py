@@ -521,52 +521,73 @@ _CPU_HEAVY_RATIO = 0.5
 
 
 def _get_cpu_time_summary():
-    """Return CPU and wall times of finished async jobs, grouped by label and priority."""
-    rows = (
-        db.session.query(
-            AsyncJob.label,
-            AsyncJob.priority,
-            func.count(AsyncJob.id),
-            func.avg(AsyncJob.cpu_time),
-            func.max(AsyncJob.cpu_time),
-            func.avg(AsyncJob.time_taken),
+    """Return CPU and wall times of finished async jobs.
+
+    Jobs are grouped by where they run, label and priority. ``runs_in`` is
+    ``"worker"`` for :class:`WorkerAsyncJob` and ``"web"`` for
+    :class:`LocalAsyncJob`, which runs in a thread of the process that
+    enqueued it, usually the web process, and has no priority.
+    """
+    keys = [
+        "runs_in",
+        "label",
+        "priority",
+        "count",
+        "mean_cpu",
+        "max_cpu",
+        "mean_wall",
+    ]
+    summary = []
+    for cls, runs_in in [(LocalAsyncJob, "web"), (WorkerAsyncJob, "worker")]:
+        rows = (
+            db.session.query(
+                cls.label,
+                cls.priority,
+                func.count(cls.id),
+                func.avg(cls.cpu_time),
+                func.max(cls.cpu_time),
+                func.avg(cls.time_taken),
+            )
+            .filter(
+                cls.finished == True,  # noqa: E712
+                cls.cpu_time != None,  # noqa: E711
+                cls.time_taken != None,  # noqa: E711
+            )
+            .group_by(cls.label, cls.priority)
+            .order_by(cls.label, cls.priority)
+            .all()
         )
-        .filter(
-            AsyncJob.finished == True,  # noqa: E712
-            AsyncJob.cpu_time != None,  # noqa: E711
-            AsyncJob.time_taken != None,  # noqa: E711
-        )
-        .group_by(AsyncJob.label, AsyncJob.priority)
-        .order_by(AsyncJob.label, AsyncJob.priority)
-        .all()
-    )
-    keys = ["label", "priority", "count", "mean_cpu", "max_cpu", "mean_wall"]
-    return [dict(zip(keys, row)) for row in rows]
+        summary += [dict(zip(keys, (runs_in, *row))) for row in rows]
+    return summary
 
 
 def _format_cpu_time_summary(rows):
     """Format the output of :func:`_get_cpu_time_summary` as a table.
 
-    A label counts as CPU-heavy when its mean CPU time is at least
+    A row counts as CPU-heavy when its mean CPU time is at least
     ``_CPU_HEAVY_RATIO`` of its mean wall time; such jobs need a CPU core
-    each while they run, whereas I/O-bound jobs mostly wait. Jobs without a
-    priority, such as :class:`LocalAsyncJob`, show ``-``.
+    each while they run, whereas I/O-bound jobs mostly wait. The "Runs in"
+    column says whether that core is in a worker or the web process. Web
+    jobs have no priority and show ``-``.
     """
     if not rows:
         return "No async jobs finished."
     header = [
+        "Runs in",
         "Label",
         "Priority",
         "Count",
         "Mean CPU (s)",
         "Max CPU (s)",
         "Mean wall (s)",
+        "CPU-heavy",
     ]
-    table = [header + ["CPU-heavy"]]
+    table = [header]
     for row in rows:
         cpu_heavy = row["mean_cpu"] >= _CPU_HEAVY_RATIO * row["mean_wall"]
         table.append(
             [
+                row["runs_in"],
                 row["label"],
                 row["priority"] or "-",
                 str(row["count"]),
@@ -576,14 +597,14 @@ def _format_cpu_time_summary(rows):
                 "yes" if cpu_heavy else "no",
             ]
         )
-    widths = [max(len(line[i]) for line in table) for i in range(len(header) + 1)]
+    widths = [max(len(cell) for cell in column) for column in zip(*table)]
     lines = [
         f"Async job CPU time (CPU-heavy: mean CPU >= {_CPU_HEAVY_RATIO:.0%} "
         "of mean wall time):"
     ]
     for line in table:
-        cells = [cell.ljust(width) for cell, width in zip(line[:2], widths[:2])]
-        cells += [cell.rjust(width) for cell, width in zip(line[2:], widths[2:])]
+        cells = [cell.ljust(width) for cell, width in zip(line[:3], widths[:3])]
+        cells += [cell.rjust(width) for cell, width in zip(line[3:], widths[3:])]
         lines.append("  " + "  ".join(cells))
     return "\n".join(lines)
 
