@@ -4,7 +4,7 @@ Upgrading to PsyNet 14
 
 This checklist migrates an existing experiment onto PsyNet 14: in-place
 timeline transitions, recruiter and leave APIs, changed defaults, setup and
-deployment files, participant failure, groups, assets and exports. Work
+deployment files, participant failure, groups, assets, async jobs and exports. Work
 through the steps in order; each lists what to search for. Frontend patterns
 and full examples are in :doc:`/code/pages/custom_front_ends`.
 
@@ -496,7 +496,39 @@ Search for ``ExperimentAsset``, ``CachedAsset``, ``CachedFunctionAsset``,
 * Ready-made stimuli can live in ``static/`` and be referenced with
   ``psynet.media.static_url_for``; see :doc:`/code/using_stimuli`.
 
-19. Exports and analysis scripts
+19. Async jobs
+--------------
+
+Search for ``psynet.process``, ``AsyncProcess``, ``WorkerAsyncProcess``,
+``LocalAsyncProcess``, ``async_processes`` and ``process_id``.
+
+* Async processes are now called async jobs, and live in
+  ``psynet.async_job``: ``AsyncJob``, ``WorkerAsyncJob`` and
+  ``LocalAsyncJob``.
+* Creating a job no longer runs it. Call ``.enqueue()``, which launches the
+  job once the transaction commits::
+
+      from psynet.async_job import WorkerAsyncJob
+
+      WorkerAsyncJob(function=analyse, arguments={"trial": trial}).enqueue()
+
+  PsyNet logs a warning when a job is created but never enqueued.
+* The old names still work but warn. ``WorkerAsyncProcess(...)`` and
+  ``LocalAsyncProcess(...)`` create and enqueue the job, but they are now
+  functions, so ``isinstance`` checks against them fail.
+* ``async_processes`` on participants, trials, nodes, networks, responses
+  and assets is now ``async_jobs``.
+* An override of ``Experiment.handle_error`` that reads ``process=`` should
+  read ``async_job=``; ``ErrorRecord.process_id`` is now ``async_job_id``.
+* In exports, ``database/process.csv`` is now ``database/async_job.csv``,
+  and its ``type`` column holds names such as
+  ``psynet.async_job.WorkerAsyncJob``. ``error.csv`` has ``async_job_id``
+  instead of ``process_id``, and ``participant.csv`` has
+  ``awaited_async_code_block_job_id``.
+
+See :doc:`/reference/api/async_job`.
+
+20. Exports and analysis scripts
 --------------------------------
 
 Search scripts and notes for ``--assets all``, ``--legacy``,
@@ -524,7 +556,7 @@ Search scripts and notes for ``--assets all``, ``--legacy``,
 
 See :doc:`/data/what_an_export_contains`.
 
-20. Validate
+21. Validate
 ------------
 
 From a complete experiment directory. At minimum you typically need:

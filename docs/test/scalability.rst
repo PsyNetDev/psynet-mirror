@@ -86,7 +86,7 @@ that the slowest participants experience. The report also shows:
 - **Bot runtimes** and **trials per bot**.
 - **Request metrics**: total requests, errors and throughput.
 - **Wait page times**, for synchronized experiments.
-- **Async process times**: for experiments with asynchronous processes, such
+- **Async job times**: for experiments with async jobs, such
   as audio analysis, both the execution time and the time spent waiting in
   the queue. A high queue share, highlighted in yellow or red, means more
   worker processes are needed.
