@@ -881,15 +881,16 @@ def _confirm_local_data_reset(assume_yes):
         "To do so, it will:\n"
         f"  - drop every table in the local database {database}\n"
         f"  - delete every key in local Redis {redis}\n"
-        "  - stop any local PsyNet server using that database (e.g. psynet debug local)\n"
-        "Other programs connected to the database or Redis, such as Docker "
-        "containers or another experiment, keep running and should be restarted."
+        "  - stop the local PsyNet worker and clock processes using that database\n"
+        "Other programs connected to the database or Redis, such as the web "
+        "server of a running psynet debug local, Docker containers or another "
+        "experiment, keep running and should be stopped or restarted."
     )
     in_use = []
     n_workers = len(list_psynet_worker_processes())
     if n_workers:
         in_use.append(
-            f"{n_workers} local PsyNet server process(es) are using this database."
+            f"{n_workers} local PsyNet worker or clock process(es) are using this database."
         )
     clients = list_other_database_clients()
     if clients:
