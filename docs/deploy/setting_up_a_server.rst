@@ -70,10 +70,17 @@ was the limit: the web workers used about 9 threads and the database about
 3, and with more bots the server handled fewer requests a second. Memory
 was not the limit: the experiment used under 5 GB.
 
-With Dallinger 12.4 and earlier, the database connection pool caps every
-docker-ssh server at about 200 participants at a time, whatever its size: in
-the same test, the response time rose to over 400 ms at 320 bots while most
-of the CPU sat idle.
+.. warning::
+
+   Dallinger 12.4 and earlier cap every docker-ssh server at about 200
+   participants at a time, whatever its size, because of the database
+   connection pool: in the same test, the response time rose to over 400 ms
+   at 320 bots while most of the CPU sat idle. The figures in this section
+   assume a Dallinger release that includes
+   `Dallinger#10051 <https://github.com/Dallinger/Dallinger/pull/10051>`_,
+   which is not yet released. Even then, only apps deployed with Cloudflare
+   ingress get the larger pool; classic-ingress apps share one database
+   server and stay at about 200.
 
 A cloud vCPU is one CPU thread, often on a slower core, and most experiments
 do more work per page than this one, so as a starting point plan on 20 to 30

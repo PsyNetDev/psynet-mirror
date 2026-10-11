@@ -175,7 +175,7 @@ server, see
 Run the sweep on the server you will deploy to, with ``--time-factor 1`` so
 that bots work at a realistic pace; bots with ``--time-factor 0`` load the
 server far more than people do. Each test's measurement window includes the
-time bots take to start (about 10 per second by default), so use a
+time bots take to start (about 8 per second), so use a
 ``--duration-minutes`` of at least two or three for steady results. A test
 whose bots didn't all start within the window counts as exceeding the limits,
 and the summary warns when starting the bots took more than a quarter of the

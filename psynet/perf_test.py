@@ -640,6 +640,7 @@ class PerformanceTester:
 
         stats = (
             db.session.query(
+                func.count(Request.id).label("count"),
                 func.avg(Request.duration).label("avg"),
                 func.percentile_cont(0.5)
                 .within_group(Request.duration)
@@ -875,6 +876,7 @@ class PerformanceTester:
             "bots_failed": bots_failed,
             "bots_incomplete": bots_incomplete,
             "total_requests": requests_during_test,
+            "key_requests": stats.count,
             "requests_per_sec": requests_per_sec,
             "bot_errors": bot_state["total_bot_errors"],
             "avg_response_time": avg_response_time,
@@ -1422,7 +1424,7 @@ def capacity_failures(result, limits=CapacityLimits()):
         )
     request_errors = result.get("request_errors") or 0
     if request_errors > limits.max_request_error_rate * (
-        result.get("total_requests") or 0
+        result.get("key_requests") or 0
     ):
         reasons.append(f"{request_errors} request errors")
     bot_errors = result.get("bot_errors") or 0

@@ -1968,21 +1968,28 @@ def safe(func):
     return wrapper
 
 
-def keep_alive_session():
+def keep_alive_session(retry_posts=False):
     """
     Return a ``requests.Session`` that reuses connections and retries dropped ones.
 
     A server or proxy may close an idle keep-alive connection just as the
     client reuses it (gunicorn's default keep-alive is 2 seconds), which shows
     up as "Connection reset by peer". The session retries such a request once.
-    Responses with error statuses are never retried. Repeating a ``/response``
-    POST is safe because the server rejects answers for a page the
-    participant has already left.
+    Responses with error statuses are never retried.
+
+    Parameters
+    ----------
+    retry_posts : bool
+        Also retry POST and other non-idempotent requests. The server may
+        already have handled a request whose connection then dropped, so only
+        enable this when a repeat is harmless, as for bots' ``/response``
+        POSTs, which the server rejects for a page the participant has left.
     """
     session = requests.Session()
-    adapter = requests.adapters.HTTPAdapter(
-        max_retries=Retry(total=1, status=0, allowed_methods=None)
-    )
+    retry = Retry(total=1, status=0)
+    if retry_posts:
+        retry = Retry(total=1, status=0, allowed_methods=None)
+    adapter = requests.adapters.HTTPAdapter(max_retries=retry)
     session.mount("http://", adapter)
     session.mount("https://", adapter)
     return session

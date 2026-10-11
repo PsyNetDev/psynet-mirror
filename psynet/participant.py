@@ -1323,7 +1323,7 @@ class ParticipantDriver:
         bottleneck of a performance test.
         """
         if "_http_session" not in self.__dict__:
-            self.__dict__["_http_session"] = keep_alive_session()
+            self.__dict__["_http_session"] = keep_alive_session(retry_posts=True)
         return self.__dict__["_http_session"]
 
     def take_page(

@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+import requests
 
 from psynet.pytest_psynet import path_to_demo_experiment
 from psynet.timeline import Module
@@ -847,8 +848,9 @@ def test_templates_read_config_lazily_and_hide_sensitive_keys():
     assert html == "dark|hidden|unset"
 
 
-def test_keep_alive_session_retries_a_dropped_connection():
-    """A POST on a connection the server drops is resent once, not failed."""
+@pytest.mark.parametrize("retry_posts", [True, False])
+def test_keep_alive_session_retries_a_dropped_post_only_when_asked(retry_posts):
+    """A POST on a connection the server drops is resent once only if allowed."""
     import socket
     import threading
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -874,10 +876,14 @@ def test_keep_alive_session_retries_a_dropped_connection():
     threading.Thread(target=server.serve_forever, daemon=True).start()
     url = f"http://127.0.0.1:{server.server_port}/response"
     try:
-        with keep_alive_session() as session:
-            assert session.post(url, data={"a": 1}).status_code == 200
+        with keep_alive_session(retry_posts=retry_posts) as session:
+            if retry_posts:
+                assert session.post(url, data={"a": 1}).status_code == 200
+            else:
+                with pytest.raises(requests.ConnectionError):
+                    session.post(url, data={"a": 1})
     finally:
         server.shutdown()
         server.server_close()
 
-    assert attempts == ["/response", "/response"]
+    assert len(attempts) == (2 if retry_posts else 1)
