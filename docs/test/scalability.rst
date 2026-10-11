@@ -36,6 +36,14 @@ one test per value and prints a summary comparing them:
 
     psynet performance-test local --n-bots "5,10,20,40"
 
+Every bot and server process holds PostgreSQL connections, and all local
+experiments and test sessions share one PostgreSQL server, whose
+``max_connections`` is 100 by default. A run with a few hundred bots, or
+several runs at once, can exceed it: PostgreSQL then refuses connections with
+"sorry, too many clients already". Run fewer bots at once, stop other local
+experiments, or raise ``max_connections`` (see
+:doc:`/developer/running_tests`).
+
 To use a server that is already running (for example from ``psynet debug
 local``), add ``--existing``. A ``psynet debug local --legacy`` server stops
 itself once the experiment reports that it is complete, which can happen

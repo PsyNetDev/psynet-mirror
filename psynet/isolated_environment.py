@@ -146,18 +146,59 @@ def _is_psynet_debug(cmdline):
     )
 
 
+#: PostgreSQL's SQLSTATE for ``too_many_connections``.
+_TOO_MANY_CONNECTIONS_SQLSTATE = "53300"
+_TOO_MANY_CONNECTIONS_TEXTS = (
+    "too many clients already",
+    "remaining connection slots are reserved",
+)
+
+
+def postgres_connection_limit_message(error):
+    """Explain a PostgreSQL "too many connections" error, or return None.
+
+    Parameters
+    ----------
+    error : BaseException or str
+        An exception (for example from psycopg2 or SQLAlchemy) or text such as
+        server output.
+
+    Returns
+    -------
+    str or None
+        Advice for the user if ``error`` says that the server has run out of
+        connections, otherwise None.
+    """
+    if getattr(error, "pgcode", None) == _TOO_MANY_CONNECTIONS_SQLSTATE or any(
+        text in str(error) for text in _TOO_MANY_CONNECTIONS_TEXTS
+    ):
+        return (
+            "The local PostgreSQL server has run out of connections. Every local "
+            "experiment, test session and database shares this server and its "
+            "max_connections limit (100 by default). Run fewer bots or test "
+            "sessions at once, stop other local experiments, or raise "
+            "max_connections in postgresql.conf (psql -c 'SHOW config_file' "
+            "shows where it is) and restart PostgreSQL."
+        )
+    return None
+
+
 class IsolationError(RuntimeError):
     """Raised when a test session can't get its own database and Redis.
 
-    The message gives the reason and how to opt out, so callers can show
-    ``str(error)`` as is; the original exception is the ``__cause__``.
+    The message gives the reason and how to opt out (or, if PostgreSQL ran out
+    of connections, how to free some), so callers can show ``str(error)`` as
+    is; the original exception is the ``__cause__``.
     """
 
     def __init__(self, reason):
-        super().__init__(
-            f"Could not give these tests their own database and Redis ({reason}). "
+        advice = postgres_connection_limit_message(reason) or (
             f"Set {ENV_VAR}={SHARED} to run them against the local database and "
             "Redis instead, which resets any local debug server."
+        )
+        super().__init__(
+            f"Could not give these tests their own database and Redis ({reason}). "
+            f"{advice}"
         )
 
 
