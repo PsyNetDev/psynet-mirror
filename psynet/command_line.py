@@ -4262,6 +4262,31 @@ _test_options["performance_n_bots"] = click.option(
     If not specified, will default to Experiment.test_n_bots""",
 )
 
+
+def _validate_bot_processes(ctx, param, value):
+    """Click callback: return ``--bot-processes`` as ``"auto"``, a whole number or ``None``."""
+    if value is None or value.strip().lower() == "auto":
+        return None if value is None else "auto"
+    try:
+        n_processes = int(value)
+    except ValueError:
+        n_processes = 0
+    if n_processes < 1:
+        raise click.BadParameter("use 'auto' or a whole number of at least 1.")
+    return n_processes
+
+
+_test_options["performance_bot_processes"] = click.option(
+    "--bot-processes",
+    callback=_validate_bot_processes,
+    help="""
+    Number of processes to run the bots in. One process tops out at a few
+    hundred requests per second, and a test in which a bot process uses more
+    than 70% of a CPU core counts as could not be tested. 'auto' (the default)
+    uses a process per 250 bots, up to one per four CPU cores; with --n-bots
+    auto it plans for the largest count the search may test.""",
+)
+
 _test_options["performance_max_p95_ms"] = click.option(
     "--max-p95-ms",
     type=click.FloatRange(min=0, min_open=True),
@@ -4327,7 +4352,7 @@ _test_options["performance_json_output"] = click.option(
     dallinger_version, python_version, platform, experiment_label,
     started_at / finished_at (ISO timestamps), options (n_bots_sweep,
     capacity_search, max_p95_s, max_queue_p95_s, duration_minutes,
-    stagger_interval_s, time_factor), and results
+    stagger_interval_s, time_factor, bot_processes), and results
     (one entry per bot count tested, with all metrics).
     Useful for downstream consumption (e.g. benchmarking tools like asv).""",
 )
@@ -4494,6 +4519,7 @@ def performance_test(ctx):
 @_test_options["performance_max_queue_p95_s"]
 @_test_options["performance_json_output"]
 @_test_options["performance_bot_log"]
+@_test_options["performance_bot_processes"]
 @click.option("--debug", is_flag=True, help="Enable debug logging for verbose output")
 @_in_isolated_test_environment
 def performance_test__local(existing=False, json_output=None, debug=False, **options):
@@ -4619,6 +4645,7 @@ def _run_performance_test_with_existing_server(
     duration_minutes=None,
     max_p95_ms=None,
     max_queue_p95_s=None,
+    bot_processes=None,
     bot_log=None,
 ):
     """Run performance test connecting to an already-running server."""
@@ -4680,17 +4707,19 @@ def _run_performance_test_with_existing_server(
             max_p95_s=None if max_p95_ms is None else float(max_p95_ms) / 1000,
             max_queue_p95_s=max_queue_p95_s,
         ),
+        bot_processes="auto" if bot_processes is None else bot_processes,
     )
+    # Bot processes append to this log too.
     if bot_log is None:
         bot_log_file = tempfile.NamedTemporaryFile(
-            mode="w",
+            mode="a",
             delete=False,
             prefix="psynet_bots_",
             suffix=".log",
             dir=_performance_log_directory(),
         )
     else:
-        bot_log_file = open(bot_log, "w")
+        bot_log_file = open(bot_log, "a")
     print(f"Bot output log: {bot_log_file.name}")
     started_at = datetime.datetime.now().isoformat(timespec="seconds")
     try:
@@ -4716,6 +4745,7 @@ def _run_performance_test_with_existing_server(
             "duration_minutes": tester.duration_minutes,
             "stagger_interval_s": tester.stagger_interval_s,
             "time_factor": tester.time_factor,
+            "bot_processes": tester.bot_processes,
         }
         _write_json_results(
             json_output,
@@ -4967,6 +4997,7 @@ def _run_performance_test_with_new_server(*, debug=False, json_output=None, **op
 @_test_options["performance_max_p95_ms"]
 @_test_options["performance_max_queue_p95_s"]
 @_test_options["performance_json_output"]
+@_test_options["performance_bot_processes"]
 @click.pass_context
 def performance_test__docker_ssh(ctx, app, server, json_output=None, **options):
     """
@@ -5102,6 +5133,7 @@ def audit_simulate(ctx, n_bots=None):
 @_test_options["duration_minutes"]
 @_test_options["performance_max_p95_ms"]
 @_test_options["performance_max_queue_p95_s"]
+@_test_options["performance_bot_processes"]
 @click.option("--debug", is_flag=True, help="Enable debug logging for verbose output")
 @require_exp_directory
 @_in_isolated_test_environment

@@ -160,6 +160,76 @@ def test_bots_that_fail_count_as_started_and_errored(monkeypatch):
     assert kinds["HTTP 500 on /participant_status"] == bot_state["total_bot_errors"] - 1
 
 
+def test_bot_processes_report_their_bots_to_the_parent(monkeypatch):
+    """Runs the bot-process protocol with threads standing in for processes."""
+    import itertools
+    import queue
+    import threading
+    import time
+    from types import SimpleNamespace
+
+    from dallinger import db
+
+    from psynet.participant import ParticipantDriver
+
+    ids = itertools.count(1)
+
+    class FakeDriver(ParticipantDriver):
+        def __init__(self):
+            self.id = next(ids)
+
+    class ThreadProcess(threading.Thread):
+        pid = exitcode = None
+
+        def start(self):
+            super().start()
+            self.pid = self.native_id
+
+    def run_bot_process(index, commands, events, settings):
+        events.put((None, "ready", index))
+        PerformanceTester(
+            None, None, stagger_interval_s=0, time_factor=0
+        )._serve_bot_commands(index, commands, events)
+
+    experiment = Mock()
+    experiment.run_bot.side_effect = lambda bot, time_factor: bot._sleep(60)
+    monkeypatch.setattr("psynet.bot.BotDriver", FakeDriver)
+    monkeypatch.setattr("psynet.experiment.get_experiment", lambda: experiment)
+    monkeypatch.setattr(db, "session", Mock())
+    monkeypatch.setattr("psynet.perf_test._fit_redis_pool_to_bots", Mock())
+    monkeypatch.setattr("psynet.perf_test._run_bot_process", run_bot_process)
+    monkeypatch.setattr(
+        "psynet.perf_test.multiprocessing.get_context",
+        lambda method: SimpleNamespace(Queue=queue.Queue, Process=ThreadProcess),
+    )
+    tester = PerformanceTester(Mock(), "http://x", bot_processes=2)
+
+    with tester._bots_in_processes(max_bots=4, bot_log_file=None):
+        bot_state = tester._initialize_bot_tracking()
+        tester._bot_processes.begin_test(bot_state, time.time() + 60, 4)
+        for _ in range(4):
+            tester._bot_processes.start_slot()
+        deadline = time.time() + 5
+        while len(bot_state["running"]) < 4 and time.time() < deadline:
+            time.sleep(0.01)
+        assert bot_state["peak_running"] == bot_state["total_bots_started"] == 4
+        tester._stop_bots(bot_state, timeout_s=5)
+
+    assert [terminated for _, _, terminated in bot_state["bot_durations"]] == [True] * 4
+    assert len(bot_state["cpu_shares"]) == 2
+
+
+@pytest.mark.parametrize(
+    "requested, max_bots, cpu_count, expected",
+    [("auto", 100, 16, 1), ("auto", 2000, 16, 4), ("auto", 2000, 2, 1), (8, 3, 2, 3)],
+)
+def test_bot_process_count(monkeypatch, requested, max_bots, cpu_count, expected):
+    from psynet.perf_test import _choose_bot_processes
+
+    monkeypatch.setattr("psynet.perf_test.os.cpu_count", lambda: cpu_count)
+    assert _choose_bot_processes(requested, max_bots) == expected
+
+
 @pytest.mark.parametrize("url", ["http://localhost:5000", None])
 def test_bot_errors_without_a_route_are_still_described(url):
     import requests

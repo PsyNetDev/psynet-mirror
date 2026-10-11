@@ -4641,6 +4641,23 @@ def test_performance_log_directory_keeps_only_recent_logs(tmp_path, monkeypatch)
     assert bot_log.exists()
 
 
+def test_bot_processes_option_accepts_auto_or_a_positive_count():
+    from psynet.command_line import _test_options
+
+    @click.command()
+    @_test_options["performance_bot_processes"]
+    def command(bot_processes):
+        click.echo(repr(bot_processes))
+
+    for value, expected in [(" Auto", "'auto'"), ("4", "4")]:
+        result = CliRunner().invoke(command, ["--bot-processes", value])
+        assert result.output.strip() == expected
+    assert CliRunner().invoke(command, []).output.strip() == "None"
+    for invalid in ["0", "two"]:
+        result = CliRunner().invoke(command, ["--bot-processes", invalid])
+        assert result.exit_code == 2
+
+
 def test_performance_test_bot_counts():
     from psynet.command_line import _validate_performance_n_bots
 
@@ -4670,13 +4687,31 @@ def test_experiment_never_completes_during_performance_test(monkeypatch):
     "options,expected",
     [
         (
-            dict(stagger=0, time_factor=0, duration_minutes=0),
-            dict(duration_minutes=0, stagger_interval_s=0.0, time_factor=0),
+            dict(stagger=0, time_factor=0, duration_minutes=0, bot_processes=3),
+            dict(
+                duration_minutes=0,
+                stagger_interval_s=0.0,
+                time_factor=0,
+                bot_processes=3,
+            ),
         ),
-        ({}, dict(duration_minutes=2.0, stagger_interval_s=0.5, time_factor=1.0)),
+        (
+            {},
+            dict(
+                duration_minutes=2.0,
+                stagger_interval_s=0.5,
+                time_factor=1.0,
+                bot_processes="auto",
+            ),
+        ),
         (
             dict(n_bots="auto"),
-            dict(duration_minutes=2.0, stagger_interval_s=0.5, time_factor=1.0),
+            dict(
+                duration_minutes=2.0,
+                stagger_interval_s=0.5,
+                time_factor=1.0,
+                bot_processes="auto",
+            ),
         ),
     ],
     ids=["explicit-zeros", "defaults", "capacity-search"],
@@ -4738,11 +4773,12 @@ def test_ssh_performance_test_command_forwards_zero_valued_options():
         duration_minutes=1.5,
         max_p95_ms=800,
         max_queue_p95_s=0,
+        bot_processes=2,
     ) == (
         "env PSYNET_EXPERIMENT_URL=http://localhost:5000 "
         "psynet performance-test local --existing "
         "--n-bots 5,10 --stagger 0 --time-factor 0 --duration-minutes 1.5 "
-        "--max-p95-ms 800 --max-queue-p95-s 0"
+        "--max-p95-ms 800 --max-queue-p95-s 0 --bot-processes 2"
     )
     assert _build_ssh_performance_test_cmd(n_bots="auto", bot_log="/tmp/b.log") == (
         "env PSYNET_EXPERIMENT_URL=http://localhost:5000 "

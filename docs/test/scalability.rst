@@ -84,6 +84,13 @@ Controlling the load
     participants; ``0`` makes bots go as fast as possible. Each bot's pace varies
     randomly around this value.
 
+``--bot-processes``
+    The number of processes to run the bots in (see
+    :ref:`performance_testing_bot_processes`). ``auto``, the default, uses one
+    process per 250 bots, up to one per four CPU cores, so tests of fewer than
+    250 bots run in a single process. With ``--n-bots auto`` it plans for the
+    largest count the search may test.
+
 For example, to model up to 50 participants arriving over time and working at
 a realistic pace:
 
@@ -232,6 +239,9 @@ held the test back. Response times, queue
 waits, request errors and busy responses still cap the capacity in a test
 that also had these limits.
 
+The processes running the bots can also hold a test back, when they run out
+of CPU; see :ref:`performance_testing_bot_processes`.
+
 Test the experiment at the length participants will take it. When bots
 finish within seconds, the test mostly measures how quickly bots are
 created and replaced rather than a realistic load, so avoid testing
@@ -255,12 +265,10 @@ Testing on a server
 -------------------
 
 A local test is limited by your own computer, because the bots share its CPUs
-with the server. The bots run as threads inside the ``performance-test``
-process, so they are cheap: on a four-core computer, 200 bots working at a
-realistic pace used about a third of one core, against nearly three cores for
-the server. Because the bots share a process, they also share module-level
-state and the experiment instance, as in :ref:`parallel tests
-<parallel_bot_tests>`. To test a real server, launch the experiment there in
+with the server. The bots are cheap (see
+:ref:`performance_testing_bot_processes`): on a four-core computer, 200 bots
+working at a realistic pace used about a third of one core, against nearly
+three cores for the server. To test a real server, launch the experiment there in
 debug mode, then run the test over SSH. The bots then run inside the server's
 web container and send their requests straight to the experiment server,
 skipping the server's web proxy and any Cloudflare tunnel, so the test
@@ -281,6 +289,43 @@ bot log out of the container and prints where it saved it.
 If the server is on a private network, such as a lab computer, deploy with
 ``--ingress cloudflare``: Let's Encrypt cannot issue certificates for a
 private address, so classic ingress fails there.
+
+.. _performance_testing_bot_processes:
+
+Processes running the bots
+--------------------------
+
+The bots run as threads inside the ``performance-test`` process, which
+creates their participants, sends their requests and parses the pages they
+get back. Because they share a process, they also share module-level state
+and the experiment instance, as in :ref:`parallel tests
+<parallel_bot_tests>`. The threads take turns on one Python interpreter, so
+one process can only send a few hundred requests per second: on a 16-core
+server, 600 bots at ``--time-factor 1`` made 166 requests per second and kept
+the process about 80% busy. Beyond that every bot slows down, and the server
+gets less load than that many participants would give it, so it looks
+faster than it is.
+
+Larger tests therefore spread the bots over several processes, set with
+``--bot-processes``. The ``performance-test`` process starts them once per
+run and keeps all the bookkeeping, so the results look the same however many
+processes there are; each process writes to the same bot log. If one stops
+unexpectedly, for example because the computer ran out of memory, the test
+ends early and counts as could not be tested.
+
+PsyNet measures the CPU time each process running bots uses during each test
+and shows the busiest one under *Bot runtimes* as *Bot process CPU*, as a
+share of one CPU core. A test in which any process used more than 70% of a
+core counts as could not be tested, like a test whose bots could not start
+fast enough. With ``--n-bots auto``, the search then stops there, and the
+summary reports the capacity as at least the largest count that passed and
+suggests more ``--bot-processes``. Increase ``--bot-processes`` and run again
+to measure further.
+
+With ``performance-test ssh`` the bot processes run on the experiment server
+and take CPU from it, which is why ``auto`` uses at most one process per four
+cores. Each bot holds its own PostgreSQL connection whichever process it runs
+in, and each extra process adds at most one more.
 
 Saving results
 --------------
