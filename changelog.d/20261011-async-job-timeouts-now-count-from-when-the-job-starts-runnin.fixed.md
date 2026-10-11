@@ -1,0 +1,1 @@
+Async job timeouts, including trial makers' `async_timeout_sec`, now count from when the job starts running, so jobs waiting in a busy queue are no longer failed before they run, and a job that has already failed is no longer run later by the worker.

@@ -380,12 +380,36 @@ def test_deprecated_process_names_still_work(monkeypatch, participant):
     "experiment_directory", [path_to_test_experiment("static")], indirect=True
 )
 @pytest.mark.usefixtures("launched_experiment")
-def test_enqueue_starts_timeout_and_enforces_unique():
-    job = WorkerAsyncJob(do_nothing, timeout=30)
-    assert job.timeout_scheduled_for is None
-    job.enqueue()
-    assert (job.timeout_scheduled_for - job.time_enqueued).total_seconds() == 30
+def test_timeout_counts_from_start_not_enqueue(monkeypatch):
+    unworked_queue = Queue("psynet_test_unworked", connection=redis_conn)
+    monkeypatch.setattr(
+        WorkerAsyncJob, "get_redis_queue", classmethod(lambda cls, p: unworked_queue)
+    )
+    queued = WorkerAsyncJob(do_nothing, timeout=0.01).enqueue()
+    stalled = WorkerAsyncJob(do_nothing, timeout=0.01).enqueue()
+    stalled.log_time_started()
+    queued_id, stalled_id = queued.id, stalled.id
+    db.session.commit()
+    time.sleep(0.05)
+    WorkerAsyncJob.check_timeouts()
+    queued = WorkerAsyncJob.query.get(queued_id)
+    assert queued.pending and not queued.failed
+    assert WorkerAsyncJob.query.get(stalled_id).failed
 
+    WorkerAsyncJob.call_function(queued_id)
+    queued = WorkerAsyncJob.query.get(queued_id)
+    assert queued.finished and not queued.failed
+    assert queued.timeout_scheduled_for > queued.time_started
+
+    WorkerAsyncJob.call_function(stalled_id)
+    assert not WorkerAsyncJob.query.get(stalled_id).finished
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("static")], indirect=True
+)
+@pytest.mark.usefixtures("launched_experiment")
+def test_enqueue_enforces_unique():
     LocalAsyncJob(do_nothing, unique=True).enqueue()
     duplicate = LocalAsyncJob(do_nothing, unique=True)
     with pytest.raises(IntegrityError):
