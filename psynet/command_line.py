@@ -4282,7 +4282,7 @@ _test_options["performance_bot_processes"] = click.option(
     help="""
     Number of processes to run the bots in. One process tops out at a few
     hundred requests per second, and a test in which the bots in a process
-    run more than 100 ms late (p95) counts as could not be tested. 'auto' (the default)
+    run more than 50 ms late (p95) counts as could not be tested. 'auto' (the default)
     uses a process per 250 bots, up to one per four CPU cores; with --n-bots
     auto it plans for the largest count the search may test.""",
 )

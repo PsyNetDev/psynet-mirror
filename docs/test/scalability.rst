@@ -220,17 +220,19 @@ three for steady results. A test whose bots didn't all start within the
 window counts as exceeding the limits, and the summary warns when starting
 the bots took more than a quarter of the test.
 
-One ``performance-test`` process creates each bot's participant itself, so
-it can only start new bots at a limited rate, which depends on the
-experiment and the computer. The most bots it can keep taking part at once
+The processes running the bots create each bot's participant themselves, so
+they can only start new bots at a limited rate, which depends on the
+experiment, the computer and ``--bot-processes``. The most bots they can
+keep taking part at once
 is roughly that start rate multiplied by how long each bot takes to finish
 the experiment. A longer experiment, or a larger ``--time-factor``, keeps
 more bots taking part at once. A test in which fewer than 90% of the
 requested bots were ever taking part at the same time counts as exceeding
 the limits. Bots that fail because PostgreSQL ran out of connections count
 against the bot error limit too, but they also point to the test: the bots
-open database connections in the test process that participants' browsers
-don't. These are limits of the test, not of the server, so when they are
+open database connections in the processes running them that participants'
+browsers don't. Bots that run late because their process is too busy (see
+:ref:`performance_testing_bot_processes`) are a limit of the test too. These are limits of the test, not of the server, so when they are
 the only limits the smallest failing
 count exceeded, the summary reports the capacity as "at least" the largest
 passing count and doesn't suggest a participant cap. If no count passed, it
@@ -238,9 +240,6 @@ reports that the smallest count could not be tested, with advice on what
 held the test back. Response times, queue
 waits, request errors and busy responses still cap the capacity in a test
 that also had these limits.
-
-The processes running the bots can also hold a test back, when they run out
-of CPU; see :ref:`performance_testing_bot_processes`.
 
 Test the experiment at the length participants will take it. When bots
 finish within seconds, the test mostly measures how quickly bots are

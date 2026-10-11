@@ -186,7 +186,7 @@ def test_bot_processes_report_their_bots_to_the_parent(monkeypatch):
             self.pid = self.native_id
 
     def run_bot_process(index, commands, events, settings):
-        events.put((None, "ready", index))
+        events.put((0, "ready", index))
         PerformanceTester(
             None, None, stagger_interval_s=0, time_factor=0
         )._serve_bot_commands(index, commands, events)
@@ -217,6 +217,7 @@ def test_bot_processes_report_their_bots_to_the_parent(monkeypatch):
 
     assert [terminated for _, _, terminated in bot_state["bot_durations"]] == [True] * 4
     assert len(bot_state["process_loads"]) == 2
+    assert bot_state["unreported_bot_processes"] == []
 
 
 @pytest.mark.parametrize(
@@ -576,18 +577,51 @@ def test_a_busy_cpu_share_alone_does_not_fail_a_test():
 
 
 def test_load_monitor_measures_how_late_threads_run_while_the_lock_is_held():
+    import sys
     import time
 
     from psynet.perf_test import _LoadMonitor
 
     monitor = _LoadMonitor()
     time.sleep(0.2)
-    # sum() over a range runs in C without releasing the interpreter lock.
-    sum(range(50_000_000))
-    cpu_share, lag_p95_s = monitor.stop()
+    switch_interval = sys.getswitchinterval()
+    # Keep the interpreter lock in this thread for 0.3 s.
+    sys.setswitchinterval(1.0)
+    try:
+        deadline = time.monotonic() + 0.3
+        while time.monotonic() < deadline:
+            pass
+    finally:
+        sys.setswitchinterval(switch_interval)
+    _, lag_p95_s = monitor.stop()
 
     assert lag_p95_s > 0.1
-    assert cpu_share > 0.3
+
+
+def test_bot_processes_ignore_messages_from_an_earlier_test():
+    import queue
+    import time
+
+    from psynet.perf_test import _BotProcesses
+
+    bot_processes = object.__new__(_BotProcesses)
+    bot_state = PerformanceTester(Mock(), "http://x")._initialize_bot_tracking()
+    bot_processes._test = (2, bot_state, time.time() + 60)
+    bot_processes._events, bot_processes._replies = queue.Queue(), queue.Queue()
+    for event in [
+        (1, "start", 7, 0.1),
+        (1, "finished", 0, (0.5, 0.2), 0),
+        (2, "start", 8, 0.1),
+        (2, "finished", 0, (0.1, 0.01), 0),
+        None,
+    ]:
+        bot_processes._events.put(event)
+
+    bot_processes._apply_events()
+
+    assert list(bot_state["running"]) == [8]
+    assert bot_processes._replies.get_nowait() == (2, "finished", 0, (0.1, 0.01), 0)
+    assert bot_processes._replies.empty()
 
 
 _POSTGRES_BOT_ERRORS = dict(

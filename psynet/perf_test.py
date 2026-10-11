@@ -34,7 +34,7 @@ import threading
 import time
 import traceback
 from collections import Counter
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from decimal import Decimal
 from functools import partial
@@ -67,6 +67,7 @@ _BOT_PROCESS_START_TIMEOUT_S = 300
 # How much longer than the bots' stop timeout to wait for bot processes to reply.
 _BOT_PROCESS_REPLY_GRACE_S = 10
 _LAG_PROBE_INTERVAL_S = 0.05
+_BOT_PROCESS_EXIT_JOIN_S = 5
 
 
 def _is_bot_thread_record(record):
@@ -523,7 +524,8 @@ class PerformanceTester:
         logger.info("")
         logger.info(bold("=" * 80))
         logger.info(bold(f"TEST {label}: Running with {n_bots:,} concurrent bots"))
-        _fit_redis_pool_to_bots(n_bots)
+        if self._bot_processes is None:
+            _fit_redis_pool_to_bots(n_bots)
         return self._test_performance(n_bots, bot_log_file=bot_log_file)
 
     def _print_performance_summary(self, results):
@@ -546,15 +548,18 @@ class PerformanceTester:
         initial_state = self._capture_initial_state()
         bot_state = self._initialize_bot_tracking()
         start_time = time.time()
-        load = _LoadMonitor()
         end_time = start_time + (duration_minutes * 60)
         if self._bot_processes is None:
+            load = _LoadMonitor()
             start_bot_slot = self._create_bot_launcher(bot_state, end_time)
+            bot_logs = _bot_logs_to(bot_log_file)
         else:
+            load = None
             self._bot_processes.begin_test(bot_state, end_time, n)
             start_bot_slot = self._bot_processes.start_slot
+            bot_logs = nullcontext()
 
-        with _bot_logs_to(bot_log_file):
+        with bot_logs:
             try:
                 self._run_monitoring_loop(
                     n, bot_state, start_bot_slot, start_time, end_time
@@ -563,7 +568,8 @@ class PerformanceTester:
                 last_request_id = self._max_request_id()
                 ended_at = datetime.datetime.now()
             finally:
-                bot_state["process_loads"].append(load.stop())
+                if load is not None:
+                    bot_state["process_loads"].append(load.stop())
                 self._stop_bots(bot_state)
         self._clear_realtime_status()
 
@@ -632,6 +638,8 @@ class PerformanceTester:
             "process_loads": [],
             # Why a bot process stopped during the test, if one did.
             "bot_process_failure": None,
+            # Numbers of bot processes that didn't report their load.
+            "unreported_bot_processes": [],
             "last_status_update": time.time(),
             "status_line_length": 0,
         }
@@ -773,8 +781,9 @@ class PerformanceTester:
         if self._bot_processes is None:
             n_alive = _join_threads(bot_state["threads"], timeout_s)
         else:
-            process_loads, n_alive = self._bot_processes.end_test(timeout_s)
+            process_loads, unreported, n_alive = self._bot_processes.end_test(timeout_s)
             bot_state["process_loads"] += process_loads
+            bot_state["unreported_bot_processes"] = unreported
         if n_alive:
             logger.warning(
                 f"{n_alive} bot(s) were still waiting for the server "
@@ -1147,6 +1156,7 @@ class PerformanceTester:
             "actual_duration": actual_duration,
             "server_stopped": bot_state["server_stopped"],
             "bot_process_failure": bot_state["bot_process_failure"],
+            "unreported_bot_processes": bot_state["unreported_bot_processes"],
             "bot_processes": self._n_bot_processes,
             "slots_started": bot_state["slots_started"],
             "peak_running": bot_state["peak_running"],
@@ -1218,8 +1228,8 @@ class PerformanceTester:
 
         See :class:`_BotProcesses` for the commands and events.
         """
-        stop_event, threads, end_time, record = threading.Event(), [], None, None
-        load = None
+        stop_event, threads, end_time = threading.Event(), [], None
+        test_id, load = 0, None
         while True:
             command, *args = commands.get()
             if command == "test":
@@ -1243,8 +1253,10 @@ class PerformanceTester:
                 load = None
                 stop_event.set()
                 n_alive = _join_threads(threads, timeout_s)
-                events.put((None, "finished", index, process_load, n_alive))
+                events.put((test_id, "finished", index, process_load, n_alive))
             elif command == "exit":
+                stop_event.set()
+                _join_threads(threads, _BOT_PROCESS_EXIT_JOIN_S)
                 return
 
 
@@ -1253,20 +1265,25 @@ def _put_bot_event(events, test_id, kind, *args):
     events.put((test_id, kind, *args))
 
 
+_REPLY_KINDS = frozenset({"ready", "failed", "finished"})
+
+
 class _BotProcesses:
     """Spawned child processes that run bot slots for a :class:`PerformanceTester`.
 
     The parent keeps all the bookkeeping. It sends each child commands on the
     child's own queue: ``("test", test_id, end_time, n_slots)`` before a test,
     ``("slot",)`` to start one bot slot, ``("stop", timeout_s)`` to stop the
-    test's bots and ``("exit",)``. Children send events on one shared queue:
-    ``(test_id, kind, *args)`` for each bot's progress, which a thread here
-    applies to the test's ``bot_state`` with
+    test's bots and ``("exit",)`` to stop them and exit. Children send
+    messages on one shared queue, each tagged with the test it belongs to
+    (0 before the first test): ``(test_id, kind, *args)`` for each bot's
+    progress, which a thread here applies to the test's ``bot_state`` with
     :meth:`PerformanceTester._record_bot_event` just as a bot thread in the
-    parent would, and ``(None, kind, index, *payload)`` replies: ``"ready"``,
-    ``"failed"`` with a traceback, and ``"finished"`` with the child's load
-    (see :class:`_LoadMonitor`) and how many of its bots were still running. Events from bots of an
-    earlier test are dropped.
+    parent would, and ``(test_id, kind, index, *payload)`` replies:
+    ``"ready"``, ``"failed"`` with a traceback, and ``"finished"`` with the
+    child's load (see :class:`_LoadMonitor`) and how many of its bots were
+    still running. Messages from an earlier test are dropped, so bots that
+    outlive their test can't affect the next one.
 
     Children are spawned, not forked: database engines, Redis pools and
     threads don't survive a fork. They ignore Ctrl-C and leave stopping to
@@ -1293,8 +1310,9 @@ class _BotProcesses:
             )
             for index, commands in enumerate(self._commands)
         ]
-        self._test_id = 0
-        self._bot_state = self._end_time = None
+        # (test_id, bot_state, end_time), replaced as a whole so that the
+        # event thread always reads a consistent test.
+        self._test = (0, None, None)
         self._n_slots_started = 0
         self._event_thread = threading.Thread(
             target=self._apply_events, name="psynet-bot-events", daemon=True
@@ -1315,21 +1333,22 @@ class _BotProcesses:
             raise
 
     def _apply_events(self):
-        """Apply bot events to the current test and pass replies on, until closed."""
+        """Apply the current test's bot events and pass its replies on, until closed."""
         while True:
             event = self._events.get()
             if event is None:
                 return
             test_id, kind, *args = event
-            if test_id is None:
-                self._replies.put((kind, *args))
-            elif test_id == self._test_id:
-                try:
-                    PerformanceTester._record_bot_event(
-                        self._bot_state, self._end_time, kind, *args
-                    )
-                except Exception:
-                    logger.exception("Could not record bot event %r.", event)
+            current_id, bot_state, end_time = self._test
+            if test_id != current_id:
+                continue
+            if kind in _REPLY_KINDS:
+                self._replies.put(event)
+                continue
+            try:
+                PerformanceTester._record_bot_event(bot_state, end_time, kind, *args)
+            except Exception:
+                logger.exception("Could not record bot event %r.", event)
 
     def _collect_replies(self, kind, timeout_s):
         """Wait up to ``timeout_s`` for a ``kind`` reply from each live child.
@@ -1351,12 +1370,14 @@ class _BotProcesses:
             done_waiting = not waiting or remaining <= 0
             try:
                 # Still read replies that a child sent just before it exited.
-                reply_kind, index, *payload = self._replies.get(
+                test_id, reply_kind, index, *payload = self._replies.get(
                     timeout=0.5 if done_waiting else min(1.0, remaining)
                 )
             except queue.Empty:
                 if done_waiting:
                     break
+                continue
+            if test_id != self._test[0]:
                 continue
             if reply_kind == "failed":
                 raise RuntimeError(
@@ -1368,12 +1389,14 @@ class _BotProcesses:
 
     def begin_test(self, bot_state, end_time, n_bots):
         """Tell the children that a test of ``n_bots`` bots, ending at ``end_time``, starts."""
-        self._bot_state, self._end_time = bot_state, end_time
-        self._test_id += 1
+        test_id = self._test[0] + 1
+        self._test = (test_id, bot_state, end_time)
+        while not self._replies.empty():
+            self._replies.get_nowait()
         self._n_slots_started = 0
         n_slots = math.ceil(n_bots / len(self._processes))
         for commands in self._commands:
-            commands.put(("test", self._test_id, end_time, n_slots))
+            commands.put(("test", test_id, end_time, n_slots))
 
     def start_slot(self):
         """Start one bot slot, in each child in turn."""
@@ -1386,28 +1409,21 @@ class _BotProcesses:
 
         Returns
         -------
-        tuple of (list of tuple, int)
-            Each child's load during the test, as returned by
-            :meth:`_LoadMonitor.stop`, and how many bots were still running
-            when the children stopped waiting for them.
+        tuple of (list of tuple, list of int, int)
+            The load of each child that reported, as returned by
+            :meth:`_LoadMonitor.stop`; the numbers of those that didn't; and
+            how many bots were still running when the children stopped
+            waiting for them.
         """
         for commands in self._commands:
             commands.put(("stop", timeout_s))
         replies = self._collect_replies(
             "finished", timeout_s + _BOT_PROCESS_REPLY_GRACE_S
         )
-        silent = [
-            index + 1
-            for index, process in enumerate(self._processes)
-            if index not in replies and process.is_alive()
-        ]
-        if silent:
-            logger.warning(
-                f"Bot process(es) {', '.join(map(str, silent))} did not report "
-                "after the test, so how late their bots ran is not checked."
-            )
+        unreported = [i + 1 for i in range(len(self._processes)) if i not in replies]
         process_loads = [load for load, _ in replies.values()]
-        return process_loads, sum(n_alive for _, n_alive in replies.values())
+        n_alive = sum(n for _, n in replies.values())
+        return process_loads, unreported, n_alive
 
     def failure(self):
         """Describe the first child that has stopped, or return ``None``."""
@@ -1467,9 +1483,9 @@ def _run_bot_process(index, commands, events, settings):
             time_factor=settings["time_factor"],
         )
     except BaseException:
-        events.put((None, "failed", index, traceback.format_exc()))
+        events.put((0, "failed", index, traceback.format_exc()))
         return
-    events.put((None, "ready", index))
+    events.put((0, "ready", index))
     log_path = settings["bot_log_path"]
     # Appending lets every bot process share the parent's bot log.
     bot_log = open(log_path, "a") if log_path else None
@@ -2110,8 +2126,9 @@ def _start_rate_limits(result):
 def _tester_limits(result):
     """Return the reasons the test process, not the server, held back a test.
 
-    Besides bots that didn't all start or take part at once, and a bot
-    process that stopped, this includes bots that ran late:
+    Besides bots that didn't all start or take part at once, a bot process
+    that stopped and bot processes that didn't report their load, this
+    includes bots that ran late:
     ``tester_lag_p95_s`` is the 95th percentile of how much later than asked
     a thread in the worst process running bots woke up (see
     :class:`_LoadMonitor`). That is how long bots queue for the interpreter
@@ -2122,6 +2139,12 @@ def _tester_limits(result):
     reasons = _start_rate_limits(result)
     if result.get("bot_process_failure"):
         reasons.append(result["bot_process_failure"])
+    unreported = result.get("unreported_bot_processes")
+    if unreported:
+        reasons.append(
+            f"bot process(es) {', '.join(map(str, unreported))} did not report "
+            "after the test, so how late their bots ran is unknown"
+        )
     if _tester_lagged(result):
         where = (
             "the test process"
