@@ -93,7 +93,7 @@ class TestCommandLine(object):
         assert {"use_local_psynet", "use_local_dallinger"} <= debug_names
         assert not {"use_local_psynet", "use_local_dallinger"} & deploy_names
 
-    def test_local_psynet_wheel_is_staged_for_the_image_build_only(
+    def test_local_builds_are_staged_for_the_image_build_only(
         self, monkeypatch, tmp_path
     ):
         from psynet import command_line, experiment_scaffold
@@ -108,26 +108,48 @@ class TestCommandLine(object):
             return "psynet-1.0-py3-none-any.whl"
 
         monkeypatch.setattr("dallinger.utils.build_and_place", build_and_place)
+        Path("constraints.txt").write_text(
+            "-e file:///Users/me/review-1307#egg=psynet[experiment]\n"
+            "-e file:///Users/me/dallinger-dev#egg=dallinger\n"
+            "helper @ git+https://github.com/Dallinger/helper.git\n"
+            "    # via psynet\n"
+        )
+        local_packages = command_line._local_packages(True, True)
 
         Path("Dockerfile").write_text("FROM python\n")
         with pytest.raises(click.UsageError, match="psynet scripts update"):
-            with command_line._local_psynet_wheel(enabled=True):
+            with command_line._local_image_packages(local_packages):
                 pass
 
-        Path("Dockerfile").write_text("RUN set -- /experiment/psynet-*.whl\n")
-        with command_line._local_psynet_wheel(enabled=True):
+        Path("Dockerfile").write_text("COPY *local-image-pins.txt ./\n")
+        with command_line._local_image_packages(local_packages):
             assert Path("psynet-1.0-py3-none-any.whl").exists()
+            assert Path("local-image-pins.txt").read_text() == (
+                "helper @ git+https://github.com/Dallinger/helper.git\n"
+                "    # via psynet\n"
+            )
         assert not list(tmp_path.glob("*.whl"))
+        assert not Path("local-image-pins.txt").exists()
 
-        Path("psynet-0.9-py3-none-any.whl").write_text("")
-        with pytest.raises(click.UsageError, match="psynet-0.9-py3"):
+        Path("local-image-pins.txt").touch()
+        with pytest.raises(click.UsageError, match="local-image-pins.txt"):
             command_line._pre_launch(
                 Mock(), mode="debug", archive=None, local_=True, docker=True
             )
 
-    def test_dockerfile_skips_pins_of_packages_with_staged_wheels(
+    def test_sandbox_checks_skip_only_locally_built_packages(
         self, monkeypatch, tmp_path
     ):
+        from psynet.command_line import run_pre_checks_sandbox
+
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("SKIP_VERSION_CHECK", raising=False)
+        Path("requirements.txt").write_text("psynet\ndallinger==0.0.1\n")
+        with pytest.raises(ValueError, match="Dallinger versions"):
+            run_pre_checks_sandbox(("psynet",))
+        run_pre_checks_sandbox(("psynet", "dallinger"))
+
+    def test_dockerfile_prefers_local_image_pins(self, monkeypatch, tmp_path):
         import psynet as psynet_pkg
 
         dockerfile = (
@@ -144,23 +166,17 @@ class TestCommandLine(object):
         fake_uv.chmod(0o755)
         monkeypatch.setenv("PATH", f"{fake_uv.parent}{os.pathsep}{os.environ['PATH']}")
         monkeypatch.chdir(tmp_path)
-        Path("requirements.txt").write_text("psynet\n")
-        Path("constraints.txt").write_text(
-            "-e file:///Users/me/PsyNet\n"
-            "dallinger @ file:///Users/me/Dallinger\n"
-            "    # via psynet\n"
-            "numpy==2.0\n"
-        )
+        Path("requirements.txt").write_text("requirements\n")
+        Path("constraints.txt").write_text("constraints\n")
 
         def installed():
             return subprocess.run(
                 ["sh", "-c", install], capture_output=True, text=True, check=True
             ).stdout
 
-        assert "PsyNet" in installed() and "Dallinger" in installed()
-        Path("psynet-1.0-py3-none-any.whl").touch()
-        Path("dallinger-1.0-py3-none-any.whl").touch()
-        assert installed() == "    # via psynet\nnumpy==2.0\n"
+        assert installed() == "constraints\n"
+        Path("local-image-pins.txt").write_text("local\n")
+        assert installed() == "local\n"
 
     def test_awaken_ssh_app_does_not_require_a_front_door(self):
         from psynet.command_line import _awaken_ssh_app
