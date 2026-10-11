@@ -26,6 +26,7 @@ def _base_result(**overrides):
         "bots_failed": 0,
         "bots_incomplete": 0,
         "total_requests": 10,
+        "key_requests": 10,
         "successful_requests": 10,
         "request_errors": 0,
         "avg_response_time": 0.05,
@@ -424,7 +425,7 @@ def test_a_test_whose_bots_were_never_all_running_is_not_within_capacity():
 def test_a_stray_error_is_reported_but_does_not_cap_capacity():
     def result(n, **overrides):
         return _base_result(
-            n_bots=n, total_requests=47_000, total_bots_started=3_000, **overrides
+            n_bots=n, key_requests=47_000, total_bots_started=3_000, **overrides
         )
 
     results = [
