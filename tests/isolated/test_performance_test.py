@@ -526,7 +526,7 @@ def test_a_stray_error_is_reported_but_does_not_cap_capacity():
 
     text = _join(format_capacity_summary(results))
     assert "Capacity: about 640" in text
-    assert "60 request errors, p95 async queue wait 36.90 s" in text
+    assert "60 request errors; p95 async queue wait 36.90 s" in text
     assert (
         "The 640-bot test had 1 request error, 3 busy/stale responses and 1 bot error"
         in text

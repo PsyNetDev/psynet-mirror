@@ -4653,22 +4653,9 @@ def _run_performance_test_with_existing_server(
     import sys
 
     from psynet.experiment import get_experiment
+    from psynet.perf_test import log_to_console
 
-    # Configure logging to output to console
-    root_logger = logging.getLogger()
-    log_level = logging.DEBUG if debug else logging.INFO
-    root_logger.setLevel(log_level)
-
-    # Remove any existing handlers
-    for handler in root_logger.handlers[:]:
-        root_logger.removeHandler(handler)
-
-    # Add console handler with clean format (no prefixes)
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setLevel(log_level)
-    formatter = logging.Formatter("%(message)s")
-    console_handler.setFormatter(formatter)
-    root_logger.addHandler(console_handler)
+    log_to_console(logging.DEBUG if debug else logging.INFO)
 
     _load_runtime_server_config()
     _check_existing_server_answers()

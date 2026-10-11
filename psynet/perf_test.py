@@ -104,6 +104,19 @@ def _bot_logs_to(stream):
             root.removeHandler(bot_handler)
 
 
+def log_to_console(level, console_level=None):
+    """Make the root logger print bare messages to stdout, replacing its handlers.
+
+    Records below ``console_level`` (by default ``level``) are not printed.
+    """
+    console = logging.StreamHandler(sys.stdout)
+    console.setLevel(console_level or level)
+    console.setFormatter(logging.Formatter("%(message)s"))
+    root = logging.getLogger()
+    root.setLevel(level)
+    root.handlers[:] = [console]
+
+
 def _hide_bot_thread_records(record):
     """Log filter that drops bot-thread records from the console."""
     return not _is_bot_thread_record(record)
@@ -198,11 +211,6 @@ def run_parallel_test(n_bots, time_factor, stagger_interval_s, check_bots):
 
     with transaction():
         check_bots(Bot.query.all())
-
-
-# ---------------------------------------------------------------------------
-# PerformanceTester (moved from Experiment perf methods)
-# ---------------------------------------------------------------------------
 
 
 def raise_open_file_limit():
@@ -415,7 +423,7 @@ class PerformanceTester:
                         if any(server_limit for _, server_limit in causes)
                         else "could not be tested"
                     )
-                    reasons = ", ".join(reason for reason, _ in causes)
+                    reasons = "; ".join(reason for reason, _ in causes)
                     logger.info(warning(f"{n_bots:,} bots {outcome}: {reasons}"))
                     lowest_fail = n_bots
                 else:
@@ -1479,13 +1487,8 @@ def _run_bot_process(index, commands, events, settings):
     """Run bot slots in a child process started by :class:`_BotProcesses`."""
     signal.signal(signal.SIGINT, signal.SIG_IGN)
     level = settings["log_level"]
-    console = logging.StreamHandler(sys.stdout)
     # Bot output goes to the bot log; the parent reports on the test.
-    console.setLevel(level if level <= logging.DEBUG else logging.WARNING)
-    console.setFormatter(logging.Formatter("%(message)s"))
-    root = logging.getLogger()
-    root.setLevel(level)
-    root.handlers[:] = [console]
+    log_to_console(level, level if level <= logging.DEBUG else logging.WARNING)
     try:
         # Loads the dashboard credentials as performance-test local does.
         from psynet.command_line import _load_runtime_server_config
@@ -1514,11 +1517,6 @@ def _run_bot_process(index, commands, events, settings):
     finally:
         if bot_log is not None:
             bot_log.close()
-
-
-# ---------------------------------------------------------------------------
-# Formatting helpers (already existed in this file)
-# ---------------------------------------------------------------------------
 
 
 def colorize_success_rate(rate_str):
@@ -2337,7 +2335,7 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
     first_fail, first_causes = (
         min(failed, key=lambda f: f[0]["n_bots"]) if failed else (None, [])
     )
-    first_reasons = ", ".join(reason for reason, _ in first_causes)
+    first_reasons = "; ".join(reason for reason, _ in first_causes)
     unmeasured = not any(server_limit for _, server_limit in first_causes)
     below_fail = [n for n in passed if first_fail is None or n < first_fail["n_bots"]]
     capacity = max(below_fail, default=None)
