@@ -9,6 +9,7 @@ from dallinger import db
 from dallinger.db import redis_conn
 from rq import Queue
 from rq.exceptions import NoSuchJobError
+from rq.job import JobStatus
 from sqlalchemy.exc import IntegrityError
 
 import psynet.experiment  # noqa -- to ensure that all SQLAlchemy classes are registered
@@ -390,25 +391,42 @@ def test_timeout_counts_from_start_not_enqueue(monkeypatch):
     stalled.log_time_started()
     backlog = WorkerAsyncJob(do_nothing).enqueue()
     lost = WorkerAsyncJob(do_nothing).enqueue()
-    for job in [backlog, lost]:
-        job.time_enqueued -= timedelta(hours=2)
-    queued_id, stalled_id, backlog_id, lost_id = (
-        queued.id,
-        stalled.id,
-        backlog.id,
-        lost.id,
-    )
+    finished_in_rq = WorkerAsyncJob(do_nothing).enqueue()
+    local_lost = LocalAsyncJob(do_nothing)
+    db.session.add(local_lost)
+    for job in [backlog, lost, finished_in_rq, local_lost]:
+        job.time_enqueued = datetime.now() - timedelta(hours=2)
     db.session.commit()
+    ids = dict(
+        queued=queued.id,
+        stalled=stalled.id,
+        backlog=backlog.id,
+        lost=lost.id,
+        finished_in_rq=finished_in_rq.id,
+        local_lost=local_lost.id,
+    )
     lost.redis_job.delete()
+    finished_in_rq.redis_job.set_status(JobStatus.FINISHED)
     time.sleep(0.05)
-    WorkerAsyncJob.check_timeouts()
-    for job_id in [queued_id, backlog_id]:
-        job = WorkerAsyncJob.query.get(job_id)
+    AsyncJob.check_timeouts()
+    for name in ["queued", "backlog", "finished_in_rq"]:
+        job = AsyncJob.query.get(ids[name])
         assert job.pending and not job.failed
-    assert WorkerAsyncJob.query.get(stalled_id).failed
-    lost = WorkerAsyncJob.query.get(lost_id)
-    assert "probably lost" in lost.failed_reason and not lost.pending
+    stalled = AsyncJob.query.get(ids["stalled"])
+    assert stalled.failed and not stalled.pending
+    for name in ["lost", "local_lost"]:
+        job = AsyncJob.query.get(ids[name])
+        assert "probably lost" in job.failed_reason and not job.pending
 
+    finished_in_rq = AsyncJob.query.get(ids["finished_in_rq"])
+    finished_in_rq.pending, finished_in_rq.finished = False, True
+    finished_in_rq.redis_job.delete()
+    db.session.commit()
+    AsyncJob._fail_if_overdue(finished_in_rq.id, datetime.now())
+    db.session.commit()
+    assert not AsyncJob.query.get(ids["finished_in_rq"]).failed
+
+    queued_id, stalled_id, lost_id = ids["queued"], ids["stalled"], ids["lost"]
     WorkerAsyncJob.call_function(queued_id)
     queued = WorkerAsyncJob.query.get(queued_id)
     assert queued.finished and not queued.failed
@@ -582,23 +600,20 @@ def test_pending_jobs_keep_the_app_awake():
     "experiment_directory", [path_to_test_experiment("static")], indirect=True
 )
 @pytest.mark.usefixtures("launched_experiment")
-def test_local_jobs_time_out_or_are_lost_after_an_hour():
+def test_local_jobs_time_out_after_an_hour():
     job = LocalAsyncJob(do_nothing)
     assert job.timeout == AsyncJob.default_timeout == 3600
     job.time_enqueued = datetime.now()
     job.log_time_started()
     assert job.timeout_scheduled_for - job.time_started == timedelta(hours=1)
     job.timeout_scheduled_for = datetime.now() - timedelta(seconds=1)
-    never_started = LocalAsyncJob(do_nothing)
-    never_started.time_enqueued = datetime.now() - timedelta(hours=2)
-    db.session.add_all([job, never_started])
+    db.session.add(job)
     db.session.commit()
-    job_ids = [job.id, never_started.id]
+    job_id = job.id
 
     AsyncJob.check_timeouts()
-    for job_id in job_ids:
-        job = LocalAsyncJob.query.get(job_id)
-        assert job.failed and not job.pending
+    job = LocalAsyncJob.query.get(job_id)
+    assert job.failed and not job.pending
 
 
 def test_cpu_time_summary_flags_cpu_heavy_labels():

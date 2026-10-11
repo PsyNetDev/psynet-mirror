@@ -4908,6 +4908,24 @@ def test_pending_job_check_is_skipped_with_a_warning(
     assert reason in output
 
 
+def test_local_pending_job_check_is_skipped_if_the_database_fails(monkeypatch, capsys):
+    from sqlalchemy.exc import ProgrammingError
+
+    import psynet.async_job
+    from psynet.command_line import _get_local_pending_async_jobs
+
+    def fail():
+        raise ProgrammingError("SELECT", {}, Exception("no table async_job"))
+
+    monkeypatch.setattr(psynet.async_job, "_get_pending_job_summary", fail)
+
+    assert _get_local_pending_async_jobs() is None
+    assert (
+        "WARNING: Skipped the check for pending async jobs: "
+        "could not query the database (no table async_job)."
+    ) in capsys.readouterr().out
+
+
 def test_export_warns_about_pending_jobs(capsys):
     from psynet.command_line import _warn_export_misses_pending_jobs
 

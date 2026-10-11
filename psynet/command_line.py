@@ -3202,17 +3202,41 @@ def _build_local_export(export_path, assets):
 
     Returns
     -------
-    dict
+    dict or None
         The pending async job summary taken before the export; see
-        :func:`psynet.async_job._get_pending_job_summary`.
+        :func:`_get_local_pending_async_jobs`.
     """
-    from .async_job import _get_pending_job_summary
     from .export.service import build_export_tree
 
-    pending_jobs = _get_pending_job_summary()
+    pending_jobs = _get_local_pending_async_jobs()
     log(f"Building export in {export_path}")
     build_export_tree(export_path, assets=assets, local=True)
     return pending_jobs
+
+
+def _get_local_pending_async_jobs():
+    """Summarize the local database's pending async jobs.
+
+    Returns
+    -------
+    dict or None
+        The summary from :func:`psynet.async_job._get_pending_job_summary`,
+        or ``None`` after printing a warning if the database could not be
+        queried.
+    """
+    from sqlalchemy.exc import DBAPIError
+
+    from .async_job import _get_pending_job_summary
+
+    try:
+        return _get_pending_job_summary()
+    except DBAPIError as exc:
+        db.session.rollback()
+        log(
+            "WARNING: Skipped the check for pending async jobs: "
+            f"could not query the database ({exc.orig})."
+        )
+        return None
 
 
 def _normalize_public_origin(value):

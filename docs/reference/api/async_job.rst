@@ -76,11 +76,12 @@ thread, but the job is already marked failed.
 A job that has not started within an hour of being enqueued
 (:attr:`~psynet.async_job.AsyncJob.max_queue_wait_sec`) is failed as
 probably lost if it can no longer start: a
-:class:`~psynet.async_job.WorkerAsyncJob` that RQ no longer holds, for
-example because its launch failed or Redis restarted, or a
-:class:`~psynet.async_job.LocalAsyncJob`, which starts as soon as it is
-launched. A worker job still waiting in the RQ queue is a genuine backlog and
-keeps waiting, however long that takes. Lost jobs are not re-run.
+:class:`~psynet.async_job.WorkerAsyncJob` that RQ no longer has, for
+example because its launch failed or Redis restarted, or that RQ failed,
+stopped or cancelled, or a :class:`~psynet.async_job.LocalAsyncJob`, which
+starts as soon as it is launched. A worker job still waiting in the RQ queue
+is a genuine backlog and keeps waiting, however long that takes, and a job a
+worker has finished is never failed. Lost jobs are not re-run.
 
 Pending jobs
 ------------
@@ -92,7 +93,8 @@ deployments:
 * idle hibernation does not put the app to sleep while any job is pending;
 * ``psynet export ssh`` and ``psynet export local`` end with a warning that
   jobs are still pending, because the export does not contain their
-  results (``psynet export heroku`` does not check);
+  results (``psynet export heroku`` does not check); if the jobs cannot be
+  checked, the export prints a warning and completes;
 * ``psynet destroy ssh`` wakes the app if it is asleep, then refuses to
   destroy it while jobs are pending, or asks you to confirm when run
   interactively.
