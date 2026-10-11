@@ -17,8 +17,8 @@ An isolated environment gives the test session:
   afresh when the session starts and dropped when it ends;
 - a private ``redis-server`` on the shared Redis port plus the same offset,
   stopped when the session ends (Redis delivers live notifications to every
-  database on a server, so a database number on the shared server is only a
-  fallback);
+  database on a server, so a database number on the shared server, emptied
+  when the session ends, is only a fallback);
 - its own ``dallinger_develop_directory``.
 
 PsyNet's process cleanup already only targets processes that use the current
@@ -48,7 +48,8 @@ are isolated already.
 Isolation separates services, not files: tests still scaffold and remove
 generated files in the experiment directory, so a ``psynet debug`` serving the
 same directory breaks. :func:`check_no_debug_server` refuses to start in that
-case.
+case; the ``in_experiment_directory`` fixture also calls it, because tests
+started from elsewhere enter the experiment directory later.
 """
 
 import fcntl
@@ -117,8 +118,6 @@ def check_no_debug_server(directory):
     """
     import psutil
 
-    from .testing.locks import HELD_LOCK_ENV_VAR
-
     directory = os.path.realpath(directory)
     for process in psutil.process_iter(["cmdline", "cwd"]):
         cmdline = process.info["cmdline"] or []
@@ -128,15 +127,29 @@ def check_no_debug_server(directory):
         ):
             continue
         try:
-            held_lock = process.environ().get(HELD_LOCK_ENV_VAR)
+            environ = process.environ()
         except (psutil.AccessDenied, psutil.NoSuchProcess, psutil.ZombieProcess):
-            held_lock = None
-        if held_lock is None or os.path.realpath(held_lock) != directory:
+            environ = {}
+        if not _started_by_test_session(environ, directory):
             raise RuntimeError(
                 f"psynet debug (PID {process.pid}) is serving {directory}, and the "
                 "tests would replace its generated files. Stop it, or run the tests "
                 "from a copy of the experiment such as a git worktree."
             )
+
+
+def _started_by_test_session(environ, directory):
+    """Return whether a process with ``environ`` belongs to a test session.
+
+    Servers that a session's fixtures start inherit :data:`READY_ENV_VAR`;
+    CI slots that hold the directory's lock pass it down instead.
+    """
+    from .testing.locks import HELD_LOCK_ENV_VAR
+
+    held_lock = environ.get(HELD_LOCK_ENV_VAR)
+    return bool(environ.get(READY_ENV_VAR)) or (
+        held_lock is not None and os.path.realpath(held_lock) == directory
+    )
 
 
 def _is_psynet_debug(cmdline):
@@ -287,16 +300,20 @@ class IsolatedEnvironment:
     def describe(self):
         """Return a one-line summary of where the session's services are."""
         database = urlsplit(self.env["DATABASE_URL"]).path.lstrip("/")
+        redis = urlsplit(self.env["REDIS_URL"])
+        redis_database = redis.path.lstrip("/") or "0"
         return (
-            f"Using database {database}, Redis at {self.env['REDIS_URL']}, "
-            f"and port {self.env['base_port']}."
+            f"Using database {database}, Redis at {redis.hostname}:"
+            f"{redis.port or 6379}/{redis_database}, and port {self.env['base_port']}."
         )
 
     def close(self):
-        """Stop the session's Redis server and drop its database."""
+        """Stop or empty the session's Redis and drop its database."""
         if self._redis_process is not None:
             stop_process(self._redis_process)
             self._redis_process = None
+        elif self._port_lock is not None:
+            _flush_redis_database(self.env["REDIS_URL"])
         if self._port_lock is not None:
             # While the port is still claimed, so no new session is using it yet.
             shutil.rmtree(self.env["dallinger_develop_directory"], ignore_errors=True)
@@ -368,6 +385,19 @@ def _drop_session_database(session_database_url):
         print(
             f"Warning: could not drop database {name} ({e}). Drop it with "
             f"'dropdb {name}'.",
+            file=sys.stderr,
+        )
+
+
+def _flush_redis_database(redis_url):
+    """Empty a spare Redis database, warning instead of raising if that fails."""
+    import redis
+
+    try:
+        redis.Redis.from_url(redis_url).flushdb()
+    except redis.RedisError as e:
+        print(
+            f"Warning: could not empty the test session's Redis database ({e}).",
             file=sys.stderr,
         )
 

@@ -4066,13 +4066,10 @@ def _rerun_in_isolated_test_environment():
     ``psynet test local --n-bots 4``) with this interpreter, and this process
     then exits with its code. A second Ctrl+C kills the child.
     """
-    from .isolated_environment import IsolatedEnvironment, check_no_debug_server
+    from .isolated_environment import IsolatedEnvironment
     from .services import SERVICES_CHECKED_ENV_VAR, ensure_local_services
 
-    try:
-        check_no_debug_server(os.getcwd())
-    except RuntimeError as e:
-        raise click.ClickException(str(e)) from e
+    _check_no_debug_server_here()
     # Before creating the database and Redis, so that an experiment that isn't
     # set up fails without advice about services it won't use.
     _check_experiment_directory("test")
@@ -4081,6 +4078,7 @@ def _rerun_in_isolated_test_environment():
         environment = IsolatedEnvironment.start()
     except RuntimeError as e:
         raise click.ClickException(str(e)) from e
+    exit_code = 130
     with environment:
         log(environment.describe())
         # On macOS framework builds, sys.orig_argv[0] is the framework's own
@@ -4102,6 +4100,16 @@ def _rerun_in_isolated_test_environment():
                 interrupted = True
     # A child killed by signal N reports -N; shells report 128 + N.
     sys.exit(exit_code if exit_code >= 0 else 128 - exit_code)
+
+
+def _check_no_debug_server_here():
+    """Raise ``click.ClickException`` if ``psynet debug`` serves the current directory."""
+    from .isolated_environment import check_no_debug_server
+
+    try:
+        check_no_debug_server(os.getcwd())
+    except RuntimeError as e:
+        raise click.ClickException(str(e)) from e
 
 
 def build_remote_experiment_command(app, cmd):
@@ -4795,12 +4803,7 @@ def _run_performance_test_with_new_server(
     n_bots, stagger, time_factor, duration_minutes, debug, json_output=None
 ):
     """Run performance test after starting a new experiment server"""
-    from .isolated_environment import check_no_debug_server
-
-    try:
-        check_no_debug_server(os.getcwd())
-    except RuntimeError as e:
-        raise click.ClickException(str(e)) from e
+    _check_no_debug_server_here()
     # Prefer legacy debug: gunicorn with several workers is closer to a deployed
     # server than the auto-reload develop path used by normal
     # ``psynet debug local``.
