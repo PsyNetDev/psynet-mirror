@@ -29,8 +29,9 @@ Async job CPU time (CPU-heavy: mean CPU >= 50% of mean wall time):
   AsyncCodeBlock      2         0.027        0.052          0.085         no
 ```
 
-If the log says `No async jobs ran.`, the experiment puts no load on the
-workers; go straight to the performance test.
+If the log says `No async jobs finished.` and the experiment doesn't use async
+jobs, it puts no load on the workers; go straight to the performance test. If
+it does use them, look for failed jobs in the log first.
 
 For per-job values, export the data (`psynet export local`) and read the
 `cpu_time`, `time_taken` and `queue_delay` columns of

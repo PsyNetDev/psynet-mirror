@@ -383,4 +383,4 @@ def test_cpu_time_summary_flags_cpu_heavy_labels():
     assert rows["analyse"][1:] == ["3", "0.800", "1.200", "1.000", "yes"]
     assert rows["upload"][-1] == "no"
 
-    assert _format_cpu_time_summary([]) == "No async jobs ran."
+    assert _format_cpu_time_summary([]) == "No async jobs finished."

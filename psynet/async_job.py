@@ -134,7 +134,7 @@ class AsyncJob(SQLBase, SQLMixin):
         A label for the job; defaults to the function's name.
     unique : bool or dict, optional
         If ``True``, enqueueing fails with an ``IntegrityError`` when a job
-        with the same label, function and arguments already exists.         A dict
+        with the same label, function and arguments already exists. A dict
         is used as the uniqueness key instead.
 
     Attributes
@@ -516,7 +516,7 @@ def _format_cpu_time_summary(rows):
     each while they run, whereas I/O-bound jobs mostly wait.
     """
     if not rows:
-        return "No async jobs ran."
+        return "No async jobs finished."
     header = ["Label", "Count", "Mean CPU (s)", "Max CPU (s)", "Mean wall (s)"]
     table = [header + ["CPU-heavy"]]
     for row in rows:

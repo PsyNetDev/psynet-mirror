@@ -25,7 +25,7 @@ A CPU-heavy job keeps a CPU core busy while it runs, so as load grows it
 needs more worker processes (``num_dynos_worker``) and a server with a core
 for each. An I/O-bound job mostly waits, for example on an API call, and
 does not need more cores. If no async jobs finished, PsyNet logs
-``No async jobs ran.`` instead. Per-job values are in the ``cpu_time``
+``No async jobs finished.`` instead. Per-job values are in the ``cpu_time``
 column of ``database/async_job.csv`` in the export; see
 :class:`~psynet.async_job.AsyncJob` for how it is measured. The
 :doc:`/skills/plan-server-resources` Agent Skill turns these numbers into a
