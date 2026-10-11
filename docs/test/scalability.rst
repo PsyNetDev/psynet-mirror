@@ -226,7 +226,9 @@ open database connections in the test process that participants' browsers
 don't. These are limits of the test, not of the server, so when they are
 the only limits the smallest failing
 count exceeded, the summary reports the capacity as "at least" the largest
-passing count and doesn't suggest a participant cap. Response times, queue
+passing count and doesn't suggest a participant cap. If no count passed, it
+reports that the smallest count could not be tested, with advice on what
+held the test back. Response times, queue
 waits, request errors and busy responses still cap the capacity in a test
 that also had these limits.
 

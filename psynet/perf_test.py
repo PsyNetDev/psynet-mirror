@@ -308,16 +308,15 @@ class PerformanceTester:
             all_results.append(result)
             if result["server_stopped"]:
                 break
-            failures = capacity_failures(result, self.limits)
-            if failures:
+            causes = _capacity_failure_causes(result, self.limits)
+            if causes:
                 outcome = (
                     "exceeded limits"
-                    if _server_limits(result, self.limits)
+                    if any(server_limit for _, server_limit in causes)
                     else "could not be tested"
                 )
-                logger.info(
-                    warning(f"{n_bots:,} bots {outcome}: {', '.join(failures)}")
-                )
+                reasons = ", ".join(reason for reason, _ in causes)
+                logger.info(warning(f"{n_bots:,} bots {outcome}: {reasons}"))
                 lowest_fail = n_bots
             else:
                 highest_pass = n_bots
@@ -1700,15 +1699,6 @@ def capacity_failures(result, limits=CapacityLimits()):
     return [reason for reason, _ in _capacity_failure_causes(result, limits)]
 
 
-def _server_limits(result, limits):
-    """Return the reasons in :func:`capacity_failures` that limit the server itself."""
-    return [
-        reason
-        for reason, server_limit in _capacity_failure_causes(result, limits)
-        if server_limit
-    ]
-
-
 def next_capacity_probe(highest_pass, lowest_fail, max_bots=_CAPACITY_SEARCH_MAX):
     """Return the next bot count for the capacity search, or ``None`` when done.
 
@@ -1790,33 +1780,33 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
             for r in results
         )
     )
-    failures = [(r, capacity_failures(r, limits)) for r in results]
-    passed = [r["n_bots"] for r, reasons in failures if not reasons]
-    failed = [(r, reasons) for r, reasons in failures if reasons]
-    first_fail, first_reasons = (
-        min(failed, key=lambda f: f[0]["n_bots"]) if failed else (None, None)
+    causes = [(r, _capacity_failure_causes(r, limits)) for r in results]
+    passed = [r["n_bots"] for r, result_causes in causes if not result_causes]
+    failed = [(r, result_causes) for r, result_causes in causes if result_causes]
+    first_fail, first_causes = (
+        min(failed, key=lambda f: f[0]["n_bots"]) if failed else (None, [])
     )
+    first_reasons = ", ".join(reason for reason, _ in first_causes)
+    unmeasured = not any(server_limit for _, server_limit in first_causes)
     below_fail = [n for n in passed if first_fail is None or n < first_fail["n_bots"]]
-    unmeasured = first_fail is not None and not _server_limits(first_fail, limits)
-    start_rate_limited = first_fail is not None and bool(_tester_limits(first_fail))
-    if not below_fail:
-        lines = [
-            f"  Even {first_fail['n_bots']:,} bots did not keep {limit} "
-            f"({', '.join(first_reasons)}); fix any errors or test fewer bots."
-        ]
+    capacity = max(below_fail, default=None)
+    if capacity is None:
+        if unmeasured:
+            lines = [
+                f"  Capacity unknown: {first_fail['n_bots']:,} bots could not "
+                f"be tested ({first_reasons})."
+            ]
+        else:
+            lines = [
+                f"  Even {first_fail['n_bots']:,} bots did not keep {limit} "
+                f"({first_reasons}); fix any errors or test fewer bots."
+            ]
         if passed:
             lines.append(
                 f"  {max(passed):,} bots passed, so the results are "
                 "inconsistent; rerun to confirm."
             )
-        if any("async queue" in reason for reason in first_reasons):
-            lines.append(_QUEUE_ADVICE)
-        if start_rate_limited:
-            lines.append(_START_RATE_ADVICE)
-        return lines + [""]
-
-    capacity = max(below_fail)
-    if first_fail is None:
+    elif first_fail is None:
         lines = [
             f"  Capacity: at least {capacity:,} concurrent bots kept {limit}. "
             "Test more bots to find the limit."
@@ -1824,16 +1814,12 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
     elif unmeasured:
         lines = [
             f"  Capacity: at least {capacity:,} concurrent bots kept {limit}; "
-            f"{first_fail['n_bots']:,} could not be tested "
-            f"({', '.join(first_reasons)}).",
+            f"{first_fail['n_bots']:,} could not be tested ({first_reasons}).",
         ]
-        if start_rate_limited:
-            lines.append(_START_RATE_ADVICE)
     else:
         lines = [
             f"  Capacity: about {capacity:,} concurrent bots kept {limit}; "
-            f"{first_fail['n_bots']:,} did not "
-            f"({', '.join(first_reasons)}).",
+            f"{first_fail['n_bots']:,} did not ({first_reasons}).",
             f"  Cap concurrent participants at about "
             f"{max(1, int(capacity * _CAPACITY_HEADROOM)):,} "
             f"({_CAPACITY_HEADROOM:.0%} of {capacity:,}).",
@@ -1843,10 +1829,14 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
                 f"  {max(passed):,} bots also passed, so the results are "
                 "inconsistent; rerun to confirm."
             )
-    if first_reasons and any("async queue" in reason for reason in first_reasons):
+    if "async queue" in first_reasons:
         lines.append(_QUEUE_ADVICE)
+    if first_fail is not None and _tester_limits(first_fail):
+        lines.append(_START_RATE_ADVICE)
     if any(_POSTGRES_FULL in (r.get("bot_error_kinds") or {}) for r in results):
         lines.append(_POSTGRES_ADVICE)
+    if capacity is None:
+        return lines + [""]
     capacity_result = next(r for r in results if r["n_bots"] == capacity)
     tolerated = []
     if capacity_result.get("request_errors"):

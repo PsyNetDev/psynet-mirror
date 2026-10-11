@@ -507,6 +507,17 @@ def test_capacity_summary_does_not_suggest_a_cap_when_the_test_could_not_measure
     assert "Cap concurrent" not in text
 
 
+def test_capacity_summary_says_when_even_the_smallest_count_could_not_be_tested():
+    results = [_base_result(n_bots=10, p95_response_time=0.1, **_POSTGRES_BOT_ERRORS)]
+
+    text = _join(format_capacity_summary(results))
+
+    assert "10 bots could not be tested (40 bot errors" in text
+    assert "raise max_connections" in text
+    assert "Cap concurrent" not in text
+    assert "did not keep" not in text
+
+
 @pytest.mark.parametrize(
     "server_limit, reason",
     [
