@@ -207,7 +207,13 @@ One ``performance-test`` process starts about 8 new bots a second, because
 it creates each bot's participant itself. That keeps up to about 900 bots
 taking part at once at a realistic pace; a test that asks for more, and in
 which fewer than 90% of the bots were ever taking part at the same time,
-counts as exceeding the limits. The test doesn't reset the database, so later
+counts as exceeding the limits. This is a limit of the test process, not of
+the server, so when it is the only limit the smallest failing count exceeded,
+the summary reports the capacity as "at least" the largest passing count and
+doesn't suggest a participant cap.
+Bots that take longer, in a longer experiment or with a larger
+``--time-factor``, keep more bots taking part at once and give a better
+measure of the server. The test doesn't reset the database, so later
 tests in a sweep run against more participants than earlier ones.
 
 Bots don't open websockets, so the search doesn't measure how many

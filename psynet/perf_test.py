@@ -287,7 +287,8 @@ class PerformanceTester:
         raise_open_file_limit()
         self._print_suite_header(
             f"automatic (from {_CAPACITY_SEARCH_START}, while keeping "
-            f"{self.limits.describe()})"
+            f"{self.limits.describe()}; a test in which new bots can't start "
+            "fast enough also fails, as a limit of this test process)"
         )
         max_tests = _max_capacity_probes()
         logger.info(
@@ -1596,11 +1597,9 @@ def queue_wait_p95(result):
 _MIN_RUNNING_SHARE = 0.9
 
 
-def capacity_failures(result, limits=CapacityLimits()):
-    """Return the reasons a test result exceeded ``limits`` (empty if it did not)."""
+def _tester_limits(result):
+    """Return the reasons the test process, not the server, held back a test."""
     reasons = []
-    if result.get("server_stopped"):
-        reasons.append("server stopped")
     slots_started = result.get("slots_started")
     if slots_started is not None and slots_started < result.get("n_bots", 0):
         reasons.append(
@@ -1613,6 +1612,15 @@ def capacity_failures(result, limits=CapacityLimits()):
             f"at most {peak_running:,} of {result['n_bots']:,} bots were taking "
             "part at once, because new bots could not start fast enough"
         )
+    return reasons
+
+
+def capacity_failures(result, limits=CapacityLimits()):
+    """Return the reasons a test result exceeded ``limits`` (empty if it did not)."""
+    reasons = []
+    if result.get("server_stopped"):
+        reasons.append("server stopped")
+    reasons += _tester_limits(result)
     request_errors = result.get("request_errors") or 0
     if request_errors > max(
         limits.allowed_request_errors,
@@ -1693,6 +1701,12 @@ _QUEUE_ADVICE = (
     "  Async processes waited too long for a worker: add worker processes "
     "with num_dynos_worker, or make the processes faster."
 )
+_START_RATE_ADVICE = (
+    "  Bots that cannot start fast enough limit the test rather than the "
+    "server, because this process creates each bot's "
+    "participant itself. Bots that take longer, in a longer experiment or "
+    "with a larger --time-factor, give a better measure of the server."
+)
 
 
 def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
@@ -1715,6 +1729,9 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
         min(failed, key=lambda f: f[0]["n_bots"]) if failed else (None, None)
     )
     below_fail = [n for n in passed if first_fail is None or n < first_fail["n_bots"]]
+    tester_limited = first_fail is not None and set(first_reasons) <= set(
+        _tester_limits(first_fail)
+    )
     if not below_fail:
         lines = [
             f"  Even {first_fail['n_bots']:,} bots did not keep {limit} "
@@ -1727,6 +1744,8 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
             )
         if any("async queue" in reason for reason in first_reasons):
             lines.append(_QUEUE_ADVICE)
+        if tester_limited:
+            lines.append(_START_RATE_ADVICE)
         return lines + [""]
 
     capacity = max(below_fail)
@@ -1734,6 +1753,13 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
         lines = [
             f"  Capacity: at least {capacity:,} concurrent bots kept {limit}. "
             "Test more bots to find the limit."
+        ]
+    elif tester_limited:
+        lines = [
+            f"  Capacity: at least {capacity:,} concurrent bots kept {limit}; "
+            f"{first_fail['n_bots']:,} could not be tested "
+            f"({', '.join(first_reasons)}).",
+            _START_RATE_ADVICE,
         ]
     else:
         lines = [

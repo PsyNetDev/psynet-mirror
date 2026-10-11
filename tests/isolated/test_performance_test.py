@@ -460,6 +460,20 @@ def test_a_stray_error_is_reported_but_does_not_cap_capacity():
     assert "add worker processes with num_dynos_worker" in text
 
 
+def test_capacity_summary_does_not_suggest_a_cap_when_bots_started_too_slowly():
+    results = [
+        _base_result(n_bots=80, p95_response_time=0.085),
+        _base_result(n_bots=160, slots_started=160, peak_running=140),
+    ]
+
+    text = _join(format_capacity_summary(results))
+
+    assert "Capacity: at least 80 concurrent bots" in text
+    assert "160 could not be tested" in text
+    assert "limit the test rather than the server" in text
+    assert "Cap concurrent" not in text
+
+
 def test_one_error_in_a_short_test_does_not_cap_capacity():
     assert capacity_failures(_base_result(key_requests=700, request_errors=1)) == []
     assert capacity_failures(_base_result(key_requests=700, request_errors=2)) == [
