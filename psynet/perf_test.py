@@ -1054,6 +1054,9 @@ def _describe_workers(result):
     return text
 
 
+_POSTGRES_FULL = "PostgreSQL out of connections"
+
+
 def _describe_bot_error(err):
     """Summarize why a bot failed, e.g. ``HTTP 500 on /participant_status``.
 
@@ -1062,9 +1065,13 @@ def _describe_bot_error(err):
     """
     import requests
 
+    from psynet.isolated_environment import postgres_connection_limit_message
+
     cause, seen = err, set()
     while cause is not None and id(cause) not in seen:
         seen.add(id(cause))
+        if postgres_connection_limit_message(cause):
+            return _POSTGRES_FULL
         response = getattr(cause, "response", None)
         if isinstance(cause, requests.HTTPError) and response is not None:
             route = urlparse(response.url or "").path.strip("/").split("/")[0]
@@ -1633,6 +1640,11 @@ def _max_capacity_probes(max_bots=_CAPACITY_SEARCH_MAX):
     return max(n_probes(capacity) for capacity in range(max_bots + 1))
 
 
+_POSTGRES_ADVICE = (
+    "  Some bots failed because PostgreSQL ran out of connections, which limits "
+    "the test rather than the experiment. In a local test, run fewer bots at "
+    "once, stop other local experiments, or raise max_connections."
+)
 _QUEUE_ADVICE = (
     "  Async processes waited too long for a worker: add worker processes "
     "with num_dynos_worker, or make the processes faster."
@@ -1695,15 +1707,14 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
             )
     if first_reasons and any("async queue" in reason for reason in first_reasons):
         lines.append(_QUEUE_ADVICE)
+    if any(_POSTGRES_FULL in (r.get("bot_error_kinds") or {}) for r in results):
+        lines.append(_POSTGRES_ADVICE)
     capacity_result = next(r for r in results if r["n_bots"] == capacity)
-    tolerated = [
-        f"{n:,} {kind}{'' if n == 1 else 's'}"
-        for n, kind in (
-            (capacity_result.get("request_errors") or 0, "request error"),
-            (capacity_result.get("bot_errors") or 0, "bot error"),
-        )
-        if n
-    ]
+    tolerated = []
+    if capacity_result.get("request_errors"):
+        tolerated.append(_plural(capacity_result["request_errors"], "request error"))
+    if capacity_result.get("bot_errors"):
+        tolerated.append(_describe_bot_errors(capacity_result))
     if tolerated:
         lines.append(
             f"  The {capacity:,}-bot test had {' and '.join(tolerated)}, within "

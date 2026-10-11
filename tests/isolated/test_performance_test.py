@@ -173,6 +173,25 @@ def test_bot_errors_without_a_route_are_still_described(url):
     )
 
 
+def test_postgres_running_out_of_connections_is_named_with_advice():
+    from psynet.perf_test import _describe_bot_error
+
+    try:
+        try:
+            raise Exception("FATAL:  sorry, too many clients already")
+        except Exception as cause:
+            raise RuntimeError("could not create participant") from cause
+    except RuntimeError as err:
+        kind = _describe_bot_error(err)
+
+    assert kind == "PostgreSQL out of connections"
+    results = [
+        _base_result(n_bots=10),
+        _base_result(n_bots=20, bot_errors=5, bot_error_kinds={kind: 5}),
+    ]
+    assert "raise max_connections" in _join(format_capacity_summary(results))
+
+
 def test_capacity_summary_names_the_bot_errors():
     results = [
         _base_result(n_bots=10),
