@@ -164,8 +164,8 @@ run at once.
 The search starts at 10 bots and doubles the count until a test fails, then
 halves the gap between the largest passing and smallest failing counts until
 they are within 10% of each other. It stops at 2,000 bots. For a server that
-handles more than about 100 bots this takes 9 to 12 tests, so a search with
-``--duration-minutes 3`` takes 30 to 40 minutes; the run prints its upper
+handles more than about 100 bots this takes 8 to 12 tests, so a search with
+``--duration-minutes 3`` takes 25 to 40 minutes; the run prints its upper
 bound when it starts.
 
 When bots fail, the report lists what went wrong, for example
