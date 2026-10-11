@@ -667,7 +667,7 @@ class PerformanceTester:
             .all()
         )
 
-        request_errors, busy_responses = _count_request_errors(
+        request_errors, busy_responses = _split_failed_requests(
             db.session.query(Request.status_code, func.count(Request.id))
             .filter(
                 *request_window,
@@ -967,7 +967,7 @@ def _describe_workers(result):
 _BUSY_STATUS_CODES = frozenset({409, 503})
 
 
-def _count_request_errors(status_counts):
+def _split_failed_requests(status_counts):
     """Split failed key-endpoint requests into errors and busy/stale responses.
 
     PsyNet answers with HTTP 503 when the experiment is busy and HTTP 409
@@ -1431,7 +1431,7 @@ class CapacityLimits:
         errors = (
             f"at most {self.max_request_error_rate:.1%} of requests failing "
             f"({self.allowed_request_errors} always allowed), "
-            f"{self.max_busy_response_rate:.0%} busy or stale "
+            f"{self.max_busy_response_rate:.0%} of requests answered busy or stale "
             f"({self.allowed_busy_responses} always allowed) and "
             f"{self.max_bot_error_rate:.0%} of bots failing"
         )
@@ -1581,13 +1581,15 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
         f"{n:,} {kind}{'' if n == 1 else 's'}"
         for n, kind in (
             (capacity_result.get("request_errors") or 0, "request error"),
+            (capacity_result.get("busy_responses") or 0, "busy/stale response"),
             (capacity_result.get("bot_errors") or 0, "bot error"),
         )
         if n
     ]
     if tolerated:
+        found = " and ".join(filter(None, [", ".join(tolerated[:-1]), tolerated[-1]]))
         lines.append(
-            f"  The {capacity:,}-bot test had {' and '.join(tolerated)}, within "
+            f"  The {capacity:,}-bot test had {found}, within "
             "the limits; check the logs in case they point to a bug."
         )
     ramp_up = capacity_result.get("ramp_up_s")

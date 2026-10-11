@@ -187,7 +187,7 @@ The summary at the end of every run reports the capacity it found and, once a
 larger bot count has exceeded the limits, suggests capping the number of
 participants taking part at once at 80% of it, for example::
 
-    Capacity: about 160 concurrent bots kept p95 response time under 500 ms, p95 async queue wait under 5 s and at most 0.1% of requests failing (1 always allowed), 1% busy or stale (10 always allowed) and 1% of bots failing; 170 did not (p95 response time 622 ms).
+    Capacity: about 160 concurrent bots kept p95 response time under 500 ms, p95 async queue wait under 5 s and at most 0.1% of requests failing (1 always allowed), 1% of requests answered busy or stale (10 always allowed) and 1% of bots failing; 170 did not (p95 response time 622 ms).
     Cap concurrent participants at about 128 (80% of 160).
 
 For rough capacities of common server sizes, based on one test on a real

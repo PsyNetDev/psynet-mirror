@@ -5,7 +5,7 @@ import pytest
 from psynet.perf_test import (
     CapacityLimits,
     PerformanceTester,
-    _count_request_errors,
+    _split_failed_requests,
     capacity_failures,
     colorize_success_rate,
     format_capacity_summary,
@@ -335,14 +335,17 @@ def test_a_stray_error_is_reported_but_does_not_cap_capacity():
         )
 
     results = [
-        result(640, request_errors=1, bot_errors=1),
+        result(640, request_errors=1, busy_responses=3, bot_errors=1),
         result(2000, request_errors=60, q_delay_p95=36.9),
     ]
 
     text = _join(format_capacity_summary(results))
     assert "Capacity: about 640" in text
     assert "60 request errors, p95 async queue wait 36.90 s" in text
-    assert "The 640-bot test had 1 request error and 1 bot error" in text
+    assert (
+        "The 640-bot test had 1 request error, 3 busy/stale responses and 1 bot error"
+        in text
+    )
     assert "add worker processes with num_dynos_worker" in text
 
 
@@ -354,7 +357,7 @@ def test_one_error_in_a_short_test_does_not_cap_capacity():
 
 
 def test_busy_responses_are_not_request_errors():
-    assert _count_request_errors([(503, 4), (409, 1), (500, 2)]) == (2, 5)
+    assert _split_failed_requests([(503, 4), (409, 1), (500, 2)]) == (2, 5)
 
 
 def test_a_storm_of_busy_responses_exceeds_capacity():
