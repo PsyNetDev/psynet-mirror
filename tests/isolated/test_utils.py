@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from importlib.machinery import ModuleSpec
 from math import isnan
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 import requests
@@ -887,3 +887,17 @@ def test_keep_alive_session_retries_a_dropped_post_only_when_asked(retry_posts):
         server.server_close()
 
     assert len(attempts) == (2 if retry_posts else 1)
+
+
+def test_check_for_login_errors_reports_the_form_messages():
+    from psynet.utils import check_for_login_errors
+
+    page = Mock(text="<html><body><p>Dashboard</p></body></html>")
+    check_for_login_errors(page)
+
+    page.text = (
+        '<div class="alert alert-danger">Invalid login</div>'
+        '<span style="color: red">Unknown user</span>'
+    )
+    with pytest.raises(RuntimeError, match="'Invalid login - Unknown user'"):
+        check_for_login_errors(page)

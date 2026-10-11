@@ -173,6 +173,7 @@ from .utils import (
     get_logger,
     get_translator,
     is_in_repo_experiment,
+    keep_alive_session,
     loading_experiment_classes,
     log_time_taken,
     render_template_with_translations,
@@ -749,15 +750,12 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     def authenticated_session(self):
         """Return a dashboard-authenticated session for the current thread.
 
-        ``requests.Session`` is not thread-safe, so bots running in threads
-        each log in once and keep their own session.
+        ``requests.Session`` is not thread-safe, so each thread keeps its own
+        session. The process logs in once per server and every thread's
+        session reuses that login's cookies, so bots running in threads don't
+        each log in.
         """
-        sessions = self.__dict__.setdefault(
-            "_authenticated_sessions", threading.local()
-        )
-        if not hasattr(sessions, "session"):
-            sessions.session = get_authenticated_session(self.base_url)
-        return sessions.session
+        return _thread_dashboard_session(self.base_url)
 
     @classmethod
     def get_index_html(cls):
@@ -7251,6 +7249,32 @@ def get_experiment() -> Experiment:
     Returns an initialized instance of the experiment class.
     """
     return import_local_experiment()["class"]()
+
+
+@cache
+def _dashboard_login_cookies(base_url):
+    """Log in to the dashboard at ``base_url`` and return the login's cookies.
+
+    Cached with :func:`functools.cache` so that
+    :func:`~psynet.utils.clear_all_caches` forgets logins to servers that tests
+    have since replaced at the same URL.
+    """
+    return get_authenticated_session(base_url).cookies
+
+
+_dashboard_sessions = threading.local()
+
+
+def _thread_dashboard_session(base_url):
+    """Return this thread's dashboard session for ``base_url``, sharing one login."""
+    cookies = _dashboard_login_cookies(base_url)
+    sessions = vars(_dashboard_sessions).setdefault("by_url", {})
+    login, session = sessions.get(base_url, (None, None))
+    if login is not cookies:
+        session = keep_alive_session()
+        session.cookies.update(cookies)
+        sessions[base_url] = (cookies, session)
+    return session
 
 
 @cache

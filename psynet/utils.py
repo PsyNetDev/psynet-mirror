@@ -2074,6 +2074,10 @@ def get_authenticated_session(base_url, username=None, password=None):
 
 
 def check_for_login_errors(response):
+    """Raise ``RuntimeError`` with the form's messages if a dashboard login failed."""
+    # Parsing a whole dashboard page is slow, and only failed logins show alerts.
+    if "alert-danger" not in response.text:
+        return
     soup = BeautifulSoup(response.text, "html.parser")
 
     top_level_alert = soup.find("div", class_="alert alert-danger")
