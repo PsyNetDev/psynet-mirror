@@ -139,7 +139,7 @@ by default each local test session gets its own environment and leaves a
 running ``psynet debug local`` alone. The session prints where it runs, for
 example::
 
-    Using database dallinger_test_5100, Redis at redis://127.0.0.1:6479, and port 5100.
+    Using database dallinger_test_5100, Redis at 127.0.0.1:6479/0, and port 5100.
 
 It claims a free web port 100 or more above your ``base_port`` (so from 5100
 by default), uses the database ``<database>_test_<port>`` next to
@@ -147,7 +147,7 @@ by default), uses the database ``<database>_test_<port>`` next to
 sessions can also run at once. Both are removed when the session ends. If ``redis-server`` isn't installed (for example when Redis runs only in
 Docker), the session uses a spare database number on your Redis server
 instead, which keeps its data apart but can still send live notifications to a
-debug server's participants. If the environment can't be set up, the session stops
+debug server's participants. That database is emptied when the session ends. If the environment can't be set up, the session stops
 with an error rather than falling back to your database.
 
 Each session has its own database, but all of them share your PostgreSQL
