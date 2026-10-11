@@ -130,9 +130,12 @@ well:
 
     psynet performance-test local --n-bots 10,20,40,80 --time-factor 1 --duration-minutes 3
 
-A test counts as within capacity if no request or bot errors occur and both
-of these stay within their limits:
+A test counts as within capacity if these stay within their limits:
 
+- the share of ``/timeline`` and ``/response`` requests that fail, at most
+  0.1%, and the share of bots that fail, at most 1%. A long test makes tens
+  of thousands of requests, so a single stray error doesn't fail it, but the
+  summary still reports any errors at the capacity it found;
 - the 95th-percentile response time for ``/timeline`` and ``/response``,
   together and for each of them, limited by ``--max-p95-ms`` (default 500);
 - the 95th-percentile time that async processes wait in the queue for a
@@ -162,7 +165,7 @@ The summary at the end of every run reports the capacity it found and, once a
 larger bot count has exceeded the limits, suggests a cap of 80% of it, for
 example::
 
-    Capacity: about 160 concurrent bots kept p95 response time under 500 ms, p95 async queue wait under 5 s and no errors; 170 did not (p95 response time 622 ms).
+    Capacity: about 160 concurrent bots kept p95 response time under 500 ms, p95 async queue wait under 5 s and fewer than 0.1% of requests and 1% of bots failing; 170 did not (p95 response time 622 ms).
     Suggested max_concurrent_participants: 128 (80% of 160)
 
 For rough capacities of common server sizes, based on one test on a real
