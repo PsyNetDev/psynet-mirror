@@ -516,11 +516,16 @@ def _launch_unless_cancelled(spec):
         spec["class"].launch(spec)
     except Exception:
         logger.exception("Could not launch async job %s.", spec["id"])
+        if issubclass(spec["class"], WorkerAsyncJob):
+            consequence = (
+                "so it stays pending until the clock fails it as lost, "
+                "about an hour after it was enqueued."
+            )
+        else:
+            consequence = "so it stays pending and will not run."
         _send_alert(
             f"Async job {spec['id']} ({spec['class'].__name__}) was "
-            "saved but could not be launched, "
-            "so it stays pending until the clock fails it as lost, "
-            "about an hour after it was enqueued."
+            f"saved but could not be launched, {consequence}"
         )
 
 
@@ -638,12 +643,7 @@ class LocalAsyncJob(AsyncJob):
             db.session.close()
 
 
-_RQ_WAITING_STATUSES = {
-    JobStatus.QUEUED,
-    JobStatus.SCHEDULED,
-    JobStatus.DEFERRED,
-    JobStatus.STARTED,
-}
+_RQ_LOST_STATUSES = {JobStatus.FAILED, JobStatus.STOPPED, JobStatus.CANCELED}
 
 
 def _rq_job_id(async_job_id):
@@ -682,7 +682,7 @@ class WorkerAsyncJob(AsyncJob):
         from when a worker starts running it. Time spent waiting in the
         queue does not count. A job that has not started within
         :attr:`max_queue_wait_sec` (1 hour) of being enqueued is failed only
-        if RQ no longer holds it.
+        if RQ lost it.
     priority : str, default ``"high"``
         The RQ queue the job runs on, ``"high"`` or ``"low"``. Workers take
         jobs from the ``high`` queue before the ``low`` queue, but do not
@@ -693,10 +693,12 @@ class WorkerAsyncJob(AsyncJob):
     ----------
     max_queue_wait_sec : int
         Seconds after being enqueued (default 3600, i.e. 1 hour) after which
-        :meth:`check_timeouts` fails a job that has not started, if RQ no
-        longer holds it, for example because its launch failed or Redis
-        restarted. A job that RQ still holds is a genuine backlog and keeps
-        waiting. A lost job is failed rather than re-run.
+        :meth:`check_timeouts` fails a job that has not started, if RQ lost
+        it: RQ no longer has the job, for example because its launch failed
+        or Redis restarted, or RQ failed, stopped or cancelled it. A job
+        still waiting in RQ is a genuine backlog and keeps waiting, and a job
+        RQ reports as finished is left alone. A lost job is failed rather
+        than re-run.
     """
 
     max_queue_wait_sec = 3600
@@ -767,13 +769,21 @@ class WorkerAsyncJob(AsyncJob):
 
     @classmethod
     def _is_lost_before_start(cls, async_job_id):
-        """Return whether RQ no longer holds a job that has not started.
+        """Return whether RQ lost a job that has not started.
 
-        Returns ``False``, with a warning, if Redis cannot be reached.
+        A job is lost if RQ no longer has it, or if RQ failed, stopped or
+        cancelled it. A job RQ reports as finished was run by a worker, and
+        any other status, including ``created``, which RQ only sets while
+        enqueueing, means RQ may still run it.
+
+        Returns
+        -------
+        bool
+            ``False``, with a warning, if Redis cannot be reached.
         """
         try:
-            rq_job = Job.fetch(_rq_job_id(async_job_id), connection=redis_conn)
-        except NoSuchJobError:
+            status = Job(_rq_job_id(async_job_id), connection=redis_conn).get_status()
+        except InvalidJobOperation:
             return True
         except RedisError:
             logger.warning(
@@ -782,22 +792,16 @@ class WorkerAsyncJob(AsyncJob):
                 exc_info=True,
             )
             return False
-        return rq_job.get_status(refresh=False) not in _RQ_WAITING_STATUSES
+        return status in _RQ_LOST_STATUSES
 
     @classmethod
-    def check_timeouts(cls):
-        """Fail jobs that have timed out or were lost before starting.
-
-        A job times out once it has run for longer than its ``timeout``. A job
-        that has not started :attr:`max_queue_wait_sec` after being enqueued
-        is failed if RQ no longer holds it; otherwise it keeps waiting.
-        Failed jobs are no longer pending.
-        """
-        now = datetime.datetime.now()
+    def _is_overdue(cls, now):
+        """Return a filter for pending jobs that timed out or never started."""
         start_deadline = now - datetime.timedelta(seconds=cls.max_queue_wait_sec)
-        jobs = cls.query.filter(
+        return and_(
             cls.pending,
             ~cls.failed,
+            ~cls.finished,
             or_(
                 cls.timeout_scheduled_for < now,
                 and_(
@@ -805,27 +809,59 @@ class WorkerAsyncJob(AsyncJob):
                     cls.time_enqueued < start_deadline,
                 ),
             ),
-        ).all()
-        for job in jobs:
-            if job.time_started is not None:
-                job.fail("Async job timed out")
-            elif cls._is_lost_before_start(job.id):
-                job.fail(
-                    f"Async job did not start within {cls.max_queue_wait_sec} s "
-                    "of being enqueued and is no longer in the RQ queue; "
-                    "it was probably lost"
-                )
-            else:
-                continue
-            job.pending = False
-            if job.participant_id is not None:
-                from psynet.timeline_hold import _queue_timeline_hold_wake
+        )
 
-                _queue_timeline_hold_wake(
-                    job.participant_id,
-                    reason="async_job_timed_out",
-                )
+    @classmethod
+    def check_timeouts(cls):
+        """Fail jobs that have timed out or were lost before starting.
+
+        A job times out once it has run for longer than its ``timeout``. A job
+        that has not started :attr:`max_queue_wait_sec` after being enqueued
+        is failed if RQ lost it (see :meth:`_is_lost_before_start`);
+        otherwise it keeps waiting. Failed jobs are no longer pending.
+        """
+        now = datetime.datetime.now()
+        job_ids = [
+            job_id
+            for (job_id,) in db.session.query(cls.id).filter(cls._is_overdue(now))
+        ]
+        for job_id in job_ids:
+            cls._fail_if_overdue(job_id, now)
             db.session.commit()
+
+    @classmethod
+    def _fail_if_overdue(cls, async_job_id, now):
+        """Lock a job and fail it if it is still overdue at time ``now``.
+
+        Re-checking under the lock skips a job that a worker started or
+        finished since :meth:`check_timeouts` selected it.
+        """
+        job = (
+            cls.query.filter(cls.id == async_job_id, cls._is_overdue(now))
+            .with_for_update(of=AsyncJob)
+            .populate_existing()
+            .one_or_none()
+        )
+        if job is None:
+            return
+        if job.time_started is not None:
+            job.fail("Async job timed out")
+        elif cls._is_lost_before_start(job.id):
+            job.fail(
+                f"Async job did not start within {cls.max_queue_wait_sec} s "
+                "of being enqueued and RQ no longer holds it; "
+                "it was probably lost"
+            )
+        else:
+            return
+        job.pending = False
+        if job.participant_id is not None:
+            from psynet.timeline_hold import _queue_timeline_hold_wake
+
+            _queue_timeline_hold_wake(
+                job.participant_id,
+                reason="async_job_timed_out",
+            )
 
     @property
     def redis_job_id(self):

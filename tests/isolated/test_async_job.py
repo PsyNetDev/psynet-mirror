@@ -9,6 +9,7 @@ from dallinger import db
 from dallinger.db import redis_conn
 from rq import Queue
 from rq.exceptions import NoSuchJobError
+from rq.job import JobStatus
 from sqlalchemy.exc import IntegrityError
 
 import psynet.experiment  # noqa -- to ensure that all SQLAlchemy classes are registered
@@ -391,24 +392,36 @@ def test_timeout_counts_from_start_not_enqueue(monkeypatch):
     stalled.log_time_started()
     backlog = WorkerAsyncJob(do_nothing).enqueue()
     lost = WorkerAsyncJob(do_nothing).enqueue()
-    for job in [backlog, lost]:
+    finished_in_rq = WorkerAsyncJob(do_nothing).enqueue()
+    for job in [backlog, lost, finished_in_rq]:
         job.time_enqueued -= datetime.timedelta(hours=2)
-    queued_id, stalled_id, backlog_id, lost_id = (
+    queued_id, stalled_id, backlog_id, lost_id, finished_in_rq_id = (
         queued.id,
         stalled.id,
         backlog.id,
         lost.id,
+        finished_in_rq.id,
     )
     db.session.commit()
     lost.redis_job.delete()
+    finished_in_rq.redis_job.set_status(JobStatus.FINISHED)
     time.sleep(0.05)
     WorkerAsyncJob.check_timeouts()
-    for job_id in [queued_id, backlog_id]:
+    for job_id in [queued_id, backlog_id, finished_in_rq_id]:
         job = WorkerAsyncJob.query.get(job_id)
         assert job.pending and not job.failed
-    assert WorkerAsyncJob.query.get(stalled_id).failed
+    stalled = WorkerAsyncJob.query.get(stalled_id)
+    assert stalled.failed and not stalled.pending
     lost = WorkerAsyncJob.query.get(lost_id)
     assert "probably lost" in lost.failed_reason and not lost.pending
+
+    finished_in_rq = WorkerAsyncJob.query.get(finished_in_rq_id)
+    finished_in_rq.pending, finished_in_rq.finished = False, True
+    finished_in_rq.redis_job.delete()
+    db.session.commit()
+    WorkerAsyncJob._fail_if_overdue(finished_in_rq_id, datetime.datetime.now())
+    db.session.commit()
+    assert not WorkerAsyncJob.query.get(finished_in_rq_id).failed
 
     WorkerAsyncJob.call_function(queued_id)
     queued = WorkerAsyncJob.query.get(queued_id)
