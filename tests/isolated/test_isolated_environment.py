@@ -19,6 +19,7 @@ from psynet.isolated_environment import (
     _claim_port,
     _spare_redis_database,
     check_no_debug_server,
+    postgres_connection_limit_message,
     shared_environment_warning,
     should_isolate,
     start_redis_server,
@@ -181,6 +182,24 @@ def test_a_failed_start_explains_how_to_opt_out(tmp_path, monkeypatch):
     port, lock = _claim_port(free_port)
     lock.close()
     assert port == free_port, "the failed start kept its port claim"
+
+
+@pytest.mark.parametrize(
+    "server_error",
+    [
+        "FATAL:  sorry, too many clients already",
+        "FATAL:  remaining connection slots are reserved for non-replication "
+        "superuser connections",
+    ],
+)
+def test_running_out_of_postgres_connections_is_explained(server_error):
+    message = str(IsolationError(RuntimeError(f"Could not connect: {server_error}")))
+
+    assert server_error in message
+    assert "PostgreSQL server has run out of connections" in message
+    assert "max_connections" in message
+    assert f"{ENV_VAR}=shared" not in message, "opting out would not help"
+    assert postgres_connection_limit_message("database does not exist") is None
 
 
 @pytest.mark.skipif(not shutil.which("redis-server"), reason="needs redis-server")
