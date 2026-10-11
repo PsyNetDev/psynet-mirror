@@ -4789,19 +4789,12 @@ def test_write_json_results_emits_expected_schema_with_coerced_values(tmp_path):
     assert first["process_stats"][0]["max"] is None
 
 
-def _invoke_destroy_ssh(monkeypatch, destroy_app, apps=(), app=None, yes=False):
-    import importlib
-
+def _invoke_destroy_ssh(monkeypatch, destroy_app, apps=(), app=None):
     from psynet.command_line import destroy__docker_ssh
 
     docker_ssh = importlib.import_module("dallinger.command_line.docker_ssh")
     monkeypatch.setattr(docker_ssh, "destroy", destroy_app)
-    if yes:
-        monkeypatch.setattr(
-            click, "confirm", lambda *args, **kwargs: pytest.fail("--yes prompted")
-        )
-    else:
-        monkeypatch.setattr(click, "confirm", lambda *args, **kwargs: True)
+    monkeypatch.setattr(click, "confirm", lambda *args, **kwargs: True)
 
     @click.command()
     @click.pass_context
@@ -4811,7 +4804,7 @@ def _invoke_destroy_ssh(monkeypatch, destroy_app, apps=(), app=None, yes=False):
             app=app,
             apps=apps,
             server="test-server",
-            yes=yes,
+            yes=False,
         )
 
     return CliRunner().invoke(parent)
@@ -4855,22 +4848,30 @@ def test_debug_heroku_docker_runs_heroku_pre_launch_checks(tmp_path, monkeypatch
     assert pre_launch_kwargs["docker"] is True
 
 
+@pytest.mark.parametrize("yes_flag", ["--yes", "-y"])
 @pytest.mark.parametrize(
-    "kwargs, expected",
-    [({"app": "one"}, ["one"]), ({"apps": ("one", "two")}, ["one", "two"])],
+    "app_args, expected",
+    [(["--app", "one"], ["one"]), (["one", "two"], ["one", "two"])],
 )
-def test_destroy_ssh_yes_skips_confirmation(monkeypatch, kwargs, expected):
+def test_destroy_ssh_yes_skips_confirmation(monkeypatch, yes_flag, app_args, expected):
     destroyed = []
 
     @click.command()
     @click.option("--app", required=True)
     @click.option("--server")
     def fake_destroy(app, server):
-        destroyed.append(app)
+        destroyed.append((app, server))
 
-    result = _invoke_destroy_ssh(monkeypatch, fake_destroy, yes=True, **kwargs)
+    docker_ssh = importlib.import_module("dallinger.command_line.docker_ssh")
+    monkeypatch.setattr(docker_ssh, "destroy", fake_destroy)
+    monkeypatch.setattr(docker_ssh, "get_configured_hosts", lambda: {"musix": {}})
+    monkeypatch.setattr(
+        click, "confirm", lambda *args, **kwargs: pytest.fail("--yes prompted")
+    )
+
+    result = CliRunner().invoke(psynet, ["destroy", "ssh", *app_args, yes_flag])
     assert result.exit_code == 0, result.output
-    assert destroyed == expected
+    assert destroyed == [(app, "musix") for app in expected]
 
 
 def test_destroy_ssh_requires_an_app_name(monkeypatch):
@@ -5005,11 +5006,37 @@ def test_prolific_listing_warnings():
     assert "£4.24/hour" in " ".join(warnings(5, 0.60))
 
 
-def test_prompt_for_ssh_server_returns_the_chosen_server(monkeypatch):
-    from click.testing import CliRunner
+def _invoke_db_ssh(monkeypatch, hosts):
+    from contextlib import contextmanager
 
     import psynet.command_line as command_line
 
-    monkeypatch.setattr(command_line, "CONFIGURED_HOSTS", {"rr-pc02": {}, "musix": {}})
-    with CliRunner().isolation(input="musix\n"):
-        assert command_line.prompt_for_ssh_server() == "musix"
+    docker_ssh = importlib.import_module("dallinger.command_line.docker_ssh")
+    monkeypatch.setattr(docker_ssh, "get_configured_hosts", lambda: hosts)
+    monkeypatch.setattr(command_line, "CONFIGURED_HOSTS", hosts)
+
+    @contextmanager
+    def fake_remote_postgres(server_info, app):
+        yield f"postgresql://{server_info['host']}/{app}"
+
+    monkeypatch.setattr(command_line, "remote_postgres", fake_remote_postgres)
+    return CliRunner().invoke(psynet, ["db", "ssh", "--app", "demo"])
+
+
+def test_db_ssh_without_configured_servers_explains_how_to_add_one(monkeypatch):
+    result = _invoke_db_ssh(monkeypatch, {})
+    assert result.exit_code != 0
+    assert "dallinger docker-ssh servers add" in result.output
+
+
+def test_db_ssh_uses_the_only_configured_server(monkeypatch):
+    result = _invoke_db_ssh(monkeypatch, {"musix": {"host": "musix.example"}})
+    assert result.exit_code == 0, result.output
+    assert "postgresql://musix.example/demo" in result.output
+
+
+def test_db_ssh_without_a_terminal_asks_for_server(monkeypatch):
+    result = _invoke_db_ssh(monkeypatch, {"musix": {}, "rr-pc02": {}})
+    assert result.exit_code != 0
+    assert "Please provide `--server`" in result.output
+    assert "Configured servers: musix, rr-pc02" in result.output

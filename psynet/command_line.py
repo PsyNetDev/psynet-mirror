@@ -28,6 +28,7 @@ from dallinger.command_line.docker_ssh import (
     CONFIGURED_HOSTS,
     option_server,
     remote_postgres,
+    resolve_server_option,
 )
 from dallinger.command_line.utils import verify_id as dallinger_verify_id
 from dallinger.config import experiment_available, get_config
@@ -347,6 +348,7 @@ def _validate_location(ctx, param, value):
         raise click.UsageError(
             f"Invalid location {value}; location must be one of: {', '.join(allowed)}"
         )
+    return value
 
 
 @psynet.command("experiment-variables")
@@ -401,15 +403,6 @@ def db_connection(location, app=None, server=None):
             connection.close()
 
 
-def prompt_for_ssh_server():
-    """Ask the user to choose one of the configured SSH servers."""
-    return click.prompt(
-        "Choose one of the configured servers "
-        "(add one with `dallinger docker-ssh servers add`)",
-        type=click.Choice(list(CONFIGURED_HOSTS)),
-    )
-
-
 @contextmanager
 def get_db_uri(location, app=None, server=None):
     match location:
@@ -422,8 +415,9 @@ def get_db_uri(location, app=None, server=None):
         case "ssh":
             if app is None:
                 raise click.UsageError("Missing parameter: --app")
-            if server is None:
-                server = prompt_for_ssh_server()
+            server = resolve_server_option(
+                click.get_current_context(silent=True), None, server
+            )
             server_info = CONFIGURED_HOSTS[server]
             with remote_postgres(server_info, app) as db_uri:
                 yield db_uri

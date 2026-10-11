@@ -1,1 +1,1 @@
-Fixed `psynet db ssh` and other commands that read a remote database crashing when `--server` was omitted; they now ask you to choose one of your configured servers.
+Fixed `psynet db` rejecting every location, and `psynet db ssh` crashing when `--server` was omitted; it now selects the server the same way as other SSH commands, using your only configured server automatically or asking you to choose one.
