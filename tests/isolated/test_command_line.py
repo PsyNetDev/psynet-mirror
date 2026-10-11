@@ -2091,6 +2091,41 @@ def test_setup_can_pin_editable_psynet_commit(tmp_path, monkeypatch):
     assert (tmp_path / "requirements.txt").read_text() == f"{requirement}\n"
 
 
+def test_setup_editable_source_scaffolds_without_commit_pin_warning(
+    tmp_path, monkeypatch
+):
+    source = tmp_path / "psynet-source"
+    source.mkdir()
+    for module in ("experiment_setup", "experiment_scaffold"):
+        monkeypatch.setattr(
+            f"psynet.{module}.get_editable_psynet_source", lambda: source
+        )
+    monkeypatch.setattr("psynet.experiment_scaffold.psynet_version", "99.0.0a1")
+    monkeypatch.setattr(
+        "psynet.experiment_scaffold._current_source_commit", lambda source: "a" * 40
+    )
+
+    def unpushed_commit(source):
+        raise ValueError("The PsyNet commit is not pushed.")
+
+    monkeypatch.setattr(
+        "psynet.experiment_scaffold.commit_psynet_requirement", unpushed_commit
+    )
+    _mock_dedicated_experiment_venv(monkeypatch)
+    monkeypatch.setattr("psynet.experiment_setup._run_uv", lambda *args: None)
+
+    with working_directory(tmp_path):
+        result = CliRunner().invoke(psynet, ["setup", "--psynet-source", "editable"])
+
+    assert result.exit_code == 0, result.output
+    assert "Warning" not in result.output
+    assert (
+        (tmp_path / "requirements.txt")
+        .read_text()
+        .startswith(f"-e {source.as_uri()}#egg=psynet[experiment]\n")
+    )
+
+
 def test_setup_no_install_skips_sync_outside_shared_env(tmp_path, monkeypatch):
     (tmp_path / "requirements.txt").write_text("psynet==0.0.0\n")
     (tmp_path / "constraints.txt").write_text(
@@ -4754,14 +4789,19 @@ def test_write_json_results_emits_expected_schema_with_coerced_values(tmp_path):
     assert first["process_stats"][0]["max"] is None
 
 
-def _invoke_destroy_ssh(monkeypatch, destroy_app, apps=(), app=None):
+def _invoke_destroy_ssh(monkeypatch, destroy_app, apps=(), app=None, yes=False):
     import importlib
 
     from psynet.command_line import destroy__docker_ssh
 
     docker_ssh = importlib.import_module("dallinger.command_line.docker_ssh")
     monkeypatch.setattr(docker_ssh, "destroy", destroy_app)
-    monkeypatch.setattr(click, "confirm", lambda *args, **kwargs: True)
+    if yes:
+        monkeypatch.setattr(
+            click, "confirm", lambda *args, **kwargs: pytest.fail("--yes prompted")
+        )
+    else:
+        monkeypatch.setattr(click, "confirm", lambda *args, **kwargs: True)
 
     @click.command()
     @click.pass_context
@@ -4771,9 +4811,66 @@ def _invoke_destroy_ssh(monkeypatch, destroy_app, apps=(), app=None):
             app=app,
             apps=apps,
             server="test-server",
+            yes=yes,
         )
 
     return CliRunner().invoke(parent)
+
+
+def test_deploy_heroku_docker_runs_only_the_docker_deploy(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        "psynet.command_line._deploy__docker_heroku",
+        lambda ctx, app, archive: calls.append("docker"),
+    )
+    monkeypatch.setattr(
+        "psynet.command_line._pre_launch",
+        lambda *args, **kwargs: calls.append("plain"),
+    )
+
+    from psynet.command_line import deploy__heroku
+
+    with working_directory(tmp_path):
+        result = CliRunner().invoke(deploy__heroku, ["--app", "test-app", "--docker"])
+
+    assert result.exit_code == 0, result.output
+    assert calls == ["docker"]
+
+
+def test_debug_heroku_docker_runs_heroku_pre_launch_checks(tmp_path, monkeypatch):
+    pre_launch_kwargs = {}
+
+    def fake_pre_launch(ctx, **kwargs):
+        pre_launch_kwargs.update(kwargs)
+        raise click.Abort()
+
+    monkeypatch.setattr("psynet.command_line._pre_launch", fake_pre_launch)
+
+    from psynet.command_line import debug__heroku
+
+    with working_directory(tmp_path):
+        CliRunner().invoke(debug__heroku, ["--app", "test-app", "--docker"])
+
+    assert pre_launch_kwargs["heroku"] is True
+    assert pre_launch_kwargs["docker"] is True
+
+
+@pytest.mark.parametrize(
+    "kwargs, expected",
+    [({"app": "one"}, ["one"]), ({"apps": ("one", "two")}, ["one", "two"])],
+)
+def test_destroy_ssh_yes_skips_confirmation(monkeypatch, kwargs, expected):
+    destroyed = []
+
+    @click.command()
+    @click.option("--app", required=True)
+    @click.option("--server")
+    def fake_destroy(app, server):
+        destroyed.append(app)
+
+    result = _invoke_destroy_ssh(monkeypatch, fake_destroy, yes=True, **kwargs)
+    assert result.exit_code == 0, result.output
+    assert destroyed == expected
 
 
 def test_destroy_ssh_requires_an_app_name(monkeypatch):

@@ -1,0 +1,1 @@
+Fixed `psynet deploy heroku --docker` also running a plain Heroku deploy after the Docker deploy, and `psynet debug heroku --docker` skipping the Heroku package-size, asset-storage and Prolific payment checks that `psynet debug heroku` runs.

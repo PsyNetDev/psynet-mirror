@@ -208,9 +208,16 @@ def _default_experiment_py() -> str:
     return _EXPERIMENT_PY_TEMPLATE.format(label=_default_experiment_label())
 
 
-def _default_requirements_txt() -> str:
-    """Return a starter ``requirements.txt`` for the current PsyNet version."""
-    requirement = _default_psynet_requirement()
+def _default_requirements_txt(psynet_requirement: str | None = None) -> str:
+    """Return a starter ``requirements.txt``.
+
+    Parameters
+    ----------
+    psynet_requirement
+        PsyNet requirement to record. Defaults to
+        :func:`_default_psynet_requirement`.
+    """
+    requirement = psynet_requirement or _default_psynet_requirement()
     return f"{requirement}\n{_REQUIREMENTS_TXT_COMMENTS}"
 
 
@@ -705,7 +712,7 @@ def _current_source_commit(source=None) -> str | None:
     return commit if re.fullmatch(r"[0-9a-f]{40}", commit) else None
 
 
-def _bootstrap_authored_files(skip_files):
+def _bootstrap_authored_files(skip_files, psynet_requirement=None):
     """Create missing starter experiment files without overwriting existing ones.
 
     Contents are computed before any writes so a failed PsyNet pin (for example
@@ -715,7 +722,7 @@ def _bootstrap_authored_files(skip_files):
     skipped = []
     bootstrap_files = {
         "experiment.py": _default_experiment_py,
-        "requirements.txt": _default_requirements_txt,
+        "requirements.txt": lambda: _default_requirements_txt(psynet_requirement),
     }
 
     pending = []
@@ -1121,11 +1128,14 @@ def scaffold_experiment_directory(
     *,
     overwrite=False,
     skip_files=None,
+    psynet_requirement=None,
 ):
     """Create or refresh the standard scaffold-managed experiment files.
 
     ``config.txt`` is part of the default scaffold and is created when missing,
     but existing copies are never overwritten (authors commonly customize them).
+    ``psynet_requirement``, when given, is recorded in a newly created
+    ``requirements.txt`` instead of the default requirement.
     """
     skip_files = set(skip_files or [])
     _assert_scaffold_paths_are_safe(
@@ -1139,7 +1149,9 @@ def scaffold_experiment_directory(
     previous_gitignore = _read_gitignore()
 
     try:
-        bootstrap_written, bootstrap_skipped = _bootstrap_authored_files(skip_files)
+        bootstrap_written, bootstrap_skipped = _bootstrap_authored_files(
+            skip_files, psynet_requirement
+        )
     except ValueError as exc:
         raise click.UsageError(str(exc)) from exc
     written.extend(bootstrap_written)

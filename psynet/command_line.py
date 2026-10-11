@@ -1608,6 +1608,7 @@ def deploy__heroku(ctx, app, archive, docker):
     """
     if docker:
         _deploy__docker_heroku(ctx, app, archive)
+        return
 
     try:
         from dallinger.command_line import deploy as dallinger_deploy
@@ -2147,7 +2148,13 @@ def debug__docker_heroku(ctx, app, archive):
                 "This shouldn't be hard to fix..."
             )
         _pre_launch(
-            ctx, mode="sandbox", archive=archive, local_=False, docker=True, app=app
+            ctx,
+            mode="sandbox",
+            archive=archive,
+            local_=False,
+            docker=True,
+            heroku=True,
+            app=app,
         )
         result = ctx.invoke(dallinger_sandbox, verbose=True, app=app)
         _post_deploy(result)
@@ -3798,8 +3805,14 @@ def _dallinger_hibernation_command(name):
 @click.option("--app", default=None, help="Experiment id")
 @click.argument("apps", required=False, nargs=-1)
 @option_server
+@click.option(
+    "--yes",
+    "-y",
+    is_flag=True,
+    help="Skip the confirmation prompt.",
+)
 @click.pass_context
-def destroy__docker_ssh(ctx, app, apps, server):
+def destroy__docker_ssh(ctx, app, apps, server, yes):
     """
     Destroy the experiment on a remote server via SSH.
     """
@@ -3816,13 +3829,14 @@ def destroy__docker_ssh(ctx, app, apps, server):
             destroy,
             app=app,
             server=server,
+            ask_for_confirmation=not yes,
         )
     if len(apps) > 0:
         assert app is None, "You cannot provide both --app and a list of apps."
         confirmation = f"""
             Are you sure you want to remove {len(apps)} apps on {server} ({apps})?
             """
-        if click.confirm(confirmation, abort=True):
+        if yes or click.confirm(confirmation, abort=True):
             failed = []
             for app in apps:
                 try:
@@ -4730,7 +4744,6 @@ def _run_performance_test_with_new_server(
 @_test_options["performance_stagger"]
 @_test_options["performance_time_factor"]
 @_test_options["duration_minutes"]
-@_test_options["performance_json_output"]
 @click.pass_context
 def performance_test__docker_ssh(
     ctx,
@@ -4740,7 +4753,6 @@ def performance_test__docker_ssh(
     stagger=None,
     time_factor=None,
     duration_minutes=None,
-    json_output=None,
 ):
     """
     Runs performance tests on the remote server. Assumes that the app has
@@ -4753,15 +4765,8 @@ def performance_test__docker_ssh(
     If the app is in use during the performance test, results may not be
     reliable.
 
-    Note: --json-output is not yet supported for remote SSH execution. For
-    JSON output, run ``psynet performance-test local --json-output`` instead.
+    For JSON output, run ``psynet performance-test local --json-output``.
     """
-    if json_output:
-        raise click.UsageError(
-            "--json-output is not yet implemented for SSH mode. "
-            "Use 'psynet performance-test local --json-output' instead.",
-        )
-
     from dallinger.command_line.docker_ssh import Executor
 
     cmd = _build_ssh_performance_test_cmd(
