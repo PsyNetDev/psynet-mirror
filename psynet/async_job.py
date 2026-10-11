@@ -650,7 +650,7 @@ def _launch_unless_cancelled(spec):
             f"Async job {spec['id']} ({spec['class'].__name__}) was "
             "saved but could not be launched, "
             "so it stays pending until the clock fails it as lost, "
-            "about an hour after it was enqueued."
+            f"{spec['class'].max_queue_wait_sec / 60:g} minutes after it was enqueued."
         )
 
 
@@ -951,7 +951,9 @@ class WorkerAsyncJob(AsyncJob):
         Returns
         -------
         bool
-            ``False``, with a warning, if Redis cannot be reached.
+            ``True`` if RQ has no record of the job or failed, stopped or
+            cancelled it. ``False`` if RQ may still run it, or, with a
+            warning, if Redis cannot be reached.
         """
         try:
             status = Job(self.redis_job_id, connection=redis_conn).get_status()
