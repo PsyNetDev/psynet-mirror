@@ -131,11 +131,13 @@ class TestCommandLine(object):
         assert not list(tmp_path.glob("*.whl"))
         assert not Path("local-image-pins.txt").exists()
 
-        Path("local-image-pins.txt").touch()
-        with pytest.raises(click.UsageError, match="local-image-pins.txt"):
-            command_line._pre_launch(
-                Mock(), mode="debug", archive=None, local_=True, docker=True
-            )
+        for leftover in ["local-image-pins.txt", "psynet-1.0-py3-none-any.whl"]:
+            Path(leftover).touch()
+            with pytest.raises(click.UsageError, match=leftover):
+                command_line._pre_launch(
+                    Mock(), mode="debug", archive=None, local_=True, docker=True
+                )
+            Path(leftover).unlink()
 
     def test_sandbox_checks_skip_only_locally_built_packages(
         self, monkeypatch, tmp_path
