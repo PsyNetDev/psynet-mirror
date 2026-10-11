@@ -2,6 +2,49 @@
 Async jobs
 ==========
 
+.. _async_job_priority:
+
+Job priority
+------------
+
+Each :class:`~psynet.async_job.WorkerAsyncJob` runs at ``"high"`` or ``"low"``
+priority. Workers take jobs from the high-priority queue first, so a
+participant who is waiting for an analysis does not queue behind analyses
+that nobody is waiting for. Unless you choose a priority, PsyNet picks one:
+
+* :class:`~psynet.timeline.AsyncCodeBlock`: high with ``wait=True``, low with
+  ``wait=False``.
+* :meth:`~psynet.trial.main.Trial.async_post_trial`: high if the trial maker
+  checks performance (``check_performance_at_end`` or
+  ``check_performance_every_trial``), or if the trial class overrides
+  :meth:`~psynet.trial.main.Trial.show_feedback` and keeps
+  ``wait_for_feedback = True``; low otherwise.
+* :meth:`~psynet.trial.main.TrialNetwork.async_post_grow_network` and
+  :meth:`~psynet.trial.main.TrialNode.async_on_deploy`: high, because
+  participants may wait for the next node.
+* A :class:`~psynet.async_job.WorkerAsyncJob` you create yourself: high.
+
+To override the choice:
+
+.. code-block:: python
+
+    AsyncCodeBlock(save_summary, wait=False, priority="high")
+
+    class MyTrial(StaticTrial):
+        async_post_trial_priority = "low"
+
+    WorkerAsyncJob(refit_model, priority="low").enqueue()
+
+Priority only decides which waiting job starts next; a running job is never
+interrupted. If every worker is busy with long low-priority jobs, a
+high-priority job still waits for one of them to finish. Priority has no
+effect on a :class:`~psynet.async_job.LocalAsyncJob`, which runs in a thread
+of the web process. The CPU table printed after ``psynet test local`` (see
+:doc:`/test/scalability`) shows each job label's priority.
+
+API
+---
+
 .. Exclude rq.job.Job because sphinx_autodoc_typehints resolves its annotations
 .. and can hit an unresolved Redis forward reference even though Job is not
 .. rendered on the page.

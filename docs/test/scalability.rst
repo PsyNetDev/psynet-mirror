@@ -13,13 +13,13 @@ Measuring async job CPU
 -----------------------
 
 At the end of ``psynet test local``, PsyNet logs how much CPU each kind of
-async job used, grouped by label:
+async job used, grouped by label and :ref:`priority <async_job_priority>`:
 
 .. code-block:: text
 
     Async job CPU time (CPU-heavy: mean CPU >= 50% of mean wall time):
-      Label           Count  Mean CPU (s)  Max CPU (s)  Mean wall (s)  CPU-heavy
-      AsyncCodeBlock      2         0.027        0.052          0.085         no
+      Label           Priority  Count  Mean CPU (s)  Max CPU (s)  Mean wall (s)  CPU-heavy
+      AsyncCodeBlock  high          2         0.027        0.052          0.085         no
 
 A CPU-heavy job keeps a CPU core busy while it runs, so as load grows it
 needs more worker processes (``num_dynos_worker``) and a server with a core

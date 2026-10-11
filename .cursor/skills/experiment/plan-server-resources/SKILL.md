@@ -10,7 +10,7 @@ description: Measure how much CPU each async job of a PsyNet experiment uses wit
 Read these pages before acting. The "Documentation" section of the experiment's `AGENTS.md` explains how to find and search them.
 
 - `test/scalability` — `psynet performance-test` and how to read its report
-- `reference/api/async_job` — async job columns, including `cpu_time`
+- `reference/api/async_job` — job priority, and async job columns including `cpu_time`
 
 ## Measure async job CPU
 
@@ -20,13 +20,13 @@ Run the bots locally from the experiment directory:
 psynet test local
 ```
 
-When the bots finish, the log shows one row per async job label, for jobs
-that finished:
+When the bots finish, the log shows one row per async job label and
+priority, for jobs that finished:
 
 ```text
 Async job CPU time (CPU-heavy: mean CPU >= 50% of mean wall time):
-  Label           Count  Mean CPU (s)  Max CPU (s)  Mean wall (s)  CPU-heavy
-  AsyncCodeBlock      2         0.027        0.052          0.085         no
+  Label           Priority  Count  Mean CPU (s)  Max CPU (s)  Mean wall (s)  CPU-heavy
+  AsyncCodeBlock  high          2         0.027        0.052          0.085         no
 ```
 
 If the log says `No async jobs finished.` and the experiment doesn't use async
@@ -59,6 +59,13 @@ the web process.
 
 An **I/O-bound** job, such as an API call or an upload, mostly waits, so more
 cores do not help it.
+
+**Priority** says whether a participant waits for the job (`high`) or not
+(`low`); workers start `high` jobs first. A long CPU-heavy `low` job, such
+as analysing every main tapping trial, still occupies a worker until it
+finishes, so size the workers so that `high` jobs, such as calibration or
+feedback analyses, find a free one at peak. If a label has the wrong
+priority, override it as described in `reference/api/async_job`.
 
 In a worker that runs several jobs at once, `cpu_time` also counts the other
 jobs that ran while this one waited on I/O. With a few bots in
