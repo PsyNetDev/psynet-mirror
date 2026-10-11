@@ -876,6 +876,7 @@ def render_performance_result(
             f"<td>{format_metric(row.get('p95_response_time'))}</td>"
             f"<td>{format_metric(queue_wait_p95(row))}</td>"
             f"<td>{errors}</td>"
+            f"<td>{int(row.get('busy_responses') or 0)}</td>"
             f"<td>{html.escape(verdict)}</td>"
             "</tr>"
         )
@@ -909,7 +910,8 @@ def render_performance_result(
         f"{performance_heading('Resp Med (s)', 'Median HTTP response time, in seconds, for key participant endpoints.')}"
         f"{performance_heading('Resp P95 (s)', '95th percentile HTTP response time, in seconds, for key participant endpoints; higher values show slower tail latency.')}"
         f"{performance_heading('Q P95 all (s)', '95th percentile async-process queue delay across trial makers, or the wait of the oldest process still queued when the test ended if that is longer.')}"
-        f"{performance_heading('Errors', 'Request errors plus bot errors recorded during the run.')}"
+        f"{performance_heading('Errors', 'Request errors plus bot errors recorded during the run, not counting busy or stale responses.')}"
+        f"{performance_heading('Busy/stale', 'Responses to key participant endpoints with HTTP 409 or 503, which PsyNet sends when the experiment is busy or a page went stale.')}"
         f"{performance_heading('Within limits', f'Whether the run kept {limits.describe()}.')}"
         "</tr></thead><tbody>"
         + "\n".join(body)

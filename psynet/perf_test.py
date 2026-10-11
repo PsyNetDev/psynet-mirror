@@ -667,7 +667,7 @@ class PerformanceTester:
             .all()
         )
 
-        request_errors, retried_requests = _count_request_errors(
+        request_errors, busy_responses = _count_request_errors(
             db.session.query(Request.status_code, func.count(Request.id))
             .filter(
                 *request_window,
@@ -891,7 +891,7 @@ class PerformanceTester:
             "avg_init_time": avg_init_time,
             "initialization_times": initialization_times,
             "request_errors": request_errors,
-            "retried_requests": retried_requests,
+            "busy_responses": busy_responses,
             "median_wait_page_time": median_wait_page_time,
             "p95_wait_page_time": p95_wait_page_time,
             "max_wait_page_time": max_wait_page_time,
@@ -964,16 +964,17 @@ def _describe_workers(result):
     return text
 
 
-_RETRIED_STATUS_CODES = frozenset({409, 503})
+_BUSY_STATUS_CODES = frozenset({409, 503})
 
 
 def _count_request_errors(status_counts):
-    """Split failed key-endpoint requests into errors and retried responses.
+    """Split failed key-endpoint requests into errors and busy/stale responses.
 
     PsyNet answers with HTTP 503 when the experiment is busy and HTTP 409
-    when a timeline moved on mid-render, and bots retry both. The request
-    log doesn't record whether a retry succeeded, but a bot that gives up
-    fails, so those failures count as bot errors instead.
+    when a timeline moved on mid-render. Bots retry the responses that PsyNet
+    marks as busy or stale, and any other 409 or 503 fails the bot. The
+    request log records only status codes, so every 409 and 503 counts as a
+    busy/stale response, and bots that fail on them count as bot errors.
 
     Parameters
     ----------
@@ -983,15 +984,15 @@ def _count_request_errors(status_counts):
     Returns
     -------
     tuple of (int, int)
-        The number of request errors and of retried responses.
+        The number of request errors and of busy/stale responses.
     """
-    errors = retried = 0
+    errors = busy = 0
     for status_code, count in status_counts:
-        if status_code in _RETRIED_STATUS_CODES:
-            retried += count
+        if status_code in _BUSY_STATUS_CODES:
+            busy += count
         else:
             errors += count
-    return errors, retried
+    return errors, busy
 
 
 def _mean(values):
@@ -1116,9 +1117,9 @@ def format_test_results(result):
         ["Total requests", result["total_requests"]],
         ["Request errors", result["request_errors"]],
     ]
-    if result.get("retried_requests"):
+    if result.get("busy_responses"):
         request_rows.append(
-            ["Busy/stale responses retried", result["retried_requests"]]
+            ["Busy/stale responses (409/503)", result["busy_responses"]]
         )
     if result.get("requests_per_sec") is not None:
         request_rows.append(["Throughput", f"{result['requests_per_sec']:.2f} req/s"])
@@ -1379,13 +1380,23 @@ class CapacityLimits:
         measured by :func:`queue_wait_p95`.
     max_request_error_rate : float
         Largest acceptable share of ``/timeline`` and ``/response`` requests
-        that fail, not counting busy or stale responses that bots retry.
+        that fail, not counting busy or stale responses (HTTP 409 and 503).
         A long test makes tens of thousands of requests, so a stray error
         should not count against a bot count that is otherwise well within
         capacity.
     allowed_request_errors : int
         Number of request errors that is acceptable however few requests a
         test makes, so that one stray error doesn't fail a short test.
+    max_busy_response_rate : float
+        Largest acceptable share of ``/timeline`` and ``/response`` requests
+        answered as busy or stale. Bots retry these, so a server stuck on lock
+        contention can otherwise pass with no errors and short response times.
+        Each such response delays at most one request, so at 1% the delays
+        stay well inside the 5% of requests that the p95 limit ignores.
+    allowed_busy_responses : int
+        Number of busy or stale responses that is acceptable however few
+        requests a test makes, for the occasional contention at timeline holds
+        and synchronized groups.
     max_bot_error_rate : float
         Largest acceptable share of bots that fail.
     """
@@ -1394,6 +1405,8 @@ class CapacityLimits:
     max_queue_p95_s: float = DEFAULT_MAX_QUEUE_P95_S
     max_request_error_rate: float = 0.001
     allowed_request_errors: int = 1
+    max_busy_response_rate: float = 0.01
+    allowed_busy_responses: int = 10
     max_bot_error_rate: float = 0.01
 
     @classmethod
@@ -1415,10 +1428,11 @@ class CapacityLimits:
         Pass ``include_queue=False`` when the tests ran no async processes.
         """
         response = f"p95 response time under {self.max_p95_s * 1000:.0f} ms"
-        allowed = self.allowed_request_errors
         errors = (
-            f"at most {self.max_request_error_rate:.1%} of requests "
-            f"({allowed} always allowed) and "
+            f"at most {self.max_request_error_rate:.1%} of requests failing "
+            f"({self.allowed_request_errors} always allowed), "
+            f"{self.max_busy_response_rate:.0%} busy or stale "
+            f"({self.allowed_busy_responses} always allowed) and "
             f"{self.max_bot_error_rate:.0%} of bots failing"
         )
         if not include_queue:
@@ -1465,12 +1479,19 @@ def capacity_failures(result, limits=CapacityLimits()):
             f"at most {peak_running:,} of {result['n_bots']:,} bots were taking "
             "part at once, because new bots could not start fast enough"
         )
+    key_requests = result.get("key_requests") or 0
     request_errors = result.get("request_errors") or 0
     if request_errors > max(
         limits.allowed_request_errors,
-        limits.max_request_error_rate * (result.get("key_requests") or 0),
+        limits.max_request_error_rate * key_requests,
     ):
         reasons.append(f"{request_errors} request errors")
+    busy_responses = result.get("busy_responses") or 0
+    if busy_responses > max(
+        limits.allowed_busy_responses,
+        limits.max_busy_response_rate * key_requests,
+    ):
+        reasons.append(f"{busy_responses} busy/stale responses")
     bot_errors = result.get("bot_errors") or 0
     if bot_errors > limits.max_bot_error_rate * (result.get("total_bots_started") or 0):
         reasons.append(f"{bot_errors} bot errors")

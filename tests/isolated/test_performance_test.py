@@ -353,8 +353,15 @@ def test_one_error_in_a_short_test_does_not_cap_capacity():
     ]
 
 
-def test_retried_busy_responses_are_not_request_errors():
+def test_busy_responses_are_not_request_errors():
     assert _count_request_errors([(503, 4), (409, 1), (500, 2)]) == (2, 5)
+
+
+def test_a_storm_of_busy_responses_exceeds_capacity():
+    assert capacity_failures(_base_result(key_requests=700, busy_responses=10)) == []
+    assert capacity_failures(
+        _base_result(key_requests=10_000, request_errors=0, busy_responses=300)
+    ) == ["300 busy/stale responses"]
 
 
 def test_each_endpoint_must_stay_within_the_response_time_limit():
