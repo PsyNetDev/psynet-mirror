@@ -779,7 +779,9 @@ class WorkerAsyncJob(AsyncJob):
         Returns
         -------
         bool
-            ``False``, with a warning, if Redis cannot be reached.
+            ``True`` if RQ has no record of the job or failed, stopped or
+            cancelled it. ``False`` if RQ may still run it, or, with a
+            warning, if Redis cannot be reached.
         """
         try:
             status = Job(_rq_job_id(async_job_id), connection=redis_conn).get_status()
@@ -849,7 +851,7 @@ class WorkerAsyncJob(AsyncJob):
         elif cls._is_lost_before_start(job.id):
             job.fail(
                 f"Async job did not start within {cls.max_queue_wait_sec} s "
-                "of being enqueued and RQ no longer holds it; "
+                "of being enqueued and RQ no longer has it queued; "
                 "it was probably lost"
             )
         else:
