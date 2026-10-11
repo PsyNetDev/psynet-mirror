@@ -128,6 +128,7 @@ except ImportError:  # pragma: no cover - older Dallinger without Cloudflare ing
 
 
 _LOCAL_PSYNET_WHEEL_PATTERN = "psynet-*.whl"
+_LOCAL_IMAGE_PINS = "local-image-pins.txt"
 
 
 def _use_local_psynet_option(func):
@@ -148,9 +149,9 @@ def _use_local_dallinger_option(func):
         is_flag=True,
         default=False,
         help=(
-            "Bake the locally imported Dallinger source into the experiment "
-            "image instead of the Git pin. Required for canary deploys of "
-            "unreleased docker-ssh features."
+            "Build the locally imported Dallinger source into the experiment "
+            "image instead of installing the Dallinger version pinned in "
+            "requirements.txt or constraints.txt."
         ),
     )(func)
 
@@ -1588,13 +1589,13 @@ def _pre_launch(
     server=None,
     app=None,
     update=False,
-    use_local_psynet=False,
+    local_packages=(),
     assume_yes=False,
 ):
     from .experiment import get_experiment
 
     if docker:
-        _reject_leftover_psynet_wheels()
+        _reject_leftover_local_image_files()
 
     # Scaffold/git checks before Redis so missing-boilerplate guidance is visible
     # even when Redis is not running.
@@ -1632,7 +1633,7 @@ def _pre_launch(
         if update:
             _check_ssh_update(server, app, mode)
 
-    run_pre_checks(mode, local_, heroku, docker, app, use_local_psynet)
+    run_pre_checks(mode, local_, heroku, docker, app, local_packages)
 
     # An --update only rebuilds the image, so it leaves local data alone.
     if not update:
@@ -1908,34 +1909,79 @@ def _configure_dallinger_image_source(use_local_dallinger=False):
     click.echo(f"Baking local Dallinger from {source} into the experiment image.")
 
 
-def _reject_leftover_psynet_wheels():
-    """Stop if the experiment directory holds a PsyNet wheel from an earlier run.
+def _reject_leftover_local_image_files():
+    """Stop if the experiment directory holds local-build files from an earlier run.
 
-    The experiment Dockerfile installs any such wheel over the pinned version,
-    so a wheel left by an interrupted ``--use-local-psynet`` run would replace
-    the pin, even in ``psynet deploy``.
+    The experiment Dockerfile installs a PsyNet wheel over the pinned version
+    and prefers ``local-image-pins.txt`` over the pins, so files left by an
+    interrupted ``psynet debug ssh --use-local-psynet`` or
+    ``--use-local-dallinger`` run would replace the pins, even in
+    ``psynet deploy``.
     """
     leftovers = sorted(p.name for p in Path.cwd().glob(_LOCAL_PSYNET_WHEEL_PATTERN))
+    if Path(_LOCAL_IMAGE_PINS).exists():
+        leftovers.append(_LOCAL_IMAGE_PINS)
     if leftovers:
         raise click.UsageError(
             f"Remove {', '.join(leftovers)} from the experiment directory. It is "
-            "left over from an interrupted 'psynet debug ssh --use-local-psynet', "
-            "and the image would install it instead of the PsyNet version in "
-            "requirements.txt."
+            "left over from an interrupted 'psynet debug ssh' with "
+            "--use-local-psynet or --use-local-dallinger, and the image would "
+            "use it instead of the versions in requirements.txt."
         )
 
 
-@contextmanager
-def _local_psynet_wheel(enabled):
-    """Build the editable PsyNet checkout into a wheel for the experiment image.
+def _local_packages(use_local_psynet, use_local_dallinger):
+    """Return the names of the packages built into the image from local checkouts."""
+    return tuple(
+        package
+        for package, enabled in (
+            ("psynet", use_local_psynet),
+            ("dallinger", use_local_dallinger),
+        )
+        if enabled
+    )
 
-    The wheel goes in the experiment directory, so it is sent with the other
-    experiment files, and the experiment Dockerfile installs it over the
-    requirements.txt version. It is removed again afterwards.
+
+@contextmanager
+def _local_image_packages(local_packages):
+    """Stage local PsyNet and Dallinger builds for the experiment image.
+
+    For ``"psynet"``, the editable PsyNet checkout is built into a wheel in the
+    experiment directory, so it is sent with the other experiment files, and
+    the experiment Dockerfile installs it over the pinned version. Dallinger
+    stages its own wheel when ``DALLINGER_SOURCE`` is set.
+
+    The pins without these packages are written to ``local-image-pins.txt``,
+    which the Dockerfile installs instead, because their pins may point at a
+    checkout that only exists on this machine. Staged files are removed
+    afterwards.
+
+    Parameters
+    ----------
+    local_packages : tuple of str
+        Packages built from local checkouts, from :func:`_local_packages`.
     """
-    if not enabled:
+    if not local_packages:
         yield
         return
+    if _LOCAL_IMAGE_PINS not in Path("Dockerfile").read_text():
+        raise click.UsageError(
+            "This experiment's Dockerfile does not install local PsyNet or "
+            "Dallinger builds. Run 'psynet scripts update' to refresh it."
+        )
+    staged = []
+    try:
+        if "psynet" in local_packages:
+            staged.append(_build_local_psynet_wheel())
+        staged.append(_write_local_image_pins(local_packages))
+        yield
+    finally:
+        for path in staged:
+            path.unlink(missing_ok=True)
+
+
+def _build_local_psynet_wheel():
+    """Build the editable PsyNet checkout into a wheel in the experiment directory."""
     from dallinger.utils import build_and_place
 
     from .experiment_scaffold import get_editable_psynet_source
@@ -1943,17 +1989,29 @@ def _local_psynet_wheel(enabled):
     source = get_editable_psynet_source()
     if source is None:
         raise click.UsageError("--use-local-psynet needs an editable PsyNet checkout.")
-    if _LOCAL_PSYNET_WHEEL_PATTERN not in Path("Dockerfile").read_text():
-        raise click.UsageError(
-            "This experiment's Dockerfile does not install a local PsyNet wheel. "
-            "Run 'psynet scripts update' to refresh it."
-        )
     click.echo(f"Baking local PsyNet from {source} into the experiment image.")
-    wheel = Path.cwd() / Path(build_and_place(str(source), os.getcwd())).name
-    try:
-        yield
-    finally:
-        wheel.unlink(missing_ok=True)
+    return Path.cwd() / Path(build_and_place(str(source), os.getcwd())).name
+
+
+def _write_local_image_pins(local_packages):
+    """Write the image's pins without ``local_packages`` to ``local-image-pins.txt``.
+
+    Like the Dockerfile, this reads ``constraints.txt`` when present and
+    ``requirements.txt`` otherwise.
+    """
+    from .experiment_scaffold import is_requirement_line_for
+
+    source = Path("constraints.txt")
+    if not source.is_file():
+        source = Path("requirements.txt")
+    kept = [
+        line
+        for line in source.read_text().splitlines(keepends=True)
+        if not any(is_requirement_line_for(line, p) for p in local_packages)
+    ]
+    target = Path.cwd() / _LOCAL_IMAGE_PINS
+    target.write_text("".join(kept))
+    return target
 
 
 def _awaken_ssh_app(server, app):
@@ -2170,7 +2228,7 @@ def _check_experiment_directory(mode, *, require_git_commit=False):
 
 
 def run_pre_checks(
-    mode, local_, heroku=False, docker=False, app=None, use_local_psynet=False
+    mode, local_, heroku=False, docker=False, app=None, local_packages=()
 ):
     from .experiment import get_experiment
     from .utils import check_todos_before_deployment
@@ -2267,10 +2325,7 @@ def run_pre_checks(
                 check_prolific_payment(exp, config)
 
         if mode == "sandbox":
-            # The image installs the local checkout, so the requirements.txt
-            # pin does not decide which PsyNet runs.
-            if not use_local_psynet:
-                run_pre_checks_sandbox()
+            run_pre_checks_sandbox(local_packages)
         elif mode == "live":
             run_pre_checks_deploy(local_, recruiter)
 
@@ -2287,10 +2342,19 @@ def _check_constraints_before_remote_deploy():
     _check_constraints()
 
 
-def run_pre_checks_sandbox():
-    check_psynet_requirement_is_unambiguous()
-    check_psynet_requirement_includes_experiment_extra()
-    check_core_dependency_versions_match_requirements()
+def run_pre_checks_sandbox(local_packages=()):
+    """Check the PsyNet and Dallinger pins before a debug deploy.
+
+    Parameters
+    ----------
+    local_packages : tuple of str
+        Packages built into the image from local checkouts. Their pins do not
+        decide what runs, so they are not checked.
+    """
+    if "psynet" not in local_packages:
+        check_psynet_requirement_is_unambiguous()
+        check_psynet_requirement_includes_experiment_extra()
+    check_core_dependency_versions_match_requirements(skip=local_packages)
 
 
 @debug.command("heroku")
@@ -2389,6 +2453,7 @@ def debug__docker_ssh(
 
         _validate_ssh_deploy_update(app, archive, update)
         _configure_dallinger_image_source(use_local_dallinger=use_local_dallinger)
+        local_packages = _local_packages(use_local_psynet, use_local_dallinger)
 
         _pre_launch(
             ctx,
@@ -2400,11 +2465,11 @@ def debug__docker_ssh(
             server=server,
             app=app,
             update=update,
-            use_local_psynet=use_local_psynet,
+            local_packages=local_packages,
             assume_yes=assume_yes,
         )
 
-        with _local_psynet_wheel(enabled=use_local_psynet):
+        with _local_image_packages(local_packages):
             # Note: PsyNet bypasses Dallinger's deploy-from-archive system and uses its own, so we set archive_path=None.
             result = _invoke_docker_ssh_deploy(
                 ctx,
