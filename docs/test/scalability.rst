@@ -141,9 +141,12 @@ well:
 A test counts as within capacity if these stay within their limits:
 
 - the share of ``/timeline`` and ``/response`` requests that fail, at most
-  0.1%, and the share of bots that fail, at most 1%. A long test makes tens
-  of thousands of requests, so a single stray error doesn't fail it, but the
-  summary still reports any errors at the capacity it found;
+  0.1% (one failed request is always allowed), and the share of bots that
+  fail, at most 1%. A single stray error doesn't fail a test, however short,
+  but the summary still reports any errors at the capacity it found. Busy
+  (HTTP 503) and stale-page (HTTP 409) responses don't count as request
+  errors, because bots retry them; a bot whose retries fail counts as a
+  failed bot, and the report lists how many such responses were retried;
 - the 95th-percentile response time for ``/timeline`` and ``/response``,
   together and for each of them, limited by ``--max-p95-ms`` (default 500);
 - the 95th-percentile time that async processes wait in the queue for a
@@ -170,11 +173,11 @@ the report shows the number of worker processes and how many jobs they can
 run at once.
 
 The summary at the end of every run reports the capacity it found and, once a
-larger bot count has exceeded the limits, suggests a cap of 80% of it, for
-example::
+larger bot count has exceeded the limits, suggests capping the number of
+participants taking part at once at 80% of it, for example::
 
-    Capacity: about 160 concurrent bots kept p95 response time under 500 ms, p95 async queue wait under 5 s and fewer than 0.1% of requests and 1% of bots failing; 170 did not (p95 response time 622 ms).
-    Suggested max_concurrent_participants: 128 (80% of 160)
+    Capacity: about 160 concurrent bots kept p95 response time under 500 ms, p95 async queue wait under 5 s and at most 0.1% of requests (1 always allowed) and 1% of bots failing; 170 did not (p95 response time 622 ms).
+    Cap concurrent participants at about 128 (80% of 160).
 
 For rough capacities of common server sizes, based on one test on a real
 server, see

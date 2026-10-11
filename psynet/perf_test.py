@@ -667,14 +667,15 @@ class PerformanceTester:
             .all()
         )
 
-        request_errors = (
-            db.session.query(func.count(Request.id))
+        request_errors, retried_requests = _count_request_errors(
+            db.session.query(Request.status_code, func.count(Request.id))
             .filter(
                 *request_window,
                 Request.endpoint.in_(key_endpoints),
                 Request.status_code >= 400,
             )
-            .scalar()
+            .group_by(Request.status_code)
+            .all()
         )
 
         # Like requests, only count processes that started before the test
@@ -890,6 +891,7 @@ class PerformanceTester:
             "avg_init_time": avg_init_time,
             "initialization_times": initialization_times,
             "request_errors": request_errors,
+            "retried_requests": retried_requests,
             "median_wait_page_time": median_wait_page_time,
             "p95_wait_page_time": p95_wait_page_time,
             "max_wait_page_time": max_wait_page_time,
@@ -960,6 +962,36 @@ def _describe_workers(result):
     if n_slots and n_slots != n_workers:
         text += f", up to {n_slots} jobs at once"
     return text
+
+
+_RETRIED_STATUS_CODES = frozenset({409, 503})
+
+
+def _count_request_errors(status_counts):
+    """Split failed key-endpoint requests into errors and retried responses.
+
+    PsyNet answers with HTTP 503 when the experiment is busy and HTTP 409
+    when a timeline moved on mid-render, and bots retry both. The request
+    log doesn't record whether a retry succeeded, but a bot that gives up
+    fails, so those failures count as bot errors instead.
+
+    Parameters
+    ----------
+    status_counts : iterable of (int, int)
+        ``(status_code, count)`` pairs for responses with status 400 or above.
+
+    Returns
+    -------
+    tuple of (int, int)
+        The number of request errors and of retried responses.
+    """
+    errors = retried = 0
+    for status_code, count in status_counts:
+        if status_code in _RETRIED_STATUS_CODES:
+            retried += count
+        else:
+            errors += count
+    return errors, retried
 
 
 def _mean(values):
@@ -1084,14 +1116,18 @@ def format_test_results(result):
         ["Total requests", result["total_requests"]],
         ["Request errors", result["request_errors"]],
     ]
+    if result.get("retried_requests"):
+        request_rows.append(
+            ["Busy/stale responses retried", result["retried_requests"]]
+        )
     if result.get("requests_per_sec") is not None:
         request_rows.append(["Throughput", f"{result['requests_per_sec']:.2f} req/s"])
     _table_lines(request_rows, headers=[], colalign=("left", "right"))
     lines.append("")
 
     # RESPONSE TIMES
-    n_req = result.get("total_requests", "?")
-    _section(f"RESPONSE TIMES (n={n_req})")
+    n_req = result.get("key_requests", "?")
+    _section(f"RESPONSE TIMES (n={n_req} /timeline and /response requests)")
     resp_rows = [
         ["Median", _fmt(result["median_response_time"], "s")],
         ["95th percentile", _fmt(result["p95_response_time"], "s")],
@@ -1343,9 +1379,13 @@ class CapacityLimits:
         measured by :func:`queue_wait_p95`.
     max_request_error_rate : float
         Largest acceptable share of ``/timeline`` and ``/response`` requests
-        that fail. A long test makes tens of thousands of requests, so a
-        stray error should not count against a bot count that is otherwise
-        well within capacity.
+        that fail, not counting busy or stale responses that bots retry.
+        A long test makes tens of thousands of requests, so a stray error
+        should not count against a bot count that is otherwise well within
+        capacity.
+    allowed_request_errors : int
+        Number of request errors that is acceptable however few requests a
+        test makes, so that one stray error doesn't fail a short test.
     max_bot_error_rate : float
         Largest acceptable share of bots that fail.
     """
@@ -1353,6 +1393,7 @@ class CapacityLimits:
     max_p95_s: float = DEFAULT_MAX_P95_S
     max_queue_p95_s: float = DEFAULT_MAX_QUEUE_P95_S
     max_request_error_rate: float = 0.001
+    allowed_request_errors: int = 1
     max_bot_error_rate: float = 0.01
 
     @classmethod
@@ -1374,8 +1415,10 @@ class CapacityLimits:
         Pass ``include_queue=False`` when the tests ran no async processes.
         """
         response = f"p95 response time under {self.max_p95_s * 1000:.0f} ms"
+        allowed = self.allowed_request_errors
         errors = (
-            f"fewer than {self.max_request_error_rate:.1%} of requests and "
+            f"at most {self.max_request_error_rate:.1%} of requests "
+            f"({allowed} always allowed) and "
             f"{self.max_bot_error_rate:.0%} of bots failing"
         )
         if not include_queue:
@@ -1423,8 +1466,9 @@ def capacity_failures(result, limits=CapacityLimits()):
             "part at once, because new bots could not start fast enough"
         )
     request_errors = result.get("request_errors") or 0
-    if request_errors > limits.max_request_error_rate * (
-        result.get("key_requests") or 0
+    if request_errors > max(
+        limits.allowed_request_errors,
+        limits.max_request_error_rate * (result.get("key_requests") or 0),
     ):
         reasons.append(f"{request_errors} request errors")
     bot_errors = result.get("bot_errors") or 0
@@ -1500,9 +1544,9 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
             f"  Capacity: about {capacity:,} concurrent bots kept {limit}; "
             f"{first_fail['n_bots']:,} did not "
             f"({', '.join(first_reasons)}).",
-            f"  Suggested max_concurrent_participants: "
+            f"  Cap concurrent participants at about "
             f"{max(1, int(capacity * _CAPACITY_HEADROOM)):,} "
-            f"({_CAPACITY_HEADROOM:.0%} of {capacity:,})",
+            f"({_CAPACITY_HEADROOM:.0%} of {capacity:,}).",
         ]
         if max(passed) > first_fail["n_bots"]:
             lines.append(

@@ -5,6 +5,7 @@ import pytest
 from psynet.perf_test import (
     CapacityLimits,
     PerformanceTester,
+    _count_request_errors,
     capacity_failures,
     colorize_success_rate,
     format_capacity_summary,
@@ -199,7 +200,7 @@ def test_capacity_summary_suggests_a_cap_below_the_measured_capacity():
 
     assert "about 150 concurrent bots" in text
     assert "200 did not (3 request errors)" in text
-    assert "Suggested max_concurrent_participants: 120" in text
+    assert "Cap concurrent participants at about 120 (80% of 150)." in text
 
 
 def test_capacity_summary_mentions_queue_waits_only_with_async_processes():
@@ -230,7 +231,7 @@ def test_capacity_summary_says_when_no_limit_was_reached():
     text = _join(format_capacity_summary(results, time_factor=0))
 
     assert "at least 50" in text
-    assert "Suggested" not in text
+    assert "Cap concurrent" not in text
     assert "--time-factor 1" in text
 
 
@@ -343,6 +344,17 @@ def test_a_stray_error_is_reported_but_does_not_cap_capacity():
     assert "60 request errors, p95 async queue wait 36.90 s" in text
     assert "The 640-bot test had 1 request error and 1 bot error" in text
     assert "add worker processes with num_dynos_worker" in text
+
+
+def test_one_error_in_a_short_test_does_not_cap_capacity():
+    assert capacity_failures(_base_result(key_requests=700, request_errors=1)) == []
+    assert capacity_failures(_base_result(key_requests=700, request_errors=2)) == [
+        "2 request errors"
+    ]
+
+
+def test_retried_busy_responses_are_not_request_errors():
+    assert _count_request_errors([(503, 4), (409, 1), (500, 2)]) == (2, 5)
 
 
 def test_each_endpoint_must_stay_within_the_response_time_limit():
