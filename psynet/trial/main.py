@@ -42,7 +42,7 @@ from sqlalchemy.orm.collections import attribute_mapped_collection
 from psynet import field
 
 from ..asset import Asset, AssetNetwork, AssetNode, AssetTrial
-from ..async_job import WorkerAsyncJob, _deprecated_async_processes
+from ..async_job import WorkerAsyncJob, _deprecated_async_processes, check_priority
 from ..data import SQLBase, SQLMixin, SQLMixinDallinger, register_table
 from ..db import forbid_commits
 from ..error import (  # noqa  # Importing the error module is important to ensure sqlalchemy is happy
@@ -259,9 +259,12 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         Priority of the :meth:`~psynet.trial.main.Trial.async_post_trial` job,
         ``"high"`` or ``"low"``; see :class:`~psynet.async_job.WorkerAsyncJob`.
         If ``None`` (default), it is ``"high"`` when a participant may wait for
-        the result, i.e. when the trial maker checks performance or the trial
-        overrides :meth:`~psynet.trial.main.Trial.show_feedback` with
-        ``wait_for_feedback`` set, and ``"low"`` otherwise.
+        the result, i.e. when the trial maker checks performance, when it is a
+        within-participant chain trial maker (``chain_type="within"``), whose
+        next trial waits for this one to be finalized, or when the trial
+        overrides :meth:`~psynet.trial.main.Trial.show_feedback` or
+        :meth:`~psynet.trial.main.Trial.gives_feedback` with
+        ``wait_for_feedback`` set; it is ``"low"`` otherwise.
 
     accumulate_answers : bool
         Set this class attribute to ``True`` if the trial contains multiple pages and you want
@@ -815,13 +818,19 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         See :attr:`async_post_trial_priority` for the rules.
         """
         if cls.async_post_trial_priority is not None:
+            check_priority(cls.async_post_trial_priority)
             return cls.async_post_trial_priority
         if trial_maker is not None and (
             trial_maker.check_performance_at_end
             or trial_maker.check_performance_every_trial
+            # The participant's next trial waits for this trial to finalize.
+            or getattr(trial_maker, "chain_type", None) == "within"
         ):
             return "high"
-        if cls.wait_for_feedback and cls.show_feedback is not Trial.show_feedback:
+        if cls.wait_for_feedback and (
+            cls.show_feedback is not Trial.show_feedback
+            or cls.gives_feedback is not Trial.gives_feedback
+        ):
             return "high"
         return "low"
 

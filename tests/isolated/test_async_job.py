@@ -429,27 +429,47 @@ class _NoWaitFeedbackTrial(_FeedbackTrial):
     wait_for_feedback = False
 
 
+class _GivesFeedbackTrial(Trial):
+    def gives_feedback(self, experiment, participant):
+        return True
+
+
 class _LowFeedbackTrial(_FeedbackTrial):
     async_post_trial_priority = "low"
 
 
+class _InvalidPriorityTrial(Trial):
+    async_post_trial_priority = "urgent"
+
+
 @pytest.mark.parametrize(
-    "trial_class, check_performance, expected",
+    "trial_class, check_performance, chain_type, expected",
     [
-        (Trial, False, "low"),
-        (Trial, True, "high"),
-        (_FeedbackTrial, False, "high"),
-        (_NoWaitFeedbackTrial, False, "low"),
-        (_LowFeedbackTrial, True, "low"),
+        (Trial, False, "across", "low"),
+        (Trial, True, "across", "high"),
+        (Trial, False, "within", "high"),
+        (_FeedbackTrial, False, "across", "high"),
+        (_GivesFeedbackTrial, False, "across", "high"),
+        (_NoWaitFeedbackTrial, False, "across", "low"),
+        (_LowFeedbackTrial, True, "within", "low"),
     ],
 )
-def test_async_post_trial_priority(trial_class, check_performance, expected):
+def test_async_post_trial_priority(
+    trial_class, check_performance, chain_type, expected
+):
     for flag in ["check_performance_at_end", "check_performance_every_trial"]:
         trial_maker = types.SimpleNamespace(
-            check_performance_at_end=False, check_performance_every_trial=False
+            check_performance_at_end=False,
+            check_performance_every_trial=False,
+            chain_type=chain_type,
         )
         setattr(trial_maker, flag, check_performance)
         assert trial_class._get_async_post_trial_priority(trial_maker) == expected
+
+
+def test_invalid_async_post_trial_priority_raises():
+    with pytest.raises(ValueError, match="priority"):
+        _InvalidPriorityTrial._get_async_post_trial_priority(None)
 
 
 @pytest.mark.parametrize(

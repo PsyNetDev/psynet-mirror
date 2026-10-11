@@ -14,11 +14,21 @@ that nobody is waiting for. Unless you choose a priority, PsyNet picks one:
 
 * :class:`~psynet.timeline.AsyncCodeBlock`: high with ``wait=True``, low with
   ``wait=False``.
-* :meth:`~psynet.trial.main.Trial.async_post_trial`: high if the trial maker
-  checks performance (``check_performance_at_end`` or
-  ``check_performance_every_trial``), or if the trial class overrides
-  :meth:`~psynet.trial.main.Trial.show_feedback` and keeps
-  ``wait_for_feedback = True``; low otherwise.
+* :meth:`~psynet.trial.main.Trial.async_post_trial`: high if
+
+  * the trial maker checks performance (``check_performance_at_end`` or
+    ``check_performance_every_trial``);
+  * the trial maker is a within-participant chain trial maker
+    (``chain_type="within"``), because the participant's next trial in a
+    chain waits for the previous trial to be finalized; or
+  * the trial class overrides :meth:`~psynet.trial.main.Trial.show_feedback`
+    or :meth:`~psynet.trial.main.Trial.gives_feedback` and keeps
+    ``wait_for_feedback = True``.
+
+  Low otherwise. Across-participant chains are low because participants are
+  usually given another chain while one grows; if your participants often
+  wait for chains (for example with ``wait_for_networks=True`` and few
+  chains), set ``async_post_trial_priority = "high"``.
 * :meth:`~psynet.trial.main.TrialNetwork.async_post_grow_network` and
   :meth:`~psynet.trial.main.TrialNode.async_on_deploy`: high, because
   participants may wait for the next node.
@@ -40,7 +50,8 @@ interrupted. If every worker is busy with long low-priority jobs, a
 high-priority job still waits for one of them to finish. Priority has no
 effect on a :class:`~psynet.async_job.LocalAsyncJob`, which runs in a thread
 of the web process. The CPU table printed after ``psynet test local`` (see
-:doc:`/test/scalability`) shows each job label's priority.
+:doc:`/test/scalability`) has one row per job label, priority and place the
+job runs in.
 
 API
 ---

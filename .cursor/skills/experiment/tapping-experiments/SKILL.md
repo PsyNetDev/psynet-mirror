@@ -60,7 +60,9 @@ A robust tapping experiment usually includes:
 
 Recording analyses run as async jobs. Analyses that a participant waits for,
 such as a recording test with a performance check or feedback, run at high
-priority; main-trial analyses that nobody waits for run at low priority.
+priority. So do analyses in within-participant (iterated) chains, because
+each next stimulus waits for the previous analysis. Main-trial analyses that
+nobody waits for, such as static trials without feedback, run at low priority.
 See the job priority section of `reference/api/async_job`, and
 `plan-server-resources/SKILL.md` for sizing workers.
 
