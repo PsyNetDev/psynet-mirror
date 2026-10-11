@@ -436,7 +436,9 @@ If async jobs are still running, for example analyses of participants'
 recordings, ``psynet export ssh`` (and ``psynet export local``) ends with a
 warning that the export does not include their results. Wait for them to
 finish and export again; see :doc:`/reference/api/async_job`.
-``psynet export heroku`` does not check.
+``psynet export heroku`` does not check. Jobs that were lost before
+starting, for example when Redis restarted, are failed about an hour after
+they were enqueued and then stop counting as pending.
 
 Tear down
 ---------

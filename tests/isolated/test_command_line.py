@@ -4797,13 +4797,7 @@ def _invoke_destroy_ssh(
     return CliRunner().invoke(parent)
 
 
-_PENDING = {
-    "counts": {"high": 0, "low": 2, "local": 0},
-    "total": 2,
-    "oldest_age": 600,
-    "lost": 0,
-}
-_LOST_ONLY = {**_PENDING, "total": 0, "oldest_age": None, "lost": 3}
+_PENDING = {"counts": {"high": 0, "low": 2, "local": 0}, "total": 2, "oldest_age": 600}
 
 
 def _recording_destroy():
@@ -4866,7 +4860,6 @@ def test_destroy_ssh_asks_before_destroying_pending_jobs(monkeypatch):
         (_PENDING, True, "2 async jobs are still pending (2 low priority)"),
         (None, False, ""),
         ({**_PENDING, "total": 0}, False, ""),
-        (_LOST_ONLY, False, "3 async jobs were probably lost"),
     ],
 )
 def test_destroy_ssh_proceeds_without_pending_jobs_or_with_discard(
@@ -4927,13 +4920,6 @@ def test_export_warns_about_pending_jobs(capsys):
         "WARNING: 2 async jobs are still pending (2 low priority); the oldest was "
         "enqueued 10 minutes ago. This export will not include their results; "
         "export again once they have finished." in capsys.readouterr().out
-    )
-
-    _warn_export_misses_pending_jobs(_LOST_ONLY)
-    assert capsys.readouterr().out.strip() == (
-        "❯❯ WARNING: 3 async jobs were probably lost: they did not start within "
-        "1 hour of being enqueued, or ran past their timeout. Their results are "
-        "missing, and PsyNet will not re-run them."
     )
 
 

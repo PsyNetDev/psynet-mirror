@@ -47,8 +47,9 @@ To override the choice:
 
 Priority only decides which waiting job starts next; a running job is never
 interrupted. If every worker is busy with long low-priority jobs, a
-high-priority job still waits for one of them to finish. Priority has no
-effect on a :class:`~psynet.async_job.LocalAsyncJob`, which runs in a thread
+high-priority job still waits for one of them to finish, and its
+``timeout`` does not count while it waits (see :ref:`async_job_timeout`).
+Priority has no effect on a :class:`~psynet.async_job.LocalAsyncJob`, which runs in a thread
 of the web process. The CPU table printed after ``psynet test local`` (see
 :doc:`/test/scalability`) has one row per job label, priority and place the
 job runs in.
@@ -71,6 +72,15 @@ thread, but the job is already marked failed.
 .. code-block:: python
 
     WorkerAsyncJob(refit_model, timeout=4 * 3600).enqueue()
+
+A job that has not started within an hour of being enqueued
+(:attr:`~psynet.async_job.AsyncJob.max_queue_wait_sec`) is failed as
+probably lost if it can no longer start: a
+:class:`~psynet.async_job.WorkerAsyncJob` that RQ no longer holds, for
+example because its launch failed or Redis restarted, or a
+:class:`~psynet.async_job.LocalAsyncJob`, which starts as soon as it is
+launched. A worker job still waiting in the RQ queue is a genuine backlog and
+keeps waiting, however long that takes. Lost jobs are not re-run.
 
 Pending jobs
 ------------
@@ -106,17 +116,10 @@ app as before.
 A job is pending from :meth:`~psynet.async_job.AsyncJob.enqueue` until it
 finishes, fails, times out or is cancelled, and
 :class:`~psynet.async_job.LocalAsyncJob` jobs count too, because hibernation
-and destroying stop the web process they run in. A job that did not start
-within an hour of being enqueued, or ran past its timeout without being
-failed, was probably lost, for example from Redis or with a web process that
-stopped. Such jobs do not keep the app awake or block ``psynet destroy ssh``;
-export and destroy report them separately:
-
-.. code-block:: text
-
-    ❯❯ WARNING: 2 async jobs were probably lost: they did not start within
-    1 hour of being enqueued, or ran past their timeout. Their results are
-    missing, and PsyNet will not re-run them.
+and destroying stop the web process they run in. The experiment's clock
+fails timed-out and lost jobs (see :ref:`async_job_timeout`) within about a
+minute, so they stop counting as pending; a backlog that is still waiting
+in the RQ queue keeps counting however old it is.
 
 API
 ---

@@ -388,21 +388,36 @@ def test_timeout_counts_from_start_not_enqueue(monkeypatch):
     queued = WorkerAsyncJob(do_nothing, timeout=0.01).enqueue()
     stalled = WorkerAsyncJob(do_nothing, timeout=0.01).enqueue()
     stalled.log_time_started()
-    queued_id, stalled_id = queued.id, stalled.id
+    backlog = WorkerAsyncJob(do_nothing).enqueue()
+    lost = WorkerAsyncJob(do_nothing).enqueue()
+    for job in [backlog, lost]:
+        job.time_enqueued -= timedelta(hours=2)
+    queued_id, stalled_id, backlog_id, lost_id = (
+        queued.id,
+        stalled.id,
+        backlog.id,
+        lost.id,
+    )
     db.session.commit()
+    lost.redis_job.delete()
     time.sleep(0.05)
     WorkerAsyncJob.check_timeouts()
-    queued = WorkerAsyncJob.query.get(queued_id)
-    assert queued.pending and not queued.failed
+    for job_id in [queued_id, backlog_id]:
+        job = WorkerAsyncJob.query.get(job_id)
+        assert job.pending and not job.failed
     assert WorkerAsyncJob.query.get(stalled_id).failed
+    lost = WorkerAsyncJob.query.get(lost_id)
+    assert "probably lost" in lost.failed_reason and not lost.pending
 
     WorkerAsyncJob.call_function(queued_id)
     queued = WorkerAsyncJob.query.get(queued_id)
     assert queued.finished and not queued.failed
     assert queued.timeout_scheduled_for > queued.time_started
 
-    WorkerAsyncJob.call_function(stalled_id)
-    assert not WorkerAsyncJob.query.get(stalled_id).finished
+    for job_id in [stalled_id, lost_id]:
+        WorkerAsyncJob.call_function(job_id)
+        job = WorkerAsyncJob.query.get(job_id)
+        assert not job.finished and not job.pending
 
 
 @pytest.mark.parametrize(
@@ -531,7 +546,6 @@ def test_pending_jobs_keep_the_app_awake():
         "counts": {"high": 0, "low": 0, "local": 0},
         "total": 0,
         "oldest_age": None,
-        "lost": 0,
     }
     assert experiment.reason_to_stay_awake() is None
 
@@ -544,18 +558,11 @@ def test_pending_jobs_keep_the_app_awake():
     finished = WorkerAsyncJob(do_nothing).enqueue()
     finished.pending, finished.finished = False, True
     db.session.add(WorkerAsyncJob(do_nothing, label="never_enqueued"))
-    hour_ago = datetime.now() - timedelta(seconds=AsyncJob.default_timeout + 1)
-    never_started = LocalAsyncJob(do_nothing).enqueue()
-    overdue = WorkerAsyncJob(do_nothing, timeout=1).enqueue()
-    db.session.flush()
-    never_started.time_enqueued = hour_ago
-    overdue.log_time_started()
-    overdue.timeout_scheduled_for = datetime.now() - timedelta(seconds=1)
     db.session.flush()
 
     summary = _get_pending_job_summary()
     assert summary["counts"] == {"high": 1, "low": 2, "local": 1}
-    assert summary["total"] == 4 and summary["lost"] == 2
+    assert summary["total"] == 4
     assert summary["oldest_age"] < 60
     assert experiment.reason_to_stay_awake() == (
         "4 async jobs are still pending "
@@ -568,26 +575,30 @@ def test_pending_jobs_keep_the_app_awake():
         experiment.base_url + "/async_job_status"
     )
     response.raise_for_status()
-    assert set(response.json()) == {"counts", "total", "oldest_age", "lost"}
+    assert set(response.json()) == {"counts", "total", "oldest_age"}
 
 
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("static")], indirect=True
 )
 @pytest.mark.usefixtures("launched_experiment")
-def test_local_jobs_time_out_after_the_default_timeout():
+def test_local_jobs_time_out_or_are_lost_after_an_hour():
     job = LocalAsyncJob(do_nothing)
     assert job.timeout == AsyncJob.default_timeout == 3600
     job.time_enqueued = datetime.now()
     job.log_time_started()
     assert job.timeout_scheduled_for - job.time_started == timedelta(hours=1)
     job.timeout_scheduled_for = datetime.now() - timedelta(seconds=1)
-    db.session.add(job)
+    never_started = LocalAsyncJob(do_nothing)
+    never_started.time_enqueued = datetime.now() - timedelta(hours=2)
+    db.session.add_all([job, never_started])
     db.session.commit()
-    job_id = job.id
+    job_ids = [job.id, never_started.id]
 
     AsyncJob.check_timeouts()
-    assert LocalAsyncJob.query.get(job_id).failed
+    for job_id in job_ids:
+        job = LocalAsyncJob.query.get(job_id)
+        assert job.failed and not job.pending
 
 
 def test_cpu_time_summary_flags_cpu_heavy_labels():

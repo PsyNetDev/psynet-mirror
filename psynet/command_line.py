@@ -3125,7 +3125,7 @@ def export_(
 
     ``pending_jobs`` is a remote app's async job summary, taken before the
     export (see :func:`_fetch_pending_async_jobs`); local exports read their
-    own. A warning about pending or probably lost jobs ends the output.
+    own. A warning about pending jobs ends the output.
     """
     anonymize = kwargs.pop("anonymize", None)
     _warn_deprecated_export_options(
@@ -3366,18 +3366,14 @@ def _fetch_ssh_pending_async_jobs(app, server):
 
 
 def _warn_export_misses_pending_jobs(summary):
-    """Warn that an export lacks the results of pending or lost async jobs."""
-    if not summary:
-        return
-    from .async_job import _describe_lost_jobs, _describe_pending_jobs
+    """Warn that an export lacks the results of pending async jobs."""
+    if summary and summary["total"]:
+        from .async_job import _describe_pending_jobs
 
-    if summary["total"]:
         log(
             f"WARNING: {_describe_pending_jobs(summary)}. This export will not "
             "include their results; export again once they have finished."
         )
-    if summary["lost"]:
-        log(f"WARNING: {_describe_lost_jobs(summary)}.")
 
 
 def _fetch_remote_export(
@@ -3809,16 +3805,12 @@ def _confirm_destroy_with_pending_jobs(
     Returns
     -------
     bool
-        Whether the app may be destroyed. Probably lost jobs never block it.
+        Whether the app may be destroyed.
     """
-    if not summary:
+    if not summary or not summary["total"]:
         return True
-    from .async_job import _describe_lost_jobs, _describe_pending_jobs
+    from .async_job import _describe_pending_jobs
 
-    if summary["lost"]:
-        log(f"WARNING: {app}: {_describe_lost_jobs(summary)}.")
-    if not summary["total"]:
-        return True
     if discard_pending_jobs:
         log(
             f"WARNING: {app}: {_describe_pending_jobs(summary)}. Discarding them "
