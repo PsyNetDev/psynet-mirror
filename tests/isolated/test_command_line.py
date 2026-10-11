@@ -4343,7 +4343,6 @@ def remote_launch(monkeypatch, tmp_path):
         *,
         workers=0,
         clients=(),
-        participants=0,
         redis_clients=0,
         interactive=True,
         **kwargs,
@@ -4353,9 +4352,6 @@ def remote_launch(monkeypatch, tmp_path):
             lambda: [Mock()] * workers,
         )
         monkeypatch.setattr("psynet.db.list_other_database_clients", lambda: clients)
-        monkeypatch.setattr(
-            "psynet.command_line._count_local_participants", lambda: participants
-        )
         monkeypatch.setattr(
             "psynet.command_line._count_other_redis_clients", lambda: redis_clients
         )
@@ -4368,7 +4364,7 @@ def remote_launch(monkeypatch, tmp_path):
 
 def test_remote_update_keeps_local_data(remote_launch):
     launch, resets, confirm = remote_launch
-    launch(update=True, workers=1, participants=3, redis_clients=2)
+    launch(update=True, workers=1, redis_clients=2)
     assert resets.mock_calls == []
     confirm.assert_not_called()
 
@@ -4379,7 +4375,6 @@ def test_remote_update_keeps_local_data(remote_launch):
         ({}, None),
         ({"workers": 1}, "1 local PsyNet server process(es)"),
         ({"clients": [(4321, "u", "flask", "idle")]}, "pid 4321 (flask, idle)"),
-        ({"participants": 3}, "3 participant(s)"),
         ({"redis_clients": 2}, "2 other client(s) are connected to local Redis"),
     ],
 )
@@ -4409,10 +4404,10 @@ def test_remote_launch_resets_nothing_if_declined(remote_launch):
 def test_remote_launch_needs_yes_without_a_terminal(remote_launch):
     launch, resets, confirm = remote_launch
     with pytest.raises(click.ClickException, match="--yes"):
-        launch(participants=3, interactive=False)
+        launch(workers=1, interactive=False)
     assert resets.mock_calls == []
 
-    launch(participants=3, interactive=False, assume_yes=True)
+    launch(workers=1, interactive=False, assume_yes=True)
     confirm.assert_not_called()
     resets.kill_workers.assert_called_once()
 

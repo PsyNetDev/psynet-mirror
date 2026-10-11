@@ -897,9 +897,6 @@ def _confirm_local_data_reset(assume_yes):
             "Other clients are connected to the local database: "
             f"{_format_other_database_clients(clients)}."
         )
-    n_participants = _count_local_participants()
-    if n_participants:
-        in_use.append(f"The local database contains {n_participants} participant(s).")
     n_redis_clients = _count_other_redis_clients()
     if n_redis_clients:
         in_use.append(
@@ -935,16 +932,6 @@ def _count_other_redis_clients():
     pipe.client_list()
     own_id, clients = pipe.execute()
     return sum(1 for client in clients if int(client["id"]) != own_id)
-
-
-def _count_local_participants():
-    """Return the number of rows in the local ``participant`` table (0 if absent)."""
-    from sqlalchemy import inspect, text
-
-    with db.engine.connect() as connection:
-        if not inspect(connection).has_table("participant"):
-            return 0
-        return connection.execute(text("SELECT count(*) FROM participant")).scalar()
 
 
 def _url_without_password(url):
