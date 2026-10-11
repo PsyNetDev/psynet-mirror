@@ -1,4 +1,5 @@
 import json
+import time
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -303,24 +304,29 @@ def test_submit_response_retries_structured_busy_like_timeline_gets(monkeypatch)
     assert calls["n"] == _BOT_TIMELINE_BUSY_ATTEMPTS
 
 
-@pytest.mark.parametrize("time_factor, expected_sleep", [(0, 0.1), (1, 2.0)])
-def test_take_page_pauses_when_still_on_timeline_hold(
-    monkeypatch, time_factor, expected_sleep
+@pytest.mark.parametrize("time_factor, poll", [(0, 0.1), (1, 0.5)])
+def test_take_page_polls_timeline_hold_at_check_interval(
+    monkeypatch, time_factor, poll
 ):
-    """Bots pause at an unready hold, and paced bots poll at the hold's interval."""
+    """Paced bots spend the page's time, then poll a hold every ``check_interval``."""
     driver = ParticipantDriver.__new__(ParticipantDriver)
-    driver.status = _driver_page_status("hold-a")
+    driver.status = _driver_page_status("page-a")
     driver.status["status"] = "working"
-    driver.status["page"]["is_timeline_hold"] = True
-    driver.status["page"]["check_interval"] = 2.0
+    hold = _driver_page_status("hold-a")
+    hold["status"] = "working"
+    hold["page"].update(is_timeline_hold=True, time_estimate=3.0, check_interval=0.5)
     driver.response_files = {}
     sleeps = []
-    monkeypatch.setattr(driver, "_simulate_page_time", lambda *a, **k: None)
-    monkeypatch.setattr(driver, "_submit_response", lambda *a, **k: None)
-    monkeypatch.setattr(driver, "_render_page", lambda: None)
-    monkeypatch.setattr(driver, "refresh_status", lambda: None)
+
+    def submit(*args, **kwargs):
+        driver.status = hold
+        driver.status_time_fetched = time.monotonic()
+
+    monkeypatch.setattr(driver, "_submit_response", submit)
     monkeypatch.setattr("psynet.participant.time.sleep", lambda s: sleeps.append(s))
+    driver.status_time_fetched = time.monotonic()
 
-    driver.take_page(time_factor=time_factor)
+    for _ in range(3):
+        driver.take_page(render_pages=False, time_factor=time_factor)
 
-    assert sleeps == [expected_sleep]
+    assert sleeps == pytest.approx([time_factor, poll, poll, poll], abs=0.05)

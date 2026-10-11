@@ -1356,7 +1356,10 @@ class ParticipantDriver:
             )
         assert self.status is not None
 
-        self._simulate_page_time(time_factor)
+        if not _status_is_timeline_hold(self.status):
+            # Holds are paced by the poll sleep below, as browsers poll from
+            # arrival; their time_estimate is expected_wait, not a poll gap.
+            self._simulate_page_time(time_factor)
         self._submit_response(self.status, self.response_files, response)
         if render_pages:
             self._render_page()
