@@ -1480,10 +1480,19 @@ class CapacityLimits:
     max_queue_p95_s : float
         Largest acceptable time async processes spend waiting for a worker,
         measured by :func:`queue_wait_p95`.
+    max_request_error_rate : float
+        Largest acceptable share of ``/timeline`` and ``/response`` requests
+        that fail. A long test makes tens of thousands of requests, so a
+        stray error should not count against a bot count that is otherwise
+        well within capacity.
+    max_bot_error_rate : float
+        Largest acceptable share of bots that fail.
     """
 
     max_p95_s: float = DEFAULT_MAX_P95_S
     max_queue_p95_s: float = DEFAULT_MAX_QUEUE_P95_S
+    max_request_error_rate: float = 0.001
+    max_bot_error_rate: float = 0.01
 
     @classmethod
     def from_options(cls, max_p95_s=None, max_queue_p95_s=None):
@@ -1504,11 +1513,15 @@ class CapacityLimits:
         Pass ``include_queue=False`` when the tests ran no async processes.
         """
         response = f"p95 response time under {self.max_p95_s * 1000:.0f} ms"
+        errors = (
+            f"fewer than {self.max_request_error_rate:.1%} of requests and "
+            f"{self.max_bot_error_rate:.0%} of bots failing"
+        )
         if not include_queue:
-            return f"{response} and no errors"
+            return f"{response} and {errors}"
         return (
             f"{response}, p95 async queue wait under {self.max_queue_p95_s:g} s "
-            "and no errors"
+            f"and {errors}"
         )
 
 
@@ -1548,9 +1561,13 @@ def capacity_failures(result, limits=CapacityLimits()):
             f"at most {peak_running:,} of {result['n_bots']:,} bots were taking "
             "part at once, because new bots could not start fast enough"
         )
-    if result.get("request_errors"):
-        reasons.append(_plural(result["request_errors"], "request error"))
-    if result.get("bot_errors"):
+    request_errors = result.get("request_errors") or 0
+    if request_errors > limits.max_request_error_rate * (
+        result.get("total_requests") or 0
+    ):
+        reasons.append(_plural(request_errors, "request error"))
+    bot_errors = result.get("bot_errors") or 0
+    if bot_errors > limits.max_bot_error_rate * (result.get("total_bots_started") or 0):
         reasons.append(_describe_bot_errors(result))
     p95 = result.get("p95_response_time")
     if p95 is None:
@@ -1614,6 +1631,12 @@ def _max_capacity_probes(max_bots=_CAPACITY_SEARCH_MAX):
     return max(n_probes(capacity) for capacity in range(max_bots + 1))
 
 
+_QUEUE_ADVICE = (
+    "  Async processes waited too long for a worker: add worker processes "
+    "with num_dynos_worker, or make the processes faster."
+)
+
+
 def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
     """Describe the capacity that ``results`` imply and suggest a participant cap.
 
@@ -1644,6 +1667,8 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
                 f"  {max(passed):,} bots passed, so the results are "
                 "inconsistent; rerun to confirm."
             )
+        if any("async queue" in reason for reason in first_reasons):
+            lines.append(_QUEUE_ADVICE)
         return lines + [""]
 
     capacity = max(below_fail)
@@ -1666,7 +1691,22 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
                 f"  {max(passed):,} bots also passed, so the results are "
                 "inconsistent; rerun to confirm."
             )
+    if first_reasons and any("async queue" in reason for reason in first_reasons):
+        lines.append(_QUEUE_ADVICE)
     capacity_result = next(r for r in results if r["n_bots"] == capacity)
+    tolerated = [
+        f"{n:,} {kind}{'' if n == 1 else 's'}"
+        for n, kind in (
+            (capacity_result.get("request_errors") or 0, "request error"),
+            (capacity_result.get("bot_errors") or 0, "bot error"),
+        )
+        if n
+    ]
+    if tolerated:
+        lines.append(
+            f"  The {capacity:,}-bot test had {' and '.join(tolerated)}, within "
+            "the limits; check the logs in case they point to a bug."
+        )
     ramp_up = capacity_result.get("ramp_up_s")
     test_length = capacity_result.get("actual_duration")
     if ramp_up and test_length and ramp_up > _RAMP_UP_WARNING_SHARE * test_length:

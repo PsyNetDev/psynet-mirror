@@ -421,6 +421,24 @@ def test_a_test_whose_bots_were_never_all_running_is_not_within_capacity():
     ]
 
 
+def test_a_stray_error_is_reported_but_does_not_cap_capacity():
+    def result(n, **overrides):
+        return _base_result(
+            n_bots=n, total_requests=47_000, total_bots_started=3_000, **overrides
+        )
+
+    results = [
+        result(640, request_errors=1, bot_errors=1),
+        result(2000, request_errors=60, q_delay_p95=36.9),
+    ]
+
+    text = _join(format_capacity_summary(results))
+    assert "Capacity: about 640" in text
+    assert "60 request errors, p95 async queue wait 36.90 s" in text
+    assert "The 640-bot test had 1 request error and 1 bot error" in text
+    assert "add worker processes with num_dynos_worker" in text
+
+
 def test_each_endpoint_must_stay_within_the_response_time_limit():
     result = _base_result(
         p95_response_time=0.426,
