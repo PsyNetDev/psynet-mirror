@@ -4764,16 +4764,22 @@ def _invoke_destroy_ssh(
     pending=None,
     discard_pending_jobs=False,
     confirm=lambda *args, **kwargs: True,
+    events=None,
 ):
     import importlib
 
     from psynet.command_line import destroy__docker_ssh
 
+    events = [] if events is None else events
     docker_ssh = importlib.import_module("dallinger.command_line.docker_ssh")
     monkeypatch.setattr(docker_ssh, "destroy", destroy_app)
     monkeypatch.setattr(
+        "psynet.command_line._awaken_ssh_app",
+        lambda server, app: events.append(("awaken", app)),
+    )
+    monkeypatch.setattr(
         "psynet.command_line._fetch_ssh_pending_async_jobs",
-        lambda app, server: pending,
+        lambda app, server: events.append(("check", app)) or pending,
     )
     monkeypatch.setattr(click, "confirm", confirm)
 
@@ -4791,7 +4797,13 @@ def _invoke_destroy_ssh(
     return CliRunner().invoke(parent)
 
 
-_PENDING = {"counts": {"high": 0, "low": 2, "local": 0}, "total": 2, "oldest_age": 600}
+_PENDING = {
+    "counts": {"high": 0, "low": 2, "local": 0},
+    "total": 2,
+    "oldest_age": 600,
+    "lost": 0,
+}
+_LOST_ONLY = {**_PENDING, "total": 0, "oldest_age": None, "lost": 3}
 
 
 def _recording_destroy():
@@ -4829,23 +4841,36 @@ def test_destroy_ssh_asks_before_destroying_pending_jobs(monkeypatch):
         return False
 
     decline.calls = []
+    events = []
     monkeypatch.setattr("psynet.command_line._stdin_is_interactive", lambda: True)
     fake_destroy, destroyed = _recording_destroy()
     result = _invoke_destroy_ssh(
-        monkeypatch, fake_destroy, app="busy", pending=_PENDING, confirm=decline
+        monkeypatch,
+        fake_destroy,
+        app="busy",
+        pending=_PENDING,
+        confirm=decline,
+        events=events,
     )
 
     assert destroyed == [], result.output
+    assert result.exit_code == 1, result.output
+    assert events == [("awaken", "busy"), ("check", "busy")]
     assert "Destroy the app anyway?" in result.output
     assert decline.calls == [{"default": False}]
 
 
 @pytest.mark.parametrize(
-    "pending, discard",
-    [(_PENDING, True), (None, False), ({**_PENDING, "total": 0}, False)],
+    "pending, discard, message",
+    [
+        (_PENDING, True, "2 async jobs are still pending (2 low priority)"),
+        (None, False, ""),
+        ({**_PENDING, "total": 0}, False, ""),
+        (_LOST_ONLY, False, "3 async jobs were probably lost"),
+    ],
 )
 def test_destroy_ssh_proceeds_without_pending_jobs_or_with_discard(
-    monkeypatch, pending, discard
+    monkeypatch, pending, discard, message
 ):
     fake_destroy, destroyed = _recording_destroy()
     result = _invoke_destroy_ssh(
@@ -4858,13 +4883,14 @@ def test_destroy_ssh_proceeds_without_pending_jobs_or_with_discard(
 
     assert destroyed == ["done"], result.output
     assert result.exit_code == 0, result.output
+    assert message in result.output
 
 
 @pytest.mark.parametrize(
     "response, reason",
     [
         (types.SimpleNamespace(status_code=404), "a PsyNet version without this check"),
-        (types.SimpleNamespace(status_code=503), "the app is hibernating"),
+        (types.SimpleNamespace(status_code=503), "the app is unavailable"),
         (requests.ConnectionError("refused"), "could not reach the app (refused)"),
     ],
 )
@@ -4901,6 +4927,13 @@ def test_export_warns_about_pending_jobs(capsys):
         "WARNING: 2 async jobs are still pending (2 low priority); the oldest was "
         "enqueued 10 minutes ago. This export will not include their results; "
         "export again once they have finished." in capsys.readouterr().out
+    )
+
+    _warn_export_misses_pending_jobs(_LOST_ONLY)
+    assert capsys.readouterr().out.strip() == (
+        "❯❯ WARNING: 3 async jobs were probably lost: they did not start within "
+        "1 hour of being enqueued, or ran past their timeout. Their results are "
+        "missing, and PsyNet will not re-run them."
     )
 
 

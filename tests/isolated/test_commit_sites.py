@@ -48,7 +48,7 @@ COMMIT_SITES = {
     "experiment.py::Experiment.route_response": _OWNS_REQUEST,
     "async_job.py::AsyncJob.call_function": _OWNS_JOB,
     "async_job.py::LocalAsyncJob.thread_function": _OWNS_JOB,
-    "async_job.py::WorkerAsyncJob.check_timeouts": _OWNS_JOB,
+    "async_job.py::AsyncJob.check_timeouts": _OWNS_JOB,
     "pytest_psynet.py::trial": "pytest fixture",
     "recruiters.py::BaseLucidRecruiter.normalize_entry_information": (
         "Dallinger's /participant and /load-participant routes do not commit"

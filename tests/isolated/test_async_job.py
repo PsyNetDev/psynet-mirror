@@ -2,6 +2,7 @@ import tempfile
 import threading
 import time
 import types
+from datetime import datetime, timedelta
 
 import pytest
 from dallinger import db
@@ -11,7 +12,7 @@ from rq.exceptions import NoSuchJobError
 from sqlalchemy.exc import IntegrityError
 
 import psynet.experiment  # noqa -- to ensure that all SQLAlchemy classes are registered
-from psynet.async_job import LocalAsyncJob, WorkerAsyncJob
+from psynet.async_job import AsyncJob, LocalAsyncJob, WorkerAsyncJob
 from psynet.db import forbid_commits
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.timeline import AsyncCodeBlock
@@ -345,7 +346,6 @@ def test_only_enqueued_jobs_launch(monkeypatch, caplog):
 @pytest.mark.usefixtures("launched_experiment")
 def test_deprecated_process_names_still_work(monkeypatch, participant):
     import psynet.process
-    from psynet.async_job import AsyncJob
 
     launched = []
     monkeypatch.setattr(
@@ -522,7 +522,7 @@ def test_cpu_time_summary_says_where_jobs_run():
 )
 @pytest.mark.usefixtures("launched_experiment")
 def test_pending_jobs_keep_the_app_awake():
-    from psynet.async_job import AsyncJob, _get_pending_job_summary
+    from psynet.async_job import _get_pending_job_summary
     from psynet.experiment import get_experiment
 
     experiment = get_experiment()
@@ -531,6 +531,7 @@ def test_pending_jobs_keep_the_app_awake():
         "counts": {"high": 0, "low": 0, "local": 0},
         "total": 0,
         "oldest_age": None,
+        "lost": 0,
     }
     assert experiment.reason_to_stay_awake() is None
 
@@ -543,15 +544,23 @@ def test_pending_jobs_keep_the_app_awake():
     finished = WorkerAsyncJob(do_nothing).enqueue()
     finished.pending, finished.finished = False, True
     db.session.add(WorkerAsyncJob(do_nothing, label="never_enqueued"))
+    hour_ago = datetime.now() - timedelta(seconds=AsyncJob.default_timeout + 1)
+    never_started = LocalAsyncJob(do_nothing).enqueue()
+    overdue = WorkerAsyncJob(do_nothing, timeout=1).enqueue()
+    db.session.flush()
+    never_started.time_enqueued = hour_ago
+    overdue.log_time_started()
+    overdue.timeout_scheduled_for = datetime.now() - timedelta(seconds=1)
     db.session.flush()
 
     summary = _get_pending_job_summary()
     assert summary["counts"] == {"high": 1, "low": 2, "local": 1}
-    assert summary["total"] == 4 and summary["oldest_age"] >= 0
-    assert experiment.reason_to_stay_awake().startswith(
+    assert summary["total"] == 4 and summary["lost"] == 2
+    assert summary["oldest_age"] < 60
+    assert experiment.reason_to_stay_awake() == (
         "4 async jobs are still pending "
         "(1 high priority, 2 low priority, 1 in the web process); "
-        "the oldest was enqueued "
+        "the oldest was enqueued under a minute ago"
     )
     db.session.rollback()
 
@@ -559,7 +568,26 @@ def test_pending_jobs_keep_the_app_awake():
         experiment.base_url + "/async_job_status"
     )
     response.raise_for_status()
-    assert set(response.json()) == {"counts", "total", "oldest_age"}
+    assert set(response.json()) == {"counts", "total", "oldest_age", "lost"}
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("static")], indirect=True
+)
+@pytest.mark.usefixtures("launched_experiment")
+def test_local_jobs_time_out_after_the_default_timeout():
+    job = LocalAsyncJob(do_nothing)
+    assert job.timeout == AsyncJob.default_timeout == 3600
+    job.time_enqueued = datetime.now()
+    job.log_time_started()
+    assert job.timeout_scheduled_for - job.time_started == timedelta(hours=1)
+    job.timeout_scheduled_for = datetime.now() - timedelta(seconds=1)
+    db.session.add(job)
+    db.session.commit()
+    job_id = job.id
+
+    AsyncJob.check_timeouts()
+    assert LocalAsyncJob.query.get(job_id).failed
 
 
 def test_cpu_time_summary_flags_cpu_heavy_labels():

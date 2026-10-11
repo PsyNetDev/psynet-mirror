@@ -433,9 +433,10 @@ Once you destroy the app or the server, ``psynet export`` no longer works,
 so treat data you have not exported as lost.
 
 If async jobs are still running, for example analyses of participants'
-recordings, ``psynet export`` warns that the export will not include their
-results. Wait for them to finish and export again; see
-:doc:`/reference/api/async_job`.
+recordings, ``psynet export ssh`` (and ``psynet export local``) ends with a
+warning that the export does not include their results. Wait for them to
+finish and export again; see :doc:`/reference/api/async_job`.
+``psynet export heroku`` does not check.
 
 Tear down
 ---------
@@ -464,7 +465,7 @@ When the target number of participants is reached:
       :alt: Prolific submissions awaiting review
 
 4. Wait until no async jobs are pending, then export the data one final
-   time. ``psynet export`` warns while jobs are still pending.
+   time. ``psynet export ssh`` warns while jobs are still pending.
 5. Remove the experiment from the server:
 
    .. code:: bash
@@ -472,10 +473,12 @@ When the target number of participants is reached:
       psynet destroy ssh --app my-study --server your-server.example.org
 
    This stops the experiment's containers and removes its folder from the
-   server. If async jobs are still pending, the command says how many and
-   asks you to confirm, or refuses when it cannot ask (for example in a
-   script, or when destroying several apps at once). Pass
-   ``--discard-pending-jobs`` only if you accept losing their results.
+   server. It first wakes the app if it is asleep. If async jobs are still
+   pending, the command says how many and asks you to confirm, or refuses
+   when it cannot ask (for example in a script, or when destroying several
+   apps at once). Pass ``--discard-pending-jobs`` only if you accept losing
+   their results. If the app cannot be checked, the command prints a
+   warning and destroys it anyway.
 
 If the server was provisioned only for this study, tear it down as well;
 see :doc:`/deploy/setting_up_a_server`. For an EC2 server created with

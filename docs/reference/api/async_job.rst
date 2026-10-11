@@ -53,15 +53,39 @@ of the web process. The CPU table printed after ``psynet test local`` (see
 :doc:`/test/scalability`) has one row per job label, priority and place the
 job runs in.
 
+.. _async_job_timeout:
+
+Timeouts
+--------
+
+A job that runs for longer than its ``timeout`` fails, and so do its trial
+and node. The timeout counts from when the job starts running, so time spent
+waiting in the queue does not count. Jobs created without a ``timeout`` get
+:attr:`~psynet.async_job.AsyncJob.default_timeout`, one hour. Trial,
+network and node jobs use the trial maker's ``async_timeout_sec`` (five
+minutes by default). An RQ worker stops a
+:class:`~psynet.async_job.WorkerAsyncJob` function when it times out; a
+:class:`~psynet.async_job.LocalAsyncJob` function keeps running in its
+thread, but the job is already marked failed.
+
+.. code-block:: python
+
+    WorkerAsyncJob(refit_model, timeout=4 * 3600).enqueue()
+
+Pending jobs
+------------
+
 Low-priority jobs can build up a backlog that is still running after the
 last participant has left. PsyNet protects that backlog on docker-ssh
 deployments:
 
 * idle hibernation does not put the app to sleep while any job is pending;
-* ``psynet export`` warns that jobs are still pending, because the export
-  will not contain their results;
-* ``psynet destroy ssh`` refuses to destroy an app with pending jobs, or asks
-  you to confirm when run interactively.
+* ``psynet export ssh`` and ``psynet export local`` end with a warning that
+  jobs are still pending, because the export does not contain their
+  results (``psynet export heroku`` does not check);
+* ``psynet destroy ssh`` wakes the app if it is asleep, then refuses to
+  destroy it while jobs are pending, or asks you to confirm when run
+  interactively.
 
 Wait for the backlog to finish, export again, and then destroy the app. For
 example, ``psynet destroy ssh`` prints:
@@ -74,10 +98,25 @@ example, ``psynet destroy ssh`` prints:
     before destroying the app.
 
 Pass ``--discard-pending-jobs`` to destroy the app anyway, for example when
-the jobs can never finish. A job is pending from
-:meth:`~psynet.async_job.AsyncJob.enqueue` until it finishes, fails, times
-out or is cancelled, and :class:`~psynet.async_job.LocalAsyncJob` jobs count
-too, because hibernation and destroying stop the web process they run in.
+the jobs can never finish; the command still says how many jobs it discards.
+If the app cannot be checked, for example because it runs an older PsyNet
+version or does not answer, the command prints a warning and destroys the
+app as before.
+
+A job is pending from :meth:`~psynet.async_job.AsyncJob.enqueue` until it
+finishes, fails, times out or is cancelled, and
+:class:`~psynet.async_job.LocalAsyncJob` jobs count too, because hibernation
+and destroying stop the web process they run in. A job that did not start
+within an hour of being enqueued, or ran past its timeout without being
+failed, was probably lost, for example from Redis or with a web process that
+stopped. Such jobs do not keep the app awake or block ``psynet destroy ssh``;
+export and destroy report them separately:
+
+.. code-block:: text
+
+    ❯❯ WARNING: 2 async jobs were probably lost: they did not start within
+    1 hour of being enqueued, or ran past their timeout. Their results are
+    missing, and PsyNet will not re-run them.
 
 API
 ---

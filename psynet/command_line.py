@@ -3051,7 +3051,6 @@ def export__docker_ssh(ctx, app, server, **kwargs):
     """
     app = _resolve_ssh_app(ctx, app, server)
     _awaken_ssh_app(server, app)
-    _warn_export_misses_pending_jobs(_fetch_ssh_pending_async_jobs(app, server))
     export_(
         ctx,
         get_exp_variables=lambda: _read_experiment_variables(
@@ -3061,6 +3060,7 @@ def export__docker_ssh(ctx, app, server, **kwargs):
         local=False,
         server=server,
         docker_ssh=True,
+        pending_jobs=_fetch_ssh_pending_async_jobs(app, server),
         **kwargs,
     )
 
@@ -3081,6 +3081,7 @@ def export_(
     password=None,
     transfer="auto",
     allow_project_mismatch=False,
+    pending_jobs=None,
     **kwargs,
 ):
     """
@@ -3121,6 +3122,10 @@ def export_(
     because for remote experiments it opens an SSH tunnel to the experiment
     database. Server-built exports do not need them: they take the experiment's
     identity from an authenticated preflight instead.
+
+    ``pending_jobs`` is a remote app's async job summary, taken before the
+    export (see :func:`_fetch_pending_async_jobs`); local exports read their
+    own. A warning about pending or probably lost jobs ends the output.
     """
     anonymize = kwargs.pop("anonymize", None)
     _warn_deprecated_export_options(
@@ -3166,7 +3171,7 @@ def export_(
     shutil.rmtree(staging, ignore_errors=True)
     try:
         if local:
-            _build_local_export(str(staging), assets)
+            pending_jobs = _build_local_export(str(staging), assets)
         else:
             _fetch_remote_export(
                 experiment_class,
@@ -3189,16 +3194,25 @@ def export_(
         raise
 
     log(f"Export complete. You can find your results at: {published}")
+    _warn_export_misses_pending_jobs(pending_jobs)
 
 
 def _build_local_export(export_path, assets):
-    """Build an export directly from the local deployment's database."""
+    """Build an export directly from the local deployment's database.
+
+    Returns
+    -------
+    dict
+        The pending async job summary taken before the export; see
+        :func:`psynet.async_job._get_pending_job_summary`.
+    """
     from .async_job import _get_pending_job_summary
     from .export.service import build_export_tree
 
-    _warn_export_misses_pending_jobs(_get_pending_job_summary())
+    pending_jobs = _get_pending_job_summary()
     log(f"Building export in {export_path}")
     build_export_tree(export_path, assets=assets, local=True)
+    return pending_jobs
 
 
 def _normalize_public_origin(value):
@@ -3323,7 +3337,7 @@ def _fetch_pending_async_jobs(endpoint):
         if response.status_code == 404:
             reason = "the app runs a PsyNet version without this check"
         elif response.status_code == 503:
-            reason = "the app is hibernating or unavailable"
+            reason = "the app is unavailable (503 Service Unavailable)"
         elif response.status_code != 200:
             reason = f"the app returned {response.status_code} {response.reason}"
         else:
@@ -3352,14 +3366,18 @@ def _fetch_ssh_pending_async_jobs(app, server):
 
 
 def _warn_export_misses_pending_jobs(summary):
-    """Warn that an export taken now lacks the results of pending async jobs."""
-    if summary and summary["total"]:
-        from .async_job import _describe_pending_jobs
+    """Warn that an export lacks the results of pending or lost async jobs."""
+    if not summary:
+        return
+    from .async_job import _describe_lost_jobs, _describe_pending_jobs
 
+    if summary["total"]:
         log(
             f"WARNING: {_describe_pending_jobs(summary)}. This export will not "
             "include their results; export again once they have finished."
         )
+    if summary["lost"]:
+        log(f"WARNING: {_describe_lost_jobs(summary)}.")
 
 
 def _fetch_remote_export(
@@ -3769,8 +3787,10 @@ def _stdin_is_interactive():
     return sys.stdin.isatty()
 
 
-def _confirm_destroy_with_pending_jobs(app, summary, ask_for_confirmation):
-    """Return whether ``app`` may be destroyed, given its pending async jobs.
+def _confirm_destroy_with_pending_jobs(
+    app, summary, ask_for_confirmation, discard_pending_jobs=False
+):
+    """Report an app's pending async jobs and decide whether to destroy it.
 
     Parameters
     ----------
@@ -3782,13 +3802,29 @@ def _confirm_destroy_with_pending_jobs(app, summary, ask_for_confirmation):
     ask_for_confirmation : bool
         Whether the user may be asked. When ``False`` (batch mode, or a
         future ``--yes``), or when stdin is not a terminal, an app with
-        pending jobs is not destroyed; only ``--discard-pending-jobs``
-        overrides that.
-    """
-    if not summary or not summary["total"]:
-        return True
-    from .async_job import _describe_pending_jobs
+        pending jobs is not destroyed.
+    discard_pending_jobs : bool
+        Destroy the app even if jobs are pending, after reporting them.
 
+    Returns
+    -------
+    bool
+        Whether the app may be destroyed. Probably lost jobs never block it.
+    """
+    if not summary:
+        return True
+    from .async_job import _describe_lost_jobs, _describe_pending_jobs
+
+    if summary["lost"]:
+        log(f"WARNING: {app}: {_describe_lost_jobs(summary)}.")
+    if not summary["total"]:
+        return True
+    if discard_pending_jobs:
+        log(
+            f"WARNING: {app}: {_describe_pending_jobs(summary)}. Discarding them "
+            "because --discard-pending-jobs was passed."
+        )
+        return True
     log(
         f"WARNING: {app}: {_describe_pending_jobs(summary)}. Destroying the app "
         "now loses their results. Wait for them to finish, then run "
@@ -3810,18 +3846,18 @@ def _destroy(
 ):
     """Destroy a single app.
 
-    For docker-ssh apps (``server`` given), first check for pending async
-    jobs with :func:`_confirm_destroy_with_pending_jobs`, unless
-    ``discard_pending_jobs``.
+    For docker-ssh apps (``server`` given), first wake the app and check for
+    pending async jobs with :func:`_confirm_destroy_with_pending_jobs`.
     """
-    if (
-        server
-        and not discard_pending_jobs
-        and not _confirm_destroy_with_pending_jobs(
-            app, _fetch_ssh_pending_async_jobs(app, server), ask_for_confirmation
-        )
-    ):
-        return False
+    if server:
+        _awaken_ssh_app(server, app)
+        if not _confirm_destroy_with_pending_jobs(
+            app,
+            _fetch_ssh_pending_async_jobs(app, server),
+            ask_for_confirmation,
+            discard_pending_jobs,
+        ):
+            return False
     confirmed = (
         user_confirms(
             "Would you like to delete the app from the web server?", default=True

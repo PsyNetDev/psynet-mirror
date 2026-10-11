@@ -4,8 +4,10 @@ An :class:`AsyncJob` stores a function and its arguments as a row in the
 ``async_job`` table, so that slow work (e.g. ``async_post_trial``, asset
 deposits, or :class:`~psynet.timeline.AsyncCodeBlock` functions) can run
 without blocking the participant's request. :class:`WorkerAsyncJob` runs the
-function on an RQ worker and supports timeouts and cancellation;
-:class:`LocalAsyncJob` runs it in a thread of the current process.
+function on an RQ worker and supports cancellation; :class:`LocalAsyncJob`
+runs it in a thread of the current process. Every job has a timeout,
+:attr:`AsyncJob.default_timeout` unless given, counted from when it starts;
+the experiment's clock fails overdue jobs with :meth:`AsyncJob.check_timeouts`.
 
 Constructing a job does not run it. Call :meth:`AsyncJob.enqueue`, which adds
 the job to the database session and launches it only once the transaction
@@ -152,6 +154,10 @@ class AsyncJob(SQLBase, SQLMixin):
     priority : str, optional
         ``"high"`` or ``"low"``; see :class:`WorkerAsyncJob`. It is stored
         on a :class:`LocalAsyncJob` too, but has no effect there.
+    timeout : float, optional
+        Seconds after which the job fails if it has not finished, counted
+        from when it starts running; time spent waiting to start does not
+        count. Defaults to :attr:`default_timeout`.
 
     Attributes
     ----------
@@ -170,6 +176,9 @@ class AsyncJob(SQLBase, SQLMixin):
 
     __tablename__ = "async_job"
 
+    #: Seconds a job created without a ``timeout`` may run before it fails.
+    default_timeout = 3600
+
     label = Column(String)
     function = Column(PythonObject)
     arguments = deferred(Column(PythonDict))
@@ -182,6 +191,8 @@ class AsyncJob(SQLBase, SQLMixin):
     queue_delay = Column(Float)
     cpu_time = Column(Float)
     priority = Column(String)
+    timeout = Column(Float)
+    timeout_scheduled_for = Column(DateTime)
     _unique_key = Column(PythonDict, unique=True)
 
     participant_id = Column(Integer, ForeignKey("participant.id"), index=True)
@@ -223,10 +234,12 @@ class AsyncJob(SQLBase, SQLMixin):
         label=None,
         unique=False,
         priority=None,
+        timeout=None,
     ):
         if priority is not None:
             check_priority(priority)
         self.priority = priority
+        self.timeout = self.default_timeout if timeout is None else timeout
 
         if label is None:
             label = function.__name__
@@ -318,7 +331,32 @@ class AsyncJob(SQLBase, SQLMixin):
         }
 
     def log_time_started(self):
+        """Record the start time and start the timeout."""
         self.time_started = datetime.datetime.now()
+        self.timeout_scheduled_for = self.time_started + datetime.timedelta(
+            seconds=self.timeout
+        )
+
+    @classmethod
+    def check_timeouts(cls):
+        """Fail started jobs that have run past their timeout."""
+        jobs = cls.query.filter(
+            cls.pending,
+            ~cls.failed,
+            cls.timeout_scheduled_for < datetime.datetime.now(),
+        ).all()
+        for job in jobs:
+            job.fail(
+                "Async job timed out",
+            )
+            if job.participant_id is not None:
+                from psynet.timeline_hold import _queue_timeline_hold_wake
+
+                _queue_timeline_hold_wake(
+                    job.participant_id,
+                    reason="async_job_timed_out",
+                )
+            db.session.commit()
 
     def log_time_finished(self):
         self.time_finished = datetime.datetime.now()
@@ -615,7 +653,11 @@ def _format_cpu_time_summary(rows):
 def _get_pending_job_summary():
     """Count the async jobs that are enqueued but have not yet ended.
 
-    A job ends when it finishes, fails, times out, or is cancelled.
+    A job ends when it finishes, fails, times out, or is cancelled. A job that
+    has not ended but did not start within :attr:`AsyncJob.default_timeout`
+    of being enqueued, or ran past its timeout without the clock failing it,
+    was probably lost, for example from Redis or with a web process that
+    stopped; it is counted separately and is not re-run.
 
     Returns
     -------
@@ -625,33 +667,70 @@ def _get_pending_job_summary():
         :class:`LocalAsyncJob` rows, which run in the web process.
         ``"total"`` is their sum and ``"oldest_age"`` is the number of
         seconds since the oldest pending job was enqueued, or ``None``.
+        ``"lost"`` counts the probably lost jobs, which are not included in
+        the other entries.
     """
+    now = datetime.datetime.now()
+    start_deadline = now - datetime.timedelta(seconds=AsyncJob.default_timeout)
     counts = {"high": 0, "low": 0, "local": 0}
+    lost = 0
     oldest = None
     for cls in [WorkerAsyncJob, LocalAsyncJob]:
         rows = (
             db.session.query(
-                cls.priority, func.count(cls.id), func.min(cls.time_enqueued)
+                cls.priority,
+                cls.time_enqueued,
+                cls.time_started,
+                cls.timeout_scheduled_for,
             )
             .filter(
                 cls.pending,
                 ~cls.failed,
                 cls.time_enqueued != None,  # noqa: E711
             )
-            .group_by(cls.priority)
             .all()
         )
-        for priority, count, enqueued in rows:
-            counts["local" if cls is LocalAsyncJob else priority] += count
+        for priority, enqueued, started, timeout_at in rows:
+            if (started is None and enqueued < start_deadline) or (
+                timeout_at is not None and timeout_at < now
+            ):
+                lost += 1
+                continue
+            counts["local" if cls is LocalAsyncJob else priority] += 1
             oldest = enqueued if oldest is None else min(oldest, enqueued)
-    oldest_age = (
-        None if oldest is None else (datetime.datetime.now() - oldest).total_seconds()
+    oldest_age = None if oldest is None else (now - oldest).total_seconds()
+    return {
+        "counts": counts,
+        "total": sum(counts.values()),
+        "oldest_age": oldest_age,
+        "lost": lost,
+    }
+
+
+def _describe_lost_jobs(summary):
+    """Describe the probably lost jobs of :func:`_get_pending_job_summary`."""
+    from .utils import format_timedelta
+
+    n = summary["lost"]
+    they, their, them, were = (
+        ("they", "their", "them", "were") if n != 1 else ("it", "its", "it", "was")
     )
-    return {"counts": counts, "total": sum(counts.values()), "oldest_age": oldest_age}
+    limit = format_timedelta(datetime.timedelta(seconds=AsyncJob.default_timeout))
+    return (
+        f"{n} async job{'s' if n != 1 else ''} {were} probably lost: {they} did "
+        f"not start within {limit} of being enqueued, or ran past {their} "
+        f"timeout. {their.capitalize()} results are missing, and PsyNet will not "
+        f"re-run {them}"
+    )
 
 
-def _describe_pending_jobs(summary):
-    """Describe the output of :func:`_get_pending_job_summary` in one sentence."""
+def _describe_pending_jobs(summary, precise=True):
+    """Describe the pending jobs of :func:`_get_pending_job_summary` in one sentence.
+
+    With ``precise=False`` the age of the oldest job is rounded down to whole
+    minutes, or given as "over an hour", so that the text stays the same
+    between polls.
+    """
     from .utils import format_timedelta
 
     total = summary["total"]
@@ -668,10 +747,19 @@ def _describe_pending_jobs(summary):
         f"{total} async job{'s are' if total != 1 else ' is'} still pending"
         f" ({', '.join(parts)})"
     )
-    if summary["oldest_age"] is not None:
-        age = datetime.timedelta(seconds=summary["oldest_age"])
-        text += f"; the oldest was enqueued {format_timedelta(age)} ago"
-    return text
+    age = summary["oldest_age"]
+    if age is None:
+        return text
+    if precise:
+        age_text = format_timedelta(datetime.timedelta(seconds=age))
+    elif age >= 3600:
+        age_text = "over an hour"
+    elif age < 60:
+        age_text = "under a minute"
+    else:
+        minutes = int(age // 60)
+        age_text = f"{minutes} minute{'s' if minutes != 1 else ''}"
+    return text + f"; the oldest was enqueued {age_text} ago"
 
 
 class LocalAsyncJob(AsyncJob):
@@ -723,14 +811,11 @@ def _cancel_rq_job(async_job_id):
 class WorkerAsyncJob(AsyncJob):
     """An async job that runs on an RQ worker.
 
-    Accepts the parameters of :class:`AsyncJob`, plus:
+    Accepts the parameters of :class:`AsyncJob`. The worker also stops the
+    job's function when its ``timeout`` expires.
 
     Parameters
     ----------
-    timeout : float, optional
-        Seconds after which the job fails if it has not finished, counted
-        from when a worker starts running it. Time spent waiting in the
-        queue does not count.
     priority : str, default ``"high"``
         The RQ queue the job runs on, ``"high"`` or ``"low"``. Workers take
         jobs from the ``high`` queue before the ``low`` queue, but do not
@@ -738,8 +823,6 @@ class WorkerAsyncJob(AsyncJob):
         worker if every worker is busy.
     """
 
-    timeout = Column(Float)
-    timeout_scheduled_for = Column(DateTime)
     cancelled = Column(Boolean, default=False)
 
     def get_launch_spec(self) -> dict:
@@ -764,7 +847,6 @@ class WorkerAsyncJob(AsyncJob):
         priority="high",
     ):
         check_priority(priority)
-        self.timeout = timeout
         super().__init__(
             function,
             arguments,
@@ -777,15 +859,8 @@ class WorkerAsyncJob(AsyncJob):
             label=label,
             unique=unique,
             priority=priority,
+            timeout=timeout,
         )
-
-    def log_time_started(self):
-        """Record the start time and start the timeout, if any."""
-        super().log_time_started()
-        if self.timeout:
-            self.timeout_scheduled_for = self.time_started + datetime.timedelta(
-                seconds=self.timeout
-            )
 
     @classmethod
     def get_redis_queue(cls, priority):
@@ -801,27 +876,6 @@ class WorkerAsyncJob(AsyncJob):
             timeout=spec["timeout"],
             job_id=_rq_job_id(spec["id"]),
         )
-
-    @classmethod
-    def check_timeouts(cls):
-        jobs = cls.query.filter(
-            cls.pending,
-            ~cls.failed,
-            cls.timeout != None,  # noqa -- this is special SQLAlchemy syntax
-            cls.timeout_scheduled_for < datetime.datetime.now(),
-        ).all()
-        for job in jobs:
-            job.fail(
-                "Async job timed out",
-            )
-            if job.participant_id is not None:
-                from psynet.timeline_hold import _queue_timeline_hold_wake
-
-                _queue_timeline_hold_wake(
-                    job.participant_id,
-                    reason="async_job_timed_out",
-                )
-            db.session.commit()
 
     @property
     def redis_job_id(self):

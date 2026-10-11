@@ -84,6 +84,7 @@ from psynet.utils import (
 from . import deployment_info
 from . import exit as exit_domain
 from .asset import Asset, AssetRegistry, LocalStorage, OnDemandAsset, S3Storage
+from .async_job import AsyncJob
 from .bot import Bot, BotDriver, BotResponse
 from .command_line import export_launch_data
 from .data import SQLBase, SQLMixin, ingest_zip, register_table
@@ -716,7 +717,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 "in your Experiment class. For example, you might write: label = 'GSP experiment with faces'"
             )
 
-        self.database_checks = []
+        self.database_checks = [
+            DatabaseCheck("async_job_timeouts", AsyncJob.check_timeouts)
+        ]
         self.participant_fail_routines = []
         self.recruitment_criteria = []
         self._websocket_message_handlers = {}
@@ -1747,7 +1750,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         from .async_job import _describe_pending_jobs, _get_pending_job_summary
 
         summary = _get_pending_job_summary()
-        return _describe_pending_jobs(summary) if summary["total"] else None
+        return (
+            _describe_pending_jobs(summary, precise=False) if summary["total"] else None
+        )
 
     def _test_experiment_serial(self):
         logger.info(f"Testing experiment with {self.test_n_bots} serial bot(s)...")
