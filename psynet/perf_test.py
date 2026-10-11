@@ -208,6 +208,16 @@ def raise_open_file_limit():
     logger.warning(f"Could not raise the open-file limit above {soft}: {error}")
 
 
+def _cpu_share(cpu_start, wall_s):
+    """Return the CPU time this process used since ``cpu_start``, per second of ``wall_s``.
+
+    :func:`time.process_time` counts every thread, so 1.0 means a whole core.
+    """
+    if wall_s <= 0:
+        return None
+    return (time.process_time() - cpu_start) / wall_s
+
+
 def _fit_redis_pool_to_bots(n_bots):
     """Let every bot thread hold a Redis connection at once.
 
@@ -287,8 +297,9 @@ class PerformanceTester:
         raise_open_file_limit()
         self._print_suite_header(
             f"automatic (from {_CAPACITY_SEARCH_START}, while keeping "
-            f"{self.limits.describe()}; a test in which new bots can't start "
-            "fast enough also fails, as a limit of this test process)"
+            f"{self.limits.describe()}; a test in which bots can't start fast "
+            "enough, or can't keep pace because their process is too busy, "
+            "could not be tested)"
         )
         max_tests = _max_capacity_probes()
         logger.info(
@@ -401,6 +412,7 @@ class PerformanceTester:
         initial_state = self._capture_initial_state()
         bot_state = self._initialize_bot_tracking()
         start_time = time.time()
+        cpu_start = time.process_time()
         end_time = start_time + (duration_minutes * 60)
         start_bot_slot = self._create_bot_launcher(bot_state, end_time)
 
@@ -410,6 +422,7 @@ class PerformanceTester:
                     n, bot_state, start_bot_slot, start_time, end_time
                 )
                 actual_duration = time.time() - start_time
+                bot_state["cpu_shares"].append(_cpu_share(cpu_start, actual_duration))
                 last_request_id = self._max_request_id()
                 ended_at = datetime.datetime.now()
             finally:
@@ -477,6 +490,8 @@ class PerformanceTester:
             "peak_running": 0,
             # Seconds from the test start until the last bot slot started.
             "ramp_up_s": None,
+            # CPU time each process running bots used, per second of the test.
+            "cpu_shares": [],
             "last_status_update": time.time(),
             "status_line_length": 0,
         }
@@ -967,6 +982,9 @@ class PerformanceTester:
             "slots_started": bot_state["slots_started"],
             "peak_running": bot_state["peak_running"],
             "ramp_up_s": bot_state["ramp_up_s"],
+            "tester_cpu_share": max(
+                (s for s in bot_state["cpu_shares"] if s is not None), default=None
+            ),
             "total_bots_started": bot_state["total_bots_started"],
             "completed_during_test": bot_state["bots_completed_during_test"],
             "bots_succeeded": bots_succeeded,
@@ -1234,6 +1252,14 @@ def format_test_results(result):
             [
                 "Avg runtime (timed out)",
                 f"{result['avg_incomplete_duration']:.1f}s",
+            ]
+        )
+    if result.get("tester_cpu_share") is not None:
+        cpu = f"{result['tester_cpu_share']:.0%} of a core"
+        runtime_rows.append(
+            [
+                "Bot process CPU (busiest)",
+                warning(cpu) if _tester_cpu_saturated(result) else cpu,
             ]
         )
     if runtime_rows:
@@ -1613,10 +1639,19 @@ def queue_wait_p95(result):
 
 # Bots between runs, or still being created, leave a few slots briefly empty.
 _MIN_RUNNING_SHARE = 0.9
+# Bot threads share one interpreter lock, so a process running bots slows
+# them all down well before it uses a whole core.
+_MAX_TESTER_CPU_SHARE = 0.7
 
 
-def _tester_limits(result):
-    """Return the reasons the test process, not the server, held back a test."""
+def _tester_cpu_saturated(result):
+    """Return whether a process running bots was too busy for them to keep pace."""
+    share = result.get("tester_cpu_share")
+    return share is not None and share > _MAX_TESTER_CPU_SHARE
+
+
+def _start_rate_limits(result):
+    """Return the reasons bots did not all start, or take part at once, in a test."""
     reasons = []
     slots_started = result.get("slots_started")
     if slots_started is not None and slots_started < result.get("n_bots", 0):
@@ -1635,12 +1670,25 @@ def _tester_limits(result):
     return reasons
 
 
+def _tester_limits(result):
+    """Return the reasons the test process, not the server, held back a test."""
+    reasons = _start_rate_limits(result)
+    if _tester_cpu_saturated(result):
+        reasons.append(
+            f"a process running bots used {result['tester_cpu_share']:.0%} of a "
+            "CPU core, too busy for its bots to keep pace"
+        )
+    return reasons
+
+
 def _capacity_failure_causes(result, limits):
     """Return ``(reason, server_limit)`` for each limit that ``result`` exceeded.
 
     ``server_limit`` is False when the reason only shows that the test could
     not measure the server at this bot count: bots didn't all start or take
-    part at once, bots failed because PostgreSQL ran out of connections (the
+    part at once, a process running bots was too busy for them to keep pace
+    (so the server got less load than that many participants would give),
+    bots failed because PostgreSQL ran out of connections (the
     bots open their own database connections in this process, which
     participants don't), or no responses were recorded while bots were
     missing.
@@ -1765,6 +1813,12 @@ _START_RATE_ADVICE = (
     "participant itself. Bots that take longer, in a longer experiment or "
     "with a larger --time-factor, give a better measure of the server."
 )
+_TESTER_CPU_ADVICE = (
+    "  A process running bots was so busy that its bots made requests more "
+    "slowly than participants would, so the server got less load than the "
+    "bot count suggests. Spread the bots over more processes with "
+    "--bot-processes, or run the test from a computer with more CPU cores."
+)
 
 
 def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
@@ -1831,8 +1885,10 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
             )
     if "async queue" in first_reasons:
         lines.append(_QUEUE_ADVICE)
-    if first_fail is not None and _tester_limits(first_fail):
+    if first_fail is not None and _start_rate_limits(first_fail):
         lines.append(_START_RATE_ADVICE)
+    if first_fail is not None and _tester_cpu_saturated(first_fail):
+        lines.append(_TESTER_CPU_ADVICE)
     if any(_POSTGRES_FULL in (r.get("bot_error_kinds") or {}) for r in results):
         lines.append(_POSTGRES_ADVICE)
     if capacity is None:

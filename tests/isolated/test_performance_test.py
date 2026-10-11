@@ -477,6 +477,24 @@ def test_capacity_summary_does_not_suggest_a_cap_when_bots_started_too_slowly():
     assert "Cap concurrent" not in text
 
 
+def test_a_test_whose_bot_process_was_too_busy_could_not_be_tested():
+    results = [
+        _base_result(n_bots=80, p95_response_time=0.085, tester_cpu_share=0.3),
+        _base_result(n_bots=160, p95_response_time=0.1, tester_cpu_share=0.85),
+    ]
+
+    assert capacity_failures(results[1]) == [
+        "a process running bots used 85% of a CPU core, too busy for its bots "
+        "to keep pace"
+    ]
+    text = _join(format_capacity_summary(results))
+    assert "Capacity: at least 80 concurrent bots" in text
+    assert "160 could not be tested" in text
+    assert "Spread the bots over more processes with --bot-processes" in text
+    assert "Cap concurrent" not in text
+    assert "85% of a core" in _join(format_test_results(results[1]))
+
+
 _POSTGRES_BOT_ERRORS = dict(
     bot_errors=40,
     total_bots_started=400,
