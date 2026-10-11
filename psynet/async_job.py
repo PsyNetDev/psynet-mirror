@@ -409,12 +409,15 @@ class AsyncJob(SQLBase, SQLMixin):
             if getattr(job, "cancelled", False):
                 logger.info("Async job %s was cancelled; skipping.", async_job_id)
                 return
+            if job.failed:
+                logger.info("Async job %s has already failed; skipping.", async_job_id)
+                return
             function = job.function
 
             arguments = cls.preprocess_args(job.arguments)
 
             timer = time.monotonic()
-            job.time_started = datetime.datetime.now()
+            job.log_time_started()
             if job.time_enqueued:
                 job.queue_delay = (job.time_started - job.time_enqueued).total_seconds()
             db.session.commit()
@@ -513,7 +516,7 @@ def _launch_unless_cancelled(spec):
         _send_alert(
             f"Async job {spec['id']} ({spec['class'].__name__}) was "
             "saved but could not be launched, "
-            "so it stays pending until its timeout, if any."
+            "so it stays pending."
         )
 
 
@@ -663,7 +666,9 @@ class WorkerAsyncJob(AsyncJob):
     Parameters
     ----------
     timeout : float, optional
-        Seconds after which the job fails if it has not finished.
+        Seconds after which the job fails if it has not finished, counted
+        from when a worker starts running it. Time spent waiting in the
+        queue does not count.
     priority : str, default ``"high"``
         The RQ queue the job runs on, ``"high"`` or ``"low"``. Workers take
         jobs from the ``high`` queue before the ``low`` queue, but do not
@@ -712,20 +717,13 @@ class WorkerAsyncJob(AsyncJob):
             priority=priority,
         )
 
-    def enqueue(self):
-        """Enqueue the job as in :meth:`AsyncJob.enqueue` and start its timeout.
-
-        Returns
-        -------
-        WorkerAsyncJob
-            The job itself.
-        """
-        super().enqueue()
+    def log_time_started(self):
+        """Record the start time and start the timeout, if any."""
+        super().log_time_started()
         if self.timeout:
-            self.timeout_scheduled_for = self.time_enqueued + datetime.timedelta(
+            self.timeout_scheduled_for = self.time_started + datetime.timedelta(
                 seconds=self.timeout
             )
-        return self
 
     @classmethod
     def get_redis_queue(cls, priority):
