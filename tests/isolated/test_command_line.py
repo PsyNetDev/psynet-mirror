@@ -4681,7 +4681,7 @@ def test_experiment_never_completes_during_performance_test(monkeypatch):
     ],
     ids=["explicit-zeros", "defaults", "capacity-search"],
 )
-def test_performance_test_options_reach_the_tester(options, expected):
+def test_performance_test_options_reach_the_tester(options, expected, tmp_path):
     """Explicit zeros are kept; omitted options use the experiment's defaults."""
     from psynet.command_line import _run_performance_test_with_existing_server
     from psynet.perf_test import CapacityLimits
@@ -4703,6 +4703,7 @@ def test_performance_test_options_reach_the_tester(options, expected):
         patch("logging.getLogger", return_value=Mock(handlers=[])),
         patch("psynet.command_line._load_runtime_server_config") as load_config,
         patch("psynet.command_line._check_existing_server_answers"),
+        patch("psynet.command_line._performance_log_directory", return_value=tmp_path),
         patch("psynet.experiment.get_experiment", return_value=experiment),
         patch(
             "psynet.perf_test.PerformanceTester", return_value=tester
