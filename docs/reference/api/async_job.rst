@@ -49,8 +49,10 @@ Priority only decides which waiting job starts next; a running job is never
 interrupted. If every worker is busy with long low-priority jobs, a
 high-priority job still waits for one of them to finish. A job's
 ``timeout`` counts from when it starts running, so queue wait does not count
-towards it, but a job that has not started within an hour of being enqueued
-is failed as probably lost (see
+towards it. A job that has not started within an hour of being enqueued is
+failed as probably lost if RQ no longer holds it, for example because its
+launch failed or Redis restarted; a job still waiting in the RQ queue is a
+genuine backlog and keeps waiting (see
 :attr:`~psynet.async_job.WorkerAsyncJob.max_queue_wait_sec`). Priority has no
 effect on a :class:`~psynet.async_job.LocalAsyncJob`, which runs in a thread
 of the web process. The CPU table printed after ``psynet test local`` (see

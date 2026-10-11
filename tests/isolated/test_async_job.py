@@ -389,16 +389,26 @@ def test_timeout_counts_from_start_not_enqueue(monkeypatch):
     queued = WorkerAsyncJob(do_nothing, timeout=0.01).enqueue()
     stalled = WorkerAsyncJob(do_nothing, timeout=0.01).enqueue()
     stalled.log_time_started()
+    backlog = WorkerAsyncJob(do_nothing).enqueue()
     lost = WorkerAsyncJob(do_nothing).enqueue()
-    lost.time_enqueued -= datetime.timedelta(hours=2)
-    queued_id, stalled_id, lost_id = queued.id, stalled.id, lost.id
+    for job in [backlog, lost]:
+        job.time_enqueued -= datetime.timedelta(hours=2)
+    queued_id, stalled_id, backlog_id, lost_id = (
+        queued.id,
+        stalled.id,
+        backlog.id,
+        lost.id,
+    )
     db.session.commit()
+    lost.redis_job.delete()
     time.sleep(0.05)
     WorkerAsyncJob.check_timeouts()
-    queued = WorkerAsyncJob.query.get(queued_id)
-    assert queued.pending and not queued.failed
+    for job_id in [queued_id, backlog_id]:
+        job = WorkerAsyncJob.query.get(job_id)
+        assert job.pending and not job.failed
     assert WorkerAsyncJob.query.get(stalled_id).failed
-    assert "probably lost" in WorkerAsyncJob.query.get(lost_id).failed_reason
+    lost = WorkerAsyncJob.query.get(lost_id)
+    assert "probably lost" in lost.failed_reason and not lost.pending
 
     WorkerAsyncJob.call_function(queued_id)
     queued = WorkerAsyncJob.query.get(queued_id)
