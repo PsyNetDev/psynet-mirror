@@ -317,6 +317,24 @@ def test_a_test_whose_bots_did_not_all_start_is_not_within_capacity():
     ]
 
 
+def test_a_test_whose_bots_were_never_all_running_is_not_within_capacity():
+    result = _base_result(n_bots=1820, slots_started=1820, peak_running=1050)
+
+    assert capacity_failures(result) == [
+        "at most 1,050 of 1,820 bots were taking part at once, because new bots "
+        "could not start fast enough"
+    ]
+
+
+def test_each_endpoint_must_stay_within_the_response_time_limit():
+    result = _base_result(
+        p95_response_time=0.426,
+        endpoint_p95={"/timeline": 0.191, "/response": 0.511},
+    )
+
+    assert capacity_failures(result) == ["p95 response time for /response 511 ms"]
+
+
 # --- colorize_success_rate ---
 
 
