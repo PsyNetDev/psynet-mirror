@@ -30,8 +30,9 @@ Async job CPU time (CPU-heavy: mean CPU >= 50% of mean wall time):
 ```
 
 `Runs in` is `worker` for `WorkerAsyncJob` jobs, which run in worker
-processes, and `web` for `LocalAsyncJob` jobs, such as asset deposits, which
-run in a thread of the web process.
+processes, and `web` for `LocalAsyncJob` jobs, such as asset deposits. These
+run in a thread of the process that enqueued them, which is usually the web
+process; one enqueued from a worker job runs in that worker.
 
 If the log says `No async jobs finished.` and the experiment doesn't use async
 jobs, it puts no load on the workers; go straight to the performance test. If
@@ -74,6 +75,11 @@ jobs that ran while this one waited on I/O. With a few bots in
 `psynet test local` the jobs mostly run alone, so the numbers are close to
 exact; under load they are an upper bound. Your computer may also be faster
 or slower than the server.
+
+`cpu_time` counts only the job's own thread. CPU used by subprocesses (such as
+`ffmpeg`) or by library threads (such as NumPy's BLAS) is missing, so a job
+that shells out can look I/O-bound. For such jobs, judge from `Mean wall`
+and confirm with the performance test.
 
 ## Confirm with a performance test
 
