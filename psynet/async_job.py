@@ -45,8 +45,10 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
+    and_,
     func,
     inspect,
+    or_,
 )
 from sqlalchemy.exc import NoResultFound
 from sqlalchemy.orm import deferred, relationship
@@ -406,11 +408,12 @@ class AsyncJob(SQLBase, SQLMixin):
             experiment = get_experiment()
 
             job = cls.get_async_job(async_job_id)
-            if getattr(job, "cancelled", False):
-                logger.info("Async job %s was cancelled; skipping.", async_job_id)
-                return
             if job.failed:
-                logger.info("Async job %s has already failed; skipping.", async_job_id)
+                logger.info(
+                    "Async job %s has already failed or was cancelled; skipping.",
+                    async_job_id,
+                )
+                job.pending = False
                 return
             function = job.function
 
@@ -516,7 +519,8 @@ def _launch_unless_cancelled(spec):
         _send_alert(
             f"Async job {spec['id']} ({spec['class'].__name__}) was "
             "saved but could not be launched, "
-            "so it stays pending."
+            "so it stays pending; if it has not started within an hour, "
+            "it will be failed."
         )
 
 
@@ -668,13 +672,25 @@ class WorkerAsyncJob(AsyncJob):
     timeout : float, optional
         Seconds after which the job fails if it has not finished, counted
         from when a worker starts running it. Time spent waiting in the
-        queue does not count.
+        queue does not count, but a job that has not started within
+        :attr:`max_queue_wait_sec` (1 hour) of being enqueued is failed.
     priority : str, default ``"high"``
         The RQ queue the job runs on, ``"high"`` or ``"low"``. Workers take
         jobs from the ``high`` queue before the ``low`` queue, but do not
         interrupt a running job: a high-priority job still waits for a free
         worker if every worker is busy.
+
+    Attributes
+    ----------
+    max_queue_wait_sec : int
+        Seconds a job may wait in the queue before :meth:`check_timeouts`
+        fails it, whether or not it has a ``timeout`` (default 3600, i.e.
+        1 hour). A job that has not started by then is assumed lost, for
+        example because its launch failed or Redis restarted; it is failed
+        rather than re-run, and a worker that picks it up later skips it.
     """
+
+    max_queue_wait_sec = 3600
 
     timeout = Column(Float)
     timeout_scheduled_for = Column(DateTime)
@@ -742,16 +758,33 @@ class WorkerAsyncJob(AsyncJob):
 
     @classmethod
     def check_timeouts(cls):
+        """Fail jobs that have timed out or have waited too long to start.
+
+        A job times out once it has run for longer than its ``timeout``. A job
+        that has not started :attr:`max_queue_wait_sec` after being enqueued
+        is failed too, because its launch failed or its RQ job was lost.
+        """
+        now = datetime.datetime.now()
+        start_deadline = now - datetime.timedelta(seconds=cls.max_queue_wait_sec)
         jobs = cls.query.filter(
             cls.pending,
             ~cls.failed,
-            cls.timeout != None,  # noqa -- this is special SQLAlchemy syntax
-            cls.timeout_scheduled_for < datetime.datetime.now(),
+            or_(
+                cls.timeout_scheduled_for < now,
+                and_(
+                    cls.time_started == None,  # noqa: E711
+                    cls.time_enqueued < start_deadline,
+                ),
+            ),
         ).all()
         for job in jobs:
-            job.fail(
-                "Async job timed out",
-            )
+            if job.time_started is None:
+                job.fail(
+                    f"Async job did not start within {cls.max_queue_wait_sec} s "
+                    "of being enqueued; it was probably lost"
+                )
+            else:
+                job.fail("Async job timed out")
             if job.participant_id is not None:
                 from psynet.timeline_hold import _queue_timeline_hold_wake
 

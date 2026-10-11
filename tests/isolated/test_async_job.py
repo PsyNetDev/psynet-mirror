@@ -1,3 +1,4 @@
+import datetime
 import tempfile
 import threading
 import time
@@ -388,21 +389,26 @@ def test_timeout_counts_from_start_not_enqueue(monkeypatch):
     queued = WorkerAsyncJob(do_nothing, timeout=0.01).enqueue()
     stalled = WorkerAsyncJob(do_nothing, timeout=0.01).enqueue()
     stalled.log_time_started()
-    queued_id, stalled_id = queued.id, stalled.id
+    lost = WorkerAsyncJob(do_nothing).enqueue()
+    lost.time_enqueued -= datetime.timedelta(hours=2)
+    queued_id, stalled_id, lost_id = queued.id, stalled.id, lost.id
     db.session.commit()
     time.sleep(0.05)
     WorkerAsyncJob.check_timeouts()
     queued = WorkerAsyncJob.query.get(queued_id)
     assert queued.pending and not queued.failed
     assert WorkerAsyncJob.query.get(stalled_id).failed
+    assert "probably lost" in WorkerAsyncJob.query.get(lost_id).failed_reason
 
     WorkerAsyncJob.call_function(queued_id)
     queued = WorkerAsyncJob.query.get(queued_id)
     assert queued.finished and not queued.failed
     assert queued.timeout_scheduled_for > queued.time_started
 
-    WorkerAsyncJob.call_function(stalled_id)
-    assert not WorkerAsyncJob.query.get(stalled_id).finished
+    for job_id in [stalled_id, lost_id]:
+        WorkerAsyncJob.call_function(job_id)
+        job = WorkerAsyncJob.query.get(job_id)
+        assert not job.finished and not job.pending
 
 
 @pytest.mark.parametrize(
