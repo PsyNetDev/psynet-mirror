@@ -369,25 +369,15 @@ class PerformanceTester:
 
     def run(self, bot_counts=None, bot_log_file=None):
         """Run performance tests for one or more bot count values."""
-        raise_open_file_limit()
-        if bot_counts is None:
-            bot_counts = [self.n_bots]
-
+        bot_counts = bot_counts or [self.n_bots]
         self._print_suite_header(", ".join(str(n) for n in bot_counts))
-        all_results = []
-        with self._bot_runner(max(bot_counts), bot_log_file):
-            self._suite_started_at = datetime.datetime.now()
-            for i, n_bots in enumerate(bot_counts, 1):
-                if i > 1:
-                    self._pause_between_tests()
-                label = f"{i}/{len(bot_counts)}"
-                result = self._run_one_test(label, n_bots, bot_log_file)
-                all_results.append(result)
-                if _ended_early(result):
-                    break
 
-        self._print_performance_summary(all_results)
-        return all_results
+        def next_bot_count(results):
+            return bot_counts[len(results)] if len(results) < len(bot_counts) else None
+
+        return self._run_suite(
+            max(bot_counts), next_bot_count, bot_log_file, n_tests=len(bot_counts)
+        )
 
     def find_capacity(self, bot_log_file=None):
         """Search for the largest bot count the server handles within limits.
@@ -401,7 +391,6 @@ class PerformanceTester:
         list[dict]
             One result per test, in the order they ran.
         """
-        raise_open_file_limit()
         self._print_suite_header(
             f"automatic (from {_CAPACITY_SEARCH_START}, while keeping "
             f"{self.limits.describe()}; a test in which bots can't start fast "
@@ -413,22 +402,13 @@ class PerformanceTester:
             f"Expected run time:    up to {max_tests} tests, about "
             f"{max_tests * self.duration_minutes:g} min plus pauses between tests"
         )
-        all_results = []
-        with self._bot_runner(_CAPACITY_SEARCH_MAX, bot_log_file):
-            self._suite_started_at = datetime.datetime.now()
-            highest_pass = lowest_fail = None
-            while True:
-                n_bots = next_capacity_probe(highest_pass, lowest_fail)
-                if n_bots is None:
-                    break
-                if all_results:
-                    self._pause_between_tests()
-                label = f"{len(all_results) + 1}"
-                result = self._run_one_test(label, n_bots, bot_log_file)
-                all_results.append(result)
-                if _ended_early(result):
-                    break
-                causes = _capacity_failure_causes(result, self.limits)
+        highest_pass = lowest_fail = None
+
+        def next_bot_count(results):
+            nonlocal highest_pass, lowest_fail
+            if results:
+                n_bots = results[-1]["n_bots"]
+                causes = _capacity_failure_causes(results[-1], self.limits)
                 if causes:
                     outcome = (
                         "exceeded limits"
@@ -440,7 +420,33 @@ class PerformanceTester:
                     lowest_fail = n_bots
                 else:
                     highest_pass = n_bots
+            return next_capacity_probe(highest_pass, lowest_fail)
 
+        return self._run_suite(_CAPACITY_SEARCH_MAX, next_bot_count, bot_log_file)
+
+    def _run_suite(self, max_bots, next_bot_count, bot_log_file, n_tests=None):
+        """Run tests until ``next_bot_count(results_so_far)`` returns ``None``.
+
+        Stops early if a test ends early, then prints the summary. ``max_bots``
+        is the most bots any test may run, which sets the bot processes.
+
+        Returns
+        -------
+        list[dict]
+            One result per test, in the order they ran.
+        """
+        raise_open_file_limit()
+        all_results = []
+        with self._bot_runner(max_bots, bot_log_file):
+            self._suite_started_at = datetime.datetime.now()
+            while (n_bots := next_bot_count(all_results)) is not None:
+                if all_results:
+                    self._pause_between_tests()
+                label = f"{len(all_results) + 1}" + (f"/{n_tests}" if n_tests else "")
+                result = self._run_one_test(label, n_bots, bot_log_file)
+                all_results.append(result)
+                if _ended_early(result):
+                    break
         self._print_performance_summary(all_results)
         return all_results
 
