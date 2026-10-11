@@ -26,6 +26,12 @@ def failing_function():
     assert False, "This is an intentional error thrown for testing purposes."
 
 
+def busy_for(seconds):
+    end = time.thread_time() + seconds
+    while time.thread_time() < end:
+        pass
+
+
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("static")], indirect=True
 )
@@ -86,6 +92,16 @@ class TestAsyncJobs2:
                 assert p.finished
 
         assert abs(job.time_taken - 1) < 0.5
+        assert job.cpu_time < 0.2
+
+    def test_cpu_bound_job_records_cpu_time(self):
+        job = LocalAsyncJob(busy_for, {"seconds": 0.3}).enqueue()
+        db.session.commit()
+        time.sleep(1)
+        db.session.commit()
+
+        assert job.finished
+        assert 0.3 <= job.cpu_time <= job.time_taken
 
     def test_invalid_function(self):
         def local_function():
@@ -340,3 +356,31 @@ def test_deprecated_process_names_still_work(monkeypatch, participant):
     assert launched == [job.id]
     with pytest.warns(DeprecationWarning, match="renamed to async_jobs"):
         assert participant.async_processes == [job]
+
+
+def test_cpu_time_summary_flags_cpu_heavy_labels():
+    from psynet.async_job import _format_cpu_time_summary
+
+    summary = _format_cpu_time_summary(
+        [
+            {
+                "label": "analyse",
+                "count": 3,
+                "mean_cpu": 0.8,
+                "max_cpu": 1.2,
+                "mean_wall": 1.0,
+            },
+            {
+                "label": "upload",
+                "count": 5,
+                "mean_cpu": 0.01,
+                "max_cpu": 0.02,
+                "mean_wall": 0.5,
+            },
+        ]
+    )
+    rows = {line.split()[0]: line.split() for line in summary.splitlines()[2:]}
+    assert rows["analyse"][1:] == ["3", "0.800", "1.200", "1.000", "yes"]
+    assert rows["upload"][-1] == "no"
+
+    assert _format_cpu_time_summary([]) == "No async jobs ran."

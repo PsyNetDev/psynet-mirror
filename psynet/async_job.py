@@ -43,6 +43,7 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
+    func,
     inspect,
 )
 from sqlalchemy.exc import NoResultFound
@@ -133,8 +134,22 @@ class AsyncJob(SQLBase, SQLMixin):
         A label for the job; defaults to the function's name.
     unique : bool or dict, optional
         If ``True``, enqueueing fails with an ``IntegrityError`` when a job
-        with the same label, function and arguments already exists. A dict
+        with the same label, function and arguments already exists.         A dict
         is used as the uniqueness key instead.
+
+    Attributes
+    ----------
+    time_taken : float
+        Wall-clock seconds the job took to run.
+    queue_delay : float
+        Seconds between enqueueing the job and the job starting.
+    cpu_time : float
+        CPU seconds used by the job's thread while its function ran,
+        measured with :func:`time.thread_time`. CPU used by other processes,
+        such as the database server, is not counted. In a gevent worker the
+        measurement also counts other greenlets that ran while this job
+        waited on I/O, so it is exact for jobs that run alone and an upper
+        bound when jobs overlap.
     """
 
     __tablename__ = "async_job"
@@ -149,6 +164,7 @@ class AsyncJob(SQLBase, SQLMixin):
     time_finished = Column(DateTime)
     time_taken = Column(Float)
     queue_delay = Column(Float)
+    cpu_time = Column(Float)
     _unique_key = Column(PythonDict, unique=True)
 
     participant_id = Column(Integer, ForeignKey("participant.id"), index=True)
@@ -369,11 +385,13 @@ class AsyncJob(SQLBase, SQLMixin):
             db.session.commit()
 
             token = _running_async_job.set(True)
+            cpu_timer = time.thread_time()
             try:
                 function(**arguments)
             finally:
                 _running_async_job.reset(token)
 
+            job.cpu_time = time.thread_time() - cpu_timer
             job.time_finished = datetime.datetime.now()
             job.time_taken = time.monotonic() - timer
             job.pending = False
@@ -462,6 +480,67 @@ def _launch_unless_cancelled(spec):
             "saved but could not be launched, "
             "so it stays pending until its timeout, if any."
         )
+
+
+_CPU_HEAVY_RATIO = 0.5
+
+
+def _get_cpu_time_summary():
+    """Return CPU and wall times of finished async jobs, grouped by label."""
+    rows = (
+        db.session.query(
+            AsyncJob.label,
+            func.count(AsyncJob.id),
+            func.avg(AsyncJob.cpu_time),
+            func.max(AsyncJob.cpu_time),
+            func.avg(AsyncJob.time_taken),
+        )
+        .filter(
+            AsyncJob.finished == True,  # noqa: E712
+            AsyncJob.cpu_time != None,  # noqa: E711
+            AsyncJob.time_taken != None,  # noqa: E711
+        )
+        .group_by(AsyncJob.label)
+        .order_by(AsyncJob.label)
+        .all()
+    )
+    keys = ["label", "count", "mean_cpu", "max_cpu", "mean_wall"]
+    return [dict(zip(keys, row)) for row in rows]
+
+
+def _format_cpu_time_summary(rows):
+    """Format the output of :func:`_get_cpu_time_summary` as a table.
+
+    A label counts as CPU-heavy when its mean CPU time is at least
+    ``_CPU_HEAVY_RATIO`` of its mean wall time; such jobs need a CPU core
+    each while they run, whereas I/O-bound jobs mostly wait.
+    """
+    if not rows:
+        return "No async jobs ran."
+    header = ["Label", "Count", "Mean CPU (s)", "Max CPU (s)", "Mean wall (s)"]
+    table = [header + ["CPU-heavy"]]
+    for row in rows:
+        cpu_heavy = row["mean_cpu"] >= _CPU_HEAVY_RATIO * row["mean_wall"]
+        table.append(
+            [
+                row["label"],
+                str(row["count"]),
+                f"{row['mean_cpu']:.3f}",
+                f"{row['max_cpu']:.3f}",
+                f"{row['mean_wall']:.3f}",
+                "yes" if cpu_heavy else "no",
+            ]
+        )
+    widths = [max(len(line[i]) for line in table) for i in range(len(header) + 1)]
+    lines = [
+        f"Async job CPU time (CPU-heavy: mean CPU >= {_CPU_HEAVY_RATIO:.0%} "
+        "of mean wall time):"
+    ]
+    for line in table:
+        cells = [line[0].ljust(widths[0])]
+        cells += [cell.rjust(width) for cell, width in zip(line[1:], widths[1:])]
+        lines.append("  " + "  ".join(cells))
+    return "\n".join(lines)
 
 
 class LocalAsyncJob(AsyncJob):
