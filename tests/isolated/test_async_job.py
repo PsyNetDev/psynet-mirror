@@ -14,6 +14,8 @@ import psynet.experiment  # noqa -- to ensure that all SQLAlchemy classes are re
 from psynet.async_job import LocalAsyncJob, WorkerAsyncJob
 from psynet.db import forbid_commits
 from psynet.pytest_psynet import path_to_test_experiment
+from psynet.timeline import AsyncCodeBlock
+from psynet.trial.main import Trial
 
 
 def do_nothing():
@@ -273,7 +275,9 @@ def test_failed_launch_alerts_and_later_launches_still_run(monkeypatch):
 @pytest.mark.usefixtures("launched_experiment")
 def test_cancel_cancels_the_queued_worker_job(monkeypatch):
     unworked_queue = Queue("psynet_test_unworked", connection=redis_conn)
-    monkeypatch.setattr(WorkerAsyncJob, "redis_queue", unworked_queue)
+    monkeypatch.setattr(
+        WorkerAsyncJob, "get_redis_queue", classmethod(lambda cls, p: unworked_queue)
+    )
 
     job = WorkerAsyncJob(do_nothing).enqueue()
     db.session.commit()
@@ -389,6 +393,65 @@ def test_enqueue_starts_timeout_and_enforces_unique():
     db.session.rollback()
 
 
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("static")], indirect=True
+)
+@pytest.mark.usefixtures("launched_experiment")
+def test_worker_job_runs_on_the_queue_named_by_its_priority():
+    default = WorkerAsyncJob(do_nothing).enqueue()
+    low = WorkerAsyncJob(do_nothing, priority="low").enqueue()
+    db.session.commit()
+
+    assert default.priority == "high"
+    assert default.redis_job.origin == "high"
+    assert low.redis_job.origin == "low"
+
+
+def test_invalid_priority_raises():
+    with pytest.raises(ValueError, match="priority"):
+        WorkerAsyncJob(do_nothing, priority="urgent")
+    with pytest.raises(ValueError, match="priority"):
+        AsyncCodeBlock(do_nothing, wait=False, priority="default")
+
+
+def test_async_code_block_priority_follows_wait():
+    assert AsyncCodeBlock(do_nothing, expected_wait=1).priority == "high"
+    assert AsyncCodeBlock(do_nothing, wait=False).priority == "low"
+    assert AsyncCodeBlock(do_nothing, wait=False, priority="high").priority == "high"
+
+
+class _FeedbackTrial(Trial):
+    def show_feedback(self, experiment, participant):
+        pass
+
+
+class _NoWaitFeedbackTrial(_FeedbackTrial):
+    wait_for_feedback = False
+
+
+class _LowFeedbackTrial(_FeedbackTrial):
+    async_post_trial_priority = "low"
+
+
+@pytest.mark.parametrize(
+    "trial_class, check_performance, expected",
+    [
+        (Trial, False, "low"),
+        (Trial, True, "high"),
+        (_FeedbackTrial, False, "high"),
+        (_NoWaitFeedbackTrial, False, "low"),
+        (_LowFeedbackTrial, True, "low"),
+    ],
+)
+def test_async_post_trial_priority(trial_class, check_performance, expected):
+    for flag in ["check_performance_at_end", "check_performance_every_trial"]:
+        trial_maker = types.SimpleNamespace(
+            check_performance_at_end=False, check_performance_every_trial=False
+        )
+        setattr(trial_maker, flag, check_performance)
+        assert trial_class._get_async_post_trial_priority(trial_maker) == expected
+
+
 def test_cpu_time_summary_flags_cpu_heavy_labels():
     from psynet.async_job import _format_cpu_time_summary
 
@@ -396,6 +459,7 @@ def test_cpu_time_summary_flags_cpu_heavy_labels():
         [
             {
                 "label": "analyse",
+                "priority": "high",
                 "count": 3,
                 "mean_cpu": 0.8,
                 "max_cpu": 1.2,
@@ -403,6 +467,7 @@ def test_cpu_time_summary_flags_cpu_heavy_labels():
             },
             {
                 "label": "upload",
+                "priority": None,
                 "count": 5,
                 "mean_cpu": 0.01,
                 "max_cpu": 0.02,
@@ -411,7 +476,8 @@ def test_cpu_time_summary_flags_cpu_heavy_labels():
         ]
     )
     rows = {line.split()[0]: line.split() for line in summary.splitlines()[2:]}
-    assert rows["analyse"][1:] == ["3", "0.800", "1.200", "1.000", "yes"]
+    assert rows["analyse"][1:] == ["high", "3", "0.800", "1.200", "1.000", "yes"]
+    assert rows["upload"][1] == "-"
     assert rows["upload"][-1] == "no"
 
     assert _format_cpu_time_summary([]) == "No async jobs finished."

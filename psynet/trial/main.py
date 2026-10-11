@@ -255,6 +255,14 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         to ``False`` to give feedback straight away; ``show_feedback`` may then see a trial
         whose async jobs are still running and whose ``score`` is not yet set.
 
+    async_post_trial_priority : str or None
+        Priority of the :meth:`~psynet.trial.main.Trial.async_post_trial` job,
+        ``"high"`` or ``"low"``; see :class:`~psynet.async_job.WorkerAsyncJob`.
+        If ``None`` (default), it is ``"high"`` when a participant may wait for
+        the result, i.e. when the trial maker checks performance or the trial
+        overrides :meth:`~psynet.trial.main.Trial.show_feedback` with
+        ``wait_for_feedback`` set, and ``"low"`` otherwise.
+
     accumulate_answers : bool
         Set this class attribute to ``True`` if the trial contains multiple pages and you want
         the answers to all of these pages to be stored as a dict in ``participant.answer``,
@@ -798,6 +806,24 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         # )
 
     run_async_post_trial = None
+    async_post_trial_priority = None
+
+    @classmethod
+    def _get_async_post_trial_priority(cls, trial_maker):
+        """Return the priority of this trial class's ``async_post_trial`` job.
+
+        See :attr:`async_post_trial_priority` for the rules.
+        """
+        if cls.async_post_trial_priority is not None:
+            return cls.async_post_trial_priority
+        if trial_maker is not None and (
+            trial_maker.check_performance_at_end
+            or trial_maker.check_performance_every_trial
+        ):
+            return "high"
+        if cls.wait_for_feedback and cls.show_feedback is not Trial.show_feedback:
+            return "high"
+        return "low"
 
     def async_post_trial(self):
         """
@@ -1080,6 +1106,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             timeout=self.trial_maker.async_timeout_sec,
             trial=self,
             unique=True,
+            priority=self._get_async_post_trial_priority(self.trial_maker),
         ).enqueue()
 
     def on_finalized(self):
@@ -3168,6 +3195,8 @@ class NetworkTrialMaker(TrialMaker):
             label="post_grow_network",
             timeout=self.async_timeout_sec,
             network=network,
+            # Participants may wait for the network's next node.
+            priority="high",
         ).enqueue()
 
     @property
@@ -3680,6 +3709,8 @@ class TrialNode(SQLMixinDallinger, dallinger.models.Node, AssetParentMixin):
             node=self,
             timeout=self.trial_maker.async_timeout_sec,
             unique=True,
+            # Participants may wait for this node to be deployed.
+            priority="high",
         ).enqueue()
         self.async_on_deploy_requested = True
 

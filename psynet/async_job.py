@@ -18,6 +18,9 @@ network, response, asset) through the ``async_jobs`` relationships on those
 models. When a job fails, :attr:`AsyncJob.failure_cascade` fails its trial
 and node, and the error is recorded as an :class:`~psynet.error.ErrorRecord`
 pointing at the job.
+
+A :class:`WorkerAsyncJob` has a priority, ``"high"`` or ``"low"``, naming the
+RQ queue it is enqueued on; workers take jobs from the ``high`` queue first.
 """
 
 import datetime
@@ -30,7 +33,6 @@ from functools import partial
 import dallinger.db
 from dallinger import db
 from dallinger.db import redis_conn
-from dallinger.utils import classproperty
 from redis.exceptions import RedisError
 from rq import Queue
 from rq.exceptions import InvalidJobOperation, NoSuchJobError
@@ -65,6 +67,17 @@ from .utils import get_logger
 logger = get_logger()
 
 _RECHECK_LOCK_TIMEOUT_SECONDS = 5
+
+PRIORITIES = ("high", "low")
+
+
+def check_priority(priority):
+    """Raise ``ValueError`` unless ``priority`` is one of :data:`PRIORITIES`."""
+    if priority not in PRIORITIES:
+        raise ValueError(
+            f"Invalid async job priority {priority!r}; expected one of {PRIORITIES}."
+        )
+
 
 _running_async_job = ContextVar("psynet_running_async_job", default=False)
 
@@ -136,6 +149,9 @@ class AsyncJob(SQLBase, SQLMixin):
         If ``True``, enqueueing fails with an ``IntegrityError`` when a job
         with the same label, function and arguments already exists. A dict
         is used as the uniqueness key instead.
+    priority : str, optional
+        ``"high"`` or ``"low"``; see :class:`WorkerAsyncJob`. It is stored
+        on a :class:`LocalAsyncJob` too, but has no effect there.
 
     Attributes
     ----------
@@ -165,6 +181,7 @@ class AsyncJob(SQLBase, SQLMixin):
     time_taken = Column(Float)
     queue_delay = Column(Float)
     cpu_time = Column(Float)
+    priority = Column(String)
     _unique_key = Column(PythonDict, unique=True)
 
     participant_id = Column(Integer, ForeignKey("participant.id"), index=True)
@@ -205,7 +222,12 @@ class AsyncJob(SQLBase, SQLMixin):
         asset=None,
         label=None,
         unique=False,
+        priority=None,
     ):
+        if priority is not None:
+            check_priority(priority)
+        self.priority = priority
+
         if label is None:
             label = function.__name__
 
@@ -335,10 +357,6 @@ class AsyncJob(SQLBase, SQLMixin):
     @classmethod
     def launch(cls, spec: dict):
         raise NotImplementedError
-
-    @classproperty
-    def redis_queue(cls):
-        return Queue("default", connection=redis_conn)
 
     @classmethod
     def call_function_with_logger(cls, async_job_id):
@@ -503,10 +521,11 @@ _CPU_HEAVY_RATIO = 0.5
 
 
 def _get_cpu_time_summary():
-    """Return CPU and wall times of finished async jobs, grouped by label."""
+    """Return CPU and wall times of finished async jobs, grouped by label and priority."""
     rows = (
         db.session.query(
             AsyncJob.label,
+            AsyncJob.priority,
             func.count(AsyncJob.id),
             func.avg(AsyncJob.cpu_time),
             func.max(AsyncJob.cpu_time),
@@ -517,11 +536,11 @@ def _get_cpu_time_summary():
             AsyncJob.cpu_time != None,  # noqa: E711
             AsyncJob.time_taken != None,  # noqa: E711
         )
-        .group_by(AsyncJob.label)
-        .order_by(AsyncJob.label)
+        .group_by(AsyncJob.label, AsyncJob.priority)
+        .order_by(AsyncJob.label, AsyncJob.priority)
         .all()
     )
-    keys = ["label", "count", "mean_cpu", "max_cpu", "mean_wall"]
+    keys = ["label", "priority", "count", "mean_cpu", "max_cpu", "mean_wall"]
     return [dict(zip(keys, row)) for row in rows]
 
 
@@ -530,17 +549,26 @@ def _format_cpu_time_summary(rows):
 
     A label counts as CPU-heavy when its mean CPU time is at least
     ``_CPU_HEAVY_RATIO`` of its mean wall time; such jobs need a CPU core
-    each while they run, whereas I/O-bound jobs mostly wait.
+    each while they run, whereas I/O-bound jobs mostly wait. Jobs without a
+    priority, such as :class:`LocalAsyncJob`, show ``-``.
     """
     if not rows:
         return "No async jobs finished."
-    header = ["Label", "Count", "Mean CPU (s)", "Max CPU (s)", "Mean wall (s)"]
+    header = [
+        "Label",
+        "Priority",
+        "Count",
+        "Mean CPU (s)",
+        "Max CPU (s)",
+        "Mean wall (s)",
+    ]
     table = [header + ["CPU-heavy"]]
     for row in rows:
         cpu_heavy = row["mean_cpu"] >= _CPU_HEAVY_RATIO * row["mean_wall"]
         table.append(
             [
                 row["label"],
+                row["priority"] or "-",
                 str(row["count"]),
                 f"{row['mean_cpu']:.3f}",
                 f"{row['max_cpu']:.3f}",
@@ -554,8 +582,8 @@ def _format_cpu_time_summary(rows):
         "of mean wall time):"
     ]
     for line in table:
-        cells = [line[0].ljust(widths[0])]
-        cells += [cell.rjust(width) for cell, width in zip(line[1:], widths[1:])]
+        cells = [cell.ljust(width) for cell, width in zip(line[:2], widths[:2])]
+        cells += [cell.rjust(width) for cell, width in zip(line[2:], widths[2:])]
         lines.append("  " + "  ".join(cells))
     return "\n".join(lines)
 
@@ -615,6 +643,11 @@ class WorkerAsyncJob(AsyncJob):
     ----------
     timeout : float, optional
         Seconds after which the job fails if it has not finished.
+    priority : str, default ``"high"``
+        The RQ queue the job runs on, ``"high"`` or ``"low"``. Workers take
+        jobs from the ``high`` queue before the ``low`` queue, but do not
+        interrupt a running job: a high-priority job still waits for a free
+        worker if every worker is busy.
     """
 
     timeout = Column(Float)
@@ -624,6 +657,7 @@ class WorkerAsyncJob(AsyncJob):
     def get_launch_spec(self) -> dict:
         spec = super().get_launch_spec()
         spec["timeout"] = self.timeout
+        spec["priority"] = self.priority
         return spec
 
     def __init__(
@@ -639,7 +673,9 @@ class WorkerAsyncJob(AsyncJob):
         label=None,
         unique=False,
         timeout=None,
+        priority="high",
     ):
+        check_priority(priority)
         self.timeout = timeout
         super().__init__(
             function,
@@ -652,6 +688,7 @@ class WorkerAsyncJob(AsyncJob):
             asset=asset,
             label=label,
             unique=unique,
+            priority=priority,
         )
 
     def enqueue(self):
@@ -670,8 +707,13 @@ class WorkerAsyncJob(AsyncJob):
         return self
 
     @classmethod
+    def get_redis_queue(cls, priority):
+        """Return the RQ queue for jobs of the given priority."""
+        return Queue(priority, connection=redis_conn)
+
+    @classmethod
     def launch(cls, spec: dict):
-        cls.redis_queue.enqueue_call(
+        cls.get_redis_queue(spec["priority"]).enqueue_call(
             func=cls.call_function_with_logger,
             args=(),
             kwargs=dict(async_job_id=spec["id"]),
