@@ -234,7 +234,10 @@ experiment's services, and opens recruitment; see
 :doc:`/deploy/how_deployment_works`. It prepares the experiment's starting
 database on your computer first, which clears the local PostgreSQL database
 and Redis and stops local PsyNet workers, so stop any local experiment before
-you deploy. When it finishes it prints:
+you deploy. ``psynet debug ssh`` and ``psynet debug heroku`` do the same. These
+commands ask before resetting if a local server or participant data is found;
+pass ``--yes`` to skip the question. When ``psynet deploy ssh`` finishes, it
+prints:
 
 - the recruitment message (for Prolific, a link to the new draft study);
 - the dashboard link with its user name and password;

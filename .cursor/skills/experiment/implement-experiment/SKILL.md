@@ -174,10 +174,13 @@ development folder, and starting one stops the other's workers. Before each
 `psynet debug local`, `psynet test local` or `psynet audit simulate`, check that
 nothing else is listening on port 5000 (`lsof -nP -iTCP:5000 -sTCP:LISTEN`).
 If another experiment is running, ask the user to stop it rather than stopping
-it yourself, and record the wait in the audit timeline. `psynet deploy`
-commands also clear the local database and Redis, so don't run them while a
-local experiment is running. If local data disappears unexpectedly, check
-`ps` for a `psynet deploy` in another session before debugging your code.
+it yourself, and record the wait in the audit timeline. Remote launches
+(`psynet deploy ssh`, `psynet deploy heroku`, `psynet debug ssh` and
+`psynet debug heroku`) also clear the local database and Redis, so don't run
+them while a local experiment is running, and don't pass `--yes` to skip their
+warning. `--update` leaves local data alone. If local data disappears
+unexpectedly, check `ps` for one of these commands in another session before
+debugging your code.
 
 #### Coding
 

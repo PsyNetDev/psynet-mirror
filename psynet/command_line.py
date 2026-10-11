@@ -845,26 +845,90 @@ def run_prepare_in_subprocess():
     run_subprocess_with_live_output(prepare_cmd)
 
 
-def _prepare_after_stopping_local_workers(ctx, archive, update=False):
-    """Stop leftover local debug workers, then reset the local database.
+def _reset_local_data(*, remote, assume_yes=False):
+    """Reset this computer's Redis, and its database for remote launches.
 
-    Every launch path runs ``prepare`` against this machine's Postgres, so
-    leftover ``dallinger_heroku_*`` backends must be gone first. Chrome
-    windows are left alone here so a remote deploy does not close the
-    author's browser. An ``--update`` prepares only the image.
+    Launches build the experiment's starting database with ``prepare`` on this
+    computer, so leftover ``dallinger_heroku_*`` backends must be stopped
+    before tables are dropped. Chrome windows are left alone so a remote
+    launch does not close the author's browser.
+
+    Parameters
+    ----------
+    remote : bool
+        Whether the experiment will run elsewhere. Remote launches first say
+        what they reset, and ask before resetting data that is in use.
+    assume_yes : bool
+        Reset data that is in use without asking.
     """
+    if remote:
+        _confirm_local_data_reset(assume_yes)
+    redis_vars.clear()
     kill_psynet_worker_processes()
-    if update:
-        _prepare_image_for_update()
-    else:
-        ctx.invoke(prepare, archive=archive)
+    if remote:
+        init_db(drop_all=True)
+
+
+def _confirm_local_data_reset(assume_yes):
+    """Describe the local reset, and ask first if a server or participants use it."""
+    from .services import _is_interactive, _redis_url
+
+    database = _url_without_password(_current_database_url())
+    redis = _url_without_password(_redis_url())
+    click.echo(
+        "This launch builds the experiment's starting database on this computer. "
+        "To do so, it will:\n"
+        f"  - drop every table in the local database {database}\n"
+        f"  - delete every key in local Redis {redis}\n"
+        "  - stop any local PsyNet server using that database (e.g. psynet debug local)"
+    )
+    in_use = []
+    n_workers = len(list_psynet_worker_processes())
+    if n_workers:
+        in_use.append(
+            f"{n_workers} local PsyNet server process(es) are using this database."
+        )
+    n_participants = _count_local_participants()
+    if n_participants:
+        in_use.append(f"The local database contains {n_participants} participant(s).")
+    if not in_use:
+        return
+    click.echo("\n".join(in_use))
+    if assume_yes:
+        return
+    if not _is_interactive():
+        raise click.ClickException(
+            "Refusing to reset local data in a non-interactive session. "
+            "Re-run with --yes to reset it anyway, or stop the local experiment, "
+            "or point DATABASE_URL and REDIS_URL at a scratch database."
+        )
+    click.confirm("Reset this local data and continue?", default=False, abort=True)
+
+
+def _count_local_participants():
+    """Return the number of rows in the local ``participant`` table (0 if absent)."""
+    from sqlalchemy import inspect, text
+
+    with db.engine.connect() as connection:
+        if not inspect(connection).has_table("participant"):
+            return 0
+        return connection.execute(text("SELECT count(*) FROM participant")).scalar()
+
+
+def _url_without_password(url):
+    """Return ``url`` with any password removed, for display."""
+    parts = urlsplit(url)
+    if parts.password is None:
+        return url
+    host = parts.netloc.rpartition("@")[2]
+    netloc = f"{parts.username}@{host}" if parts.username else host
+    return parts._replace(netloc=netloc).geturl()
 
 
 def _prepare_image_for_update():
     """Prepare the image for ``--update``; the running app keeps its database."""
     from .experiment import get_experiment
 
-    redis_vars.clear()
     get_experiment().pre_deploy(update=True)
     clean_sys_modules()
     update_docker_tag()
@@ -1431,6 +1495,17 @@ _option_ssh_update = click.option(
     help="Rebuild a running app in place, keeping its database and skipping launch.",
 )
 
+_option_yes_reset_local_data = click.option(
+    "--yes",
+    "-y",
+    "assume_yes",
+    is_flag=True,
+    help=(
+        "Reset the local database and Redis without asking, even if a local "
+        "server or participants are using them."
+    ),
+)
+
 
 _SSH_COMMAND_FOR_MODE = {"sandbox": "psynet debug ssh", "live": "psynet deploy ssh"}
 
@@ -1514,6 +1589,7 @@ def _pre_launch(
     app=None,
     update=False,
     use_local_psynet=False,
+    assume_yes=False,
 ):
     from .experiment import get_experiment
 
@@ -1530,9 +1606,8 @@ def _pre_launch(
     # helpers on this machine before any remote packaging, so local Postgres
     # and Redis are required here even when the experiment ultimately runs
     # elsewhere.
-    ensure_local_services(assume_yes=False, strict=True)
+    ensure_local_services(assume_yes=False, strict=True, remote_launch=not local_)
 
-    redis_vars.clear()
     deployment_info.init(
         redeploying_from_archive=archive is not None,
         mode=mode,
@@ -1559,6 +1634,10 @@ def _pre_launch(
 
     run_pre_checks(mode, local_, heroku, docker, app, use_local_psynet)
 
+    # An --update only rebuilds the image, so it leaves local data alone.
+    if not update:
+        _reset_local_data(remote=not local_, assume_yes=assume_yes)
+
     if os.environ.get("DALLINGER_SOURCE"):
         os.environ.pop("DALLINGER_NO_EGG_BUILD", None)
     else:
@@ -1582,7 +1661,10 @@ def _pre_launch(
     if config.get("check_dallinger_version"):
         check_installed_dallinger_version_is_recommended()
 
-    _prepare_after_stopping_local_workers(ctx, archive, update=update)
+    if update:
+        _prepare_image_for_update()
+    else:
+        ctx.invoke(prepare, archive=archive)
 
     _forget_tables_defined_in_experiment_directory()
 
@@ -1642,13 +1724,15 @@ def deploy__local(ctx, docker, archive, legacy, no_browsers):
 @click.option("--app", callback=verify_id, required=True, help="Experiment id")
 @click.option("--archive", default=None, help="Optional path to an experiment archive")
 @click.option("--docker", is_flag=True, default=False, help="Deploy using Docker")
+@_option_yes_reset_local_data
 @click.pass_context
-def deploy__heroku(ctx, app, archive, docker):
+def deploy__heroku(ctx, app, archive, docker, assume_yes):
     """
     Deploy the experiment to Heroku.
     """
     if docker:
-        _deploy__docker_heroku(ctx, app, archive)
+        _deploy__docker_heroku(ctx, app, archive, assume_yes)
+        return
 
     try:
         from dallinger.command_line import deploy as dallinger_deploy
@@ -1660,6 +1744,7 @@ def deploy__heroku(ctx, app, archive, docker):
             local_=False,
             heroku=True,
             app=app,
+            assume_yes=assume_yes,
         )
         # Note: PsyNet bypasses Dallinger's deploy-from-archive system and uses its own, so we set archive=None.
         result = ctx.invoke(dallinger_deploy, verbose=True, app=app, archive=None)
@@ -1669,7 +1754,7 @@ def deploy__heroku(ctx, app, archive, docker):
         reset_console()
 
 
-def _deploy__docker_heroku(ctx, app, archive):
+def _deploy__docker_heroku(ctx, app, archive, assume_yes=False):
     try:
         from dallinger.command_line.docker import deploy as dallinger_deploy
 
@@ -1687,6 +1772,7 @@ def _deploy__docker_heroku(ctx, app, archive):
             docker=True,
             heroku=True,
             app=app,
+            assume_yes=assume_yes,
         )
         result = ctx.invoke(dallinger_deploy, verbose=True, app=app)
         _post_deploy(result)
@@ -1705,6 +1791,7 @@ def _deploy__docker_heroku(ctx, app, archive):
 )
 @option_ingress
 @_option_ssh_update
+@_option_yes_reset_local_data
 @click.pass_context
 def deploy__docker_ssh(
     ctx,
@@ -1714,6 +1801,7 @@ def deploy__docker_ssh(
     server,
     ingress=None,
     update=False,
+    assume_yes=False,
 ):
     """
     Deploy the experiment to a remote server via Docker and SSH.
@@ -1736,6 +1824,7 @@ def deploy__docker_ssh(
             server=server,
             app=app,
             update=update,
+            assume_yes=assume_yes,
         )
 
         from dallinger.command_line.docker_ssh import (
@@ -2129,8 +2218,6 @@ def run_pre_checks(
         check_dockerfile()
 
     if not local_:
-        init_db(drop_all=True)
-
         config = get_config()
         if not config.ready:
             config.load()
@@ -2212,19 +2299,26 @@ def run_pre_checks_sandbox():
 )
 @click.option("--docker", is_flag=True, help="Docker mode.")
 @click.option("--archive", default=None, help="Optional path to an experiment archive.")
+@_option_yes_reset_local_data
 @click.pass_context
-def debug__heroku(ctx, app, docker, archive):
+def debug__heroku(ctx, app, docker, archive, assume_yes):
     """
     Debug the experiment on Heroku.
     """
     if docker:
-        debug__docker_heroku(ctx, app, archive)
+        debug__docker_heroku(ctx, app, archive, assume_yes)
     else:
         from dallinger.command_line import sandbox as dallinger_sandbox
 
         try:
             _pre_launch(
-                ctx, mode="sandbox", archive=archive, local_=False, heroku=True, app=app
+                ctx,
+                mode="sandbox",
+                archive=archive,
+                local_=False,
+                heroku=True,
+                app=app,
+                assume_yes=assume_yes,
             )
             # Note: PsyNet bypasses Dallinger's deploy-from-archive system and uses its own, so we set archive=None.
             result = ctx.invoke(dallinger_sandbox, verbose=True, app=app, archive=None)
@@ -2234,7 +2328,7 @@ def debug__heroku(ctx, app, docker, archive):
             reset_console()
 
 
-def debug__docker_heroku(ctx, app, archive):
+def debug__docker_heroku(ctx, app, archive, assume_yes=False):
     from dallinger.command_line.docker import sandbox as dallinger_sandbox
 
     try:
@@ -2244,7 +2338,13 @@ def debug__docker_heroku(ctx, app, archive):
                 "This shouldn't be hard to fix..."
             )
         _pre_launch(
-            ctx, mode="sandbox", archive=archive, local_=False, docker=True, app=app
+            ctx,
+            mode="sandbox",
+            archive=archive,
+            local_=False,
+            docker=True,
+            app=app,
+            assume_yes=assume_yes,
         )
         result = ctx.invoke(dallinger_sandbox, verbose=True, app=app)
         _post_deploy(result)
@@ -2267,6 +2367,7 @@ def debug__docker_heroku(ctx, app, archive):
 @_use_local_psynet_option
 @_use_local_dallinger_option
 @_option_ssh_update
+@_option_yes_reset_local_data
 @click.pass_context
 def debug__docker_ssh(
     ctx,
@@ -2278,6 +2379,7 @@ def debug__docker_ssh(
     use_local_psynet=False,
     use_local_dallinger=False,
     update=False,
+    assume_yes=False,
 ):
     """
     Debug the experiment on a remote server via SSH.
@@ -2299,6 +2401,7 @@ def debug__docker_ssh(
             app=app,
             update=update,
             use_local_psynet=use_local_psynet,
+            assume_yes=assume_yes,
         )
 
         with _local_psynet_wheel(enabled=use_local_psynet):

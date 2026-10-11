@@ -3866,6 +3866,7 @@ def test_pre_launch_skips_dependency_check_for_in_repo_experiments(
     )
     monkeypatch.setattr("psynet.services.ensure_local_services", lambda **kwargs: None)
     monkeypatch.setattr("psynet.command_line.redis_vars.clear", lambda: None)
+    monkeypatch.setattr("psynet.command_line.kill_psynet_worker_processes", Mock())
     monkeypatch.setattr(
         "psynet.command_line.deployment_info.init", lambda **kwargs: None
     )
@@ -4136,21 +4137,6 @@ def test_run_local_prepares_before_legacy_cleanup():
     assert order == ["pre_launch", "cleanup", "debug"]
 
 
-def test_prepare_after_stopping_local_workers_kills_then_prepares():
-    from psynet.command_line import _prepare_after_stopping_local_workers, prepare
-
-    order = []
-    ctx = Mock()
-    ctx.invoke.side_effect = lambda *args, **kwargs: order.append("prepare")
-    with patch(
-        "psynet.command_line.kill_psynet_worker_processes",
-        lambda: order.append("kill"),
-    ):
-        _prepare_after_stopping_local_workers(ctx, archive="export.zip")
-    assert order == ["kill", "prepare"]
-    ctx.invoke.assert_called_once_with(prepare, archive="export.zip")
-
-
 def test_worker_cleanup_only_targets_this_database(monkeypatch, tmp_path):
     from psynet.command_line import list_psynet_worker_processes
 
@@ -4259,7 +4245,7 @@ def test_kill_psynet_worker_processes_warns_with_pids(caplog):
 
 
 def test_pre_launch_stops_workers_before_prepare(monkeypatch):
-    from psynet.command_line import _pre_launch
+    from psynet.command_line import _pre_launch, prepare
 
     calls = []
     monkeypatch.setattr(
@@ -4267,6 +4253,10 @@ def test_pre_launch_stops_workers_before_prepare(monkeypatch):
     )
     monkeypatch.setattr("psynet.services.ensure_local_services", lambda **k: None)
     monkeypatch.setattr("psynet.command_line.redis_vars.clear", lambda: None)
+    monkeypatch.setattr(
+        "psynet.command_line.kill_psynet_worker_processes",
+        lambda: calls.append("kill"),
+    )
     monkeypatch.setattr("psynet.command_line.deployment_info.init", lambda **k: None)
     monkeypatch.setattr("psynet.command_line.deployment_info.write", lambda **k: None)
     monkeypatch.setattr("psynet.command_line.run_pre_checks", lambda *a, **k: None)
@@ -4277,16 +4267,124 @@ def test_pre_launch_stops_workers_before_prepare(monkeypatch):
     config = Mock()
     config.get.return_value = False
     monkeypatch.setattr("psynet.command_line.get_config", lambda: config)
-    monkeypatch.setattr(
-        "psynet.command_line._prepare_after_stopping_local_workers",
-        lambda ctx, archive, update=False: calls.append(("prepare", archive)),
-    )
+    ctx = Mock()
+    ctx.invoke.side_effect = lambda command, archive: calls.append((command, archive))
     monkeypatch.setattr(
         "psynet.command_line._forget_tables_defined_in_experiment_directory",
         lambda: calls.append("forget"),
     )
-    _pre_launch(Mock(), mode="debug", archive=None, local_=True, docker=False)
-    assert calls == [("prepare", None), "forget"]
+    _pre_launch(ctx, mode="debug", archive=None, local_=True, docker=False)
+    assert calls == ["kill", (prepare, None), "forget"]
+
+
+class _LaunchContinued(Exception):
+    """Raised where a launch loads the experiment, after any local reset."""
+
+
+@pytest.fixture
+def remote_launch(monkeypatch, tmp_path):
+    """Run a remote ``_pre_launch`` with its checks and local resets mocked."""
+    from psynet.command_line import _pre_launch
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("DATABASE_URL", "postgresql://dallinger:secret@localhost/demo")
+    for name in ("DALLINGER_NO_EGG_BUILD", "SKIP_DEPENDENCY_CHECK"):
+        monkeypatch.setenv(name, "")
+    for check in ("_check_experiment_directory", "run_pre_checks"):
+        monkeypatch.setattr(f"psynet.command_line.{check}", Mock())
+    monkeypatch.setattr("psynet.services.ensure_local_services", Mock())
+    resets = Mock()
+    monkeypatch.setattr("psynet.command_line.redis_vars.clear", resets.clear_redis)
+    monkeypatch.setattr(
+        "psynet.command_line.kill_psynet_worker_processes", resets.kill_workers
+    )
+    monkeypatch.setattr("psynet.command_line.init_db", resets.init_db)
+    monkeypatch.setattr(
+        "psynet.experiment.get_experiment", Mock(side_effect=_LaunchContinued)
+    )
+    confirm = Mock(return_value=True)
+    monkeypatch.setattr("click.confirm", confirm)
+
+    def launch(*, workers=0, participants=0, interactive=True, **kwargs):
+        monkeypatch.setattr(
+            "psynet.command_line.list_psynet_worker_processes",
+            lambda: [Mock()] * workers,
+        )
+        monkeypatch.setattr(
+            "psynet.command_line._count_local_participants", lambda: participants
+        )
+        monkeypatch.setattr("psynet.services._is_interactive", lambda: interactive)
+        with pytest.raises(_LaunchContinued):
+            _pre_launch(Mock(), mode="sandbox", archive=None, local_=False, **kwargs)
+
+    return launch, resets, confirm
+
+
+def test_remote_update_keeps_local_data(remote_launch):
+    launch, resets, confirm = remote_launch
+    launch(update=True, workers=1, participants=3)
+    assert resets.mock_calls == []
+    confirm.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "workers, participants, asks",
+    [(0, 0, False), (1, 0, True), (0, 3, True)],
+)
+def test_remote_launch_asks_before_resetting_local_data_in_use(
+    remote_launch, capsys, workers, participants, asks
+):
+    launch, resets, confirm = remote_launch
+    launch(workers=workers, participants=participants)
+    assert confirm.called == asks
+    assert resets.init_db.call_args.kwargs == {"drop_all": True}
+    resets.clear_redis.assert_called_once()
+    resets.kill_workers.assert_called_once()
+    output = capsys.readouterr().out
+    assert "postgresql://dallinger@localhost/demo" in output
+    assert "secret" not in output
+
+
+def test_remote_launch_resets_nothing_if_declined(remote_launch):
+    launch, resets, confirm = remote_launch
+    confirm.side_effect = click.Abort
+    with pytest.raises(click.Abort):
+        launch(workers=1)
+    assert resets.mock_calls == []
+
+
+def test_remote_launch_needs_yes_without_a_terminal(remote_launch):
+    launch, resets, confirm = remote_launch
+    with pytest.raises(click.ClickException, match="--yes"):
+        launch(participants=3, interactive=False)
+    assert resets.mock_calls == []
+
+    launch(participants=3, interactive=False, assume_yes=True)
+    confirm.assert_not_called()
+    resets.init_db.assert_called_once_with(drop_all=True)
+
+
+@pytest.mark.parametrize(
+    "command, args",
+    [
+        ("debug__heroku", ["--app", "test-app", "--docker", "--yes"]),
+        ("deploy__heroku", ["--app", "test-app", "--docker", "-y"]),
+        ("deploy__heroku", ["--app", "test-app", "--yes"]),
+    ],
+)
+def test_remote_launch_commands_pass_yes_to_pre_launch(
+    monkeypatch, tmp_path, command, args
+):
+    from psynet import command_line
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("psynet.command_line.reset_console", Mock())
+    pre_launch = Mock(side_effect=_LaunchContinued)
+    monkeypatch.setattr("psynet.command_line._pre_launch", pre_launch)
+    result = CliRunner().invoke(getattr(command_line, command), args)
+    assert isinstance(result.exception, _LaunchContinued)
+    pre_launch.assert_called_once()
+    assert pre_launch.call_args.kwargs["assume_yes"] is True
 
 
 def test_prepare_does_not_refuse_other_database_clients(monkeypatch):

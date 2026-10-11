@@ -59,8 +59,11 @@ in its terminal) before starting another; to see what is using the port, run
 ``lsof -nP -iTCP:5000 -sTCP:LISTEN``. To keep both running, give one of them
 its own database, Redis server and port as described in
 :ref:`running_several_local_experiments`.
-``psynet deploy`` also uses the local database and Redis while it prepares a
-deployment, so it wipes a local experiment that is running at the same time.
+Remote launches (``psynet deploy ssh``, ``psynet deploy heroku``,
+``psynet debug ssh`` and ``psynet debug heroku``) also use the local database
+and Redis while they prepare the experiment, so they wipe a local experiment
+that is running at the same time. They ask before doing so if a local server
+or participant data is found. ``--update`` launches leave local data alone.
 
 Database connection refused
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
