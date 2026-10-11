@@ -1,12 +1,14 @@
 import tempfile
 import threading
 import time
+import types
 
 import pytest
 from dallinger import db
 from dallinger.db import redis_conn
 from rq import Queue
 from rq.exceptions import NoSuchJobError
+from sqlalchemy.exc import IntegrityError
 
 import psynet.experiment  # noqa -- to ensure that all SQLAlchemy classes are registered
 from psynet.async_job import LocalAsyncJob, WorkerAsyncJob
@@ -340,3 +342,32 @@ def test_deprecated_process_names_still_work(monkeypatch, participant):
     assert launched == [job.id]
     with pytest.warns(DeprecationWarning, match="renamed to async_jobs"):
         assert participant.async_processes == [job]
+    with pytest.warns(DeprecationWarning, match="LocalAsyncJob"):
+        assert isinstance(job, psynet.process.LocalAsyncProcess)
+    with pytest.warns(DeprecationWarning, match="WorkerAsyncJob"):
+        assert not isinstance(job, psynet.process.WorkerAsyncProcess)
+    with pytest.warns(DeprecationWarning, match="LocalAsyncJob"):
+        assert psynet.process.LocalAsyncProcess.query.all() == [job]
+    with pytest.warns(DeprecationWarning, match="renamed to get_async_job"):
+        assert AsyncJob.get_process(job.id) is job
+    with pytest.warns(DeprecationWarning, match="LocalAsyncJob"):
+        assert types.resolve_bases((psynet.process.LocalAsyncProcess,)) == (
+            LocalAsyncJob,
+        )
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("static")], indirect=True
+)
+@pytest.mark.usefixtures("launched_experiment")
+def test_enqueue_starts_timeout_and_enforces_unique():
+    job = WorkerAsyncJob(do_nothing, timeout=30)
+    assert job.timeout_scheduled_for is None
+    job.enqueue()
+    assert (job.timeout_scheduled_for - job.time_enqueued).total_seconds() == 30
+
+    LocalAsyncJob(do_nothing, unique=True).enqueue()
+    duplicate = LocalAsyncJob(do_nothing, unique=True)
+    with pytest.raises(IntegrityError):
+        duplicate.enqueue()
+    db.session.rollback()
