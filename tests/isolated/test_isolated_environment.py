@@ -66,15 +66,23 @@ def test_tests_refuse_to_run_beside_a_debug_server_in_their_directory(tmp_path):
 
     fake_psynet = tmp_path / "psynet"
     fake_psynet.write_text("import time\ntime.sleep(60)\n")
-    shell = {k: v for k, v in os.environ.items() if k != HELD_LOCK_ENV_VAR}
+    shell = {
+        k: v
+        for k, v in os.environ.items()
+        if k not in (HELD_LOCK_ENV_VAR, READY_ENV_VAR)
+    }
 
     def spawn(env):
         return subprocess.Popen(
             [sys.executable, str(fake_psynet), "debug", "local"], cwd=tmp_path, env=env
         )
 
-    test_server = spawn({**shell, HELD_LOCK_ENV_VAR: str(tmp_path)})
-    processes = [test_server]
+    # Servers from a session's fixtures (whose env is copied from the session
+    # before it takes the directory lock), and from a CI slot holding the lock.
+    processes = [
+        spawn({**shell, READY_ENV_VAR: "1"}),
+        spawn({**shell, HELD_LOCK_ENV_VAR: str(tmp_path)}),
+    ]
     try:
         time.sleep(0.5)
         check_no_debug_server(tmp_path)
@@ -162,6 +170,34 @@ def test_spare_redis_databases_avoid_the_shared_one():
     assert _spare_redis_database("redis://localhost:6379", 0) == 1
     assert _spare_redis_database("redis://localhost:6379", 1) == 2
     assert _spare_redis_database("redis://localhost:6379/1", 0) == 0
+
+
+def test_spare_redis_database_is_emptied_when_the_session_ends(monkeypatch):
+    import redis
+
+    real_which = shutil.which
+    monkeypatch.setattr(
+        shutil, "which", lambda cmd: None if cmd == "redis-server" else real_which(cmd)
+    )
+    with IsolatedEnvironment.start() as environment:
+        url = environment.env["REDIS_URL"]
+        redis.Redis.from_url(url).set("left-by-test", "1")
+    assert not redis.Redis.from_url(url).exists("left-by-test")
+
+
+def test_description_hides_the_redis_password():
+    environment = IsolatedEnvironment(
+        {
+            "DATABASE_URL": "postgresql://u:p@localhost/dallinger_test_5100",
+            "REDIS_URL": "redis://:secret@redis.example:6380/3",
+            "base_port": "5100",
+        }
+    )
+
+    description = environment.describe()
+
+    assert "Redis at redis.example:6380/3," in description
+    assert "secret" not in description
 
 
 def test_a_failed_start_explains_how_to_opt_out(tmp_path, monkeypatch):
