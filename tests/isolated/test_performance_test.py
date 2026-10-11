@@ -114,6 +114,7 @@ def test_bots_still_taking_the_experiment_stop_when_the_test_ends(monkeypatch):
     assert len(bot_state["running"]) == 3
     tester._stop_bots(bot_state, timeout_s=5)
 
+    assert not any(thread.is_alive() for thread in tester._bots._threads)
     assert [terminated for _, _, terminated in bot_state["bot_durations"]] == [True] * 3
     assert bot_state["total_bot_errors"] == 0
 
@@ -322,6 +323,16 @@ def test_parallel_test_reraises_a_bot_error_after_all_bots_finish(monkeypatch):
     check_bots.assert_not_called()
 
 
+def test_a_suite_stops_after_a_bot_process_does_not_report():
+    tester = PerformanceTester(authenticated_session=Mock(), base_url="http://x")
+    result = _base_result(n_bots=10, server_stopped=False, unreported_bot_processes=[2])
+    with (
+        patch.object(tester, "_test_performance", return_value=result),
+        patch("psynet.perf_test.raise_open_file_limit"),
+    ):
+        assert tester.run([10, 20]) == [result]
+
+
 @pytest.mark.parametrize(
     "capacity, expected_probes",
     [
@@ -487,8 +498,16 @@ def test_redis_pool_lets_every_bot_hold_a_connection(monkeypatch, blocking):
         pool = redis.ConnectionPool(max_connections=2, **server)
     monkeypatch.setattr(db, "redis_conn", redis.Redis(connection_pool=pool))
     tester = PerformanceTester(authenticated_session=Mock(), base_url="http://x")
-    tester._bots.begin_test(tester._initialize_bot_tracking(), 0, 5)
-    tester._bots.end_test(timeout_s=0)
+    tester.duration_minutes = 0
+    with patch.multiple(
+        tester,
+        _capture_initial_state=Mock(),
+        _run_monitoring_loop=Mock(),
+        _max_request_id=Mock(),
+        _clear_realtime_status=Mock(),
+        _calculate_and_report_results=Mock(),
+    ):
+        tester._run_one_test("1/1", 5, bot_log_file=None)
 
     connections = [pool.get_connection() for _ in range(105)]
     for connection in connections:

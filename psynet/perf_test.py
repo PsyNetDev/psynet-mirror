@@ -335,8 +335,16 @@ def _join_threads(threads, timeout_s):
 
 
 def _ended_early(result):
-    """Return whether a test ended in a way that stops its suite."""
-    return bool(result["server_stopped"] or result.get("bot_process_failure"))
+    """Return whether a test ended in a way that stops its suite.
+
+    That includes a bot process not reporting after the test, because it may
+    be stuck and would be sent the next test's bots as well.
+    """
+    return bool(
+        result["server_stopped"]
+        or result.get("bot_process_failure")
+        or result.get("unreported_bot_processes")
+    )
 
 
 class PerformanceTester:
@@ -1341,7 +1349,7 @@ class _BotProcesses:
         self._test = (0, None, None)
         self._n_slots_started = 0
         self._event_thread = threading.Thread(
-            target=self._apply_events, name="psynet-bot-events", daemon=True
+            target=self._apply_events, name="psynet-perf-events", daemon=True
         )
         self._event_thread.start()
         try:
