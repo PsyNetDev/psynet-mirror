@@ -389,12 +389,34 @@ def test_enqueue_starts_timeout_and_enforces_unique():
     db.session.rollback()
 
 
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("static")], indirect=True
+)
+@pytest.mark.usefixtures("launched_experiment")
+def test_cpu_time_summary_says_where_jobs_run():
+    from psynet.async_job import _get_cpu_time_summary
+
+    for cls, cpu_time in [(LocalAsyncJob, 0.1), (WorkerAsyncJob, 0.3)]:
+        job = cls(do_nothing, label="summary_test")
+        job.finished, job.cpu_time, job.time_taken = True, cpu_time, 0.5
+        db.session.add(job)
+
+    summary = _get_cpu_time_summary()
+    db.session.rollback()
+    rows = [row for row in summary if row["label"] == "summary_test"]
+    assert [(row["runs_in"], row["mean_cpu"]) for row in rows] == [
+        ("web", 0.1),
+        ("worker", 0.3),
+    ]
+
+
 def test_cpu_time_summary_flags_cpu_heavy_labels():
     from psynet.async_job import _format_cpu_time_summary
 
     summary = _format_cpu_time_summary(
         [
             {
+                "runs_in": "worker",
                 "label": "analyse",
                 "count": 3,
                 "mean_cpu": 0.8,
@@ -402,6 +424,7 @@ def test_cpu_time_summary_flags_cpu_heavy_labels():
                 "mean_wall": 1.0,
             },
             {
+                "runs_in": "web",
                 "label": "upload",
                 "count": 5,
                 "mean_cpu": 0.01,
@@ -410,8 +433,17 @@ def test_cpu_time_summary_flags_cpu_heavy_labels():
             },
         ]
     )
-    rows = {line.split()[0]: line.split() for line in summary.splitlines()[2:]}
-    assert rows["analyse"][1:] == ["3", "0.800", "1.200", "1.000", "yes"]
+    rows = {line.split()[1]: line.split() for line in summary.splitlines()[2:]}
+    assert rows["analyse"] == [
+        "worker",
+        "analyse",
+        "3",
+        "0.800",
+        "1.200",
+        "1.000",
+        "yes",
+    ]
+    assert rows["upload"][0] == "web"
     assert rows["upload"][-1] == "no"
 
     assert _format_cpu_time_summary([]) == "No async jobs finished."
