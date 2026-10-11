@@ -20,6 +20,10 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   irreversible commands unless the user explicitly asks.
 - Before any destroy/teardown recommendation, verify whether data has been
   exported and record the export path or blocker.
+- Export and destroy only once no async jobs are pending. `psynet export ssh`
+  warns that the export misses pending jobs; `psynet destroy ssh` refuses
+  when it cannot ask. Wait for the jobs, then export again; never add
+  `--discard-pending-jobs` unless the user accepts losing those results.
 - Do not commit or publish real AWS credentials, recruiter tokens, dashboard
   passwords, `.env` files, private keys, or participant data.
 - Prefer command generation and readiness reports over live operations unless

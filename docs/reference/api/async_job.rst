@@ -53,6 +53,32 @@ of the web process. The CPU table printed after ``psynet test local`` (see
 :doc:`/test/scalability`) has one row per job label, priority and place the
 job runs in.
 
+Low-priority jobs can build up a backlog that is still running after the
+last participant has left. PsyNet protects that backlog on docker-ssh
+deployments:
+
+* idle hibernation does not put the app to sleep while any job is pending;
+* ``psynet export`` warns that jobs are still pending, because the export
+  will not contain their results;
+* ``psynet destroy ssh`` refuses to destroy an app with pending jobs, or asks
+  you to confirm when run interactively.
+
+Wait for the backlog to finish, export again, and then destroy the app. For
+example, ``psynet destroy ssh`` prints:
+
+.. code-block:: text
+
+    ❯❯ WARNING: my-study: 12 async jobs are still pending (12 low priority);
+    the oldest was enqueued 25 minutes ago. Destroying the app now loses their
+    results. Wait for them to finish, then run `psynet export ssh` again
+    before destroying the app.
+
+Pass ``--discard-pending-jobs`` to destroy the app anyway, for example when
+the jobs can never finish. A job is pending from
+:meth:`~psynet.async_job.AsyncJob.enqueue` until it finishes, fails, times
+out or is cancelled, and :class:`~psynet.async_job.LocalAsyncJob` jobs count
+too, because hibernation and destroying stop the web process they run in.
+
 API
 ---
 

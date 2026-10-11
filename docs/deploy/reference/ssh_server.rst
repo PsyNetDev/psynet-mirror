@@ -165,7 +165,9 @@ Files on the server
 ``psynet destroy ssh`` stops the app's containers and removes
 ``~/dallinger/<app>/``, its Caddy configuration, and its image if no other app
 uses it. The app's database stays in PostgreSQL until an app with the same
-name is deployed, which replaces it.
+name is deployed, which replaces it. It first asks the app for pending async
+jobs and does not destroy an app that has some unless you confirm or pass
+``--discard-pending-jobs``; see :doc:`/reference/api/async_job`.
 
 Updating a running app
 ----------------------
@@ -201,6 +203,10 @@ To sleep apps automatically after a quiet period, set in ``config.txt``::
 
     docker_ssh_idle_hibernate = true
     docker_ssh_idle_hibernate_minutes = 60
+
+Before sleeping, the app is asked whether it must stay awake: it stays awake
+while participants are working, while ``auto_recruit`` is on, and while
+async jobs are pending, so a backlog of low-priority jobs finishes first.
 
 ``/health`` probes do not reset the idle timer. While idle sleep is on,
 PsyNet pages ping the server every few minutes while a participant is using
