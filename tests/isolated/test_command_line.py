@@ -1412,6 +1412,23 @@ def test_heroku_pre_checks_do_not_prompt_to_unignore_deploy(tmp_path, monkeypatc
     assert not any(".deploy" in message for message in prompts)
 
 
+def test_remote_pre_checks_leave_local_database_alone(tmp_path, monkeypatch):
+    (tmp_path / "requirements.txt").write_text("psynet\n")
+    monkeypatch.setenv("SKIP_DEPENDENCY_CHECK", "1")
+    monkeypatch.setattr("psynet.experiment.get_experiment", Mock)
+    monkeypatch.setattr("psynet.command_line.get_config", Mock)
+    monkeypatch.setattr("psynet.utils.check_todos_before_deployment", Mock())
+    monkeypatch.setattr("psynet.command_line.run_pre_checks_sandbox", Mock())
+    init_db = Mock()
+    monkeypatch.setattr("psynet.command_line.init_db", init_db)
+    monkeypatch.setattr("dallinger.db.init_db", init_db)
+
+    with working_directory(tmp_path):
+        run_pre_checks(mode="sandbox", local_=False, app="test-app")
+
+    init_db.assert_not_called()
+
+
 def test_ssh_update_keeps_the_running_identity(tmp_path, monkeypatch):
     from psynet import deployment_info
     from psynet.command_line import _check_ssh_update
@@ -4316,21 +4333,30 @@ def remote_launch(monkeypatch, tmp_path):
     monkeypatch.setattr(
         "psynet.command_line.kill_psynet_worker_processes", resets.kill_workers
     )
-    monkeypatch.setattr("psynet.command_line.init_db", resets.init_db)
     monkeypatch.setattr(
         "psynet.experiment.get_experiment", Mock(side_effect=_LaunchContinued)
     )
     confirm = Mock(return_value=True)
     monkeypatch.setattr("click.confirm", confirm)
 
-    def launch(*, workers=0, participants=0, interactive=True, **kwargs):
+    def launch(
+        *,
+        workers=0,
+        clients=(),
+        participants=0,
+        redis_keys=0,
+        interactive=True,
+        **kwargs,
+    ):
         monkeypatch.setattr(
             "psynet.command_line.list_psynet_worker_processes",
             lambda: [Mock()] * workers,
         )
+        monkeypatch.setattr("psynet.db.list_other_database_clients", lambda: clients)
         monkeypatch.setattr(
             "psynet.command_line._count_local_participants", lambda: participants
         )
+        monkeypatch.setattr("dallinger.db.redis_conn", Mock(dbsize=lambda: redis_keys))
         monkeypatch.setattr("psynet.services._is_interactive", lambda: interactive)
         with pytest.raises(_LaunchContinued):
             _pre_launch(Mock(), mode="sandbox", archive=None, local_=False, **kwargs)
@@ -4340,27 +4366,34 @@ def remote_launch(monkeypatch, tmp_path):
 
 def test_remote_update_keeps_local_data(remote_launch):
     launch, resets, confirm = remote_launch
-    launch(update=True, workers=1, participants=3)
+    launch(update=True, workers=1, participants=3, redis_keys=2)
     assert resets.mock_calls == []
     confirm.assert_not_called()
 
 
 @pytest.mark.parametrize(
-    "workers, participants, asks",
-    [(0, 0, False), (1, 0, True), (0, 3, True)],
+    "in_use, reason",
+    [
+        ({}, None),
+        ({"workers": 1}, "1 local PsyNet server process(es)"),
+        ({"clients": [(4321, "u", "flask", "idle")]}, "pid 4321 (flask, idle)"),
+        ({"participants": 3}, "3 participant(s)"),
+        ({"redis_keys": 5}, "Redis contains 5 key(s)"),
+    ],
 )
 def test_remote_launch_asks_before_resetting_local_data_in_use(
-    remote_launch, capsys, workers, participants, asks
+    remote_launch, capsys, in_use, reason
 ):
     launch, resets, confirm = remote_launch
-    launch(workers=workers, participants=participants)
-    assert confirm.called == asks
-    assert resets.init_db.call_args.kwargs == {"drop_all": True}
+    launch(**in_use)
+    assert confirm.called == bool(reason)
     resets.clear_redis.assert_called_once()
     resets.kill_workers.assert_called_once()
     output = capsys.readouterr().out
     assert "postgresql://dallinger@localhost/demo" in output
     assert "secret" not in output
+    if reason:
+        assert reason in output
 
 
 def test_remote_launch_resets_nothing_if_declined(remote_launch):
@@ -4379,7 +4412,7 @@ def test_remote_launch_needs_yes_without_a_terminal(remote_launch):
 
     launch(participants=3, interactive=False, assume_yes=True)
     confirm.assert_not_called()
-    resets.init_db.assert_called_once_with(drop_all=True)
+    resets.kill_workers.assert_called_once()
 
 
 @pytest.mark.parametrize(

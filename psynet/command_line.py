@@ -847,11 +847,11 @@ def run_prepare_in_subprocess():
 
 
 def _reset_local_data(*, remote, assume_yes=False):
-    """Reset this computer's Redis, and its database for remote launches.
+    """Clear this computer's Redis and stop local servers before ``prepare``.
 
     Launches build the experiment's starting database with ``prepare`` on this
-    computer, so leftover ``dallinger_heroku_*`` backends must be stopped
-    before tables are dropped. Chrome windows are left alone so a remote
+    computer, which drops every table, so leftover ``dallinger_heroku_*``
+    backends must be stopped first. Chrome windows are left alone so a remote
     launch does not close the author's browser.
 
     Parameters
@@ -866,12 +866,14 @@ def _reset_local_data(*, remote, assume_yes=False):
         _confirm_local_data_reset(assume_yes)
     redis_vars.clear()
     kill_psynet_worker_processes()
-    if remote:
-        init_db(drop_all=True)
 
 
 def _confirm_local_data_reset(assume_yes):
-    """Describe the local reset, and ask first if a server or participants use it."""
+    """Describe the local reset, and ask first if the local data looks in use."""
+    from dallinger.db import redis_conn
+
+    from .data import _format_other_database_clients
+    from .db import list_other_database_clients
     from .services import _is_interactive, _redis_url
 
     database = _url_without_password(_current_database_url())
@@ -881,7 +883,9 @@ def _confirm_local_data_reset(assume_yes):
         "To do so, it will:\n"
         f"  - drop every table in the local database {database}\n"
         f"  - delete every key in local Redis {redis}\n"
-        "  - stop any local PsyNet server using that database (e.g. psynet debug local)"
+        "  - stop any local PsyNet server using that database (e.g. psynet debug local)\n"
+        "Other programs connected to the database or Redis, such as Docker "
+        "containers or another experiment, keep running and should be restarted."
     )
     in_use = []
     n_workers = len(list_psynet_worker_processes())
@@ -889,9 +893,18 @@ def _confirm_local_data_reset(assume_yes):
         in_use.append(
             f"{n_workers} local PsyNet server process(es) are using this database."
         )
+    clients = list_other_database_clients()
+    if clients:
+        in_use.append(
+            "Other clients are connected to the local database: "
+            f"{_format_other_database_clients(clients)}."
+        )
     n_participants = _count_local_participants()
     if n_participants:
         in_use.append(f"The local database contains {n_participants} participant(s).")
+    n_redis_keys = redis_conn.dbsize()
+    if n_redis_keys:
+        in_use.append(f"Local Redis contains {n_redis_keys} key(s).")
     if not in_use:
         return
     click.echo("\n".join(in_use))
@@ -1502,8 +1515,8 @@ _option_yes_reset_local_data = click.option(
     "assume_yes",
     is_flag=True,
     help=(
-        "Reset the local database and Redis without asking, even if a local "
-        "server or participants are using them."
+        "Reset the local database and Redis without asking, even if they look "
+        "in use. Other prompts, such as starting local services, still ask."
     ),
 )
 
