@@ -253,7 +253,7 @@ class ConcurrentResponseAsyncTrial(FinalizeBackstopTrial):
 )
 @pytest.mark.usefixtures("in_experiment_directory")
 def test_async_post_trial_finalizes_trial_completed_concurrently(
-    db_session, participant, monkeypatch
+    db_session, participant, monkeypatch, caplog
 ):
     from psynet.async_job import WorkerAsyncJob
 
@@ -270,11 +270,14 @@ def test_async_post_trial_finalizes_trial_completed_concurrently(
     trial.async_post_trial_requested = True
     db.session.add(trial)
     db.session.flush()
+    # Saved without enqueue() so that the test runs the job itself.
     job = WorkerAsyncJob(trial.call_async_post_trial, trial=trial)
     db.session.add(job)
     db.session.flush()
     async_job_id, trial_id = job.id, trial.id
-    db.session.commit()
+    with caplog.at_level("WARNING", logger="psynet"):
+        db.session.commit()
+    assert "never enqueued" in caplog.text
 
     WorkerAsyncJob.call_function(async_job_id)
 

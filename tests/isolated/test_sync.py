@@ -5836,7 +5836,7 @@ def test_deleted_orm_callback_receiver_is_rejected(in_experiment_directory, db_s
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
 def test_async_job_events_wake_timeline_holds(
-    in_experiment_directory, db_session, monkeypatch
+    in_experiment_directory, db_session, monkeypatch, caplog
 ):
     wakes = []
     monkeypatch.setattr(
@@ -5846,6 +5846,7 @@ def test_async_job_events_wake_timeline_holds(
 
     participant = new_participant(get_experiment())
     db_session.flush()
+    # Saved without enqueue() so that the test runs the jobs itself.
     finished = LocalAsyncJob(async_job_noop, participant=participant)
     timed_out = WorkerAsyncJob(async_job_noop, participant=participant, timeout=30)
     cancelled = WorkerAsyncJob(async_job_noop, participant=participant)
@@ -5854,7 +5855,9 @@ def test_async_job_events_wake_timeline_holds(
     db_session.flush()
     finished_id = finished.id
     cancelled_id = cancelled.id
-    db_session.commit()
+    with caplog.at_level("WARNING", logger="psynet"):
+        db_session.commit()
+    assert caplog.text.count("never enqueued") == 3
 
     LocalAsyncJob.call_function(finished_id)
     WorkerAsyncJob.check_timeouts()
