@@ -16,6 +16,7 @@ from .isolated_environment import (
     IsolatedEnvironment,
     IsolationError,
     check_no_debug_server,
+    postgres_connection_limit_message,
     shared_environment_warning,
     should_isolate,
 )
@@ -63,6 +64,17 @@ def _start():
     atexit.register(environment.close)
     os.environ.update(environment.env)
     print(environment.describe(), file=sys.stderr)
+
+
+def pytest_terminal_summary(terminalreporter):
+    """Explain failures caused by PostgreSQL running out of connections."""
+    stats = terminalreporter.stats
+    for report in stats.get("failed", []) + stats.get("error", []):
+        advice = postgres_connection_limit_message(getattr(report, "longreprtext", ""))
+        if advice:
+            terminalreporter.write_sep("=", "PostgreSQL ran out of connections")
+            terminalreporter.write_line(advice)
+            return
 
 
 _start()

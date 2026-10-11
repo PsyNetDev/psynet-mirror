@@ -150,6 +150,15 @@ instead, which keeps its data apart but can still send live notifications to a
 debug server's participants. If the environment can't be set up, the session stops
 with an error rather than falling back to your database.
 
+Each session has its own database, but all of them share your PostgreSQL
+server and its ``max_connections`` limit (100 by default). Several sessions at
+once, or a performance test with a few hundred bots, can use up that limit;
+PostgreSQL then refuses connections with "sorry, too many clients already", and
+PsyNet says that the server ran out of connections. Run fewer bots or sessions
+at once, stop other local experiments, or raise ``max_connections`` in
+``postgresql.conf`` (``psql -c 'SHOW config_file'`` shows where it is) and
+restart PostgreSQL.
+
 This applies to ``pytest`` runs from the PsyNet checkout, to experiments
 whose ``pytest.ini`` loads ``-p psynet.pytest_environment`` (run ``psynet
 scripts update`` in older experiments) and to ``psynet test local``.

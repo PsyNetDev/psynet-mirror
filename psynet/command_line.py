@@ -4832,7 +4832,12 @@ def _start_local_server_and_wait_for_ready(
             for line in recent_output:
                 print(line, file=sys.stderr)
         log_file.close()
-        raise click.ClickException("Failed to start experiment server.")
+        from .isolated_environment import postgres_connection_limit_message
+
+        advice = postgres_connection_limit_message("\n".join(recent_output))
+        raise click.ClickException(
+            "Failed to start experiment server." + (f" {advice}" if advice else "")
+        )
 
 
 def _terminate_server_process(process):
