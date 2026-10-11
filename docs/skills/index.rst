@@ -111,6 +111,9 @@ can run one directly by typing ``/`` and its name, for example
    * - :doc:`prepare-for-cint`
      - Make an experiment ready for recruitment through Cint.
      - :doc:`/deploy/recruiters/cint`
+   * - :doc:`plan-server-resources`
+     - Measure how much CPU async jobs use and plan worker processes.
+     - :doc:`/test/scalability`
    * - :doc:`deploy-experiment`
      - Check deployment readiness and run deployments safely.
      - :doc:`/deploy/running_a_study`
