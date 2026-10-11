@@ -572,6 +572,12 @@ def test_a_test_whose_bots_ran_late_could_not_be_tested():
     assert "240 ms" in details and "95% of a core" in details
 
 
+def test_a_bot_process_that_did_not_report_makes_a_test_untestable():
+    results = [_base_result(n_bots=80), _base_result(unreported_bot_processes=[2])]
+    assert "bot process(es) 2 did not report" in capacity_failures(results[1])[0]
+    assert "could not be tested" in _join(format_capacity_summary(results))
+
+
 def test_a_busy_cpu_share_alone_does_not_fail_a_test():
     assert capacity_failures(_base_result(tester_cpu_share=0.95)) == []
 

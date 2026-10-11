@@ -2184,8 +2184,8 @@ def _capacity_failure_causes(result, limits):
     part at once, bots in a busy process ran too late to keep pace
     (so the server got less load than that many participants would give),
     bots failed because PostgreSQL ran out of connections (the
-    bots open their own database connections in this process, which
-    participants don't), or no responses were recorded while bots were
+    bots open their own database connections in the processes running them,
+    which participants don't), or no responses were recorded while bots were
     missing.
     """
     causes = [("server stopped", True)] if result.get("server_stopped") else []
@@ -2293,7 +2293,7 @@ def _max_capacity_probes(max_bots=_CAPACITY_SEARCH_MAX):
 
 _POSTGRES_ADVICE = (
     "  Some bots failed because PostgreSQL ran out of connections. The bots "
-    "open their own database connections in this test process, which "
+    "open their own database connections in the processes running them, which "
     "participants don't, so this limits the test rather than the experiment. "
     "Run fewer bots at once, stop other experiments that share the database "
     "server, or raise max_connections."
@@ -2304,8 +2304,8 @@ _QUEUE_ADVICE = (
 )
 _START_RATE_ADVICE = (
     "  Bots that cannot start fast enough limit the test rather than the "
-    "server, because this process creates each bot's "
-    "participant itself. Bots that take longer, in a longer experiment or "
+    "server, because the processes running the bots create each bot's "
+    "participant themselves. Bots that take longer, in a longer experiment or "
     "with a larger --time-factor, give a better measure of the server."
 )
 _TESTER_LAG_ADVICE = (

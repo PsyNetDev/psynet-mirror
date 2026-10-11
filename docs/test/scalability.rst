@@ -310,7 +310,8 @@ Larger tests therefore spread the bots over several processes, set with
 run and keeps all the bookkeeping, so the results look the same however many
 processes there are; each process writes to the same bot log. If one stops
 unexpectedly, for example because the computer ran out of memory, the test
-ends early and counts as could not be tested.
+ends early and counts as could not be tested. So does a test after which a
+process does not report back, because how late its bots ran is unknown.
 
 To check that the bots kept pace, each process running bots measures how
 late its threads run: a background thread repeatedly sleeps for 50 ms and
