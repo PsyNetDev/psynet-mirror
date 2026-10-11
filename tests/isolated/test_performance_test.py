@@ -216,7 +216,7 @@ def test_bot_processes_report_their_bots_to_the_parent(monkeypatch):
         tester._stop_bots(bot_state, timeout_s=5)
 
     assert [terminated for _, _, terminated in bot_state["bot_durations"]] == [True] * 4
-    assert len(bot_state["cpu_shares"]) == 2
+    assert len(bot_state["process_loads"]) == 2
 
 
 @pytest.mark.parametrize(
@@ -547,22 +547,47 @@ def test_capacity_summary_does_not_suggest_a_cap_when_bots_started_too_slowly():
     assert "Cap concurrent" not in text
 
 
-def test_a_test_whose_bot_process_was_too_busy_could_not_be_tested():
+def test_a_test_whose_bots_ran_late_could_not_be_tested():
     results = [
-        _base_result(n_bots=80, p95_response_time=0.085, tester_cpu_share=0.3),
-        _base_result(n_bots=160, p95_response_time=0.1, tester_cpu_share=0.85),
+        _base_result(n_bots=80, p95_response_time=0.085, tester_lag_p95_s=0.01),
+        _base_result(
+            n_bots=160,
+            p95_response_time=0.1,
+            tester_lag_p95_s=0.24,
+            tester_cpu_share=0.95,
+        ),
     ]
 
     assert capacity_failures(results[1]) == [
-        "a process running bots used 85% of a CPU core, too busy for its bots "
-        "to keep pace"
+        "bots in the test process were running 240 ms late (p95), so they could "
+        "not keep pace (use more --bot-processes)"
     ]
     text = _join(format_capacity_summary(results))
     assert "Capacity: at least 80 concurrent bots" in text
     assert "160 could not be tested" in text
     assert "Spread the bots over more processes with --bot-processes" in text
     assert "Cap concurrent" not in text
-    assert "85% of a core" in _join(format_test_results(results[1]))
+    details = _join(format_test_results(results[1]))
+    assert "240 ms" in details and "95% of a core" in details
+
+
+def test_a_busy_cpu_share_alone_does_not_fail_a_test():
+    assert capacity_failures(_base_result(tester_cpu_share=0.95)) == []
+
+
+def test_load_monitor_measures_how_late_threads_run_while_the_lock_is_held():
+    import time
+
+    from psynet.perf_test import _LoadMonitor
+
+    monitor = _LoadMonitor()
+    time.sleep(0.2)
+    # sum() over a range runs in C without releasing the interpreter lock.
+    sum(range(50_000_000))
+    cpu_share, lag_p95_s = monitor.stop()
+
+    assert lag_p95_s > 0.1
+    assert cpu_share > 0.3
 
 
 _POSTGRES_BOT_ERRORS = dict(

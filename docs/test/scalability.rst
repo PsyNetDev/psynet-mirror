@@ -313,14 +313,22 @@ processes there are; each process writes to the same bot log. If one stops
 unexpectedly, for example because the computer ran out of memory, the test
 ends early and counts as could not be tested.
 
-PsyNet measures the CPU time each process running bots uses during each test
-and shows the busiest one under *Bot runtimes* as *Bot process CPU*, as a
-share of one CPU core. A test in which any process used more than 70% of a
-core counts as could not be tested, like a test whose bots could not start
-fast enough. With ``--n-bots auto``, the search then stops there, and the
+To check that the bots kept pace, each process running bots measures how
+late its threads run: a background thread repeatedly sleeps for 50 ms and
+records how much longer than that it actually took to wake up. Bot threads
+wait just as long for the interpreter and the CPU before each step. The
+report shows the 95th percentile of this lag for the worst process under
+*Bot runtimes* as *Bot lag*. A test in which it exceeded 100 ms counts as
+could not be tested, like a test whose bots could not start fast enough.
+With ``--n-bots auto``, the search treats that bot count as failed, and the
 summary reports the capacity as at least the largest count that passed and
 suggests more ``--bot-processes``. Increase ``--bot-processes`` and run again
 to measure further.
+
+The report also shows the busiest process's CPU use, as a share of one core,
+under *Bot process CPU*. It doesn't decide whether a test passes, but a
+process near a whole core is close to its limit. Both numbers are saved in
+the JSON results as ``tester_lag_p95_s`` and ``tester_cpu_share``.
 
 With ``performance-test ssh`` the bot processes run on the experiment server
 and take CPU from it, which is why ``auto`` uses at most one process per four

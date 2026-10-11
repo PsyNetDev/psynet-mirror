@@ -66,6 +66,7 @@ _BOTS_PER_PROCESS = 250
 _BOT_PROCESS_START_TIMEOUT_S = 300
 # How much longer than the bots' stop timeout to wait for bot processes to reply.
 _BOT_PROCESS_REPLY_GRACE_S = 10
+_LAG_PROBE_INTERVAL_S = 0.05
 
 
 def _is_bot_thread_record(record):
@@ -228,14 +229,56 @@ def raise_open_file_limit():
     logger.warning(f"Could not raise the open-file limit above {soft}: {error}")
 
 
-def _cpu_share(cpu_start, wall_s):
-    """Return the CPU time this process used since ``cpu_start``, per second of ``wall_s``.
+class _LoadMonitor:
+    """Measure how busy this process is from creation until :meth:`stop`.
 
-    :func:`time.process_time` counts every thread, so 1.0 means a whole core.
+    A daemon thread repeatedly waits for 50 ms and records how much later
+    than that it wakes up. Bot threads queue just as long for the
+    interpreter lock and the CPU before they can act, so this lag is how
+    late the bots in this process run.
     """
-    if wall_s <= 0:
-        return None
-    return (time.process_time() - cpu_start) / wall_s
+
+    def __init__(self):
+        self._lags_ms = Counter()
+        self._stopped = threading.Event()
+        self._cpu_start = time.process_time()
+        self._wall_start = time.monotonic()
+        self._thread = threading.Thread(
+            target=self._probe, name="psynet-lag-probe", daemon=True
+        )
+        self._thread.start()
+
+    def _probe(self):
+        while True:
+            start = time.monotonic()
+            if self._stopped.wait(_LAG_PROBE_INTERVAL_S):
+                return
+            lag = time.monotonic() - start - _LAG_PROBE_INTERVAL_S
+            self._lags_ms[max(0, round(lag * 1000))] += 1
+
+    def stop(self):
+        """Stop measuring and return this process's load since it started.
+
+        Returns
+        -------
+        tuple of (float or None, float or None)
+            The CPU time used per second, counting every thread, so 1.0 means
+            a whole core; and the 95th-percentile lag in seconds.
+        """
+        wall_s = time.monotonic() - self._wall_start
+        cpu_s = time.process_time() - self._cpu_start
+        self._stopped.set()
+        self._thread.join()
+        lag_p95_ms = _quantile(sorted(self._lags_ms.elements()), 0.95)
+        return (
+            cpu_s / wall_s if wall_s > 0 else None,
+            None if lag_p95_ms is None else lag_p95_ms / 1000,
+        )
+
+
+def _worst(process_loads, i):
+    """Return the largest non-missing item ``i`` of the ``(cpu_share, lag_p95_s)`` pairs."""
+    return max((load[i] for load in process_loads if load[i] is not None), default=None)
 
 
 def _fit_redis_pool_to_bots(n_bots):
@@ -359,7 +402,7 @@ class PerformanceTester:
         self._print_suite_header(
             f"automatic (from {_CAPACITY_SEARCH_START}, while keeping "
             f"{self.limits.describe()}; a test in which bots can't start fast "
-            "enough, or can't keep pace because their process is too busy, "
+            "enough, or run late because their process is too busy, "
             "could not be tested)"
         )
         max_tests = _max_capacity_probes()
@@ -503,7 +546,7 @@ class PerformanceTester:
         initial_state = self._capture_initial_state()
         bot_state = self._initialize_bot_tracking()
         start_time = time.time()
-        cpu_start = time.process_time()
+        load = _LoadMonitor()
         end_time = start_time + (duration_minutes * 60)
         if self._bot_processes is None:
             start_bot_slot = self._create_bot_launcher(bot_state, end_time)
@@ -517,10 +560,10 @@ class PerformanceTester:
                     n, bot_state, start_bot_slot, start_time, end_time
                 )
                 actual_duration = time.time() - start_time
-                bot_state["cpu_shares"].append(_cpu_share(cpu_start, actual_duration))
                 last_request_id = self._max_request_id()
                 ended_at = datetime.datetime.now()
             finally:
+                bot_state["process_loads"].append(load.stop())
                 self._stop_bots(bot_state)
         self._clear_realtime_status()
 
@@ -585,8 +628,8 @@ class PerformanceTester:
             "peak_running": 0,
             # Seconds from the test start until the last bot slot started.
             "ramp_up_s": None,
-            # CPU time each process running bots used, per second of the test.
-            "cpu_shares": [],
+            # (CPU share, p95 lag in s) of each process running bots.
+            "process_loads": [],
             # Why a bot process stopped during the test, if one did.
             "bot_process_failure": None,
             "last_status_update": time.time(),
@@ -730,8 +773,8 @@ class PerformanceTester:
         if self._bot_processes is None:
             n_alive = _join_threads(bot_state["threads"], timeout_s)
         else:
-            cpu_shares, n_alive = self._bot_processes.end_test(timeout_s)
-            bot_state["cpu_shares"] += cpu_shares
+            process_loads, n_alive = self._bot_processes.end_test(timeout_s)
+            bot_state["process_loads"] += process_loads
         if n_alive:
             logger.warning(
                 f"{n_alive} bot(s) were still waiting for the server "
@@ -1108,9 +1151,8 @@ class PerformanceTester:
             "slots_started": bot_state["slots_started"],
             "peak_running": bot_state["peak_running"],
             "ramp_up_s": bot_state["ramp_up_s"],
-            "tester_cpu_share": max(
-                (s for s in bot_state["cpu_shares"] if s is not None), default=None
-            ),
+            "tester_cpu_share": _worst(bot_state["process_loads"], 0),
+            "tester_lag_p95_s": _worst(bot_state["process_loads"], 1),
             "total_bots_started": bot_state["total_bots_started"],
             "completed_during_test": bot_state["bots_completed_during_test"],
             "bots_succeeded": bots_succeeded,
@@ -1177,7 +1219,7 @@ class PerformanceTester:
         See :class:`_BotProcesses` for the commands and events.
         """
         stop_event, threads, end_time, record = threading.Event(), [], None, None
-        cpu_start = wall_start = None
+        load = None
         while True:
             command, *args = commands.get()
             if command == "test":
@@ -1185,7 +1227,7 @@ class PerformanceTester:
                 stop_event, threads = threading.Event(), []
                 record = partial(_put_bot_event, events, test_id)
                 _fit_redis_pool_to_bots(n_slots)
-                cpu_start, wall_start = time.process_time(), time.time()
+                load = _LoadMonitor()
             elif command == "slot":
                 thread = threading.Thread(
                     target=self._run_bot_slot,
@@ -1197,14 +1239,11 @@ class PerformanceTester:
                 thread.start()
             elif command == "stop":
                 (timeout_s,) = args
-                cpu_share = (
-                    None
-                    if wall_start is None
-                    else _cpu_share(cpu_start, time.time() - wall_start)
-                )
+                process_load = (None, None) if load is None else load.stop()
+                load = None
                 stop_event.set()
                 n_alive = _join_threads(threads, timeout_s)
-                events.put((None, "finished", index, cpu_share, n_alive))
+                events.put((None, "finished", index, process_load, n_alive))
             elif command == "exit":
                 return
 
@@ -1225,8 +1264,8 @@ class _BotProcesses:
     applies to the test's ``bot_state`` with
     :meth:`PerformanceTester._record_bot_event` just as a bot thread in the
     parent would, and ``(None, kind, index, *payload)`` replies: ``"ready"``,
-    ``"failed"`` with a traceback, and ``"finished"`` with the child's CPU
-    share and how many of its bots were still running. Events from bots of an
+    ``"failed"`` with a traceback, and ``"finished"`` with the child's load
+    (see :class:`_LoadMonitor`) and how many of its bots were still running. Events from bots of an
     earlier test are dropped.
 
     Children are spawned, not forked: database engines, Redis pools and
@@ -1347,9 +1386,10 @@ class _BotProcesses:
 
         Returns
         -------
-        tuple of (list of float, int)
-            Each child's CPU share during the test, and how many bots were
-            still running when the children stopped waiting for them.
+        tuple of (list of tuple, int)
+            Each child's load during the test, as returned by
+            :meth:`_LoadMonitor.stop`, and how many bots were still running
+            when the children stopped waiting for them.
         """
         for commands in self._commands:
             commands.put(("stop", timeout_s))
@@ -1364,10 +1404,10 @@ class _BotProcesses:
         if silent:
             logger.warning(
                 f"Bot process(es) {', '.join(map(str, silent))} did not report "
-                "after the test, so their CPU use is not checked."
+                "after the test, so how late their bots ran is not checked."
             )
-        cpu_shares = [share for share, _ in replies.values() if share is not None]
-        return cpu_shares, sum(n_alive for _, n_alive in replies.values())
+        process_loads = [load for load, _ in replies.values()]
+        return process_loads, sum(n_alive for _, n_alive in replies.values())
 
     def failure(self):
         """Describe the first child that has stopped, or return ``None``."""
@@ -1649,13 +1689,17 @@ def format_test_results(result):
                 f"{result['avg_incomplete_duration']:.1f}s",
             ]
         )
-    if result.get("tester_cpu_share") is not None:
-        cpu = f"{result['tester_cpu_share']:.0%} of a core"
+    if result.get("tester_lag_p95_s") is not None:
+        lag = f"{result['tester_lag_p95_s'] * 1000:.0f} ms"
         runtime_rows.append(
             [
-                "Bot process CPU (busiest)",
-                warning(cpu) if _tester_cpu_saturated(result) else cpu,
+                "Bot lag (p95, worst process)",
+                warning(lag) if _tester_lagged(result) else lag,
             ]
+        )
+    if result.get("tester_cpu_share") is not None:
+        runtime_rows.append(
+            ["Bot process CPU (busiest)", f"{result['tester_cpu_share']:.0%} of a core"]
         )
     if runtime_rows:
         _table_lines(runtime_rows, headers=[], colalign=("left", "right"))
@@ -2034,15 +2078,13 @@ def queue_wait_p95(result):
 
 # Bots between runs, or still being created, leave a few slots briefly empty.
 _MIN_RUNNING_SHARE = 0.9
-# Bot threads share one interpreter lock, so a process running bots slows
-# them all down well before it uses a whole core.
-_MAX_TESTER_CPU_SHARE = 0.7
+_MAX_TESTER_LAG_P95_S = 0.1
 
 
-def _tester_cpu_saturated(result):
-    """Return whether a process running bots was too busy for them to keep pace."""
-    share = result.get("tester_cpu_share")
-    return share is not None and share > _MAX_TESTER_CPU_SHARE
+def _tester_lagged(result):
+    """Return whether bots ran so late that they could not keep pace; see :func:`_tester_limits`."""
+    lag = result.get("tester_lag_p95_s")
+    return lag is not None and lag > _MAX_TESTER_LAG_P95_S
 
 
 def _start_rate_limits(result):
@@ -2066,14 +2108,30 @@ def _start_rate_limits(result):
 
 
 def _tester_limits(result):
-    """Return the reasons the test process, not the server, held back a test."""
+    """Return the reasons the test process, not the server, held back a test.
+
+    Besides bots that didn't all start or take part at once, and a bot
+    process that stopped, this includes bots that ran late:
+    ``tester_lag_p95_s`` is the 95th percentile of how much later than asked
+    a thread in the worst process running bots woke up (see
+    :class:`_LoadMonitor`). That is how long bots queue for the interpreter
+    lock and the CPU before each step, so above ``_MAX_TESTER_LAG_P95_S``
+    they make requests noticeably more slowly than participants would and
+    the server gets less load than the bot count suggests.
+    """
     reasons = _start_rate_limits(result)
     if result.get("bot_process_failure"):
         reasons.append(result["bot_process_failure"])
-    if _tester_cpu_saturated(result):
+    if _tester_lagged(result):
+        where = (
+            "the test process"
+            if result.get("bot_processes", 1) == 1
+            else "the busiest bot process"
+        )
         reasons.append(
-            f"a process running bots used {result['tester_cpu_share']:.0%} of a "
-            "CPU core, too busy for its bots to keep pace"
+            f"bots in {where} were running "
+            f"{result['tester_lag_p95_s'] * 1000:.0f} ms late (p95), so they could "
+            "not keep pace (use more --bot-processes)"
         )
     return reasons
 
@@ -2083,7 +2141,7 @@ def _capacity_failure_causes(result, limits):
 
     ``server_limit`` is False when the reason only shows that the test could
     not measure the server at this bot count: bots didn't all start or take
-    part at once, a process running bots was too busy for them to keep pace
+    part at once, bots in a busy process ran too late to keep pace
     (so the server got less load than that many participants would give),
     bots failed because PostgreSQL ran out of connections (the
     bots open their own database connections in this process, which
@@ -2210,11 +2268,11 @@ _START_RATE_ADVICE = (
     "participant itself. Bots that take longer, in a longer experiment or "
     "with a larger --time-factor, give a better measure of the server."
 )
-_TESTER_CPU_ADVICE = (
-    "  A process running bots was so busy that its bots made requests more "
-    "slowly than participants would, so the server got less load than the "
-    "bot count suggests. Spread the bots over more processes with "
-    "--bot-processes, or run the test from a computer with more CPU cores."
+_TESTER_LAG_ADVICE = (
+    "  A process running bots was so busy that its bots ran late and made "
+    "requests more slowly than participants would, so the server got less "
+    "load than the bot count suggests. Spread the bots over more processes "
+    "with --bot-processes, or run the test from a computer with more CPU cores."
 )
 
 
@@ -2284,8 +2342,8 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
         lines.append(_QUEUE_ADVICE)
     if first_fail is not None and _start_rate_limits(first_fail):
         lines.append(_START_RATE_ADVICE)
-    if first_fail is not None and _tester_cpu_saturated(first_fail):
-        lines.append(_TESTER_CPU_ADVICE)
+    if first_fail is not None and _tester_lagged(first_fail):
+        lines.append(_TESTER_LAG_ADVICE)
     if any(_POSTGRES_FULL in (r.get("bot_error_kinds") or {}) for r in results):
         lines.append(_POSTGRES_ADVICE)
     if capacity is None:
