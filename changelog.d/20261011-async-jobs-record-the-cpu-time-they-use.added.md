@@ -1,0 +1,1 @@
+Added a `cpu_time` column to async jobs, recording the CPU seconds each job's function used. `psynet test local` now ends with a table of CPU and wall time per async job label that flags CPU-heavy jobs, and the new `plan-server-resources` Agent Skill explains how to use it to plan worker processes before a performance test.
