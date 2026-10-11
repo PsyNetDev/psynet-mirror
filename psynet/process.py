@@ -5,26 +5,55 @@ import warnings
 from .async_job import AsyncJob, LocalAsyncJob, WorkerAsyncJob
 
 
-def WorkerAsyncProcess(*args, **kwargs):
-    """Deprecated: create a :class:`~psynet.async_job.WorkerAsyncJob` and enqueue it."""
-    warnings.warn(
-        "WorkerAsyncProcess(...) is deprecated; use "
-        "psynet.async_job.WorkerAsyncJob(...).enqueue() instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return WorkerAsyncJob(*args, **kwargs).enqueue()
+class _DeprecatedJobAlias:
+    """Warning stand-in for a renamed job class.
+
+    Calling it creates and enqueues the new job; public attribute access,
+    ``isinstance`` and ``issubclass`` are forwarded to the new class, and
+    subclassing it subclasses the new class. It is not a mapped class
+    itself, so it adds no SQLAlchemy polymorphic identity.
+    """
+
+    def __init__(self, old_name, target):
+        self._old_name = old_name
+        self._target = target
+
+    def _warn(self, usage=""):
+        warnings.warn(
+            f"psynet.process.{self._old_name} is deprecated; use "
+            f"psynet.async_job.{self._target.__name__}{usage} instead.",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+
+    def __call__(self, *args, **kwargs):
+        self._warn("(...).enqueue()")
+        return self._target(*args, **kwargs).enqueue()
+
+    def __getattr__(self, name):
+        if name.startswith("_"):
+            raise AttributeError(name)
+        self._warn()
+        return getattr(self._target, name)
+
+    def __instancecheck__(self, obj):
+        self._warn()
+        return isinstance(obj, self._target)
+
+    def __subclasscheck__(self, cls):
+        self._warn()
+        return issubclass(cls, self._target)
+
+    def __mro_entries__(self, bases):
+        self._warn(" (and call .enqueue() on each job)")
+        return (self._target,)
+
+    def __repr__(self):
+        return f"<deprecated alias {self._old_name} of {self._target.__name__}>"
 
 
-def LocalAsyncProcess(*args, **kwargs):
-    """Deprecated: create a :class:`~psynet.async_job.LocalAsyncJob` and enqueue it."""
-    warnings.warn(
-        "LocalAsyncProcess(...) is deprecated; use "
-        "psynet.async_job.LocalAsyncJob(...).enqueue() instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return LocalAsyncJob(*args, **kwargs).enqueue()
+WorkerAsyncProcess = _DeprecatedJobAlias("WorkerAsyncProcess", WorkerAsyncJob)
+LocalAsyncProcess = _DeprecatedJobAlias("LocalAsyncProcess", LocalAsyncJob)
 
 
 def __getattr__(name):

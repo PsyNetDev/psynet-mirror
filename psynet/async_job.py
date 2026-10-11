@@ -270,6 +270,13 @@ class AsyncJob(SQLBase, SQLMixin):
         -------
         AsyncJob
             The job itself, so it can be enqueued as it is created.
+
+        Raises
+        ------
+        RuntimeError
+            If the job has already been enqueued.
+        sqlalchemy.exc.IntegrityError
+            If the job was created with ``unique`` and a matching job exists.
         """
         if self.time_enqueued is not None:
             raise RuntimeError(f"Async job {self.id} has already been enqueued.")
@@ -353,6 +360,16 @@ class AsyncJob(SQLBase, SQLMixin):
             .populate_existing()
             .one()
         )
+
+    @classmethod
+    def get_process(cls, process_id: int):
+        """Deprecated alias of :meth:`get_async_job`."""
+        warnings.warn(
+            "AsyncJob.get_process has been renamed to get_async_job.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return cls.get_async_job(process_id)
 
     @classmethod
     @with_transaction
@@ -624,11 +641,6 @@ class WorkerAsyncJob(AsyncJob):
         timeout=None,
     ):
         self.timeout = timeout
-        if timeout:
-            self.timeout_scheduled_for = datetime.datetime.now() + datetime.timedelta(
-                seconds=timeout
-            )
-
         super().__init__(
             function,
             arguments,
@@ -641,6 +653,21 @@ class WorkerAsyncJob(AsyncJob):
             label=label,
             unique=unique,
         )
+
+    def enqueue(self):
+        """Enqueue the job as in :meth:`AsyncJob.enqueue` and start its timeout.
+
+        Returns
+        -------
+        WorkerAsyncJob
+            The job itself.
+        """
+        super().enqueue()
+        if self.timeout:
+            self.timeout_scheduled_for = self.time_enqueued + datetime.timedelta(
+                seconds=self.timeout
+            )
+        return self
 
     @classmethod
     def launch(cls, spec: dict):

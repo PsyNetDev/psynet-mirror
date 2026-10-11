@@ -514,8 +514,10 @@ Search for ``psynet.process``, ``AsyncProcess``, ``WorkerAsyncProcess``,
 
   PsyNet logs a warning when a job is created but never enqueued.
 * The old names still work but warn. ``WorkerAsyncProcess(...)`` and
-  ``LocalAsyncProcess(...)`` create and enqueue the job, but they are now
-  functions, so ``isinstance`` checks against them fail.
+  ``LocalAsyncProcess(...)`` create and enqueue the job, and
+  ``AsyncJob.get_process`` calls ``get_async_job``. A subclass of
+  ``WorkerAsyncProcess`` or ``LocalAsyncProcess`` becomes a subclass of the
+  new class, so call ``.enqueue()`` on its jobs.
 * ``async_processes`` on participants, trials, nodes, networks, responses
   and assets is now ``async_jobs``.
 * An override of ``Experiment.handle_error`` that reads ``process=`` should

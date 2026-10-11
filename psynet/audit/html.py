@@ -876,7 +876,7 @@ def render_performance_result(
         f"{performance_heading('Requests', 'HTTP requests observed for key participant endpoints such as timeline and response routes.')}"
         f"{performance_heading('Resp Med (s)', 'Median HTTP response time, in seconds, for key participant endpoints.')}"
         f"{performance_heading('Resp P95 (s)', '95th percentile HTTP response time, in seconds, for key participant endpoints; higher values show slower tail latency.')}"
-        f"{performance_heading('Q P95 all (s)', '95th percentile async-process queue delay across trial makers, when queue metrics are available.')}"
+        f"{performance_heading('Q P95 all (s)', '95th percentile async-job queue delay across trial makers, when queue metrics are available.')}"
         f"{performance_heading('Errors', 'Request errors plus bot errors recorded during the run.')}"
         "</tr></thead><tbody>" + "\n".join(body) + "</tbody></table></div></section>"
     )
