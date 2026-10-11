@@ -310,8 +310,13 @@ class PerformanceTester:
                 break
             failures = capacity_failures(result, self.limits)
             if failures:
+                outcome = (
+                    "exceeded limits"
+                    if _server_limits(result, self.limits)
+                    else "could not be tested"
+                )
                 logger.info(
-                    warning(f"{n_bots:,} bots exceeded limits: {', '.join(failures)}")
+                    warning(f"{n_bots:,} bots {outcome}: {', '.join(failures)}")
                 )
                 lowest_fail = n_bots
             else:
@@ -1621,7 +1626,9 @@ def _tester_limits(result):
             "(use a longer --duration-minutes)"
         )
     peak_running = result.get("peak_running")
-    if peak_running and peak_running < _MIN_RUNNING_SHARE * result.get("n_bots", 0):
+    if peak_running is not None and peak_running < _MIN_RUNNING_SHARE * result.get(
+        "n_bots", 0
+    ):
         reasons.append(
             f"at most {peak_running:,} of {result['n_bots']:,} bots were taking "
             "part at once, because new bots could not start fast enough"
@@ -1629,45 +1636,77 @@ def _tester_limits(result):
     return reasons
 
 
-def capacity_failures(result, limits=CapacityLimits()):
-    """Return the reasons a test result exceeded ``limits`` (empty if it did not)."""
-    reasons = []
-    if result.get("server_stopped"):
-        reasons.append("server stopped")
-    reasons += _tester_limits(result)
+def _capacity_failure_causes(result, limits):
+    """Return ``(reason, server_limit)`` for each limit that ``result`` exceeded.
+
+    ``server_limit`` is False when the reason only shows that the test could
+    not measure the server at this bot count: bots didn't all start or take
+    part at once, bots failed because PostgreSQL ran out of connections (the
+    bots open their own database connections in this process, which
+    participants don't), or no responses were recorded while bots were
+    missing.
+    """
+    causes = [("server stopped", True)] if result.get("server_stopped") else []
+    tester_limits = _tester_limits(result)
+    causes += [(reason, False) for reason in tester_limits]
     key_requests = result.get("key_requests") or 0
     request_errors = result.get("request_errors") or 0
     if request_errors > max(
         limits.allowed_request_errors,
         limits.max_request_error_rate * key_requests,
     ):
-        reasons.append(_plural(request_errors, "request error"))
+        causes.append((_plural(request_errors, "request error"), True))
     busy_responses = result.get("busy_responses") or 0
     if busy_responses > max(
         limits.allowed_busy_responses,
         limits.max_busy_response_rate * key_requests,
     ):
-        reasons.append(_plural(busy_responses, "busy/stale response"))
+        causes.append((_plural(busy_responses, "busy/stale response"), True))
     bot_errors = result.get("bot_errors") or 0
-    if bot_errors > limits.max_bot_error_rate * (result.get("total_bots_started") or 0):
-        reasons.append(_describe_bot_errors(result))
+    max_bot_errors = limits.max_bot_error_rate * (result.get("total_bots_started") or 0)
+    if bot_errors > max_bot_errors:
+        postgres_errors = (result.get("bot_error_kinds") or {}).get(_POSTGRES_FULL, 0)
+        causes.append(
+            (
+                _describe_bot_errors(result),
+                bot_errors - postgres_errors > max_bot_errors,
+            )
+        )
     p95 = result.get("p95_response_time")
     if p95 is None:
-        reasons.append("no responses recorded")
+        causes.append(("no responses recorded", not tester_limits))
     elif float(p95) > limits.max_p95_s:
-        reasons.append(f"p95 response time {float(p95) * 1000:.0f} ms")
+        causes.append((f"p95 response time {float(p95) * 1000:.0f} ms", True))
     else:
         for endpoint, endpoint_p95 in sorted(
             (result.get("endpoint_p95") or {}).items()
         ):
             if float(endpoint_p95) > limits.max_p95_s:
-                reasons.append(
-                    f"p95 response time for {endpoint} {float(endpoint_p95) * 1000:.0f} ms"
+                causes.append(
+                    (
+                        f"p95 response time for {endpoint} "
+                        f"{float(endpoint_p95) * 1000:.0f} ms",
+                        True,
+                    )
                 )
     queue_wait = queue_wait_p95(result)
     if queue_wait is not None and queue_wait > limits.max_queue_p95_s:
-        reasons.append(f"p95 async queue wait {queue_wait:.2f} s")
-    return reasons
+        causes.append((f"p95 async queue wait {queue_wait:.2f} s", True))
+    return causes
+
+
+def capacity_failures(result, limits=CapacityLimits()):
+    """Return the reasons a test result exceeded ``limits`` (empty if it did not)."""
+    return [reason for reason, _ in _capacity_failure_causes(result, limits)]
+
+
+def _server_limits(result, limits):
+    """Return the reasons in :func:`capacity_failures` that limit the server itself."""
+    return [
+        reason
+        for reason, server_limit in _capacity_failure_causes(result, limits)
+        if server_limit
+    ]
 
 
 def next_capacity_probe(highest_pass, lowest_fail, max_bots=_CAPACITY_SEARCH_MAX):
@@ -1681,6 +1720,12 @@ def next_capacity_probe(highest_pass, lowest_fail, max_bots=_CAPACITY_SEARCH_MAX
         Smallest bot count that has failed so far.
     max_bots : int
         The search never goes above this count.
+
+    Returns
+    -------
+    int or None
+        The bot count to test next, or ``None`` once the passing and failing
+        counts are close enough or ``max_bots`` has passed.
     """
     if lowest_fail is None:
         if highest_pass is None:
@@ -1714,9 +1759,11 @@ def _max_capacity_probes(max_bots=_CAPACITY_SEARCH_MAX):
 
 
 _POSTGRES_ADVICE = (
-    "  Some bots failed because PostgreSQL ran out of connections, which limits "
-    "the test rather than the experiment. In a local test, run fewer bots at "
-    "once, stop other local experiments, or raise max_connections."
+    "  Some bots failed because PostgreSQL ran out of connections. The bots "
+    "open their own database connections in this test process, which "
+    "participants don't, so this limits the test rather than the experiment. "
+    "Run fewer bots at once, stop other experiments that share the database "
+    "server, or raise max_connections."
 )
 _QUEUE_ADVICE = (
     "  Async processes waited too long for a worker: add worker processes "
@@ -1750,9 +1797,8 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
         min(failed, key=lambda f: f[0]["n_bots"]) if failed else (None, None)
     )
     below_fail = [n for n in passed if first_fail is None or n < first_fail["n_bots"]]
-    tester_limited = first_fail is not None and set(first_reasons) <= set(
-        _tester_limits(first_fail)
-    )
+    unmeasured = first_fail is not None and not _server_limits(first_fail, limits)
+    start_rate_limited = first_fail is not None and bool(_tester_limits(first_fail))
     if not below_fail:
         lines = [
             f"  Even {first_fail['n_bots']:,} bots did not keep {limit} "
@@ -1765,7 +1811,7 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
             )
         if any("async queue" in reason for reason in first_reasons):
             lines.append(_QUEUE_ADVICE)
-        if tester_limited:
+        if start_rate_limited:
             lines.append(_START_RATE_ADVICE)
         return lines + [""]
 
@@ -1775,13 +1821,14 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
             f"  Capacity: at least {capacity:,} concurrent bots kept {limit}. "
             "Test more bots to find the limit."
         ]
-    elif tester_limited:
+    elif unmeasured:
         lines = [
             f"  Capacity: at least {capacity:,} concurrent bots kept {limit}; "
             f"{first_fail['n_bots']:,} could not be tested "
             f"({', '.join(first_reasons)}).",
-            _START_RATE_ADVICE,
         ]
+        if start_rate_limited:
+            lines.append(_START_RATE_ADVICE)
     else:
         lines = [
             f"  Capacity: about {capacity:,} concurrent bots kept {limit}; "

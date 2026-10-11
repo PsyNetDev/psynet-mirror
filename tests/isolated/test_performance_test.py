@@ -474,16 +474,55 @@ def test_capacity_summary_does_not_suggest_a_cap_when_bots_started_too_slowly():
     assert "Cap concurrent" not in text
 
 
-def test_busy_responses_cap_capacity_even_when_bots_started_too_slowly():
+_POSTGRES_BOT_ERRORS = dict(
+    bot_errors=40,
+    total_bots_started=400,
+    bot_error_kinds={"PostgreSQL out of connections": 40},
+)
+
+
+@pytest.mark.parametrize(
+    "unmeasured",
+    [
+        dict(peak_running=100, p95_response_time=None, **_POSTGRES_BOT_ERRORS),
+        dict(peak_running=160, **_POSTGRES_BOT_ERRORS),
+        dict(slots_started=160, peak_running=0),
+    ],
+    ids=["slow-start-and-postgres", "postgres-only", "none-running"],
+)
+def test_capacity_summary_does_not_suggest_a_cap_when_the_test_could_not_measure(
+    unmeasured,
+):
     results = [
         _base_result(n_bots=80, p95_response_time=0.085),
-        _base_result(n_bots=160, peak_running=140, busy_responses=300),
+        _base_result(n_bots=160, **unmeasured),
+    ]
+
+    text = _join(format_capacity_summary(results))
+
+    assert "Capacity: at least 80 concurrent bots" in text
+    assert "Cap concurrent" not in text
+
+
+@pytest.mark.parametrize(
+    "server_limit, reason",
+    [
+        (dict(busy_responses=300), "300 busy/stale responses"),
+        (dict(p95_response_time=0.9), "p95 response time 900 ms"),
+    ],
+)
+def test_server_limits_cap_capacity_even_when_bots_started_too_slowly(
+    server_limit, reason
+):
+    results = [
+        _base_result(n_bots=80, p95_response_time=0.085),
+        _base_result(n_bots=160, peak_running=140, **server_limit),
     ]
 
     text = _join(format_capacity_summary(results))
 
     assert "Capacity: about 80 concurrent bots" in text
-    assert "300 busy/stale responses" in text
+    assert reason in text
     assert "Cap concurrent participants at about 64" in text
 
 

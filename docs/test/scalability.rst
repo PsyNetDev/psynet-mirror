@@ -208,24 +208,33 @@ server, see :ref:`choosing_server_size`.
 Run the search on the server you will deploy to, with ``--time-factor 1`` so
 that bots work at a realistic pace; bots with ``--time-factor 0`` load the
 server far more than people do. Each test's measurement window includes the
-time bots take to start (about 8 per second), so use a
-``--duration-minutes`` of at least two or three for steady results. A test
-whose bots didn't all start within the window counts as exceeding the limits,
-and the summary warns when starting the bots took more than a quarter of the
-test.
+time bots take to start, so use a ``--duration-minutes`` of at least two or
+three for steady results. A test whose bots didn't all start within the
+window counts as exceeding the limits, and the summary warns when starting
+the bots took more than a quarter of the test.
 
-One ``performance-test`` process starts about 8 new bots a second, because
-it creates each bot's participant itself. That keeps up to about 900 bots
-taking part at once at a realistic pace; a test that asks for more, and in
-which fewer than 90% of the bots were ever taking part at the same time,
-counts as exceeding the limits. This is a limit of the test process, not of
-the server, so when it is the only limit the smallest failing count exceeded,
-the summary reports the capacity as "at least" the largest passing count and
-doesn't suggest a participant cap.
-Bots that take longer, in a longer experiment or with a larger
-``--time-factor``, keep more bots taking part at once and give a better
-measure of the server. The test doesn't reset the database, so later
-tests in a sweep run against more participants than earlier ones.
+One ``performance-test`` process creates each bot's participant itself, so
+it can only start new bots at a limited rate, which depends on the
+experiment and the computer. The most bots it can keep taking part at once
+is roughly that start rate multiplied by how long each bot takes to finish
+the experiment. A longer experiment, or a larger ``--time-factor``, keeps
+more bots taking part at once. A test in which fewer than 90% of the
+requested bots were ever taking part at the same time counts as exceeding
+the limits. Bots that fail because PostgreSQL ran out of connections count
+against the bot error limit too, but they also point to the test: the bots
+open database connections in the test process that participants' browsers
+don't. These are limits of the test, not of the server, so when they are
+the only limits the smallest failing
+count exceeded, the summary reports the capacity as "at least" the largest
+passing count and doesn't suggest a participant cap. Response times, queue
+waits, request errors and busy responses still cap the capacity in a test
+that also had these limits.
+
+Test the experiment at the length participants will take it. When bots
+finish within seconds, the test mostly measures how quickly bots are
+created and replaced rather than a realistic load, so avoid testing
+shortened versions of an experiment. The test doesn't reset the database, so later tests in a
+sweep run against more participants than earlier ones.
 
 Bots don't open websockets, so the search doesn't measure how many
 participants can wait at once. A participant on a waiting page, such as a
