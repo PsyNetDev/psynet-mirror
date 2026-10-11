@@ -468,6 +468,8 @@ class PerformanceTester:
             "first_bot_initialized": False,
             "server_stopped": False,
             "slots_started": 0,
+            # Most bots that were taking part at the same moment.
+            "peak_running": 0,
             # Seconds from the test start until the last bot slot started.
             "ramp_up_s": None,
             "last_status_update": time.time(),
@@ -563,6 +565,9 @@ class PerformanceTester:
             bot_state["initialization_times"].append(now - create_time)
             bot_state["first_bot_initialized"] = True
             bot_state["running"][bot_id] = now
+            bot_state["peak_running"] = max(
+                bot_state["peak_running"], len(bot_state["running"])
+            )
 
     @staticmethod
     def _record_bot_end(bot_state, bot_id, outcome, end_time, error_kind=None):
@@ -740,6 +745,16 @@ class PerformanceTester:
                 Request.endpoint.in_(key_endpoints),
             )
             .one()
+        )
+
+        endpoint_p95 = dict(
+            db.session.query(
+                Request.endpoint,
+                func.percentile_cont(0.95).within_group(Request.duration),
+            )
+            .filter(*request_window, Request.endpoint.in_(key_endpoints))
+            .group_by(Request.endpoint)
+            .all()
         )
 
         request_errors = (
@@ -943,6 +958,7 @@ class PerformanceTester:
             "actual_duration": actual_duration,
             "server_stopped": bot_state["server_stopped"],
             "slots_started": bot_state["slots_started"],
+            "peak_running": bot_state["peak_running"],
             "ramp_up_s": bot_state["ramp_up_s"],
             "total_bots_started": bot_state["total_bots_started"],
             "completed_during_test": bot_state["bots_completed_during_test"],
@@ -956,6 +972,7 @@ class PerformanceTester:
             "avg_response_time": avg_response_time,
             "median_response_time": median_response_time,
             "p95_response_time": p95_response_time,
+            "endpoint_p95": endpoint_p95,
             "p99_response_time": p99_response_time,
             "stddev_response_time": stddev_response_time,
             "max_response_time": max_response_time,
@@ -1458,8 +1475,8 @@ class CapacityLimits:
     Parameters
     ----------
     max_p95_s : float
-        Largest acceptable 95th-percentile response time for ``/timeline``
-        and ``/response``.
+        Largest acceptable 95th-percentile response time, for ``/timeline``
+        and ``/response`` together and for each of them.
     max_queue_p95_s : float
         Largest acceptable time async processes spend waiting for a worker,
         measured by :func:`queue_wait_p95`.
@@ -1510,6 +1527,10 @@ def queue_wait_p95(result):
     return max(waits) if waits else None
 
 
+# Bots between runs, or still being created, leave a few slots briefly empty.
+_MIN_RUNNING_SHARE = 0.9
+
+
 def capacity_failures(result, limits=CapacityLimits()):
     """Return the reasons a test result exceeded ``limits`` (empty if it did not)."""
     reasons = []
@@ -1521,6 +1542,12 @@ def capacity_failures(result, limits=CapacityLimits()):
             f"only {slots_started:,} of {result['n_bots']:,} bots started "
             "(use a longer --duration-minutes)"
         )
+    peak_running = result.get("peak_running")
+    if peak_running and peak_running < _MIN_RUNNING_SHARE * result.get("n_bots", 0):
+        reasons.append(
+            f"at most {peak_running:,} of {result['n_bots']:,} bots were taking "
+            "part at once, because new bots could not start fast enough"
+        )
     if result.get("request_errors"):
         reasons.append(_plural(result["request_errors"], "request error"))
     if result.get("bot_errors"):
@@ -1530,6 +1557,14 @@ def capacity_failures(result, limits=CapacityLimits()):
         reasons.append("no responses recorded")
     elif float(p95) > limits.max_p95_s:
         reasons.append(f"p95 response time {float(p95) * 1000:.0f} ms")
+    else:
+        for endpoint, endpoint_p95 in sorted(
+            (result.get("endpoint_p95") or {}).items()
+        ):
+            if float(endpoint_p95) > limits.max_p95_s:
+                reasons.append(
+                    f"p95 response time for {endpoint} {float(endpoint_p95) * 1000:.0f} ms"
+                )
     queue_wait = queue_wait_p95(result)
     if queue_wait is not None and queue_wait > limits.max_queue_p95_s:
         reasons.append(f"p95 async queue wait {queue_wait:.2f} s")

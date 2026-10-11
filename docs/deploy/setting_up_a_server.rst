@@ -63,11 +63,12 @@ study opening, so plan for that peak rather than for the average.
 
 In one test, a simple rating experiment (ten static trials and one async
 process) ran on a desktop server with 8 cores, 16 CPU threads and 32 GB of
-RAM (AMD Ryzen 7 5800X). With 480 bots at once working at a realistic pace,
-the 95th-percentile response time was about 100 ms, with no errors. The
-experiment used about 7 of the 16 threads (5 for the web workers, 2 for the
-database), so the server could probably take a few hundred more. Memory
-was not the limit: the experiment used about 4 GB.
+RAM (AMD Ryzen 7 5800X). With bots working at a realistic pace, it served up
+to about 640 at once, with a 95th-percentile response time of about 180 ms
+and no errors. That is about 40 participants per CPU thread. At 640 the CPU
+was the limit: the web workers used about 9 threads and the database about
+3, and with more bots the server handled fewer requests a second. Memory
+was not the limit: the experiment used under 5 GB.
 
 With Dallinger 12.4 and earlier, the database connection pool caps every
 docker-ssh server at about 200 participants at a time, whatever its size: in

@@ -134,7 +134,7 @@ A test counts as within capacity if no request or bot errors occur and both
 of these stay within their limits:
 
 - the 95th-percentile response time for ``/timeline`` and ``/response``,
-  limited by ``--max-p95-ms`` (default 500);
+  together and for each of them, limited by ``--max-p95-ms`` (default 500);
 - the 95th-percentile time that async processes wait in the queue for a
   worker, limited by ``--max-queue-p95-s`` (default 5). Participants often
   sit on a wait page during this time, so it matters as much as response
@@ -188,6 +188,13 @@ time bots take to start (about 10 per second by default), so use a
 whose bots didn't all start within the window counts as exceeding the limits,
 and the summary warns when starting the bots took more than a quarter of the
 test.
+
+One ``performance-test`` process starts about 8 new bots a second, because
+it creates each bot's participant itself. That keeps up to about 900 bots
+taking part at once at a realistic pace; a test that asks for more, and in
+which fewer than 90% of the bots were ever taking part at the same time,
+counts as exceeding the limits. The test doesn't reset the database, so later
+tests in a sweep run against more participants than earlier ones.
 
 Bots don't open websockets, so the search doesn't measure how many
 participants can wait at once. A participant on a waiting page, such as a
