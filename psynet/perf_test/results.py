@@ -168,7 +168,7 @@ class PerformanceTestResult:
     # Seconds from the test start until the first bot completed the
     # experiment, where the steady state begins.
     first_completion_s: float | None = None
-    # Metrics before and after first_completion_s (see measure.split_phases),
+    # Metrics before and after first_completion_s (see measure.phase_stats),
     # empty unless the steady state lasted at least MIN_STEADY_STATE_S.
     startup_phase: dict = field(default_factory=dict)
     steady_state_phase: dict = field(default_factory=dict)

@@ -15,7 +15,7 @@ from psynet.perf_test import (
     format_performance_summary,
     format_test_results,
 )
-from psynet.perf_test.measure import _split_failed_requests, split_phases
+from psynet.perf_test.measure import _split_failed_requests, phase_stats
 from psynet.perf_test.runtime import _BotState
 from psynet.pytest_psynet import path_to_test_experiment
 
@@ -425,22 +425,50 @@ def test_arrival_minutes_spreads_bot_slots_evenly_over_the_window():
     assert all(t - started[0] >= 0.2 * i - 0.01 for i, t in enumerate(started))
 
 
-def test_split_phases_splits_requests_and_queue_waits_at_the_boundary():
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+def test_phase_stats_split_requests_and_queue_waits_at_the_boundary(db_session):
     from datetime import datetime, timedelta
+
+    from dallinger import db
+
+    from psynet.experiment import Request
+    from psynet.process import AsyncProcess
 
     start = datetime(2026, 10, 12, 12)
 
     def at(seconds):
         return start + timedelta(seconds=seconds)
 
-    requests = [(at(1), 2.0, 200), (at(2), 1.0, 500), (at(3), 0.5, 503)]
-    requests += [(at(60 + i), 0.1, 200) for i in range(20)]
-    queue_delays = [(at(5), 30.0), (at(70), 1.0)]
+    requests = [(1, 2.0, 200), (2, 1.0, 500), (3, 0.5, 503)]
+    requests += [(60 + i, 0.1, 200) for i in range(20)]
+    for seconds, duration, status_code in requests:
+        db.session.add(
+            Request(
+                creation_time=at(seconds),
+                duration=duration,
+                status_code=status_code,
+                method="POST",
+                endpoint="/response",
+            )
+        )
+    db.session.execute(
+        AsyncProcess.__table__.insert(),
+        [
+            dict(time_enqueued=at(s), time_started=at(s), queue_delay=delay)
+            for s, delay in [(5, 30.0), (70, 1.0)]
+        ],
+    )
+    db.session.flush()
 
-    startup, steady = split_phases(requests, queue_delays, boundary=at(60))
+    startup, steady = phase_stats(0, 10**9, 0, at(600), boundary=at(60))
 
     assert startup == dict(
-        key_requests=3, request_errors=1, p95_response_time=2.0, q_delay_p95=30.0
+        key_requests=3,
+        request_errors=1,
+        p95_response_time=pytest.approx(1.9),
+        q_delay_p95=30.0,
     )
     assert steady == dict(
         key_requests=20, request_errors=0, p95_response_time=0.1, q_delay_p95=1.0
