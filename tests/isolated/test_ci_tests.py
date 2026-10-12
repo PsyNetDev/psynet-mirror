@@ -3,6 +3,7 @@ import multiprocessing
 import threading
 import time
 
+import pytest
 from click.testing import CliRunner
 
 from psynet.command_line import psynet
@@ -18,30 +19,49 @@ def test_assign_shard_balances_and_covers_every_item():
         for i, d in enumerate([9, 7, 6, 5, 4, 3, 2, 2])
     ]
 
-    shards = [assign_shard(items, 3, index) for index in (1, 2, 3)]
+    shards = _assign_all(items, 3)
 
-    assert sorted(i.path for shard in shards for i in shard) == sorted(
-        i.path for i in items
-    )
+    _assert_covers_every_item(shards, items)
     assert sorted(sum(i.estimate for i in shard) for shard in shards) == [12, 13, 13]
 
 
-def test_assign_shard_spreads_cpu_heavy_items():
-    # By duration alone, the two heavy items would land on the same shard.
-    items = [SuiteItem("long", "demo", estimate=20)] + [
-        SuiteItem(f"t{i}", "demo", estimate=d, cpu_heavy=d == 5)
-        for i, d in enumerate([10, 5, 5, 4, 4, 3, 3])
+@pytest.mark.parametrize(
+    "estimates, heavy, node_total, heavy_counts, max_load",
+    [
+        # By duration alone, the two heavy items would land on the same shard.
+        ([20, 10, 5, 5, 4, 4, 3, 3], {2, 3}, 3, [0, 1, 1], 20),
+        ([5, 5, 5, 4], {0, 1, 2}, 2, [1, 2], 10),
+        ([5, 5, 4], {0, 1}, 1, [2], 14),
+    ],
+)
+def test_assign_shard_spreads_cpu_heavy_items(
+    estimates, heavy, node_total, heavy_counts, max_load
+):
+    items = [
+        SuiteItem(f"t{i}", "demo", estimate=d, cpu_heavy=i in heavy)
+        for i, d in enumerate(estimates)
     ]
 
-    shards = [assign_shard(items, 3, index) for index in (1, 2, 3)]
+    shards = _assign_all(items, node_total)
 
-    assert sorted(sum(i.cpu_heavy for i in shard) for shard in shards) == [0, 1, 1]
-    assert max(sum(i.estimate for i in shard) for shard in shards) == 20
+    _assert_covers_every_item(shards, items)
+    assert sorted(sum(i.cpu_heavy for i in shard) for shard in shards) == heavy_counts
+    assert max(sum(i.estimate for i in shard) for shard in shards) == max_load
 
 
-def test_cpu_heavy_items_exist():
-    root = get_psynet_root()
-    assert all((root / path).is_dir() for path in ci_tests.CPU_HEAVY_ITEMS)
+def test_cpu_heavy_items_are_collected_and_flagged():
+    collected = ci_tests.collect_items("full", {})
+    assert {i.path for i in collected if i.cpu_heavy} == ci_tests.CPU_HEAVY_ITEMS
+
+
+def _assign_all(items, node_total):
+    return [assign_shard(items, node_total, i) for i in range(1, node_total + 1)]
+
+
+def _assert_covers_every_item(shards, items):
+    assert sorted(i.path for shard in shards for i in shard) == sorted(
+        i.path for i in items
+    )
 
 
 def test_playwright_durations_feed_balanced_spec_shards(tmp_path, monkeypatch):
