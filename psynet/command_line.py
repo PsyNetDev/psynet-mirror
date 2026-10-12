@@ -5600,7 +5600,7 @@ def _run_ssh_suite_with_reset(
         else:
             all_results = suite.run(bot_counts, bot_log_file=remote.bot_log_file)
     finally:
-        # The database must be back before the app starts again.
+        # close() may take the pre-fill snapshot, which needs the app stopped.
         try:
             database_reset.close()
         finally:

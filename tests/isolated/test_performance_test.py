@@ -561,71 +561,6 @@ def test_database_reset_restores_snapshots_and_drops_only_its_own(scratch_databa
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
 )
-def test_a_failed_restore_never_loses_the_database_or_its_snapshot(scratch_database):
-    from contextlib import contextmanager
-
-    import psycopg2
-
-    from psynet import perf_reset
-
-    url, created = scratch_database
-    copy = f"{created[0]}__restore"
-    created.append(copy)
-    database = perf_reset.LocalDatabase(url)
-    failing = []
-
-    class FailingCursor(_RecordingCursor):
-        def execute(self, statement, params=None):
-            text = getattr(statement, "as_string", lambda _: statement)(self._cursor)
-            if text.startswith(tuple(failing)):
-                raise psycopg2.OperationalError(f"Simulated failure: {text}")
-            return self._cursor.execute(statement, params)
-
-    class FailingReset(perf_reset.DatabaseReset):
-        @contextmanager
-        def _connect(self):
-            with super()._connect() as cursor:
-                yield FailingCursor(cursor, [])
-
-    def exists(name):
-        with database.cursor() as cursor:
-            cursor.execute("SELECT 1 FROM pg_database WHERE datname = %s", (name,))
-            return cursor.fetchone() is not None
-
-    server = Mock()
-    reset = FailingReset(server.stop, server.start, database=database)
-    _participants(url, 1)
-    reset()
-    created.append(reset.snapshot)
-    _participants(url, 1)
-
-    failing[:] = ["CREATE DATABASE"]
-    with pytest.raises(psycopg2.Error):
-        reset()
-    assert _participants(url) == 2
-
-    # The next reset drops a restore copy left beside the database.
-    failing[:] = [f'DROP DATABASE IF EXISTS "{database.name}"']
-    with pytest.raises(psycopg2.Error):
-        reset()
-    assert _participants(url) == 2 and exists(copy)
-
-    # Fails after dropping the database; the restore copy can't be renamed yet.
-    failing[:] = ["ALTER DATABASE"]
-    with pytest.raises(psycopg2.Error):
-        reset()
-    reset.close()
-    assert not exists(database.name) and exists(reset.snapshot)
-
-    failing.clear()
-    reset.close()
-    assert _participants(url) == 1
-    assert not exists(reset.snapshot) and not exists(copy)
-
-
-@pytest.mark.parametrize(
-    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
-)
 @pytest.mark.parametrize("second_stop", [None, RuntimeError("still stopping")])
 def test_close_keeps_a_finished_prefill_whose_snapshot_was_not_taken(
     scratch_database, second_stop
@@ -1563,8 +1498,6 @@ def test_a_remote_reset_restores_only_the_apps_database_in_its_container():
         if "DROP DATABASE" in cmd and not attempts:
             attempts.append(cmd)
             return 1, 'ERROR:  55006: database "my-app" is being accessed\n'
-        if "datname = 'my-app'" in cmd:
-            return "1\n"
         if "DATABASE_URL" in cmd:
             return "my-app\n"
         if "pg_database_size" in cmd:
@@ -1591,11 +1524,7 @@ def test_a_remote_reset_restores_only_the_apps_database_in_its_container():
     sql = [c for c in commands if " psql " in c]
     assert sql and all("docker exec" in c and "my-app_postgresql" in c for c in sql)
     assert [c for c in sql if "DROP DATABASE" in c] == attempts * 2
-    assert any(
-        f'CREATE DATABASE "my-app__restore" TEMPLATE "{_APP_SNAPSHOT}"' in c
-        for c in sql
-    )
-    assert any('ALTER DATABASE "my-app__restore" RENAME TO "my-app"' in c for c in sql)
+    assert any(f'CREATE DATABASE "my-app" TEMPLATE "{_APP_SNAPSHOT}"' in c for c in sql)
     assert any("redis-cli --scan --pattern" in c for c in commands)
     assert reset.snapshot_rows == {"participant": 3}
     assert server.stop.call_count == server.start.call_count == 1
@@ -1626,7 +1555,7 @@ def test_ssh_starts_the_stopped_services_again_after_a_failed_reset(
         if "CREATE DATABASE" in cmd:
             return 1, "ERROR:  53100: could not extend file: No space left\n"
         for pattern, output in [
-            ("datname = '", "" if "__restore" in cmd else "1"),
+            ("datname = '", "1"),
             ("DATABASE_URL", "my-app"),
             ("SCARD", "1"),
             ("ps --services", "postgresql\nredis\nweb\nworker_1\npgbouncer\nsidecar"),

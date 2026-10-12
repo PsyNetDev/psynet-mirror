@@ -8,12 +8,11 @@ load rather than amounts of data. :class:`DatabaseReset` is the suite's
 
 Before the first test it takes a snapshot of the database with ``CREATE
 DATABASE ... TEMPLATE``, a file-level copy that keeps sequences, indexes and
-table bloat; before each later test it copies the snapshot to
-``<database>__restore``, drops the experiment database and renames the copy
-in its place (see :meth:`DatabaseReset._restore`). PostgreSQL only copies,
-drops or renames a database that nobody is connected to, so the hook stops
-the experiment server, terminates the connections that remain, and starts
-the server again afterwards. Restarting also empties the server's in-memory caches, some of
+table bloat; before each later test it drops the experiment database and
+creates it again from the snapshot. PostgreSQL only copies or drops a
+database that nobody is connected to, so the hook stops the experiment
+server, terminates the connections that remain, and starts the server again
+afterwards. Restarting also empties the server's in-memory caches, some of
 which hold row IDs. The hook also deletes the RQ job keys from Redis, because
 jobs refer to rows by ID, but keeps the other keys, such as the launch flags
 without which the server would launch the experiment again.
@@ -40,11 +39,6 @@ Design constraints:
 - Snapshots are separate databases that are created once and never
   changed; only the experiment database is replaced. A kept snapshot is
   only dropped on request.
-- An interrupted or failed reset never leaves the experiment database
-  without a copy: the snapshot or its restore copy exists at every step,
-  :meth:`DatabaseReset.close` and the next reset put the experiment
-  database back from them (see :meth:`DatabaseReset._recover`), and a
-  temporary snapshot is only dropped while the experiment database exists.
 - Only the experiment database and snapshots that its
   :class:`SnapshotDatabase` owns are ever dropped. A local experiment
   database must be the disposable one that the isolated test environment
@@ -88,7 +82,6 @@ _IN_USE_ATTEMPTS = 10
 _INSUFFICIENT_PRIVILEGE = "42501"
 _OBJECT_IN_USE = "55006"
 _MAX_NAME_LENGTH = 63
-_RESTORE_SUFFIX = "__restore"
 _PREFILL_PREFIX = "psynet_prefill_"
 _PREFILL_NAME = re.compile(r"psynet_prefill_(?:.+_)?(?P<code>[0-9a-f]{12})_n\d+")
 _PREFILL_SUFFIX = re.compile(r"[0-9a-f]{12}_n\d+")
@@ -428,8 +421,7 @@ class DatabaseReset:
     ------
     ValueError
         If the database may not be reset (see
-        :meth:`SnapshotDatabase.check_resettable`), or its name is too long
-        for the name of its restore copy.
+        :meth:`SnapshotDatabase.check_resettable`).
     """
 
     def __init__(
@@ -446,15 +438,8 @@ class DatabaseReset:
         self._database = LocalDatabase() if database is None else database
         if keep_as is not None and not self._database.owns_snapshot(keep_as):
             raise ValueError(f"{keep_as} is not a pre-fill snapshot name.")
-        self.database = self._database.name
-        self._restore_copy = self.database + _RESTORE_SUFFIX
-        if len(self._restore_copy) > _MAX_NAME_LENGTH:
-            raise ValueError(
-                f"The database name {self.database} is too long to reset: the "
-                f"name of its restore copy, {self._restore_copy}, would be "
-                f"longer than PostgreSQL's {_MAX_NAME_LENGTH} characters."
-            )
         self._database.check_resettable()
+        self.database = self._database.name
         self.snapshot = from_snapshot
         # Rows in each growing table of the snapshot, once restored or taken.
         self.snapshot_rows = None
@@ -473,9 +458,8 @@ class DatabaseReset:
 
         The server starts again afterwards. If taking or restoring the
         snapshot fails, the server stays stopped and the error propagates;
-        the caller then calls :meth:`close`, which puts the experiment
-        database back if the restore had dropped it, and starts the server
-        again or shuts it down.
+        the caller then calls :meth:`close` and shuts the server down or
+        starts it again.
         """
         taking = self.snapshot is None
         if taking:
@@ -503,32 +487,24 @@ class DatabaseReset:
             logger.info(f"Snapshot {self.snapshot}: {rows} rows.")
 
     def close(self):
-        """Put back an experiment database that an interrupted restore dropped, keep a finished pre-fill, then drop a snapshot taken here.
+        """Keep a finished pre-fill whose snapshot failed, then drop a snapshot taken here.
 
         To keep the pre-fill it stops the server first, because the copy
-        needs the database unused. A temporary snapshot is kept while the
-        experiment database is missing. Errors are only logged, so that a
-        test's own error is the one that propagates.
+        needs the database unused. Errors are only logged, so that a test's
+        own error is the one that propagates.
         """
         import psycopg2
 
-        present = False
         try:
-            with self._connect() as cursor:
-                present = self._recover(cursor)
             if self._prefilled and self.snapshot is None:
                 self._stop_server_to_keep_prefill()
                 self._take_snapshot()
-            if self._drop_snapshot_on_close and present:
+            if self._drop_snapshot_on_close:
                 with self._connect() as cursor:
                     drop_database(cursor, self.snapshot)
-            elif self._drop_snapshot_on_close:
-                logger.warning(warning(self._missing_database_advice()))
         except (psycopg2.Error, RuntimeError) as e:
             if self.snapshot is None:
                 advice = "The pre-filled data was not kept."
-            elif not present:
-                advice = self._missing_database_advice()
             elif self._drop_snapshot_on_close:
                 advice = self._database.drop_hint(self.snapshot)
             else:
@@ -536,61 +512,6 @@ class DatabaseReset:
             logger.warning(
                 warning(f"Could not finish resetting the database ({e}). {advice}")
             )
-
-    def _missing_database_advice(self):
-        return (
-            f"The database {self.database} may be missing, so the snapshot "
-            f"{self.snapshot} was kept; recreate the database with 'CREATE "
-            f'DATABASE "{self.database}" TEMPLATE "{self.snapshot}"\' if it is, '
-            "then drop the snapshot."
-        )
-
-    def _recover(self, cursor):
-        """Put the experiment database back if an interrupted restore dropped it; return whether it exists.
-
-        The restore copy is complete if it exists, because ``CREATE
-        DATABASE`` leaves nothing behind when it fails, so it is renamed in
-        place; without it, the experiment database is copied from the
-        snapshot again. A restore copy left beside an existing experiment
-        database is dropped. A statement that an interrupt cut off on the
-        client may still finish on the server, so if putting the database
-        back fails, it checks again whether the database exists.
-        """
-        import psycopg2
-
-        if _database_exists(cursor, self.database):
-            if _database_exists(cursor, self._restore_copy):
-                drop_database(cursor, self._restore_copy)
-            return True
-        try:
-            if _database_exists(cursor, self._restore_copy):
-                source = f"its restore copy {self._restore_copy}"
-                self._rename_restore_copy(cursor)
-            elif self.snapshot and _database_exists(cursor, self.snapshot):
-                source = f"the snapshot {self.snapshot}"
-                _create_from_template(cursor, self.database, self.snapshot)
-            else:
-                return False
-        except psycopg2.Error:
-            if not _database_exists(cursor, self.database):
-                raise
-            return True
-        logger.warning(
-            warning(
-                f"The database {self.database} was missing after an interrupted "
-                f"reset; put it back from {source}."
-            )
-        )
-        return True
-
-    def _rename_restore_copy(self, cursor):
-        _run_when_unused(
-            cursor,
-            self._restore_copy,
-            _statement(
-                "ALTER DATABASE {} RENAME TO {}", self._restore_copy, self.database
-            ),
-        )
 
     def _stop_server_to_keep_prefill(self):
         """Stop the server, if it still runs, warning instead of raising if that fails."""
@@ -659,11 +580,6 @@ class DatabaseReset:
     def _check_disk_space(self, cursor, source):
         """Raise unless PostgreSQL's data directory has twice the size of database ``source`` free.
 
-        The copy of ``source`` needs its own size, and its write-ahead log
-        up to as much again. A restore keeps the experiment database until
-        the copy exists, so its space isn't freed first; at the peak the
-        disk holds the experiment database, the snapshot and the copy.
-
         If the data directory's free space can't be read, for example without
         permission to read the server's settings or for a local PostgreSQL in
         a container, it only warns, once.
@@ -691,30 +607,21 @@ class DatabaseReset:
         cached = sum(size for _, size, _ in self._database.list_snapshots())
         raise RuntimeError(
             f"Copying {source} needs about {_size(needed)} of free disk space "
-            f"(PsyNet asks for twice the database's size, because the copy is "
-            f"made before the experiment database is dropped), but {directory} has "
+            f"(PsyNet asks for twice the database's size), but {directory} has "
             f"only {_size(free)} free. "
             f"Pre-fill snapshots use {_size(cached)}; drop those you no longer "
             f"need with '{self._database.snapshots_command} --drop NAME'."
         )
 
     def _restore(self):
-        """Replace the experiment database with a copy of the snapshot, so that one of them always exists.
-
-        The copy is made as ``<database>__restore``, the experiment database
-        is dropped, and the copy is renamed in its place. An interrupted
-        earlier reset is first cleaned up by :meth:`_recover`.
-        """
         with self._connect() as cursor:
-            self._recover(cursor)
             self._check_disk_space(cursor, self.snapshot)
-            _create_from_template(cursor, self._restore_copy, self.snapshot)
             _run_when_unused(
                 cursor,
                 self.database,
                 _statement("DROP DATABASE IF EXISTS {}", self.database),
             )
-            self._rename_restore_copy(cursor)
+            _create_from_template(cursor, self.database, self.snapshot)
 
 
 def _create_from_template(cursor, name, template):

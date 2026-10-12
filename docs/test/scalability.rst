@@ -351,15 +351,10 @@ what differs on a server.
 
 Before the first test, PsyNet copies the experiment's database into a
 snapshot database. Before each later test, it stops the experiment server,
-copies the snapshot to a new database named ``<database>__restore``, drops
-the experiment's database, renames the copy in its place, empties the async
-job queues and starts the server again. That takes a few seconds, plus a
-few seconds per gigabyte of data, because PostgreSQL copies the database's
-files. At the end it drops the snapshot. Because the copy is made first, an
-interrupted or failed reset never loses the data: when the run ends, or at
-the next reset, PsyNet renames the copy, or copies the snapshot again, if
-the experiment's database is missing, and it keeps the snapshot until the
-experiment's database is back. A test run only
+drops the experiment's database and creates it again from the snapshot,
+empties the async job queues and starts the server again. That takes a few
+seconds, plus a few seconds per gigabyte of data, because PostgreSQL copies
+the database's files. At the end it drops the snapshot. A test run only
 ever drops the experiment's own database and its temporary snapshot. Kept pre-fill
 snapshots (see below) are only dropped by ``psynet performance-test
 snapshots``, whose ``--drop-all`` drops every pre-fill snapshot on this
@@ -378,11 +373,7 @@ PostgreSQL role must be allowed to create databases, as it already must be
 for the isolated test environment (see :doc:`/developer/running_tests`).
 
 Each copy needs disk space, so before one PsyNet checks that the disk
-holding PostgreSQL's data has at least twice the database's size free:
-the copy itself, and room for PostgreSQL's write-ahead log. During a reset
-the disk briefly holds the experiment's database, the snapshot and the
-copy, because the experiment's database is only dropped once the copy
-exists. If
+holding PostgreSQL's data has at least twice the database's size free. If
 the space isn't free, PsyNet stops and says how much space the pre-fill
 snapshots use. It can only check if the PostgreSQL role may read the
 server's settings and the server's data directory is on this computer,
@@ -515,14 +506,16 @@ Before each later test, PsyNet stops the app's running containers except
 PostgreSQL, Redis and the front door (``frontdoor``, ``controller`` and
 ``cloudflared``): the web, worker, clock and PgBouncer containers, and any
 services you added to the app's compose file, so that no connection holds
-on to the old database. It then replaces the database with a copy of the
-snapshot, as above, with ``psql`` inside the app's PostgreSQL container,
-empties the app's async job queues, and starts again only the containers
-it stopped, waiting until the web server answers and the workers are back.
-Pre-fill bots run inside the web container. If a reset fails or you
-interrupt the run, PsyNet puts the database back and starts the containers
-it stopped; if it can't start them, it says that the app is stopped and
-prints the ``docker compose start`` command to run on the server.
+on to the old database. It then recreates the database from the snapshot,
+as above, with ``psql`` inside the app's PostgreSQL container, empties the
+app's async job queues, and starts again only the containers it stopped,
+waiting until the web server answers and the workers are back. Pre-fill
+bots run inside the web container. If a reset fails or you interrupt the
+run, PsyNet starts the containers it stopped. If it can't, the command
+fails, saying that the app may be stopped, and prints the ``docker compose
+start`` command to run on the server. A reset interrupted between dropping
+and recreating the database leaves the app without its database; redeploy
+the app then.
 
 The guards against real data run before the first reset and again before
 every later one, with the same ``--force`` as above. Neither command
