@@ -434,7 +434,14 @@ def _trial_maker_details(trial_maker_id):
     """Return the expected trials per participant and the candidate label of a trial maker."""
     from psynet.experiment import get_experiment
 
-    trial_maker = get_experiment().timeline.trial_makers.get(trial_maker_id)
+    try:
+        trial_maker = get_experiment().timeline.trial_makers.get(trial_maker_id)
+    except Exception as e:
+        logger.warning(
+            f"Could not look up trial maker {trial_maker_id!r} in the experiment, "
+            f"so its expected trials are unknown: {e}"
+        )
+        trial_maker = None
     expected = getattr(trial_maker, "expected_trials_per_participant", None)
     return dict(
         expected_trials=int(expected) if isinstance(expected, (int, float)) else None,

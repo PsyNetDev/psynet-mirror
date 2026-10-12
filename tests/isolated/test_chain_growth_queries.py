@@ -1129,26 +1129,49 @@ def networks_in_blocks(trial_maker, participant, blocks, network_class=ChainNetw
 )
 @pytest.mark.usefixtures("in_experiment_directory")
 @pytest.mark.parametrize(
-    "wait_for_networks, first_chain, ended_busy",
-    [(True, "busy", 0), (False, "busy", 1), (False, "full", 0)],
+    "case, ended_busy",
+    [
+        ("wait_for_networks", 0),
+        ("busy", 1),
+        ("full", 0),
+        # Busy only with its last trials, so it needs no more.
+        ("last_node", 0),
+        ("committed_to_chain", 0),
+        ("override_waits", 0),
+        # The only busy chain that still needs trials is one it can't join.
+        ("filter_rejects_growing", 0),
+    ],
 )
-def test_busy_block_waits_or_finishes_early(
-    db_session, participant, wait_for_networks, first_chain, ended_busy
-):
+def test_busy_block_waits_or_finishes_early(db_session, participant, case, ended_busy):
     trial_maker = chain_trial_maker(
         chains_per_experiment=2,
         max_trials_per_participant=None,
-        wait_for_networks=wait_for_networks,
+        wait_for_networks=case == "wait_for_networks",
     )
-    first, free = networks_in_blocks(trial_maker, participant, ["A", "B"])
-    if first_chain == "busy":
-        add_trial(GrowthQueryTrial, first.head, new_participant(), finalized=False)
-    else:
+    blocks = ["A", "A", "B"] if case == "filter_rejects_growing" else ["A", "B"]
+    first, *rejected, free = networks_in_blocks(trial_maker, participant, blocks)
+    if case == "full":
         first.full = True
+    else:
+        for network in [first, *rejected]:
+            add_trial(
+                GrowthQueryTrial, network.head, new_participant(), finalized=False
+            )
+    if case in ("last_node", "filter_rejects_growing"):
+        first.max_size = 1
+    if rejected:
+        trial_maker.custom_chain_filter = lambda chains, p, e: [
+            chain for chain in chains if chain not in rejected
+        ]
+    if case == "committed_to_chain":
+        participant.module_state.current_chain_id = first.id
+    if case == "override_waits":
+        find_chains = trial_maker.find_chains
+        trial_maker.find_chains = lambda p, e: find_chains(p, e) or "wait"
 
     outcome = trial_maker._select_trial_node(participant, get_experiment())
 
-    if wait_for_networks:
+    if case in ("wait_for_networks", "committed_to_chain", "override_waits"):
         assert outcome == "wait"
         assert participant.module_state.block == "A"
     else:
@@ -1156,7 +1179,11 @@ def test_busy_block_waits_or_finishes_early(
         assert participant.module_state.block == "B"
     assert (participant.module_state.blocks_ended_busy or 0) == ended_busy
     finishes = busy_early_finish_stats(after_participant_id=0)
-    assert finishes.get(trial_maker.id, {}).get("participants", 0) == ended_busy
+    if ended_busy:
+        assert finishes[trial_maker.id]["participants"] == 1
+        assert finishes[trial_maker.id]["median_trials"] == 0
+    else:
+        assert trial_maker.id not in finishes
 
 
 @pytest.mark.parametrize(

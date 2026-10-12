@@ -591,14 +591,18 @@ def describe_busy_early_finish(result, trial_maker_id, detail=False):
         A key of ``result.busy_early_finishes``.
     detail : bool
         Also give the share of bots and their median number of trials, e.g.
-        ``23 of 150 participants (15%) got fewer trials in main_chain because
+        ``23 of 150 bots started (15%) got fewer trials in main_chain because
         every chain was busy; median 41 of 60 trials``.
+
+    Counts are of bots started, which include the bots that replaced those
+    that finished, so a bot that got no trials and was replaced at once
+    counts like a participant who would have left.
     """
     stats = result.busy_early_finishes[trial_maker_id]
     n, started = stats["participants"], result.total_bots_started or 0
-    who = plural(n, "participant")
+    who = plural(n, "bot")
     if detail and started:
-        who = f"{n:,} of {plural(started, 'participant')} ({n / started:.0%})"
+        who = f"{n:,} of {started:,} bots started ({n / started:.0%})"
     text = (
         f"{who} got fewer trials in {trial_maker_id} because every "
         f"{stats.get('candidate') or 'chain'} was busy"
@@ -801,9 +805,12 @@ _MIN_CONFIRMATION_RETRY_SHARE = 0.5
 
 
 def overshoot(result, limits):
-    """Return how many times its limit the worst response-time or queue measure of ``result`` reached.
+    """Return how many times its limit the worst load-dependent measure of ``result`` reached.
 
-    Returns ``None`` if neither exceeded its limit, e.g. when only errors did.
+    The measures are response times, the async queue wait and, for each
+    trial maker, the share of bots that got fewer trials because every chain
+    was busy. Returns ``None`` if none exceeded its limit, e.g. when only
+    errors did.
     """
     ratios = []
     p95s = [result.p95_response_time, *(result.endpoint_p95 or {}).values()]
@@ -811,6 +818,12 @@ def overshoot(result, limits):
     queue_wait = queue_wait_p95(result)
     if queue_wait is not None and limits.max_queue_p95_s:
         ratios.append(queue_wait / limits.max_queue_p95_s)
+    allowed_busy = limits.max_busy_early_finish_rate * (result.total_bots_started or 0)
+    if allowed_busy:
+        ratios += [
+            stats["participants"] / allowed_busy
+            for stats in (result.busy_early_finishes or {}).values()
+        ]
     worst = max(ratios, default=0)
     return worst if worst > 1 else None
 

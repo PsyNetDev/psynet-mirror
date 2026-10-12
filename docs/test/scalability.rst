@@ -149,9 +149,11 @@ that the slowest participants experience. The report also shows:
 - **Bot runtimes**, separately for each of these outcomes, and **trials per
   bot** (for bots that completed successfully). Below the trials, a line for
   each chain trial maker says how many bots got fewer trials because every
-  chain was busy, for example ``23 of 150 participants (15%) got fewer
+  chain was busy, for example ``23 of 150 bots started (15%) got fewer
   trials in main_chain because every chain was busy; median 41 of 60
-  trials.``
+  trials.`` Bots started include those that replaced bots that finished.
+  Chains that are busy only with their last trials don't count, because
+  they would have nothing left to give.
 - **Request metrics**: total requests, errors and throughput. A
   *Busy/stale responses (409/503)* line appears when ``/timeline`` or
   ``/response`` answered with HTTP 503, which PsyNet sends when the
@@ -259,7 +261,9 @@ A test counts as within capacity if these stay within their limits:
   at most 1% for each trial maker. With the default
   ``wait_for_networks=False``, a participant who finds every eligible chain
   awaiting an async process or out of trial capacity finishes the block
-  early instead of waiting. The participant is not failed, so the test
+  early instead of waiting. Static trial makers don't limit trials per node
+  during selection, so they only do this when every node awaits an async
+  process. The participant is not failed, so the test
   results show these bots under *trials per bot* instead, with their median
   number of trials and the trial maker's ``expected_trials_per_participant``.
   Unlike wait timeouts, this sets the capacity and the suggested cap:
