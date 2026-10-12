@@ -47,8 +47,10 @@ def _fmt(value, suffix=""):
 def _describe_workers(result):
     """Describe the async worker processes and how many jobs they can run at once."""
     n_workers = result.n_rq_workers
-    if not n_workers:
+    if n_workers is None:
         return ""
+    if n_workers == 0:
+        return "no worker processes"
     text = f"{n_workers} worker process{'es' if n_workers != 1 else ''}"
     n_slots = result.n_rq_job_slots
     if n_slots and n_slots != n_workers:
@@ -589,6 +591,13 @@ _LOW_PRIORITY_BACKLOG_ADVICE = (
 
 def _queue_advice(result):
     """Return advice for a test whose high-priority async jobs waited too long for a worker."""
+    if result.n_rq_workers == 0:
+        return (
+            "  High-priority async jobs, which participants wait for, waited for "
+            "a worker, but no worker processes were running, so they couldn't "
+            "run. Check the server log for workers that failed to start, and "
+            "check worker_processes."
+        )
     workers = _describe_workers(result)
     had = f" The server had {workers}." if workers else ""
     return (

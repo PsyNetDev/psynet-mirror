@@ -117,23 +117,25 @@ def _heroku_local_command():
     The command matches the one Dallinger's ``HerokuLocalWrapper`` runs, with
     the dyno counts from the server's ``config.txt``.
     """
-    from dallinger.heroku.tools import dyno_count
+    from dallinger.heroku.tools import HerokuLocalWrapper, dyno_count
 
     from psynet.redis import redis_vars
     from psynet.utils import load_runtime_server_config
 
     cwd = redis_vars.get("server_working_directory", None)
-    if not cwd:
+    if not cwd or not os.path.isfile(os.path.join(cwd, "Procfile")):
         raise click.ClickException(
-            "The experiment server didn't record its working directory, so it "
-            "can't be restarted to reset the database."
+            "The experiment server didn't record a working directory with a "
+            f"Procfile (got {cwd!r}), so it can't be restarted to reset the "
+            "database."
         )
     config = load_runtime_server_config()
     dynos = f"web={dyno_count(config, 'web')},worker={dyno_count(config, 'worker')}"
     if config.get("clock_on"):
         dynos += ",clock"
     port = config.get("base_port")
-    return ["heroku", "local", "-p", str(port), dynos], cwd, port
+    command = [HerokuLocalWrapper.shell_command, "local", "-p", str(port), dynos]
+    return command, cwd, port
 
 
 def _wait_for_free_port(port):
