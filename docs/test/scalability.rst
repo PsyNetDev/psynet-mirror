@@ -502,7 +502,7 @@ Resetting the database on a server
 
 With these options your computer runs the series of tests, or the capacity
 search, and the server runs one test at a time and sends its results back.
-Before each later test, PsyNet stops the app's running containers except
+Before each later test, PsyNet stops the app's running or restarting containers except
 PostgreSQL, Redis and the front door (``frontdoor``, ``controller`` and
 ``cloudflared``): the web, worker, clock and PgBouncer containers, and any
 services you added to the app's compose file, so that no connection holds

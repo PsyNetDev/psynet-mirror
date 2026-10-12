@@ -34,7 +34,7 @@ Design constraints:
 - Before each reset the web container checks that the database has only bot
   participants and that the app doesn't recruit real ones (see
   ``psynet performance-test prepare-reset``); live mode always refuses.
-- A reset stops every running service of the app's compose file except
+- A reset stops every running or restarting service of the app's compose file except
   PostgreSQL, Redis and the front door's services (``_KEPT_SERVICES``),
   so that services added to the compose file that use the database can't
   hold it, and starts again only those it stopped. That includes
@@ -221,7 +221,7 @@ class RemoteApp:
         return self.compose("exec", "-T", "web", "python", "-c", probe).strip()
 
     def stop(self):
-        """Check that the database may be reset, then stop the app's running services that may use the database.
+        """Check that the database may be reset, then stop the app's running or restarting services that may use the database.
 
         Those are all except PostgreSQL, Redis and the front door's
         services; :meth:`start` starts them again.
@@ -302,9 +302,11 @@ class RemoteApp:
         return self.compose("exec", "-T", "redis", "redis-cli", *command).strip()
 
     def _server_services(self):
-        """Return the running services that may use the database, such as web, workers, clock and pgbouncer."""
-        running = self.compose("ps", "--services", "--status", "running").split()
-        return [s for s in running if s not in _KEPT_SERVICES]
+        """Return the running or restarting services that may use the database, such as web, workers, clock and pgbouncer."""
+        running = self.compose(
+            "ps", "--services", "--status", "running", "--status", "restarting"
+        ).split()
+        return [s for s in dict.fromkeys(running) if s not in _KEPT_SERVICES]
 
     def _append_bot_log(self, remote_path):
         from psynet.command_line import build_remote_experiment_command
