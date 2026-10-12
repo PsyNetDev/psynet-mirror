@@ -11,6 +11,7 @@ from psynet.participant import Participant
 from psynet.perf_test.measure import busy_early_finish_stats
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.sqlalchemy_profiling import assert_query_count
+from psynet.sync import SimpleSyncGroup
 from psynet.trial.chain import ChainNetwork, ChainNode, ChainTrial, ChainTrialMaker
 from psynet.trial.create_and_rate import (
     CreateAndRateAssignmentPending,
@@ -1136,6 +1137,8 @@ def networks_in_blocks(trial_maker, participant, blocks, network_class=ChainNetw
         ("full", 0),
         # Busy only with its last trials, so it needs no more.
         ("last_node", 0),
+        # Its last node still awaits an async process, so it needs trials.
+        ("last_node_awaiting_async", 1),
         ("committed_to_chain", 0),
         ("override_waits", 0),
         # The only busy chain that still needs trials is one it can't join.
@@ -1157,8 +1160,10 @@ def test_busy_block_waits_or_finishes_early(db_session, participant, case, ended
             add_trial(
                 GrowthQueryTrial, network.head, new_participant(), finalized=False
             )
-    if case in ("last_node", "filter_rejects_growing"):
+    if case in ("last_node", "last_node_awaiting_async", "filter_rejects_growing"):
         first.max_size = 1
+    if case == "last_node_awaiting_async":
+        first.head.async_on_deploy_requested = True
     if rejected:
         trial_maker.custom_chain_filter = lambda chains, p, e: [
             chain for chain in chains if chain not in rejected
@@ -1184,6 +1189,43 @@ def test_busy_block_waits_or_finishes_early(db_session, participant, case, ended
         assert finishes[trial_maker.id]["median_trials"] == 0
     else:
         assert trial_maker.id not in finishes
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_busy_block_counts_once_for_every_sync_group_member(db_session, participant):
+    trial_maker = chain_trial_maker(
+        chains_per_experiment=2,
+        max_trials_per_participant=None,
+        sync_group_type="main",
+    )
+    first, free = networks_in_blocks(trial_maker, participant, ["A", "B"])
+    follower = new_participant()
+    initialize_trial_maker_state(trial_maker, follower)
+    follower.module_state.block_order = ["A", "B"]
+    follower.module_state.set_block_position(0)
+    group = SimpleSyncGroup(
+        group_type="main",
+        initial_group_size=2,
+        max_group_size=2,
+        min_group_size=1,
+        n_active_participants=2,
+        accepts_top_ups=False,
+    )
+    db_session.add(group)
+    for member in (participant, follower):
+        group.add_participant(member)
+    group.leader = participant
+    add_trial(GrowthQueryTrial, first.head, new_participant(), finalized=False)
+
+    outcome = trial_maker._select_trial_node(participant, get_experiment())
+
+    assert outcome.value is free.head
+    for member in (participant, follower):
+        assert member.module_state.block == "B"
+        assert member.module_state.blocks_ended_busy == 1
 
 
 @pytest.mark.parametrize(
