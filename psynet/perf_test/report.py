@@ -14,22 +14,24 @@ from tabulate import tabulate
 
 from psynet.log import bold, error, success, warning
 from psynet.perf_test.results import (
+    CAPACITY_HEADROOM,
     MIN_STEADY_STATE_S,
     POSTGRES_FULL,
     PROCESS_STAT_KEYS,
     CapacityLimits,
-    busy_early_finish_cause,
     capacity_failure_causes,
+    capacity_outcome,
     count_wait_timeouts,
     describe_bot_errors,
     describe_busy_early_finish,
+    overshoot,
     phase_limit_reasons,
     plural,
     queue_wait_p95,
+    retry_bot_count,
     start_rate_limits,
     tester_lagged,
     top_counts,
-    wait_timeout_cause,
     wait_timeout_reasons,
 )
 
@@ -437,7 +439,9 @@ def format_performance_summary(results):
     """
     lines = []
     database_growth = _describe_database_growth(results)
-    results = sorted(results, key=lambda r: r.n_bots)
+    # The confirmation test is longer than the others, so it comes last
+    # rather than serving as the baseline.
+    results = sorted(results, key=lambda r: (r.confirmation, r.n_bots))
 
     show_scaling = len(results) > 1 and results[0].median_response_time is not None
     baseline_response_median = results[0].median_response_time if show_scaling else None
@@ -464,7 +468,10 @@ def format_performance_summary(results):
     for i, result in enumerate(results):
         response_median = result.median_response_time
         q_median = result.q_delay_median
-        row = [result.n_bots, result.bots_succeeded]
+        row = [
+            f"{result.n_bots} (confirmation)" if result.confirmation else result.n_bots,
+            result.bots_succeeded,
+        ]
         if show_failed:
             row.append(result.participants_failed)
         row += [
@@ -642,19 +649,19 @@ def _startup_only_lines(result, limits):
     ]
 
 
-_CAPACITY_HEADROOM = 0.8
 _RAMP_UP_WARNING_SHARE = 0.25
 
 
-def _capacity_headline(
-    capacity, passed, first_fail, first_reasons, limit, *, unmeasured, waits_only
-):
+def _capacity_headline(outcome, first_reasons, limit, *, show_cap=True):
     """Return the capacity summary's first lines: the capacity, and a cap if the server set it.
 
     Only a server limit sets the capacity, so a first failure that could not
-    be tested (``unmeasured``) or that only had wait timeouts or busy chains
-    (``waits_only``) leaves it a lower bound, without a cap.
+    be tested (``outcome.unmeasured``) or that only had wait timeouts or busy
+    chains (``outcome.waits_only``) leaves it a lower bound, without a cap.
+    Pass ``show_cap=False`` when a confirmation test reports the cap instead.
     """
+    capacity, passed, first_fail = outcome.capacity, outcome.passed, outcome.first_fail
+    unmeasured, waits_only = outcome.unmeasured, outcome.waits_only
     if first_fail is None:
         return [
             f"  Capacity: at least {capacity:,} concurrent bots kept {limit}. "
@@ -674,16 +681,15 @@ def _capacity_headline(
             ]
     else:
         lower_bound = unmeasured or waits_only
-        outcome = "could not be tested" if unmeasured else "did not"
+        verdict = "could not be tested" if unmeasured else "did not"
         lines = [
             f"  Capacity: {'at least' if lower_bound else 'about'} {capacity:,} "
-            f"concurrent bots kept {limit}; {n_failed} {outcome} ({first_reasons})."
+            f"concurrent bots kept {limit}; {n_failed} {verdict} ({first_reasons})."
         ]
-        if not lower_bound:
+        if show_cap and outcome.cap is not None:
             lines.append(
-                f"  Cap concurrent participants at about "
-                f"{max(1, int(capacity * _CAPACITY_HEADROOM)):,} "
-                f"({_CAPACITY_HEADROOM:.0%} of {capacity:,})."
+                f"  Cap concurrent participants at about {outcome.cap:,} "
+                f"({CAPACITY_HEADROOM:.0%} of {capacity:,})."
             )
     above_fail = [n for n in passed if capacity is None or n > first_fail.n_bots]
     if above_fail and (capacity is None or not unmeasured):
@@ -695,11 +701,65 @@ def _capacity_headline(
     return lines
 
 
+def _confirmation_lines(result, limits):
+    """Report whether the confirmation test that ended a capacity search kept the limits."""
+    n = result.n_bots
+    arriving = (
+        f"bots arriving over {result.arrival_minutes:g} min"
+        if result.arrival_minutes
+        else "bots starting together"
+    )
+    test = (
+        f"the {n:,}-bot confirmation test ({arriving}, "
+        f"{result.duration_minutes or 0:g} min long)"
+    )
+    causes = capacity_failure_causes(result, limits)
+    if not causes:
+        return [
+            f"  Confirmed: {test} kept the same limits. Cap concurrent "
+            f"participants at about {n:,}."
+        ]
+    reasons = "; ".join(reason for reason, _ in causes)
+    if not any(server_limit for _, server_limit in causes):
+        return [
+            f"  Not confirmed: {test} could not be tested ({reasons}). The search "
+            f"suggested capping concurrent participants at about {n:,}."
+        ]
+    lines = [f"  Not confirmed: {test} exceeded the limits ({reasons})."]
+    if result.startup_phase and result.steady_state_phase:
+        startup = phase_limit_reasons(result.startup_phase, limits)
+        steady = phase_limit_reasons(
+            result.steady_state_phase, limits, result.oldest_queued_s
+        )
+        lines.append(
+            "  Response times, request errors and queue waits: start-up "
+            f"{'; '.join(startup) or 'within the limits'}, steady state "
+            f"{'; '.join(steady) or 'within the limits'}."
+        )
+    else:
+        lines.append(
+            "  The test reached too little steady state to judge it separately."
+        )
+    retry = retry_bot_count(result, limits)
+    ratio = overshoot(result, limits)
+    why = f", as the worst measure reached {ratio:.1f} times its limit" if ratio else ""
+    rerun = f"--n-bots {retry} --duration-minutes {result.duration_minutes or 0:g}"
+    if result.arrival_minutes:
+        rerun += f" --arrival-minutes {result.arrival_minutes:g}"
+    lines.append(
+        f"  Try capping concurrent participants at about {retry:,}{why}, and "
+        f"check it with {rerun}."
+    )
+    return lines
+
+
 def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
     """Describe the capacity that ``results`` imply and suggest a participant cap.
 
     Returns list[str].
     """
+    confirmation = next((r for r in results if r.confirmation), None)
+    results = [r for r in results if not r.confirmation]
     if not results:
         return []
     limit = limits.describe(
@@ -708,34 +768,15 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
             for r in results
         )
     )
-    causes = [(r, capacity_failure_causes(r, limits)) for r in results]
-    passed = [r.n_bots for r, result_causes in causes if not result_causes]
-    failed = [(r, result_causes) for r, result_causes in causes if result_causes]
-    first_fail, first_causes = (
-        min(failed, key=lambda f: f[0].n_bots) if failed else (None, [])
-    )
-    first_reasons = "; ".join(reason for reason, _ in first_causes)
-    unmeasured = not any(server_limit for _, server_limit in first_causes)
-    wait_cause = first_fail and wait_timeout_cause(first_fail, limits)
-    busy_cause = first_fail and busy_early_finish_cause(first_fail, limits)
-    # Wait timeouts and busy chains can come from the design, so alone they
-    # don't show the server's capacity.
-    design_causes = {wait_cause, busy_cause} - {None, False}
-    waits_only = bool(design_causes) and not any(
-        server_limit and reason not in design_causes
-        for reason, server_limit in first_causes
-    )
-    below_fail = [n for n in passed if first_fail is None or n < first_fail.n_bots]
-    capacity = max(below_fail, default=None)
+    outcome = capacity_outcome(results, limits)
+    capacity, first_fail = outcome.capacity, outcome.first_fail
+    first_reasons = "; ".join(reason for reason, _ in outcome.first_causes)
+    wait_cause, busy_cause = outcome.wait_cause, outcome.busy_cause
     lines = _capacity_headline(
-        capacity,
-        passed,
-        first_fail,
-        first_reasons,
-        limit,
-        unmeasured=unmeasured,
-        waits_only=waits_only,
+        outcome, first_reasons, limit, show_cap=confirmation is None
     )
+    if confirmation is not None:
+        lines += _confirmation_lines(confirmation, limits)
     if first_fail is not None:
         lines += _startup_only_lines(first_fail, limits)
     if wait_cause:

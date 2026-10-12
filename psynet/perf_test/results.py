@@ -2,9 +2,11 @@
 
 :class:`PerformanceTestResult` holds one test's measurements and is what
 ``--json-output`` saves. :class:`CapacityLimits` and :func:`capacity_failures`
-decide whether a result passes, and :func:`next_capacity_probe` chooses the
-next bot count of a capacity search. :func:`default_duration_minutes`
-chooses how long a test lasts from how long a participant session takes.
+decide whether a result passes, :func:`capacity_outcome` what a series of
+results shows, and :func:`next_capacity_probe` chooses the next bot count of
+a capacity search. :func:`default_duration_minutes` and
+:func:`confirmation_timing` choose how long tests last from how long a
+participant session takes.
 
 Failures from waiting too long, such as timed-out holds, count against
 capacity (see :func:`_is_wait_timeout`); others, such as prescreens, are
@@ -36,12 +38,24 @@ _CAPACITY_RESOLUTION = 0.1
 CAPACITY_SEARCH_MAX_TESTS = 12
 # A default test lasts this many participant sessions, so that bots finish
 # and new ones replace them, but at most _MAX_DEFAULT_DURATION_MINUTES so that
-# a capacity search of a long study stays practical.
+# a long study's test stays practical.
 _DEFAULT_SESSIONS_PER_TEST = 1.5
 _MAX_DEFAULT_DURATION_MINUTES = 30
+# A capacity search runs up to CAPACITY_SEARCH_MAX_TESTS tests, so its tests
+# last one session but at most 5 minutes: 12 tests then take at most an hour,
+# and the 7 or 8 a typical search runs about 40 minutes. They only see the
+# start-up, which the confirmation test makes up for.
+_SEARCH_SESSIONS_PER_TEST = 1
+_MAX_SEARCH_DURATION_MINUTES = 5
+# The confirmation test spreads arrivals over one session and lasts two, so
+# that the last bots to arrive finish a session and the test sees about one
+# session of steady state. At most an hour, which covers two sessions of a
+# 30-minute study.
+_CONFIRMATION_SESSIONS = 2
+_MAX_CONFIRMATION_DURATION_MINUTES = 60
 
 
-def default_duration_minutes(session_minutes, minimum):
+def default_duration_minutes(session_minutes, minimum, search=False):
     """Return how long a test lasts by default, in whole minutes.
 
     Parameters
@@ -51,17 +65,64 @@ def default_duration_minutes(session_minutes, minimum):
         duration times the bots' time factor. ``None`` or 0 if unknown.
     minimum : float
         The shortest default, ``Experiment.test_duration_minutes``.
+    search : bool
+        Whether the test is part of a capacity search (``--n-bots auto``).
 
     Returns
     -------
     float
-        1.5 sessions rounded up, at least ``minimum`` and at most 30 minutes
-        (unless ``minimum`` is longer).
+        1.5 sessions rounded up and at most 30 minutes, or for a search one
+        session rounded up and at most 5 minutes; at least ``minimum``.
     """
     if not session_minutes:
         return minimum
-    sessions = math.ceil(_DEFAULT_SESSIONS_PER_TEST * session_minutes)
-    return max(minimum, min(sessions, _MAX_DEFAULT_DURATION_MINUTES))
+    sessions, longest = (
+        (_SEARCH_SESSIONS_PER_TEST, _MAX_SEARCH_DURATION_MINUTES)
+        if search
+        else (_DEFAULT_SESSIONS_PER_TEST, _MAX_DEFAULT_DURATION_MINUTES)
+    )
+    return max(minimum, min(math.ceil(sessions * session_minutes), longest))
+
+
+def confirmation_timing(session_minutes, minimum, arrival_minutes=None):
+    """Return ``(duration_minutes, arrival_minutes)`` for a capacity search's confirmation test.
+
+    Bots arrive evenly over one session and the test lasts two, so that it
+    reaches the steady state: at least a session and a minute, so that a
+    short study's steady state is long enough to report, and at most an
+    hour, so a study over an hour long never reaches it.
+
+    Parameters
+    ----------
+    session_minutes : float or None
+        How long a bot takes the experiment, as for
+        :func:`default_duration_minutes`.
+    minimum : float
+        The shortest test, the search tests' duration.
+    arrival_minutes : float, optional
+        The arrival window the user chose, which the confirmation keeps; the
+        test then lasts a session longer than it.
+
+    Returns
+    -------
+    tuple of (float, float or None)
+        The test length in whole minutes and the arrival window in minutes,
+        ``None`` if the session length is unknown.
+    """
+    session_minutes = session_minutes or 0
+    if arrival_minutes:
+        duration = math.ceil(arrival_minutes + max(session_minutes, 1))
+        return max(minimum, duration), arrival_minutes
+    # A short study still gets a steady state long enough to report.
+    sessions = max(
+        _CONFIRMATION_SESSIONS * session_minutes,
+        session_minutes + MIN_STEADY_STATE_S / 60,
+    )
+    duration = max(
+        minimum,
+        min(math.ceil(sessions), _MAX_CONFIRMATION_DURATION_MINUTES),
+    )
+    return duration, round(min(session_minutes, duration / 2), 1) or None
 
 
 def short_test_warning(duration_minutes, session_minutes):
@@ -89,6 +150,14 @@ class PerformanceTestResult:
 
     n_bots: int = 0
     duration_minutes: float | None = None
+    # Minutes over which the bots arrived, or None if they started --stagger
+    # seconds apart.
+    arrival_minutes: float | None = None
+    # How long a bot takes the experiment: the timeline's estimate times the
+    # bots' time factor.
+    session_minutes: float | None = None
+    # Whether this is the confirmation test that ends a capacity search.
+    confirmation: bool = False
     actual_duration: float | None = None
     server_stopped: bool = False
     # Why a bot process stopped during the test, if one did.
@@ -648,6 +717,114 @@ def capacity_failure_causes(result, limits):
 def capacity_failures(result, limits=CapacityLimits()):
     """Return the reasons a test result exceeded ``limits`` (empty if it did not)."""
     return [reason for reason, _ in capacity_failure_causes(result, limits)]
+
+
+# The suggested participant cap leaves this share of the capacity.
+CAPACITY_HEADROOM = 0.8
+
+
+@dataclass
+class CapacityOutcome:
+    """What the tests of a capacity search, or a list of bot counts, show about capacity.
+
+    Built by :func:`capacity_outcome`.
+    """
+
+    # The largest passing bot count below the smallest failing one.
+    capacity: int | None
+    # Every passing bot count.
+    passed: list[int]
+    # The test with the smallest failing bot count, and its failure causes
+    # from capacity_failure_causes.
+    first_fail: PerformanceTestResult | None
+    first_causes: list
+    # Whether the first failure only shows that the test couldn't measure
+    # the server.
+    unmeasured: bool
+    # The first failure's wait-timeout reason, if it had too many.
+    wait_cause: str | None
+    # The first failure's busy-chain reason, if too many participants got
+    # fewer trials because every chain was busy.
+    busy_cause: str | None
+    # Whether wait timeouts and busy chains were the first failure's only
+    # server limits; they can come from the design, so alone they don't show
+    # the capacity.
+    waits_only: bool
+
+    @property
+    def cap(self):
+        """Return the suggested participant cap, or ``None`` if the tests didn't find a limit."""
+        if (
+            self.capacity is None
+            or self.first_fail is None
+            or self.unmeasured
+            or self.waits_only
+        ):
+            return None
+        return max(1, int(self.capacity * CAPACITY_HEADROOM))
+
+
+def capacity_outcome(results, limits=CapacityLimits()):
+    """Return the :class:`CapacityOutcome` of ``results``, ignoring any confirmation test."""
+    causes = [
+        (r, capacity_failure_causes(r, limits)) for r in results if not r.confirmation
+    ]
+    passed = [r.n_bots for r, result_causes in causes if not result_causes]
+    failed = [(r, result_causes) for r, result_causes in causes if result_causes]
+    first_fail, first_causes = (
+        min(failed, key=lambda f: f[0].n_bots) if failed else (None, [])
+    )
+    wait_cause = first_fail and wait_timeout_cause(first_fail, limits) or None
+    busy_cause = first_fail and busy_early_finish_cause(first_fail, limits) or None
+    design_causes = {wait_cause, busy_cause} - {None}
+    return CapacityOutcome(
+        capacity=max(
+            (n for n in passed if first_fail is None or n < first_fail.n_bots),
+            default=None,
+        ),
+        passed=passed,
+        first_fail=first_fail,
+        first_causes=first_causes,
+        unmeasured=not any(server_limit for _, server_limit in first_causes),
+        wait_cause=wait_cause,
+        busy_cause=busy_cause,
+        waits_only=bool(design_causes)
+        and not any(
+            server_limit and reason not in design_causes
+            for reason, server_limit in first_causes
+        ),
+    )
+
+
+# A failed confirmation suggests at least this share of its bot count, because
+# a queue that never drains overshoots its limit by far more than the load does.
+_MIN_CONFIRMATION_RETRY_SHARE = 0.5
+
+
+def overshoot(result, limits):
+    """Return how many times its limit the worst response-time or queue measure of ``result`` reached.
+
+    Returns ``None`` if neither exceeded its limit, e.g. when only errors did.
+    """
+    ratios = []
+    p95s = [result.p95_response_time, *(result.endpoint_p95 or {}).values()]
+    ratios += [float(p) / limits.max_p95_s for p in p95s if p is not None]
+    queue_wait = queue_wait_p95(result)
+    if queue_wait is not None and limits.max_queue_p95_s:
+        ratios.append(queue_wait / limits.max_queue_p95_s)
+    worst = max(ratios, default=0)
+    return worst if worst > 1 else None
+
+
+def retry_bot_count(result, limits):
+    """Return the bot count to try after ``result``, a confirmation test, exceeded the limits.
+
+    Divides its bot count by :func:`overshoot`, keeping between half and
+    :data:`CAPACITY_HEADROOM` of it.
+    """
+    ratio = overshoot(result, limits) or 1 / CAPACITY_HEADROOM
+    share = min(CAPACITY_HEADROOM, max(_MIN_CONFIRMATION_RETRY_SHARE, 1 / ratio))
+    return max(1, int(result.n_bots * share))
 
 
 def next_capacity_probe(highest_pass, lowest_fail, max_bots=CAPACITY_SEARCH_MAX):

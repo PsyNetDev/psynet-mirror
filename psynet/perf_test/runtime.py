@@ -482,12 +482,41 @@ class PerformanceTester:
         """Close the bots' pooled database connections, for example before a reset."""
         self._bots.release_database_connections()
 
-    def run_test(self, label, n_bots, bot_log_file):
-        """Run one test of ``n_bots`` bots, print its results and return them."""
+    def run_test(
+        self,
+        label,
+        n_bots,
+        bot_log_file,
+        *,
+        duration_minutes=None,
+        arrival_minutes=None,
+        confirmation=False,
+    ):
+        """Run one test of ``n_bots`` bots, print its results and return them.
+
+        ``duration_minutes`` and ``arrival_minutes`` replace the tester's for
+        this test only, as for the confirmation test that ends a capacity
+        search (``confirmation``).
+        """
         logger.info("")
         logger.info(bold("=" * 80))
-        logger.info(bold(f"TEST {label}: Running with {n_bots:,} concurrent bots"))
-        return self._test_performance(n_bots, bot_log_file=bot_log_file)
+        kind = "CONFIRMATION TEST" if confirmation else f"TEST {label}"
+        logger.info(bold(f"{kind}: Running with {n_bots:,} concurrent bots"))
+        saved = self.duration_minutes, self.arrival_minutes
+        if duration_minutes is not None:
+            self.duration_minutes, self.arrival_minutes = (
+                duration_minutes,
+                arrival_minutes,
+            )
+        try:
+            result = self._test_performance(n_bots, bot_log_file=bot_log_file)
+            result.duration_minutes = self.duration_minutes
+            result.arrival_minutes = self.arrival_minutes
+        finally:
+            self.duration_minutes, self.arrival_minutes = saved
+        result.session_minutes = self.session_minutes
+        result.confirmation = confirmation
+        return result
 
     def _test_performance(self, n, bot_log_file):
         """Run a load test with n concurrent bots for configured duration."""
