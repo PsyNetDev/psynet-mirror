@@ -603,6 +603,16 @@ def test_reset_refuses_system_and_remote_databases(url, allowed):
             check_resettable_database(url, environ)
 
 
+def test_reset_in_ci_accepts_another_host_only_for_the_session_database():
+    from psynet.isolated_environment import DATABASE_ENV_VAR
+    from psynet.perf_reset import check_resettable_database
+
+    environ = {"CI": "true", DATABASE_ENV_VAR: "dallinger_test_5000"}
+    check_resettable_database("postgresql://u@postgres/dallinger_test_5000", environ)
+    with pytest.raises(ValueError, match="Refusing"):
+        check_resettable_database("postgresql://u@postgres/dallinger", environ)
+
+
 def test_reset_refuses_a_session_variable_naming_a_debug_database():
     from psynet.isolated_environment import DATABASE_ENV_VAR
     from psynet.perf_reset import check_resettable_database
@@ -628,7 +638,7 @@ def test_reset_only_drops_the_isolated_session_database(environ):
 
     shared = {"DATABASE_URL": os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL)}
     if environ is None:
-        with IsolatedEnvironment.start(shared) as environment:
+        with IsolatedEnvironment.start({**os.environ, **shared}) as environment:
             check_resettable_database(environment.env["DATABASE_URL"], environment.env)
         return
     environ = {**shared, **environ}
