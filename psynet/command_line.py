@@ -916,8 +916,7 @@ def _prepare_after_stopping_local_workers(ctx, archive, update=False):
     """
     if not kill_psynet_worker_processes():
         raise click.ClickException(
-            "Leftover PsyNet server or worker processes are still running and "
-            "may write to the local database. Stop them before resetting it."
+            _leftover_database_writer_message("resetting the database")
         )
     if update:
         _prepare_image_for_update()
@@ -1416,13 +1415,15 @@ def _current_database_url():
 
 
 def uses_current_database(process):
-    """
-    Return whether ``process`` was started with this shell's ``DATABASE_URL``.
+    """Return whether ``process`` was started with this shell's ``DATABASE_URL``.
 
     Local servers inherit ``DATABASE_URL`` from the command that launched them,
     so this distinguishes this experiment's leftovers from other local
-    experiments on the same machine. Processes whose environment can't be read
-    are treated as someone else's.
+    experiments on the same machine. Returns ``False`` when the environment
+    cannot be read. That is not proof of a different database:
+    :func:`list_psynet_worker_processes` still treats an unreadable writer as
+    live, because another account shares this PostgreSQL and
+    ``/proc/<pid>/environ`` is private.
     """
     from dallinger.db import corrected_db_url, db_url_default
 
@@ -1433,24 +1434,56 @@ def uses_current_database(process):
     return corrected_db_url(url) == _current_database_url()
 
 
+def _environment_unreadable(process) -> bool:
+    """Return whether ``process`` exists but its environment cannot be read."""
+    try:
+        process.environ()
+    except psutil.AccessDenied:
+        return True
+    except (psutil.NoSuchProcess, psutil.ZombieProcess):
+        return False
+    return False
+
+
+def _leftover_database_writer_message(purpose: str) -> str:
+    """Explain that a reset must wait until leftover writers are gone."""
+    pids = []
+    for process in list_psynet_worker_processes():
+        try:
+            pids.append(str(process.pid))
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pids.append("unknown")
+    listed = ", ".join(pids) if pids else "unknown"
+    return (
+        "Leftover PsyNet server or worker processes are still running "
+        f"(pids {listed}) and may write to the local database. "
+        f"Stop them before {purpose}. A process owned by another account "
+        "is included when its environment cannot be read, because it may "
+        "be using this shared PostgreSQL."
+    )
+
+
 def list_psynet_worker_processes():
-    """List local servers and workers that use this shell's database.
+    """List local servers and workers that may write this shell's database.
 
     Includes ``dallinger_heroku_*`` processes and the ``flask run`` development
-    server started by ``psynet deploy local`` without ``--legacy``.
+    server started by ``psynet deploy local`` without ``--legacy``. A writer
+    whose environment cannot be read is included as well. Another OS user
+    shares this PostgreSQL, and ignoring that process would let a reset drop
+    the database while it can still commit.
     """
-    return [
-        p
-        for p in psutil.process_iter()
-        if is_local_database_writer_process(p) and uses_current_database(p)
-    ]
+    writers = []
+    for process in psutil.process_iter():
+        if not is_local_database_writer_process(process):
+            continue
+        if uses_current_database(process) or _environment_unreadable(process):
+            writers.append(process)
+    return writers
 
 
 def is_local_database_writer_process(process):
     """Return whether ``process`` can commit to the local experiment database."""
-    return is_psynet_worker_process(process) or is_flask_develop_server_process(
-        process
-    )
+    return is_psynet_worker_process(process) or is_flask_develop_server_process(process)
 
 
 def is_flask_develop_server_process(process):
@@ -1867,10 +1900,10 @@ def deploy__local(
             # and the second protect call under this lock is a no-op.
             if not kill_psynet_worker_processes():
                 raise RuntimeError(
-                    "Leftover PsyNet server or worker processes are still running "
-                    "and may write to the local database. Stop them before "
-                    "deploying so the recovery snapshot is not taken while they "
-                    "can still commit."
+                    _leftover_database_writer_message(
+                        "deploying, so the recovery snapshot is not taken while "
+                        "they can still commit"
+                    )
                 )
             protect_existing_database(
                 experiment_path,
@@ -1944,13 +1977,18 @@ def deploy__local(
                 )
                 raise
 
+            # experiment.py installs a SIGINT handler that calls sys.exit(0).
+            # The server's stop handler restores it before this snapshot. Hold
+            # the CLI handler across the copy so a second Ctrl-C is not a
+            # successful exit and create_snapshot can delete a partial archive.
             try:
-                _save_stopped_local_deployment(
-                    experiment_path,
-                    local_id,
-                    selected_snapshot,
-                    extras,
-                )
+                with _stop_child_processes_on_signal():
+                    _save_stopped_local_deployment(
+                        experiment_path,
+                        local_id,
+                        selected_snapshot,
+                        extras,
+                    )
             except Exception:
                 if _local_stop_should_propagate(stop_exit):
                     raise stop_exit

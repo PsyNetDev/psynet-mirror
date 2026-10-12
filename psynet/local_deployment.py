@@ -38,6 +38,7 @@ from rich.prompt import IntPrompt
 from rich.table import Table
 
 from psynet.deployment_events import (
+    ReplacedLockFile,
     append_deployment_event,
     file_lock,
     utc_now,
@@ -49,6 +50,10 @@ from psynet.serialize import unserialize
 # stop-then-start sequence can briefly overlap. Wait that race out before
 # reporting a genuine conflict.
 DATABASE_LOCK_WAIT_SECONDS = 30.0
+
+# systemd-tmpfiles removes untouched files in /tmp after 10 or 30 days.
+# Refresh well inside that window so a long field run keeps its lock inode.
+DATABASE_LOCK_REFRESH_SECONDS = 60 * 60
 
 # Reading deployment identity must not block a launch behind a leftover backend.
 DATABASE_READ_TIMEOUT_SECONDS = 10
@@ -376,6 +381,7 @@ def create_snapshot(
         os.close(descriptor)
         parent_sequence = _snapshot_parent(snapshots, deployment_id, resumed_from)
         started_at = datetime.now(timezone.utc)
+        published = False
         try:
             exported = exporter(temporary)
             participant_count, max_response_id, content_token = _export_counts(exported)
@@ -398,18 +404,31 @@ def create_snapshot(
                 "sha256": checksum,
             }
             _write_json_atomically(metadata_path, metadata)
-        except Exception as error:
-            temporary.unlink(missing_ok=True)
-            path.unlink(missing_ok=True)
-            metadata_path.unlink(missing_ok=True)
-            append_deployment_event(
-                root,
-                "snapshot.failed",
-                local_id,
-                reason=reason,
-                deployment_id=deployment_id,
-                error=str(error),
+            published = True
+        except BaseException as error:
+            # KeyboardInterrupt and SystemExit are not Exception. A second
+            # Ctrl-C during the copy must not leave a numbered zip without
+            # metadata, or the next resume refuses to start.
+            if not published:
+                temporary.unlink(missing_ok=True)
+                path.unlink(missing_ok=True)
+                metadata_path.unlink(missing_ok=True)
+            message = (
+                str(error)
+                if isinstance(error, Exception)
+                else "Snapshot was interrupted before its metadata was published."
             )
+            try:
+                append_deployment_event(
+                    root,
+                    "snapshot.failed",
+                    local_id,
+                    reason=reason,
+                    deployment_id=deployment_id,
+                    error=message,
+                )
+            except Exception:
+                logger.exception("Failed to record snapshot.failed")
             raise
 
     duration = (datetime.now(timezone.utc) - started_at).total_seconds()
@@ -790,6 +809,11 @@ def local_database_lock_path() -> Path:
     across OS users, so the lock lives in ``/tmp`` rather than a home
     directory. Tests and unusual hosts may override the path with
     ``PSYNET_LOCAL_DATABASE_LOCK``.
+
+    ``flock`` stays on the inode. Age-based ``/tmp`` cleaning deletes the
+    directory entry of a file that is not touched, and a later deploy can then
+    lock a new inode while the original process still holds the old one. The
+    holder refreshes the file's timestamp for as long as the lock is open.
     """
     override = os.environ.get("PSYNET_LOCAL_DATABASE_LOCK")
     if override:
@@ -848,10 +872,19 @@ def _acquire_lock_file(path: Path, wait_seconds: float):
     """Acquire ``path``, waiting out a lock that a stopping deployment still holds."""
     deadline = time.monotonic() + wait_seconds
     waited = False
+    replaced = 0
     while True:
         lock_context = file_lock(path, blocking=False, world_writable=True)
         try:
             return lock_context, lock_context.__enter__()
+        except ReplacedLockFile:
+            replaced += 1
+            if replaced >= 5:
+                raise RuntimeError(
+                    f"The local PsyNet database lock ({path}) was removed or "
+                    "replaced while acquiring it. Refusing to start."
+                ) from None
+            continue
         except BlockingIOError:
             if time.monotonic() >= deadline:
                 raise
@@ -863,6 +896,42 @@ def _acquire_lock_file(path: Path, wait_seconds: float):
                     wait_seconds,
                 )
             time.sleep(0.5)
+
+
+def _refresh_lock_timestamp(file) -> None:
+    """Update the lock inode's timestamps so age-based /tmp cleaning skips it."""
+    try:
+        os.utime(file.fileno())
+    except OSError:
+        logger.warning(
+            "Could not refresh the local database lock timestamp.",
+        )
+
+
+def _maintain_lock_file(path: Path, file, stop: threading.Event) -> None:
+    """Refresh a held lock file until ``stop`` is set.
+
+    If the directory entry disappears, log it. Recreating the path would be a
+    new inode, which would not carry this flock, so the holder cannot repair
+    exclusion after an unlink. Keeping the timestamp fresh is what stops
+    systemd-tmpfiles from removing the file during a long run.
+    """
+    while not stop.is_set():
+        try:
+            held = os.fstat(file.fileno())
+        except OSError:
+            return
+        if held.st_nlink == 0:
+            logger.error(
+                "The local database lock %s was removed while this deployment "
+                "still holds it. Another launch can reset PostgreSQL. Stop "
+                "that launch.",
+                path,
+            )
+        else:
+            _refresh_lock_timestamp(file)
+        if stop.wait(DATABASE_LOCK_REFRESH_SECONDS):
+            return
 
 
 @contextmanager
@@ -879,6 +948,8 @@ def local_database_lock(
         validate_local_id(local_id)
     path = local_database_lock_path()
     outermost = False
+    maintainer = None
+    stop_maintainer = None
     _database_lock_guard.acquire()
     try:
         if _database_lock_depth == 0:
@@ -890,6 +961,14 @@ def local_database_lock(
                 raise lock_access_error(path) from error
             _database_lock_context = lock_context
             outermost = True
+            stop_maintainer = threading.Event()
+            maintainer = threading.Thread(
+                target=_maintain_lock_file,
+                args=(path, file, stop_maintainer),
+                name="psynet-local-lock-refresh",
+                daemon=True,
+            )
+            maintainer.start()
         _database_lock_depth += 1
         try:
             if outermost:
@@ -914,6 +993,10 @@ def local_database_lock(
             if _database_lock_depth > 0:
                 _database_lock_depth -= 1
             if _database_lock_depth == 0 and _database_lock_context is not None:
+                if stop_maintainer is not None:
+                    stop_maintainer.set()
+                if maintainer is not None:
+                    maintainer.join(timeout=2)
                 lock_context = _database_lock_context
                 _database_lock_context = None
                 _database_already_protected = False

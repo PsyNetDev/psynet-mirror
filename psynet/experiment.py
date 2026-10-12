@@ -1540,20 +1540,26 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     def _create_participant_finish_snapshot(
         self, participant=None, *, commit_flag=False
     ):
-        """Write the finish snapshot and maybe clear the shutdown-needed flag."""
+        """Write the finish snapshot and maybe clear the shutdown-needed flag.
+
+        The flag is committed before the archive is copied. The copy uses
+        another connection, so clearing the flag afterwards changes the
+        experiment row and the shutdown skip no longer recognizes this archive.
+        """
         try:
+            if (
+                self._managed_local_live_deployment_info() is not None
+                and not self._has_unfinished_participants(excluding=participant)
+            ):
+                self.var.local_snapshot_needed_on_shutdown = False
+                if commit_flag:
+                    db.session.commit()
             snapshot = self.create_local_deployment_snapshot("participant_finished")
         except Exception:
             logger.exception(
                 "Failed to create participant-finish local deployment snapshot."
             )
             return None
-        if snapshot is not None and not self._has_unfinished_participants(
-            excluding=participant
-        ):
-            self.var.local_snapshot_needed_on_shutdown = False
-            if commit_flag:
-                db.session.commit()
         return snapshot
 
     @classmethod

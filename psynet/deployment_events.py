@@ -63,6 +63,20 @@ def validate_local_id(value: str) -> str:
     return value
 
 
+class ReplacedLockFile(RuntimeError):
+    """The lock path no longer names the inode that was opened."""
+
+
+def _held_lock_matches_path(path: Path, file) -> bool:
+    """Return whether ``path`` still refers to the inode behind ``file``."""
+    try:
+        held = os.fstat(file.fileno())
+        current = os.stat(path)
+    except OSError:
+        return False
+    return held.st_ino == current.st_ino and held.st_dev == current.st_dev
+
+
 def _open_unfollowed_lock(path: Path):
     """Open ``path`` without following a final symlink component."""
     flags = os.O_RDWR | os.O_CREAT
@@ -117,6 +131,15 @@ def file_lock(path: Path, *, blocking: bool = True, world_writable: bool = False
             # still serializes threads in environments without fcntl.
             _fallback_file_lock.acquire()
             using_fallback = True
+        # flock follows the inode, not the path. If the directory entry was
+        # replaced between open and lock, this fd does not exclude writers
+        # that lock the new path.
+        if (
+            world_writable
+            and not using_fallback
+            and not _held_lock_matches_path(path, file)
+        ):
+            raise ReplacedLockFile(path)
         yield file
     finally:
         if using_fallback:

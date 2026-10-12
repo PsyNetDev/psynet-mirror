@@ -36,8 +36,11 @@ Before that recovery snapshot, ``psynet deploy local`` stops leftover
 PsyNet worker processes and any ``flask run`` development server using this
 database. If one of them is still running, the command refuses to reset the
 database, so a writer cannot commit into a database the archive does not
-contain. Stopping the running deployment with Ctrl-C or SIGTERM writes the
-shutdown snapshot before the process exits.
+contain. A server whose environment cannot be read, including one started by
+another account on this machine, is treated the same way. Stopping the
+running deployment with Ctrl-C or SIGTERM writes the shutdown snapshot before
+the process exits. A second Ctrl-C during that copy does not leave a numbered
+archive without its metadata.
 
 The ten-minute timer skips a backup when the ``response`` table is empty
 and there is no prior snapshot, or when the response watermark has not

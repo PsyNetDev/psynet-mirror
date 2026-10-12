@@ -4264,6 +4264,31 @@ def test_uses_current_database_rejects_unreadable_processes(error):
     assert not uses_current_database(process)
 
 
+def test_unreadable_writer_environment_is_still_listed(monkeypatch):
+    from psynet.command_line import list_psynet_worker_processes
+
+    process = Mock()
+    process.pid = os.getpid() + 1
+    process.cmdline.return_value = ["/venv/bin/flask", "run"]
+    process.environ.side_effect = psutil.AccessDenied(process.pid)
+    monkeypatch.setattr("psynet.command_line.psutil.process_iter", lambda: [process])
+    assert list_psynet_worker_processes() == [process]
+
+
+def test_readable_writer_on_another_database_is_not_listed(monkeypatch):
+    from psynet.command_line import list_psynet_worker_processes
+
+    process = Mock()
+    process.pid = os.getpid() + 1
+    process.cmdline.return_value = ["/venv/bin/flask", "run"]
+    process.environ.return_value = {
+        "DATABASE_URL": "postgresql://dallinger@localhost/other"
+    }
+    monkeypatch.setenv("DATABASE_URL", "postgresql://dallinger@localhost/this")
+    monkeypatch.setattr("psynet.command_line.psutil.process_iter", lambda: [process])
+    assert list_psynet_worker_processes() == []
+
+
 def test_kill_psynet_worker_processes_warns_with_pids(caplog):
     import logging
 

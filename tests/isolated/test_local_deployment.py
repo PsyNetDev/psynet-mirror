@@ -149,6 +149,38 @@ def test_create_snapshot_records_failure_without_partial_archive(tmp_path):
     assert "database unavailable" in events[-1]["error"]
 
 
+def test_create_snapshot_removes_archive_when_metadata_is_interrupted(
+    tmp_path, monkeypatch
+):
+    from psynet.local_deployment import create_snapshot
+
+    def exporter(path):
+        _write_archive(path)
+
+    def interrupted(path, content):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("psynet.local_deployment._write_json_atomically", interrupted)
+    with pytest.raises(KeyboardInterrupt):
+        create_snapshot(
+            tmp_path,
+            "gibbs",
+            "shutdown",
+            "launch-1",
+            exporter=exporter,
+        )
+
+    directory = tmp_path / "data" / "snapshots" / "gibbs"
+    assert list(directory.glob("*.zip")) == []
+    assert list(directory.glob("*.json")) == []
+    events = [
+        json.loads(line)
+        for line in (tmp_path / "data/deployment-events.jsonl").read_text().splitlines()
+    ]
+    assert events[-1]["event"] == "snapshot.failed"
+    assert "interrupted" in events[-1]["error"]
+
+
 def test_choose_snapshot_defaults_to_latest_without_a_terminal(tmp_path, monkeypatch):
     from psynet.local_deployment import choose_snapshot, create_snapshot
 
@@ -520,6 +552,65 @@ def test_local_database_lock_does_not_follow_symlink(tmp_path, monkeypatch):
     assert victim.stat().st_mode & 0o777 == 0o600
 
 
+def test_local_database_lock_retries_when_the_lock_inode_changes(tmp_path, monkeypatch):
+    import psynet.deployment_events as events
+    from psynet.local_deployment import local_database_lock
+
+    lock_path = tmp_path / "local-deployment.lock"
+    monkeypatch.setattr(
+        "psynet.local_deployment.local_database_lock_path",
+        lambda: lock_path,
+    )
+    calls = {"n": 0}
+    real = events._held_lock_matches_path
+
+    def mismatch_once(path, file):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return False
+        return real(path, file)
+
+    monkeypatch.setattr(events, "_held_lock_matches_path", mismatch_once)
+    with local_database_lock(tmp_path, "gibbs", wait_seconds=0):
+        assert lock_path.is_file()
+    assert calls["n"] >= 2
+
+
+def test_lock_refresh_updates_an_old_timestamp(tmp_path):
+    import os
+
+    from psynet.deployment_events import file_lock
+    from psynet.local_deployment import _refresh_lock_timestamp
+
+    path = tmp_path / "local-deployment.lock"
+    with file_lock(path, world_writable=True) as file:
+        stale = path.stat().st_mtime - 100_000
+        os.utime(path, (stale, stale))
+        _refresh_lock_timestamp(file)
+        assert path.stat().st_mtime > stale
+
+
+def test_lock_maintainer_logs_when_the_held_file_is_unlinked(tmp_path, caplog):
+    import logging
+
+    from psynet.deployment_events import file_lock
+    from psynet.local_deployment import _maintain_lock_file
+
+    class StopAfterOneWait:
+        def is_set(self):
+            return False
+
+        def wait(self, timeout=None):
+            return True
+
+    path = tmp_path / "local-deployment.lock"
+    with file_lock(path, world_writable=True) as file:
+        path.unlink()
+        with caplog.at_level(logging.ERROR):
+            _maintain_lock_file(path, file, StopAfterOneWait())
+    assert "was removed" in caplog.text
+
+
 def test_local_database_lock_does_not_remap_permission_error_inside_body(
     tmp_path, monkeypatch
 ):
@@ -722,6 +813,82 @@ def test_deploy_local_restores_selected_snapshot_and_saves_shutdown(
         "deploy.requested",
         "deploy.stopped",
     ]
+
+
+def test_second_interrupt_during_shutdown_snapshot_is_not_a_clean_exit(
+    tmp_path, monkeypatch
+):
+    from psynet.command_line import psynet
+    from psynet.local_deployment import DatabaseOwner, Snapshot
+    from psynet.utils import working_directory
+
+    (tmp_path / "experiment.py").write_text("")
+    archive = tmp_path / "data" / "snapshots" / "gibbs" / "000001.zip"
+    archive.parent.mkdir(parents=True)
+    _write_archive(archive)
+    selected = Snapshot(
+        sequence=1,
+        path=archive,
+        metadata_path=archive.with_suffix(".json"),
+        created_at="2026-08-27T18:00:00Z",
+        reason="shutdown",
+        deployment_id="old-launch",
+        parent_sequence=None,
+        participant_count=1,
+        sha256=None,
+    )
+    seen = {}
+
+    def exit_cleanly(signum, frame):
+        raise SystemExit(0)
+
+    def create_final(*_args, **_kwargs):
+        seen["handler"] = signal.getsignal(signal.SIGINT)
+        raise KeyboardInterrupt
+
+    @contextmanager
+    def unlocked(*_args):
+        yield
+
+    monkeypatch.setattr("psynet.command_line.local_database_lock", unlocked)
+    monkeypatch.setattr("psynet.services.ensure_local_services", lambda **_kwargs: True)
+    monkeypatch.setattr(
+        "psynet.command_line.protect_existing_database", lambda *_a, **_k: None
+    )
+    monkeypatch.setattr(
+        "psynet.command_line.choose_snapshot", lambda *_a, **_k: selected
+    )
+    monkeypatch.setattr("psynet.command_line._run_local", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        "psynet.command_line.kill_psynet_worker_processes", lambda: True
+    )
+    monkeypatch.setattr(
+        "psynet.command_line.read_database_owner",
+        lambda: DatabaseOwner("gibbs", tmp_path, "new-launch", "Example"),
+    )
+    monkeypatch.setattr("psynet.command_line.create_snapshot", create_final)
+    monkeypatch.setattr(
+        "psynet.command_line.append_deployment_event", lambda *_a, **_k: None
+    )
+
+    previous = signal.signal(signal.SIGINT, exit_cleanly)
+    raised = None
+    try:
+        with working_directory(tmp_path):
+            try:
+                result = CliRunner().invoke(
+                    psynet, ["deploy", "local", "--id", "gibbs"]
+                )
+            except KeyboardInterrupt as error:
+                raised = error
+                result = None
+    finally:
+        signal.signal(signal.SIGINT, previous)
+
+    assert seen["handler"] is not exit_cleanly
+    assert signal.getsignal(signal.SIGINT) is previous
+    if raised is None:
+        assert result.exit_code != 0
 
 
 def test_protect_existing_database_recovers_interrupted_owner(tmp_path, monkeypatch):
@@ -1565,6 +1732,7 @@ def test_maybe_snapshot_after_participant_finish_clears_shutdown_need(monkeypatc
 
         def create_local_deployment_snapshot(self, reason):
             assert reason == "participant_finished"
+            assert self.var.local_snapshot_needed_on_shutdown is False
             return snapshot
 
         def _has_unfinished_participants(self, excluding=None):
@@ -1687,9 +1855,16 @@ def test_maybe_snapshot_defers_until_after_request_commit(monkeypatch):
     config.get.return_value = True
     monkeypatch.setattr("psynet.experiment.get_config", lambda: config)
 
+    snapshot_calls = []
+
     class Dummy:
         var = SimpleNamespace(local_snapshot_needed_on_shutdown=True)
-        create_local_deployment_snapshot = Mock(return_value=snapshot)
+
+        def create_local_deployment_snapshot(self, reason):
+            assert self.var.local_snapshot_needed_on_shutdown is False
+            snapshot_calls.append(reason)
+            return snapshot
+
         _has_unfinished_participants = Mock(return_value=False)
         _managed_local_live_deployment_info = Mock(return_value={"local_id": "gibbs"})
         maybe_snapshot_after_participant_finish = (
@@ -1718,14 +1893,12 @@ def test_maybe_snapshot_defers_until_after_request_commit(monkeypatch):
     app = Flask(__name__)
     with app.test_request_context("/timeline"):
         assert dummy.maybe_snapshot_after_participant_finish(participant) is None
-        dummy.create_local_deployment_snapshot.assert_not_called()
+        assert snapshot_calls == []
         assert dummy.var.local_snapshot_needed_on_shutdown is True
         result = Experiment._run_deferred_participant_finish_snapshot()
 
     assert result is snapshot
-    dummy.create_local_deployment_snapshot.assert_called_once_with(
-        "participant_finished"
-    )
+    assert snapshot_calls == ["participant_finished"]
     assert dummy.var.local_snapshot_needed_on_shutdown is False
     assert session.commit.call_count >= 1
 
