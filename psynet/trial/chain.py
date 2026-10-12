@@ -1283,6 +1283,9 @@ class ChainTrialMakerState(NetworkTrialMakerState):
     # block's order is "listed" or a callable; None otherwise.
     planned_network_ids = Column(PythonList)
     plan_position = Column(Integer)
+    # Blocks the participant finished early because every eligible chain or
+    # node was busy and wait_for_networks=False; performance tests report it.
+    blocks_ended_busy = Column(Integer, default=0)
 
     @property
     def block(self):
@@ -2383,7 +2386,9 @@ class ChainTrialMaker(NetworkTrialMaker):
         Candidates are busy when they await an asynchronous process or, in
         chains, have no trial capacity left for now. A participant committed
         to one chain or planned node waits for it; otherwise
-        ``wait_for_networks`` decides.
+        ``wait_for_networks`` decides. Finishing the block counts towards the
+        participant's ``blocks_ended_busy``, because the participant may get
+        fewer trials than a less busy experiment would give.
         """
         state = participant.module_state
         if self._focus_network_id(state) is not None:
@@ -2398,6 +2403,7 @@ class ChainTrialMaker(NetworkTrialMaker):
             self._candidate_label,
             state.block,
         )
+        state.blocks_ended_busy = (state.blocks_ended_busy or 0) + 1
         return []
 
     def _focus_network_id(self, state):

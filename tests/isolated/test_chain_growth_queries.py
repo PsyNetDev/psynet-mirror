@@ -1127,15 +1127,23 @@ def networks_in_blocks(trial_maker, participant, blocks, network_class=ChainNetw
     "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
 )
 @pytest.mark.usefixtures("in_experiment_directory")
-@pytest.mark.parametrize("wait_for_networks", [True, False])
-def test_busy_block_waits_or_finishes_early(db_session, participant, wait_for_networks):
+@pytest.mark.parametrize(
+    "wait_for_networks, first_chain, ended_busy",
+    [(True, "busy", 0), (False, "busy", 1), (False, "full", 0)],
+)
+def test_busy_block_waits_or_finishes_early(
+    db_session, participant, wait_for_networks, first_chain, ended_busy
+):
     trial_maker = chain_trial_maker(
         chains_per_experiment=2,
         max_trials_per_participant=None,
         wait_for_networks=wait_for_networks,
     )
-    busy, free = networks_in_blocks(trial_maker, participant, ["A", "B"])
-    add_trial(GrowthQueryTrial, busy.head, new_participant(), finalized=False)
+    first, free = networks_in_blocks(trial_maker, participant, ["A", "B"])
+    if first_chain == "busy":
+        add_trial(GrowthQueryTrial, first.head, new_participant(), finalized=False)
+    else:
+        first.full = True
 
     outcome = trial_maker._select_trial_node(participant, get_experiment())
 
@@ -1145,6 +1153,7 @@ def test_busy_block_waits_or_finishes_early(db_session, participant, wait_for_ne
     else:
         assert outcome.value is free.head
         assert participant.module_state.block == "B"
+    assert (participant.module_state.blocks_ended_busy or 0) == ended_busy
 
 
 @pytest.mark.parametrize(
