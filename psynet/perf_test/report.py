@@ -578,18 +578,30 @@ _POSTGRES_ADVICE = (
     "Run fewer bots at once, stop other experiments that share the database "
     "server, or raise max_connections."
 )
-_QUEUE_ADVICE = (
-    "  High-priority async jobs, which participants wait for, waited too long "
-    "for a worker: add worker processes with num_dynos_worker, or make the "
-    "jobs faster."
-)
 _LOW_PRIORITY_BACKLOG_ADVICE = (
     "  Low-priority async jobs piled up during the steady state, so the "
     "workers can't keep up with them in the long run. Participants don't "
     "wait for these jobs, but their results arrive ever later and the backlog "
-    "competes for workers with high-priority jobs. Add worker processes with "
-    "num_dynos_worker, or make the jobs cheaper."
+    "competes for workers with high-priority jobs. Raise the worker_processes "
+    "config variable, or make the jobs cheaper."
 )
+
+
+def _queue_advice(result):
+    """Return advice for a test whose high-priority async jobs waited too long for a worker."""
+    workers = _describe_workers(result)
+    had = f" The server had {workers}." if workers else ""
+    return (
+        "  High-priority async jobs, which participants wait for, waited too "
+        f"long for a worker.{had} Raise the worker_processes config variable "
+        "(worker dynos on Heroku), or make the jobs faster. A worker process "
+        "runs one CPU-heavy job, such as audio analysis, at a time, so for "
+        "those also set worker_greenlets_per_process = 1 and plan on one "
+        "worker process per CPU core; see 'Async workers' in the PsyNet docs "
+        "on testing scalability."
+    )
+
+
 _WAIT_ADVICE = (
     "  Participants waited too long and the experiment failed them. Design "
     "experiments to avoid this, for example with a longer max_wait_time or "
@@ -895,7 +907,7 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
     ):
         lines.append(_BUSY_CHAINS_ADVICE)
     if "async queue" in first_reasons:
-        lines.append(_QUEUE_ADVICE)
+        lines.append(_queue_advice(first_fail))
     if first_fail is not None and start_rate_limits(first_fail):
         lines.append(_START_RATE_ADVICE)
     if first_fail is not None and tester_lagged(first_fail):

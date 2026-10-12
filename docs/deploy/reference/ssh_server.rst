@@ -128,7 +128,7 @@ Each app runs these Docker Compose services:
 
 - ``web``, which serves HTTP requests;
 - ``worker_1`` to ``worker_N``, which process background tasks, one for each
-  of ``num_dynos_worker``;
+  of ``worker_processes`` (see :ref:`performance_testing_async_workers`);
 - ``clock``, which runs scheduled tasks;
 - ``redis``, which holds the app's cache and task queue;
 - ``pgbouncer``, which pools the app's database connections.

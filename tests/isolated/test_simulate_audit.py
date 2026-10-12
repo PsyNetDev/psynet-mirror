@@ -337,18 +337,6 @@ def test_audit_performance_test_writes_canonical_output_and_marks_present(
     assert "Marked performance_result present" in result.output
 
 
-def test_performance_test_ssh_rejects_json_output():
-    from psynet.command_line import performance_test__docker_ssh
-
-    with click.Context(performance_test__docker_ssh):
-        with pytest.raises(click.UsageError, match="not yet implemented for SSH mode"):
-            performance_test__docker_ssh.callback(
-                app="example",
-                server="example",
-                json_output="results.json",
-            )
-
-
 @pytest.mark.parametrize("args, expected", [([], None), (["--n-bots", "3"], 3)])
 def test_audit_simulate_passes_n_bots_to_test_local(
     tmp_path, monkeypatch, args, expected

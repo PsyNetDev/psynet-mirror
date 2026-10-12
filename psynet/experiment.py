@@ -635,6 +635,14 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         Indicates whether the experiment needs internet access. Can be set to ``False`` for lab or field studies.
         Default: ``True``.
 
+    performance_test_app : ``bool``
+        Marks an SSH app as one that ``psynet performance-test ssh`` may load,
+        reset and pre-fill, which means that its data is disposable.
+        ``performance-test ssh`` sets it when it deploys an app for its tests,
+        and refuses to run on apps without it. Setting it yourself declares
+        that the app's data may be deleted.
+        Default: ``False``.
+
 
 
     Parameters
@@ -2225,6 +2233,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             "legacy_js_var_globals": "warn",
             "needs_internet_access": True,
             "check_participant_opened_devtools": False,
+            "performance_test_app": False,
             "supported_locales": "[]",
             "wage_per_hour": 9.0,
             "window_height": 768,
@@ -4171,6 +4180,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         if "docker_ssh_monitoring_path" not in config.types:
             config.register("docker_ssh_monitoring_path", str)
         config.register("check_participant_opened_devtools", bool)
+        config.register("performance_test_app", bool)
+        config.register("performance_test_code_key", str)
         config.register("currency", str)
         config.register("default_translator", str)
         config.register("enable_google_search_console", bool)
@@ -7155,12 +7166,29 @@ Experiment.UnsuccessfulEndLogic = UnsuccessfulEndLogic
 Experiment.RejectedConsentLogic = RejectedConsentLogic
 
 
-def handle_shutdown_signal(*args, **kwargs):
+def handle_shutdown_signal(signum, frame):
+    """Shut down on SIGINT or SIGTERM.
+
+    Dallinger's server processes (``dallinger_heroku_web``, ``_worker`` and
+    ``_clock``) exit with status 0, and the clock first records that the
+    experiment went offline. Other processes, such as ``psynet`` commands,
+    bots and tests, raise :class:`KeyboardInterrupt` on SIGINT and
+    ``SystemExit(128 + signum)`` on SIGTERM, so that their cleanup runs and
+    they exit with a failure status.
+
+    This is installed when the module is imported, so it replaces handlers
+    installed before then, such as those of gunicorn's workers, and is
+    replaced by those installed later, such as those of RQ's ``work()``.
+    """
     process_name = os.path.basename(sys.argv[0])
     if process_name.endswith("clock"):
         Experiment.record_experiment_status(online=False)
         Experiment.notifier.notify("Experiment was taken down ⛔️")
-    sys.exit(0)
+    if process_name.startswith("dallinger_heroku_") or process_name.endswith("clock"):
+        sys.exit(0)
+    if signum == signal.SIGINT:
+        raise KeyboardInterrupt
+    raise SystemExit(128 + signum)
 
 
 signal.signal(signal.SIGTERM, handle_shutdown_signal)

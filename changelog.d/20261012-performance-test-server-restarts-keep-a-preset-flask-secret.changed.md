@@ -1,0 +1,1 @@
+`psynet performance-test local --reset-database` now sets the experiment server's Flask secret key itself and restarts the server from its config, instead of reading the key from the running server's processes. `psynet debug local --legacy` passes its gunicorn process count as `web_processes` instead of the deprecated `threads`.

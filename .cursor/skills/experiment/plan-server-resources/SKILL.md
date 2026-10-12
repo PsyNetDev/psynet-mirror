@@ -48,8 +48,9 @@ For per-job values, export the data (`psynet export local`) and read the
 A **CPU-heavy** job, such as audio analysis or model fitting, keeps a CPU core
 busy while it runs. A worker process uses one core, so CPU-heavy `worker`
 jobs queue behind each other unless there are more worker processes. Set the
-number of worker processes with `num_dynos_worker` in `config.txt`; on an SSH
-deployment each one is a separate worker container. Estimate the cores the
+number of worker processes with `worker_processes` in `config.txt`, and for
+CPU-heavy jobs set `worker_greenlets_per_process = 1`; on an SSH deployment
+each worker process is a separate worker container. Estimate the cores the
 worker jobs keep busy at peak:
 
 ```text
@@ -60,10 +61,10 @@ busy cores at peak          = CPU seconds per participant × participants starti
 For example, 2 bots that ran 6 `analyse_audio` worker jobs averaging 1.5 CPU
 seconds need 4.5 CPU seconds per participant. With 40 participants starting
 per minute, 4.5 × 40 / 60 = 3 cores are busy, so leave headroom with
-`num_dynos_worker = 4` on a server with a core for each worker plus one for
+`worker_processes = 4` on a server with a core for each worker plus one for
 the web process.
 
-Do not count `web` rows toward `num_dynos_worker`: more workers do not help
+Do not count `web` rows toward `worker_processes`: more workers do not help
 them. A CPU-heavy `web` row competes with page requests in the web process,
 so expect slower responses in the performance test; if they are too slow,
 make the job cheaper or move its work into a `WorkerAsyncJob`.

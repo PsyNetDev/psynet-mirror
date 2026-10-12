@@ -1,9 +1,10 @@
 """Start every performance test from the same database.
 
-``psynet performance-test local --reset-database`` resets the experiment's
-database before each test of a suite, so that the tests of ``--n-bots auto``
-compare load rather than amounts of data. :class:`DatabaseReset` is the
-suite's ``before_test`` hook (see :class:`psynet.perf_test.PerformanceSuite`).
+``psynet performance-test local --reset-database`` and ``psynet
+performance-test ssh --reset-database`` reset the experiment's database
+before each test of a suite, so that the tests of ``--n-bots auto`` compare
+load rather than amounts of data. :class:`DatabaseReset` is the suite's
+``before_test`` hook (see :class:`psynet.perf_test.PerformanceSuite`).
 
 Before the first test it takes a snapshot of the database with ``CREATE
 DATABASE ... TEMPLATE``, a file-level copy that keeps sequences, indexes and
@@ -19,22 +20,32 @@ without which the server would launch the experiment again.
 With ``--prefill-participants``, bots first add data, and the snapshot is
 kept as a pre-fill cache under a name made from the experiment code, the
 PsyNet version and the number of pre-fill participants (see
-:func:`prefill_snapshot_name`), so that a later run with the same code and
-number starts from it instead of pre-filling again. To pre-fill again, drop
-it with ``psynet performance-test snapshots --drop NAME``.
+:meth:`SnapshotDatabase.prefill_snapshot_name`), so that a later run with the
+same code and number starts from it instead of pre-filling again. To
+pre-fill again, drop it with ``psynet performance-test snapshots --drop
+NAME``.
+
+The class doesn't know how the server runs or where PostgreSQL is. Callers
+pass functions that stop and start the server, and a
+:class:`SnapshotDatabase`, which runs the SQL and the few steps that need
+the server's own processes (Redis, async jobs). :class:`LocalDatabase`
+is the experiment database of ``performance-test local``;
+:class:`psynet.perf_ssh.RemoteAppDatabase` is that of an app on an SSH
+server, reached with ``docker exec``. Both see a cursor that behaves like
+psycopg2's, so the SQL here is shared.
 
 Design constraints:
 
 - Snapshots are separate databases that are created once and never
   changed; only the experiment database is replaced. A kept snapshot is
   only dropped on request.
-- Only the experiment database and snapshots that this module names are
-  ever dropped, and only on this computer's PostgreSQL server (or, with
-  ``CI`` set, the CI job's own service container). The
-  experiment database must be the disposable one that the isolated test
-  environment created for this session (see
-  :func:`check_resettable_database`), never one that a researcher debugs
-  with.
+- Only the experiment database and snapshots that its
+  :class:`SnapshotDatabase` owns are ever dropped. A local experiment
+  database must be the disposable one that the isolated test environment
+  created for this session (see :func:`check_resettable_database`), never
+  one that a researcher debugs with; a remote one must be the app's own.
+  With ``CI`` set, the local server may be the CI job's own service
+  container on another host.
 - A pre-fill can take hours, so if it finishes but its snapshot isn't
   taken, for example after an interrupt, :meth:`DatabaseReset.close` takes
   it.
@@ -42,11 +53,6 @@ Design constraints:
   test environment already requires.
 - Files that tests add to the asset storage remain after a reset; only the
   rows that refer to them go.
-
-The class doesn't know how the server runs: callers pass functions that stop
-and start it (see :mod:`psynet.perf_local_server`), so that a remote
-deployment can reuse it with its own functions and, by overriding
-:meth:`DatabaseReset._connect`, its own database access.
 """
 
 import datetime
@@ -79,9 +85,11 @@ _IN_USE_ATTEMPTS = 10
 _INSUFFICIENT_PRIVILEGE = "42501"
 _OBJECT_IN_USE = "55006"
 _MAX_NAME_LENGTH = 63
-_PREFILL_NAME = re.compile(r"psynet_prefill_(?P<code>[0-9a-f]{12})_n\d+")
+_PREFILL_PREFIX = "psynet_prefill_"
+_PREFILL_NAME = re.compile(r"psynet_prefill_(?:.+_)?(?P<code>[0-9a-f]{12})_n\d+")
+_PREFILL_SUFFIX = re.compile(r"[0-9a-f]{12}_n\d+")
 _SESSION_DATABASE = re.compile(r".+_test_\d+")
-_SYSTEM_DATABASES = {"postgres", "template0", "template1"}
+SYSTEM_DATABASES = frozenset({"postgres", "template0", "template1"})
 _LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
 _SETTINGS_FILES = ("config.txt", "requirements.txt", "constraints.txt")
 
@@ -97,7 +105,7 @@ def check_local_database(database_url):
     """
     url = make_url(database_url)
     host = url.query.get("host") or url.host or "local socket"
-    if not url.database or url.database in _SYSTEM_DATABASES:
+    if not url.database or url.database in SYSTEM_DATABASES:
         raise ValueError(f"Refusing to change the database {url.database!r}.")
     if not (host in _LOCAL_HOSTS or host == "local socket" or host.startswith("/")):
         raise ValueError(
@@ -194,55 +202,203 @@ def experiment_code_key():
     return digest.hexdigest()[:12]
 
 
-def prefill_snapshot_name(code_key, n_participants):
-    """Return the name of the pre-fill snapshot for this code and number of participants."""
-    return f"psynet_prefill_{code_key}_n{n_participants}"
-
-
 def snapshot_code_key(snapshot):
     """Return the code key in a pre-fill snapshot's name, or ``None``."""
     match = _PREFILL_NAME.fullmatch(snapshot)
     return match["code"] if match else None
 
 
-def find_snapshot(name, database_url):
-    """Return snapshot database ``name`` if it exists, otherwise ``None``."""
-    with _maintenance_cursor(database_url) as cursor:
-        return name if _database_exists(cursor, name) else None
+class SnapshotDatabase:
+    """An experiment database and the pre-fill snapshots beside it on its PostgreSQL server.
 
+    Subclasses say how to reach PostgreSQL (:meth:`cursor`) and do the steps
+    of a reset that need the experiment server's own processes. This base
+    class holds the SQL that finds, lists and drops snapshots.
 
-def check_snapshot(snapshot, database_url):
-    """Raise ``ValueError`` unless ``snapshot`` is a pre-fill snapshot that exists."""
-    if snapshot_code_key(snapshot) is None:
-        raise ValueError(
-            f"{snapshot} is not a pre-fill snapshot; list them with "
-            "'psynet performance-test snapshots'."
-        )
-    with _maintenance_cursor(database_url) as cursor:
-        if not _database_exists(cursor, snapshot):
-            raise ValueError(f"No snapshot database {snapshot}.")
-
-
-def list_snapshots(database_url):
-    """Return ``(name, size_bytes, description)`` for each pre-fill snapshot.
-
-    The snapshots are databases on the server, which all experiments share.
+    Parameters
+    ----------
+    name : str
+        The experiment database.
+    snapshot_prefix : str
+        Names of the pre-fill snapshots that belong to this database start
+        with this, followed by the code key and number of participants.
+    snapshots_command : str
+        The command that lists and drops those snapshots, for messages.
     """
-    with _maintenance_cursor(database_url) as cursor:
-        cursor.execute(
-            "SELECT datname, pg_database_size(oid), "
-            "shobj_description(oid, 'pg_database') FROM pg_database "
-            "WHERE datname LIKE 'psynet\\_prefill\\_%' ORDER BY datname"
+
+    def __init__(self, name, snapshot_prefix, snapshots_command):
+        self.name = name
+        self.snapshot_prefix = snapshot_prefix
+        self.snapshots_command = snapshots_command
+
+    def cursor(self, database="postgres"):
+        """Return a context manager yielding an autocommit cursor on ``database``.
+
+        The cursor needs psycopg2's ``execute``, ``fetchone`` and
+        ``fetchall``, and must raise :class:`psycopg2.Error` with
+        ``pgcode`` set. ``CREATE DATABASE`` and ``DROP DATABASE`` can't run
+        inside a transaction or on the database they copy or drop, hence
+        the ``postgres`` database by default.
+        """
+        raise NotImplementedError
+
+    def check_resettable(self):
+        """Raise ``ValueError`` if the experiment database must not be reset."""
+
+    def free_disk_space(self, directory):
+        """Return the free bytes of PostgreSQL's data ``directory``.
+
+        Raises
+        ------
+        OSError
+            If they can't be known; the reset then only warns.
+        """
+        raise NotImplementedError
+
+    def clear_job_queues(self):
+        """Delete the RQ queues, jobs and worker registrations from the experiment's Redis."""
+        raise NotImplementedError
+
+    def wait_for_async_jobs(self, timeout_s):
+        """Wait until the experiment's async jobs finish; return how many haven't."""
+        raise NotImplementedError
+
+    def release_connections(self):
+        """Close this process's own connections to the experiment database."""
+
+    def drop_hint(self, name):
+        """Tell the user how to drop database ``name`` by hand."""
+        return f"Drop the database {name} by hand."
+
+    def prefill_snapshot_name(self, code_key, n_participants):
+        """Return the name of the pre-fill snapshot for this code and number of participants."""
+        return f"{self.snapshot_prefix}{code_key}_n{n_participants}"
+
+    def owns_snapshot(self, name):
+        """Return whether ``name`` is one of this database's pre-fill snapshots."""
+        return name.startswith(self.snapshot_prefix) and bool(
+            _PREFILL_SUFFIX.fullmatch(name[len(self.snapshot_prefix) :])
         )
-        return [row for row in cursor.fetchall() if snapshot_code_key(row[0])]
+
+    def find_snapshot(self, name):
+        """Return snapshot database ``name`` if it exists, otherwise ``None``."""
+        with self.cursor() as cursor:
+            return name if _database_exists(cursor, name) else None
+
+    def check_snapshot(self, name):
+        """Raise ``ValueError`` unless ``name`` is one of this database's pre-fill snapshots and exists."""
+        if not self.owns_snapshot(name):
+            raise ValueError(
+                f"{name} is not a pre-fill snapshot of {self.name}; list them "
+                f"with '{self.snapshots_command}'."
+            )
+        if self.find_snapshot(name) is None:
+            raise ValueError(f"No snapshot database {name}.")
+
+    def list_snapshots(self):
+        """Return ``(name, size_bytes, description)`` for each of this database's pre-fill snapshots."""
+        with self.cursor() as cursor:
+            cursor.execute(
+                "SELECT datname, pg_database_size(oid), "
+                "shobj_description(oid, 'pg_database') FROM pg_database "
+                "WHERE datname LIKE 'psynet\\_prefill\\_%' ORDER BY datname"
+            )
+            rows = cursor.fetchall()
+        return [
+            (name, int(size), description)
+            for name, size, description in rows
+            if self.owns_snapshot(name)
+        ]
+
+    def drop_snapshot(self, name):
+        """Drop one of this database's pre-fill snapshots."""
+        if not self.owns_snapshot(name):
+            raise ValueError(f"{name} is not a pre-fill snapshot of {self.name}.")
+        with self.cursor() as cursor:
+            drop_database(cursor, name)
+
+    def count_rows(self):
+        """Return the rows in each growing table of the experiment database."""
+        from psynet.perf_test.measure import database_rows_on_cursor
+
+        with self.cursor(self.name) as cursor:
+            return database_rows_on_cursor(cursor)
 
 
-def drop_snapshot(snapshot, database_url):
-    """Drop a pre-fill snapshot database."""
-    if snapshot_code_key(snapshot) is None:
-        raise ValueError(f"{snapshot} is not a pre-fill snapshot.")
-    with _maintenance_cursor(database_url) as cursor:
-        drop_database(cursor, snapshot)
+class LocalDatabase(SnapshotDatabase):
+    """The experiment database of ``performance-test local``, and this process's Redis.
+
+    Its pre-fill snapshots are all those on the PostgreSQL server, which
+    experiments share.
+
+    Parameters
+    ----------
+    database_url : str, optional
+        The experiment database. Defaults to Dallinger's.
+    """
+
+    def __init__(self, database_url=None):
+        if database_url is None:
+            from dallinger import db
+
+            database_url = db.engine.url.render_as_string(hide_password=False)
+        self.url = database_url
+        super().__init__(
+            make_url(database_url).database,
+            _PREFILL_PREFIX,
+            "psynet performance-test snapshots",
+        )
+
+    @contextmanager
+    def cursor(self, database="postgres"):
+        """Yield an autocommit cursor on ``database``; ``postgres`` falls back to ``template1``."""
+        import psycopg2
+
+        parts = urlsplit(self.url)
+        try:
+            connection = psycopg2.connect(
+                urlunsplit(parts._replace(path=f"/{database}"))
+            )
+        except psycopg2.OperationalError:
+            if database != "postgres":
+                raise
+            connection = psycopg2.connect(urlunsplit(parts._replace(path="/template1")))
+        connection.autocommit = True
+        try:
+            with connection.cursor() as cursor:
+                yield cursor
+        finally:
+            connection.close()
+
+    def check_resettable(self):
+        check_resettable_database(self.url)
+
+    def free_disk_space(self, directory):
+        if not os.path.isfile(os.path.join(directory, "PG_VERSION")):
+            raise FileNotFoundError(
+                f"its data directory {directory} isn't on this computer"
+            )
+        return shutil.disk_usage(directory).free
+
+    def clear_job_queues(self):
+        from dallinger.db import redis_conn
+
+        keys = list(redis_conn.scan_iter("rq:*", count=1000))
+        for i in range(0, len(keys), 1000):
+            redis_conn.delete(*keys[i : i + 1000])
+
+    def wait_for_async_jobs(self, timeout_s):
+        from psynet.perf_test import wait_for_async_jobs
+
+        return wait_for_async_jobs(timeout_s=timeout_s, finished=True)
+
+    def release_connections(self):
+        from psynet.db import release_local_database_connections
+
+        release_local_database_connections()
+
+    def drop_hint(self, name):
+        return f"Drop the snapshot with 'dropdb {name}'."
 
 
 class DatabaseReset:
@@ -265,17 +421,19 @@ class DatabaseReset:
         The name of a snapshot database to start from. It is only read.
     keep_as : str, optional
         Take the snapshot under this pre-fill snapshot name (see
-        :func:`prefill_snapshot_name`), which must not exist yet, and keep
-        it. Otherwise the snapshot is dropped at :meth:`close`.
+        :meth:`SnapshotDatabase.prefill_snapshot_name`), which must not
+        exist yet, and keep it. Otherwise the snapshot is dropped at
+        :meth:`close`.
     description : str, optional
         Stored as the comment of a kept snapshot database.
-    database_url : str, optional
-        The experiment database. Defaults to Dallinger's.
+    database : SnapshotDatabase, optional
+        The experiment database. Defaults to Dallinger's local one.
 
     Raises
     ------
     ValueError
-        If the database may not be reset (see :func:`check_resettable_database`).
+        If the database may not be reset (see
+        :meth:`SnapshotDatabase.check_resettable`).
     """
 
     def __init__(
@@ -287,17 +445,13 @@ class DatabaseReset:
         from_snapshot=None,
         keep_as=None,
         description=None,
-        database_url=None,
+        database=None,
     ):
-        if keep_as is not None and snapshot_code_key(keep_as) is None:
+        self._database = LocalDatabase() if database is None else database
+        if keep_as is not None and not self._database.owns_snapshot(keep_as):
             raise ValueError(f"{keep_as} is not a pre-fill snapshot name.")
-        if database_url is None:
-            from dallinger import db
-
-            database_url = db.engine.url.render_as_string(hide_password=False)
-        check_resettable_database(database_url)
-        self.database_url = database_url
-        self.database = make_url(database_url).database
+        self._database.check_resettable()
+        self.database = self._database.name
         self.snapshot = from_snapshot
         # Rows in each growing table of the snapshot, once restored or taken.
         self.snapshot_rows = None
@@ -316,10 +470,9 @@ class DatabaseReset:
 
         The server starts again afterwards. If taking or restoring the
         snapshot fails, the server stays stopped and the error propagates;
-        the caller then shuts the server down.
+        the caller then calls :meth:`close` and shuts the server down or
+        starts it again.
         """
-        from psynet.db import release_local_database_connections
-
         taking = self.snapshot is None
         if taking:
             if self._prefill is not None:
@@ -333,15 +486,15 @@ class DatabaseReset:
             else f"Resetting the database to {self.snapshot}..."
         )
         self._stop_server()
-        release_local_database_connections()
+        self._database.release_connections()
         if taking:
             self._take_snapshot()
         else:
             self._restore()
-        self._clear_job_queues()
+        self._database.clear_job_queues()
         self._start_server()
         if self.snapshot_rows is None:
-            self.snapshot_rows = self._count_rows()
+            self.snapshot_rows = self._database.count_rows()
             rows = ", ".join(f"{t} {n:,}" for t, n in self.snapshot_rows.items())
             logger.info(f"Snapshot {self.snapshot}: {rows} rows.")
 
@@ -349,9 +502,12 @@ class DatabaseReset:
         """Keep a finished pre-fill whose snapshot failed, then drop a snapshot taken here.
 
         To keep the pre-fill it stops the server first, because the copy
-        needs the database unused. Errors are only logged, so that a test's
-        own error is the one that propagates.
+        needs the database unused. Database errors and other
+        :class:`RuntimeError` are only logged, so that a test's own error is
+        the one that propagates; ``click.Abort`` and ``click.exceptions.Exit``,
+        which are also :class:`RuntimeError`, propagate.
         """
+        import click
         import psycopg2
 
         try:
@@ -361,11 +517,13 @@ class DatabaseReset:
             if self._drop_snapshot_on_close:
                 with self._connect() as cursor:
                     drop_database(cursor, self.snapshot)
+        except (click.Abort, click.exceptions.Exit):
+            raise
         except (psycopg2.Error, RuntimeError) as e:
             if self.snapshot is None:
                 advice = "The pre-filled data was not kept."
             elif self._drop_snapshot_on_close:
-                advice = f"Drop the snapshot with 'dropdb {self.snapshot}'."
+                advice = self._database.drop_hint(self.snapshot)
             else:
                 advice = f"The snapshot {self.snapshot} was kept."
             logger.warning(
@@ -374,8 +532,6 @@ class DatabaseReset:
 
     def _stop_server_to_keep_prefill(self):
         """Stop the server, if it still runs, warning instead of raising if that fails."""
-        from psynet.db import release_local_database_connections
-
         try:
             self._stop_server()
         except Exception as e:
@@ -385,18 +541,14 @@ class DatabaseReset:
                     "the pre-filled data anyway."
                 )
             )
-        release_local_database_connections()
+        self._database.release_connections()
 
-    @contextmanager
     def _connect(self):
-        """Yield an autocommit cursor on the server's maintenance database."""
-        with _maintenance_cursor(self.database_url) as cursor:
-            yield cursor
+        """Return a context manager yielding a cursor on the server's maintenance database."""
+        return self._database.cursor()
 
     def _wait_for_async_jobs(self):
-        from psynet.perf_test import wait_for_async_jobs
-
-        waiting = wait_for_async_jobs(timeout_s=_ASYNC_DRAIN_TIMEOUT_S, finished=True)
+        waiting = self._database.wait_for_async_jobs(_ASYNC_DRAIN_TIMEOUT_S)
         if waiting:
             raise RuntimeError(
                 f"{waiting:,} async jobs had not finished after "
@@ -418,10 +570,9 @@ class DatabaseReset:
             self.snapshot, self._drop_snapshot_on_close = name, self._keep_as is None
             if self._description and self._keep_as is not None:
                 cursor.execute(
-                    sql.SQL("COMMENT ON DATABASE {} IS %s").format(
-                        sql.Identifier(name)
-                    ),
-                    (self._description,),
+                    sql.SQL("COMMENT ON DATABASE {} IS {}").format(
+                        sql.Identifier(name), sql.Literal(self._description)
+                    )
                 )
         if self._keep_as is not None:
             logger.info(
@@ -434,34 +585,30 @@ class DatabaseReset:
         """List the other kept pre-fill snapshots, which take disk space until dropped."""
         others = [
             f"{other} ({size / 1e6:,.0f} MB)"
-            for other, size, _ in list_snapshots(self.database_url)
+            for other, size, _ in self._database.list_snapshots()
             if other != self._keep_as
         ]
         if others:
             logger.info(
                 f"Other pre-fill snapshots: {', '.join(others)}. Drop those you "
-                "no longer need with 'psynet performance-test snapshots --drop NAME'."
+                f"no longer need with '{self._database.snapshots_command} --drop NAME'."
             )
 
     def _check_disk_space(self, cursor, source):
         """Raise unless PostgreSQL's data directory has twice the size of database ``source`` free.
 
         If the data directory's free space can't be read, for example without
-        permission to read the server's settings or for a PostgreSQL in a
-        container, it only warns, once.
+        permission to read the server's settings or for a local PostgreSQL in
+        a container, it only warns, once.
         """
         import psycopg2
 
         cursor.execute("SELECT pg_database_size(%s)", (source,))
-        needed = 2 * cursor.fetchone()[0]
+        needed = 2 * int(cursor.fetchone()[0])
         try:
             cursor.execute("SHOW data_directory")
             directory = cursor.fetchone()[0]
-            if not os.path.isfile(os.path.join(directory, "PG_VERSION")):
-                raise FileNotFoundError(
-                    f"its data directory {directory} isn't on this computer"
-                )
-            free = shutil.disk_usage(directory).free
+            free = self._database.free_disk_space(directory)
         except (psycopg2.Error, OSError) as e:
             if not self._disk_space_unknown:
                 self._disk_space_unknown = True
@@ -474,13 +621,13 @@ class DatabaseReset:
             return
         if free >= needed:
             return
-        cached = sum(size for _, size, _ in list_snapshots(self.database_url))
+        cached = sum(size for _, size, _ in self._database.list_snapshots())
         raise RuntimeError(
             f"Copying {source} needs about {_size(needed)} of free disk space "
             f"(PsyNet asks for twice the database's size), but {directory} has "
             f"only {_size(free)} free. "
             f"Pre-fill snapshots use {_size(cached)}; drop those you no longer "
-            "need with 'psynet performance-test snapshots --drop NAME'."
+            f"need with '{self._database.snapshots_command} --drop NAME'."
         )
 
     def _restore(self):
@@ -492,28 +639,6 @@ class DatabaseReset:
                 _statement("DROP DATABASE IF EXISTS {}", self.database),
             )
             _create_from_template(cursor, self.database, self.snapshot)
-
-    def _count_rows(self):
-        from sqlalchemy import create_engine
-        from sqlalchemy.pool import NullPool
-
-        from psynet.perf_test.measure import database_rows
-
-        engine = create_engine(self.database_url, poolclass=NullPool)
-        try:
-            with engine.connect() as connection:
-                return database_rows(connection)
-        finally:
-            engine.dispose()
-
-    @staticmethod
-    def _clear_job_queues():
-        """Delete the RQ queues, jobs and worker registrations from Redis."""
-        from dallinger.db import redis_conn
-
-        keys = list(redis_conn.scan_iter("rq:*", count=1000))
-        for i in range(0, len(keys), 1000):
-            redis_conn.delete(*keys[i : i + 1000])
 
 
 def _create_from_template(cursor, name, template):
@@ -566,28 +691,6 @@ def _run_when_unused(cursor, database, statement):
             if e.pgcode != _OBJECT_IN_USE or attempt == _IN_USE_ATTEMPTS - 1:
                 raise
         time.sleep(1)
-
-
-@contextmanager
-def _maintenance_cursor(database_url):
-    """Yield an autocommit cursor on the ``postgres`` database, or ``template1``.
-
-    ``CREATE DATABASE`` and ``DROP DATABASE`` can't run inside a transaction
-    or on the database they copy or drop.
-    """
-    import psycopg2
-
-    parts = urlsplit(database_url)
-    try:
-        connection = psycopg2.connect(urlunsplit(parts._replace(path="/postgres")))
-    except psycopg2.OperationalError:
-        connection = psycopg2.connect(urlunsplit(parts._replace(path="/template1")))
-    connection.autocommit = True
-    try:
-        with connection.cursor() as cursor:
-            yield cursor
-    finally:
-        connection.close()
 
 
 def _size(n_bytes):

@@ -28,7 +28,7 @@ jobs, such as asset deposits, which run in a thread of the process that
 enqueued them, usually the web process; they skip the worker queues, so
 their priority is ``-``. A CPU-heavy worker job keeps a CPU core busy while
 it runs, so as load grows it needs more worker processes
-(``num_dynos_worker``) and a server with a core for each. A CPU-heavy web
+(``worker_processes``) and a server with a core for each. A CPU-heavy web
 job slows the web process instead, and more worker processes do not help
 it. An I/O-bound job mostly waits, for example on an API call, and does not
 need more cores. If no async jobs finished, PsyNet logs
@@ -195,10 +195,12 @@ that the slowest participants experience. The report also shows:
   timed out waited longest.
 - **Async job times**: for experiments with async jobs, such
   as audio analysis, the execution time, CPU time and time spent waiting in
-  the queue, for each label and :ref:`priority <async_job_priority>`. A
+  the queue, for each label and :ref:`priority <async_job_priority>`, with
+  the number of worker processes and how many jobs they can run at once. A
   high queue share, highlighted in yellow or red, means more worker
-  processes are needed. Below the table, the report counts the jobs of each
-  priority still queued when the test ended.
+  processes are needed; see :ref:`performance_testing_async_workers`. Below
+  the table, the report counts the jobs of each priority still queued when
+  the test ended.
 - **Start-up vs steady state**: the request count, 95th-percentile response
   time, request errors and the 95th-percentile queue wait of high- and of
   low-priority async jobs, separately for the start-up and the steady
@@ -349,26 +351,13 @@ the search test that set the capacity, the summary suggests rerunning with
 ``--reset-database`` before capping lower.
 
 The summary names the limit that a failing test exceeded. If the queue limit
-is what caps capacity, add worker processes with the ``num_dynos_worker``
-config variable (see :doc:`/reference/configuration`) before resorting to a
-lower participant cap. If low-priority jobs piled up during the steady state
-of the confirmation test, so that at least as many were queued at its end as
-when the steady state began, the summary warns that the workers can't keep
-up with them in the long run: their results arrive ever later, and they
-compete for workers with the high-priority jobs. Add worker processes for
-this too.
-
-How many async jobs a worker process can handle depends on what they
-do. Each worker process runs up to 20 jobs at once with gevent, but jobs
-only overlap while they wait, for example on a web API, the database or
-``time.sleep``. A job that keeps the CPU busy, such as audio analysis in
-Python, blocks the other jobs in its process until it finishes. In the
-``async_codeblock`` demo, one worker process finished about 14 one-second
-jobs per second when they slept, but only about one per second when they
-computed. For CPU-bound jobs, plan on about one worker process per CPU core
-and on throughput of one job at a time per process. The async section of
-the report shows the number of worker processes and how many jobs they can
-run at once.
+is what caps capacity, the summary says how many worker processes the server
+had and suggests more; add them before resorting to a lower participant cap.
+If low-priority jobs piled up during the steady state of the confirmation
+test, so that at least as many were queued at its end as when the steady
+state began, the summary warns that the workers can't keep up with them in
+the long run: their results arrive ever later, and they compete for workers
+with the high-priority jobs. Add worker processes for this too.
 
 The search starts at 10 bots and doubles the count until a test fails, then
 halves the gap between the largest passing and smallest failing counts until
@@ -420,13 +409,8 @@ had waited (``oldest_queued_s``). The confirmation test has ``confirmation`` set
 and the options record ``confirmation_skipped`` with the reason it didn't
 run. When the search tests and a long test with spread-out arrivals
 disagree, trust the long test. For async jobs that keep the CPU busy,
-you can also check worker throughput by hand: one worker process keeps up
-with about as many participants at once as a session lasts divided by the
-processing time each participant needs (the average CPU times,
-``cpu_avg``, in ``async_job_stats`` times the number of each job per
-participant). For
-example, 43 s of audio analysis per 12-minute session lets one worker
-process keep up with about 16 participants.
+also check worker throughput by hand, as described in
+:ref:`performance_testing_async_workers`.
 
 The processes running the bots create each bot's participant themselves, so
 they can only start new bots at a limited rate, which depends on the
@@ -466,6 +450,47 @@ files per waiting participant, also caps it at about 500 per worker. This
 needs a Dallinger release newer than 12.4; with 12.4 and earlier, a web
 worker runs out of Redis connections once about 100 participants have waited
 on it.
+
+.. _performance_testing_async_workers:
+
+Async workers
+-------------
+
+Async jobs run in worker processes, separate from the web server. Two
+config variables (see :doc:`/reference/configuration`) set how many jobs run
+at once:
+
+- ``worker_processes`` (default 1) is the number of worker processes: the
+  ``worker_N`` containers on an SSH server, the worker dynos on Heroku, and
+  the local worker processes of ``psynet debug local --legacy`` and
+  ``performance-test local``. It replaces ``num_dynos_worker``.
+- ``worker_greenlets_per_process`` (default 20) is how many jobs each
+  worker process runs at once with gevent.
+
+The async section of the test results shows both, for example ``2 worker
+processes, up to 40 jobs at once``. Jobs in the same process only overlap
+while they wait, for example on a web API, the database or ``time.sleep``.
+A job that keeps the CPU busy, such as audio analysis in Python, blocks the
+other jobs in its process until it finishes. In the ``async_codeblock``
+demo, one worker process finished about 14 one-second jobs per second when
+they slept, but only about one per second when they computed.
+
+So for experiments with CPU-heavy async jobs, such as tapping
+experiments that analyse recordings with REPP, set
+``worker_greenlets_per_process = 1``, so that a busy process doesn't take
+jobs that a free one could run, and plan on about one worker process per CPU
+core. One worker process then keeps up with about (session length) / (CPU
+time per job × jobs per participant) participants taking part at once. The
+CPU Avg column in the async section, or ``cpu_avg`` in ``async_job_stats``
+with ``--json-output``, gives the CPU time per job. Workers start
+high-priority jobs first, but a long low-priority job still occupies its
+worker until it finishes. For example, 43 s of audio
+analysis per 12-minute session lets one worker process keep up with about
+16 participants, so 100 participants at once need about 6 worker processes
+and a server with that many cores to spare beyond those the web server and
+database use. On SSH servers the worker containers get a low CPU priority,
+so that a busy worker doesn't slow down participants' pages, but they still
+use every core that is free.
 
 .. _performance_testing_database_size:
 
@@ -511,9 +536,10 @@ To read the numbers:
 Starting every test from the same data
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-``psynet performance-test local --reset-database`` starts every test from
-the same database, so that the tests of a capacity search differ only in
-load:
+``--reset-database`` starts every test from the same database, so that the
+tests of a capacity search differ only in load. This section describes
+``performance-test local``; :ref:`performance_testing_server_reset` explains
+what differs on a server.
 
 .. code-block:: bash
 
@@ -524,9 +550,8 @@ snapshot database. Before each later test, it stops the experiment server,
 drops the experiment's database and creates it again from the snapshot,
 empties the async job queues and starts the server again. That takes a few
 seconds, plus a few seconds per gigabyte of data, because PostgreSQL copies
-the database's files. At the end it drops the snapshot. It only resets a
-database on your own computer, and a test run only ever drops the
-experiment's own database and its temporary snapshot. Kept pre-fill
+the database's files. At the end it drops the snapshot. A test run only
+ever drops the experiment's own database and its temporary snapshot. Kept pre-fill
 snapshots (see below) are only dropped by ``psynet performance-test
 snapshots``, whose ``--drop-all`` drops every pre-fill snapshot on this
 computer. Files that the bots uploaded or
@@ -563,6 +588,9 @@ snapshot, so every test starts with 1,500 participants' data. The bots use
 the same routes as participants, so the data is what the experiment itself
 stores, but it takes time: at about 250 requests per participant, a few
 hundred requests per second fill 1,500 participants in about an hour.
+The pre-fill adds to whatever the database already holds, such as bots
+from earlier tests, and the snapshot keeps it all; PsyNet warns when the
+database isn't empty.
 
 If any pre-fill bot raises an error, the run stops without keeping a
 snapshot, because the data would differ from what participants leave.
@@ -600,14 +628,16 @@ their sizes and the experiment that made them, and drop them with:
 server, whichever experiment made it.
 
 To start from real data instead, for example from a pilot, export the
-pilot with ``psynet export``, launch the experiment from the export with
-``psynet debug ssh --app my-experiment --archive export.zip`` (see
-:doc:`/deploy/reference/deploy_from_archive`), and run ``psynet performance-test ssh``
-against it. Every test then starts with at least the pilot's data.
+pilot with ``psynet export``, add ``performance_test_app = true`` to
+``config.txt``, launch a new app from the export with ``psynet debug ssh
+--app my-experiment-perf --archive export.zip`` (see
+:doc:`/deploy/reference/deploy_from_archive`), remove the line from ``config.txt`` again, and
+run ``psynet performance-test ssh --app my-experiment-perf`` (see
+:ref:`performance_testing_server_app`). Every test then starts with at least
+the pilot's data.
 
-These options need the server that ``performance-test local`` starts, so
-they can't be combined with ``--existing``; ``performance-test ssh`` does
-not support them yet.
+Locally, these options need the server that ``performance-test local``
+starts, so they can't be combined with ``--existing``.
 
 .. _performance_testing_server:
 
@@ -618,8 +648,10 @@ A local test is limited by your own computer, because the bots share its CPUs
 with the server. The bots are cheap (see
 :ref:`performance_testing_bot_processes`): on a four-core computer, 200 bots
 working at a realistic pace used about a third of one core, against nearly
-three cores for the server. To test a real server, launch the experiment there in
-debug mode, then run the test over SSH. The bots then run inside the server's
+three cores for the server. To test a real server, run the test over SSH
+from the experiment directory, naming a new app for it; PsyNet deploys the
+experiment under that name in debug mode first (see
+:ref:`performance_testing_server_app`). The bots then run inside the app's
 web container and send their requests straight to the experiment server,
 skipping the server's web proxy and any Cloudflare tunnel, so the test
 measures the experiment itself. They still take a little of the server's
@@ -628,18 +660,64 @@ machine, so on a shared server check with the other users first:
 
 .. code-block:: bash
 
-    psynet debug ssh --app my-experiment
-    psynet performance-test ssh --app my-experiment --n-bots 50 --duration-minutes 10
+    psynet performance-test ssh --app my-experiment-perf --n-bots 50 --duration-minutes 10
 
-The test does not reset the database, so repeated runs accumulate data (see
-:ref:`performance_testing_database_size`; ``--reset-database`` is only
-available locally so far). Make
+By default the test does not reset the database, so repeated runs
+accumulate data (see :ref:`performance_testing_database_size` and
+:ref:`performance_testing_server_reset`). Make
 sure the app allows enough participants for the number of bots, and that
 nobody else is using it during the test.
 
-Performance tests add bot participants to the database and load the
-server, so they must never run against an experiment that is collecting
-real data. ``performance-test ssh`` and ``performance-test local`` therefore
+.. _performance_testing_server_app:
+
+Apps for performance tests
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Performance tests fill the database with bot participants, and with
+``--reset-database`` they drop it, so they only run on apps that
+``performance-test ssh`` deployed for them, never on an existing
+deployment. If the server has no app named ``--app``,
+``performance-test ssh`` first deploys the experiment from the current
+directory under that name, in debug mode, as ``psynet debug ssh`` would. It
+takes the same ``--server``, ``--dns-host``, ``--ingress`` and
+``--use-local-dallinger`` options. If the server is on a private network,
+such as a lab computer, add ``--ingress cloudflare``: Let's Encrypt cannot
+issue certificates for a private address, so classic ingress fails there.
+
+The app's config marks it as a performance-test app with
+``performance_test_app = true``, and records the hash of the experiment's
+files and the PsyNet and Dallinger versions that it was deployed with (the
+same hash that names pre-fill snapshots, see :ref:`performance_testing_reset`).
+Each run reads both inside the app's web container. If the hash differs
+from that of the experiment directory, the run first updates the app as
+``psynet debug ssh --update`` does: it rebuilds and restarts the app's
+containers but keeps its database, with the data of earlier tests, and its
+pre-fill snapshots. The old snapshots no longer match the new hash, so a
+run with ``--prefill-participants`` pre-fills again, adding to the data
+already in the database, and keeps the old snapshots until you drop them.
+The database keeps the tables of the earlier code, and
+launch steps, such as creating networks, don't run again; if the change
+needs them, destroy the app and let the next run deploy it again. Update
+the app only through ``performance-test ssh``: ``psynet debug ssh
+--update`` doesn't set ``performance_test_app``, so the app would lose its
+mark.
+
+If an app of that name exists but isn't marked, for example one you
+deployed with ``psynet debug ssh`` or ``psynet deploy ssh``, every run
+refuses it, as does ``psynet performance-test snapshots --app``; choose
+another app name. Setting ``performance_test_app = true`` in ``config.txt``
+yourself declares that the app's data is disposable: performance tests may
+add to it, reset it and drop it. ``psynet deploy ssh`` and other live
+deployments refuse to deploy with it set.
+
+After a run, the app stays on the server for later runs, and PsyNet prints
+the command that destroys it:
+
+.. code-block:: bash
+
+    psynet destroy ssh --server my-server --app my-experiment-perf
+
+As a second check, ``performance-test ssh`` and ``performance-test local``
 refuse to start if the database has participants that PsyNet bots didn't
 create (bots from earlier tests and pre-fills don't count), if the
 experiment runs in live mode, or if its recruiter can bring real
@@ -647,13 +725,73 @@ participants. Test recruiters are the development and mock recruiters,
 Hot Air, generic, bots and simulated participants. If the experiment isn't
 collecting real data, add ``--force``. You need it, for example, after your
 own walkthrough of the experiment, after a Selenium walkthrough, after
-loading a bot export, or for an experiment configured with Prolific that
-you deployed with ``psynet debug ssh``. When the run ends, PsyNet copies the
-bot log out of the container and prints where it saved it.
+loading a bot export, or for an experiment configured with Prolific. When
+the run ends, PsyNet copies the bot log out of the container and prints
+where it saved it.
 
-If the server is on a private network, such as a lab computer, deploy with
-``--ingress cloudflare``: Let's Encrypt cannot issue certificates for a
-private address, so classic ingress fails there.
+.. _performance_testing_server_reset:
+
+Resetting the database on a server
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``performance-test ssh`` takes the same ``--reset-database``,
+``--prefill-participants`` and ``--from-snapshot`` options as
+``performance-test local`` (see :ref:`performance_testing_reset`):
+
+.. code-block:: bash
+
+    psynet performance-test ssh --app my-experiment-perf --reset-database --n-bots auto
+    psynet performance-test ssh --app my-experiment-perf --prefill-participants 1500 --n-bots auto
+
+With these options your computer runs the series of tests, or the capacity
+search, and the server runs one test at a time and sends its results back.
+Test lengths, ``--arrival-minutes`` and the confirmation test that ends a
+capacity search work as without them. Before each later test, PsyNet stops the app's running or restarting containers except
+PostgreSQL, Redis and the front door (``frontdoor``, ``controller`` and
+``cloudflared``): the web, worker, clock and PgBouncer containers, and any
+services you added to the app's compose file, so that no connection holds
+on to the old database. It then recreates the database from the snapshot,
+as above, with ``psql`` inside the app's PostgreSQL container, empties the
+app's async job queues, and starts again only the containers it stopped,
+waiting until the web server answers and the workers are back. Pre-fill
+bots run inside the web container. If a reset fails or you interrupt the
+run, PsyNet starts the containers it stopped. If it can't, the command
+fails, saying that the app may be stopped, and prints the ``docker compose
+start`` command to run on the server. A reset interrupted between dropping
+and recreating the database leaves the app without its database; destroy
+the app then, and the next run deploys it again.
+
+Before the first reset and again before every later one, the web container
+checks that the app is a performance-test app, and runs the guards against
+real data, with the same ``--force`` as above. Neither command
+resets an experiment running in live mode, even with ``--force``. A
+reset only touches the app's own database, whose name is the app name; it
+refuses if the web container uses a database with another name. The free
+disk space check runs inside the PostgreSQL container, and if it can't
+check, it refuses to reset rather than warning.
+
+Snapshots live in the PostgreSQL server that the app uses, and their names
+include the app name, such as
+``psynet_prefill_my-experiment-perf_0123456789ab_n1500``, so that apps sharing
+one PostgreSQL server don't share snapshots. PostgreSQL limits database
+names to 63 characters, so very long app names can't keep pre-fill
+snapshots. List and drop an app's snapshots with:
+
+.. code-block:: bash
+
+    psynet performance-test snapshots --app my-experiment-perf
+    psynet performance-test snapshots --app my-experiment-perf --drop-all
+
+Here ``--drop-all`` drops only that app's snapshots. ``psynet destroy ssh``
+drops them too: with Cloudflare ingress the app has its own PostgreSQL
+container, whose volume goes with the app, and with classic ingress PsyNet
+drops the app's pre-fill snapshots from the shared PostgreSQL server before
+destroying the app. A run drops its temporary snapshot, named
+``<app>_snapshot_<time>``, when it ends, and prints a ``dropdb`` command if
+that fails. If a run is killed first, the temporary snapshot stays: with
+classic ingress, drop it from the shared PostgreSQL container with
+``docker exec dallinger-postgresql-1 dropdb -U dallinger <name>``, because
+destroying the app doesn't.
 
 .. _performance_testing_bot_processes:
 
@@ -705,7 +843,7 @@ Saving results
 --------------
 
 ``--json-output results.json`` writes the full results and details of the run
-to a file (local tests only). To record the results in the experiment's
+to a file. To record the results in the experiment's
 audit, use ``psynet audit performance-test`` instead. It runs locally, takes
 the same load options and ``--existing``, and writes
 ``audit/artifacts/performance.json`` for the audit's *Performance test*

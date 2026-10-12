@@ -3,27 +3,24 @@
 A database reset (see :mod:`psynet.perf_reset`) needs the server stopped
 while it copies the database, and started again afterwards. The server first
 starts with ``psynet debug local --legacy``, which prepares a fresh database
-and launches the experiment, so it can't simply run again. Instead, right
-after that first start, :class:`RestartableLocalServer` records the ``heroku
-local`` command that it ran, which starts the web, worker and clock
-processes, with its working directory and environment, and later restarts
-run that command. The environment includes the Flask secret key, so
-dashboard logins stay valid across restarts.
+and launches the experiment, so it can't simply run again. Instead, restarts
+run the ``heroku local`` command that Dallinger ran to start the web, worker
+and clock processes, rebuilt from the config of the running server, in the
+server's working directory.
 
-``heroku local`` is a shell script that runs a Node program. On macOS the
-environment of the protected ``bash`` can't be read, so the recipe is that
-of the Node process. A change to the Heroku CLI's process tree would break
-the lookup, which then fails with a clear error rather than guessing.
+:class:`RestartableLocalServer` generates a Flask secret key and starts the
+server with it in its environment. Dallinger's debug deployment keeps a
+preset key, so restarts with the same environment keep dashboard logins,
+such as those of the bots, valid. The key never appears in the output.
 """
 
 import os
+import secrets
 import signal
 import subprocess
 import time
-from urllib.parse import urlsplit
 
 import click
-import psutil
 
 from psynet.utils import get_experiment_url
 
@@ -44,13 +41,19 @@ class RestartableLocalServer:
     """
 
     def __init__(self, debug=False, restartable=False):
-        from psynet.command_line import _start_local_server_and_wait_for_ready
+        from psynet.command_line import (
+            _start_local_server_and_wait_for_ready,
+            local_server_env,
+        )
 
-        self._debug = debug
+        extra_env = {
+            "PSYNET_PERFORMANCE_TEST": "1",
+            "FLASK_SECRET_KEY": secrets.token_hex(16),
+        }
         self._info = _start_local_server_and_wait_for_ready(
             ["debug", "local", "--legacy", "--no-browsers"],
             debug=debug,
-            extra_env={"PSYNET_PERFORMANCE_TEST": "1"},
+            extra_env=extra_env,
         )
         self._log_path = self._info["tmp_log_path"]
         self._process = None
@@ -58,7 +61,7 @@ class RestartableLocalServer:
         self._recipe = None
         if restartable:
             try:
-                self._recipe = _find_heroku_local(self._info["process"].pid)
+                self._recipe = (*_heroku_local_command(), local_server_env(extra_env))
             except BaseException:
                 self.close()
                 raise
@@ -73,7 +76,7 @@ class RestartableLocalServer:
 
     def start(self):
         """Start the server's processes again and wait until they serve requests."""
-        cmdline, cwd, env, port = self._recipe
+        cmdline, cwd, port, env = self._recipe
         _wait_for_free_port(port)
         print("▶ Restarting experiment server...")
         with open(self._log_path, "a", encoding="utf-8") as log:
@@ -108,39 +111,29 @@ class RestartableLocalServer:
             print(f"✓ Server stopped (log: {self._log_path})")
 
 
-def _find_heroku_local(pid):
-    """Return the command line, working directory, environment and port of ``heroku local``.
+def _heroku_local_command():
+    """Return the ``heroku local`` command of the running server, its working directory and port.
 
-    ``pid`` is the ``psynet debug local --legacy`` process that started it.
+    The command matches the one Dallinger's ``HerokuLocalWrapper`` runs, with
+    the dyno counts from the server's ``config.txt``.
     """
-    port = urlsplit(get_experiment_url()).port
-    for process in psutil.Process(pid).children(recursive=True):
-        try:
-            cmdline = process.cmdline()
-            if not _is_heroku_local(cmdline, port):
-                continue
-            env = process.environ()
-            cwd = process.cwd()
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            continue
-        if "FLASK_SECRET_KEY" in env:
-            return cmdline, cwd, env, port
-    raise click.ClickException(
-        "Could not find the heroku local process of the experiment server, so "
-        "it can't be restarted to reset the database."
-    )
+    from dallinger.heroku.tools import dyno_count
 
+    from psynet.redis import redis_vars
+    from psynet.utils import load_runtime_server_config
 
-def _is_heroku_local(cmdline, port):
-    """Return whether ``cmdline`` runs ``heroku local -p <port>``."""
-    try:
-        i = cmdline.index("local")
-    except ValueError:
-        return False
-    return any("heroku" in part for part in cmdline[:i]) and cmdline[i + 1 : i + 3] == [
-        "-p",
-        str(port),
-    ]
+    cwd = redis_vars.get("server_working_directory", None)
+    if not cwd:
+        raise click.ClickException(
+            "The experiment server didn't record its working directory, so it "
+            "can't be restarted to reset the database."
+        )
+    config = load_runtime_server_config()
+    dynos = f"web={dyno_count(config, 'web')},worker={dyno_count(config, 'worker')}"
+    if config.get("clock_on"):
+        dynos += ",clock"
+    port = config.get("base_port")
+    return ["heroku", "local", "-p", str(port), dynos], cwd, port
 
 
 def _wait_for_free_port(port):
