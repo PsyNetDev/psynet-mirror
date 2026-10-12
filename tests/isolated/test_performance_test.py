@@ -1406,3 +1406,24 @@ def test_performance_tests_refuse_participants_that_bots_did_not_create(db_sessi
     with pytest.raises(click.ClickException, match="1 participant"):
         _check_no_real_participants(force=False)
     _check_no_real_participants(force=True)
+
+
+def test_database_copies_need_twice_the_database_size_free(caplog):
+    import psycopg2
+
+    from psynet.perf_reset import DatabaseReset
+
+    reset = DatabaseReset(Mock(), Mock(), database_url="postgresql:///experiment")
+    cursor = Mock()
+    cursor.fetchone.side_effect = [(1e9,), ("/pgdata",)]
+    with (
+        patch("psynet.perf_reset.shutil.disk_usage", return_value=Mock(free=1.5e9)),
+        patch("psynet.perf_reset.list_snapshots", return_value=[("s", 3e9, None)]),
+        pytest.raises(RuntimeError, match=r"2\.0 GB.*3\.0 GB.*snapshots --drop"),
+    ):
+        reset._check_disk_space(cursor, "experiment")
+
+    cursor.fetchone.side_effect = [(1e9,)]
+    cursor.execute.side_effect = [None, psycopg2.Error("permission denied")]
+    reset._check_disk_space(cursor, "experiment")
+    assert "Could not check" in caplog.text

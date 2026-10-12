@@ -366,6 +366,13 @@ the snapshot as a ``pg_dump`` archive in the experiment's
 before each test with ``pg_restore``. That needs the PostgreSQL client
 programs and takes longer.
 
+Each copy needs disk space, so before making one PsyNet checks that the
+disk holding PostgreSQL's data has at least twice the database's size free,
+and otherwise stops and says how much space the pre-fill snapshots use. It
+can only check if the PostgreSQL role may read the server's settings and
+the server runs on this computer outside a container; otherwise it warns
+once and carries on.
+
 To test with the amount of data the study will reach, pre-fill the
 database before the first test:
 

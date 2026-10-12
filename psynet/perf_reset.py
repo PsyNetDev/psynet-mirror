@@ -270,6 +270,7 @@ class DatabaseReset:
         self._description = description
         self._snapshot_directory = Path(snapshot_directory)
         self._owns_snapshot = False
+        self._disk_space_unknown = False
 
     def __call__(self):
         """Take or restore the snapshot, with the server stopped meanwhile.
@@ -392,6 +393,7 @@ class DatabaseReset:
             name = self.database[: _MAX_NAME_LENGTH - len(stamp)] + stamp
         try:
             with self._connect() as cursor:
+                self._check_disk_space(cursor, self.database)
                 _swap_in_copy(cursor, name, self.database)
                 if self._description and self._keep_as is not None:
                     cursor.execute(
@@ -438,6 +440,8 @@ class DatabaseReset:
     def _dump(self, name):
         """Write a ``pg_dump`` archive of the database; return its path."""
         self._snapshot_directory.mkdir(parents=True, exist_ok=True)
+        with self._connect() as cursor:
+            self._check_disk_space(cursor, self.database, self._snapshot_directory)
         archive = self._snapshot_directory / f"{name}.dump"
         partial = archive.with_suffix(".partial")
         _run_postgres_tool(
@@ -446,9 +450,52 @@ class DatabaseReset:
         os.replace(partial, archive)
         return str(archive)
 
+    def _check_disk_space(self, cursor, source, directory=None):
+        """Raise unless twice the size of database ``source`` is free where its copy goes.
+
+        The copy goes in PostgreSQL's data directory, or in ``directory`` for
+        a ``pg_dump`` archive. If the data directory's free space can't be
+        read, for example without permission to read the server's settings
+        or for a PostgreSQL in a container, it only warns, once.
+        """
+        import psycopg2
+
+        cursor.execute("SELECT pg_database_size(%s)", (source,))
+        needed = 2 * cursor.fetchone()[0]
+        try:
+            if directory is None:
+                cursor.execute("SHOW data_directory")
+                directory = cursor.fetchone()[0]
+            free = shutil.disk_usage(directory).free
+        except (psycopg2.Error, OSError) as e:
+            if not self._disk_space_unknown:
+                self._disk_space_unknown = True
+                logger.warning(
+                    warning(
+                        f"Could not check PostgreSQL's free disk space ({str(e).strip()}); "
+                        f"copying {source} needs about {_size(needed)}."
+                    )
+                )
+            return
+        if free >= needed:
+            return
+        cached = sum(
+            size
+            for _, size, _ in list_snapshots(
+                self.database_url, self._snapshot_directory
+            )
+        )
+        raise RuntimeError(
+            f"Copying {source} needs about {_size(needed)} of free disk space, "
+            f"twice its size, but {directory} has only {_size(free)} free. "
+            f"Pre-fill snapshots use {_size(cached)}; drop those you no longer "
+            "need with 'psynet performance-test snapshots --drop NAME'."
+        )
+
     def _restore(self):
         if not self.snapshot.endswith(".dump"):
             with self._connect() as cursor:
+                self._check_disk_space(cursor, self.snapshot)
                 _swap_in_copy(cursor, self.database, self.snapshot)
             return
         with self._connect() as cursor:
@@ -563,6 +610,10 @@ def _maintenance_cursor(database_url):
             yield cursor
     finally:
         connection.close()
+
+
+def _size(n_bytes):
+    return f"{n_bytes / 1e9:,.1f} GB" if n_bytes >= 1e9 else f"{n_bytes / 1e6:,.0f} MB"
 
 
 def _database_exists(cursor, name):
