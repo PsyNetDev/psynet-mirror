@@ -71,6 +71,12 @@ run individual tests locally and only run the full test suite on GitLab.
 - Tests are assigned to shards so that each shard's estimated duration is
   about the same. Estimates come from ``ci/test_durations.json``; tests that
   are missing from that file get the median duration for their kind.
+- Tests that keep the CPU busy for much of their run, such as demos that
+  synthesize audio, are listed in ``CPU_HEAVY_ITEMS`` in
+  ``psynet/dev/ci_tests.py``. Each goes to a different shard, because a
+  shard's slots share one 2-vCPU runner and two such tests running together
+  can slow each other past their timeouts. Add a test to that list if it
+  fails only when it shares a shard with another CPU-heavy test.
 - Within a shard, ``TEST_SLOTS`` tests run concurrently. Slot 0 uses the job's
   database and Redis server; every other slot gets its own database, its own
   Redis server and its own port (see :ref:`running_several_local_experiments`).

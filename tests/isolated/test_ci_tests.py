@@ -26,6 +26,24 @@ def test_assign_shard_balances_and_covers_every_item():
     assert sorted(sum(i.estimate for i in shard) for shard in shards) == [12, 13, 13]
 
 
+def test_assign_shard_spreads_cpu_heavy_items():
+    # By duration alone, the two heavy items would land on the same shard.
+    items = [SuiteItem("long", "demo", estimate=20)] + [
+        SuiteItem(f"t{i}", "demo", estimate=d, cpu_heavy=d == 5)
+        for i, d in enumerate([10, 5, 5, 4, 4, 3, 3])
+    ]
+
+    shards = [assign_shard(items, 3, index) for index in (1, 2, 3)]
+
+    assert sorted(sum(i.cpu_heavy for i in shard) for shard in shards) == [0, 1, 1]
+    assert max(sum(i.estimate for i in shard) for shard in shards) == 20
+
+
+def test_cpu_heavy_items_exist():
+    root = get_psynet_root()
+    assert all((root / path).is_dir() for path in ci_tests.CPU_HEAVY_ITEMS)
+
+
 def test_playwright_durations_feed_balanced_spec_shards(tmp_path, monkeypatch):
     durations_path = tmp_path / "test_durations.json"
     monkeypatch.setattr(ci_tests, "DURATIONS_PATH", durations_path)

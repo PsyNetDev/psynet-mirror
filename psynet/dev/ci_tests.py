@@ -9,7 +9,8 @@ Two things make this faster than running items one after another:
 - **Balanced shards.** Items are assigned with the longest-processing-time
   rule using the durations recorded in :data:`DURATIONS_PATH`, so no shard
   is stuck with several of the slowest tests. Items without a recorded
-  duration get the median for their kind.
+  duration get the median for their kind. Items in :data:`CPU_HEAVY_ITEMS`
+  go to different shards, because a shard's slots share one runner's CPUs.
 - **Slots.** A shard can run several items at once. Each slot is a separate
   local PsyNet environment: its own Postgres database, Redis server, web
   port and Dallinger develop directory. A Redis server (not just a database
@@ -31,7 +32,6 @@ Refresh the durations after the suite changes noticeably with
 artifacts written by ``run-tests`` and the ``playwright-*-junit.xml`` reports.
 """
 
-import heapq
 import json
 import os
 import re
@@ -52,6 +52,18 @@ from psynet.utils import get_psynet_root, list_experiment_dirs, list_isolated_te
 
 DURATIONS_PATH = Path("ci/test_durations.json")
 PLAYWRIGHT_DIR = Path("tests/playwright")
+
+# Items that keep the CPU busy for much of their run. A shard's slots share one
+# 2-vCPU runner, so two of these in one shard can slow each other past their
+# timeouts; :func:`assign_shard` puts each on a different shard.
+CPU_HEAVY_ITEMS = frozenset(
+    {
+        # Synthesizes start-node stimuli at launch with n_jobs = 8.
+        "demos/experiments/gibbs_audio_complex",
+        # Bots' singing recordings are analysed with Praat pitch tracking.
+        "demos/experiments/vertical_processing",
+    }
+)
 
 _COMMON_PYTEST_ARGS = [
     "-Werror",
@@ -77,6 +89,7 @@ class SuiteItem:
     path: str
     kind: str
     estimate: float = 0.0
+    cpu_heavy: bool = False
 
     @property
     def absolute_path(self):
@@ -107,6 +120,8 @@ def collect_items(scope, durations):
     ]
     for kind in {item.kind for item in items}:
         _apply_estimates([i for i in items if i.kind == kind], durations)
+    for item in items:
+        item.cpu_heavy = item.path in CPU_HEAVY_ITEMS
     return items
 
 
@@ -123,14 +138,21 @@ def assign_shard(items, node_total, node_index):
 
     Uses the longest-processing-time rule, so shards end up with similar total
     estimated durations. Ties are broken by path, keeping the assignment
-    identical on every shard.
+    identical on every shard. Items marked ``cpu_heavy`` are placed first, each
+    on a shard with as few other heavy items as possible, so they only share a
+    shard when there are more of them than shards.
     """
-    loads = [(0.0, shard) for shard in range(node_total)]
-    assigned = {shard: [] for shard in range(node_total)}
-    for item in sorted(items, key=lambda i: (-i.estimate, i.path)):
-        load, shard = heapq.heappop(loads)
+    loads = [0.0] * node_total
+    heavy_counts = [0] * node_total
+    assigned = [[] for _ in range(node_total)]
+    for item in sorted(items, key=lambda i: (not i.cpu_heavy, -i.estimate, i.path)):
+        shard = min(
+            range(node_total),
+            key=lambda s: (heavy_counts[s] if item.cpu_heavy else 0, loads[s], s),
+        )
         assigned[shard].append(item)
-        heapq.heappush(loads, (load + item.estimate, shard))
+        loads[shard] += item.estimate
+        heavy_counts[shard] += item.cpu_heavy
     return assigned[node_index - 1]
 
 
