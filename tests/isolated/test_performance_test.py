@@ -629,9 +629,8 @@ def test_an_interrupted_prefill_snapshot_is_never_lost(db_session):
                 )
         assert rows(keep) == 2
 
-        # A pre-fill whose snapshot failed is kept at close(), before teardown.
-        with perf_reset._maintenance_cursor(scratch_url) as cursor:
-            drop_database(cursor, keep)
+        # A fresh pre-fill whose snapshot failed replaces the old one (2 rows)
+        # at close(), before teardown drops the experiment database.
         reset = FailingReset(
             server.stop,
             server.start,
@@ -1486,14 +1485,15 @@ def test_performance_tests_refuse_participants_that_bots_did_not_create(db_sessi
     _check_no_real_participants(force=True)
 
 
-def test_database_copies_need_twice_the_database_size_free(caplog):
+def test_database_copies_need_twice_the_database_size_free(caplog, tmp_path):
     import psycopg2
 
     from psynet.perf_reset import DatabaseReset
 
     reset = DatabaseReset(Mock(), Mock(), database_url="postgresql:///experiment")
     cursor = Mock()
-    cursor.fetchone.side_effect = [(1e9,), ("/pgdata",)]
+    (tmp_path / "PG_VERSION").write_text("16")
+    cursor.fetchone.side_effect = [(1e9,), (str(tmp_path),)]
     with (
         patch("psynet.perf_reset.shutil.disk_usage", return_value=Mock(free=1.5e9)),
         patch("psynet.perf_reset.list_snapshots", return_value=[("s", 3e9, None)]),
@@ -1501,7 +1501,29 @@ def test_database_copies_need_twice_the_database_size_free(caplog):
     ):
         reset._check_disk_space(cursor, "experiment")
 
+    # A data directory in a container, or one PostgreSQL won't show, isn't checked.
+    cursor.fetchone.side_effect = [(1e9,), ("/in/a/container",)]
+    reset._check_disk_space(cursor, "experiment")
+    assert "isn't on this computer" in caplog.text
     cursor.fetchone.side_effect = [(1e9,)]
     cursor.execute.side_effect = [None, psycopg2.Error("permission denied")]
     reset._check_disk_space(cursor, "experiment")
-    assert "Could not check" in caplog.text
+
+
+@pytest.mark.parametrize(
+    "mode, recruiter, live",
+    [
+        ("debug", "prolific", False),
+        ("sandbox", "hotair", False),
+        ("sandbox", "prolific", True),
+        ("live", "hotair", True),
+    ],
+)
+def test_live_recruitment_counts_as_real_participants(mode, recruiter, live):
+    from psynet.recruiters import recruits_real_participants
+
+    config = {"mode": mode, "recruiter": recruiter}
+    assert (
+        bool(recruits_real_participants(Mock(get=lambda k, d=None: config.get(k, d))))
+        is live
+    )

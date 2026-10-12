@@ -349,10 +349,7 @@ class DatabaseReset:
             with self._connect() as cursor:
                 present = _recover_database(cursor, self.database)
                 if present and self._prefilled and self.snapshot is None:
-                    if _recover_database(cursor, self._keep_as):
-                        self.snapshot = self._keep_as
-                    else:
-                        self._take_snapshot()
+                    self._take_snapshot()
                 if not present:
                     logger.warning(
                         warning(
@@ -478,6 +475,10 @@ class DatabaseReset:
             if directory is None:
                 cursor.execute("SHOW data_directory")
                 directory = cursor.fetchone()[0]
+                if not os.path.isfile(os.path.join(directory, "PG_VERSION")):
+                    raise FileNotFoundError(
+                        f"its data directory {directory} isn't on this computer"
+                    )
             free = shutil.disk_usage(directory).free
         except (psycopg2.Error, OSError) as e:
             if not self._disk_space_unknown:
@@ -498,8 +499,9 @@ class DatabaseReset:
             )
         )
         raise RuntimeError(
-            f"Copying {source} needs about {_size(needed)} of free disk space, "
-            f"twice its size, but {directory} has only {_size(free)} free. "
+            f"Copying {source} needs about {_size(needed)} of free disk space "
+            f"(PsyNet asks for twice the database's size), but {directory} has "
+            f"only {_size(free)} free. "
             f"Pre-fill snapshots use {_size(cached)}; drop those you no longer "
             "need with 'psynet performance-test snapshots --drop NAME'."
         )
@@ -511,6 +513,7 @@ class DatabaseReset:
                 _swap_in_copy(cursor, self.database, self.snapshot)
             return
         with self._connect() as cursor:
+            self._check_disk_space(cursor, self.database)
             terminate_connections(cursor, self.database)
         _run_postgres_tool(
             "pg_restore",
@@ -564,17 +567,21 @@ def _swap_in_copy(cursor, target, template):
 
 
 def _recover_database(cursor, database):
-    """Finish or undo an interrupted :func:`_swap_in_copy`; return whether ``database`` exists."""
+    """Finish an interrupted :func:`_swap_in_copy`; return whether ``database`` exists.
+
+    A leftover copy is always complete, because ``CREATE DATABASE`` either
+    finishes or leaves nothing, so it replaces ``database``.
+    """
     copy = replacement_name(database)
-    if _database_exists(cursor, database):
-        drop_database(cursor, copy)
-        return True
     if not _database_exists(cursor, copy):
-        return False
+        return _database_exists(cursor, database)
+    _run_when_unused(
+        cursor, database, _statement("DROP DATABASE IF EXISTS {}", database)
+    )
     _run_when_unused(
         cursor, copy, _statement("ALTER DATABASE {} RENAME TO {}", copy, database)
     )
-    logger.warning(warning(f"Restored {database} from {copy} after a failed reset."))
+    logger.warning(warning(f"Finished replacing {database} with {copy}."))
     return True
 
 

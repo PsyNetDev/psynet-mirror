@@ -4892,21 +4892,33 @@ def _run_performance_test_with_existing_server(
 
 
 def _check_no_real_participants(force):
-    """Refuse to test a database with participants that bots didn't create, unless ``force``."""
-    from psynet.perf_test import count_non_bot_participants
+    """Refuse to test an experiment that may have real participants, unless ``force``.
 
+    That is one with participants that bots didn't create, or with live
+    recruitment (see :func:`psynet.recruiters.recruits_real_participants`).
+    """
+    from psynet.perf_test import count_non_bot_participants
+    from psynet.recruiters import recruits_real_participants
+
+    reasons = []
     n = count_non_bot_participants()
-    if not n:
+    if n:
+        reasons.append(
+            f"the database has {n:,} participant(s) that PsyNet bots didn't create"
+        )
+    if live := recruits_real_participants():
+        reasons.append(live)
+    if not reasons:
         return
     message = (
-        f"The database has {n:,} participant(s) that PsyNet bots didn't create. "
+        f"This may be an experiment with real participants: {'; '.join(reasons)}. "
         "Performance tests add bot participants to the database and load the "
         "server, so they must not run against an experiment that is collecting "
         "real data."
     )
     if not force:
         raise click.ClickException(
-            f"{message} If these participants are test data, rerun with --force."
+            f"{message} If it isn't collecting real data, rerun with --force."
         )
     print(f"Warning: {message} Continuing because of --force.")
 

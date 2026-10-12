@@ -366,12 +366,13 @@ the snapshot as a ``pg_dump`` archive in the experiment's
 before each test with ``pg_restore``. That needs the PostgreSQL client
 programs and takes longer.
 
-Each copy needs disk space, so before making one PsyNet checks that the
-disk holding PostgreSQL's data has at least twice the database's size free,
-and otherwise stops and says how much space the pre-fill snapshots use. It
-can only check if the PostgreSQL role may read the server's settings and
-the server runs on this computer outside a container; otherwise it warns
-once and carries on.
+Each copy or restore needs disk space, so before one PsyNet checks that
+the disk holding PostgreSQL's data has at least twice the database's size
+free. That margin is PsyNet's policy rather than an exact need. If the
+space isn't free, PsyNet stops and says how much space the pre-fill
+snapshots use. It can only check if the PostgreSQL role may read the
+server's settings and the server's data directory is on this computer,
+not in a container; otherwise it warns once and carries on.
 
 To test with the amount of data the study will reach, pre-fill the
 database before the first test:
@@ -461,9 +462,14 @@ Performance tests add bot participants to the database and load the
 server, so they must never run against an experiment that is collecting
 real data. ``performance-test ssh`` and ``performance-test local`` therefore
 refuse to start if the database has participants that PsyNet bots didn't
-create; bots from earlier tests and pre-fills don't count. If those
-participants are only test data, for example from your own walkthrough of
-the experiment, add ``--force``. When the run ends, PsyNet copies the
+create (bots from earlier tests and pre-fills don't count), if the
+experiment runs in live mode, or if its recruiter can bring real
+participants. Test recruiters are the development and mock recruiters,
+Hot Air, generic, bots and simulated participants. If the experiment isn't
+collecting real data, add ``--force``. You need it, for example, after your
+own walkthrough of the experiment, after a Selenium walkthrough, after
+loading a bot export, or for an experiment configured with Prolific that
+you deployed with ``psynet debug ssh``. When the run ends, PsyNet copies the
 bot log out of the container and prints where it saved it.
 
 If the server is on a private network, such as a lab computer, deploy with
