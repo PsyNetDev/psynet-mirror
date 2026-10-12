@@ -4890,16 +4890,43 @@ def _database_reset(reset, server, experiment_label, bot_log_file):
     ValueError
         If the database may not be reset, or the snapshot doesn't exist.
     """
-    from dallinger import db
-
-    from psynet import perf_reset
+    from psynet.perf_reset import LocalDatabase, check_resettable_database
     from psynet.perf_test import prefill_database
 
-    database_url = db.engine.url.render_as_string(hide_password=False)
-    print(f"Database to reset: {perf_reset.check_resettable_database(database_url)}")
-    from_snapshot, prefill, keep_as = reset["from_snapshot"], None, None
+    database = LocalDatabase()
+    print(f"Database to reset: {check_resettable_database(database.url)}")
+    return _build_database_reset(
+        database,
+        reset,
+        stop_server=server.stop,
+        start_server=server.start,
+        prefill=functools.partial(
+            prefill_database, reset["prefill_participants"], bot_log_file
+        ),
+        experiment_label=experiment_label,
+    )
+
+
+def _build_database_reset(
+    database, reset, *, stop_server, start_server, prefill, experiment_label
+):
+    """Return the :class:`~psynet.perf_reset.DatabaseReset` of ``database`` for the ``reset`` options.
+
+    ``prefill()`` adds the ``--prefill-participants`` data; it runs only if
+    no cached pre-fill snapshot matches the experiment's code key (see
+    :func:`~psynet.perf_reset.experiment_code_key`) and number of pre-fill
+    participants.
+
+    Raises
+    ------
+    ValueError
+        If the database may not be reset, or the snapshot doesn't exist.
+    """
+    from psynet import perf_reset
+
+    from_snapshot, keep_as = reset["from_snapshot"], None
     if from_snapshot:
-        perf_reset.check_snapshot(from_snapshot, database_url)
+        database.check_snapshot(from_snapshot)
         snapshot_key = perf_reset.snapshot_code_key(from_snapshot)
         current_key = snapshot_key and _current_code_key()
         if current_key and snapshot_key != current_key:
@@ -4908,28 +4935,26 @@ def _database_reset(reset, server, experiment_label, bot_log_file):
                 "experiment files or PsyNet or Dallinger versions."
             )
     elif reset["prefill_participants"]:
-        n_participants = reset["prefill_participants"]
-        name = perf_reset.prefill_snapshot_name(
-            perf_reset.experiment_code_key(), n_participants
+        name = database.prefill_snapshot_name(
+            perf_reset.experiment_code_key(), reset["prefill_participants"]
         )
-        from_snapshot = perf_reset.find_snapshot(name, database_url)
+        from_snapshot = database.find_snapshot(name)
         if from_snapshot:
             print(
                 f"Using the cached pre-fill snapshot {from_snapshot}. To pre-fill "
-                "again, drop it with 'psynet performance-test snapshots --drop "
+                f"again, drop it with '{database.snapshots_command} --drop "
                 f"{from_snapshot}'."
             )
         else:
             keep_as = name
-            prefill = functools.partial(prefill_database, n_participants, bot_log_file)
     return perf_reset.DatabaseReset(
-        server.stop,
-        server.start,
-        prefill=prefill,
+        stop_server,
+        start_server,
+        prefill=prefill if keep_as else None,
         from_snapshot=from_snapshot,
         keep_as=keep_as,
         description=f"{experiment_label}, PsyNet {__version__}",
-        database_url=database_url,
+        database=database,
     )
 
 
@@ -5189,9 +5214,10 @@ def performance_test__snapshots(drop, drop_all):
     """
     from dallinger.db import db_url
 
-    from psynet.perf_reset import check_local_database, drop_snapshot, list_snapshots
+    from psynet.perf_reset import LocalDatabase, check_local_database
 
-    snapshots = list_snapshots(db_url)
+    database = LocalDatabase(db_url)
+    snapshots = database.list_snapshots()
     names = list(drop) + [name for name, _, _ in snapshots if drop_all]
     if names:
         try:
@@ -5200,7 +5226,7 @@ def performance_test__snapshots(drop, drop_all):
             raise click.ClickException(str(e)) from e
     for name in dict.fromkeys(names):
         try:
-            drop_snapshot(name, db_url)
+            database.drop_snapshot(name)
         except ValueError as e:
             raise click.ClickException(str(e)) from e
         print(f"Dropped {name}")

@@ -468,7 +468,7 @@ def scratch_database(db_session, monkeypatch):
         create_database,
         drop_database,
     )
-    from psynet.perf_reset import _maintenance_cursor
+    from psynet.perf_reset import LocalDatabase
 
     url = create_database(
         db.engine.url.render_as_string(hide_password=False), suffix="_scratch_test_0"
@@ -476,7 +476,7 @@ def scratch_database(db_session, monkeypatch):
     created = [url.rsplit("/", 1)[1]]
     monkeypatch.setenv(DATABASE_ENV_VAR, created[0])
     yield url, created
-    with _maintenance_cursor(url) as cursor:
+    with LocalDatabase(url).cursor() as cursor:
         for name in created:
             drop_database(cursor, name)
 
@@ -508,7 +508,8 @@ def test_database_reset_restores_snapshots_and_drops_only_its_own(scratch_databa
     from psynet.redis import redis_vars
 
     url, created = scratch_database
-    cache = perf_reset.prefill_snapshot_name("0123456789ab", 3)
+    database = perf_reset.LocalDatabase(url)
+    cache = database.prefill_snapshot_name("0123456789ab", 3)
     created.append(cache)
     statements = []
 
@@ -521,7 +522,7 @@ def test_database_reset_restores_snapshots_and_drops_only_its_own(scratch_databa
     _participants(url, 1)
     redis_vars.set("launch_finished", True)
     server = Mock()
-    reset = RecordingReset(server.stop, server.start, database_url=url)
+    reset = RecordingReset(server.stop, server.start, database=database)
     reset()
     created.append(reset.snapshot)
     assert reset.snapshot_rows == {"participant": 1}
@@ -531,21 +532,21 @@ def test_database_reset_restores_snapshots_and_drops_only_its_own(scratch_databa
     assert server.stop.call_count == server.start.call_count == 2
     assert redis_vars.get("launch_finished") is True
     reset.close()
-    assert perf_reset.find_snapshot(reset.snapshot, url) is None
+    assert database.find_snapshot(reset.snapshot) is None
 
     prefill = RecordingReset(
         server.stop,
         server.start,
         prefill=lambda: _participants(url, 2),
         keep_as=cache,
-        database_url=url,
+        database=database,
     )
     prefill()
     prefill.close()
-    assert cache in [name for name, _, _ in perf_reset.list_snapshots(url)]
+    assert cache in [name for name, _, _ in database.list_snapshots()]
     _participants(url, 5)
     cached = RecordingReset(
-        server.stop, server.start, from_snapshot=cache, database_url=url
+        server.stop, server.start, from_snapshot=cache, database=database
     )
     cached()
     cached.close()
@@ -567,18 +568,19 @@ def test_close_keeps_a_finished_prefill_whose_snapshot_was_not_taken(
     from psynet import perf_reset
 
     url, created = scratch_database
-    keep = perf_reset.prefill_snapshot_name("fedcba987654", 2)
+    database = perf_reset.LocalDatabase(url)
+    keep = database.prefill_snapshot_name("fedcba987654", 2)
     created.append(keep)
     server = Mock()
     server.stop.side_effect = [KeyboardInterrupt, second_stop]
     reset = perf_reset.DatabaseReset(
-        server.stop, server.start, prefill=Mock(), keep_as=keep, database_url=url
+        server.stop, server.start, prefill=Mock(), keep_as=keep, database=database
     )
     with pytest.raises(KeyboardInterrupt):
         reset()
     reset.close()
     assert server.stop.call_count == 2
-    assert perf_reset.find_snapshot(keep, url) == keep
+    assert database.find_snapshot(keep) == keep
 
 
 @pytest.mark.parametrize(
@@ -1406,18 +1408,18 @@ def test_database_copies_need_twice_the_database_size_free(
     import psycopg2
 
     from psynet.isolated_environment import DATABASE_ENV_VAR
-    from psynet.perf_reset import DatabaseReset
+    from psynet.perf_reset import DatabaseReset, LocalDatabase
 
     monkeypatch.setenv(DATABASE_ENV_VAR, "experiment_test_0")
     reset = DatabaseReset(
-        Mock(), Mock(), database_url="postgresql:///experiment_test_0"
+        Mock(), Mock(), database=LocalDatabase("postgresql:///experiment_test_0")
     )
     cursor = Mock()
     (tmp_path / "PG_VERSION").write_text("16")
     cursor.fetchone.side_effect = [(1e9,), (str(tmp_path),)]
     with (
         patch("psynet.perf_reset.shutil.disk_usage", return_value=Mock(free=1.5e9)),
-        patch("psynet.perf_reset.list_snapshots", return_value=[("s", 3e9, None)]),
+        patch.object(LocalDatabase, "list_snapshots", return_value=[("s", 3e9, None)]),
         pytest.raises(RuntimeError, match=r"2\.0 GB.*3\.0 GB.*snapshots --drop"),
     ):
         reset._check_disk_space(cursor, "experiment")

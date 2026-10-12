@@ -469,11 +469,30 @@ def database_rows(connection=None):
     tables = [table for table in _GROWING_TABLES if table in existing]
     if not tables:
         return {}
+    row = connection.execute(text(_count_rows_statement(tables))).one()
+    return dict(row._mapping)
+
+
+def database_rows_on_cursor(cursor):
+    """Return :func:`database_rows` counted with a DB-API ``cursor`` on the experiment database."""
+    names = ", ".join(f"'{table}'" for table in _GROWING_TABLES)
+    cursor.execute(
+        "SELECT tablename FROM pg_tables WHERE schemaname = current_schema() "
+        f"AND tablename IN ({names})"
+    )
+    existing = {row[0] for row in cursor.fetchall()}
+    tables = [table for table in _GROWING_TABLES if table in existing]
+    if not tables:
+        return {}
+    cursor.execute(_count_rows_statement(tables))
+    return {table: int(n) for table, n in zip(tables, cursor.fetchone())}
+
+
+def _count_rows_statement(tables):
     columns = ", ".join(
         f'(SELECT count(*) FROM "{table}") AS "{table}"' for table in tables
     )
-    row = connection.execute(text(f"SELECT {columns}")).one()
-    return dict(row._mapping)
+    return f"SELECT {columns}"
 
 
 _BUSY_STATUS_CODES = frozenset({409, 503})
