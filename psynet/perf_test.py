@@ -2922,7 +2922,7 @@ def _capacity_headline(
                 f"{max(1, int(capacity * _CAPACITY_HEADROOM)):,} "
                 f"({_CAPACITY_HEADROOM:.0%} of {capacity:,})."
             )
-    above_fail = [n for n in passed if n > first_fail.n_bots]
+    above_fail = [n for n in passed if capacity is None or n > first_fail.n_bots]
     if above_fail and (capacity is None or not unmeasured):
         also = "" if capacity is None else "also "
         lines.append(

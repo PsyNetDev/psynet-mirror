@@ -893,16 +893,17 @@ def test_capacity_summary_says_when_every_count_failed():
     assert format_capacity_summary([]) == []
 
 
-def test_capacity_summary_flags_a_pass_above_a_failed_smallest_count():
+@pytest.mark.parametrize("n_passed", [20, 10])
+def test_capacity_summary_flags_a_pass_at_or_above_a_failed_smallest_count(n_passed):
     results = [
         _base_result(n_bots=10, p95_response_time=0.1, bot_errors=1),
-        _base_result(n_bots=20, p95_response_time=0.1),
+        _base_result(n_bots=n_passed, p95_response_time=0.1),
     ]
 
     text = _join(format_capacity_summary(results))
 
     assert "Even 10 bots did not keep" in text
-    assert "20 bots passed, so the results are inconsistent" in text
+    assert f"{n_passed} bots passed, so the results are inconsistent" in text
 
 
 def test_capacity_summary_warns_when_starting_the_bots_took_much_of_the_test():
