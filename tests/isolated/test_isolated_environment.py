@@ -19,6 +19,7 @@ from psynet.isolated_environment import (
     _claim_port,
     _spare_redis_database,
     check_no_debug_server,
+    create_database,
     postgres_connection_limit_message,
     shared_environment_warning,
     should_isolate,
@@ -127,11 +128,15 @@ def test_isolated_environment_uses_its_own_services():
         socket.create_connection(("127.0.0.1", redis_port), timeout=1).close()
         develop_directory = Path(first.env["dallinger_develop_directory"])
         develop_directory.mkdir(exist_ok=True)
+        leftover = create_database(
+            first.env["DATABASE_URL"], suffix="_snapshot_20261012000000"
+        )
 
     with pytest.raises(OSError):
         socket.create_connection(("127.0.0.1", redis_port), timeout=1).close()
     assert not develop_directory.exists()
     assert not _database_exists(first.env["DATABASE_URL"])
+    assert not _database_exists(leftover)
 
 
 @pytest.mark.skipif(shutil.which("redis-server") is None, reason="needs redis-server")
