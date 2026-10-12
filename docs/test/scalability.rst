@@ -431,7 +431,7 @@ server, whichever experiment made it.
 To start from real data instead, for example from a pilot, export the
 pilot with ``psynet export``, launch the experiment from the export with
 ``psynet debug ssh --app my-experiment --archive export.zip`` (see
-:ref:`deploy_from_archive`), and run ``psynet performance-test ssh``
+:doc:`/deploy/reference/deploy_from_archive`), and run ``psynet performance-test ssh``
 against it. Every test then starts with at least the pilot's data.
 
 These options need the server that ``performance-test local`` starts, so

@@ -29,7 +29,8 @@ Design constraints:
   changed; only the experiment database is replaced. A kept snapshot is
   only dropped on request.
 - Only the experiment database and snapshots that this module names are
-  ever dropped, and only on this computer's PostgreSQL server. The
+  ever dropped, and only on this computer's PostgreSQL server (or, with
+  ``CI`` set, the CI job's own service container). The
   experiment database must be the disposable one that the isolated test
   environment created for this session (see
   :func:`check_resettable_database`), never one that a researcher debugs
@@ -64,6 +65,7 @@ from psynet.isolated_environment import (
     DATABASE_ENV_VAR,
     SHARED,
     drop_database,
+    in_ci,
     terminate_connections,
 )
 from psynet.log import warning
@@ -115,6 +117,11 @@ def check_resettable_database(database_url, environ=None):
     ``PSYNET_TEST_ENVIRONMENT=shared`` set, the database may be the one you
     debug with, such as ``dallinger``.
 
+    The database must also be on this computer, except with ``CI`` set,
+    where PostgreSQL is the CI job's own service container on another host.
+    CI doesn't start the isolated test environment, so only tests that start
+    one themselves get a session database there.
+
     Parameters
     ----------
     database_url : str
@@ -129,10 +136,14 @@ def check_resettable_database(database_url, environ=None):
         PostgreSQL system database, or isn't on this computer.
     """
     environ = os.environ if environ is None else environ
-    description = check_local_database(database_url)
-    database = make_url(database_url).database
+    url = make_url(database_url)
+    database = url.database
+    if in_ci(environ):
+        description = f"{database} on {url.host}"
+    else:
+        description = check_local_database(database_url)
     if database != environ.get(DATABASE_ENV_VAR) or not _SESSION_DATABASE.fullmatch(
-        database
+        database or ""
     ):
         raise ValueError(
             f"Refusing to reset the database {database}: resetting drops and "
