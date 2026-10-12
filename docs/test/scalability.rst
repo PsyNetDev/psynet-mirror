@@ -101,7 +101,12 @@ Controlling the load
     A multiplier on the time estimates in the timeline, controlling how fast
     bots work through the experiment. ``1`` (the default) roughly matches real
     participants; ``0`` makes bots go as fast as possible. Each bot's pace varies
-    randomly around this value.
+    randomly around this value, from 0.7 to 3 times it, because people rarely
+    work much faster than the time estimates. Above ``0``, bots also never
+    submit a page before a participant could: a recording page takes at least
+    its recording's ``duration``, and an audio meter at least its
+    ``min_time`` (see :attr:`~psynet.timeline.Page.min_duration`). Bots don't
+    know how long media prompts play, so they can still leave those early.
 
 ``--bot-processes``
     The number of processes to run the bots in (see

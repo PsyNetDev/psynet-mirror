@@ -330,3 +330,36 @@ def test_take_page_polls_timeline_hold_at_check_interval(
         driver.take_page(render_pages=False, time_factor=time_factor)
 
     assert sleeps == pytest.approx([time_factor, poll, poll, poll], abs=0.05)
+
+
+def test_page_min_duration_follows_the_submit_enable_triggers():
+    from psynet.modular_page import AudioMeterControl, AudioRecordControl
+    from psynet.page import InfoPage
+
+    record = AudioRecordControl(duration=4, bot_response_media="x.wav")
+    assert InfoPage("Hi", time_estimate=1).min_duration == 0
+    assert ModularPage("rec", "Sing", record, time_estimate=5).min_duration == 4
+    meter = AudioMeterControl(min_time=2.5)
+    assert ModularPage("meter", "Adjust", meter, time_estimate=5).min_duration == 2.5
+
+
+@pytest.mark.parametrize(
+    "time_factor, min_duration, expected_sleep",
+    [(0, 5.0, 0), (1, 0.0, 2.0), (1, 5.0, 5.0), (3, 5.0, 6.0)],
+)
+def test_paced_bots_stay_on_a_page_for_at_least_its_min_duration(
+    monkeypatch, time_factor, min_duration, expected_sleep
+):
+    driver = ParticipantDriver.__new__(ParticipantDriver)
+    driver.status = _driver_page_status("page-a")
+    driver.status["status"] = "working"
+    driver.status["page"].update(time_estimate=2.0, min_duration=min_duration)
+    driver.response_files = {}
+    sleeps = []
+    monkeypatch.setattr(driver, "_submit_response", lambda *args, **kwargs: None)
+    monkeypatch.setattr("psynet.participant.time.sleep", sleeps.append)
+    driver.status_time_fetched = time.monotonic()
+
+    driver.take_page(render_pages=False, time_factor=time_factor)
+
+    assert sleeps[0] == pytest.approx(expected_sleep, abs=0.05)

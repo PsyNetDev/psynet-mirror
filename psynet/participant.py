@@ -1436,10 +1436,16 @@ class ParticipantDriver:
         Parameters
         ----------
         time_factor : float
-            Factor to multiply the simulated page time by.
+            Factor to multiply the page's ``time_estimate`` by. Above 0 the
+            bot also stays at least the page's ``min_duration`` (see
+            :attr:`psynet.timeline.Page.min_duration`), as a participant must.
         """
-        time_estimate = self.status["page"]["time_estimate"]
-        simulated_page_time = time_estimate * time_factor
+        page = self.status["page"]
+        simulated_page_time = page["time_estimate"] * time_factor
+        if time_factor > 0:
+            simulated_page_time = max(
+                simulated_page_time, page.get("min_duration") or 0.0
+            )
         wake_time = self.status_time_fetched + simulated_page_time
         self._sleep(max(wake_time - time.monotonic(), 0))
 

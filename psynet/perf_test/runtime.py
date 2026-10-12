@@ -74,6 +74,7 @@ _BOT_PROCESS_START_TIMEOUT_S = 300
 # How much longer than the bots' stop timeout to wait for bot processes to reply.
 _BOT_PROCESS_REPLY_GRACE_S = 10
 _LAG_PROBE_INTERVAL_S = 0.05
+_MIN_PACE_FACTOR = 0.7
 _BOT_PROCESS_EXIT_JOIN_S = 5
 # Return to the start of the terminal line and erase it, however wide its
 # characters were.
@@ -567,13 +568,18 @@ class PerformanceTester:
         }
 
     def _bounded_random_multiplier(self, max_multiplier=3.0):
-        """Bounded lognormal distribution for user completion times"""
+        """Return a bot's pace factor: lognormal with mean 1, at most 3 and at least 0.7.
+
+        Values above 3 are drawn again; values below 0.7 become 0.7, because
+        people rarely work much faster than the time estimates, and bots that
+        did would front-load the server's work into the start of a test.
+        """
         sigma = 0.6
         mu = -0.5 * sigma * sigma
         while True:
             x = self._random.lognormvariate(mu, sigma)
             if x <= max_multiplier:
-                return x
+                return max(x, _MIN_PACE_FACTOR)
 
     def _bounded_random_stagger(self, max_multiplier=5.0):
         """Return a gamma-distributed stagger bounded relative to its mean."""

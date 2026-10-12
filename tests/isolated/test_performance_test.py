@@ -66,6 +66,14 @@ def test_random_stagger_is_bounded_relative_to_configured_interval():
         assert tester._bounded_random_stagger() == 0.4
 
 
+def test_bot_pace_factor_is_clipped_below_and_redrawn_above():
+    tester = PerformanceTester(authenticated_session=Mock(), base_url="http://x")
+
+    with patch.object(tester._random, "lognormvariate", side_effect=[0.2, 5, 1.4]):
+        assert tester._bounded_random_multiplier() == 0.7
+        assert tester._bounded_random_multiplier() == 1.4
+
+
 def test_monitoring_loop_ends_early_when_server_stops():
     import time
 
