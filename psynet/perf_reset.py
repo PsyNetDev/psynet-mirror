@@ -551,9 +551,12 @@ class DatabaseReset:
         The restore copy is complete if it exists, because ``CREATE
         DATABASE`` leaves nothing behind when it fails, so it is renamed in
         place; without it, the experiment database is copied from the
-        snapshot again.
+        snapshot again. A restore copy left beside an existing experiment
+        database is dropped.
         """
         if _database_exists(cursor, self.database):
+            if _database_exists(cursor, self._restore_copy):
+                drop_database(cursor, self._restore_copy)
             return True
         if _database_exists(cursor, self._restore_copy):
             source = f"its restore copy {self._restore_copy}"
@@ -690,13 +693,11 @@ class DatabaseReset:
         """Replace the experiment database with a copy of the snapshot, so that one of them always exists.
 
         The copy is made as ``<database>__restore``, the experiment database
-        is dropped, and the copy is renamed in its place. A restore copy left
-        by an interrupted reset is dropped first, once the experiment
-        database is back.
+        is dropped, and the copy is renamed in its place. An interrupted
+        earlier reset is first cleaned up by :meth:`_recover`.
         """
         with self._connect() as cursor:
-            if self._recover(cursor) and _database_exists(cursor, self._restore_copy):
-                drop_database(cursor, self._restore_copy)
+            self._recover(cursor)
             self._check_disk_space(cursor, self.snapshot)
             _create_from_template(cursor, self._restore_copy, self.snapshot)
             _run_when_unused(

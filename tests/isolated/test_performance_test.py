@@ -569,7 +569,8 @@ def test_a_failed_restore_never_loses_the_database_or_its_snapshot(scratch_datab
     from psynet import perf_reset
 
     url, created = scratch_database
-    created.append(f"{created[0]}__restore")
+    copy = f"{created[0]}__restore"
+    created.append(copy)
     database = perf_reset.LocalDatabase(url)
     failing = []
 
@@ -603,6 +604,12 @@ def test_a_failed_restore_never_loses_the_database_or_its_snapshot(scratch_datab
         reset()
     assert _participants(url) == 2
 
+    # The next reset drops a restore copy left beside the database.
+    failing[:] = [f'DROP DATABASE IF EXISTS "{database.name}"']
+    with pytest.raises(psycopg2.Error):
+        reset()
+    assert _participants(url) == 2 and exists(copy)
+
     # Fails after dropping the database; the restore copy can't be renamed yet.
     failing[:] = ["ALTER DATABASE"]
     with pytest.raises(psycopg2.Error):
@@ -613,7 +620,7 @@ def test_a_failed_restore_never_loses_the_database_or_its_snapshot(scratch_datab
     failing.clear()
     reset.close()
     assert _participants(url) == 1
-    assert not exists(reset.snapshot)
+    assert not exists(reset.snapshot) and not exists(copy)
 
 
 @pytest.mark.parametrize(
