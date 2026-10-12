@@ -4889,20 +4889,12 @@ def _run_performance_test_with_existing_server(
     debug=False,
     json_output=None,
     n_bots=None,
-    stagger=None,
-    time_factor=None,
-    duration_minutes=None,
-    arrival_minutes=None,
-    no_confirm=False,
-    max_p95_ms=None,
-    max_queue_p95_s=None,
-    bot_processes=None,
     bot_log=None,
     test_label=None,
-    suite_started_s_ago=None,
     force=False,
     server=None,
     reset=None,
+    **options,
 ):
     """Run performance test connecting to an already-running server.
 
@@ -4933,41 +4925,15 @@ def _run_performance_test_with_existing_server(
         )
         sys.exit(1)
 
-    from psynet.perf_test import CapacityLimits, PerformanceSuite, PerformanceTester
+    from psynet.perf_test import PerformanceTester
 
     _check_no_real_participants(force, resetting=bool(reset))
     os.environ["PASSTHROUGH_ERRORS"] = "True"
 
-    bot_counts = n_bots or [exp.test_n_bots]
-    find_capacity = bot_counts == "auto"
-    if test_label is not None and (find_capacity or len(bot_counts) != 1 or reset):
+    if test_label is not None and (
+        n_bots == "auto" or len(n_bots or [exp.test_n_bots]) != 1 or reset
+    ):
         raise click.UsageError("--test-label runs one test of one --n-bots count.")
-
-    estimated_duration_minutes = exp.estimated_duration_in_minutes
-    time_factor, duration_minutes = _performance_test_timing(
-        estimated_duration_minutes=estimated_duration_minutes,
-        minimum_minutes=exp.test_duration_minutes,
-        time_factor=time_factor,
-        duration_minutes=duration_minutes,
-        arrival_minutes=arrival_minutes,
-        find_capacity=find_capacity,
-    )
-    tester = PerformanceTester(
-        authenticated_session=exp.authenticated_session,
-        base_url=exp.base_url,
-        duration_minutes=duration_minutes,
-        stagger_interval_s=(
-            exp.test_parallel_stagger_interval_s if stagger is None else float(stagger)
-        ),
-        time_factor=time_factor,
-        bot_processes="auto" if bot_processes is None else bot_processes,
-        estimated_duration_minutes=estimated_duration_minutes,
-        arrival_minutes=arrival_minutes,
-    )
-    limits = CapacityLimits.from_options(
-        max_p95_s=None if max_p95_ms is None else float(max_p95_ms) / 1000,
-        max_queue_p95_s=max_queue_p95_s,
-    )
     # Bot processes append to this log too.
     if bot_log is None:
         bot_log_file = tempfile.NamedTemporaryFile(
@@ -4992,6 +4958,110 @@ def _run_performance_test_with_existing_server(
         except ValueError as e:
             bot_log_file.close()
             raise click.ClickException(str(e)) from e
+
+    def close():
+        bot_log_file.close()
+        if database_reset is not None:
+            database_reset.close()
+
+    return _run_performance_suite(
+        functools.partial(
+            PerformanceTester,
+            authenticated_session=exp.authenticated_session,
+            base_url=exp.base_url,
+        ),
+        _experiment_test_defaults(exp),
+        bot_log_file,
+        database_reset=database_reset,
+        reset=reset,
+        close=close,
+        metadata=lambda tester: _collect_run_metadata(exp.label),
+        json_output=json_output,
+        quiet=remote,
+        test_label=test_label,
+        n_bots=n_bots,
+        **options,
+    )
+
+
+def _experiment_test_defaults(exp):
+    """Return the experiment's performance-test defaults, as ``performance-test app-info`` reports them."""
+    return {
+        "label": exp.label,
+        "test_n_bots": exp.test_n_bots,
+        "test_duration_minutes": exp.test_duration_minutes,
+        "test_parallel_stagger_interval_s": exp.test_parallel_stagger_interval_s,
+        "estimated_duration_minutes": exp.estimated_duration_in_minutes,
+    }
+
+
+def _run_performance_suite(
+    make_tester,
+    experiment,
+    bot_log_file,
+    *,
+    database_reset=None,
+    reset=None,
+    close,
+    metadata,
+    json_output=None,
+    quiet=False,
+    test_label=None,
+    suite_started_s_ago=None,
+    n_bots=None,
+    stagger=None,
+    time_factor=None,
+    duration_minutes=None,
+    arrival_minutes=None,
+    no_confirm=False,
+    max_p95_ms=None,
+    max_queue_p95_s=None,
+    bot_processes=None,
+):
+    """Run a suite, or one labelled test, for the performance-test options, and save its JSON.
+
+    Parameters
+    ----------
+    make_tester : callable
+        Returns the tester, given :class:`~psynet.perf_test.PerformanceTester`'s
+        timing keyword arguments.
+    experiment : dict
+        The experiment's test defaults (see :func:`_experiment_test_defaults`).
+    close : callable
+        Runs after the tests, even if they fail, before the JSON is written.
+    metadata : callable
+        Returns the JSON metadata, given the tester.
+
+    The other arguments are as for :func:`_run_performance_test_with_existing_server`.
+    """
+    from psynet.perf_test import CapacityLimits, PerformanceSuite
+
+    bot_counts = n_bots or [experiment["test_n_bots"]]
+    find_capacity = bot_counts == "auto"
+    time_factor, duration_minutes = _performance_test_timing(
+        estimated_duration_minutes=experiment["estimated_duration_minutes"],
+        minimum_minutes=experiment["test_duration_minutes"],
+        time_factor=time_factor,
+        duration_minutes=duration_minutes,
+        arrival_minutes=arrival_minutes,
+        find_capacity=find_capacity,
+    )
+    tester = make_tester(
+        duration_minutes=duration_minutes,
+        stagger_interval_s=(
+            experiment["test_parallel_stagger_interval_s"]
+            if stagger is None
+            else float(stagger)
+        ),
+        time_factor=time_factor,
+        bot_processes="auto" if bot_processes is None else bot_processes,
+        estimated_duration_minutes=experiment["estimated_duration_minutes"],
+        arrival_minutes=arrival_minutes,
+    )
+    limits = CapacityLimits.from_options(
+        max_p95_s=None if max_p95_ms is None else float(max_p95_ms) / 1000,
+        max_queue_p95_s=max_queue_p95_s,
+    )
     suite = PerformanceSuite(tester, limits=limits, before_test=database_reset)
     started_at = datetime.datetime.now().isoformat(timespec="seconds")
     try:
@@ -5010,15 +5080,12 @@ def _run_performance_test_with_existing_server(
         else:
             all_results = suite.run(bot_counts, bot_log_file=bot_log_file)
     finally:
-        bot_log_file.close()
-        if database_reset is not None:
-            database_reset.close()
-
+        close()
     if json_output:
         _write_suite_json(
             json_output,
-            quiet=remote,
-            metadata=_collect_run_metadata(exp.label),
+            quiet=quiet,
+            metadata=metadata(tester),
             started_at=started_at,
             all_results=all_results,
             capacity_search=find_capacity,
@@ -5678,14 +5745,7 @@ def performance_test__app_info(json_output):
 
     info = _performance_test_app_info()
     try:
-        exp = get_experiment()
-        info["experiment"] = {
-            "label": exp.label,
-            "test_n_bots": exp.test_n_bots,
-            "test_duration_minutes": exp.test_duration_minutes,
-            "test_parallel_stagger_interval_s": exp.test_parallel_stagger_interval_s,
-            "estimated_duration_minutes": exp.estimated_duration_in_minutes,
-        }
+        info["experiment"] = _experiment_test_defaults(get_experiment())
     except Exception as e:
         logger.warning(f"Could not load the experiment's test defaults: {e}")
     with open(json_output, "w") as f:
@@ -5924,22 +5984,7 @@ def _prepare_performance_test_app(ctx, app, *, server, **deploy_options):
 
 
 def _run_ssh_performance_test(
-    app,
-    server,
-    experiment,
-    reset,
-    *,
-    json_output=None,
-    n_bots=None,
-    stagger=None,
-    time_factor=None,
-    duration_minutes=None,
-    arrival_minutes=None,
-    no_confirm=False,
-    max_p95_ms=None,
-    max_queue_p95_s=None,
-    bot_processes=None,
-    force=False,
+    app, server, experiment, reset, *, json_output=None, force=False, **options
 ):
     """Run a suite from this computer, each test in ``app``'s web container.
 
@@ -5952,7 +5997,7 @@ def _run_ssh_performance_test(
     import logging
 
     from psynet.perf_ssh import RemoteApp, RemotePerformanceTester
-    from psynet.perf_test import CapacityLimits, PerformanceSuite, log_to_console
+    from psynet.perf_test import log_to_console
 
     log_to_console(logging.INFO)
     bot_log_file = tempfile.NamedTemporaryFile(
@@ -5966,67 +6011,30 @@ def _run_ssh_performance_test(
     remote = RemoteApp(
         _ssh_executor(server), app, server, force=force, bot_log_file=bot_log_file
     )
-    bot_counts = n_bots or [experiment["test_n_bots"]]
-    find_capacity = bot_counts == "auto"
-    time_factor, duration_minutes = _performance_test_timing(
-        estimated_duration_minutes=experiment["estimated_duration_minutes"],
-        minimum_minutes=experiment["test_duration_minutes"],
-        time_factor=time_factor,
-        duration_minutes=duration_minutes,
-        arrival_minutes=arrival_minutes,
-        find_capacity=find_capacity,
-    )
-    tester = RemotePerformanceTester(
-        remote,
-        duration_minutes=duration_minutes,
-        stagger_interval_s=(
-            experiment["test_parallel_stagger_interval_s"]
-            if stagger is None
-            else stagger
-        ),
-        time_factor=time_factor,
-        bot_processes="auto" if bot_processes is None else bot_processes,
-        estimated_duration_minutes=experiment["estimated_duration_minutes"],
-        arrival_minutes=arrival_minutes,
-    )
-    limits = CapacityLimits.from_options(
-        max_p95_s=None if max_p95_ms is None else float(max_p95_ms) / 1000,
-        max_queue_p95_s=max_queue_p95_s,
-    )
     with bot_log_file, _exit_on_sigterm():
         database_reset = _ssh_database_reset(remote, reset, experiment["label"])
-        suite = PerformanceSuite(tester, limits=limits, before_test=database_reset)
-        started_at = datetime.datetime.now().isoformat(timespec="seconds")
-        try:
-            if find_capacity:
-                all_results = suite.find_capacity(
-                    bot_log_file=bot_log_file, confirm=not no_confirm
-                )
-            else:
-                all_results = suite.run(bot_counts, bot_log_file=bot_log_file)
-        finally:
+
+        def close():
             if database_reset is not None:
                 # close() may take the pre-fill snapshot, which needs the app stopped.
                 try:
                     database_reset.close()
                 finally:
                     remote.start_stopped_services()
-    if json_output:
-        _write_suite_json(
-            json_output,
-            metadata=tester.remote_metadata
-            or {"experiment_label": experiment["label"]},
-            started_at=started_at,
-            all_results=all_results,
-            capacity_search=find_capacity,
-            limits=limits,
-            tester=tester,
+
+        return _run_performance_suite(
+            functools.partial(RemotePerformanceTester, remote),
+            experiment,
+            bot_log_file,
             database_reset=database_reset,
             reset=reset,
-            confirm=not no_confirm if find_capacity else None,
-            confirmation_skipped=suite.confirmation_skipped,
+            close=close,
+            metadata=lambda tester: (
+                tester.remote_metadata or {"experiment_label": experiment["label"]}
+            ),
+            json_output=json_output,
+            **options,
         )
-    return all_results
 
 
 def _ssh_database_reset(remote, reset, experiment_label):
