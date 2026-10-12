@@ -195,6 +195,10 @@ def _stop_process_group(process):
             os.killpg(process.pid, sig)
         except ProcessLookupError:
             break
+        except PermissionError:
+            # macOS reports EPERM for a group that only has zombies left;
+            # _group_alive tells whether the group has stopped.
+            pass
         deadline = time.monotonic() + timeout_s
         while _group_alive(process) and time.monotonic() < deadline:
             time.sleep(0.2)
@@ -213,7 +217,10 @@ def _group_alive(process):
     process.poll()
     try:
         os.killpg(process.pid, 0)
-    except (ProcessLookupError, PermissionError):
-        # macOS reports EPERM for a group that only has zombies left.
+    except ProcessLookupError:
         return False
+    except PermissionError:
+        # macOS reports EPERM for a group that only has zombies left, but
+        # the group isn't stopped while its leader still runs.
+        return process.returncode is None
     return True

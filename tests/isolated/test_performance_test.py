@@ -1446,6 +1446,31 @@ def test_performance_tests_refuse_participants_that_bots_did_not_create(db_sessi
     _check_no_real_participants(force=True)
 
 
+@pytest.mark.parametrize("leader_exited", [True, False])
+def test_eperm_from_the_server_group_means_stopped_only_once_its_leader_exited(
+    leader_exited,
+):
+    from itertools import count
+
+    import click
+
+    from psynet.perf_local_server import _stop_process_group
+
+    process = Mock(pid=12345, returncode=0 if leader_exited else None)
+    with (
+        patch("psynet.perf_local_server.os.killpg", side_effect=PermissionError),
+        patch("psynet.perf_local_server.time.monotonic", side_effect=count(0, 20)),
+        patch("psynet.perf_local_server.time.sleep"),
+    ):
+        if leader_exited:
+            _stop_process_group(process)
+            process.wait.assert_called_once()
+        else:
+            with pytest.raises(click.ClickException, match="did not stop"):
+                _stop_process_group(process)
+            process.wait.assert_not_called()
+
+
 def test_database_copies_need_twice_the_database_size_free(
     caplog, tmp_path, monkeypatch
 ):
