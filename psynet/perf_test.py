@@ -1999,12 +1999,18 @@ def format_test_results(result):
     if result.failed_reasons:
         _section("WHY THE EXPERIMENT FAILED PARTICIPANTS")
         waits = _wait_timeout_reasons(result)
+        # Wait timeouts count against capacity, so they are never folded away.
+        shown = [
+            (reason, n)
+            for i, (reason, n) in enumerate(result.failed_reasons.items())
+            if i < 5 or reason in waits
+        ]
         reason_rows = [
             [reason + (" (waited too long)" if reason in waits else ""), n]
-            for reason, n in list(result.failed_reasons.items())[:5]
+            for reason, n in shown
         ]
-        if len(result.failed_reasons) > 5:
-            others = sum(list(result.failed_reasons.values())[5:])
+        others = sum(result.failed_reasons.values()) - sum(n for _, n in shown)
+        if others:
             reason_rows.append(["Other reasons", others])
         _table_lines(reason_rows, headers=[], colalign=("left", "right"))
         lines.append("")
@@ -2728,7 +2734,7 @@ _DB_GROWTH_MIN_ROWS = 10_000
 
 
 def _tables_that_differ(rows_a, rows_b):
-    """Return ``(table, a, b)`` for the tables whose row counts differ a lot."""
+    """Return ``"table a and b"`` descriptions of the tables whose row counts differ a lot."""
     differ = []
     for table in {**rows_a, **rows_b}:
         a, b = rows_a.get(table, 0), rows_b.get(table, 0)
@@ -2882,10 +2888,11 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
         if reason not in _wait_timeout_reasons(capacity_result)
     }
     if other_failures:
+        also, why = ("also ", " for other reasons") if wait_timeouts else ("", "")
         lines.append(
-            f"  In the {capacity:,}-bot test the experiment also failed "
-            f"{_plural(sum(other_failures.values()), 'participant')} for other "
-            f"reasons ({_describe_failed_reasons(other_failures)}). These don't "
+            f"  In the {capacity:,}-bot test the experiment {also}failed "
+            f"{_plural(sum(other_failures.values()), 'participant')}{why} "
+            f"({_describe_failed_reasons(other_failures)}). These don't "
             "count against capacity; check that the design expects them."
         )
     ramp_up = capacity_result.ramp_up_s

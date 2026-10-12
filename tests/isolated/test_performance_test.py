@@ -335,6 +335,13 @@ def test_a_suite_stops_after_a_bot_process_does_not_report():
         assert tester.run([10, 20]) == [result]
 
 
+_HOLD_TIMEOUT = "timeline_hold:wait_while, fail_on_timeout"
+
+
+@pytest.mark.parametrize(
+    "over_capacity",
+    [{"p95_response_time": 0.9}, {"failed_reasons": {_HOLD_TIMEOUT: 100}}],
+)
 @pytest.mark.parametrize(
     "capacity, expected_probes",
     [
@@ -342,12 +349,14 @@ def test_a_suite_stops_after_a_bot_process_does_not_report():
         (5, [10, 5, 7, 6]),
     ],
 )
-def test_capacity_search_brackets_then_bisects(capacity, expected_probes):
+def test_capacity_search_brackets_then_bisects(
+    capacity, expected_probes, over_capacity
+):
     tester = PerformanceTester(authenticated_session=Mock(), base_url="http://x")
 
     def fake_test(n_bots, bot_log_file):
-        p95 = 0.1 if n_bots <= capacity else 0.9
-        return _base_result(n_bots=n_bots, p95_response_time=p95, server_stopped=False)
+        overrides = over_capacity if n_bots > capacity else {}
+        return _base_result(n_bots=n_bots, server_stopped=False, **overrides)
 
     with (
         patch.object(tester, "_test_performance", side_effect=fake_test),
@@ -358,9 +367,6 @@ def test_capacity_search_brackets_then_bisects(capacity, expected_probes):
         results = tester.find_capacity()
 
     assert [r.n_bots for r in results] == expected_probes
-
-
-_HOLD_TIMEOUT = "timeline_hold:wait_while, fail_on_timeout"
 
 
 @pytest.mark.parametrize(
@@ -431,6 +437,10 @@ def test_failed_participants_are_classified_by_failed_not_status():
             "139 participants failed for waiting too long at "
             "sync group below minimum size, timeline_hold:wait_while",
         ),
+        (
+            {"timeout between barriers": 139},
+            "139 participants failed for waiting too long at timeout between barriers",
+        ),
         ({"sync group below minimum size": 139}, None),
         ({"attention_test_1, performance_check": 139}, None),
     ],
@@ -459,7 +469,11 @@ def test_only_participants_failed_for_waiting_too_long_limit_capacity(
         assert "at least 150" in text
 
 
-def test_wait_timeouts_alone_do_not_set_a_participant_cap():
+@pytest.mark.parametrize(
+    "other_limits, capped",
+    [({}, False), ({"p95_response_time": 0.9}, True), ({"bot_errors": 5}, True)],
+)
+def test_only_wait_timeouts_alone_leave_capacity_without_a_cap(other_limits, capped):
     results = [
         _base_result(n_bots=10, total_bots_started=20),
         _base_result(
@@ -467,13 +481,15 @@ def test_wait_timeouts_alone_do_not_set_a_participant_cap():
             total_bots_started=40,
             participants_failed=1,
             failed_reasons={_HOLD_TIMEOUT: 1},
+            **other_limits,
         ),
     ]
 
     text = _join(format_capacity_summary(results))
 
-    assert "Capacity: at least 10 concurrent bots" in text
-    assert "Cap concurrent participants" not in text
+    assert ("Cap concurrent participants" in text) == capped
+    assert ("about 10" if capped else "at least 10") in text
+    assert "Design experiments to avoid this" in text
 
 
 def test_test_results_show_participants_the_experiment_failed():
