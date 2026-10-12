@@ -149,8 +149,8 @@ a `release-` branch) run only the fast checks; the pytest, Playwright, `docs`
 and `asv_regression` jobs wait as manual jobs. Start them when a full run is
 useful, for example before asking for review of a risky stacked change, with
 the play button in the GitLab UI or through the API with `GITLAB_TOKEN`. Each
-shard is its own job, so play every shard of a job (and `merge_test_results`
-only after all test shards):
+shard is its own job, so play every shard of a job. `merge_test_results`
+starts by itself once all pytest and Playwright shards have run:
 
 ```http
 POST https://gitlab.com/api/v4/projects/PsyNetDev%2FPsyNet/jobs/<job_id>/play
