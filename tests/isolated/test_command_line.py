@@ -4528,6 +4528,21 @@ def test_load_runtime_server_config_loads_generated_config():
     )
 
 
+def test_load_runtime_server_config_keeps_a_deployed_servers_environment(tmp_path):
+    from psynet.utils import load_runtime_server_config
+
+    config = Mock()
+    config.ready = True
+
+    with (
+        patch("psynet.redis.redis_vars.get", return_value=str(tmp_path)),
+        patch("dallinger.config.experiment_directory", return_value=str(tmp_path)),
+    ):
+        load_runtime_server_config(config)
+
+    config.load_from_file.assert_not_called()
+
+
 def test_load_runtime_server_config_loads_launch_info_when_runtime_dir_is_missing(
     tmp_path, monkeypatch
 ):

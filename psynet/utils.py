@@ -250,6 +250,14 @@ def get_config():
     return config
 
 
+def _same_directory(a, b):
+    """Return whether paths ``a`` and ``b`` name the same existing directory."""
+    try:
+        return b is not None and os.path.samefile(a, b)
+    except OSError:
+        return False
+
+
 def load_runtime_server_config(config=None, deployment_id=None):
     """
     Return the configuration of the running server, including runtime values.
@@ -277,9 +285,15 @@ def load_runtime_server_config(config=None, deployment_id=None):
 
     # The debug server runs from Dallinger's generated development directory,
     # whose config.txt includes runtime values such as dashboard credentials.
+    # A deployed server runs from the experiment directory itself, whose
+    # config.txt is already loaded below the environment; loading it again
+    # on top would hide the deployment's environment, such as its mode.
     server_working_directory = redis_vars.get("server_working_directory", None)
     if server_working_directory:
-        config.load_from_file(os.path.join(server_working_directory, "config.txt"))
+        from dallinger.config import experiment_directory
+
+        if not _same_directory(server_working_directory, experiment_directory()):
+            config.load_from_file(os.path.join(server_working_directory, "config.txt"))
         return config
 
     if deployment_id:
