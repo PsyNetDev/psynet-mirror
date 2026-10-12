@@ -286,12 +286,13 @@ def test_status_is_printed_as_plain_lines_when_output_is_not_a_terminal(capsys):
     import time
 
     tester = PerformanceTester(authenticated_session=Mock(), base_url="http://x")
-    bot_state = _BotState()
+    bot_state = _BotState(bots_failed_during_test=3)
 
     tester._show_realtime_status(bot_state, time.time(), time.time() + 60, force=True)
 
     output = capsys.readouterr().out
     assert "Running: 0" in output
+    assert "Failed by experiment: 3" in output
     assert "\r" not in output
 
 
@@ -354,6 +355,13 @@ def test_a_suite_calls_before_test_before_every_test_instead_of_pausing():
     pause.assert_not_called()
 
 
+_HOLD_TIMEOUT = "timeline_hold:wait_while, fail_on_timeout"
+
+
+@pytest.mark.parametrize(
+    "over_capacity",
+    [{"p95_response_time": 0.9}, {"failed_reasons": {_HOLD_TIMEOUT: 100}}],
+)
 @pytest.mark.parametrize(
     "capacity, expected_probes",
     [
@@ -361,12 +369,14 @@ def test_a_suite_calls_before_test_before_every_test_instead_of_pausing():
         (5, [10, 5, 7, 6]),
     ],
 )
-def test_capacity_search_brackets_then_bisects(capacity, expected_probes):
+def test_capacity_search_brackets_then_bisects(
+    capacity, expected_probes, over_capacity
+):
     tester = PerformanceTester(authenticated_session=Mock(), base_url="http://x")
 
     def fake_test(n_bots, bot_log_file):
-        p95 = 0.1 if n_bots <= capacity else 0.9
-        return _base_result(n_bots=n_bots, p95_response_time=p95, server_stopped=False)
+        overrides = over_capacity if n_bots > capacity else {}
+        return _base_result(n_bots=n_bots, server_stopped=False, **overrides)
 
     with (
         patch.object(tester, "_test_performance", side_effect=fake_test),
@@ -379,44 +389,56 @@ def test_capacity_search_brackets_then_bisects(capacity, expected_probes):
     assert [r.n_bots for r in results] == expected_probes
 
 
-_HOLD_TIMEOUT = "timeline_hold:wait_while, fail_on_timeout"
-
-
 @pytest.mark.parametrize(
     "experiment_directory",
     [path_to_test_experiment("timeline")],
     indirect=True,
 )
-def test_failed_participants_and_database_rows_are_recorded(db_session):
+def test_database_rows_count_new_participants(db_session):
     import uuid
 
     from dallinger import db
 
     from psynet.experiment import get_experiment
     from psynet.participant import Participant
-    from psynet.perf_test import _bot_outcome, _database_rows, _failure_reason
+    from psynet.perf_test import _database_rows
 
     before = _database_rows()
-    participant = Participant(
-        experiment=get_experiment(),
-        recruiter_id="hotair",
-        worker_id=str(uuid.uuid4()),
-        hit_id=str(uuid.uuid4()),
-        assignment_id=str(uuid.uuid4()),
-        mode="debug",
+    db.session.add(
+        Participant(
+            experiment=get_experiment(),
+            recruiter_id="hotair",
+            worker_id=str(uuid.uuid4()),
+            hit_id=str(uuid.uuid4()),
+            assignment_id=str(uuid.uuid4()),
+            mode="debug",
+        )
     )
-    db.session.add(participant)
     db.session.flush()
-    participant.append_failure_tags(
-        "timeline_hold:barrier:round_3", "fail_on_timeout", "UnsuccessfulEndPage"
-    )
-    participant.fail(redirect_to_end=False)
 
     assert _database_rows()["participant"] == before["participant"] + 1
-    assert _bot_outcome(participant, errored=False) == "failed by the experiment"
-    assert _failure_reason(participant) == (
-        "timeline_hold:barrier:round_N, fail_on_timeout"
+
+
+def test_failed_participants_are_classified_by_failed_not_status():
+    from types import SimpleNamespace
+
+    from psynet.perf_test import _bot_outcome, _failure_reason
+
+    failed = SimpleNamespace(
+        status="approved",
+        failed=True,
+        failure_tags=[
+            "fail_on_timeout",
+            "UnsuccessfulEndPage",
+            "timeline_hold:barrier:round_3",
+        ],
     )
+    approved = SimpleNamespace(status="approved", failed=False, failure_tags=[])
+
+    assert _bot_outcome(failed, errored=False) == "failed by the experiment"
+    assert _bot_outcome(failed, errored=True) == "failed by the experiment"
+    assert _bot_outcome(approved, errored=True) != "failed by the experiment"
+    assert _failure_reason(failed) == "timeline_hold:barrier:round_N, fail_on_timeout"
 
 
 def _add_participant():
@@ -478,40 +500,74 @@ def test_database_reset_restores_the_snapshot(db_session, tmp_path):
 
 
 @pytest.mark.parametrize(
-    "reason, waited_at",
+    "failed_reasons, expected",
     [
-        (_HOLD_TIMEOUT, "timeline_hold:wait_while"),
         (
-            "while_loop:Waiting for trial, fail_on_timeout",
-            "while_loop:Waiting for trial",
+            {_HOLD_TIMEOUT: 139},
+            "139 participants failed for waiting too long at timeline_hold:wait_while",
         ),
-        ("timeout between barriers", "timeout between barriers"),
-        ("attention_test_1, performance_check", None),
+        (
+            {"while_loop:Waiting for trial, fail_on_timeout": 139},
+            "139 participants failed for waiting too long at while_loop:Waiting for trial",
+        ),
+        (
+            {_HOLD_TIMEOUT: 100, "sync group below minimum size": 39},
+            "139 participants failed for waiting too long at "
+            "sync group below minimum size, timeline_hold:wait_while",
+        ),
+        (
+            {"timeout between barriers": 139},
+            "139 participants failed for waiting too long at timeout between barriers",
+        ),
+        ({"sync group below minimum size": 139}, None),
+        ({"attention_test_1, performance_check": 139}, None),
     ],
 )
 def test_only_participants_failed_for_waiting_too_long_limit_capacity(
-    reason, waited_at
+    failed_reasons, expected
 ):
     result = _base_result(
         n_bots=150,
         total_bots_started=294,
-        bots_succeeded=5,
+        bots_succeeded=155,
         participants_failed=139,
-        failed_reasons={reason: 139},
+        failed_reasons=failed_reasons,
     )
 
     failures = capacity_failures(result)
     text = _join(format_capacity_summary([result]))
 
-    if waited_at:
-        assert failures == [
-            f"139 participants failed for waiting too long at {waited_at}"
-        ]
+    if expected:
+        assert failures == [expected]
         assert "Even 150 bots did not keep" in text
+        assert f"({expected})." in text
+        assert "Design experiments to avoid this" in text
     else:
         assert failures == []
         assert "at least 150" in text
-        assert f"failed 139 participants for other reasons (139 {reason})" in text
+
+
+@pytest.mark.parametrize(
+    "other_limits, capped",
+    [({}, False), ({"p95_response_time": 0.9}, True), ({"bot_errors": 5}, True)],
+)
+def test_only_wait_timeouts_alone_leave_capacity_without_a_cap(other_limits, capped):
+    results = [
+        _base_result(n_bots=10, total_bots_started=20),
+        _base_result(
+            n_bots=20,
+            total_bots_started=40,
+            participants_failed=1,
+            failed_reasons={_HOLD_TIMEOUT: 1},
+            **other_limits,
+        ),
+    ]
+
+    text = _join(format_capacity_summary(results))
+
+    assert ("Cap concurrent participants" in text) == capped
+    assert ("about 10" if capped else "at least 10") in text
+    assert "Design experiments to avoid this" in text
 
 
 def test_test_results_show_participants_the_experiment_failed():
@@ -935,6 +991,18 @@ def test_a_saved_result_reads_back_ignoring_unknown_and_missing_keys():
         "no responses recorded"
     ]
     assert PerformanceTestResult.from_dict({"bots_succeeded": None}).bots_succeeded == 0
+    old = PerformanceTestResult.from_dict(
+        {
+            k: v
+            for k, v in saved.items()
+            if k not in ("participants_failed", "failed_reasons", "db_rows_before")
+        }
+    )
+    assert (old.participants_failed, old.failed_reasons, old.db_rows_before) == (
+        0,
+        {},
+        {},
+    )
 
 
 def test_busy_responses_are_not_request_errors():

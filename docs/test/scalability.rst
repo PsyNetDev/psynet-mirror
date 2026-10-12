@@ -109,16 +109,18 @@ that the slowest participants experience. The report also shows:
   successfully* counts bots that finished the experiment without the
   experiment failing their participant. *Failed by the experiment* counts
   participants that the experiment failed, for example at a prescreen or
-  when a wait timed out (see :meth:`~psynet.participant.Participant.fail`);
-  they still get the status ``approved``, so check this line as well as the
-  first. A breakdown lists the most common failure reasons, built from the
+  when a wait timed out (see :meth:`~psynet.participant.Participant.fail`).
+  They often still end ``approved`` after the unsuccessful end; ``failed``
+  is what matters, so check this line as well as the first. A breakdown lists the most common failure reasons, built from the
   participants' failure tags, and marks those that mean the participant
   waited too long. *Bot error or other status* counts bots that raised an
   error, or whose participant ended with another status such as
   ``returned``. *Stopped at the end of the test* counts bots still taking
-  the experiment when the test ended.
-- **Bot runtimes** and **trials per bot** (for bots that completed
-  successfully).
+  the experiment when the test ended. A bot stopped there while waiting at
+  a hold whose time limit had passed, but which it had not checked again,
+  is not yet counted as failed.
+- **Bot runtimes**, separately for each of these outcomes, and **trials per
+  bot** (for bots that completed successfully).
 - **Request metrics**: total requests, errors and throughput. A
   *Busy/stale responses (409/503)* line appears when ``/timeline`` or
   ``/response`` answered with HTTP 503, which PsyNet sends when the
@@ -126,7 +128,9 @@ that the slowest participants experience. The report also shows:
   Bots retry those that PsyNet marks as busy or stale. These responses are
   not counted as request errors.
 - **Time on wait pages per bot**, for experiments with wait pages: the
-  total time each bot that completed successfully spent waiting.
+  total time each bot that completed successfully or was failed by the
+  experiment spent waiting. Failed bots are included because those that
+  timed out waited longest.
 - **Async process times**: for experiments with asynchronous processes, such
   as audio analysis, both the execution time and the time spent waiting in
   the queue. A high queue share, highlighted in yellow or red, means more
@@ -191,13 +195,20 @@ A test counts as within capacity if these stay within their limits:
 - the share of bots whose participants the experiment failed for waiting
   too long, at most 1%. These are participants failed when a
   :func:`~psynet.page.wait_while` (including async code blocks that wait),
-  a barrier, or a ``while_loop`` with ``max_loop_time`` timed out, or when a
-  group barrier timed out between barriers. Under load they usually
-  waited for the server, and in a real study they would be lost. Other
-  failures, such as prescreens, are part of the design: the summary reports
-  them but they don't count against capacity. If waits time out even with
-  few bots, the experiment's ``max_wait_time`` may be too short for how
-  long partners take.
+  a barrier, or a ``while_loop`` with ``max_loop_time`` (such as waiting
+  for a trial) timed out, or when a group barrier timed out between
+  barriers. In a test that has such failures, members of a sync group
+  failed because the group fell below its minimum size count too, because
+  they usually follow from them. In a real study those participants would
+  be lost, so wait timeouts count as failures at any bot count, and
+  experiments should be designed to avoid them, for example with a longer
+  ``max_wait_time`` or enough participants to fill groups and chains. At
+  high bot counts they can also mean the server is too slow. Because they
+  may come from the design, when wait timeouts are all that the smallest
+  failing count exceeded the summary reports the capacity as a lower bound,
+  without a participant cap. Other failures, such as prescreens, are part
+  of the design: the summary reports them but they don't count against
+  capacity.
 
 The summary names the limit that a failing test exceeded. If the queue limit
 is what caps capacity, add worker processes with the ``num_dynos_worker``
