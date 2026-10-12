@@ -74,10 +74,10 @@ Controlling the load
     sees the study's steady state as well as its start. A session is the
     experiment's estimated duration (from the timeline's ``time_estimate``
     values, shown in the suite header) times ``--time-factor``. The default
-    is at most 30 minutes, so that a capacity search of a long study stays
-    practical, and at least ``Experiment.test_duration_minutes`` (one
-    minute). A test shorter than one session sees only the start of the
-    study, when all the bots arrive at once, and the suite warns about it.
+    is at most 30 minutes, so that a test of a long study stays practical,
+    and at least ``Experiment.test_duration_minutes`` (one minute). A test
+    shorter than one session sees only the start of the study, before any
+    bot finishes, and the suite warns about it.
     With ``--n-bots auto`` the search's tests are shorter by default (see
     :ref:`performance_testing_capacity`).
 
@@ -92,11 +92,12 @@ Controlling the load
     ``--n-bots 100 --arrival-minutes 10`` a new bot arrives every 6 seconds.
     Use it when participants will arrive gradually; the default, where
     every bot arrives within seconds, matches a study that opens many places
-    at once. With ``--n-bots auto`` every test uses the same window, so
-    larger counts arrive faster. Bots that replace finished ones still start
-    after ``Experiment.test_parallel_stagger_interval_s``, so
-    ``--arrival-minutes`` can't be combined with ``--stagger``. The window
-    must be shorter than ``--duration-minutes``; without
+    at once. With ``--n-bots auto`` only the confirmation test uses the
+    window; the search's tests stay short, with the bots starting together
+    (see :ref:`performance_testing_capacity`). Bots that replace finished
+    ones still start after ``Experiment.test_parallel_stagger_interval_s``,
+    so ``--arrival-minutes`` can't be combined with ``--stagger``. Otherwise
+    the window must be shorter than ``--duration-minutes``; without
     ``--duration-minutes`` it is added to the default test length.
 
 ``--time-factor``
@@ -268,15 +269,25 @@ evenly over one participant session and the test lasting two sessions, at
 most an hour, so that the test reaches its steady state. A study over 30
 minutes gets less than two sessions, and one over about an hour no steady
 state, so for long studies also run a long test of the cap by hand. With your own
-``--arrival-minutes``, the confirmation keeps that window and lasts a
-session longer. If the confirmation test stays within the limits, the
-summary reports the cap as confirmed. If not, it reports the cap as not
-confirmed, shows which limits the start-up and the steady state exceeded,
-and suggests a lower cap, scaled by how far the test overshot its limits
-(but at least half the tested cap), with the command to check it. It does
-not search again. Add ``--no-confirm`` to skip the confirmation test; it is
-always skipped with ``--time-factor 0``, whose pace isn't realistic, and
+``--arrival-minutes``, the confirmation uses that window instead of one
+session and lasts a session longer. The summary reports the cap as
+confirmed only if the confirmation test stayed within the limits and
+reached its steady state; one that never got there leaves the cap
+unconfirmed. If the test exceeded the limits, the summary shows which
+limits the start-up and the steady state exceeded, and suggests a lower
+cap, scaled by how far the test overshot its limits (but at least half the
+tested cap), with the command to check it. A test that could not measure
+the server, for example because the server stopped or the bots couldn't
+start fast enough, leaves the cap unconfirmed without a suggestion. The
+search does not run again. Add ``--no-confirm`` to skip the confirmation
+test; it is always skipped with ``--time-factor 0``, whose pace isn't
+realistic, when the experiment's estimated session length is unknown, and
 when the search suggests no cap.
+
+Without ``--reset-database``, the confirmation test runs on the data that
+the search tests left. If it fails after starting with much more data than
+the search test that set the capacity, the summary suggests rerunning with
+``--reset-database`` before capping lower.
 
 The summary names the limit that a failing test exceeded. If the queue limit
 is what caps capacity, add worker processes with the ``num_dynos_worker``
