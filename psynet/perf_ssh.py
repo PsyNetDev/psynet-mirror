@@ -67,6 +67,7 @@ from psynet.perf_reset import SYSTEM_DATABASES, SnapshotDatabase
 logger = logging.getLogger(__name__)
 
 _STATUS_MARKER = "__psynet_exit_status="
+_SHARED_POSTGRES = "dallinger-postgresql-1"
 _KEPT_SERVICES = frozenset(
     {"postgresql", "redis", "frontdoor", "controller", "cloudflared"}
 )
@@ -355,6 +356,40 @@ class RemoteSqlError(psycopg2.Error):
         return self._sqlstate
 
 
+def _app_postgres_container(executor, app):
+    """Return the app's PostgreSQL container and whether it is the app's own.
+
+    Newer Dallinger versions give an app its own ``<app>_postgresql``
+    container; other apps use the server's shared ``dallinger-postgresql-1``.
+    A stopped own container is an error rather than a reason to fall back,
+    because the shared one doesn't hold the app's database.
+
+    Raises
+    ------
+    ValueError
+        If no container is found, or the app's own one isn't running.
+    """
+
+    def inspect(container, field):
+        output = executor.run(
+            f"docker inspect -f '{field}' {shlex.quote(container)}", raise_=False
+        )
+        return (output or "").strip()
+
+    own = f"{app}_postgresql"
+    for container in (own, _SHARED_POSTGRES):
+        if inspect(
+            container, "{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}"
+        ):
+            return container, container == own
+        if container == own and inspect(container, "{{.Id}}"):
+            raise ValueError(
+                f"The PostgreSQL container {own} exists but isn't running; "
+                "start the app again."
+            )
+    raise ValueError(f"Could not find a PostgreSQL container for the app {app}.")
+
+
 class RemoteAppDatabase(SnapshotDatabase):
     """The database of an app on an SSH server, reached with ``docker exec ... psql``.
 
@@ -373,17 +408,9 @@ class RemoteAppDatabase(SnapshotDatabase):
     """
 
     def __init__(self, remote):
-        from dallinger.command_line.docker_ssh import (
-            ExecuteException,
-            _resolve_remote_postgres,
+        self.container, self.isolated = _app_postgres_container(
+            remote.executor, remote.app
         )
-
-        try:
-            self.container, _, self.isolated = _resolve_remote_postgres(
-                remote.executor, remote.app
-            )
-        except ExecuteException as e:
-            raise ValueError(str(e)) from e
         self.remote = remote
         super().__init__(
             remote.app,
