@@ -397,10 +397,15 @@ class _LoadMonitor:
     def _probe(self):
         while True:
             start = time.monotonic()
-            if self._stopped.wait(_LAG_PROBE_INTERVAL_S):
-                return
+            stopped = self._stopped.wait(_LAG_PROBE_INTERVAL_S)
             lag = time.monotonic() - start - _LAG_PROBE_INTERVAL_S
-            self._lags_ms[max(0, round(lag * 1000))] += 1
+            # From Python 3.13, a wait whose timeout expired while this thread
+            # queued for the interpreter lock can still report the stop, so
+            # keep any wait that lasted the full interval.
+            if lag >= 0 or not stopped:
+                self._lags_ms[max(0, round(lag * 1000))] += 1
+            if stopped:
+                return
 
     def stop(self):
         """Stop measuring and return this process's load since it started.
