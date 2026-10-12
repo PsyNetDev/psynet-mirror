@@ -4772,18 +4772,15 @@ def test_database_reset_options_imply_a_reset_and_reject_conflicts(monkeypatch):
         existing=False,
         reset_database=False,
         prefill_participants=None,
-        prefill_bots=None,
         from_snapshot=None,
     )
     assert _check_database_reset_options(**none) is None
     assert _check_database_reset_options(**{**none, "prefill_participants": 100}) == {
         "prefill_participants": 100,
-        "prefill_bots": 50,
         "from_snapshot": None,
     }
     for conflict in [
         dict(existing=True, reset_database=True),
-        dict(prefill_bots=5),
         dict(prefill_participants=5, from_snapshot="snapshot"),
     ]:
         with pytest.raises(click.UsageError):

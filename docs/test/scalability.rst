@@ -378,8 +378,7 @@ database before the first test:
 
 .. code-block:: bash
 
-    psynet performance-test local --prefill-participants 1500 --prefill-bots 50 \
-        --n-bots auto
+    psynet performance-test local --prefill-participants 1500 --n-bots auto
 
 This runs 1,500 bots through the experiment, 50 at a time and without
 pauses, waits for their async processes to finish, and then takes the
@@ -394,11 +393,11 @@ Participants that the experiment fails by design, for example at a
 prescreen, are only counted.
 
 PsyNet keeps the pre-filled snapshot and prints its name, which comes from
-a hash of the experiment's files, the PsyNet and Dallinger versions and the
-pre-fill settings. The files are those a deployment copies, without the ones
+a hash of the experiment's files and the PsyNet and Dallinger versions,
+followed by the number of pre-fill participants. The files are those a deployment copies, without the ones
 Git ignores, plus ``config.txt``, ``requirements.txt`` and
 ``constraints.txt`` where they exist. A later run with the same files,
-versions and settings starts from that snapshot instead of pre-filling
+versions and number of participants starts from that snapshot instead of pre-filling
 again. PsyNet never changes a kept snapshot: to pre-fill again, drop it
 with ``psynet performance-test snapshots --drop <name>`` and run the test
 again. Any change to those files, even a comment, means a new pre-fill. If
@@ -417,7 +416,7 @@ their sizes and the experiment that made them, and drop them with:
 .. code-block:: bash
 
     psynet performance-test snapshots
-    psynet performance-test snapshots --drop psynet_prefill_0123456789ab_n1500_k50
+    psynet performance-test snapshots --drop psynet_prefill_0123456789ab_n1500
     psynet performance-test snapshots --drop-all
 
 ``--drop-all`` drops this experiment's snapshots: those made from its

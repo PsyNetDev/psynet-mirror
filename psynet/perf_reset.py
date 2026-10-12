@@ -18,9 +18,9 @@ without which the server would launch the experiment again.
 
 With ``--prefill-participants``, bots first add data, and the snapshot is
 kept as a pre-fill cache under a name made from the experiment code, the
-PsyNet version and the pre-fill settings (see :func:`prefill_snapshot_name`),
-so that a later run with the same code and settings starts from it instead
-of pre-filling again. To pre-fill again, drop it with ``psynet
+PsyNet version and the number of pre-fill participants (see
+:func:`prefill_snapshot_name`), so that a later run with the same code and
+number starts from it instead of pre-filling again. To pre-fill again, drop it with ``psynet
 performance-test snapshots --drop NAME``.
 
 Design constraints:
@@ -70,7 +70,7 @@ _IN_USE_ATTEMPTS = 10
 _INSUFFICIENT_PRIVILEGE = "42501"
 _OBJECT_IN_USE = "55006"
 _MAX_NAME_LENGTH = 63
-_PREFILL_NAME = re.compile(r"psynet_prefill_(?P<code>[0-9a-f]{12})_n\d+_k\d+")
+_PREFILL_NAME = re.compile(r"psynet_prefill_(?P<code>[0-9a-f]{12})_n\d+")
 _SYSTEM_DATABASES = {"postgres", "template0", "template1"}
 _LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
 _SETTINGS_FILES = ("config.txt", "requirements.txt", "constraints.txt")
@@ -137,9 +137,9 @@ def experiment_code_key():
     return digest.hexdigest()[:12]
 
 
-def prefill_snapshot_name(code_key, n_participants, n_bots):
-    """Return the name of the pre-fill snapshot for these code and settings."""
-    return f"psynet_prefill_{code_key}_n{n_participants}_k{n_bots}"
+def prefill_snapshot_name(code_key, n_participants):
+    """Return the name of the pre-fill snapshot for this code and number of participants."""
+    return f"psynet_prefill_{code_key}_n{n_participants}"
 
 
 def snapshot_code_key(snapshot):
@@ -347,7 +347,7 @@ class DatabaseReset:
         if self._keep_as is not None:
             logger.info(
                 f"Kept the pre-fill snapshot {name}; later runs with the same "
-                "experiment code and pre-fill settings start from it."
+                "experiment code and number of pre-fill participants start from it."
             )
             self._log_other_snapshots()
 

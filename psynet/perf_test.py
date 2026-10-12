@@ -61,6 +61,7 @@ logger = logging.getLogger(__name__)
 _SERVER_CHECK_INTERVAL_S = 5
 _BACKLOG_DRAIN_TIMEOUT_S = 120
 _BOT_THREAD_PREFIX = "psynet-bot-"
+_PREFILL_BOTS = 50
 
 DEFAULT_MAX_P95_S = 0.5
 DEFAULT_MAX_QUEUE_P95_S = 5.0
@@ -405,10 +406,10 @@ def count_non_bot_participants():
     return n
 
 
-def prefill_database(n_participants, n_bots, bot_log_file=None):
+def prefill_database(n_participants, bot_log_file=None):
     """Add ``n_participants`` participants' data by running bots through the experiment.
 
-    ``n_bots`` bots run at once, as threads, without pauses (time factor 0),
+    Up to 50 bots run at once, as threads, without pauses (time factor 0),
     until ``n_participants`` bots have taken the experiment. The bots go
     through the same routes as participants, so the data is what the
     experiment itself stores.
@@ -427,12 +428,12 @@ def prefill_database(n_participants, n_bots, bot_log_file=None):
     from psynet.bot import BotDriver
     from psynet.experiment import get_experiment
 
+    n_bots = min(_PREFILL_BOTS, n_participants)
     logger.info("")
     logger.info(
         bold(f"PRE-FILL: {n_participants:,} participants, {n_bots:,} bots at once")
     )
     experiment = get_experiment()
-    n_bots = min(n_bots, n_participants)
     _fit_redis_pool_to_bots(n_bots)
     raise_open_file_limit()
     taken = itertools.count()

@@ -503,7 +503,7 @@ def test_database_reset_restores_snapshots_and_drops_only_its_own(scratch_databa
     from psynet.redis import redis_vars
 
     url, created = scratch_database
-    cache = perf_reset.prefill_snapshot_name("0123456789ab", 3, 2)
+    cache = perf_reset.prefill_snapshot_name("0123456789ab", 3)
     created.append(cache)
     statements = []
 
@@ -561,7 +561,7 @@ def test_close_keeps_a_finished_prefill_whose_snapshot_was_not_taken(
     from psynet import perf_reset
 
     url, created = scratch_database
-    keep = perf_reset.prefill_snapshot_name("fedcba987654", 2, 1)
+    keep = perf_reset.prefill_snapshot_name("fedcba987654", 2)
     created.append(keep)
     server = Mock()
     server.stop.side_effect = KeyboardInterrupt

@@ -4364,8 +4364,8 @@ _test_options["performance_json_output"] = click.option(
     (the database snapshot that each test started from and its rows, with
     --reset-database), options (n_bots_sweep, capacity_search, max_p95_s,
     max_queue_p95_s, duration_minutes, stagger_interval_s, time_factor,
-    bot_processes, reset_database, prefill_participants, prefill_bots,
-    from_snapshot), and results (one entry per bot count tested, with all
+    bot_processes, reset_database, prefill_participants, from_snapshot),
+    and results (one entry per bot count tested, with all
     metrics).
     Useful for downstream consumption (e.g. benchmarking tools like asv).""",
 )
@@ -4378,8 +4378,6 @@ _test_options["performance_bot_log"] = click.option(
     default=None,
     hidden=True,
 )
-
-_DEFAULT_PREFILL_BOTS = 50
 
 _test_options["performance_reset_database"] = click.option(
     "--reset-database",
@@ -4396,18 +4394,11 @@ _test_options["performance_prefill_participants"] = click.option(
     "--prefill-participants",
     type=click.IntRange(min=1),
     help="""
-    Before the first test, run this many bots through the experiment
-    without pauses, so that the tests start with that much data. The
-    resulting snapshot is kept and reused by later runs with the same
-    experiment code, PsyNet version and pre-fill settings. Implies
-    --reset-database.""",
-)
-
-_test_options["performance_prefill_bots"] = click.option(
-    "--prefill-bots",
-    type=click.IntRange(min=1),
-    help=f"""
-    How many pre-fill bots run at once (default {_DEFAULT_PREFILL_BOTS}).""",
+    Before the first test, run this many bots through the experiment,
+    50 at a time and without pauses, so that the tests start with that
+    much data. The resulting snapshot is kept and reused by later runs
+    with the same experiment code, PsyNet version and number of pre-fill
+    participants. Implies --reset-database.""",
 )
 
 _test_options["performance_from_snapshot"] = click.option(
@@ -4425,7 +4416,6 @@ def _check_database_reset_options(
     existing,
     reset_database,
     prefill_participants,
-    prefill_bots,
     from_snapshot,
 ):
     """Return the database-reset options, or ``None`` without a reset.
@@ -4435,8 +4425,6 @@ def _check_database_reset_options(
     click.UsageError
         If the options conflict.
     """
-    if prefill_bots and not prefill_participants:
-        raise click.UsageError("--prefill-bots needs --prefill-participants.")
     if prefill_participants and from_snapshot:
         raise click.UsageError(
             "Use either --prefill-participants or --from-snapshot, not both."
@@ -4458,9 +4446,6 @@ def _check_database_reset_options(
         )
     return {
         "prefill_participants": prefill_participants,
-        "prefill_bots": (
-            (prefill_bots or _DEFAULT_PREFILL_BOTS) if prefill_participants else None
-        ),
         "from_snapshot": from_snapshot,
     }
 
@@ -4612,7 +4597,6 @@ def performance_test(ctx):
 @_test_options["performance_bot_processes"]
 @_test_options["performance_reset_database"]
 @_test_options["performance_prefill_participants"]
-@_test_options["performance_prefill_bots"]
 @_test_options["performance_from_snapshot"]
 @_test_options["performance_force"]
 @click.option("--debug", is_flag=True, help="Enable debug logging for verbose output")
@@ -4623,7 +4607,6 @@ def performance_test__local(
     debug=False,
     reset_database=False,
     prefill_participants=None,
-    prefill_bots=None,
     from_snapshot=None,
     **options,
 ):
@@ -4648,7 +4631,6 @@ def performance_test__local(
         existing=existing,
         reset_database=reset_database,
         prefill_participants=prefill_participants,
-        prefill_bots=prefill_bots,
         from_snapshot=from_snapshot,
     )
     return _run_performance_test_local(
@@ -4872,7 +4854,6 @@ def _run_performance_test_with_existing_server(
             "bot_processes": tester.bot_processes,
             "reset_database": database_reset is not None,
             "prefill_participants": reset.get("prefill_participants"),
-            "prefill_bots": reset.get("prefill_bots"),
             "from_snapshot": reset.get("from_snapshot"),
         }
         _write_json_results(
@@ -4947,9 +4928,9 @@ def _database_reset(reset, server, experiment_label, bot_log_file):
                 "experiment files or PsyNet or Dallinger versions."
             )
     elif reset["prefill_participants"]:
-        n_participants, n_bots = reset["prefill_participants"], reset["prefill_bots"]
+        n_participants = reset["prefill_participants"]
         name = perf_reset.prefill_snapshot_name(
-            perf_reset.experiment_code_key(), n_participants, n_bots
+            perf_reset.experiment_code_key(), n_participants
         )
         from_snapshot = perf_reset.find_snapshot(name, database_url)
         if from_snapshot:
@@ -4960,9 +4941,7 @@ def _database_reset(reset, server, experiment_label, bot_log_file):
             )
         else:
             keep_as = name
-            prefill = functools.partial(
-                prefill_database, n_participants, n_bots, bot_log_file
-            )
+            prefill = functools.partial(prefill_database, n_participants, bot_log_file)
     return perf_reset.DatabaseReset(
         server.stop,
         server.start,
