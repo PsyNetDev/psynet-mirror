@@ -68,17 +68,20 @@ _CAPACITY_SEARCH_MAX = 2000
 # The search stops once the gap between the largest passing and smallest
 # failing bot counts is within this fraction of the passing count.
 _CAPACITY_RESOLUTION = 0.1
-_CAPACITY_HEADROOM = 0.8
-_RAMP_UP_WARNING_SHARE = 0.25
+# The most tests the capacity search runs: doubling from 10 to the 2000 cap
+# takes 9, then bisecting between 1280 and 2000 takes 3. Recompute it if the
+# constants above change.
+_CAPACITY_SEARCH_MAX_TESTS = 12
 _OPEN_FILE_TARGET = 65536
 _MACOS_OPEN_FILE_MAX = 10240
-# At realistic pacing a process runs about this many bots on well under a core.
-_BOTS_PER_PROCESS = 250
 _BOT_PROCESS_START_TIMEOUT_S = 300
 # How much longer than the bots' stop timeout to wait for bot processes to reply.
 _BOT_PROCESS_REPLY_GRACE_S = 10
 _LAG_PROBE_INTERVAL_S = 0.05
 _BOT_PROCESS_EXIT_JOIN_S = 5
+# Return to the start of the terminal line and erase it, however wide its
+# characters were.
+_ERASE_LINE = "\r\033[K"
 
 
 def _is_bot_thread_record(record):
@@ -175,7 +178,6 @@ class _BotState:
     # Numbers of bot processes that didn't report their load.
     unreported_bot_processes: list = field(default_factory=list)
     last_status_update: float = field(default_factory=time.time)
-    status_line_length: int = 0
 
 
 @dataclass(kw_only=True)
@@ -532,6 +534,10 @@ def _fit_redis_pool_to_bots(n_bots):
             pool.pool.put_nowait(None)
 
 
+# At realistic pacing a process runs about this many bots on well under a core.
+_BOTS_PER_PROCESS = 250
+
+
 def _choose_bot_processes(requested, max_bots):
     """Return how many processes to run up to ``max_bots`` bots in.
 
@@ -663,7 +669,7 @@ class PerformanceSuite:
             "enough, or run late because their process is too busy, "
             "could not be tested)"
         )
-        max_tests = _max_capacity_probes()
+        max_tests = _CAPACITY_SEARCH_MAX_TESTS
         between = (
             "a database reset before each test"
             if self.before_test is not None
@@ -1078,17 +1084,14 @@ class PerformanceTester:
             print(status, flush=True)
             return
 
-        # Clear previous line and print new status
-        sys.stdout.write("\r" + " " * bot_state.status_line_length + "\r")
-        sys.stdout.write(status)
+        sys.stdout.write(_ERASE_LINE + status)
         sys.stdout.flush()
-        bot_state.status_line_length = len(status)
 
     def _clear_realtime_status(self):
         """Clear the status line when progress is complete."""
         is_debug = logger.getEffectiveLevel() <= logging.DEBUG
         if not is_debug and sys.stdout.isatty():
-            sys.stdout.write("\r" + " " * 150 + "\r")
+            sys.stdout.write(_ERASE_LINE)
             sys.stdout.flush()
 
     def _run_monitoring_loop(self, n, bot_state, start_bot_slot, start_time, end_time):
@@ -1962,10 +1965,10 @@ def _wait_timeouts(result):
     return sum(_wait_timeout_reasons(result).values())
 
 
-def _describe_failed_reasons(failed_reasons, limit=3):
-    """Name the most common reasons in ``failed_reasons``, e.g. ``12 performance_check``."""
-    items = list(failed_reasons.items())
-    named = ", ".join(f"{count:,} {reason}" for reason, count in items[:limit])
+def _top_counts(counts, limit=3):
+    """Name the first ``limit`` items of ``counts``, e.g. ``12 performance_check, 3 timeout``."""
+    items = list(counts.items())
+    named = ", ".join(f"{count:,} {name}" for name, count in items[:limit])
     return named + (", ..." if len(items) > limit else "")
 
 
@@ -2034,18 +2037,13 @@ def _plural(count, noun):
     return f"{count:,} {noun}{'' if count == 1 else 's'}"
 
 
-def _describe_bot_errors(result, limit=3):
+def _describe_bot_errors(result):
     """Describe a result's bot errors, naming the most common causes."""
     text = _plural(result.bot_errors, "bot error")
-    kinds = list((result.bot_error_kinds or {}).items())
-    if not kinds:
-        return text
+    kinds = result.bot_error_kinds or {}
     if len(kinds) == 1:
-        return f"{text} ({kinds[0][0]})"
-    named = ", ".join(f"{count:,} {kind}" for kind, count in kinds[:limit])
-    if len(kinds) > limit:
-        named += ", ..."
-    return f"{text} ({named})"
+        return f"{text} ({next(iter(kinds))})"
+    return f"{text} ({_top_counts(kinds)})" if kinds else text
 
 
 _BUSY_STATUS_CODES = frozenset({409, 503})
@@ -2798,25 +2796,6 @@ def next_capacity_probe(highest_pass, lowest_fail, max_bots=_CAPACITY_SEARCH_MAX
     return (lower + lowest_fail) // 2
 
 
-def _max_capacity_probes(max_bots=_CAPACITY_SEARCH_MAX):
-    """Return the most tests the capacity search can run, over all capacities."""
-
-    def n_probes(capacity):
-        highest_pass = lowest_fail = None
-        n = 0
-        while (
-            probe := next_capacity_probe(highest_pass, lowest_fail, max_bots)
-        ) is not None:
-            n += 1
-            if probe <= capacity:
-                highest_pass = probe
-            else:
-                lowest_fail = probe
-        return n
-
-    return max(n_probes(capacity) for capacity in range(max_bots + 1))
-
-
 _POSTGRES_ADVICE = (
     "  Some bots failed because PostgreSQL ran out of connections. The bots "
     "open their own database connections in the processes running them, which "
@@ -2898,6 +2877,10 @@ def _database_growth_warnings(results, capacity_result, first_fail):
             "  Rerun with --reset-database to start every test from the same data."
         )
     return lines
+
+
+_CAPACITY_HEADROOM = 0.8
+_RAMP_UP_WARNING_SHARE = 0.25
 
 
 def _capacity_headline(
@@ -3028,7 +3011,7 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
         lines.append(
             f"  In the {capacity:,}-bot test the experiment {also}failed "
             f"{_plural(sum(other_failures.values()), 'participant')}{why} "
-            f"({_describe_failed_reasons(other_failures)}). These don't "
+            f"({_top_counts(other_failures)}). These don't "
             "count against capacity; check that the design expects them."
         )
     ramp_up = capacity_result.ramp_up_s
