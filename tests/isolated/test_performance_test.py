@@ -397,6 +397,7 @@ def test_capacity_search_tests_last_a_session_up_to_five_minutes(
         (45, None, (60, 30)),
         (None, None, (1, None)),
         (12, 3, (15, 3)),
+        (12, 55, (60, 55)),
     ],
 )
 def test_confirmation_test_spreads_arrivals_over_a_session_and_lasts_two(
@@ -495,6 +496,14 @@ def test_arrival_minutes_only_spread_the_confirmation_test(caplog):
     [
         ({}, "never reached the steady state"),
         (dict(server_stopped=True, **_STEADY), "could not be tested (server stopped)"),
+        (
+            dict(server_stopped=True, p95_response_time=None, **_STEADY),
+            "could not be tested (server stopped; no responses recorded)",
+        ),
+        (
+            dict(p95_response_time=None, **_STEADY),
+            "could not be tested (no responses recorded)",
+        ),
     ],
 )
 def test_a_confirmation_that_measures_nothing_leaves_the_cap_unconfirmed(
@@ -505,6 +514,13 @@ def test_a_confirmation_that_measures_nothing_leaves_the_cap_unconfirmed(
     assert expected in caplog.text
     assert "cap of about 120 concurrent participants is unconfirmed" in caplog.text
     assert "Confirmed:" not in caplog.text and "Try capping" not in caplog.text
+
+
+def test_a_confirmation_that_fails_on_queue_wait_gets_the_queue_advice(caplog):
+    _confirmation_search(caplog, dict(q_delay_p95=30.0, **_STEADY))
+
+    assert "p95 async queue wait 30.00 s" in caplog.text
+    assert caplog.text.count("Async processes waited too long") == 1
 
 
 def test_a_failed_confirmation_on_grown_data_suggests_a_reset(caplog):

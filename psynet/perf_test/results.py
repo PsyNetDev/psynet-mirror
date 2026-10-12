@@ -50,7 +50,7 @@ _MAX_SEARCH_DURATION_MINUTES = 5
 # session of steady state. At most an hour, which covers two sessions of a
 # 30-minute study.
 _CONFIRMATION_SESSIONS = 2
-_MAX_CONFIRMATION_DURATION_MINUTES = 60
+MAX_CONFIRMATION_DURATION_MINUTES = 60
 # The shortest steady state that the report shows separately from the start-up.
 MIN_STEADY_STATE_S = 60
 
@@ -101,7 +101,7 @@ def confirmation_timing(session_minutes, minimum, arrival_minutes=None):
         The shortest test, the search tests' duration.
     arrival_minutes : float, optional
         The arrival window the user chose, which the confirmation keeps; the
-        test then lasts a session longer than it.
+        test then lasts a session longer than it, up to the same hour.
 
     Returns
     -------
@@ -111,17 +111,16 @@ def confirmation_timing(session_minutes, minimum, arrival_minutes=None):
     """
     session_minutes = session_minutes or 0
     if arrival_minutes:
-        duration = math.ceil(arrival_minutes + max(session_minutes, 1))
-        return max(minimum, duration), arrival_minutes
-    # A short study still gets a steady state long enough to report.
-    sessions = max(
-        _CONFIRMATION_SESSIONS * session_minutes,
-        session_minutes + MIN_STEADY_STATE_S / 60,
-    )
-    duration = max(
-        minimum,
-        min(math.ceil(sessions), _MAX_CONFIRMATION_DURATION_MINUTES),
-    )
+        duration = arrival_minutes + max(session_minutes, 1)
+    else:
+        # A short study still gets a steady state long enough to report.
+        duration = max(
+            _CONFIRMATION_SESSIONS * session_minutes,
+            session_minutes + MIN_STEADY_STATE_S / 60,
+        )
+    duration = max(minimum, min(math.ceil(duration), MAX_CONFIRMATION_DURATION_MINUTES))
+    if arrival_minutes:
+        return duration, arrival_minutes
     return duration, round(min(session_minutes, duration / 2), 1) or None
 
 

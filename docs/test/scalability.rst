@@ -270,15 +270,16 @@ most an hour, so that the test reaches its steady state. A study over 30
 minutes gets less than two sessions, and one over about an hour no steady
 state, so for long studies also run a long test of the cap by hand. With your own
 ``--arrival-minutes``, the confirmation uses that window instead of one
-session and lasts a session longer. The summary reports the cap as
+session and lasts a session longer, again at most an hour, so with
+``--n-bots auto`` the window must be shorter than an hour. The summary reports the cap as
 confirmed only if the confirmation test stayed within the limits and
 reached its steady state; one that never got there leaves the cap
 unconfirmed. If the test exceeded the limits, the summary shows which
 limits the start-up and the steady state exceeded, and suggests a lower
 cap, scaled by how far the test overshot its limits (but at least half the
 tested cap), with the command to check it. A test that could not measure
-the server, for example because the server stopped or the bots couldn't
-start fast enough, leaves the cap unconfirmed without a suggestion. The
+the server, for example because the server stopped, no responses were
+recorded or the bots couldn't start fast enough, leaves the cap unconfirmed without a suggestion. The
 search does not run again. Add ``--no-confirm`` to skip the confirmation
 test; it is always skipped with ``--time-factor 0``, whose pace isn't
 realistic, when the experiment's estimated session length is unknown, and

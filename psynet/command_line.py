@@ -4426,9 +4426,9 @@ _test_options["performance_arrival_minutes"] = click.option(
     Spread the arrival of each test's bots evenly over this many minutes after
     the first bot starts, as participants arrive while a study is open,
     instead of starting them --stagger seconds apart. With --n-bots auto, only
-    the confirmation test uses this window (instead of one session) and lasts
-    a session longer than it; the search's tests stay short, with the bots
-    starting together. Can't be combined with --stagger; bots that replace
+    the confirmation test uses this window (instead of one session), so it
+    must be shorter than an hour, and lasts a session longer than it, up to
+    an hour; the search's tests stay short, with the bots starting together. Can't be combined with --stagger; bots that replace
     finished ones still start after the experiment's
     test_parallel_stagger_interval_s. Otherwise it must be shorter than
     --duration-minutes, and without --duration-minutes it is added to the
@@ -5095,13 +5095,19 @@ def _check_arrival_options(
         raise click.UsageError(
             "--arrival-minutes and --stagger both set when bots start; use one."
         )
-    # A capacity search's tests don't use the window; its confirmation test
-    # lasts longer than it.
-    if (
-        n_bots != "auto"
-        and duration_minutes is not None
-        and arrival_minutes >= duration_minutes
-    ):
+    from psynet.perf_test.results import MAX_CONFIRMATION_DURATION_MINUTES
+
+    if n_bots == "auto":
+        # The search's tests don't use the window; its confirmation test
+        # lasts an hour at most, unless the search's tests are longer.
+        longest = max(MAX_CONFIRMATION_DURATION_MINUTES, duration_minutes or 0)
+        if arrival_minutes >= longest:
+            raise click.UsageError(
+                f"With --n-bots auto, --arrival-minutes must be shorter than "
+                f"{longest:g} min, the length of the longest confirmation test, "
+                "so that every bot starts during it."
+            )
+    elif duration_minutes is not None and arrival_minutes >= duration_minutes:
         raise click.UsageError(
             "--arrival-minutes must be shorter than --duration-minutes, so that "
             "every bot starts during the test."

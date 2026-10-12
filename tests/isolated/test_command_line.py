@@ -5006,6 +5006,7 @@ def test_performance_test_options_reach_the_tester(options, expected, tmp_path):
     [
         (dict(arrival_minutes=1, stagger=2), "use one"),
         (dict(arrival_minutes=2, duration_minutes=2), "shorter than --duration"),
+        (dict(n_bots="auto", arrival_minutes=60), "shorter than 60 min"),
     ],
 )
 def test_arrival_minutes_rejects_conflicting_options(options, message):
