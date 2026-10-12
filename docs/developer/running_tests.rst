@@ -24,6 +24,14 @@ requests that change only that path. If you add a top-level file or directory
 that tests or the CI image depend on, or a test that reads a docs page, add
 its path to ``.docker_test_rules``.
 
+Merge requests stacked on another feature branch, whose target branch is not
+``master``, run only the fast checks (``pre_commit``,
+``validate_agent_skills`` and ``changelog_check``). The pytest, Playwright,
+``docs`` and ``asv_regression`` jobs that the diff would otherwise trigger
+appear as optional manual jobs instead: start them from the pipeline page when
+you want a full run. Pipelines created after the merge request is retargeted
+to ``master`` run everything as usual.
+
 Merge-train pipelines skip jobs that already passed on the same files.
 Merging goes through a GitLab merge train, whose pipeline tests the commit that
 ``master`` will become. That commit often has exactly the same files as the

@@ -144,6 +144,16 @@ GET https://gitlab.com/api/v4/projects/<project_id>/jobs/<job_id>/trace
 
 This is the preferred approach for agents when verifying CI status or logs.
 
+Merge requests stacked on another branch (target branch not `master`) run only
+the fast checks; the pytest, Playwright, `docs` and `asv_regression` jobs wait
+as manual jobs. Start them when a full run is useful, for example before
+asking for review of a risky stacked change, with the play button in the
+GitLab UI or through the API with `GITLAB_TOKEN`:
+
+```http
+POST https://gitlab.com/api/v4/projects/PsyNetDev%2FPsyNet/jobs/<job_id>/play
+```
+
 ## Playwright flakiness guardrails
 
 When adding or updating Playwright E2E tests, follow these rules to reduce CI flakiness:

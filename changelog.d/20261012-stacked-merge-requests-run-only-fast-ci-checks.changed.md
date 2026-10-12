@@ -1,0 +1,1 @@
+Changed CI so that merge requests stacked on another branch run only the fast checks, offering the pytest, Playwright, docs and fast benchmark jobs as optional manual jobs. Merge requests targeting `master`, merge trains, and `master`, tag and scheduled pipelines are unchanged.

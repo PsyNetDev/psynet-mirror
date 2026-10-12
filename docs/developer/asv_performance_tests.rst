@@ -48,7 +48,8 @@ non-zero when ASV detects a regression larger than ``--factor 1.25``. Docs,
 changelog, and skill-only merge requests skip this job. Merge-train pipelines
 also skip it when the merge request's last merged-results pipeline passed it
 on identical files, because it would benchmark the same two commits again;
-see :doc:`running_tests`.
+see :doc:`running_tests`. Merge requests stacked on another feature branch
+offer the job as a manual action instead of running it.
 
 Export performance is not included in the ASV suite. End-to-end exports depend
 on mutable database fixtures, filesystem caches, and subprocess startup, which
