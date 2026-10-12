@@ -18,9 +18,11 @@ from psynet.perf_test.results import (
     POSTGRES_FULL,
     PROCESS_STAT_KEYS,
     CapacityLimits,
+    busy_early_finish_cause,
     capacity_failure_causes,
     count_wait_timeouts,
     describe_bot_errors,
+    describe_busy_early_finish,
     phase_limit_reasons,
     plural,
     queue_wait_p95,
@@ -300,6 +302,10 @@ def _request_lines(result):
             ["Max", result.max_trial_count or 0],
         ]
     )
+    lines += [
+        f"  {describe_busy_early_finish(result, trial_maker_id, detail=True)}."
+        for trial_maker_id in result.busy_early_finishes or {}
+    ]
     lines.append("")
     return lines
 
@@ -540,6 +546,12 @@ _WAIT_ADVICE = (
     "enough participants to fill groups and chains; at high bot counts it can "
     "also mean the server is too slow."
 )
+_BUSY_CHAINS_ADVICE = (
+    "  Participants got fewer trials because every chain they could join was "
+    "busy, so the experiment finished their block early. Let them wait with "
+    "wait_for_networks=True, add chains, or cap concurrent participants lower. "
+    "Bots that all arrive at once overstate this; confirm with --arrival-minutes."
+)
 _START_RATE_ADVICE = (
     "  Bots that cannot start fast enough limit the test rather than the "
     "server, because the processes running the bots create each bot's "
@@ -640,7 +652,7 @@ def _capacity_headline(
     """Return the capacity summary's first lines: the capacity, and a cap if the server set it.
 
     Only a server limit sets the capacity, so a first failure that could not
-    be tested (``unmeasured``) or that only had wait timeouts
+    be tested (``unmeasured``) or that only had wait timeouts or busy chains
     (``waits_only``) leaves it a lower bound, without a cap.
     """
     if first_fail is None:
@@ -705,10 +717,13 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
     first_reasons = "; ".join(reason for reason, _ in first_causes)
     unmeasured = not any(server_limit for _, server_limit in first_causes)
     wait_cause = first_fail and wait_timeout_cause(first_fail, limits)
-    # Wait timeouts can come from the design, so alone they don't show the
-    # server's capacity.
-    waits_only = wait_cause and not any(
-        server_limit and reason != wait_cause for reason, server_limit in first_causes
+    busy_cause = first_fail and busy_early_finish_cause(first_fail, limits)
+    # Wait timeouts and busy chains can come from the design, so alone they
+    # don't show the server's capacity.
+    design_causes = {wait_cause, busy_cause} - {None, False}
+    waits_only = bool(design_causes) and not any(
+        server_limit and reason not in design_causes
+        for reason, server_limit in first_causes
     )
     below_fail = [n for n in passed if first_fail is None or n < first_fail.n_bots]
     capacity = max(below_fail, default=None)
@@ -725,6 +740,8 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
         lines += _startup_only_lines(first_fail, limits)
     if wait_cause:
         lines.append(_WAIT_ADVICE)
+    if busy_cause:
+        lines.append(_BUSY_CHAINS_ADVICE)
     if "async queue" in first_reasons:
         lines.append(_QUEUE_ADVICE)
     if first_fail is not None and start_rate_limits(first_fail):
@@ -747,6 +764,14 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
     if wait_timeouts := count_wait_timeouts(capacity_result):
         tolerated.append(
             f"{plural(wait_timeouts, 'participant')} failed for waiting too long"
+        )
+    if busy_finishes := sum(
+        stats["participants"]
+        for stats in (capacity_result.busy_early_finishes or {}).values()
+    ):
+        tolerated.append(
+            f"{plural(busy_finishes, 'participant')} who got fewer trials "
+            "because every chain was busy"
         )
     if tolerated:
         found = " and ".join(filter(None, [", ".join(tolerated[:-1]), tolerated[-1]]))

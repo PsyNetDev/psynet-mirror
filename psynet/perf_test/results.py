@@ -8,7 +8,9 @@ chooses how long a test lasts from how long a participant session takes.
 
 Failures from waiting too long, such as timed-out holds, count against
 capacity (see :func:`_is_wait_timeout`); others, such as prescreens, are
-reported only.
+reported only. Participants who got fewer trials because every chain was
+busy count against capacity in the same way (see
+:func:`busy_early_finish_cause`), although they are not failed.
 
 The terminal report (:mod:`psynet.perf_test.report`) and the suite
 (:mod:`psynet.perf_test.suite`) word failure causes with the helpers here, so
@@ -162,6 +164,10 @@ class PerformanceTestResult:
     min_trial_count: int | None = None
     median_trial_count: int | None = None
     max_trial_count: int | None = None
+    # Bots whose chain trial makers finished a block early because every
+    # eligible chain or node was busy, by trial maker (see
+    # measure.busy_early_finish_stats).
+    busy_early_finishes: dict[str, dict] = field(default_factory=dict)
     n_rq_workers: int | None = None
     # Jobs the async workers can run at once.
     n_rq_job_slots: int | None = None
@@ -344,6 +350,12 @@ class CapacityLimits:
         timed out (see :func:`_is_wait_timeout`). Such a participant is lost
         to the study just like one whose bot failed, so the default matches
         ``max_bot_error_rate``.
+    max_busy_early_finish_rate : float
+        Largest acceptable share of bots that got fewer trials in a trial
+        maker because every chain was busy and ``wait_for_networks=False``
+        (see :func:`busy_early_finish_cause`). Like a wait timeout, this
+        usually comes from the design and loses data, so the default matches
+        ``max_wait_timeout_rate``.
     """
 
     max_p95_s: float = DEFAULT_MAX_P95_S
@@ -354,6 +366,7 @@ class CapacityLimits:
     allowed_busy_responses: int = 10
     max_bot_error_rate: float = 0.01
     max_wait_timeout_rate: float = 0.01
+    max_busy_early_finish_rate: float = 0.01
 
     @classmethod
     def from_options(cls, max_p95_s=None, max_queue_p95_s=None):
@@ -379,9 +392,11 @@ class CapacityLimits:
             f"({self.allowed_request_errors} always allowed), "
             f"{self.max_busy_response_rate:.0%} of requests answered busy or stale "
             f"({self.allowed_busy_responses} always allowed), "
-            f"{self.max_bot_error_rate:.0%} of bots failing and "
+            f"{self.max_bot_error_rate:.0%} of bots failing, "
             f"{self.max_wait_timeout_rate:.0%} of participants failed by the "
-            "experiment for waiting too long"
+            "experiment for waiting too long and "
+            f"{self.max_busy_early_finish_rate:.0%} getting fewer trials "
+            "because every chain was busy"
         )
         if not include_queue:
             return f"{response} and {errors}"
@@ -493,6 +508,51 @@ def wait_timeout_cause(result, limits):
     )
 
 
+def describe_busy_early_finish(result, trial_maker_id, detail=False):
+    """Describe the bots that got fewer trials in a trial maker because every chain was busy.
+
+    Parameters
+    ----------
+    result : PerformanceTestResult
+        The test.
+    trial_maker_id : str
+        A key of ``result.busy_early_finishes``.
+    detail : bool
+        Also give the share of bots and their median number of trials, e.g.
+        ``23 of 150 participants (15%) got fewer trials in main_chain because
+        every chain was busy; median 41 of 60 trials``.
+    """
+    stats = result.busy_early_finishes[trial_maker_id]
+    n, started = stats["participants"], result.total_bots_started or 0
+    who = plural(n, "participant")
+    if detail and started:
+        who = f"{n:,} of {plural(started, 'participant')} ({n / started:.0%})"
+    text = (
+        f"{who} got fewer trials in {trial_maker_id} because every "
+        f"{stats.get('candidate') or 'chain'} was busy"
+    )
+    median, expected = stats.get("median_trials"), stats.get("expected_trials")
+    if detail and median is not None:
+        text += f"; median {median:,}" + (f" of {expected:,}" if expected else "")
+        text += " trials"
+    return text
+
+
+def busy_early_finish_cause(result, limits):
+    """Return why ``result`` had too many bots get fewer trials because every chain was busy, or ``None``.
+
+    Each trial maker is judged separately against
+    ``limits.max_busy_early_finish_rate``.
+    """
+    allowed = limits.max_busy_early_finish_rate * (result.total_bots_started or 0)
+    over = [
+        describe_busy_early_finish(result, trial_maker_id)
+        for trial_maker_id, stats in (result.busy_early_finishes or {}).items()
+        if stats["participants"] > allowed
+    ]
+    return " and ".join(over) or None
+
+
 # The shortest steady state that the report shows separately from the start-up.
 MIN_STEADY_STATE_S = 60
 
@@ -562,6 +622,8 @@ def capacity_failure_causes(result, limits):
         )
     if wait_cause := wait_timeout_cause(result, limits):
         causes.append((wait_cause, True))
+    if busy_cause := busy_early_finish_cause(result, limits):
+        causes.append((busy_cause, True))
     p95 = result.p95_response_time
     if p95 is None:
         causes.append(("no responses recorded", not tester_limits))

@@ -368,6 +368,73 @@ def bot_outcome_stats(after_participant_id, errored_bot_ids):
         min_trial_count=min_trials,
         median_trial_count=median_trials,
         max_trial_count=max_trials,
+        busy_early_finishes=busy_early_finish_stats(after_participant_id),
+    )
+
+
+def busy_early_finish_stats(after_participant_id):
+    """Return, by trial maker, the bots that finished a block early because every chain was busy.
+
+    Chain trial makers with ``wait_for_networks=False`` count these blocks in
+    each participant's ``blocks_ended_busy`` (see
+    :class:`~psynet.trial.chain.ChainTrialMakerState`). Bots count whatever
+    their outcome.
+
+    Returns
+    -------
+    dict
+        For each trial maker with such bots: ``participants``, how many;
+        ``median_trials``, the median number of non-failed trials they got in
+        that trial maker; ``expected_trials``, its
+        ``expected_trials_per_participant`` (``None`` if unknown); and
+        ``candidate``, ``"chain"`` or ``"node"``, what was busy.
+    """
+    from dallinger import db
+    from sqlalchemy import and_, func
+
+    from psynet.trial.chain import ChainTrialMakerState
+    from psynet.trial.main import Trial
+
+    state = ChainTrialMakerState
+    rows = (
+        db.session.query(state.module_id, func.count(Trial.id))
+        .outerjoin(
+            Trial,
+            and_(
+                Trial.participant_id == state.participant_id,
+                Trial.trial_maker_id == state.module_id,
+                Trial.failed == False,  # noqa: E712
+            ),
+        )
+        .filter(
+            state.participant_id > after_participant_id,
+            state.blocks_ended_busy > 0,
+        )
+        .group_by(state.id, state.module_id)
+        .all()
+    )
+    trials = {}
+    for trial_maker_id, n_trials in rows:
+        trials.setdefault(trial_maker_id, []).append(n_trials)
+    return {
+        trial_maker_id: dict(
+            participants=len(counts),
+            median_trials=quantile(sorted(counts), 0.5),
+            **_trial_maker_details(trial_maker_id),
+        )
+        for trial_maker_id, counts in sorted(trials.items())
+    }
+
+
+def _trial_maker_details(trial_maker_id):
+    """Return the expected trials per participant and the candidate label of a trial maker."""
+    from psynet.experiment import get_experiment
+
+    trial_maker = get_experiment().timeline.trial_makers.get(trial_maker_id)
+    expected = getattr(trial_maker, "expected_trials_per_participant", None)
+    return dict(
+        expected_trials=int(expected) if isinstance(expected, (int, float)) else None,
+        candidate=getattr(trial_maker, "_candidate_label", "chain"),
     )
 
 

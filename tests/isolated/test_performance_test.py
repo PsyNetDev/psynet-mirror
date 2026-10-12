@@ -906,6 +906,43 @@ def test_a_passing_test_reports_participants_failed_by_design(failed_reasons, wo
     assert "These don't count against capacity" in text
 
 
+@pytest.mark.parametrize("participants", [1, 23])
+def test_participants_who_got_fewer_trials_because_chains_were_busy_limit_capacity(
+    participants,
+):
+    result = _base_result(
+        n_bots=150,
+        total_bots_started=150,
+        busy_early_finishes={
+            "main_chain": {
+                "participants": participants,
+                "median_trials": 41,
+                "expected_trials": 60,
+                "candidate": "chain",
+            }
+        },
+    )
+
+    report = _join(format_test_results(result))
+    summary = _join(format_capacity_summary([result]))
+
+    share = f"{participants / 150:.0%}"
+    assert (
+        f"{participants} of 150 participants ({share}) got fewer trials in "
+        "main_chain because every chain was busy; median 41 of 60 trials."
+    ) in report
+    if participants == 1:
+        assert capacity_failures(result) == []
+        assert "1 participant who got fewer trials" in summary
+    else:
+        assert capacity_failures(result) == [
+            "23 participants got fewer trials in main_chain because every "
+            "chain was busy"
+        ]
+        assert "wait_for_networks=True" in summary
+        assert "Cap concurrent participants" not in summary
+
+
 def test_test_results_show_participants_the_experiment_failed():
     text = _join(
         format_test_results(

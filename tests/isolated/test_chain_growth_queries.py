@@ -8,6 +8,7 @@ from sqlalchemy.exc import OperationalError
 
 from psynet.experiment import get_experiment
 from psynet.participant import Participant
+from psynet.perf_test.measure import busy_early_finish_stats
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.sqlalchemy_profiling import assert_query_count
 from psynet.trial.chain import ChainNetwork, ChainNode, ChainTrial, ChainTrialMaker
@@ -1154,6 +1155,8 @@ def test_busy_block_waits_or_finishes_early(
         assert outcome.value is free.head
         assert participant.module_state.block == "B"
     assert (participant.module_state.blocks_ended_busy or 0) == ended_busy
+    finishes = busy_early_finish_stats(after_participant_id=0)
+    assert finishes.get(trial_maker.id, {}).get("participants", 0) == ended_busy
 
 
 @pytest.mark.parametrize(

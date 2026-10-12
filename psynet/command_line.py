@@ -4234,8 +4234,9 @@ _test_options["performance_n_bots"] = click.option(
     Use --n-bots auto to search for the largest bot count that keeps the
     95th-percentile response time under --max-p95-ms and async queue waits
     under --max-queue-p95-s, with at most 0.1% of requests failing, 1%
-    answered as busy or stale, 1% of bots failing, and 1% of participants
-    failed by the experiment for waiting too long.
+    answered as busy or stale, 1% of bots failing, 1% of participants
+    failed by the experiment for waiting too long, and 1% getting fewer
+    trials in a trial maker because every chain was busy.
     If not specified, will default to Experiment.test_n_bots""",
 )
 
