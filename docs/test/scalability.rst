@@ -187,7 +187,11 @@ hold every ``check_interval`` seconds, as a browser's fallback poll does. The
 results leave out everything else a browser does, including static files and
 media, requests to custom routes from page JavaScript, and websockets, which
 browsers keep open at timeline holds and in live multi-participant pages. If
-an experiment leans on these, also test it with real browsers.
+an experiment leans on these, also test it with real browsers. The summary
+of every run ends with a *Not measured* line as a reminder: uploads over
+participants' own networks (the bots upload from next to the server), media
+downloads and bandwidth, the front door (the server's web proxy or a
+Cloudflare tunnel) and browser rendering.
 
 If response times are high, profile the database queries with ``psynet test
 local --sql-profile``; see :doc:`/test/sqlalchemy_profiling`.

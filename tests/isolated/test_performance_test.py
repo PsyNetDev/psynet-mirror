@@ -1424,6 +1424,7 @@ def test_format_performance_summary_single_result():
     assert "1.6" in text
     assert "Resp Med (s)" in text
     assert "0.04" in text
+    assert "Not measured: uploads over participants' own networks" in text
 
 
 def test_format_performance_summary_scaling():

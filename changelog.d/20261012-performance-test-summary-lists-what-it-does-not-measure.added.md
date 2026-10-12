@@ -1,0 +1,1 @@
+Added a "Not measured" line to every `psynet performance-test` summary, listing what the bots leave out: uploads over participants' own networks, media downloads and bandwidth, the web proxy or Cloudflare tunnel, and browser rendering.

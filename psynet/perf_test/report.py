@@ -416,6 +416,14 @@ def _ratio(value, baseline, is_baseline):
     return f"{value / baseline:.1f}x"
 
 
+_NOT_MEASURED = (
+    "  Not measured: uploads over participants' own networks (bots upload from "
+    "next to the server), media downloads and bandwidth, the front door (web "
+    "proxy or Cloudflare tunnel) and browser rendering. Check these separately "
+    "if your study plays or records a lot of media."
+)
+
+
 def format_performance_summary(results):
     """Format cross-test comparison table.
 
@@ -494,7 +502,7 @@ def format_performance_summary(results):
             f"  Database rows from the first test to the last: {database_growth}."
         )
         lines.append("")
-
+    lines += [_NOT_MEASURED, ""]
     return lines
 
 
