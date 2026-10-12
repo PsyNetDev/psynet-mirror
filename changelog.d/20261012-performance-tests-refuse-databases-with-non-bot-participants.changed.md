@@ -1,0 +1,1 @@
+`psynet performance-test local` and `psynet performance-test ssh` now refuse to run if the experiment's database has participants that PsyNet bots didn't create, because performance tests write bot participants into the database and load the server; pass `--force` if those participants are only test data.

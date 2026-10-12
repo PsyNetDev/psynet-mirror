@@ -380,6 +380,31 @@ def run_parallel_test(n_bots, time_factor, stagger_interval_s, check_bots):
         check_bots(Bot.query.all())
 
 
+def count_non_bot_participants():
+    """Return how many participants in the database PsyNet bots didn't create.
+
+    Bots, including those of earlier performance tests and pre-fills, are
+    :class:`psynet.bot.Bot` rows; their recruiter ID can't tell them apart,
+    because real participants may have the same one.
+    """
+    from dallinger import db
+    from dallinger.models import Participant
+    from sqlalchemy import func, or_
+
+    from psynet.bot import Bot
+
+    bot_types = [
+        mapper.polymorphic_identity for mapper in Bot.__mapper__.self_and_descendants
+    ]
+    n = (
+        db.session.query(func.count(Participant.id))
+        .filter(or_(Participant.type.is_(None), Participant.type.notin_(bot_types)))
+        .scalar()
+    )
+    db.session.rollback()
+    return n
+
+
 def prefill_database(n_participants, n_bots, bot_log_file=None):
     """Add ``n_participants`` participants' data by running bots through the experiment.
 

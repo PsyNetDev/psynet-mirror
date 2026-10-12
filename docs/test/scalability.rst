@@ -448,7 +448,15 @@ The test does not reset the database, so repeated runs accumulate data (see
 :ref:`performance_testing_database_size`; ``--reset-database`` is only
 available locally so far). Make
 sure the app allows enough participants for the number of bots, and that
-nobody else is using it during the test. When the run ends, PsyNet copies the
+nobody else is using it during the test.
+
+Performance tests add bot participants to the database and load the
+server, so they must never run against an experiment that is collecting
+real data. ``performance-test ssh`` and ``performance-test local`` therefore
+refuse to start if the database has participants that PsyNet bots didn't
+create; bots from earlier tests and pre-fills don't count. If those
+participants are only test data, for example from your own walkthrough of
+the experiment, add ``--force``. When the run ends, PsyNet copies the
 bot log out of the container and prints where it saved it.
 
 If the server is on a private network, such as a lab computer, deploy with

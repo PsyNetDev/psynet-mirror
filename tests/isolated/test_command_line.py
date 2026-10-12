@@ -4738,6 +4738,7 @@ def test_performance_test_options_reach_the_tester(options, expected, tmp_path):
         patch("logging.getLogger", return_value=Mock(handlers=[])),
         patch("psynet.command_line._load_runtime_server_config") as load_config,
         patch("psynet.command_line._check_existing_server_answers"),
+        patch("psynet.command_line._check_no_real_participants"),
         patch("psynet.command_line._performance_log_directory", return_value=tmp_path),
         patch("psynet.experiment.get_experiment", return_value=experiment),
         patch("psynet.perf_test.PerformanceTester") as performance_tester,
@@ -4802,13 +4803,16 @@ def test_ssh_performance_test_command_forwards_zero_valued_options():
         max_p95_ms=800,
         max_queue_p95_s=0,
         bot_processes=2,
+        force=True,
     ) == (
         "env PSYNET_EXPERIMENT_URL=http://localhost:5000 "
         "psynet performance-test local --existing "
         "--n-bots 5,10 --stagger 0 --time-factor 0 --duration-minutes 1.5 "
-        "--max-p95-ms 800 --max-queue-p95-s 0 --bot-processes 2"
+        "--max-p95-ms 800 --max-queue-p95-s 0 --bot-processes 2 --force"
     )
-    assert _build_ssh_performance_test_cmd(n_bots="auto", bot_log="/tmp/b.log") == (
+    assert _build_ssh_performance_test_cmd(
+        n_bots="auto", bot_log="/tmp/b.log", force=False
+    ) == (
         "env PSYNET_EXPERIMENT_URL=http://localhost:5000 "
         "psynet performance-test local --existing --n-bots auto --bot-log /tmp/b.log"
     )

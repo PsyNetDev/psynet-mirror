@@ -4288,6 +4288,14 @@ _test_options["performance_bot_processes"] = click.option(
     auto it plans for the largest count the search may test.""",
 )
 
+_test_options["performance_force"] = click.option(
+    "--force",
+    is_flag=True,
+    help="""
+    Run even if the database has participants that PsyNet bots didn't
+    create, which may be real participants.""",
+)
+
 _test_options["performance_max_p95_ms"] = click.option(
     "--max-p95-ms",
     type=click.FloatRange(min=0, min_open=True),
@@ -4609,6 +4617,7 @@ def performance_test(ctx):
 @_test_options["performance_prefill_bots"]
 @_test_options["performance_fresh_prefill"]
 @_test_options["performance_from_snapshot"]
+@_test_options["performance_force"]
 @click.option("--debug", is_flag=True, help="Enable debug logging for verbose output")
 @_in_isolated_test_environment
 def performance_test__local(
@@ -4756,6 +4765,7 @@ def _run_performance_test_with_existing_server(
     max_queue_p95_s=None,
     bot_processes=None,
     bot_log=None,
+    force=False,
     server=None,
     reset=None,
 ):
@@ -4787,6 +4797,7 @@ def _run_performance_test_with_existing_server(
 
     from psynet.perf_test import CapacityLimits, PerformanceSuite, PerformanceTester
 
+    _check_no_real_participants(force)
     os.environ["PASSTHROUGH_ERRORS"] = "True"
 
     bot_counts = n_bots or [exp.test_n_bots]
@@ -4878,6 +4889,26 @@ def _run_performance_test_with_existing_server(
         )
         print(f"Performance results (JSON): {json_output}")
     return all_results
+
+
+def _check_no_real_participants(force):
+    """Refuse to test a database with participants that bots didn't create, unless ``force``."""
+    from psynet.perf_test import count_non_bot_participants
+
+    n = count_non_bot_participants()
+    if not n:
+        return
+    message = (
+        f"The database has {n:,} participant(s) that PsyNet bots didn't create. "
+        "Performance tests add bot participants to the database and load the "
+        "server, so they must not run against an experiment that is collecting "
+        "real data."
+    )
+    if not force:
+        raise click.ClickException(
+            f"{message} If these participants are test data, rerun with --force."
+        )
+    print(f"Warning: {message} Continuing because of --force.")
 
 
 def _database_reset(reset, server, experiment_label, bot_log_file):
@@ -5268,6 +5299,7 @@ def _current_code_key():
 @_test_options["performance_max_queue_p95_s"]
 @_test_options["performance_json_output"]
 @_test_options["performance_bot_processes"]
+@_test_options["performance_force"]
 @click.pass_context
 def performance_test__docker_ssh(ctx, app, server, json_output=None, **options):
     """
@@ -5336,8 +5368,11 @@ def _build_ssh_performance_test_cmd(**options):
     for name, value in options.items():
         if isinstance(value, list):
             value = ",".join(str(v) for v in value)
-        if value is not None:
-            cmd += f" --{name.replace('_', '-')} {value}"
+        flag = f"--{name.replace('_', '-')}"
+        if value is True:
+            cmd += f" {flag}"
+        elif value is not None and value is not False:
+            cmd += f" {flag} {value}"
     return cmd
 
 

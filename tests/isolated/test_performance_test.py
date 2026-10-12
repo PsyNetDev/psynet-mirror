@@ -1374,3 +1374,35 @@ def test_prefill_cache_key_changes_with_config_txt(tmp_path, monkeypatch):
     key = experiment_code_key()
     (tmp_path / "config.txt").write_text("[Config]\n# A comment\n")
     assert experiment_code_key() != key
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+def test_performance_tests_refuse_participants_that_bots_did_not_create(db_session):
+    import click
+    from dallinger import db
+
+    from psynet.bot import Bot
+    from psynet.command_line import _check_no_real_participants
+    from psynet.experiment import get_experiment
+    from psynet.participant import Participant
+    from psynet.redis import redis_vars
+
+    redis_vars.set("launch_finished", True)
+    Bot()
+    _check_no_real_participants(force=False)
+    db.session.add(
+        Participant(
+            get_experiment(),
+            recruiter_id="generic",
+            worker_id="w",
+            assignment_id="a",
+            hit_id="",
+            mode="debug",
+        )
+    )
+    db.session.commit()
+    with pytest.raises(click.ClickException, match="1 participant"):
+        _check_no_real_participants(force=False)
+    _check_no_real_participants(force=True)
