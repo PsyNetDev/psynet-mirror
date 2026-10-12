@@ -1811,10 +1811,10 @@ def _run_bot_process(index, commands, events, settings):
     log_to_console(level, level if level <= logging.DEBUG else logging.WARNING)
     try:
         # Loads the dashboard credentials as performance-test local does.
-        from psynet.command_line import _load_runtime_server_config
         from psynet.experiment import get_experiment
+        from psynet.utils import load_runtime_server_config
 
-        _load_runtime_server_config()
+        load_runtime_server_config()
         get_experiment()
         raise_open_file_limit()
         tester = PerformanceTester(

@@ -3088,7 +3088,7 @@ def test_test_local_existing_bypasses_scaffold_gate(tmp_path, monkeypatch):
         patch(
             "psynet.command_line._check_experiment_directory"
         ) as mock_check_directory,
-        patch("psynet.command_line._load_runtime_server_config") as load_runtime_config,
+        patch("psynet.command_line.load_runtime_server_config") as load_runtime_config,
         patch("psynet.command_line._check_existing_server_answers"),
         patch("psynet.experiment.get_experiment", return_value=mock_exp),
     ):
@@ -4381,7 +4381,7 @@ def test_terminate_server_process_escalates_when_sendcontrol_raises_oserror():
 
 
 def test_load_runtime_server_config_loads_generated_config():
-    from psynet.command_line import _load_runtime_server_config
+    from psynet.utils import load_runtime_server_config
 
     config = Mock()
     config.ready = True
@@ -4390,7 +4390,7 @@ def test_load_runtime_server_config_loads_generated_config():
         "psynet.command_line.redis_vars.get",
         return_value="/tmp/dallinger_develop/exp",
     ):
-        _load_runtime_server_config(config)
+        load_runtime_server_config(config)
 
     config.load.assert_not_called()
     config.load_from_file.assert_called_once_with(
@@ -4401,7 +4401,7 @@ def test_load_runtime_server_config_loads_generated_config():
 def test_load_runtime_server_config_loads_launch_info_when_runtime_dir_is_missing(
     tmp_path, monkeypatch
 ):
-    from psynet.command_line import _load_runtime_server_config
+    from psynet.utils import load_runtime_server_config
 
     deployment_id = "timeline-demo__mode=debug__launch=test"
     launch_info_dir = tmp_path / "psynet-data" / "launch-data" / deployment_id
@@ -4421,7 +4421,7 @@ def test_load_runtime_server_config_loads_launch_info_when_runtime_dir_is_missin
     monkeypatch.setenv("HOME", str(tmp_path))
 
     with patch("psynet.command_line.redis_vars.get", return_value=None):
-        _load_runtime_server_config(config, deployment_id=deployment_id)
+        load_runtime_server_config(config, deployment_id=deployment_id)
 
     config.load.assert_not_called()
     config.load_from_file.assert_not_called()
@@ -4734,7 +4734,7 @@ def test_performance_test_options_reach_the_tester(options, expected, tmp_path):
 
     with (
         patch("logging.getLogger", return_value=Mock(handlers=[])),
-        patch("psynet.command_line._load_runtime_server_config") as load_config,
+        patch("psynet.command_line.load_runtime_server_config") as load_config,
         patch("psynet.command_line._check_existing_server_answers"),
         patch("psynet.command_line._check_no_real_participants"),
         patch("psynet.command_line._performance_log_directory", return_value=tmp_path),

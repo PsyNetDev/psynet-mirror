@@ -4,6 +4,7 @@ import glob
 import hashlib
 import importlib
 import inspect
+import json
 import logging
 import os
 import random
@@ -246,6 +247,51 @@ def get_config():
     config = dallinger_get_config()
     if not config.ready:
         config.load()
+    return config
+
+
+def load_runtime_server_config(config=None, deployment_id=None):
+    """
+    Return the configuration of the running server, including runtime values.
+
+    Runtime values such as dashboard credentials come from the config of the
+    running debug server, or else from the launch info of ``deployment_id``.
+
+    Parameters
+    ----------
+    config : dallinger.config.Configuration, optional
+        The configuration to extend; by default Dallinger's configuration.
+    deployment_id : str, optional
+        The deployment whose saved launch info to read when no debug server is
+        running.
+
+    Returns
+    -------
+    dallinger.config.Configuration
+    """
+    from .redis import redis_vars
+
+    config = config or get_config()
+    if not config.ready:
+        config.load()
+
+    # The debug server runs from Dallinger's generated development directory,
+    # whose config.txt includes runtime values such as dashboard credentials.
+    server_working_directory = redis_vars.get("server_working_directory", None)
+    if server_working_directory:
+        config.load_from_file(os.path.join(server_working_directory, "config.txt"))
+        return config
+
+    if deployment_id:
+        launch_info_path = (
+            Path("~/psynet-data/launch-data").expanduser()
+            / deployment_id
+            / "launch-info.json"
+        )
+        if launch_info_path.exists():
+            with open(launch_info_path, encoding="utf-8") as f:
+                config.extend(json.load(f))
+
     return config
 
 

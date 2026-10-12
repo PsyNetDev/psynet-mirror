@@ -88,6 +88,7 @@ from .utils import (
     is_in_repo_experiment,
     list_experiment_dirs,
     list_isolated_tests,
+    load_runtime_server_config,
     make_parents,
     pretty_format_seconds,
     require_exp_directory,
@@ -1074,31 +1075,6 @@ def _debug_auto_reload(ctx, archive, no_browsers):
         develop_module.launch_app_and_open_browser = launch_job
 
 
-def _load_runtime_server_config(config=None, deployment_id=None):
-    config = config or get_config()
-    if not config.ready:
-        config.load()
-
-    # The debug server runs from Dallinger's generated development directory,
-    # whose config.txt includes runtime values such as dashboard credentials.
-    server_working_directory = redis_vars.get("server_working_directory", None)
-    if server_working_directory:
-        config.load_from_file(os.path.join(server_working_directory, "config.txt"))
-        return config
-
-    if deployment_id:
-        launch_info_path = (
-            Path("~/psynet-data/launch-data").expanduser()
-            / deployment_id
-            / "launch-info.json"
-        )
-        if launch_info_path.exists():
-            with open(launch_info_path, encoding="utf-8") as f:
-                config.extend(json.load(f))
-
-    return config
-
-
 def patch_dallinger_develop():
     from dallinger.deployment import DevelopmentDeployment
 
@@ -1305,7 +1281,7 @@ def _run_bot(time_factor, dashboard_user, dashboard_password):
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
-    config = _load_runtime_server_config()
+    config = load_runtime_server_config()
     if dashboard_user is not None:
         config.set("dashboard_user", dashboard_user)
     if dashboard_password is not None:
@@ -3161,7 +3137,7 @@ def export_(
         )
         deployment_id = exp_variables["deployment_id"]
         assert len(deployment_id) > 0
-        _load_runtime_server_config(config, deployment_id=deployment_id)
+        load_runtime_server_config(config, deployment_id=deployment_id)
 
     # Only the default location keeps a rotating history of previous exports.
     rotate_history = experiment_class.rotate_export_history if path is None else None
@@ -4033,7 +4009,7 @@ def test__local(
     from psynet.experiment import get_experiment
 
     if existing:
-        _load_runtime_server_config()
+        load_runtime_server_config()
     exp = get_experiment()
 
     if n_bots:
@@ -4761,7 +4737,7 @@ def _run_performance_test_with_existing_server(
 
     log_to_console(logging.DEBUG if debug else logging.INFO)
 
-    _load_runtime_server_config()
+    load_runtime_server_config()
     _check_existing_server_answers()
 
     try:
