@@ -5597,7 +5597,11 @@ def _run_ssh_suite_with_reset(
         else:
             all_results = suite.run(bot_counts, bot_log_file=remote.bot_log_file)
     finally:
-        database_reset.close()
+        # The database must be back before the app starts again.
+        try:
+            database_reset.close()
+        finally:
+            remote.start_stopped_services()
     if json_output:
         _write_suite_json(
             json_output,

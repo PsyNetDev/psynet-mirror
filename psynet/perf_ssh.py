@@ -99,6 +99,8 @@ class RemoteApp:
             f"docker compose -f ~/dallinger/{shlex.quote(app)}/docker-compose.yml"
         )
         self._n_workers = 0
+        # Services that stop() stopped and start() hasn't started again.
+        self._stopped = []
 
     def run(self, cmd):
         """Run ``cmd`` on the server and return its output.
@@ -197,8 +199,10 @@ class RemoteApp:
         """
         self.prepare()
         self._n_workers = int(self._redis("SCARD", "rq:workers") or 0)
+        services = self._server_services()
         print(f"▶ Stopping {self.app}'s server processes...")
-        self.compose("stop", *self._server_services())
+        self._stopped = list(dict.fromkeys(self._stopped + services))
+        self.compose("stop", *services)
 
     def start(self):
         """Start the server processes and pgbouncer again and wait until the server answers.
@@ -212,7 +216,9 @@ class RemoteApp:
             If the server isn't ready within ``_SERVER_READY_TIMEOUT_S``.
         """
         print(f"▶ Starting {self.app}'s server processes...")
-        self.compose("start", *self._server_services())
+        if self._stopped:
+            self.compose("start", *self._stopped)
+        self._stopped = []
         deadline = time.monotonic() + _SERVER_READY_TIMEOUT_S
         health = " ".join(
             [self._compose, "exec -T web python -c", shlex.quote(_HEALTH_PROBE)]
@@ -230,6 +236,33 @@ class RemoteApp:
                     "server processes started; see its logs in Dozzle."
                 )
             time.sleep(2)
+
+    def start_stopped_services(self):
+        """Start the services that :meth:`stop` stopped, if they haven't started again, as after a failed reset.
+
+        If they can't be started, it prints that the app is stopped and the
+        command that starts it by hand. Other errors are only printed, so
+        that the reset's own error is the one that propagates.
+        """
+        if not self._stopped:
+            return
+        command = (
+            f"cd ~/dallinger/{shlex.quote(self.app)} && docker compose start "
+            + " ".join(map(shlex.quote, self._stopped))
+        )
+        try:
+            self.start()
+        except (Exception, KeyboardInterrupt) as e:
+            if self._stopped:
+                print(
+                    f"✗ {self.app} is stopped: its server processes could not be "
+                    f"started again ({e}). Start them on {self.server} with:\n"
+                    f"    {command}"
+                )
+            else:
+                print(f"Warning: {e}")
+            if isinstance(e, KeyboardInterrupt):
+                raise
 
     def clear_job_queues(self):
         """Delete the RQ queues, jobs and worker registrations from the app's Redis."""

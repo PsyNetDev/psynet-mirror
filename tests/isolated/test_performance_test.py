@@ -1498,6 +1498,8 @@ def test_a_remote_reset_restores_only_the_apps_database_in_its_container():
         if "DROP DATABASE" in cmd and not attempts:
             attempts.append(cmd)
             return 1, 'ERROR:  55006: database "my-app" is being accessed\n'
+        if "datname = 'my-app'" in cmd:
+            return "1\n"
         if "DATABASE_URL" in cmd:
             return "my-app\n"
         if "pg_database_size" in cmd:
@@ -1524,7 +1526,11 @@ def test_a_remote_reset_restores_only_the_apps_database_in_its_container():
     sql = [c for c in commands if " psql " in c]
     assert sql and all("docker exec" in c and "my-app_postgresql" in c for c in sql)
     assert [c for c in sql if "DROP DATABASE" in c] == attempts * 2
-    assert any(f'CREATE DATABASE "my-app" TEMPLATE "{_APP_SNAPSHOT}"' in c for c in sql)
+    assert any(
+        f'CREATE DATABASE "my-app__restore" TEMPLATE "{_APP_SNAPSHOT}"' in c
+        for c in sql
+    )
+    assert any('ALTER DATABASE "my-app__restore" RENAME TO "my-app"' in c for c in sql)
     assert any("redis-cli --scan --pattern" in c for c in commands)
     assert reset.snapshot_rows == {"participant": 3}
     assert server.stop.call_count == server.start.call_count == 1
