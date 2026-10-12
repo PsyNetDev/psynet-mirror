@@ -425,6 +425,23 @@ def test_arrival_minutes_spreads_bot_slots_evenly_over_the_window():
     assert all(t - started[0] >= 0.2 * i - 0.01 for i, t in enumerate(started))
 
 
+def test_arrival_minutes_starts_a_single_bot_slot():
+    import time
+
+    tester = PerformanceTester(
+        authenticated_session=Mock(), base_url="http://x", arrival_minutes=1
+    )
+    bot_state = _BotState()
+    start_slot = Mock(
+        side_effect=lambda: setattr(bot_state, "first_bot_initialized", True)
+    )
+
+    start = time.time()
+    tester._run_monitoring_loop(1, bot_state, start_slot, start, start + 0.5)
+
+    start_slot.assert_called_once()
+
+
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
 )
