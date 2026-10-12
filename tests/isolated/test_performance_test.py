@@ -517,6 +517,11 @@ def test_database_reset_restores_the_snapshot_and_drops_only_its_own_databases(
         assert participants() == 1
         assert server.stop.call_count == server.start.call_count == 2
         assert redis_vars.get("launch_finished") is True
+        # A reset that failed after dropping the database left only the copy.
+        with perf_reset._maintenance_cursor(scratch_url) as cursor:
+            cursor.execute(f'ALTER DATABASE "{scratch}" RENAME TO "{scratch}__new"')
+        reset()
+        assert participants() == 1
         reset.close()
         assert perf_reset.find_snapshot(reset.snapshot, scratch_url) is None
 
@@ -562,7 +567,9 @@ def test_database_reset_restores_the_snapshot_and_drops_only_its_own_databases(
     [
         ("postgresql://u:p@localhost/dallinger_test_5000", True),
         ("postgresql:///dallinger?host=/tmp", True),
+        ("postgresql:///dallinger", True),
         ("postgresql://u:p@localhost/postgres", False),
+        ("postgresql://u:p@localhost/template1", False),
         ("postgresql://u:p@db.example.org/dallinger", False),
     ],
 )

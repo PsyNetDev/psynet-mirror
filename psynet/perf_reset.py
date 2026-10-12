@@ -64,13 +64,14 @@ SNAPSHOT_DIRECTORY = Path(".deploy") / "performance_snapshots"
 # Async processes left from pre-filling would never run after a reset,
 # because the reset deletes their RQ jobs.
 _ASYNC_DRAIN_TIMEOUT_S = 3600
-_IN_USE_ATTEMPTS = 5
+_IN_USE_ATTEMPTS = 10
 _INSUFFICIENT_PRIVILEGE = "42501"
 _OBJECT_IN_USE = "55006"
 _MAX_NAME_LENGTH = 63
 _PREFILL_NAME = re.compile(r"psynet_prefill_(?P<code>[0-9a-f]{12})_n\d+_k\d+")
 _SYSTEM_DATABASES = {"postgres", "template0", "template1"}
 _LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
+_SETTINGS_FILES = ("config.txt", "requirements.txt", "constraints.txt")
 
 
 def check_resettable_database(database_url):
@@ -80,7 +81,8 @@ def check_resettable_database(database_url):
     ------
     ValueError
         If the database is a PostgreSQL system database or isn't on this
-        computer, for example a shared one with ``PSYNET_TEST_ENVIRONMENT=shared``.
+        computer. A local database outside the isolated test environment,
+        as with ``PSYNET_TEST_ENVIRONMENT=shared``, is allowed.
     """
     from sqlalchemy.engine import make_url
 
@@ -97,11 +99,20 @@ def check_resettable_database(database_url):
 
 
 def experiment_code_key():
-    """Return a short hash of the experiment's authored files and the PsyNet version.
+    """Return a short hash of the experiment's files and the PsyNet and Dallinger versions.
 
     The files are those that a deployment would copy, without the ones Git
-    ignores, such as generated boilerplate.
+    ignores, such as generated boilerplate, plus the ``_SETTINGS_FILES``
+    that exist: deployments regenerate those, so the deployment plan leaves
+    them out, but local runs use them as they are.
+
+    Raises
+    ------
+    ValueError
+        If the experiment has no ``deploy.toml``.
     """
+    import dallinger.version
+
     import psynet
     from psynet.deployment_info import authored_deployment_files
 
@@ -110,8 +121,14 @@ def experiment_code_key():
         raise ValueError(
             "Caching pre-fill snapshots needs the experiment's deploy.toml."
         )
-    digest = hashlib.sha256(psynet.__version__.encode())
-    for destination, source in files:
+    listed = {destination for destination, _ in files}
+    files += [(name, name) for name in _SETTINGS_FILES if name not in listed]
+    digest = hashlib.sha256(
+        f"{psynet.__version__}\0{dallinger.version.__version__}".encode()
+    )
+    for destination, source in sorted(files):
+        if not os.path.isfile(source):
+            continue
         digest.update(f"\0{destination}\0".encode())
         with open(source, "rb") as f:
             while chunk := f.read(1 << 20):
@@ -169,7 +186,8 @@ def list_snapshots(database_url, directory=SNAPSHOT_DIRECTORY):
         )
         snapshots = [row for row in cursor.fetchall() if snapshot_code_key(row[0])]
     for archive in sorted(Path(directory).glob("psynet_prefill_*.dump")):
-        snapshots.append((str(archive), archive.stat().st_size, None))
+        if snapshot_code_key(archive.name):
+            snapshots.append((str(archive), archive.stat().st_size, None))
     return snapshots
 
 
@@ -271,12 +289,33 @@ class DatabaseReset:
             else:
                 self._restore()
             self._clear_job_queues()
-        finally:
-            self._start_server()
+        except BaseException:
+            self._restart_after_failure()
+            raise
+        self._start_server()
         if self.snapshot_rows is None:
             self.snapshot_rows = self._count_rows()
             rows = ", ".join(f"{t} {n:,}" for t, n in self.snapshot_rows.items())
             logger.info(f"Snapshot {self.snapshot}: {rows} rows.")
+
+    def _restart_after_failure(self):
+        """Start the server after a failed reset if its database is complete.
+
+        A failure to start is only logged, so that the reset's own error is
+        the one that propagates.
+        """
+        if not self._database_complete:
+            logger.warning(
+                warning(
+                    f"The experiment server stays stopped, because the reset "
+                    f"failed and {self.database} may be incomplete."
+                )
+            )
+            return
+        try:
+            self._start_server()
+        except Exception:
+            logger.exception("Could not restart the experiment server.")
 
     def close(self):
         """Drop a snapshot taken here unless it is kept, once the database is complete."""
@@ -372,6 +411,22 @@ class DatabaseReset:
                 f"Kept the pre-fill snapshot {name}; later runs with the same "
                 "experiment code and pre-fill settings start from it."
             )
+            self._log_other_snapshots()
+
+    def _log_other_snapshots(self):
+        """List the other kept pre-fill snapshots, which take disk space until dropped."""
+        others = [
+            f"{other} ({size / 1e6:,.0f} MB)"
+            for other, size, _ in list_snapshots(
+                self.database_url, self._snapshot_directory
+            )
+            if _snapshot_stem(other) != self._keep_as
+        ]
+        if others:
+            logger.info(
+                f"Other pre-fill snapshots: {', '.join(others)}. Drop those you "
+                "no longer need with 'psynet performance-test snapshots --drop NAME'."
+            )
 
     def _dump(self, name):
         """Write a ``pg_dump`` archive of the database; return its path."""
@@ -403,23 +458,32 @@ class DatabaseReset:
         else:
             copy = self.database[: _MAX_NAME_LENGTH - 5] + "__new"
             with self._connect() as cursor:
-                drop_database(cursor, copy)
+                # A reset that failed after dropping the experiment database
+                # left a complete copy, which only needs renaming.
+                if _database_exists(cursor, self.database) or not _database_exists(
+                    cursor, copy
+                ):
+                    drop_database(cursor, copy)
+                    self._while_in_use(
+                        cursor,
+                        self.snapshot,
+                        sql.SQL("CREATE DATABASE {} TEMPLATE {}").format(
+                            sql.Identifier(copy), sql.Identifier(self.snapshot)
+                        ),
+                    )
+                    self._while_in_use(
+                        cursor,
+                        self.database,
+                        sql.SQL("DROP DATABASE IF EXISTS {}").format(
+                            sql.Identifier(self.database)
+                        ),
+                    )
                 self._while_in_use(
                     cursor,
-                    self.snapshot,
-                    sql.SQL("CREATE DATABASE {} TEMPLATE {}").format(
-                        sql.Identifier(copy), sql.Identifier(self.snapshot)
-                    ),
-                )
-                self._while_in_use(
-                    cursor,
-                    self.database,
-                    sql.SQL("DROP DATABASE {}").format(sql.Identifier(self.database)),
-                )
-                cursor.execute(
+                    copy,
                     sql.SQL("ALTER DATABASE {} RENAME TO {}").format(
                         sql.Identifier(copy), sql.Identifier(self.database)
-                    )
+                    ),
                 )
         self._database_complete = True
 

@@ -381,24 +381,36 @@ the same routes as participants, so the data is what the experiment itself
 stores, but it takes time: at about 250 requests per participant, a few
 hundred requests per second fill 1,500 participants in about an hour.
 
+If any pre-fill bot raises an error, the run stops without keeping a
+snapshot, because the data would differ from what participants leave.
+Participants that the experiment fails by design, for example at a
+prescreen, are only counted.
+
 PsyNet keeps the pre-filled snapshot and prints its name, which comes from
-the experiment's files (those a deployment copies, without the ones Git
-ignores), the PsyNet version and the pre-fill settings. A later run with the
-same files, version and settings starts from that snapshot instead of
-pre-filling again; ``--fresh-prefill`` pre-fills again and replaces it. Any
-change to the experiment's files means a new pre-fill. If a change can't
-affect the data, such as a fixed typo, start from the old snapshot with
+a hash of the experiment's files, the PsyNet and Dallinger versions and the
+pre-fill settings. The files are those a deployment copies, without the ones
+Git ignores, plus ``config.txt``, ``requirements.txt`` and
+``constraints.txt`` where they exist. A later run with the same files,
+versions and settings starts from that snapshot instead of pre-filling
+again; ``--fresh-prefill`` pre-fills again and replaces it. Any change to
+those files, even a comment, means a new pre-fill. If a change can't affect
+the data, such as a fixed typo, start from the old snapshot with
 ``--from-snapshot <name>``, which only warns that the code differs.
 
 Pre-fill snapshots stay on the database server, or in
-``.deploy/performance_snapshots``, until you drop them. List them, with
-their sizes and the experiment that made them, and drop them with:
+``.deploy/performance_snapshots``, until you drop them; after keeping a new
+one, PsyNet lists the others and their sizes. List them, with their sizes
+and the experiment that made them, and drop them with:
 
 .. code-block:: bash
 
     psynet performance-test snapshots
     psynet performance-test snapshots --drop psynet_prefill_0123456789ab_n1500_k50
     psynet performance-test snapshots --drop-all
+
+``--drop-all`` drops this experiment's snapshots: those made from its
+current files, and its archives. Add ``--all-experiments`` to drop every
+pre-fill snapshot database on the server.
 
 To start from real data instead, for example from a pilot, export the
 pilot with ``psynet export``, launch the experiment from the export with

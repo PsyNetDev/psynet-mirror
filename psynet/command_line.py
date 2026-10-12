@@ -4903,7 +4903,7 @@ def _database_reset(reset, server, experiment_label, bot_log_file):
     if from_snapshot:
         perf_reset.check_snapshot(from_snapshot, database_url)
         key = perf_reset.snapshot_code_key(from_snapshot)
-        if key is not None and key != perf_reset.experiment_code_key():
+        if key is not None and key != _current_code_key():
             print(
                 f"Warning: {from_snapshot} was pre-filled with different "
                 "experiment code or PsyNet version."
@@ -5176,8 +5176,19 @@ def _run_performance_test_with_new_server(
     metavar="SNAPSHOT",
     help="Drop this pre-fill snapshot; repeat to drop several.",
 )
-@click.option("--drop-all", is_flag=True, help="Drop every pre-fill snapshot listed.")
-def performance_test__snapshots(drop, drop_all):
+@click.option(
+    "--drop-all",
+    is_flag=True,
+    help="""
+    Drop this experiment's pre-fill snapshots: the databases made from its
+    current code, and its pg_dump archives.""",
+)
+@click.option(
+    "--all-experiments",
+    is_flag=True,
+    help="With --drop-all, drop every experiment's pre-fill snapshot databases.",
+)
+def performance_test__snapshots(drop, drop_all, all_experiments):
     """
     List the pre-fill snapshots of ``performance-test local``, or drop them.
 
@@ -5186,17 +5197,40 @@ def performance_test__snapshots(drop, drop_all):
     """
     from dallinger.db import db_url
 
-    from psynet.perf_reset import drop_snapshot, list_snapshots
+    from psynet.perf_reset import (
+        check_resettable_database,
+        drop_snapshot,
+        list_snapshots,
+        snapshot_code_key,
+    )
 
+    if all_experiments and not drop_all:
+        raise click.UsageError("--all-experiments needs --drop-all.")
     snapshots = list_snapshots(db_url)
-    names = [name for name, _, _ in snapshots] if drop_all else drop
+    names = list(drop)
+    if drop_all:
+        key = None if all_experiments else _current_code_key()
+        names += [
+            name
+            for name, _, _ in snapshots
+            if all_experiments
+            or name.endswith(".dump")
+            or snapshot_code_key(name) == key
+        ]
+    if names:
+        try:
+            check_resettable_database(db_url)
+        except ValueError as e:
+            raise click.ClickException(str(e)) from e
     for name in names:
         try:
             drop_snapshot(name, db_url)
         except (ValueError, OSError) as e:
             raise click.ClickException(str(e)) from e
         print(f"Dropped {name}")
-    if names:
+    if drop or drop_all:
+        if not names:
+            print("No pre-fill snapshots to drop.")
         return
     if not snapshots:
         print("No pre-fill snapshots.")
@@ -5205,6 +5239,16 @@ def performance_test__snapshots(drop, drop_all):
             f"{name}  {size / 1e6:,.0f} MB"
             + (f"  {description}" if description else "")
         )
+
+
+def _current_code_key():
+    """Return the experiment's pre-fill cache key, or ``None`` without a deploy.toml."""
+    from psynet.perf_reset import experiment_code_key
+
+    try:
+        return experiment_code_key()
+    except ValueError:
+        return None
 
 
 @performance_test.command("ssh")

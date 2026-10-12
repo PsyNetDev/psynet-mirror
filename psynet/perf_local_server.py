@@ -181,7 +181,7 @@ def _wait_until_server_ready(process, n_workers, log_path):
 
 
 def _stop_process_group(process):
-    """Interrupt ``process`` and its group, escalating if it doesn't exit."""
+    """Interrupt ``process`` and its group, escalating until the whole group exits."""
     for sig, timeout_s in (
         (signal.SIGINT, 15),
         (signal.SIGTERM, 5),
@@ -190,9 +190,25 @@ def _stop_process_group(process):
         try:
             os.killpg(process.pid, sig)
         except ProcessLookupError:
-            pass
-        try:
-            process.wait(timeout_s)
-            return
-        except subprocess.TimeoutExpired:
-            continue
+            break
+        deadline = time.monotonic() + timeout_s
+        while _group_alive(process) and time.monotonic() < deadline:
+            time.sleep(0.2)
+        if not _group_alive(process):
+            break
+    else:
+        raise click.ClickException(
+            f"The experiment server (process group {process.pid}) did not stop, "
+            "even after SIGKILL."
+        )
+    process.wait()
+
+
+def _group_alive(process):
+    """Return whether any process of ``process``'s group still runs."""
+    process.poll()
+    try:
+        os.killpg(process.pid, 0)
+    except ProcessLookupError:
+        return False
+    return True

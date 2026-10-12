@@ -387,6 +387,13 @@ def prefill_database(n_participants, n_bots, bot_log_file=None):
     until ``n_participants`` bots have taken the experiment. The bots go
     through the same routes as participants, so the data is what the
     experiment itself stores.
+
+    Raises
+    ------
+    RuntimeError
+        If any bot raised, because the data would then differ from what
+        participants leave. Participants that the experiment fails, for
+        example at a prescreen, are only reported.
     """
     import itertools
 
@@ -432,11 +439,22 @@ def prefill_database(n_participants, n_bots, bot_log_file=None):
         while _join_threads(threads, timeout_s=30):
             logger.info(f"Pre-fill: {done.total():,} of {n_participants:,} bots done")
     errors = done.total() - done["finished"]
-    logger.info(f"Pre-fill: {done.total():,} bots done.")
     if errors:
         del done["finished"]
         kinds = ", ".join(f"{n:,} {kind}" for kind, n in done.most_common())
-        logger.warning(warning(f"{_plural(errors, 'pre-fill bot')} failed ({kinds})."))
+        raise RuntimeError(
+            f"{_plural(errors, 'pre-fill bot')} raised errors ({kinds}), so the "
+            "pre-filled data is not what participants would leave; see the bot "
+            "log. No snapshot was taken."
+        )
+    from psynet.participant import Participant
+
+    n_failed = Participant.query.filter(Participant.failed.is_(True)).count()
+    db.session.rollback()
+    logger.info(
+        f"Pre-fill: {done.total():,} bots done; the experiment failed "
+        f"{_plural(n_failed, 'participant')}."
+    )
 
 
 def raise_open_file_limit():
@@ -1749,7 +1767,16 @@ class _BotProcesses:
         """Have the children close their pooled database connections, and wait for them."""
         for commands in self._commands:
             commands.put(("release",))
-        self._collect_replies("released", timeout_s)
+        replies = self._collect_replies("released", timeout_s)
+        silent = [i + 1 for i in range(len(self._processes)) if i not in replies]
+        if silent:
+            logger.warning(
+                warning(
+                    f"Bot processes {silent} did not confirm within {timeout_s} s "
+                    "that they closed their database connections; the reset "
+                    "terminates any that remain."
+                )
+            )
 
     def close(self, timeout_s=10):
         """Ask the children to exit, terminating any that don't within ``timeout_s``."""
