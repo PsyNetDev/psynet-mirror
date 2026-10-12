@@ -1396,6 +1396,17 @@ def test_a_stray_error_is_reported_but_does_not_cap_capacity():
     assert "worker_greenlets_per_process = 1" in text
 
 
+def test_queue_advice_says_when_no_worker_processes_ran():
+    results = [
+        _base_result(n_bots=10),
+        _base_result(n_bots=20, q_delay_p95=36.9, n_rq_workers=0, n_rq_job_slots=0),
+    ]
+
+    text = _join(format_capacity_summary(results))
+    assert "no worker processes were running, so they couldn't run" in text
+    assert "Raise the worker_processes" not in text
+
+
 def test_capacity_summary_does_not_suggest_a_cap_when_bots_started_too_slowly():
     results = [
         _base_result(n_bots=80, p95_response_time=0.085),
@@ -1809,14 +1820,19 @@ def test_eperm_from_the_server_group_means_stopped_only_once_its_leader_exited(
             process.wait.assert_not_called()
 
 
-def test_restarts_rerun_heroku_local_with_the_first_start_secret_key(capsys, tmp_path):
+def _restart_local_server(server_dir, tmp_path, **config):
+    """Start and restart a ``RestartableLocalServer`` with stubbed processes.
+
+    Returns the mocks of the first start and of the restart's ``Popen``.
+    """
     from psynet.perf_local_server import RestartableLocalServer
 
-    config = {"base_port": 5000, "worker_processes": 3, "clock_on": True}
+    config = {"base_port": 5000, **config}
     start = Mock(return_value={"tmp_log_path": str(tmp_path / "server.log")})
     with (
         patch("psynet.command_line._start_local_server_and_wait_for_ready", start),
-        patch("psynet.redis.redis_vars.get", return_value="/srv/exp"),
+        patch("psynet.command_line._stop_server"),
+        patch("psynet.redis.redis_vars.get", return_value=server_dir),
         patch(
             "psynet.utils.load_runtime_server_config",
             return_value=Mock(get=lambda key, default=None: config.get(key, default)),
@@ -1826,13 +1842,39 @@ def test_restarts_rerun_heroku_local_with_the_first_start_secret_key(capsys, tmp
         patch("psynet.perf_local_server.subprocess.Popen") as popen,
     ):
         RestartableLocalServer(restartable=True).start()
+    return start, popen
+
+
+def test_restarts_rerun_heroku_local_with_the_first_start_secret_key(capsys, tmp_path):
+    (tmp_path / "Procfile").touch()
+    start, popen = _restart_local_server(
+        str(tmp_path), tmp_path, worker_processes=3, clock_on=True
+    )
 
     key = start.call_args.kwargs["extra_env"]["FLASK_SECRET_KEY"]
     args, kwargs = popen.call_args
     assert args[0] == ["heroku", "local", "-p", "5000", "web=1,worker=3,clock"]
-    assert kwargs["cwd"] == "/srv/exp"
+    assert kwargs["cwd"] == str(tmp_path)
     assert kwargs["env"]["FLASK_SECRET_KEY"] == key
     assert key not in capsys.readouterr().out
+
+
+def test_restarts_start_no_clock_process_without_clock_on(tmp_path):
+    (tmp_path / "Procfile").touch()
+    _, popen = _restart_local_server(str(tmp_path), tmp_path, clock_on=False)
+    assert popen.call_args.args[0][-1] == "web=1,worker=1"
+
+
+@pytest.mark.parametrize("server_dir", [None, "missing", "no_procfile"])
+def test_restarts_need_the_server_directory_and_its_procfile(server_dir, tmp_path):
+    import click
+
+    if server_dir:
+        server_dir = str(tmp_path / server_dir)
+    (tmp_path / "no_procfile").mkdir()
+    with pytest.raises(click.ClickException, match="Procfile") as error:
+        _restart_local_server(server_dir, tmp_path)
+    assert repr(server_dir) in error.value.message
 
 
 def test_database_copies_need_twice_the_database_size_free(
