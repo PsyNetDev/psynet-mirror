@@ -868,9 +868,12 @@ def render_performance_result(
         errors = int(row.get("request_errors") or 0) + int(row.get("bot_errors") or 0)
         failures = capacity_failures(result, limits)
         verdict = f"No: {', '.join(failures)}" if failures else "Yes"
+        target = str(row.get("n_bots", "")) + (
+            " (confirmation)" if result.confirmation else ""
+        )
         body.append(
             "<tr>"
-            f"<td>{html.escape(str(row.get('n_bots', '')))}</td>"
+            f"<td>{html.escape(target)}</td>"
             f"<td>{html.escape(str(row.get('total_bots_started', '')))}</td>"
             f"<td>{html.escape(str(row.get('bots_succeeded', '')))}</td>"
             f"<td>{html.escape(str(row.get('total_requests', '')))}</td>"

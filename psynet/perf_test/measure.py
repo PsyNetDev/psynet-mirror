@@ -185,8 +185,9 @@ def phase_stats(
     tuple of (dict, dict)
         For the start-up and the steady state: ``key_requests``,
         ``request_errors`` (not counting busy or stale responses),
-        ``p95_response_time`` and ``q_delay_p95``, the last two ``None``
-        without measurements.
+        ``p95_response_time``, ``async_processes`` (that started by
+        ``ended_at``) and ``q_delay_p95``; the response and queue times are
+        ``None`` without measurements.
     """
     from dallinger import db
     from sqlalchemy import func
@@ -216,9 +217,11 @@ def phase_stats(
         .group_by(in_steady_state)
     }
     enqueued_in_steady_state = AsyncProcess.time_enqueued >= boundary
-    queue_p95 = dict(
-        db.session.query(
+    queues = {
+        row[0]: row[1:]
+        for row in db.session.query(
             enqueued_in_steady_state,
+            func.count(AsyncProcess.id),
             func.percentile_cont(0.95).within_group(AsyncProcess.queue_delay),
         )
         .filter(
@@ -227,17 +230,18 @@ def phase_stats(
             AsyncProcess.queue_delay.isnot(None),
         )
         .group_by(enqueued_in_steady_state)
-        .all()
-    )
+    }
     phases = []
     for steady in (False, True):
         row = requests.get(steady)
+        n_processes, queue_p95 = queues.get(steady, (0, None))
         phases.append(
             dict(
                 key_requests=row.count if row else 0,
                 request_errors=row.errors if row else 0,
                 p95_response_time=_as_float(row.p95) if row else None,
-                q_delay_p95=_as_float(queue_p95.get(steady)),
+                async_processes=n_processes,
+                q_delay_p95=_as_float(queue_p95),
             )
         )
     return tuple(phases)

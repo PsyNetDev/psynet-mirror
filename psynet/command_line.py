@@ -4235,8 +4235,20 @@ _test_options["performance_n_bots"] = click.option(
     95th-percentile response time under --max-p95-ms and async queue waits
     under --max-queue-p95-s, with at most 0.1% of requests failing, 1%
     answered as busy or stale, 1% of bots failing, and 1% of participants
-    failed by the experiment for waiting too long.
+    failed by the experiment for waiting too long. The search's tests are
+    short (see --duration-minutes), so a confirmation test then runs the
+    suggested participant cap with bots arriving over one session, for two
+    sessions (at most an hour), and decides whether the cap is confirmed;
+    see --no-confirm.
     If not specified, will default to Experiment.test_n_bots""",
+)
+
+_test_options["performance_no_confirm"] = click.option(
+    "--no-confirm",
+    is_flag=True,
+    help="""
+    With --n-bots auto, skip the confirmation test at the suggested cap,
+    which can take up to an hour. It is always skipped with --time-factor 0.""",
 )
 
 
@@ -4342,7 +4354,10 @@ _test_options["duration_minutes"] = click.option(
     up to whole minutes, at most 30 minutes and at least
     Experiment.test_duration_minutes (1 minute). A test shorter than one
     session only sees the start of the study, when every bot arrives at once,
-    and the suite warns about it.""",
+    and the suite warns about it. With --n-bots auto this sets the length of
+    the search's tests, which default to one session, at most 5 minutes, so
+    that a search of up to 12 tests takes at most an hour; the confirmation
+    test sets its own length.""",
 )
 
 _test_options["performance_json_output"] = click.option(
@@ -4357,10 +4372,13 @@ _test_options["performance_json_output"] = click.option(
     (the database snapshot that each test started from and its rows, with
     --reset-database), options (n_bots_sweep, capacity_search, max_p95_s,
     max_queue_p95_s, duration_minutes, estimated_duration_minutes,
-    stagger_interval_s, arrival_minutes, time_factor, bot_processes,
-    reset_database, prefill_participants, from_snapshot),
-    and results (one entry per bot count tested, with all
-    metrics).
+    session_minutes, stagger_interval_s, arrival_minutes, time_factor,
+    bot_processes, reset_database, prefill_participants, from_snapshot,
+    and with --n-bots auto confirm and confirmation_skipped),
+    and results (one entry per test, with all metrics, including its
+    duration_minutes, arrival_minutes, session_minutes, startup_phase and
+    steady_state_phase, and confirmation for the test that confirms a
+    capacity search's cap).
     Useful for downstream consumption (e.g. benchmarking tools like asv).""",
 )
 
@@ -4587,6 +4605,7 @@ def performance_test(ctx):
 @_test_options["performance_time_factor"]
 @_test_options["duration_minutes"]
 @_test_options["performance_arrival_minutes"]
+@_test_options["performance_no_confirm"]
 @_test_options["performance_max_p95_ms"]
 @_test_options["performance_max_queue_p95_s"]
 @_test_options["performance_json_output"]
@@ -4737,6 +4756,7 @@ def _run_performance_test_with_existing_server(
     time_factor=None,
     duration_minutes=None,
     arrival_minutes=None,
+    no_confirm=False,
     max_p95_ms=None,
     max_queue_p95_s=None,
     bot_processes=None,
@@ -4790,7 +4810,9 @@ def _run_performance_test_with_existing_server(
     estimated_duration_minutes = exp.estimated_duration_in_minutes
     if duration_minutes is None:
         duration_minutes = default_duration_minutes(
-            estimated_duration_minutes * time_factor, exp.test_duration_minutes
+            estimated_duration_minutes * time_factor,
+            exp.test_duration_minutes,
+            search=find_capacity,
         ) + (arrival_minutes or 0)
     tester = PerformanceTester(
         authenticated_session=exp.authenticated_session,
@@ -4834,7 +4856,9 @@ def _run_performance_test_with_existing_server(
     started_at = datetime.datetime.now().isoformat(timespec="seconds")
     try:
         if find_capacity:
-            all_results = suite.find_capacity(bot_log_file=bot_log_file)
+            all_results = suite.find_capacity(
+                bot_log_file=bot_log_file, confirm=not no_confirm
+            )
         else:
             all_results = suite.run(bot_counts, bot_log_file=bot_log_file)
     finally:
@@ -4860,6 +4884,7 @@ def _run_performance_test_with_existing_server(
             "max_queue_p95_s": limits.max_queue_p95_s,
             "duration_minutes": tester.duration_minutes,
             "estimated_duration_minutes": tester.estimated_duration_minutes,
+            "session_minutes": tester.session_minutes,
             "stagger_interval_s": tester.stagger_interval_s,
             "arrival_minutes": tester.arrival_minutes,
             "time_factor": tester.time_factor,
@@ -4868,6 +4893,9 @@ def _run_performance_test_with_existing_server(
             "prefill_participants": reset.get("prefill_participants"),
             "from_snapshot": reset.get("from_snapshot"),
         }
+        if find_capacity:
+            options["confirm"] = not no_confirm
+            options["confirmation_skipped"] = suite.confirmation_skipped
         _write_json_results(
             json_output,
             metadata=metadata,
@@ -5286,6 +5314,7 @@ def _current_code_key():
 @_test_options["performance_time_factor"]
 @_test_options["duration_minutes"]
 @_test_options["performance_arrival_minutes"]
+@_test_options["performance_no_confirm"]
 @_test_options["performance_max_p95_ms"]
 @_test_options["performance_max_queue_p95_s"]
 @_test_options["performance_json_output"]
@@ -5429,6 +5458,7 @@ def audit_simulate(ctx, n_bots=None):
 @_test_options["performance_time_factor"]
 @_test_options["duration_minutes"]
 @_test_options["performance_arrival_minutes"]
+@_test_options["performance_no_confirm"]
 @_test_options["performance_max_p95_ms"]
 @_test_options["performance_max_queue_p95_s"]
 @_test_options["performance_bot_processes"]

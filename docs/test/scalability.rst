@@ -78,6 +78,8 @@ Controlling the load
     practical, and at least ``Experiment.test_duration_minutes`` (one
     minute). A test shorter than one session sees only the start of the
     study, when all the bots arrive at once, and the suite warns about it.
+    With ``--n-bots auto`` the search's tests are shorter by default (see
+    :ref:`performance_testing_capacity`).
 
 ``--stagger``
     The average delay, in seconds, between starting bots, so that they arrive
@@ -206,7 +208,7 @@ well, so you don't have to guess a list of counts:
 
 .. code-block:: bash
 
-    psynet performance-test local --n-bots auto --time-factor 1 --duration-minutes 3
+    psynet performance-test local --n-bots auto --time-factor 1
 
 A test counts as within capacity if these stay within their limits:
 
@@ -255,6 +257,27 @@ request-error or queue limits only in its start-up, the summary says so. If
 your participants will arrive gradually, test that with ``--arrival-minutes``
 rather than relying on the steady state alone.
 
+The search's tests are short and their bots arrive together, so for most
+studies they see only the start-up. In an experiment with async processes,
+such as audio analysis, or with long timeline holds, every bot reaches each
+process and each hold at the same moment, so queue waits are longer than
+when participants arrive spread out, and the search underestimates the
+capacity. The search therefore ends with a *confirmation test*: it runs the
+participant cap it suggests (80% of the capacity), with bots arriving
+evenly over one participant session and the test lasting two sessions, at
+most an hour, so that the test reaches its steady state. A study over 30
+minutes gets less than two sessions, and one over about an hour no steady
+state, so for long studies also run a long test of the cap by hand. With your own
+``--arrival-minutes``, the confirmation keeps that window and lasts a
+session longer. If the confirmation test stays within the limits, the
+summary reports the cap as confirmed. If not, it reports the cap as not
+confirmed, shows which limits the start-up and the steady state exceeded,
+and suggests a lower cap, scaled by how far the test overshot its limits
+(but at least half the tested cap), with the command to check it. It does
+not search again. Add ``--no-confirm`` to skip the confirmation test; it is
+always skipped with ``--time-factor 0``, whose pace isn't realistic, and
+when the search suggests no cap.
+
 The summary names the limit that a failing test exceeded. If the queue limit
 is what caps capacity, add worker processes with the ``num_dynos_worker``
 config variable (see :doc:`/reference/configuration`) before resorting to a
@@ -275,10 +298,12 @@ run at once.
 The search starts at 10 bots and doubles the count until a test fails, then
 halves the gap between the largest passing and smallest failing counts until
 they are within 10% of each other. It stops at 2,000 bots. For a server that
-handles more than about 100 bots this takes 8 to 12 tests, so a search with
-``--duration-minutes 3`` takes 25 to 40 minutes, and one of a 12-minute study
-at the default 18 minutes per test takes 2.5 to 4 hours; the run prints its
-upper bound when it starts.
+handles more than about 100 bots this takes 8 to 12 tests. By default each
+search test lasts one participant session, rounded up to whole minutes, at
+most 5 minutes and at least ``Experiment.test_duration_minutes``;
+``--duration-minutes`` sets another length. A search of a 12-minute study
+therefore takes 40 to 60 minutes, and its confirmation test another 24
+minutes. The run prints its upper bound when it starts.
 
 When bots fail, the report lists what went wrong, for example
 ``HTTP 500 on /response``. The request error count only includes errors that
@@ -287,10 +312,14 @@ them under *Bot errors* instead.
 
 The summary at the end of every run reports the capacity it found and, once a
 larger bot count has exceeded the limits, suggests capping the number of
-participants taking part at once at 80% of it, for example::
+participants taking part at once at 80% of it. After a confirmation test the
+cap comes from that test, for example::
 
     Capacity: about 160 concurrent bots kept p95 response time under 500 ms, p95 async queue wait under 5 s and at most 0.1% of requests failing (1 always allowed), 1% of requests answered busy or stale (10 always allowed), 1% of bots failing and 1% of participants failed by the experiment for waiting too long; 170 did not (p95 response time 622 ms).
-    Cap concurrent participants at about 128 (80% of 160).
+    Confirmed: the 128-bot confirmation test (bots arriving over 12 min, 24 min long) kept the same limits. Cap concurrent participants at about 128.
+
+Without a confirmation test, the second line reads ``Cap concurrent
+participants at about 128 (80% of 160).``
 
 For rough capacities of common server sizes, based on one test on a real
 server, see :ref:`choosing_server_size`.
@@ -298,10 +327,26 @@ server, see :ref:`choosing_server_size`.
 Run the search on the server you will deploy to, with ``--time-factor 1`` so
 that bots work at a realistic pace; bots with ``--time-factor 0`` load the
 server far more than people do. Each test's measurement window includes the
-time bots take to start, so keep the default ``--duration-minutes``, or at
-least one participant session, for steady results. A test whose bots didn't all start within the
+time bots take to start, so for steady results of a single bot count keep
+the default ``--duration-minutes``, or at least one participant session. A test whose bots didn't all start within the
 window counts as exceeding the limits, and the summary warns when starting
 the bots took more than a quarter of the test.
+
+With ``--json-output``, each result records the test's
+``duration_minutes``, ``arrival_minutes`` and ``session_minutes`` (the
+estimated session times ``--time-factor``), its ``startup_phase`` and
+``steady_state_phase`` metrics (including the number of async processes in
+each), and per async process label, in ``process_stats``, how long the
+processes took and waited. The confirmation test has ``confirmation`` set,
+and the options record ``confirmation_skipped`` with the reason it didn't
+run. When the search tests and a long test with spread-out arrivals
+disagree, trust the long test. For async processes that keep the CPU busy,
+you can also check worker throughput by hand: one worker process keeps up
+with about as many participants at once as a session lasts divided by the
+processing time each participant needs (the average times in
+``process_stats`` times the number of each process per participant). For
+example, 43 s of audio analysis per 12-minute session lets one worker
+process keep up with about 16 participants.
 
 The processes running the bots create each bot's participant themselves, so
 they can only start new bots at a limited rate, which depends on the

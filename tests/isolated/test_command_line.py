@@ -4712,6 +4712,15 @@ def test_experiment_never_completes_during_performance_test(monkeypatch):
             ),
         ),
         (
+            dict(n_bots="auto"),
+            dict(
+                duration_minutes=4,
+                stagger_interval_s=0.5,
+                time_factor=1.0,
+                bot_processes="auto",
+            ),
+        ),
+        (
             dict(arrival_minutes=1.5),
             dict(
                 duration_minutes=7.5,
@@ -4726,13 +4735,15 @@ def test_experiment_never_completes_during_performance_test(monkeypatch):
         "explicit-zeros",
         "defaults",
         "capacity-search-without-pauses",
+        "capacity-search-tests-last-a-session",
         "arrivals-lengthen-the-default",
     ],
 )
 def test_performance_test_options_reach_the_tester(options, expected, tmp_path):
     """Explicit zeros are kept; omitted options use the experiment's defaults.
 
-    By default a test lasts 1.5 sessions of the experiment's estimated 4 minutes.
+    By default a test lasts 1.5 sessions of the experiment's estimated 4
+    minutes, and a capacity search's tests one session.
     """
     from psynet.command_line import _run_performance_test_with_existing_server
     from psynet.perf_test import CapacityLimits

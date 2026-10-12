@@ -379,6 +379,111 @@ def test_default_duration_covers_a_session_and_start_up(
     assert default_duration_minutes(session_minutes, minimum) == expected
 
 
+@pytest.mark.parametrize(
+    "session_minutes, minimum, expected",
+    [(None, 1, 1), (0.3, 1, 1), (3.2, 1, 4), (12, 1, 5), (12, 8, 8)],
+)
+def test_capacity_search_tests_last_a_session_up_to_five_minutes(
+    session_minutes, minimum, expected
+):
+    assert default_duration_minutes(session_minutes, minimum, search=True) == expected
+
+
+@pytest.mark.parametrize(
+    "session_minutes, arrival_minutes, expected",
+    [
+        (12, None, (24, 12)),
+        (0.08, None, (2, 0.1)),
+        (45, None, (60, 30)),
+        (None, None, (1, None)),
+        (12, 3, (15, 3)),
+    ],
+)
+def test_confirmation_test_spreads_arrivals_over_a_session_and_lasts_two(
+    session_minutes, arrival_minutes, expected
+):
+    from psynet.perf_test.results import confirmation_timing
+
+    assert confirmation_timing(session_minutes, 1, arrival_minutes) == expected
+
+
+def _search(tester, fake_test, **kwargs):
+    """Run a capacity search whose tests ``fake_test(tester)`` measures."""
+    with (
+        patch.object(
+            tester,
+            "_test_performance",
+            side_effect=lambda n_bots, bot_log_file: fake_test(n_bots),
+        ),
+        patch.object(tester, "pause_between_tests"),
+        patch("psynet.perf_test.runtime.raise_open_file_limit"),
+    ):
+        suite = PerformanceSuite(tester)
+        return suite, suite.find_capacity(**kwargs)
+
+
+def _session_tester(time_factor=1):
+    """Return a tester of a 12-minute study whose search tests last 5 minutes."""
+    return PerformanceTester(
+        authenticated_session=Mock(),
+        base_url="http://x",
+        duration_minutes=5,
+        time_factor=time_factor,
+        estimated_duration_minutes=12,
+    )
+
+
+@pytest.mark.parametrize("confirmed", [True, False])
+def test_capacity_search_ends_with_a_long_confirmation_test(caplog, confirmed):
+    tester = _session_tester()
+
+    def fake_test(n_bots):
+        # Short tests pass up to 150 bots; the long one fails unless confirmed.
+        long_test = tester.duration_minutes > 5
+        fails = n_bots > 150 or (long_test and not confirmed)
+        return _base_result(n_bots=n_bots, p95_response_time=0.9 if fails else 0.1)
+
+    with caplog.at_level("INFO"):
+        suite, results = _search(tester, fake_test)
+
+    confirmation = results[-1]
+    assert [r.confirmation for r in results] == [False] * 8 + [True]
+    assert (confirmation.n_bots, confirmation.duration_minutes) == (120, 24)
+    assert confirmation.arrival_minutes == 12
+    assert results[0].duration_minutes == 5 and results[0].session_minutes == 12
+    assert "then a 24-min confirmation test" in caplog.text
+    if confirmed:
+        assert "Confirmed: the 120-bot confirmation test" in caplog.text
+    else:
+        assert "Not confirmed: the 120-bot confirmation test" in caplog.text
+        # p95 900 ms is 1.8 times the 500 ms limit: 120 / 1.8 = 66.
+        assert "Try capping concurrent participants at about 66" in caplog.text
+    assert "Cap concurrent participants at about 120 (80%" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    "time_factor, confirm, reason",
+    [(1, False, "--no-confirm"), (0, True, "--time-factor 0")],
+)
+def test_capacity_search_can_skip_the_confirmation_test(
+    caplog, time_factor, confirm, reason
+):
+    tester = _session_tester(time_factor)
+
+    def fake_test(n_bots):
+        return _base_result(
+            n_bots=n_bots, p95_response_time=0.9 if n_bots > 15 else 0.1
+        )
+
+    with caplog.at_level("INFO"):
+        suite, results = _search(tester, fake_test, confirm=confirm)
+
+    assert not any(r.confirmation for r in results)
+    assert suite.confirmation_skipped.startswith(reason)
+    assert f"Confirmation test skipped: {reason}" in caplog.text
+    assert "Cap concurrent participants at about 12" in caplog.text
+
+
 @pytest.mark.parametrize("duration_minutes, warns", [(3, True), (20, False)])
 def test_suite_header_shows_the_estimate_and_warns_about_short_tests(
     caplog, duration_minutes, warns
@@ -485,10 +590,15 @@ def test_phase_stats_split_requests_and_queue_waits_at_the_boundary(db_session):
         key_requests=3,
         request_errors=1,
         p95_response_time=pytest.approx(1.9),
+        async_processes=1,
         q_delay_p95=30.0,
     )
     assert steady == dict(
-        key_requests=20, request_errors=0, p95_response_time=0.1, q_delay_p95=1.0
+        key_requests=20,
+        request_errors=0,
+        p95_response_time=0.1,
+        async_processes=1,
+        q_delay_p95=1.0,
     )
 
 
