@@ -465,15 +465,17 @@ class PerformanceTester:
             bot_processes, self._bots = self._bots, _ThreadBots(self)
             bot_processes.close()
 
-    def pause_between_tests(self):
+    def pause_between_tests(self, suite_started_at=None):
         """Pause, then let async processes queued by earlier tests start.
 
         Otherwise they would hold up the next test's processes and count
-        against its queue wait.
+        against its queue wait. ``suite_started_at`` is when the earlier
+        tests began, by default when :meth:`bot_runner` started.
         """
         time.sleep(5)
         queued = wait_for_async_processes(
-            since=self._suite_started_at, timeout_s=_BACKLOG_DRAIN_TIMEOUT_S
+            since=suite_started_at or self._suite_started_at,
+            timeout_s=_BACKLOG_DRAIN_TIMEOUT_S,
         )
         if queued:
             logger.warning(
