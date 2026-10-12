@@ -333,15 +333,17 @@ most an hour, so that the test reaches its steady state. A study over 30
 minutes gets less than two sessions, and one over about an hour no steady
 state, so for long studies also run a long test of the cap by hand. With your own
 ``--arrival-minutes``, the confirmation uses that window instead of one
-session and lasts a session longer. The summary reports the cap as
+session and lasts a session longer, again at most an hour, or
+``--duration-minutes`` if that is longer; the window must be shorter than
+this longest confirmation test. The summary reports the cap as
 confirmed only if the confirmation test stayed within the limits and
 reached its steady state; one that never got there leaves the cap
 unconfirmed. If the test exceeded the limits, the summary shows which
 limits the start-up and the steady state exceeded, and suggests a lower
 cap, scaled by how far the test overshot its limits (but at least half the
 tested cap), with the command to check it. A test that could not measure
-the server, for example because the server stopped or the bots couldn't
-start fast enough, leaves the cap unconfirmed without a suggestion. The
+the server, for example because the server stopped, no responses were
+recorded or the bots couldn't start fast enough, leaves the cap unconfirmed without a suggestion. The
 search does not run again. Add ``--no-confirm`` to skip the confirmation
 test; it is always skipped with ``--time-factor 0``, whose pace isn't
 realistic, when the experiment's estimated session length is unknown, and
@@ -663,6 +665,11 @@ machine, so on a shared server check with the other users first:
 
     psynet performance-test ssh --app my-experiment-perf --n-bots 50 --duration-minutes 10
 
+Your computer runs the series of tests, or the capacity search, and the
+server runs one test at a time and sends its results back, so keep your
+computer connected until the run ends. Interrupting the run with Ctrl-C
+stops the test on the server.
+
 By default the test does not reset the database, so repeated runs
 accumulate data (see :ref:`performance_testing_database_size` and
 :ref:`performance_testing_server_reset`). Make
@@ -744,10 +751,8 @@ Resetting the database on a server
     psynet performance-test ssh --app my-experiment-perf --reset-database --n-bots auto
     psynet performance-test ssh --app my-experiment-perf --prefill-participants 1500 --n-bots auto
 
-With these options your computer runs the series of tests, or the capacity
-search, and the server runs one test at a time and sends its results back.
-Test lengths, ``--arrival-minutes`` and the confirmation test that ends a
-capacity search work as without them. Before each later test, PsyNet stops the app's running or restarting containers except
+With these options, before each later test, PsyNet stops the app's
+running or restarting containers except
 PostgreSQL, Redis and the front door (``frontdoor``, ``controller`` and
 ``cloudflared``): the web, worker, clock and PgBouncer containers, and any
 services you added to the app's compose file, so that no connection holds
@@ -837,8 +842,10 @@ the JSON results as ``tester_lag_p95_s`` and ``tester_cpu_share``.
 
 With ``performance-test ssh`` the bot processes run on the experiment server
 and take CPU from it, which is why ``auto`` uses at most one process per four
-cores. Each bot holds its own PostgreSQL connection whichever process it runs
-in, and each extra process adds at most one more.
+cores. Each test there is its own ``performance-test`` process, which
+starts its bot processes again, adding a few seconds per test. Each bot
+holds its own PostgreSQL connection whichever process it runs in, and each
+extra process adds at most one more.
 
 Saving results
 --------------
