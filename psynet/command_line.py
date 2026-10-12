@@ -5197,15 +5197,10 @@ def _run_performance_test_with_new_server(
     "--drop-all",
     is_flag=True,
     help="""
-    Drop this experiment's pre-fill snapshots: the databases made from its
-    current code.""",
+    Drop every pre-fill snapshot on this computer's PostgreSQL server,
+    whichever experiment made it.""",
 )
-@click.option(
-    "--all-experiments",
-    is_flag=True,
-    help="With --drop-all, drop every experiment's pre-fill snapshot databases.",
-)
-def performance_test__snapshots(drop, drop_all, all_experiments):
+def performance_test__snapshots(drop, drop_all):
     """
     List the pre-fill snapshots of ``performance-test local``, or drop them.
 
@@ -5218,31 +5213,16 @@ def performance_test__snapshots(drop, drop_all, all_experiments):
         check_resettable_database,
         drop_snapshot,
         list_snapshots,
-        snapshot_code_key,
     )
 
-    if all_experiments and not drop_all:
-        raise click.UsageError("--all-experiments needs --drop-all.")
     snapshots = list_snapshots(db_url)
-    names = list(drop)
-    if drop_all:
-        key = None if all_experiments else _current_code_key()
-        if key is None and not all_experiments:
-            raise click.UsageError(
-                "Without a deploy.toml, PsyNet can't tell which snapshots are this "
-                "experiment's; use --drop NAME, or --drop-all --all-experiments."
-            )
-        names += [
-            name
-            for name, _, _ in snapshots
-            if all_experiments or snapshot_code_key(name) == key
-        ]
+    names = list(drop) + [name for name, _, _ in snapshots if drop_all]
     if names:
         try:
             check_resettable_database(db_url)
         except ValueError as e:
             raise click.ClickException(str(e)) from e
-    for name in names:
+    for name in dict.fromkeys(names):
         try:
             drop_snapshot(name, db_url)
         except ValueError as e:

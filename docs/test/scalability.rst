@@ -394,11 +394,11 @@ prescreen, are only counted.
 
 PsyNet keeps the pre-filled snapshot and prints its name, which comes from
 a hash of the experiment's files and the PsyNet and Dallinger versions,
-followed by the number of pre-fill participants. The files are those a deployment copies, without the ones
-Git ignores, plus ``config.txt``, ``requirements.txt`` and
-``constraints.txt`` where they exist. A later run with the same files,
-versions and number of participants starts from that snapshot instead of pre-filling
-again. PsyNet never changes a kept snapshot: to pre-fill again, drop it
+followed by the number of pre-fill participants. The files are those a
+deployment copies, without the ones Git ignores, plus ``config.txt``,
+``requirements.txt`` and ``constraints.txt`` where they exist. A later run
+with the same files, versions and number of participants starts from that
+snapshot instead of pre-filling again. PsyNet never changes a kept snapshot: to pre-fill again, drop it
 with ``psynet performance-test snapshots --drop <name>`` and run the test
 again. Any change to those files, even a comment, means a new pre-fill. If
 a change can't affect the data, such as a fixed typo, start from the old
@@ -419,9 +419,8 @@ their sizes and the experiment that made them, and drop them with:
     psynet performance-test snapshots --drop psynet_prefill_0123456789ab_n1500
     psynet performance-test snapshots --drop-all
 
-``--drop-all`` drops this experiment's snapshots: those made from its
-current files. Add ``--all-experiments`` to drop every
-pre-fill snapshot database on the server.
+``--drop-all`` drops every pre-fill snapshot on this computer's PostgreSQL
+server, whichever experiment made it.
 
 To start from real data instead, for example from a pilot, export the
 pilot with ``psynet export``, launch the experiment from the export with

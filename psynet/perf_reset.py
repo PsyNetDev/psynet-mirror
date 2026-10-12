@@ -20,8 +20,8 @@ With ``--prefill-participants``, bots first add data, and the snapshot is
 kept as a pre-fill cache under a name made from the experiment code, the
 PsyNet version and the number of pre-fill participants (see
 :func:`prefill_snapshot_name`), so that a later run with the same code and
-number starts from it instead of pre-filling again. To pre-fill again, drop it with ``psynet
-performance-test snapshots --drop NAME``.
+number starts from it instead of pre-filling again. To pre-fill again, drop
+it with ``psynet performance-test snapshots --drop NAME``.
 
 Design constraints:
 
@@ -194,7 +194,7 @@ class DatabaseReset:
     The first call adds any pre-fill data, waits for async processes to
     finish, and takes the snapshot; with ``from_snapshot`` it restores that
     snapshot instead. Every later call restores the snapshot. Each call
-    stops the server first and always starts it again.
+    stops the server first and starts it again afterwards.
 
     Parameters
     ----------
