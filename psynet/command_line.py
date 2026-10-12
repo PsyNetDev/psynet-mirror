@@ -4365,7 +4365,7 @@ _test_options["performance_json_output"] = click.option(
     --reset-database), options (n_bots_sweep, capacity_search, max_p95_s,
     max_queue_p95_s, duration_minutes, stagger_interval_s, time_factor,
     bot_processes, reset_database, prefill_participants, prefill_bots,
-    fresh_prefill, from_snapshot), and results (one entry per bot count tested, with all
+    from_snapshot), and results (one entry per bot count tested, with all
     metrics).
     Useful for downstream consumption (e.g. benchmarking tools like asv).""",
 )
@@ -4410,14 +4410,6 @@ _test_options["performance_prefill_bots"] = click.option(
     How many pre-fill bots run at once (default {_DEFAULT_PREFILL_BOTS}).""",
 )
 
-_test_options["performance_fresh_prefill"] = click.option(
-    "--fresh-prefill",
-    is_flag=True,
-    help="""
-    Pre-fill again even if a snapshot for the same code and settings
-    exists, and replace it.""",
-)
-
 _test_options["performance_from_snapshot"] = click.option(
     "--from-snapshot",
     metavar="SNAPSHOT",
@@ -4434,7 +4426,6 @@ def _check_database_reset_options(
     reset_database,
     prefill_participants,
     prefill_bots,
-    fresh_prefill,
     from_snapshot,
 ):
     """Return the database-reset options, or ``None`` without a reset.
@@ -4444,10 +4435,8 @@ def _check_database_reset_options(
     click.UsageError
         If the options conflict.
     """
-    if (prefill_bots or fresh_prefill) and not prefill_participants:
-        raise click.UsageError(
-            "--prefill-bots and --fresh-prefill need --prefill-participants."
-        )
+    if prefill_bots and not prefill_participants:
+        raise click.UsageError("--prefill-bots needs --prefill-participants.")
     if prefill_participants and from_snapshot:
         raise click.UsageError(
             "Use either --prefill-participants or --from-snapshot, not both."
@@ -4472,7 +4461,6 @@ def _check_database_reset_options(
         "prefill_bots": (
             (prefill_bots or _DEFAULT_PREFILL_BOTS) if prefill_participants else None
         ),
-        "fresh_prefill": fresh_prefill,
         "from_snapshot": from_snapshot,
     }
 
@@ -4625,7 +4613,6 @@ def performance_test(ctx):
 @_test_options["performance_reset_database"]
 @_test_options["performance_prefill_participants"]
 @_test_options["performance_prefill_bots"]
-@_test_options["performance_fresh_prefill"]
 @_test_options["performance_from_snapshot"]
 @_test_options["performance_force"]
 @click.option("--debug", is_flag=True, help="Enable debug logging for verbose output")
@@ -4637,7 +4624,6 @@ def performance_test__local(
     reset_database=False,
     prefill_participants=None,
     prefill_bots=None,
-    fresh_prefill=False,
     from_snapshot=None,
     **options,
 ):
@@ -4663,7 +4649,6 @@ def performance_test__local(
         reset_database=reset_database,
         prefill_participants=prefill_participants,
         prefill_bots=prefill_bots,
-        fresh_prefill=fresh_prefill,
         from_snapshot=from_snapshot,
     )
     return _run_performance_test_local(
@@ -4888,7 +4873,6 @@ def _run_performance_test_with_existing_server(
             "reset_database": database_reset is not None,
             "prefill_participants": reset.get("prefill_participants"),
             "prefill_bots": reset.get("prefill_bots"),
-            "fresh_prefill": reset.get("fresh_prefill"),
             "from_snapshot": reset.get("from_snapshot"),
         }
         _write_json_results(
@@ -4967,12 +4951,12 @@ def _database_reset(reset, server, experiment_label, bot_log_file):
         name = perf_reset.prefill_snapshot_name(
             perf_reset.experiment_code_key(), n_participants, n_bots
         )
-        if not reset["fresh_prefill"]:
-            from_snapshot = perf_reset.find_snapshot(name, database_url)
+        from_snapshot = perf_reset.find_snapshot(name, database_url)
         if from_snapshot:
             print(
-                f"Using the cached pre-fill snapshot {from_snapshot} "
-                "(--fresh-prefill pre-fills again)."
+                f"Using the cached pre-fill snapshot {from_snapshot}. To pre-fill "
+                "again, drop it with 'psynet performance-test snapshots --drop "
+                f"{from_snapshot}'."
             )
         else:
             keep_as = name

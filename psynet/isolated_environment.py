@@ -361,11 +361,6 @@ def drop_database(cursor, name):
     cursor.execute(sql.SQL("DROP DATABASE IF EXISTS {}").format(sql.Identifier(name)))
 
 
-def replacement_name(name):
-    """Return the name of the copy that replaces database ``name`` during a swap."""
-    return name[:58] + "__new"
-
-
 def terminate_connections(cursor, name):
     """Terminate the other client connections to database ``name``.
 

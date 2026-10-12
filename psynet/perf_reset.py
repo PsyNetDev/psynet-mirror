@@ -20,17 +20,21 @@ With ``--prefill-participants``, bots first add data, and the snapshot is
 kept as a pre-fill cache under a name made from the experiment code, the
 PsyNet version and the pre-fill settings (see :func:`prefill_snapshot_name`),
 so that a later run with the same code and settings starts from it instead
-of pre-filling again.
+of pre-filling again. To pre-fill again, drop it with ``psynet
+performance-test snapshots --drop NAME``.
 
 Design constraints:
 
+- Snapshots are separate databases that are created once and never
+  changed; only the experiment database is replaced. A kept snapshot is
+  only dropped on request.
 - Only the experiment database and snapshots that this module names are
   ever dropped, and only on this computer's PostgreSQL server (see
   :func:`check_resettable_database`). The experiment database is disposable:
   it belongs to the isolated test session, or to CI.
-- The replacement of a kept snapshot is a swap (see :func:`_swap_in_copy`):
-  the copy is complete before the old snapshot is dropped, and
-  :meth:`DatabaseReset.close` finishes a swap that was interrupted.
+- A pre-fill can take hours, so if it finishes but its snapshot isn't
+  taken, for example after an interrupt, :meth:`DatabaseReset.close` takes
+  it.
 - The PostgreSQL role must be allowed to create databases, as the isolated
   test environment already requires.
 - Files that tests add to the asset storage remain after a reset; only the
@@ -54,11 +58,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 from sqlalchemy.engine import make_url
 
-from psynet.isolated_environment import (
-    drop_database,
-    replacement_name,
-    terminate_connections,
-)
+from psynet.isolated_environment import drop_database, terminate_connections
 from psynet.log import warning
 
 logger = logging.getLogger(__name__)
@@ -208,8 +208,8 @@ class DatabaseReset:
         The name of a snapshot database to start from. It is only read.
     keep_as : str, optional
         Take the snapshot under this pre-fill snapshot name (see
-        :func:`prefill_snapshot_name`), replacing any snapshot of that name,
-        and keep it. Otherwise the snapshot is dropped at :meth:`close`.
+        :func:`prefill_snapshot_name`), which must not exist yet, and keep
+        it. Otherwise the snapshot is dropped at :meth:`close`.
     description : str, optional
         Stored as the comment of a kept snapshot database.
     database_url : str, optional
@@ -362,7 +362,8 @@ class DatabaseReset:
             name = self.database[: _MAX_NAME_LENGTH - len(stamp)] + stamp
         with self._connect() as cursor:
             self._check_disk_space(cursor, self.database)
-            _swap_in_copy(cursor, name, self.database)
+            _create_from_template(cursor, name, self.database)
+            self.snapshot, self._drop_snapshot_on_close = name, self._keep_as is None
             if self._description and self._keep_as is not None:
                 cursor.execute(
                     sql.SQL("COMMENT ON DATABASE {} IS %s").format(
@@ -370,7 +371,6 @@ class DatabaseReset:
                     ),
                     (self._description,),
                 )
-        self.snapshot, self._drop_snapshot_on_close = name, self._keep_as is None
         if self._keep_as is not None:
             logger.info(
                 f"Kept the pre-fill snapshot {name}; later runs with the same "
@@ -462,41 +462,6 @@ class DatabaseReset:
         keys = list(redis_conn.scan_iter("rq:*", count=1000))
         for i in range(0, len(keys), 1000):
             redis_conn.delete(*keys[i : i + 1000])
-
-
-def _swap_in_copy(cursor, target, template):
-    """Replace database ``target``, if it exists, with a copy of ``template``.
-
-    The copy is complete before ``target`` is dropped. If renaming the copy
-    fails after that, :func:`_recover_database` can finish the swap.
-    """
-    copy = replacement_name(target)
-    # A copy left without its target is the only copy, so it becomes the target.
-    _recover_database(cursor, target)
-    _create_from_template(cursor, copy, template)
-    _run_when_unused(cursor, target, _statement("DROP DATABASE IF EXISTS {}", target))
-    _run_when_unused(
-        cursor, copy, _statement("ALTER DATABASE {} RENAME TO {}", copy, target)
-    )
-
-
-def _recover_database(cursor, database):
-    """Finish an interrupted :func:`_swap_in_copy`; return whether ``database`` exists.
-
-    A leftover copy is always complete, because ``CREATE DATABASE`` either
-    finishes or leaves nothing, so it replaces ``database``.
-    """
-    copy = replacement_name(database)
-    if not _database_exists(cursor, copy):
-        return _database_exists(cursor, database)
-    _run_when_unused(
-        cursor, database, _statement("DROP DATABASE IF EXISTS {}", database)
-    )
-    _run_when_unused(
-        cursor, copy, _statement("ALTER DATABASE {} RENAME TO {}", copy, database)
-    )
-    logger.warning(warning(f"Finished replacing {database} with {copy}."))
-    return True
 
 
 def _create_from_template(cursor, name, template):

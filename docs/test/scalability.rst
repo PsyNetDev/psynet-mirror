@@ -399,14 +399,20 @@ pre-fill settings. The files are those a deployment copies, without the ones
 Git ignores, plus ``config.txt``, ``requirements.txt`` and
 ``constraints.txt`` where they exist. A later run with the same files,
 versions and settings starts from that snapshot instead of pre-filling
-again; ``--fresh-prefill`` pre-fills again and replaces it. Any change to
-those files, even a comment, means a new pre-fill. If a change can't affect
-the data, such as a fixed typo, start from the old snapshot with
-``--from-snapshot <name>``, which only warns that the code differs.
+again. PsyNet never changes a kept snapshot: to pre-fill again, drop it
+with ``psynet performance-test snapshots --drop <name>`` and run the test
+again. Any change to those files, even a comment, means a new pre-fill. If
+a change can't affect the data, such as a fixed typo, start from the old
+snapshot with ``--from-snapshot <name>``, which only warns that the code
+differs.
 
-Pre-fill snapshots stay on the database server until you drop them; after keeping a new
-one, PsyNet lists the others and their sizes. List them, with their sizes
-and the experiment that made them, and drop them with:
+If a run is interrupted after its pre-fill finished but before the
+snapshot was taken, PsyNet still takes the snapshot as the run ends, so
+the pre-fill isn't lost.
+
+Pre-fill snapshots stay on the database server until you drop them; after
+keeping a new one, PsyNet lists the others and their sizes. List them, with
+their sizes and the experiment that made them, and drop them with:
 
 .. code-block:: bash
 

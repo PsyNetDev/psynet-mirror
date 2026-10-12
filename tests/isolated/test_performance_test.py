@@ -442,188 +442,136 @@ def test_failed_participants_are_classified_by_failed_not_status():
 
 
 class _RecordingCursor:
-    """Record the statements run on a cursor, failing once on each prefix in ``failures``."""
+    """Record the statements composed with ``psycopg2.sql`` that run on a cursor."""
 
-    def __init__(self, cursor, statements, failures):
-        self._cursor, self._statements, self._failures = cursor, statements, failures
+    def __init__(self, cursor, statements):
+        self._cursor, self._statements = cursor, statements
 
     def execute(self, statement, params=None):
-        import psycopg2
         from psycopg2 import sql
 
         if isinstance(statement, sql.Composable):
-            text = statement.as_string(self._cursor)
-            self._statements.append(text)
-            for prefix in self._failures:
-                if text.startswith(prefix):
-                    self._failures.remove(prefix)
-                    raise psycopg2.OperationalError(f"Injected failure: {text}")
+            self._statements.append(statement.as_string(self._cursor))
         return self._cursor.execute(statement, params)
 
     def __getattr__(self, name):
         return getattr(self._cursor, name)
 
 
+@pytest.fixture
+def scratch_database(db_session):
+    """Yield a scratch database's URL and a list of databases to drop afterwards."""
+    from dallinger import db
+
+    from psynet.isolated_environment import create_database, drop_database
+    from psynet.perf_reset import _maintenance_cursor
+
+    url = create_database(
+        db.engine.url.render_as_string(hide_password=False), suffix="_reset_scratch"
+    )
+    created = [url.rsplit("/", 1)[1]]
+    yield url, created
+    with _maintenance_cursor(url) as cursor:
+        for name in created:
+            drop_database(cursor, name)
+
+
+def _participants(database_url, n_new=0):
+    """Add ``n_new`` rows to a minimal participant table; return its row count."""
+    import psycopg2
+
+    connection = psycopg2.connect(database_url)
+    try:
+        with connection, connection.cursor() as cursor:
+            cursor.execute("CREATE TABLE IF NOT EXISTS participant (id serial)")
+            for _ in range(n_new):
+                cursor.execute("INSERT INTO participant DEFAULT VALUES")
+            cursor.execute("SELECT count(*) FROM participant")
+            return cursor.fetchone()[0]
+    finally:
+        connection.close()
+
+
 @pytest.mark.parametrize(
-    "experiment_directory",
-    [path_to_test_experiment("timeline")],
-    indirect=True,
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
 )
-def test_database_reset_restores_the_snapshot_and_drops_only_its_own_databases(
-    db_session,
-):
+def test_database_reset_restores_snapshots_and_drops_only_its_own(scratch_database):
     import re
     from contextlib import contextmanager
 
-    import psycopg2
-    from dallinger import db
-
     from psynet import perf_reset
-    from psynet.isolated_environment import (
-        create_database,
-        drop_database,
-        replacement_name,
-    )
     from psynet.redis import redis_vars
 
-    scratch_url = create_database(
-        db.engine.url.render_as_string(hide_password=False), suffix="_reset_scratch"
-    )
-    scratch = scratch_url.rsplit("/", 1)[1]
+    url, created = scratch_database
     cache = perf_reset.prefill_snapshot_name("0123456789ab", 3, 2)
-    statements, failures = [], []
+    created.append(cache)
+    statements = []
 
     class RecordingReset(perf_reset.DatabaseReset):
         @contextmanager
         def _connect(self):
             with super()._connect() as cursor:
-                yield _RecordingCursor(cursor, statements, failures)
+                yield _RecordingCursor(cursor, statements)
 
-    def participants(n_new=0):
-        connection = psycopg2.connect(scratch_url)
-        try:
-            with connection, connection.cursor() as cursor:
-                cursor.execute("CREATE TABLE IF NOT EXISTS participant (id serial)")
-                for _ in range(n_new):
-                    cursor.execute("INSERT INTO participant DEFAULT VALUES")
-                cursor.execute("SELECT count(*) FROM participant")
-                return cursor.fetchone()[0]
-        finally:
-            connection.close()
-
-    participants(1)
+    _participants(url, 1)
     redis_vars.set("launch_finished", True)
     server = Mock()
-    snapshots = []
-    try:
-        reset = RecordingReset(server.stop, server.start, database_url=scratch_url)
-        reset()
-        snapshots.append(reset.snapshot)
-        assert reset.snapshot_rows == {"participant": 1}
-        participants(1)
-        reset()
-        assert participants() == 1
-        assert server.stop.call_count == server.start.call_count == 2
-        assert redis_vars.get("launch_finished") is True
-        reset.close()
-        assert perf_reset.find_snapshot(reset.snapshot, scratch_url) is None
+    reset = RecordingReset(server.stop, server.start, database_url=url)
+    reset()
+    created.append(reset.snapshot)
+    assert reset.snapshot_rows == {"participant": 1}
+    _participants(url, 1)
+    reset()
+    assert _participants(url) == 1
+    assert server.stop.call_count == server.start.call_count == 2
+    assert redis_vars.get("launch_finished") is True
+    reset.close()
+    assert perf_reset.find_snapshot(reset.snapshot, url) is None
 
-        kept = RecordingReset(
-            server.stop, server.start, keep_as=cache, database_url=scratch_url
-        )
-        kept()
-        kept.close()
-        assert perf_reset.find_snapshot(cache, scratch_url) == cache
-        assert cache in [name for name, _, _ in perf_reset.list_snapshots(scratch_url)]
-        perf_reset.drop_snapshot(cache, scratch_url)
+    prefill = RecordingReset(
+        server.stop,
+        server.start,
+        prefill=lambda: _participants(url, 2),
+        keep_as=cache,
+        database_url=url,
+    )
+    prefill()
+    prefill.close()
+    assert cache in [name for name, _, _ in perf_reset.list_snapshots(url)]
+    _participants(url, 5)
+    cached = RecordingReset(
+        server.stop, server.start, from_snapshot=cache, database_url=url
+    )
+    cached()
+    cached.close()
+    assert _participants(url) == 3
 
-        dropped = set(
-            re.findall(r'DROP DATABASE (?:IF EXISTS )?"([^"]+)"', " ".join(statements))
-        )
-        targets = {scratch, reset.snapshot, cache}
-        assert {reset.snapshot, cache} <= dropped
-        assert dropped <= targets | {replacement_name(name) for name in targets}
-    finally:
-        with perf_reset._maintenance_cursor(scratch_url) as cursor:
-            for name in [scratch, f"{scratch}__new", cache, *snapshots]:
-                drop_database(cursor, name)
+    dropped = re.findall(
+        r'DROP DATABASE (?:IF EXISTS )?"([^"]+)"', " ".join(statements)
+    )
+    assert set(dropped) == {created[0], reset.snapshot}
 
 
 @pytest.mark.parametrize(
-    "experiment_directory",
-    [path_to_test_experiment("timeline")],
-    indirect=True,
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
 )
-def test_an_interrupted_prefill_snapshot_is_never_lost(db_session):
-    from contextlib import contextmanager
-
-    import psycopg2
-    from dallinger import db
-
+def test_close_keeps_a_finished_prefill_whose_snapshot_was_not_taken(
+    scratch_database,
+):
     from psynet import perf_reset
-    from psynet.isolated_environment import create_database, drop_database
 
-    scratch_url = create_database(
-        db.engine.url.render_as_string(hide_password=False), suffix="_keep_scratch"
-    )
-    scratch = scratch_url.rsplit("/", 1)[1]
+    url, created = scratch_database
     keep = perf_reset.prefill_snapshot_name("fedcba987654", 2, 1)
-
-    def rows(database, n_new=0):
-        connection = psycopg2.connect(scratch_url.rsplit("/", 1)[0] + "/" + database)
-        try:
-            with connection, connection.cursor() as cursor:
-                cursor.execute("CREATE TABLE IF NOT EXISTS participant (id serial)")
-                for _ in range(n_new):
-                    cursor.execute("INSERT INTO participant DEFAULT VALUES")
-                cursor.execute("SELECT count(*) FROM participant")
-                return cursor.fetchone()[0]
-        finally:
-            connection.close()
-
-    failures = []
-
-    class FailingReset(perf_reset.DatabaseReset):
-        @contextmanager
-        def _connect(self):
-            with super()._connect() as cursor:
-                yield _RecordingCursor(cursor, [], failures)
-
+    created.append(keep)
     server = Mock()
-    try:
-        # A copy left without its target is kept, even if the swap then fails.
-        rows(scratch, 2)
-        with perf_reset._maintenance_cursor(scratch_url) as cursor:
-            cursor.execute(f'CREATE DATABASE "{keep}__new" TEMPLATE "{scratch}"')
-            rows(scratch, 1)
-            failures.append("CREATE DATABASE")
-            with pytest.raises(psycopg2.OperationalError):
-                perf_reset._swap_in_copy(
-                    _RecordingCursor(cursor, [], failures), keep, scratch
-                )
-        assert rows(keep) == 2
-
-        # A fresh pre-fill whose snapshot failed replaces the old one (2 rows)
-        # at close(), before teardown drops the experiment database.
-        reset = FailingReset(
-            server.stop,
-            server.start,
-            prefill=Mock(),
-            keep_as=keep,
-            database_url=scratch_url,
-        )
-        failures.append("CREATE DATABASE")
-        with pytest.raises(psycopg2.OperationalError):
-            reset()
-        server.start.assert_not_called()
-        reset.close()
-        with perf_reset._maintenance_cursor(scratch_url) as cursor:
-            drop_database(cursor, scratch)
-        assert rows(keep) == 3
-    finally:
-        with perf_reset._maintenance_cursor(scratch_url) as cursor:
-            for name in [scratch, f"{scratch}__new", keep, f"{keep}__new"]:
-                drop_database(cursor, name)
+    server.stop.side_effect = KeyboardInterrupt
+    reset = perf_reset.DatabaseReset(
+        server.stop, server.start, prefill=Mock(), keep_as=keep, database_url=url
+    )
+    with pytest.raises(KeyboardInterrupt):
+        reset()
+    reset.close()
+    assert perf_reset.find_snapshot(keep, url) == keep
 
 
 @pytest.mark.parametrize(
