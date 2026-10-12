@@ -2,6 +2,7 @@ import time
 
 import pytest
 import requests
+from dallinger.utils import get_base_url
 
 from psynet.error import ErrorRecord
 from psynet.pytest_psynet import (
@@ -176,7 +177,7 @@ class TestExp(object):
             # The built-in Dallinger.complete_experiment doesn't work because it mistakenly
             # uses a GET request instead of a POST request
             requests.post(
-                f"http://localhost:5000/worker_complete?participant_id={bot.participant_id}"
+                f"{get_base_url()}/worker_complete?participant_id={bot.participant_id}"
             )
 
             bot.driver.quit()

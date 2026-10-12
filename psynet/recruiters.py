@@ -28,8 +28,9 @@ Key design constraints for maintainers:
   writes those fields onto the participant; ``report_submission_outcome``
   reports the terminal outcome and delegates real bonus transfers to
   ``reward_bonus`` by default. Recruiters with ``reports_zero_outcomes``
-  (Lab Recruiter, Lucid) also report zero bonuses through that hook. ``False``
-  means the platform rejected the report or transfer.
+  (Lab Recruiter, Lucid) also report zero bonuses through that hook, and
+  implement the outcome there. Calling ``reward_bonus`` on those recruiters
+  raises. ``False`` means the platform rejected the report or transfer.
   ``Experiment.on_recruiter_submission_complete`` owns this sequence,
   always re-recording status and platform base, and uses ``bonus_status``
   to skip a repeat transfer. PsyNet posts a bonus automatically at most
@@ -62,7 +63,6 @@ import pandas as pd
 import requests
 from dallinger import db
 from dallinger.config import get_config
-from dallinger.db import session
 from dallinger.notifications import admin_notifier, get_mailer
 from dallinger.prolific import ProlificServiceException
 from dallinger.recruiters import (
@@ -82,7 +82,9 @@ from sqlalchemy.sql import func
 from . import exit as exit_domain
 from .consent import AudiovisualConsent, LucidConsent, OpenScienceConsent
 from .data import SQLBase, SQLMixin, register_table
+from .db import _check_external_call_allowed, _commit_external_call_state
 from .lucid import LucidService, get_lucid_service
+from .notifier import _alert_researcher
 from .page import InfoPage
 from .participant import (
     BONUS_STATUS_CAPPED,
@@ -108,7 +110,12 @@ from .timeline import (
     join,
     while_loop,
 )
-from .utils import get_logger, get_translator, render_template_with_translations
+from .utils import (
+    get_descendent_class_by_name,
+    get_logger,
+    get_translator,
+    render_template_with_translations,
+)
 
 logger = get_logger()
 
@@ -119,6 +126,7 @@ PROLIFIC_MESSAGE_FIELD_ALIASES = {
 
 
 RETRIABLE_PROLIFIC_RETURN_LOOKUP_STATUSES = {408, 429, 500, 502, 503, 504}
+RETURN_FOR_BONUS_PAYMENT_MAX_WAIT = 60.0
 
 # Prolific completion-code type used for participants who fail or error out of
 # the experiment. See ``PsyNetProlificRecruiterMixin.completion_codes_and_actions``.
@@ -233,7 +241,96 @@ def _prolific_error_status(error: ProlificServiceException):
         return None
 
 
+def _prolific_lookup_error_is_retriable(error: Exception) -> bool:
+    """Return whether a failed Prolific lookup is worth retrying.
+
+    Connection errors and timeouts reach PsyNet as ``requests`` exceptions
+    from Dallinger releases without Dallinger PR #10008
+    (https://github.com/Dallinger/Dallinger/pull/10008), and as a
+    ``ProlificServiceException`` whose payload has an ``error`` but no
+    ``response`` from releases with it. Once PsyNet's minimum Dallinger
+    version includes that PR, drop the ``requests.RequestException``
+    handling here and at the call sites that mention this function.
+    """
+    if isinstance(error, requests.RequestException):
+        return True
+    try:
+        payload = json.loads(str(error))
+    except json.JSONDecodeError:
+        return False
+    if isinstance(payload, dict) and "error" in payload and "response" not in payload:
+        return True
+    return _prolific_error_status(error) in RETRIABLE_PROLIFIC_RETURN_LOOKUP_STATUSES
+
+
+def _recruiter_class_by_name(name):
+    try:
+        return get_descendent_class_by_name(dallinger.recruiters.Recruiter, name)
+    except AssertionError:
+        return None
+
+
+def configured_recruiter_class(config=None):
+    """Return the recruiter class that the configuration selects.
+
+    This mirrors :func:`dallinger.recruiters.from_config` without
+    instantiating the recruiter, which can be expensive (for example, building
+    a Prolific API client). Use it when only the recruiter type matters.
+
+    Parameters
+    ----------
+    config :
+        Dallinger configuration; defaults to the active configuration.
+
+    Returns
+    -------
+    class or None
+        The recruiter class, or ``None`` if the configured name is unknown
+        in debug mode (where ``from_config`` also returns ``None``).
+    """
+    config = config or get_config()
+    if config.get("replay"):
+        return dallinger.recruiters.HotAirRecruiter
+
+    name = config.get("recruiter", None)
+    recruiter_class = _recruiter_class_by_name(name) if name is not None else None
+    if recruiter_class is not None and issubclass(
+        recruiter_class,
+        (dallinger.recruiters.BotRecruiter, dallinger.recruiters.MultiRecruiter),
+    ):
+        return recruiter_class
+
+    if config.get("mode") == "debug":
+        if recruiter_class is not None:
+            if issubclass(recruiter_class, MockRecruiter):
+                return recruiter_class
+            if issubclass(recruiter_class, dallinger.recruiters.ProlificRecruiter):
+                return _recruiter_class_by_name("devprolific")
+        return _recruiter_class_by_name(
+            config.get("debug_recruiter", "HotAirRecruiter")
+        )
+
+    if recruiter_class is not None:
+        return recruiter_class
+    if name:
+        raise NotImplementedError("No such recruiter {}".format(name))
+    return dallinger.recruiters.MTurkRecruiter
+
+
+def _abandon_overdue_participants(participants):
+    """Mark participants abandoned from Dallinger's clock and commit.
+
+    The clock's ``sessions_scope()`` does not commit, so the recruiter's
+    ``notify_duration_exceeded`` must, as Dallinger's own recruiters do.
+    """
+    for participant in participants:
+        participant.status = "abandoned"
+    db.session.commit()
+
+
 class PsyNetRecruiterMixin:
+    """PsyNet behavior shared by all recruiters, including payment and early exit."""
+
     show_early_exit_button = False
     # Deprecated aliases of ``show_early_exit_button``. Prefer the early-exit name
     # in new code; Lucid still sets the aliases so older templates keep working.
@@ -260,17 +357,30 @@ class PsyNetRecruiterMixin:
         Most recruiters have no separate outcome callback, so sub-cent
         amounts are a no-op and real bonuses use ``reward_bonus``. Recruiters
         whose bonus endpoint is also their terminal outcome callback can
-        override this method to report every amount, including zero.
+        override this method to report every amount, including zero. Raises
+        inside timeline steps, even for sub-cent amounts.
         """
+        _check_external_call_allowed()
         if amount < 0.01:
             return True
         return self.reward_bonus(participant, amount, reason)
 
     def after_rejected_consent(self, experiment, participant):
-        """Hook run when the participant rejects consent and never reaches submission."""
+        """Hook run when the participant rejects consent and never reaches submission.
+
+        PsyNet runs it in a worker process after the participant's request
+        commits, without making them wait, so it may call the recruitment
+        platform. It has no Flask request context.
+        """
 
     def terminate_participant(
-        self, participant=None, assignment_id=None, reason=None, details=None
+        self,
+        participant=None,
+        assignment_id=None,
+        reason=None,
+        details=None,
+        *,
+        raise_on_error=False,
     ):
         raise NotImplementedError
 
@@ -686,6 +796,7 @@ class PsyNetRecruiterMixin:
         Dallinger helpers often return ``None`` on success. ``None`` or any
         value other than ``False`` is treated as success.
         """
+        _check_external_call_allowed()
         result = super().reward_bonus(participant, amount, reason)
         if result is False:
             record_bonus_attempt_detail(
@@ -778,9 +889,29 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
         }
     )
 
+    _warned_missing_study_id = False
+
     def shows_error_recovery_page(self, plan: exit_domain.ExitPlan) -> bool:
         """Prolific recovery asks the participant to submit or return."""
         return plan.context is exit_domain.ExitContext.ERROR_RECOVERY
+
+    def verify_status_of(self, participants):
+        """Sync participant statuses with Prolific, or skip if no study is recorded.
+
+        No study ID is recorded when PsyNet did not open the study itself
+        (for example with ``auto_recruit = false``, including debug runs), so
+        there are no submissions to compare against. The clock runs this check
+        every few seconds, so the skip is logged only once per process.
+        """
+        if not self.current_study_id:
+            if not PsyNetProlificRecruiterMixin._warned_missing_study_id:
+                PsyNetProlificRecruiterMixin._warned_missing_study_id = True
+                logger.warning(
+                    "Skipping Prolific participant status checks: no Prolific "
+                    "study ID is recorded for this experiment."
+                )
+            return
+        super().verify_status_of(participants)
 
     @property
     def unsuccessful_base_payment(self):
@@ -1472,6 +1603,7 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
 
     def approve_hit(self, assignment_id: str):
         """COMPLETE an ACTIVE/TIMED-OUT row, or Approve one already AWAITING REVIEW."""
+        _check_external_call_allowed()
         participant = latest_participant_for_assignment(assignment_id)
         if (
             participant is None
@@ -1548,6 +1680,7 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
                 endpoint=f"/submissions/{assignment_id}/transition/",
                 json={"action": "COMPLETE", "completion_code": code},
             )
+        # requests.RequestException: see _prolific_lookup_error_is_retriable.
         except (ProlificServiceException, requests.RequestException) as ex:
             handle_recruitment_error(ex)
             return False
@@ -1667,6 +1800,7 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
 
     def reward_bonus(self, participant, amount, reason):
         """Pay a Prolific bonus. Return False if Prolific rejected the transfer."""
+        _check_external_call_allowed()
         try:
             self.prolificservice.pay_session_bonus(
                 study_id=self.current_study_id,
@@ -1787,7 +1921,14 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
                             participant.var.assignment_returned
                         ),
                         logic_if_true=join(
-                            CodeBlock(self.reward_and_set_bonus),
+                            AsyncCodeBlock(
+                                self.reward_and_set_bonus,
+                                wait=True,
+                                expected_wait=5.0,
+                                check_interval=1.0,
+                                max_wait_time=RETURN_FOR_BONUS_PAYMENT_MAX_WAIT,
+                                on_timeout=self._notify_return_for_bonus_payment_timeout,
+                            ),
                             conditional(
                                 "return_for_bonus_credited",
                                 condition=self._return_for_bonus_credited,
@@ -1872,15 +2013,15 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
             submission = recruiter.prolificservice.get_participant_submission(
                 participant.assignment_id
             )
-        except ProlificServiceException as error:
-            status = _prolific_error_status(error)
-            if status not in RETRIABLE_PROLIFIC_RETURN_LOOKUP_STATUSES:
+        # requests.RequestException: see _prolific_lookup_error_is_retriable.
+        except (ProlificServiceException, requests.RequestException) as error:
+            if not _prolific_lookup_error_is_retriable(error):
                 logger.error(
                     "Could not check Prolific submission status for assignment %s "
                     "because Prolific returned a non-retriable lookup error "
                     "with status %s.",
                     participant.assignment_id,
-                    status,
+                    _prolific_error_status(error),
                     exc_info=True,
                 )
                 raise
@@ -1920,6 +2061,20 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
             participant,
             decision,
             reason="Partial payment for incomplete participation",
+        )
+
+    @staticmethod
+    def _notify_return_for_bonus_payment_timeout(participant):
+        """Tell the researcher that a return-for-bonus payment has not finished."""
+        _alert_researcher(
+            f"The return-for-bonus payment for participant {participant.id} "
+            f"(assignment {participant.assignment_id}, worker "
+            f"{participant.worker_id}) did not finish within "
+            f"{RETURN_FOR_BONUS_PAYMENT_MAX_WAIT:.0f} seconds, so the worker "
+            "queue may be stalled. The participant was told that you will "
+            "arrange payment. PsyNet still pays them if the queued job runs; "
+            "check the participant on the Participants dashboard, and pay "
+            "them through Prolific if no payment is recorded."
         )
 
     def check_for_returned_assignment(self, participant) -> bool:
@@ -2008,6 +2163,14 @@ class ProlificRecruiter(
 class DevProlificRecruiter(
     PsyNetProlificRecruiterMixin, dallinger.recruiters.DevProlificRecruiter
 ):
+    def open_recruitment(self, n: int = 1) -> dict:
+        """Open a simulated Prolific study, saying that nothing was created."""
+        response = super().open_recruitment(n=n)
+        response["message"] = (
+            "Prolific study simulated in debug mode; nothing was created on Prolific"
+        )
+        return response
+
     def _live_submission_status(self, assignment_id: str) -> str:
         """Dev mode has no live row; report ACTIVE so local submit exercises COMPLETE."""
         return "ACTIVE"
@@ -2069,10 +2232,7 @@ class BaseLabRecruiter(
         The participant has been working longer than the time defined in
         the "duration" config value.
         """
-        for participant in participants:
-            participant.status = "abandoned"
-            # We preserve this commit just in case Dallinger removes the external commit in the future
-            session.commit()
+        _abandon_overdue_participants(participants)
 
     def _authorization_header(self):
         """Return a DRF Token header built from the configured auth token."""
@@ -2108,6 +2268,7 @@ class BaseLabRecruiter(
 
     def report_submission_outcome(self, participant, amount, reason):
         """Report a terminal Lab Recruiter outcome, including a zero bonus."""
+        _check_external_call_allowed()
         authorization = self._authorization_header()
         if not authorization:
             if (self.config.get("mode") or "") == "debug":
@@ -2641,10 +2802,7 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
         The participant has been working longer than the time defined in
         the "duration" config value.
         """
-        for participant in participants:
-            participant.status = "abandoned"
-            # We preserve this commit just in case Dallinger removes the external commit in the future
-            session.commit()
+        _abandon_overdue_participants(participants)
 
     def run_checks(self):
         self._recheck_paused_entry()
@@ -2730,7 +2888,6 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
             },
         )
         db.session.add(status_entry)
-        db.session.commit()
 
         unfailed_entrants = LucidRID.query.filter_by(
             terminated_at=None, completed_at=None
@@ -3005,7 +3162,8 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
         if rid is None:
             rid = hit_id
 
-        # Save RID info into the database
+        # Dallinger's /participant and /load-participant routes call this
+        # without committing, so the new RID must be committed here.
         try:
             lucid_rid = LucidRID.query.filter_by(rid=rid).one()
         except NoResultFound:
@@ -3072,16 +3230,20 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
             bonus=0.0,
         )
 
-    def report_submission_outcome(self, participant, amount, reason):
-        """Complete or terminate the respondent on Lucid, even with a zero bonus."""
-        return self.reward_bonus(participant, amount, reason)
-
     def reward_bonus(self, participant, amount, reason):
-        """
-        Set `completed_at` timestamp on participant's LucidRID entry.
+        """Lucid does not transfer bonuses through ``reward_bonus``."""
+        raise RuntimeError(
+            "Lucid reports terminal outcomes via "
+            "report_submission_outcome, including a zero bonus. "
+            "Do not call reward_bonus."
+        )
 
-        Returns False if the Lucid complete/terminate call raises.
+    def report_submission_outcome(self, participant, amount, reason):
+        """Complete or terminate the respondent on Lucid, even with a zero bonus.
+
+        Returns False if the Lucid complete or terminate call raises.
         """
+        _check_external_call_allowed()
         try:
             if self._committed_panel_termination(participant) is not None:
                 # The exit flow already terminated the panel session; a second
@@ -3099,10 +3261,12 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
                     reason = "consent-rejected"
                 else:
                     reason = "participant-did-not-complete"
-                self.terminate_participant(participant=participant, reason=reason)
+                self.terminate_participant(
+                    participant=participant, reason=reason, raise_on_error=True
+                )
         except Exception as ex:
             logger.exception(
-                "Lucid reward_bonus failed for participant %s.",
+                "Lucid outcome report failed for participant %s.",
                 getattr(participant, "id", None),
             )
             record_bonus_attempt_detail(participant, str(ex))
@@ -3172,37 +3336,21 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
         assignment_id=None,
         reason=None,
         details=None,
-    ):
-        """Terminate a Lucid participant, committing the change immediately.
-
-        Lucid API failures are logged rather than raised, because most callers
-        are timeout handlers that must still send the participant back to the
-        panel. Subclasses that customise termination should override
-        :meth:`_terminate_participant`, which the early-exit path calls with
-        its own transaction settings.
-        """
-        return self._terminate_participant(
-            participant=participant,
-            assignment_id=assignment_id,
-            reason=reason,
-            details=details,
-            commit_participant=True,
-            raise_on_error=False,
-        )
-
-    def _terminate_participant(
-        self,
-        participant=None,
-        assignment_id=None,
-        reason=None,
-        details=None,
         *,
-        commit_participant,
-        raise_on_error,
+        raise_on_error=False,
     ):
-        """Implement Lucid termination with internal transaction controls."""
+        """Terminate a Lucid participant and return their terminate URL.
+
+        :meth:`LucidService.terminate_respondent` commits as soon as Lucid
+        confirms, so this always raises inside timeline steps; call it from
+        an ``AsyncCodeBlock`` there. Lucid API failures are logged rather
+        than raised unless ``raise_on_error`` is set, because most callers
+        are timeout handlers that must still send the participant back to
+        the panel.
+        """
         assert participant or assignment_id
         assert not (participant and assignment_id)
+        _check_external_call_allowed()
 
         if participant:
             assignment_id = participant.assignment_id
@@ -3214,8 +3362,6 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
             participant.failed = True
             participant.failed_reason = reason
             participant.status = "returned"
-            if commit_participant:
-                db.session.commit()
         try:
             logger.info(
                 f"Terminating respondent with RID '{assignment_id}'. Reason: '{reason}'"
@@ -3245,10 +3391,9 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
             # The error route has already recorded termination details. The
             # browser's terminate URL remains the sole external handoff.
             return
-        self._terminate_participant(
+        self.terminate_participant(
             participant=participant,
             reason="early_exit",
-            commit_participant=False,
             raise_on_error=True,
         )
 
@@ -3445,11 +3590,12 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
         return self.get_config_entry("initial_response_within_s")
 
     def change_lucid_status(self, status):
+        _check_external_call_allowed()
         survey_number = self.current_survey_number()
         service = get_lucid_service()
         service.change_status(survey_number, status)
         LucidStatus.query.order_by(LucidStatus.id.desc()).first().status = status
-        db.session.commit()
+        _commit_external_call_state()
 
 
 class DevLucidRecruiter(DevRecruiter, BaseLucidRecruiter):
@@ -3704,7 +3850,4 @@ class GenericRecruiter(
         The participant has been working longer than the time defined in
         the "duration" config value.
         """
-        for participant in participants:
-            participant.status = "abandoned"
-            # We preserve this commit just in case Dallinger removes the external commit in the future
-            session.commit()
+        _abandon_overdue_participants(participants)

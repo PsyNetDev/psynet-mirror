@@ -1,0 +1,1 @@
+Release wheels now include the demos' code and text files (without media or vendored libraries), and `psynet docs demos` prints the folder that holds them, so coding agents can read and search demo code for the installed PsyNet version without a source checkout or web access.

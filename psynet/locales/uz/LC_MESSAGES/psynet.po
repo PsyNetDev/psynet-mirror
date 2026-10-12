@@ -3313,6 +3313,12 @@ msgstr "Bir necha soniyadan keyin yana urinib ko'ring."
 
 #: psynet/templates/macros/timeline-shell.html
 #, fuzzy
+msgctxt "timeline_problem"
+msgid "Getting ready, please wait..."
+msgstr "Tayyorlanmoqda, iltimos kuting..."
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
 msgctxt "timeline"
 msgid "Reward"
 msgstr "Mukofot"

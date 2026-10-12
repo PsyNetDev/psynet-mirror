@@ -72,7 +72,5 @@ stop and ask the user; do not leave the merge half-finished.
 Push the merge with a regular `git push`. Never force-push the target
 branch.
 
-If this skill was invoked on its own, typical next step is
-`/branch-review`. To rewrite history onto the target, follow
-`.cursor/skills/reorganize-onto-target/SKILL.md` (When to run) instead
-of soft-resetting here.
+If this skill was invoked on its own, the typical next step is
+`/branch-review`.

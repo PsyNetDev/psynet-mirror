@@ -1,0 +1,1 @@
+Changed Lucid recruitment to stop new entrants as soon as finished plus working participants cover the target, by lowering the survey's total quota while it stays live. The survey is set to complete once nobody is still working, and entry reopens if a working participant drops out. Experiments no longer need to close the Lucid survey themselves.

@@ -29,6 +29,8 @@ import subprocess
 from pathlib import Path
 from typing import Union
 
+_URL_CREDENTIALS = re.compile(r"^([A-Za-z][A-Za-z0-9+.-]*://)[^/?#]*@")
+
 
 class ExperimentDirectoryNameError(ValueError):
     """Raised when an experiment directory name collides with a non-package module."""
@@ -100,6 +102,17 @@ def git_repository_available() -> bool:
         stderr=subprocess.PIPE,
     )
     return result.returncode == 0
+
+
+def strip_url_credentials(url: str) -> str:
+    """Return ``url`` without its ``user:password@`` part.
+
+    Only URL-style remotes (``https://user:token@host/path``) are changed.
+    scp-style remotes such as ``git@host:path`` and local paths are returned
+    unchanged. Malformed URLs are handled without raising, because Git
+    accepts any string as a remote URL.
+    """
+    return _URL_CREDENTIALS.sub(r"\1", url)
 
 
 def git_commit_available() -> bool:

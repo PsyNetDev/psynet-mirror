@@ -9,6 +9,13 @@ compatibility: Requires PsyNet with `psynet audit` CLI; ffprobe recommended for 
 A standalone audit is an `audit/` folder inside the experiment directory. Run
 the CLI from the experiment root.
 
+## Read first
+
+Read these pages before acting. The "Documentation" section of the experiment's `AGENTS.md` explains how to find and search them.
+
+- `test/audits` — what an audit contains and how to build it
+- `test/audit_reference` — `audit.json` fields and status conventions
+
 ## Prerequisites
 
 - Read `references/populating-an-audit.md`; it is the shared operational source
@@ -21,7 +28,7 @@ the CLI from the experiment root.
   no server ever ran).
 - If the experiment needs implementation changes, use
   `implement-experiment`.
-- For a live handoff, use `prepare-experiment-tunnel` (and `public-tunnel`) when
+- For a live handoff, use `public-tunnel` ("Preview a running experiment") when
   a temporary public preview is needed.
 
 ## Workflow

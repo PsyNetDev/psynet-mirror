@@ -3385,6 +3385,12 @@ msgstr "Subukang muli pagkatapos ng ilang segundo."
 
 #: psynet/templates/macros/timeline-shell.html
 #, fuzzy
+msgctxt "timeline_problem"
+msgid "Getting ready, please wait..."
+msgstr "Naghahanda, mangyaring maghintay..."
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
 msgctxt "timeline"
 msgid "Reward"
 msgstr "Gantimpala"

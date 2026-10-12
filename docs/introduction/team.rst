@@ -3,9 +3,8 @@
 Team
 ====
 
-The PsyNet team is distributed over several academic institutions,
-including primarily the Max Planck Institute for Empirical Aesthetics
-and the University of Cambridge.
+The PsyNet team is based mainly at the Max Planck Institute for Empirical
+Aesthetics and the University of Cambridge.
 
 **Core team**
 

@@ -3280,6 +3280,12 @@ msgstr "ಇನ್ನೂ ಕೆಲವು ಕ್ಷಣಗಳಲ್ಲಿ ಮತ್
 
 #: psynet/templates/macros/timeline-shell.html
 #, fuzzy
+msgctxt "timeline_problem"
+msgid "Getting ready, please wait..."
+msgstr "ಸಿದ್ಧವಾಗುತ್ತಿದೆ, ದಯವಿಟ್ಟು ಕಾಯಿರಿ..."
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
 msgctxt "timeline"
 msgid "Reward"
 msgstr "ಪ್ರತಿಫಲ"

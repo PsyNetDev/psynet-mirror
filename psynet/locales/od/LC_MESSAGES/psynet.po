@@ -3276,6 +3276,12 @@ msgstr "କିଛି ସେକେଣ୍ଡ ପରେ ପୁନଃଚେଷ୍ଟ
 
 #: psynet/templates/macros/timeline-shell.html
 #, fuzzy
+msgctxt "timeline_problem"
+msgid "Getting ready, please wait..."
+msgstr "ପ୍ରସ୍ତୁତି ନେଉଛି, ଦୟାକରି ଅପେକ୍ଷା କରନ୍ତୁ..."
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
 msgctxt "timeline"
 msgid "Reward"
 msgstr "ପୁରସ୍କାର"

@@ -160,6 +160,9 @@ git switch -c deployment-tests/$BASE_NAME "$BASE_COMMIT"
 git checkout <previous-deployment-branch> -- tests/deployment/payment_flows_prolific tests/deployment/audio_gibbs
 ```
 
+   GitLab runs no pipeline for `deployment-tests/*` branches, so do not wait
+   for CI after pushing one; the base tag or branch carries the test results.
+
    For an explicitly requested master-based deployment, update local `master`
    (`git switch master && git pull --ff-only origin master`) and branch from
    `master` instead.
@@ -261,9 +264,10 @@ git commit -m "Refresh experiment scripts via psynet scripts update"
 
      Keep the `[experiment]` extra in every PsyNet pin, including the
      master-based one. Since PsyNet 14 the base package only bootstraps the
-     CLI, so without the extra the image has no Dallinger runtime and the
-     `clock` container fails with `dallinger_heroku_clock: executable file
-     not found`.
+     CLI, so without the extra the image has no Dallinger runtime. PsyNet's
+     deploy pre-check refuses such a pin; if it is bypassed, the `clock`
+     container fails with `dallinger_heroku_clock: executable file not
+     found`.
 
    - **Master-based deployment**: pin PsyNet to the latest pushed `master`
      commit hash, and Dallinger to the SHA that `pyproject.toml` declares.

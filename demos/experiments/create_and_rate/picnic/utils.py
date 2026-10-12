@@ -1,4 +1,3 @@
-# pylint: disable=unused-import,abstract-method,unused-argument
 from markupsafe import Markup
 
 from psynet.modular_page import ModularPage, Prompt, TextControl

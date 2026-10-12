@@ -127,25 +127,17 @@ def test_asset_plan_excludes_assets_rsync_cannot_supply(tmp_path):
         [
             {
                 "id": 1,
-                "type": "experiment_asset",
+                "type": "psynet.asset.FileAsset",
                 "export_path": "a.wav",
                 "sha256_contents": "a" * 64,
                 "storage": "LocalStorage",
             },
-            {"id": 2, "type": "external_asset", "export_path": "b.wav"},
             {
-                "id": 3,
-                "type": "experiment_asset",
-                "export_path": "c.wav",
-                "sha256_contents": "c" * 64,
+                "id": 2,
+                "type": "psynet.asset.FileAsset",
+                "export_path": "b.wav",
+                "sha256_contents": "b" * 64,
                 "storage": "S3Storage",
-            },
-            {
-                "id": 4,
-                "type": "on_demand_asset",
-                "export_path": "d.wav",
-                "sha256_contents": "d" * 64,
-                "storage": "LocalStorage",
             },
         ],
     )
@@ -153,7 +145,7 @@ def test_asset_plan_excludes_assets_rsync_cannot_supply(tmp_path):
     plan = plan_asset_transfer(str(tmp_path))
 
     assert plan.digests == ["a" * 64]
-    assert [row["id"] for row in plan.ineligible] == ["3", "4"]
+    assert [row["id"] for row in plan.ineligible] == ["2"]
     assert not plan.eligible
 
 
@@ -182,7 +174,7 @@ def test_hydration_reports_a_failed_rsync_as_a_transfer_error(
         [
             {
                 "id": 1,
-                "type": "experiment_asset",
+                "type": "psynet.asset.FileAsset",
                 "export_path": "a.wav",
                 "sha256_contents": digest,
                 "storage": "LocalStorage",
@@ -218,14 +210,14 @@ def test_hydration_fetches_missing_objects_once_and_reuses_the_cache(
             [
                 {
                     "id": 1,
-                    "type": "experiment_asset",
+                    "type": "psynet.asset.FileAsset",
                     "export_path": "module/a.wav",
                     "sha256_contents": file_digest,
                     "storage": "LocalStorage",
                 },
                 {
                     "id": 2,
-                    "type": "experiment_asset",
+                    "type": "psynet.asset.FileAsset",
                     "export_path": "module/folder",
                     "sha256_contents": folder_digest,
                     "is_folder": "True",
@@ -283,7 +275,7 @@ def test_hydration_fails_when_transferred_bytes_do_not_match_their_digest(
         [
             {
                 "id": 1,
-                "type": "experiment_asset",
+                "type": "psynet.asset.FileAsset",
                 "export_path": "a.wav",
                 "sha256_contents": claimed_digest,
                 "storage": "LocalStorage",
@@ -558,7 +550,7 @@ def test_hydration_rejects_an_escaping_export_path(tmp_path, cache_root):
         [
             {
                 "id": 1,
-                "type": "experiment_asset",
+                "type": "psynet.asset.FileAsset",
                 "export_path": "../secret.wav",
                 "sha256_contents": digest,
                 "storage": "LocalStorage",

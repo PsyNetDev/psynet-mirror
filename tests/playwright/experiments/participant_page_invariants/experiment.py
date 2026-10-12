@@ -5,8 +5,6 @@ and a landscape graphic that would outgrow the content surface if sized
 only against the window.
 """
 
-# pylint: disable=unused-import,abstract-method,unused-argument,no-member
-
 from markupsafe import Markup
 
 import psynet.experiment

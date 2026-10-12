@@ -158,14 +158,13 @@ class Exp(psynet.experiment.Experiment):
             chains_per_experiment=None,
             chains_per_participant=2,
             trials_per_node=1,
-            balance_across_chains=False,
             recruit_mode="n_participants",
             check_performance_at_end=True,
             check_performance_every_trial=False,
             target_n_participants=25,
             wait_for_networks=True,
             assets={
-                "5s_silence": asset("assets/5s_silence.wav", cache=True),
+                "5s_silence": asset("assets/5s_silence.wav"),
             },
         ),
     )

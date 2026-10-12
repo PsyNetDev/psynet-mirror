@@ -1,7 +1,5 @@
-# pylint: disable=unused-import,abstract-method,unused-argument
-
 import random
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 import numpy as np
 from markupsafe import Markup
@@ -304,11 +302,12 @@ class CustomTrialMaker(GraphChainTrialMaker):
         max_trials_per_participant: Optional[int],
         chains_per_participant: Optional[int],
         trials_per_node: int,
-        balance_across_chains: bool,
+        chain_order: str,
         check_performance_at_end: bool,
         check_performance_every_trial: bool,
         recruit_mode: str,
-        target_n_participants=Optional[int],
+        target_n_participants: Optional[int] = None,
+        n_participants_completion: Literal["experiment", "trial_maker"] = "experiment",
         max_nodes_per_chain: Optional[int] = None,
         fail_trials_on_participant_performance_check: bool = False,
         propagate_failure: bool = True,
@@ -329,11 +328,12 @@ class CustomTrialMaker(GraphChainTrialMaker):
             max_trials_per_participant=max_trials_per_participant,
             chains_per_participant=chains_per_participant,
             trials_per_node=trials_per_node,
-            balance_across_chains=balance_across_chains,
+            chain_order=chain_order,
             check_performance_at_end=check_performance_at_end,
             check_performance_every_trial=check_performance_every_trial,
             recruit_mode=recruit_mode,
             target_n_participants=target_n_participants,
+            n_participants_completion=n_participants_completion,
             max_nodes_per_chain=max_nodes_per_chain,
             fail_trials_on_participant_performance_check=fail_trials_on_participant_performance_check,
             propagate_failure=propagate_failure,
@@ -449,7 +449,7 @@ class Exp(psynet.experiment.Experiment):
             max_trials_per_participant=3,
             chains_per_participant=None,
             trials_per_node=1,
-            balance_across_chains=True,
+            chain_order="balanced",
             check_performance_at_end=False,
             check_performance_every_trial=False,
             recruit_mode="n_trials",

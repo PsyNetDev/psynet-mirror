@@ -167,7 +167,7 @@ def test_rater_role_waits_when_only_pending_chains_remain():
     assert maker.find_chains(participant=None, experiment=None) == "wait"
 
 
-def test_rater_role_exits_when_only_creator_heads_remain():
+def test_rater_role_finishes_block_when_only_creator_heads_remain():
     needs = chain(1)
     maker = CreateAndRateSelectionHarness(
         candidates=[needs],
@@ -175,7 +175,7 @@ def test_rater_role_exits_when_only_creator_heads_remain():
         wait_for_networks=True,
         role=CreateAndRateTrialMakerMixin.RATER_ROLE,
     )
-    assert maker.find_chains(None, None) == "exit"
+    assert maker.find_chains(None, None) == []
 
 
 def test_headless_chain_is_an_error_even_when_other_chains_are_assignable():
@@ -244,7 +244,7 @@ def test_fixed_role_filter_runs_before_availability_checks():
         unavailable=[rater_chain],
     )
 
-    assert maker.find_chains(None, None) == "exit"
+    assert maker.find_chains(None, None) == []
 
 
 @pytest.mark.parametrize(
@@ -322,7 +322,7 @@ def test_create_and_rate_waits_when_only_pending_chains_remain():
     assert maker.find_chains(participant=None, experiment=None) == "wait"
 
 
-def test_create_and_rate_exits_when_only_pending_chains_remain_without_wait():
+def test_create_and_rate_finishes_block_when_only_pending_chains_remain_without_wait():
     pending = chain(1)
     maker = CreateAndRateSelectionHarness(
         candidates=[pending],
@@ -330,7 +330,7 @@ def test_create_and_rate_exits_when_only_pending_chains_remain_without_wait():
         wait_for_networks=False,
     )
 
-    assert maker.find_chains(participant=None, experiment=None) == "exit"
+    assert maker.find_chains(participant=None, experiment=None) == []
 
 
 def test_create_and_rate_returns_assignable_chains():
@@ -347,3 +347,8 @@ def test_create_and_rate_returns_assignable_chains():
 
     assert maker.find_chains(participant=None, experiment=None) == [ready]
     assert maker.phase_batch_calls == 1
+
+
+def test_create_and_rate_rejects_planned_chain_order():
+    with pytest.raises(ValueError, match="creation phase"):
+        CreateAndRateTrialMakerMixin(chain_order="listed")

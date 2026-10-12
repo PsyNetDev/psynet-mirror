@@ -413,6 +413,8 @@ def render_data_exports(
 ) -> str:
     """Render the real-data export download link."""
 
+    if evidence.data_file is None:
+        return '<p class="missing-artifact">No real data yet.</p>'
     items = [
         evidence_action_item(
             "Data export",
@@ -595,7 +597,7 @@ def render_design_simulation(
             notebook_file,
             evidence.simulation_notebook,
             section_id="simulation-notebook",
-            heading="Design simulation notebook",
+            heading="Power analysis notebook",
             standalone=standalone,
             url_transform=url_transform,
         )
@@ -653,12 +655,14 @@ def render_notebook_cell(cell: dict[str, object]) -> str:
         if cell_type == "markdown":
             return render_markdown_block(source)
         if cell_type == "code":
-            return (
-                '<div class="notebook-code">'
+            code = (
+                '<details class="notebook-code"><summary>Show code</summary>'
                 f"{render_code_block(source, 'python')}"
-                "</div>"
-                f"{render_notebook_outputs(cell.get('outputs'))}"
+                "</details>"
+                if source.strip()
+                else ""
             )
+            return f"{code}{render_notebook_outputs(cell.get('outputs'))}"
         return f"<pre><code>{html.escape(source)}</code></pre>"
 
     body = safe_section_html(f"notebook-cell-{cell_type}", render_body)

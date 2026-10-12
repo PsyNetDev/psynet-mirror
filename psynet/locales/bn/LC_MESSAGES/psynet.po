@@ -3263,6 +3263,12 @@ msgstr "কয়েক সেকেন্ড পরে আবার চেষ�
 
 #: psynet/templates/macros/timeline-shell.html
 #, fuzzy
+msgctxt "timeline_problem"
+msgid "Getting ready, please wait..."
+msgstr "প্রস্তুতি নিচ্ছে, অনুগ্রহ করে অপেক্ষা করুন..."
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
 msgctxt "timeline"
 msgid "Reward"
 msgstr "পুরস্কার"

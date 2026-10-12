@@ -3283,6 +3283,12 @@ msgstr "केही सेकेन्डमा पुन: प्रयास �
 
 #: psynet/templates/macros/timeline-shell.html
 #, fuzzy
+msgctxt "timeline_problem"
+msgid "Getting ready, please wait..."
+msgstr "तयार हुँदैछ, कृपया पर्खनुहोस्..."
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
 msgctxt "timeline"
 msgid "Reward"
 msgstr "पुरस्कार"
