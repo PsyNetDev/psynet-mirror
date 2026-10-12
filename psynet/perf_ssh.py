@@ -117,7 +117,7 @@ class RemoteApp:
             f"docker compose -f ~/dallinger/{shlex.quote(app)}/docker-compose.yml"
         )
         self._n_workers = 0
-        # Services that stop() stopped and start() hasn't started again.
+        # Services that stop() stopped, until start() has the server ready again.
         self._stopped = []
 
     def run(self, cmd):
@@ -247,7 +247,6 @@ class RemoteApp:
         print(f"▶ Starting {self.app}'s server processes...")
         if self._stopped:
             self.compose("start", *self._stopped)
-        self._stopped = []
         deadline = time.monotonic() + _SERVER_READY_TIMEOUT_S
         health = " ".join(
             [self._compose, "exec -T web python -c", shlex.quote(_HEALTH_PROBE)]
@@ -258,6 +257,7 @@ class RemoteApp:
                 healthy
                 and int(self._redis("SCARD", "rq:workers") or 0) >= self._n_workers
             ):
+                self._stopped = []
                 return
             if time.monotonic() >= deadline:
                 raise RuntimeError(

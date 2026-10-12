@@ -384,17 +384,29 @@ def terminate_connections(cursor, name):
 
 
 def _drop_session_database(session_database_url):
-    """Drop a session's database, warning instead of raising if that fails."""
+    """Drop a session's database and its leftover reset snapshots, warning instead of raising if that fails.
+
+    ``performance-test local --reset-database`` names its temporary snapshots
+    ``<database>_snapshot_<time>`` (see :mod:`psynet.perf_reset`); an
+    interrupted run can leave one behind.
+    """
     import psycopg2
 
     parts = urlsplit(session_database_url)
     name = parts.path.lstrip("/")
     shared_url = urlunsplit(parts._replace(path=re.sub(r"_test_\d+$", "", parts.path)))
+    snapshots = re.sub(r"([\\_%])", r"\\\1", name) + r"\_snapshot\_%"
     try:
         connection = psycopg2.connect(shared_url)
         try:
             connection.autocommit = True
             with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT datname FROM pg_database WHERE datname LIKE %s",
+                    (snapshots,),
+                )
+                for (snapshot,) in cursor.fetchall():
+                    drop_database(cursor, snapshot)
                 drop_database(cursor, name)
         finally:
             connection.close()
