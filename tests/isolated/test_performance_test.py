@@ -603,6 +603,16 @@ def test_reset_refuses_system_and_remote_databases(url, allowed):
             check_resettable_database(url, environ)
 
 
+def test_reset_refuses_a_session_variable_naming_a_debug_database():
+    from psynet.isolated_environment import DATABASE_ENV_VAR
+    from psynet.perf_reset import check_resettable_database
+
+    with pytest.raises(ValueError, match="Refusing"):
+        check_resettable_database(
+            "postgresql://u:p@localhost/dallinger", {DATABASE_ENV_VAR: "dallinger"}
+        )
+
+
 @pytest.mark.parametrize(
     "environ",
     [{"CI": "1"}, {READY_ENV_VAR: "1"}, {ENV_VAR: SHARED}, None],

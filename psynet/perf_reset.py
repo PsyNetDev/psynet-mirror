@@ -96,11 +96,11 @@ def check_local_database(database_url):
     url = make_url(database_url)
     host = url.query.get("host") or url.host or "local socket"
     if not url.database or url.database in _SYSTEM_DATABASES:
-        raise ValueError(f"Refusing to reset the database {url.database!r}.")
+        raise ValueError(f"Refusing to change the database {url.database!r}.")
     if not (host in _LOCAL_HOSTS or host == "local socket" or host.startswith("/")):
         raise ValueError(
-            f"Refusing to reset the database {url.database} on {host}: "
-            "--reset-database only resets a database on this computer."
+            f"Refusing to change the database {url.database} on {host}: "
+            "performance tests only reset or drop databases on this computer."
         )
     return f"{url.database} on {host}"
 
