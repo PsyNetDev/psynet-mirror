@@ -1204,7 +1204,11 @@ def _invoke_performance_test_ssh(command, args, *, apps, app_info, code_key="new
     return result, deploy, run, database
 
 
-_MARKED = {"performance_test_app": True, "performance_test_code_key": "old"}
+_MARKED = {
+    "performance_test_app": True,
+    "performance_test_code_key": "old",
+    "experiment": {"label": "Test"},
+}
 
 
 @pytest.mark.parametrize(
@@ -1234,7 +1238,7 @@ def test_performance_test_ssh_manages_its_own_app(apps, code_key, deployed):
             "use_local_dallinger": False,
             **deployed,
         }
-    run.assert_called_once()
+    assert run.call_args.args[2] == {"label": "Test"}
     assert "psynet destroy ssh --server server --app my-app" in result.output
 
 
@@ -1248,6 +1252,17 @@ def test_performance_test_ssh_refuses_apps_it_did_not_deploy(args):
     assert "didn't deploy it" in result.output
     assert "Choose another --app name" in result.output
     deploy.assert_not_called()
+    run.assert_not_called()
+
+
+def test_performance_test_ssh_needs_the_apps_experiment_to_load():
+    app_info = {k: v for k, v in _MARKED.items() if k != "experiment"}
+    result, _, run, _ = _invoke_performance_test_ssh(
+        "ssh", [], apps=["my-app"], app_info=app_info, code_key="old"
+    )
+
+    assert result.exit_code == 1
+    assert "Could not load the experiment in my-app" in result.output
     run.assert_not_called()
 
 
@@ -5008,29 +5023,6 @@ def test_capacity_search_accepts_an_arrival_window_longer_than_its_tests():
     _check_arrival_options(n_bots="auto", arrival_minutes=10, duration_minutes=1)
 
 
-def test_ssh_performance_test_forwards_confirmation_options():
-    from psynet.command_line import _run_ssh_performance_test
-
-    remote = Mock(run_psynet=Mock(return_value={}))
-    with (
-        patch("psynet.command_line._ssh_executor"),
-        patch("psynet.perf_ssh.RemoteApp", return_value=remote),
-    ):
-        _run_ssh_performance_test(
-            "my-app",
-            "server",
-            None,
-            json_output=None,
-            force=False,
-            n_bots="auto",
-            arrival_minutes=10,
-            no_confirm=True,
-        )
-    assert remote.run_psynet.call_args.args[0].endswith(
-        "--n-bots auto --arrival-minutes 10 --no-confirm"
-    )
-
-
 def test_database_reset_options_imply_a_reset_and_reject_conflicts(monkeypatch):
     from psynet.command_line import _check_database_reset_options
     from psynet.isolated_environment import DATABASE_ENV_VAR
@@ -5060,9 +5052,9 @@ def test_database_reset_options_imply_a_reset_and_reject_conflicts(monkeypatch):
 
 
 def test_performance_test_flags_keep_zeros_and_omit_unset_options():
-    from psynet.command_line import performance_test_flags
+    from psynet.perf_ssh import _performance_test_flags
 
-    assert performance_test_flags(
+    assert _performance_test_flags(
         n_bots=[5, 10],
         stagger=0,
         time_factor=0,
@@ -5075,7 +5067,7 @@ def test_performance_test_flags_keep_zeros_and_omit_unset_options():
         " --n-bots 5,10 --stagger 0 --time-factor 0 --duration-minutes 1.5 "
         "--test-label 1/2 --force"
     )
-    assert performance_test_flags(n_bots=None, stagger=None) == ""
+    assert _performance_test_flags(n_bots=None, stagger=None) == ""
 
 
 def test_experiment_url_can_be_overridden_for_one_process(monkeypatch):

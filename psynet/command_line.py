@@ -4493,6 +4493,15 @@ _test_options["performance_test_label"] = click.option(
     hidden=True,
 )
 
+# A later test of such a suite without database resets first pauses as a
+# local suite would between tests, for a suite that started this long ago.
+_test_options["performance_suite_started_s_ago"] = click.option(
+    "--suite-started-s-ago",
+    type=click.FloatRange(min=0),
+    default=None,
+    hidden=True,
+)
+
 _test_options["performance_reset_database"] = click.option(
     "--reset-database",
     is_flag=True,
@@ -4729,6 +4738,7 @@ def performance_test(ctx):
 @_test_options["performance_json_output"]
 @_test_options["performance_bot_log"]
 @_test_options["performance_test_label"]
+@_test_options["performance_suite_started_s_ago"]
 @_test_options["performance_bot_processes"]
 @_test_options["performance_reset_database"]
 @_test_options["performance_prefill_participants"]
@@ -4886,6 +4896,7 @@ def _run_performance_test_with_existing_server(
     bot_processes=None,
     bot_log=None,
     test_label=None,
+    suite_started_s_ago=None,
     force=False,
     server=None,
     reset=None,
@@ -4895,7 +4906,8 @@ def _run_performance_test_with_existing_server(
     ``reset`` holds the database-reset options (see
     :func:`_check_database_reset_options`), which need the ``server`` to restart.
     With ``test_label``, it runs a single test of the one count in ``n_bots``
-    under that label, without a suite.
+    under that label, without a suite; with ``suite_started_s_ago`` too, it
+    first pauses as between the tests of a suite that started that long ago.
     """
     import logging
     import sys
@@ -4982,6 +4994,11 @@ def _run_performance_test_with_existing_server(
     try:
         if test_label is not None:
             with tester.bot_runner(bot_counts[0], bot_log_file):
+                if suite_started_s_ago is not None:
+                    tester.pause_between_tests(
+                        datetime.datetime.now()
+                        - datetime.timedelta(seconds=suite_started_s_ago)
+                    )
                 all_results = [tester.run_test(test_label, bot_counts[0], bot_log_file)]
         elif find_capacity:
             all_results = suite.find_capacity(
@@ -5643,10 +5660,27 @@ def _performance_test_app_info():
 @click.option("--json-output", required=True, type=click.Path(dir_okay=False))
 def performance_test__app_info(json_output):
     """
-    Write whether this app is a performance-test app to --json-output; used by ``performance-test ssh``.
+    Write whether this app is a performance-test app, and its experiment's test defaults, to --json-output; used by ``performance-test ssh``.
+
+    The defaults are left out if the experiment can't be loaded, so that an
+    app whose experiment is broken can still be updated.
     """
+    from psynet.experiment import get_experiment
+
+    info = _performance_test_app_info()
+    try:
+        exp = get_experiment()
+        info["experiment"] = {
+            "label": exp.label,
+            "test_n_bots": exp.test_n_bots,
+            "test_duration_minutes": exp.test_duration_minutes,
+            "test_parallel_stagger_interval_s": exp.test_parallel_stagger_interval_s,
+            "estimated_duration_minutes": exp.estimated_duration_in_minutes,
+        }
+    except Exception as e:
+        logger.warning(f"Could not load the experiment's test defaults: {e}")
     with open(json_output, "w") as f:
-        json.dump(_performance_test_app_info(), f)
+        json.dump(info, f)
 
 
 def _require_performance_test_app(server, app):
@@ -5699,9 +5733,8 @@ def performance_test__prepare_reset(
 
     Refuses apps that ``performance-test ssh`` didn't deploy, live mode, and
     unless --force, non-bot participants and recruiters that may bring real
-    ones. Then it pre-fills the database,
-    waits for async processes, and writes the experiment's test defaults and
-    the number of async processes still waiting to --json-output.
+    ones. Then it pre-fills the database, waits for async processes, and
+    writes the number of async processes still waiting to --json-output.
     """
     import logging
 
@@ -5719,7 +5752,7 @@ def performance_test__prepare_reset(
             "this app, so its data may matter."
         )
     _check_existing_server_answers()
-    exp = get_experiment()
+    get_experiment()
     _check_no_real_participants(force, resetting=True)
     if prefill_participants:
         from psynet.participant import Participant
@@ -5740,17 +5773,7 @@ def performance_test__prepare_reset(
     if async_timeout_s is not None:
         waiting = wait_for_async_processes(timeout_s=async_timeout_s, finished=True)
     with open(json_output, "w") as f:
-        json.dump(
-            {
-                "label": exp.label,
-                "test_n_bots": exp.test_n_bots,
-                "test_duration_minutes": exp.test_duration_minutes,
-                "test_parallel_stagger_interval_s": exp.test_parallel_stagger_interval_s,
-                "estimated_duration_minutes": exp.estimated_duration_in_minutes,
-                "waiting": waiting,
-            },
-            f,
-        )
+        json.dump({"waiting": waiting}, f)
 
 
 @performance_test.command("ssh")
@@ -5802,13 +5825,13 @@ def performance_test__docker_ssh(
     command didn't deploy. The app is kept after the run; destroy it with
     ``psynet destroy ssh``.
 
-    The bots run inside the app's web container. Without --reset-database,
-    the tests use the database as it is, and the whole suite runs there.
-    With --reset-database, --prefill-participants or --from-snapshot, this
-    computer runs the suite instead: it runs each test in the web container
-    and, between tests, stops the app's server processes, restores the
-    app's database from a snapshot in the app's PostgreSQL, and starts them
-    again. Snapshots are named after the app; list or drop them with
+    The bots run inside the app's web container, while this computer runs
+    the suite: it runs each test in the web container. With
+    --reset-database, --prefill-participants or --from-snapshot, between
+    tests it stops the app's server processes, restores the app's database
+    from a snapshot in the app's PostgreSQL, and starts them again; without
+    them, the tests use the database as it is. Snapshots are named after
+    the app; list or drop them with
     ``psynet performance-test snapshots --app APP``.
 
     Be sure the app is configured to allow a large quantity of bots. If the
@@ -5816,7 +5839,7 @@ def performance_test__docker_ssh(
     """
     reset = _reset_options(reset_database, prefill_participants, from_snapshot)
     _check_arrival_options(**options)
-    _prepare_performance_test_app(
+    experiment = _prepare_performance_test_app(
         ctx,
         app,
         server=server,
@@ -5826,7 +5849,7 @@ def performance_test__docker_ssh(
     )
     try:
         _run_ssh_performance_test(
-            app, server, reset, json_output=json_output, **options
+            app, server, experiment, reset, json_output=json_output, **options
         )
     finally:
         print(
@@ -5841,78 +5864,63 @@ def _prepare_performance_test_app(ctx, app, *, server, **deploy_options):
     ``deploy_options`` are the options of ``psynet debug ssh`` (see
     :func:`_debug_ssh`).
 
+    Returns
+    -------
+    dict
+        The experiment's test defaults that ``performance-test app-info``
+        reports.
+
     Raises
     ------
     click.ClickException
-        If the app exists but ``performance-test ssh`` didn't deploy it.
+        If the app exists but ``performance-test ssh`` didn't deploy it, or
+        its experiment can't be loaded.
     """
     from dallinger.command_line.docker_ssh import get_apps
 
+    info = None
     if app not in {entry.name for entry in get_apps(server)}:
         print(f"▶ Deploying {app} on {server} for performance tests...")
         _debug_ssh(
             ctx, app=app, server=server, performance_test_app=True, **deploy_options
         )
-        return
-    deployed_key = _require_performance_test_app(server, app)[
-        "performance_test_code_key"
-    ]
-    current_key = _current_code_key()
-    if current_key is not None and current_key == deployed_key:
-        print(f"Using {app} on {server}, deployed for performance tests.")
-        return
-    print(
-        f"▶ Updating {app} on {server}: the experiment's files, PsyNet or "
-        "Dallinger have changed since it was deployed. The update keeps its "
-        "database."
-    )
-    _debug_ssh(
-        ctx,
-        app=app,
-        server=server,
-        update=True,
-        performance_test_app=True,
-        **deploy_options,
-    )
-
-
-def _run_ssh_performance_test(app, server, reset, *, json_output, **options):
-    """Run the performance tests in ``app``'s web container, resetting its database with ``reset``."""
-    from psynet.perf_ssh import RemoteApp
-
-    bot_log_file = tempfile.NamedTemporaryFile(
-        mode="a",
-        delete=False,
-        prefix=f"psynet_bots_{app}_",
-        suffix=".log",
-        dir=_performance_log_directory(),
-    )
-    print(f"Bot output log: {bot_log_file.name}")
-    remote = RemoteApp(
-        _ssh_executor(server),
-        app,
-        server,
-        force=options["force"],
-        bot_log_file=bot_log_file,
-    )
-    with bot_log_file, _exit_on_sigterm():
-        if reset:
-            return _run_ssh_suite_with_reset(remote, reset, json_output, **options)
-        payload = remote.run_psynet(
-            "performance-test local --existing" + performance_test_flags(**options),
-            bot_log=True,
+    else:
+        info = _require_performance_test_app(server, app)
+        current_key = _current_code_key()
+        if current_key is not None and current_key == info["performance_test_code_key"]:
+            print(f"Using {app} on {server}, deployed for performance tests.")
+        else:
+            print(
+                f"▶ Updating {app} on {server}: the experiment's files, PsyNet or "
+                "Dallinger have changed since it was deployed. The update keeps its "
+                "database."
+            )
+            _debug_ssh(
+                ctx,
+                app=app,
+                server=server,
+                update=True,
+                performance_test_app=True,
+                **deploy_options,
+            )
+            info = None
+    if info is None:
+        info = _require_performance_test_app(server, app)
+    if "experiment" not in info:
+        raise click.ClickException(
+            f"Could not load the experiment in {app}'s web container; see the "
+            "output above."
         )
-    if json_output:
-        with open(json_output, "w") as f:
-            json.dump(payload, f, indent=2)
-        print(f"Performance results (JSON): {json_output}")
+    return info["experiment"]
 
 
-def _run_ssh_suite_with_reset(
-    remote,
+def _run_ssh_performance_test(
+    app,
+    server,
+    experiment,
     reset,
-    json_output,
     *,
+    json_output=None,
     n_bots=None,
     stagger=None,
     time_factor=None,
@@ -5924,26 +5932,30 @@ def _run_ssh_suite_with_reset(
     bot_processes=None,
     force=False,
 ):
-    """Run a suite from this computer, resetting the SSH app's database before each test.
+    """Run a suite from this computer, each test in ``app``'s web container.
 
-    ``reset`` holds the database-reset options (see :func:`_reset_options`).
-    Default test lengths are those of ``performance-test local``.
+    ``experiment`` holds the experiment's test defaults (see
+    :func:`_prepare_performance_test_app`), and ``reset`` the
+    database-reset options (see :func:`_reset_options`), if the database is
+    reset before each test. Default test lengths are those of
+    ``performance-test local``.
     """
     import logging
 
-    from psynet.perf_ssh import RemoteAppDatabase, RemotePerformanceTester
+    from psynet.perf_ssh import RemoteApp, RemotePerformanceTester
     from psynet.perf_test import CapacityLimits, PerformanceSuite, log_to_console
 
     log_to_console(logging.INFO)
-    # The first check that the database may be reset, before anything changes.
-    experiment = remote.prepare()
-    try:
-        database = RemoteAppDatabase(remote)
-        database.check_resettable()
-    except ValueError as e:
-        raise click.ClickException(str(e)) from e
-    print(
-        f"Database to reset: {database.name} in {database.container} on {remote.server}"
+    bot_log_file = tempfile.NamedTemporaryFile(
+        mode="a",
+        delete=False,
+        prefix=f"psynet_bots_{app}_",
+        suffix=".log",
+        dir=_performance_log_directory(),
+    )
+    print(f"Bot output log: {bot_log_file.name}")
+    remote = RemoteApp(
+        _ssh_executor(server), app, server, force=force, bot_log_file=bot_log_file
     )
     bot_counts = n_bots or [experiment["test_n_bots"]]
     find_capacity = bot_counts == "auto"
@@ -5972,34 +5984,24 @@ def _run_ssh_suite_with_reset(
         max_p95_s=None if max_p95_ms is None else float(max_p95_ms) / 1000,
         max_queue_p95_s=max_queue_p95_s,
     )
-    try:
-        database_reset = _build_database_reset(
-            database,
-            reset,
-            stop_server=remote.stop,
-            start_server=remote.start,
-            prefill=functools.partial(
-                remote.prepare, prefill_participants=reset["prefill_participants"]
-            ),
-            experiment_label=experiment["label"],
-        )
-    except ValueError as e:
-        raise click.ClickException(str(e)) from e
-    suite = PerformanceSuite(tester, limits=limits, before_test=database_reset)
-    started_at = datetime.datetime.now().isoformat(timespec="seconds")
-    try:
-        if find_capacity:
-            all_results = suite.find_capacity(
-                bot_log_file=remote.bot_log_file, confirm=not no_confirm
-            )
-        else:
-            all_results = suite.run(bot_counts, bot_log_file=remote.bot_log_file)
-    finally:
-        # close() may take the pre-fill snapshot, which needs the app stopped.
+    with bot_log_file, _exit_on_sigterm():
+        database_reset = _ssh_database_reset(remote, reset, experiment["label"])
+        suite = PerformanceSuite(tester, limits=limits, before_test=database_reset)
+        started_at = datetime.datetime.now().isoformat(timespec="seconds")
         try:
-            database_reset.close()
+            if find_capacity:
+                all_results = suite.find_capacity(
+                    bot_log_file=bot_log_file, confirm=not no_confirm
+                )
+            else:
+                all_results = suite.run(bot_counts, bot_log_file=bot_log_file)
         finally:
-            remote.start_stopped_services()
+            if database_reset is not None:
+                # close() may take the pre-fill snapshot, which needs the app stopped.
+                try:
+                    database_reset.close()
+                finally:
+                    remote.start_stopped_services()
     if json_output:
         _write_suite_json(
             json_output,
@@ -6018,26 +6020,42 @@ def _run_ssh_suite_with_reset(
     return all_results
 
 
-_CONTAINER_WEB_PORT = 5000
+def _ssh_database_reset(remote, reset, experiment_label):
+    """Return the :class:`~psynet.perf_reset.DatabaseReset` of the SSH app for the ``reset`` options, or ``None`` without them.
 
-
-def performance_test_flags(**options):
-    """Return ``performance-test`` command-line flags for ``options``, preserving explicit zeros.
-
-    ``options`` are named like the command's options, e.g. ``n_bots`` for
-    ``--n-bots``; a list becomes a comma-separated value. The result starts
-    with a space unless it is empty.
+    Raises
+    ------
+    click.ClickException
+        If the database may not be reset.
     """
-    flags = ""
-    for name, value in options.items():
-        if isinstance(value, list):
-            value = ",".join(str(v) for v in value)
-        flag = f"--{name.replace('_', '-')}"
-        if value is True:
-            flags += f" {flag}"
-        elif value is not None and value is not False:
-            flags += f" {flag} {shlex.quote(str(value))}"
-    return flags
+    from psynet.perf_ssh import RemoteAppDatabase
+
+    if not reset:
+        return None
+    # The first check that the database may be reset, before anything changes.
+    remote.prepare()
+    try:
+        database = RemoteAppDatabase(remote)
+        database.check_resettable()
+        print(
+            f"Database to reset: {database.name} in {database.container} "
+            f"on {remote.server}"
+        )
+        return _build_database_reset(
+            database,
+            reset,
+            stop_server=remote.stop,
+            start_server=remote.start,
+            prefill=functools.partial(
+                remote.prepare, prefill_participants=reset["prefill_participants"]
+            ),
+            experiment_label=experiment_label,
+        )
+    except ValueError as e:
+        raise click.ClickException(str(e)) from e
+
+
+_CONTAINER_WEB_PORT = 5000
 
 
 @psynet.command(name="list-experiment-dirs")

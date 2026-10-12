@@ -1809,6 +1809,13 @@ def test_live_recruitment_counts_as_real_participants(mode, recruiter, live):
 
 
 _APP_SNAPSHOT = "psynet_prefill_my-app_0123456789ab_n5"
+_EXPERIMENT = {
+    "label": "Test",
+    "test_n_bots": 2,
+    "test_duration_minutes": 1,
+    "test_parallel_stagger_interval_s": 0.1,
+    "estimated_duration_minutes": 1,
+}
 
 
 def _fake_server(respond):
@@ -1904,7 +1911,7 @@ def test_ssh_starts_the_stopped_services_again_after_a_failed_reset(
 ):
     import psycopg2
 
-    from psynet.command_line import _run_ssh_suite_with_reset
+    from psynet.command_line import _run_ssh_performance_test
 
     def respond(cmd):
         if "CREATE DATABASE" in cmd:
@@ -1927,25 +1934,21 @@ def test_ssh_starts_the_stopped_services_again_after_a_failed_reset(
     monkeypatch.chdir(tmp_path)
     # Its handler would keep writing to capsys's stdout after this test.
     monkeypatch.setattr("psynet.perf_test.log_to_console", lambda *args: None)
-    remote = _app_database(respond).remote
-    remote.prepare = Mock(
-        return_value={
-            "label": "Test",
-            "test_n_bots": 2,
-            "test_duration_minutes": 1,
-            "test_parallel_stagger_interval_s": 0.1,
-            "estimated_duration_minutes": 1,
-            "waiting": 0,
-        }
-    )
+    executor = _app_database(respond).remote.executor
     reset = {"prefill_participants": None, "from_snapshot": _APP_SNAPSHOT}
     # A failed restart fails the command, replacing the reset's error.
-    with pytest.raises(RuntimeError if restart_fails else psycopg2.Error):
-        _run_ssh_suite_with_reset(remote, reset, None, n_bots=[2])
+    with (
+        patch("psynet.command_line._ssh_executor", return_value=executor),
+        patch("psynet.perf_ssh.RemoteApp.prepare", return_value=0),
+        pytest.raises(RuntimeError if restart_fails else psycopg2.Error),
+    ):
+        _run_ssh_performance_test(
+            "my-app", "server", _EXPERIMENT, reset, n_bots=[2], force=False
+        )
 
     manual = "docker compose start web worker_1 pgbouncer sidecar"
     assert (manual in capsys.readouterr().out) == restart_fails
-    commands = remote.executor.commands
+    commands = executor.commands
     stop, start = (
         next(i for i, c in enumerate(commands) if f".yml {action} " in c)
         for action in ("stop", "start")
@@ -2048,54 +2051,49 @@ def test_a_suite_drives_remote_tests_through_their_json_results():
 
 
 def test_a_remote_capacity_search_ends_with_a_confirmation_test(tmp_path, monkeypatch):
-    """The reset path times its tests like a local search of a 12-minute study."""
+    """Over SSH, tests are timed like a local search of a 12-minute study, and later ones pause first."""
     import json
     import re
     from dataclasses import asdict
 
-    from psynet.command_line import _run_ssh_suite_with_reset
+    from psynet.command_line import _run_ssh_performance_test
 
     def run_psynet(args, bot_log):
         n_bots = int(re.search(r"--n-bots (\d+)", args)[1])
         p95 = 0.9 if n_bots > 150 else 0.1
         result = _base_result(n_bots=n_bots, p95_response_time=p95, **_STEADY)
-        return {"results": [asdict(result)]}
+        return {"psynet_version": "remote", "results": [asdict(result)]}
 
-    remote = Mock(force=False, run_psynet=Mock(side_effect=run_psynet))
-    remote.prepare.return_value = {
-        "label": "Test",
-        "test_n_bots": 2,
-        "test_duration_minutes": 1,
-        "test_parallel_stagger_interval_s": 0.1,
-        "estimated_duration_minutes": 12,
-        "waiting": 0,
-    }
     monkeypatch.setattr("psynet.perf_test.log_to_console", lambda *args: None)
-    monkeypatch.setattr("psynet.perf_ssh.time.sleep", lambda s: None)
     json_output = tmp_path / "results.json"
     with (
-        patch("psynet.perf_ssh.RemoteAppDatabase"),
-        patch(
-            "psynet.command_line._build_database_reset",
-            return_value=Mock(snapshot=None, snapshot_rows=None),
-        ),
+        patch("psynet.command_line._ssh_executor"),
+        patch("psynet.perf_ssh.RemoteApp.run_psynet", side_effect=run_psynet) as run,
     ):
-        results = _run_ssh_suite_with_reset(
-            remote,
-            {"prefill_participants": None, "from_snapshot": None},
-            str(json_output),
+        results = _run_ssh_performance_test(
+            "my-app",
+            "server",
+            {**_EXPERIMENT, "estimated_duration_minutes": 12},
+            None,
+            json_output=str(json_output),
             n_bots="auto",
         )
 
-    commands = [c.args[0] for c in remote.run_psynet.call_args_list]
+    commands = [c.args[0] for c in run.call_args_list]
+    assert all(c.startswith("performance-test local --existing") for c in commands)
+    assert "--suite-started-s-ago" not in commands[0]
+    assert all("--suite-started-s-ago" in c for c in commands[1:])
     assert all("--duration-minutes 5 " in c for c in commands[:-1])
     assert not any("--arrival-minutes" in c for c in commands[:-1])
     assert "--n-bots 120 " in commands[-1]
     assert "--duration-minutes 24 --arrival-minutes 12.0 " in commands[-1]
     assert [r.confirmation for r in results] == [False] * 8 + [True]
-    options = json.loads(json_output.read_text())["options"]
+    written = json.loads(json_output.read_text())
+    assert written["psynet_version"] == "remote"
+    options = written["options"]
     assert options["confirm"] is True and options["confirmation_skipped"] is None
     assert options["session_minutes"] == 12
+    assert options["reset_database"] is False
 
 
 def test_resetting_refuses_live_mode_even_with_force(monkeypatch):

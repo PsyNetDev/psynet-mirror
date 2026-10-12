@@ -1,15 +1,14 @@
-"""Reset and pre-fill the database of an SSH app for ``psynet performance-test ssh``.
+"""Run the tests of ``psynet performance-test ssh`` in an SSH app, and reset and pre-fill its database.
 
-Without a reset, ``performance-test ssh`` runs the whole suite as one
-``psynet performance-test local --existing`` inside the app's web container.
-A reset has to stop that container, which would stop the test with it, so
-with ``--reset-database`` this computer drives the suite instead: each test
-is its own ``performance-test local --existing`` in the web container, whose
-JSON result is read back, and between tests :class:`RemoteApp` stops the
-app's server processes, :class:`psynet.perf_reset.DatabaseReset` restores
-the snapshot, and the processes start again. :class:`RemotePerformanceTester`
-is the tester that :class:`psynet.perf_test.PerformanceSuite` sees, so the
-capacity search and summaries are those of a local run.
+This computer drives the suite: each test is its own
+``performance-test local --existing`` in the app's web container, whose
+JSON result is read back. A reset has to stop that container, which would
+stop a suite running inside it with it. With ``--reset-database``, between
+tests :class:`RemoteApp` stops the app's server processes,
+:class:`psynet.perf_reset.DatabaseReset` restores the snapshot, and the
+processes start again. :class:`RemotePerformanceTester` is the tester that
+:class:`psynet.perf_test.PerformanceSuite` sees, so the capacity search and
+summaries are those of a local run.
 
 How an app is laid out on the server (see Dallinger's ``docker_ssh``): its
 files and ``docker-compose.yml`` are in ``~/dallinger/<app>/``; the stack has
@@ -194,7 +193,7 @@ class RemoteApp:
             ) from e
 
     def prepare(self, *, prefill_participants=None, async_timeout_s=None):
-        """Check that the app's database may be reset, optionally pre-fill it, and return facts about it.
+        """Check that the app's database may be reset, optionally pre-fill it, and return how many async processes are waiting.
 
         This runs ``psynet performance-test prepare-reset`` in the web
         container, which refuses an app that ``performance-test ssh`` didn't
@@ -206,11 +205,8 @@ class RemoteApp:
 
         Returns
         -------
-        dict
-            The experiment's ``label``, ``test_n_bots``,
-            ``test_duration_minutes``, ``test_parallel_stagger_interval_s``
-            and ``estimated_duration_minutes``, and the number of async
-            processes still ``waiting``.
+        int
+            The number of async processes still waiting.
         """
         args = "performance-test prepare-reset"
         if self.force:
@@ -219,7 +215,7 @@ class RemoteApp:
             args += f" --prefill-participants {int(prefill_participants)}"
         if async_timeout_s is not None:
             args += f" --wait-for-async-processes {int(async_timeout_s)}"
-        return self.run_psynet(args, bot_log=bool(prefill_participants))
+        return self.run_psynet(args, bot_log=bool(prefill_participants))["waiting"]
 
     def database_name(self):
         """Return the name of the database in the web container's ``DATABASE_URL``."""
@@ -477,7 +473,7 @@ class RemoteAppDatabase(SnapshotDatabase):
         self.remote.clear_job_queues()
 
     def wait_for_async_processes(self, timeout_s):
-        return self.remote.prepare(async_timeout_s=timeout_s)["waiting"]
+        return self.remote.prepare(async_timeout_s=timeout_s)
 
     def drop_hint(self, name):
         return (
@@ -557,6 +553,25 @@ def _literal(value):
     return "'" + str(value).replace("'", "''") + "'"
 
 
+def _performance_test_flags(**options):
+    """Return ``performance-test`` command-line flags for ``options``, preserving explicit zeros.
+
+    ``options`` are named like the command's options, e.g. ``n_bots`` for
+    ``--n-bots``; a list becomes a comma-separated value. The result starts
+    with a space unless it is empty.
+    """
+    flags = ""
+    for name, value in options.items():
+        if isinstance(value, list):
+            value = ",".join(str(v) for v in value)
+        flag = f"--{name.replace('_', '-')}"
+        if value is True:
+            flags += f" {flag}"
+        elif value is not None and value is not False:
+            flags += f" {flag} {shlex.quote(str(value))}"
+    return flags
+
+
 class RemotePerformanceTester:
     """Run each test as its own ``psynet performance-test local --existing`` in the app's web container.
 
@@ -597,16 +612,20 @@ class RemotePerformanceTester:
         self.arrival_minutes = arrival_minutes
         #: The JSON metadata of the first remote test, such as the server's PsyNet version.
         self.remote_metadata = None
+        self._suite_started = None
+        self._pause_before_test = False
 
     session_minutes = PerformanceTester.session_minutes
 
     @contextmanager
     def bot_runner(self, max_bots, bot_log_file):
-        """Do nothing: each remote test starts and stops its own bot processes."""
+        """Note when the suite starts: each remote test starts and stops its own bot processes."""
+        self._suite_started = time.monotonic()
         yield
 
     def pause_between_tests(self):
-        time.sleep(5)
+        """Make the next remote test pause first, as a local suite pauses between tests."""
+        self._pause_before_test = True
 
     def release_database_connections(self):
         """Do nothing: the bots' connections close when their remote test ends."""
@@ -625,18 +644,22 @@ class RemotePerformanceTester:
 
         The options are as for :meth:`psynet.perf_test.PerformanceTester.run_test`.
         The remote test always gets its length, so it never chooses a default
-        of its own.
+        of its own. After :meth:`pause_between_tests`, it pauses first and
+        waits for async processes that the suite's earlier tests queued.
         """
-        from psynet.command_line import performance_test_flags
-
+        suite_started_s_ago = None
+        if self._pause_before_test:
+            self._pause_before_test = False
+            suite_started_s_ago = round(time.monotonic() - self._suite_started)
         if duration_minutes is None:
             duration_minutes, arrival_minutes = (
                 self.duration_minutes,
                 self.arrival_minutes,
             )
-        args = "performance-test local --existing" + performance_test_flags(
+        args = "performance-test local --existing" + _performance_test_flags(
             n_bots=[n_bots],
             test_label=label,
+            suite_started_s_ago=suite_started_s_ago,
             duration_minutes=duration_minutes,
             arrival_minutes=arrival_minutes,
             stagger=self.stagger_interval_s,
