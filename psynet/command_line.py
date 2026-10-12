@@ -4232,8 +4232,8 @@ _test_options["performance_n_bots"] = click.option(
     to run sequential tests with different maximum concurrency levels.
     Example: --n-bots "5,10,20" will run three separate tests.
     Use --n-bots auto to search for the largest bot count that keeps the
-    95th-percentile response time under --max-p95-ms and async queue waits
-    under --max-queue-p95-s, with at most 0.1% of requests failing, 1%
+    95th-percentile response time under --max-p95-ms and high-priority async
+    queue waits under --max-queue-p95-s, with at most 0.1% of requests failing, 1%
     answered as busy or stale, 1% of bots failing, 1% of participants
     failed by the experiment for waiting too long, and 1% getting fewer
     trials in a trial maker because every chain was busy. The search's tests
@@ -4302,10 +4302,11 @@ _test_options["performance_max_queue_p95_s"] = click.option(
     type=click.FloatRange(min=0),
     default=None,
     help="""
-    The 95th-percentile time, in seconds, that async jobs may wait for
-    a worker while the test still counts as within capacity. Processes still
-    queued when the test ends count with the time they have waited so far.
-    Used alongside --max-p95-ms. Defaults to 5.""",
+    The 95th-percentile time, in seconds, that high-priority async jobs,
+    which participants wait for, may wait for a worker while the test still
+    counts as within capacity. Jobs still queued when the test ends count
+    with the time they have waited so far. Low-priority jobs are reported
+    but never fail the test. Used alongside --max-p95-ms. Defaults to 5.""",
 )
 
 _test_options["performance_time_factor"] = click.option(
@@ -4380,9 +4381,9 @@ _test_options["performance_json_output"] = click.option(
     bot_processes, reset_database, prefill_participants, from_snapshot,
     and with --n-bots auto confirm and confirmation_skipped),
     and results (one entry per test, with all metrics, including its
-    duration_minutes, arrival_minutes, session_minutes, startup_phase and
-    steady_state_phase, and confirmation for the test that confirms a
-    capacity search's cap).
+    duration_minutes, arrival_minutes, session_minutes, queue_waits by
+    async job priority, startup_phase and steady_state_phase, and
+    confirmation for the test that confirms a capacity search's cap).
     Useful for downstream consumption (e.g. benchmarking tools like asv).""",
 )
 

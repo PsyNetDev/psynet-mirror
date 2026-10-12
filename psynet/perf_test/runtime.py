@@ -880,10 +880,11 @@ class PerformanceTester:
 
         Request statistics cover requests logged up to ``last_request_id``, i.e.
         before the bots were stopped, so that they match ``actual_duration``.
-        Async jobs count if they started by ``ended_at``.
-        ``oldest_queued_s`` is how long the oldest async job enqueued
-        during the test had been waiting for a worker at ``ended_at``, so a
-        backlog that never drains still counts against capacity.
+        Async jobs count if they started by ``ended_at``. For each priority,
+        ``queue_waits`` also records the jobs enqueued during the test that
+        were still waiting for a worker at ``ended_at`` and how long the
+        oldest had waited, so a high-priority backlog that never drains
+        still counts against capacity.
 
         The steady state begins when the first bot completes the experiment:
         until then every bot is still in its first session, so the test sees

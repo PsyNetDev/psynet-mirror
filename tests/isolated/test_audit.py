@@ -417,7 +417,7 @@ def test_render_audit_site_renders_evidence_view(tmp_path: Path) -> None:
                         "total_requests": 12,
                         "median_response_time": 0.1234,
                         "p95_response_time": 0.4567,
-                        "q_delay_p95": 0.0,
+                        "queue_waits": {"high": {"q_delay_p95": 0.0}},
                         "request_errors": 1,
                         "bot_errors": 2,
                     }

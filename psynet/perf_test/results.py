@@ -225,11 +225,14 @@ class PerformanceTestResult:
     # Of bots that raised or whose participant ended with another status.
     avg_failed_duration: float | None = None
     avg_incomplete_duration: float | None = None
+    # Of all async jobs that started.
     q_delay_median: float | None = None
-    q_delay_p95: float | None = None
-    # How long the oldest async job still queued at the end had waited.
-    oldest_queued_s: float | None = None
-    # Duration and queue-delay statistics by trial maker and job label.
+    # For "high" and "low" priority async jobs, if any: how many started,
+    # their p95 queue wait, and the backlog still queued at the end and how
+    # long its oldest job had waited (see measure._queue_waits).
+    queue_waits: dict[str, dict] = field(default_factory=dict)
+    # Duration, CPU and queue-delay statistics by trial maker, job label and
+    # priority.
     async_job_stats: list[dict] = field(default_factory=list)
     # Trials per bot that succeeded.
     min_trial_count: int | None = None
@@ -268,12 +271,13 @@ class PerformanceTestResult:
 
 
 # Statistics in each entry of PerformanceTestResult.async_job_stats, besides
-# trial_maker_id, label and count.
+# trial_maker_id, label, priority and count.
 ASYNC_JOB_STAT_KEYS = (
     "avg",
     "median",
     "p95",
     "max",
+    "cpu_avg",
     "q_avg",
     "q_median",
     "q_p95",
@@ -282,6 +286,10 @@ ASYNC_JOB_STAT_KEYS = (
 
 
 POSTGRES_FULL = "PostgreSQL out of connections"
+
+# Async job priorities, as in psynet.async_job, which this module doesn't
+# import so that it doesn't need a database.
+PRIORITIES = ("high", "low")
 
 
 # Failure tags that mean a participant waited too long, which under load
@@ -392,8 +400,9 @@ class CapacityLimits:
         Largest acceptable 95th-percentile response time, for ``/timeline``
         and ``/response`` together and for each of them.
     max_queue_p95_s : float
-        Largest acceptable time async jobs spend waiting for a worker,
-        measured by :func:`queue_wait_p95`.
+        Largest acceptable time high-priority async jobs spend waiting for a
+        worker, measured by :func:`queue_wait_p95`. Participants don't wait
+        for low-priority jobs, so their waits are only reported.
     max_request_error_rate : float
         Largest acceptable share of ``/timeline`` and ``/response`` requests
         that fail, not counting busy or stale responses (HTTP 409 and 503).
@@ -473,22 +482,59 @@ class CapacityLimits:
         if not include_queue:
             return f"{response} and {errors}"
         return (
-            f"{response}, p95 async queue wait under {self.max_queue_p95_s:g} s "
-            f"and {errors}"
+            f"{response}, p95 high-priority async queue wait under "
+            f"{self.max_queue_p95_s:g} s and {errors}"
         )
 
 
-def queue_wait_p95(result):
-    """Return the 95th-percentile async queue delay, counting any unfinished backlog.
+def queue_wait_p95(result, priority="high"):
+    """Return the 95th-percentile queue delay of ``priority`` async jobs, counting any unfinished backlog.
 
     Jobs still waiting when the test ended have no ``queue_delay`` yet,
     so the wait of the oldest one is used instead whenever it is longer.
-    Returns ``None`` if the test ran no async jobs.
+    Returns ``None`` if the test ran no async jobs of that priority.
     """
-    waits = [
-        float(v) for v in (result.q_delay_p95, result.oldest_queued_s) if v is not None
+    return _queue_wait_p95(result.queue_waits, priority)
+
+
+def phase_queue_wait_p95(phase, priority="high"):
+    """Return :func:`queue_wait_p95` for one phase of a test, counting the backlog at its end.
+
+    ``phase`` is :attr:`PerformanceTestResult.startup_phase` or
+    :attr:`~PerformanceTestResult.steady_state_phase`.
+    """
+    return _queue_wait_p95(phase.get("queue_waits"), priority)
+
+
+def _queue_wait_p95(queue_waits, priority):
+    waits = (queue_waits or {}).get(priority) or {}
+    values = [
+        float(v)
+        for v in (waits.get("q_delay_p95"), waits.get("oldest_queued_s"))
+        if v is not None
     ]
-    return max(waits) if waits else None
+    return max(values) if values else None
+
+
+def low_priority_backlog_growing(result, limits):
+    """Return whether low-priority async jobs piled up during the steady state of ``result``.
+
+    That is, at least as many were queued at the end as when the steady state
+    began, and the oldest had waited longer than ``limits.max_queue_p95_s``.
+    Then the workers can't keep up with these jobs in the long run, although
+    participants don't wait for them. Returns ``False`` without a steady
+    state to compare.
+    """
+    if not (result.startup_phase and result.steady_state_phase):
+        return False
+    low = (result.queue_waits or {}).get("low") or {}
+    at_start = (result.startup_phase.get("queue_waits") or {}).get("low") or {}
+    backlog = low.get("backlog", 0)
+    return (
+        backlog > 0
+        and backlog >= at_start.get("backlog", 0)
+        and (low.get("oldest_queued_s") or 0) > limits.max_queue_p95_s
+    )
 
 
 # Bots between runs, or still being created, leave a few slots briefly empty.
@@ -629,13 +675,13 @@ def busy_early_finish_cause(result, limits):
     return " and ".join(over) or None
 
 
-def phase_limit_reasons(phase, limits, oldest_queued_s=None):
+def phase_limit_reasons(phase, limits):
     """Return the response-time, request-error and queue limits that one phase exceeded.
 
     ``phase`` is :attr:`PerformanceTestResult.startup_phase` or
-    :attr:`~PerformanceTestResult.steady_state_phase`. Pass the result's
-    ``oldest_queued_s`` for the steady state, which a backlog left at the end
-    belongs to, as in :func:`queue_wait_p95`.
+    :attr:`~PerformanceTestResult.steady_state_phase`. As in
+    :func:`queue_wait_p95`, only high-priority queue waits count, including
+    the backlog left at the end of the phase.
     """
     reasons = []
     p95 = phase.get("p95_response_time")
@@ -648,9 +694,9 @@ def phase_limit_reasons(phase, limits, oldest_queued_s=None):
     )
     if errors > allowed:
         reasons.append(plural(errors, "request error"))
-    waits = [w for w in (phase.get("q_delay_p95"), oldest_queued_s) if w is not None]
-    if waits and max(waits) > limits.max_queue_p95_s:
-        reasons.append(f"p95 async queue wait {max(waits):.2f} s")
+    queue_wait = phase_queue_wait_p95(phase)
+    if queue_wait is not None and queue_wait > limits.max_queue_p95_s:
+        reasons.append(f"p95 high-priority async queue wait {queue_wait:.2f} s")
     return reasons
 
 
@@ -713,7 +759,7 @@ def capacity_failure_causes(result, limits):
                 )
     queue_wait = queue_wait_p95(result)
     if queue_wait is not None and queue_wait > limits.max_queue_p95_s:
-        causes.append((f"p95 async queue wait {queue_wait:.2f} s", True))
+        causes.append((f"p95 high-priority async queue wait {queue_wait:.2f} s", True))
     return causes
 
 
@@ -807,9 +853,9 @@ _MIN_CONFIRMATION_RETRY_SHARE = 0.5
 def overshoot(result, limits):
     """Return how many times its limit the worst load-dependent measure of ``result`` reached.
 
-    The measures are response times, the async queue wait and, for each
-    trial maker, the share of bots that got fewer trials because every chain
-    was busy. Returns ``None`` if none exceeded its limit, e.g. when only
+    The measures are response times, the high-priority async queue wait
+    and, for each trial maker, the share of bots that got fewer trials
+    because every chain was busy. Returns ``None`` if none exceeded its limit, e.g. when only
     errors did.
     """
     ratios = []

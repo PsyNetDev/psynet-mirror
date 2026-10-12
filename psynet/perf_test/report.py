@@ -18,6 +18,7 @@ from psynet.perf_test.results import (
     CAPACITY_HEADROOM,
     MIN_STEADY_STATE_S,
     POSTGRES_FULL,
+    PRIORITIES,
     CapacityLimits,
     busy_early_finish_cause,
     capacity_failure_causes,
@@ -25,8 +26,10 @@ from psynet.perf_test.results import (
     count_wait_timeouts,
     describe_bot_errors,
     describe_busy_early_finish,
+    low_priority_backlog_growing,
     overshoot,
     phase_limit_reasons,
+    phase_queue_wait_p95,
     plural,
     queue_wait_p95,
     retry_bot_count,
@@ -102,15 +105,21 @@ def _phase_lines(result):
             f"{steady['request_errors']:,}",
         ],
     ]
-    steady_queue = [
-        w for w in (steady["q_delay_p95"], result.oldest_queued_s) if w is not None
-    ]
-    if startup["q_delay_p95"] is not None or steady_queue:
+    phases = (startup, steady)
+    for priority in PRIORITIES:
+        if not any(priority in (p.get("queue_waits") or {}) for p in phases):
+            continue
         rows.append(
             [
-                "p95 async queue wait",
-                _fmt(startup["q_delay_p95"], "s"),
-                _fmt(max(steady_queue, default=None), "s"),
+                f"p95 {priority}-priority queue wait",
+                *(_fmt(phase_queue_wait_p95(p, priority), "s") for p in phases),
+            ]
+        )
+    if any("low" in (p.get("queue_waits") or {}) for p in phases):
+        rows.append(
+            [
+                "Low-priority jobs queued at the end",
+                *(f"{_backlog(p.get('queue_waits'), 'low'):,}" for p in phases),
             ]
         )
     return [
@@ -125,6 +134,11 @@ def _phase_lines(result):
         ),
         "",
     ]
+
+
+def _backlog(queue_waits, priority):
+    """Return how many ``priority`` async jobs ``queue_waits`` says were still queued."""
+    return ((queue_waits or {}).get(priority) or {}).get("backlog", 0)
 
 
 def _section(title):
@@ -315,6 +329,7 @@ def _request_lines(result):
 
 _ASYNC_TABLE_LEGEND = [
     "  Avg/Med/P95/Max — statistics on actual execution time",
+    "  CPU Avg — mean CPU time of the job's own thread",
     "  Q Avg/Q Med/Q P95 — statistics on queue delay (time waiting in RQ queue)",
     "  Q Share — avg of per-job queue_delay / (queue_delay + exec_time),",
     "    i.e. avg percentage of total time spent queuing rather than executing",
@@ -334,8 +349,9 @@ def _async_job_lines(result):
             [
                 ps["trial_maker_id"],
                 ps["label"],
+                ps.get("priority") or "",
                 ps["count"],
-                *(_fmt(ps[key]) for key in ASYNC_JOB_STAT_KEYS if key != "q_share"),
+                *(_fmt(ps.get(key)) for key in ASYNC_JOB_STAT_KEYS if key != "q_share"),
                 _q_share_text(ps["q_share"], ps["q_p95"]),
             ]
             for ps in result.async_job_stats
@@ -348,11 +364,13 @@ def _async_job_lines(result):
                 headers=[
                     "Trial Maker",
                     "Label",
+                    "Priority",
                     "Count",
                     "Avg (s)",
                     "Med (s)",
                     "P95 (s)",
                     "Max (s)",
+                    "CPU Avg (s)",
                     "Q Avg (s)",
                     "Q Med (s)",
                     "Q P95 (s)",
@@ -360,7 +378,7 @@ def _async_job_lines(result):
                 ],
                 indent="    ",
                 tablefmt="simple",
-                colalign=("left", "left") + ("right",) * 8,
+                colalign=("left", "left", "left") + ("right",) * 9,
             ),
             "",
         ]
@@ -372,14 +390,23 @@ def _async_job_lines(result):
             "",
         ]
 
-    if result.oldest_queued_s is not None:
-        lines += [
-            warning(
-                "  Still queued when the test ended: oldest job had waited "
-                f"{result.oldest_queued_s:.1f}s for a worker."
-            ),
-            "",
-        ]
+    for priority in PRIORITIES:
+        waits = (result.queue_waits or {}).get(priority) or {}
+        if not waits.get("backlog"):
+            continue
+        text = (
+            f"  Still queued when the test ended: {waits['backlog']:,} "
+            f"{priority}-priority jobs; the oldest had waited "
+            f"{waits['oldest_queued_s']:.1f}s for a worker."
+        )
+        if priority == "high":
+            lines += [warning(text), ""]
+        else:
+            lines += [
+                text + " Participants don't wait for these, so they don't "
+                "count against the limits.",
+                "",
+            ]
     return lines
 
 
@@ -463,7 +490,10 @@ def format_performance_summary(results):
     summary_headers.append("Q Med all (s)")
     if show_scaling:
         summary_headers.append("Q Med vs base")
-    summary_headers.append("Q P95 (s)")
+    show_low = any("low" in (r.queue_waits or {}) for r in results)
+    summary_headers.append("Q P95 high (s)")
+    if show_low:
+        summary_headers.append("Q P95 low (s)")
 
     summary_rows = []
     for i, result in enumerate(results):
@@ -491,6 +521,8 @@ def format_performance_summary(results):
         if show_scaling:
             row.append(_ratio(q_median, baseline_q_median, i == 0))
         row.append(_fmt(queue_wait_p95(result)))
+        if show_low:
+            row.append(_fmt(queue_wait_p95(result, "low")))
         summary_rows.append(row)
 
     lines.append("")
@@ -501,8 +533,10 @@ def format_performance_summary(results):
     )
     lines.append("  Q Med all — median queue delay across all async jobs")
     lines.append(
-        "  Q P95 — 95th percentile queue delay, or the wait of the oldest job "
-        "still queued at the end if longer"
+        "  Q P95 high / low — 95th percentile queue delay of high- or "
+        "low-priority jobs, or the wait of the oldest one still queued at the "
+        "end if longer; participants only wait for high-priority jobs, so only "
+        "these count against --max-queue-p95-s"
     )
     if show_scaling:
         lines.append("  vs base — ratio of the median to the lowest bot count's")
@@ -545,8 +579,16 @@ _POSTGRES_ADVICE = (
     "server, or raise max_connections."
 )
 _QUEUE_ADVICE = (
-    "  Async jobs waited too long for a worker: add worker processes "
-    "with num_dynos_worker, or make the processes faster."
+    "  High-priority async jobs, which participants wait for, waited too long "
+    "for a worker: add worker processes with num_dynos_worker, or make the "
+    "jobs faster."
+)
+_LOW_PRIORITY_BACKLOG_ADVICE = (
+    "  Low-priority async jobs piled up during the steady state, so the "
+    "workers can't keep up with them in the long run. Participants don't "
+    "wait for these jobs, but their results arrive ever later and the backlog "
+    "competes for workers with high-priority jobs. Add worker processes with "
+    "num_dynos_worker, or make the jobs cheaper."
 )
 _WAIT_ADVICE = (
     "  Participants waited too long and the experiment failed them. Design "
@@ -659,18 +701,16 @@ def _startup_only_lines(result, limits):
     if not (result.startup_phase and result.steady_state_phase):
         return []
     startup = phase_limit_reasons(result.startup_phase, limits)
-    steady = phase_limit_reasons(
-        result.steady_state_phase, limits, result.oldest_queued_s
-    )
+    steady = phase_limit_reasons(result.steady_state_phase, limits)
     if not startup or steady:
         return []
     return [
         f"  In the {result.n_bots:,}-bot test, the start-up exceeded the limits "
         f"({'; '.join(startup)}) but the steady state kept its response times, "
-        "request errors and queue waits within them. The capacity counts the "
-        "start-up, because participants often arrive together when a study "
-        "opens; if yours will arrive gradually, rerun with --arrival-minutes "
-        "to match."
+        "request errors and high-priority queue waits within them. The "
+        "capacity counts the start-up, because participants often arrive "
+        "together when a study opens; if yours will arrive gradually, rerun "
+        "with --arrival-minutes to match."
     ]
 
 
@@ -727,6 +767,29 @@ def _capacity_headline(outcome, first_reasons, limit, *, show_cap=True):
     return lines
 
 
+def _low_priority_lines(result, limits):
+    """Report low-priority async jobs of ``result`` that waited longer than the queue limit.
+
+    The limit doesn't apply to them, so this is for information, with advice
+    on worker processes if the backlog grew during the steady state (see
+    :func:`~psynet.perf_test.results.low_priority_backlog_growing`).
+    """
+    wait = queue_wait_p95(result, "low") if result else None
+    if wait is None or wait <= limits.max_queue_p95_s:
+        return []
+    test = f"{result.n_bots:,}-bot{' confirmation' if result.confirmation else ''}"
+    lines = [
+        f"  Low-priority async jobs in the {test} test: p95 queue wait "
+        f"{wait:.2f} s, {_backlog(result.queue_waits, 'low'):,} still queued at "
+        "the end. "
+        "Participants don't wait for these, so they don't count against the "
+        "limits."
+    ]
+    if low_priority_backlog_growing(result, limits):
+        lines.append(_LOW_PRIORITY_BACKLOG_ADVICE)
+    return lines
+
+
 def _confirmation_exceeded(result, limits):
     """Return whether a confirmation test measured the server exceeding ``limits``.
 
@@ -776,12 +839,10 @@ def _confirmation_lines(result, limits):
     lines = [f"  Not confirmed: {test} exceeded the limits ({reasons})."]
     if result.startup_phase and result.steady_state_phase:
         startup = phase_limit_reasons(result.startup_phase, limits)
-        steady = phase_limit_reasons(
-            result.steady_state_phase, limits, result.oldest_queued_s
-        )
+        steady = phase_limit_reasons(result.steady_state_phase, limits)
         lines.append(
-            "  Response times, request errors and queue waits: start-up "
-            f"{'; '.join(startup) or 'within the limits'}, steady state "
+            "  Response times, request errors and high-priority queue waits: "
+            f"start-up {'; '.join(startup) or 'within the limits'}, steady state "
             f"{'; '.join(steady) or 'within the limits'}."
         )
     else:
@@ -842,6 +903,7 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
     if any(POSTGRES_FULL in (r.bot_error_kinds or {}) for r in results):
         lines.append(_POSTGRES_ADVICE)
     capacity_result = next((r for r in results if r.n_bots == capacity), None)
+    lines += _low_priority_lines(confirmation or capacity_result or first_fail, limits)
     lines += _database_growth_warnings(
         run_order, capacity_result, first_fail, confirmation, limits
     )

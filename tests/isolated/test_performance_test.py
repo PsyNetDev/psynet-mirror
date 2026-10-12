@@ -15,7 +15,11 @@ from psynet.perf_test import (
     format_performance_summary,
     format_test_results,
 )
-from psynet.perf_test.measure import _split_failed_requests, phase_stats
+from psynet.perf_test.measure import (
+    _split_failed_requests,
+    async_job_stats,
+    phase_stats,
+)
 from psynet.perf_test.results import retry_bot_count
 from psynet.perf_test.runtime import _BotState
 from psynet.pytest_psynet import path_to_test_experiment
@@ -646,31 +650,44 @@ def test_phase_stats_split_requests_and_queue_waits_at_the_boundary(db_session):
                 endpoint="/response",
             )
         )
-    db.session.execute(
-        AsyncJob.__table__.insert(),
-        [
-            dict(time_enqueued=at(s), time_started=at(s), queue_delay=delay)
-            for s, delay in [(5, 30.0), (70, 1.0)]
-        ],
+    # Local jobs have no priority and count as high priority.
+    jobs = [(5, 5, "high"), (70, 71, None), (10, 100, "low"), (80, 85, "low")]
+    jobs = [
+        dict(
+            time_enqueued=at(enqueued),
+            time_started=at(started),
+            queue_delay=float(started - enqueued),
+            priority=priority,
+        )
+        for enqueued, started, priority in jobs
+    ]
+    jobs.append(
+        dict(time_enqueued=at(50), time_started=None, queue_delay=None, priority="low")
     )
+    db.session.execute(AsyncJob.__table__.insert(), jobs)
     db.session.flush()
 
     startup, steady = phase_stats(0, 10**9, 0, at(600), boundary=at(60))
+
+    def waits(jobs, p95, backlog=0, oldest=None):
+        return dict(jobs=jobs, q_delay_p95=p95, backlog=backlog, oldest_queued_s=oldest)
 
     assert startup == dict(
         key_requests=3,
         request_errors=1,
         p95_response_time=pytest.approx(1.9),
-        async_jobs=1,
-        q_delay_p95=30.0,
+        queue_waits={"high": waits(1, 0.0), "low": waits(1, 90.0, 2, 50.0)},
     )
     assert steady == dict(
         key_requests=20,
         request_errors=0,
         p95_response_time=0.1,
-        async_jobs=1,
-        q_delay_p95=1.0,
+        queue_waits={"high": waits(1, 1.0), "low": waits(1, 5.0, 1, 550.0)},
     )
+    assert async_job_stats(0, at(600))["queue_waits"] == {
+        "high": waits(2, pytest.approx(0.95)),
+        "low": waits(2, pytest.approx(85.75), 1, 550.0),
+    }
 
 
 def test_report_compares_start_up_and_steady_state():
@@ -678,15 +695,25 @@ def test_report_compares_start_up_and_steady_state():
         first_completion_s=200.0,
         actual_duration=600.0,
         startup_phase=dict(
-            key_requests=500, request_errors=0, p95_response_time=0.9, q_delay_p95=12.0
+            key_requests=500,
+            request_errors=0,
+            p95_response_time=0.9,
+            queue_waits={"high": {"q_delay_p95": 12.0}, "low": {"backlog": 30}},
         ),
         steady_state_phase=dict(
-            key_requests=900, request_errors=0, p95_response_time=0.1, q_delay_p95=1.0
+            key_requests=900,
+            request_errors=0,
+            p95_response_time=0.1,
+            queue_waits={"high": {"q_delay_p95": 1.0}, "low": {"backlog": 4}},
         ),
     )
     report = _join(format_test_results(_base_result(**phases)))
     assert "Start-up: the first 200 s" in report
-    assert "p95 async queue wait" in report
+    assert "p95 high-priority queue wait" in report
+    backlog_row = next(
+        line for line in report.splitlines() if "Low-priority jobs queued" in line
+    )
+    assert backlog_row.split()[-2:] == ["30", "4"]
 
     over = _base_result(n_bots=40, p95_response_time=0.7, **phases)
     summary = _join(format_capacity_summary([over]))
@@ -1222,18 +1249,49 @@ def test_capacity_summary_mentions_queue_waits_only_with_async_jobs():
     assert "async queue wait under" in _join(format_capacity_summary(results))
 
 
-def test_async_queue_backlog_limits_capacity():
+def test_only_high_priority_queue_waits_limit_capacity():
+    low = {"q_delay_p95": 90.0, "backlog": 40, "oldest_queued_s": 140.0}
     results = [
-        _base_result(n_bots=100, p95_response_time=0.2, q_delay_p95=1.0),
         _base_result(
-            n_bots=200, p95_response_time=0.2, q_delay_p95=2.0, oldest_queued_s=40.0
+            n_bots=100, queue_waits={"high": {"q_delay_p95": 1.0}, "low": low}
+        ),
+        _base_result(
+            n_bots=200,
+            queue_waits={"high": {"q_delay_p95": 2.0, "oldest_queued_s": 40.0}},
         ),
     ]
 
     text = _join(format_capacity_summary(results, CapacityLimits(max_queue_p95_s=5)))
 
     assert "about 100 concurrent bots" in text
-    assert "200 did not (p95 async queue wait 40.00 s)" in text
+    assert "200 did not (p95 high-priority async queue wait 40.00 s)" in text
+    assert (
+        "Low-priority async jobs in the 100-bot test: p95 queue wait 140.00 s, "
+        "40 still queued at the end. Participants don't wait for these"
+    ) in text
+    assert "piled up" not in text
+
+
+@pytest.mark.parametrize("backlog_at_start, growing", [(30, True), (80, False)])
+def test_a_growing_low_priority_backlog_in_the_confirmation_test_needs_workers(
+    caplog, backlog_at_start, growing
+):
+    def phase(backlog):
+        return dict(_PHASE, queue_waits={"low": {"backlog": backlog}})
+
+    low = {"q_delay_p95": 200.0, "backlog": 50, "oldest_queued_s": 300.0}
+    _confirmation_search(
+        caplog,
+        dict(
+            first_completion_s=600.0,
+            startup_phase=phase(backlog_at_start),
+            steady_state_phase=phase(50),
+            queue_waits={"high": {"q_delay_p95": 1.0}, "low": low},
+        ),
+    )
+
+    assert "Confirmed: the 120-bot confirmation test" in caplog.text
+    assert ("workers can't keep up with them" in caplog.text) == growing
 
 
 def test_capacity_summary_says_when_no_limit_was_reached():
@@ -1377,12 +1435,12 @@ def test_a_stray_error_is_reported_but_does_not_cap_capacity():
 
     results = [
         result(640, request_errors=1, busy_responses=3, bot_errors=1),
-        result(2000, request_errors=60, q_delay_p95=36.9),
+        result(2000, request_errors=60, queue_waits={"high": {"q_delay_p95": 36.9}}),
     ]
 
     text = _join(format_capacity_summary(results))
     assert "Capacity: about 640" in text
-    assert "60 request errors; p95 async queue wait 36.90 s" in text
+    assert "60 request errors; p95 high-priority async queue wait 36.90 s" in text
     assert (
         "The 640-bot test had 1 request error, 3 busy/stale responses and 1 bot error"
         in text

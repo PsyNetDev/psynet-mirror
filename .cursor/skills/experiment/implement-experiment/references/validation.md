@@ -82,10 +82,13 @@ a long run at the suggested cap with spread-out arrivals. When they
 disagree, trust the long run with spread-out arrivals. Without
 `--reset-database` that run starts on the data the search left, so if it
 fails after the database grew a lot, rerun with `--reset-database` before
-capping lower. For CPU-heavy jobs,
+capping lower. Only high-priority async jobs, which participants wait for,
+count against `--max-queue-p95-s`; a low-priority backlog (`queue_waits.low`
+in the JSON) is only reported, but if the summary says it piled up during the
+confirmation run, the workers can't keep up long-term. For CPU-heavy jobs,
 also work out worker throughput: one worker process keeps up with about
-(session length) ÷ (job time × jobs per participant) participants, with job
-times from `async_job_stats`. Report how you reached the cap.
+(session length) ÷ (job CPU time × jobs per participant) participants, with
+`cpu_avg` from `async_job_stats`. Report how you reached the cap.
 
 For chain experiments, also check how many participants got fewer trials
 because every chain was busy (a line under TRIALS PER BOT, and

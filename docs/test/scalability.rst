@@ -194,12 +194,15 @@ that the slowest participants experience. The report also shows:
   experiment spent waiting. Failed bots are included because those that
   timed out waited longest.
 - **Async job times**: for experiments with async jobs, such
-  as audio analysis, both the execution time and the time spent waiting in
-  the queue. A high queue share, highlighted in yellow or red, means more
-  worker processes are needed.
+  as audio analysis, the execution time, CPU time and time spent waiting in
+  the queue, for each label and :ref:`priority <async_job_priority>`. A
+  high queue share, highlighted in yellow or red, means more worker
+  processes are needed. Below the table, the report counts the jobs of each
+  priority still queued when the test ended.
 - **Start-up vs steady state**: the request count, 95th-percentile response
-  time, request errors and 95th-percentile async queue wait, separately for
-  the start-up and the steady state. The start-up lasts until the first bot
+  time, request errors and the 95th-percentile queue wait of high- and of
+  low-priority async jobs, separately for the start-up and the steady
+  state, with the low-priority jobs still queued at the end of each. The start-up lasts until the first bot
   completes the experiment: until then every bot is in its first session,
   as when a study opens and its first participants arrive together, so
   queues fill up and slow pages are hit by everyone at once. The steady
@@ -263,11 +266,17 @@ A test counts as within capacity if these stay within their limits:
   contention at timeline holds and in synchronized groups;
 - the 95th-percentile response time for ``/timeline`` and ``/response``,
   together and for each of them, limited by ``--max-p95-ms`` (default 500);
-- the 95th-percentile time that async jobs wait in the queue for a
-  worker, limited by ``--max-queue-p95-s`` (default 5). Participants often
-  sit on a wait page during this time, so it matters as much as response
-  time. Processes still waiting when the test ends count with the time they
-  have waited so far, so a queue that never drains fails the test;
+- the 95th-percentile time that high-priority async jobs wait in the queue
+  for a worker, limited by ``--max-queue-p95-s`` (default 5). Participants
+  often sit on a wait page during this time, so it matters as much as
+  response time. Jobs still waiting when the test ends count with the time
+  they have waited so far, so a queue that never drains fails the test.
+  Local jobs, which have no priority, count as high priority. Participants
+  don't wait for low-priority jobs, such as analyses of trials without
+  feedback (see :ref:`async_job_priority`), so a backlog of these, which
+  often builds up in the start-up, never fails a test. When their queue
+  wait exceeds the limit, the summary reports it and how many were still
+  queued at the end;
 - the share of bots whose participants the experiment failed for waiting
   too long, at most 1%. These are participants failed when a
   :func:`~psynet.page.wait_while` (including async code blocks that wait),
@@ -292,7 +301,7 @@ A test counts as within capacity if these stay within their limits:
   awaiting an async job or out of trial capacity finishes the block
   early instead of waiting. Static trial makers don't limit trials per node
   during selection, so they only do this when every node awaits an async
-  process. The participant is not failed, so the test
+  job. The participant is not failed, so the test
   results show these bots under *trials per bot* instead, with their median
   number of trials and the trial maker's ``expected_trials_per_participant``.
   Unlike wait timeouts, this sets the capacity and the suggested cap:
@@ -311,7 +320,7 @@ rather than relying on the steady state alone.
 The search's tests are short and their bots arrive together, so for most
 studies they see only the start-up. In an experiment with async jobs,
 such as audio analysis, or with long timeline holds, every bot reaches each
-process and each hold at the same moment, so queue waits are longer than
+job and each hold at the same moment, so queue waits are longer than
 when participants arrive spread out, and the search underestimates the
 capacity. The search therefore ends with a *confirmation test*: it runs the
 participant cap it suggests (80% of the capacity), with bots arriving
@@ -342,7 +351,12 @@ the search test that set the capacity, the summary suggests rerunning with
 The summary names the limit that a failing test exceeded. If the queue limit
 is what caps capacity, add worker processes with the ``num_dynos_worker``
 config variable (see :doc:`/reference/configuration`) before resorting to a
-lower participant cap.
+lower participant cap. If low-priority jobs piled up during the steady state
+of the confirmation test, so that at least as many were queued at its end as
+when the steady state began, the summary warns that the workers can't keep
+up with them in the long run: their results arrive ever later, and they
+compete for workers with the high-priority jobs. Add worker processes for
+this too.
 
 How many async jobs a worker process can handle depends on what they
 do. Each worker process runs up to 20 jobs at once with gevent, but jobs
@@ -376,7 +390,7 @@ larger bot count has exceeded the limits, suggests capping the number of
 participants taking part at once at 80% of it. After a confirmation test the
 cap comes from that test, for example::
 
-    Capacity: about 160 concurrent bots kept p95 response time under 500 ms, p95 async queue wait under 5 s and at most 0.1% of requests failing (1 always allowed), 1% of requests answered busy or stale (10 always allowed), 1% of bots failing, 1% of participants failed by the experiment for waiting too long and 1% getting fewer trials because every chain was busy; 170 did not (p95 response time 622 ms).
+    Capacity: about 160 concurrent bots kept p95 response time under 500 ms, p95 high-priority async queue wait under 5 s and at most 0.1% of requests failing (1 always allowed), 1% of requests answered busy or stale (10 always allowed), 1% of bots failing, 1% of participants failed by the experiment for waiting too long and 1% getting fewer trials because every chain was busy; 170 did not (p95 response time 622 ms).
     Confirmed: the 128-bot confirmation test (bots arriving over 12 min, 24 min long) kept the same limits. Cap concurrent participants at about 128.
 
 Without a confirmation test, the second line reads ``Cap concurrent
@@ -396,16 +410,21 @@ the bots took more than a quarter of the test.
 With ``--json-output``, each result records the test's
 ``duration_minutes``, ``arrival_minutes`` and ``session_minutes`` (the
 estimated session times ``--time-factor``), its ``startup_phase`` and
-``steady_state_phase`` metrics (including the number of async jobs in
-each), and per async job label, in ``async_job_stats``, how long the
-processes took and waited. The confirmation test has ``confirmation`` set,
+``steady_state_phase`` metrics, and per async job label and priority, in
+``async_job_stats``, how long the jobs took, how much CPU they used
+(``cpu_avg``) and how long they waited. ``queue_waits``, for the whole test
+and for each phase, has an entry for each priority (``high``, ``low``) that
+had jobs: the number of ``jobs`` that started, their ``q_delay_p95``, the
+``backlog`` of jobs still queued at the end and how long the oldest of them
+had waited (``oldest_queued_s``). The confirmation test has ``confirmation`` set,
 and the options record ``confirmation_skipped`` with the reason it didn't
 run. When the search tests and a long test with spread-out arrivals
 disagree, trust the long test. For async jobs that keep the CPU busy,
 you can also check worker throughput by hand: one worker process keeps up
 with about as many participants at once as a session lasts divided by the
-processing time each participant needs (the average times in
-``async_job_stats`` times the number of each job per participant). For
+processing time each participant needs (the average CPU times,
+``cpu_avg``, in ``async_job_stats`` times the number of each job per
+participant). For
 example, 43 s of audio analysis per 12-minute session lets one worker
 process keep up with about 16 participants.
 

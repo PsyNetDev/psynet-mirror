@@ -4,7 +4,8 @@
 ``Request``, ``AsyncJob`` and participant IDs before a test and passes them
 here afterwards, so measurements cover only the test window: requests logged
 before the bots were told to stop and async jobs that started by then, plus the
-wait of the oldest job still queued at the end.
+jobs still queued at the end. Queue waits are measured separately for high-
+and low-priority jobs, because participants only wait for high-priority ones.
 
 A bot only succeeds if the experiment did not fail its participant: failed
 participants keep the status ``approved`` (see :func:`_bot_outcome`). Each
@@ -181,9 +182,9 @@ def phase_stats(
     tuple of (dict, dict)
         For the start-up and the steady state: ``key_requests``,
         ``request_errors`` (not counting busy or stale responses),
-        ``p95_response_time``, ``async_jobs`` (that started by
-        ``ended_at``) and ``q_delay_p95``; the response and queue times are
-        ``None`` without measurements.
+        ``p95_response_time`` and ``queue_waits`` (see :func:`_queue_waits`;
+        the backlog is the one left at the end of the phase); the response
+        and queue times are ``None`` without measurements.
     """
     from dallinger import db
     from sqlalchemy import func
@@ -212,35 +213,123 @@ def phase_stats(
         )
         .group_by(in_steady_state)
     }
-    enqueued_in_steady_state = AsyncJob.time_enqueued >= boundary
-    queues = {
-        row[0]: row[1:]
-        for row in db.session.query(
-            enqueued_in_steady_state,
-            func.count(AsyncJob.id),
-            func.percentile_cont(0.95).within_group(AsyncJob.queue_delay),
-        )
-        .filter(
-            AsyncJob.id > after_async_job_id,
-            AsyncJob.time_started <= ended_at,
-            AsyncJob.queue_delay.isnot(None),
-        )
-        .group_by(enqueued_in_steady_state)
-    }
     phases = []
-    for steady in (False, True):
+    for steady, phase_ended_at in ((False, boundary), (True, ended_at)):
         row = requests.get(steady)
-        n_jobs, queue_p95 = queues.get(steady, (0, None))
         phases.append(
             dict(
                 key_requests=row.count if row else 0,
                 request_errors=row.errors if row else 0,
                 p95_response_time=_as_float(row.p95) if row else None,
-                async_jobs=n_jobs,
-                q_delay_p95=_as_float(queue_p95),
+                queue_waits=_queue_waits(
+                    after_async_job_id,
+                    ended_at,
+                    phase_ended_at,
+                    (AsyncJob.time_enqueued >= boundary)
+                    if steady
+                    else (AsyncJob.time_enqueued < boundary),
+                ),
             )
         )
     return tuple(phases)
+
+
+def _queue_waits(after_async_job_id, ended_at, backlog_at, *filters):
+    """Return how long async jobs after ``after_async_job_id`` waited for a worker, by priority.
+
+    Grouping by priority matters because participants only wait for
+    high-priority jobs.
+
+    Parameters
+    ----------
+    after_async_job_id : int
+        Only count jobs with a larger ID.
+    ended_at : datetime.datetime
+        Only jobs that started by then count towards ``jobs`` and
+        ``q_delay_p95``.
+    backlog_at : datetime.datetime
+        When to count the jobs still waiting for a worker.
+    *filters
+        Further SQL filters on the jobs that started, e.g. when they were
+        enqueued.
+
+    Returns
+    -------
+    dict
+        For each priority with jobs, ``"high"`` or ``"low"``: ``jobs`` that
+        started, their ``q_delay_p95``, the ``backlog`` of jobs still
+        waiting at ``backlog_at`` and how long the oldest of them had
+        waited (``oldest_queued_s``, or ``None``).
+    """
+    from dallinger import db
+    from sqlalchemy import func, or_
+
+    from psynet.async_job import AsyncJob
+
+    priority = _job_priority()
+    started = {
+        row.priority: row
+        for row in db.session.query(
+            priority,
+            func.count(AsyncJob.id).label("jobs"),
+            func.percentile_cont(0.95).within_group(AsyncJob.queue_delay).label("p95"),
+        )
+        .filter(*_queue_window(after_async_job_id, ended_at), *filters)
+        .group_by(priority)
+    }
+    queued = {
+        row.priority: row
+        for row in db.session.query(
+            priority,
+            func.count(AsyncJob.id).label("jobs"),
+            func.min(AsyncJob.time_enqueued).label("oldest"),
+        )
+        .filter(
+            AsyncJob.id > after_async_job_id,
+            AsyncJob.time_enqueued <= backlog_at,
+            AsyncJob.failed.is_(False),
+            or_(
+                AsyncJob.time_started.is_(None),
+                AsyncJob.time_started > backlog_at,
+            ),
+        )
+        .group_by(priority)
+    }
+    waits = {}
+    for p in sorted({*started, *queued}):
+        s, q = started.get(p), queued.get(p)
+        waits[p] = dict(
+            jobs=s.jobs if s else 0,
+            q_delay_p95=_as_float(s.p95) if s else None,
+            backlog=q.jobs if q else 0,
+            oldest_queued_s=(backlog_at - q.oldest).total_seconds() if q else None,
+        )
+    return waits
+
+
+def _job_priority():
+    """Return an async job's priority as a labelled SQL expression.
+
+    Local jobs have no priority. They start at once in the process that
+    enqueued them, and participants may wait for them, so they count as high
+    priority.
+    """
+    from sqlalchemy import func
+
+    from psynet.async_job import AsyncJob
+
+    return func.coalesce(AsyncJob.priority, "high").label("priority")
+
+
+def _queue_window(after_async_job_id, ended_at):
+    """Return SQL filters for the async jobs whose queue delay a test measured."""
+    from psynet.async_job import AsyncJob
+
+    return (
+        AsyncJob.id > after_async_job_id,
+        AsyncJob.time_started <= ended_at,
+        AsyncJob.queue_delay.isnot(None),
+    )
 
 
 def async_job_stats(after_async_job_id, ended_at):
@@ -248,29 +337,29 @@ def async_job_stats(after_async_job_id, ended_at):
 
     Like requests, only jobs that started by ``ended_at`` count: jobs
     left queued while the bots stop would otherwise report the stop time as
-    queue delay. Those are covered by ``oldest_queued_s``. Queue delay is
-    known once a job starts, so it also covers jobs still running.
+    queue delay. Those are covered by the ``backlog`` and ``oldest_queued_s``
+    of ``queue_waits``. Queue delay is known once a job starts, so it also
+    covers jobs still running.
     """
     from dallinger import db
-    from sqlalchemy import case, func, or_
+    from sqlalchemy import case, func
 
     from psynet.async_job import AsyncJob
 
-    queue_window = (
-        AsyncJob.id > after_async_job_id,
-        AsyncJob.time_started <= ended_at,
-        AsyncJob.queue_delay.isnot(None),
-    )
+    queue_window = _queue_window(after_async_job_id, ended_at)
     time_taken, queue_delay = AsyncJob.time_taken, AsyncJob.queue_delay
+    priority = _job_priority()
     rows = (
         db.session.query(
             AsyncJob.trial_maker_id,
             AsyncJob.label,
+            priority,
             func.count(AsyncJob.id).label("count"),
             func.avg(time_taken).label("avg"),
             func.percentile_cont(0.5).within_group(time_taken).label("median"),
             func.percentile_cont(0.95).within_group(time_taken).label("p95"),
             func.max(time_taken).label("max"),
+            func.avg(AsyncJob.cpu_time).label("cpu_avg"),
             func.avg(queue_delay).label("q_avg"),
             func.percentile_cont(0.5).within_group(queue_delay).label("q_median"),
             func.percentile_cont(0.95).within_group(queue_delay).label("q_p95"),
@@ -285,46 +374,29 @@ def async_job_stats(after_async_job_id, ended_at):
             ).label("q_share"),
         )
         .filter(*queue_window, AsyncJob.finished == True)  # noqa: E712
-        .group_by(AsyncJob.trial_maker_id, AsyncJob.label)
+        .group_by(AsyncJob.trial_maker_id, AsyncJob.label, priority)
+        .order_by(AsyncJob.trial_maker_id, AsyncJob.label, priority)
         .all()
     )
     async_job_stats = [
         {
             "trial_maker_id": row.trial_maker_id or "",
             "label": row.label or "",
+            "priority": row.priority,
             "count": row.count,
             **{key: _as_float(row._mapping[key]) for key in ASYNC_JOB_STAT_KEYS},
         }
         for row in rows
     ]
-    q_delay_median, q_delay_p95 = (
-        db.session.query(
-            func.percentile_cont(0.5).within_group(queue_delay),
-            func.percentile_cont(0.95).within_group(queue_delay),
-        )
+    q_delay_median = (
+        db.session.query(func.percentile_cont(0.5).within_group(queue_delay))
         .filter(*queue_window)
-        .one()
-    )
-    oldest_enqueued = (
-        db.session.query(func.min(AsyncJob.time_enqueued))
-        .filter(
-            AsyncJob.id > after_async_job_id,
-            AsyncJob.time_enqueued <= ended_at,
-            AsyncJob.failed.is_(False),
-            or_(
-                AsyncJob.time_started.is_(None),
-                AsyncJob.time_started > ended_at,
-            ),
-        )
         .scalar()
     )
     return dict(
         async_job_stats=async_job_stats,
         q_delay_median=_as_float(q_delay_median),
-        q_delay_p95=_as_float(q_delay_p95),
-        oldest_queued_s=(
-            (ended_at - oldest_enqueued).total_seconds() if oldest_enqueued else None
-        ),
+        queue_waits=_queue_waits(after_async_job_id, ended_at, ended_at),
     )
 
 

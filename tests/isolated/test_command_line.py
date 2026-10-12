@@ -4942,8 +4942,11 @@ def test_write_json_results_emits_expected_schema(tmp_path):
         "time_factor": 1.0,
         "from_snapshot": Path("snapshot.dump"),
     }
+    low_backlog = {"jobs": 3, "q_delay_p95": 9.0, "backlog": 2, "oldest_queued_s": 12.0}
     all_results = [
-        PerformanceTestResult(n_bots=1, p95_response_time=0.5),
+        PerformanceTestResult(
+            n_bots=1, p95_response_time=0.5, queue_waits={"low": low_backlog}
+        ),
         PerformanceTestResult(n_bots=2),
     ]
 
@@ -4961,6 +4964,7 @@ def test_write_json_results_emits_expected_schema(tmp_path):
     assert [r["n_bots"] for r in payload["results"]] == [1, 2]
     assert payload["results"][0]["p95_response_time"] == 0.5
     assert payload["results"][1]["p95_response_time"] is None
+    assert payload["results"][0]["queue_waits"] == {"low": low_backlog}
 
 
 def _invoke_destroy_ssh(monkeypatch, destroy_app, apps=(), app=None):
