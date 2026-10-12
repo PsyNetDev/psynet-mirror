@@ -47,8 +47,7 @@ import time
 import traceback
 from collections import Counter
 from contextlib import contextmanager
-from dataclasses import asdict, dataclass, field, fields
-from decimal import Decimal
+from dataclasses import dataclass, field, fields
 from functools import partial
 from urllib.parse import urlparse
 
@@ -132,56 +131,6 @@ def log_to_console(level, console_level=None):
 def _hide_bot_thread_records(record):
     """Log filter that drops bot-thread records from the console."""
     return not _is_bot_thread_record(record)
-
-
-# ---------------------------------------------------------------------------
-# JSON serialization helpers
-# ---------------------------------------------------------------------------
-
-
-def _to_json_safe(value):
-    """
-    Recursively convert a value to a JSON-safe form.
-
-    Handles Decimal, datetime, NaN/Inf, sets/frozensets, tuples, dicts, lists
-    and :class:`PerformanceTestResult`, which becomes a dict of its fields.
-    Sets are emitted in sorted order so output is deterministic across runs.
-    """
-    if value is None:
-        return None
-    if isinstance(value, PerformanceTestResult):
-        return _to_json_safe(asdict(value))
-    if isinstance(value, bool):
-        # Check bool before int since bool is a subclass of int
-        return value
-    if isinstance(value, (int, str)):
-        return value
-    if isinstance(value, float):
-        if value != value or value == float("inf") or value == float("-inf"):
-            # NaN or Inf -> None (JSON doesn't support these)
-            return None
-        return value
-    if isinstance(value, Decimal):
-        return float(value)
-    if isinstance(value, (datetime.datetime, datetime.date)):
-        return value.isoformat()
-    if isinstance(value, (set, frozenset)):
-        # Sort for deterministic JSON output — sets have no native order,
-        # which would produce noisy diffs when results are stored in git.
-        # Fall back to insertion order if items are mutually incomparable.
-        items = [_to_json_safe(item) for item in value]
-        try:
-            return sorted(items, key=lambda x: (x is None, str(type(x)), x))
-        except TypeError:
-            return items
-    if isinstance(value, tuple):
-        return [_to_json_safe(item) for item in value]
-    if isinstance(value, list):
-        return [_to_json_safe(item) for item in value]
-    if isinstance(value, dict):
-        return {k: _to_json_safe(v) for k, v in value.items()}
-    # Fallback for unknown types
-    return str(value)
 
 
 # ---------------------------------------------------------------------------
@@ -1262,6 +1211,17 @@ class PerformanceTester:
 _KEY_ENDPOINTS = ("/timeline", "/response")
 
 
+def _as_float(value):
+    """Return a SQL aggregate as a float, or ``None`` if it is missing or not finite.
+
+    Results are saved as JSON, which has no ``Decimal``, NaN or infinity.
+    """
+    if value is None:
+        return None
+    value = float(value)
+    return value if math.isfinite(value) else None
+
+
 def _request_stats(after_request_id, last_request_id):
     """Return the result fields measured from requests in ``(after_request_id, last_request_id]``.
 
@@ -1287,15 +1247,16 @@ def _request_stats(after_request_id, last_request_id):
         .filter(*key_window)
         .one()
     )
-    endpoint_p95 = dict(
-        db.session.query(
+    endpoint_p95 = {
+        endpoint: _as_float(p95)
+        for endpoint, p95 in db.session.query(
             Request.endpoint,
             func.percentile_cont(0.95).within_group(Request.duration),
         )
         .filter(*key_window)
         .group_by(Request.endpoint)
         .all()
-    )
+    }
     request_errors, busy_responses = _split_failed_requests(
         db.session.query(Request.status_code, func.count(Request.id))
         .filter(*key_window, Request.status_code >= 400)
@@ -1307,16 +1268,30 @@ def _request_stats(after_request_id, last_request_id):
         .filter(*window)
         .scalar(),
         key_requests=stats.count,
-        avg_response_time=stats.avg,
-        median_response_time=stats.median,
-        p95_response_time=stats.p95,
+        avg_response_time=_as_float(stats.avg),
+        median_response_time=_as_float(stats.median),
+        p95_response_time=_as_float(stats.p95),
         endpoint_p95=endpoint_p95,
-        p99_response_time=stats.p99,
-        stddev_response_time=stats.stddev,
-        max_response_time=stats.max,
+        p99_response_time=_as_float(stats.p99),
+        stddev_response_time=_as_float(stats.stddev),
+        max_response_time=_as_float(stats.max),
         request_errors=request_errors,
         busy_responses=busy_responses,
     )
+
+
+# Statistics in each entry of PerformanceTestResult.process_stats, besides
+# trial_maker_id, label and count.
+_PROCESS_STAT_KEYS = (
+    "avg",
+    "median",
+    "p95",
+    "max",
+    "q_avg",
+    "q_median",
+    "q_p95",
+    "q_share",
+)
 
 
 def _async_process_stats(after_process_id, ended_at):
@@ -1366,9 +1341,10 @@ def _async_process_stats(after_process_id, ended_at):
     )
     process_stats = [
         {
-            **row._asdict(),
             "trial_maker_id": row.trial_maker_id or "",
             "label": row.label or "",
+            "count": row.count,
+            **{key: _as_float(row._mapping[key]) for key in _PROCESS_STAT_KEYS},
         }
         for row in rows
     ]
@@ -1395,8 +1371,8 @@ def _async_process_stats(after_process_id, ended_at):
     )
     return dict(
         process_stats=process_stats,
-        q_delay_median=q_delay_median,
-        q_delay_p95=q_delay_p95,
+        q_delay_median=_as_float(q_delay_median),
+        q_delay_p95=_as_float(q_delay_p95),
         oldest_queued_s=(
             (ended_at - oldest_enqueued).total_seconds() if oldest_enqueued else None
         ),
@@ -2335,18 +2311,7 @@ def _async_process_lines(result):
                 ps["trial_maker_id"],
                 ps["label"],
                 ps["count"],
-                *(
-                    _fmt(ps[key])
-                    for key in (
-                        "avg",
-                        "median",
-                        "p95",
-                        "max",
-                        "q_avg",
-                        "q_median",
-                        "q_p95",
-                    )
-                ),
+                *(_fmt(ps[key]) for key in _PROCESS_STAT_KEYS if key != "q_share"),
                 _q_share_text(ps["q_share"], ps["q_p95"]),
             ]
             for ps in result.process_stats

@@ -4696,16 +4696,16 @@ def _collect_run_metadata(experiment_label):
 
 def _write_json_results(json_output, *, metadata, options, all_results):
     """Write performance test results plus the metadata that produced them to JSON."""
-    from psynet.perf_test import _to_json_safe
+    from dataclasses import asdict
 
     payload = {
         "schema_version": 1,
         **metadata,
-        "options": _to_json_safe(options),
-        "results": [_to_json_safe(r) for r in all_results],
+        "options": options,
+        "results": [asdict(r) for r in all_results],
     }
     with open(json_output, "w") as f:
-        json.dump(payload, f, indent=2, allow_nan=False)
+        json.dump(payload, f, indent=2, allow_nan=False, default=str)
 
 
 def _check_existing_server_answers():

@@ -1184,14 +1184,12 @@ def test_one_error_in_a_short_test_does_not_cap_capacity():
 
 def test_a_saved_result_reads_back_ignoring_unknown_and_missing_keys():
     import json
-    from decimal import Decimal
+    from dataclasses import asdict
 
-    from psynet.perf_test import _to_json_safe
+    result = _base_result(endpoint_p95={"/response": 0.2})
+    saved = json.loads(json.dumps(asdict(result), allow_nan=False))
 
-    result = _base_result(endpoint_p95={"/response": Decimal("0.2")})
-    saved = json.loads(json.dumps(_to_json_safe(result)))
-
-    assert saved["endpoint_p95"] == {"/response": 0.2}
+    assert PerformanceTestResult.from_dict(saved) == result
     read_back = PerformanceTestResult.from_dict({**saved, "removed_metric": 1})
     assert read_back.endpoint_p95 == {"/response": 0.2}
     assert capacity_failures(PerformanceTestResult.from_dict({"n_bots": 4})) == [
