@@ -354,8 +354,11 @@ drops the experiment's database and creates it again from the snapshot,
 empties the async job queues and starts the server again. That takes a few
 seconds, plus a few seconds per gigabyte of data, because PostgreSQL copies
 the database's files. At the end it drops the snapshot. It only resets a
-database on your own computer, and only ever drops the experiment's own
-database and the snapshots it names. Files that the bots uploaded or
+database on your own computer, and a test run only ever drops the
+experiment's own database and its temporary snapshot. Kept pre-fill
+snapshots (see below) are only dropped by ``psynet performance-test
+snapshots``, whose ``--drop-all`` drops every pre-fill snapshot on this
+computer. Files that the bots uploaded or
 generated stay in the asset storage after a reset, because only the
 database rows that refer to them are reset; they cost disk space but
 nothing else.

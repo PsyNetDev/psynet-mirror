@@ -4904,8 +4904,10 @@ def _database_reset(reset, server, experiment_label, bot_log_file):
     """Return the :class:`~psynet.perf_reset.DatabaseReset` for the ``reset`` options.
 
     With ``--prefill-participants`` it starts from the cached pre-fill
-    snapshot for the current code and settings if there is one, and
-    otherwise pre-fills and keeps the snapshot.
+    snapshot for the experiment's code key (see
+    :func:`~psynet.perf_reset.experiment_code_key`) and number of pre-fill
+    participants if there is one, and otherwise pre-fills and keeps the
+    snapshot.
 
     Raises
     ------

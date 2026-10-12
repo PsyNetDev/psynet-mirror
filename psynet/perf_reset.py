@@ -351,11 +351,12 @@ class DatabaseReset:
                 with self._connect() as cursor:
                     drop_database(cursor, self.snapshot)
         except (psycopg2.Error, RuntimeError) as e:
-            advice = (
-                "The pre-filled data was not kept."
-                if self.snapshot is None
-                else f"Drop the snapshot with 'dropdb {self.snapshot}'."
-            )
+            if self.snapshot is None:
+                advice = "The pre-filled data was not kept."
+            elif self._drop_snapshot_on_close:
+                advice = f"Drop the snapshot with 'dropdb {self.snapshot}'."
+            else:
+                advice = f"The snapshot {self.snapshot} was kept."
             logger.warning(
                 warning(f"Could not finish resetting the database ({e}). {advice}")
             )
