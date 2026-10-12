@@ -2956,6 +2956,55 @@ def _database_growth_warnings(results, capacity_result, first_fail):
     return lines
 
 
+def _capacity_headline(
+    capacity, passed, first_fail, first_reasons, limit, *, unmeasured, waits_only
+):
+    """Return the capacity summary's first lines: the capacity, and a cap if the server set it.
+
+    Only a server limit sets the capacity, so a first failure that could not
+    be tested (``unmeasured``) or that only had wait timeouts
+    (``waits_only``) leaves it a lower bound, without a cap.
+    """
+    if first_fail is None:
+        return [
+            f"  Capacity: at least {capacity:,} concurrent bots kept {limit}. "
+            "Test more bots to find the limit."
+        ]
+    n_failed = f"{first_fail.n_bots:,}"
+    if capacity is None:
+        if unmeasured:
+            lines = [
+                f"  Capacity unknown: {n_failed} bots could not be tested "
+                f"({first_reasons})."
+            ]
+        else:
+            advice = "" if waits_only else "; fix any errors or test fewer bots"
+            lines = [
+                f"  Even {n_failed} bots did not keep {limit} ({first_reasons}){advice}."
+            ]
+    else:
+        lower_bound = unmeasured or waits_only
+        outcome = "could not be tested" if unmeasured else "did not"
+        lines = [
+            f"  Capacity: {'at least' if lower_bound else 'about'} {capacity:,} "
+            f"concurrent bots kept {limit}; {n_failed} {outcome} ({first_reasons})."
+        ]
+        if not lower_bound:
+            lines.append(
+                f"  Cap concurrent participants at about "
+                f"{max(1, int(capacity * _CAPACITY_HEADROOM)):,} "
+                f"({_CAPACITY_HEADROOM:.0%} of {capacity:,})."
+            )
+    above_fail = [n for n in passed if n > first_fail.n_bots]
+    if above_fail and (capacity is None or not unmeasured):
+        also = "" if capacity is None else "also "
+        lines.append(
+            f"  {max(above_fail):,} bots {also}passed, so the results are "
+            "inconsistent; rerun to confirm."
+        )
+    return lines
+
+
 def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
     """Describe the capacity that ``results`` imply and suggest a participant cap.
 
@@ -2985,56 +3034,15 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
     )
     below_fail = [n for n in passed if first_fail is None or n < first_fail.n_bots]
     capacity = max(below_fail, default=None)
-    if capacity is None:
-        if unmeasured:
-            lines = [
-                f"  Capacity unknown: {first_fail.n_bots:,} bots could not "
-                f"be tested ({first_reasons})."
-            ]
-        elif waits_only:
-            lines = [
-                f"  Even {first_fail.n_bots:,} bots did not keep {limit} "
-                f"({first_reasons})."
-            ]
-        else:
-            lines = [
-                f"  Even {first_fail.n_bots:,} bots did not keep {limit} "
-                f"({first_reasons}); fix any errors or test fewer bots."
-            ]
-        if passed:
-            lines.append(
-                f"  {max(passed):,} bots passed, so the results are "
-                "inconsistent; rerun to confirm."
-            )
-    elif first_fail is None:
-        lines = [
-            f"  Capacity: at least {capacity:,} concurrent bots kept {limit}. "
-            "Test more bots to find the limit."
-        ]
-    elif waits_only:
-        lines = [
-            f"  Capacity: at least {capacity:,} concurrent bots kept {limit}; "
-            f"{first_fail.n_bots:,} did not ({first_reasons}).",
-        ]
-    elif unmeasured:
-        lines = [
-            f"  Capacity: at least {capacity:,} concurrent bots kept {limit}; "
-            f"{first_fail.n_bots:,} could not be tested ({first_reasons}).",
-        ]
-    else:
-        lines = [
-            f"  Capacity: about {capacity:,} concurrent bots kept {limit}; "
-            f"{first_fail.n_bots:,} did not ({first_reasons}).",
-            f"  Cap concurrent participants at about "
-            f"{max(1, int(capacity * _CAPACITY_HEADROOM)):,} "
-            f"({_CAPACITY_HEADROOM:.0%} of {capacity:,}).",
-        ]
-    if capacity is not None and first_fail is not None and not unmeasured:
-        if max(passed) > first_fail.n_bots:
-            lines.append(
-                f"  {max(passed):,} bots also passed, so the results are "
-                "inconsistent; rerun to confirm."
-            )
+    lines = _capacity_headline(
+        capacity,
+        passed,
+        first_fail,
+        first_reasons,
+        limit,
+        unmeasured=unmeasured,
+        waits_only=waits_only,
+    )
     if wait_cause:
         lines.append(_WAIT_ADVICE)
     if "async queue" in first_reasons:
