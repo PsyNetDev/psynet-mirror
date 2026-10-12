@@ -595,8 +595,14 @@ def _tables_that_differ(rows_a, rows_b):
     return differ
 
 
-def _database_growth_warnings(results, capacity_result, first_fail):
-    """Warn when the tests in ``results`` (in the order run) saw very different amounts of data."""
+def _database_growth_warnings(
+    results, capacity_result, first_fail, confirmation=None, limits=CapacityLimits()
+):
+    """Warn when the tests in ``results`` (in the order run) saw very different amounts of data.
+
+    ``confirmation`` is a capacity search's confirmation test, which runs on
+    the data the search tests left unless the database is reset.
+    """
     lines = []
     if not results:
         return lines
@@ -621,6 +627,22 @@ def _database_growth_warnings(results, capacity_result, first_fail):
                 "rows), so the difference between them may come from the data "
                 "rather than the load."
             )
+    if (
+        capacity_result is not None
+        and confirmation is not None
+        and _confirmation_exceeded(confirmation, limits)
+    ):
+        differ = _tables_that_differ(
+            capacity_result.db_rows_before or {}, confirmation.db_rows_before or {}
+        )
+        if differ:
+            return lines + [
+                f"  The confirmation test started with very different amounts of "
+                f"data from the {capacity_result.n_bots:,}-bot test "
+                f"({'; '.join(differ)} rows), so its failure may come from the "
+                "data the search left. Rerun with --reset-database before "
+                "capping lower."
+            ]
     if lines and any(r.db_rows_before != results[0].db_rows_before for r in results):
         lines.append(
             "  Rerun with --reset-database to start every test from the same data."
@@ -705,8 +727,23 @@ def _capacity_headline(outcome, first_reasons, limit, *, show_cap=True):
     return lines
 
 
+def _confirmation_exceeded(result, limits):
+    """Return whether a confirmation test measured the server exceeding ``limits``.
+
+    A server that stopped, like the test's own limits, leaves it unmeasured.
+    """
+    return any(
+        server_limit and reason != "server stopped"
+        for reason, server_limit in capacity_failure_causes(result, limits)
+    )
+
+
 def _confirmation_lines(result, limits):
-    """Report whether the confirmation test that ended a capacity search kept the limits."""
+    """Report whether the confirmation test that ended a capacity search kept the limits.
+
+    Only a test that kept the limits and reached the steady state confirms
+    the cap.
+    """
     n = result.n_bots
     arriving = (
         f"bots arriving over {result.arrival_minutes:g} min"
@@ -717,17 +754,24 @@ def _confirmation_lines(result, limits):
         f"the {n:,}-bot confirmation test ({arriving}, "
         f"{result.duration_minutes or 0:g} min long)"
     )
+    unconfirmed = (
+        f"The search's cap of about {n:,} concurrent participants is unconfirmed."
+    )
     causes = capacity_failure_causes(result, limits)
     if not causes:
+        if result.first_completion_s is None or not result.steady_state_phase:
+            return [
+                f"  Not confirmed: {test} kept the limits but never reached the "
+                f"steady state, so it only saw the start-up. {unconfirmed}"
+            ]
         return [
             f"  Confirmed: {test} kept the same limits. Cap concurrent "
             f"participants at about {n:,}."
         ]
     reasons = "; ".join(reason for reason, _ in causes)
-    if not any(server_limit for _, server_limit in causes):
+    if not _confirmation_exceeded(result, limits):
         return [
-            f"  Not confirmed: {test} could not be tested ({reasons}). The search "
-            f"suggested capping concurrent participants at about {n:,}."
+            f"  Not confirmed: {test} could not be tested ({reasons}). {unconfirmed}"
         ]
     lines = [f"  Not confirmed: {test} exceeded the limits ({reasons})."]
     if result.startup_phase and result.steady_state_phase:
@@ -768,7 +812,7 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
     Returns list[str].
     """
     confirmation = next((r for r in results if r.confirmation), None)
-    results = [r for r in results if not r.confirmation]
+    run_order, results = results, [r for r in results if not r.confirmation]
     if not results:
         return []
     limit = limits.describe(
@@ -803,7 +847,9 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
     if any(POSTGRES_FULL in (r.bot_error_kinds or {}) for r in results):
         lines.append(_POSTGRES_ADVICE)
     capacity_result = next((r for r in results if r.n_bots == capacity), None)
-    lines += _database_growth_warnings(results, capacity_result, first_fail)
+    lines += _database_growth_warnings(
+        run_order, capacity_result, first_fail, confirmation, limits
+    )
     if capacity is None:
         return lines + [""]
     tolerated = []

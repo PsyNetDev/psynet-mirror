@@ -53,6 +53,8 @@ _MAX_SEARCH_DURATION_MINUTES = 5
 # 30-minute study.
 _CONFIRMATION_SESSIONS = 2
 _MAX_CONFIRMATION_DURATION_MINUTES = 60
+# The shortest steady state that the report shows separately from the start-up.
+MIN_STEADY_STATE_S = 60
 
 
 def default_duration_minutes(session_minutes, minimum, search=False):
@@ -132,7 +134,7 @@ def short_test_warning(duration_minutes, session_minutes):
     return (
         f"The test lasts {duration_minutes:g} min, but a participant session takes "
         f"about {session_minutes:.1f} min, so the test only sees the start of the "
-        "study, when every bot arrives at once, and not its steady state. Use "
+        "study, before any bot finishes, and not its steady state. Use "
         f"--duration-minutes {math.ceil(_DEFAULT_SESSIONS_PER_TEST * session_minutes)} "
         "or more to see both."
     )
@@ -621,10 +623,6 @@ def busy_early_finish_cause(result, limits):
         if stats["participants"] > allowed
     ]
     return " and ".join(over) or None
-
-
-# The shortest steady state that the report shows separately from the start-up.
-MIN_STEADY_STATE_S = 60
 
 
 def phase_limit_reasons(phase, limits, oldest_queued_s=None):

@@ -298,10 +298,15 @@ class _LoadMonitor:
     def _probe(self):
         while True:
             start = time.monotonic()
-            if self._stopped.wait(_LAG_PROBE_INTERVAL_S):
-                return
+            stopped = self._stopped.wait(_LAG_PROBE_INTERVAL_S)
             lag = time.monotonic() - start - _LAG_PROBE_INTERVAL_S
-            self._lags_ms[max(0, round(lag * 1000))] += 1
+            # From Python 3.13, a wait whose timeout expired while this thread
+            # queued for the interpreter lock can still report the stop, so
+            # keep any wait that lasted the full interval.
+            if lag >= 0 or not stopped:
+                self._lags_ms[max(0, round(lag * 1000))] += 1
+            if stopped:
+                return
 
     def stop(self):
         """Stop measuring and return this process's load since it started.
@@ -496,37 +501,37 @@ class PerformanceTester:
 
         ``duration_minutes`` and ``arrival_minutes`` replace the tester's for
         this test only, as for the confirmation test that ends a capacity
-        search (``confirmation``).
+        search (``confirmation``); without ``duration_minutes`` the test uses
+        the tester's duration and arrival window.
         """
         logger.info("")
         logger.info(bold("=" * 80))
         kind = "CONFIRMATION TEST" if confirmation else f"TEST {label}"
         logger.info(bold(f"{kind}: Running with {n_bots:,} concurrent bots"))
-        saved = self.duration_minutes, self.arrival_minutes
-        if duration_minutes is not None:
-            self.duration_minutes, self.arrival_minutes = (
-                duration_minutes,
-                arrival_minutes,
+        if duration_minutes is None:
+            duration_minutes, arrival_minutes = (
+                self.duration_minutes,
+                self.arrival_minutes,
             )
-        try:
-            result = self._test_performance(n_bots, bot_log_file=bot_log_file)
-            result.duration_minutes = self.duration_minutes
-            result.arrival_minutes = self.arrival_minutes
-        finally:
-            self.duration_minutes, self.arrival_minutes = saved
+        result = self._test_performance(
+            n_bots,
+            bot_log_file=bot_log_file,
+            duration_minutes=duration_minutes,
+            arrival_minutes=arrival_minutes,
+        )
+        result.duration_minutes = duration_minutes
+        result.arrival_minutes = arrival_minutes
         result.session_minutes = self.session_minutes
         result.confirmation = confirmation
         return result
 
-    def _test_performance(self, n, bot_log_file):
-        """Run a load test with n concurrent bots for configured duration."""
-        duration_minutes = self.duration_minutes
+    def _test_performance(self, n, bot_log_file, duration_minutes, arrival_minutes):
+        """Run a load test with n concurrent bots for ``duration_minutes``.
+
+        With ``arrival_minutes`` the bots arrive evenly over that window.
+        """
         logger.info("")
-        arriving = (
-            f", arriving over {self.arrival_minutes:g} min"
-            if self.arrival_minutes
-            else ""
-        )
+        arriving = f", arriving over {arrival_minutes:g} min" if arrival_minutes else ""
         logger.info(
             f"\u25b6 Starting load test with {n:,} concurrent bots for "
             f"{duration_minutes:g} min{arriving}..."
@@ -543,7 +548,12 @@ class PerformanceTester:
         with _bot_logs_to(bot_log_file):
             try:
                 self._run_monitoring_loop(
-                    n, bot_state, self._bots.start_slot, start_time, end_time
+                    n,
+                    bot_state,
+                    self._bots.start_slot,
+                    start_time,
+                    end_time,
+                    arrival_minutes,
                 )
                 actual_duration = time.time() - start_time
                 last_request_id = self._max_request_id()
@@ -623,14 +633,14 @@ class PerformanceTester:
             if x <= max_stagger:
                 return x
 
-    def _slot_gap(self, n):
+    def _slot_gap(self, n, arrival_minutes):
         """Return the time between starting one of ``n`` bot slots and the next.
 
         With ``arrival_minutes`` the slots start evenly over that window, the
         last at its end; otherwise ``stagger_interval_s`` apart on average.
         """
-        if self.arrival_minutes and n > 1:
-            return self.arrival_minutes * 60 / (n - 1)
+        if arrival_minutes and n > 1:
+            return arrival_minutes * 60 / (n - 1)
         return self._bounded_random_stagger()
 
     def _run_bot_slot(self, stop_event, end_time, record):
@@ -800,8 +810,13 @@ class PerformanceTester:
             sys.stdout.write(_ERASE_LINE)
             sys.stdout.flush()
 
-    def _run_monitoring_loop(self, n, bot_state, start_bot_slot, start_time, end_time):
-        """Start ``n`` staggered bot slots and watch the server until the test ends."""
+    def _run_monitoring_loop(
+        self, n, bot_state, start_bot_slot, start_time, end_time, arrival_minutes=None
+    ):
+        """Start ``n`` staggered bot slots and watch the server until the test ends.
+
+        With ``arrival_minutes`` the slots start evenly over that window.
+        """
         # The first bot waits for the experiment launch; the rest follow it,
         # spaced by _slot_gap.
         start_bot_slot()
@@ -838,12 +853,12 @@ class PerformanceTester:
             if n_started < n and bot_state.first_bot_initialized:
                 if next_slot_time is None:
                     next_slot_time = current_time
-                    if self.arrival_minutes:
-                        next_slot_time += self._slot_gap(n)
+                    if arrival_minutes:
+                        next_slot_time += self._slot_gap(n, arrival_minutes)
                 while n_started < n and current_time >= next_slot_time:
                     start_bot_slot()
                     n_started = bot_state.slots_started = n_started + 1
-                    next_slot_time += self._slot_gap(n)
+                    next_slot_time += self._slot_gap(n, arrival_minutes)
                 if n_started >= n:
                     bot_state.ramp_up_s = time.time() - start_time
 

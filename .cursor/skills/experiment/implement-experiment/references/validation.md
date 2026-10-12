@@ -78,7 +78,10 @@ long holds, every bot hits each job and hold at once, so the search
 underestimates capacity. In the JSON, compare each result's `startup_phase`
 and `steady_state_phase`, and read the result with `"confirmation": true`,
 a long run at the suggested cap with spread-out arrivals. When they
-disagree, trust the long run with spread-out arrivals. For CPU-heavy jobs,
+disagree, trust the long run with spread-out arrivals. Without
+`--reset-database` that run starts on the data the search left, so if it
+fails after the database grew a lot, rerun with `--reset-database` before
+capping lower. For CPU-heavy jobs,
 also work out worker throughput: one worker process keeps up with about
 (session length) ÷ (job time × jobs per participant) participants, with job
 times from `process_stats`. Report how you reached the cap.

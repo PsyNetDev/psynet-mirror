@@ -126,6 +126,11 @@ class PerformanceSuite:
             self.confirmation_skipped = (
                 "--time-factor 0, at which bots don't keep a participant's pace"
             )
+        elif not tester.session_minutes:
+            self.confirmation_skipped = (
+                "the experiment's estimated session length is unknown, so the "
+                "test can't be timed to reach the steady state"
+            )
         else:
             self.confirmation_skipped = None
         confirm_minutes, confirm_arrival = confirmation_timing(
@@ -178,7 +183,10 @@ class PerformanceSuite:
                     highest_pass = n_bots
             n_bots = next_capacity_probe(highest_pass, lowest_fail)
             if n_bots is not None:
-                return n_bots, {}
+                # The tester's arrival window is for the confirmation test.
+                return n_bots, dict(
+                    duration_minutes=tester.duration_minutes, arrival_minutes=None
+                )
             if self.confirmation_skipped:
                 return None
             confirming_cap = capacity_outcome(results, self.limits).cap
@@ -269,7 +277,9 @@ class PerformanceSuite:
         if tester.arrival_minutes:
             logger.info(
                 f"Bot arrivals:         evenly over {tester.arrival_minutes:g} min"
+                + (" in the confirmation test" if search else "")
             )
+        if tester.arrival_minutes and not search:
             logger.info(
                 f"Bot start stagger:    ~{tester.stagger_interval_s:g}s, "
                 "after a bot finishes"
