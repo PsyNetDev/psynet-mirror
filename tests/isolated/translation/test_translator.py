@@ -17,6 +17,7 @@ If only OpenAI credentials are available, run ChatGPT tests only:
 
 import json
 import os
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -92,11 +93,11 @@ def test_chat_gpt_sends_temperature_only_when_configured(
     if temperature is not None:
         config["openai_default_temperature"] = temperature
     monkeypatch.setattr("psynet.translation.translators.get_config", lambda: config)
-    monkeypatch.setattr(
-        "openai.OpenAI",
-        lambda api_key: SimpleNamespace(
-            chat=SimpleNamespace(completions=SimpleNamespace(create=create))
-        ),
+    client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=create))
+    )
+    monkeypatch.setitem(
+        sys.modules, "openai", SimpleNamespace(OpenAI=lambda api_key: client)
     )
 
     result = ChatGptTranslator().translate(["Hello"], "en", "fr")
