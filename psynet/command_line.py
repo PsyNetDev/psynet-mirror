@@ -4301,8 +4301,10 @@ _test_options["performance_time_factor"] = click.option(
     default=None,
     help="""
     Multiply the timings in time_estimate by a random amount around this factor.
-    Actual multiplier will vary randomly using a lognormal distribution with an upper
-    bound of 3x this factor. When equal to zero, the bot will run through the
+    Each bot's pace varies randomly from 0.7 to 3 times this factor, because
+    people rarely work much faster than the time estimates. Above 0, bots also
+    never submit a page before its minimum duration (Page.min_duration), such
+    as a recording's duration. When equal to zero, the bot will run through the
     experiment as fast as possible. If not specified, defaults to 1.0""",
 )
 
