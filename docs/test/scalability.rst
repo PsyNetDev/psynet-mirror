@@ -435,7 +435,7 @@ To start from real data instead, for example from a pilot, export the
 pilot with ``psynet export``, add ``performance_test_app = true`` to
 ``config.txt``, launch a new app from the export with ``psynet debug ssh
 --app my-experiment-perf --archive export.zip`` (see
-:ref:`deploy_from_archive`), remove the line from ``config.txt`` again, and
+:doc:`/deploy/reference/deploy_from_archive`), remove the line from ``config.txt`` again, and
 run ``psynet performance-test ssh --app my-experiment-perf`` (see
 :ref:`performance_testing_server_app`). Every test then starts with at least
 the pilot's data.

@@ -44,6 +44,8 @@ Design constraints:
   database must be the disposable one that the isolated test environment
   created for this session (see :func:`check_resettable_database`), never
   one that a researcher debugs with; a remote one must be the app's own.
+  With ``CI`` set, the local server may be the CI job's own service
+  container on another host.
 - A pre-fill can take hours, so if it finishes but its snapshot isn't
   taken, for example after an interrupt, :meth:`DatabaseReset.close` takes
   it.
@@ -69,6 +71,7 @@ from psynet.isolated_environment import (
     DATABASE_ENV_VAR,
     SHARED,
     drop_database,
+    in_ci,
     terminate_connections,
 )
 from psynet.log import warning
@@ -122,6 +125,11 @@ def check_resettable_database(database_url, environ=None):
     ``PSYNET_TEST_ENVIRONMENT=shared`` set, the database may be the one you
     debug with, such as ``dallinger``.
 
+    The database must also be on this computer, except with ``CI`` set,
+    where PostgreSQL is the CI job's own service container on another host.
+    CI doesn't start the isolated test environment, so only tests that start
+    one themselves get a session database there.
+
     Parameters
     ----------
     database_url : str
@@ -136,10 +144,14 @@ def check_resettable_database(database_url, environ=None):
         PostgreSQL system database, or isn't on this computer.
     """
     environ = os.environ if environ is None else environ
-    description = check_local_database(database_url)
-    database = make_url(database_url).database
+    url = make_url(database_url)
+    database = url.database
+    if in_ci(environ):
+        description = f"{database} on {url.host}"
+    else:
+        description = check_local_database(database_url)
     if database != environ.get(DATABASE_ENV_VAR) or not _SESSION_DATABASE.fullmatch(
-        database
+        database or ""
     ):
         raise ValueError(
             f"Refusing to reset the database {database}: resetting drops and "

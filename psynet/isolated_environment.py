@@ -108,9 +108,14 @@ def shared_environment_warning(environ=None):
     )
 
 
+def in_ci(environ=None):
+    """Return whether ``CI`` is set, so the services are the CI job's own."""
+    environ = os.environ if environ is None else environ
+    return environ.get("CI", "").lower() not in ("", "0", "false")
+
+
 def _is_configured(environ):
-    in_ci = environ.get("CI", "").lower() not in ("", "0", "false")
-    return bool(environ.get(READY_ENV_VAR)) or in_ci
+    return bool(environ.get(READY_ENV_VAR)) or in_ci(environ)
 
 
 def check_no_debug_server(directory):
