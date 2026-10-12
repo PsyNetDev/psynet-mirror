@@ -260,7 +260,9 @@ A test counts as within capacity if these stay within their limits:
   at most 1% for each trial maker. With the default
   ``wait_for_networks=False``, a participant who finds every eligible chain
   awaiting an async process or out of trial capacity finishes the block
-  early instead of waiting. The participant is not failed, so the test
+  early instead of waiting. Static trial makers don't limit trials per node
+  during selection, so they only do this when every node awaits an async
+  process. The participant is not failed, so the test
   results show these bots under *trials per bot* instead, with their median
   number of trials and the trial maker's ``expected_trials_per_participant``.
   Unlike wait timeouts, this sets the capacity and the suggested cap:

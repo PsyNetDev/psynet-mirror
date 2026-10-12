@@ -1138,6 +1138,8 @@ def networks_in_blocks(trial_maker, participant, blocks, network_class=ChainNetw
         ("last_node", 0),
         ("committed_to_chain", 0),
         ("override_waits", 0),
+        # The only busy chain that still needs trials is one it can't join.
+        ("filter_rejects_growing", 0),
     ],
 )
 def test_busy_block_waits_or_finishes_early(db_session, participant, case, ended_busy):
@@ -1146,13 +1148,21 @@ def test_busy_block_waits_or_finishes_early(db_session, participant, case, ended
         max_trials_per_participant=None,
         wait_for_networks=case == "wait_for_networks",
     )
-    first, free = networks_in_blocks(trial_maker, participant, ["A", "B"])
+    blocks = ["A", "A", "B"] if case == "filter_rejects_growing" else ["A", "B"]
+    first, *rejected, free = networks_in_blocks(trial_maker, participant, blocks)
     if case == "full":
         first.full = True
     else:
-        add_trial(GrowthQueryTrial, first.head, new_participant(), finalized=False)
-    if case == "last_node":
+        for network in [first, *rejected]:
+            add_trial(
+                GrowthQueryTrial, network.head, new_participant(), finalized=False
+            )
+    if case in ("last_node", "filter_rejects_growing"):
         first.max_size = 1
+    if rejected:
+        trial_maker.custom_chain_filter = lambda chains, p, e: [
+            chain for chain in chains if chain not in rejected
+        ]
     if case == "committed_to_chain":
         participant.module_state.current_chain_id = first.id
     if case == "override_waits":
