@@ -124,6 +124,13 @@ own experiment on the server you will use (see
 :ref:`performance_testing_server`), and keep the number of participants
 taking part at once below the capacity it reports.
 
+Experiments with CPU-heavy async processes, such as tapping experiments
+that analyse recordings with REPP, need extra cores for their worker
+processes, about one core for each. One worker process keeps up with about
+(session length) / (CPU time per job × jobs per participant) participants
+at once; :ref:`performance_testing_async_workers` explains how to estimate
+this and how to set ``worker_processes``.
+
 The server is a small part of a study's cost. 100 participants at once, paid
 £9 an hour, cost about £900 an hour, while an ``m7i.4xlarge`` that can serve
 several times as many costs under $1 an hour. A server that is too small

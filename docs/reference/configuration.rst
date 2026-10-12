@@ -818,27 +818,28 @@ Web server
     deployments run a single web service, so this does not scale the
     remote web container.
 
-``num_dynos_worker`` *int* |dlgr-icon|
-    Number of worker processes. Used by the legacy local process manager
-    and by SSH Docker deployments, where it creates ``worker_1`` …
-    ``worker_N``. Increase this for live experiments that run many
-    background jobs. Each worker process runs up to 20 jobs at once, but
-    only while they wait on I/O; CPU-bound jobs run one at a time per
-    process.
+``worker_processes`` *int* |dlgr-icon|
+    Number of worker processes for async processes and other background
+    jobs. SSH Docker deployments create ``worker_1`` … ``worker_N``,
+    Heroku runs this many worker dynos, and the legacy local process
+    manager starts this many worker processes. Increase this for live
+    experiments that run many background jobs; see
+    :ref:`performance_testing_async_workers`. Replaces the deprecated
+    ``num_dynos_worker``. Default: ``1``.
 
-``threads`` *str* |dlgr-icon|
-    The number of gunicorn web worker processes to start.
-    When given the default value of ``auto`` the number of worker processes will be calculated
-    using the formula ``round(multiprocessing.cpu_count() * worker_multiplier)) + 1`` by making use
-    of the ``worker_multiplier`` config variable. Default: ``auto``.
-    ``psynet debug local --legacy`` starts four workers rather than ``auto``.
-    Plain ``psynet debug local`` runs the Flask reloader as one web process
-    and ignores this setting.
+``worker_greenlets_per_process`` *int* |dlgr-icon|
+    Number of jobs each worker process runs at once. Jobs only overlap
+    while they wait on I/O; CPU-bound jobs run one at a time per process,
+    so set this to ``1`` for CPU-heavy async processes and raise
+    ``worker_processes`` instead. Default: ``20``.
 
-``worker_multiplier`` *float* |dlgr-icon|
-    Multiplier used to determine the number of gunicorn web worker processes
-    started per CPU. Reduce this if your server runs out of memory.
-    Default: ``1.5``.
+``web_processes`` *str* |dlgr-icon|
+    The number of gunicorn web processes to start. The default, ``auto``,
+    starts ``round(1.5 * multiprocessing.cpu_count()) + 1``. Replaces the
+    deprecated ``threads``. ``psynet debug local --legacy`` starts four
+    processes rather than ``auto``. Plain ``psynet debug local`` runs the
+    Flask reloader as one web process and ignores this setting.
+    Default: ``auto``.
 
 For help on choosing appropriate configuration variables, also see this Dallinger documentation page at https://dallinger.readthedocs.io/latest/configuration.html#choosing-configuration-values
 
@@ -867,9 +868,6 @@ Docker
     Example:
 
     * ``/host/path:/container_path,/another-path:/another-container-path``
-
-``docker_worker_cpu_shares`` *int* |dlgr-icon|
-    CPU shares for Docker worker containers. Default: ``1024``
 
 
 Internationalization

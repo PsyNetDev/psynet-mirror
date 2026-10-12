@@ -84,7 +84,9 @@ fails after the database grew a lot, rerun with `--reset-database` before
 capping lower. For CPU-heavy jobs,
 also work out worker throughput: one worker process keeps up with about
 (session length) ÷ (job time × jobs per participant) participants, with job
-times from `process_stats`. Report how you reached the cap.
+times from `process_stats`. If the queue limits capacity, set
+`worker_greenlets_per_process = 1` and raise `worker_processes`, about one
+per spare CPU core. Report how you reached the cap.
 
 For chain experiments, also check how many participants got fewer trials
 because every chain was busy (a line under TRIALS PER BOT, and

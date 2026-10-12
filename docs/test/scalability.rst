@@ -166,8 +166,10 @@ that the slowest participants experience. The report also shows:
   timed out waited longest.
 - **Async process times**: for experiments with asynchronous processes, such
   as audio analysis, both the execution time and the time spent waiting in
-  the queue. A high queue share, highlighted in yellow or red, means more
-  worker processes are needed.
+  the queue, with the number of worker processes and how many jobs they
+  can run at once. A high queue share, highlighted in yellow or red, means
+  more worker processes are needed; see
+  :ref:`performance_testing_async_workers`.
 - **Start-up vs steady state**: the request count, 95th-percentile response
   time, request errors and 95th-percentile async queue wait, separately for
   the start-up and the steady state. The start-up lasts until the first bot
@@ -311,21 +313,8 @@ the search test that set the capacity, the summary suggests rerunning with
 ``--reset-database`` before capping lower.
 
 The summary names the limit that a failing test exceeded. If the queue limit
-is what caps capacity, add worker processes with the ``num_dynos_worker``
-config variable (see :doc:`/reference/configuration`) before resorting to a
-lower participant cap.
-
-How many async processes a worker process can handle depends on what they
-do. Each worker process runs up to 20 jobs at once with gevent, but jobs
-only overlap while they wait, for example on a web API, the database or
-``time.sleep``. A job that keeps the CPU busy, such as audio analysis in
-Python, blocks the other jobs in its process until it finishes. In the
-``async_codeblock`` demo, one worker process finished about 14 one-second
-jobs per second when they slept, but only about one per second when they
-computed. For CPU-bound jobs, plan on about one worker process per CPU core
-and on throughput of one job at a time per process. The async section of
-the report shows the number of worker processes and how many jobs they can
-run at once.
+is what caps capacity, the summary says how many worker processes the server
+had and suggests more; add them before resorting to a lower participant cap.
 
 The search starts at 10 bots and doubles the count until a test fails, then
 halves the gap between the largest passing and smallest failing counts until
@@ -373,12 +362,8 @@ processes took and waited. The confirmation test has ``confirmation`` set,
 and the options record ``confirmation_skipped`` with the reason it didn't
 run. When the search tests and a long test with spread-out arrivals
 disagree, trust the long test. For async processes that keep the CPU busy,
-you can also check worker throughput by hand: one worker process keeps up
-with about as many participants at once as a session lasts divided by the
-processing time each participant needs (the average times in
-``process_stats`` times the number of each process per participant). For
-example, 43 s of audio analysis per 12-minute session lets one worker
-process keep up with about 16 participants.
+also check worker throughput by hand, as described in
+:ref:`performance_testing_async_workers`.
 
 The processes running the bots create each bot's participant themselves, so
 they can only start new bots at a limited rate, which depends on the
@@ -418,6 +403,45 @@ files per waiting participant, also caps it at about 500 per worker. This
 needs a Dallinger release newer than 12.4; with 12.4 and earlier, a web
 worker runs out of Redis connections once about 100 participants have waited
 on it.
+
+.. _performance_testing_async_workers:
+
+Async workers
+-------------
+
+Async processes run in worker processes, separate from the web server. Two
+config variables (see :doc:`/reference/configuration`) set how many jobs run
+at once:
+
+- ``worker_processes`` (default 1) is the number of worker processes: the
+  ``worker_N`` containers on an SSH server, the worker dynos on Heroku, and
+  the local worker processes of ``psynet debug local --legacy`` and
+  ``performance-test local``. It replaces ``num_dynos_worker``.
+- ``worker_greenlets_per_process`` (default 20) is how many jobs each
+  worker process runs at once with gevent.
+
+The async section of the test results shows both, for example ``2 worker
+processes, up to 40 jobs at once``. Jobs in the same process only overlap
+while they wait, for example on a web API, the database or ``time.sleep``.
+A job that keeps the CPU busy, such as audio analysis in Python, blocks the
+other jobs in its process until it finishes. In the ``async_codeblock``
+demo, one worker process finished about 14 one-second jobs per second when
+they slept, but only about one per second when they computed.
+
+So for experiments with CPU-heavy async processes, such as tapping
+experiments that analyse recordings with REPP, set
+``worker_greenlets_per_process = 1``, so that a busy process doesn't take
+jobs that a free one could run, and plan on about one worker process per CPU
+core. One worker process then keeps up with about (session length) / (CPU
+time per job × jobs per participant) participants taking part at once. The
+average times in the async section, or in ``process_stats`` with
+``--json-output``, give the time per job. For example, 43 s of audio
+analysis per 12-minute session lets one worker process keep up with about
+16 participants, so 100 participants at once need about 6 worker processes
+and a server with that many cores to spare beyond those the web server and
+database use. On SSH servers the worker containers get a low CPU priority,
+so that a busy worker doesn't slow down participants' pages, but they still
+use every core that is free.
 
 .. _performance_testing_database_size:
 

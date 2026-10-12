@@ -1387,7 +1387,11 @@ def test_a_stray_error_is_reported_but_does_not_cap_capacity():
         "The 640-bot test had 1 request error, 3 busy/stale responses and 1 bot error"
         in text
     )
-    assert "add worker processes with num_dynos_worker" in text
+    assert (
+        "The server had 2 worker processes, up to 40 jobs at once. Raise the "
+        "worker_processes config variable"
+    ) in text
+    assert "worker_greenlets_per_process = 1" in text
 
 
 def test_capacity_summary_does_not_suggest_a_cap_when_bots_started_too_slowly():
