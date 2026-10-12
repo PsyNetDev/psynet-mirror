@@ -552,20 +552,29 @@ class DatabaseReset:
         DATABASE`` leaves nothing behind when it fails, so it is renamed in
         place; without it, the experiment database is copied from the
         snapshot again. A restore copy left beside an existing experiment
-        database is dropped.
+        database is dropped. A statement that an interrupt cut off on the
+        client may still finish on the server, so if putting the database
+        back fails, it checks again whether the database exists.
         """
+        import psycopg2
+
         if _database_exists(cursor, self.database):
             if _database_exists(cursor, self._restore_copy):
                 drop_database(cursor, self._restore_copy)
             return True
-        if _database_exists(cursor, self._restore_copy):
-            source = f"its restore copy {self._restore_copy}"
-            self._rename_restore_copy(cursor)
-        elif self.snapshot and _database_exists(cursor, self.snapshot):
-            source = f"the snapshot {self.snapshot}"
-            _create_from_template(cursor, self.database, self.snapshot)
-        else:
-            return False
+        try:
+            if _database_exists(cursor, self._restore_copy):
+                source = f"its restore copy {self._restore_copy}"
+                self._rename_restore_copy(cursor)
+            elif self.snapshot and _database_exists(cursor, self.snapshot):
+                source = f"the snapshot {self.snapshot}"
+                _create_from_template(cursor, self.database, self.snapshot)
+            else:
+                return False
+        except psycopg2.Error:
+            if not _database_exists(cursor, self.database):
+                raise
+            return True
         logger.warning(
             warning(
                 f"The database {self.database} was missing after an interrupted "
