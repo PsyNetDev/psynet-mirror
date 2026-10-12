@@ -651,7 +651,8 @@ def test_phase_stats_split_requests_and_queue_waits_at_the_boundary(db_session):
             )
         )
     # Local jobs have no priority and count as high priority.
-    jobs = [(5, 5, "high"), (70, 71, None), (10, 100, "low"), (80, 85, "low")]
+    jobs = [(5, 5, "high"), (70, 71, None), (30, 90, "high")]
+    jobs += [(10, 100, "low"), (80, 85, "low")]
     jobs = [
         dict(
             time_enqueued=at(enqueued),
@@ -676,17 +677,21 @@ def test_phase_stats_split_requests_and_queue_waits_at_the_boundary(db_session):
         key_requests=3,
         request_errors=1,
         p95_response_time=pytest.approx(1.9),
-        # The low job enqueued at 10 s started after the boundary.
-        queue_waits={"high": waits(1, 0.0), "low": waits(0, None, 2, 50.0)},
+        # Jobs enqueued before the boundary but started after it count in the
+        # steady state, and in the start-up backlog.
+        queue_waits={"high": waits(1, 0.0, 1, 30.0), "low": waits(0, None, 2, 50.0)},
     )
     assert steady == dict(
         key_requests=20,
         request_errors=0,
         p95_response_time=0.1,
-        queue_waits={"high": waits(1, 1.0), "low": waits(1, 5.0, 1, 550.0)},
+        queue_waits={
+            "high": waits(2, pytest.approx(57.05)),
+            "low": waits(2, pytest.approx(85.75), 1, 550.0),
+        },
     )
     assert async_job_stats(0, at(600))["queue_waits"] == {
-        "high": waits(2, pytest.approx(0.95)),
+        "high": waits(3, pytest.approx(54.1)),
         "low": waits(2, pytest.approx(85.75), 1, 550.0),
     }
 

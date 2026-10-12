@@ -174,8 +174,8 @@ def phase_stats(
     """Return the start-up and steady-state metrics of a test, split at ``boundary``.
 
     Reads the same requests and async jobs as :func:`request_stats` and
-    :func:`async_job_stats`. Requests logged, and jobs enqueued,
-    before ``boundary`` are start-up; the rest are the steady state.
+    :func:`async_job_stats`. Requests logged, and jobs started, before
+    ``boundary`` are start-up; the rest are the steady state.
 
     Returns
     -------
@@ -183,9 +183,8 @@ def phase_stats(
         For the start-up and the steady state: ``key_requests``,
         ``request_errors`` (not counting busy or stale responses),
         ``p95_response_time`` and ``queue_waits`` (see :func:`_queue_waits`)
-        of the jobs enqueued in the phase that started by its end, with the
-        backlog left at its end; the response and queue times are ``None``
-        without measurements.
+        of the jobs that started in the phase, with the backlog left at its
+        end; the response and queue times are ``None`` without measurements.
     """
     from dallinger import db
     from sqlalchemy import func
@@ -225,9 +224,7 @@ def phase_stats(
                 queue_waits=_queue_waits(
                     after_async_job_id,
                     phase_ended_at,
-                    (AsyncJob.time_enqueued >= boundary)
-                    if steady
-                    else (AsyncJob.time_enqueued < boundary),
+                    *([AsyncJob.time_started > boundary] if steady else []),
                 ),
             )
         )
@@ -248,8 +245,8 @@ def _queue_waits(after_async_job_id, ended_at, *filters):
         Only jobs that started by then count towards ``jobs`` and
         ``q_delay_p95``; jobs still waiting then make up the backlog.
     *filters
-        Further SQL filters on the jobs that started, e.g. when they were
-        enqueued.
+        Further SQL filters on the jobs that started, e.g. when they
+        started.
 
     Returns
     -------

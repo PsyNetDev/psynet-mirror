@@ -204,7 +204,9 @@ that the slowest participants experience. The report also shows:
 - **Start-up vs steady state**: the request count, 95th-percentile response
   time, request errors and the 95th-percentile queue wait of high- and of
   low-priority async jobs, separately for the start-up and the steady
-  state, with the low-priority jobs still queued at the end of each. The start-up lasts until the first bot
+  state, with the low-priority jobs still queued at the end of each. A job
+  counts in the phase in which it started, so a job that waited out the end
+  of the start-up counts in the steady state. The start-up lasts until the first bot
   completes the experiment: until then every bot is in its first session,
   as when a study opens and its first participants arrive together, so
   queues fill up and slow pages are hit by everyone at once. The steady
