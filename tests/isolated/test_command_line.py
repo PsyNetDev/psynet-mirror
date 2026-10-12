@@ -4205,6 +4205,64 @@ def test_is_flask_develop_server_process(cmdline, expected):
     assert is_flask_develop_server_process(process) is expected
 
 
+@pytest.mark.parametrize(
+    "cmdline, expected",
+    [
+        ([sys.executable, "-m", "psynet.local_deployment"], True),
+        (["/usr/bin/python", "-m", "psynet.local_deployment"], True),
+        (["/usr/bin/python", "-m", "psynet.command_line", "deploy", "local"], False),
+        (
+            ["/usr/bin/python", "-m", "pytest", "-m", "psynet.local_deployment"],
+            False,
+        ),
+        (["/venv/bin/flask", "run"], False),
+    ],
+)
+def test_is_snapshot_export_process(cmdline, expected):
+    from psynet.command_line import is_snapshot_export_process
+
+    process = Mock()
+    process.pid = os.getpid() + 1
+    process.cmdline.return_value = cmdline
+    assert is_snapshot_export_process(process) is expected
+
+
+def test_unreadable_snapshot_export_is_still_listed(monkeypatch):
+    from psynet.command_line import list_psynet_worker_processes
+
+    process = Mock()
+    process.pid = os.getpid() + 1
+    process.cmdline.return_value = [
+        sys.executable,
+        "-m",
+        "psynet.local_deployment",
+    ]
+    process.environ.side_effect = psutil.AccessDenied(process.pid)
+    process.status.return_value = psutil.STATUS_RUNNING
+    process.children.return_value = []
+    monkeypatch.setattr("psynet.command_line.psutil.process_iter", lambda: [process])
+    assert list_psynet_worker_processes() == [process]
+
+
+def test_snapshot_child_of_a_writer_is_listed(monkeypatch):
+    from psynet.command_line import list_psynet_worker_processes
+
+    parent = Mock()
+    parent.pid = os.getpid() + 1
+    parent.cmdline.return_value = ["/venv/bin/flask", "run"]
+    parent.status.return_value = psutil.STATUS_RUNNING
+    parent.environ.return_value = {
+        "DATABASE_URL": "postgresql://dallinger@localhost/this"
+    }
+    child = Mock()
+    child.pid = os.getpid() + 2
+    child.status.return_value = psutil.STATUS_RUNNING
+    parent.children.return_value = [child]
+    monkeypatch.setenv("DATABASE_URL", "postgresql://dallinger@localhost/this")
+    monkeypatch.setattr("psynet.command_line.psutil.process_iter", lambda: [parent])
+    assert list_psynet_worker_processes() == [parent, child]
+
+
 def test_flask_develop_server_on_this_database_is_a_writer(monkeypatch, tmp_path):
     from psynet.command_line import list_psynet_worker_processes
 
@@ -4271,6 +4329,8 @@ def test_unreadable_writer_environment_is_still_listed(monkeypatch):
     process.pid = os.getpid() + 1
     process.cmdline.return_value = ["/venv/bin/flask", "run"]
     process.environ.side_effect = psutil.AccessDenied(process.pid)
+    process.status.return_value = psutil.STATUS_RUNNING
+    process.children.return_value = []
     monkeypatch.setattr("psynet.command_line.psutil.process_iter", lambda: [process])
     assert list_psynet_worker_processes() == [process]
 

@@ -33,18 +33,22 @@ files for resuming on the same machine. They do not include assets or
 replace a full :ref:`data export <data>`.
 
 Before that recovery snapshot, ``psynet deploy local`` and ``psynet prepare``
-stop leftover PsyNet worker processes and any ``flask run`` development
-server using this database. If one of them is still running, the command
-refuses to reset the database, so a writer cannot commit into a database the
-archive does not contain. A server whose environment cannot be read, including one started by
-another account on this machine, is treated the same way. Stopping the
-running deployment with Ctrl-C or SIGTERM writes the shutdown snapshot before
-the process exits. A second Ctrl-C during that copy does not leave a numbered
+stop leftover PsyNet worker processes, any ``flask run`` development
+server using this database, and any ``python -m psynet.local_deployment``
+snapshot copy. That copy is a child of the dev server. Killing the server
+does not stop it, and it keeps PostgreSQL locks until the archive finishes.
+If one of them is still running, the command refuses to reset the database,
+so a writer cannot commit into a database the archive does not contain. A
+server whose environment cannot be read, including one started by another
+account on this machine, is treated the same way. Stopping the running
+deployment with Ctrl-C or SIGTERM writes the shutdown snapshot before the
+process exits. A second Ctrl-C during that copy does not leave a numbered
 archive without its metadata.
 
-The ten-minute timer skips a backup when the ``response`` table is empty
-and there is no prior snapshot, or when the response watermark has not
-grown and a fingerprint of every public table still matches the last
+The ten-minute timer writes the first archive even when the ``response``
+table is empty, so participants, trials, and assets are recoverable before
+anyone answers. Later ticks skip a backup when the response watermark has
+not grown and a fingerprint of every public table still matches the last
 archive. That fingerprint changes when any row is inserted, updated, or
 deleted, not only when a new response id appears. If the watermark or the
 fingerprint cannot be read, the timer still writes a snapshot. Long-running

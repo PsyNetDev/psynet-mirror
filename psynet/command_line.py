@@ -1327,16 +1327,16 @@ def kill_psynet_worker_processes(wait_timeout=1):
             continue
     pid_list = ", ".join(pids) if pids else "unknown"
     logger.warning(
-        "Stopping %s leftover local PsyNet server or worker process(es) "
-        "(pids %s). Launch paths including remote deploy do this so a stale "
-        "dallinger_heroku_* backend or flask run server cannot hold this "
-        "Postgres database.",
+        "Stopping %s leftover local PsyNet server, worker, or snapshot "
+        "process(es) (pids %s). Launch paths including remote deploy do this "
+        "so a stale dallinger_heroku_* backend, flask run server, or "
+        "snapshot copy cannot hold this Postgres database.",
         len(processes),
         pid_list,
     )
     log(
-        f"Found {len(processes)} remaining PsyNet server or worker process(es) "
-        f"(pids {pid_list}), terminating them now."
+        f"Found {len(processes)} remaining PsyNet server, worker, or snapshot "
+        f"process(es) (pids {pid_list}), terminating them now."
     )
     signalled = [process for process in processes if safely_kill_process(process)]
     unstoppable = [process for process in processes if process not in signalled]
@@ -1468,35 +1468,74 @@ def _leftover_database_writer_message(purpose: str) -> str:
             pids.append("unknown")
     listed = ", ".join(pids) if pids else "unknown"
     return (
-        "Leftover PsyNet server or worker processes are still running "
-        f"(pids {listed}) and may write to the local database. "
-        f"Stop them before {purpose}. A process owned by another account "
-        "is included when its environment cannot be read, because it may "
-        "be using this shared PostgreSQL."
+        "Leftover PsyNet server, worker, or snapshot processes are still "
+        f"running (pids {listed}) and may write to the local database or "
+        f"hold its locks. Stop them before {purpose}. A process owned by "
+        "another account is included when its environment cannot be read, "
+        "because it may be using this shared PostgreSQL."
     )
 
 
 def list_psynet_worker_processes():
     """List local servers and workers that may write this shell's database.
 
-    Includes ``dallinger_heroku_*`` processes and the ``flask run`` development
-    server started by ``psynet deploy local`` without ``--legacy``. A writer
-    whose environment cannot be read is included as well. Another OS user
-    shares this PostgreSQL, and ignoring that process would let a reset drop
-    the database while it can still commit.
+    Includes ``dallinger_heroku_*`` processes, the ``flask run`` development
+    server started by ``psynet deploy local`` without ``--legacy``, and
+    ``python -m psynet.local_deployment`` snapshot copies. A writer whose
+    environment cannot be read is included as well. Another OS user shares
+    this PostgreSQL, and ignoring that process would let a reset drop the
+    database while it can still commit. Children of a matched process are
+    included too: SIGKILL does not stop them, and a snapshot copy keeps its
+    locks after the dev server is gone.
     """
     writers = []
+    seen = set()
     for process in psutil.process_iter():
         if not is_local_database_writer_process(process):
             continue
-        if uses_current_database(process) or _environment_unreadable(process):
-            writers.append(process)
+        if not (
+            uses_current_database(process) or _environment_unreadable(process)
+        ):
+            continue
+        _append_database_client(writers, seen, process)
+        for child in _live_child_processes(process):
+            _append_database_client(writers, seen, child)
     return writers
 
 
+def _append_database_client(writers, seen, process):
+    """Record ``process`` once, skipping this process and zombies."""
+    try:
+        pid = process.pid
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        return
+    if pid == os.getpid() or pid in seen or _process_is_defunct(process):
+        return
+    seen.add(pid)
+    writers.append(process)
+
+
+def _live_child_processes(process):
+    """Return child processes, or nothing if the process API cannot list them."""
+    children = getattr(process, "children", None)
+    if not callable(children):
+        return []
+    try:
+        found = children(recursive=True)
+    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.Error):
+        return []
+    if not isinstance(found, list):
+        return []
+    return found
+
+
 def is_local_database_writer_process(process):
-    """Return whether ``process`` can commit to the local experiment database."""
-    return is_psynet_worker_process(process) or is_flask_develop_server_process(process)
+    """Return whether ``process`` can commit to or lock the local database."""
+    return (
+        is_psynet_worker_process(process)
+        or is_flask_develop_server_process(process)
+        or is_snapshot_export_process(process)
+    )
 
 
 def is_flask_develop_server_process(process):
@@ -1516,6 +1555,29 @@ def is_flask_develop_server_process(process):
         return False
     for index, name in enumerate(names):
         if name == "flask" and "run" in names[index + 1 : index + 5]:
+            return True
+    return False
+
+
+def is_snapshot_export_process(process):
+    """Return whether ``process`` is a ``python -m psynet.local_deployment`` copy.
+
+    Finish-time and periodic snapshots spawn this helper from the dev server.
+    Killing ``flask run`` does not stop it. Once the server is gone the helper
+    is reparented and still holds the COPY locks that block the next reset.
+    The current process and pytest are never a match.
+    """
+    try:
+        if process.pid == os.getpid():
+            return False
+        cmdline = process.cmdline()
+    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+        return False
+    names = [Path(argument).name.lower() for argument in cmdline]
+    if any(name.startswith("pytest") for name in names):
+        return False
+    for index, argument in enumerate(cmdline[:-1]):
+        if argument == "-m" and cmdline[index + 1] == "psynet.local_deployment":
             return True
     return False
 

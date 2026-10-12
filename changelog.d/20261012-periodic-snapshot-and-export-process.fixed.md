@@ -1,0 +1,1 @@
+The ten-minute local snapshot now writes the first archive before any response exists, so participants and trials survive a crash. ``psynet prepare`` and ``psynet deploy local`` stop a leftover snapshot copy, which otherwise keeps PostgreSQL locks after the dev server is killed and blocks the next reset.

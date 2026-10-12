@@ -1564,13 +1564,12 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @classmethod
     def maybe_create_periodic_local_snapshot(cls):
-        """Snapshot a managed local live run if new responses exist.
+        """Snapshot a managed local live run when the database is not archived.
 
-        The ten-minute timer would otherwise write identical archives during
-        long quiet stretches. Skip when the response table is empty and there
-        is no prior snapshot, or when the response watermark has not grown and
-        the full-database content token still matches. If either check cannot
-        be read, snapshot rather than skip a backup.
+        The ten-minute timer writes the first archive even if ``response`` is
+        still empty, then skips later ticks when the response watermark has
+        not grown and the full-database content token still matches. If either
+        check cannot be read, snapshot rather than skip a backup.
         """
         info = cls._managed_local_live_deployment_info()
         if info is None:

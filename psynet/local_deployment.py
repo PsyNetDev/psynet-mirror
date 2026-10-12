@@ -1103,13 +1103,11 @@ def snapshot_content_matches(
 ) -> bool:
     """Return whether ``latest`` already contains the live database.
 
-    An empty ``response`` table with no snapshot is unchanged, so the periodic
-    timer can skip without a second database read. Any other uncertainty
+    No archive is not a match, even when ``response`` is still empty: other
+    tables may already hold participants, trials, or assets. Any uncertainty
     (unreadable watermark, missing token, or a token mismatch) returns
     ``False``.
     """
-    if current_watermark == 0 and latest is None:
-        return True
     if (
         current_watermark is None
         or latest is None
