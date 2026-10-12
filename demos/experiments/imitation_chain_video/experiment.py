@@ -79,9 +79,9 @@ class CustomTrial(CameraImitationChainTrial):
                     "and we haven't been able to debug it yet. It may be some kind of race condition. "
                     "We'll now print some debugging information to try and help solve this mystery. "
                 )
-                logger.info("Does our trial's node have pending async processes?")
-                logger.info(self.node.async_processes)
-                logger.info([x.__json__() for x in self.node.async_processes])
+                logger.info("Does our trial's node have pending async jobs?")
+                logger.info(self.node.async_jobs)
+                logger.info([x.__json__() for x in self.node.async_jobs])
 
                 logger.info("What happens if we refresh the object?")
                 db.session.refresh(self)

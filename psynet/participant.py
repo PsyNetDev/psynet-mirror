@@ -34,6 +34,7 @@ from psynet.db import transaction
 from psynet.timeline import Page
 
 from .asset import AssetParticipant
+from .async_job import _deprecated_async_processes
 from .data import SQLMixinDallinger
 from .field import PythonDict, PythonList, PythonObject
 from .utils import (
@@ -492,10 +493,12 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
 
     all_responses = relationship("psynet.timeline.Response")
 
-    awaited_async_code_block_process_id = Column(Integer, ForeignKey("process.id"))
-    awaited_async_code_block_process = relationship(
-        "AsyncProcess", foreign_keys=[awaited_async_code_block_process_id]
+    awaited_async_code_block_job_id = Column(Integer, ForeignKey("async_job.id"))
+    awaited_async_code_block_job = relationship(
+        "AsyncJob", foreign_keys=[awaited_async_code_block_job_id]
     )
+
+    async_processes = _deprecated_async_processes
 
     @property
     def current_trial(self):

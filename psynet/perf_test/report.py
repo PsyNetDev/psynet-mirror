@@ -14,10 +14,10 @@ from tabulate import tabulate
 
 from psynet.log import bold, error, success, warning
 from psynet.perf_test.results import (
+    ASYNC_JOB_STAT_KEYS,
     CAPACITY_HEADROOM,
     MIN_STEADY_STATE_S,
     POSTGRES_FULL,
-    PROCESS_STAT_KEYS,
     CapacityLimits,
     busy_early_finish_cause,
     capacity_failure_causes,
@@ -64,7 +64,7 @@ def format_test_results(result):
         *_runtime_lines(result),
         *_init_time_lines(result),
         *_request_lines(result),
-        *_async_process_lines(result),
+        *_async_job_lines(result),
         *_phase_lines(result),
         *_database_row_lines(result),
     ]
@@ -316,7 +316,7 @@ def _request_lines(result):
 _ASYNC_TABLE_LEGEND = [
     "  Avg/Med/P95/Max — statistics on actual execution time",
     "  Q Avg/Q Med/Q P95 — statistics on queue delay (time waiting in RQ queue)",
-    "  Q Share — avg of per-process queue_delay / (queue_delay + exec_time),",
+    "  Q Share — avg of per-job queue_delay / (queue_delay + exec_time),",
     "    i.e. avg percentage of total time spent queuing rather than executing",
     "  Colors: yellow = Q Share > 20% and Q P95 > 0.2s (moderate contention)",
     "          red = Q Share > 20% and Q P95 > 0.5s (significant contention)",
@@ -324,24 +324,24 @@ _ASYNC_TABLE_LEGEND = [
 ]
 
 
-def _async_process_lines(result):
-    """Return the ASYNC PROCESS TIMES section and any backlog left at the end."""
+def _async_job_lines(result):
+    """Return the ASYNC JOB TIMES section and any backlog left at the end."""
     worker_info = _describe_workers(result)
-    if result.process_stats:
-        n_procs = sum(ps["count"] for ps in result.process_stats)
+    if result.async_job_stats:
+        n_procs = sum(ps["count"] for ps in result.async_job_stats)
         worker_info = f", {worker_info}" if worker_info else ""
         proc_rows = [
             [
                 ps["trial_maker_id"],
                 ps["label"],
                 ps["count"],
-                *(_fmt(ps[key]) for key in PROCESS_STAT_KEYS if key != "q_share"),
+                *(_fmt(ps[key]) for key in ASYNC_JOB_STAT_KEYS if key != "q_share"),
                 _q_share_text(ps["q_share"], ps["q_p95"]),
             ]
-            for ps in result.process_stats
+            for ps in result.async_job_stats
         ]
         lines = [
-            *_section(f"ASYNC PROCESS TIMES ({n_procs} completed{worker_info})"),
+            *_section(f"ASYNC JOB TIMES ({n_procs} completed{worker_info})"),
             *_ASYNC_TABLE_LEGEND,
             *_table_lines(
                 proc_rows,
@@ -367,15 +367,15 @@ def _async_process_lines(result):
     else:
         worker_info = f" ({worker_info})" if worker_info else ""
         lines = [
-            *_section(f"ASYNC PROCESS TIMES{worker_info}"),
-            "  No completed async processes.",
+            *_section(f"ASYNC JOB TIMES{worker_info}"),
+            "  No completed async jobs.",
             "",
         ]
 
     if result.oldest_queued_s is not None:
         lines += [
             warning(
-                "  Still queued when the test ended: oldest process had waited "
+                "  Still queued when the test ended: oldest job had waited "
                 f"{result.oldest_queued_s:.1f}s for a worker."
             ),
             "",
@@ -384,7 +384,7 @@ def _async_process_lines(result):
 
 
 def _q_share_text(q_share, q_p95):
-    """Format an async process's queue share, colored by how much it queued."""
+    """Format an async job's queue share, colored by how much it queued."""
     if q_share is None or q_p95 is None:
         return "N/A"
     text = f"{q_share:.0%}"
@@ -499,9 +499,9 @@ def format_performance_summary(results):
         "  Resp P95 / Resp Med — 95th percentile / median HTTP response time for key "
         "endpoints (/timeline, /response)"
     )
-    lines.append("  Q Med all — median queue delay across all async processes")
+    lines.append("  Q Med all — median queue delay across all async jobs")
     lines.append(
-        "  Q P95 — 95th percentile queue delay, or the wait of the oldest process "
+        "  Q P95 — 95th percentile queue delay, or the wait of the oldest job "
         "still queued at the end if longer"
     )
     if show_scaling:
@@ -545,7 +545,7 @@ _POSTGRES_ADVICE = (
     "server, or raise max_connections."
 )
 _QUEUE_ADVICE = (
-    "  Async processes waited too long for a worker: add worker processes "
+    "  Async jobs waited too long for a worker: add worker processes "
     "with num_dynos_worker, or make the processes faster."
 )
 _WAIT_ADVICE = (

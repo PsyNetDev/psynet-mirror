@@ -3,7 +3,7 @@
 :class:`PerformanceSuite` and :class:`PerformanceTester` back ``psynet
 performance-test``. The tester runs one test: it keeps a fixed number of bots
 taking the experiment at once, then reads the server's ``Request`` and
-``AsyncProcess`` tables to measure response times and async queue waits. The
+``AsyncJob`` tables to measure response times and async queue waits. The
 suite runs a test per bot count, or with :meth:`PerformanceSuite.find_capacity`
 searches for the largest bot count that stays within :class:`CapacityLimits`.
 Its ``before_test`` hook can reset the database before each test (see
@@ -27,7 +27,7 @@ the submodules share with each other are not part of this API.
 
 from psynet.perf_test.measure import (
     count_non_bot_participants,
-    wait_for_async_processes,
+    wait_for_async_jobs,
 )
 from psynet.perf_test.report import (
     capacity_advice,
@@ -74,5 +74,5 @@ __all__ = [
     "queue_wait_p95",
     "raise_open_file_limit",
     "server_is_reachable",
-    "wait_for_async_processes",
+    "wait_for_async_jobs",
 ]

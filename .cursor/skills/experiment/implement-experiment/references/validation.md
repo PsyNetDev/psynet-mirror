@@ -31,7 +31,8 @@ Do not treat a green bot run as evidence that pages fit the window.
 ## Performance evidence
 
 When the work needs performance evidence, run this sustained load test after
-functional checks pass. Do not rely on experiment defaults such as
+functional checks pass. If the experiment runs async jobs, first measure their
+CPU use with `plan-server-resources/SKILL.md`. Do not rely on experiment defaults such as
 `test_n_bots = 1`. Use the audit-scoped route so results land in the packet
 immediately. From the experiment root:
 
@@ -84,7 +85,7 @@ fails after the database grew a lot, rerun with `--reset-database` before
 capping lower. For CPU-heavy jobs,
 also work out worker throughput: one worker process keeps up with about
 (session length) ÷ (job time × jobs per participant) participants, with job
-times from `process_stats`. Report how you reached the cap.
+times from `async_job_stats`. Report how you reached the cap.
 
 For chain experiments, also check how many participants got fewer trials
 because every chain was busy (a line under TRIALS PER BOT, and

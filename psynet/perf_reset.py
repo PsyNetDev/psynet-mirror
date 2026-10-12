@@ -72,7 +72,7 @@ from psynet.log import warning
 
 logger = logging.getLogger(__name__)
 
-# Async processes left from pre-filling would never run after a reset,
+# Async jobs left from pre-filling would never run after a reset,
 # because the reset deletes their RQ jobs.
 _ASYNC_DRAIN_TIMEOUT_S = 3600
 _IN_USE_ATTEMPTS = 10
@@ -248,7 +248,7 @@ def drop_snapshot(snapshot, database_url):
 class DatabaseReset:
     """Reset the experiment database to a snapshot before each call.
 
-    The first call adds any pre-fill data, waits for async processes to
+    The first call adds any pre-fill data, waits for async jobs to
     finish, and takes the snapshot; with ``from_snapshot`` it restores that
     snapshot instead. Every later call restores the snapshot. Each call
     stops the server first and starts it again afterwards.
@@ -308,7 +308,7 @@ class DatabaseReset:
         self._description = description
         self._drop_snapshot_on_close = False
         self._disk_space_unknown = False
-        # Whether the pre-fill for ``keep_as`` and its async processes finished.
+        # Whether the pre-fill for ``keep_as`` and its async jobs finished.
         self._prefilled = False
 
     def __call__(self):
@@ -324,7 +324,7 @@ class DatabaseReset:
         if taking:
             if self._prefill is not None:
                 self._prefill()
-            self._wait_for_async_processes()
+            self._wait_for_async_jobs()
             self._prefilled = self._keep_as is not None
         logger.info("")
         logger.info(
@@ -393,18 +393,16 @@ class DatabaseReset:
         with _maintenance_cursor(self.database_url) as cursor:
             yield cursor
 
-    def _wait_for_async_processes(self):
-        from psynet.perf_test import wait_for_async_processes
+    def _wait_for_async_jobs(self):
+        from psynet.perf_test import wait_for_async_jobs
 
-        waiting = wait_for_async_processes(
-            timeout_s=_ASYNC_DRAIN_TIMEOUT_S, finished=True
-        )
+        waiting = wait_for_async_jobs(timeout_s=_ASYNC_DRAIN_TIMEOUT_S, finished=True)
         if waiting:
             raise RuntimeError(
-                f"{waiting:,} async processes had not finished after "
+                f"{waiting:,} async jobs had not finished after "
                 f"{_ASYNC_DRAIN_TIMEOUT_S // 60} minutes, so no snapshot was "
                 "taken: their jobs would be lost at each reset. Check the "
-                "experiment's async processes in the server log."
+                "experiment's async jobs in the server log."
             )
 
     def _take_snapshot(self):

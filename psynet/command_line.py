@@ -4302,7 +4302,7 @@ _test_options["performance_max_queue_p95_s"] = click.option(
     type=click.FloatRange(min=0),
     default=None,
     help="""
-    The 95th-percentile time, in seconds, that async processes may wait for
+    The 95th-percentile time, in seconds, that async jobs may wait for
     a worker while the test still counts as within capacity. Processes still
     queued when the test ends count with the time they have waited so far.
     Used alongside --max-p95-ms. Defaults to 5.""",

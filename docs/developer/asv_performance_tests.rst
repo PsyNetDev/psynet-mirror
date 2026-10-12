@@ -34,7 +34,7 @@ Benchmarks are split by directory:
   damp that noise. Because the ``master`` job is allowed to fail (see below),
   slow-tier results are tracked in the published history rather than gating
   merges. The slow ASV history focuses on median request latency and median
-  async-process queue delay; participant failures and incomplete bots are left
+  async-job queue delay; participant failures and incomplete bots are left
   in the performance-test output instead of being tracked as ASV metrics.
 
 Merge-request checks

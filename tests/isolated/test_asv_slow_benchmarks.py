@@ -1,4 +1,4 @@
-from benchmarks.slow.experiment_performance import AsyncProcesses, Static
+from benchmarks.slow.experiment_performance import AsyncJobs, Static
 
 
 def test_slow_asv_tracks_median_response_time():
@@ -13,7 +13,7 @@ def test_slow_asv_tracks_median_response_time():
 
 
 def test_slow_asv_tracks_median_queue_delay_for_async_experiment():
-    benchmark = AsyncProcesses()
+    benchmark = AsyncJobs()
     data = {
         (5, 2.0): {
             "q_delay_median": 0.045,

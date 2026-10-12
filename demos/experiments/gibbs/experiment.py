@@ -10,13 +10,13 @@ from sqlalchemy.orm import relationship
 
 import psynet.experiment
 from psynet.asset import asset
+from psynet.async_job import AsyncJob
 from psynet.bot import Bot
 from psynet.data import SQLBase, SQLMixin, register_table
 from psynet.demography.general import ExperimentFeedback
 from psynet.modular_page import ModularPage, Prompt, PushButtonControl, SliderControl
 from psynet.page import InfoPage
 from psynet.participant import Participant
-from psynet.process import AsyncProcess
 from psynet.timeline import CodeBlock, Timeline
 from psynet.trial.gibbs import GibbsNetwork, GibbsNode, GibbsTrial, GibbsTrialMaker
 from psynet.utils import get_logger
@@ -262,7 +262,7 @@ class Exp(psynet.experiment.Experiment):
             assert len(b.alive_trials) == 7  # 4 normal trials + 3 repeat trials
             assert all([t.finalized for t in b.alive_trials])
 
-        processes = AsyncProcess.query.all()
-        assert all([not p.failed for p in processes])
+        async_jobs = AsyncJob.query.all()
+        assert all([not job.failed for job in async_jobs])
 
         super().test_check_bots(bots)

@@ -626,8 +626,8 @@ def test_phase_stats_split_requests_and_queue_waits_at_the_boundary(db_session):
 
     from dallinger import db
 
+    from psynet.async_job import AsyncJob
     from psynet.experiment import Request
-    from psynet.process import AsyncProcess
 
     start = datetime(2026, 10, 12, 12)
 
@@ -647,7 +647,7 @@ def test_phase_stats_split_requests_and_queue_waits_at_the_boundary(db_session):
             )
         )
     db.session.execute(
-        AsyncProcess.__table__.insert(),
+        AsyncJob.__table__.insert(),
         [
             dict(time_enqueued=at(s), time_started=at(s), queue_delay=delay)
             for s, delay in [(5, 30.0), (70, 1.0)]
@@ -661,14 +661,14 @@ def test_phase_stats_split_requests_and_queue_waits_at_the_boundary(db_session):
         key_requests=3,
         request_errors=1,
         p95_response_time=pytest.approx(1.9),
-        async_processes=1,
+        async_jobs=1,
         q_delay_p95=30.0,
     )
     assert steady == dict(
         key_requests=20,
         request_errors=0,
         p95_response_time=0.1,
-        async_processes=1,
+        async_jobs=1,
         q_delay_p95=1.0,
     )
 
@@ -1214,7 +1214,7 @@ def test_capacity_summary_suggests_a_cap_below_the_measured_capacity():
     assert "Cap concurrent participants at about 120 (80% of 150)." in text
 
 
-def test_capacity_summary_mentions_queue_waits_only_with_async_processes():
+def test_capacity_summary_mentions_queue_waits_only_with_async_jobs():
     results = [_base_result(n_bots=50, p95_response_time=0.1, q_delay_median=None)]
     assert "async" not in _join(format_capacity_summary(results))
 
@@ -1670,10 +1670,10 @@ def test_format_test_results_wait_page_times():
     assert "TIME ON WAIT PAGES PER BOT (n=10 bots" in text
 
 
-def test_format_test_results_process_stats():
+def test_format_test_results_async_job_stats():
     lines = format_test_results(
         _base_result(
-            process_stats=[
+            async_job_stats=[
                 {
                     "trial_maker_id": "tm1",
                     "label": "create_trial",
@@ -1691,17 +1691,17 @@ def test_format_test_results_process_stats():
         )
     )
     text = _join(lines)
-    assert "ASYNC PROCESS TIMES" in text
+    assert "ASYNC JOB TIMES" in text
     assert "2 worker processes, up to 40 jobs at once" in text
     assert "tm1" in text
     assert "create_trial" in text
     assert "Q Med" in text
 
 
-def test_format_test_results_no_process_stats():
-    lines = format_test_results(_base_result(process_stats=None))
+def test_format_test_results_no_async_job_stats():
+    lines = format_test_results(_base_result(async_job_stats=None))
     text = _join(lines)
-    assert "No completed async processes" in text
+    assert "No completed async jobs" in text
     assert "2 worker processes, up to 40 jobs at once" in text
 
 

@@ -38,8 +38,8 @@ class ErrorRecord(SQLBase, SQLMixin):
     asset_id = Column(Integer, ForeignKey("asset.id"), index=True)
     asset = relationship("Asset", back_populates="errors")
 
-    process_id = Column(Integer, ForeignKey("process.id"), index=True)
-    process = relationship("AsyncProcess", back_populates="errors")
+    async_job_id = Column(Integer, ForeignKey("async_job.id"), index=True)
+    async_job = relationship("AsyncJob", back_populates="errors")
 
     log_line_number = Column(Integer, nullable=True)
 
@@ -51,6 +51,6 @@ class ErrorRecord(SQLBase, SQLMixin):
         """
         Returns a dictionary of IDs for the error record.
 
-        This includes the IDs of the participant, network, node, response, trial, asset, and process.
+        This includes the IDs of the participant, network, node, response, trial, asset, and async job.
         """
         return {k: v for k, v in self.__dict__.items() if "_id" in k}

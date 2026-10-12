@@ -227,10 +227,10 @@ class PerformanceTestResult:
     avg_incomplete_duration: float | None = None
     q_delay_median: float | None = None
     q_delay_p95: float | None = None
-    # How long the oldest async process still queued at the end had waited.
+    # How long the oldest async job still queued at the end had waited.
     oldest_queued_s: float | None = None
-    # Duration and queue-delay statistics by trial maker and process label.
-    process_stats: list[dict] = field(default_factory=list)
+    # Duration and queue-delay statistics by trial maker and job label.
+    async_job_stats: list[dict] = field(default_factory=list)
     # Trials per bot that succeeded.
     min_trial_count: int | None = None
     median_trial_count: int | None = None
@@ -267,9 +267,9 @@ class PerformanceTestResult:
         )
 
 
-# Statistics in each entry of PerformanceTestResult.process_stats, besides
+# Statistics in each entry of PerformanceTestResult.async_job_stats, besides
 # trial_maker_id, label and count.
-PROCESS_STAT_KEYS = (
+ASYNC_JOB_STAT_KEYS = (
     "avg",
     "median",
     "p95",
@@ -392,7 +392,7 @@ class CapacityLimits:
         Largest acceptable 95th-percentile response time, for ``/timeline``
         and ``/response`` together and for each of them.
     max_queue_p95_s : float
-        Largest acceptable time async processes spend waiting for a worker,
+        Largest acceptable time async jobs spend waiting for a worker,
         measured by :func:`queue_wait_p95`.
     max_request_error_rate : float
         Largest acceptable share of ``/timeline`` and ``/response`` requests
@@ -456,7 +456,7 @@ class CapacityLimits:
     def describe(self, include_queue=True):
         """Return the limits as a phrase, for summaries.
 
-        Pass ``include_queue=False`` when the tests ran no async processes.
+        Pass ``include_queue=False`` when the tests ran no async jobs.
         """
         response = f"p95 response time under {self.max_p95_s * 1000:.0f} ms"
         errors = (
@@ -481,9 +481,9 @@ class CapacityLimits:
 def queue_wait_p95(result):
     """Return the 95th-percentile async queue delay, counting any unfinished backlog.
 
-    Processes still waiting when the test ended have no ``queue_delay`` yet,
+    Jobs still waiting when the test ended have no ``queue_delay`` yet,
     so the wait of the oldest one is used instead whenever it is longer.
-    Returns ``None`` if the test ran no async processes.
+    Returns ``None`` if the test ran no async jobs.
     """
     waits = [
         float(v) for v in (result.q_delay_p95, result.oldest_queued_s) if v is not None

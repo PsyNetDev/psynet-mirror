@@ -42,14 +42,14 @@ from functools import partial
 
 from psynet.log import bold, warning
 from psynet.perf_test.measure import (
-    async_process_stats,
+    async_job_stats,
     bot_duration_stats,
     bot_outcome_stats,
     count_rq_workers,
     database_rows,
     phase_stats,
     request_stats,
-    wait_for_async_processes,
+    wait_for_async_jobs,
 )
 from psynet.perf_test.report import (
     format_test_results,
@@ -466,20 +466,20 @@ class PerformanceTester:
             bot_processes.close()
 
     def pause_between_tests(self):
-        """Pause, then let async processes queued by earlier tests start.
+        """Pause, then let async jobs queued by earlier tests start.
 
-        Otherwise they would hold up the next test's processes and count
+        Otherwise they would hold up the next test's jobs and count
         against its queue wait.
         """
         time.sleep(5)
-        queued = wait_for_async_processes(
+        queued = wait_for_async_jobs(
             since=self._suite_started_at, timeout_s=_BACKLOG_DRAIN_TIMEOUT_S
         )
         if queued:
             logger.warning(
                 warning(
-                    f"{queued:,} async processes from earlier tests are still "
-                    "queued, so they may slow the next test's processes."
+                    f"{queued:,} async jobs from earlier tests are still "
+                    "queued, so they may slow the next test's jobs."
                 )
             )
 
@@ -588,11 +588,11 @@ class PerformanceTester:
         from dallinger import db
         from sqlalchemy import func
 
+        from psynet.async_job import AsyncJob
         from psynet.participant import Participant
-        from psynet.process import AsyncProcess
 
         max_request_id = self._max_request_id()
-        max_process_id = db.session.query(func.max(AsyncProcess.id)).scalar() or 0
+        max_async_job_id = db.session.query(func.max(AsyncJob.id)).scalar() or 0
         max_participant_id = db.session.query(func.max(Participant.id)).scalar() or 0
 
         db_rows = database_rows()
@@ -601,7 +601,7 @@ class PerformanceTester:
         db.session.rollback()
         return {
             "max_request_id": max_request_id,
-            "max_process_id": max_process_id,
+            "max_async_job_id": max_async_job_id,
             "max_participant_id": max_participant_id,
             "db_rows": db_rows,
         }
@@ -880,8 +880,8 @@ class PerformanceTester:
 
         Request statistics cover requests logged up to ``last_request_id``, i.e.
         before the bots were stopped, so that they match ``actual_duration``.
-        Async processes count if they started by ``ended_at``.
-        ``oldest_queued_s`` is how long the oldest async process enqueued
+        Async jobs count if they started by ``ended_at``.
+        ``oldest_queued_s`` is how long the oldest async job enqueued
         during the test had been waiting for a worker at ``ended_at``, so a
         backlog that never drains still counts against capacity.
 
@@ -896,7 +896,7 @@ class PerformanceTester:
         request_summary = request_stats(
             initial_state["max_request_id"], last_request_id
         )
-        process_stats = async_process_stats(initial_state["max_process_id"], ended_at)
+        async_job_summary = async_job_stats(initial_state["max_async_job_id"], ended_at)
         outcomes, bot_stats = bot_outcome_stats(
             initial_state["max_participant_id"], bot_state.errored_bot_ids
         )
@@ -928,7 +928,7 @@ class PerformanceTester:
             max_init_time=quantile(init_times, 1),
             n_init_samples=len(init_times),
             **request_summary,
-            **process_stats,
+            **async_job_summary,
             **bot_stats,
             **bot_duration_stats(bot_state.bot_durations, outcomes),
         )
@@ -939,7 +939,7 @@ class PerformanceTester:
                 result.startup_phase, result.steady_state_phase = phase_stats(
                     initial_state["max_request_id"],
                     last_request_id,
-                    initial_state["max_process_id"],
+                    initial_state["max_async_job_id"],
                     ended_at,
                     datetime.datetime.fromtimestamp(completed_at),
                 )

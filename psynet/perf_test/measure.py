@@ -1,10 +1,10 @@
 """Read a performance test's measurements from the server's database.
 
 :class:`~psynet.perf_test.runtime.PerformanceTester` records the largest
-``Request``, ``AsyncProcess`` and participant IDs before a test and passes them
+``Request``, ``AsyncJob`` and participant IDs before a test and passes them
 here afterwards, so measurements cover only the test window: requests logged
-before the bots were told to stop and processes that started by then, plus the
-wait of the oldest process still queued at the end.
+before the bots were told to stop and async jobs that started by then, plus the
+wait of the oldest job still queued at the end.
 
 A bot only succeeds if the experiment did not fail its participant: failed
 participants keep the status ``approved`` (see :func:`_bot_outcome`). Each
@@ -23,7 +23,7 @@ import time
 from collections import Counter
 
 from psynet.perf_test.results import (
-    PROCESS_STAT_KEYS,
+    ASYNC_JOB_STAT_KEYS,
     quantile,
 )
 
@@ -55,46 +55,42 @@ def count_non_bot_participants():
     return n
 
 
-def wait_for_async_processes(since=None, *, timeout_s, finished=False):
-    """Wait up to ``timeout_s`` until no async process is waiting for a worker.
+def wait_for_async_jobs(since=None, *, timeout_s, finished=False):
+    """Wait up to ``timeout_s`` until no async job is waiting for a worker.
 
     Parameters
     ----------
     since : datetime.datetime, optional
-        Only count processes enqueued from then on.
+        Only count jobs enqueued from then on.
     finished : bool
-        Also wait for processes that have started to finish.
+        Also wait for jobs that have started to finish.
 
     Returns
     -------
     int
-        How many processes were still waiting when the wait ended.
+        How many jobs were still waiting when the wait ended.
     """
     from dallinger import db
     from sqlalchemy import func
 
-    from psynet.process import AsyncProcess
+    from psynet.async_job import AsyncJob
 
     waiting_for = "finish" if finished else "start"
     filters = [
-        AsyncProcess.failed.is_(False),
-        AsyncProcess.finished.is_(False)
-        if finished
-        else AsyncProcess.time_started.is_(None),
+        AsyncJob.failed.is_(False),
+        AsyncJob.finished.is_(False) if finished else AsyncJob.time_started.is_(None),
     ]
     if since is not None:
-        filters.append(AsyncProcess.time_enqueued >= since)
+        filters.append(AsyncJob.time_enqueued >= since)
     deadline = time.monotonic() + timeout_s
     announced = False
     while True:
-        waiting = (
-            db.session.query(func.count(AsyncProcess.id)).filter(*filters).scalar()
-        )
+        waiting = db.session.query(func.count(AsyncJob.id)).filter(*filters).scalar()
         db.session.rollback()
         if not waiting or time.monotonic() >= deadline:
             return waiting
         if not announced:
-            logger.info(f"Waiting for {waiting:,} async processes to {waiting_for}...")
+            logger.info(f"Waiting for {waiting:,} async jobs to {waiting_for}...")
             announced = True
         time.sleep(2)
 
@@ -172,12 +168,12 @@ def request_stats(after_request_id, last_request_id):
 
 
 def phase_stats(
-    after_request_id, last_request_id, after_process_id, ended_at, boundary
+    after_request_id, last_request_id, after_async_job_id, ended_at, boundary
 ):
     """Return the start-up and steady-state metrics of a test, split at ``boundary``.
 
-    Reads the same requests and async processes as :func:`request_stats` and
-    :func:`async_process_stats`. Requests logged, and processes enqueued,
+    Reads the same requests and async jobs as :func:`request_stats` and
+    :func:`async_job_stats`. Requests logged, and jobs enqueued,
     before ``boundary`` are start-up; the rest are the steady state.
 
     Returns
@@ -185,15 +181,15 @@ def phase_stats(
     tuple of (dict, dict)
         For the start-up and the steady state: ``key_requests``,
         ``request_errors`` (not counting busy or stale responses),
-        ``p95_response_time``, ``async_processes`` (that started by
+        ``p95_response_time``, ``async_jobs`` (that started by
         ``ended_at``) and ``q_delay_p95``; the response and queue times are
         ``None`` without measurements.
     """
     from dallinger import db
     from sqlalchemy import func
 
+    from psynet.async_job import AsyncJob
     from psynet.experiment import Request
-    from psynet.process import AsyncProcess
 
     in_steady_state = (Request.creation_time >= boundary).label("steady")
     requests = {
@@ -216,61 +212,61 @@ def phase_stats(
         )
         .group_by(in_steady_state)
     }
-    enqueued_in_steady_state = AsyncProcess.time_enqueued >= boundary
+    enqueued_in_steady_state = AsyncJob.time_enqueued >= boundary
     queues = {
         row[0]: row[1:]
         for row in db.session.query(
             enqueued_in_steady_state,
-            func.count(AsyncProcess.id),
-            func.percentile_cont(0.95).within_group(AsyncProcess.queue_delay),
+            func.count(AsyncJob.id),
+            func.percentile_cont(0.95).within_group(AsyncJob.queue_delay),
         )
         .filter(
-            AsyncProcess.id > after_process_id,
-            AsyncProcess.time_started <= ended_at,
-            AsyncProcess.queue_delay.isnot(None),
+            AsyncJob.id > after_async_job_id,
+            AsyncJob.time_started <= ended_at,
+            AsyncJob.queue_delay.isnot(None),
         )
         .group_by(enqueued_in_steady_state)
     }
     phases = []
     for steady in (False, True):
         row = requests.get(steady)
-        n_processes, queue_p95 = queues.get(steady, (0, None))
+        n_jobs, queue_p95 = queues.get(steady, (0, None))
         phases.append(
             dict(
                 key_requests=row.count if row else 0,
                 request_errors=row.errors if row else 0,
                 p95_response_time=_as_float(row.p95) if row else None,
-                async_processes=n_processes,
+                async_jobs=n_jobs,
                 q_delay_p95=_as_float(queue_p95),
             )
         )
     return tuple(phases)
 
 
-def async_process_stats(after_process_id, ended_at):
-    """Return the result fields measured from async processes after ``after_process_id``.
+def async_job_stats(after_async_job_id, ended_at):
+    """Return the result fields measured from async jobs after ``after_async_job_id``.
 
-    Like requests, only processes that started by ``ended_at`` count: jobs
+    Like requests, only jobs that started by ``ended_at`` count: jobs
     left queued while the bots stop would otherwise report the stop time as
     queue delay. Those are covered by ``oldest_queued_s``. Queue delay is
-    known once a process starts, so it also covers processes still running.
+    known once a job starts, so it also covers jobs still running.
     """
     from dallinger import db
     from sqlalchemy import case, func, or_
 
-    from psynet.process import AsyncProcess
+    from psynet.async_job import AsyncJob
 
     queue_window = (
-        AsyncProcess.id > after_process_id,
-        AsyncProcess.time_started <= ended_at,
-        AsyncProcess.queue_delay.isnot(None),
+        AsyncJob.id > after_async_job_id,
+        AsyncJob.time_started <= ended_at,
+        AsyncJob.queue_delay.isnot(None),
     )
-    time_taken, queue_delay = AsyncProcess.time_taken, AsyncProcess.queue_delay
+    time_taken, queue_delay = AsyncJob.time_taken, AsyncJob.queue_delay
     rows = (
         db.session.query(
-            AsyncProcess.trial_maker_id,
-            AsyncProcess.label,
-            func.count(AsyncProcess.id).label("count"),
+            AsyncJob.trial_maker_id,
+            AsyncJob.label,
+            func.count(AsyncJob.id).label("count"),
             func.avg(time_taken).label("avg"),
             func.percentile_cont(0.5).within_group(time_taken).label("median"),
             func.percentile_cont(0.95).within_group(time_taken).label("p95"),
@@ -288,16 +284,16 @@ def async_process_stats(after_process_id, ended_at):
                 )
             ).label("q_share"),
         )
-        .filter(*queue_window, AsyncProcess.finished == True)  # noqa: E712
-        .group_by(AsyncProcess.trial_maker_id, AsyncProcess.label)
+        .filter(*queue_window, AsyncJob.finished == True)  # noqa: E712
+        .group_by(AsyncJob.trial_maker_id, AsyncJob.label)
         .all()
     )
-    process_stats = [
+    async_job_stats = [
         {
             "trial_maker_id": row.trial_maker_id or "",
             "label": row.label or "",
             "count": row.count,
-            **{key: _as_float(row._mapping[key]) for key in PROCESS_STAT_KEYS},
+            **{key: _as_float(row._mapping[key]) for key in ASYNC_JOB_STAT_KEYS},
         }
         for row in rows
     ]
@@ -310,20 +306,20 @@ def async_process_stats(after_process_id, ended_at):
         .one()
     )
     oldest_enqueued = (
-        db.session.query(func.min(AsyncProcess.time_enqueued))
+        db.session.query(func.min(AsyncJob.time_enqueued))
         .filter(
-            AsyncProcess.id > after_process_id,
-            AsyncProcess.time_enqueued <= ended_at,
-            AsyncProcess.failed.is_(False),
+            AsyncJob.id > after_async_job_id,
+            AsyncJob.time_enqueued <= ended_at,
+            AsyncJob.failed.is_(False),
             or_(
-                AsyncProcess.time_started.is_(None),
-                AsyncProcess.time_started > ended_at,
+                AsyncJob.time_started.is_(None),
+                AsyncJob.time_started > ended_at,
             ),
         )
         .scalar()
     )
     return dict(
-        process_stats=process_stats,
+        async_job_stats=async_job_stats,
         q_delay_median=_as_float(q_delay_median),
         q_delay_p95=_as_float(q_delay_p95),
         oldest_queued_s=(

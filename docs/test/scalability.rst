@@ -9,6 +9,35 @@ experiment and reports response times, throughput and queue delays.
 
 Run it once :doc:`back-end tests <backend>` pass.
 
+Measuring async job CPU
+-----------------------
+
+At the end of ``psynet test local``, PsyNet logs how much CPU each kind of
+async job used, grouped by where the job runs, label and
+:ref:`priority <async_job_priority>`:
+
+.. code-block:: text
+
+    Async job CPU time (CPU-heavy: mean CPU >= 50% of mean wall time):
+      Runs in  Label           Priority  Count  Mean CPU (s)  Max CPU (s)  Mean wall (s)  CPU-heavy
+      worker   AsyncCodeBlock  high          2         0.027        0.052          0.085         no
+
+``worker`` rows are :class:`~psynet.async_job.WorkerAsyncJob` jobs, which run
+in worker processes. ``web`` rows are :class:`~psynet.async_job.LocalAsyncJob`
+jobs, such as asset deposits, which run in a thread of the process that
+enqueued them, usually the web process; they skip the worker queues, so
+their priority is ``-``. A CPU-heavy worker job keeps a CPU core busy while
+it runs, so as load grows it needs more worker processes
+(``num_dynos_worker``) and a server with a core for each. A CPU-heavy web
+job slows the web process instead, and more worker processes do not help
+it. An I/O-bound job mostly waits, for example on an API call, and does not
+need more cores. If no async jobs finished, PsyNet logs
+``No async jobs finished.`` instead. Per-job values are in the ``cpu_time``
+column of ``database/async_job.csv`` in the export; see
+:class:`~psynet.async_job.AsyncJob` for how it is measured. The
+:doc:`/skills/plan-server-resources` Agent Skill turns these numbers into a
+worker estimate. Confirm the estimate with a performance test.
+
 Running a test
 --------------
 
@@ -164,7 +193,7 @@ that the slowest participants experience. The report also shows:
   total time each bot that completed successfully or was failed by the
   experiment spent waiting. Failed bots are included because those that
   timed out waited longest.
-- **Async process times**: for experiments with asynchronous processes, such
+- **Async job times**: for experiments with async jobs, such
   as audio analysis, both the execution time and the time spent waiting in
   the queue. A high queue share, highlighted in yellow or red, means more
   worker processes are needed.
@@ -179,7 +208,7 @@ that the slowest participants experience. The report also shows:
   state lasts at least a minute; otherwise the report says how far the
   test got.
 - **Database rows**: the rows in the tables that grow as a study collects
-  data (participants, trials, responses, nodes, networks, async processes
+  data (participants, trials, responses, nodes, networks, async jobs
   and assets), before the test and after it. See
   :ref:`performance_testing_database_size`.
 
@@ -190,7 +219,7 @@ waiting grows faster than the reported times, so also watch the server's CPU
 use and the number of request errors.
 
 The bots fetch pages and submit answers without a browser. They also run
-the server-side work that answers trigger, such as async processes, and
+the server-side work that answers trigger, such as async jobs, and
 they wait at timeline holds: with a ``--time-factor`` above 0 they check the
 hold every ``check_interval`` seconds, as a browser's fallback poll does. The
 results leave out everything else a browser does, including static files and
@@ -234,7 +263,7 @@ A test counts as within capacity if these stay within their limits:
   contention at timeline holds and in synchronized groups;
 - the 95th-percentile response time for ``/timeline`` and ``/response``,
   together and for each of them, limited by ``--max-p95-ms`` (default 500);
-- the 95th-percentile time that async processes wait in the queue for a
+- the 95th-percentile time that async jobs wait in the queue for a
   worker, limited by ``--max-queue-p95-s`` (default 5). Participants often
   sit on a wait page during this time, so it matters as much as response
   time. Processes still waiting when the test ends count with the time they
@@ -260,7 +289,7 @@ A test counts as within capacity if these stay within their limits:
   every chain (or node, in a static trial maker) they could take was busy,
   at most 1% for each trial maker. With the default
   ``wait_for_networks=False``, a participant who finds every eligible chain
-  awaiting an async process or out of trial capacity finishes the block
+  awaiting an async job or out of trial capacity finishes the block
   early instead of waiting. Static trial makers don't limit trials per node
   during selection, so they only do this when every node awaits an async
   process. The participant is not failed, so the test
@@ -280,7 +309,7 @@ your participants will arrive gradually, test that with ``--arrival-minutes``
 rather than relying on the steady state alone.
 
 The search's tests are short and their bots arrive together, so for most
-studies they see only the start-up. In an experiment with async processes,
+studies they see only the start-up. In an experiment with async jobs,
 such as audio analysis, or with long timeline holds, every bot reaches each
 process and each hold at the same moment, so queue waits are longer than
 when participants arrive spread out, and the search underestimates the
@@ -315,7 +344,7 @@ is what caps capacity, add worker processes with the ``num_dynos_worker``
 config variable (see :doc:`/reference/configuration`) before resorting to a
 lower participant cap.
 
-How many async processes a worker process can handle depends on what they
+How many async jobs a worker process can handle depends on what they
 do. Each worker process runs up to 20 jobs at once with gevent, but jobs
 only overlap while they wait, for example on a web API, the database or
 ``time.sleep``. A job that keeps the CPU busy, such as audio analysis in
@@ -367,16 +396,16 @@ the bots took more than a quarter of the test.
 With ``--json-output``, each result records the test's
 ``duration_minutes``, ``arrival_minutes`` and ``session_minutes`` (the
 estimated session times ``--time-factor``), its ``startup_phase`` and
-``steady_state_phase`` metrics (including the number of async processes in
-each), and per async process label, in ``process_stats``, how long the
+``steady_state_phase`` metrics (including the number of async jobs in
+each), and per async job label, in ``async_job_stats``, how long the
 processes took and waited. The confirmation test has ``confirmation`` set,
 and the options record ``confirmation_skipped`` with the reason it didn't
 run. When the search tests and a long test with spread-out arrivals
-disagree, trust the long test. For async processes that keep the CPU busy,
+disagree, trust the long test. For async jobs that keep the CPU busy,
 you can also check worker throughput by hand: one worker process keeps up
 with about as many participants at once as a session lasts divided by the
 processing time each participant needs (the average times in
-``process_stats`` times the number of each process per participant). For
+``async_job_stats`` times the number of each job per participant). For
 example, 43 s of audio analysis per 12-minute session lets one worker
 process keep up with about 16 participants.
 
@@ -510,7 +539,7 @@ database before the first test:
     psynet performance-test local --prefill-participants 1500 --n-bots auto
 
 This runs 1,500 bots through the experiment, 50 at a time and without
-pauses, waits for their async processes to finish, and then takes the
+pauses, waits for their async jobs to finish, and then takes the
 snapshot, so every test starts with 1,500 participants' data. The bots use
 the same routes as participants, so the data is what the experiment itself
 stores, but it takes time: at about 250 requests per participant, a few
