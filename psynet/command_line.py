@@ -5678,22 +5678,18 @@ def performance_test__app_info(json_output):
 
     info = _performance_test_app_info()
     try:
-        info["experiment"] = _experiment_test_defaults(get_experiment())
+        exp = get_experiment()
+        info["experiment"] = {
+            "label": exp.label,
+            "test_n_bots": exp.test_n_bots,
+            "test_duration_minutes": exp.test_duration_minutes,
+            "test_parallel_stagger_interval_s": exp.test_parallel_stagger_interval_s,
+            "estimated_duration_minutes": exp.estimated_duration_in_minutes,
+        }
     except Exception as e:
         logger.warning(f"Could not load the experiment's test defaults: {e}")
     with open(json_output, "w") as f:
         json.dump(info, f)
-
-
-def _experiment_test_defaults(exp):
-    """Return the experiment's performance-test defaults, as ``performance-test app-info`` reports them."""
-    return {
-        "label": exp.label,
-        "test_n_bots": exp.test_n_bots,
-        "test_duration_minutes": exp.test_duration_minutes,
-        "test_parallel_stagger_interval_s": exp.test_parallel_stagger_interval_s,
-        "estimated_duration_minutes": exp.estimated_duration_in_minutes,
-    }
 
 
 def _require_performance_test_app(server, app):
