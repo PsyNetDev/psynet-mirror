@@ -4420,17 +4420,8 @@ def mark_audit_artifact_present(relative_path: Path) -> Path:
 
 
 def performance_results_have_successful_bots(all_results) -> bool:
-    """Return True when any performance result completed at least one bot."""
-    for result in all_results or []:
-        if not isinstance(result, dict):
-            continue
-        try:
-            succeeded = int(result.get("bots_succeeded") or 0)
-        except (TypeError, ValueError):
-            continue
-        if succeeded > 0:
-            return True
-    return False
+    """Return True when any :class:`~psynet.perf_test.PerformanceTestResult` completed a bot."""
+    return any(result.bots_succeeded > 0 for result in all_results or [])
 
 
 def mark_performance_result_present(all_results) -> None:
@@ -4727,7 +4718,7 @@ def _run_performance_test_with_existing_server(
             "finished_at": finished_at,
         }
         options = {
-            "n_bots_sweep": [result["n_bots"] for result in all_results],
+            "n_bots_sweep": [result.n_bots for result in all_results],
             "capacity_search": find_capacity,
             "max_p95_s": tester.limits.max_p95_s,
             "max_queue_p95_s": tester.limits.max_queue_p95_s,

@@ -5,6 +5,8 @@ import pytest
 from psynet.perf_test import (
     CapacityLimits,
     PerformanceTester,
+    PerformanceTestResult,
+    _BotState,
     _split_failed_requests,
     capacity_failures,
     colorize_success_rate,
@@ -15,8 +17,8 @@ from psynet.perf_test import (
 
 
 def _base_result(**overrides):
-    """Minimal valid result dict for format_test_results."""
-    result = {
+    """Return a minimal valid result for format_test_results."""
+    fields = {
         "n_bots": 2,
         "duration_minutes": 0.1,
         "actual_duration": 6.3,
@@ -28,7 +30,6 @@ def _base_result(**overrides):
         "bots_incomplete": 0,
         "total_requests": 10,
         "key_requests": 10,
-        "successful_requests": 10,
         "request_errors": 0,
         "avg_response_time": 0.05,
         "median_response_time": 0.04,
@@ -47,8 +48,7 @@ def _base_result(**overrides):
         "n_rq_job_slots": 40,
         "q_delay_median": 0.02,
     }
-    result.update(overrides)
-    return result
+    return PerformanceTestResult(**{**fields, **overrides})
 
 
 def _join(lines):
@@ -74,12 +74,12 @@ def test_monitoring_loop_ends_early_when_server_stops():
     session = Mock()
     session.head.side_effect = requests.ConnectionError()
     tester = PerformanceTester(authenticated_session=session, base_url="http://x")
-    bot_state = tester._initialize_bot_tracking()
+    bot_state = _BotState()
     start = time.time()
 
     tester._run_monitoring_loop(1, bot_state, Mock(), start, start + 600)
 
-    assert bot_state["server_stopped"]
+    assert bot_state.server_stopped
     assert time.time() - start < 5
 
 
@@ -103,20 +103,20 @@ def test_bots_still_taking_the_experiment_stop_when_the_test_ends(monkeypatch):
     monkeypatch.setattr("psynet.experiment.get_experiment", lambda: experiment)
     monkeypatch.setattr(db, "session", Mock())
     tester = PerformanceTester(authenticated_session=Mock(), base_url="http://x")
-    bot_state = tester._initialize_bot_tracking()
+    bot_state = _BotState()
     tester._bots.begin_test(bot_state, time.time() + 60, 3)
 
     for _ in range(3):
         tester._bots.start_slot()
     deadline = time.time() + 5
-    while len(bot_state["running"]) < 3 and time.time() < deadline:
+    while len(bot_state.running) < 3 and time.time() < deadline:
         time.sleep(0.01)
-    assert len(bot_state["running"]) == 3
+    assert len(bot_state.running) == 3
     tester._stop_bots(bot_state, timeout_s=5)
 
     assert not any(thread.is_alive() for thread in tester._bots._threads)
-    assert [terminated for _, _, terminated in bot_state["bot_durations"]] == [True] * 3
-    assert bot_state["total_bot_errors"] == 0
+    assert [terminated for _, _, terminated in bot_state.bot_durations] == [True] * 3
+    assert bot_state.total_bot_errors == 0
 
 
 def test_bots_that_fail_count_as_started_and_errored(monkeypatch):
@@ -147,18 +147,18 @@ def test_bots_that_fail_count_as_started_and_errored(monkeypatch):
     tester = PerformanceTester(
         authenticated_session=Mock(), base_url="http://x", stagger_interval_s=0
     )
-    bot_state = tester._initialize_bot_tracking()
+    bot_state = _BotState()
     tester._bots.begin_test(bot_state, time.time() + 0.2, 1)
     tester._bots.start_slot()
     time.sleep(0.4)
     tester._stop_bots(bot_state, timeout_s=5)
 
-    assert bot_state["total_bots_started"] == bot_state["total_bot_errors"] >= 2
-    assert 1 not in bot_state["errored_bot_ids"]
-    assert 2 in bot_state["errored_bot_ids"]
-    kinds = bot_state["bot_error_kinds"]
+    assert bot_state.total_bots_started == bot_state.total_bot_errors >= 2
+    assert 1 not in bot_state.errored_bot_ids
+    assert 2 in bot_state.errored_bot_ids
+    kinds = bot_state.bot_error_kinds
     assert kinds["RuntimeError"] == 1
-    assert kinds["HTTP 500 on /participant_status"] == bot_state["total_bot_errors"] - 1
+    assert kinds["HTTP 500 on /participant_status"] == bot_state.total_bot_errors - 1
 
 
 def test_bot_processes_report_their_bots_to_the_parent(monkeypatch):
@@ -206,19 +206,19 @@ def test_bot_processes_report_their_bots_to_the_parent(monkeypatch):
     tester = PerformanceTester(Mock(), "http://x", bot_processes=2)
 
     with tester._bot_runner(max_bots=4, bot_log_file=None):
-        bot_state = tester._initialize_bot_tracking()
+        bot_state = _BotState()
         tester._bots.begin_test(bot_state, time.time() + 60, 4)
         for _ in range(4):
             tester._bots.start_slot()
         deadline = time.time() + 5
-        while len(bot_state["running"]) < 4 and time.time() < deadline:
+        while len(bot_state.running) < 4 and time.time() < deadline:
             time.sleep(0.01)
-        assert bot_state["peak_running"] == bot_state["total_bots_started"] == 4
+        assert bot_state.peak_running == bot_state.total_bots_started == 4
         tester._stop_bots(bot_state, timeout_s=5)
 
-    assert [terminated for _, _, terminated in bot_state["bot_durations"]] == [True] * 4
-    assert len(bot_state["process_loads"]) == 2
-    assert bot_state["unreported_bot_processes"] == []
+    assert [terminated for _, _, terminated in bot_state.bot_durations] == [True] * 4
+    assert len(bot_state.process_loads) == 2
+    assert bot_state.unreported_bot_processes == []
 
 
 @pytest.mark.parametrize(
@@ -284,7 +284,7 @@ def test_status_is_printed_as_plain_lines_when_output_is_not_a_terminal(capsys):
     import time
 
     tester = PerformanceTester(authenticated_session=Mock(), base_url="http://x")
-    bot_state = tester._initialize_bot_tracking()
+    bot_state = _BotState()
 
     tester._show_realtime_status(bot_state, time.time(), time.time() + 60, force=True)
 
@@ -355,7 +355,7 @@ def test_capacity_search_brackets_then_bisects(capacity, expected_probes):
     ):
         results = tester.find_capacity()
 
-    assert [r["n_bots"] for r in results] == expected_probes
+    assert [r.n_bots for r in results] == expected_probes
 
 
 def test_capacity_limits_from_options_keeps_zero_and_defaults_none():
@@ -382,7 +382,7 @@ def test_capacity_summary_mentions_queue_waits_only_with_async_processes():
     results = [_base_result(n_bots=50, p95_response_time=0.1, q_delay_median=None)]
     assert "async" not in _join(format_capacity_summary(results))
 
-    results[0]["q_delay_median"] = 0.5
+    results[0].q_delay_median = 0.5
     assert "async queue wait under" in _join(format_capacity_summary(results))
 
 
@@ -449,7 +449,7 @@ def test_capacity_summary_warns_when_starting_the_bots_took_much_of_the_test():
         in _join(format_capacity_summary(results))
     )
 
-    results[0]["ramp_up_s"] = 5.0
+    results[0].ramp_up_s = 5.0
     assert "took" not in _join(format_capacity_summary(results))
 
 
@@ -459,15 +459,15 @@ def test_monitoring_loop_records_how_long_the_bots_took_to_start():
     tester = PerformanceTester(
         authenticated_session=Mock(), base_url="http://x", stagger_interval_s=0.01
     )
-    bot_state = tester._initialize_bot_tracking()
-    bot_state["first_bot_initialized"] = True
+    bot_state = _BotState()
+    bot_state.first_bot_initialized = True
     start = time.time()
 
     tester._run_monitoring_loop(3, bot_state, Mock(), start, start + 2)
 
-    assert bot_state["slots_started"] == 3
-    assert bot_state["ramp_up_s"] is not None
-    assert 0 <= bot_state["ramp_up_s"] < 2
+    assert bot_state.slots_started == 3
+    assert bot_state.ramp_up_s is not None
+    assert 0 <= bot_state.ramp_up_s < 2
 
 
 def test_raise_open_file_limit_reaches_the_hard_limit_or_65536():
@@ -630,7 +630,7 @@ def test_bot_processes_ignore_messages_from_an_earlier_test():
     from psynet.perf_test import _BotProcesses
 
     bot_processes = object.__new__(_BotProcesses)
-    bot_state = PerformanceTester(Mock(), "http://x")._initialize_bot_tracking()
+    bot_state = _BotState()
     bot_processes._test = (2, bot_state, time.time() + 60)
     bot_processes._events, bot_processes._replies = queue.Queue(), queue.Queue()
     for event in [
@@ -644,7 +644,7 @@ def test_bot_processes_ignore_messages_from_an_earlier_test():
 
     bot_processes._apply_events()
 
-    assert list(bot_state["running"]) == [8]
+    assert list(bot_state.running) == [8]
     assert bot_processes._replies.get_nowait() == (2, "finished", 0, (0.1, 0.01), 0)
     assert bot_processes._replies.empty()
 
@@ -716,6 +716,23 @@ def test_one_error_in_a_short_test_does_not_cap_capacity():
     assert capacity_failures(_base_result(key_requests=700, request_errors=1)) == []
     assert capacity_failures(_base_result(key_requests=700, request_errors=2)) == [
         "2 request errors"
+    ]
+
+
+def test_a_saved_result_reads_back_ignoring_unknown_and_missing_keys():
+    import json
+    from decimal import Decimal
+
+    from psynet.perf_test import _to_json_safe
+
+    result = _base_result(endpoint_p95={"/response": Decimal("0.2")})
+    saved = json.loads(json.dumps(_to_json_safe(result)))
+
+    assert saved["endpoint_p95"] == {"/response": 0.2}
+    read_back = PerformanceTestResult.from_dict({**saved, "removed_metric": 1})
+    assert read_back.endpoint_p95 == {"/response": 0.2}
+    assert capacity_failures(PerformanceTestResult.from_dict({"n_bots": 4})) == [
+        "no responses recorded"
     ]
 
 
@@ -915,56 +932,27 @@ def test_format_performance_summary_returns_list():
 
 
 def test_performance_summary_handles_missing_response_metrics():
-    """Ported from original mock-based test."""
-    result = {
-        "n_bots": 2,
-        "duration_minutes": 0.1,
-        "actual_duration": 6.3,
-        "total_bots_started": 1,
-        "completed_during_test": 1,
-        "bot_errors": 0,
-        "bots_succeeded": 1,
-        "bots_failed": 0,
-        "bots_incomplete": 0,
-        "total_requests": 0,
-        "successful_requests": 0,
-        "request_errors": 0,
-        "avg_response_time": None,
-        "median_response_time": None,
-        "p95_response_time": None,
-        "p99_response_time": None,
-        "stddev_response_time": None,
-        "max_response_time": None,
-        "avg_bot_duration": 6.3,
-        "avg_init_time": 0.5,
-    }
+    result = _base_result(
+        total_requests=0,
+        avg_response_time=None,
+        median_response_time=None,
+        p95_response_time=None,
+        p99_response_time=None,
+        stddev_response_time=None,
+        max_response_time=None,
+    )
     lines = format_performance_summary([result])
     assert any("N/A" in line for line in lines)
 
 
 def test_performance_summary_handles_no_completed_or_failed_bots():
-    """Ported from original mock-based test."""
-    result = {
-        "n_bots": 2,
-        "duration_minutes": 0.1,
-        "actual_duration": 0.8,
-        "total_bots_started": 1,
-        "completed_during_test": 0,
-        "bot_errors": 0,
-        "bots_succeeded": 1,
-        "bots_failed": 0,
-        "bots_incomplete": 0,
-        "total_requests": 0,
-        "successful_requests": 0,
-        "request_errors": 0,
-        "avg_response_time": 0.0,
-        "median_response_time": None,
-        "p95_response_time": 0.0,
-        "p99_response_time": None,
-        "stddev_response_time": None,
-        "max_response_time": None,
-        "avg_bot_duration": None,
-        "avg_init_time": None,
-    }
+    result = _base_result(
+        completed_during_test=0,
+        total_requests=0,
+        median_response_time=None,
+        p95_response_time=0.0,
+        avg_bot_duration=None,
+        avg_init_time=None,
+    )
     lines = format_performance_summary([result])
     assert isinstance(lines, list)

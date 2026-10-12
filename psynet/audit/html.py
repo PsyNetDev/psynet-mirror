@@ -33,6 +33,7 @@ from psynet.audit.model import (
 )
 from psynet.perf_test import (
     CapacityLimits,
+    PerformanceTestResult,
     capacity_advice,
     capacity_failures,
     format_capacity_summary,
@@ -863,8 +864,9 @@ def render_performance_result(
     )
     body: list[str] = []
     for row in evidence.performance_results:
+        result = PerformanceTestResult.from_dict(row)
         errors = int(row.get("request_errors") or 0) + int(row.get("bot_errors") or 0)
-        failures = capacity_failures(row, limits)
+        failures = capacity_failures(result, limits)
         verdict = f"No: {', '.join(failures)}" if failures else "Yes"
         body.append(
             "<tr>"
@@ -874,7 +876,7 @@ def render_performance_result(
             f"<td>{html.escape(str(row.get('total_requests', '')))}</td>"
             f"<td>{format_metric(row.get('median_response_time'))}</td>"
             f"<td>{format_metric(row.get('p95_response_time'))}</td>"
-            f"<td>{format_metric(queue_wait_p95(row))}</td>"
+            f"<td>{format_metric(queue_wait_p95(result))}</td>"
             f"<td>{errors}</td>"
             f"<td>{int(row.get('busy_responses') or 0)}</td>"
             f"<td>{html.escape(verdict)}</td>"
@@ -884,7 +886,7 @@ def render_performance_result(
         line.strip()
         for line in format_capacity_summary(
             [
-                row
+                PerformanceTestResult.from_dict(row)
                 for row in evidence.performance_results
                 if isinstance(row.get("n_bots"), int)
             ],

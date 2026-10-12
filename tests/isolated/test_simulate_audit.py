@@ -221,29 +221,26 @@ def test_mark_audit_artifact_present_updates_performance_result(tmp_path, monkey
 
 def test_performance_results_have_successful_bots():
     from psynet.command_line import performance_results_have_successful_bots
+    from psynet.perf_test import PerformanceTestResult
 
     assert not performance_results_have_successful_bots([])
-    assert not performance_results_have_successful_bots(
-        [{"n_bots": 2, "bots_succeeded": 0}]
-    )
+    assert not performance_results_have_successful_bots([PerformanceTestResult()])
     assert performance_results_have_successful_bots(
-        [
-            {"n_bots": 1, "bots_succeeded": 0},
-            {"n_bots": 2, "bots_succeeded": 1},
-        ]
+        [PerformanceTestResult(), PerformanceTestResult(bots_succeeded=1)]
     )
 
 
 def test_mark_performance_result_skips_zero_success(tmp_path, capsys, monkeypatch):
     from psynet.audit.cli import init_audit
     from psynet.command_line import mark_performance_result_present
+    from psynet.perf_test import PerformanceTestResult
 
     audit_dir = tmp_path / "audit"
     init_audit(audit_dir)
     (audit_dir / "artifacts" / "performance.json").write_text("{}\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
-    mark_performance_result_present([{"n_bots": 2, "bots_succeeded": 0}])
+    mark_performance_result_present([PerformanceTestResult(n_bots=2)])
 
     captured = capsys.readouterr()
     assert "no bots succeeded" in captured.err
@@ -304,6 +301,7 @@ def test_audit_performance_test_writes_canonical_output_and_marks_present(
 
     from psynet.audit.cli import init_audit
     from psynet.command_line import psynet
+    from psynet.perf_test import PerformanceTestResult
 
     audit_dir = tmp_path / "audit"
     init_audit(audit_dir)
@@ -316,7 +314,7 @@ def test_audit_performance_test_writes_canonical_output_and_marks_present(
 
     def run_performance_test(**kwargs):
         Path(kwargs["json_output"]).write_text("{}\n", encoding="utf-8")
-        return [{"bots_succeeded": 1}]
+        return [PerformanceTestResult(bots_succeeded=1)]
 
     monkeypatch.setattr(
         "psynet.command_line._run_performance_test_local",

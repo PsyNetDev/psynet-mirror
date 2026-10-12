@@ -35,7 +35,7 @@ import time
 import traceback
 from collections import Counter
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, field, fields, is_dataclass
 from decimal import Decimal
 from functools import partial
 from urllib.parse import urlparse
@@ -131,11 +131,14 @@ def _to_json_safe(value):
     """
     Recursively convert a value to a JSON-safe form.
 
-    Handles Decimal, datetime, NaN/Inf, sets/frozensets, tuples, dicts, and lists.
+    Handles Decimal, datetime, NaN/Inf, sets/frozensets, tuples, dicts, lists
+    and dataclass instances, which become dicts of their fields.
     Sets are emitted in sorted order so output is deterministic across runs.
     """
     if value is None:
         return None
+    if is_dataclass(value) and not isinstance(value, type):
+        return _to_json_safe(asdict(value))
     if isinstance(value, bool):
         # Check bool before int since bool is a subclass of int
         return value
@@ -167,6 +170,129 @@ def _to_json_safe(value):
         return {k: _to_json_safe(v) for k, v in value.items()}
     # Fallback for unknown types
     return str(value)
+
+
+# ---------------------------------------------------------------------------
+# Test state and results
+# ---------------------------------------------------------------------------
+
+
+@dataclass(kw_only=True)
+class _BotState:
+    """What the bots of one test have done so far, for the live status and results.
+
+    Bot threads and the thread applying bot process events update it under
+    ``lock``; the monitoring loop and :meth:`PerformanceTester._stop_bots`
+    set the rest.
+    """
+
+    lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+    # Bot ID -> time the bot was created, for bots taking the experiment.
+    running: dict = field(default_factory=dict)
+    total_bots_started: int = 0
+    bots_completed_during_test: int = 0
+    total_bot_errors: int = 0
+    errored_bot_ids: set = field(default_factory=set)
+    # Short description of each failure, e.g. "HTTP 500 on /response".
+    bot_error_kinds: Counter = field(default_factory=Counter)
+    # (bot_id, duration_s, stopped_by_test_end) of each finished bot.
+    bot_durations: list = field(default_factory=list)
+    initialization_times: list = field(default_factory=list)
+    first_bot_initialized: bool = False
+    server_stopped: bool = False
+    slots_started: int = 0
+    # Most bots that were taking part at the same moment.
+    peak_running: int = 0
+    # Seconds from the test start until the last bot slot started.
+    ramp_up_s: float | None = None
+    # (CPU share, p95 lag in s) of each process running bots.
+    process_loads: list = field(default_factory=list)
+    # Why a bot process stopped during the test, if one did.
+    bot_process_failure: str | None = None
+    # Numbers of bot processes that didn't report their load.
+    unreported_bot_processes: list = field(default_factory=list)
+    last_status_update: float = field(default_factory=time.time)
+    status_line_length: int = 0
+
+
+@dataclass(kw_only=True)
+class PerformanceTestResult:
+    """The measurements of one performance test, as written to ``--json-output``.
+
+    Field names are the JSON keys, in order. Times are in seconds, and a
+    measurement is ``None`` when the test did not produce it. Every field has
+    a default so that :meth:`from_dict` can read results that older or newer
+    PsyNet versions saved.
+    """
+
+    n_bots: int = 0
+    duration_minutes: float | None = None
+    actual_duration: float | None = None
+    server_stopped: bool = False
+    # Why a bot process stopped during the test, if one did.
+    bot_process_failure: str | None = None
+    # Numbers of bot processes that didn't report after the test.
+    unreported_bot_processes: list[int] = field(default_factory=list)
+    bot_processes: int = 1
+    slots_started: int | None = None
+    # Most bots that were taking part at the same moment.
+    peak_running: int | None = None
+    # Seconds from the test start until the last bot slot started.
+    ramp_up_s: float | None = None
+    # Of the busiest process running bots; see _LoadMonitor.
+    tester_cpu_share: float | None = None
+    tester_lag_p95_s: float | None = None
+    total_bots_started: int = 0
+    completed_during_test: int = 0
+    bots_succeeded: int = 0
+    bots_failed: int = 0
+    bots_incomplete: int = 0
+    total_requests: int = 0
+    # Requests to /timeline and /response, which the response times cover.
+    key_requests: int = 0
+    requests_per_sec: float | None = None
+    bot_errors: int = 0
+    # Number of bot errors of each kind, most common first.
+    bot_error_kinds: dict[str, int] = field(default_factory=dict)
+    avg_response_time: float | None = None
+    median_response_time: float | None = None
+    p95_response_time: float | None = None
+    endpoint_p95: dict[str, float] = field(default_factory=dict)
+    p99_response_time: float | None = None
+    stddev_response_time: float | None = None
+    max_response_time: float | None = None
+    avg_bot_duration: float | None = None
+    avg_init_time: float | None = None
+    initialization_times: list[float] = field(default_factory=list)
+    request_errors: int = 0
+    # HTTP 409 and 503 responses; see _split_failed_requests.
+    busy_responses: int = 0
+    median_wait_page_time: float | None = None
+    p95_wait_page_time: float | None = None
+    max_wait_page_time: float | None = None
+    n_wait_page_samples: int | None = None
+    avg_succeeded_duration: float | None = None
+    avg_failed_duration: float | None = None
+    avg_incomplete_duration: float | None = None
+    q_delay_median: float | None = None
+    q_delay_p95: float | None = None
+    # How long the oldest async process still queued at the end had waited.
+    oldest_queued_s: float | None = None
+    # Duration and queue-delay statistics by trial maker and process label.
+    process_stats: list[dict] = field(default_factory=list)
+    min_trial_count: int | None = None
+    median_trial_count: int | None = None
+    max_trial_count: int | None = None
+    n_succeeded_bots: int = 0
+    n_rq_workers: int | None = None
+    # Jobs the async workers can run at once.
+    n_rq_job_slots: int | None = None
+
+    @classmethod
+    def from_dict(cls, data):
+        """Return a result from a saved JSON result, ignoring unknown keys."""
+        names = {f.name for f in fields(cls)}
+        return cls(**{k: v for k, v in data.items() if k in names})
 
 
 def run_parallel_test(n_bots, time_factor, stagger_interval_s, check_bots):
@@ -341,9 +467,9 @@ def _ended_early(result):
     be stuck and would be sent the next test's bots as well.
     """
     return bool(
-        result["server_stopped"]
-        or result.get("bot_process_failure")
-        or result.get("unreported_bot_processes")
+        result.server_stopped
+        or result.bot_process_failure
+        or result.unreported_bot_processes
     )
 
 
@@ -404,7 +530,7 @@ class PerformanceTester:
 
         Returns
         -------
-        list[dict]
+        list[PerformanceTestResult]
             One result per test, in the order they ran.
         """
         self._print_suite_header(
@@ -423,7 +549,7 @@ class PerformanceTester:
         def next_bot_count(results):
             nonlocal highest_pass, lowest_fail
             if results:
-                n_bots = results[-1]["n_bots"]
+                n_bots = results[-1].n_bots
                 causes = _capacity_failure_causes(results[-1], self.limits)
                 if causes:
                     outcome = (
@@ -448,7 +574,7 @@ class PerformanceTester:
 
         Returns
         -------
-        list[dict]
+        list[PerformanceTestResult]
             One result per test, in the order they ran.
         """
         raise_open_file_limit()
@@ -568,7 +694,7 @@ class PerformanceTester:
         )
 
         initial_state = self._capture_initial_state()
-        bot_state = self._initialize_bot_tracking()
+        bot_state = _BotState()
         start_time = time.time()
         end_time = start_time + (duration_minutes * 60)
         self._bots.begin_test(bot_state, end_time, n)
@@ -623,37 +749,6 @@ class PerformanceTester:
             "max_request_id": max_request_id,
             "max_process_id": max_process_id,
             "max_participant_id": max_participant_id,
-        }
-
-    def _initialize_bot_tracking(self):
-        """Initialize tracking structures for bots."""
-        return {
-            "lock": threading.Lock(),
-            # Bot ID -> time the bot was created, for bots taking the experiment.
-            "running": {},
-            "total_bots_started": 0,
-            "bots_completed_during_test": 0,
-            "total_bot_errors": 0,
-            "errored_bot_ids": set(),
-            # Short description of each failure, e.g. "HTTP 500 on /response".
-            "bot_error_kinds": Counter(),
-            "bot_durations": [],
-            "initialization_times": [],
-            "first_bot_initialized": False,
-            "server_stopped": False,
-            "slots_started": 0,
-            # Most bots that were taking part at the same moment.
-            "peak_running": 0,
-            # Seconds from the test start until the last bot slot started.
-            "ramp_up_s": None,
-            # (CPU share, p95 lag in s) of each process running bots.
-            "process_loads": [],
-            # Why a bot process stopped during the test, if one did.
-            "bot_process_failure": None,
-            # Numbers of bot processes that didn't report their load.
-            "unreported_bot_processes": [],
-            "last_status_update": time.time(),
-            "status_line_length": 0,
         }
 
     def _bounded_random_multiplier(self, max_multiplier=3.0):
@@ -733,8 +828,8 @@ class PerformanceTester:
         ``"end"`` with ``(bot_id, outcome, error_kind)`` when it finishes.
         """
         if kind == "attempt":
-            with bot_state["lock"]:
-                bot_state["total_bots_started"] += 1
+            with bot_state.lock:
+                bot_state.total_bots_started += 1
         elif kind == "start":
             cls._record_bot_start(bot_state, *args)
         else:
@@ -745,37 +840,35 @@ class PerformanceTester:
     def _record_bot_start(bot_state, bot_id, init_time):
         """Record that a bot started, for the live status and results."""
         now = time.time()
-        with bot_state["lock"]:
-            bot_state["initialization_times"].append(init_time)
-            bot_state["first_bot_initialized"] = True
-            bot_state["running"][bot_id] = now
-            bot_state["peak_running"] = max(
-                bot_state["peak_running"], len(bot_state["running"])
-            )
+        with bot_state.lock:
+            bot_state.initialization_times.append(init_time)
+            bot_state.first_bot_initialized = True
+            bot_state.running[bot_id] = now
+            bot_state.peak_running = max(bot_state.peak_running, len(bot_state.running))
 
     @staticmethod
     def _record_bot_end(bot_state, bot_id, outcome, end_time, error_kind=None):
         """Record how and when a bot finished."""
         now = time.time()
-        with bot_state["lock"]:
-            start = bot_state["running"].pop(bot_id, None)
+        with bot_state.lock:
+            start = bot_state.running.pop(bot_id, None)
             if outcome == "error":
-                bot_state["total_bot_errors"] += 1
-                bot_state["bot_error_kinds"][error_kind] += 1
+                bot_state.total_bot_errors += 1
+                bot_state.bot_error_kinds[error_kind] += 1
                 if bot_id is not None:
-                    bot_state["errored_bot_ids"].add(bot_id)
+                    bot_state.errored_bot_ids.add(bot_id)
             elif outcome == "completed" and now < end_time:
-                bot_state["bots_completed_during_test"] += 1
+                bot_state.bots_completed_during_test += 1
             if start is not None:
-                bot_state["bot_durations"].append(
+                bot_state.bot_durations.append(
                     (bot_id, now - start, outcome == "stopped")
                 )
 
     def _stop_bots(self, bot_state, timeout_s=30):
         """Stop the bots that are still running and wait for their threads."""
         process_loads, unreported, n_alive = self._bots.end_test(timeout_s)
-        bot_state["process_loads"] += process_loads
-        bot_state["unreported_bot_processes"] = unreported
+        bot_state.process_loads += process_loads
+        bot_state.unreported_bot_processes = unreported
         if unreported:
             logger.warning(
                 f"Bot process(es) {', '.join(map(str, unreported))} did not report "
@@ -798,18 +891,18 @@ class PerformanceTester:
         # line every 30 seconds instead of carriage-return redraws.
         interactive = sys.stdout.isatty()
         interval = 2 if interactive else 30
-        if not force and current_time - bot_state["last_status_update"] < interval:
+        if not force and current_time - bot_state.last_status_update < interval:
             return
 
-        bot_state["last_status_update"] = current_time
+        bot_state.last_status_update = current_time
 
         # Calculate stats
-        running = len(bot_state["running"])
-        completed = bot_state["bots_completed_during_test"]
-        errors = bot_state["total_bot_errors"]
+        running = len(bot_state.running)
+        completed = bot_state.bots_completed_during_test
+        errors = bot_state.total_bot_errors
 
         # Calculate average response time from recent bot durations
-        recent_durations = [d for _, d, _ in bot_state["bot_durations"][-5:]]
+        recent_durations = [d for _, d, _ in bot_state.bot_durations[-5:]]
         avg_duration = (
             sum(recent_durations) / len(recent_durations) if recent_durations else 0
         )
@@ -827,10 +920,10 @@ class PerformanceTester:
             return
 
         # Clear previous line and print new status
-        sys.stdout.write("\r" + " " * bot_state["status_line_length"] + "\r")
+        sys.stdout.write("\r" + " " * bot_state.status_line_length + "\r")
         sys.stdout.write(status)
         sys.stdout.flush()
-        bot_state["status_line_length"] = len(status)
+        bot_state.status_line_length = len(status)
 
     def _clear_realtime_status(self):
         """Clear the status line when progress is complete."""
@@ -843,9 +936,9 @@ class PerformanceTester:
         """Start ``n`` staggered bot slots and watch the server until the test ends."""
         # The first bot waits for the experiment launch; the rest follow it.
         start_bot_slot()
-        n_started = bot_state["slots_started"] = 1
+        n_started = bot_state.slots_started = 1
         if n_started >= n:
-            bot_state["ramp_up_s"] = 0.0
+            bot_state.ramp_up_s = 0.0
         next_slot_time = None
         next_server_check = start_time
         while time.time() < end_time:
@@ -864,24 +957,24 @@ class PerformanceTester:
                             "duration."
                         )
                     )
-                    bot_state["server_stopped"] = True
+                    bot_state.server_stopped = True
                     return
                 failure = self._bots.failure()
                 if failure:
                     self._clear_realtime_status()
                     logger.warning(warning(f"The test ends early: {failure}."))
-                    bot_state["bot_process_failure"] = failure
+                    bot_state.bot_process_failure = failure
                     return
 
-            if n_started < n and bot_state["first_bot_initialized"]:
+            if n_started < n and bot_state.first_bot_initialized:
                 if next_slot_time is None:
                     next_slot_time = current_time
                 while n_started < n and current_time >= next_slot_time:
                     start_bot_slot()
-                    n_started = bot_state["slots_started"] = n_started + 1
+                    n_started = bot_state.slots_started = n_started + 1
                     next_slot_time += self._bounded_random_stagger()
                 if n_started >= n:
-                    bot_state["ramp_up_s"] = time.time() - start_time
+                    bot_state.ramp_up_s = time.time() - start_time
 
             self._show_realtime_status(bot_state, current_time, end_time)
             time.sleep(0.05)
@@ -1059,7 +1152,7 @@ class PerformanceTester:
         bots = Bot.query.filter(Bot.id > initial_state["max_participant_id"]).all()
         # A bot whose thread raised failed, whatever status the server recorded.
         bot_status_map = {
-            b.id: "failed" if b.id in bot_state["errored_bot_ids"] else b.status
+            b.id: "failed" if b.id in bot_state.errored_bot_ids else b.status
             for b in bots
         }
         succeeded_statuses = {"approved", "submitted"}
@@ -1081,13 +1174,6 @@ class PerformanceTester:
         median_wait_page_time = _quantile(wait_page_times, 0.5)
         p95_wait_page_time = _quantile(wait_page_times, 0.95)
         max_wait_page_time = _quantile(wait_page_times, 1)
-
-        avg_response_time = stats.avg
-        median_response_time = stats.median
-        p95_response_time = stats.p95
-        p99_response_time = stats.p99
-        stddev_response_time = stats.stddev
-        max_response_time = stats.max
 
         def _trial_count_stats(bot_ids):
             from psynet.trial.main import Trial  # noqa: lazy to avoid circular
@@ -1118,95 +1204,94 @@ class PerformanceTester:
         ) = _trial_count_stats(succeeded_bot_ids)
         succeeded_durations = [
             d
-            for bot_id, d, terminated in bot_state["bot_durations"]
+            for bot_id, d, terminated in bot_state.bot_durations
             if not terminated and bot_status_map.get(bot_id) in succeeded_statuses
         ]
         failed_durations = [
             d
-            for bot_id, d, terminated in bot_state["bot_durations"]
+            for bot_id, d, terminated in bot_state.bot_durations
             if not terminated
             and bot_status_map.get(bot_id) not in succeeded_statuses
             and bot_status_map.get(bot_id) != "working"
         ]
         incomplete_durations = [
             d
-            for bot_id, d, terminated in bot_state["bot_durations"]
+            for bot_id, d, terminated in bot_state.bot_durations
             if terminated or bot_status_map.get(bot_id) == "working"
         ]
-        all_durations = [d for _, d, _ in bot_state["bot_durations"]]
+        all_durations = [d for _, d, _ in bot_state.bot_durations]
 
         avg_bot_duration = _mean(all_durations)
         avg_succeeded_duration = _mean(succeeded_durations)
         avg_failed_duration = _mean(failed_durations)
         avg_incomplete_duration = _mean(incomplete_durations)
-        avg_init_time = _mean(bot_state["initialization_times"])
+        avg_init_time = _mean(bot_state.initialization_times)
 
         requests_per_sec = (
             requests_during_test / actual_duration if actual_duration > 0 else None
         )
         n_wait_page_samples = len(wait_page_times) if wait_page_times else None
-        initialization_times = list(bot_state["initialization_times"])
 
-        result = {
-            "n_bots": n,
-            "duration_minutes": duration_minutes,
-            "actual_duration": actual_duration,
-            "server_stopped": bot_state["server_stopped"],
-            "bot_process_failure": bot_state["bot_process_failure"],
-            "unreported_bot_processes": bot_state["unreported_bot_processes"],
-            "bot_processes": self._n_bot_processes,
-            "slots_started": bot_state["slots_started"],
-            "peak_running": bot_state["peak_running"],
-            "ramp_up_s": bot_state["ramp_up_s"],
-            "tester_cpu_share": _worst(bot_state["process_loads"], 0),
-            "tester_lag_p95_s": _worst(bot_state["process_loads"], 1),
-            "total_bots_started": bot_state["total_bots_started"],
-            "completed_during_test": bot_state["bots_completed_during_test"],
-            "bots_succeeded": bots_succeeded,
-            "bots_failed": bots_failed,
-            "bots_incomplete": bots_incomplete,
-            "total_requests": requests_during_test,
-            "key_requests": stats.count,
-            "requests_per_sec": requests_per_sec,
-            "bot_errors": bot_state["total_bot_errors"],
-            "bot_error_kinds": dict(bot_state["bot_error_kinds"].most_common()),
-            "avg_response_time": avg_response_time,
-            "median_response_time": median_response_time,
-            "p95_response_time": p95_response_time,
-            "endpoint_p95": endpoint_p95,
-            "p99_response_time": p99_response_time,
-            "stddev_response_time": stddev_response_time,
-            "max_response_time": max_response_time,
-            "avg_bot_duration": avg_bot_duration,
-            "avg_init_time": avg_init_time,
-            "initialization_times": initialization_times,
-            "request_errors": request_errors,
-            "busy_responses": busy_responses,
-            "median_wait_page_time": median_wait_page_time,
-            "p95_wait_page_time": p95_wait_page_time,
-            "max_wait_page_time": max_wait_page_time,
-            "n_wait_page_samples": n_wait_page_samples,
-            "avg_succeeded_duration": avg_succeeded_duration,
-            "avg_failed_duration": avg_failed_duration,
-            "avg_incomplete_duration": avg_incomplete_duration,
-            "q_delay_median": q_delay_median,
-            "q_delay_p95": q_delay_p95,
-            "oldest_queued_s": oldest_queued_s,
-            "process_stats": process_stats,
-            "min_trial_count": min_trial_count,
-            "median_trial_count": median_trial_count,
-            "max_trial_count": max_trial_count,
-            "n_succeeded_bots": len(succeeded_bot_ids),
-        }
+        result = PerformanceTestResult(
+            n_bots=n,
+            duration_minutes=duration_minutes,
+            actual_duration=actual_duration,
+            server_stopped=bot_state.server_stopped,
+            bot_process_failure=bot_state.bot_process_failure,
+            unreported_bot_processes=bot_state.unreported_bot_processes,
+            bot_processes=self._n_bot_processes,
+            slots_started=bot_state.slots_started,
+            peak_running=bot_state.peak_running,
+            ramp_up_s=bot_state.ramp_up_s,
+            tester_cpu_share=_worst(bot_state.process_loads, 0),
+            tester_lag_p95_s=_worst(bot_state.process_loads, 1),
+            total_bots_started=bot_state.total_bots_started,
+            completed_during_test=bot_state.bots_completed_during_test,
+            bots_succeeded=bots_succeeded,
+            bots_failed=bots_failed,
+            bots_incomplete=bots_incomplete,
+            total_requests=requests_during_test,
+            key_requests=stats.count,
+            requests_per_sec=requests_per_sec,
+            bot_errors=bot_state.total_bot_errors,
+            bot_error_kinds=dict(bot_state.bot_error_kinds.most_common()),
+            avg_response_time=stats.avg,
+            median_response_time=stats.median,
+            p95_response_time=stats.p95,
+            endpoint_p95=endpoint_p95,
+            p99_response_time=stats.p99,
+            stddev_response_time=stats.stddev,
+            max_response_time=stats.max,
+            avg_bot_duration=avg_bot_duration,
+            avg_init_time=avg_init_time,
+            initialization_times=list(bot_state.initialization_times),
+            request_errors=request_errors,
+            busy_responses=busy_responses,
+            median_wait_page_time=median_wait_page_time,
+            p95_wait_page_time=p95_wait_page_time,
+            max_wait_page_time=max_wait_page_time,
+            n_wait_page_samples=n_wait_page_samples,
+            avg_succeeded_duration=avg_succeeded_duration,
+            avg_failed_duration=avg_failed_duration,
+            avg_incomplete_duration=avg_incomplete_duration,
+            q_delay_median=q_delay_median,
+            q_delay_p95=q_delay_p95,
+            oldest_queued_s=oldest_queued_s,
+            process_stats=process_stats,
+            min_trial_count=min_trial_count,
+            median_trial_count=median_trial_count,
+            max_trial_count=max_trial_count,
+            n_succeeded_bots=len(succeeded_bot_ids),
+        )
 
         try:
             from dallinger.db import redis_conn
             from rq import Worker
 
             workers = Worker.all(connection=redis_conn)
-            result["n_rq_workers"] = len(workers)
+            result.n_rq_workers = len(workers)
             # Dallinger's gevent workers record how many jobs each can run at once.
-            result["n_rq_job_slots"] = sum(
+            result.n_rq_job_slots = sum(
                 int(redis_conn.hget(w.key, "pool_size") or 1) for w in workers
             )
         except Exception as e:
@@ -1550,11 +1635,11 @@ def _fmt(value, suffix=""):
 
 def _describe_workers(result):
     """Describe the async worker processes and how many jobs they can run at once."""
-    n_workers = result.get("n_rq_workers")
+    n_workers = result.n_rq_workers
     if not n_workers:
         return ""
     text = f"{n_workers} worker process{'es' if n_workers != 1 else ''}"
-    n_slots = result.get("n_rq_job_slots")
+    n_slots = result.n_rq_job_slots
     if n_slots and n_slots != n_workers:
         text += f", up to {n_slots} jobs at once"
     return text
@@ -1592,8 +1677,8 @@ def _plural(count, noun):
 
 def _describe_bot_errors(result, limit=3):
     """Describe a result's bot errors, naming the most common causes."""
-    text = _plural(result["bot_errors"], "bot error")
-    kinds = list((result.get("bot_error_kinds") or {}).items())
+    text = _plural(result.bot_errors, "bot error")
+    kinds = list((result.bot_error_kinds or {}).items())
     if not kinds:
         return text
     if len(kinds) == 1:
@@ -1664,11 +1749,11 @@ def format_test_results(result):
         lines.append(f"  {'-' * 36}")
 
     bots_finished = max(
-        result["completed_during_test"],
-        result["bots_succeeded"] + result["bots_failed"],
+        result.completed_during_test,
+        result.bots_succeeded + result.bots_failed,
     )
 
-    total_started = result["total_bots_started"]
+    total_started = result.total_bots_started
     if total_started > 0:
         completion_rate = f"{(bots_finished / total_started) * 100:.0f}%"
     else:
@@ -1676,20 +1761,18 @@ def format_test_results(result):
 
     lines.append("")
     lines.append(success("\u2713 Test completed"))
-    lines.append(bold(f"TEST RESULTS (n={result['n_bots']:,} bots)"))
+    lines.append(bold(f"TEST RESULTS (n={result.n_bots:,} bots)"))
     lines.append("")
 
     # BOT OUTCOMES
     _section("BOT OUTCOMES")
-    bots_in_db = (
-        result["bots_succeeded"] + result["bots_failed"] + result["bots_incomplete"]
-    )
-    bots_not_in_db = result["total_bots_started"] - bots_in_db
+    bots_in_db = result.bots_succeeded + result.bots_failed + result.bots_incomplete
+    bots_not_in_db = result.total_bots_started - bots_in_db
     outcome_rows = [
-        ["Bots started", result["total_bots_started"]],
-        ["Completed successfully", result["bots_succeeded"]],
-        ["Completed with error", result["bots_failed"]],
-        ["Timed out (still running)", result["bots_incomplete"]],
+        ["Bots started", result.total_bots_started],
+        ["Completed successfully", result.bots_succeeded],
+        ["Completed with error", result.bots_failed],
+        ["Timed out (still running)", result.bots_incomplete],
     ]
     if bots_not_in_db > 0:
         outcome_rows.append(["Never reached DB", bots_not_in_db])
@@ -1697,7 +1780,7 @@ def format_test_results(result):
     _table_lines(outcome_rows, headers=[], colalign=("left", "right"))
     lines.append("")
 
-    error_kinds = result.get("bot_error_kinds")
+    error_kinds = result.bot_error_kinds
     if error_kinds:
         _section("BOT ERRORS")
         _table_lines(
@@ -1710,49 +1793,49 @@ def format_test_results(result):
     # BOT RUNTIMES
     _section("BOT RUNTIMES")
     runtime_rows = []
-    if result.get("actual_duration") is not None:
-        runtime_rows.append(["Test duration", f"{result['actual_duration']:.1f}s"])
-    if result.get("avg_bot_duration") is not None:
-        runtime_rows.append(["Avg runtime", f"{result['avg_bot_duration']:.1f}s"])
-    if result.get("avg_succeeded_duration") is not None:
+    if result.actual_duration is not None:
+        runtime_rows.append(["Test duration", f"{result.actual_duration:.1f}s"])
+    if result.avg_bot_duration is not None:
+        runtime_rows.append(["Avg runtime", f"{result.avg_bot_duration:.1f}s"])
+    if result.avg_succeeded_duration is not None:
         runtime_rows.append(
             [
                 "Avg runtime (succeeded)",
-                f"{result['avg_succeeded_duration']:.1f}s",
+                f"{result.avg_succeeded_duration:.1f}s",
             ]
         )
-    if result.get("avg_failed_duration") is not None:
+    if result.avg_failed_duration is not None:
         runtime_rows.append(
             [
                 "Avg runtime (failed)",
-                f"{result['avg_failed_duration']:.1f}s",
+                f"{result.avg_failed_duration:.1f}s",
             ]
         )
-    if result.get("avg_incomplete_duration") is not None:
+    if result.avg_incomplete_duration is not None:
         runtime_rows.append(
             [
                 "Avg runtime (timed out)",
-                f"{result['avg_incomplete_duration']:.1f}s",
+                f"{result.avg_incomplete_duration:.1f}s",
             ]
         )
-    if result.get("tester_lag_p95_s") is not None:
-        lag = f"{result['tester_lag_p95_s'] * 1000:.0f} ms"
+    if result.tester_lag_p95_s is not None:
+        lag = f"{result.tester_lag_p95_s * 1000:.0f} ms"
         runtime_rows.append(
             [
                 "Bot lag (p95, worst process)",
                 warning(lag) if _tester_lagged(result) else lag,
             ]
         )
-    if result.get("tester_cpu_share") is not None:
+    if result.tester_cpu_share is not None:
         runtime_rows.append(
-            ["Bot process CPU (busiest)", f"{result['tester_cpu_share']:.0%} of a core"]
+            ["Bot process CPU (busiest)", f"{result.tester_cpu_share:.0%} of a core"]
         )
     if runtime_rows:
         _table_lines(runtime_rows, headers=[], colalign=("left", "right"))
     lines.append("")
 
     # Bot initialization time distribution (sub-section)
-    init_times = result.get("initialization_times", [])
+    init_times = result.initialization_times
     if init_times:
         init_sorted = sorted(init_times)
         init_median = _quantile(init_sorted, 0.5)
@@ -1776,65 +1859,60 @@ def format_test_results(result):
     # REQUEST METRICS
     _section("REQUEST METRICS")
     request_rows = [
-        ["Total requests", result["total_requests"]],
+        ["Total requests", result.total_requests],
         # Requests that fail before the server can log them appear only
         # under BOT ERRORS.
-        ["Request errors (logged)", result["request_errors"]],
+        ["Request errors (logged)", result.request_errors],
     ]
-    if result.get("busy_responses"):
-        request_rows.append(
-            ["Busy/stale responses (409/503)", result["busy_responses"]]
-        )
-    if result.get("requests_per_sec") is not None:
-        request_rows.append(["Throughput", f"{result['requests_per_sec']:.2f} req/s"])
+    if result.busy_responses:
+        request_rows.append(["Busy/stale responses (409/503)", result.busy_responses])
+    if result.requests_per_sec is not None:
+        request_rows.append(["Throughput", f"{result.requests_per_sec:.2f} req/s"])
     _table_lines(request_rows, headers=[], colalign=("left", "right"))
     lines.append("")
 
     # RESPONSE TIMES
-    n_req = result.get("key_requests", "?")
+    n_req = result.key_requests
     _section(f"RESPONSE TIMES (n={n_req} /timeline and /response requests)")
     resp_rows = [
-        ["Median", _fmt(result["median_response_time"], "s")],
-        ["95th percentile", _fmt(result["p95_response_time"], "s")],
-        ["99th percentile", _fmt(result["p99_response_time"], "s")],
-        ["Max", _fmt(result["max_response_time"], "s")],
-        ["Mean", _fmt(result["avg_response_time"], "s")],
-        ["Std dev", _fmt(result["stddev_response_time"], "s")],
+        ["Median", _fmt(result.median_response_time, "s")],
+        ["95th percentile", _fmt(result.p95_response_time, "s")],
+        ["99th percentile", _fmt(result.p99_response_time, "s")],
+        ["Max", _fmt(result.max_response_time, "s")],
+        ["Mean", _fmt(result.avg_response_time, "s")],
+        ["Std dev", _fmt(result.stddev_response_time, "s")],
     ]
     _table_lines(resp_rows, headers=[], colalign=("left", "right"))
     lines.append("")
 
     # WAIT PAGE TIMES
-    if result.get("median_wait_page_time") is not None:
-        n_wait = result.get("n_wait_page_samples", "?")
+    if result.median_wait_page_time is not None:
+        n_wait = result.n_wait_page_samples
         page_word = "page" if n_wait == 1 else "pages"
         _section(f"WAIT PAGE TIMES (n={n_wait} {page_word})")
         wait_rows = [
-            ["Median", f"{result['median_wait_page_time']:.1f}s"],
-            ["95th percentile", f"{result['p95_wait_page_time']:.1f}s"],
-            ["Max", f"{result['max_wait_page_time']:.1f}s"],
+            ["Median", f"{result.median_wait_page_time:.1f}s"],
+            ["95th percentile", f"{result.p95_wait_page_time:.1f}s"],
+            ["Max", f"{result.max_wait_page_time:.1f}s"],
         ]
         _table_lines(wait_rows, headers=[], colalign=("left", "right"))
         lines.append("")
 
     # TRIALS PER BOT
-    n_succeeded = result.get("n_succeeded_bots", 0)
+    n_succeeded = result.n_succeeded_bots
     bot_word = "bot" if n_succeeded == 1 else "bots"
     _section(f"TRIALS PER BOT (n={n_succeeded} {bot_word} succeeded)")
-    _tc = lambda k, fallback=0: (  # noqa: E731
-        result[k] if result.get(k) is not None else fallback
-    )
     trial_rows = [
-        ["Min", _tc("min_trial_count")],
-        ["Median", _tc("median_trial_count")],
-        ["Max", _tc("max_trial_count")],
+        ["Min", result.min_trial_count or 0],
+        ["Median", result.median_trial_count or 0],
+        ["Max", result.max_trial_count or 0],
     ]
     _table_lines(trial_rows, headers=[], colalign=("left", "right"))
     lines.append("")
 
     # ASYNC PROCESS TIMES
-    if result.get("process_stats"):
-        n_procs = sum(ps["count"] for ps in result["process_stats"])
+    if result.process_stats:
+        n_procs = sum(ps["count"] for ps in result.process_stats)
         worker_info = _describe_workers(result)
         worker_info = f", {worker_info}" if worker_info else ""
         _section(f"ASYNC PROCESS TIMES ({n_procs} completed{worker_info})")
@@ -1880,7 +1958,7 @@ def format_test_results(result):
                 _fmt(ps["q_p95"]),
                 _color_q_share(ps["q_share"], ps["q_p95"]),
             ]
-            for ps in result["process_stats"]
+            for ps in result.process_stats
         ]
         _table_lines(
             proc_rows,
@@ -1920,11 +1998,11 @@ def format_test_results(result):
         lines.append("  No completed async processes.")
         lines.append("")
 
-    if result.get("oldest_queued_s") is not None:
+    if result.oldest_queued_s is not None:
         lines.append(
             warning(
                 "  Still queued when the test ended: oldest process had waited "
-                f"{result['oldest_queued_s']:.1f}s for a worker."
+                f"{result.oldest_queued_s:.1f}s for a worker."
             )
         )
         lines.append("")
@@ -1944,15 +2022,11 @@ def _ratio(value, baseline, is_baseline):
 def format_performance_summary(results):
     """Format cross-test comparison table. Returns list[str]."""
     lines = []
-    results = sorted(results, key=lambda r: r["n_bots"])
+    results = sorted(results, key=lambda r: r.n_bots)
 
-    show_scaling = (
-        len(results) > 1 and results[0].get("median_response_time") is not None
-    )
-    baseline_response_median = (
-        results[0].get("median_response_time") if show_scaling else None
-    )
-    baseline_q_median = results[0].get("q_delay_median") if show_scaling else None
+    show_scaling = len(results) > 1 and results[0].median_response_time is not None
+    baseline_response_median = results[0].median_response_time if show_scaling else None
+    baseline_q_median = results[0].q_delay_median if show_scaling else None
 
     summary_headers = [
         "Bots",
@@ -1971,18 +2045,18 @@ def format_performance_summary(results):
 
     summary_rows = []
     for i, result in enumerate(results):
-        response_median = result.get("median_response_time")
-        q_median = result.get("q_delay_median")
+        response_median = result.median_response_time
+        q_median = result.q_delay_median
         row = [
-            result["n_bots"],
-            result["bots_succeeded"],
-            result["total_requests"],
+            result.n_bots,
+            result.bots_succeeded,
+            result.total_requests,
             (
-                f"{result['requests_per_sec']:.1f}"
-                if result.get("requests_per_sec") is not None
+                f"{result.requests_per_sec:.1f}"
+                if result.requests_per_sec is not None
                 else "N/A"
             ),
-            _fmt(result.get("p95_response_time")),
+            _fmt(result.p95_response_time),
             _fmt(response_median),
         ]
         if show_scaling:
@@ -2115,9 +2189,7 @@ def queue_wait_p95(result):
     Returns ``None`` if the test ran no async processes.
     """
     waits = [
-        float(v)
-        for v in (result.get("q_delay_p95"), result.get("oldest_queued_s"))
-        if v is not None
+        float(v) for v in (result.q_delay_p95, result.oldest_queued_s) if v is not None
     ]
     return max(waits) if waits else None
 
@@ -2129,25 +2201,23 @@ _MAX_TESTER_LAG_P95_S = 0.05
 
 def _tester_lagged(result):
     """Return whether bots ran so late that they could not keep pace; see :func:`_tester_limits`."""
-    lag = result.get("tester_lag_p95_s")
+    lag = result.tester_lag_p95_s
     return lag is not None and lag > _MAX_TESTER_LAG_P95_S
 
 
 def _start_rate_limits(result):
     """Return the reasons bots did not all start, or take part at once, in a test."""
     reasons = []
-    slots_started = result.get("slots_started")
-    if slots_started is not None and slots_started < result.get("n_bots", 0):
+    slots_started = result.slots_started
+    if slots_started is not None and slots_started < result.n_bots:
         reasons.append(
-            f"only {slots_started:,} of {result['n_bots']:,} bots started "
+            f"only {slots_started:,} of {result.n_bots:,} bots started "
             "(use a longer --duration-minutes)"
         )
-    peak_running = result.get("peak_running")
-    if peak_running is not None and peak_running < _MIN_RUNNING_SHARE * result.get(
-        "n_bots", 0
-    ):
+    peak_running = result.peak_running
+    if peak_running is not None and peak_running < _MIN_RUNNING_SHARE * result.n_bots:
         reasons.append(
-            f"at most {peak_running:,} of {result['n_bots']:,} bots were taking "
+            f"at most {peak_running:,} of {result.n_bots:,} bots were taking "
             "part at once, because new bots could not start fast enough"
         )
     return reasons
@@ -2167,9 +2237,9 @@ def _tester_limits(result):
     the server gets less load than the bot count suggests.
     """
     reasons = _start_rate_limits(result)
-    if result.get("bot_process_failure"):
-        reasons.append(result["bot_process_failure"])
-    unreported = result.get("unreported_bot_processes")
+    if result.bot_process_failure:
+        reasons.append(result.bot_process_failure)
+    unreported = result.unreported_bot_processes
     if unreported:
         reasons.append(
             f"bot process(es) {', '.join(map(str, unreported))} did not report "
@@ -2178,12 +2248,12 @@ def _tester_limits(result):
     if _tester_lagged(result):
         where = (
             "the test process"
-            if result.get("bot_processes", 1) == 1
+            if result.bot_processes == 1
             else "the busiest bot process"
         )
         reasons.append(
             f"bots in {where} were running "
-            f"{result['tester_lag_p95_s'] * 1000:.0f} ms late (p95), so they could "
+            f"{result.tester_lag_p95_s * 1000:.0f} ms late (p95), so they could "
             "not keep pace (use more --bot-processes)"
         )
     return reasons
@@ -2201,41 +2271,39 @@ def _capacity_failure_causes(result, limits):
     which participants don't), or no responses were recorded while bots were
     missing.
     """
-    causes = [("server stopped", True)] if result.get("server_stopped") else []
+    causes = [("server stopped", True)] if result.server_stopped else []
     tester_limits = _tester_limits(result)
     causes += [(reason, False) for reason in tester_limits]
-    key_requests = result.get("key_requests") or 0
-    request_errors = result.get("request_errors") or 0
+    key_requests = result.key_requests or 0
+    request_errors = result.request_errors or 0
     if request_errors > max(
         limits.allowed_request_errors,
         limits.max_request_error_rate * key_requests,
     ):
         causes.append((_plural(request_errors, "request error"), True))
-    busy_responses = result.get("busy_responses") or 0
+    busy_responses = result.busy_responses or 0
     if busy_responses > max(
         limits.allowed_busy_responses,
         limits.max_busy_response_rate * key_requests,
     ):
         causes.append((_plural(busy_responses, "busy/stale response"), True))
-    bot_errors = result.get("bot_errors") or 0
-    max_bot_errors = limits.max_bot_error_rate * (result.get("total_bots_started") or 0)
+    bot_errors = result.bot_errors or 0
+    max_bot_errors = limits.max_bot_error_rate * (result.total_bots_started or 0)
     if bot_errors > max_bot_errors:
-        postgres_errors = (result.get("bot_error_kinds") or {}).get(_POSTGRES_FULL, 0)
+        postgres_errors = (result.bot_error_kinds or {}).get(_POSTGRES_FULL, 0)
         causes.append(
             (
                 _describe_bot_errors(result),
                 bot_errors - postgres_errors > max_bot_errors,
             )
         )
-    p95 = result.get("p95_response_time")
+    p95 = result.p95_response_time
     if p95 is None:
         causes.append(("no responses recorded", not tester_limits))
     elif float(p95) > limits.max_p95_s:
         causes.append((f"p95 response time {float(p95) * 1000:.0f} ms", True))
     else:
-        for endpoint, endpoint_p95 in sorted(
-            (result.get("endpoint_p95") or {}).items()
-        ):
+        for endpoint, endpoint_p95 in sorted((result.endpoint_p95 or {}).items()):
             if float(endpoint_p95) > limits.max_p95_s:
                 causes.append(
                     (
@@ -2338,29 +2406,29 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
         return []
     limit = limits.describe(
         include_queue=any(
-            queue_wait_p95(r) is not None or r.get("q_delay_median") is not None
+            queue_wait_p95(r) is not None or r.q_delay_median is not None
             for r in results
         )
     )
     causes = [(r, _capacity_failure_causes(r, limits)) for r in results]
-    passed = [r["n_bots"] for r, result_causes in causes if not result_causes]
+    passed = [r.n_bots for r, result_causes in causes if not result_causes]
     failed = [(r, result_causes) for r, result_causes in causes if result_causes]
     first_fail, first_causes = (
-        min(failed, key=lambda f: f[0]["n_bots"]) if failed else (None, [])
+        min(failed, key=lambda f: f[0].n_bots) if failed else (None, [])
     )
     first_reasons = "; ".join(reason for reason, _ in first_causes)
     unmeasured = not any(server_limit for _, server_limit in first_causes)
-    below_fail = [n for n in passed if first_fail is None or n < first_fail["n_bots"]]
+    below_fail = [n for n in passed if first_fail is None or n < first_fail.n_bots]
     capacity = max(below_fail, default=None)
     if capacity is None:
         if unmeasured:
             lines = [
-                f"  Capacity unknown: {first_fail['n_bots']:,} bots could not "
+                f"  Capacity unknown: {first_fail.n_bots:,} bots could not "
                 f"be tested ({first_reasons})."
             ]
         else:
             lines = [
-                f"  Even {first_fail['n_bots']:,} bots did not keep {limit} "
+                f"  Even {first_fail.n_bots:,} bots did not keep {limit} "
                 f"({first_reasons}); fix any errors or test fewer bots."
             ]
         if passed:
@@ -2376,17 +2444,17 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
     elif unmeasured:
         lines = [
             f"  Capacity: at least {capacity:,} concurrent bots kept {limit}; "
-            f"{first_fail['n_bots']:,} could not be tested ({first_reasons}).",
+            f"{first_fail.n_bots:,} could not be tested ({first_reasons}).",
         ]
     else:
         lines = [
             f"  Capacity: about {capacity:,} concurrent bots kept {limit}; "
-            f"{first_fail['n_bots']:,} did not ({first_reasons}).",
+            f"{first_fail.n_bots:,} did not ({first_reasons}).",
             f"  Cap concurrent participants at about "
             f"{max(1, int(capacity * _CAPACITY_HEADROOM)):,} "
             f"({_CAPACITY_HEADROOM:.0%} of {capacity:,}).",
         ]
-        if max(passed) > first_fail["n_bots"]:
+        if max(passed) > first_fail.n_bots:
             lines.append(
                 f"  {max(passed):,} bots also passed, so the results are "
                 "inconsistent; rerun to confirm."
@@ -2397,19 +2465,17 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
         lines.append(_START_RATE_ADVICE)
     if first_fail is not None and _tester_lagged(first_fail):
         lines.append(_TESTER_LAG_ADVICE)
-    if any(_POSTGRES_FULL in (r.get("bot_error_kinds") or {}) for r in results):
+    if any(_POSTGRES_FULL in (r.bot_error_kinds or {}) for r in results):
         lines.append(_POSTGRES_ADVICE)
     if capacity is None:
         return lines + [""]
-    capacity_result = next(r for r in results if r["n_bots"] == capacity)
+    capacity_result = next(r for r in results if r.n_bots == capacity)
     tolerated = []
-    if capacity_result.get("request_errors"):
-        tolerated.append(_plural(capacity_result["request_errors"], "request error"))
-    if capacity_result.get("busy_responses"):
-        tolerated.append(
-            _plural(capacity_result["busy_responses"], "busy/stale response")
-        )
-    if capacity_result.get("bot_errors"):
+    if capacity_result.request_errors:
+        tolerated.append(_plural(capacity_result.request_errors, "request error"))
+    if capacity_result.busy_responses:
+        tolerated.append(_plural(capacity_result.busy_responses, "busy/stale response"))
+    if capacity_result.bot_errors:
         tolerated.append(_describe_bot_errors(capacity_result))
     if tolerated:
         found = " and ".join(filter(None, [", ".join(tolerated[:-1]), tolerated[-1]]))
@@ -2417,8 +2483,8 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
             f"  The {capacity:,}-bot test had {found}, within "
             "the limits; check the logs in case they point to a bug."
         )
-    ramp_up = capacity_result.get("ramp_up_s")
-    test_length = capacity_result.get("actual_duration")
+    ramp_up = capacity_result.ramp_up_s
+    test_length = capacity_result.actual_duration
     if ramp_up and test_length and ramp_up > _RAMP_UP_WARNING_SHARE * test_length:
         lines.append(
             f"  Starting all {capacity:,} bots took {ramp_up:.0f} s of the "
