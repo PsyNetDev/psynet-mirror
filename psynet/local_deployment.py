@@ -21,6 +21,7 @@ import json
 import logging
 import os
 import re
+import subprocess
 import sys
 import tempfile
 import threading
@@ -581,10 +582,90 @@ def _connect(db_url: str, *, statement_timeout_seconds: int):
     )
 
 
+def _wait_callback_installed() -> bool:
+    """Return whether psycopg2 would reject ``COPY`` in this process.
+
+    The dev server and gunicorn install a gevent wait callback. ``copy_expert``
+    raises ``ProgrammingError`` until that callback is removed, and removing it
+    blocks every other database wait in the process for the whole dump.
+    """
+    import psycopg2.extensions
+
+    return psycopg2.extensions.get_wait_callback() is not None
+
+
 def export_database_snapshot(
     destination: Path, db_url: Optional[str] = None
 ) -> DatabaseExport:
-    """Write a consistent Dallinger-compatible CSV database archive."""
+    """Write a consistent Dallinger-compatible CSV database archive.
+
+    When this process has a psycopg2 wait callback, the copy runs in a fresh
+    interpreter. That process is not monkey-patched, so ``COPY`` succeeds and
+    the web server keeps serving during the dump.
+    """
+    if db_url is None:
+        from dallinger import db
+
+        db_url = db.db_url
+    destination = Path(destination)
+    if _wait_callback_installed():
+        return _export_database_snapshot_subprocess(destination, db_url)
+    return _export_database_snapshot_in_process(destination, db_url)
+
+
+def _export_database_snapshot_subprocess(
+    destination: Path, db_url: str
+) -> DatabaseExport:
+    """Copy the database from an interpreter that has no wait callback."""
+    completed = subprocess.run(
+        [sys.executable, "-m", "psynet.local_deployment"],
+        input=json.dumps(
+            {"destination": str(destination), "db_url": db_url},
+        ),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        detail = (completed.stderr or "").strip() or "Snapshot export process failed."
+        raise RuntimeError(detail[:500])
+    try:
+        payload = json.loads(completed.stdout)
+    except json.JSONDecodeError as error:
+        raise RuntimeError("Snapshot export process returned invalid JSON.") from error
+    return DatabaseExport(
+        int(payload["participant_count"]),
+        int(payload["max_response_id"]),
+        payload.get("content_token"),
+    )
+
+
+def _export_snapshot_subprocess_main() -> None:
+    """Entry point for ``python -m psynet.local_deployment``."""
+    try:
+        payload = json.loads(sys.stdin.read())
+        exported = _export_database_snapshot_in_process(
+            Path(payload["destination"]),
+            payload["db_url"],
+        )
+    except Exception as error:
+        print(f"{type(error).__name__}: {error}", file=sys.stderr)
+        raise SystemExit(1) from error
+    json.dump(
+        {
+            "participant_count": exported.participant_count,
+            "max_response_id": exported.max_response_id,
+            "content_token": exported.content_token,
+        },
+        sys.stdout,
+    )
+    sys.stdout.write("\n")
+
+
+def _export_database_snapshot_in_process(
+    destination: Path, db_url: Optional[str] = None
+) -> DatabaseExport:
+    """Write the archive in this process. Callers must not have a wait callback."""
     from psycopg2 import sql
 
     if db_url is None:
@@ -1155,3 +1236,7 @@ def _protect_existing_database(
         reason="recovery-before-reset",
         deployment_id=owner.deployment_id,
     )
+
+
+if __name__ == "__main__":
+    _export_snapshot_subprocess_main()

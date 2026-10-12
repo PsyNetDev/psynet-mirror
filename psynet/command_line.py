@@ -324,7 +324,20 @@ def _install_archive_template(archive: str, template_path: str) -> None:
 
 
 def _prepare(archive=None):
+    """Reset the local database after saving unsaved managed state.
+
+    Leftover ``flask run`` and ``dallinger_heroku_*`` processes are stopped
+    first. The recovery snapshot and the reset do not run while one of them
+    can still commit. ``deploy local`` already stops writers before it calls
+    this; a direct ``psynet prepare`` has to do the same, because a parent
+    killed with ``SIGKILL`` releases the database lock and leaves the server
+    running.
+    """
     with local_database_lock(Path.cwd()):
+        if not kill_psynet_worker_processes():
+            raise click.ClickException(
+                _leftover_database_writer_message("resetting the database")
+            )
         protect_existing_database(
             Path.cwd(),
             "prepare",

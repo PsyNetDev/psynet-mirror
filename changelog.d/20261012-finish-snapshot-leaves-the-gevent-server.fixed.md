@@ -1,0 +1,1 @@
+Participant-finish database snapshots now copy PostgreSQL from a fresh process, so the gevent dev server and gunicorn workers no longer reject the archive. ``psynet prepare`` stops leftover local servers before that reset and refuses to drop the database while one of them is still running.

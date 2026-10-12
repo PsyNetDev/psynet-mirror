@@ -32,11 +32,11 @@ start another experiment. Snapshots are private, non-anonymized recovery
 files for resuming on the same machine. They do not include assets or
 replace a full :ref:`data export <data>`.
 
-Before that recovery snapshot, ``psynet deploy local`` stops leftover
-PsyNet worker processes and any ``flask run`` development server using this
-database. If one of them is still running, the command refuses to reset the
-database, so a writer cannot commit into a database the archive does not
-contain. A server whose environment cannot be read, including one started by
+Before that recovery snapshot, ``psynet deploy local`` and ``psynet prepare``
+stop leftover PsyNet worker processes and any ``flask run`` development
+server using this database. If one of them is still running, the command
+refuses to reset the database, so a writer cannot commit into a database the
+archive does not contain. A server whose environment cannot be read, including one started by
 another account on this machine, is treated the same way. Stopping the
 running deployment with Ctrl-C or SIGTERM writes the shutdown snapshot before
 the process exits. A second Ctrl-C during that copy does not leave a numbered
@@ -52,8 +52,9 @@ experiments therefore do not accumulate identical backups during quiet
 periods.
 
 Finish-time snapshots are on by default for managed local live deployments.
-Disable them in ``config.txt`` or ``Experiment.config`` if they are too costly
-on the machine you are using::
+The copy runs in a separate process, so the local web server keeps serving
+while PostgreSQL is archived. Disable them in ``config.txt`` or
+``Experiment.config`` if they are too costly on the machine you are using::
 
     snapshot_on_participant_finish = false
 

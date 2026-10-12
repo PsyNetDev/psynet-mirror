@@ -181,6 +181,128 @@ def test_create_snapshot_removes_archive_when_metadata_is_interrupted(
     assert "interrupted" in events[-1]["error"]
 
 
+def test_export_database_snapshot_stays_in_process_without_a_wait_callback(
+    tmp_path, monkeypatch
+):
+    from psynet.local_deployment import DatabaseExport, export_database_snapshot
+
+    monkeypatch.setattr(
+        "psynet.local_deployment._wait_callback_installed",
+        lambda: False,
+    )
+    monkeypatch.setattr(
+        "psynet.local_deployment._export_database_snapshot_in_process",
+        lambda destination, db_url: DatabaseExport(1, 2, "in-process"),
+    )
+
+    def fail_subprocess(*_args, **_kwargs):
+        raise AssertionError("subprocess export should not run")
+
+    monkeypatch.setattr("psynet.local_deployment.subprocess.run", fail_subprocess)
+
+    exported = export_database_snapshot(tmp_path / "snap.zip", db_url="postgresql://db")
+
+    assert exported == DatabaseExport(1, 2, "in-process")
+
+
+def test_export_database_snapshot_uses_a_fresh_process_when_copy_would_be_rejected(
+    tmp_path, monkeypatch
+):
+    from psynet.local_deployment import DatabaseExport, export_database_snapshot
+
+    monkeypatch.setattr(
+        "psynet.local_deployment._wait_callback_installed",
+        lambda: True,
+    )
+    captured = {}
+
+    def fake_run(args, **kwargs):
+        captured["args"] = args
+        captured["input"] = kwargs["input"]
+        completed = Mock()
+        completed.returncode = 0
+        completed.stdout = json.dumps(
+            {
+                "participant_count": 4,
+                "max_response_id": 8,
+                "content_token": "from-child",
+            }
+        )
+        completed.stderr = ""
+        return completed
+
+    monkeypatch.setattr("psynet.local_deployment.subprocess.run", fake_run)
+
+    exported = export_database_snapshot(tmp_path / "snap.zip", db_url="postgresql://db")
+
+    assert exported == DatabaseExport(4, 8, "from-child")
+    assert captured["args"][1:] == ["-m", "psynet.local_deployment"]
+    payload = json.loads(captured["input"])
+    assert payload["db_url"] == "postgresql://db"
+    assert payload["destination"] == str(tmp_path / "snap.zip")
+
+
+def test_export_subprocess_reports_child_failure(tmp_path, monkeypatch):
+    from psynet.local_deployment import export_database_snapshot
+
+    monkeypatch.setattr(
+        "psynet.local_deployment._wait_callback_installed",
+        lambda: True,
+    )
+
+    def fake_run(*_args, **_kwargs):
+        completed = Mock()
+        completed.returncode = 1
+        completed.stdout = ""
+        completed.stderr = "ProgrammingError: copy_expert cannot be used\n"
+        return completed
+
+    monkeypatch.setattr("psynet.local_deployment.subprocess.run", fake_run)
+
+    with pytest.raises(RuntimeError, match="ProgrammingError"):
+        export_database_snapshot(tmp_path / "snap.zip", db_url="postgresql://db")
+
+
+def test_snapshot_module_entry_point_rejects_invalid_input():
+    import subprocess
+    import sys
+
+    completed = subprocess.run(
+        [sys.executable, "-m", "psynet.local_deployment"],
+        input="{",
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 1
+    assert "JSONDecodeError" in completed.stderr
+
+
+def test_snapshot_subprocess_main_prints_export_counts(monkeypatch, capsys):
+    from psynet.local_deployment import (
+        DatabaseExport,
+        _export_snapshot_subprocess_main,
+    )
+
+    monkeypatch.setattr(
+        "psynet.local_deployment._export_database_snapshot_in_process",
+        lambda destination, db_url: DatabaseExport(3, 9, "tok"),
+    )
+    monkeypatch.setattr(
+        "sys.stdin",
+        StringIO(json.dumps({"destination": "snap.zip", "db_url": "postgresql://db"})),
+    )
+
+    _export_snapshot_subprocess_main()
+
+    assert json.loads(capsys.readouterr().out) == {
+        "participant_count": 3,
+        "max_response_id": 9,
+        "content_token": "tok",
+    }
+
+
 def test_choose_snapshot_defaults_to_latest_without_a_terminal(tmp_path, monkeypatch):
     from psynet.local_deployment import choose_snapshot, create_snapshot
 
@@ -335,7 +457,14 @@ def test_prepare_protects_managed_database_before_reset(tmp_path, monkeypatch):
         calls.append("lock")
         yield
 
+    def stop_writers():
+        calls.append("kill")
+        return True
+
     monkeypatch.setattr("psynet.command_line.local_database_lock", locked)
+    monkeypatch.setattr(
+        "psynet.command_line.kill_psynet_worker_processes", stop_writers
+    )
     monkeypatch.setattr(
         "psynet.command_line.protect_existing_database",
         lambda *_args, **_kwargs: calls.append("protect"),
@@ -348,7 +477,45 @@ def test_prepare_protects_managed_database_before_reset(tmp_path, monkeypatch):
     with working_directory(tmp_path):
         _prepare("snapshot.zip")
 
-    assert calls == ["lock", "protect", ("prepare", "snapshot.zip")]
+    assert calls == ["lock", "kill", "protect", ("prepare", "snapshot.zip")]
+
+
+def test_prepare_refuses_reset_while_a_database_writer_is_alive(tmp_path, monkeypatch):
+    from psynet.command_line import _prepare
+    from psynet.utils import working_directory
+
+    calls = []
+
+    @contextmanager
+    def locked(*_args):
+        calls.append("lock")
+        yield
+
+    monkeypatch.setattr("psynet.command_line.local_database_lock", locked)
+    monkeypatch.setattr(
+        "psynet.command_line.kill_psynet_worker_processes",
+        lambda: False,
+    )
+    monkeypatch.setattr(
+        "psynet.command_line.protect_existing_database",
+        lambda *_args, **_kwargs: calls.append("protect"),
+    )
+    monkeypatch.setattr(
+        "psynet.command_line._prepare_unlocked",
+        lambda archive: calls.append("reset"),
+    )
+    monkeypatch.setattr(
+        "psynet.command_line._leftover_database_writer_message",
+        lambda purpose: f"writers still running before {purpose}",
+    )
+
+    import click
+
+    with working_directory(tmp_path):
+        with pytest.raises(click.ClickException, match="writers still running"):
+            _prepare("snapshot.zip")
+
+    assert calls == ["lock"]
 
 
 def test_concurrent_deployment_error_tells_operator_to_stop_the_other_experiment(
