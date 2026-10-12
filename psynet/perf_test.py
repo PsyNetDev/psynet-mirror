@@ -852,7 +852,7 @@ class PerformanceTester:
                 failed = (
                     db.session.query(Participant.failed).filter_by(id=bot_id).scalar()
                 )
-                outcome = "failed" if failed is True else "completed"
+                outcome = "failed" if failed else "completed"
             except DriverStopped:
                 outcome = "stopped"
             except BaseException as err:
@@ -2467,8 +2467,8 @@ class CapacityLimits:
             f"{self.max_busy_response_rate:.0%} of requests answered busy or stale "
             f"({self.allowed_busy_responses} always allowed), "
             f"{self.max_bot_error_rate:.0%} of bots failing and "
-            f"{self.max_wait_timeout_rate:.0%} failed by the experiment for "
-            "waiting too long"
+            f"{self.max_wait_timeout_rate:.0%} of participants failed by the "
+            "experiment for waiting too long"
         )
         if not include_queue:
             return f"{response} and {errors}"
@@ -2846,6 +2846,7 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
             f"{max(1, int(capacity * _CAPACITY_HEADROOM)):,} "
             f"({_CAPACITY_HEADROOM:.0%} of {capacity:,}).",
         ]
+    if capacity is not None and first_fail is not None and not unmeasured:
         if max(passed) > first_fail.n_bots:
             lines.append(
                 f"  {max(passed):,} bots also passed, so the results are "
