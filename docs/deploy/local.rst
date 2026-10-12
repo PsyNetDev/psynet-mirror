@@ -33,9 +33,11 @@ files for resuming on the same machine. They do not include assets or
 replace a full :ref:`data export <data>`.
 
 Before that recovery snapshot, ``psynet deploy local`` stops leftover
-PsyNet worker processes. If any of them are still running, the command
-refuses to reset the database, so a worker cannot commit into a database
-the archive does not contain.
+PsyNet worker processes and any ``flask run`` development server using this
+database. If one of them is still running, the command refuses to reset the
+database, so a writer cannot commit into a database the archive does not
+contain. Stopping the running deployment with Ctrl-C or SIGTERM writes the
+shutdown snapshot before the process exits.
 
 The ten-minute timer skips a backup when the ``response`` table is empty
 and there is no prior snapshot, or when the response watermark has not

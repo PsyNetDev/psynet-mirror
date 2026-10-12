@@ -907,14 +907,18 @@ def run_prepare_in_subprocess():
 
 
 def _prepare_after_stopping_local_workers(ctx, archive, update=False):
-    """Stop leftover local debug workers, then reset the local database.
+    """Stop leftover local servers, then reset the local database.
 
     Every launch path runs ``prepare`` against this machine's Postgres, so
-    leftover ``dallinger_heroku_*`` backends must be gone first. Chrome
-    windows are left alone here so a remote deploy does not close the
-    author's browser. An ``--update`` prepares only the image.
+    leftover ``dallinger_heroku_*`` backends and ``flask run`` servers must be
+    gone first. Chrome windows are left alone here so a remote deploy does not
+    close the author's browser. An ``--update`` prepares only the image.
     """
-    kill_psynet_worker_processes()
+    if not kill_psynet_worker_processes():
+        raise click.ClickException(
+            "Leftover PsyNet server or worker processes are still running and "
+            "may write to the local database. Stop them before resetting it."
+        )
     if update:
         _prepare_image_for_update()
     else:
@@ -1119,13 +1123,7 @@ def _stop_child_processes_on_signal():
     """
 
     def handler(signum, frame):
-        children = psutil.Process().children(recursive=True)
-        for child in children:
-            try:
-                child.terminate()
-            except psutil.NoSuchProcess:
-                pass
-        psutil.wait_procs(children, timeout=5)
+        _stop_descendant_processes()
         if signum == signal.SIGINT:
             raise KeyboardInterrupt
         raise SystemExit(128 + signum)
@@ -1221,6 +1219,49 @@ def patch_dallinger_develop():
 patch_dallinger_develop()
 
 
+def _stop_descendant_processes():
+    """Stop child processes, escalating to SIGKILL when SIGTERM is ignored.
+
+    ``flask run`` often survives ``terminate()``. A following snapshot or
+    database reset must not race a server that is still committing.
+    """
+    children = psutil.Process().children(recursive=True)
+    for child in children:
+        try:
+            child.terminate()
+        except psutil.NoSuchProcess:
+            pass
+    _gone, alive = psutil.wait_procs(children, timeout=5)
+    survivors = []
+    for child in alive:
+        try:
+            if child.status() == psutil.STATUS_ZOMBIE:
+                continue
+        except psutil.NoSuchProcess:
+            continue
+        try:
+            child.kill()
+        except psutil.NoSuchProcess:
+            continue
+        survivors.append(child)
+    if survivors:
+        psutil.wait_procs(survivors, timeout=2)
+
+
+def _local_stop_should_propagate(error):
+    """Return whether a local-server stop must keep its original exit status.
+
+    ``SystemExit(0)`` and ``SystemExit(None)`` (``sys.exit()`` with no code)
+    are successful stops. Ctrl-C and ``SystemExit(128 + signal)`` are re-raised
+    after the shutdown snapshot so the process status still reports the signal.
+    """
+    if isinstance(error, KeyboardInterrupt):
+        return True
+    if isinstance(error, SystemExit):
+        return error.code not in (0, None)
+    return False
+
+
 def safely_kill_process(p):
     """Kill ``p``, returning whether the signal was delivered."""
     try:
@@ -1250,15 +1291,14 @@ def _process_is_defunct(process):
 
 
 def kill_psynet_worker_processes(wait_timeout=1):
-    """Terminate leftover PsyNet worker processes, best effort.
+    """Terminate leftover local servers and workers that use this database.
 
-    Returns whether every leftover worker stopped. Cleanup must never fail a
-    launch or a shutdown, so an unkillable or already defunct worker is
-    reported and otherwise ignored: raising here previously broke every local
-    launch after the first whenever one such process lingered. Only processes
-    that were signalled are waited for, so leftovers cannot slow every launch
-    down. Launch paths including remote deploy do this so a stale
-    ``dallinger_heroku_*`` backend cannot hold the shared Postgres database.
+    Returns whether every leftover writer stopped. An already defunct process
+    is ignored. Callers that are about to snapshot or reset the database must
+    treat ``False`` as "a writer may still commit". Only processes that were
+    signalled are waited for. Launch paths including remote deploy do this so
+    a stale ``dallinger_heroku_*`` backend or ``flask run`` server cannot hold
+    the shared Postgres database.
     """
     processes = [
         process
@@ -1275,14 +1315,15 @@ def kill_psynet_worker_processes(wait_timeout=1):
             continue
     pid_list = ", ".join(pids) if pids else "unknown"
     logger.warning(
-        "Stopping %s leftover local PsyNet worker process(es) (pids %s). "
-        "Launch paths including remote deploy do this so a stale "
-        "dallinger_heroku_* backend cannot hold this Postgres database.",
+        "Stopping %s leftover local PsyNet server or worker process(es) "
+        "(pids %s). Launch paths including remote deploy do this so a stale "
+        "dallinger_heroku_* backend or flask run server cannot hold this "
+        "Postgres database.",
         len(processes),
         pid_list,
     )
     log(
-        f"Found {len(processes)} remaining PsyNet worker process(es) "
+        f"Found {len(processes)} remaining PsyNet server or worker process(es) "
         f"(pids {pid_list}), terminating them now."
     )
     signalled = [process for process in processes if safely_kill_process(process)]
@@ -1294,7 +1335,7 @@ def kill_psynet_worker_processes(wait_timeout=1):
         ]
     if unstoppable:
         logger.warning(
-            "PsyNet worker process(es) did not stop: %s.",
+            "PsyNet server or worker process(es) did not stop: %s.",
             ", ".join(str(process.pid) for process in unstoppable),
         )
         return False
@@ -1393,12 +1434,44 @@ def uses_current_database(process):
 
 
 def list_psynet_worker_processes():
-    """List local ``dallinger_heroku_*`` workers that use this shell's database."""
+    """List local servers and workers that use this shell's database.
+
+    Includes ``dallinger_heroku_*`` processes and the ``flask run`` development
+    server started by ``psynet deploy local`` without ``--legacy``.
+    """
     return [
         p
         for p in psutil.process_iter()
-        if is_psynet_worker_process(p) and uses_current_database(p)
+        if is_local_database_writer_process(p) and uses_current_database(p)
     ]
+
+
+def is_local_database_writer_process(process):
+    """Return whether ``process`` can commit to the local experiment database."""
+    return is_psynet_worker_process(process) or is_flask_develop_server_process(
+        process
+    )
+
+
+def is_flask_develop_server_process(process):
+    """Return whether ``process`` is a ``flask run`` development server.
+
+    The default local runner starts this via ``dallinger develop debug``. It is
+    not named ``dallinger_heroku_*``. The current process is never a match.
+    """
+    try:
+        if process.pid == os.getpid():
+            return False
+        cmdline = process.cmdline()
+    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+        return False
+    names = [Path(argument).name.lower() for argument in cmdline]
+    if any(name.startswith("pytest") for name in names):
+        return False
+    for index, name in enumerate(names):
+        if name == "flask" and "run" in names[index + 1 : index + 5]:
+            return True
+    return False
 
 
 def is_psynet_worker_process(process):
@@ -1794,9 +1867,10 @@ def deploy__local(
             # and the second protect call under this lock is a no-op.
             if not kill_psynet_worker_processes():
                 raise RuntimeError(
-                    "Leftover PsyNet worker processes are still running and may "
-                    "write to the local database. Stop them before deploying so "
-                    "the recovery snapshot is not taken while they can still commit."
+                    "Leftover PsyNet server or worker processes are still running "
+                    "and may write to the local database. Stop them before "
+                    "deploying so the recovery snapshot is not taken while they "
+                    "can still commit."
                 )
             protect_existing_database(
                 experiment_path,
@@ -1838,6 +1912,7 @@ def deploy__local(
                 archive=archive if selected_snapshot is None else None,
                 **extras,
             )
+            stop_exit = None
             try:
                 _run_local(
                     ctx,
@@ -1855,9 +1930,10 @@ def deploy__local(
                     ),
                     services_ready=True,
                 )
-            except SystemExit as error:
-                if error.code != 0:
-                    raise
+            except (KeyboardInterrupt, SystemExit) as error:
+                # Snapshot before leaving. Ctrl-C raises KeyboardInterrupt;
+                # SIGTERM and SIGHUP raise SystemExit(128 + signum).
+                stop_exit = error
             except Exception as error:
                 append_deployment_event(
                     experiment_path,
@@ -1868,83 +1944,100 @@ def deploy__local(
                 )
                 raise
 
-            workers_stopped = kill_psynet_worker_processes()
-            owner = read_database_owner()
-            if owner is None:
-                raise RuntimeError(
-                    "The stopped database does not contain a PsyNet experiment; "
-                    f"refusing to save it as local deployment '{local_id}'."
-                )
-            save_path = experiment_path
-            save_id = local_id
-            if owner.local_id != local_id:
-                if not owner.managed:
-                    raise RuntimeError(
-                        "The stopped database does not match the local deployment "
-                        f"ID '{local_id}'; refusing to save it as that deployment."
-                    )
-                save_path = owner.experiment_path
-                save_id = owner.local_id
-            snapshots = list_snapshots(save_path, save_id)
-            latest = snapshots[-1] if snapshots else None
-            if (
-                owner.local_id == local_id
-                and workers_stopped
-                and should_skip_shutdown_snapshot(owner)
-                and latest_snapshot_covers_owner(owner, latest)
-            ):
-                append_deployment_event(
+            try:
+                _save_stopped_local_deployment(
                     experiment_path,
-                    "deploy.stopped",
                     local_id,
-                    deployment_id=owner.deployment_id,
-                    saved=latest is not None,
-                    snapshot=latest.sequence if latest is not None else None,
-                    shutdown_snapshot=False,
-                    **extras,
+                    selected_snapshot,
+                    extras,
                 )
-            else:
-                try:
-                    final_snapshot = create_snapshot(
-                        save_path,
-                        save_id,
-                        reason="shutdown",
-                        deployment_id=owner.deployment_id,
-                        resumed_from=(
-                            selected_snapshot.sequence
-                            if selected_snapshot is not None
-                            else None
-                        ),
-                    )
-                except Exception:
-                    append_deployment_event(
-                        experiment_path,
-                        "deploy.stopped",
-                        local_id,
-                        deployment_id=owner.deployment_id,
-                        saved=False,
-                        **extras,
-                    )
-                    raise
-                append_deployment_event(
-                    experiment_path,
-                    "deploy.stopped",
-                    local_id,
-                    deployment_id=owner.deployment_id,
-                    saved=True,
-                    snapshot=final_snapshot.sequence,
-                    id_saved_as=save_id if save_id != local_id else None,
-                    **extras,
-                )
-                if owner.local_id != local_id:
-                    raise RuntimeError(
-                        "The stopped database belongs to local deployment "
-                        f"'{owner.local_id}', not '{local_id}'. "
-                        f"Saved shutdown snapshot {final_snapshot.sequence:06d} "
-                        "under the owning ID."
-                    )
+            except Exception:
+                if _local_stop_should_propagate(stop_exit):
+                    raise stop_exit
+                raise
+            if _local_stop_should_propagate(stop_exit):
+                raise stop_exit
     except RuntimeError as error:
         raise click.ClickException(str(error)) from error
+
+
+def _save_stopped_local_deployment(
+    experiment_path, local_id, selected_snapshot, extras
+):
+    """Snapshot a stopped local deployment and append ``deploy.stopped``."""
+    workers_stopped = kill_psynet_worker_processes()
+    owner = read_database_owner()
+    if owner is None:
+        raise RuntimeError(
+            "The stopped database does not contain a PsyNet experiment; "
+            f"refusing to save it as local deployment '{local_id}'."
+        )
+    save_path = experiment_path
+    save_id = local_id
+    if owner.local_id != local_id:
+        if not owner.managed:
+            raise RuntimeError(
+                "The stopped database does not match the local deployment "
+                f"ID '{local_id}'; refusing to save it as that deployment."
+            )
+        save_path = owner.experiment_path
+        save_id = owner.local_id
+    snapshots = list_snapshots(save_path, save_id)
+    latest = snapshots[-1] if snapshots else None
+    if (
+        owner.local_id == local_id
+        and workers_stopped
+        and should_skip_shutdown_snapshot(owner)
+        and latest_snapshot_covers_owner(owner, latest)
+    ):
+        append_deployment_event(
+            experiment_path,
+            "deploy.stopped",
+            local_id,
+            deployment_id=owner.deployment_id,
+            saved=latest is not None,
+            snapshot=latest.sequence if latest is not None else None,
+            shutdown_snapshot=False,
+            **extras,
+        )
+        return
+    try:
+        final_snapshot = create_snapshot(
+            save_path,
+            save_id,
+            reason="shutdown",
+            deployment_id=owner.deployment_id,
+            resumed_from=(
+                selected_snapshot.sequence if selected_snapshot is not None else None
+            ),
+        )
+    except Exception:
+        append_deployment_event(
+            experiment_path,
+            "deploy.stopped",
+            local_id,
+            deployment_id=owner.deployment_id,
+            saved=False,
+            **extras,
+        )
+        raise
+    append_deployment_event(
+        experiment_path,
+        "deploy.stopped",
+        local_id,
+        deployment_id=owner.deployment_id,
+        saved=True,
+        snapshot=final_snapshot.sequence,
+        id_saved_as=save_id if save_id != local_id else None,
+        **extras,
+    )
+    if owner.local_id != local_id:
+        raise RuntimeError(
+            "The stopped database belongs to local deployment "
+            f"'{owner.local_id}', not '{local_id}'. "
+            f"Saved shutdown snapshot {final_snapshot.sequence:06d} "
+            "under the owning ID."
+        )
 
 
 @psynet.command("comment")

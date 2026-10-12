@@ -1,0 +1,1 @@
+Stopping ``psynet deploy local`` with Ctrl-C or SIGTERM now writes the shutdown snapshot before the process exits. A leftover ``flask run`` server is stopped before that snapshot or a database reset, and the reset is refused if the server is still running.

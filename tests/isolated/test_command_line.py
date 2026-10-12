@@ -4124,10 +4124,12 @@ def test_prepare_after_stopping_local_workers_kills_then_prepares():
     order = []
     ctx = Mock()
     ctx.invoke.side_effect = lambda *args, **kwargs: order.append("prepare")
-    with patch(
-        "psynet.command_line.kill_psynet_worker_processes",
-        lambda: order.append("kill"),
-    ):
+
+    def kill():
+        order.append("kill")
+        return True
+
+    with patch("psynet.command_line.kill_psynet_worker_processes", kill):
         _prepare_after_stopping_local_workers(ctx, archive="export.zip")
     assert order == ["kill", "prepare"]
     ctx.invoke.assert_called_once_with(prepare, archive="export.zip")
@@ -4181,6 +4183,54 @@ def test_is_psynet_worker_process(name, cmdline, expected):
     process.name.return_value = name
     process.cmdline.return_value = cmdline
     assert is_psynet_worker_process(process) is expected
+
+
+@pytest.mark.parametrize(
+    "cmdline, expected",
+    [
+        (["/venv/bin/flask", "run", "--port", "5000"], True),
+        (["/usr/bin/python", "-m", "flask", "run"], True),
+        (["/usr/bin/python", "-m", "flask", "--app", "experiment", "run"], True),
+        (["/usr/bin/python", "-m", "pytest", "flask", "run"], False),
+        (["/usr/bin/python", "-m", "pytest", "-k", "flask"], False),
+        (["dallinger_heroku_web"], False),
+    ],
+)
+def test_is_flask_develop_server_process(cmdline, expected):
+    from psynet.command_line import is_flask_develop_server_process
+
+    process = Mock()
+    process.pid = os.getpid() + 1
+    process.cmdline.return_value = cmdline
+    assert is_flask_develop_server_process(process) is expected
+
+
+def test_flask_develop_server_on_this_database_is_a_writer(monkeypatch, tmp_path):
+    from psynet.command_line import list_psynet_worker_processes
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql://dallinger@localhost/this_test")
+    flask = tmp_path / "flask"
+    flask.write_text("import time\ntime.sleep(30)\n")
+    ours = subprocess.Popen(
+        [sys.executable, str(flask), "run"],
+        env={
+            **os.environ,
+            "DATABASE_URL": "postgresql://dallinger@localhost/this_test",
+        },
+    )
+    theirs = subprocess.Popen(
+        [sys.executable, str(flask), "run"],
+        env={**os.environ, "DATABASE_URL": "postgresql://dallinger@localhost/other"},
+    )
+    try:
+        time.sleep(0.5)
+        pids = {process.pid for process in list_psynet_worker_processes()}
+        assert ours.pid in pids
+        assert theirs.pid not in pids
+    finally:
+        for process in (ours, theirs):
+            process.kill()
+            process.wait()
 
 
 def test_uses_current_database_normalizes_urls_and_handles_the_default(monkeypatch):
@@ -4956,6 +5006,41 @@ def test_signalled_debug_process_stops_its_child_processes(tmp_path):
     deadline = time.monotonic() + 10
     while psutil.pid_exists(child_pid):
         assert time.monotonic() < deadline, "child process outlived its parent"
+        time.sleep(0.1)
+
+
+def test_signalled_debug_process_kills_children_that_ignore_sigterm(tmp_path):
+    import signal
+    import sys
+    import time
+
+    import psutil
+
+    pid_file = tmp_path / "child.pid"
+    script = (
+        "import subprocess, sys\n"
+        "from psynet.command_line import _stop_child_processes_on_signal\n"
+        "child_code = 'import signal, time; "
+        "signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)'\n"
+        "with _stop_child_processes_on_signal():\n"
+        "    child = subprocess.Popen([sys.executable, '-c', child_code])\n"
+        f"    open({str(pid_file)!r}, 'w').write(str(child.pid))\n"
+        "    child.wait()\n"
+    )
+    parent = subprocess.Popen([sys.executable, "-c", script])
+    deadline = time.monotonic() + 60
+    while not pid_file.exists() or not pid_file.read_text():
+        assert time.monotonic() < deadline, "child process did not start"
+        if parent.poll() is not None:
+            raise AssertionError(f"parent exited early with {parent.returncode}")
+        time.sleep(0.1)
+    child_pid = int(pid_file.read_text())
+
+    parent.send_signal(signal.SIGTERM)
+    assert parent.wait(timeout=30) == 128 + signal.SIGTERM
+    deadline = time.monotonic() + 10
+    while psutil.pid_exists(child_pid):
+        assert time.monotonic() < deadline, "child that ignored SIGTERM survived"
         time.sleep(0.1)
 
 

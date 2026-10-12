@@ -1,4 +1,5 @@
 import json
+import signal
 import zipfile
 from contextlib import contextmanager
 from io import StringIO
@@ -607,9 +608,12 @@ def test_local_runner_holds_database_lock(tmp_path, monkeypatch):
     assert calls[1] == "run"
 
 
-@pytest.mark.parametrize("signal_shutdown", [False, True])
+@pytest.mark.parametrize(
+    "stop_with",
+    ["return", "exit0", "exitnone", "sigterm", "sigint"],
+)
 def test_deploy_local_restores_selected_snapshot_and_saves_shutdown(
-    tmp_path, monkeypatch, signal_shutdown
+    tmp_path, monkeypatch, stop_with
 ):
     from psynet.command_line import psynet
     from psynet.local_deployment import DatabaseOwner, Snapshot
@@ -650,8 +654,14 @@ def test_deploy_local_restores_selected_snapshot_and_saves_shutdown(
 
     def run_local(*args, **kwargs):
         calls["run"] = (args, kwargs)
-        if signal_shutdown:
+        if stop_with == "exit0":
             raise SystemExit(0)
+        if stop_with == "exitnone":
+            raise SystemExit(None)
+        if stop_with == "sigterm":
+            raise SystemExit(128 + signal.SIGTERM)
+        if stop_with == "sigint":
+            raise KeyboardInterrupt
 
     def create_final(*args, **kwargs):
         calls["snapshot"] = (args, kwargs)
@@ -681,13 +691,26 @@ def test_deploy_local_restores_selected_snapshot_and_saves_shutdown(
         lambda *args, **kwargs: events.append((args, kwargs)),
     )
 
+    raised = None
     with working_directory(tmp_path):
-        result = CliRunner().invoke(
-            psynet,
-            ["deploy", "local", "--id", "gibbs", "--snapshot", "latest"],
-        )
+        try:
+            result = CliRunner().invoke(
+                psynet,
+                ["deploy", "local", "--id", "gibbs", "--snapshot", "latest"],
+            )
+        except KeyboardInterrupt as error:
+            raised = error
+            result = None
 
-    assert result.exit_code == 0, result.output
+    if stop_with == "sigint":
+        if raised is None:
+            assert result.exit_code != 0, result.output
+    elif stop_with == "sigterm":
+        assert raised is None
+        assert result.exit_code == 128 + signal.SIGTERM, result.output
+    else:
+        assert raised is None
+        assert result.exit_code == 0, result.output
     assert calls["run"][0][2] == str(archive)
     assert calls["run"][1]["local_id"] == "gibbs"
     assert calls["run"][1]["resumed_from"] == 4
