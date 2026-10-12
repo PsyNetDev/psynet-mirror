@@ -144,7 +144,11 @@ that the slowest participants experience. The report also shows:
   a hold whose time limit had passed, but which it had not checked again,
   is not yet counted as failed.
 - **Bot runtimes**, separately for each of these outcomes, and **trials per
-  bot** (for bots that completed successfully).
+  bot** (for bots that completed successfully). Below the trials, a line for
+  each chain trial maker says how many bots got fewer trials because every
+  chain was busy, for example ``23 of 150 participants (15%) got fewer
+  trials in main_chain because every chain was busy; median 41 of 60
+  trials.``
 - **Request metrics**: total requests, errors and throughput. A
   *Busy/stale responses (409/503)* line appears when ``/timeline`` or
   ``/response`` answered with HTTP 503, which PsyNet sends when the
@@ -246,7 +250,20 @@ A test counts as within capacity if these stay within their limits:
   failing count exceeded the summary reports the capacity as a lower bound,
   without a participant cap. Other failures, such as prescreens, are part
   of the design: the summary reports them but they don't count against
-  capacity.
+  capacity;
+- the share of bots that got fewer trials in a chain trial maker because
+  every chain (or node, in a static trial maker) they could take was busy,
+  at most 1% for each trial maker. With the default
+  ``wait_for_networks=False``, a participant who finds every eligible chain
+  awaiting an async process or out of trial capacity finishes the block
+  early instead of waiting. The participant is not failed, so the test
+  results show these bots under *trials per bot* instead, with their median
+  number of trials and the trial maker's ``expected_trials_per_participant``.
+  Like wait timeouts, this usually comes from the design, so when it is all
+  that the smallest failing count exceeded the capacity is a lower bound.
+  To avoid it, set ``wait_for_networks=True``, add chains, or admit fewer
+  participants at once. Bots that all arrive together overstate it, so
+  check it with ``--arrival-minutes`` too.
 
 The limits apply to the whole test, start-up included, because a real study
 also has a start-up burst: recruiters often release many places at once when
@@ -289,7 +306,7 @@ The summary at the end of every run reports the capacity it found and, once a
 larger bot count has exceeded the limits, suggests capping the number of
 participants taking part at once at 80% of it, for example::
 
-    Capacity: about 160 concurrent bots kept p95 response time under 500 ms, p95 async queue wait under 5 s and at most 0.1% of requests failing (1 always allowed), 1% of requests answered busy or stale (10 always allowed), 1% of bots failing and 1% of participants failed by the experiment for waiting too long; 170 did not (p95 response time 622 ms).
+    Capacity: about 160 concurrent bots kept p95 response time under 500 ms, p95 async queue wait under 5 s and at most 0.1% of requests failing (1 always allowed), 1% of requests answered busy or stale (10 always allowed), 1% of bots failing, 1% of participants failed by the experiment for waiting too long and 1% getting fewer trials because every chain was busy; 170 did not (p95 response time 622 ms).
     Cap concurrent participants at about 128 (80% of 160).
 
 For rough capacities of common server sizes, based on one test on a real

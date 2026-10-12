@@ -66,6 +66,14 @@ on the order of the estimated duration if you want completions). Skip
 an expensive re-run when a suitable `audit/artifacts/performance.json` already
 exists for the current implementation.
 
+For chain experiments, also check how many participants got fewer trials
+because every chain was busy (a line under TRIALS PER BOT, and
+`busy_early_finishes` in the JSON). They are not failed, but above 1% the run
+counts as over capacity. Check it in the realistic confirmation run above
+all: short bursty tests overstate it, because every bot arrives at once. To
+reduce it, set `wait_for_networks=True`, add chains, or admit fewer
+participants at once.
+
 ## Interactive evidence
 
 ```bash
