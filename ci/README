@@ -25,3 +25,4 @@ merged-results pipeline that tested identical files and lists the jobs that
 passed there. Jobs that source `skip-if-already-passed.sh` at the start of
 their `before_script` then end early. Source that script rather than running
 it, so its `exit 0` ends the job. See "Running tests" in the developer docs.
+
