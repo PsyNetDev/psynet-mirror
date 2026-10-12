@@ -616,7 +616,9 @@ def _startup_only_lines(result, limits):
         f"  In the {result.n_bots:,}-bot test, the start-up exceeded the limits "
         f"({'; '.join(startup)}) but the steady state kept its response times, "
         "request errors and queue waits within them. The capacity counts the "
-        "start-up, because participants often arrive together when a study opens."
+        "start-up, because participants often arrive together when a study "
+        "opens; if yours will arrive gradually, rerun with --arrival-minutes "
+        "to match."
     ]
 
 

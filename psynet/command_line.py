@@ -4315,6 +4315,20 @@ _test_options["performance_stagger"] = click.option(
     If not specified, will default to Experiment.test_parallel_stagger_interval_s (0.1 s)""",
 )
 
+_test_options["performance_arrival_minutes"] = click.option(
+    "--arrival-minutes",
+    type=click.FloatRange(min=0, min_open=True),
+    default=None,
+    help="""
+    Spread the arrival of each test's bots evenly over this many minutes after
+    the first bot starts, as participants arrive while a study is open,
+    instead of starting them --stagger seconds apart. With --n-bots auto,
+    every test uses the same window. Can't be combined with --stagger; bots
+    that replace finished ones still start after the experiment's
+    test_parallel_stagger_interval_s. Must be shorter than --duration-minutes;
+    without --duration-minutes it is added to the default test length.""",
+)
+
 _test_options["duration_minutes"] = click.option(
     "--duration-minutes",
     type=click.FloatRange(min=0, min_open=True),
@@ -4341,7 +4355,8 @@ _test_options["performance_json_output"] = click.option(
     (the database snapshot that each test started from and its rows, with
     --reset-database), options (n_bots_sweep, capacity_search, max_p95_s,
     max_queue_p95_s, duration_minutes, estimated_duration_minutes,
-    stagger_interval_s, time_factor, bot_processes, reset_database, prefill_participants, from_snapshot),
+    stagger_interval_s, arrival_minutes, time_factor, bot_processes,
+    reset_database, prefill_participants, from_snapshot),
     and results (one entry per bot count tested, with all
     metrics).
     Useful for downstream consumption (e.g. benchmarking tools like asv).""",
@@ -4569,6 +4584,7 @@ def performance_test(ctx):
 @_test_options["performance_stagger"]
 @_test_options["performance_time_factor"]
 @_test_options["duration_minutes"]
+@_test_options["performance_arrival_minutes"]
 @_test_options["performance_max_p95_ms"]
 @_test_options["performance_max_queue_p95_s"]
 @_test_options["performance_json_output"]
@@ -4623,6 +4639,7 @@ def _run_performance_test_local(*, existing, json_output, debug, reset=None, **o
     ``options`` are the performance-test options, such as ``n_bots``, and
     ``reset`` the database-reset options (see :func:`_check_database_reset_options`).
     """
+    _check_arrival_options(**options)
     if existing:
         return _run_performance_test_with_existing_server(
             debug=debug, json_output=json_output, **options
@@ -4717,6 +4734,7 @@ def _run_performance_test_with_existing_server(
     stagger=None,
     time_factor=None,
     duration_minutes=None,
+    arrival_minutes=None,
     max_p95_ms=None,
     max_queue_p95_s=None,
     bot_processes=None,
@@ -4771,7 +4789,7 @@ def _run_performance_test_with_existing_server(
     if duration_minutes is None:
         duration_minutes = default_duration_minutes(
             estimated_duration_minutes * time_factor, exp.test_duration_minutes
-        )
+        ) + (arrival_minutes or 0)
     tester = PerformanceTester(
         authenticated_session=exp.authenticated_session,
         base_url=exp.base_url,
@@ -4782,6 +4800,7 @@ def _run_performance_test_with_existing_server(
         time_factor=time_factor,
         bot_processes="auto" if bot_processes is None else bot_processes,
         estimated_duration_minutes=estimated_duration_minutes,
+        arrival_minutes=arrival_minutes,
     )
     limits = CapacityLimits.from_options(
         max_p95_s=None if max_p95_ms is None else float(max_p95_ms) / 1000,
@@ -4840,6 +4859,7 @@ def _run_performance_test_with_existing_server(
             "duration_minutes": tester.duration_minutes,
             "estimated_duration_minutes": tester.estimated_duration_minutes,
             "stagger_interval_s": tester.stagger_interval_s,
+            "arrival_minutes": tester.arrival_minutes,
             "time_factor": tester.time_factor,
             "bot_processes": tester.bot_processes,
             "reset_database": database_reset is not None,
@@ -4854,6 +4874,23 @@ def _run_performance_test_with_existing_server(
         )
         print(f"Performance results (JSON): {json_output}")
     return all_results
+
+
+def _check_arrival_options(
+    *, arrival_minutes=None, stagger=None, duration_minutes=None, **_options
+):
+    """Raise ``click.UsageError`` if ``--arrival-minutes`` conflicts with the other options."""
+    if arrival_minutes is None:
+        return
+    if stagger is not None:
+        raise click.UsageError(
+            "--arrival-minutes and --stagger both set when bots start; use one."
+        )
+    if duration_minutes is not None and arrival_minutes >= duration_minutes:
+        raise click.UsageError(
+            "--arrival-minutes must be shorter than --duration-minutes, so that "
+            "every bot starts during the test."
+        )
 
 
 def _check_no_real_participants(force):
@@ -5246,6 +5283,7 @@ def _current_code_key():
 @_test_options["performance_stagger"]
 @_test_options["performance_time_factor"]
 @_test_options["duration_minutes"]
+@_test_options["performance_arrival_minutes"]
 @_test_options["performance_max_p95_ms"]
 @_test_options["performance_max_queue_p95_s"]
 @_test_options["performance_json_output"]
@@ -5272,6 +5310,7 @@ def performance_test__docker_ssh(ctx, app, server, json_output=None, **options):
             "--json-output is not yet implemented for SSH mode. "
             "Use 'psynet performance-test local --json-output' instead.",
         )
+    _check_arrival_options(**options)
 
     # A name unique to this run, so a run that fails before writing its log
     # never copies an older one.
@@ -5387,6 +5426,7 @@ def audit_simulate(ctx, n_bots=None):
 @_test_options["performance_stagger"]
 @_test_options["performance_time_factor"]
 @_test_options["duration_minutes"]
+@_test_options["performance_arrival_minutes"]
 @_test_options["performance_max_p95_ms"]
 @_test_options["performance_max_queue_p95_s"]
 @_test_options["performance_bot_processes"]

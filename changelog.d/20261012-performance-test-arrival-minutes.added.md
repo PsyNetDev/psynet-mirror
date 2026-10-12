@@ -1,0 +1,1 @@
+Added `--arrival-minutes` to `psynet performance-test local`, `ssh` and `psynet audit performance-test`, which spreads each test's bots evenly over that many minutes, as participants arrive while a study is open. It can't be combined with `--stagger`.

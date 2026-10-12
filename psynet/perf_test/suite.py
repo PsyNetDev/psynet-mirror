@@ -176,7 +176,16 @@ class PerformanceSuite:
                 f"{tester.estimated_duration_minutes:.1f} min (from the timeline's "
                 f"time estimates){paced}"
             )
-        logger.info(f"Bot start stagger:    ~{tester.stagger_interval_s:g}s")
+        if tester.arrival_minutes:
+            logger.info(
+                f"Bot arrivals:         evenly over {tester.arrival_minutes:g} min"
+            )
+            logger.info(
+                f"Bot start stagger:    ~{tester.stagger_interval_s:g}s, "
+                "after a bot finishes"
+            )
+        else:
+            logger.info(f"Bot start stagger:    ~{tester.stagger_interval_s:g}s")
         logger.info(f"Bot time factor:      {tester.time_factor:g}")
         short = short_test_warning(tester.duration_minutes, tester.session_minutes)
         if short:

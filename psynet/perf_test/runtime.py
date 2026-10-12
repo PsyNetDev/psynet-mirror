@@ -387,11 +387,15 @@ class PerformanceTester:
         time_factor=0.0,
         bot_processes=1,
         estimated_duration_minutes=None,
+        arrival_minutes=None,
     ):
         """Set up a performance tester.
 
         Parameters
         ----------
+        stagger_interval_s : float
+            Mean of the random pause before each bot starts. Without
+            ``arrival_minutes`` it spaces the bot slots' first bots too.
         bot_processes : int or "auto"
             Number of processes to run the bots in. With 1 they run as threads
             in this process; ``"auto"`` chooses from the most bots a suite
@@ -399,6 +403,9 @@ class PerformanceTester:
         estimated_duration_minutes : float, optional
             The experiment's estimated duration
             (``Experiment.estimated_duration_in_minutes``), for the suite header.
+        arrival_minutes : float, optional
+            Start each test's bot slots evenly over this many minutes after
+            the first bot starts, rather than ``stagger_interval_s`` apart.
         """
         self.authenticated_session = authenticated_session
         self.base_url = base_url
@@ -407,6 +414,7 @@ class PerformanceTester:
         self.time_factor = time_factor
         self.bot_processes = bot_processes
         self.estimated_duration_minutes = estimated_duration_minutes
+        self.arrival_minutes = arrival_minutes
         self._n_bot_processes = 1
         # Runs the bots: _ThreadBots, or _BotProcesses during a suite that
         # needs several processes.
@@ -484,10 +492,14 @@ class PerformanceTester:
         """Run a load test with n concurrent bots for configured duration."""
         duration_minutes = self.duration_minutes
         logger.info("")
+        arriving = (
+            f", arriving over {self.arrival_minutes:g} min"
+            if self.arrival_minutes
+            else ""
+        )
         logger.info(
-            "\u25b6 Starting load test with {n:,} concurrent bots for {duration_minutes} minutes...".format(
-                n=n, duration_minutes=duration_minutes
-            )
+            f"\u25b6 Starting load test with {n:,} concurrent bots for "
+            f"{duration_minutes:g} min{arriving}..."
         )
 
         initial_state = self._capture_initial_state()
@@ -574,6 +586,16 @@ class PerformanceTester:
             x = self._random.gammavariate(k, theta)
             if x <= max_stagger:
                 return x
+
+    def _slot_gap(self, n):
+        """Return the time between starting one of ``n`` bot slots and the next.
+
+        With ``arrival_minutes`` the slots start evenly over that window, the
+        last at its end; otherwise ``stagger_interval_s`` apart on average.
+        """
+        if self.arrival_minutes and n > 1:
+            return self.arrival_minutes * 60 / (n - 1)
+        return self._bounded_random_stagger()
 
     def _run_bot_slot(self, stop_event, end_time, record):
         """Run bots one after another until the test ends.
@@ -744,7 +766,8 @@ class PerformanceTester:
 
     def _run_monitoring_loop(self, n, bot_state, start_bot_slot, start_time, end_time):
         """Start ``n`` staggered bot slots and watch the server until the test ends."""
-        # The first bot waits for the experiment launch; the rest follow it.
+        # The first bot waits for the experiment launch; the rest follow it,
+        # spaced by _slot_gap.
         start_bot_slot()
         n_started = bot_state.slots_started = 1
         if n_started >= n:
@@ -779,10 +802,12 @@ class PerformanceTester:
             if n_started < n and bot_state.first_bot_initialized:
                 if next_slot_time is None:
                     next_slot_time = current_time
+                    if self.arrival_minutes:
+                        next_slot_time += self._slot_gap(n)
                 while n_started < n and current_time >= next_slot_time:
                     start_bot_slot()
                     n_started = bot_state.slots_started = n_started + 1
-                    next_slot_time += self._bounded_random_stagger()
+                    next_slot_time += self._slot_gap(n)
                 if n_started >= n:
                     bot_state.ramp_up_s = time.time() - start_time
 

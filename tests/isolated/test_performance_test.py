@@ -385,6 +385,30 @@ def test_suite_header_shows_the_estimate_and_warns_about_short_tests(
     assert ("only sees the start of the study" in caplog.text) == warns
 
 
+def test_arrival_minutes_spreads_bot_slots_evenly_over_the_window():
+    import time
+
+    tester = PerformanceTester(
+        authenticated_session=Mock(),
+        base_url="http://x",
+        stagger_interval_s=100,
+        arrival_minutes=0.01,
+    )
+    bot_state = _BotState()
+    started = []
+
+    def start_slot():
+        started.append(time.time())
+        bot_state.first_bot_initialized = True
+
+    start = time.time()
+    tester._run_monitoring_loop(4, bot_state, start_slot, start, start + 1)
+
+    # The loop can only start a slot late, never early: 0.6 s over 3 gaps.
+    assert len(started) == 4
+    assert all(t - started[0] >= 0.2 * i - 0.01 for i, t in enumerate(started))
+
+
 def test_split_phases_splits_requests_and_queue_waits_at_the_boundary():
     from datetime import datetime, timedelta
 

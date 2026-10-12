@@ -969,6 +969,7 @@ def render_performance_options(options: object) -> str:
         ("Target concurrent bots", n_bots_text),
         ("Duration", format_minutes(options.get("duration_minutes"))),
         ("Start stagger", format_seconds(options.get("stagger_interval_s"))),
+        ("Arrivals over", format_minutes(options.get("arrival_minutes"))),
         ("Time factor", str(options.get("time_factor") or "")),
     ]
     return (

@@ -4711,8 +4711,23 @@ def test_experiment_never_completes_during_performance_test(monkeypatch):
                 bot_processes="auto",
             ),
         ),
+        (
+            dict(arrival_minutes=1.5),
+            dict(
+                duration_minutes=7.5,
+                stagger_interval_s=0.5,
+                time_factor=1.0,
+                bot_processes="auto",
+                arrival_minutes=1.5,
+            ),
+        ),
     ],
-    ids=["explicit-zeros", "defaults", "capacity-search-without-pauses"],
+    ids=[
+        "explicit-zeros",
+        "defaults",
+        "capacity-search-without-pauses",
+        "arrivals-lengthen-the-default",
+    ],
 )
 def test_performance_test_options_reach_the_tester(options, expected, tmp_path):
     """Explicit zeros are kept; omitted options use the experiment's defaults.
@@ -4755,7 +4770,7 @@ def test_performance_test_options_reach_the_tester(options, expected, tmp_path):
         authenticated_session=experiment.authenticated_session,
         base_url=experiment.base_url,
         estimated_duration_minutes=4.0,
-        **expected,
+        **{"arrival_minutes": None, **expected},
     )
     suite_class.assert_called_once_with(
         performance_tester.return_value, limits=CapacityLimits(), before_test=None
@@ -4765,6 +4780,22 @@ def test_performance_test_options_reach_the_tester(options, expected, tmp_path):
         searching,
         not searching,
     )
+
+
+@pytest.mark.parametrize(
+    "options, message",
+    [
+        (dict(arrival_minutes=1, stagger=2), "use one"),
+        (dict(arrival_minutes=2, duration_minutes=2), "shorter than --duration"),
+    ],
+)
+def test_arrival_minutes_rejects_conflicting_options(options, message):
+    from psynet.command_line import _run_performance_test_local
+
+    with pytest.raises(click.UsageError, match=message):
+        _run_performance_test_local(
+            existing=True, json_output=None, debug=False, **options
+        )
 
 
 def test_database_reset_options_imply_a_reset_and_reject_conflicts(monkeypatch):

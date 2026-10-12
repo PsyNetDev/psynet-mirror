@@ -84,6 +84,19 @@ Controlling the load
     at random intervals as real participants do. Defaults to
     ``Experiment.test_parallel_stagger_interval_s`` (0.1 s).
 
+``--arrival-minutes``
+    Spread each test's bots evenly over this many minutes after the first
+    bot starts, instead of starting them ``--stagger`` seconds apart: with
+    ``--n-bots 100 --arrival-minutes 10`` a new bot arrives every 6 seconds.
+    Use it when participants will arrive gradually; the default, where
+    every bot arrives within seconds, matches a study that opens many places
+    at once. With ``--n-bots auto`` every test uses the same window, so
+    larger counts arrive faster. Bots that replace finished ones still start
+    after ``Experiment.test_parallel_stagger_interval_s``, so
+    ``--arrival-minutes`` can't be combined with ``--stagger``. The window
+    must be shorter than ``--duration-minutes``; without
+    ``--duration-minutes`` it is added to the default test length.
+
 ``--time-factor``
     A multiplier on the time estimates in the timeline, controlling how fast
     bots work through the experiment. ``1`` (the default) roughly matches real
@@ -97,12 +110,12 @@ Controlling the load
     250 bots run in a single process. With ``--n-bots auto`` it plans for the
     largest count the search may test.
 
-For example, to model up to 50 participants arriving over time and working at
-a realistic pace:
+For example, to model 50 participants arriving over five minutes and working
+at a realistic pace:
 
 .. code-block:: bash
 
-    psynet performance-test local --n-bots 50 --stagger 2 --time-factor 1 --duration-minutes 10
+    psynet performance-test local --n-bots 50 --arrival-minutes 5 --time-factor 1 --duration-minutes 20
 
 Reading the results
 -------------------
@@ -229,7 +242,9 @@ A test counts as within capacity if these stay within their limits:
 The limits apply to the whole test, start-up included, because a real study
 also has a start-up burst: recruiters often release many places at once when
 a study opens. When the smallest failing count exceeded the response-time,
-request-error or queue limits only in its start-up, the summary says so.
+request-error or queue limits only in its start-up, the summary says so. If
+your participants will arrive gradually, test that with ``--arrival-minutes``
+rather than relying on the steady state alone.
 
 The summary names the limit that a failing test exceeded. If the queue limit
 is what caps capacity, add worker processes with the ``num_dynos_worker``
