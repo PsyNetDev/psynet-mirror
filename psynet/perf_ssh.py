@@ -22,6 +22,11 @@ apps use too.
 
 Design constraints:
 
+- Performance tests only run on apps that ``performance-test ssh`` deployed
+  for them, whose database is disposable. It deploys them with the config
+  variable ``performance_test_app`` set, and the app's own config, read in
+  its web container, is what says whether an app is one; that of this
+  computer never counts. ``prepare-reset`` checks it again before every reset.
 - SQL runs through ``docker exec <postgres container> psql`` as the
   container's superuser (:class:`RemoteAppDatabase`), never through an SSH
   tunnel, so the database is never reached as if it were local.
@@ -91,7 +96,7 @@ def run_with_status(executor, cmd):
 
 
 class RemoteApp:
-    """An app on an SSH server, as ``psynet debug ssh`` deployed it.
+    """An app on an SSH server, as ``psynet performance-test ssh`` deployed it.
 
     Parameters
     ----------
@@ -190,7 +195,8 @@ class RemoteApp:
         """Check that the app's database may be reset, optionally pre-fill it, and return facts about it.
 
         This runs ``psynet performance-test prepare-reset`` in the web
-        container, which refuses an app in live mode and, unless
+        container, which refuses an app that ``performance-test ssh`` didn't
+        deploy or that runs in live mode and, unless
         :attr:`force`, one that has non-bot participants or a recruiter that
         may bring real ones. Then it adds ``prefill_participants`` bots'
         data, and waits up to ``async_timeout_s`` for async processes to

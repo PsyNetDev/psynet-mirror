@@ -1172,6 +1172,119 @@ def test_performance_test_ssh_commands_refuse_app_names_with_shell_syntax(comman
     executor.assert_not_called()
 
 
+def _invoke_performance_test_ssh(command, args, *, apps, app_info, code_key="new"):
+    """Invoke ``performance-test <command>`` on a fake server with ``apps``, whose web containers report ``app_info``."""
+    from types import SimpleNamespace
+
+    from psynet.command_line import performance_test
+
+    with (
+        patch(
+            "dallinger.command_line.docker_ssh.get_configured_hosts",
+            return_value={"server": {}},
+        ),
+        patch(
+            "dallinger.command_line.docker_ssh.get_apps",
+            return_value=[SimpleNamespace(name=app) for app in apps],
+        ),
+        patch("psynet.command_line._ssh_executor"),
+        patch("psynet.command_line._awaken_ssh_app"),
+        patch("psynet.perf_ssh.RemoteApp.run_psynet", return_value=app_info),
+        patch("psynet.perf_ssh.RemoteAppDatabase") as database,
+        patch("psynet.command_line._current_code_key", return_value=code_key),
+        patch("psynet.command_line._debug_ssh") as deploy,
+        patch("psynet.command_line._run_ssh_performance_test") as run,
+    ):
+        result = CliRunner().invoke(
+            performance_test.commands[command], ["--app", "my-app", *args]
+        )
+    return result, deploy, run, database
+
+
+_MARKED = {"performance_test_app": True, "performance_test_code_key": "old"}
+
+
+@pytest.mark.parametrize(
+    "apps, code_key, deployed",
+    [
+        ([], "new", {}),
+        (["my-app"], "old", None),
+        (["my-app"], "new", {"update": True}),
+    ],
+    ids=["deploys-a-missing-app", "reuses-an-unchanged-app", "updates-a-changed-app"],
+)
+def test_performance_test_ssh_manages_its_own_app(apps, code_key, deployed):
+    result, deploy, run, _ = _invoke_performance_test_ssh(
+        "ssh", [], apps=apps, app_info=_MARKED, code_key=code_key
+    )
+
+    assert result.exit_code == 0, result.output
+    if deployed is None:
+        deploy.assert_not_called()
+    else:
+        assert deploy.call_args.kwargs == {
+            "app": "my-app",
+            "server": "server",
+            "performance_test_app": True,
+            "dns_host": None,
+            "ingress": None,
+            "use_local_dallinger": False,
+            **deployed,
+        }
+    run.assert_called_once()
+    assert "psynet destroy ssh --server server --app my-app" in result.output
+
+
+@pytest.mark.parametrize("args", [[], ["--reset-database"]])
+def test_performance_test_ssh_refuses_apps_it_did_not_deploy(args):
+    result, deploy, run, _ = _invoke_performance_test_ssh(
+        "ssh", args, apps=["my-app"], app_info={"performance_test_app": False}
+    )
+
+    assert result.exit_code == 1
+    assert "didn't deploy it" in result.output
+    assert "Choose another --app name" in result.output
+    deploy.assert_not_called()
+    run.assert_not_called()
+
+
+def test_performance_test_snapshots_refuse_apps_it_did_not_deploy():
+    result, _, _, database = _invoke_performance_test_ssh(
+        "snapshots", [], apps=["my-app"], app_info={}
+    )
+
+    assert result.exit_code == 1
+    assert "didn't deploy it" in result.output
+    database.assert_not_called()
+
+
+def test_performance_test_deploys_mark_the_app_and_record_its_code_key():
+    from psynet.command_line import _debug_ssh
+
+    ctx = Mock()
+    with (
+        patch("psynet.command_line._configure_dallinger_image_source"),
+        patch("psynet.command_line._pre_launch") as pre_launch,
+        patch("psynet.command_line._post_deploy"),
+        patch("psynet.command_line._cleanup_exp_directory"),
+        patch("psynet.perf_reset.experiment_code_key", return_value="abc"),
+    ):
+        _debug_ssh(
+            ctx,
+            app="my-app",
+            server="server",
+            dns_host=None,
+            update=True,
+            performance_test_app=True,
+        )
+
+    assert ctx.invoke.call_args.kwargs["config_options"] == {
+        "performance_test_app": "true",
+        "performance_test_code_key": "abc",
+    }
+    assert pre_launch.call_args.kwargs["confirm_update"] is False
+
+
 def test_remote_experiment_commands_disable_tty_allocation():
     from psynet.command_line import build_remote_experiment_command
 

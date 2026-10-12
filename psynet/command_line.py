@@ -1389,6 +1389,27 @@ _option_ssh_update = click.option(
     help="Rebuild a running app in place, keeping its database and skipping launch.",
 )
 
+_ssh_deployment_options = [
+    option_server,
+    click.option(
+        "--dns-host",
+        help="DNS name to use. Must resolve all its subdomains to the IP address specified as ssh host",
+    ),
+    option_ingress,
+    _use_local_dallinger_option,
+]
+
+
+def _add_ssh_deployment_options(command):
+    """Attach the options that say where and how an SSH app is deployed.
+
+    ``debug ssh``, ``deploy ssh`` and ``performance-test ssh``, which deploys
+    its own apps, share them.
+    """
+    for option in reversed(_ssh_deployment_options):
+        command = option(command)
+    return command
+
 
 _SSH_COMMAND_FOR_MODE = {"sandbox": "psynet debug ssh", "live": "psynet deploy ssh"}
 
@@ -1418,7 +1439,7 @@ def _read_running_deployment_info(server, app):
     return deployment_info.loads(text[text.find("{") : text.rfind("}") + 1])
 
 
-def _check_ssh_update(server, app, mode):
+def _check_ssh_update(server, app, mode, confirm=True):
     """Check and confirm an in-place SSH update, keeping the app's identity.
 
     Parameters
@@ -1429,6 +1450,8 @@ def _check_ssh_update(server, app, mode):
         Experiment app name.
     mode : str
         ``"sandbox"`` for ``debug ssh`` or ``"live"`` for ``deploy ssh``.
+    confirm : bool
+        Ask the user to confirm the update first.
     """
     try:
         running = _read_running_deployment_info(server, app)
@@ -1444,7 +1467,7 @@ def _check_ssh_update(server, app, mode):
             f"{app} was created with `{original}`. Update it with "
             f"`{original} --app {app} --update`."
         )
-    if not user_confirms(
+    if confirm and not user_confirms(
         f"This rebuilds and restarts {app} on {server}, keeping its database. "
         "Participants may see a short interruption. New assets are not deposited, "
         "and networks and pre-deploy routines are not run again. Don't change the "
@@ -1476,6 +1499,7 @@ def _pre_launch(
     server=None,
     app=None,
     update=False,
+    confirm_update=True,
 ):
     from .experiment import get_experiment
 
@@ -1514,7 +1538,7 @@ def _pre_launch(
         ensure_remote_host_in_known_hosts(ssh_host, ssh_user)
         _abort_if_app_exists(server, app, update=update)
         if update:
-            _check_ssh_update(server, app, mode)
+            _check_ssh_update(server, app, mode, confirm=confirm_update)
 
     run_pre_checks(mode, local_, heroku, docker, app)
 
@@ -1536,6 +1560,12 @@ def _pre_launch(
     experiment.update_deployment_id()
 
     config = get_config()
+    if mode == "live" and config.get("performance_test_app", False):
+        raise click.UsageError(
+            "performance_test_app is set, which declares that the app's data is "
+            "disposable and lets performance tests reset it. Remove it from the "
+            "config to deploy in live mode."
+        )
     deployment_info.write(locale=config.get("locale", "en"))
 
     if config.get("check_dallinger_version"):
@@ -1657,13 +1687,7 @@ def _deploy__docker_heroku(ctx, app, archive):
 @deploy.command("ssh")
 @click.option("--app", callback=verify_id, help="Experiment id")
 @click.option("--archive", default=None, help="Optional path to an experiment archive")
-@option_server
-@click.option(
-    "--dns-host",
-    help="DNS name to use. Must resolve all its subdomains to the IP address specified as ssh host",
-)
-@option_ingress
-@_use_local_dallinger_option
+@_add_ssh_deployment_options
 @_option_ssh_update
 @click.pass_context
 def deploy__docker_ssh(
@@ -1728,14 +1752,26 @@ def _validate_ssh_deploy_update(app, archive, update):
 
 
 def _invoke_docker_ssh_deploy(
-    ctx, command, *, server, dns_host, app, ingress=None, update=False
+    ctx,
+    command,
+    *,
+    server,
+    dns_host,
+    app,
+    ingress=None,
+    update=False,
+    config_options=None,
 ):
-    """Invoke Dallinger docker-ssh deploy/sandbox, forwarding ingress when supported."""
+    """Invoke Dallinger docker-ssh deploy/sandbox, forwarding ingress when supported.
+
+    ``config_options`` are config variables that the app gets in its
+    environment, on top of those of the local config.
+    """
     kwargs = {
         "server": server,
         "dns_host": dns_host,
         "app_name": app,
-        "config_options": {},
+        "config_options": config_options or {},
         "archive_path": None,
         "update": bool(update),
     }
@@ -2161,27 +2197,36 @@ def debug__docker_heroku(ctx, app, archive):
     "--app", callback=verify_id, default=None, help="Name of the experiment app."
 )
 @click.option("--archive", default=None, help="Optional path to an experiment archive.")
-@option_server
-@click.option(
-    "--dns-host",
-    help="DNS name to use. Must resolve all its subdomains to the IP address specified as ssh host",
-)
-@option_ingress
-@_use_local_dallinger_option
+@_add_ssh_deployment_options
 @_option_ssh_update
 @click.pass_context
-def debug__docker_ssh(
+def debug__docker_ssh(ctx, **options):
+    """
+    Debug the experiment on a remote server via SSH.
+    """
+    _debug_ssh(ctx, **options)
+
+
+def _debug_ssh(
     ctx,
+    *,
     app,
-    archive,
     server,
     dns_host,
+    archive=None,
     ingress=None,
     use_local_dallinger=False,
     update=False,
+    performance_test_app=False,
 ):
-    """
-    Debug the experiment on a remote server via SSH.
+    """Deploy or update ``app`` on ``server`` in debug mode, as ``psynet debug ssh`` does.
+
+    With ``performance_test_app``, the app is one that ``psynet
+    performance-test ssh`` deploys for its tests: its environment sets
+    ``performance_test_app`` and records the experiment's code key in
+    ``performance_test_code_key`` (see
+    :func:`psynet.perf_reset.experiment_code_key`), and an update isn't
+    confirmed first.
     """
     try:
         from dallinger.command_line.docker_ssh import sandbox
@@ -2199,7 +2244,16 @@ def debug__docker_ssh(
             server=server,
             app=app,
             update=update,
+            confirm_update=not performance_test_app,
         )
+        config_options = {}
+        if performance_test_app:
+            from .perf_reset import experiment_code_key
+
+            config_options = {
+                "performance_test_app": "true",
+                "performance_test_code_key": experiment_code_key(),
+            }
 
         # Note: PsyNet bypasses Dallinger's deploy-from-archive system and uses its own, so we set archive_path=None.
         result = _invoke_docker_ssh_deploy(
@@ -2210,6 +2264,7 @@ def debug__docker_ssh(
             app=app,
             ingress=ingress,
             update=update,
+            config_options=config_options,
         )
 
         _post_deploy(result)
@@ -5371,12 +5426,19 @@ def performance_test__snapshots(ctx, drop, drop_all, app, server):
 
 
 def _ssh_app_database(ctx, server, app):
-    """Return the :class:`~psynet.perf_ssh.RemoteAppDatabase` of ``app`` on ``server``."""
+    """Return the :class:`~psynet.perf_ssh.RemoteAppDatabase` of ``app`` on ``server``.
+
+    Raises
+    ------
+    click.ClickException
+        If ``performance-test ssh`` didn't deploy the app.
+    """
     from dallinger.command_line.docker_ssh import resolve_server_option
 
     from psynet.perf_ssh import RemoteApp, RemoteAppDatabase
 
     server = resolve_server_option(ctx, None, server)
+    _require_performance_test_app(server, app)
     try:
         return RemoteAppDatabase(RemoteApp(_ssh_executor(server), app, server))
     except ValueError as e:
@@ -5416,6 +5478,61 @@ def _current_code_key():
         return None
 
 
+def _performance_test_app_info():
+    """Return whether the running experiment is a performance-test app, and its recorded code key."""
+    config = load_runtime_server_config()
+    return {
+        "performance_test_app": bool(config.get("performance_test_app", False)),
+        "performance_test_code_key": config.get("performance_test_code_key", None),
+    }
+
+
+@performance_test.command("app-info", hidden=True)
+@click.option("--json-output", required=True, type=click.Path(dir_okay=False))
+def performance_test__app_info(json_output):
+    """
+    Write whether this app is a performance-test app to --json-output; used by ``performance-test ssh``.
+    """
+    with open(json_output, "w") as f:
+        json.dump(_performance_test_app_info(), f)
+
+
+def _require_performance_test_app(server, app):
+    """Return the :func:`_performance_test_app_info` of ``app`` on ``server``.
+
+    The app's own config says whether it is a performance-test app, so this
+    runs in its web container.
+
+    Raises
+    ------
+    click.ClickException
+        If ``performance-test ssh`` didn't deploy the app, or that can't be
+        checked.
+    """
+    from psynet.perf_ssh import RemoteApp
+
+    _awaken_ssh_app(server, app)
+    remote = RemoteApp(_ssh_executor(server), app, server)
+    advice = (
+        "Performance tests only run on apps that 'psynet performance-test ssh' "
+        "deployed for them, whose data is disposable. Choose another --app name, "
+        "and 'performance-test ssh' deploys a new app under that name."
+    )
+    try:
+        info = remote.run_psynet("performance-test app-info")
+    except (click.Abort, RuntimeError) as e:
+        raise click.ClickException(
+            f"Could not check whether {app} on {server} is a performance-test app "
+            f"({str(e) or 'see the output above'}). {advice}"
+        ) from e
+    if not info.get("performance_test_app"):
+        raise click.ClickException(
+            f"Refusing to test {app} on {server}: 'performance-test ssh' didn't "
+            f"deploy it, so it may hold data that matters. {advice}"
+        )
+    return info
+
+
 @performance_test.command("prepare-reset", hidden=True)
 @click.option("--prefill-participants", type=click.IntRange(min=1))
 @click.option("--wait-for-async-processes", "async_timeout_s", type=int)
@@ -5428,8 +5545,9 @@ def performance_test__prepare_reset(
     """
     Check that the running server's database may be reset; used by ``performance-test ssh``.
 
-    Refuses live mode, and unless --force, non-bot participants and
-    recruiters that may bring real ones. Then it pre-fills the database,
+    Refuses apps that ``performance-test ssh`` didn't deploy, live mode, and
+    unless --force, non-bot participants and recruiters that may bring real
+    ones. Then it pre-fills the database,
     waits for async processes, and writes the experiment's test defaults and
     the number of async processes still waiting to --json-output.
     """
@@ -5443,7 +5561,11 @@ def performance_test__prepare_reset(
     )
 
     log_to_console(logging.INFO)
-    load_runtime_server_config()
+    if not _performance_test_app_info()["performance_test_app"]:
+        raise click.ClickException(
+            "Refusing to reset the database: 'performance-test ssh' didn't deploy "
+            "this app, so its data may matter."
+        )
     _check_existing_server_answers()
     exp = get_experiment()
     _check_no_real_participants(force, resetting=True)
@@ -5454,8 +5576,8 @@ def performance_test__prepare_reset(
             print(
                 f"Warning: the database already has {n_existing:,} participants, "
                 "for example from earlier tests; the pre-fill adds to them, and "
-                "the snapshot keeps them all. Redeploy the app to pre-fill an "
-                "empty database."
+                "the snapshot keeps them all. To pre-fill an empty database, "
+                "destroy the app; the next 'performance-test ssh' deploys it again."
             )
         with open(bot_log or os.devnull, "a") as bot_log_file:
             try:
@@ -5480,9 +5602,14 @@ def performance_test__prepare_reset(
 
 @performance_test.command("ssh")
 @click.option(
-    "--app", required=True, callback=verify_id, help="Name of the experiment app."
+    "--app",
+    required=True,
+    callback=verify_id,
+    help="""
+    Name of the app to test. If the server has no app of that name, it is
+    deployed in debug mode from this directory for performance tests.""",
 )
-@option_server
+@_add_ssh_deployment_options
 @_test_options["performance_n_bots"]
 @_test_options["performance_stagger"]
 @_test_options["performance_time_factor"]
@@ -5500,6 +5627,9 @@ def performance_test__docker_ssh(
     ctx,
     app,
     server,
+    dns_host=None,
+    ingress=None,
+    use_local_dallinger=False,
     json_output=None,
     reset_database=False,
     prefill_participants=None,
@@ -5507,8 +5637,15 @@ def performance_test__docker_ssh(
     **options,
 ):
     """
-    Runs performance tests on the remote server. Assumes that the app has
-    already been launched on the remote server using ``psynet debug ssh``.
+    Runs performance tests on the remote server, in an app deployed for them.
+
+    If the server has no app named --app, this deploys one from this
+    directory in debug mode, as ``psynet debug ssh`` would, and marks it as
+    a performance-test app, whose data is disposable. Later runs reuse it,
+    updating it first if the experiment's files, PsyNet or Dallinger have
+    changed; the update keeps its database. They refuse apps that this
+    command didn't deploy. The app is kept after the run; destroy it with
+    ``psynet destroy ssh``.
 
     The bots run inside the app's web container. Without --reset-database,
     the tests use the database as it is, and the whole suite runs there.
@@ -5522,9 +5659,71 @@ def performance_test__docker_ssh(
     Be sure the app is configured to allow a large quantity of bots. If the
     app is in use during the performance test, results may not be reliable.
     """
+    reset = _reset_options(reset_database, prefill_participants, from_snapshot)
+    _prepare_performance_test_app(
+        ctx,
+        app,
+        server=server,
+        dns_host=dns_host,
+        ingress=ingress,
+        use_local_dallinger=use_local_dallinger,
+    )
+    try:
+        _run_ssh_performance_test(
+            app, server, reset, json_output=json_output, **options
+        )
+    finally:
+        print(
+            f"{app} is kept for later performance tests. Destroy it with:\n"
+            f"    psynet destroy ssh --server {server} --app {app}"
+        )
+
+
+def _prepare_performance_test_app(ctx, app, *, server, **deploy_options):
+    """Deploy ``app`` for performance tests, or update it if the experiment has changed since.
+
+    ``deploy_options`` are the options of ``psynet debug ssh`` (see
+    :func:`_debug_ssh`).
+
+    Raises
+    ------
+    click.ClickException
+        If the app exists but ``performance-test ssh`` didn't deploy it.
+    """
+    from dallinger.command_line.docker_ssh import get_apps
+
+    if app not in {entry.name for entry in get_apps(server)}:
+        print(f"▶ Deploying {app} on {server} for performance tests...")
+        _debug_ssh(
+            ctx, app=app, server=server, performance_test_app=True, **deploy_options
+        )
+        return
+    deployed_key = _require_performance_test_app(server, app)[
+        "performance_test_code_key"
+    ]
+    current_key = _current_code_key()
+    if current_key is not None and current_key == deployed_key:
+        print(f"Using {app} on {server}, deployed for performance tests.")
+        return
+    print(
+        f"▶ Updating {app} on {server}: the experiment's files, PsyNet or "
+        "Dallinger have changed since it was deployed. The update keeps its "
+        "database."
+    )
+    _debug_ssh(
+        ctx,
+        app=app,
+        server=server,
+        update=True,
+        performance_test_app=True,
+        **deploy_options,
+    )
+
+
+def _run_ssh_performance_test(app, server, reset, *, json_output, **options):
+    """Run the performance tests in ``app``'s web container, resetting its database with ``reset``."""
     from psynet.perf_ssh import RemoteApp
 
-    reset = _reset_options(reset_database, prefill_participants, from_snapshot)
     bot_log_file = tempfile.NamedTemporaryFile(
         mode="a",
         delete=False,

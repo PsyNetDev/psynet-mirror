@@ -432,10 +432,13 @@ their sizes and the experiment that made them, and drop them with:
 server, whichever experiment made it.
 
 To start from real data instead, for example from a pilot, export the
-pilot with ``psynet export``, launch the experiment from the export with
-``psynet debug ssh --app my-experiment --archive export.zip`` (see
-:ref:`deploy_from_archive`), and run ``psynet performance-test ssh``
-against it. Every test then starts with at least the pilot's data.
+pilot with ``psynet export``, add ``performance_test_app = true`` to
+``config.txt``, launch a new app from the export with ``psynet debug ssh
+--app my-experiment-perf --archive export.zip`` (see
+:ref:`deploy_from_archive`), remove the line from ``config.txt`` again, and
+run ``psynet performance-test ssh --app my-experiment-perf`` (see
+:ref:`performance_testing_server_app`). Every test then starts with at least
+the pilot's data.
 
 Locally, these options need the server that ``performance-test local``
 starts, so they can't be combined with ``--existing``.
@@ -449,8 +452,10 @@ A local test is limited by your own computer, because the bots share its CPUs
 with the server. The bots are cheap (see
 :ref:`performance_testing_bot_processes`): on a four-core computer, 200 bots
 working at a realistic pace used about a third of one core, against nearly
-three cores for the server. To test a real server, launch the experiment there in
-debug mode, then run the test over SSH. The bots then run inside the server's
+three cores for the server. To test a real server, run the test over SSH
+from the experiment directory, naming a new app for it; PsyNet deploys the
+experiment under that name in debug mode first (see
+:ref:`performance_testing_server_app`). The bots then run inside the app's
 web container and send their requests straight to the experiment server,
 skipping the server's web proxy and any Cloudflare tunnel, so the test
 measures the experiment itself. They still take a little of the server's
@@ -459,8 +464,7 @@ machine, so on a shared server check with the other users first:
 
 .. code-block:: bash
 
-    psynet debug ssh --app my-experiment
-    psynet performance-test ssh --app my-experiment --n-bots 50 --duration-minutes 10
+    psynet performance-test ssh --app my-experiment-perf --n-bots 50 --duration-minutes 10
 
 By default the test does not reset the database, so repeated runs
 accumulate data (see :ref:`performance_testing_database_size` and
@@ -468,9 +472,53 @@ accumulate data (see :ref:`performance_testing_database_size` and
 sure the app allows enough participants for the number of bots, and that
 nobody else is using it during the test.
 
-Performance tests add bot participants to the database and load the
-server, so they must never run against an experiment that is collecting
-real data. ``performance-test ssh`` and ``performance-test local`` therefore
+.. _performance_testing_server_app:
+
+Apps for performance tests
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Performance tests fill the database with bot participants, and with
+``--reset-database`` they drop it, so they only run on apps that
+``performance-test ssh`` deployed for them, never on an existing
+deployment. If the server has no app named ``--app``,
+``performance-test ssh`` first deploys the experiment from the current
+directory under that name, in debug mode, as ``psynet debug ssh`` would. It
+takes the same ``--server``, ``--dns-host``, ``--ingress`` and
+``--use-local-dallinger`` options. If the server is on a private network,
+such as a lab computer, add ``--ingress cloudflare``: Let's Encrypt cannot
+issue certificates for a private address, so classic ingress fails there.
+
+The app's config marks it as a performance-test app with
+``performance_test_app = true``, and records the hash of the experiment's
+files and the PsyNet and Dallinger versions that it was deployed with (the
+same hash that names pre-fill snapshots, see :ref:`performance_testing_reset`).
+Each run reads both inside the app's web container. If the hash differs
+from that of the experiment directory, the run first updates the app as
+``psynet debug ssh --update`` does: it rebuilds and restarts the app's
+containers but keeps its database, with the data of earlier tests, and its
+pre-fill snapshots. The database keeps the tables of the earlier code, and
+launch steps, such as creating networks, don't run again; if the change
+needs them, destroy the app and let the next run deploy it again. Update
+the app only through ``performance-test ssh``: ``psynet debug ssh
+--update`` doesn't set ``performance_test_app``, so the app would lose its
+mark.
+
+If an app of that name exists but isn't marked, for example one you
+deployed with ``psynet debug ssh`` or ``psynet deploy ssh``, every run
+refuses it, as does ``psynet performance-test snapshots --app``; choose
+another app name. Setting ``performance_test_app = true`` in ``config.txt``
+yourself declares that the app's data is disposable: performance tests may
+add to it, reset it and drop it. ``psynet deploy ssh`` and other live
+deployments refuse to deploy with it set.
+
+After a run, the app stays on the server for later runs, and PsyNet prints
+the command that destroys it:
+
+.. code-block:: bash
+
+    psynet destroy ssh --server my-server --app my-experiment-perf
+
+As a second check, ``performance-test ssh`` and ``performance-test local``
 refuse to start if the database has participants that PsyNet bots didn't
 create (bots from earlier tests and pre-fills don't count), if the
 experiment runs in live mode, or if its recruiter can bring real
@@ -478,13 +526,9 @@ participants. Test recruiters are the development and mock recruiters,
 Hot Air, generic, bots and simulated participants. If the experiment isn't
 collecting real data, add ``--force``. You need it, for example, after your
 own walkthrough of the experiment, after a Selenium walkthrough, after
-loading a bot export, or for an experiment configured with Prolific that
-you deployed with ``psynet debug ssh``. When the run ends, PsyNet copies the
-bot log out of the container and prints where it saved it.
-
-If the server is on a private network, such as a lab computer, deploy with
-``--ingress cloudflare``: Let's Encrypt cannot issue certificates for a
-private address, so classic ingress fails there.
+loading a bot export, or for an experiment configured with Prolific. When
+the run ends, PsyNet copies the bot log out of the container and prints
+where it saved it.
 
 .. _performance_testing_server_reset:
 
@@ -497,8 +541,8 @@ Resetting the database on a server
 
 .. code-block:: bash
 
-    psynet performance-test ssh --app my-experiment --reset-database --n-bots auto
-    psynet performance-test ssh --app my-experiment --prefill-participants 1500 --n-bots auto
+    psynet performance-test ssh --app my-experiment-perf --reset-database --n-bots auto
+    psynet performance-test ssh --app my-experiment-perf --prefill-participants 1500 --n-bots auto
 
 With these options your computer runs the series of tests, or the capacity
 search, and the server runs one test at a time and sends its results back.
@@ -514,11 +558,12 @@ bots run inside the web container. If a reset fails or you interrupt the
 run, PsyNet starts the containers it stopped. If it can't, the command
 fails, saying that the app may be stopped, and prints the ``docker compose
 start`` command to run on the server. A reset interrupted between dropping
-and recreating the database leaves the app without its database; redeploy
-the app then.
+and recreating the database leaves the app without its database; destroy
+the app then, and the next run deploys it again.
 
-The guards against real data run before the first reset and again before
-every later one, with the same ``--force`` as above. Neither command
+Before the first reset and again before every later one, the web container
+checks that the app is a performance-test app, and runs the guards against
+real data, with the same ``--force`` as above. Neither command
 resets an experiment running in live mode, even with ``--force``. A
 reset only touches the app's own database, whose name is the app name; it
 refuses if the web container uses a database with another name. The free
@@ -527,15 +572,15 @@ check, it refuses to reset rather than warning.
 
 Snapshots live in the PostgreSQL server that the app uses, and their names
 include the app name, such as
-``psynet_prefill_my-experiment_0123456789ab_n1500``, so that apps sharing
+``psynet_prefill_my-experiment-perf_0123456789ab_n1500``, so that apps sharing
 one PostgreSQL server don't share snapshots. PostgreSQL limits database
 names to 63 characters, so very long app names can't keep pre-fill
 snapshots. List and drop an app's snapshots with:
 
 .. code-block:: bash
 
-    psynet performance-test snapshots --app my-experiment
-    psynet performance-test snapshots --app my-experiment --drop-all
+    psynet performance-test snapshots --app my-experiment-perf
+    psynet performance-test snapshots --app my-experiment-perf --drop-all
 
 Here ``--drop-all`` drops only that app's snapshots. ``psynet destroy ssh``
 drops them too: with Cloudflare ingress the app has its own PostgreSQL
