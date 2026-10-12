@@ -4696,26 +4696,29 @@ def test_experiment_never_completes_during_performance_test(monkeypatch):
         (
             {},
             dict(
-                duration_minutes=2.0,
+                duration_minutes=6,
                 stagger_interval_s=0.5,
                 time_factor=1.0,
                 bot_processes="auto",
             ),
         ),
         (
-            dict(n_bots="auto"),
+            dict(n_bots="auto", time_factor=0),
             dict(
                 duration_minutes=2.0,
                 stagger_interval_s=0.5,
-                time_factor=1.0,
+                time_factor=0,
                 bot_processes="auto",
             ),
         ),
     ],
-    ids=["explicit-zeros", "defaults", "capacity-search"],
+    ids=["explicit-zeros", "defaults", "capacity-search-without-pauses"],
 )
 def test_performance_test_options_reach_the_tester(options, expected, tmp_path):
-    """Explicit zeros are kept; omitted options use the experiment's defaults."""
+    """Explicit zeros are kept; omitted options use the experiment's defaults.
+
+    By default a test lasts 1.5 sessions of the experiment's estimated 4 minutes.
+    """
     from psynet.command_line import _run_performance_test_with_existing_server
     from psynet.perf_test import CapacityLimits
 
@@ -4727,6 +4730,7 @@ def test_performance_test_options_reach_the_tester(options, expected, tmp_path):
         test_duration_minutes=2.0,
         test_parallel_stagger_interval_s=0.5,
         test_time_factor=2.5,
+        estimated_duration_in_minutes=4.0,
     )
     suite = Mock()
     suite.run.return_value = []
@@ -4750,6 +4754,7 @@ def test_performance_test_options_reach_the_tester(options, expected, tmp_path):
     performance_tester.assert_called_once_with(
         authenticated_session=experiment.authenticated_session,
         base_url=experiment.base_url,
+        estimated_duration_minutes=4.0,
         **expected,
     )
     suite_class.assert_called_once_with(

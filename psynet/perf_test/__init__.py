@@ -41,6 +41,7 @@ from psynet.perf_test.results import (
     CapacityLimits,
     PerformanceTestResult,
     capacity_failures,
+    default_duration_minutes,
     next_capacity_probe,
     queue_wait_p95,
 )
@@ -63,6 +64,7 @@ __all__ = [
     "capacity_advice",
     "capacity_failures",
     "count_non_bot_participants",
+    "default_duration_minutes",
     "format_capacity_summary",
     "format_performance_summary",
     "format_test_results",

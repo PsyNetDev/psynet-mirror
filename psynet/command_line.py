@@ -4320,12 +4320,13 @@ _test_options["duration_minutes"] = click.option(
     type=click.FloatRange(min=0, min_open=True),
     default=None,
     help="""
-    Total performance-test measurement window in minutes. This includes
-    first-bot initialization and ramp-up towards 'n-bots', so the test may spend
-    less than 'duration-minutes' at the target concurrency. A short first pass
-    (default 1 minute) is fine; use a longer window when finalizing, and at
-    least the estimated experiment duration if you want bots to finish.
-    If not specified, defaults to Experiment.test_duration_minutes (1 minute)""",
+    Length of each test in minutes, including first-bot initialization and
+    ramp-up towards 'n-bots'. If not specified, a test lasts 1.5 participant
+    sessions (the timeline's estimated duration times --time-factor), rounded
+    up to whole minutes, at most 30 minutes and at least
+    Experiment.test_duration_minutes (1 minute). A test shorter than one
+    session only sees the start of the study, when every bot arrives at once,
+    and the suite warns about it.""",
 )
 
 _test_options["performance_json_output"] = click.option(
@@ -4339,8 +4340,8 @@ _test_options["performance_json_output"] = click.option(
     started_at / finished_at (ISO timestamps), snapshot and snapshot_rows
     (the database snapshot that each test started from and its rows, with
     --reset-database), options (n_bots_sweep, capacity_search, max_p95_s,
-    max_queue_p95_s, duration_minutes, stagger_interval_s, time_factor,
-    bot_processes, reset_database, prefill_participants, from_snapshot),
+    max_queue_p95_s, duration_minutes, estimated_duration_minutes,
+    stagger_interval_s, time_factor, bot_processes, reset_database, prefill_participants, from_snapshot),
     and results (one entry per bot count tested, with all
     metrics).
     Useful for downstream consumption (e.g. benchmarking tools like asv).""",
@@ -4750,7 +4751,12 @@ def _run_performance_test_with_existing_server(
         )
         sys.exit(1)
 
-    from psynet.perf_test import CapacityLimits, PerformanceSuite, PerformanceTester
+    from psynet.perf_test import (
+        CapacityLimits,
+        PerformanceSuite,
+        PerformanceTester,
+        default_duration_minutes,
+    )
 
     _check_no_real_participants(force)
     os.environ["PASSTHROUGH_ERRORS"] = "True"
@@ -4758,19 +4764,24 @@ def _run_performance_test_with_existing_server(
     bot_counts = n_bots or [exp.test_n_bots]
     find_capacity = bot_counts == "auto"
 
+    # Documented CLI default is 1.0 (realistic pacing). Do not fall back to
+    # Experiment.test_time_factor, which defaults to 0.0 for correctness tests.
+    time_factor = 1.0 if time_factor is None else time_factor
+    estimated_duration_minutes = exp.estimated_duration_in_minutes
+    if duration_minutes is None:
+        duration_minutes = default_duration_minutes(
+            estimated_duration_minutes * time_factor, exp.test_duration_minutes
+        )
     tester = PerformanceTester(
         authenticated_session=exp.authenticated_session,
         base_url=exp.base_url,
-        duration_minutes=(
-            exp.test_duration_minutes if duration_minutes is None else duration_minutes
-        ),
+        duration_minutes=duration_minutes,
         stagger_interval_s=(
             exp.test_parallel_stagger_interval_s if stagger is None else float(stagger)
         ),
-        # Documented CLI default is 1.0 (realistic pacing). Do not fall back to
-        # Experiment.test_time_factor, which defaults to 0.0 for correctness tests.
-        time_factor=(1.0 if time_factor is None else time_factor),
+        time_factor=time_factor,
         bot_processes="auto" if bot_processes is None else bot_processes,
+        estimated_duration_minutes=estimated_duration_minutes,
     )
     limits = CapacityLimits.from_options(
         max_p95_s=None if max_p95_ms is None else float(max_p95_ms) / 1000,
@@ -4827,6 +4838,7 @@ def _run_performance_test_with_existing_server(
             "max_p95_s": limits.max_p95_s,
             "max_queue_p95_s": limits.max_queue_p95_s,
             "duration_minutes": tester.duration_minutes,
+            "estimated_duration_minutes": tester.estimated_duration_minutes,
             "stagger_interval_s": tester.stagger_interval_s,
             "time_factor": tester.time_factor,
             "bot_processes": tester.bot_processes,

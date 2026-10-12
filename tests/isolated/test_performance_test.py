@@ -10,6 +10,7 @@ from psynet.perf_test import (
     PerformanceTester,
     PerformanceTestResult,
     capacity_failures,
+    default_duration_minutes,
     format_capacity_summary,
     format_performance_summary,
     format_test_results,
@@ -350,6 +351,38 @@ def test_a_suite_calls_before_test_before_every_test_instead_of_pausing():
 
     assert before_test.call_count == 2
     pause.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "session_minutes, minimum, expected",
+    [(None, 1, 1), (0, 1, 1), (0.3, 1, 1), (12.1, 1, 19), (40, 1, 30), (40, 45, 45)],
+)
+def test_default_duration_covers_a_session_and_start_up(
+    session_minutes, minimum, expected
+):
+    assert default_duration_minutes(session_minutes, minimum) == expected
+
+
+@pytest.mark.parametrize("duration_minutes, warns", [(3, True), (20, False)])
+def test_suite_header_shows_the_estimate_and_warns_about_short_tests(
+    caplog, duration_minutes, warns
+):
+    tester = PerformanceTester(
+        authenticated_session=Mock(),
+        base_url="http://x",
+        duration_minutes=duration_minutes,
+        time_factor=1,
+        estimated_duration_minutes=13,
+    )
+    with (
+        caplog.at_level("INFO"),
+        patch.object(tester, "_test_performance", return_value=_base_result()),
+        patch("psynet.perf_test.runtime.raise_open_file_limit"),
+    ):
+        PerformanceSuite(tester).run([2])
+
+    assert "Estimated session:    13.0 min" in caplog.text
+    assert ("only sees the start of the study" in caplog.text) == warns
 
 
 _HOLD_TIMEOUT = "timeline_hold:wait_while, fail_on_timeout"

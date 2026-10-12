@@ -23,6 +23,7 @@ from psynet.perf_test.results import (
     CapacityLimits,
     capacity_failure_causes,
     next_capacity_probe,
+    short_test_warning,
 )
 
 logger = logging.getLogger(__name__)
@@ -159,9 +160,24 @@ class PerformanceSuite:
         return all_results
 
     def _print_suite_header(self, bots_description):
+        tester = self.tester
         logger.info(bold("=" * 80))
         logger.info(bold("\u26a1 PERFORMANCE TEST SUITE"))
         logger.info(f"Bots per test:        {bots_description}")
-        logger.info(f"Test duration:        {self.tester.duration_minutes:g} min")
-        logger.info(f"Bot start stagger:    ~{self.tester.stagger_interval_s:g}s")
-        logger.info(f"Bot time factor:      {self.tester.time_factor:g}")
+        logger.info(f"Test duration:        {tester.duration_minutes:g} min")
+        if tester.estimated_duration_minutes is not None:
+            paced = (
+                ""
+                if tester.time_factor == 1
+                else f", {tester.session_minutes:.1f} min at the bots' time factor"
+            )
+            logger.info(
+                "Estimated session:    "
+                f"{tester.estimated_duration_minutes:.1f} min (from the timeline's "
+                f"time estimates){paced}"
+            )
+        logger.info(f"Bot start stagger:    ~{tester.stagger_interval_s:g}s")
+        logger.info(f"Bot time factor:      {tester.time_factor:g}")
+        short = short_test_warning(tester.duration_minutes, tester.session_minutes)
+        if short:
+            logger.warning(warning(short))

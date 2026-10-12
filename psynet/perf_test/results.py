@@ -3,7 +3,8 @@
 :class:`PerformanceTestResult` holds one test's measurements and is what
 ``--json-output`` saves. :class:`CapacityLimits` and :func:`capacity_failures`
 decide whether a result passes, and :func:`next_capacity_probe` chooses the
-next bot count of a capacity search.
+next bot count of a capacity search. :func:`default_duration_minutes`
+chooses how long a test lasts from how long a participant session takes.
 
 Failures from waiting too long, such as timed-out holds, count against
 capacity (see :func:`_is_wait_timeout`); others, such as prescreens, are
@@ -16,6 +17,7 @@ the database, so it works on results read back from JSON.
 """
 
 import copy
+import math
 from dataclasses import dataclass, field, fields
 from urllib.parse import urlparse
 
@@ -30,6 +32,47 @@ _CAPACITY_RESOLUTION = 0.1
 # takes 9, then bisecting between 1280 and 2000 takes 3. Recompute it if the
 # constants above change.
 CAPACITY_SEARCH_MAX_TESTS = 12
+# A default test lasts this many participant sessions, so that bots finish
+# and new ones replace them, but at most _MAX_DEFAULT_DURATION_MINUTES so that
+# a capacity search of a long study stays practical.
+_DEFAULT_SESSIONS_PER_TEST = 1.5
+_MAX_DEFAULT_DURATION_MINUTES = 30
+
+
+def default_duration_minutes(session_minutes, minimum):
+    """Return how long a test lasts by default, in whole minutes.
+
+    Parameters
+    ----------
+    session_minutes : float or None
+        How long a bot takes the experiment: the timeline's estimated
+        duration times the bots' time factor. ``None`` or 0 if unknown.
+    minimum : float
+        The shortest default, ``Experiment.test_duration_minutes``.
+
+    Returns
+    -------
+    float
+        1.5 sessions rounded up, at least ``minimum`` and at most 30 minutes
+        (unless ``minimum`` is longer).
+    """
+    if not session_minutes:
+        return minimum
+    sessions = math.ceil(_DEFAULT_SESSIONS_PER_TEST * session_minutes)
+    return max(minimum, min(sessions, _MAX_DEFAULT_DURATION_MINUTES))
+
+
+def short_test_warning(duration_minutes, session_minutes):
+    """Return a warning if a test is shorter than one participant session, else ``None``."""
+    if not session_minutes or duration_minutes >= session_minutes:
+        return None
+    return (
+        f"The test lasts {duration_minutes:g} min, but a participant session takes "
+        f"about {session_minutes:.1f} min, so the test only sees the start of the "
+        "study, when every bot arrives at once, and not its steady state. Use "
+        f"--duration-minutes {math.ceil(_DEFAULT_SESSIONS_PER_TEST * session_minutes)} "
+        "or more to see both."
+    )
 
 
 @dataclass(kw_only=True)

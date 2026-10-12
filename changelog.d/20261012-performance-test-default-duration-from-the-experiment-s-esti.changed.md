@@ -1,0 +1,1 @@
+Changed `psynet performance-test` so that, without `--duration-minutes`, each test lasts 1.5 participant sessions (the timeline's estimated duration times `--time-factor`, rounded up, at most 30 minutes). The suite header shows the estimated session length and warns when a test is shorter than one session, because such a test only sees the start of the study.

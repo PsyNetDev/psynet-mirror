@@ -19,7 +19,8 @@ From the experiment directory:
     psynet performance-test local
 
 This starts a local server, keeps ``Experiment.test_n_bots`` bots (default 1)
-active for one minute, prints a report, and shuts the server down. Like
+active for about one and a half participant sessions (see
+``--duration-minutes`` below), prints a report, and shuts the server down. Like
 ``psynet test local``, the server gets a free port, a database and a Redis
 server of its own, so local debug servers keep running (see
 :doc:`/developer/running_tests`). It prints the paths of the server and bot
@@ -67,11 +68,16 @@ Controlling the load
     ``Experiment.test_n_bots``.
 
 ``--duration-minutes``
-    The length of the test, including the time bots take to start. Defaults to
-    ``Experiment.test_duration_minutes`` (one minute), which is enough to see
-    whether response times look healthy. For bots to finish the experiment,
-    the test must last about as long as the experiment itself; on shorter runs,
-    completion counts are uninformative.
+    The length of each test, including the time bots take to start. By
+    default a test lasts 1.5 participant sessions, rounded up to whole
+    minutes: long enough for bots to finish and be replaced, so that the test
+    sees the study's steady state as well as its start. A session is the
+    experiment's estimated duration (from the timeline's ``time_estimate``
+    values, shown in the suite header) times ``--time-factor``. The default
+    is at most 30 minutes, so that a capacity search of a long study stays
+    practical, and at least ``Experiment.test_duration_minutes`` (one
+    minute). A test shorter than one session sees only the start of the
+    study, when all the bots arrive at once, and the suite warns about it.
 
 ``--stagger``
     The average delay, in seconds, between starting bots, so that they arrive
@@ -231,8 +237,9 @@ The search starts at 10 bots and doubles the count until a test fails, then
 halves the gap between the largest passing and smallest failing counts until
 they are within 10% of each other. It stops at 2,000 bots. For a server that
 handles more than about 100 bots this takes 8 to 12 tests, so a search with
-``--duration-minutes 3`` takes 25 to 40 minutes; the run prints its upper
-bound when it starts.
+``--duration-minutes 3`` takes 25 to 40 minutes, and one of a 12-minute study
+at the default 18 minutes per test takes 2.5 to 4 hours; the run prints its
+upper bound when it starts.
 
 When bots fail, the report lists what went wrong, for example
 ``HTTP 500 on /response``. The request error count only includes errors that
@@ -252,8 +259,8 @@ server, see :ref:`choosing_server_size`.
 Run the search on the server you will deploy to, with ``--time-factor 1`` so
 that bots work at a realistic pace; bots with ``--time-factor 0`` load the
 server far more than people do. Each test's measurement window includes the
-time bots take to start, so use a ``--duration-minutes`` of at least two or
-three for steady results. A test whose bots didn't all start within the
+time bots take to start, so keep the default ``--duration-minutes``, or at
+least one participant session, for steady results. A test whose bots didn't all start within the
 window counts as exceeding the limits, and the summary warns when starting
 the bots took more than a quarter of the test.
 

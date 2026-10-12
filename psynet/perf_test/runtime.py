@@ -382,6 +382,7 @@ class PerformanceTester:
         stagger_interval_s=0.1,
         time_factor=0.0,
         bot_processes=1,
+        estimated_duration_minutes=None,
     ):
         """Set up a performance tester.
 
@@ -391,6 +392,9 @@ class PerformanceTester:
             Number of processes to run the bots in. With 1 they run as threads
             in this process; ``"auto"`` chooses from the most bots a suite
             runs and the CPU count (see :func:`_choose_bot_processes`).
+        estimated_duration_minutes : float, optional
+            The experiment's estimated duration
+            (``Experiment.estimated_duration_in_minutes``), for the suite header.
         """
         self.authenticated_session = authenticated_session
         self.base_url = base_url
@@ -398,12 +402,20 @@ class PerformanceTester:
         self.stagger_interval_s = stagger_interval_s
         self.time_factor = time_factor
         self.bot_processes = bot_processes
+        self.estimated_duration_minutes = estimated_duration_minutes
         self._n_bot_processes = 1
         # Runs the bots: _ThreadBots, or _BotProcesses during a suite that
         # needs several processes.
         self._bots = _ThreadBots(self)
         # Experiment code shares this process and may call random.seed().
         self._random = random.Random()
+
+    @property
+    def session_minutes(self):
+        """Return about how long a bot takes the experiment, or ``None`` if unknown."""
+        if self.estimated_duration_minutes is None:
+            return None
+        return self.estimated_duration_minutes * self.time_factor
 
     @contextmanager
     def bot_runner(self, max_bots, bot_log_file):
