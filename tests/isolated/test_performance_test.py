@@ -561,6 +561,64 @@ def test_database_reset_restores_snapshots_and_drops_only_its_own(scratch_databa
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
 )
+def test_a_failed_restore_never_loses_the_database_or_its_snapshot(scratch_database):
+    from contextlib import contextmanager
+
+    import psycopg2
+
+    from psynet import perf_reset
+
+    url, created = scratch_database
+    created.append(f"{created[0]}__restore")
+    database = perf_reset.LocalDatabase(url)
+    failing = []
+
+    class FailingCursor(_RecordingCursor):
+        def execute(self, statement, params=None):
+            text = getattr(statement, "as_string", lambda _: statement)(self._cursor)
+            if text.startswith(tuple(failing)):
+                raise psycopg2.OperationalError(f"Simulated failure: {text}")
+            return self._cursor.execute(statement, params)
+
+    class FailingReset(perf_reset.DatabaseReset):
+        @contextmanager
+        def _connect(self):
+            with super()._connect() as cursor:
+                yield FailingCursor(cursor, [])
+
+    def exists(name):
+        with database.cursor() as cursor:
+            cursor.execute("SELECT 1 FROM pg_database WHERE datname = %s", (name,))
+            return cursor.fetchone() is not None
+
+    server = Mock()
+    reset = FailingReset(server.stop, server.start, database=database)
+    _participants(url, 1)
+    reset()
+    created.append(reset.snapshot)
+    _participants(url, 1)
+
+    failing[:] = ["CREATE DATABASE"]
+    with pytest.raises(psycopg2.Error):
+        reset()
+    assert _participants(url) == 2
+
+    # Fails after dropping the database; the restore copy can't be renamed yet.
+    failing[:] = ["ALTER DATABASE"]
+    with pytest.raises(psycopg2.Error):
+        reset()
+    reset.close()
+    assert not exists(database.name) and exists(reset.snapshot)
+
+    failing.clear()
+    reset.close()
+    assert _participants(url) == 1
+    assert not exists(reset.snapshot)
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
 @pytest.mark.parametrize("second_stop", [None, RuntimeError("still stopping")])
 def test_close_keeps_a_finished_prefill_whose_snapshot_was_not_taken(
     scratch_database, second_stop
@@ -1534,6 +1592,54 @@ def test_a_remote_reset_restores_only_the_apps_database_in_its_container():
     assert any("redis-cli --scan --pattern" in c for c in commands)
     assert reset.snapshot_rows == {"participant": 3}
     assert server.stop.call_count == server.start.call_count == 1
+
+
+def test_ssh_starts_the_stopped_services_again_after_a_failed_reset(
+    tmp_path, monkeypatch
+):
+    import psycopg2
+
+    from psynet.command_line import _run_ssh_suite_with_reset
+
+    def respond(cmd):
+        if "CREATE DATABASE" in cmd:
+            return 1, "ERROR:  53100: could not extend file: No space left\n"
+        for pattern, output in [
+            ("datname = '", "" if "__restore" in cmd else "1"),
+            ("DATABASE_URL", "my-app"),
+            ("SCARD", "1"),
+            ("config --services", "postgresql\nredis\nweb\nworker_1\npgbouncer"),
+            ("pg_database_size", "1000"),
+            ("data_directory", "/var/lib/postgresql/data"),
+            (" df ", "Filesystem 1024-blocks Used Available\nx 9 0 9999 1% /"),
+        ]:
+            if pattern in cmd:
+                return output + "\n"
+        return ""
+
+    monkeypatch.chdir(tmp_path)
+    remote = _app_database(respond).remote
+    remote.prepare = Mock(
+        return_value={
+            "label": "Test",
+            "test_n_bots": 2,
+            "test_duration_minutes": 1,
+            "test_parallel_stagger_interval_s": 0.1,
+            "waiting": 0,
+        }
+    )
+    reset = {"prefill_participants": None, "from_snapshot": _APP_SNAPSHOT}
+    with pytest.raises(psycopg2.Error, match="No space left"):
+        _run_ssh_suite_with_reset(remote, reset, None, n_bots=[2])
+
+    commands = remote.executor.commands
+    stop, start = (
+        next(i for i, c in enumerate(commands) if f".yml {action} " in c)
+        for action in ("stop", "start")
+    )
+    assert "stop web worker_1 pgbouncer ;" in commands[stop]
+    assert "start web worker_1 pgbouncer ;" in commands[start]
+    assert start > max(i for i, c in enumerate(commands) if " psql " in c)
 
 
 @pytest.mark.parametrize("web_database", ["dallinger", "other-app"])
